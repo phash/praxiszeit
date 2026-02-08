@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { Link } from 'react-router-dom';
 import apiClient from '../../api/client';
-import { Users, Clock, TrendingUp, X, Calendar } from 'lucide-react';
+import { Users, Clock, TrendingUp, X, Calendar, FileText } from 'lucide-react';
 
 interface EmployeeReport {
   user_id: string;
@@ -249,14 +250,24 @@ export default function AdminDashboard() {
       <div className="mt-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-gray-900">Jahresübersicht - Abwesenheiten</h2>
-          <input
-            type="number"
-            value={currentYear}
-            onChange={(e) => setCurrentYear(parseInt(e.target.value))}
-            min="2020"
-            max="2030"
-            className="px-4 py-2 border border-gray-300 rounded-lg"
-          />
+          <div className="flex items-center space-x-3">
+            <input
+              type="number"
+              value={currentYear}
+              onChange={(e) => setCurrentYear(parseInt(e.target.value))}
+              min="2020"
+              max="2030"
+              className="px-4 py-2 border border-gray-300 rounded-lg"
+            />
+            <Link
+              to="/admin/reports"
+              className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+              title="Zu Berichte & Export"
+            >
+              <FileText size={20} />
+              <span>Berichte</span>
+            </Link>
+          </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

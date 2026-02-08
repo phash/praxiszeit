@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
-from app.schemas.user import LoginRequest, LoginResponse, RefreshRequest, RefreshResponse, UserResponse, ChangePasswordRequest
+from app.schemas.user import LoginRequest, LoginResponse, RefreshRequest, RefreshResponse, UserResponse, ChangePasswordRequest, UpdateCalendarColorRequest
 from app.services import auth_service
 from app.middleware.auth import get_current_user
 
@@ -113,3 +113,19 @@ def change_password(
     db.commit()
 
     return {"message": "Passwort erfolgreich geändert"}
+
+
+@router.put("/calendar-color", response_model=UserResponse)
+def update_calendar_color(
+    request: UpdateCalendarColorRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update calendar color for the current authenticated user.
+    """
+    current_user.calendar_color = request.calendar_color
+    db.commit()
+    db.refresh(current_user)
+
+    return UserResponse.model_validate(current_user)

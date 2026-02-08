@@ -2,6 +2,7 @@ from app.models.user import User, UserRole
 from app.models.time_entry import TimeEntry
 from app.models.absence import Absence, AbsenceType
 from app.models.public_holiday import PublicHoliday
+from app.models.working_hours_change import WorkingHoursChange
 
 __all__ = [
     "User",
@@ -10,4 +11,5 @@ __all__ = [
     "Absence",
     "AbsenceType",
     "PublicHoliday",
+    "WorkingHoursChange",
 ]

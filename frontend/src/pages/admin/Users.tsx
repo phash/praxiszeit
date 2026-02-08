@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, Save, X } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, Save, X, Clock, Trash2 } from 'lucide-react';
 
 interface User {
   id: string;
@@ -15,8 +15,24 @@ interface User {
   created_at: string;
 }
 
+interface VacationInfo {
+  budget_days: number;
+  used_days: number;
+  remaining_days: number;
+}
+
+interface WorkingHoursChange {
+  id: string;
+  user_id: string;
+  effective_from: string;
+  weekly_hours: number;
+  note?: string;
+  created_at: string;
+}
+
 export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
+  const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -30,6 +46,14 @@ export default function Users() {
     track_hours: true,
   });
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [showHoursModal, setShowHoursModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
+  const [hoursFormData, setHoursFormData] = useState({
+    effective_from: '',
+    weekly_hours: 40,
+    note: '',
+  });
 
   useEffect(() => {
     fetchUsers();
@@ -39,6 +63,24 @@ export default function Users() {
     try {
       const response = await apiClient.get('/admin/users');
       setUsers(response.data);
+
+      // Fetch vacation info for each user
+      const currentYear = new Date().getFullYear();
+      const vacationPromises = response.data.map((user: User) =>
+        apiClient.get(`/dashboard/vacation`, {
+          params: { user_id: user.id, year: currentYear }
+        }).then(res => ({ userId: user.id, data: res.data }))
+        .catch(() => ({ userId: user.id, data: null }))
+      );
+
+      const vacationResults = await Promise.all(vacationPromises);
+      const vacationMap: Record<string, VacationInfo> = {};
+      vacationResults.forEach(result => {
+        if (result.data) {
+          vacationMap[result.userId] = result.data;
+        }
+      });
+      setVacationInfo(vacationMap);
     } catch (error) {
       console.error('Failed to fetch users:', error);
     } finally {
@@ -110,6 +152,58 @@ export default function Users() {
       vacation_days: 30,
       track_hours: true,
     });
+  };
+
+  const handleOpenHoursModal = async (user: User) => {
+    setSelectedUser(user);
+    setShowHoursModal(true);
+    setHoursFormData({
+      effective_from: new Date().toISOString().split('T')[0],
+      weekly_hours: user.weekly_hours,
+      note: '',
+    });
+    await fetchHoursChanges(user.id);
+  };
+
+  const fetchHoursChanges = async (userId: string) => {
+    try {
+      const response = await apiClient.get(`/admin/users/${userId}/working-hours-changes`);
+      setHoursChanges(response.data);
+    } catch (error) {
+      console.error('Failed to fetch hours changes:', error);
+    }
+  };
+
+  const handleAddHoursChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    try {
+      await apiClient.post(`/admin/users/${selectedUser.id}/working-hours-changes`, hoursFormData);
+      await fetchHoursChanges(selectedUser.id);
+      await fetchUsers(); // Refresh user list to show updated current hours
+      setHoursFormData({
+        effective_from: new Date().toISOString().split('T')[0],
+        weekly_hours: selectedUser.weekly_hours,
+        note: '',
+      });
+      alert('Stundenänderung hinzugefügt');
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Fehler beim Hinzufügen');
+    }
+  };
+
+  const handleDeleteHoursChange = async (changeId: string) => {
+    if (!selectedUser || !confirm('Stundenänderung wirklich löschen?')) return;
+
+    try {
+      await apiClient.delete(`/admin/users/${selectedUser.id}/working-hours-changes/${changeId}`);
+      await fetchHoursChanges(selectedUser.id);
+      await fetchUsers(); // Refresh user list to show updated current hours
+      alert('Stundenänderung gelöscht');
+    } catch (error) {
+      alert('Fehler beim Löschen');
+    }
   };
 
   return (
@@ -257,7 +351,7 @@ export default function Users() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">E-Mail</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rolle</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wochenstd.</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Urlaub</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Urlaubskonto</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stundenzählung</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktionen</th>
@@ -287,7 +381,53 @@ export default function Users() {
                       {user.role === 'admin' ? 'Admin' : 'Mitarbeiterin'}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">{user.weekly_hours}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{user.vacation_days}</td>
+                    <td className="px-6 py-4 text-sm">
+                      {vacationInfo[user.id] ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-gray-600">Budget:</span>
+                            <span className="font-medium text-gray-900">
+                              {vacationInfo[user.id].budget_days} Tage
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-gray-600">Genommen:</span>
+                            <span className="font-medium text-orange-600">
+                              {vacationInfo[user.id].used_days.toFixed(1)} Tage
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-gray-600">Übrig:</span>
+                            <span className={`font-semibold ${
+                              vacationInfo[user.id].remaining_days > 5
+                                ? 'text-green-600'
+                                : vacationInfo[user.id].remaining_days > 0
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                            }`}>
+                              {vacationInfo[user.id].remaining_days.toFixed(1)} Tage
+                            </span>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div
+                              className={`h-2 rounded-full ${
+                                vacationInfo[user.id].remaining_days > 5
+                                  ? 'bg-green-500'
+                                  : vacationInfo[user.id].remaining_days > 0
+                                  ? 'bg-yellow-500'
+                                  : 'bg-red-500'
+                              }`}
+                              style={{
+                                width: `${Math.max(0, (vacationInfo[user.id].remaining_days / vacationInfo[user.id].budget_days) * 100)}%`
+                              }}
+                            ></div>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">Lädt...</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm">
                       {user.track_hours ? (
                         <span className="text-green-600">✓ Aktiv</span>
@@ -311,6 +451,13 @@ export default function Users() {
                         <Edit2 size={16} />
                       </button>
                       <button
+                        onClick={() => handleOpenHoursModal(user)}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Stundenverlauf"
+                      >
+                        <Clock size={16} />
+                      </button>
+                      <button
                         onClick={() => handleResetPassword(user.id, `${user.first_name} ${user.last_name}`)}
                         className="text-orange-600 hover:text-orange-800"
                         title="Passwort zurücksetzen"
@@ -332,6 +479,139 @@ export default function Users() {
           </table>
         </div>
       </div>
+
+      {/* Working Hours History Modal */}
+      {showHoursModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Stundenverlauf</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  {selectedUser.first_name} {selectedUser.last_name} • Aktuell: {selectedUser.weekly_hours} Std/Woche
+                </p>
+              </div>
+              <button
+                onClick={() => setShowHoursModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Add New Change Form */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <h3 className="font-semibold text-blue-900 mb-3">Neue Stundenänderung</h3>
+                <form onSubmit={handleAddHoursChange} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Gültig ab
+                    </label>
+                    <input
+                      type="date"
+                      value={hoursFormData.effective_from}
+                      onChange={(e) => setHoursFormData({ ...hoursFormData, effective_from: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Wochenstunden
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={hoursFormData.weekly_hours}
+                      onChange={(e) => setHoursFormData({ ...hoursFormData, weekly_hours: parseFloat(e.target.value) })}
+                      required
+                      min="0"
+                      max="60"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Notiz (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={hoursFormData.note}
+                      onChange={(e) => setHoursFormData({ ...hoursFormData, note: e.target.value })}
+                      placeholder="z.B. Teilzeitänderung"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <button
+                      type="submit"
+                      className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
+                    >
+                      <Plus size={18} />
+                      <span>Hinzufügen</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* History List */}
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3">Verlauf</h3>
+                {hoursChanges.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">Keine Änderungen vorhanden</p>
+                ) : (
+                  <div className="space-y-3">
+                    {hoursChanges.map((change) => (
+                      <div
+                        key={change.id}
+                        className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            Ab {new Date(change.effective_from).toLocaleDateString('de-DE', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                            })}: {change.weekly_hours} Std/Woche
+                          </p>
+                          {change.note && (
+                            <p className="text-sm text-gray-600 mt-1">{change.note}</p>
+                          )}
+                          <p className="text-xs text-gray-500 mt-1">
+                            Erstellt: {new Date(change.created_at).toLocaleDateString('de-DE', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteHoursChange(change.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Löschen"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <strong>Hinweis:</strong> Die Berechnungen von Soll-Stunden berücksichtigen automatisch die
+                  historischen Werte. Wenn z.B. jemand ab 15.03. von 20h auf 30h wechselt, werden für den
+                  März die ersten 14 Tage mit 20h und ab dem 15. mit 30h berechnet.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

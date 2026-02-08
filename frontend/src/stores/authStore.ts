@@ -10,6 +10,7 @@ interface User {
   role: 'admin' | 'employee';
   weekly_hours: number;
   vacation_days: number;
+  calendar_color: string;
   is_active: boolean;
   created_at: string;
 }
@@ -22,6 +23,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   setTokens: (accessToken: string, refreshToken: string, user: User) => void;
+  setUser: (user: User) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -72,6 +74,10 @@ export const useAuthStore = create<AuthState>()(
           refreshToken,
           isAuthenticated: true,
         });
+      },
+
+      setUser: (user: User) => {
+        set({ user });
       },
     }),
     {

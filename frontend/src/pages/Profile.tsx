@@ -1,18 +1,36 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
-import { Lock, Save } from 'lucide-react';
+import { Lock, Save, Palette } from 'lucide-react';
+
+// 12 beautiful pastel colors for calendar
+const PASTEL_COLORS = [
+  { name: 'Blau', hex: '#93C5FD' },
+  { name: 'Rosa', hex: '#F9A8D4' },
+  { name: 'Lila', hex: '#DDD6FE' },
+  { name: 'Grün', hex: '#86EFAC' },
+  { name: 'Gelb', hex: '#FDE047' },
+  { name: 'Orange', hex: '#FDBA74' },
+  { name: 'Türkis', hex: '#5EEAD4' },
+  { name: 'Mint', hex: '#A7F3D0' },
+  { name: 'Pfirsich', hex: '#FED7AA' },
+  { name: 'Lavendel', hex: '#E9D5FF' },
+  { name: 'Hellblau', hex: '#BAE6FD' },
+  { name: 'Koralle', hex: '#FCA5A5' },
+];
 
 export default function Profile() {
-  const { user } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordData, setPasswordData] = useState({
     current_password: '',
     new_password: '',
     confirm_password: '',
   });
+  const [selectedColor, setSelectedColor] = useState(user?.calendar_color || '#93C5FD');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [colorMessage, setColorMessage] = useState('');
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +48,6 @@ export default function Profile() {
     }
 
     try {
-      // Note: This endpoint would need to be added to the backend
       await apiClient.post('/auth/change-password', {
         current_password: passwordData.current_password,
         new_password: passwordData.new_password,
@@ -40,6 +57,22 @@ export default function Profile() {
       setShowPasswordForm(false);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Fehler beim Ändern des Passworts');
+    }
+  };
+
+  const handleColorChange = async (color: string) => {
+    setSelectedColor(color);
+    setColorMessage('');
+
+    try {
+      const response = await apiClient.put('/auth/calendar-color', {
+        calendar_color: color,
+      });
+      setUser(response.data);
+      setColorMessage('Kalenderfarbe erfolgreich aktualisiert');
+      setTimeout(() => setColorMessage(''), 3000);
+    } catch (err: any) {
+      setColorMessage('Fehler beim Speichern der Farbe');
     }
   };
 
@@ -87,6 +120,60 @@ export default function Profile() {
               )}
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Calendar Color Selection */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <Palette size={20} />
+          <h3 className="text-lg font-semibold">Kalenderfarbe</h3>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Wählen Sie eine Farbe für Ihre Einträge im Team-Kalender
+        </p>
+
+        {colorMessage && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">
+            {colorMessage}
+          </div>
+        )}
+
+        {/* Color Preview */}
+        <div className="flex items-center space-x-3 mb-4">
+          <div
+            className="w-12 h-12 rounded-lg border-2 border-gray-300"
+            style={{ backgroundColor: selectedColor }}
+          ></div>
+          <div>
+            <p className="text-sm font-medium text-gray-700">Gewählte Farbe</p>
+            <p className="text-xs text-gray-500">{selectedColor}</p>
+          </div>
+        </div>
+
+        {/* Color Palette */}
+        <div className="grid grid-cols-6 gap-3">
+          {PASTEL_COLORS.map((color) => (
+            <button
+              key={color.hex}
+              onClick={() => handleColorChange(color.hex)}
+              className={`relative w-full aspect-square rounded-lg transition-all hover:scale-110 ${
+                selectedColor === color.hex
+                  ? 'ring-4 ring-primary ring-offset-2 scale-110'
+                  : 'hover:ring-2 hover:ring-gray-300'
+              }`}
+              style={{ backgroundColor: color.hex }}
+              title={color.name}
+            >
+              {selectedColor === color.hex && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center">
+                    <div className="w-2 h-2 bg-primary rounded-full"></div>
+                  </div>
+                </div>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 

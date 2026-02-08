@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from typing import List, Optional
-from datetime import timedelta
+from datetime import timedelta, date
 from app.database import get_db
 from app.models import User, Absence, AbsenceType, UserRole, PublicHoliday
 from app.middleware.auth import get_current_user
-from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry
+from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry
 from app.services import calculation_service
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
@@ -79,6 +79,52 @@ def get_absence_calendar(
             ))
 
     return calendar_entries
+
+
+@router.get("/team/upcoming", response_model=List[TeamAbsenceEntry])
+def get_team_upcoming_absences(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get upcoming absences for all active employees.
+    Visible to all authenticated users.
+    Shows unique absence periods (groups consecutive days with same end_date).
+    """
+    today = date.today()
+
+    # Get all future absences from active users
+    absences = db.query(Absence).join(User).filter(
+        User.is_active == True,
+        Absence.date >= today
+    ).order_by(Absence.date, User.last_name, User.first_name).all()
+
+    # Group by user and end_date to avoid duplicates for date ranges
+    seen = set()
+    team_absences = []
+
+    for absence in absences:
+        user = db.query(User).filter(User.id == absence.user_id).first()
+        if not user:
+            continue
+
+        # Create a unique key for this absence period
+        key = (absence.user_id, absence.date, absence.end_date or absence.date, absence.type)
+
+        if key not in seen:
+            seen.add(key)
+            team_absences.append(TeamAbsenceEntry(
+                date=absence.date,
+                end_date=absence.end_date,
+                user_first_name=user.first_name,
+                user_last_name=user.last_name,
+                user_color=user.calendar_color,
+                type=absence.type,
+                hours=absence.hours,
+                note=absence.note
+            ))
+
+    return team_absences
 
 
 @router.post("/", response_model=List[AbsenceResponse], status_code=status.HTTP_201_CREATED)

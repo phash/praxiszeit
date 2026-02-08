@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_serializer
 from typing import Optional
 from datetime import datetime
 from decimal import Decimal
@@ -13,6 +13,7 @@ class UserBase(BaseModel):
     weekly_hours: Decimal = Field(..., ge=0, le=60)
     vacation_days: int = Field(..., ge=0, le=50)
     track_hours: bool = True
+    calendar_color: str = Field(default='#93C5FD', pattern=r'^#[0-9A-Fa-f]{6}$')
 
 
 class UserCreate(UserBase):
@@ -34,6 +35,10 @@ class UserResponse(UserBase):
     role: UserRole
     is_active: bool
     created_at: datetime
+
+    @field_serializer('id')
+    def serialize_uuid(self, value: UUID) -> str:
+        return str(value)
 
     class Config:
         from_attributes = True
@@ -73,3 +78,7 @@ class UserCreateResponse(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=8)
+
+
+class UpdateCalendarColorRequest(BaseModel):
+    calendar_color: str = Field(..., pattern=r'^#[0-9A-Fa-f]{6}$')

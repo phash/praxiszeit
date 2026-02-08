@@ -4,23 +4,79 @@ from calendar import monthrange
 from typing import Dict
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
+from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange
 
 
-def get_daily_target(user: User) -> Decimal:
+def get_weekly_hours_for_date(db: Session, user: User, target_date: date) -> Decimal:
+    """
+    Get the weekly hours that were valid for a specific date.
+    Considers historical working hours changes.
+
+    Args:
+        db: Database session
+        user: User object
+        target_date: Date to get hours for
+
+    Returns:
+        Weekly hours as Decimal
+    """
+    # Find the most recent working hours change before or on target_date
+    change = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.effective_from <= target_date
+    ).order_by(WorkingHoursChange.effective_from.desc()).first()
+
+    if change:
+        return Decimal(str(change.weekly_hours))
+
+    # No historical change found, use current user value
+    return Decimal(str(user.weekly_hours))
+
+
+def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     """
     Calculate daily target hours based on weekly hours.
     Assumes 5-day work week.
 
     Args:
         user: User object
+        weekly_hours: Optional weekly hours to use (if None, uses user.weekly_hours)
 
     Returns:
         Daily target hours as Decimal (0 if track_hours is False)
     """
     if not user.track_hours:
         return Decimal('0')
-    return Decimal(str(user.weekly_hours)) / Decimal('5')
+
+    if weekly_hours is None:
+        weekly_hours = Decimal(str(user.weekly_hours))
+
+    return weekly_hours / Decimal('5')
+
+
+def get_working_days_in_month(db: Session, year: int, month: int) -> int:
+    """
+    Calculate number of working days (Mon-Fri) in a month.
+    Excludes weekends but does NOT exclude holidays or absences.
+
+    Args:
+        db: Database session (unused, kept for consistency)
+        year: Year
+        month: Month (1-12)
+
+    Returns:
+        Number of working days (weekdays)
+    """
+    _, last_day = monthrange(year, month)
+    working_days = 0
+
+    for day in range(1, last_day + 1):
+        d = date(year, month, day)
+        # Count only weekdays (Mon-Fri)
+        if d.weekday() < 5:
+            working_days += 1
+
+    return working_days
 
 
 def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decimal:
@@ -28,13 +84,16 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     Calculate monthly target hours.
 
     Formula:
-    Working days = Weekdays (Mon-Fri) in month
-                   - Public holidays (Bavaria)
-                   - Absence days (vacation, sick, training, other)
-    Monthly target = Working days × Daily target
+    For each weekday (Mon-Fri) in month:
+        - Skip public holidays
+        - Skip absence days
+        - Add daily target (based on weekly hours valid for that date)
 
     IMPORTANT: Absences REDUCE the target, because the employee
     doesn't need to work on those days.
+
+    This function now considers historical working hours changes,
+    so if hours changed mid-month, both values are used correctly.
 
     Args:
         db: Database session
@@ -48,40 +107,40 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     if not user.track_hours:
         return Decimal('0')
 
-    daily_target = get_daily_target(user)
-
-    # Get all weekdays (Mon-Fri) in the month
-    _, last_day = monthrange(year, month)
-    weekdays = 0
-
-    for day in range(1, last_day + 1):
-        d = date(year, month, day)
-        # 0 = Monday, 6 = Sunday
-        if d.weekday() < 5:  # Monday to Friday
-            weekdays += 1
-
-    # Subtract public holidays (only those falling on weekdays)
+    # Get holidays and absences for the month
     holidays = db.query(PublicHoliday).filter(
         extract('year', PublicHoliday.date) == year,
         extract('month', PublicHoliday.date) == month
     ).all()
+    holiday_dates = {h.date for h in holidays}
 
-    holiday_weekdays = sum(1 for h in holidays if h.date.weekday() < 5)
-
-    # Subtract absence days (vacation, sick, training, other)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         extract('year', Absence.date) == year,
         extract('month', Absence.date) == month
     ).all()
+    absence_dates = {a.date for a in absences}
 
-    absence_weekdays = sum(1 for a in absences if a.date.weekday() < 5)
+    # Calculate target by iterating through each day
+    _, last_day = monthrange(year, month)
+    monthly_target = Decimal('0')
 
-    # Calculate working days
-    working_days = weekdays - holiday_weekdays - absence_weekdays
+    for day in range(1, last_day + 1):
+        d = date(year, month, day)
 
-    # Calculate monthly target
-    monthly_target = Decimal(str(working_days)) * daily_target
+        # Skip weekends
+        if d.weekday() >= 5:  # Saturday or Sunday
+            continue
+
+        # Skip holidays and absences
+        if d in holiday_dates or d in absence_dates:
+            continue
+
+        # Get weekly hours valid for this specific date
+        weekly_hours = get_weekly_hours_for_date(db, user, d)
+        daily_target = get_daily_target(user, weekly_hours)
+
+        monthly_target += daily_target
 
     return monthly_target.quantize(Decimal('0.01'))
 
@@ -189,6 +248,9 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         remaining_hours: Remaining vacation hours
         remaining_days: Remaining vacation days
 
+    NOTE: Uses CURRENT weekly hours for conversion between days and hours.
+    This ensures consistent display even if hours changed during the year.
+
     Args:
         db: Database session
         user: User object
@@ -197,6 +259,7 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     Returns:
         Dict with vacation account details
     """
+    # Use current weekly hours for conversion
     daily_target = get_daily_target(user)
 
     # Calculate budget in hours
