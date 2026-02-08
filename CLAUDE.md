@@ -25,12 +25,18 @@ Ein vollständiges Zeiterfassungssystem für Arztpraxen und kleine Unternehmen.
 
 ### Für Administratoren
 - ✅ **Benutzerverwaltung**: Anlegen, Bearbeiten, Deaktivieren von Mitarbeitern
+- ✅ **Arbeitszeiten-Historie**: Stundenänderungen nachverfolgen (z.B. Teilzeit-Anpassungen)
+- ✅ **Urlaubsübersicht**: Budget, Verbrauch und Resturlaub pro Mitarbeiter mit Ampel-System
+- ✅ **Kalenderfarben**: Individuelle Farben für jeden MA im Abwesenheitskalender
 - ✅ **Admin Dashboard**: Teamübersicht mit allen Mitarbeitern und deren Stundensalden
 - ✅ **Jahresübersicht**: Abwesenheitstage nach Typ (Urlaub, Krank, Fortbildung)
 - ✅ **Detailansicht**: Zeiteinträge und Abwesenheiten pro Mitarbeiter
-- ✅ **Berichte**: Monatliche Auswertungen mit Export (Excel, CSV)
+- ✅ **Berichte-Seite** mit drei Export-Optionen:
+  - Monatsreport (detailliert mit täglichen Einträgen)
+  - Jahresreport Classic (kompakte 12-Monats-Übersicht)
+  - Jahresreport Detailliert (365 Tage pro MA)
 - ✅ **Stundenzählung deaktivieren**: Für Mitarbeiter ohne Arbeitszeiterfassung
-- ✅ **Abwesenheitskalender**: Team-Übersicht aller Abwesenheiten
+- ✅ **Abwesenheitskalender**: Team-Übersicht aller Abwesenheiten mit Farbcodierung
 
 ### Besondere Features
 - 🗓️ **Feiertage**: Automatische Berücksichtigung gesetzlicher Feiertage
@@ -98,15 +104,18 @@ docker-compose exec backend alembic upgrade head
 ## 🗄️ Datenbank
 
 **PostgreSQL 16** mit folgenden Haupttabellen:
-- `users` - Benutzer mit Rollen, Wochenstunden, Urlaubsanspruch
+- `users` - Benutzer mit Rollen, Wochenstunden, Urlaubsanspruch, Kalenderfarbe
+- `working_hours_changes` - Historie von Arbeitszeitenänderungen mit Datum und Notiz
 - `time_entries` - Zeiteinträge (Start, Ende, Pausen)
-- `absences` - Abwesenheiten mit Typ und Zeitraum
+- `absences` - Abwesenheiten mit Typ und optional Zeitraum (end_date)
 - `public_holidays` - Feiertage nach Bundesland
 
 **Migrationen:**
 - 001: Initial Schema (User, TimeEntry, Absence, PublicHoliday)
 - 002: Add track_hours field (Stundenzählung deaktivierbar)
 - 003: Add end_date to absences (Zeiträume)
+- 004: Add calendar_color to users (Farbcodierung im Kalender)
+- 005: Add working_hours_changes table (Arbeitszeiten-Historie)
 
 ## 👤 Standard-Benutzer
 
@@ -181,9 +190,33 @@ Nach dem ersten Start existieren folgende Benutzer:
 ## 🐛 Bekannte Issues / Lessons Learned
 
 1. **Decimal vs Float**: Pydantic serialisiert Decimal als String. Für Frontend besser float verwenden.
+   - Bei Excel-Export: Decimal/float-Mixing vermeiden (TypeError)
+   - Lösung: Konsistent float() verwenden oder beide Seiten zu Decimal konvertieren
+
 2. **Email Validation**: `.local` TLD ist reserviert und schlägt bei Pydantic EmailStr fehl.
+
 3. **Date Range Logic**: Bei Zeiträumen nur Werktage (Mo-Fr) erstellen und Feiertage ausschließen.
+
 4. **Login für Screenshots**: Test-Admin muss existieren für automatische Screenshots.
+
+5. **Historische Berechnungen**:
+   - Bei Stundenänderungen Tag-für-Tag iterieren, nicht Monatsmittelwerte
+   - `get_weekly_hours_for_date()` für jedes Datum aufrufen
+   - Sortierung nach `effective_from DESC` wichtig für korrekte Historie
+
+6. **Migration-Handling in Docker**:
+   - Migrationen auf Host erstellen, BEVOR Container rebuildet werden
+   - `docker-compose exec backend alembic revision --autogenerate`
+   - Migration-Files müssen auf Host existieren, sonst gehen sie beim Rebuild verloren
+
+7. **SQLAlchemy Session Management**:
+   - Objekte aus einer Session nicht in anderer Session verwenden
+   - Bei Batch-Operations: IDs zwischenspeichern, dann in neuer Session neu laden
+
+8. **Excel Export Performance**:
+   - Classic Format (12 Monate): ~17KB, schnell
+   - Detailliert (365 Tage): ~108KB, dauert länger
+   - Bei großen Exports Benutzer informieren (Loading-State)
 
 ## 🚀 Deployment
 
