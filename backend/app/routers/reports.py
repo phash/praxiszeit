@@ -172,3 +172,54 @@ def export_monthly_report(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/export-yearly")
+def export_yearly_report(
+    year: int = Query(..., description="Year (e.g., 2026)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Export yearly report as Excel file.
+    Creates:
+    - Overview sheet with all employees
+    - Absences overview
+    - Detail sheet per employee with monthly breakdown
+    """
+    # Generate Excel file
+    excel_file = export_service.generate_yearly_report(db, year)
+
+    # Create filename
+    filename = f"PraxisZeit_Jahresreport_{year}.xlsx"
+
+    # Return as streaming response
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get("/export-yearly-classic")
+def export_yearly_report_classic(
+    year: int = Query(..., description="Year (e.g., 2026)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Export yearly report in classic format (compact, months as columns).
+    Creates one sheet per employee with 12-month overview.
+    """
+    # Generate Excel file
+    excel_file = export_service.generate_yearly_report_classic(db, year)
+
+    # Create filename
+    filename = f"PraxisZeit_Jahresreport_Classic_{year}.xlsx"
+
+    # Return as streaming response
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

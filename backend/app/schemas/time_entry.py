@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, field_serializer
 from typing import Optional
 from datetime import date, time, datetime
 from decimal import Decimal
+from uuid import UUID
 
 
 class TimeEntryBase(BaseModel):
@@ -39,10 +40,14 @@ class TimeEntryUpdate(BaseModel):
 
 
 class TimeEntryResponse(TimeEntryBase):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
     net_hours: Decimal
     created_at: datetime
+
+    @field_serializer('id', 'user_id')
+    def serialize_uuid(self, value: UUID) -> str:
+        return str(value)
 
     class Config:
         from_attributes = True

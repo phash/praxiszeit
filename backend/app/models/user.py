@@ -26,6 +26,7 @@ class User(Base):
     weekly_hours = Column(Numeric(4, 1), nullable=False)  # e.g., 20.0, 30.0, 38.5
     vacation_days = Column(Integer, nullable=False, default=30)
     track_hours = Column(Boolean, default=True, nullable=False)  # Track Soll/Ist hours for this user
+    calendar_color = Column(String(7), nullable=False, default='#93C5FD')  # Pastel blue default
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
+from uuid import UUID
 from app.models.absence import AbsenceType
 
 
@@ -18,10 +19,14 @@ class AbsenceCreate(AbsenceBase):
 
 
 class AbsenceResponse(AbsenceBase):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
     end_date: Optional[date] = None
     created_at: datetime
+
+    @field_serializer('id', 'user_id')
+    def serialize_uuid(self, value: UUID) -> str:
+        return str(value)
 
     class Config:
         from_attributes = True
@@ -34,6 +39,21 @@ class AbsenceCalendarEntry(BaseModel):
     user_last_name: str
     type: AbsenceType
     hours: Decimal
+
+    class Config:
+        from_attributes = True
+
+
+class TeamAbsenceEntry(BaseModel):
+    """Entry for team absence overview with date range support."""
+    date: date
+    end_date: Optional[date] = None
+    user_first_name: str
+    user_last_name: str
+    user_color: str
+    type: AbsenceType
+    hours: Decimal
+    note: Optional[str] = None
 
     class Config:
         from_attributes = True

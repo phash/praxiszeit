@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List, Optional
 from app.database import get_db
-from app.models import User, TimeEntry
+from app.models import User, TimeEntry, UserRole
 from app.middleware.auth import get_current_user
 from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount
 from app.services import calculation_service
@@ -56,11 +56,11 @@ def get_overtime_account(
     ).order_by(TimeEntry.date).first()
 
     history = []
+    now = datetime.now()
 
     if first_entry:
         start_year = first_entry.date.year
         start_month = first_entry.date.month
-        now = datetime.now()
 
         current_year = start_year
         current_month = start_month
@@ -102,16 +102,32 @@ def get_overtime_account(
 @router.get("/vacation", response_model=VacationAccount)
 def get_vacation_account(
     year: Optional[int] = Query(None, description="Year (default: current year)"),
+    user_id: Optional[str] = Query(None, description="User ID (admin only)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Get vacation account for a year.
     Shows budget, used, and remaining vacation in hours and days.
+
+    Regular users can only query their own data.
+    Admins can query any user's data by providing user_id.
     """
     year = year or datetime.now().year
 
-    account = calculation_service.get_vacation_account(db, current_user, year)
+    # Determine which user to query
+    target_user = current_user
+
+    if user_id:
+        # Only admins can query other users
+        if current_user.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Zugriff verweigert")
+
+        target_user = db.query(User).filter(User.id == user_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    account = calculation_service.get_vacation_account(db, target_user, year)
 
     return VacationAccount(
         year=year,
