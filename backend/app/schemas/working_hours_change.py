@@ -7,7 +7,7 @@ from uuid import UUID
 
 class WorkingHoursChangeBase(BaseModel):
     effective_from: date
-    weekly_hours: Decimal = Field(..., ge=0, le=60)
+    weekly_hours: float = Field(..., ge=0, le=60)
     note: Optional[str] = None
 
 

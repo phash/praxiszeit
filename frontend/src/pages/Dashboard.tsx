@@ -22,8 +22,26 @@ interface VacationAccount {
   remaining_days: number;
 }
 
+interface OvertimeHistory {
+  year: number;
+  month: number;
+  target: number;
+  actual: number;
+  balance: number;
+  cumulative: number;
+}
+
 interface OvertimeAccount {
   current_balance: number;
+  history: OvertimeHistory[];
+}
+
+interface YearlyAbsenceSummary {
+  vacation_days: number;
+  sick_days: number;
+  training_days: number;
+  other_days: number;
+  total_days: number;
 }
 
 interface TeamAbsence {
@@ -41,23 +59,42 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
+  const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsenceSummary | null>(null);
   const [teamAbsences, setTeamAbsences] = useState<TeamAbsence[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes] = await Promise.all([
+        const currentYear = new Date().getFullYear();
+        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absencesRes] = await Promise.all([
           apiClient.get('/dashboard'),
           apiClient.get('/dashboard/overtime'),
           apiClient.get('/dashboard/vacation'),
           apiClient.get('/absences/team/upcoming'),
+          apiClient.get('/absences', { params: { year: currentYear } }),
         ]);
 
         setDashboardData(dashboardRes.data);
         setOvertimeAccount(overtimeRes.data);
         setVacationAccount(vacationRes.data);
         setTeamAbsences(teamAbsencesRes.data);
+
+        // Calculate yearly absence summary
+        const absences = absencesRes.data;
+        const dailyTarget = dashboardRes.data.target_hours /
+          new Date(dashboardRes.data.year, dashboardRes.data.month, 0).getDate();
+
+        const summary = {
+          vacation_days: absences.filter((a: any) => a.type === 'vacation').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
+          sick_days: absences.filter((a: any) => a.type === 'sick').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
+          training_days: absences.filter((a: any) => a.type === 'training').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
+          other_days: absences.filter((a: any) => a.type === 'other').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
+          total_days: 0
+        };
+        summary.total_days = summary.vacation_days + summary.sick_days + summary.training_days + summary.other_days;
+
+        setYearlyAbsences(summary);
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
       } finally {
@@ -172,6 +209,82 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Monthly Overview Table */}
+      {overtimeAccount && overtimeAccount.history.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900">Monatsübersicht</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monat</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Soll</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ist</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Saldo</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Überstunden kum.</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {overtimeAccount.history.slice().reverse().map((month) => (
+                  <tr key={`${month.year}-${month.month}`} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {format(new Date(month.year, month.month - 1), 'MMMM yyyy', { locale: de })}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{month.target.toFixed(1)}h</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{month.actual.toFixed(1)}h</td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className={`font-medium ${
+                        month.balance >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {month.balance >= 0 ? '+' : ''}{month.balance.toFixed(1)}h
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className={`font-semibold ${
+                        month.cumulative >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {month.cumulative >= 0 ? '+' : ''}{month.cumulative.toFixed(1)}h
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Yearly Absence Overview */}
+      {yearlyAbsences && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-6">Jahresübersicht {new Date().getFullYear()}</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600">{yearlyAbsences.vacation_days.toFixed(1)}</div>
+              <div className="text-sm text-gray-600 mt-1">Urlaub</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-red-600">{yearlyAbsences.sick_days.toFixed(1)}</div>
+              <div className="text-sm text-gray-600 mt-1">Krank</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-orange-600">{yearlyAbsences.training_days.toFixed(1)}</div>
+              <div className="text-sm text-gray-600 mt-1">Fortbildung</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days.toFixed(1)}</div>
+              <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-gray-900">{yearlyAbsences.total_days.toFixed(1)}</div>
+              <div className="text-sm text-gray-600 mt-1">Gesamt</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Team Absences Calendar */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -222,8 +335,8 @@ export default function Dashboard() {
                         {format(monthDate, 'MMMM yyyy', { locale: de })}
                       </h4>
 
-                      {/* Calendar Grid */}
-                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      {/* Desktop: Calendar Grid */}
+                      <div className="hidden sm:block border border-gray-200 rounded-lg overflow-hidden">
                         {/* Weekday Headers */}
                         <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
                           {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((day) => (
@@ -273,6 +386,63 @@ export default function Dashboard() {
                             );
                           })}
                         </div>
+                      </div>
+
+                      {/* Mobile: List View */}
+                      <div className="sm:hidden space-y-2">
+                        {days
+                          .filter((day) => {
+                            const dateKey = format(day, 'yyyy-MM-dd');
+                            const dayAbsences = absencesByDate[dateKey] || [];
+                            return dayAbsences.length > 0;
+                          })
+                          .map((day) => {
+                            const dateKey = format(day, 'yyyy-MM-dd');
+                            const dayAbsences = absencesByDate[dateKey] || [];
+                            const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+
+                            return (
+                              <div
+                                key={dateKey}
+                                className={`border rounded-lg p-3 ${
+                                  isToday ? 'border-primary bg-blue-50' : 'border-gray-200 bg-white'
+                                }`}
+                              >
+                                <p className={`font-semibold text-sm mb-2 ${isToday ? 'text-primary' : 'text-gray-900'}`}>
+                                  {format(day, 'EEEE, dd. MMMM', { locale: de })}
+                                </p>
+                                <div className="space-y-1">
+                                  {dayAbsences.map((absence, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center text-sm"
+                                    >
+                                      <span
+                                        className="w-3 h-3 rounded-full mr-2 flex-shrink-0"
+                                        style={{ backgroundColor: absence.user_color }}
+                                      ></span>
+                                      <span className="font-medium text-gray-900">
+                                        {absence.user_first_name} {absence.user_last_name}
+                                      </span>
+                                      <span className="text-gray-500 mx-1">-</span>
+                                      <span className="text-gray-600">{typeLabels[absence.type]}</span>
+                                      {absence.note && (
+                                        <span className="text-gray-500 text-xs ml-1">({absence.note})</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        {days.filter((day) => {
+                          const dateKey = format(day, 'yyyy-MM-dd');
+                          return (absencesByDate[dateKey] || []).length > 0;
+                        }).length === 0 && (
+                          <p className="text-gray-500 text-center py-4 text-sm">
+                            Keine Abwesenheiten in diesem Monat
+                          </p>
+                        )}
                       </div>
                     </div>
                   );

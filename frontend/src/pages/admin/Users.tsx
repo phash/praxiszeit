@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
+import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, Save, X, Clock, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, Save, X, Clock, Trash2, Copy, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { useToast } from '../../contexts/ToastContext';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import Badge from '../../components/Badge';
 
 interface User {
   id: string;
@@ -10,6 +14,8 @@ interface User {
   role: 'admin' | 'employee';
   weekly_hours: number;
   vacation_days: number;
+  work_days_per_week: number;
+  suggested_vacation_days?: number;
   track_hours: boolean;
   is_active: boolean;
   created_at: string;
@@ -31,6 +37,7 @@ interface WorkingHoursChange {
 }
 
 export default function Users() {
+  const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
   const [loading, setLoading] = useState(true);
@@ -43,6 +50,7 @@ export default function Users() {
     role: 'employee' as 'admin' | 'employee',
     weekly_hours: 40,
     vacation_days: 30,
+    work_days_per_week: 5,
     track_hours: true,
   });
   const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -55,9 +63,24 @@ export default function Users() {
     note: '',
   });
 
+  const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
+  const [resetPasswordData, setResetPasswordData] = useState<{ password: string; userName: string } | null>(null);
+
+  // Sorting & Filtering
+  const [sortField, setSortField] = useState<keyof User | ''>('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [filterText, setFilterText] = useState('');
+
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (formData.work_days_per_week > 0) {
+      const suggested = Math.round(30 * formData.work_days_per_week / 5);
+      setSuggestedVacation(suggested);
+    }
+  }, [formData.work_days_per_week]);
 
   const fetchUsers = async () => {
     try {
@@ -93,15 +116,16 @@ export default function Users() {
     try {
       if (editingId) {
         await apiClient.put(`/admin/users/${editingId}`, formData);
-        alert('Benutzer aktualisiert');
+        toast.success('Benutzer erfolgreich aktualisiert');
       } else {
         const response = await apiClient.post('/admin/users', formData);
         setTempPassword(response.data.temporary_password);
+        toast.success('Benutzer erfolgreich erstellt');
       }
       fetchUsers();
       if (!tempPassword) resetForm();
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Fehler beim Speichern');
+      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
     }
   };
 
@@ -114,6 +138,7 @@ export default function Users() {
       role: user.role,
       weekly_hours: user.weekly_hours,
       vacation_days: user.vacation_days,
+      work_days_per_week: user.work_days_per_week || 5,
       track_hours: user.track_hours ?? true,
     });
     setShowForm(true);
@@ -123,9 +148,13 @@ export default function Users() {
     if (!confirm(`Passwort für ${name} zurücksetzen?`)) return;
     try {
       const response = await apiClient.post(`/admin/users/${userId}/reset-password`);
-      alert(`Neues Passwort: ${response.data.temporary_password}`);
+      setResetPasswordData({
+        password: response.data.temporary_password,
+        userName: name
+      });
+      toast.success('Passwort erfolgreich zurückgesetzt');
     } catch (error) {
-      alert('Fehler beim Zurücksetzen');
+      toast.error('Fehler beim Zurücksetzen des Passworts');
     }
   };
 
@@ -133,9 +162,10 @@ export default function Users() {
     if (!confirm(`${name} wirklich deaktivieren?`)) return;
     try {
       await apiClient.delete(`/admin/users/${userId}`);
+      toast.success(`Benutzer ${name} erfolgreich deaktiviert`);
       fetchUsers();
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Fehler beim Deaktivieren');
+      toast.error(error.response?.data?.detail || 'Fehler beim Deaktivieren');
     }
   };
 
@@ -150,6 +180,7 @@ export default function Users() {
       role: 'employee',
       weekly_hours: 40,
       vacation_days: 30,
+      work_days_per_week: 5,
       track_hours: true,
     });
   };
@@ -187,9 +218,9 @@ export default function Users() {
         weekly_hours: selectedUser.weekly_hours,
         note: '',
       });
-      alert('Stundenänderung hinzugefügt');
+      toast.success('Stundenänderung erfolgreich hinzugefügt');
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Fehler beim Hinzufügen');
+      toast.error(error.response?.data?.detail || 'Fehler beim Hinzufügen');
     }
   };
 
@@ -200,11 +231,52 @@ export default function Users() {
       await apiClient.delete(`/admin/users/${selectedUser.id}/working-hours-changes/${changeId}`);
       await fetchHoursChanges(selectedUser.id);
       await fetchUsers(); // Refresh user list to show updated current hours
-      alert('Stundenänderung gelöscht');
+      toast.success('Stundenänderung erfolgreich gelöscht');
     } catch (error) {
-      alert('Fehler beim Löschen');
+      toast.error('Fehler beim Löschen der Stundenänderung');
     }
   };
+
+  // Sorting function
+  const handleSort = (field: keyof User) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filter and sort users
+  const filteredAndSortedUsers = users
+    .filter(user => {
+      if (!filterText) return true;
+      const searchLower = filterText.toLowerCase();
+      return (
+        user.first_name.toLowerCase().includes(searchLower) ||
+        user.last_name.toLowerCase().includes(searchLower) ||
+        user.email.toLowerCase().includes(searchLower)
+      );
+    })
+    .sort((a, b) => {
+      if (!sortField) return 0;
+
+      const aValue = a[sortField];
+      const bValue = b[sortField];
+
+      if (aValue === undefined || bValue === undefined) return 0;
+
+      let comparison = 0;
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        comparison = aValue.localeCompare(bValue);
+      } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+        comparison = aValue - bValue;
+      } else if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
+        comparison = (aValue === bValue) ? 0 : aValue ? 1 : -1;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
 
   return (
     <div>
@@ -215,7 +287,7 @@ export default function Users() {
           className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
         >
           {showForm ? <X size={20} /> : <Plus size={20} />}
-          <span>{showForm ? 'Abbrechen' : 'Neue Mitarbeiterin'}</span>
+          <span>{showForm ? 'Abbrechen' : 'Neue:r Mitarbeiter:in'}</span>
         </button>
       </div>
 
@@ -223,7 +295,7 @@ export default function Users() {
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
           <h3 className="text-lg font-semibold mb-4">
-            {editingId ? 'Benutzer bearbeiten' : 'Neue Mitarbeiterin anlegen'}
+            {editingId ? 'Benutzer bearbeiten' : 'Neue:n Benutzer:in anlegen'}
           </h3>
 
           {tempPassword && (
@@ -236,7 +308,7 @@ export default function Users() {
                 {tempPassword}
               </code>
               <p className="text-sm text-yellow-700 mt-2">
-                Bitte notieren Sie dieses Passwort und geben Sie es der Mitarbeiterin.
+                Bitte notieren Sie dieses Passwort und geben Sie es der betroffenen Person.
               </p>
               <button
                 onClick={resetForm}
@@ -266,7 +338,7 @@ export default function Users() {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 >
-                  <option value="employee">Mitarbeiterin</option>
+                  <option value="employee">Mitarbeiter:in</option>
                   <option value="admin">Administrator</option>
                 </select>
               </div>
@@ -304,6 +376,21 @@ export default function Users() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Arbeitstage pro Woche</label>
+                <input
+                  type="number"
+                  value={formData.work_days_per_week}
+                  onChange={(e) => setFormData({ ...formData, work_days_per_week: parseInt(e.target.value) || 5 })}
+                  required
+                  min="1"
+                  max="7"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Anzahl der Arbeitstage pro Woche (1-7)
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Urlaubstage</label>
                 <input
                   type="number"
@@ -314,6 +401,19 @@ export default function Users() {
                   max="50"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
+                {suggestedVacation !== null && formData.vacation_days !== suggestedVacation && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                    💡 <strong>Empfehlung:</strong> {suggestedVacation} Tage
+                    (basierend auf {formData.work_days_per_week} Arbeitstagen/Woche)
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, vacation_days: suggestedVacation })}
+                      className="ml-2 text-blue-600 underline"
+                    >
+                      Übernehmen
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
                 <input
@@ -341,46 +441,123 @@ export default function Users() {
         </div>
       )}
 
-      {/* Users Table */}
+      {/* Filter Input */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <input
+            type="text"
+            placeholder="Suche nach Name oder E-Mail..."
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      {/* Users Table/Cards */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">E-Mail</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rolle</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wochenstd.</th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('last_name')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Name</span>
+                    {sortField === 'last_name' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('email')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>E-Mail</span>
+                    {sortField === 'email' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('role')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Rolle</span>
+                    {sortField === 'role' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('weekly_hours')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Wochenstd.</span>
+                    {sortField === 'weekly_hours' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Arbeitstage</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Urlaubskonto</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stundenzählung</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('track_hours')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Stundenzählung</span>
+                    {sortField === 'track_hours' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('is_active')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Status</span>
+                    {sortField === 'is_active' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktionen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
                     Lade Benutzer...
                   </td>
                 </tr>
-              ) : users.length === 0 ? (
+              ) : filteredAndSortedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
-                    Keine Benutzer vorhanden
+                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                    {filterText ? 'Keine Benutzer gefunden' : 'Keine Benutzer vorhanden'}
                   </td>
                 </tr>
               ) : (
-                users.map((user) => (
+                filteredAndSortedUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {user.last_name}, {user.first_name}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{user.email}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {user.role === 'admin' ? 'Admin' : 'Mitarbeiterin'}
+                      {user.role === 'admin' ? 'Admin' : 'Mitarbeiter:in'}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">{user.weekly_hours}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{user.work_days_per_week} Tage/Wo</td>
                     <td className="px-6 py-4 text-sm">
                       {vacationInfo[user.id] ? (
                         <div className="space-y-1">
@@ -478,26 +655,152 @@ export default function Users() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Cards */}
+        <div className="lg:hidden">
+          {loading ? (
+            <div className="p-6">
+              <LoadingSpinner text="Lade Benutzer..." />
+            </div>
+          ) : filteredAndSortedUsers.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              {filterText ? 'Keine Benutzer gefunden' : 'Keine Benutzer vorhanden'}
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {filteredAndSortedUsers.map((user) => (
+                <div key={user.id} className="p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">
+                        {user.last_name}, {user.first_name}
+                      </p>
+                      <p className="text-sm text-gray-600">{user.email}</p>
+                      <div className="flex items-center space-x-2 mt-2">
+                        <Badge variant={user.role === 'admin' ? 'info' : 'default'} size="sm">
+                          {user.role === 'admin' ? 'Admin' : 'Mitarbeiter'}
+                        </Badge>
+                        <Badge variant={user.is_active ? 'success' : 'error'} size="sm">
+                          {user.is_active ? 'Aktiv' : 'Inaktiv'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-500 block">Wochenstunden</span>
+                      <p className="font-medium">{user.weekly_hours}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block">Arbeitstage</span>
+                      <p className="font-medium">{user.work_days_per_week}/Wo</p>
+                    </div>
+                  </div>
+
+                  {vacationInfo[user.id] && (
+                    <div className="bg-gray-50 rounded-lg p-3 mb-3 text-sm">
+                      <p className="font-medium text-gray-700 mb-2">Urlaubskonto</p>
+                      <div className="space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Budget:</span>
+                          <span className="font-medium">{vacationInfo[user.id].budget_days} Tage</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Übrig:</span>
+                          <span className={`font-semibold ${
+                            vacationInfo[user.id].remaining_days > 5
+                              ? 'text-green-600'
+                              : vacationInfo[user.id].remaining_days > 0
+                              ? 'text-yellow-600'
+                              : 'text-red-600'
+                          }`}>
+                            {vacationInfo[user.id].remaining_days.toFixed(1)} Tage
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleEdit(user)}
+                      className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition"
+                      aria-label={`${user.first_name} ${user.last_name} bearbeiten`}
+                    >
+                      <Edit2 size={16} />
+                      <span>Bearbeiten</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenHoursModal(user)}
+                      className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                      aria-label="Stundenverlauf anzeigen"
+                      title="Stundenverlauf"
+                    >
+                      <Clock size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleResetPassword(user.id, `${user.first_name} ${user.last_name}`)}
+                      className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                      aria-label="Passwort zurücksetzen"
+                      title="Passwort zurücksetzen"
+                    >
+                      <Key size={16} />
+                    </button>
+                    {user.is_active && (
+                      <button
+                        onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
+                        className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition"
+                        aria-label="Benutzer deaktivieren"
+                        title="Deaktivieren"
+                      >
+                        <UserX size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Working Hours History Modal */}
       {showHoursModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Stundenverlauf</h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  {selectedUser.first_name} {selectedUser.last_name} • Aktuell: {selectedUser.weekly_hours} Std/Woche
-                </p>
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowHoursModal(false)}
+          aria-hidden="true"
+        >
+          <FocusTrap
+            focusTrapOptions={{
+              allowOutsideClick: true,
+              escapeDeactivates: true,
+              onDeactivate: () => setShowHoursModal(false),
+            }}
+          >
+            <div 
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="hours-modal-title"
+              className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h2 id="hours-modal-title" className="text-2xl font-bold text-gray-900">Stundenverlauf</h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {selectedUser.first_name} {selectedUser.last_name} • Aktuell: {selectedUser.weekly_hours} Std/Woche
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowHoursModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                  aria-label={`Stundenverlauf für ${selectedUser.first_name} ${selectedUser.last_name} schließen`}
+                >
+                  <X size={24} />
+                </button>
               </div>
-              <button
-                onClick={() => setShowHoursModal(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X size={24} />
-              </button>
-            </div>
 
             <div className="p-6">
               {/* Add New Change Form */}
@@ -610,6 +913,83 @@ export default function Users() {
               </div>
             </div>
           </div>
+          </FocusTrap>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {resetPasswordData && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          onClick={() => setResetPasswordData(null)}
+        >
+          <FocusTrap
+            focusTrapOptions={{
+              allowOutsideClick: true,
+              escapeDeactivates: true,
+              onDeactivate: () => setResetPasswordData(null),
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="password-modal-title"
+              className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 id="password-modal-title" className="text-xl font-semibold text-gray-900">
+                  Temporäres Passwort erstellt
+                </h3>
+                <button
+                  onClick={() => setResetPasswordData(null)}
+                  className="text-gray-400 hover:text-gray-600 transition"
+                  aria-label="Modal schließen"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Für <strong>{resetPasswordData.userName}</strong>:
+                </p>
+                <div className="bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
+                  <code className="text-lg font-mono font-bold text-gray-900 break-all">
+                    {resetPasswordData.password}
+                  </code>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(resetPasswordData.password);
+                  toast.success('Passwort in Zwischenablage kopiert');
+                }}
+                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-4"
+              >
+                <Copy size={18} />
+                <span>In Zwischenablage kopieren</span>
+              </button>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm text-red-800 flex items-start space-x-2">
+                  <span className="text-red-600 font-bold flex-shrink-0">⚠️</span>
+                  <span>
+                    <strong>Wichtig:</strong> Dieses Passwort wird nur einmal angezeigt!
+                    Bitte notieren Sie es sorgfältig oder kopieren Sie es in die Zwischenablage.
+                  </span>
+                </p>
+              </div>
+
+              <button
+                onClick={() => setResetPasswordData(null)}
+                className="w-full mt-4 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition"
+              >
+                Schließen
+              </button>
+            </div>
+          </FocusTrap>
         </div>
       )}
     </div>
