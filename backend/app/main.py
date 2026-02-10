@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import subprocess
 import sys
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from app.database import engine, SessionLocal
 from app.config import settings
@@ -124,5 +125,16 @@ def root():
 
 @app.get("/api/health")
 def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+    """Health check endpoint with database connectivity test."""
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": "disconnected"}
+        )
+    finally:
+        db.close()
