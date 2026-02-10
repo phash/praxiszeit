@@ -47,7 +47,10 @@ Ein vollständiges Zeiterfassungssystem für Arztpraxen und kleine Unternehmen.
 - 📅 **Wochenenden ausschließen**: Bei Zeiträumen automatisch nur Werktage
 - 🔒 **Rollensystem**: Admin vs. Employee mit unterschiedlichen Berechtigungen
 - 📊 **Urlaubskonto**: Automatische Berechnung mit Vorjahresübertrag
-- 🎨 **Responsive Design**: Funktioniert auf Desktop und Mobile
+- 🎨 **Responsive Design**: Hamburger-Menu + Card-Layouts auf Mobile
+- 🔔 **Toast-Notifications**: Styled Benachrichtigungen statt browser-native alert/confirm
+- ❤️ **Health Check**: `/api/health` Endpoint mit DB-Connectivity-Test
+- 🌐 **CORS konfigurierbar**: Via `CORS_ORIGINS` Umgebungsvariable
 
 ## 🏗️ Architektur und Code-Organisation
 
@@ -88,12 +91,15 @@ schemas/  (business  (ORM)
 src/
 ├── pages/           # Full page components (Dashboard, TimeTracking, Profile, etc.)
 │   └── admin/       # Admin-only pages (Users, Dashboard, Reports)
-├── components/      # Reusable components (currently minimal, see UX_ROADMAP.md)
+├── components/      # Shared UI components (Button, Badge, ConfirmDialog, FormInput, etc.)
+├── contexts/        # React Contexts (ToastContext)
+├── hooks/           # Custom hooks (useConfirm)
+├── constants/       # Shared constants (absenceTypes)
 ├── stores/          # Zustand state management
 │   └── authStore.ts # Auth state (user, token, login/logout)
 ├── api/
 │   └── client.ts    # Axios instance with auth interceptor
-├── App.tsx          # Router setup with protected routes
+├── App.tsx          # Router setup with protected routes (wrapped in ToastProvider)
 └── main.tsx         # Entry point
 ```
 
@@ -133,10 +139,13 @@ praxiszeit/
 │   └── src/
 │       ├── pages/           # Full page components
 │       │   └── admin/       # Admin pages
-│       ├── components/      # Reusable UI components
+│       ├── components/      # Shared UI components (Button, Badge, ConfirmDialog, etc.)
+│       ├── contexts/        # React Contexts (ToastContext)
+│       ├── hooks/           # Custom hooks (useConfirm)
+│       ├── constants/       # Shared constants (absenceTypes)
 │       ├── stores/          # Zustand stores
 │       ├── api/             # API client
-│       ├── App.tsx          # Router
+│       ├── App.tsx          # Router (wrapped in ToastProvider)
 │       └── main.tsx         # Entry point
 ├── docker-compose.yml       # Multi-container orchestration
 ├── .env.example             # Environment template
@@ -298,6 +307,7 @@ id, date, name, state (Bayern), created_at
 - `003_end_date`: Add `end_date` to absences (Zeiträume)
 - `004_calendar_color`: Add `calendar_color` to users (Farbcodierung im Kalender)
 - `005_working_hours_changes`: Add working_hours_changes table (Arbeitszeiten-Historie)
+- `006_add_work_days_per_week`: Add `work_days_per_week` to users (flexible Arbeitstage)
 
 ### Datenbank-Operationen
 
@@ -491,7 +501,8 @@ return output
 
 **Security Checklist für Production:**
 - [ ] `SECRET_KEY` geändert und sicher gespeichert
-- [ ] CORS `allow_origins` auf spezifische Domains limitieren
+- [x] CORS `allow_origins` konfigurierbar via `CORS_ORIGINS` env variable (Default: `*`)
+- [ ] `CORS_ORIGINS` auf spezifische Domain(s) setzen (z.B. `https://praxis.example.com`)
 - [ ] Admin-Passwort geändert
 - [ ] HTTPS via Nginx Reverse Proxy
 - [ ] PostgreSQL nicht öffentlich exponieren
@@ -774,7 +785,7 @@ const loadData = async () => {
     setData(response.data)
   } catch (error) {
     console.error('Failed to load:', error)
-    alert('Fehler beim Laden')  // TODO: Replace with Toast
+    toast.error('Fehler beim Laden')
   } finally {
     setLoading(false)
   }
@@ -935,6 +946,7 @@ nano .env
 - `POSTGRES_PASSWORD`: Starkes Passwort
 - `DATABASE_URL`: Matche mit Postgres-Credentials
 - `ADMIN_EMAIL/PASSWORD`: Initiale Admin-Zugangsdaten
+- `CORS_ORIGINS`: Komma-getrennte Liste erlaubter Origins (z.B. `https://praxis.example.com`)
 
 4. **Container starten:**
 ```bash
@@ -999,7 +1011,8 @@ docker-compose exec db pg_dump -U praxiszeit praxiszeit > backup.sql
 **Health Check:**
 ```bash
 curl http://localhost:8000/api/health
-# Should return: {"status": "healthy"}
+# Healthy: {"status": "healthy", "database": "connected"}
+# Unhealthy (503): {"status": "unhealthy", "database": "disconnected"}
 ```
 
 **Container Status:**
@@ -1016,28 +1029,33 @@ docker-compose logs -f --since 1h       # Live logs last hour
 
 ## 🎨 UX/UI Roadmap
 
-**Status:** Umfassende UX-Analyse durchgeführt (siehe `UX_ROADMAP.md` für Details)
+**Status:** UX-Analyse durchgeführt, Kernphasen umgesetzt (Stand: 10.02.2026)
 
-**Hauptprobleme identifiziert:**
-1. Keine mobile Navigation (Navbar overflow auf kleinen Screens)
-2. Tabellen nicht responsive (horizontal scroll)
-3. Keine Toast-Notifications (aktuell: `alert()` und `confirm()`)
-4. Keine shared Button/Form Components (Code-Duplikation)
-5. Calendar-Navigation nicht intuitiv
+**Erledigte Phasen:**
+- ✅ **Phase 0:** Foundation - Toast-System, ConfirmDialog, Shared Components (Button, Badge, FormInput, FormSelect, FormTextarea, LoadingSpinner, MonthSelector, TableSkeleton)
+- ✅ **Phase 1:** Mobile Navigation - Hamburger-Menu mit Sidebar, Escape-Key-Support, Route-Change-Close
+- ✅ **Phase 2:** Responsive Tables - Card-Layouts auf Mobile für alle Tabellen (TimeTracking, Absences, Users, AdminDashboard)
+- ✅ **Phase 4:** Calendar & Date Navigation - MonthSelector-Komponente mit Prev/Next
 
-**Geplante Phasen:**
-- **Phase 0:** Foundation (Toast-System, Shared Components) - 3-5 Tage
-- **Phase 1:** Mobile Navigation & Critical Fixes - 2-3 Tage
-- **Phase 2:** Responsive Tables & Cards - 4-6 Tage
-- **Phase 3:** Accessibility (A11y) - 2-3 Tage
-- **Phase 4:** Calendar & Date Navigation - 3-4 Tage
-- **Phase 5:** Polish & Nice-to-haves - 3-5 Tage
+**Offene Phasen:**
+- **Phase 3:** Accessibility (A11y) - aria-labels teilweise vorhanden, noch nicht vollständig
+- **Phase 5:** Polish & Nice-to-haves - Animationen, Skeleton-Loading überall
 
-**Siehe `UX_ROADMAP.md` für:**
-- Detaillierte Aufgabenliste pro Phase
-- Betroffene Dateien
-- Implementierungs-Snippets
-- Testing-Checklisten
+**Shared Components** (`frontend/src/components/`):
+- `ConfirmDialog.tsx` - Styled Bestätigungsdialog (ersetzt native `confirm()`)
+- `Button.tsx` - Varianten: primary, secondary, danger, ghost
+- `Badge.tsx` - Status-Badges mit Farbcodierung
+- `FormInput.tsx`, `FormSelect.tsx`, `FormTextarea.tsx` - Formular-Komponenten
+- `LoadingSpinner.tsx`, `TableSkeleton.tsx` - Ladezustands-Anzeigen
+- `MonthSelector.tsx` - Monats-Navigation mit Prev/Next
+
+**Hooks** (`frontend/src/hooks/`):
+- `useConfirm.ts` - State-Management für ConfirmDialog
+
+**Contexts** (`frontend/src/contexts/`):
+- `ToastContext.tsx` - Toast-Provider mit success/error/info/warning
+
+**Siehe `UX_ROADMAP.md` für Details zu offenen Phasen.**
 
 ## 📝 Future Features (Backlog)
 
@@ -1068,4 +1086,4 @@ docker-compose logs -f --since 1h       # Live logs last hour
 
 ---
 
-**Entwickelt mit Claude Sonnet 4.5**
+**Entwickelt mit Claude Sonnet 4.5 & Claude Opus 4.6**
