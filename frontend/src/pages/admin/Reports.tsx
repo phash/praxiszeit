@@ -68,8 +68,8 @@ export default function Reports() {
         </div>
         <div className="max-w-2xl">
           <p className="text-gray-600 mb-6">
-            Exportieren Sie einen detaillierten Monatsreport für alle Mitarbeiterinnen als Excel-Datei.
-            Die Datei enthält für jede Mitarbeiterin ein separates Sheet mit allen Zeiteinträgen,
+            Exportieren Sie einen detaillierten Monatsreport für alle Mitarbeitende als Excel-Datei.
+            Die Datei enthält für jede Mitarbeiter:in ein separates Sheet mit allen Zeiteinträgen,
             Abwesenheiten und einer Zusammenfassung.
           </p>
 
@@ -97,7 +97,7 @@ export default function Reports() {
           <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <h3 className="font-semibold text-blue-900 mb-2">Was enthält der Export?</h3>
             <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-              <li>Ein Sheet pro Mitarbeiterin</li>
+              <li>Ein Sheet pro Mitarbeiter:in</li>
               <li>Tägliche Zeiteinträge (Datum, Von, Bis, Pause, Netto)</li>
               <li>Soll-Stunden pro Tag</li>
               <li>Markierung von Wochenenden, Feiertagen und Abwesenheiten</li>
@@ -143,11 +143,11 @@ export default function Reports() {
                 <span>Classic Format</span>
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Kompakte Übersicht mit allen 12 Monaten in einer Zeile pro Mitarbeiterin.
+                Kompakte Übersicht mit allen 12 Monaten in einer Zeile pro Mitarbeiter:in.
                 Ideal für Geschäftsführung und schnellen Überblick.
               </p>
               <ul className="text-xs text-gray-600 space-y-1 mb-4">
-                <li>✓ Ein Sheet pro Mitarbeiterin</li>
+                <li>✓ Ein Sheet pro Mitarbeiter:in</li>
                 <li>✓ Monate als Spalten</li>
                 <li>✓ Überstunden kumuliert</li>
                 <li>✓ Resturlaub</li>
@@ -155,7 +155,7 @@ export default function Reports() {
               <button
                 onClick={handleYearlyClassicExport}
                 disabled={loading}
-                className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
+                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
               >
                 <Download size={18} />
                 <span>{loading ? 'Wird erstellt...' : 'Classic Export'}</span>

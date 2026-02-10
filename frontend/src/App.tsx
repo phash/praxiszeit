@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
+import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import TimeTracking from './pages/TimeTracking';
@@ -33,10 +34,11 @@ function ProtectedRoute({
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/login" element={<Login />} />
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
 
         {/* Protected Employee Routes */}
         <Route
@@ -71,6 +73,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </ToastProvider>
   );
 }
 

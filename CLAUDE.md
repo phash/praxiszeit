@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # PraxisZeit - Zeiterfassungssystem
 
 Ein vollständiges Zeiterfassungssystem für Arztpraxen und kleine Unternehmen.
@@ -45,26 +49,100 @@ Ein vollständiges Zeiterfassungssystem für Arztpraxen und kleine Unternehmen.
 - 📊 **Urlaubskonto**: Automatische Berechnung mit Vorjahresübertrag
 - 🎨 **Responsive Design**: Funktioniert auf Desktop und Mobile
 
-## 🏗️ Projekt-Struktur
+## 🏗️ Architektur und Code-Organisation
+
+### Backend-Architektur (FastAPI)
+
+**Layered Architecture:**
+```
+routers/ → services/ → models/ → database
+  ↓          ↓          ↓
+schemas/  (business  (ORM)
+          logic)
+```
+
+**Key Directories:**
+- `models/` - SQLAlchemy ORM Models (User, TimeEntry, Absence, PublicHoliday, WorkingHoursChange)
+- `routers/` - FastAPI Endpoints (auth, admin, time_entries, absences, dashboard, holidays, reports)
+- `schemas/` - Pydantic Request/Response Models (separate from ORM models)
+- `services/` - Business Logic Layer:
+  - `auth_service.py` - Password hashing, JWT token generation
+  - `calculation_service.py` - **Core business logic** for Soll/Ist calculations, overtime, vacation
+  - `export_service.py` - Excel export generation (monthly, yearly classic, yearly detailed)
+  - `holiday_service.py` - Public holiday management via workalendar
+- `middleware/` - Auth middleware for dependency injection
+- `config.py` - Environment variables via pydantic-settings
+- `database.py` - SQLAlchemy engine and session management
+- `main.py` - FastAPI app with lifespan events (startup: migrations, admin creation, holiday sync)
+
+**Critical Patterns:**
+1. **Historical Calculations:** `calculation_service.get_weekly_hours_for_date()` gets weekly hours for any date by checking `working_hours_changes` table. Always iterate day-by-day for accurate calculations.
+2. **Session Management:** Use dependency injection `Depends(get_db)` for routes. Never reuse objects across sessions.
+3. **Date Ranges:** When creating absences with `end_date`, backend creates separate entries for each weekday (Mon-Fri), excluding weekends and public holidays.
+4. **Type Safety:** Use `float` not `Decimal` in Pydantic schemas (Decimal serializes as string in JSON).
+
+### Frontend-Architektur (React + TypeScript)
+
+**Structure:**
+```
+src/
+├── pages/           # Full page components (Dashboard, TimeTracking, Profile, etc.)
+│   └── admin/       # Admin-only pages (Users, Dashboard, Reports)
+├── components/      # Reusable components (currently minimal, see UX_ROADMAP.md)
+├── stores/          # Zustand state management
+│   └── authStore.ts # Auth state (user, token, login/logout)
+├── api/
+│   └── client.ts    # Axios instance with auth interceptor
+├── App.tsx          # Router setup with protected routes
+└── main.tsx         # Entry point
+```
+
+**Key Patterns:**
+1. **State Management:** Zustand for auth state only. Server state is fetched per-page (no global cache).
+2. **Protected Routes:** Check `authStore` for token, redirect to login if missing.
+3. **Role-Based UI:** Admin routes check `user.role === 'admin'`.
+4. **API Client:** Axios instance in `api/client.ts` adds Bearer token to all requests.
+5. **Date Handling:** Use date-fns for formatting, native `<input type="date">` for inputs (YYYY-MM-DD format).
+
+### Projekt-Struktur
 
 ```
 praxiszeit/
 ├── backend/
 │   ├── app/
-│   │   ├── models/          # SQLAlchemy Models (User, TimeEntry, Absence, etc.)
+│   │   ├── models/          # SQLAlchemy Models
 │   │   ├── routers/         # FastAPI Endpoints
 │   │   ├── schemas/         # Pydantic Schemas
-│   │   ├── services/        # Business Logic
-│   │   └── middleware/      # Auth Middleware
+│   │   ├── services/        # Business Logic Layer (calculation, export, auth, holiday)
+│   │   ├── middleware/      # Auth Middleware
+│   │   ├── config.py        # Settings via pydantic-settings
+│   │   ├── database.py      # SQLAlchemy setup
+│   │   └── main.py          # FastAPI app with lifespan
 │   ├── alembic/
-│   │   └── versions/        # Datenbankmigrationen
-│   └── tests/               # Pytest Tests
+│   │   ├── env.py           # Alembic configuration
+│   │   └── versions/        # Migration files
+│   ├── tests/               # Pytest tests
+│   │   ├── conftest.py      # Test fixtures
+│   │   ├── test_auth.py     # Auth endpoint tests
+│   │   └── test_calculations.py  # Business logic tests
+│   ├── create_test_data.py  # Test data generator
+│   ├── requirements.txt     # Python dependencies
+│   ├── pytest.ini           # Pytest configuration
+│   └── Dockerfile
 ├── frontend/
 │   └── src/
-│       ├── pages/           # React Pages
-│       ├── components/      # React Components
-│       └── stores/          # Zustand State Management
-└── docker-compose.yml       # Docker Setup
+│       ├── pages/           # Full page components
+│       │   └── admin/       # Admin pages
+│       ├── components/      # Reusable UI components
+│       ├── stores/          # Zustand stores
+│       ├── api/             # API client
+│       ├── App.tsx          # Router
+│       └── main.tsx         # Entry point
+├── docker-compose.yml       # Multi-container orchestration
+├── .env.example             # Environment template
+├── README.md                # User documentation
+├── CLAUDE.md                # This file
+└── UX_ROADMAP.md            # Planned UI/UX improvements
 
 ```
 
@@ -89,33 +167,160 @@ docker-compose down
 ```bash
 docker-compose logs -f backend
 docker-compose logs -f frontend
+docker-compose logs -f db
 ```
 
-### Migration erstellen
+### Backend lokal (ohne Docker)
 ```bash
-docker-compose exec backend alembic revision --autogenerate -m "description"
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
 ```
 
-### Migration ausführen
+### Frontend lokal (ohne Docker)
 ```bash
+cd frontend
+npm install
+npm run dev  # Starts on http://localhost:5173
+```
+
+### Database Migrations
+
+**IMPORTANT:** Migrationen müssen auf dem Host erstellt werden, BEVOR Container rebuildet werden. Migration-Files gehen sonst beim Rebuild verloren.
+
+```bash
+# 1. Migration erstellen (während Container läuft)
+docker-compose exec backend alembic revision --autogenerate -m "add new field"
+
+# 2. Migration-File wird in backend/alembic/versions/ erstellt
+# 3. Migration wird automatisch beim nächsten Container-Start ausgeführt
+
+# Manuelle Migration ausführen
 docker-compose exec backend alembic upgrade head
+
+# Migration rückgängig machen
+docker-compose exec backend alembic downgrade -1
+
+# Migrations-Historie anzeigen
+docker-compose exec backend alembic history
 ```
 
-## 🗄️ Datenbank
+### Testing
+
+**Backend Tests:**
+```bash
+# In Docker
+docker-compose exec backend pytest
+docker-compose exec backend pytest -v  # Verbose
+docker-compose exec backend pytest tests/test_auth.py  # Einzelne Datei
+docker-compose exec backend pytest -k test_login  # Einzelner Test
+
+# Lokal (mit aktiviertem venv)
+cd backend
+pytest
+pytest --cov=app --cov-report=html  # Mit Coverage
+```
+
+**Frontend Linting:**
+```bash
+# In Docker
+docker-compose exec frontend npm run lint
+
+# Lokal
+cd frontend
+npm run lint
+npm run build  # TypeScript Compilation Check
+```
+
+### Test-Daten generieren
+```bash
+docker-compose exec backend python create_test_data.py
+```
+Erstellt 4 Mitarbeiterinnen mit vollständigen Zeiteinträgen und Abwesenheiten für 2026.
+
+## 🗄️ Datenbank-Schema
 
 **PostgreSQL 16** mit folgenden Haupttabellen:
-- `users` - Benutzer mit Rollen, Wochenstunden, Urlaubsanspruch, Kalenderfarbe
-- `working_hours_changes` - Historie von Arbeitszeitenänderungen mit Datum und Notiz
-- `time_entries` - Zeiteinträge (Start, Ende, Pausen)
-- `absences` - Abwesenheiten mit Typ und optional Zeitraum (end_date)
-- `public_holidays` - Feiertage nach Bundesland
 
-**Migrationen:**
-- 001: Initial Schema (User, TimeEntry, Absence, PublicHoliday)
-- 002: Add track_hours field (Stundenzählung deaktivierbar)
-- 003: Add end_date to absences (Zeiträume)
-- 004: Add calendar_color to users (Farbcodierung im Kalender)
-- 005: Add working_hours_changes table (Arbeitszeiten-Historie)
+### users
+```sql
+id, email (unique), password_hash, first_name, last_name,
+role (admin/employee), weekly_hours, vacation_days,
+track_hours (bool), calendar_color, is_active,
+created_at, updated_at
+```
+- `track_hours=False`: Deaktiviert Arbeitszeiterfassung (Soll-Stunden = 0)
+- `calendar_color`: Hex-Farbe für Abwesenheitskalender
+- **Indexes:** email (unique), role
+
+### working_hours_changes
+```sql
+id, user_id (FK), weekly_hours, effective_from (date),
+note, created_at
+```
+- Historie von Arbeitszeitenänderungen (z.B. Teilzeit-Anpassungen)
+- **Wichtig:** Sortierung nach `effective_from DESC` für korrekte Historie
+- **Indexes:** user_id, effective_from
+
+### time_entries
+```sql
+id, user_id (FK), date, start_time, end_time,
+break_minutes, notes, created_at, updated_at
+```
+- Tägliche Zeiteinträge (von-bis mit Pausen)
+- Berechnete Arbeitszeit: `(end_time - start_time) - break_minutes`
+- **Indexes:** user_id, date, (user_id, date) composite
+
+### absences
+```sql
+id, user_id (FK), date, end_date (nullable),
+type (vacation/sick/training/other), notes,
+created_at, updated_at
+```
+- `end_date=NULL`: Einzelner Tag
+- `end_date!=NULL`: Zeitraum (alle Einträge in Zeitraum speichern Original-end_date)
+- **Indexes:** user_id, date, type, (user_id, date) composite
+
+### public_holidays
+```sql
+id, date, name, state (Bayern), created_at
+```
+- Automatisch von workalendar synchronisiert (Germany Bavaria)
+- Wird beim App-Start für current/next year aktualisiert
+- **Indexes:** date, state
+
+### Migrationen (Alembic)
+- `001_initial`: Initial Schema (User, TimeEntry, Absence, PublicHoliday)
+- `002_track_hours`: Add `track_hours` field (Stundenzählung deaktivierbar)
+- `003_end_date`: Add `end_date` to absences (Zeiträume)
+- `004_calendar_color`: Add `calendar_color` to users (Farbcodierung im Kalender)
+- `005_working_hours_changes`: Add working_hours_changes table (Arbeitszeiten-Historie)
+
+### Datenbank-Operationen
+
+**Backup:**
+```bash
+docker-compose exec db pg_dump -U praxiszeit praxiszeit > backup_$(date +%Y%m%d).sql
+```
+
+**Restore:**
+```bash
+docker-compose exec -T db psql -U praxiszeit praxiszeit < backup_20260209.sql
+```
+
+**Shell:**
+```bash
+docker-compose exec db psql -U praxiszeit praxiszeit
+```
+
+**Reset (Vorsicht!):**
+```bash
+docker-compose down -v  # Löscht Volumes!
+docker-compose up -d    # Erstellt frische DB
+```
 
 ## 👤 Standard-Benutzer
 
@@ -144,97 +349,697 @@ Nach dem ersten Start existieren folgende Benutzer:
 - lucide-react (Icons)
 - tailwindcss
 
+## 🧮 Business Logic (calculation_service.py)
+
+**Kernfunktionen für Soll/Ist-Berechnungen:**
+
+### `get_weekly_hours_for_date(db, user, date) -> Decimal`
+Ermittelt die Wochenstunden, die an einem bestimmten Datum galten (berücksichtigt Historie).
+```python
+# Findet die letzte Änderung vor/am Datum
+change = db.query(WorkingHoursChange).filter(
+    effective_from <= date
+).order_by(effective_from.desc()).first()
+return change.weekly_hours if change else user.weekly_hours
+```
+
+### `get_daily_target(user, weekly_hours) -> Decimal`
+Berechnet Soll-Stunden pro Tag (Wochenstunden / 5).
+- Returns `Decimal('0')` wenn `user.track_hours == False`
+
+### `calculate_monthly_stats(db, user, year, month) -> Dict`
+**Zentrale Funktion für Monatsberechnungen:**
+1. Iteriert über jeden Tag im Monat
+2. Für jeden Tag:
+   - Prüft ob Wochenende → skip
+   - Prüft ob Feiertag → skip
+   - Prüft ob Abwesenheit → add to `absence_hours`
+   - Holt Zeiteinträge → add to `actual_hours`
+   - Berechnet `daily_target` mit historischen Wochenstunden
+3. Berechnet `balance = actual_hours - target_hours`
+
+**Wichtig:** Verwendet `get_weekly_hours_for_date()` für **jeden Tag**, nicht Monatsmittelwerte!
+
+### `calculate_overtime_history(db, user, months=6) -> List[Dict]`
+Berechnet Überstunden-Historie über mehrere Monate.
+```python
+for month in last_n_months:
+    stats = calculate_monthly_stats(db, user, year, month)
+    overtime_history.append({
+        'month': f'{year}-{month:02d}',
+        'balance': stats['balance']
+    })
+```
+
+### `calculate_vacation_account(db, user, year) -> Dict`
+Berechnet Urlaubskonto:
+1. Budget: `user.vacation_days * (user.weekly_hours / 5)`
+2. Used: Summe aller Urlaubs-Abwesenheiten in Stunden
+3. Remaining: `budget - used`
+
+**Farb-Logik (Ampel-System):**
+- Grün: `remaining >= budget * 0.5`
+- Gelb: `remaining >= budget * 0.25`
+- Rot: `remaining < budget * 0.25`
+
+## 📊 Export Service (export_service.py)
+
+Generiert Excel-Exports mit `openpyxl`.
+
+### `generate_monthly_report(db, year, month) -> BytesIO`
+**Detaillierter Monatsreport:**
+- Ein Tab pro Mitarbeiter
+- Zeile pro Tag: Datum, Wochentag, Start, Ende, Pause, Ist, Soll, Abwesenheit
+- Summenzeile: Gesamt-Ist, Gesamt-Soll, Balance, Urlaubstage
+
+### `generate_yearly_classic_report(db, year) -> BytesIO`
+**Kompakte Jahresübersicht (12 Monate):**
+- Ein Tab pro Mitarbeiter
+- Zeile pro Monat: Monat, Soll, Ist, Balance, Urlaub, Krank, Fortbildung
+- **Performance:** ~17KB, schnell
+
+### `generate_yearly_detailed_report(db, year) -> BytesIO`
+**Detaillierte Jahresübersicht (365 Tage):**
+- Ein Tab pro Mitarbeiter
+- Zeile pro Tag im ganzen Jahr
+- **Performance:** ~108KB, dauert 3-5s
+
+**Export-Pattern:**
+```python
+workbook = Workbook()
+for user in users:
+    sheet = workbook.create_sheet(f"{user.first_name} {user.last_name}")
+    # ... fill data
+output = BytesIO()
+workbook.save(output)
+output.seek(0)
+return output
+```
+
 ## 🎯 API Endpoints
 
 ### Authentication
-- POST `/api/auth/login` - Login mit Email/Passwort
-- GET `/api/auth/me` - Aktueller User
-- PUT `/api/auth/password` - Passwort ändern
+- `POST /api/auth/login` - Login mit Email/Passwort → JWT Token
+- `GET /api/auth/me` - Aktueller User (requires auth)
+- `PUT /api/auth/password` - Passwort ändern
 
 ### Time Entries
-- GET `/api/time-entries` - Liste (mit Filter)
-- POST `/api/time-entries` - Neuer Eintrag
-- PUT `/api/time-entries/{id}` - Bearbeiten
-- DELETE `/api/time-entries/{id}` - Löschen
+- `GET /api/time-entries?user_id={id}&start_date={date}&end_date={date}` - Gefilterte Liste
+- `POST /api/time-entries` - Neuer Eintrag
+- `PUT /api/time-entries/{id}` - Bearbeiten (nur eigene oder als Admin)
+- `DELETE /api/time-entries/{id}` - Löschen
 
 ### Absences
-- GET `/api/absences` - Liste
-- POST `/api/absences` - Neue Abwesenheit (auch Zeiträume)
-- DELETE `/api/absences/{id}` - Löschen
-- GET `/api/absences/calendar` - Kalender-Ansicht (alle Mitarbeiter)
-
-### Admin
-- GET `/api/admin/users` - Alle Benutzer
-- POST `/api/admin/users` - User anlegen
-- PUT `/api/admin/users/{id}` - User bearbeiten
-- GET `/api/admin/dashboard` - Dashboard Daten
-- GET `/api/admin/reports` - Monatsberichte
+- `GET /api/absences?user_id={id}&month={YYYY-MM}` - Liste
+- `POST /api/absences` - Neue Abwesenheit (wenn `end_date`: erstellt Range-Einträge)
+- `DELETE /api/absences/{id}` - Löschen
+- `GET /api/absences/calendar?year={YYYY}&month={MM}` - Kalender für alle Mitarbeiter
 
 ### Dashboard
-- GET `/api/dashboard` - Dashboard Daten für aktuellen User
+- `GET /api/dashboard` - Stats für aktuellen User (current month, overtime, vacation)
+- `GET /api/dashboard/overtime?months={n}` - Überstunden-Historie
+- `GET /api/dashboard/vacation?year={YYYY}` - Urlaubskonto
+
+### Admin - Users
+- `GET /api/admin/users?include_inactive={bool}` - Alle Benutzer
+- `POST /api/admin/users` - User anlegen
+- `PUT /api/admin/users/{id}` - User bearbeiten (inkl. track_hours, calendar_color)
+- `GET /api/admin/users/{id}/working-hours-changes` - Stundenhistorie
+- `POST /api/admin/users/{id}/working-hours-changes` - Neue Stundenänderung
+
+### Admin - Reports & Exports
+- `GET /api/admin/reports/monthly?year={YYYY}&month={MM}` - Monatsberichte (JSON)
+- `GET /api/admin/reports/export?month={YYYY-MM}` - Excel Monatsexport
+- `GET /api/admin/reports/export-yearly?year={YYYY}` - Excel Jahresexport (detailliert)
+- `GET /api/admin/reports/export-yearly-classic?year={YYYY}` - Excel Jahresexport (classic)
+
+### Admin - Dashboard
+- `GET /api/admin/dashboard` - Teamübersicht mit allen Mitarbeitern und deren Stats
+
+### Holidays
+- `GET /api/holidays?year={YYYY}` - Feiertage für Jahr
 
 ## 🔐 Sicherheit
 
-- Passwörter werden mit bcrypt gehasht
-- JWT Tokens mit HS256 Signatur
-- Token-basierte API Authentication
-- Role-based Access Control (Admin/Employee)
-- Input Validation mit Pydantic
+- Passwörter werden mit bcrypt gehasht (`passlib[bcrypt]`)
+- JWT Tokens mit HS256 Signatur (`python-jose`)
+- Token-basierte API Authentication (Bearer Token in Authorization Header)
+- Role-based Access Control (Admin/Employee via `UserRole` Enum)
+- Input Validation mit Pydantic Schemas
+- CORS konfiguriert (Production: spezifische Origins setzen!)
+- Rate Limiting via `slowapi` (optional aktivierbar)
+
+**Security Checklist für Production:**
+- [ ] `SECRET_KEY` geändert und sicher gespeichert
+- [ ] CORS `allow_origins` auf spezifische Domains limitieren
+- [ ] Admin-Passwort geändert
+- [ ] HTTPS via Nginx Reverse Proxy
+- [ ] PostgreSQL nicht öffentlich exponieren
+- [ ] `.env` nicht in Git committen (bereits in `.gitignore`)
+
+## 🐛 Troubleshooting
+
+### Backend startet nicht
+
+**Problem:** "Database connection failed"
+```bash
+# Prüfe ob DB läuft
+docker-compose ps db
+# Sollte "Up (healthy)" zeigen
+
+# Prüfe DB Logs
+docker-compose logs db
+
+# Prüfe Credentials in .env
+cat .env | grep POSTGRES
+```
+
+**Problem:** "Migration failed"
+```bash
+# Manuell Migrationen ausführen
+docker-compose exec backend alembic upgrade head
+
+# Migration-Historie prüfen
+docker-compose exec backend alembic current
+
+# Falls kaputt: Reset
+docker-compose exec backend alembic downgrade base
+docker-compose exec backend alembic upgrade head
+```
+
+**Problem:** "Admin user already exists" aber Login funktioniert nicht
+```bash
+# Passwort-Hash prüfen
+docker-compose exec backend python -c "
+from app.database import SessionLocal
+from app.models import User
+db = SessionLocal()
+admin = db.query(User).filter(User.email=='admin@praxis.de').first()
+print(f'Email: {admin.email}')
+print(f'Has password_hash: {bool(admin.password_hash)}')
+print(f'Is active: {admin.is_active}')
+"
+
+# Passwort neu setzen
+docker-compose exec backend python -c "
+from app.database import SessionLocal
+from app.models import User
+from app.services.auth_service import hash_password
+db = SessionLocal()
+admin = db.query(User).filter(User.email=='admin@praxis.de').first()
+admin.password_hash = hash_password('new_password')
+db.commit()
+print('Password updated!')
+"
+```
+
+### Frontend zeigt nur weißen Screen
+
+**Problem:** Frontend Build fehlgeschlagen
+```bash
+# Logs prüfen
+docker-compose logs frontend
+
+# Manuell bauen
+docker-compose exec frontend npm run build
+
+# Node Modules neu installieren
+docker-compose exec frontend rm -rf node_modules
+docker-compose exec frontend npm install
+```
+
+**Problem:** API-Calls schlagen fehl (CORS)
+```bash
+# Browser DevTools → Network Tab prüfen
+# Sollte sehen: OPTIONS preflight, dann POST/GET
+
+# Backend CORS-Config prüfen in app/main.py
+# allow_origins sollte Frontend-URL enthalten
+```
+
+### Berechnungen stimmen nicht
+
+**Problem:** Überstunden falsch nach Stundenänderung
+```bash
+# Prüfe working_hours_changes Tabelle
+docker-compose exec backend python -c "
+from app.database import SessionLocal
+from app.models import WorkingHoursChange
+db = SessionLocal()
+changes = db.query(WorkingHoursChange).order_by(WorkingHoursChange.effective_from).all()
+for c in changes:
+    print(f'{c.effective_from}: {c.weekly_hours}h')
+"
+
+# Stelle sicher: calculation_service verwendet get_weekly_hours_for_date()
+# NICHT user.weekly_hours direkt!
+```
+
+**Problem:** Urlaubskonto falsch
+```bash
+# Debug-Output
+docker-compose exec backend python -c "
+from app.database import SessionLocal
+from app.models import User
+from app.services.calculation_service import calculate_vacation_account
+db = SessionLocal()
+user = db.query(User).first()
+result = calculate_vacation_account(db, user, 2026)
+print(result)
+"
+```
+
+### Excel-Export schlägt fehl
+
+**Problem:** "TypeError: unsupported operand type(s) for +: 'float' and 'Decimal'"
+```python
+# Lösung: Konsistent float() oder Decimal() verwenden
+# ❌ balance = float_value + Decimal('8.0')
+# ✅ balance = float_value + float(Decimal('8.0'))
+```
+
+**Problem:** Export dauert zu lang (Timeout)
+```bash
+# Prüfe Export-Typ
+# Monthly: <1s
+# Yearly Classic: ~2s
+# Yearly Detailed: ~5s
+
+# Bei Timeout: Erhöhe Frontend Axios Timeout
+# api/client.ts: timeout: 30000  // 30s
+```
+
+### Performance-Probleme
+
+**Problem:** Dashboard lädt langsam
+```bash
+# Enable SQL Query Logging
+# In backend/app/database.py:
+engine = create_engine(DATABASE_URL, echo=True)  # Shows all queries
+
+# Prüfe auf N+1 Queries
+# Lösung: Eager Loading mit .options(joinedload())
+```
+
+**Problem:** Datenbank langsam
+```bash
+# Prüfe Indexes
+docker-compose exec db psql -U praxiszeit praxiszeit -c "
+SELECT tablename, indexname FROM pg_indexes WHERE schemaname = 'public';
+"
+
+# Sollte haben:
+# - users: email (unique)
+# - time_entries: user_id, date, (user_id, date) composite
+# - absences: user_id, date, (user_id, date) composite
+# - working_hours_changes: user_id, effective_from
+```
+
+### Test-Daten generieren schlägt fehl
+
+**Problem:** create_test_data.py Fehler
+```bash
+# Logs prüfen
+docker-compose exec backend python create_test_data.py
+
+# Falls DB-Constraint-Fehler: Daten bereits vorhanden
+# Lösung: User löschen oder IDs in Script anpassen
+```
+
+## 💻 Coding Conventions
+
+### Backend (Python)
+
+**Naming:**
+- Models: PascalCase (`User`, `TimeEntry`)
+- Functions/Variables: snake_case (`calculate_overtime`, `user_id`)
+- Constants: UPPER_SNAKE_CASE (`SECRET_KEY`, `DATABASE_URL`)
+- Private methods: `_internal_method()`
+
+**Imports:**
+```python
+# Standard library
+from datetime import date, datetime
+from typing import Dict, List, Optional
+
+# Third-party
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+# Local
+from app.models import User
+from app.schemas import UserResponse
+from app.services import calculation_service
+```
+
+**Type Hints:**
+```python
+def calculate_balance(user: User, month: int) -> Dict[str, float]:
+    ...
+
+# Optional für nullable values
+def get_user(user_id: int) -> Optional[User]:
+    ...
+```
+
+**Error Handling:**
+```python
+# FastAPI HTTP Exceptions
+if not user:
+    raise HTTPException(status_code=404, detail="User not found")
+
+# Validation in Pydantic Schemas
+class TimeEntryCreate(BaseModel):
+    start_time: time
+    end_time: time
+
+    @validator('end_time')
+    def end_after_start(cls, v, values):
+        if v <= values['start_time']:
+            raise ValueError('end_time must be after start_time')
+        return v
+```
+
+### Frontend (TypeScript/React)
+
+**Naming:**
+- Components: PascalCase (`Dashboard`, `TimeEntryForm`)
+- Functions/Variables: camelCase (`calculateBalance`, `userId`)
+- Constants: UPPER_SNAKE_CASE (`API_BASE_URL`)
+- Interfaces: PascalCase with `I` prefix optional (`User` or `IUser`)
+
+**Component Structure:**
+```tsx
+// 1. Imports
+import { useState, useEffect } from 'react'
+import { User } from '../types'
+import { apiClient } from '../api/client'
+
+// 2. Types/Interfaces
+interface DashboardProps {
+  userId: number
+}
+
+// 3. Component
+export default function Dashboard({ userId }: DashboardProps) {
+  // 3a. State
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // 3b. Effects
+  useEffect(() => {
+    loadUser()
+  }, [userId])
+
+  // 3c. Handlers
+  const loadUser = async () => {
+    const response = await apiClient.get(`/users/${userId}`)
+    setUser(response.data)
+    setLoading(false)
+  }
+
+  // 3d. Render
+  if (loading) return <div>Loading...</div>
+  return <div>{user?.first_name}</div>
+}
+```
+
+**API Calls:**
+```tsx
+// ✅ RICHTIG: async/await mit try/catch
+const loadData = async () => {
+  try {
+    setLoading(true)
+    const response = await apiClient.get('/api/dashboard')
+    setData(response.data)
+  } catch (error) {
+    console.error('Failed to load:', error)
+    alert('Fehler beim Laden')  // TODO: Replace with Toast
+  } finally {
+    setLoading(false)
+  }
+}
+
+// ❌ FALSCH: Unhandled promises
+apiClient.get('/api/dashboard').then(r => setData(r.data))
+```
+
+**Date Handling:**
+```tsx
+import { format, parseISO } from 'date-fns'
+import { de } from 'date-fns/locale'
+
+// Display
+const formatted = format(parseISO(dateString), 'dd.MM.yyyy', { locale: de })
+
+// Input (native date picker expects YYYY-MM-DD)
+<input type="date" value={date} onChange={e => setDate(e.target.value)} />
+```
 
 ## 📚 Dokumentation
 
-- **API Dokumentation**: http://localhost:8000/docs (Swagger UI)
-- **PDF-Handbuch**: `screenshots/PraxisZeit-Handbuch.pdf`
-- **Screenshots**: `screenshots/` Ordner mit allen Features
+- **API Dokumentation**: http://localhost:8000/docs (Swagger UI - interaktiv)
+- **API Alternative**: http://localhost:8000/redoc (ReDoc - statisch, schöner)
+- **README.md**: User-facing Dokumentation (Installation, Features)
+- **CLAUDE.md**: Diese Datei - Entwickler-Dokumentation
+- **UX_ROADMAP.md**: Geplante UI/UX-Verbesserungen mit Details
+- **Screenshots**: `../screenshots/` Ordner (außerhalb Repo)
 
-## 🐛 Bekannte Issues / Lessons Learned
+## 🐛 Wichtige Patterns und Gotchas
 
-1. **Decimal vs Float**: Pydantic serialisiert Decimal als String. Für Frontend besser float verwenden.
-   - Bei Excel-Export: Decimal/float-Mixing vermeiden (TypeError)
-   - Lösung: Konsistent float() verwenden oder beide Seiten zu Decimal konvertieren
+### Pydantic & Type Handling
+- **Decimal → Float:** Pydantic serialisiert Python `Decimal` als String in JSON, was Frontend-Fehler mit `.toFixed()` verursacht. **Immer `float` in Response-Schemas verwenden** für numerische Felder.
+- **Email Validation:** `EmailStr` validator lehnt `.local` TLD ab (reserviert). Verwende `EmailStr` nur für Produktion, nicht für lokale Test-Adressen.
+- **Excel Export:** Decimal/float-Mixing vermeiden (TypeError). Konsistent `float()` konvertieren.
 
-2. **Email Validation**: `.local` TLD ist reserviert und schlägt bei Pydantic EmailStr fehl.
+### Historische Berechnungen
+```python
+# ❌ FALSCH: Monatsmittelwerte
+avg_hours = sum(changes) / len(changes)
 
-3. **Date Range Logic**: Bei Zeiträumen nur Werktage (Mo-Fr) erstellen und Feiertage ausschließen.
+# ✅ RICHTIG: Tag-für-Tag iterieren
+for day in date_range:
+    daily_hours = get_weekly_hours_for_date(db, user, day)
+    calculate_target(daily_hours)
+```
+- Immer `calculation_service.get_weekly_hours_for_date()` für jedes Datum aufrufen
+- `working_hours_changes` sind nach `effective_from DESC` sortiert
+- Erste Änderung vor/am Zieldatum gilt
 
-4. **Login für Screenshots**: Test-Admin muss existieren für automatische Screenshots.
+### Date Range Absences
+Wenn User "Zeitraum" checkbox aktiviert und `end_date` setzt:
+1. Backend validiert Start < End
+2. Erstellt **separate Entries** für jeden Werktag (Mo-Fr)
+3. Excluded automatisch Wochenenden (`weekday() >= 5`)
+4. Excluded Public Holidays via DB-Join
+5. Jeder Entry speichert Original-`end_date` für UI-Display
 
-5. **Historische Berechnungen**:
-   - Bei Stundenänderungen Tag-für-Tag iterieren, nicht Monatsmittelwerte
-   - `get_weekly_hours_for_date()` für jedes Datum aufrufen
-   - Sortierung nach `effective_from DESC` wichtig für korrekte Historie
+```python
+# backend/app/routers/absences.py
+if end_date:
+    for single_date in date_range(start, end):
+        if single_date.weekday() < 5 and not is_public_holiday(single_date):
+            entries.append(Absence(date=single_date, end_date=end_date, ...))
+```
 
-6. **Migration-Handling in Docker**:
-   - Migrationen auf Host erstellen, BEVOR Container rebuildet werden
-   - `docker-compose exec backend alembic revision --autogenerate`
-   - Migration-Files müssen auf Host existieren, sonst gehen sie beim Rebuild verloren
+### SQLAlchemy Session Management
+```python
+# ❌ FALSCH: Objekte über Sessions hinweg verwenden
+def create_entries(db1: Session):
+    user = db1.query(User).first()
+    db2 = SessionLocal()
+    db2.add(TimeEntry(user=user))  # ERROR!
 
-7. **SQLAlchemy Session Management**:
-   - Objekte aus einer Session nicht in anderer Session verwenden
-   - Bei Batch-Operations: IDs zwischenspeichern, dann in neuer Session neu laden
+# ✅ RICHTIG: IDs speichern, neu laden
+def create_entries(db1: Session):
+    user_id = db1.query(User).first().id
+    db2 = SessionLocal()
+    user = db2.query(User).get(user_id)
+    db2.add(TimeEntry(user=user))
+```
 
-8. **Excel Export Performance**:
-   - Classic Format (12 Monate): ~17KB, schnell
-   - Detailliert (365 Tage): ~108KB, dauert länger
-   - Bei großen Exports Benutzer informieren (Loading-State)
+### Migration-Workflow in Docker
+**KRITISCH:** Migrationen auf Host erstellen, **BEVOR** Container rebuildet werden.
+
+```bash
+# 1. Migration erstellen (Container läuft)
+docker-compose exec backend alembic revision --autogenerate -m "add field"
+
+# 2. Migration-File erscheint in backend/alembic/versions/ auf HOST
+# 3. Git commit (!)
+# 4. Rebuild ist jetzt sicher
+docker-compose up -d --build
+
+# ❌ FALSCH: Container rebuilden ohne Migration auf Host zu sichern
+# → Migration-File geht verloren!
+```
+
+### Frontend: Conditional Form Fields
+```tsx
+// Pattern für Zeitraum-Checkbox in AbsenceCalendarPage
+const [isRange, setIsRange] = useState(false)
+const [endDate, setEndDate] = useState('')
+
+<input type="checkbox" onChange={e => setIsRange(e.target.checked)} />
+{isRange && <input type="date" value={endDate} onChange={...} />}
+```
+
+### Excel Export Performance
+- **Monthly Report:** ~20KB, <1s
+- **Yearly Classic (12 Monate):** ~17KB, ~1-2s
+- **Yearly Detailed (365 Tage):** ~108KB, ~3-5s
+- Bei großen Exports: Loading-State im Frontend anzeigen
+- `openpyxl` Workbook in Memory erstellen, als BytesIO zurückgeben
+
+### Auth & JWT
+```python
+# JWT Claims Structure
+{
+  "sub": user.email,  # Subject
+  "user_id": user.id,
+  "role": user.role,
+  "exp": datetime.utcnow() + timedelta(minutes=30)
+}
+
+# Frontend: Token in Zustand Store
+authStore.setState({ token, user })
+
+# Axios Interceptor fügt Header hinzu
+config.headers.Authorization = `Bearer ${token}`
+```
 
 ## 🚀 Deployment
 
-Das Projekt ist container-basiert und kann einfach deployed werden:
+### Production Setup
 
+1. **Server vorbereiten:**
 ```bash
-# Auf Server
+# Docker & Docker Compose installieren
+curl -fsSL https://get.docker.com | sh
+```
+
+2. **Repository klonen:**
+```bash
 git clone https://github.com/phash/praxiszeit
 cd praxiszeit
+```
+
+3. **Environment konfigurieren:**
+```bash
+cp .env.example .env
+nano .env
+```
+
+**Wichtig für Production:**
+- `SECRET_KEY`: Generiere mit `openssl rand -hex 32`
+- `POSTGRES_PASSWORD`: Starkes Passwort
+- `DATABASE_URL`: Matche mit Postgres-Credentials
+- `ADMIN_EMAIL/PASSWORD`: Initiale Admin-Zugangsdaten
+
+4. **Container starten:**
+```bash
 docker-compose up -d
 ```
 
-Wichtig:
-- `.env` Datei mit Produktions-Credentials erstellen
-- `SECRET_KEY` in Production ändern
-- PostgreSQL Daten in Volume persistieren (bereits konfiguriert)
+5. **Logs prüfen:**
+```bash
+docker-compose logs -f
+# Sollte zeigen: Migrations, Admin-Erstellung, Holiday-Sync
+```
 
-## 📝 Nächste Schritte / TODOs
+6. **Nginx Reverse Proxy (empfohlen):**
+```nginx
+server {
+    listen 80;
+    server_name praxiszeit.example.com;
+
+    location / {
+        proxy_pass http://localhost:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+### Updates deployen
+
+```bash
+git pull
+docker-compose down
+docker-compose up -d --build
+```
+
+**Wichtig:** Migrationen werden automatisch beim Container-Start ausgeführt (siehe `main.py` lifespan).
+
+### Backup-Strategy
+
+**Automatisches Backup (Cron):**
+```bash
+# /etc/cron.daily/praxiszeit-backup
+#!/bin/bash
+cd /path/to/praxiszeit
+docker-compose exec -T db pg_dump -U praxiszeit praxiszeit | gzip > /backups/praxiszeit_$(date +\%Y\%m\%d).sql.gz
+# Alte Backups löschen (älter als 30 Tage)
+find /backups -name "praxiszeit_*.sql.gz" -mtime +30 -delete
+```
+
+**Manuelles Backup:**
+```bash
+docker-compose exec db pg_dump -U praxiszeit praxiszeit > backup.sql
+```
+
+### Monitoring
+
+**Health Check:**
+```bash
+curl http://localhost:8000/api/health
+# Should return: {"status": "healthy"}
+```
+
+**Container Status:**
+```bash
+docker-compose ps
+# All services should be "Up"
+```
+
+**Logs:**
+```bash
+docker-compose logs --tail=100 backend  # Last 100 lines
+docker-compose logs -f --since 1h       # Live logs last hour
+```
+
+## 🎨 UX/UI Roadmap
+
+**Status:** Umfassende UX-Analyse durchgeführt (siehe `UX_ROADMAP.md` für Details)
+
+**Hauptprobleme identifiziert:**
+1. Keine mobile Navigation (Navbar overflow auf kleinen Screens)
+2. Tabellen nicht responsive (horizontal scroll)
+3. Keine Toast-Notifications (aktuell: `alert()` und `confirm()`)
+4. Keine shared Button/Form Components (Code-Duplikation)
+5. Calendar-Navigation nicht intuitiv
+
+**Geplante Phasen:**
+- **Phase 0:** Foundation (Toast-System, Shared Components) - 3-5 Tage
+- **Phase 1:** Mobile Navigation & Critical Fixes - 2-3 Tage
+- **Phase 2:** Responsive Tables & Cards - 4-6 Tage
+- **Phase 3:** Accessibility (A11y) - 2-3 Tage
+- **Phase 4:** Calendar & Date Navigation - 3-4 Tage
+- **Phase 5:** Polish & Nice-to-haves - 3-5 Tage
+
+**Siehe `UX_ROADMAP.md` für:**
+- Detaillierte Aufgabenliste pro Phase
+- Betroffene Dateien
+- Implementierungs-Snippets
+- Testing-Checklisten
+
+## 📝 Future Features (Backlog)
 
 - [ ] Passwort-Reset-Funktion per Email
 - [ ] Benachrichtigungen bei Urlaubsantrag
@@ -242,12 +1047,15 @@ Wichtig:
 - [ ] Mobile App (React Native)
 - [ ] 2-Faktor-Authentifizierung
 - [ ] Audit Log für Admin-Aktionen
+- [ ] Bulk-Import von Zeiteinträgen (CSV)
+- [ ] Urlaubsantrag-Workflow (Beantragen → Genehmigen)
 
 ## 🎨 Design-System
 
 **Farben:**
-- Primary: `#3b82f6` (blue-500)
-- Hover: `#2563eb` (blue-600)
+- Primary: `#2563EB` (blue-600) → `bg-primary`
+- Hover: `#1E40AF` (blue-700) → `hover:bg-primary-dark`
+- Light: `#60A5FA` (blue-400) → `bg-primary-light`
 - Urlaub: blue
 - Krank: red
 - Fortbildung: orange

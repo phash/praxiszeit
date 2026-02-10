@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import {
@@ -9,12 +10,32 @@ import {
   FileText,
   LogOut,
   Settings,
+  Menu,
+  X,
 } from 'lucide-react';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  // Close sidebar on escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [sidebarOpen]);
 
   const handleLogout = () => {
     logout();
@@ -40,12 +61,56 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-background flex">
+      {/* Skip to Content Link for Accessibility */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-primary text-white px-4 py-2 rounded-lg z-[100] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+      >
+        Zum Inhalt springen
+      </a>
+
+      {/* Mobile Header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-30">
+        <h1 className="text-xl font-bold text-primary">PraxisZeit</h1>
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="p-2 rounded-lg hover:bg-gray-100 transition"
+          aria-label="Menü öffnen"
+        >
+          <Menu size={24} />
+        </button>
+      </div>
+
+      {/* Backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <aside
+        className={`
+          w-64 bg-white border-r border-gray-200 flex flex-col
+          fixed lg:relative inset-y-0 left-0 z-50
+          transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+      >
         {/* Logo/Title */}
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-primary">PraxisZeit</h1>
-          <p className="text-sm text-gray-500 mt-1">Zeiterfassung</p>
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-primary">PraxisZeit</h1>
+            <p className="text-sm text-gray-500 mt-1">Zeiterfassung</p>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition"
+            aria-label="Menü schließen"
+          >
+            <X size={24} />
+          </button>
         </div>
 
         {/* Navigation */}
@@ -125,8 +190,8 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-8 py-8">
+      <main id="main-content" className="flex-1 overflow-y-auto lg:mt-0 mt-16" tabIndex={-1}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <Outlet />
         </div>
       </main>

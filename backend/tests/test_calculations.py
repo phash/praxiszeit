@@ -24,15 +24,111 @@ def test_get_daily_target_parttime(db):
         role=UserRole.EMPLOYEE,
         weekly_hours=20.0,  # Part-time: 20 hours/week
         vacation_days=15,
+        work_days_per_week=5,
         is_active=True
     )
     db.add(user)
     db.commit()
-    
+
     # 20 hours / 5 days = 4.0 hours per day
     daily_target = calculation_service.get_daily_target(user)
-    
+
     assert daily_target == Decimal('4.0')
+
+
+def test_get_daily_target_with_work_days(db):
+    """Test daily target calculation with different work days per week."""
+    # Full-time: 40h / 5 days = 8h/day
+    user_ft = User(
+        email="fulltime@example.com",
+        password_hash="hash",
+        first_name="Full",
+        last_name="Time",
+        role=UserRole.EMPLOYEE,
+        weekly_hours=40.0,
+        vacation_days=30,
+        work_days_per_week=5,
+        is_active=True
+    )
+    db.add(user_ft)
+    db.commit()
+
+    assert calculation_service.get_daily_target(user_ft) == Decimal('8.00')
+
+    # Part-time: 20h / 2 days = 10h/day
+    user_pt_2d = User(
+        email="parttime2days@example.com",
+        password_hash="hash",
+        first_name="Part",
+        last_name="Time2D",
+        role=UserRole.EMPLOYEE,
+        weekly_hours=20.0,
+        vacation_days=12,
+        work_days_per_week=2,
+        is_active=True
+    )
+    db.add(user_pt_2d)
+    db.commit()
+
+    assert calculation_service.get_daily_target(user_pt_2d) == Decimal('10.00')
+
+    # Part-time: 20h / 5 days = 4h/day
+    user_pt_5d = User(
+        email="parttime5days@example.com",
+        password_hash="hash",
+        first_name="Part",
+        last_name="Time5D",
+        role=UserRole.EMPLOYEE,
+        weekly_hours=20.0,
+        vacation_days=30,
+        work_days_per_week=5,
+        is_active=True
+    )
+    db.add(user_pt_5d)
+    db.commit()
+
+    assert calculation_service.get_daily_target(user_pt_5d) == Decimal('4.00')
+
+
+def test_vacation_acceptance_criteria(db):
+    """Verify specification acceptance criteria."""
+    # AC1: 20h at 2 days → 12 vacation days → 120h budget
+    user1 = User(
+        email="ac1@example.com",
+        password_hash="hash",
+        first_name="AC",
+        last_name="One",
+        role=UserRole.EMPLOYEE,
+        weekly_hours=20.0,
+        vacation_days=12,
+        work_days_per_week=2,
+        is_active=True
+    )
+    db.add(user1)
+    db.commit()
+
+    daily_target1 = calculation_service.get_daily_target(user1)
+    budget1 = Decimal('12') * daily_target1
+    assert budget1 == Decimal('120.00')
+
+    # AC2: 20h at 5 days → 30 vacation days → 120h budget
+    user2 = User(
+        email="ac2@example.com",
+        password_hash="hash",
+        first_name="AC",
+        last_name="Two",
+        role=UserRole.EMPLOYEE,
+        weekly_hours=20.0,
+        vacation_days=30,
+        work_days_per_week=5,
+        is_active=True
+    )
+    db.add(user2)
+    db.commit()
+
+    daily_target2 = calculation_service.get_daily_target(user2)
+    budget2 = Decimal('30') * daily_target2
+    assert budget2 == Decimal('120.00')
 
 
 def test_get_monthly_target_basic(db, test_user):

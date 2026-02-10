@@ -131,14 +131,23 @@ def get_yearly_absences(
 
         total_days = vacation_days + sick_days + training_days + other_days
 
+        # Calculate remaining vacation
+        vacation_account = calculation_service.get_vacation_account(db, user, year)
+        remaining_vacation_days = vacation_account['remaining_days']
+
+        # Calculate cumulative overtime for the year (up to December)
+        overtime_year = calculation_service.get_overtime_account(db, user, year, 12)
+
         results.append(EmployeeYearlyAbsences(
             user_id=str(user.id),
             first_name=user.first_name,
             last_name=user.last_name,
             vacation_days=vacation_days,
+            remaining_vacation_days=float(remaining_vacation_days),
             sick_days=sick_days,
             training_days=training_days,
             other_days=other_days,
+            overtime_year=float(overtime_year),
             total_days=total_days
         ))
 

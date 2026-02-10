@@ -70,7 +70,9 @@ class EmployeeYearlyAbsences(BaseModel):
     first_name: str
     last_name: str
     vacation_days: float
+    remaining_vacation_days: float
     sick_days: float
     training_days: float
     other_days: float
+    overtime_year: float
     total_days: float

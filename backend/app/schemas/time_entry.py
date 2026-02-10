@@ -42,7 +42,7 @@ class TimeEntryUpdate(BaseModel):
 class TimeEntryResponse(TimeEntryBase):
     id: UUID
     user_id: UUID
-    net_hours: Decimal
+    net_hours: float
     created_at: datetime
 
     @field_serializer('id', 'user_id')

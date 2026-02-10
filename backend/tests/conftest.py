@@ -37,6 +37,7 @@ def test_user(db):
         role=UserRole.EMPLOYEE,
         weekly_hours=40.0,
         vacation_days=30,
+        work_days_per_week=5,
         is_active=True
     )
     db.add(user)
@@ -56,6 +57,7 @@ def test_admin(db):
         role=UserRole.ADMIN,
         weekly_hours=40.0,
         vacation_days=30,
+        work_days_per_week=5,
         is_active=True
     )
     db.add(admin)

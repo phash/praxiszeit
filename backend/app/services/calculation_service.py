@@ -35,8 +35,14 @@ def get_weekly_hours_for_date(db: Session, user: User, target_date: date) -> Dec
 
 def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     """
-    Calculate daily target hours based on weekly hours.
-    Assumes 5-day work week.
+    Calculate daily target hours based on weekly hours and work days.
+
+    Formula: weekly_hours / work_days_per_week
+
+    Examples:
+    - 20h at 2 days → 10h/day
+    - 20h at 5 days → 4h/day
+    - 40h at 5 days → 8h/day
 
     Args:
         user: User object
@@ -51,7 +57,13 @@ def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     if weekly_hours is None:
         weekly_hours = Decimal(str(user.weekly_hours))
 
-    return weekly_hours / Decimal('5')
+    # Use work_days_per_week instead of hardcoded 5
+    work_days = Decimal(str(user.work_days_per_week))
+
+    if work_days == 0:  # Safety check
+        return Decimal('0')
+
+    return (weekly_hours / work_days).quantize(Decimal('0.01'))
 
 
 def get_working_days_in_month(db: Session, year: int, month: int) -> int:

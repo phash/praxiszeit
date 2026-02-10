@@ -10,7 +10,7 @@ class AbsenceBase(BaseModel):
     date: date  # Start date
     end_date: Optional[date] = None  # End date for ranges (NULL for single day)
     type: AbsenceType
-    hours: Decimal = Field(..., ge=0, le=24)  # Hours per day
+    hours: float = Field(..., ge=0, le=24)  # Hours per day
     note: Optional[str] = None
 
 
@@ -38,7 +38,7 @@ class AbsenceCalendarEntry(BaseModel):
     user_first_name: str
     user_last_name: str
     type: AbsenceType
-    hours: Decimal
+    hours: float
 
     class Config:
         from_attributes = True
@@ -52,7 +52,7 @@ class TeamAbsenceEntry(BaseModel):
     user_last_name: str
     user_color: str
     type: AbsenceType
-    hours: Decimal
+    hours: float
     note: Optional[str] = None
 
     class Config:
