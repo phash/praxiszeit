@@ -3,6 +3,8 @@ import { format } from 'date-fns';
 import apiClient from '../api/client';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../hooks/useConfirm';
+import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
 
@@ -36,6 +38,7 @@ export default function TimeTracking() {
     end_time?: string;
     overlap?: string;
   }>({});
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   useEffect(() => {
     fetchEntries();
@@ -118,15 +121,22 @@ export default function TimeTracking() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Möchten Sie diesen Eintrag wirklich löschen?')) return;
-    try {
-      await apiClient.delete(`/time-entries/${id}`);
-      toast.success('Zeiteintrag erfolgreich gelöscht');
-      fetchEntries();
-    } catch (error) {
-      toast.error('Fehler beim Löschen');
-    }
+  const handleDelete = (id: string) => {
+    confirm({
+      title: 'Eintrag löschen',
+      message: 'Möchten Sie diesen Zeiteintrag wirklich löschen?',
+      confirmLabel: 'Löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/time-entries/${id}`);
+          toast.success('Zeiteintrag erfolgreich gelöscht');
+          fetchEntries();
+        } catch (error) {
+          toast.error('Fehler beim Löschen');
+        }
+      },
+    });
   };
 
   const resetForm = () => {
@@ -147,6 +157,15 @@ export default function TimeTracking() {
 
   return (
     <div>
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Zeiterfassung</h1>
         <button

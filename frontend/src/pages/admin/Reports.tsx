@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Download, Calendar, FileText } from 'lucide-react';
 import apiClient from '../../api/client';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function Reports() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
+  const toast = useToast();
 
   const handleMonthlyExport = () => {
     // Download Excel file
@@ -29,7 +31,7 @@ export default function Reports() {
       link.remove();
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+      toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
       setLoading(false);
     }
@@ -50,7 +52,7 @@ export default function Reports() {
       link.remove();
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+      toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
       setLoading(false);
     }

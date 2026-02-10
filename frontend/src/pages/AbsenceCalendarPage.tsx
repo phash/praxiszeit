@@ -4,6 +4,8 @@ import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
 import { Plus, X, Trash2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../hooks/useConfirm';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
 import Badge from '../components/Badge';
 import MonthSelector from '../components/MonthSelector';
@@ -47,6 +49,7 @@ export default function AbsenceCalendarPage() {
     hours: 8,
     note: '',
   });
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   useEffect(() => {
     fetchData();
@@ -115,15 +118,22 @@ export default function AbsenceCalendarPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Möchten Sie diese Abwesenheit wirklich löschen?')) return;
-    try {
-      await apiClient.delete(`/absences/${id}`);
-      toast.success('Abwesenheit erfolgreich gelöscht');
-      fetchData();
-    } catch (error) {
-      toast.error('Fehler beim Löschen');
-    }
+  const handleDelete = (id: string) => {
+    confirm({
+      title: 'Abwesenheit löschen',
+      message: 'Möchten Sie diese Abwesenheit wirklich löschen?',
+      confirmLabel: 'Löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/absences/${id}`);
+          toast.success('Abwesenheit erfolgreich gelöscht');
+          fetchData();
+        } catch (error) {
+          toast.error('Fehler beim Löschen');
+        }
+      },
+    });
   };
 
   // Use shared constants
@@ -140,6 +150,15 @@ export default function AbsenceCalendarPage() {
 
   return (
     <div>
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Abwesenheitskalender</h1>
         <button
