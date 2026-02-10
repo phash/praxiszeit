@@ -3,6 +3,8 @@ import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
 import { Plus, Edit2, Key, UserX, Save, X, Clock, Trash2, Copy, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import Badge from '../../components/Badge';
 
@@ -65,6 +67,7 @@ export default function Users() {
 
   const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
   const [resetPasswordData, setResetPasswordData] = useState<{ password: string; userName: string } | null>(null);
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   // Sorting & Filtering
   const [sortField, setSortField] = useState<keyof User | ''>('');
@@ -144,29 +147,43 @@ export default function Users() {
     setShowForm(true);
   };
 
-  const handleResetPassword = async (userId: string, name: string) => {
-    if (!confirm(`Passwort für ${name} zurücksetzen?`)) return;
-    try {
-      const response = await apiClient.post(`/admin/users/${userId}/reset-password`);
-      setResetPasswordData({
-        password: response.data.temporary_password,
-        userName: name
-      });
-      toast.success('Passwort erfolgreich zurückgesetzt');
-    } catch (error) {
-      toast.error('Fehler beim Zurücksetzen des Passworts');
-    }
+  const handleResetPassword = (userId: string, name: string) => {
+    confirm({
+      title: 'Passwort zurücksetzen',
+      message: `Passwort für ${name} wirklich zurücksetzen? Ein neues temporäres Passwort wird generiert.`,
+      confirmLabel: 'Zurücksetzen',
+      variant: 'warning',
+      onConfirm: async () => {
+        try {
+          const response = await apiClient.post(`/admin/users/${userId}/reset-password`);
+          setResetPasswordData({
+            password: response.data.temporary_password,
+            userName: name
+          });
+          toast.success('Passwort erfolgreich zurückgesetzt');
+        } catch (error) {
+          toast.error('Fehler beim Zurücksetzen des Passworts');
+        }
+      },
+    });
   };
 
-  const handleDeactivate = async (userId: string, name: string) => {
-    if (!confirm(`${name} wirklich deaktivieren?`)) return;
-    try {
-      await apiClient.delete(`/admin/users/${userId}`);
-      toast.success(`Benutzer ${name} erfolgreich deaktiviert`);
-      fetchUsers();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Deaktivieren');
-    }
+  const handleDeactivate = (userId: string, name: string) => {
+    confirm({
+      title: 'Benutzer deaktivieren',
+      message: `${name} wirklich deaktivieren? Der Benutzer kann sich danach nicht mehr anmelden.`,
+      confirmLabel: 'Deaktivieren',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/admin/users/${userId}`);
+          toast.success(`Benutzer ${name} erfolgreich deaktiviert`);
+          fetchUsers();
+        } catch (error: any) {
+          toast.error(error.response?.data?.detail || 'Fehler beim Deaktivieren');
+        }
+      },
+    });
   };
 
   const resetForm = () => {
@@ -224,17 +241,24 @@ export default function Users() {
     }
   };
 
-  const handleDeleteHoursChange = async (changeId: string) => {
-    if (!selectedUser || !confirm('Stundenänderung wirklich löschen?')) return;
-
-    try {
-      await apiClient.delete(`/admin/users/${selectedUser.id}/working-hours-changes/${changeId}`);
-      await fetchHoursChanges(selectedUser.id);
-      await fetchUsers(); // Refresh user list to show updated current hours
-      toast.success('Stundenänderung erfolgreich gelöscht');
-    } catch (error) {
-      toast.error('Fehler beim Löschen der Stundenänderung');
-    }
+  const handleDeleteHoursChange = (changeId: string) => {
+    if (!selectedUser) return;
+    confirm({
+      title: 'Stundenänderung löschen',
+      message: 'Möchten Sie diese Stundenänderung wirklich löschen?',
+      confirmLabel: 'Löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/admin/users/${selectedUser.id}/working-hours-changes/${changeId}`);
+          await fetchHoursChanges(selectedUser.id);
+          await fetchUsers();
+          toast.success('Stundenänderung erfolgreich gelöscht');
+        } catch (error) {
+          toast.error('Fehler beim Löschen der Stundenänderung');
+        }
+      },
+    });
   };
 
   // Sorting function
@@ -280,6 +304,15 @@ export default function Users() {
 
   return (
     <div>
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Benutzerverwaltung</h1>
         <button
