@@ -65,7 +65,7 @@ def create_test_employees():
         # Check if user already exists
         existing = db.query(User).filter(User.email == emp_data["email"]).first()
         if existing:
-            print(f"✓ User {emp_data['email']} already exists")
+            print(f"✓ User already exists (skipped)")
             created_users.append(existing)
             continue
 
@@ -85,7 +85,7 @@ def create_test_employees():
         db.commit()
         db.refresh(user)
         created_users.append(user)
-        print(f"✓ Created user: {user.first_name} {user.last_name} ({user.weekly_hours}h/week)")
+        print(f"✓ Created user ({user.weekly_hours}h/week)")
 
     db.close()
     return created_users
@@ -346,12 +346,7 @@ def main():
     print("\n" + "=" * 60)
     print("✓ Test data creation completed!")
     print("=" * 60)
-    print("\nTest users created:")
-    print("- anna.mueller@praxis.de (40h/week, Vollzeit)")
-    print("- sophie.schmidt@praxis.de (20h/week, Teilzeit, war 30h bis Feb)")
-    print("- lisa.wagner@praxis.de (38.5h/week, Vollzeit)")
-    print("- julia.weber@praxis.de (10h/week, Teilzeit Mini)")
-    print("\nAll passwords: test123")
+    print("\n4 test users created (see source code for details)")
     print("=" * 60)
 
 
