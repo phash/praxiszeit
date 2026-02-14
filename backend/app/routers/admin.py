@@ -2,13 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from typing import List, Optional
-import secrets
-import string
 from datetime import date, datetime
 from app.database import get_db
 from app.models import User, TimeEntry, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole
 from app.middleware.auth import require_admin
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, PasswordResetResponse
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
 from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse
@@ -17,12 +15,6 @@ from app.services import auth_service
 from app.services.break_validation_service import validate_daily_break
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
-
-
-def generate_temp_password(length: int = 12) -> str:
-    """Generate a random temporary password."""
-    alphabet = string.ascii_letters + string.digits + "!@#$%&*"
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
 def _create_audit_log(
@@ -111,19 +103,19 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = D
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Create a new user (admin only)."""
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    existing_user = db.query(User).filter(User.username == user_data.username).first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="E-Mail-Adresse bereits vergeben")
+        raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
-    temp_password = generate_temp_password()
     new_user = User(
-        email=user_data.email,
+        username=user_data.username,
+        email=user_data.email or None,
         first_name=user_data.first_name,
         last_name=user_data.last_name,
         role=user_data.role,
         weekly_hours=user_data.weekly_hours,
         vacation_days=user_data.vacation_days,
-        password_hash=auth_service.hash_password(temp_password),
+        password_hash=auth_service.hash_password(user_data.password),
         is_active=True
     )
 
@@ -132,8 +124,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
     db.refresh(new_user)
 
     return UserCreateResponse(
-        user=UserResponse.model_validate(new_user),
-        temporary_password=temp_password
+        user=UserResponse.model_validate(new_user)
     )
 
 
@@ -149,10 +140,10 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    if user_data.email and user_data.email != user.email:
-        existing = db.query(User).filter(User.email == user_data.email).first()
+    if user_data.username and user_data.username != user.username:
+        existing = db.query(User).filter(User.username == user_data.username).first()
         if existing:
-            raise HTTPException(status_code=400, detail="E-Mail-Adresse bereits vergeben")
+            raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
     update_data = user_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -163,21 +154,22 @@ def update_user(
     return user
 
 
-@router.post("/users/{user_id}/reset-password", response_model=PasswordResetResponse)
-def reset_password(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    """Reset user password (admin only)."""
+@router.post("/users/{user_id}/set-password")
+def set_password(
+    user_id: str,
+    body: AdminSetPassword,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Set a new password for a user (admin only)."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    temp_password = generate_temp_password()
-    user.password_hash = auth_service.hash_password(temp_password)
+    user.password_hash = auth_service.hash_password(body.password)
     db.commit()
 
-    return PasswordResetResponse(
-        message=f"Passwort für {user.first_name} {user.last_name} wurde zurückgesetzt",
-        temporary_password=temp_password
-    )
+    return {"message": f"Passwort für {user.first_name} {user.last_name} wurde gesetzt"}
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

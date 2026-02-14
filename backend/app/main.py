@@ -47,10 +47,11 @@ async def lifespan(app: FastAPI):
     # 3. Create admin user if it doesn't exist
     db = SessionLocal()
     try:
-        admin = db.query(User).filter(User.email == settings.ADMIN_EMAIL).first()
+        admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
         if not admin:
-            print(f"👤 Creating admin user: {settings.ADMIN_EMAIL}")
+            print(f"👤 Creating admin user: {settings.ADMIN_USERNAME}")
             admin = User(
+                username=settings.ADMIN_USERNAME,
                 email=settings.ADMIN_EMAIL,
                 password_hash=auth_service.hash_password(settings.ADMIN_PASSWORD),
                 first_name=settings.ADMIN_FIRST_NAME,
@@ -64,7 +65,7 @@ async def lifespan(app: FastAPI):
             db.commit()
             print(f"✅ Admin user created")
         else:
-            print(f"✅ Admin user already exists: {settings.ADMIN_EMAIL}")
+            print(f"✅ Admin user already exists: {settings.ADMIN_USERNAME}")
     finally:
         db.close()
 

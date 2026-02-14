@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer
 from typing import Optional
 from datetime import datetime
 from decimal import Decimal
@@ -7,7 +7,8 @@ from app.models.user import UserRole
 
 
 class UserBase(BaseModel):
-    email: EmailStr
+    username: str = Field(..., min_length=1, max_length=100)
+    email: Optional[str] = None
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     weekly_hours: float = Field(..., ge=0, le=60)
@@ -18,11 +19,13 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
+    password: str = Field(..., min_length=8)
     role: UserRole = UserRole.EMPLOYEE
 
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
+    username: Optional[str] = Field(None, min_length=1, max_length=100)
+    email: Optional[str] = None
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     weekly_hours: Optional[float] = Field(None, ge=0, le=60)
@@ -48,7 +51,7 @@ class UserResponse(UserBase):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
 
 
@@ -68,14 +71,12 @@ class RefreshResponse(BaseModel):
     token_type: str = "bearer"
 
 
-class PasswordResetResponse(BaseModel):
-    message: str
-    temporary_password: str
+class AdminSetPassword(BaseModel):
+    password: str = Field(..., min_length=8)
 
 
 class UserCreateResponse(BaseModel):
     user: UserResponse
-    temporary_password: str
 
 
 class ChangePasswordRequest(BaseModel):

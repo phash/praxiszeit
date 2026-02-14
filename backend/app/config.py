@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "*"  # Comma-separated list, e.g. "http://localhost,https://praxis.example.com"
 
     # Initial Admin
+    ADMIN_USERNAME: str = "admin"
     ADMIN_EMAIL: str
     ADMIN_PASSWORD: str
     ADMIN_FIRST_NAME: str = "Admin"
