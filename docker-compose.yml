@@ -29,6 +29,7 @@ services:
       ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-Praxis}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
     depends_on:
       db:
         condition: service_healthy
