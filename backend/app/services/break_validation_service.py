@@ -36,8 +36,11 @@ def validate_daily_break(
     existing_entries = query.order_by(TimeEntry.start_time).all()
 
     # Build list of all time blocks (existing + the new/updated one)
+    # Skip entries without end_time (open clock-in entries)
     blocks = []
     for entry in existing_entries:
+        if entry.end_time is None:
+            continue
         blocks.append({
             "start": _time_to_minutes(entry.start_time),
             "end": _time_to_minutes(entry.end_time),

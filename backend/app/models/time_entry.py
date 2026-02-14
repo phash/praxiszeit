@@ -16,7 +16,7 @@ class TimeEntry(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)
     start_time = Column(Time, nullable=False)
-    end_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=True)
     break_minutes = Column(Integer, default=0, nullable=False)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

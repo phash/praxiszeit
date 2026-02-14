@@ -3,6 +3,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths 
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
 import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree } from 'lucide-react';
+import StampWidget from '../components/StampWidget';
 
 interface DashboardData {
   year: number;
@@ -130,6 +131,9 @@ export default function Dashboard() {
   return (
     <div>
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
+
+      {/* Stamp Widget */}
+      <StampWidget />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

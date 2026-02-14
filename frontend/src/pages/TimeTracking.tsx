@@ -14,7 +14,7 @@ interface TimeEntry {
   id: string;
   date: string;
   start_time: string;
-  end_time: string;
+  end_time: string | null;
   break_minutes: number;
   net_hours: number;
   note?: string;
@@ -73,9 +73,9 @@ export default function TimeTracking() {
       newErrors.end_time = 'Endzeit muss nach Startzeit liegen';
     }
 
-    // Check for overlapping entries on the same day
+    // Check for overlapping entries on the same day (skip open entries)
     const sameDay = entries.filter(
-      (entry) => entry.date === formData.date && entry.id !== editingId
+      (entry) => entry.date === formData.date && entry.id !== editingId && entry.end_time
     );
 
     const newStart = formData.start_time;
@@ -83,7 +83,7 @@ export default function TimeTracking() {
 
     for (const entry of sameDay) {
       const existingStart = entry.start_time.substring(0, 5);
-      const existingEnd = entry.end_time.substring(0, 5);
+      const existingEnd = entry.end_time!.substring(0, 5);
 
       if (newStart < existingEnd && newEnd > existingStart) {
         newErrors.overlap = `Überschneidung mit bestehendem Eintrag (${existingStart} - ${existingEnd})`;
@@ -98,10 +98,10 @@ export default function TimeTracking() {
     const netMinutes = grossMinutes - formData.break_minutes;
 
     if (netMinutes > 360 && formData.break_minutes < 30) {
-      // Also count gaps between other entries on same day
-      const allBlocks = sameDay.map(e => ({
+      // Also count gaps between other entries on same day (skip open entries)
+      const allBlocks = sameDay.filter(e => e.end_time).map(e => ({
         start: parseInt(e.start_time.substring(0, 2)) * 60 + parseInt(e.start_time.substring(3, 5)),
-        end: parseInt(e.end_time.substring(0, 2)) * 60 + parseInt(e.end_time.substring(3, 5)),
+        end: parseInt(e.end_time!.substring(0, 2)) * 60 + parseInt(e.end_time!.substring(3, 5)),
         brk: e.break_minutes,
       }));
       allBlocks.push({
@@ -157,7 +157,7 @@ export default function TimeTracking() {
     setFormData({
       date: entry.date,
       start_time: entry.start_time.substring(0, 5),
-      end_time: entry.end_time.substring(0, 5),
+      end_time: entry.end_time ? entry.end_time.substring(0, 5) : '17:00',
       break_minutes: entry.break_minutes,
       note: entry.note || '',
     });
@@ -423,7 +423,9 @@ export default function TimeTracking() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{entry.start_time.substring(0, 5)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{entry.end_time.substring(0, 5)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {entry.end_time ? entry.end_time.substring(0, 5) : <span className="text-green-600 font-medium">offen</span>}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.break_minutes} min</td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {entry.net_hours.toFixed(2)} h
@@ -557,7 +559,9 @@ export default function TimeTracking() {
                         </div>
                         <div>
                           <span className="text-gray-500 block">Bis</span>
-                          <p className="font-medium">{entry.end_time.substring(0, 5)}</p>
+                          <p className="font-medium">
+                            {entry.end_time ? entry.end_time.substring(0, 5) : <span className="text-green-600">offen</span>}
+                          </p>
                         </div>
                         <div>
                           <span className="text-gray-500 block">Pause</span>

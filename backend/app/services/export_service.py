@@ -128,7 +128,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         if entry:
             # Time entry exists
             sheet.cell(row=row, column=3).value = entry.start_time.strftime('%H:%M')
-            sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M')
+            sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
             sheet.cell(row=row, column=5).value = entry.break_minutes
             sheet.cell(row=row, column=6).value = float(entry.net_hours)
             sheet.cell(row=row, column=6).number_format = '0.00'
@@ -563,7 +563,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         if entry:
             # Time entry exists
             sheet.cell(row=row, column=3).value = entry.start_time.strftime('%H:%M')
-            sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M')
+            sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
             sheet.cell(row=row, column=5).value = entry.break_minutes
             sheet.cell(row=row, column=6).value = float(entry.net_hours)
             sheet.cell(row=row, column=6).number_format = '0.00'
