@@ -1,15 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy import extract
+from typing import List, Optional
 import secrets
 import string
-from datetime import date
+from datetime import date, datetime
 from app.database import get_db
-from app.models import User, WorkingHoursChange
+from app.models import User, TimeEntry, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, PasswordResetResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
+from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
+from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse
+from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.services import auth_service
+from app.services.break_validation_service import validate_daily_break
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -19,6 +24,73 @@ def generate_temp_password(length: int = 12) -> str:
     alphabet = string.ascii_letters + string.digits + "!@#$%&*"
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
+
+def _create_audit_log(
+    db: Session,
+    time_entry_id,
+    user_id,
+    changed_by,
+    action: str,
+    old_entry=None,
+    new_entry=None,
+    source: str = "manual",
+    change_request_id=None,
+):
+    """Create an audit log entry for a time entry change."""
+    log = TimeEntryAuditLog(
+        time_entry_id=time_entry_id,
+        user_id=user_id,
+        changed_by=changed_by,
+        action=action,
+        source=source,
+        change_request_id=change_request_id,
+    )
+    if old_entry:
+        log.old_date = old_entry.date if hasattr(old_entry, 'date') else old_entry.get('date')
+        log.old_start_time = old_entry.start_time if hasattr(old_entry, 'start_time') else old_entry.get('start_time')
+        log.old_end_time = old_entry.end_time if hasattr(old_entry, 'end_time') else old_entry.get('end_time')
+        log.old_break_minutes = old_entry.break_minutes if hasattr(old_entry, 'break_minutes') else old_entry.get('break_minutes')
+        log.old_note = old_entry.note if hasattr(old_entry, 'note') else old_entry.get('note')
+    if new_entry:
+        log.new_date = new_entry.date if hasattr(new_entry, 'date') else new_entry.get('date')
+        log.new_start_time = new_entry.start_time if hasattr(new_entry, 'start_time') else new_entry.get('start_time')
+        log.new_end_time = new_entry.end_time if hasattr(new_entry, 'end_time') else new_entry.get('end_time')
+        log.new_break_minutes = new_entry.break_minutes if hasattr(new_entry, 'break_minutes') else new_entry.get('break_minutes')
+        log.new_note = new_entry.note if hasattr(new_entry, 'note') else new_entry.get('note')
+    db.add(log)
+    return log
+
+
+def _enrich_cr_response(cr: ChangeRequest, db: Session) -> ChangeRequestResponse:
+    """Add user names to the change request response."""
+    response = ChangeRequestResponse.model_validate(cr)
+    user = db.query(User).filter(User.id == cr.user_id).first()
+    if user:
+        response.user_first_name = user.first_name
+        response.user_last_name = user.last_name
+    if cr.reviewed_by:
+        reviewer = db.query(User).filter(User.id == cr.reviewed_by).first()
+        if reviewer:
+            response.reviewer_first_name = reviewer.first_name
+            response.reviewer_last_name = reviewer.last_name
+    return response
+
+
+def _enrich_audit_response(log: TimeEntryAuditLog, db: Session) -> AuditLogResponse:
+    """Add user names to the audit log response."""
+    response = AuditLogResponse.model_validate(log)
+    user = db.query(User).filter(User.id == log.user_id).first()
+    if user:
+        response.user_first_name = user.first_name
+        response.user_last_name = user.last_name
+    changer = db.query(User).filter(User.id == log.changed_by).first()
+    if changer:
+        response.changed_by_first_name = changer.first_name
+        response.changed_by_last_name = changer.last_name
+    return response
+
+
+# ── User Management ──────────────────────────────────────────────────────
 
 @router.get("/users", response_model=List[UserResponse])
 def list_users(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
@@ -38,19 +110,12 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = D
 
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    """
-    Create a new user (admin only).
-    Generates a temporary password and returns it in the response.
-    """
-    # Check if email already exists
+    """Create a new user (admin only)."""
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="E-Mail-Adresse bereits vergeben")
 
-    # Generate temporary password
     temp_password = generate_temp_password()
-
-    # Create user
     new_user = User(
         email=user_data.email,
         first_name=user_data.first_name,
@@ -84,37 +149,28 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    # Check if email is being changed and if it's already taken
     if user_data.email and user_data.email != user.email:
         existing = db.query(User).filter(User.email == user_data.email).first()
         if existing:
             raise HTTPException(status_code=400, detail="E-Mail-Adresse bereits vergeben")
 
-    # Update fields
     update_data = user_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(user, field, value)
 
     db.commit()
     db.refresh(user)
-
     return user
 
 
 @router.post("/users/{user_id}/reset-password", response_model=PasswordResetResponse)
 def reset_password(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    """
-    Reset user password (admin only).
-    Generates a new temporary password and returns it.
-    """
+    """Reset user password (admin only)."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    # Generate temporary password
     temp_password = generate_temp_password()
-
-    # Update password
     user.password_hash = auth_service.hash_password(temp_password)
     db.commit()
 
@@ -126,10 +182,7 @@ def reset_password(user_id: str, db: Session = Depends(get_db), current_user: Us
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    """
-    Deactivate a user (soft delete, admin only).
-    Cannot deactivate yourself.
-    """
+    """Deactivate a user (soft delete, admin only)."""
     if str(current_user.id) == user_id:
         raise HTTPException(status_code=400, detail="Sie können sich nicht selbst deaktivieren")
 
@@ -139,11 +192,10 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
 
     user.is_active = False
     db.commit()
-
     return None
 
 
-# Working Hours Change Endpoints
+# ── Working Hours Changes ────────────────────────────────────────────────
 
 @router.get("/users/{user_id}/working-hours-changes", response_model=List[WorkingHoursChangeResponse])
 def list_working_hours_changes(
@@ -151,10 +203,7 @@ def list_working_hours_changes(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """
-    Get working hours change history for a user (admin only).
-    Returns all historical changes ordered by effective_from (newest first).
-    """
+    """Get working hours change history for a user (admin only)."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
@@ -162,7 +211,6 @@ def list_working_hours_changes(
     changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id
     ).order_by(WorkingHoursChange.effective_from.desc()).all()
-
     return changes
 
 
@@ -173,16 +221,11 @@ def create_working_hours_change(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """
-    Create a new working hours change for a user (admin only).
-
-    Also updates the user's current weekly_hours if the change is effective today or in the past.
-    """
+    """Create a new working hours change for a user (admin only)."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    # Check if a change already exists for this exact date
     existing = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
         WorkingHoursChange.effective_from == change_data.effective_from
@@ -194,30 +237,24 @@ def create_working_hours_change(
             detail=f"Eine Stundenänderung für den {change_data.effective_from.strftime('%d.%m.%Y')} existiert bereits"
         )
 
-    # Create the change record
     change = WorkingHoursChange(
         user_id=user_id,
         effective_from=change_data.effective_from,
         weekly_hours=change_data.weekly_hours,
         note=change_data.note
     )
-
     db.add(change)
 
-    # Update user's current weekly_hours if this change is effective today or in the past
     if change_data.effective_from <= date.today():
-        # Find the most recent change (including the one we just created)
         most_recent = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == user_id,
             WorkingHoursChange.effective_from <= date.today()
         ).order_by(WorkingHoursChange.effective_from.desc()).first()
-
         if most_recent:
             user.weekly_hours = most_recent.weekly_hours
 
     db.commit()
     db.refresh(change)
-
     return change
 
 
@@ -228,11 +265,7 @@ def delete_working_hours_change(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """
-    Delete a working hours change (admin only).
-
-    Also updates the user's current weekly_hours if necessary.
-    """
+    """Delete a working hours change (admin only)."""
     change = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.id == change_id,
         WorkingHoursChange.user_id == user_id
@@ -242,11 +275,9 @@ def delete_working_hours_change(
         raise HTTPException(status_code=404, detail="Stundenänderung nicht gefunden")
 
     user = db.query(User).filter(User.id == user_id).first()
-
     db.delete(change)
     db.commit()
 
-    # Recalculate user's current weekly_hours
     most_recent = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
         WorkingHoursChange.effective_from <= date.today()
@@ -257,3 +288,265 @@ def delete_working_hours_change(
         db.commit()
 
     return None
+
+
+# ── Change Request Management (Admin) ───────────────────────────────────
+
+@router.get("/change-requests", response_model=List[ChangeRequestResponse])
+def list_all_change_requests(
+    request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
+    user_id: Optional[str] = Query(None, description="Filter by user"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """List all change requests (admin view)."""
+    query = db.query(ChangeRequest)
+    if request_status:
+        query = query.filter(ChangeRequest.status == request_status)
+    if user_id:
+        query = query.filter(ChangeRequest.user_id == user_id)
+    requests = query.order_by(ChangeRequest.created_at.desc()).all()
+    return [_enrich_cr_response(cr, db) for cr in requests]
+
+
+@router.get("/change-requests/{request_id}", response_model=ChangeRequestResponse)
+def get_change_request_admin(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Get a specific change request (admin view)."""
+    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id).first()
+    if not cr:
+        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
+    return _enrich_cr_response(cr, db)
+
+
+@router.post("/change-requests/{request_id}/review", response_model=ChangeRequestResponse)
+def review_change_request(
+    request_id: str,
+    review: ChangeRequestReview,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Approve or reject a change request."""
+    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id).first()
+    if not cr:
+        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
+    if cr.status != ChangeRequestStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Antrag wurde bereits bearbeitet")
+
+    if review.action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="Ungültige Aktion (approve/reject)")
+
+    if review.action == "reject":
+        cr.status = ChangeRequestStatus.REJECTED
+        cr.reviewed_by = current_user.id
+        cr.reviewed_at = datetime.utcnow()
+        cr.rejection_reason = review.rejection_reason
+        db.commit()
+        db.refresh(cr)
+        return _enrich_cr_response(cr, db)
+
+    # Approve: apply the change
+    cr.status = ChangeRequestStatus.APPROVED
+    cr.reviewed_by = current_user.id
+    cr.reviewed_at = datetime.utcnow()
+
+    if cr.request_type == ChangeRequestType.CREATE:
+        # Create new time entry
+        entry = TimeEntry(
+            user_id=cr.user_id,
+            date=cr.proposed_date,
+            start_time=cr.proposed_start_time,
+            end_time=cr.proposed_end_time,
+            break_minutes=cr.proposed_break_minutes or 0,
+            note=cr.proposed_note,
+        )
+        db.add(entry)
+        db.flush()  # Get the entry ID
+        cr.time_entry_id = entry.id
+        _create_audit_log(
+            db, entry.id, cr.user_id, current_user.id,
+            action="create", new_entry=entry,
+            source="change_request", change_request_id=cr.id,
+        )
+
+    elif cr.request_type == ChangeRequestType.UPDATE:
+        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+        if not entry:
+            raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+        # Audit log with old values
+        _create_audit_log(
+            db, entry.id, cr.user_id, current_user.id,
+            action="update", old_entry=entry,
+            new_entry={
+                "date": cr.proposed_date,
+                "start_time": cr.proposed_start_time,
+                "end_time": cr.proposed_end_time,
+                "break_minutes": cr.proposed_break_minutes,
+                "note": cr.proposed_note,
+            },
+            source="change_request", change_request_id=cr.id,
+        )
+        # Apply changes
+        entry.date = cr.proposed_date
+        entry.start_time = cr.proposed_start_time
+        entry.end_time = cr.proposed_end_time
+        entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
+        if cr.proposed_note is not None:
+            entry.note = cr.proposed_note
+
+    elif cr.request_type == ChangeRequestType.DELETE:
+        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+        if entry:
+            _create_audit_log(
+                db, entry.id, cr.user_id, current_user.id,
+                action="delete", old_entry=entry,
+                source="change_request", change_request_id=cr.id,
+            )
+            db.delete(entry)
+
+    db.commit()
+    db.refresh(cr)
+    return _enrich_cr_response(cr, db)
+
+
+# ── Admin Time Entry Management ─────────────────────────────────────────
+
+@router.post("/users/{user_id}/time-entries", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_time_entry(
+    user_id: str,
+    entry_data: TimeEntryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin creates a time entry for an employee."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # Break validation
+    break_error = validate_daily_break(
+        db=db, user_id=user.id, entry_date=entry_data.date,
+        start_time=entry_data.start_time, end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes,
+    )
+    if break_error:
+        raise HTTPException(status_code=400, detail=break_error)
+
+    entry = TimeEntry(
+        user_id=user.id,
+        date=entry_data.date,
+        start_time=entry_data.start_time,
+        end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes,
+        note=entry_data.note,
+    )
+    db.add(entry)
+    db.flush()
+
+    _create_audit_log(
+        db, entry.id, user.id, current_user.id,
+        action="create", new_entry=entry, source="manual",
+    )
+
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+@router.put("/time-entries/{entry_id}", response_model=TimeEntryResponse)
+def admin_update_time_entry(
+    entry_id: str,
+    entry_data: TimeEntryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin updates a time entry with audit logging."""
+    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    # Break validation
+    break_error = validate_daily_break(
+        db=db, user_id=entry.user_id, entry_date=entry_data.date,
+        start_time=entry_data.start_time, end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
+    )
+    if break_error:
+        raise HTTPException(status_code=400, detail=break_error)
+
+    # Create audit log before changing
+    _create_audit_log(
+        db, entry.id, entry.user_id, current_user.id,
+        action="update", old_entry=entry,
+        new_entry={
+            "date": entry_data.date,
+            "start_time": entry_data.start_time,
+            "end_time": entry_data.end_time,
+            "break_minutes": entry_data.break_minutes,
+            "note": entry_data.note,
+        },
+        source="manual",
+    )
+
+    entry.date = entry_data.date
+    entry.start_time = entry_data.start_time
+    entry.end_time = entry_data.end_time
+    entry.break_minutes = entry_data.break_minutes
+    entry.note = entry_data.note
+
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+@router.delete("/time-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_time_entry(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin deletes a time entry with audit logging."""
+    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    _create_audit_log(
+        db, entry.id, entry.user_id, current_user.id,
+        action="delete", old_entry=entry, source="manual",
+    )
+
+    db.delete(entry)
+    db.commit()
+    return None
+
+
+# ── Audit Log ────────────────────────────────────────────────────────────
+
+@router.get("/audit-log", response_model=List[AuditLogResponse])
+def list_audit_log(
+    user_id: Optional[str] = Query(None, description="Filter by affected user"),
+    month: Optional[str] = Query(None, description="Filter by month (YYYY-MM)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """List audit log entries."""
+    query = db.query(TimeEntryAuditLog)
+
+    if user_id:
+        query = query.filter(TimeEntryAuditLog.user_id == user_id)
+
+    if month:
+        try:
+            year, month_num = map(int, month.split('-'))
+            query = query.filter(
+                extract('year', TimeEntryAuditLog.created_at) == year,
+                extract('month', TimeEntryAuditLog.created_at) == month_num,
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
+
+    logs = query.order_by(TimeEntryAuditLog.created_at.desc()).all()
+    return [_enrich_audit_response(log, db) for log in logs]

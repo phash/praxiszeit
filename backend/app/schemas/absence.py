@@ -57,3 +57,10 @@ class TeamAbsenceEntry(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class NextVacationResponse(BaseModel):
+    """Response for the next upcoming vacation countdown."""
+    date: date
+    end_date: Optional[date] = None
+    days_until: int

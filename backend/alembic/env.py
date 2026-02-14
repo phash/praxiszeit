@@ -7,7 +7,7 @@ from alembic import context
 
 # Import Base and models
 from app.database import Base
-from app.models import User, TimeEntry, Absence, PublicHoliday
+from app.models import User, TimeEntry, Absence, PublicHoliday, ChangeRequest, TimeEntryAuditLog
 from app.config import settings
 
 # this is the Alembic Config object, which provides

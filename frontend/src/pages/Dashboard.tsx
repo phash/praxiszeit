@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
-import { TrendingUp, TrendingDown, Calendar, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree } from 'lucide-react';
 
 interface DashboardData {
   year: number;
@@ -44,6 +44,12 @@ interface YearlyAbsenceSummary {
   total_days: number;
 }
 
+interface NextVacation {
+  date: string;
+  end_date?: string;
+  days_until: number;
+}
+
 interface TeamAbsence {
   date: string;
   end_date?: string;
@@ -61,24 +67,27 @@ export default function Dashboard() {
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsenceSummary | null>(null);
   const [teamAbsences, setTeamAbsences] = useState<TeamAbsence[]>([]);
+  const [nextVacation, setNextVacation] = useState<NextVacation | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const currentYear = new Date().getFullYear();
-        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absencesRes] = await Promise.all([
+        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absencesRes, nextVacationRes] = await Promise.all([
           apiClient.get('/dashboard'),
           apiClient.get('/dashboard/overtime'),
           apiClient.get('/dashboard/vacation'),
           apiClient.get('/absences/team/upcoming'),
           apiClient.get('/absences', { params: { year: currentYear } }),
+          apiClient.get('/absences/next-vacation'),
         ]);
 
         setDashboardData(dashboardRes.data);
         setOvertimeAccount(overtimeRes.data);
         setVacationAccount(vacationRes.data);
         setTeamAbsences(teamAbsencesRes.data);
+        setNextVacation(nextVacationRes.data);
 
         // Calculate yearly absence summary
         const absences = absencesRes.data;
@@ -123,7 +132,7 @@ export default function Dashboard() {
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {/* Monthly Balance */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
@@ -204,6 +213,51 @@ export default function Dashboard() {
                   <span className="font-medium">{vacationAccount.used_days.toFixed(1)} Tage</span>
                 </div>
               </div>
+            </>
+          )}
+        </div>
+
+        {/* Vacation Countdown */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-gray-600">Urlaubscountdown</h3>
+            <Palmtree className="text-green-600" size={24} />
+          </div>
+          {nextVacation ? (
+            <>
+              <p className="text-xs text-gray-500 mb-2">
+                {nextVacation.days_until === 0
+                  ? 'Heute beginnt dein Urlaub!'
+                  : `Noch ${nextVacation.days_until === 1 ? '1 Tag' : `${nextVacation.days_until} Tage`}`}
+              </p>
+              <p className="text-3xl font-bold text-green-600">
+                {nextVacation.days_until === 0 ? '🏖️' : nextVacation.days_until}
+                {nextVacation.days_until > 0 && <span className="text-lg ml-1">Tage</span>}
+              </p>
+              <div className="mt-4 space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Ab:</span>
+                  <span className="font-medium">
+                    {format(new Date(nextVacation.date + 'T00:00:00'), 'dd.MM.yyyy', { locale: de })}
+                  </span>
+                </div>
+                {nextVacation.end_date && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Bis:</span>
+                    <span className="font-medium">
+                      {format(new Date(nextVacation.end_date + 'T00:00:00'), 'dd.MM.yyyy', { locale: de })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 mb-2">Kein Urlaub geplant</p>
+              <p className="text-3xl font-bold text-gray-400">--</p>
+              <p className="mt-4 text-sm text-gray-500">
+                Trage Urlaub im Kalender ein
+              </p>
             </>
           )}
         </div>

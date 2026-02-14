@@ -4,11 +4,14 @@ import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import TimeTracking from './pages/TimeTracking';
+import ChangeRequests from './pages/ChangeRequests';
 import AbsenceCalendarPage from './pages/AbsenceCalendarPage';
 import Profile from './pages/Profile';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Users from './pages/admin/Users';
+import AdminChangeRequests from './pages/admin/ChangeRequests';
 import Reports from './pages/admin/Reports';
+import AuditLog from './pages/admin/AuditLog';
 import Layout from './components/Layout';
 
 // Protected Route Component
@@ -51,6 +54,7 @@ function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="time-tracking" element={<TimeTracking />} />
+          <Route path="change-requests" element={<ChangeRequests />} />
           <Route path="absences" element={<AbsenceCalendarPage />} />
           <Route path="profile" element={<Profile />} />
         </Route>
@@ -66,7 +70,9 @@ function App() {
         >
           <Route index element={<AdminDashboard />} />
           <Route path="users" element={<Users />} />
+          <Route path="change-requests" element={<AdminChangeRequests />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="audit-log" element={<AuditLog />} />
         </Route>
 
         {/* Fallback */}
