@@ -4,7 +4,8 @@ import apiClient from '../api/client';
 
 interface User {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   first_name: string;
   last_name: string;
   role: 'admin' | 'employee';
@@ -20,7 +21,7 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   setTokens: (accessToken: string, refreshToken: string, user: User) => void;
   setUser: (user: User) => void;
@@ -34,9 +35,9 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       isAuthenticated: false,
 
-      login: async (email: string, password: string) => {
+      login: async (username: string, password: string) => {
         const response = await apiClient.post('/auth/login', {
-          email,
+          username,
           password,
         });
 

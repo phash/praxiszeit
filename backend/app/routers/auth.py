@@ -12,23 +12,23 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/login", response_model=LoginResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     """
-    Login with email and password.
+    Login with username and password.
     Returns access token (30min) and refresh token (7 days).
     """
-    # Find user by email
-    user = db.query(User).filter(User.email == request.email).first()
+    # Find user by username
+    user = db.query(User).filter(User.username == request.username).first()
 
     if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ungültige E-Mail oder Passwort"
+            detail="Ungültiger Benutzername oder Passwort"
         )
 
     # Verify password
     if not auth_service.verify_password(request.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Ungültige E-Mail oder Passwort"
+            detail="Ungültiger Benutzername oder Passwort"
         )
 
     # Create tokens

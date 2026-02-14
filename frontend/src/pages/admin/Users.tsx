@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, Save, X, Clock, Trash2, Copy, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -10,7 +10,8 @@ import Badge from '../../components/Badge';
 
 interface User {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   first_name: string;
   last_name: string;
   role: 'admin' | 'employee';
@@ -46,7 +47,9 @@ export default function Users() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
+    username: '',
     email: '',
+    password: '',
     first_name: '',
     last_name: '',
     role: 'employee' as 'admin' | 'employee',
@@ -55,7 +58,6 @@ export default function Users() {
     work_days_per_week: 5,
     track_hours: true,
   });
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [showHoursModal, setShowHoursModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
@@ -66,7 +68,8 @@ export default function Users() {
   });
 
   const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
-  const [resetPasswordData, setResetPasswordData] = useState<{ password: string; userName: string } | null>(null);
+  const [setPasswordModal, setSetPasswordModal] = useState<{ userId: string; userName: string } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   // Sorting & Filtering
@@ -118,15 +121,16 @@ export default function Users() {
     e.preventDefault();
     try {
       if (editingId) {
-        await apiClient.put(`/admin/users/${editingId}`, formData);
+        // When editing, send only the fields that can be updated (exclude password)
+        const { password, ...updateData } = formData;
+        await apiClient.put(`/admin/users/${editingId}`, updateData);
         toast.success('Benutzer erfolgreich aktualisiert');
       } else {
-        const response = await apiClient.post('/admin/users', formData);
-        setTempPassword(response.data.temporary_password);
+        await apiClient.post('/admin/users', formData);
         toast.success('Benutzer erfolgreich erstellt');
       }
       fetchUsers();
-      if (!tempPassword) resetForm();
+      resetForm();
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
     }
@@ -135,7 +139,9 @@ export default function Users() {
   const handleEdit = (user: User) => {
     setEditingId(user.id);
     setFormData({
-      email: user.email,
+      username: user.username,
+      email: user.email || '',
+      password: '',
       first_name: user.first_name,
       last_name: user.last_name,
       role: user.role,
@@ -147,25 +153,23 @@ export default function Users() {
     setShowForm(true);
   };
 
-  const handleResetPassword = (userId: string, name: string) => {
-    confirm({
-      title: 'Passwort zurücksetzen',
-      message: `Passwort für ${name} wirklich zurücksetzen? Ein neues temporäres Passwort wird generiert.`,
-      confirmLabel: 'Zurücksetzen',
-      variant: 'warning',
-      onConfirm: async () => {
-        try {
-          const response = await apiClient.post(`/admin/users/${userId}/reset-password`);
-          setResetPasswordData({
-            password: response.data.temporary_password,
-            userName: name
-          });
-          toast.success('Passwort erfolgreich zurückgesetzt');
-        } catch (error) {
-          toast.error('Fehler beim Zurücksetzen des Passworts');
-        }
-      },
-    });
+  const handleSetPassword = (userId: string, name: string) => {
+    setNewPassword('');
+    setSetPasswordModal({ userId, userName: name });
+  };
+
+  const handleSetPasswordSubmit = async () => {
+    if (!setPasswordModal || newPassword.length < 8) return;
+    try {
+      await apiClient.post(`/admin/users/${setPasswordModal.userId}/set-password`, {
+        password: newPassword,
+      });
+      toast.success('Passwort erfolgreich gesetzt');
+      setSetPasswordModal(null);
+      setNewPassword('');
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Fehler beim Setzen des Passworts');
+    }
   };
 
   const handleDeactivate = (userId: string, name: string) => {
@@ -189,9 +193,10 @@ export default function Users() {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setTempPassword(null);
     setFormData({
+      username: '',
       email: '',
+      password: '',
       first_name: '',
       last_name: '',
       role: 'employee',
@@ -279,7 +284,8 @@ export default function Users() {
       return (
         user.first_name.toLowerCase().includes(searchLower) ||
         user.last_name.toLowerCase().includes(searchLower) ||
-        user.email.toLowerCase().includes(searchLower)
+        user.username.toLowerCase().includes(searchLower) ||
+        (user.email || '').toLowerCase().includes(searchLower)
       );
     })
     .sort((a, b) => {
@@ -331,39 +337,42 @@ export default function Users() {
             {editingId ? 'Benutzer bearbeiten' : 'Neue:n Benutzer:in anlegen'}
           </h3>
 
-          {tempPassword && (
-            <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
-              <p className="font-semibold text-yellow-900 mb-2">
-                Benutzer erfolgreich angelegt!
-              </p>
-              <p className="text-yellow-800 mb-2">Temporäres Passwort:</p>
-              <code className="bg-white px-3 py-2 rounded border border-yellow-300 text-lg font-mono">
-                {tempPassword}
-              </code>
-              <p className="text-sm text-yellow-700 mt-2">
-                Bitte notieren Sie dieses Passwort und geben Sie es der betroffenen Person.
-              </p>
-              <button
-                onClick={resetForm}
-                className="mt-4 bg-primary text-white px-4 py-2 rounded-lg"
-              >
-                Schließen
-              </button>
-            </div>
-          )}
-
-          {!tempPassword && (
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">E-Mail</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Benutzername *</label>
+                <input
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  placeholder="benutzername"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">E-Mail (optional)</label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  placeholder="name@example.de"
                 />
               </div>
+              {!editingId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Passwort *</label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                    minLength={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    placeholder="Mind. 8 Zeichen"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Rolle</label>
                 <select
@@ -470,7 +479,6 @@ export default function Users() {
                 </button>
               </div>
             </form>
-          )}
         </div>
       )}
 
@@ -480,7 +488,7 @@ export default function Users() {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="text"
-            placeholder="Suche nach Name oder E-Mail..."
+            placeholder="Suche nach Name oder Benutzername..."
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
@@ -508,11 +516,11 @@ export default function Users() {
                 </th>
                 <th
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
-                  onClick={() => handleSort('email')}
+                  onClick={() => handleSort('username')}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>E-Mail</span>
-                    {sortField === 'email' && (
+                    <span>Benutzername</span>
+                    {sortField === 'username' && (
                       sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
                     )}
                   </div>
@@ -585,7 +593,7 @@ export default function Users() {
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {user.last_name}, {user.first_name}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{user.email}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{user.username}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {user.role === 'admin' ? 'Admin' : 'Mitarbeiter:in'}
                     </td>
@@ -668,9 +676,9 @@ export default function Users() {
                         <Clock size={16} />
                       </button>
                       <button
-                        onClick={() => handleResetPassword(user.id, `${user.first_name} ${user.last_name}`)}
+                        onClick={() => handleSetPassword(user.id, `${user.first_name} ${user.last_name}`)}
                         className="text-orange-600 hover:text-orange-800"
-                        title="Passwort zurücksetzen"
+                        title="Passwort setzen"
                       >
                         <Key size={16} />
                       </button>
@@ -708,7 +716,7 @@ export default function Users() {
                       <p className="font-medium text-gray-900">
                         {user.last_name}, {user.first_name}
                       </p>
-                      <p className="text-sm text-gray-600">{user.email}</p>
+                      <p className="text-sm text-gray-600">{user.username}</p>
                       <div className="flex items-center space-x-2 mt-2">
                         <Badge variant={user.role === 'admin' ? 'info' : 'default'} size="sm">
                           {user.role === 'admin' ? 'Admin' : 'Mitarbeiter'}
@@ -773,10 +781,10 @@ export default function Users() {
                       <Clock size={16} />
                     </button>
                     <button
-                      onClick={() => handleResetPassword(user.id, `${user.first_name} ${user.last_name}`)}
+                      onClick={() => handleSetPassword(user.id, `${user.first_name} ${user.last_name}`)}
                       className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
-                      aria-label="Passwort zurücksetzen"
-                      title="Passwort zurücksetzen"
+                      aria-label="Passwort setzen"
+                      title="Passwort setzen"
                     >
                       <Key size={16} />
                     </button>
@@ -950,17 +958,17 @@ export default function Users() {
         </div>
       )}
 
-      {/* Password Reset Modal */}
-      {resetPasswordData && (
+      {/* Set Password Modal */}
+      {setPasswordModal && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          onClick={() => setResetPasswordData(null)}
+          onClick={() => setSetPasswordModal(null)}
         >
           <FocusTrap
             focusTrapOptions={{
               allowOutsideClick: true,
               escapeDeactivates: true,
-              onDeactivate: () => setResetPasswordData(null),
+              onDeactivate: () => setSetPasswordModal(null),
             }}
           >
             <div
@@ -972,10 +980,10 @@ export default function Users() {
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 id="password-modal-title" className="text-xl font-semibold text-gray-900">
-                  Temporäres Passwort erstellt
+                  Passwort setzen
                 </h3>
                 <button
-                  onClick={() => setResetPasswordData(null)}
+                  onClick={() => setSetPasswordModal(null)}
                   className="text-gray-400 hover:text-gray-600 transition"
                   aria-label="Modal schließen"
                 >
@@ -984,42 +992,42 @@ export default function Users() {
               </div>
 
               <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-2">
-                  Für <strong>{resetPasswordData.userName}</strong>:
+                <p className="text-sm text-gray-600 mb-3">
+                  Neues Passwort für <strong>{setPasswordModal.userName}</strong>:
                 </p>
-                <div className="bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
-                  <code className="text-lg font-mono font-bold text-gray-900 break-all">
-                    {resetPasswordData.password}
-                  </code>
-                </div>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Neues Passwort (mind. 8 Zeichen)"
+                  minLength={8}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newPassword.length >= 8) {
+                      handleSetPasswordSubmit();
+                    }
+                  }}
+                />
+                {newPassword.length > 0 && newPassword.length < 8 && (
+                  <p className="text-xs text-red-500 mt-1">Mindestens 8 Zeichen erforderlich</p>
+                )}
               </div>
 
               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(resetPasswordData.password);
-                  toast.success('Passwort in Zwischenablage kopiert');
-                }}
-                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-4"
+                onClick={handleSetPasswordSubmit}
+                disabled={newPassword.length < 8}
+                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Copy size={18} />
-                <span>In Zwischenablage kopieren</span>
+                <Key size={18} />
+                <span>Passwort setzen</span>
               </button>
 
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-sm text-red-800 flex items-start space-x-2">
-                  <span className="text-red-600 font-bold flex-shrink-0">⚠️</span>
-                  <span>
-                    <strong>Wichtig:</strong> Dieses Passwort wird nur einmal angezeigt!
-                    Bitte notieren Sie es sorgfältig oder kopieren Sie es in die Zwischenablage.
-                  </span>
-                </p>
-              </div>
-
               <button
-                onClick={() => setResetPasswordData(null)}
-                className="w-full mt-4 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition"
+                onClick={() => setSetPasswordModal(null)}
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition"
               >
-                Schließen
+                Abbrechen
               </button>
             </div>
           </FocusTrap>

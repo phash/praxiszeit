@@ -22,6 +22,7 @@ def create_test_employees():
 
     employees = [
         {
+            "username": "anna.mueller",
             "email": "anna.mueller@praxis.de",
             "first_name": "Anna",
             "last_name": "Müller",
@@ -31,6 +32,7 @@ def create_test_employees():
             "track_hours": True
         },
         {
+            "username": "sophie.schmidt",
             "email": "sophie.schmidt@praxis.de",
             "first_name": "Sophie",
             "last_name": "Schmidt",
@@ -40,6 +42,7 @@ def create_test_employees():
             "track_hours": True
         },
         {
+            "username": "lisa.wagner",
             "email": "lisa.wagner@praxis.de",
             "first_name": "Lisa",
             "last_name": "Wagner",
@@ -49,6 +52,7 @@ def create_test_employees():
             "track_hours": True
         },
         {
+            "username": "julia.weber",
             "email": "julia.weber@praxis.de",
             "first_name": "Julia",
             "last_name": "Weber",
@@ -63,7 +67,7 @@ def create_test_employees():
 
     for emp_data in employees:
         # Check if user already exists
-        existing = db.query(User).filter(User.email == emp_data["email"]).first()
+        existing = db.query(User).filter(User.username == emp_data["username"]).first()
         if existing:
             print(f"✓ User already exists (skipped)")
             created_users.append(existing)
@@ -71,6 +75,7 @@ def create_test_employees():
 
         # Create user
         user = User(
+            username=emp_data["username"],
             email=emp_data["email"],
             first_name=emp_data["first_name"],
             last_name=emp_data["last_name"],
@@ -258,7 +263,7 @@ def add_hours_changes():
     db = SessionLocal()
 
     # Sophie Schmidt: Changed from 30h to 20h on March 1st
-    sophie = db.query(User).filter(User.email == "sophie.schmidt@praxis.de").first()
+    sophie = db.query(User).filter(User.username == "sophie.schmidt").first()
     if sophie:
         # Check if change already exists
         existing = db.query(WorkingHoursChange).filter(

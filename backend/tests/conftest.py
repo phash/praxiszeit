@@ -30,6 +30,7 @@ def db():
 def test_user(db):
     """Create a test employee user."""
     user = User(
+        username="testuser",
         email="test@example.com",
         password_hash=auth_service.hash_password("testpassword123"),
         first_name="Test",
@@ -50,6 +51,7 @@ def test_user(db):
 def test_admin(db):
     """Create a test admin user."""
     admin = User(
+        username="adminuser",
         email="admin@example.com",
         password_hash=auth_service.hash_password("adminpassword123"),
         first_name="Admin",

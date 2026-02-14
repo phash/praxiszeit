@@ -54,7 +54,8 @@ interface YearlyAbsences {
 
 interface UserDetails {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   role: 'admin' | 'employee';
   vacation_days: number;
   track_hours: boolean;
@@ -843,12 +844,18 @@ export default function AdminDashboard() {
                           <p className="font-mono text-gray-900">{selectedUserDetails.id}</p>
                         </div>
                         <div>
+                          <p className="text-gray-500 mb-1">Benutzername</p>
+                          <p className="text-gray-900">{selectedUserDetails.username}</p>
+                        </div>
+                        {selectedUserDetails.email && (
+                        <div>
                           <p className="text-gray-500 mb-1">E-Mail</p>
                           <p className="text-gray-900 flex items-center space-x-1">
                             <Mail size={14} className="text-gray-400" />
                             <span>{selectedUserDetails.email}</span>
                           </p>
                         </div>
+                        )}
                         <div>
                           <p className="text-gray-500 mb-1">Rolle</p>
                           <p className="text-gray-900">

@@ -91,7 +91,10 @@ export default function Profile() {
             <h2 className="text-2xl font-semibold text-gray-900">
               {user?.first_name} {user?.last_name}
             </h2>
-            <p className="text-gray-600">{user?.email}</p>
+            <p className="text-gray-600">{user?.username}</p>
+            {user?.email && (
+              <p className="text-gray-500 text-sm">{user.email}</p>
+            )}
           </div>
         </div>
 

@@ -17,6 +17,7 @@ def test_get_daily_target(test_user):
 def test_get_daily_target_parttime(db):
     """Test daily target calculation for part-time employee."""
     user = User(
+        username="parttime",
         email="parttime@example.com",
         password_hash="hash",
         first_name="Part",
@@ -40,6 +41,7 @@ def test_get_daily_target_with_work_days(db):
     """Test daily target calculation with different work days per week."""
     # Full-time: 40h / 5 days = 8h/day
     user_ft = User(
+        username="fulltime",
         email="fulltime@example.com",
         password_hash="hash",
         first_name="Full",
@@ -57,6 +59,7 @@ def test_get_daily_target_with_work_days(db):
 
     # Part-time: 20h / 2 days = 10h/day
     user_pt_2d = User(
+        username="parttime2days",
         email="parttime2days@example.com",
         password_hash="hash",
         first_name="Part",
@@ -74,6 +77,7 @@ def test_get_daily_target_with_work_days(db):
 
     # Part-time: 20h / 5 days = 4h/day
     user_pt_5d = User(
+        username="parttime5days",
         email="parttime5days@example.com",
         password_hash="hash",
         first_name="Part",
@@ -94,6 +98,7 @@ def test_vacation_acceptance_criteria(db):
     """Verify specification acceptance criteria."""
     # AC1: 20h at 2 days → 12 vacation days → 120h budget
     user1 = User(
+        username="ac1",
         email="ac1@example.com",
         password_hash="hash",
         first_name="AC",
@@ -113,6 +118,7 @@ def test_vacation_acceptance_criteria(db):
 
     # AC2: 20h at 5 days → 30 vacation days → 120h budget
     user2 = User(
+        username="ac2",
         email="ac2@example.com",
         password_hash="hash",
         first_name="AC",
