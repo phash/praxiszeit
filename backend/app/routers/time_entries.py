@@ -2,11 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import extract, and_
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, time
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole
 from app.middleware.auth import get_current_user
-from app.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse
+from app.schemas.time_entry import (
+    TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
+    ClockInRequest, ClockOutRequest, ClockStatusResponse,
+)
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break
 
@@ -19,6 +22,133 @@ def _compute_is_editable(entry: TimeEntry, current_user: User) -> bool:
         return True
     return entry.date == date.today()
 
+
+def _get_open_entry(db: Session, user_id) -> Optional[TimeEntry]:
+    """Find an open (clocked-in, no end_time) entry for the user."""
+    return db.query(TimeEntry).filter(
+        TimeEntry.user_id == user_id,
+        TimeEntry.end_time.is_(None),
+    ).first()
+
+
+def _close_stale_entry(db: Session, entry: TimeEntry) -> None:
+    """Close a stale open entry at 23:59 of its date."""
+    entry.end_time = time(23, 59)
+    entry.note = (entry.note or '') + ' [auto-closed]'
+    if entry.note.startswith(' '):
+        entry.note = entry.note.strip()
+    db.commit()
+
+
+# --- Clock endpoints (must be BEFORE /{entry_id} to avoid route conflicts) ---
+
+@router.get("/clock-status", response_model=ClockStatusResponse)
+def get_clock_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get the current clock-in/out status for the authenticated user."""
+    open_entry = _get_open_entry(db, current_user.id)
+
+    if not open_entry:
+        return ClockStatusResponse(is_clocked_in=False)
+
+    # If the open entry is from a previous day, auto-close it
+    if open_entry.date != date.today():
+        _close_stale_entry(db, open_entry)
+        return ClockStatusResponse(is_clocked_in=False)
+
+    # Calculate elapsed minutes
+    now = datetime.now()
+    start_dt = datetime.combine(open_entry.date, open_entry.start_time)
+    elapsed = int((now - start_dt).total_seconds() / 60)
+
+    response_entry = TimeEntryResponse.model_validate(open_entry)
+    response_entry.is_editable = _compute_is_editable(open_entry, current_user)
+
+    return ClockStatusResponse(
+        is_clocked_in=True,
+        current_entry=response_entry,
+        elapsed_minutes=elapsed,
+    )
+
+
+@router.post("/clock-in", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)
+def clock_in(
+    body: ClockInRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Clock in: create a time entry with start_time=now, end_time=NULL."""
+    # Check for existing open entry
+    open_entry = _get_open_entry(db, current_user.id)
+    if open_entry:
+        if open_entry.date != date.today():
+            # Stale entry from a previous day: auto-close
+            _close_stale_entry(db, open_entry)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Bereits eingestempelt. Bitte zuerst ausstempeln.",
+            )
+
+    now = datetime.now()
+    entry = TimeEntry(
+        user_id=current_user.id,
+        date=now.date(),
+        start_time=now.time().replace(second=0, microsecond=0),
+        end_time=None,
+        break_minutes=0,
+        note=body.note,
+    )
+
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    response = TimeEntryResponse.model_validate(entry)
+    response.is_editable = True
+    return response
+
+
+@router.post("/clock-out", response_model=TimeEntryResponse)
+def clock_out(
+    body: ClockOutRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Clock out: set end_time=now and break_minutes on the open entry."""
+    open_entry = _get_open_entry(db, current_user.id)
+
+    if not open_entry:
+        raise HTTPException(
+            status_code=400,
+            detail="Nicht eingestempelt. Bitte zuerst einstempeln.",
+        )
+
+    # If stale entry from a previous day, auto-close and error
+    if open_entry.date != date.today():
+        _close_stale_entry(db, open_entry)
+        raise HTTPException(
+            status_code=400,
+            detail="Offener Eintrag von einem früheren Tag wurde automatisch geschlossen. Bitte neu einstempeln.",
+        )
+
+    now = datetime.now()
+    open_entry.end_time = now.time().replace(second=0, microsecond=0)
+    open_entry.break_minutes = body.break_minutes
+    if body.note:
+        open_entry.note = body.note
+
+    db.commit()
+    db.refresh(open_entry)
+
+    response = TimeEntryResponse.model_validate(open_entry)
+    response.is_editable = _compute_is_editable(open_entry, current_user)
+    return response
+
+
+# --- Standard CRUD endpoints ---
 
 @router.get("/", response_model=List[TimeEntryResponse])
 def list_time_entries(
@@ -185,22 +315,23 @@ def update_time_entry(
     for field, value in update_data.items():
         setattr(entry, field, value)
 
-    # Validate end_time > start_time
-    if entry.end_time <= entry.start_time:
+    # Validate end_time > start_time (only if both are set)
+    if entry.end_time is not None and entry.end_time <= entry.start_time:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
-    # Break validation (ArbZG §4)
-    break_error = validate_daily_break(
-        db=db,
-        user_id=entry.user_id,
-        entry_date=entry.date,
-        start_time=entry.start_time,
-        end_time=entry.end_time,
-        break_minutes=entry.break_minutes,
-        exclude_entry_id=entry.id,
-    )
-    if break_error:
-        raise HTTPException(status_code=400, detail=break_error)
+    # Break validation (ArbZG §4) - only if entry is complete
+    if entry.end_time is not None:
+        break_error = validate_daily_break(
+            db=db,
+            user_id=entry.user_id,
+            entry_date=entry.date,
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+            break_minutes=entry.break_minutes,
+            exclude_entry_id=entry.id,
+        )
+        if break_error:
+            raise HTTPException(status_code=400, detail=break_error)
 
     db.commit()
     db.refresh(entry)

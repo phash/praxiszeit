@@ -39,9 +39,14 @@ class TimeEntryUpdate(BaseModel):
     note: Optional[str] = None
 
 
-class TimeEntryResponse(TimeEntryBase):
+class TimeEntryResponse(BaseModel):
     id: UUID
     user_id: UUID
+    date: date
+    start_time: time
+    end_time: Optional[time] = None
+    break_minutes: int = Field(default=0, ge=0)
+    note: Optional[str] = None
     net_hours: float
     is_editable: bool = True
     created_at: datetime
@@ -52,3 +57,20 @@ class TimeEntryResponse(TimeEntryBase):
 
     class Config:
         from_attributes = True
+
+
+# --- Clock-in/out schemas ---
+
+class ClockInRequest(BaseModel):
+    note: Optional[str] = None
+
+
+class ClockOutRequest(BaseModel):
+    break_minutes: int = Field(default=0, ge=0)
+    note: Optional[str] = None
+
+
+class ClockStatusResponse(BaseModel):
+    is_clocked_in: bool
+    current_entry: Optional[TimeEntryResponse] = None
+    elapsed_minutes: Optional[int] = None
