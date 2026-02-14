@@ -161,13 +161,65 @@ docker compose logs -f backend
 
 ---
 
+## HTTPS aktivieren (optional)
+
+HTTPS verschluesselt die Verbindung zwischen Browser und Server.
+
+### Schritt 1: Zertifikat generieren
+
+```bash
+cd ~/praxiszeit
+chmod +x ssl/generate-cert.sh
+./ssl/generate-cert.sh
+```
+
+Das Skript erkennt automatisch die Server-IP und erstellt ein Zertifikat (10 Jahre gueltig).
+
+### Schritt 2: Mit HTTPS starten
+
+```bash
+docker compose down
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+```
+
+### Schritt 3: Firewall anpassen
+
+```bash
+sudo ufw allow 443/tcp
+```
+
+### Schritt 4: Im Browser oeffnen
+
+```
+https://<SERVER-IP>
+```
+
+Beim **ersten Zugriff** zeigt der Browser eine Warnung ("Nicht sicher" / "NET::ERR_CERT_AUTHORITY_INVALID"). Das ist normal bei selbstsignierten Zertifikaten:
+- **Chrome:** "Erweitert" → "Weiter zu ... (unsicher)"
+- **Firefox:** "Erweitert" → "Risiko akzeptieren und fortfahren"
+- **Edge:** "Erweitert" → "Weiter zu ... (unsicher)"
+
+Diese Warnung erscheint nur einmalig pro Browser/Geraet. Danach ist die Verbindung verschluesselt.
+
+### Zurueck zu HTTP (falls noetig)
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+---
+
 ## Updates einspielen
 
 ```bash
 cd ~/praxiszeit
 docker compose down
 git pull
+# Ohne SSL:
 docker compose up -d --build
+# Mit SSL:
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```
 
 Datenbank-Migrationen werden automatisch beim Start ausgefuehrt.

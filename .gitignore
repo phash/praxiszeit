@@ -44,6 +44,9 @@ yarn-error.log*
 .env.*.local
 .env.production
 
+# SSL Certificates
+ssl/*.pem
+
 # Docker
 *.log
 
