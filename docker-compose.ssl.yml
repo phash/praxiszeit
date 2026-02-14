@@ -1,0 +1,11 @@
+# SSL-Erweiterung fuer PraxisZeit
+# Nutzung: docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+
+services:
+  frontend:
+    ports:
+      - "443:443"
+    volumes:
+      - ./ssl/nginx-ssl.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      - ./ssl/key.pem:/etc/nginx/ssl/key.pem:ro
