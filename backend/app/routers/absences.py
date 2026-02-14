@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from typing import List, Optional
 from datetime import timedelta, date
+from decimal import Decimal
 from app.database import get_db
 from app.models import User, Absence, AbsenceType, UserRole, PublicHoliday
 from app.middleware.auth import get_current_user
@@ -230,7 +231,7 @@ def create_absence(
         vacation_account = calculation_service.get_vacation_account(
             db, current_user, start_date.year
         )
-        total_hours_needed = absence_data.hours * len(dates_to_create)
+        total_hours_needed = Decimal(str(absence_data.hours)) * len(dates_to_create)
         new_remaining = vacation_account['remaining_hours'] - total_hours_needed
 
         if new_remaining < 0:
