@@ -2,14 +2,22 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import extract, and_
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse
 from app.services.holiday_service import is_holiday
+from app.services.break_validation_service import validate_daily_break
 
 router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
+
+
+def _compute_is_editable(entry: TimeEntry, current_user: User) -> bool:
+    """Check if a time entry is editable by the current user."""
+    if current_user.role == UserRole.ADMIN:
+        return True
+    return entry.date == date.today()
 
 
 @router.get("/", response_model=List[TimeEntryResponse])
@@ -47,7 +55,15 @@ def list_time_entries(
             raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
     entries = query.order_by(TimeEntry.date.desc(), TimeEntry.start_time.desc()).all()
-    return entries
+
+    # Add is_editable flag to each entry
+    results = []
+    for entry in entries:
+        response = TimeEntryResponse.model_validate(entry)
+        response.is_editable = _compute_is_editable(entry, current_user)
+        results.append(response)
+
+    return results
 
 
 @router.get("/{entry_id}", response_model=TimeEntryResponse)
@@ -66,7 +82,9 @@ def get_time_entry(
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
 
-    return entry
+    response = TimeEntryResponse.model_validate(entry)
+    response.is_editable = _compute_is_editable(entry, current_user)
+    return response
 
 
 @router.post("/", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)
@@ -76,6 +94,13 @@ def create_time_entry(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new time entry."""
+
+    # Edit protection: employees can only create entries for today
+    if current_user.role != UserRole.ADMIN and entry_data.date != date.today():
+        raise HTTPException(
+            status_code=403,
+            detail="Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden"
+        )
 
     # Check for overlapping entries on the same date
     existing = db.query(TimeEntry).filter(
@@ -89,6 +114,18 @@ def create_time_entry(
             status_code=400,
             detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum"
         )
+
+    # Break validation (ArbZG §4)
+    break_error = validate_daily_break(
+        db=db,
+        user_id=current_user.id,
+        entry_date=entry_data.date,
+        start_time=entry_data.start_time,
+        end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes,
+    )
+    if break_error:
+        raise HTTPException(status_code=400, detail=break_error)
 
     # Warning if it's a weekend or holiday
     weekday = entry_data.date.weekday()
@@ -114,7 +151,9 @@ def create_time_entry(
     db.commit()
     db.refresh(entry)
 
-    return entry
+    response = TimeEntryResponse.model_validate(entry)
+    response.is_editable = _compute_is_editable(entry, current_user)
+    return response
 
 
 @router.put("/{entry_id}", response_model=TimeEntryResponse)
@@ -134,6 +173,13 @@ def update_time_entry(
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
 
+    # Edit protection: employees can only edit today's entries
+    if current_user.role != UserRole.ADMIN and entry.date != date.today():
+        raise HTTPException(
+            status_code=403,
+            detail="Einträge vergangener Tage können nur per Änderungsantrag geändert werden"
+        )
+
     # Update fields
     update_data = entry_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -143,10 +189,25 @@ def update_time_entry(
     if entry.end_time <= entry.start_time:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
+    # Break validation (ArbZG §4)
+    break_error = validate_daily_break(
+        db=db,
+        user_id=entry.user_id,
+        entry_date=entry.date,
+        start_time=entry.start_time,
+        end_time=entry.end_time,
+        break_minutes=entry.break_minutes,
+        exclude_entry_id=entry.id,
+    )
+    if break_error:
+        raise HTTPException(status_code=400, detail=break_error)
+
     db.commit()
     db.refresh(entry)
 
-    return entry
+    response = TimeEntryResponse.model_validate(entry)
+    response.is_editable = _compute_is_editable(entry, current_user)
+    return response
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -164,6 +225,13 @@ def delete_time_entry(
     # Check permissions
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
+
+    # Edit protection: employees can only delete today's entries
+    if current_user.role != UserRole.ADMIN and entry.date != date.today():
+        raise HTTPException(
+            status_code=403,
+            detail="Einträge vergangener Tage können nur per Änderungsantrag gelöscht werden"
+        )
 
     db.delete(entry)
     db.commit()

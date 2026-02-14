@@ -3,7 +3,10 @@ import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Edit2, Trash2, Save, ScrollText } from 'lucide-react';
+import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 
 interface EmployeeReport {
@@ -70,6 +73,21 @@ export default function AdminDashboard() {
   const [employeeAbsences, setEmployeeAbsences] = useState<Absence[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const toast = useToast();
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+
+  // Admin edit state
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [showNewEntryForm, setShowNewEntryForm] = useState(false);
+  const [entryForm, setEntryForm] = useState({
+    date: format(new Date(), 'yyyy-MM-dd'),
+    start_time: '08:00',
+    end_time: '17:00',
+    break_minutes: 0,
+    note: '',
+  });
+  const [auditLog, setAuditLog] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   // Sorting & Filtering for monthly report
   const [sortField, setSortField] = useState<keyof EmployeeReport | ''>('');
@@ -135,6 +153,9 @@ export default function AdminDashboard() {
         }
       });
       setEmployeeAbsences(absencesResponse.data);
+
+      // Fetch audit log
+      fetchAuditForUser(employee.user_id);
     } catch (error) {
       console.error('Failed to fetch employee details:', error);
     } finally {
@@ -147,6 +168,80 @@ export default function AdminDashboard() {
     setSelectedUserDetails(null);
     setEmployeeTimeEntries([]);
     setEmployeeAbsences([]);
+    setEditingEntryId(null);
+    setShowNewEntryForm(false);
+    setAuditLog([]);
+  };
+
+  const fetchAuditForUser = async (userId: string) => {
+    setAuditLoading(true);
+    try {
+      const response = await apiClient.get(`/admin/audit-log?user_id=${userId}&month=${currentMonth}`);
+      setAuditLog(response.data);
+    } catch (error) {
+      console.error('Failed to fetch audit log:', error);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const handleAdminEditEntry = (entry: TimeEntry) => {
+    setEditingEntryId(entry.id);
+    setShowNewEntryForm(false);
+    setEntryForm({
+      date: entry.date,
+      start_time: entry.start_time.substring(0, 5),
+      end_time: entry.end_time.substring(0, 5),
+      break_minutes: entry.break_minutes,
+      note: entry.note || '',
+    });
+  };
+
+  const handleAdminSaveEntry = async () => {
+    if (!selectedEmployee) return;
+    try {
+      if (editingEntryId) {
+        await apiClient.put(`/admin/time-entries/${editingEntryId}`, entryForm);
+        toast.success('Eintrag aktualisiert');
+      } else {
+        await apiClient.post(`/admin/users/${selectedEmployee.user_id}/time-entries`, entryForm);
+        toast.success('Eintrag erstellt');
+      }
+      setEditingEntryId(null);
+      setShowNewEntryForm(false);
+      // Refresh entries
+      const entriesResponse = await apiClient.get('/time-entries', {
+        params: { user_id: selectedEmployee.user_id, month: currentMonth }
+      });
+      setEmployeeTimeEntries(entriesResponse.data);
+      fetchAuditForUser(selectedEmployee.user_id);
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+    }
+  };
+
+  const handleAdminDeleteEntry = (entryId: string) => {
+    confirm({
+      title: 'Eintrag löschen',
+      message: 'Möchten Sie diesen Zeiteintrag löschen? Die Änderung wird im Audit-Log protokolliert.',
+      confirmLabel: 'Löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/admin/time-entries/${entryId}`);
+          toast.success('Eintrag gelöscht');
+          if (selectedEmployee) {
+            const entriesResponse = await apiClient.get('/time-entries', {
+              params: { user_id: selectedEmployee.user_id, month: currentMonth }
+            });
+            setEmployeeTimeEntries(entriesResponse.data);
+            fetchAuditForUser(selectedEmployee.user_id);
+          }
+        } catch (error) {
+          toast.error('Fehler beim Löschen');
+        }
+      },
+    });
   };
 
   // Sorting function
@@ -194,6 +289,15 @@ export default function AdminDashboard() {
 
   return (
     <div>
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Admin-Dashboard</h1>
 
       {/* Stats */}
@@ -805,10 +909,86 @@ export default function AdminDashboard() {
 
                   {/* Time Entries */}
                   <div className="bg-white border border-gray-200 rounded-lg">
-                    <div className="px-4 py-3 border-b border-gray-200 flex items-center space-x-2">
-                      <Clock size={20} className="text-primary" />
-                      <h3 className="font-semibold">Zeiteinträge ({employeeTimeEntries.length})</h3>
+                    <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Clock size={20} className="text-primary" />
+                        <h3 className="font-semibold">Zeiteinträge ({employeeTimeEntries.length})</h3>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowNewEntryForm(true);
+                          setEditingEntryId(null);
+                          setEntryForm({
+                            date: format(new Date(), 'yyyy-MM-dd'),
+                            start_time: '08:00',
+                            end_time: '17:00',
+                            break_minutes: 0,
+                            note: '',
+                          });
+                        }}
+                        className="text-sm bg-primary hover:bg-primary-dark text-white px-3 py-1 rounded-lg flex items-center space-x-1 transition"
+                      >
+                        <Plus size={14} />
+                        <span>Neuer Eintrag</span>
+                      </button>
                     </div>
+
+                    {/* Inline Edit/Create Form */}
+                    {(editingEntryId || showNewEntryForm) && (
+                      <div className="px-4 py-3 bg-blue-50 border-b border-blue-200">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                          <input
+                            type="date"
+                            value={entryForm.date}
+                            onChange={(e) => setEntryForm({ ...entryForm, date: e.target.value })}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                          <input
+                            type="time"
+                            value={entryForm.start_time}
+                            onChange={(e) => setEntryForm({ ...entryForm, start_time: e.target.value })}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                          <input
+                            type="time"
+                            value={entryForm.end_time}
+                            onChange={(e) => setEntryForm({ ...entryForm, end_time: e.target.value })}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            value={entryForm.break_minutes}
+                            onChange={(e) => setEntryForm({ ...entryForm, break_minutes: parseInt(e.target.value) || 0 })}
+                            placeholder="Pause (Min.)"
+                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                          <input
+                            type="text"
+                            value={entryForm.note}
+                            onChange={(e) => setEntryForm({ ...entryForm, note: e.target.value })}
+                            placeholder="Notiz"
+                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                          />
+                        </div>
+                        <div className="flex space-x-2 mt-2">
+                          <button
+                            onClick={handleAdminSaveEntry}
+                            className="text-sm bg-primary hover:bg-primary-dark text-white px-3 py-1 rounded flex items-center space-x-1"
+                          >
+                            <Save size={14} />
+                            <span>Speichern</span>
+                          </button>
+                          <button
+                            onClick={() => { setEditingEntryId(null); setShowNewEntryForm(false); }}
+                            className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded"
+                          >
+                            Abbrechen
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="max-h-60 overflow-y-auto">
                       {employeeTimeEntries.length === 0 ? (
                         <p className="px-4 py-3 text-sm text-gray-500">Keine Zeiteinträge vorhanden</p>
@@ -821,16 +1001,33 @@ export default function AdminDashboard() {
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Bis</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Pause</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Notiz</th>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Aktionen</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
                             {employeeTimeEntries.map((entry) => (
-                              <tr key={entry.id}>
+                              <tr key={entry.id} className="hover:bg-gray-50">
                                 <td className="px-4 py-2 text-sm">{format(new Date(entry.date), 'dd.MM.yyyy')}</td>
-                                <td className="px-4 py-2 text-sm">{entry.start_time}</td>
-                                <td className="px-4 py-2 text-sm">{entry.end_time}</td>
+                                <td className="px-4 py-2 text-sm">{entry.start_time.substring(0, 5)}</td>
+                                <td className="px-4 py-2 text-sm">{entry.end_time.substring(0, 5)}</td>
                                 <td className="px-4 py-2 text-sm">{entry.break_minutes} min</td>
                                 <td className="px-4 py-2 text-sm text-gray-500">{entry.note || '-'}</td>
+                                <td className="px-4 py-2 text-right text-sm space-x-1">
+                                  <button
+                                    onClick={() => handleAdminEditEntry(entry)}
+                                    className="text-primary hover:text-primary-dark"
+                                    title="Bearbeiten"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleAdminDeleteEntry(entry.id)}
+                                    className="text-red-600 hover:text-red-800"
+                                    title="Löschen"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -889,6 +1086,47 @@ export default function AdminDashboard() {
                             ))}
                           </tbody>
                         </table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Audit Log for this employee */}
+                  <div className="bg-white border border-gray-200 rounded-lg">
+                    <div className="px-4 py-3 border-b border-gray-200 flex items-center space-x-2">
+                      <ScrollText size={20} className="text-primary" />
+                      <h3 className="font-semibold">Änderungsprotokoll ({auditLog.length})</h3>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {auditLoading ? (
+                        <p className="px-4 py-3 text-sm text-gray-500">Lade...</p>
+                      ) : auditLog.length === 0 ? (
+                        <p className="px-4 py-3 text-sm text-gray-500">Keine Änderungen protokolliert</p>
+                      ) : (
+                        <div className="divide-y divide-gray-200">
+                          {auditLog.map((log: any) => (
+                            <div key={log.id} className="px-4 py-2 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className={`px-2 py-0.5 rounded font-medium ${
+                                  log.action === 'create' ? 'bg-green-100 text-green-800' :
+                                  log.action === 'update' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-red-100 text-red-800'
+                                }`}>
+                                  {log.action === 'create' ? 'Erstellt' : log.action === 'update' ? 'Geändert' : 'Gelöscht'}
+                                </span>
+                                <span className="text-gray-500">
+                                  {format(new Date(log.created_at), 'dd.MM. HH:mm')} | {log.changed_by_first_name} {log.changed_by_last_name}
+                                  {log.source === 'change_request' && ' (Antrag)'}
+                                </span>
+                              </div>
+                              {log.old_date && (
+                                <p className="text-gray-400 mt-1">Alt: {log.old_date} {log.old_start_time?.substring(0, 5)}-{log.old_end_time?.substring(0, 5)} P:{log.old_break_minutes}min</p>
+                              )}
+                              {log.new_date && (
+                                <p className="text-gray-600">Neu: {log.new_date} {log.new_start_time?.substring(0, 5)}-{log.new_end_time?.substring(0, 5)} P:{log.new_break_minutes}min</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>

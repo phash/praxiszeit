@@ -3,6 +3,8 @@ from app.models.time_entry import TimeEntry
 from app.models.absence import Absence, AbsenceType
 from app.models.public_holiday import PublicHoliday
 from app.models.working_hours_change import WorkingHoursChange
+from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRequestStatus
+from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 __all__ = [
     "User",
@@ -12,4 +14,8 @@ __all__ = [
     "AbsenceType",
     "PublicHoliday",
     "WorkingHoursChange",
+    "ChangeRequest",
+    "ChangeRequestType",
+    "ChangeRequestStatus",
+    "TimeEntryAuditLog",
 ]

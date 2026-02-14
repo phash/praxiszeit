@@ -43,6 +43,7 @@ class TimeEntryResponse(TimeEntryBase):
     id: UUID
     user_id: UUID
     net_hours: float
+    is_editable: bool = True
     created_at: datetime
 
     @field_serializer('id', 'user_id')

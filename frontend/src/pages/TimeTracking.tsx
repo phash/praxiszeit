@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../api/client';
-import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Lock, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
+import { useAuthStore } from '../stores/authStore';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ChangeRequestForm from '../components/ChangeRequestForm';
 import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
 
@@ -16,10 +18,12 @@ interface TimeEntry {
   break_minutes: number;
   net_hours: number;
   note?: string;
+  is_editable: boolean;
 }
 
 export default function TimeTracking() {
   const toast = useToast();
+  const { user } = useAuthStore();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -31,14 +35,21 @@ export default function TimeTracking() {
     date: format(new Date(), 'yyyy-MM-dd'),
     start_time: '08:00',
     end_time: '17:00',
+    break_minutes: 0,
     note: '',
   });
   const [errors, setErrors] = useState<{
     start_time?: string;
     end_time?: string;
     overlap?: string;
+    break_time?: string;
   }>({});
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+
+  // Change request modal
+  const [crModalOpen, setCrModalOpen] = useState(false);
+  const [crEntry, setCrEntry] = useState<TimeEntry | null>(null);
+  const [crType, setCrType] = useState<'create' | 'update' | 'delete'>('update');
 
   useEffect(() => {
     fetchEntries();
@@ -58,7 +69,6 @@ export default function TimeTracking() {
   const validateTimeEntry = (): boolean => {
     const newErrors: typeof errors = {};
 
-    // Validate start < end
     if (formData.start_time >= formData.end_time) {
       newErrors.end_time = 'Endzeit muss nach Startzeit liegen';
     }
@@ -75,10 +85,44 @@ export default function TimeTracking() {
       const existingStart = entry.start_time.substring(0, 5);
       const existingEnd = entry.end_time.substring(0, 5);
 
-      // Check for overlap: new entry starts before existing ends AND new entry ends after existing starts
       if (newStart < existingEnd && newEnd > existingStart) {
         newErrors.overlap = `Überschneidung mit bestehendem Eintrag (${existingStart} - ${existingEnd})`;
         break;
+      }
+    }
+
+    // Client-side break validation
+    const startParts = formData.start_time.split(':').map(Number);
+    const endParts = formData.end_time.split(':').map(Number);
+    const grossMinutes = (endParts[0] * 60 + endParts[1]) - (startParts[0] * 60 + startParts[1]);
+    const netMinutes = grossMinutes - formData.break_minutes;
+
+    if (netMinutes > 360 && formData.break_minutes < 30) {
+      // Also count gaps between other entries on same day
+      const allBlocks = sameDay.map(e => ({
+        start: parseInt(e.start_time.substring(0, 2)) * 60 + parseInt(e.start_time.substring(3, 5)),
+        end: parseInt(e.end_time.substring(0, 2)) * 60 + parseInt(e.end_time.substring(3, 5)),
+        brk: e.break_minutes,
+      }));
+      allBlocks.push({
+        start: startParts[0] * 60 + startParts[1],
+        end: endParts[0] * 60 + endParts[1],
+        brk: formData.break_minutes,
+      });
+      allBlocks.sort((a, b) => a.start - b.start);
+
+      let totalDeclared = allBlocks.reduce((s, b) => s + b.brk, 0);
+      let totalGap = 0;
+      for (let i = 1; i < allBlocks.length; i++) {
+        const gap = allBlocks[i].start - allBlocks[i - 1].end;
+        if (gap > 0) totalGap += gap;
+      }
+      const totalGross = allBlocks.reduce((s, b) => s + (b.end - b.start), 0);
+      const totalNet = totalGross - totalDeclared;
+      const totalEffBreak = totalDeclared + totalGap;
+
+      if (totalNet > 360 && totalEffBreak < 30) {
+        newErrors.break_time = 'Bei >6h Arbeitszeit sind mind. 30 Min. Pause erforderlich (ArbZG §4)';
       }
     }
 
@@ -88,8 +132,7 @@ export default function TimeTracking() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate before submitting
+
     if (!validateTimeEntry()) {
       return;
     }
@@ -115,6 +158,7 @@ export default function TimeTracking() {
       date: entry.date,
       start_time: entry.start_time.substring(0, 5),
       end_time: entry.end_time.substring(0, 5),
+      break_minutes: entry.break_minutes,
       note: entry.note || '',
     });
     setErrors({});
@@ -139,6 +183,18 @@ export default function TimeTracking() {
     });
   };
 
+  const openChangeRequest = (entry: TimeEntry, type: 'update' | 'delete') => {
+    setCrEntry(entry);
+    setCrType(type);
+    setCrModalOpen(true);
+  };
+
+  const openCreateChangeRequest = () => {
+    setCrEntry(null);
+    setCrType('create');
+    setCrModalOpen(true);
+  };
+
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
@@ -146,14 +202,15 @@ export default function TimeTracking() {
       date: format(new Date(), 'yyyy-MM-dd'),
       start_time: '08:00',
       end_time: '17:00',
+      break_minutes: 0,
       note: '',
     });
     setErrors({});
   };
 
   const totalNet = entries.reduce((sum, entry) => sum + entry.net_hours, 0);
-
   const weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  const isAdmin = user?.role === 'admin';
 
   return (
     <div>
@@ -166,15 +223,40 @@ export default function TimeTracking() {
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+
+      {crModalOpen && (
+        <ChangeRequestForm
+          entry={crEntry}
+          requestType={crType}
+          onClose={() => setCrModalOpen(false)}
+          onSuccess={() => {
+            setCrModalOpen(false);
+            toast.success('Änderungsantrag erfolgreich erstellt');
+          }}
+        />
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Zeiterfassung</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-        >
-          {showForm ? <X size={20} /> : <Plus size={20} />}
-          <span>{showForm ? 'Abbrechen' : 'Neuer Eintrag'}</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          {!isAdmin && (
+            <button
+              onClick={openCreateChangeRequest}
+              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+              title="Antrag für vergangenen Tag stellen"
+            >
+              <FileEdit size={20} />
+              <span className="hidden sm:inline">Antrag</span>
+            </button>
+          )}
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+          >
+            {showForm ? <X size={20} /> : <Plus size={20} />}
+            <span>{showForm ? 'Abbrechen' : 'Neuer Eintrag'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Entry Form */}
@@ -183,14 +265,18 @@ export default function TimeTracking() {
           <h3 className="text-lg font-semibold mb-4">
             {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
           </h3>
-          {/* Error Message for Overlapping Times */}
           {errors.overlap && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
               <p className="text-sm text-red-800 font-medium">{errors.overlap}</p>
             </div>
           )}
+          {errors.break_time && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" role="alert">
+              <p className="text-sm text-amber-800 font-medium">{errors.break_time}</p>
+            </div>
+          )}
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
               <input
@@ -251,6 +337,21 @@ export default function TimeTracking() {
               )}
             </div>
             <div>
+              <label htmlFor="break-minutes" className="block text-sm font-medium text-gray-700 mb-1">Pause (Min.)</label>
+              <input
+                id="break-minutes"
+                type="number"
+                min="0"
+                max="480"
+                value={formData.break_minutes}
+                onChange={(e) => {
+                  setFormData({ ...formData, break_minutes: parseInt(e.target.value) || 0 });
+                  setErrors({});
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
               <button
                 type="submit"
@@ -260,7 +361,7 @@ export default function TimeTracking() {
                 <span>Speichern</span>
               </button>
             </div>
-            <div className="md:col-span-2 lg:col-span-4">
+            <div className="md:col-span-2 lg:col-span-5">
               <label className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
               <input
                 type="text"
@@ -292,6 +393,7 @@ export default function TimeTracking() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tag</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Von</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bis</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pause</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Netto</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notiz</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktionen</th>
@@ -300,13 +402,13 @@ export default function TimeTracking() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                     Lade Einträge...
                   </td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                     Keine Einträge für diesen Monat
                   </td>
                 </tr>
@@ -315,32 +417,57 @@ export default function TimeTracking() {
                   const entryDate = new Date(entry.date + 'T00:00:00');
                   const weekday = weekdayNames[entryDate.getDay()];
                   return (
-                    <tr key={entry.id} className="hover:bg-gray-50">
+                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.is_editable ? 'bg-gray-50/50' : ''}`}>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {format(entryDate, 'dd.MM.yyyy')}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{entry.start_time.substring(0, 5)}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{entry.end_time.substring(0, 5)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{entry.break_minutes} min</td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {entry.net_hours.toFixed(2)} h
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.note || '-'}</td>
-                      <td className="px-6 py-4 text-right text-sm space-x-2">
-                        <button
-                          onClick={() => handleEdit(entry)}
-                          className="text-primary hover:text-primary-dark"
-                          aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} bearbeiten`}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(entry.id)}
-                          className="text-red-600 hover:text-red-800"
-                          aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} löschen`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                      <td className="px-6 py-4 text-right text-sm space-x-1">
+                        {entry.is_editable ? (
+                          <>
+                            <button
+                              onClick={() => handleEdit(entry)}
+                              className="text-primary hover:text-primary-dark"
+                              aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} bearbeiten`}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(entry.id)}
+                              className="text-red-600 hover:text-red-800"
+                              aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} löschen`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span title="Gesperrt"><Lock size={14} className="inline text-gray-400 mr-1" /></span>
+                            <button
+                              onClick={() => openChangeRequest(entry, 'update')}
+                              className="text-amber-600 hover:text-amber-800"
+                              aria-label={`Änderungsantrag für ${format(entryDate, 'dd.MM.yyyy')}`}
+                              title="Änderungsantrag stellen"
+                            >
+                              <FileEdit size={16} />
+                            </button>
+                            <button
+                              onClick={() => openChangeRequest(entry, 'delete')}
+                              className="text-red-400 hover:text-red-600"
+                              aria-label={`Löschantrag für ${format(entryDate, 'dd.MM.yyyy')}`}
+                              title="Löschantrag stellen"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );
@@ -348,7 +475,7 @@ export default function TimeTracking() {
               )}
               {entries.length > 0 && (
                 <tr className="bg-gray-50 font-semibold">
-                  <td colSpan={4} className="px-6 py-4 text-sm text-gray-900">Summe</td>
+                  <td colSpan={5} className="px-6 py-4 text-sm text-gray-900">Summe</td>
                   <td className="px-6 py-4 text-sm text-gray-900">{totalNet.toFixed(2)} h</td>
                   <td colSpan={2}></td>
                 </tr>
@@ -374,32 +501,56 @@ export default function TimeTracking() {
                   const entryDate = new Date(entry.date + 'T00:00:00');
                   const weekday = weekdayNames[entryDate.getDay()];
                   return (
-                    <div key={entry.id} className="p-4">
+                    <div key={entry.id} className={`p-4 ${!entry.is_editable ? 'bg-gray-50/50' : ''}`}>
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <p className="font-medium text-gray-900">
                             {format(entryDate, 'dd.MM.yyyy')}
+                            {!entry.is_editable && (
+                              <Lock size={12} className="inline ml-1 text-gray-400" />
+                            )}
                           </p>
                           <p className="text-sm text-gray-500">{weekday}</p>
                         </div>
                         <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleEdit(entry)}
-                            className="p-2 text-primary hover:bg-blue-50 rounded-lg transition"
-                            aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} bearbeiten`}
-                          >
-                            <Edit2 size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(entry.id)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                            aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} löschen`}
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          {entry.is_editable ? (
+                            <>
+                              <button
+                                onClick={() => handleEdit(entry)}
+                                className="p-2 text-primary hover:bg-blue-50 rounded-lg transition"
+                                aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} bearbeiten`}
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(entry.id)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                                aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} löschen`}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => openChangeRequest(entry, 'update')}
+                                className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition"
+                                title="Änderungsantrag"
+                              >
+                                <FileEdit size={18} />
+                              </button>
+                              <button
+                                onClick={() => openChangeRequest(entry, 'delete')}
+                                className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition"
+                                title="Löschantrag"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-3 gap-3 text-sm">
                         <div>
                           <span className="text-gray-500 block">Von</span>
                           <p className="font-medium">{entry.start_time.substring(0, 5)}</p>
@@ -407,6 +558,10 @@ export default function TimeTracking() {
                         <div>
                           <span className="text-gray-500 block">Bis</span>
                           <p className="font-medium">{entry.end_time.substring(0, 5)}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 block">Pause</span>
+                          <p className="font-medium">{entry.break_minutes} min</p>
                         </div>
                       </div>
                       <div className="mt-3 pt-3 border-t border-gray-200">

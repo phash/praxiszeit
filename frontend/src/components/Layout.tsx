@@ -8,6 +8,8 @@ import {
   User,
   Users,
   FileText,
+  FileEdit,
+  ScrollText,
   LogOut,
   Settings,
   Menu,
@@ -49,6 +51,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/time-tracking', label: 'Zeiterfassung', icon: Clock },
+    { path: '/change-requests', label: 'Änderungsanträge', icon: FileEdit },
     { path: '/absences', label: 'Abwesenheiten', icon: Calendar },
     { path: '/profile', label: 'Profil', icon: User },
   ];
@@ -56,7 +59,9 @@ export default function Layout() {
   const adminNavItems = [
     { path: '/admin', label: 'Admin-Dashboard', icon: Settings },
     { path: '/admin/users', label: 'Benutzerverwaltung', icon: Users },
+    { path: '/admin/change-requests', label: 'Änderungsanträge', icon: FileEdit },
     { path: '/admin/reports', label: 'Berichte', icon: FileText },
+    { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText },
   ];
 
   return (

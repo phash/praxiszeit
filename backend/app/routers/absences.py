@@ -6,7 +6,7 @@ from datetime import timedelta, date
 from app.database import get_db
 from app.models import User, Absence, AbsenceType, UserRole, PublicHoliday
 from app.middleware.auth import get_current_user
-from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry
+from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
@@ -125,6 +125,36 @@ def get_team_upcoming_absences(
             ))
 
     return team_absences
+
+
+@router.get("/next-vacation", response_model=Optional[NextVacationResponse])
+def get_next_vacation(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the next upcoming vacation for the current user.
+    Returns the start date, optional end date, and days until the vacation.
+    Returns null if no upcoming vacation is found.
+    """
+    today = date.today()
+
+    next_vacation = db.query(Absence).filter(
+        Absence.user_id == current_user.id,
+        Absence.type == AbsenceType.VACATION,
+        Absence.date >= today
+    ).order_by(Absence.date.asc()).first()
+
+    if not next_vacation:
+        return None
+
+    days_until = (next_vacation.date - today).days
+
+    return NextVacationResponse(
+        date=next_vacation.date,
+        end_date=next_vacation.end_date,
+        days_until=days_until
+    )
 
 
 @router.post("/", response_model=List[AbsenceResponse], status_code=status.HTTP_201_CREATED)
