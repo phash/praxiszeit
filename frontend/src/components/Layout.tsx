@@ -14,6 +14,7 @@ import {
   Settings,
   Menu,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function Layout() {
@@ -63,6 +64,7 @@ export default function Layout() {
     { path: '/admin/reports', label: 'Berichte', icon: FileText },
     { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar },
     { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText },
+    { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle },
   ];
 
   return (
