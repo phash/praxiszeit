@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from contextlib import asynccontextmanager
 import subprocess
 import sys
@@ -97,6 +98,13 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Prometheus metrics
+Instrumentator(
+    should_instrument_requests_inprogress=True,
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True,
+).instrument(app).expose(app)
 
 # Configure CORS
 cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
