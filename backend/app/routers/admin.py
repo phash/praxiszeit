@@ -87,13 +87,16 @@ def _enrich_audit_response(log: TimeEntryAuditLog, db: Session) -> AuditLogRespo
 @router.get("/users", response_model=List[UserResponse])
 def list_users(
     include_inactive: bool = False,
+    include_hidden: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """List users (admin only). By default only active users. Set include_inactive=true to include deactivated."""
+    """List users (admin only). By default only active, visible users."""
     query = db.query(User)
     if not include_inactive:
         query = query.filter(User.is_active == True)
+    if not include_hidden:
+        query = query.filter(User.is_hidden == False)
     users = query.order_by(User.last_name, User.first_name).all()
     return users
 
@@ -211,6 +214,19 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.is_active = True
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/users/{user_id}/toggle-hidden", response_model=UserResponse)
+def toggle_hidden_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Toggle the is_hidden flag for a user (admin only)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    user.is_hidden = not user.is_hidden
     db.commit()
     db.refresh(user)
     return user

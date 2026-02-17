@@ -37,6 +37,7 @@ class User(Base):
     hours_thursday = Column(Numeric(4, 2), nullable=True)
     hours_friday = Column(Numeric(4, 2), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_hidden = Column(Boolean, default=False, nullable=False, server_default='false')  # Hidden from reports/overviews
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

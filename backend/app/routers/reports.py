@@ -30,7 +30,7 @@ def get_monthly_report(
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
     # Get all active users
-    users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
+    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
 
     reports = []
 
@@ -84,7 +84,7 @@ def get_yearly_absences(
     Shows vacation, sick, training, and other days.
     """
     # Get all active users
-    users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
+    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
 
     results = []
 
