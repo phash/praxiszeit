@@ -10,10 +10,17 @@ interface User {
   last_name: string;
   role: 'admin' | 'employee';
   weekly_hours: number;
+  work_days_per_week: number;
   vacation_days: number;
   calendar_color: string;
   is_active: boolean;
   created_at: string;
+  use_daily_schedule: boolean;
+  hours_monday: number | null;
+  hours_tuesday: number | null;
+  hours_wednesday: number | null;
+  hours_thursday: number | null;
+  hours_friday: number | null;
 }
 
 interface AuthState {

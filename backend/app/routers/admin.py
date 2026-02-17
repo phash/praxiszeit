@@ -115,6 +115,15 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         role=user_data.role,
         weekly_hours=user_data.weekly_hours,
         vacation_days=user_data.vacation_days,
+        work_days_per_week=user_data.work_days_per_week,
+        track_hours=user_data.track_hours,
+        calendar_color=user_data.calendar_color,
+        use_daily_schedule=user_data.use_daily_schedule,
+        hours_monday=user_data.hours_monday,
+        hours_tuesday=user_data.hours_tuesday,
+        hours_wednesday=user_data.hours_wednesday,
+        hours_thursday=user_data.hours_thursday,
+        hours_friday=user_data.hours_friday,
         password_hash=auth_service.hash_password(user_data.password),
         is_active=True
     )

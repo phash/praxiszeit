@@ -9,6 +9,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
 import Badge from '../components/Badge';
 import MonthSelector from '../components/MonthSelector';
+import { useAuthStore } from '../stores/authStore';
 
 interface CalendarEntry {
   date: string;
@@ -32,8 +33,31 @@ interface PublicHoliday {
   name: string;
 }
 
+interface AuthUser {
+  use_daily_schedule?: boolean;
+  hours_monday?: number | null;
+  hours_tuesday?: number | null;
+  hours_wednesday?: number | null;
+  hours_thursday?: number | null;
+  hours_friday?: number | null;
+}
+
+function getHoursForDate(user: AuthUser | null | undefined, dateStr: string): number {
+  if (!user || !user.use_daily_schedule) return 8;
+  const weekday = new Date(dateStr + 'T00:00:00').getDay(); // 0=Sun, 1=Mon...
+  const dayMap: Record<number, number | null | undefined> = {
+    1: user.hours_monday,
+    2: user.hours_tuesday,
+    3: user.hours_wednesday,
+    4: user.hours_thursday,
+    5: user.hours_friday,
+  };
+  return dayMap[weekday] ?? 0;
+}
+
 export default function AbsenceCalendarPage() {
   const toast = useToast();
+  const { user: currentUser } = useAuthStore();
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [viewMode, setViewMode] = useState<'month' | 'year'>('month');
@@ -46,7 +70,7 @@ export default function AbsenceCalendarPage() {
     date: format(new Date(), 'yyyy-MM-dd'),
     end_date: '',
     type: 'vacation' as 'vacation' | 'sick' | 'training' | 'other',
-    hours: 8,
+    hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8,
     note: '',
   });
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
@@ -109,7 +133,7 @@ export default function AbsenceCalendarPage() {
       fetchData();
       setShowForm(false);
       setIsDateRange(false);
-      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 8, note: '' });
+      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '' });
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
     }
@@ -269,6 +293,16 @@ export default function AbsenceCalendarPage() {
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
+                {currentUser?.use_daily_schedule && !isDateRange && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Automatisch aus Tagesplan
+                  </p>
+                )}
+                {currentUser?.use_daily_schedule && isDateRange && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Bei Tagesplan werden Stunden pro Tag automatisch berechnet
+                  </p>
+                )}
               </div>
               {!isDateRange && (
                 <div>
@@ -378,7 +412,7 @@ export default function AbsenceCalendarPage() {
                   <div
                     key={dateStr}
                     onClick={() => {
-                      setFormData(prev => ({ ...prev, date: dateStr }));
+                      setFormData(prev => ({ ...prev, date: dateStr, hours: getHoursForDate(currentUser, dateStr) || prev.hours }));
                       setShowForm(true);
                       setIsDateRange(false);
                     }}

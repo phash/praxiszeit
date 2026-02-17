@@ -44,6 +44,9 @@ def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     - 20h at 5 days → 4h/day
     - 40h at 5 days → 8h/day
 
+    NOTE: Does NOT consider per-day schedule. Use get_daily_target_for_date()
+    for date-aware calculations.
+
     Args:
         user: User object
         weekly_hours: Optional weekly hours to use (if None, uses user.weekly_hours)
@@ -64,6 +67,47 @@ def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
         return Decimal('0')
 
     return (weekly_hours / work_days).quantize(Decimal('0.01'))
+
+
+def get_daily_target_for_date(user: User, target_date: date, weekly_hours: Decimal = None) -> Decimal:
+    """
+    Calculate daily target hours for a specific date.
+
+    If user has use_daily_schedule=True, returns the hours configured
+    for that specific weekday (Mon–Fri). Weekends always return 0.
+
+    If use_daily_schedule=False, falls back to get_daily_target().
+
+    Args:
+        user: User object
+        target_date: The specific date
+        weekly_hours: Optional weekly hours override (used when use_daily_schedule=False)
+
+    Returns:
+        Daily target hours as Decimal
+    """
+    if not user.track_hours:
+        return Decimal('0')
+
+    weekday = target_date.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+
+    if weekday >= 5:
+        return Decimal('0')
+
+    if getattr(user, 'use_daily_schedule', False):
+        day_columns = [
+            user.hours_monday,
+            user.hours_tuesday,
+            user.hours_wednesday,
+            user.hours_thursday,
+            user.hours_friday,
+        ]
+        day_hours = day_columns[weekday]
+        if day_hours is None:
+            return Decimal('0')
+        return Decimal(str(day_hours)).quantize(Decimal('0.01'))
+
+    return get_daily_target(user, weekly_hours)
 
 
 def get_working_days_in_month(db: Session, year: int, month: int) -> int:
@@ -150,7 +194,7 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
 
         # Get weekly hours valid for this specific date
         weekly_hours = get_weekly_hours_for_date(db, user, d)
-        daily_target = get_daily_target(user, weekly_hours)
+        daily_target = get_daily_target_for_date(user, d, weekly_hours)
 
         monthly_target += daily_target
 

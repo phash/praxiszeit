@@ -20,6 +20,12 @@ interface User {
   work_days_per_week: number;
   suggested_vacation_days?: number;
   track_hours: boolean;
+  use_daily_schedule: boolean;
+  hours_monday: number | null;
+  hours_tuesday: number | null;
+  hours_wednesday: number | null;
+  hours_thursday: number | null;
+  hours_friday: number | null;
   is_active: boolean;
   created_at: string;
 }
@@ -57,6 +63,12 @@ export default function Users() {
     vacation_days: 30,
     work_days_per_week: 5,
     track_hours: true,
+    use_daily_schedule: false,
+    hours_monday: 8,
+    hours_tuesday: 8,
+    hours_wednesday: 8,
+    hours_thursday: 8,
+    hours_friday: 8,
   });
   const [showHoursModal, setShowHoursModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -149,6 +161,12 @@ export default function Users() {
       vacation_days: user.vacation_days,
       work_days_per_week: user.work_days_per_week || 5,
       track_hours: user.track_hours ?? true,
+      use_daily_schedule: user.use_daily_schedule ?? false,
+      hours_monday: user.hours_monday ?? 8,
+      hours_tuesday: user.hours_tuesday ?? 8,
+      hours_wednesday: user.hours_wednesday ?? 8,
+      hours_thursday: user.hours_thursday ?? 8,
+      hours_friday: user.hours_friday ?? 8,
     });
     setShowForm(true);
   };
@@ -204,6 +222,12 @@ export default function Users() {
       vacation_days: 30,
       work_days_per_week: 5,
       track_hours: true,
+      use_daily_schedule: false,
+      hours_monday: 8,
+      hours_tuesday: 8,
+      hours_wednesday: 8,
+      hours_thursday: 8,
+      hours_friday: 8,
     });
   };
 
@@ -469,6 +493,55 @@ export default function Users() {
                   Stundenzählung aktiv (Soll-Stunden werden berechnet)
                 </label>
               </div>
+
+              {/* Daily Schedule Toggle */}
+              {formData.track_hours && (
+                <div className="md:col-span-2 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <input
+                      type="checkbox"
+                      id="use_daily_schedule"
+                      checked={formData.use_daily_schedule}
+                      onChange={(e) => setFormData({ ...formData, use_daily_schedule: e.target.checked })}
+                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                    />
+                    <label htmlFor="use_daily_schedule" className="text-sm font-medium text-gray-700 cursor-pointer">
+                      Individuelle Tagesstunden (statt einheitlich {(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)
+                    </label>
+                  </div>
+                  {formData.use_daily_schedule && (
+                    <div className="grid grid-cols-5 gap-2">
+                      {(['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const).map((day, idx) => {
+                        const keys = ['hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday'] as const;
+                        const key = keys[idx];
+                        return (
+                          <div key={day} className="text-center">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">{day}</label>
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              max="24"
+                              value={formData[key]}
+                              onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
+                              className="w-full px-2 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-primary text-sm"
+                            />
+                          </div>
+                        );
+                      })}
+                      <div className="col-span-5 text-xs text-gray-500 mt-1">
+                        Summe: {(formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday).toFixed(1)}h/Woche
+                        {formData.weekly_hours > 0 && (formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday) !== formData.weekly_hours && (
+                          <span className="text-amber-600 ml-2">
+                            (Gesamtwochenstunden: {formData.weekly_hours}h – bitte anpassen!)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="md:col-span-2">
                 <button
                   type="submit"
