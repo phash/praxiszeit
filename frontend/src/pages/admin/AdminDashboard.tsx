@@ -589,6 +589,28 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* Year-end vacation warning banner (Q4 only) */}
+        {new Date().getMonth() >= 9 && currentYear === new Date().getFullYear() && (() => {
+          const withRemaining = yearlyAbsences.filter(e => e.remaining_vacation_days > 0);
+          return withRemaining.length > 0 ? (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <p className="font-semibold text-amber-800 mb-2">
+                ⚠️ Jahresend-Warnung: Offene Urlaubstage
+              </p>
+              <p className="text-sm text-amber-700 mb-3">
+                Folgende Mitarbeiter haben noch offene Urlaubstage, die bis 31.03.{currentYear + 1} verfallen:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {withRemaining.map(emp => (
+                  <span key={emp.user_id} className="px-3 py-1 bg-amber-100 border border-amber-300 rounded-full text-sm font-medium text-amber-900">
+                    {emp.first_name} {emp.last_name}: {emp.remaining_vacation_days.toFixed(1)} Tage
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })()}
+
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           {/* Desktop Table */}
           <div className="hidden lg:block overflow-x-auto">

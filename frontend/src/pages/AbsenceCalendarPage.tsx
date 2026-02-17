@@ -146,7 +146,9 @@ export default function AbsenceCalendarPage() {
   const monthEnd = endOfMonth(new Date(year, month - 1));
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-  const weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  // Monday-first calendar (consistent with year view)
+  const weekdayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const firstDayOffset = (monthStart.getDay() + 6) % 7; // 0=Mo, 1=Di, ..., 6=So
 
   return (
     <div>
@@ -339,6 +341,11 @@ export default function AbsenceCalendarPage() {
                 </div>
               ))}
 
+              {/* Offset cells for first day of month */}
+              {Array.from({ length: firstDayOffset }).map((_, i) => (
+                <div key={`offset-${i}`} />
+              ))}
+
               {/* Calendar days */}
               {days.map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd');
@@ -349,9 +356,15 @@ export default function AbsenceCalendarPage() {
                 return (
                   <div
                     key={dateStr}
-                    className={`min-h-24 border rounded-lg p-2 ${
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, date: dateStr }));
+                      setShowForm(true);
+                      setIsDateRange(false);
+                    }}
+                    className={`min-h-24 border rounded-lg p-2 cursor-pointer transition hover:border-primary hover:shadow-sm ${
                       isWeekend || dayHoliday ? 'bg-gray-50' : 'bg-white'
                     }`}
+                    title="Klicken um Abwesenheit einzutragen"
                   >
                     <div className="text-sm font-medium text-gray-600 mb-1">
                       {format(day, 'd')}
@@ -490,10 +503,15 @@ export default function AbsenceCalendarPage() {
                       return (
                         <div
                           key={dateStr}
-                          className={`aspect-square flex flex-col items-center justify-center rounded text-xs ${
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, date: dateStr }));
+                            setShowForm(true);
+                            setIsDateRange(false);
+                          }}
+                          className={`aspect-square flex flex-col items-center justify-center rounded text-xs cursor-pointer hover:ring-1 hover:ring-primary ${
                             isWeekend || dayHoliday ? 'bg-gray-100' : 'bg-white'
                           }`}
-                          title={dayHoliday ? dayHoliday.name : ''}
+                          title={dayHoliday ? dayHoliday.name : 'Klicken um Abwesenheit einzutragen'}
                         >
                           <div className={`font-medium ${dayHoliday ? 'text-gray-500' : 'text-gray-700'}`}>
                             {format(day, 'd')}

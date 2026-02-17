@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_serializer
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
@@ -33,6 +33,7 @@ class UserUpdate(BaseModel):
     work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
     track_hours: Optional[bool] = None
     is_active: Optional[bool] = None
+    vacation_carryover_deadline: Optional[date] = None  # Individual deadline, None = default
 
 
 class UserResponse(UserBase):
@@ -41,6 +42,7 @@ class UserResponse(UserBase):
     is_active: bool
     created_at: datetime
     suggested_vacation_days: int
+    vacation_carryover_deadline: Optional[date] = None
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:

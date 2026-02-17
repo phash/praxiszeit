@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Numeric, Integer, Enum, DateTime
+from sqlalchemy import Column, String, Boolean, Numeric, Integer, Enum, DateTime, Date
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -29,6 +29,7 @@ class User(Base):
     work_days_per_week = Column(Integer, nullable=False, default=5)
     track_hours = Column(Boolean, default=True, nullable=False)  # Track Soll/Ist hours for this user
     calendar_color = Column(String(7), nullable=False, default='#93C5FD')  # Pastel blue default
+    vacation_carryover_deadline = Column(Date, nullable=True)  # NULL = default (March 31 next year)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

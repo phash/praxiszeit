@@ -129,7 +129,24 @@ def get_vacation_account(
 
     account = calculation_service.get_vacation_account(db, target_user, year)
 
+    # Determine carryover deadline (individual or default: March 31 of next year)
+    from datetime import date as date_type
+    if target_user.vacation_carryover_deadline:
+        carryover_deadline = target_user.vacation_carryover_deadline
+    else:
+        carryover_deadline = date_type(year + 1, 3, 31)
+
+    # Warning: remaining vacation AND deadline hasn't passed yet
+    today = date_type.today()
+    has_warning = (
+        float(account["remaining_days"]) > 0
+        and today.year == year  # only warn for current year
+        and today.month >= 10  # Q4 warning
+    )
+
     return VacationAccount(
         year=year,
+        carryover_deadline=carryover_deadline,
+        has_carryover_warning=has_warning,
         **account
     )

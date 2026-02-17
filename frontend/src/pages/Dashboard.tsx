@@ -21,6 +21,8 @@ interface VacationAccount {
   used_days: number;
   remaining_hours: number;
   remaining_days: number;
+  carryover_deadline?: string;
+  has_carryover_warning?: boolean;
 }
 
 interface OvertimeHistory {
@@ -217,6 +219,16 @@ export default function Dashboard() {
                   <span className="font-medium">{vacationAccount.used_days.toFixed(1)} Tage</span>
                 </div>
               </div>
+              {vacationAccount.has_carryover_warning && vacationAccount.carryover_deadline && (
+                <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs text-amber-800 font-medium">
+                    ⚠️ Noch {vacationAccount.remaining_days.toFixed(1)} Urlaubstage offen!
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Bis {new Date(vacationAccount.carryover_deadline + 'T00:00:00').toLocaleDateString('de-DE')} nehmen oder verfällt.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>

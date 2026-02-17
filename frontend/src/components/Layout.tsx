@@ -61,6 +61,7 @@ export default function Layout() {
     { path: '/admin/users', label: 'Benutzerverwaltung', icon: Users },
     { path: '/admin/change-requests', label: 'Änderungsanträge', icon: FileEdit },
     { path: '/admin/reports', label: 'Berichte', icon: FileText },
+    { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar },
     { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText },
   ];
 
