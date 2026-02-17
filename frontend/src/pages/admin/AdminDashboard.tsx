@@ -108,7 +108,7 @@ export default function AdminDashboard() {
       const response = await apiClient.get(`/admin/reports/monthly?month=${currentMonth}`);
       setReport(response.data);
     } catch (error) {
-      console.error('Failed to fetch report:', error);
+      toast.error('Fehler beim Laden des Monatsberichts');
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export default function AdminDashboard() {
       const response = await apiClient.get(`/admin/reports/yearly-absences?year=${currentYear}`);
       setYearlyAbsences(response.data);
     } catch (error) {
-      console.error('Failed to fetch yearly absences:', error);
+      toast.error('Fehler beim Laden der Jahresübersicht');
     } finally {
       setYearlyLoading(false);
     }
@@ -158,7 +158,7 @@ export default function AdminDashboard() {
       // Fetch audit log
       fetchAuditForUser(employee.user_id);
     } catch (error) {
-      console.error('Failed to fetch employee details:', error);
+      toast.error('Fehler beim Laden der Mitarbeiterdaten');
     } finally {
       setDetailLoading(false);
     }
@@ -180,7 +180,7 @@ export default function AdminDashboard() {
       const response = await apiClient.get(`/admin/audit-log?user_id=${userId}&month=${currentMonth}`);
       setAuditLog(response.data);
     } catch (error) {
-      console.error('Failed to fetch audit log:', error);
+      toast.error('Fehler beim Laden des Audit-Logs');
     } finally {
       setAuditLoading(false);
     }

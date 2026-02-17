@@ -17,6 +17,11 @@ from app.services.break_validation_service import validate_daily_break
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
+def _get_field(entry, field: str):
+    """Get a field from either an ORM object or a dict."""
+    return getattr(entry, field, None) if hasattr(entry, field) else entry.get(field)
+
+
 def _create_audit_log(
     db: Session,
     time_entry_id,
@@ -38,17 +43,17 @@ def _create_audit_log(
         change_request_id=change_request_id,
     )
     if old_entry:
-        log.old_date = old_entry.date if hasattr(old_entry, 'date') else old_entry.get('date')
-        log.old_start_time = old_entry.start_time if hasattr(old_entry, 'start_time') else old_entry.get('start_time')
-        log.old_end_time = old_entry.end_time if hasattr(old_entry, 'end_time') else old_entry.get('end_time')
-        log.old_break_minutes = old_entry.break_minutes if hasattr(old_entry, 'break_minutes') else old_entry.get('break_minutes')
-        log.old_note = old_entry.note if hasattr(old_entry, 'note') else old_entry.get('note')
+        log.old_date = _get_field(old_entry, 'date')
+        log.old_start_time = _get_field(old_entry, 'start_time')
+        log.old_end_time = _get_field(old_entry, 'end_time')
+        log.old_break_minutes = _get_field(old_entry, 'break_minutes')
+        log.old_note = _get_field(old_entry, 'note')
     if new_entry:
-        log.new_date = new_entry.date if hasattr(new_entry, 'date') else new_entry.get('date')
-        log.new_start_time = new_entry.start_time if hasattr(new_entry, 'start_time') else new_entry.get('start_time')
-        log.new_end_time = new_entry.end_time if hasattr(new_entry, 'end_time') else new_entry.get('end_time')
-        log.new_break_minutes = new_entry.break_minutes if hasattr(new_entry, 'break_minutes') else new_entry.get('break_minutes')
-        log.new_note = new_entry.note if hasattr(new_entry, 'note') else new_entry.get('note')
+        log.new_date = _get_field(new_entry, 'date')
+        log.new_start_time = _get_field(new_entry, 'start_time')
+        log.new_end_time = _get_field(new_entry, 'end_time')
+        log.new_break_minutes = _get_field(new_entry, 'break_minutes')
+        log.new_note = _get_field(new_entry, 'note')
     db.add(log)
     return log
 

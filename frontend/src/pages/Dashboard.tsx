@@ -3,6 +3,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths 
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
 import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 import StampWidget from '../components/StampWidget';
 
 interface DashboardData {
@@ -64,7 +65,24 @@ interface TeamAbsence {
   note?: string;
 }
 
+const MONTH_NAMES = [
+  'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+  'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
+];
+
+interface AbsenceEntry {
+  type: 'vacation' | 'sick' | 'training' | 'other';
+  hours: number;
+}
+
+function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], dailyTarget: number): number {
+  return absences
+    .filter(a => a.type === type)
+    .reduce((sum, a) => sum + a.hours, 0) / dailyTarget;
+}
+
 export default function Dashboard() {
+  const toast = useToast();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
@@ -93,22 +111,26 @@ export default function Dashboard() {
         setNextVacation(nextVacationRes.data);
 
         // Calculate yearly absence summary
-        const absences = absencesRes.data;
-        const dailyTarget = dashboardRes.data.target_hours /
-          new Date(dashboardRes.data.year, dashboardRes.data.month, 0).getDate();
+        const absences: AbsenceEntry[] = absencesRes.data;
+        const daysInMonth = new Date(dashboardRes.data.year, dashboardRes.data.month, 0).getDate();
+        const dailyTarget = dashboardRes.data.target_hours / daysInMonth;
 
+        const vacation_days = sumAbsenceDays(absences, 'vacation', dailyTarget);
+        const sick_days = sumAbsenceDays(absences, 'sick', dailyTarget);
+        const training_days = sumAbsenceDays(absences, 'training', dailyTarget);
+        const other_days = sumAbsenceDays(absences, 'other', dailyTarget);
         const summary = {
-          vacation_days: absences.filter((a: any) => a.type === 'vacation').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
-          sick_days: absences.filter((a: any) => a.type === 'sick').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
-          training_days: absences.filter((a: any) => a.type === 'training').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
-          other_days: absences.filter((a: any) => a.type === 'other').reduce((sum: number, a: any) => sum + a.hours, 0) / dailyTarget,
-          total_days: 0
+          vacation_days,
+          sick_days,
+          training_days,
+          other_days,
+          total_days: vacation_days + sick_days + training_days + other_days,
         };
-        summary.total_days = summary.vacation_days + summary.sick_days + summary.training_days + summary.other_days;
 
         setYearlyAbsences(summary);
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
+        toast.error('Fehler beim Laden des Dashboards');
       } finally {
         setLoading(false);
       }
@@ -125,10 +147,6 @@ export default function Dashboard() {
     );
   }
 
-  const monthNames = [
-    'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
-    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
-  ];
 
   return (
     <div>
@@ -148,7 +166,7 @@ export default function Dashboard() {
           {dashboardData && (
             <>
               <p className="text-xs text-gray-500 mb-2">
-                {monthNames[dashboardData.month - 1]} {dashboardData.year}
+                {MONTH_NAMES[dashboardData.month - 1]} {dashboardData.year}
               </p>
               <p
                 className={`text-3xl font-bold ${

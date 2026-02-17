@@ -60,7 +60,7 @@ export default function TimeTracking() {
       const response = await apiClient.get(`/time-entries?month=${currentMonth}`);
       setEntries(response.data);
     } catch (error) {
-      console.error('Failed to fetch time entries:', error);
+      toast.error('Fehler beim Laden der Zeiteinträge');
     } finally {
       setLoading(false);
     }

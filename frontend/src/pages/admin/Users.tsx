@@ -129,7 +129,7 @@ export default function Users() {
       });
       setVacationInfo(vacationMap);
     } catch (error) {
-      console.error('Failed to fetch users:', error);
+      toast.error('Fehler beim Laden der Benutzer');
     } finally {
       setLoading(false);
     }
@@ -291,7 +291,7 @@ export default function Users() {
       const response = await apiClient.get(`/admin/users/${userId}/working-hours-changes`);
       setHoursChanges(response.data);
     } catch (error) {
-      console.error('Failed to fetch hours changes:', error);
+      toast.error('Fehler beim Laden der Stundenhistorie');
     }
   };
 

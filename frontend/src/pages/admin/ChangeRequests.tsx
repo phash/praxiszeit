@@ -59,7 +59,7 @@ export default function AdminChangeRequests() {
       const response = await apiClient.get(`/admin/change-requests${params}`);
       setRequests(response.data);
     } catch (error) {
-      console.error('Failed to fetch change requests:', error);
+      toast.error('Fehler beim Laden der Änderungsanträge');
     } finally {
       setLoading(false);
     }

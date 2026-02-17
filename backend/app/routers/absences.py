@@ -245,10 +245,6 @@ def create_absence(
         total_hours_needed = Decimal(str(absence_data.hours)) * len(dates_to_create)
         new_remaining = vacation_account['remaining_hours'] - total_hours_needed
 
-        if new_remaining < 0:
-            # Warning but don't block (could require admin approval in production)
-            pass
-
     # If sick leave with vacation refund: remove overlapping vacation entries first
     refunded_vacation_dates = []
     if absence_data.type == AbsenceType.SICK and absence_data.refund_vacation:

@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from typing import List
-from datetime import datetime
+from decimal import Decimal
 from io import BytesIO
 from app.database import get_db
 from app.models import User, Absence, AbsenceType
@@ -12,6 +12,14 @@ from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, rest_time_service
 
 router = APIRouter(prefix="/api/admin/reports", tags=["admin-reports"], dependencies=[Depends(require_admin)])
+
+
+def _get_active_visible_users(db: Session) -> list:
+    """Return all active, non-hidden users ordered by name."""
+    return db.query(User).filter(
+        User.is_active == True,
+        User.is_hidden == False
+    ).order_by(User.last_name, User.first_name).all()
 
 
 @router.get("/monthly", response_model=List[EmployeeMonthlyReport])
@@ -29,8 +37,7 @@ def get_monthly_report(
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
-    # Get all active users
-    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
+    users = _get_active_visible_users(db)
 
     reports = []
 
@@ -83,8 +90,7 @@ def get_yearly_absences(
     Get yearly absence summary for all employees.
     Shows vacation, sick, training, and other days.
     """
-    # Get all active users
-    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
+    users = _get_active_visible_users(db)
 
     results = []
 
