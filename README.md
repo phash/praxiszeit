@@ -18,6 +18,7 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 ### Für Admins
 - ✅ **Benutzerverwaltung** mit Rollenverwaltung
 - ✅ **Arbeitszeiten-Historie** (Stundenänderungen nachverfolgen)
+- ✅ **Individuelle Tagesplanung** (Stunden je Wochentag konfigurierbar)
 - ✅ **Urlaubsübersicht** (Budget, Verbrauch, Resturlaub pro MA)
 - ✅ **Kalenderfarben** für Abwesenheitskalender
 - ✅ **Admin-Dashboard** mit Team-Übersicht
@@ -27,6 +28,8 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
   - Jahresreport Detailliert (365 Tage pro MA)
 - ✅ **Abwesenheitskalender** für das ganze Team
 - ✅ **Änderungsanträge** genehmigen/ablehnen
+- ✅ **Fehler-Monitoring** (Backend-Fehler mit Status und GitHub-Integration)
+- ✅ **Änderungsprotokoll** (Audit-Log aller Systemaktionen)
 
 ### Weitere Features
 - 📱 **PWA** - Installierbar als App auf Smartphone und Desktop
@@ -127,13 +130,14 @@ Die Stempeluhr erscheint oben auf dem Dashboard und ermöglicht schnelles Ein-/A
 
 ### Struktur
 
-- **users** - Benutzer mit Rollen, Wochenstunden, Urlaubsanspruch, Kalenderfarbe
+- **users** - Benutzer mit Rollen, Wochenstunden, Urlaubsanspruch, Kalenderfarbe, Tagesplanung
 - **working_hours_changes** - Historie von Stundenänderungen
 - **time_entries** - Zeiteinträge (Start, Ende nullable für Stempeluhr, Pausen)
 - **absences** - Abwesenheiten mit Typ und optional Zeitraum
 - **public_holidays** - Bayerische Feiertage
 - **change_requests** - Änderungsanträge für vergangene Einträge
 - **time_entry_audit_logs** - Audit-Logs für Zeiteinträge
+- **error_logs** - Backend-Fehler mit Deduplizierung, Status und GitHub-Verlinkung
 
 ### Migrationen
 
@@ -159,6 +163,11 @@ docker-compose exec backend alembic revision --autogenerate -m "description"
 - `007` - Add change_requests
 - `008` - Add time_entry_audit_logs
 - `009` - Make end_time nullable (Stempeluhr)
+- `010` - Add username field, make email optional
+- `011` - Add clock_in_note to time_entries
+- `012` - Add absence_type_other_label
+- `013` - Add daily schedule columns to users (use_daily_schedule, hours_monday–friday)
+- `014` - Add error_logs table
 
 ## Entwicklung
 
@@ -241,8 +250,20 @@ Die vollständige API-Dokumentation ist verfügbar unter:
 1. Server mit Docker & Docker Compose vorbereiten
 2. Repository klonen
 3. `.env` mit Produktions-Credentials erstellen
-4. SSL/TLS mit nginx reverse proxy einrichten
-5. Container starten: `docker-compose up -d`
+4. SSL-Zertifikate unter `ssl/` ablegen (`cert.pem`, `key.pem`, `nginx-ssl.conf`)
+5. Container mit SSL starten:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+```
+
+**Updates einspielen:**
+```bash
+git pull
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+```
+
+Datenbank-Migrationen werden automatisch beim Start ausgeführt.
 
 ### Backup
 
@@ -258,7 +279,11 @@ docker-compose exec -T db psql -U praxiszeit praxiszeit < backup.sql
 
 ## Support & Dokumentation
 
-- **CLAUDE.md** - Umfangreiche Projekt-Dokumentation
+- **CLAUDE.md** - Umfangreiche Projekt-Dokumentation für Entwickler
+- **PraxisZeit-Mitarbeiter-Handbuch.pdf** - Benutzerhandbuch für Mitarbeiter
+- **PraxisZeit-Admin-Handbuch.pdf** - Technisches Handbuch für Administratoren
+- **PraxisZeit-Cheat-Sheet.pdf** - Schnellreferenz für den Schreibtisch
+- **ARC42.md** - Architekturdokumentation (ARC42-Format)
 - **API Docs** - http://localhost:8000/docs
 - **GitHub Issues** - https://github.com/phash/praxiszeit/issues
 

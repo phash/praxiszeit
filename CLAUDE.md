@@ -948,18 +948,30 @@ nano .env
 - `ADMIN_EMAIL/PASSWORD`: Initiale Admin-Zugangsdaten
 - `CORS_ORIGINS`: Komma-getrennte Liste erlaubter Origins (z.B. `https://praxis.example.com`)
 
-4. **Container starten:**
+4. **SSL-Zertifikate ablegen** (für Produktion):
+```
+ssl/
+├── nginx-ssl.conf   # Nginx mit HTTPS-Konfiguration
+├── cert.pem         # SSL-Zertifikat
+└── key.pem          # Privater Schlüssel
+```
+
+5. **Container starten:**
 ```bash
+# Produktion (mit SSL):
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+
+# Lokal (ohne SSL):
 docker-compose up -d
 ```
 
-5. **Logs prüfen:**
+6. **Logs prüfen:**
 ```bash
 docker-compose logs -f
 # Sollte zeigen: Migrations, Admin-Erstellung, Holiday-Sync
 ```
 
-6. **Nginx Reverse Proxy (empfohlen):**
+7. **Nginx Reverse Proxy (empfohlen):**
 ```nginx
 server {
     listen 80;
@@ -979,11 +991,17 @@ server {
 }
 ```
 
-### Updates deployen
+### Updates deployen (Produktion mit SSL)
 
 ```bash
 git pull
-docker-compose down
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+```
+
+### Updates deployen (lokal ohne SSL)
+
+```bash
+git pull
 docker-compose up -d --build
 ```
 
