@@ -9,3 +9,7 @@ services:
       - ./ssl/nginx-ssl.conf:/etc/nginx/conf.d/default.conf:ro
       - ./ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
       - ./ssl/key.pem:/etc/nginx/ssl/key.pem:ro
+
+  grafana:
+    environment:
+      GF_SERVER_ROOT_URL: https://${SERVER_DOMAIN:-localhost}/grafana/
