@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -27,6 +27,7 @@ interface User {
   hours_thursday: number | null;
   hours_friday: number | null;
   is_active: boolean;
+  is_hidden: boolean;
   created_at: string;
 }
 
@@ -89,10 +90,11 @@ export default function Users() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterText, setFilterText] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     fetchUsers();
-  }, [showInactive]);
+  }, [showInactive, showHidden]);
 
   useEffect(() => {
     if (formData.work_days_per_week > 0) {
@@ -103,9 +105,10 @@ export default function Users() {
 
   const fetchUsers = async () => {
     try {
-      const response = await apiClient.get('/admin/users', {
-        params: showInactive ? { include_inactive: true } : {},
-      });
+      const params: Record<string, boolean> = {};
+      if (showInactive) params.include_inactive = true;
+      if (showHidden) params.include_hidden = true;
+      const response = await apiClient.get('/admin/users', { params });
       setUsers(response.data);
 
       // Fetch vacation info for each user
@@ -224,6 +227,26 @@ export default function Users() {
           fetchUsers();
         } catch (error: any) {
           toast.error(error.response?.data?.detail || 'Fehler beim Reaktivieren');
+        }
+      },
+    });
+  };
+
+  const handleToggleHidden = (userId: string, name: string, currentlyHidden: boolean) => {
+    confirm({
+      title: currentlyHidden ? 'Benutzer sichtbar schalten' : 'Benutzer ausblenden',
+      message: currentlyHidden
+        ? `${name} wieder in Berichten und Übersichten anzeigen?`
+        : `${name} aus Berichten und Übersichten ausblenden? Der Benutzer kann sich weiterhin anmelden.`,
+      confirmLabel: currentlyHidden ? 'Sichtbar schalten' : 'Ausblenden',
+      variant: currentlyHidden ? 'warning' : 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.post(`/admin/users/${userId}/toggle-hidden`);
+          toast.success(currentlyHidden ? `${name} ist jetzt sichtbar` : `${name} ausgeblendet`);
+          fetchUsers();
+        } catch (error: any) {
+          toast.error(error.response?.data?.detail || 'Fehler beim Ändern der Sichtbarkeit');
         }
       },
     });
@@ -377,6 +400,15 @@ export default function Users() {
               className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
             />
             Inaktive anzeigen
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(e) => setShowHidden(e.target.checked)}
+              className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+            />
+            Ausgeblendete anzeigen
           </label>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -696,7 +728,7 @@ export default function Users() {
                 </tr>
               ) : (
                 filteredAndSortedUsers.map((user) => (
-                  <tr key={user.id} className={`hover:bg-gray-50 ${!user.is_active ? 'opacity-50' : ''}`}>
+                  <tr key={user.id} className={`hover:bg-gray-50 ${!user.is_active ? 'opacity-50' : ''} ${user.is_hidden ? 'bg-gray-50/70' : ''}`}>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {user.last_name}, {user.first_name}
                     </td>
@@ -761,11 +793,18 @@ export default function Users() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      {user.is_active ? (
-                        <span className="text-green-600">Aktiv</span>
-                      ) : (
-                        <span className="text-red-600">Inaktiv</span>
-                      )}
+                      <div className="flex flex-col gap-1">
+                        {user.is_active ? (
+                          <span className="text-green-600">Aktiv</span>
+                        ) : (
+                          <span className="text-red-600">Inaktiv</span>
+                        )}
+                        {user.is_hidden && (
+                          <span className="text-gray-400 text-xs flex items-center gap-1">
+                            <EyeOff size={11} /> Ausgeblendet
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-right text-sm space-x-3">
                       <button
@@ -806,6 +845,13 @@ export default function Users() {
                           <UserCheck size={16} />
                         </button>
                       )}
+                      <button
+                        onClick={() => handleToggleHidden(user.id, `${user.first_name} ${user.last_name}`, user.is_hidden)}
+                        className={user.is_hidden ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-700'}
+                        title={user.is_hidden ? 'Sichtbar schalten' : 'Ausblenden'}
+                      >
+                        {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -827,20 +873,25 @@ export default function Users() {
           ) : (
             <div className="divide-y divide-gray-200">
               {filteredAndSortedUsers.map((user) => (
-                <div key={user.id} className={`p-4 ${!user.is_active ? 'opacity-50' : ''}`}>
+                <div key={user.id} className={`p-4 ${!user.is_active ? 'opacity-50' : ''} ${user.is_hidden ? 'bg-gray-50/70' : ''}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">
                         {user.last_name}, {user.first_name}
                       </p>
                       <p className="text-sm text-gray-600">{user.username}</p>
-                      <div className="flex items-center space-x-2 mt-2">
+                      <div className="flex items-center space-x-2 mt-2 flex-wrap gap-1">
                         <Badge variant={user.role === 'admin' ? 'info' : 'default'} size="sm">
                           {user.role === 'admin' ? 'Admin' : 'Mitarbeiter'}
                         </Badge>
                         <Badge variant={user.is_active ? 'success' : 'error'} size="sm">
                           {user.is_active ? 'Aktiv' : 'Inaktiv'}
                         </Badge>
+                        {user.is_hidden && (
+                          <Badge variant="default" size="sm">
+                            <span className="flex items-center gap-1"><EyeOff size={10} /> Ausgeblendet</span>
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -924,6 +975,14 @@ export default function Users() {
                         <UserCheck size={16} />
                       </button>
                     )}
+                    <button
+                      onClick={() => handleToggleHidden(user.id, `${user.first_name} ${user.last_name}`, user.is_hidden)}
+                      className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition"
+                      aria-label={user.is_hidden ? 'Sichtbar schalten' : 'Ausblenden'}
+                      title={user.is_hidden ? 'Sichtbar schalten' : 'Ausblenden'}
+                    >
+                      {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
+                    </button>
                   </div>
                 </div>
               ))}

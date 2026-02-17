@@ -62,6 +62,7 @@ def get_absence_calendar(
     # Get all absences for the month
     absences = db.query(Absence).join(User).filter(
         User.is_active == True,
+        User.is_hidden == False,
         extract('year', Absence.date) == year,
         extract('month', Absence.date) == month_num
     ).order_by(Absence.date).all()
@@ -97,6 +98,7 @@ def get_team_upcoming_absences(
     # Get all future absences from active users
     absences = db.query(Absence).join(User).filter(
         User.is_active == True,
+        User.is_hidden == False,
         Absence.date >= today
     ).order_by(Absence.date, User.last_name, User.first_name).all()
 

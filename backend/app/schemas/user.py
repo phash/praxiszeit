@@ -47,6 +47,7 @@ class UserUpdate(BaseModel):
     work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
     track_hours: Optional[bool] = None
     is_active: Optional[bool] = None
+    is_hidden: Optional[bool] = None
     vacation_carryover_deadline: Optional[date] = None  # Individual deadline, None = default
     use_daily_schedule: Optional[bool] = None
     hours_monday: Optional[float] = Field(None, ge=0, le=24)
@@ -60,6 +61,7 @@ class UserResponse(UserBase):
     id: UUID
     role: UserRole
     is_active: bool
+    is_hidden: bool = False
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None
