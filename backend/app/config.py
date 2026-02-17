@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "*"  # Comma-separated list, e.g. "http://localhost,https://praxis.example.com"
 
+    # Holidays
+    HOLIDAY_STATE: str = "Bayern"  # German state for public holidays
+
     # Initial Admin
     ADMIN_USERNAME: str = "admin"
     ADMIN_EMAIL: str

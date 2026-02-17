@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from datetime import date
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 
 class MonthlyDashboard(BaseModel):
@@ -38,6 +38,9 @@ class VacationAccount(BaseModel):
     used_days: float
     remaining_hours: float
     remaining_days: float
+    # Year-end warning info
+    carryover_deadline: Optional[date] = None  # Deadline to use remaining vacation
+    has_carryover_warning: bool = False  # True if remaining vacation at year end
 
 
 class EmployeeMonthlyReport(BaseModel):

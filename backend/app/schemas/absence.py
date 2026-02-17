@@ -15,7 +15,7 @@ class AbsenceBase(BaseModel):
 
 
 class AbsenceCreate(AbsenceBase):
-    pass
+    user_id: Optional[str] = None  # Admin only: create absence for another user
 
 
 class AbsenceResponse(AbsenceBase):

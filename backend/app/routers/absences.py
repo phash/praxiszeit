@@ -170,6 +170,15 @@ def create_absence(
     For vacation type, check if remaining vacation is sufficient.
     """
 
+    # Determine target user (admin can create for others)
+    target_user = current_user
+    if absence_data.user_id:
+        if current_user.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        target_user = db.query(User).filter(User.id == absence_data.user_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
     # Determine date range
     start_date = absence_data.date
     end_date = absence_data.end_date if absence_data.end_date else absence_data.date
@@ -215,7 +224,7 @@ def create_absence(
     # Check for existing absences
     for date in dates_to_create:
         existing = db.query(Absence).filter(
-            Absence.user_id == current_user.id,
+            Absence.user_id == target_user.id,
             Absence.date == date,
             Absence.type == absence_data.type
         ).first()
@@ -229,7 +238,7 @@ def create_absence(
     # For vacation, check remaining vacation days
     if absence_data.type == AbsenceType.VACATION:
         vacation_account = calculation_service.get_vacation_account(
-            db, current_user, start_date.year
+            db, target_user, start_date.year
         )
         total_hours_needed = Decimal(str(absence_data.hours)) * len(dates_to_create)
         new_remaining = vacation_account['remaining_hours'] - total_hours_needed
@@ -242,7 +251,7 @@ def create_absence(
     created_absences = []
     for date in dates_to_create:
         absence = Absence(
-            user_id=current_user.id,
+            user_id=target_user.id,
             date=date,
             end_date=end_date if absence_data.end_date else None,  # Store end_date for reference
             type=absence_data.type,
