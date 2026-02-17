@@ -263,12 +263,20 @@ def create_absence(
     # Create absences for all dates
     created_absences = []
     for date in dates_to_create:
+        # Use per-day hours if user has daily schedule, otherwise use provided hours
+        if getattr(target_user, 'use_daily_schedule', False):
+            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date))
+            if hours_for_day == 0:
+                continue  # Skip days with 0 scheduled hours
+        else:
+            hours_for_day = absence_data.hours
+
         absence = Absence(
             user_id=target_user.id,
             date=date,
             end_date=end_date if absence_data.end_date else None,  # Store end_date for reference
             type=absence_data.type,
-            hours=absence_data.hours,
+            hours=hours_for_day,
             note=absence_data.note
         )
         db.add(absence)

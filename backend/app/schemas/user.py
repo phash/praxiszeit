@@ -6,6 +6,14 @@ from uuid import UUID
 from app.models.user import UserRole
 
 
+class DailySchedule(BaseModel):
+    hours_monday: Optional[float] = Field(None, ge=0, le=24)
+    hours_tuesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_wednesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_thursday: Optional[float] = Field(None, ge=0, le=24)
+    hours_friday: Optional[float] = Field(None, ge=0, le=24)
+
+
 class UserBase(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     email: Optional[str] = None
@@ -16,6 +24,12 @@ class UserBase(BaseModel):
     work_days_per_week: int = Field(default=5, ge=1, le=7)
     track_hours: bool = True
     calendar_color: str = Field(default='#93C5FD', pattern=r'^#[0-9A-Fa-f]{6}$')
+    use_daily_schedule: bool = False
+    hours_monday: Optional[float] = Field(None, ge=0, le=24)
+    hours_tuesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_wednesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_thursday: Optional[float] = Field(None, ge=0, le=24)
+    hours_friday: Optional[float] = Field(None, ge=0, le=24)
 
 
 class UserCreate(UserBase):
@@ -34,6 +48,12 @@ class UserUpdate(BaseModel):
     track_hours: Optional[bool] = None
     is_active: Optional[bool] = None
     vacation_carryover_deadline: Optional[date] = None  # Individual deadline, None = default
+    use_daily_schedule: Optional[bool] = None
+    hours_monday: Optional[float] = Field(None, ge=0, le=24)
+    hours_tuesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_wednesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_thursday: Optional[float] = Field(None, ge=0, le=24)
+    hours_friday: Optional[float] = Field(None, ge=0, le=24)
 
 
 class UserResponse(UserBase):
