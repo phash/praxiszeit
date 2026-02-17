@@ -1,15 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import subprocess
 import sys
+import logging
+import traceback
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from app.database import engine, SessionLocal
 from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures
+from app.services.error_log_service import DBErrorHandler
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs
 
 
 @asynccontextmanager
@@ -105,6 +108,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Attach DB error logging handler (captures WARNING+ logs to error_logs table)
+_db_error_handler = DBErrorHandler(SessionLocal)
+_db_error_handler.setFormatter(logging.Formatter('%(message)s'))
+logging.getLogger('uvicorn.error').addHandler(_db_error_handler)
+logging.getLogger('fastapi').addHandler(_db_error_handler)
+logging.getLogger('sqlalchemy.engine').addHandler(_db_error_handler)
+
 # Register routers
 app.include_router(auth.router)
 app.include_router(admin.router)
@@ -115,6 +125,47 @@ app.include_router(holidays.router)
 app.include_router(reports.router)
 app.include_router(change_requests.router)
 app.include_router(company_closures.router)
+app.include_router(error_logs.router)
+
+
+@app.middleware("http")
+async def capture_errors_middleware(request: Request, call_next):
+    """Capture 5xx errors and log them to the error_logs table."""
+    try:
+        response = await call_next(request)
+        if response.status_code >= 500:
+            db = SessionLocal()
+            try:
+                from app.services.error_log_service import log_error
+                log_error(
+                    db=db,
+                    level='error',
+                    logger_name='http',
+                    message=f"HTTP {response.status_code} {request.method} {request.url.path}",
+                    path=request.url.path,
+                    method=request.method,
+                    status_code=response.status_code,
+                )
+            finally:
+                db.close()
+        return response
+    except Exception as exc:
+        db = SessionLocal()
+        try:
+            from app.services.error_log_service import log_error
+            log_error(
+                db=db,
+                level='critical',
+                logger_name='http',
+                message=str(exc),
+                traceback_str=traceback.format_exc(),
+                path=request.url.path,
+                method=request.method,
+                status_code=500,
+            )
+        finally:
+            db.close()
+        raise
 
 
 @app.get("/")

@@ -13,6 +13,7 @@ import AdminChangeRequests from './pages/admin/ChangeRequests';
 import Reports from './pages/admin/Reports';
 import AuditLog from './pages/admin/AuditLog';
 import AdminAbsences from './pages/admin/AdminAbsences';
+import ErrorMonitoring from './pages/admin/ErrorMonitoring';
 import Layout from './components/Layout';
 
 // Protected Route Component
@@ -75,6 +76,7 @@ function App() {
           <Route path="reports" element={<Reports />} />
           <Route path="audit-log" element={<AuditLog />} />
           <Route path="absences" element={<AdminAbsences />} />
+          <Route path="errors" element={<ErrorMonitoring />} />
         </Route>
 
         {/* Fallback */}
