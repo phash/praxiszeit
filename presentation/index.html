@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PraxisZeit - Präsentation</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.min.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+
+  :root {
+    --r-background-color: #0f172a;
+    --r-main-font: 'Inter', sans-serif;
+    --r-heading-font: 'Inter', sans-serif;
+    --r-main-color: #e2e8f0;
+    --r-heading-color: #f8fafc;
+    --r-link-color: #60a5fa;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.4);
+  }
+
+  .reveal { font-weight: 300; }
+  .reveal h1, .reveal h2, .reveal h3 { font-weight: 700; letter-spacing: -0.02em; }
+  .reveal h1 { font-size: 2.8em; }
+  .reveal h2 { font-size: 1.8em; }
+  .reveal h3 { font-size: 1.2em; color: #94a3b8; font-weight: 400; }
+
+  .brand {
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .accent { color: var(--accent); }
+
+  .pill {
+    display: inline-block;
+    padding: 0.25em 0.75em;
+    border-radius: 999px;
+    font-size: 0.55em;
+    font-weight: 600;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+    margin: 0.15em;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5em;
+    text-align: left;
+    margin-top: 0.8em;
+  }
+
+  .card {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 16px;
+    padding: 1.2em 1.4em;
+    backdrop-filter: blur(10px);
+    transition: transform 0.3s, border-color 0.3s;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .card h4 {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #f8fafc;
+    margin: 0 0 0.4em 0;
+  }
+  .card p, .card ul {
+    font-size: 0.55em;
+    color: #94a3b8;
+    margin: 0;
+    line-height: 1.6;
+  }
+  .card ul { padding-left: 1.2em; }
+
+  .icon { font-size: 1.4em; margin-bottom: 0.3em; display: block; }
+
+  .stat-row {
+    display: flex;
+    justify-content: center;
+    gap: 2em;
+    margin-top: 1em;
+  }
+  .stat {
+    text-align: center;
+  }
+  .stat .num {
+    font-size: 2.2em;
+    font-weight: 900;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.1;
+  }
+  .stat .label {
+    font-size: 0.5em;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .timeline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-top: 1.5em;
+  }
+  .timeline-step {
+    text-align: center;
+    position: relative;
+  }
+  .timeline-step .dot {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 0.5em;
+    font-size: 0.7em; font-weight: 700;
+  }
+  .timeline-step .text {
+    font-size: 0.45em;
+    color: #94a3b8;
+    max-width: 120px;
+  }
+  .timeline-line {
+    width: 60px; height: 2px;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    opacity: 0.4;
+    margin-bottom: 1.8em;
+  }
+
+  .pain-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.8em auto;
+    max-width: 700px;
+  }
+  .pain-list li {
+    font-size: 0.7em;
+    padding: 0.5em 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+    color: #cbd5e1;
+  }
+  .pain-list li span.x { color: #ef4444; font-weight: 700; margin-right: 0.5em; }
+  .pain-list li span.check { color: #22c55e; font-weight: 700; margin-right: 0.5em; }
+
+  .cta-box {
+    margin-top: 1.5em;
+    padding: 1.2em 2em;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.15));
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    display: inline-block;
+  }
+  .cta-box code {
+    font-size: 0.65em;
+    color: #93c5fd;
+    background: rgba(0,0,0,0.3);
+    padding: 0.2em 0.6em;
+    border-radius: 6px;
+  }
+
+  .reveal .slide-number { font-family: 'Inter', sans-serif; font-size: 12px; }
+
+  .glow-line {
+    width: 80px; height: 4px;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    border-radius: 2px;
+    margin: 0.5em auto;
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+
+  .phash-link {
+    color: #60a5fa;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.3s;
+  }
+  .phash-link:hover {
+    color: #93c5fd;
+  }
+
+  .phash-services {
+    display: flex;
+    justify-content: center;
+    gap: 1.2em;
+    margin-top: 1.2em;
+    flex-wrap: wrap;
+  }
+  .phash-service {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 12px;
+    padding: 0.8em 1.2em;
+    text-align: center;
+    min-width: 140px;
+    transition: border-color 0.3s, transform 0.3s;
+  }
+  .phash-service:hover {
+    border-color: rgba(59, 130, 246, 0.3);
+    transform: translateY(-2px);
+  }
+  .phash-service .ps-icon { font-size: 1.3em; display: block; margin-bottom: 0.3em; }
+  .phash-service .ps-label { font-size: 0.5em; color: #cbd5e1; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="reveal">
+<div class="slides">
+
+  <!-- SLIDE 1: Title -->
+  <section>
+    <h1><span class="brand">PraxisZeit</span></h1>
+    <div class="glow-line"></div>
+    <h3>Zeiterfassung, die mitdenkt.</h3>
+    <p style="margin-top: 2em; font-size: 0.5em; color: #64748b;">
+      Entwickelt für Arztpraxen &amp; kleine Unternehmen
+    </p>
+  </section>
+
+  <!-- SLIDE 2: Problem -->
+  <section>
+    <h2>Das Problem</h2>
+    <ul class="pain-list">
+      <li class="fragment"><span class="x">&times;</span> Excel-Tabellen, Zettelwirtschaft, verlorene Stunden</li>
+      <li class="fragment"><span class="x">&times;</span> Kein Überblick über Urlaub, Überstunden, Krankheitstage</li>
+      <li class="fragment"><span class="x">&times;</span> Teure Software, die mehr kann als man braucht</li>
+      <li class="fragment"><span class="x">&times;</span> Keine Transparenz für Mitarbeiter</li>
+    </ul>
+  </section>
+
+  <!-- SLIDE 3: Solution -->
+  <section>
+    <h2>Die Lösung</h2>
+    <ul class="pain-list">
+      <li class="fragment"><span class="check">&check;</span> Eine Web-App &mdash; überall nutzbar, auch mobil</li>
+      <li class="fragment"><span class="check">&check;</span> Automatische Soll/Ist-Berechnung mit Stundenhistorie</li>
+      <li class="fragment"><span class="check">&check;</span> Urlaubskonto, Feiertage, Abwesenheitskalender &mdash; alles drin</li>
+      <li class="fragment"><span class="check">&check;</span> Self-hosted, DSGVO-konform, keine Cloud-Abhängigkeit</li>
+    </ul>
+  </section>
+
+  <!-- SLIDE 4: Features Mitarbeiter -->
+  <section>
+    <h2>Für <span class="accent">Mitarbeiter</span></h2>
+    <div class="grid-2">
+      <div class="card fragment">
+        <span class="icon">&#9201;</span>
+        <h4>Zeiterfassung</h4>
+        <p>Wochenansicht mit Start, Ende, Pause &amp; Notizen. Einfach und schnell.</p>
+      </div>
+      <div class="card fragment">
+        <span class="icon">&#127796;</span>
+        <h4>Abwesenheiten</h4>
+        <p>Urlaub, Krankheit, Fortbildung &mdash; Zeiträume mit einem Klick eintragen.</p>
+      </div>
+      <div class="card fragment">
+        <span class="icon">&#128202;</span>
+        <h4>Dashboard</h4>
+        <p>Überstunden-Saldo, Urlaubskonto und Monatsüberblick auf einen Blick.</p>
+      </div>
+      <div class="card fragment">
+        <span class="icon">&#128241;</span>
+        <h4>PWA / Mobil</h4>
+        <p>Installierbar auf dem Handy. Funktioniert wie eine native App.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 5: Features Admin -->
+  <section>
+    <h2>Für <span class="accent">Admins</span></h2>
+    <div class="grid-2">
+      <div class="card fragment">
+        <span class="icon">&#128101;</span>
+        <h4>Team-Überblick</h4>
+        <p>Alle Mitarbeiter, Stundensalden und Urlaubskontingente auf einem Dashboard.</p>
+      </div>
+      <div class="card fragment">
+        <span class="icon">&#128197;</span>
+        <h4>Abwesenheitskalender</h4>
+        <p>Wer ist wann da? Farbcodiert, filterbar, sofort erkennbar.</p>
+      </div>
+      <div class="card fragment">
+        <span class="icon">&#128196;</span>
+        <h4>Excel-Exporte</h4>
+        <p>Monatsberichte, Jahresüberblick Classic &amp; Detailliert &mdash; per Klick.</p>
+      </div>
+      <div class="card fragment">
+        <span class="icon">&#9881;</span>
+        <h4>Flexible Konfiguration</h4>
+        <p>Individuelle Wochenstunden, Änderungshistorie, Stundenzählung deaktivierbar.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 6: Numbers -->
+  <section>
+    <h2>Auf einen Blick</h2>
+    <div class="stat-row">
+      <div class="stat fragment">
+        <div class="num">14</div>
+        <div class="label">API-Routen</div>
+      </div>
+      <div class="stat fragment">
+        <div class="num">3</div>
+        <div class="label">Export-Formate</div>
+      </div>
+      <div class="stat fragment">
+        <div class="num">100%</div>
+        <div class="label">Self-Hosted</div>
+      </div>
+      <div class="stat fragment">
+        <div class="num">&lt;5s</div>
+        <div class="label">Deployment</div>
+      </div>
+    </div>
+    <div style="margin-top: 1.5em;">
+      <span class="pill">React</span>
+      <span class="pill">FastAPI</span>
+      <span class="pill">PostgreSQL</span>
+      <span class="pill">Docker</span>
+      <span class="pill">Tailwind CSS</span>
+      <span class="pill">Prometheus</span>
+      <span class="pill">Grafana</span>
+    </div>
+  </section>
+
+  <!-- SLIDE 7: Architecture -->
+  <section>
+    <h2>Architektur</h2>
+    <div class="timeline">
+      <div class="timeline-step fragment">
+        <div class="dot">&#127760;</div>
+        <div class="text">Browser / PWA</div>
+      </div>
+      <div class="timeline-line fragment"></div>
+      <div class="timeline-step fragment">
+        <div class="dot">&#9881;</div>
+        <div class="text">Nginx Reverse Proxy</div>
+      </div>
+      <div class="timeline-line fragment"></div>
+      <div class="timeline-step fragment">
+        <div class="dot">&#9889;</div>
+        <div class="text">FastAPI Backend</div>
+      </div>
+      <div class="timeline-line fragment"></div>
+      <div class="timeline-step fragment">
+        <div class="dot">&#128451;</div>
+        <div class="text">PostgreSQL</div>
+      </div>
+    </div>
+    <p style="margin-top: 1.5em; font-size: 0.5em; color: #64748b;">
+      + Prometheus &amp; Grafana Monitoring &bull; SSL/TLS &bull; Health Checks &bull; Auto-Migrations
+    </p>
+  </section>
+
+  <!-- SLIDE 8: Get Started -->
+  <section>
+    <h2>Starten in <span class="accent">30 Sekunden</span></h2>
+    <div class="cta-box">
+      <code>git clone &amp;&amp; docker-compose up -d</code>
+    </div>
+    <p style="margin-top: 1.5em; font-size: 0.55em; color: #94a3b8;">
+      Alles inklusive: Datenbank, Backend, Frontend, Monitoring.<br>
+      Keine externe Abhängigkeit. Läuft auf jedem Server.
+    </p>
+    <div class="glow-line" style="margin-top: 1.5em;"></div>
+    <p style="font-size: 0.55em; color: #64748b; margin-top: 1em;">
+      <span class="brand" style="font-weight: 700; font-size: 1.2em;">PraxisZeit</span><br>
+      Zeiterfassung, die mitdenkt.
+    </p>
+  </section>
+
+  <!-- SLIDE 9: Phash -->
+  <section>
+    <h2>Maßgeschneiderte Software?</h2>
+    <p style="font-size: 0.65em; color: #cbd5e1; max-width: 600px; margin: 0.5em auto;">
+      PraxisZeit ist ein Projekt von <a href="https://phash.de" target="_blank" class="phash-link">Phash.de</a><br>
+      Wir entwickeln individuelle Lösungen &mdash; genau passend für Ihr Unternehmen.
+    </p>
+    <div class="phash-services">
+      <div class="phash-service fragment">
+        <span class="ps-icon">&#128187;</span>
+        <span class="ps-label">Web-Applikationen</span>
+      </div>
+      <div class="phash-service fragment">
+        <span class="ps-icon">&#9889;</span>
+        <span class="ps-label">Automatisierung</span>
+      </div>
+      <div class="phash-service fragment">
+        <span class="ps-icon">&#128290;</span>
+        <span class="ps-label">API &amp; Integration</span>
+      </div>
+      <div class="phash-service fragment">
+        <span class="ps-icon">&#9729;</span>
+        <span class="ps-label">Cloud &amp; Hosting</span>
+      </div>
+    </div>
+    <div style="margin-top: 1.8em;" class="fragment">
+      <div class="glow-line"></div>
+      <p style="font-size: 0.7em; margin-top: 0.8em;">
+        <a href="https://phash.de" target="_blank" class="phash-link" style="font-size: 1.3em;">phash.de</a>
+      </p>
+      <p style="font-size: 0.45em; color: #64748b;">
+        Software, die passt. Nicht von der Stange.
+      </p>
+    </div>
+  </section>
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.min.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    slideNumber: 'c/t',
+    transition: 'slide',
+    transitionSpeed: 'default',
+    backgroundTransition: 'fade',
+    center: true,
+    controlsTutorial: false,
+  });
+</script>
+</body>
+</html>
