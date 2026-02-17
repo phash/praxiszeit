@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   AlertTriangle,
+  BookOpen,
 } from 'lucide-react';
 
 export default function Layout() {
@@ -187,6 +188,36 @@ export default function Layout() {
               <p className="text-xs text-gray-500 truncate">{user?.username}</p>
             </div>
           </div>
+          {/* Handbuch-Downloads */}
+          <div className="mb-2 flex flex-col gap-1">
+            <a
+              href="/docs/Cheat-Sheet.pdf"
+              download
+              className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <BookOpen size={13} />
+              <span>Cheat-Sheet</span>
+            </a>
+            <a
+              href="/docs/Mitarbeiter-Handbuch.pdf"
+              download
+              className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <FileText size={13} />
+              <span>Mitarbeiter-Handbuch</span>
+            </a>
+            {user?.role === 'admin' && (
+              <a
+                href="/docs/Admin-Handbuch.pdf"
+                download
+                className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                <FileText size={13} />
+                <span>Admin-Handbuch</span>
+              </a>
+            )}
+          </div>
+
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"

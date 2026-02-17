@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { LogIn } from 'lucide-react';
+import { LogIn, FileText } from 'lucide-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -94,6 +94,29 @@ export default function Login() {
 
         <div className="mt-6 text-center text-sm text-gray-500">
           <p>Bei Problemen wenden Sie sich an Ihren Administrator</p>
+        </div>
+
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <p className="text-xs text-gray-400 text-center mb-3">Dokumentation</p>
+          <div className="flex justify-center gap-3 flex-wrap">
+            <a
+              href="/docs/Mitarbeiter-Handbuch.pdf"
+              download
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
+            >
+              <FileText size={13} />
+              Mitarbeiter-Handbuch
+            </a>
+            <span className="text-gray-300">·</span>
+            <a
+              href="/docs/Cheat-Sheet.pdf"
+              download
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
+            >
+              <FileText size={13} />
+              Cheat-Sheet
+            </a>
+          </div>
         </div>
       </div>
     </div>
