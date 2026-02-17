@@ -73,7 +73,6 @@ export default function Reports() {
       link.click();
       link.remove();
     } catch (error) {
-      console.error('Export failed:', error);
       toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
       setLoading(false);
@@ -94,7 +93,6 @@ export default function Reports() {
       link.click();
       link.remove();
     } catch (error) {
-      console.error('Export failed:', error);
       toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
       setLoading(false);

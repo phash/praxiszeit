@@ -111,7 +111,7 @@ export default function AbsenceCalendarPage() {
         setHolidays(holidaysRes.data);
       }
     } catch (error) {
-      console.error('Failed to fetch calendar data:', error);
+      toast.error('Fehler beim Laden des Kalenders');
     }
   };
 

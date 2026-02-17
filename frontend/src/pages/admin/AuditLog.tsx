@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../../api/client';
 import { ScrollText, ArrowRight } from 'lucide-react';
+import { useToast } from '../../contexts/ToastContext';
 import MonthSelector from '../../components/MonthSelector';
 
 interface AuditEntry {
@@ -52,6 +53,7 @@ const sourceLabels: Record<string, string> = {
 };
 
 export default function AuditLog() {
+  const toast = useToast();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -71,7 +73,7 @@ export default function AuditLog() {
       const response = await apiClient.get('/admin/users');
       setUsers(response.data);
     } catch (error) {
-      console.error('Failed to fetch users:', error);
+      toast.error('Fehler beim Laden der Benutzerliste');
     }
   };
 
@@ -84,7 +86,7 @@ export default function AuditLog() {
       const response = await apiClient.get(`/admin/audit-log?${params.toString()}`);
       setEntries(response.data);
     } catch (error) {
-      console.error('Failed to fetch audit log:', error);
+      toast.error('Fehler beim Laden des Audit-Logs');
     } finally {
       setLoading(false);
     }
