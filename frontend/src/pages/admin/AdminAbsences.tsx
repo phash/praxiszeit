@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { Plus, X, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, X, Trash2, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 import MonthSelector from '../../components/MonthSelector';
+
+interface CompanyClosure {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  affected_employees: number;
+}
 
 interface Employee {
   id: string;
@@ -29,6 +37,7 @@ export default function AdminAbsences() {
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
+  const [activeTab, setActiveTab] = useState<'absences' | 'closures'>('absences');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('');
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -48,8 +57,14 @@ export default function AdminAbsences() {
   const typeLabels = ABSENCE_TYPE_LABELS;
   const typeColors = ABSENCE_TYPE_COLORS;
 
+  // Betriebsferien state
+  const [closures, setClosures] = useState<CompanyClosure[]>([]);
+  const [showClosureForm, setShowClosureForm] = useState(false);
+  const [closureForm, setClosureForm] = useState({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
+
   useEffect(() => {
     loadEmployees();
+    loadClosures();
   }, []);
 
   useEffect(() => {
@@ -67,6 +82,46 @@ export default function AdminAbsences() {
     } catch {
       toast.error('Fehler beim Laden der Mitarbeiter');
     }
+  };
+
+  const loadClosures = async () => {
+    try {
+      const res = await apiClient.get('/company-closures');
+      setClosures(res.data);
+    } catch {
+      toast.error('Fehler beim Laden der Betriebsferien');
+    }
+  };
+
+  const handleCreateClosure = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await apiClient.post('/company-closures', closureForm);
+      toast.success('Betriebsferien eingetragen und Urlaub für alle Mitarbeiter erstellt');
+      setShowClosureForm(false);
+      setClosureForm({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
+      loadClosures();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+    }
+  };
+
+  const handleDeleteClosure = (closure: CompanyClosure) => {
+    confirm({
+      title: 'Betriebsferien löschen',
+      message: `Möchten Sie "${closure.name}" wirklich löschen? Die zugehörigen Urlaubseinträge aller Mitarbeiter werden entfernt.`,
+      confirmLabel: 'Löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/company-closures/${closure.id}`);
+          toast.success('Betriebsferien und zugehörige Urlaubseinträge gelöscht');
+          loadClosures();
+        } catch {
+          toast.error('Fehler beim Löschen');
+        }
+      },
+    });
   };
 
   const loadAbsences = async (userId: string) => {
@@ -172,9 +227,9 @@ export default function AdminAbsences() {
         onCancel={handleCancel}
       />
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Abwesenheiten verwalten</h1>
-        {selectedEmployee && (
+        {activeTab === 'absences' && selectedEmployee && (
           <button
             onClick={() => setShowForm(!showForm)}
             className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
@@ -183,7 +238,138 @@ export default function AdminAbsences() {
             <span>{showForm ? 'Abbrechen' : 'Abwesenheit eintragen'}</span>
           </button>
         )}
+        {activeTab === 'closures' && (
+          <button
+            onClick={() => setShowClosureForm(!showClosureForm)}
+            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+          >
+            {showClosureForm ? <X size={20} /> : <Building2 size={20} />}
+            <span>{showClosureForm ? 'Abbrechen' : 'Betriebsferien erstellen'}</span>
+          </button>
+        )}
       </div>
+
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
+        <button
+          onClick={() => setActiveTab('absences')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+            activeTab === 'absences' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Mitarbeiter-Abwesenheiten
+        </button>
+        <button
+          onClick={() => setActiveTab('closures')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition flex items-center space-x-1.5 ${
+            activeTab === 'closures' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Building2 size={14} />
+          <span>Betriebsferien</span>
+        </button>
+      </div>
+
+      {/* ===== Betriebsferien Tab ===== */}
+      {activeTab === 'closures' && (
+        <>
+          {showClosureForm && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-4">Betriebsferien erstellen</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Für alle aktiven Mitarbeiter werden automatisch Urlaubseinträge für die Arbeitstage im gewählten Zeitraum erstellt.
+              </p>
+              <form onSubmit={handleCreateClosure} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bezeichnung</label>
+                  <input
+                    type="text"
+                    value={closureForm.name}
+                    onChange={e => setClosureForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="z.B. Betriebsferien Sommer 2026"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Von</label>
+                    <input
+                      type="date"
+                      value={closureForm.start_date}
+                      onChange={e => setClosureForm(p => ({ ...p, start_date: e.target.value }))}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Bis</label>
+                    <input
+                      type="date"
+                      value={closureForm.end_date}
+                      onChange={e => setClosureForm(p => ({ ...p, end_date: e.target.value }))}
+                      required
+                      min={closureForm.start_date}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition">
+                  Betriebsferien erstellen & Urlaub eintragen
+                </button>
+              </form>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="font-semibold">Betriebsferien</h3>
+              <p className="text-sm text-gray-500 mt-0.5">Betriebsweite Schließungszeiten – zählen als Urlaub für alle Mitarbeiter</p>
+            </div>
+            {closures.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">
+                <Building2 className="mx-auto mb-2 text-gray-300" size={32} />
+                <p>Keine Betriebsferien eingetragen</p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bezeichnung</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Zeitraum</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Betroffene MA</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {closures.map(closure => (
+                    <tr key={closure.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{closure.name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {format(new Date(closure.start_date + 'T00:00:00'), 'dd.MM.yyyy')} –{' '}
+                        {format(new Date(closure.end_date + 'T00:00:00'), 'dd.MM.yyyy')}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{closure.affected_employees} Mitarbeiter</td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => handleDeleteClosure(closure)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition"
+                          aria-label="Betriebsferien löschen"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ===== Abwesenheiten Tab ===== */}
+      {activeTab === 'absences' && <>
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
@@ -440,6 +626,8 @@ export default function AdminAbsences() {
           })}
         </div>
       )}
+
+      </> /* end absences tab */}
     </div>
   );
 }

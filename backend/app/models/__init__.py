@@ -5,6 +5,7 @@ from app.models.public_holiday import PublicHoliday
 from app.models.working_hours_change import WorkingHoursChange
 from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRequestStatus
 from app.models.time_entry_audit_log import TimeEntryAuditLog
+from app.models.company_closure import CompanyClosure
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "ChangeRequestType",
     "ChangeRequestStatus",
     "TimeEntryAuditLog",
+    "CompanyClosure",
 ]
