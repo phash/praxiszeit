@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -88,10 +88,11 @@ export default function Users() {
   const [sortField, setSortField] = useState<keyof User | ''>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterText, setFilterText] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [showInactive]);
 
   useEffect(() => {
     if (formData.work_days_per_week > 0) {
@@ -102,7 +103,9 @@ export default function Users() {
 
   const fetchUsers = async () => {
     try {
-      const response = await apiClient.get('/admin/users');
+      const response = await apiClient.get('/admin/users', {
+        params: showInactive ? { include_inactive: true } : {},
+      });
       setUsers(response.data);
 
       // Fetch vacation info for each user
@@ -199,10 +202,28 @@ export default function Users() {
       onConfirm: async () => {
         try {
           await apiClient.delete(`/admin/users/${userId}`);
-          toast.success(`Benutzer ${name} erfolgreich deaktiviert`);
+          toast.success(`${name} deaktiviert`);
           fetchUsers();
         } catch (error: any) {
           toast.error(error.response?.data?.detail || 'Fehler beim Deaktivieren');
+        }
+      },
+    });
+  };
+
+  const handleReactivate = (userId: string, name: string) => {
+    confirm({
+      title: 'Benutzer reaktivieren',
+      message: `${name} wieder aktivieren? Der Benutzer kann sich danach erneut anmelden.`,
+      confirmLabel: 'Reaktivieren',
+      variant: 'warning',
+      onConfirm: async () => {
+        try {
+          await apiClient.post(`/admin/users/${userId}/reactivate`);
+          toast.success(`${name} reaktiviert`);
+          fetchUsers();
+        } catch (error: any) {
+          toast.error(error.response?.data?.detail || 'Fehler beim Reaktivieren');
         }
       },
     });
@@ -344,14 +365,27 @@ export default function Users() {
         onCancel={handleCancel}
       />
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Benutzerverwaltung</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-        >
-          {showForm ? <X size={20} /> : <Plus size={20} />}
-          <span>{showForm ? 'Abbrechen' : 'Neue:r Mitarbeiter:in'}</span>
-        </button>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Benutzerverwaltung</h1>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+            />
+            Inaktive anzeigen
+          </label>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+          >
+            {showForm ? <X size={20} /> : <Plus size={20} />}
+            <span>{showForm ? 'Abbrechen' : 'Neue:r Mitarbeiter:in'}</span>
+          </button>
+        </div>
       </div>
 
       {/* User Form */}
@@ -662,7 +696,7 @@ export default function Users() {
                 </tr>
               ) : (
                 filteredAndSortedUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                  <tr key={user.id} className={`hover:bg-gray-50 ${!user.is_active ? 'opacity-50' : ''}`}>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {user.last_name}, {user.first_name}
                     </td>
@@ -755,13 +789,23 @@ export default function Users() {
                       >
                         <Key size={16} />
                       </button>
-                      <button
-                        onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Deaktivieren"
-                      >
-                        <UserX size={16} />
-                      </button>
+                      {user.is_active ? (
+                        <button
+                          onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Deaktivieren"
+                        >
+                          <UserX size={16} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleReactivate(user.id, `${user.first_name} ${user.last_name}`)}
+                          className="text-green-600 hover:text-green-800"
+                          title="Reaktivieren"
+                        >
+                          <UserCheck size={16} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -783,7 +827,7 @@ export default function Users() {
           ) : (
             <div className="divide-y divide-gray-200">
               {filteredAndSortedUsers.map((user) => (
-                <div key={user.id} className="p-4">
+                <div key={user.id} className={`p-4 ${!user.is_active ? 'opacity-50' : ''}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">
@@ -861,7 +905,7 @@ export default function Users() {
                     >
                       <Key size={16} />
                     </button>
-                    {user.is_active && (
+                    {user.is_active ? (
                       <button
                         onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
                         className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition"
@@ -869,6 +913,15 @@ export default function Users() {
                         title="Deaktivieren"
                       >
                         <UserX size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleReactivate(user.id, `${user.first_name} ${user.last_name}`)}
+                        className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition"
+                        aria-label="Benutzer reaktivieren"
+                        title="Reaktivieren"
+                      >
+                        <UserCheck size={16} />
                       </button>
                     )}
                   </div>

@@ -85,9 +85,16 @@ def _enrich_audit_response(log: TimeEntryAuditLog, db: Session) -> AuditLogRespo
 # ── User Management ──────────────────────────────────────────────────────
 
 @router.get("/users", response_model=List[UserResponse])
-def list_users(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    """List all users (admin only)."""
-    users = db.query(User).order_by(User.last_name, User.first_name).all()
+def list_users(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """List users (admin only). By default only active users. Set include_inactive=true to include deactivated."""
+    query = db.query(User)
+    if not include_inactive:
+        query = query.filter(User.is_active == True)
+    users = query.order_by(User.last_name, User.first_name).all()
     return users
 
 
@@ -194,6 +201,19 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     user.is_active = False
     db.commit()
     return None
+
+
+@router.post("/users/{user_id}/reactivate", response_model=UserResponse)
+def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Reactivate a previously deactivated user (admin only)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    user.is_active = True
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 # ── Working Hours Changes ────────────────────────────────────────────────
