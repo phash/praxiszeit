@@ -247,6 +247,19 @@ def create_absence(
             # Warning but don't block (could require admin approval in production)
             pass
 
+    # If sick leave with vacation refund: remove overlapping vacation entries first
+    refunded_vacation_dates = []
+    if absence_data.type == AbsenceType.SICK and absence_data.refund_vacation:
+        for date in dates_to_create:
+            vacation_entry = db.query(Absence).filter(
+                Absence.user_id == target_user.id,
+                Absence.date == date,
+                Absence.type == AbsenceType.VACATION
+            ).first()
+            if vacation_entry:
+                db.delete(vacation_entry)
+                refunded_vacation_dates.append(date)
+
     # Create absences for all dates
     created_absences = []
     for date in dates_to_create:

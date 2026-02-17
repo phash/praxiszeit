@@ -91,8 +91,7 @@ export default function AbsenceCalendarPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSubmit = async (refundVacation: boolean) => {
     try {
       const submitData = {
         date: formData.date,
@@ -100,22 +99,44 @@ export default function AbsenceCalendarPage() {
         type: formData.type,
         hours: formData.hours,
         note: formData.note || null,
+        refund_vacation: refundVacation,
       };
       await apiClient.post('/absences', submitData);
-      toast.success('Abwesenheit erfolgreich eingetragen');
+      const msg = refundVacation
+        ? 'Krankmeldung eingetragen und Urlaubstage zurückerstattet'
+        : 'Abwesenheit erfolgreich eingetragen';
+      toast.success(msg);
       fetchData();
       setShowForm(false);
       setIsDateRange(false);
-      setFormData({
-        date: format(new Date(), 'yyyy-MM-dd'),
-        end_date: '',
-        type: 'vacation',
-        hours: 8,
-        note: '',
-      });
+      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 8, note: '' });
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // If sick leave: check for overlapping vacation entries
+    if (formData.type === 'sick') {
+      const startDate = formData.date;
+      const endDate = isDateRange && formData.end_date ? formData.end_date : formData.date;
+      const overlappingVacation = myAbsences.filter(a => {
+        const absDate = a.date;
+        return a.type === 'vacation' && absDate >= startDate && absDate <= endDate;
+      });
+      if (overlappingVacation.length > 0) {
+        confirm({
+          title: 'Krankmeldung im Urlaub',
+          message: `Sie sind an ${overlappingVacation.length} Tag(en) im Urlaub. Sollen diese Urlaubstage zurückerstattet werden?`,
+          confirmLabel: 'Urlaub zurückerstatten',
+          variant: 'info',
+          onConfirm: () => doSubmit(true),
+        });
+        return;
+      }
+    }
+    await doSubmit(false);
   };
 
   const handleDelete = (id: string) => {

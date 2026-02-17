@@ -9,7 +9,7 @@ from app.database import engine, SessionLocal
 from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures
 
 
 @asynccontextmanager
@@ -114,6 +114,7 @@ app.include_router(dashboard.router)
 app.include_router(holidays.router)
 app.include_router(reports.router)
 app.include_router(change_requests.router)
+app.include_router(company_closures.router)
 
 
 @app.get("/")

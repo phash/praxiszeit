@@ -9,7 +9,7 @@ from app.database import get_db
 from app.models import User, Absence, AbsenceType
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
-from app.services import calculation_service, export_service
+from app.services import calculation_service, export_service, rest_time_service
 
 router = APIRouter(prefix="/api/admin/reports", tags=["admin-reports"], dependencies=[Depends(require_admin)])
 
@@ -232,3 +232,29 @@ def export_yearly_report_classic(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/rest-time-violations")
+def get_rest_time_violations(
+    year: int = Query(..., description="Year to check"),
+    month: int = Query(None, description="Optional month to check"),
+    min_rest_hours: float = Query(None, description="Minimum rest hours (default: 11)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Get rest time violations for all employees.
+    A violation occurs when the time between two work shifts is less than min_rest_hours.
+    Default minimum rest time: 11 hours (German law ArbZG §5).
+    """
+    violations = rest_time_service.check_all_users_violations(
+        db, year, month, min_rest_hours
+    )
+    return {
+        "year": year,
+        "month": month,
+        "min_rest_hours": min_rest_hours or rest_time_service.DEFAULT_MIN_REST_HOURS,
+        "total_violations": sum(v["violation_count"] for v in violations),
+        "employees_affected": len(violations),
+        "violations": violations
+    }
