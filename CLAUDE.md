@@ -256,14 +256,17 @@ Erstellt 4 Mitarbeiterinnen mit vollständigen Zeiteinträgen und Abwesenheiten 
 
 ### users
 ```sql
-id, email (unique), password_hash, first_name, last_name,
-role (admin/employee), weekly_hours, vacation_days,
-track_hours (bool), calendar_color, is_active,
+id, username (unique), email, password_hash, first_name, last_name,
+role (admin/employee), weekly_hours, vacation_days, work_days_per_week,
+track_hours (bool), calendar_color, use_daily_schedule,
+hours_monday..hours_friday, token_version (int, default 0),
+is_active, is_hidden, vacation_carryover_deadline,
 created_at, updated_at
 ```
 - `track_hours=False`: Deaktiviert Arbeitszeiterfassung (Soll-Stunden = 0)
 - `calendar_color`: Hex-Farbe für Abwesenheitskalender
-- **Indexes:** email (unique), role
+- `token_version`: Wird inkrementiert um alle JWT-Tokens zu invalidieren
+- **Indexes:** username (unique), email, role
 
 ### working_hours_changes
 ```sql
@@ -308,6 +311,8 @@ id, date, name, state (Bayern), created_at
 - `004_calendar_color`: Add `calendar_color` to users (Farbcodierung im Kalender)
 - `005_working_hours_changes`: Add working_hours_changes table (Arbeitszeiten-Historie)
 - `006_add_work_days_per_week`: Add `work_days_per_week` to users (flexible Arbeitstage)
+- `007` - `014`: Various feature migrations (change_requests, audit_log, company_closures, error_logs, etc.)
+- `015_add_token_version`: Add `token_version` to users (JWT revocation support)
 
 ### Datenbank-Operationen
 
@@ -491,22 +496,48 @@ return output
 
 ## 🔐 Sicherheit
 
-- Passwörter werden mit bcrypt gehasht (`passlib[bcrypt]`)
-- JWT Tokens mit HS256 Signatur (`python-jose`)
-- Token-basierte API Authentication (Bearer Token in Authorization Header)
-- Role-based Access Control (Admin/Employee via `UserRole` Enum)
-- Input Validation mit Pydantic Schemas
-- CORS konfiguriert (Production: spezifische Origins setzen!)
-- Rate Limiting via `slowapi` (optional aktivierbar)
+**Umfassendes Security Audit durchgeführt am 2026-02-20** (23 Findings, alle behoben).
 
-**Security Checklist für Production:**
-- [ ] `SECRET_KEY` geändert und sicher gespeichert
-- [x] CORS `allow_origins` konfigurierbar via `CORS_ORIGINS` env variable (Default: `*`)
-- [ ] `CORS_ORIGINS` auf spezifische Domain(s) setzen (z.B. `https://praxis.example.com`)
-- [ ] Admin-Passwort geändert
-- [ ] HTTPS via Nginx Reverse Proxy
-- [ ] PostgreSQL nicht öffentlich exponieren
-- [ ] `.env` nicht in Git committen (bereits in `.gitignore`)
+### Authentifizierung & Token
+- Passwörter mit bcrypt gehasht (`passlib[bcrypt]`, 72-Byte-Truncation)
+- JWT Tokens mit HS256 Signatur (`python-jose`)
+- **Token-Revocation** via `token_version` Feld auf User-Model (in JWT als `tv` Claim)
+  - Inkrementiert bei: Passwortänderung, Deaktivierung, Admin-Set-Password
+  - Middleware + Refresh-Endpoint validieren `tv` gegen DB
+- **Rate Limiting** via `slowapi`: Login 5/min, Refresh 10/min, PW-Change 3/min
+- **Passwort-Komplexität**: Min. 10 Zeichen + Grossbuchstabe + Kleinbuchstabe + Ziffer
+- Role-based Access Control (Admin/Employee via `UserRole` Enum)
+
+### Konfigurationssicherheit
+- **SECRET_KEY**: Validierung beim Start (min. 32 Zeichen, rejected schwache/Default-Werte)
+- **CORS**: Default `http://localhost,http://localhost:5173` (nicht mehr `*`)
+  - Warnung bei Wildcard, Credentials nur mit spezifischen Origins
+- **ENVIRONMENT**: `development` (default) oder `production` (deaktiviert Swagger/ReDoc)
+- **GRAFANA_ADMIN_PASSWORD**: Pflichtfeld, kein Default-Fallback
+
+### Infrastruktur
+- Backend-Container läuft als `appuser` (non-root)
+- `--forwarded-allow-ips` auf private Netzwerke eingeschränkt
+- Nginx: CSP, Referrer-Policy, X-Frame-Options, X-Content-Type-Options
+- `/metrics` Endpoint extern blockiert (nur Docker-interner Zugriff)
+- `client_max_body_size 1M` in nginx
+- Kein API-Caching im Service Worker (sensible Daten)
+- Cache-Cleanup bei Logout
+
+### Security Checklist für Production
+- [x] `SECRET_KEY` stark generiert (128 Hex-Zeichen) + Startup-Validierung
+- [x] `CORS_ORIGINS` auf spezifische Origins gesetzt (Default: localhost)
+- [x] Rate Limiting auf Auth-Endpoints aktiv
+- [x] Token-Revocation bei Passwortänderung/Deaktivierung
+- [x] Passwort-Komplexitätsanforderungen
+- [x] Container als non-root User
+- [x] Security Headers (CSP, Referrer-Policy, HSTS in SSL)
+- [x] Swagger/ReDoc deaktivierbar via ENVIRONMENT=production
+- [x] `.env` nicht in Git (`.gitignore`)
+- [ ] `CORS_ORIGINS` auf Produktions-Domain setzen (z.B. `https://praxis.example.com`)
+- [ ] Admin-Passwort ändern (Startup-Warnung wenn schwach)
+- [ ] HTTPS via SSL-Konfiguration aktivieren
+- [ ] `ENVIRONMENT=production` in Produktions-`.env` setzen
 
 ## 🐛 Troubleshooting
 
@@ -904,19 +935,35 @@ const [endDate, setEndDate] = useState('')
 
 ### Auth & JWT
 ```python
-# JWT Claims Structure
+# JWT Access Token Claims
 {
-  "sub": user.email,  # Subject
-  "user_id": user.id,
-  "role": user.role,
-  "exp": datetime.utcnow() + timedelta(minutes=30)
+  "sub": str(user.id),      # User UUID
+  "role": user.role,         # "admin" or "employee"
+  "type": "access",          # Token type
+  "tv": user.token_version,  # Token version (for revocation)
+  "exp": datetime.now(timezone.utc) + timedelta(minutes=30)
 }
 
-# Frontend: Token in Zustand Store
-authStore.setState({ token, user })
+# JWT Refresh Token Claims
+{
+  "sub": str(user.id),
+  "type": "refresh",
+  "tv": user.token_version,
+  "exp": datetime.now(timezone.utc) + timedelta(days=7)
+}
 
-# Axios Interceptor fügt Header hinzu
+# Token Revocation: increment user.token_version to invalidate all tokens
+# Middleware validates tv == user.token_version on every request
+```
+
+```typescript
+// Frontend: Token in Zustand Store + localStorage
+authStore.setState({ accessToken, refreshToken, user })
+
+// Axios Interceptor adds Bearer token from localStorage
 config.headers.Authorization = `Bearer ${token}`
+
+// 401 Response → auto-refresh via refresh_token → retry original request
 ```
 
 ## 🚀 Deployment
