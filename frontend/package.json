@@ -19,6 +19,9 @@
     "react-router-dom": "^6.26.0",
     "zustand": "^4.5.0"
   },
+  "overrides": {
+    "minimatch": ">=10.2.1"
+  },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^18.3.3",
