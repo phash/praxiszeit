@@ -51,6 +51,14 @@ def get_current_user(
             detail="Benutzer nicht gefunden oder deaktiviert"
         )
 
+    # Validate token version (revocation check)
+    token_version = payload.get("tv", 0)
+    if token_version != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token wurde widerrufen. Bitte erneut anmelden."
+        )
+
     return user
 
 

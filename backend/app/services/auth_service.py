@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -25,41 +25,45 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(user_id: str, role: str) -> str:
+def create_access_token(user_id: str, role: str, token_version: int = 0) -> str:
     """
     Create JWT access token with 30 minutes expiry.
 
     Args:
         user_id: User UUID as string
         role: User role (admin or employee)
+        token_version: Current token version for revocation support
 
     Returns:
         Encoded JWT token
     """
-    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": user_id,
         "role": role,
         "type": "access",
+        "tv": token_version,
         "exp": expire
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     """
     Create JWT refresh token with 7 days expiry.
 
     Args:
         user_id: User UUID as string
+        token_version: Current token version for revocation support
 
     Returns:
         Encoded JWT token
     """
-    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": user_id,
         "type": "refresh",
+        "tv": token_version,
         "exp": expire
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)

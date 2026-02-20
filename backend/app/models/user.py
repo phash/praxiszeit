@@ -38,6 +38,7 @@ class User(Base):
     hours_friday = Column(Numeric(4, 2), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_hidden = Column(Boolean, default=False, nullable=False, server_default='false')  # Hidden from reports/overviews
+    token_version = Column(Integer, default=0, nullable=False, server_default='0')  # Increment to invalidate all tokens
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

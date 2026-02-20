@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
-import subprocess
+import os
 import sys
 import logging
 import traceback
@@ -33,20 +36,7 @@ async def lifespan(app: FastAPI):
         print("⏳ Waiting for database to be ready...")
         sys.exit(1)
 
-    # 2. Run Alembic migrations
-    print("🔄 Running database migrations...")
-    try:
-        result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            print("✅ Database migrations completed")
-        else:
-            print(f"⚠️  Migration warning: {result.stderr}")
-    except Exception as e:
-        print(f"⚠️  Could not run migrations automatically: {e}")
+    # 2. Migrations are handled by Dockerfile CMD (alembic upgrade head)
 
     # 3. Create admin user if it doesn't exist
     db = SessionLocal()
@@ -70,6 +60,15 @@ async def lifespan(app: FastAPI):
             print(f"✅ Admin user created")
         else:
             print(f"✅ Admin user already exists: {settings.ADMIN_USERNAME}")
+
+        # Security warning: check if admin still uses default credentials
+        if settings.ADMIN_USERNAME == "admin" and auth_service.verify_password(
+            settings.ADMIN_PASSWORD, admin.password_hash
+        ):
+            weak_passwords = ["Admin2025!", "admin123", "password", "admin"]
+            if settings.ADMIN_PASSWORD in weak_passwords or len(settings.ADMIN_PASSWORD) < 12:
+                print("⚠️  SECURITY WARNING: Admin account uses a weak/default password!")
+                print("⚠️  Change it immediately via Admin > Benutzerverwaltung or ADMIN_PASSWORD env var.")
     finally:
         db.close()
 
@@ -91,13 +90,22 @@ async def lifespan(app: FastAPI):
     print("👋 Shutting down PraxisZeit backend...")
 
 
-# Create FastAPI app
+# Create FastAPI app (disable docs in production)
+_is_production = settings.ENVIRONMENT == "production"
 app = FastAPI(
     title="PraxisZeit API",
     description="Zeiterfassungssystem für Arztpraxen",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Prometheus metrics
 Instrumentator(
@@ -108,12 +116,13 @@ Instrumentator(
 
 # Configure CORS
 cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+_cors_is_wildcard = cors_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=not _cors_is_wildcard,  # Disable credentials with wildcard origins
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)

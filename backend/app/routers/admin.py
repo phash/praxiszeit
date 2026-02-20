@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from typing import List, Optional
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from app.database import get_db
 from app.models import User, TimeEntry, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole
 from app.middleware.auth import require_admin
@@ -191,6 +191,7 @@ def set_password(
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.password_hash = auth_service.hash_password(body.password)
+    user.token_version += 1  # Invalidate all existing tokens
     db.commit()
 
     return {"message": f"Passwort für {user.first_name} {user.last_name} wurde gesetzt"}
@@ -207,6 +208,7 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.is_active = False
+    user.token_version += 1  # Invalidate all existing tokens
     db.commit()
     return None
 
@@ -384,7 +386,7 @@ def review_change_request(
     if review.action == "reject":
         cr.status = ChangeRequestStatus.REJECTED
         cr.reviewed_by = current_user.id
-        cr.reviewed_at = datetime.utcnow()
+        cr.reviewed_at = datetime.now(timezone.utc)
         cr.rejection_reason = review.rejection_reason
         db.commit()
         db.refresh(cr)
@@ -393,7 +395,7 @@ def review_change_request(
     # Approve: apply the change
     cr.status = ChangeRequestStatus.APPROVED
     cr.reviewed_by = current_user.id
-    cr.reviewed_at = datetime.utcnow()
+    cr.reviewed_at = datetime.now(timezone.utc)
 
     if cr.request_type == ChangeRequestType.CREATE:
         # Create new time entry
