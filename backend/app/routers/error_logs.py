@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 from app.database import get_db
 from app.models import User
@@ -54,7 +54,7 @@ class UpdateStatusRequest(BaseModel):
 
 
 class SetGithubUrlRequest(BaseModel):
-    github_issue_url: str
+    github_issue_url: str = Field(..., pattern=r'^https?://')
 
 
 @router.get("/", response_model=List[ErrorLogResponse])

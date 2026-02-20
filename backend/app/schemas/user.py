@@ -1,9 +1,23 @@
-from pydantic import BaseModel, Field, field_serializer
+import re
+from pydantic import BaseModel, Field, field_serializer, field_validator
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
+
+
+def _validate_password_complexity(password: str) -> str:
+    """Validate password meets complexity requirements."""
+    if len(password) < 10:
+        raise ValueError("Passwort muss mindestens 10 Zeichen lang sein")
+    if not re.search(r"[A-Z]", password):
+        raise ValueError("Passwort muss mindestens einen Grossbuchstaben enthalten")
+    if not re.search(r"[a-z]", password):
+        raise ValueError("Passwort muss mindestens einen Kleinbuchstaben enthalten")
+    if not re.search(r"[0-9]", password):
+        raise ValueError("Passwort muss mindestens eine Ziffer enthalten")
+    return password
 
 
 class DailySchedule(BaseModel):
@@ -33,8 +47,13 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=10)
     role: UserRole = UserRole.EMPLOYEE
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, v: str) -> str:
+        return _validate_password_complexity(v)
 
 
 class UserUpdate(BaseModel):
@@ -96,7 +115,12 @@ class RefreshResponse(BaseModel):
 
 
 class AdminSetPassword(BaseModel):
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=10)
+
+    @field_validator("password")
+    @classmethod
+    def check_password(cls, v: str) -> str:
+        return _validate_password_complexity(v)
 
 
 class UserCreateResponse(BaseModel):
@@ -105,7 +129,12 @@ class UserCreateResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8)
+    new_password: str = Field(..., min_length=10)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_password(cls, v: str) -> str:
+        return _validate_password_complexity(v)
 
 
 class UpdateCalendarColorRequest(BaseModel):

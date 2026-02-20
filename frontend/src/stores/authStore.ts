@@ -63,7 +63,18 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        localStorage.clear();
+        // Clear all stored tokens
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('auth-storage');
+
+        // Clear service worker caches (security: remove any cached API data)
+        if ('caches' in window) {
+          caches.keys().then((names) => {
+            names.forEach((name) => caches.delete(name));
+          });
+        }
+
         set({
           user: null,
           accessToken: null,
