@@ -20,7 +20,7 @@
     "zustand": "^4.5.0"
   },
   "overrides": {
-    "minimatch": ">=10.2.1"
+    "minimatch": ">=10.2.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
