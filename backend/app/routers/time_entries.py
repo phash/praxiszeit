@@ -12,8 +12,69 @@ from app.schemas.time_entry import (
 )
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break
+from uuid import UUID as UUIDType
 
 router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
+
+
+MAX_DAILY_HOURS_HARD = 10.0   # §3 ArbZG: absolute Obergrenze
+MAX_DAILY_HOURS_WARN = 8.0    # §3 ArbZG: Regelgrenze (Warnung)
+NIGHT_START = time(23, 0)
+NIGHT_END   = time(6, 0)
+
+
+def _calculate_daily_net_hours(
+    db: Session,
+    user_id: UUIDType,
+    entry_date: date,
+    start_time: time,
+    end_time: time,
+    break_minutes: int,
+    exclude_entry_id=None,
+) -> float:
+    """Sum up all net hours for a user on a given date, including the new/updated entry."""
+    query = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user_id,
+        TimeEntry.date == entry_date,
+        TimeEntry.end_time.isnot(None),
+    )
+    if exclude_entry_id:
+        query = query.filter(TimeEntry.id != exclude_entry_id)
+    existing = query.all()
+
+    def net_h(st: time, et: time, brk: int) -> float:
+        mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
+        return max(0.0, (mins - brk) / 60.0)
+
+    total = sum(net_h(e.start_time, e.end_time, e.break_minutes) for e in existing)
+    total += net_h(start_time, end_time, break_minutes)
+    return total
+
+
+def _is_night_work(start_time: time, end_time: time) -> bool:
+    """Check if a time entry overlaps with night hours (23:00–06:00) per §6 ArbZG."""
+    # Overlaps night if start < 06:00 or end > 23:00
+    return start_time < NIGHT_END or end_time > NIGHT_START
+
+
+def _enrich_response(
+    response: "TimeEntryResponse",
+    entry: TimeEntry,
+    current_user: User,
+    db: Session,
+    warnings: "list[str] | None" = None,
+) -> "TimeEntryResponse":
+    """Set computed fields on a TimeEntryResponse."""
+    response.is_editable = _compute_is_editable(entry, current_user)
+    weekday = entry.date.weekday()
+    holiday = is_holiday(db, entry.date)
+    response.is_sunday_or_holiday = weekday == 6 or bool(holiday)
+    response.is_night_work = (
+        _is_night_work(entry.start_time, entry.end_time)
+        if entry.end_time else False
+    )
+    response.warnings = warnings or []
+    return response
 
 
 def _compute_is_editable(entry: TimeEntry, current_user: User) -> bool:
@@ -64,7 +125,7 @@ def get_clock_status(
     elapsed = int((now - start_dt).total_seconds() / 60)
 
     response_entry = TimeEntryResponse.model_validate(open_entry)
-    response_entry.is_editable = _compute_is_editable(open_entry, current_user)
+    _enrich_response(response_entry, open_entry, current_user, db)
 
     return ClockStatusResponse(
         is_clocked_in=True,
@@ -135,7 +196,25 @@ def clock_out(
         )
 
     now = datetime.now()
-    open_entry.end_time = now.time().replace(second=0, microsecond=0)
+    new_end_time = now.time().replace(second=0, microsecond=0)
+
+    # §3 ArbZG: check daily hours before committing
+    daily_hours = _calculate_daily_net_hours(
+        db=db,
+        user_id=current_user.id,
+        entry_date=open_entry.date,
+        start_time=open_entry.start_time,
+        end_time=new_end_time,
+        break_minutes=body.break_minutes,
+        exclude_entry_id=open_entry.id,
+    )
+    if daily_hours > MAX_DAILY_HOURS_HARD:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+        )
+
+    open_entry.end_time = new_end_time
     open_entry.break_minutes = body.break_minutes
     if body.note:
         open_entry.note = body.note
@@ -143,8 +222,16 @@ def clock_out(
     db.commit()
     db.refresh(open_entry)
 
+    clock_out_warnings: list[str] = []
+    if daily_hours > MAX_DAILY_HOURS_WARN:
+        clock_out_warnings.append("DAILY_HOURS_WARNING")
+    if open_entry.date.weekday() == 6:
+        clock_out_warnings.append("SUNDAY_WORK")
+    if is_holiday(db, open_entry.date):
+        clock_out_warnings.append("HOLIDAY_WORK")
+
     response = TimeEntryResponse.model_validate(open_entry)
-    response.is_editable = _compute_is_editable(open_entry, current_user)
+    _enrich_response(response, open_entry, current_user, db, warnings=clock_out_warnings)
     return response
 
 
@@ -186,11 +273,10 @@ def list_time_entries(
 
     entries = query.order_by(TimeEntry.date.desc(), TimeEntry.start_time.desc()).all()
 
-    # Add is_editable flag to each entry
     results = []
     for entry in entries:
         response = TimeEntryResponse.model_validate(entry)
-        response.is_editable = _compute_is_editable(entry, current_user)
+        _enrich_response(response, entry, current_user, db)
         results.append(response)
 
     return results
@@ -213,7 +299,7 @@ def get_time_entry(
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
 
     response = TimeEntryResponse.model_validate(entry)
-    response.is_editable = _compute_is_editable(entry, current_user)
+    _enrich_response(response, entry, current_user, db)
     return response
 
 
@@ -257,15 +343,34 @@ def create_time_entry(
     if break_error:
         raise HTTPException(status_code=400, detail=break_error)
 
-    # Warning if it's a weekend or holiday
-    weekday = entry_data.date.weekday()
-    if weekday >= 5:
-        # It's a weekend - could add a warning mechanism
-        pass
+    # §3 ArbZG: daily hours check
+    daily_hours = _calculate_daily_net_hours(
+        db=db,
+        user_id=current_user.id,
+        entry_date=entry_data.date,
+        start_time=entry_data.start_time,
+        end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes,
+    )
+    if daily_hours > MAX_DAILY_HOURS_HARD:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
+        )
 
-    if is_holiday(db, entry_data.date):
-        # It's a public holiday - could add a warning
-        pass
+    # Collect warnings
+    warnings: list[str] = []
+    if daily_hours > MAX_DAILY_HOURS_WARN:
+        warnings.append("DAILY_HOURS_WARNING")
+
+    # §9/10 ArbZG: weekend/holiday detection
+    weekday = entry_data.date.weekday()
+    is_sunday = weekday == 6
+    holiday = is_holiday(db, entry_data.date)
+    if is_sunday:
+        warnings.append("SUNDAY_WORK")
+    if holiday:
+        warnings.append("HOLIDAY_WORK")
 
     # Create entry
     entry = TimeEntry(
@@ -282,7 +387,7 @@ def create_time_entry(
     db.refresh(entry)
 
     response = TimeEntryResponse.model_validate(entry)
-    response.is_editable = _compute_is_editable(entry, current_user)
+    _enrich_response(response, entry, current_user, db, warnings=warnings)
     return response
 
 
@@ -333,11 +438,49 @@ def update_time_entry(
         if break_error:
             raise HTTPException(status_code=400, detail=break_error)
 
+    # §3 ArbZG: daily hours check (only when entry is complete)
+    if entry.end_time is not None:
+        daily_hours = _calculate_daily_net_hours(
+            db=db,
+            user_id=entry.user_id,
+            entry_date=entry.date,
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+            break_minutes=entry.break_minutes,
+            exclude_entry_id=entry.id,
+        )
+        if daily_hours > MAX_DAILY_HOURS_HARD:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
+            )
+
     db.commit()
     db.refresh(entry)
 
+    update_warnings: list[str] = []
+    if entry.end_time is not None:
+        saved_hours = _calculate_daily_net_hours(
+            db=db,
+            user_id=entry.user_id,
+            entry_date=entry.date,
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+            break_minutes=entry.break_minutes,
+            exclude_entry_id=None,
+        )
+        if saved_hours > MAX_DAILY_HOURS_WARN:
+            update_warnings.append("DAILY_HOURS_WARNING")
+
+    entry_weekday = entry.date.weekday()
+    if entry_weekday == 6:
+        update_warnings.append("SUNDAY_WORK")
+    entry_is_holiday = is_holiday(db, entry.date)
+    if entry_is_holiday:
+        update_warnings.append("HOLIDAY_WORK")
+
     response = TimeEntryResponse.model_validate(entry)
-    response.is_editable = _compute_is_editable(entry, current_user)
+    _enrich_response(response, entry, current_user, db, warnings=update_warnings)
     return response
 
 
