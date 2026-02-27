@@ -19,6 +19,9 @@ interface TimeEntry {
   net_hours: number;
   note?: string;
   is_editable: boolean;
+  warnings: string[];
+  is_sunday_or_holiday: boolean;
+  is_night_work: boolean;
 }
 
 export default function TimeTracking() {
@@ -138,12 +141,23 @@ export default function TimeTracking() {
     }
 
     try {
+      let response;
       if (editingId) {
-        await apiClient.put(`/time-entries/${editingId}`, formData);
+        response = await apiClient.put(`/time-entries/${editingId}`, formData);
         toast.success('Zeiteintrag erfolgreich aktualisiert');
       } else {
-        await apiClient.post('/time-entries', formData);
+        response = await apiClient.post('/time-entries', formData);
         toast.success('Zeiteintrag erfolgreich erstellt');
+      }
+      const saved: TimeEntry = response.data;
+      if (saved.warnings?.includes('DAILY_HOURS_WARNING')) {
+        toast.warning('Tagesarbeitszeit überschreitet 8 Stunden (§3 ArbZG)');
+      }
+      if (saved.warnings?.includes('SUNDAY_WORK')) {
+        toast.warning('Achtung: Sonntagsarbeit – Ausnahmegrund nach §10 ArbZG dokumentieren');
+      }
+      if (saved.warnings?.includes('HOLIDAY_WORK')) {
+        toast.warning('Achtung: Feiertagsarbeit – Ausnahmegrund nach §10 ArbZG dokumentieren');
       }
       fetchEntries();
       resetForm();
@@ -417,9 +431,23 @@ export default function TimeTracking() {
                   const entryDate = new Date(entry.date + 'T00:00:00');
                   const weekday = weekdayNames[entryDate.getDay()];
                   return (
-                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.is_editable ? 'bg-gray-50/50' : ''}`}>
+                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.is_editable ? 'bg-gray-50/50' : ''} ${entry.is_sunday_or_holiday ? 'bg-orange-50/40' : ''}`}>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {format(entryDate, 'dd.MM.yyyy')}
+                        <div className="flex flex-col gap-1">
+                          <span>{format(entryDate, 'dd.MM.yyyy')}</span>
+                          <div className="flex gap-1 flex-wrap">
+                            {entry.is_sunday_or_holiday && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800" title="Sonn-/Feiertagsarbeit – §9/10 ArbZG">
+                                So/FT
+                              </span>
+                            )}
+                            {entry.is_night_work && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800" title="Nachtarbeit (23–6 Uhr) – §6 ArbZG">
+                                Nacht
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{entry.start_time.substring(0, 5)}</td>

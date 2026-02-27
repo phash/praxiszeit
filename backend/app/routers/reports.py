@@ -5,8 +5,9 @@ from sqlalchemy import extract
 from typing import List
 from decimal import Decimal
 from io import BytesIO
+from datetime import date
 from app.database import get_db
-from app.models import User, Absence, AbsenceType
+from app.models import User, Absence, AbsenceType, TimeEntry
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, rest_time_service
@@ -263,4 +264,63 @@ def get_rest_time_violations(
         "total_violations": sum(v["violation_count"] for v in violations),
         "employees_affected": len(violations),
         "violations": violations
+    }
+
+
+@router.get("/sunday-summary")
+def get_sunday_summary(
+    year: int = Query(..., description="Year to check (e.g., 2026)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    §11 ArbZG: Get Sunday/holiday work summary per employee for a given year.
+    Reports how many Sundays each employee worked and whether the legal minimum
+    of 15 free Sundays per year is met.
+    """
+    import calendar
+
+    # Count total Sundays in the year
+    total_sundays = sum(
+        1 for m in range(1, 13)
+        for d in range(1, calendar.monthrange(year, m)[1] + 1)
+        if date(year, m, d).weekday() == 6
+    )
+    min_free_sundays = 15
+
+    users = _get_active_visible_users(db)
+    result = []
+
+    for user in users:
+        # Get all entries on Sundays in this year
+        entries = (
+            db.query(TimeEntry)
+            .filter(
+                TimeEntry.user_id == user.id,
+                extract("year", TimeEntry.date) == year,
+            )
+            .all()
+        )
+        sundays_worked = {
+            e.date for e in entries if e.date.weekday() == 6
+        }
+        sundays_worked_count = len(sundays_worked)
+        free_sundays = total_sundays - sundays_worked_count
+
+        result.append({
+            "user_id": str(user.id),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "sundays_worked": sundays_worked_count,
+            "free_sundays": free_sundays,
+            "total_sundays_in_year": total_sundays,
+            "compliant": free_sundays >= min_free_sundays,
+        })
+
+    return {
+        "year": year,
+        "total_sundays_in_year": total_sundays,
+        "min_free_sundays": min_free_sundays,
+        "employees": result,
+        "non_compliant_count": sum(1 for r in result if not r["compliant"]),
     }

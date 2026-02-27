@@ -79,6 +79,9 @@ services:
       - praxiszeit-network
 
 volumes:
+  # §16 ArbZG: Zeitaufzeichnungen müssen mind. 2 Jahre aufbewahrt werden.
+  # Dieses Volume NICHT löschen ohne vorheriges Backup und Prüfung der Aufbewahrungspflicht.
+  # Backup-Anleitung: siehe INSTALLATION.md → "Gesetzliche Aufbewahrungspflichten"
   postgres_data:
   prometheus_data:
   grafana_data:

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Download, Calendar, FileText, Clock, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Download, Calendar, FileText, Clock, AlertTriangle, ChevronDown, ChevronUp, Sun } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -22,6 +22,24 @@ interface EmployeeViolations {
   violation_count: number;
 }
 
+interface SundaySummaryEmployee {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  sundays_worked: number;
+  free_sundays: number;
+  total_sundays_in_year: number;
+  compliant: boolean;
+}
+
+interface SundaySummary {
+  year: number;
+  total_sundays_in_year: number;
+  min_free_sundays: number;
+  employees: SundaySummaryEmployee[];
+  non_compliant_count: number;
+}
+
 export default function Reports() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -35,6 +53,11 @@ export default function Reports() {
   const [restViolations, setRestViolations] = useState<EmployeeViolations[] | null>(null);
   const [restLoading, setRestLoading] = useState(false);
   const [expandedViolations, setExpandedViolations] = useState<Record<string, boolean>>({});
+
+  // Sunday summary (§11 ArbZG)
+  const [sundayYear, setSundayYear] = useState(new Date().getFullYear());
+  const [sundaySummary, setSundaySummary] = useState<SundaySummary | null>(null);
+  const [sundayLoading, setSundayLoading] = useState(false);
 
   const checkRestViolations = async () => {
     setRestLoading(true);
@@ -50,6 +73,21 @@ export default function Reports() {
       toast.error('Fehler beim Laden der Ruhezeitprüfung');
     } finally {
       setRestLoading(false);
+    }
+  };
+
+  const checkSundaySummary = async () => {
+    setSundayLoading(true);
+    try {
+      const res = await apiClient.get(`/admin/reports/sunday-summary?year=${sundayYear}`);
+      setSundaySummary(res.data);
+      if (res.data.non_compliant_count === 0) {
+        toast.success('Alle Mitarbeitenden erfüllen die §11 ArbZG Anforderung (≥15 freie Sonntage)');
+      }
+    } catch {
+      toast.error('Fehler beim Laden der Sonntagsauswertung');
+    } finally {
+      setSundayLoading(false);
     }
   };
 
@@ -329,6 +367,73 @@ export default function Reports() {
         )}
       </div>
 
+      {/* Sunday Summary §11 ArbZG */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-3 mb-2">
+          <Sun className="text-yellow-500" size={24} />
+          <h2 className="text-xl font-semibold">Sonntagsarbeit §11 ArbZG</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          §11 ArbZG fordert mindestens <strong>15 beschäftigungsfreie Sonntage pro Jahr</strong> pro Mitarbeitenden.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
+            <input type="number" value={sundayYear} onChange={e => setSundayYear(parseInt(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2030" />
+          </div>
+          <button onClick={checkSundaySummary} disabled={sundayLoading}
+            className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
+            <Sun size={18} />
+            <span>{sundayLoading ? 'Prüfe...' : 'Prüfen'}</span>
+          </button>
+        </div>
+
+        {sundaySummary !== null && (
+          <div>
+            <div className="mb-3 flex flex-wrap gap-3 text-sm text-gray-600">
+              <span>Jahr: <strong>{sundaySummary.year}</strong></span>
+              <span>Sonntage gesamt: <strong>{sundaySummary.total_sundays_in_year}</strong></span>
+              <span>Pflicht freie Sonntage: <strong>≥{sundaySummary.min_free_sundays}</strong></span>
+              {sundaySummary.non_compliant_count > 0 && (
+                <span className="text-red-600 font-medium">
+                  ⚠ {sundaySummary.non_compliant_count} Mitarbeitende nicht konform
+                </span>
+              )}
+            </div>
+            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase">Mitarbeiter:in</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Gearbeitete So.</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Freie So.</th>
+                  <th className="px-4 py-2 text-center text-xs text-gray-500 uppercase">§11 Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sundaySummary.employees.map(emp => (
+                  <tr key={emp.user_id} className={`hover:bg-gray-50 ${!emp.compliant ? 'bg-red-50' : ''}`}>
+                    <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{emp.sundays_worked}</td>
+                    <td className="px-4 py-2 text-right font-medium">
+                      <span className={emp.compliant ? 'text-green-700' : 'text-red-700'}>
+                        {emp.free_sundays}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {emp.compliant
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Additional Info */}
       <div className="bg-gray-50 rounded-xl border border-gray-200 p-6">
         <h3 className="font-semibold text-gray-900 mb-3">Hinweise</h3>
@@ -338,6 +443,7 @@ export default function Reports() {
           <li>• Bayerische Feiertage werden automatisch berücksichtigt</li>
           <li>• Abwesenheiten reduzieren das Soll entsprechend</li>
           <li>• Historische Stundenänderungen werden korrekt berücksichtigt</li>
+          <li>• <strong>§16 ArbZG:</strong> Exportierte Berichte und Zeitaufzeichnungen sind mindestens <strong>2 Jahre aufzubewahren</strong></li>
         </ul>
       </div>
     </div>

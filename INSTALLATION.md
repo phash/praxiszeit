@@ -272,3 +272,39 @@ docker compose exec -T db psql -U praxiszeit praxiszeit < backup_20260214.sql
 sudo usermod -aG docker $USER
 # Dann ab- und wieder anmelden
 ```
+
+---
+
+## Gesetzliche Aufbewahrungspflichten (§16 ArbZG)
+
+Nach **§16 Abs. 2 ArbZG** sind Arbeitgeber verpflichtet, die Arbeitszeiten von Arbeitnehmenden, die
+über 8 Stunden werktäglich hinausgehen, aufzuzeichnen und diese Aufzeichnungen **mindestens 2 Jahre
+aufzubewahren**. Verstöße sind bußgeldbewehrt (bis zu 30.000 €).
+
+### Was PraxisZeit speichert
+Alle Zeiteinträge werden in der PostgreSQL-Datenbank persistent gespeichert (Docker-Volume `postgres_data`).
+Solange das Volume nicht manuell gelöscht wird, bleiben alle Daten erhalten.
+
+### Empfohlene Backup-Strategie (2-Jahres-Retention)
+
+**Tägliches automatisches Backup** (bereits in "Datensicherung" beschrieben) **plus** Jahresarchivierung:
+
+```bash
+# Jahresarchiv erstellen (jeweils zum Jahresende)
+YEAR=$(date +%Y)
+docker compose exec -T db pg_dump -U praxiszeit praxiszeit \
+  | gzip > ~/praxiszeit-backup/praxiszeit_archiv_${YEAR}.sql.gz
+
+# Backup-Verzeichnis prüfen (mind. 2 Jahrgänge vorhanden?)
+ls -lh ~/praxiszeit-backup/praxiszeit_archiv_*.sql.gz
+```
+
+### Checkliste Compliance §16 ArbZG
+- [ ] Automatisches tägliches Backup eingerichtet (Cron-Job, siehe "Datensicherung")
+- [ ] Jahresarchive werden für **mind. 2 Jahre** aufbewahrt
+- [ ] Backup-Speicherort ist gesichert (nicht nur auf dem selben Server)
+- [ ] Regelmäßige Wiederherstellungs-Tests durchführen
+- [ ] Exportierte Excel-Berichte ebenfalls 2 Jahre archivieren
+
+> **Hinweis:** Diese Anforderungen gelten unabhängig von PraxisZeit.
+> Der Arbeitgeber ist selbst für die gesetzeskonforme Aufbewahrung verantwortlich.

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, field_serializer
-from typing import Optional
+from typing import Optional, List
 from datetime import date, time, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -49,6 +49,9 @@ class TimeEntryResponse(BaseModel):
     note: Optional[str] = None
     net_hours: float
     is_editable: bool = True
+    warnings: List[str] = []
+    is_sunday_or_holiday: bool = False
+    is_night_work: bool = False
     created_at: datetime
 
     @field_serializer('id', 'user_id')
