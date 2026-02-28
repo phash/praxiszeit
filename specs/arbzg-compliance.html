@@ -221,18 +221,18 @@
   <div class="summary-grid">
     <div class="summary-card ok">
       <div class="icon">✅</div>
-      <div class="count">6</div>
+      <div class="count">5</div>
       <div class="label">Vollständig konform</div>
     </div>
     <div class="summary-card warn">
       <div class="icon">⚠️</div>
-      <div class="count">3</div>
+      <div class="count">5</div>
       <div class="label">Weitgehend / Teilweise</div>
     </div>
     <div class="summary-card info">
       <div class="icon">📋</div>
-      <div class="count">8</div>
-      <div class="label">Verbleibende Lücken</div>
+      <div class="count">10</div>
+      <div class="label">Lücken / Bugs</div>
     </div>
     <div class="summary-card fine">
       <div class="icon">💶</div>
@@ -251,7 +251,7 @@
     <div class="section-header" onclick="toggle('s2')">
       <span class="section-par">§ 2</span>
       <span class="section-title">Begriffsbestimmungen (Nachtarbeit)</span>
-      <span class="section-status">⚠️</span>
+      <span class="section-status">✅</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
@@ -302,7 +302,7 @@
         </ul>
       </div>
       <div class="note-box">
-        <strong>Hinweis §14:</strong> Die 48h-Wochengrenze leitet sich aus §3 ab (nicht aus §14). §14 regelt Notfall-Ausnahmen und wiederholt dort nur die 48h-Obergrenze. Der <code>WEEKLY_HOURS_WARNING</code>-Check implementiert die §3-Schutzintention.
+        <strong>Hinweis §3 vs. §14:</strong> Die 48h-Wochengrenze leitet sich aus <strong>§3</strong> ab (6 Werktage × 8h Durchschnitt), nicht aus §14 (Notfall-Ausnahmen). Der Code-Kommentar <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §14 ArbZG</code> in <code>time_entries.py</code> ist fachlich irreführend – korrekt wäre <code># §3 ArbZG</code>. Das Verhalten ist korrekt, nur die Dokumentation stimmt nicht.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -332,9 +332,14 @@
           <td><code>WEEKLY_HOURS_WARNING</code> + Frontend-Toast bei allen Eingabepfaden</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme (exempt_from_arbzg)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Checks werden für leitende Angestellte übersprungen</td>
+          <td>§18-Ausnahme – Mitarbeiter-Pfad</td>
+          <td><span class="badge badge-ok">✅ Korrekt</span></td>
+          <td><code>exempt_from_arbzg</code> korrekt geprüft in <code>time_entries.py</code></td>
+        </tr>
+        <tr>
+          <td>§18-Ausnahme – Admin-Pfad</td>
+          <td><span class="badge badge-fail">❌ Bug</span></td>
+          <td><code>admin.py</code> prüft <code>exempt_from_arbzg</code> <strong>nicht</strong> → 10h-Hard-Stop gilt auch für §18-Befreite, wenn Admin den Eintrag anlegt</td>
         </tr>
         <tr>
           <td>6-Monats-Ausgleichszeitraum</td>
@@ -381,9 +386,14 @@
           <td><code>break_validation_service.py</code> prüft 9h/45min vor 6h/30min</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme (exempt_from_arbzg)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Pausenpflicht-Checks werden für leitende Angestellte übersprungen</td>
+          <td>§18-Ausnahme – Mitarbeiter-Pfad</td>
+          <td><span class="badge badge-ok">✅ Korrekt</span></td>
+          <td>Pausenpflicht-Checks werden für leitende Angestellte übersprungen (MA-Selbstservice-Pfad)</td>
+        </tr>
+        <tr>
+          <td>§18-Ausnahme – Admin-Pfad</td>
+          <td><span class="badge badge-fail">❌ Bug</span></td>
+          <td><code>exempt_from_arbzg</code> nicht geprüft in <code>admin.py</code> / <code>change_requests.py</code></td>
         </tr>
         <tr>
           <td>Pausen-Timing: max. 6h am Stück (Satz 3)</td>
@@ -400,15 +410,16 @@
     <div class="section-header" onclick="toggle('s5')">
       <span class="section-par">§ 5</span>
       <span class="section-title">Mindestruhezeit zwischen Schichten</span>
-      <span class="section-status">✅</span>
+      <span class="section-status">⚠️</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
-          <li>Mind. <strong>11 Stunden ununterbrochene Ruhezeit</strong> nach Arbeitsende</li>
-          <li>Ausnahmen in bestimmten Bereichen (z.B. Krankenhäuser, Pflegeeinrichtungen) mit Ausgleich innerhalb 4 Wochen</li>
+          <li>Mind. <strong>11 Stunden ununterbrochene Ruhezeit</strong> nach Arbeitsende (Abs. 1)</li>
+          <li>Ausnahmen (Abs. 2): Krankenhäuser, Pflegeeinrichtungen, Gastronomie – Reduktion auf 10h möglich mit Ausgleich auf ≥ 12h innerhalb 4 Wochen</li>
+          <li>Bereitschaftsdienst (Abs. 3): In Kliniken/Pflegeeinrichtungen Ausgleich zu anderer Zeit möglich</li>
         </ul>
       </div>
       <table>
@@ -428,8 +439,20 @@
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
           <td>Admin Reports-Seite zeigt betroffene Mitarbeiter, Datum und Stunden-Defizit</td>
         </tr>
+        <tr>
+          <td>Split-Schicht-Erkennung</td>
+          <td><span class="badge badge-fail">❌ Bug</span></td>
+          <td><strong>False Positives bei Splitschichten:</strong> <code>rest_time_service.py</code> vergleicht alle aufeinanderfolgenden DB-Einträge, auch intraday-Lücken. Bei Splitschichten (z.B. 08:00–12:00 + 14:00–18:00) wird die 2h-Mittagspause fälschlich als &lt; 11h Ruhezeit gemeldet. Korrekte Logik: letzter Eintrag je Tag vs. erster Eintrag des Folgetages.</td>
+        </tr>
+        <tr>
+          <td>§5 Abs. 2 Ausgleichs-Tracking (Reduktion auf 10h)</td>
+          <td><span class="badge badge-info">ℹ️ Nicht impl.</span></td>
+          <td>11h-Grenze ist fest; Ausgleich auf 12h innerhalb 4 Wochen nicht getrackt. Für Arztpraxen ohne Bereitschaftsdienst kein Risiko.</td>
+        </tr>
       </table>
-      <p class="ok-note">§ 5 ist vollständig konform implementiert. ✅</p>
+      <div class="note-box" style="margin-top:1rem;">
+        <strong>Bug-Detail:</strong> In <code>rest_time_service.py</code> Zeile 62–76: Die Schleife vergleicht Entry[i-1] mit Entry[i] ohne Rücksicht auf das Datum. Die korrekte Implementierung müsste für jeden Tag den <em>letzten</em> Eintrag finden und mit dem <em>ersten</em> Eintrag des nächsten Arbeitstages vergleichen. Für Praxen mit einer Schicht/Tag kein Problem.
+      </div>
     </div>
   </div>
 
@@ -477,9 +500,14 @@
           <td><code>GET /api/admin/reports/night-work-summary</code> – Nachtschichten/MA, Nachtarbeitnehmer-Markierung (≥48 Tage/Jahr), Monatsaufschlüsselung</td>
         </tr>
         <tr>
-          <td>Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2)</td>
+          <td>Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2) – alle Pfade</td>
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
           <td><code>is_night_worker</code>-Flag auf User-Ebene; Warnung bei &gt;8h Nachtarbeit in allen 6 Validierungspfaden (create/update/clock-out/admin-create/admin-update/change-request)</td>
+        </tr>
+        <tr>
+          <td>§18-Ausnahme (exempt_from_arbzg) – Nachtarbeit-Warnung in Admin-Pfad</td>
+          <td><span class="badge badge-fail">❌ Bug</span></td>
+          <td><code>exempt_from_arbzg</code> nicht geprüft in <code>admin.py</code> / <code>change_requests.py</code>: §18-Befreite erhalten die Nachtarbeit-Warnung auch im Admin-Direkteintrag. Wird via MA-Selbstservice korrekt unterdrückt.</td>
         </tr>
         <tr>
           <td>Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer (Abs. 2)</td>
@@ -626,7 +654,7 @@
         §14 Abs. 3: Auch in Ausnahmefällen gilt die Obergrenze von <strong>48h/Woche im 6-Monats-Durchschnitt</strong>.
       </div>
       <div class="note-box">
-        <strong>Klarstellung:</strong> §14 ist eine <em>Notfall-Ausnahmeregel</em>, kein Regelfall. Die <code>WEEKLY_HOURS_WARNING</code> bei 48h implementiert die Schutzintention aus <strong>§3</strong> (6 Werktage × 8h Durchschnitt). §14 Abs. 3 wiederholt diese Grenze nur für den Ausnahmefall.
+        <strong>Klarstellung:</strong> §14 ist eine <em>Notfall-Ausnahmeregel</em>, kein Regelfall. Die <code>WEEKLY_HOURS_WARNING</code> bei 48h implementiert die Schutzintention aus <strong>§3</strong> (6 Werktage × 8h Durchschnitt). §7 Abs. 8 wiederholt diese Grenze für Tarifvertragsfälle, §14 Abs. 3 für Notfallfälle. Der Code-Kommentar <code># §14 ArbZG</code> in <code>time_entries.py</code> Zeile 22 ist irreführend – korrekt: <code># §3 ArbZG</code>.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -658,8 +686,12 @@
         <ul>
           <li>Aufzeichnung aller Arbeitszeiten &gt; 8h werktäglich (Abs. 2)</li>
           <li>Aufbewahrung mind. <strong>2 Jahre</strong> (Abs. 2)</li>
+          <li>Liste der Arbeitnehmer nach §7 Abs. 7 (Einwilligung zu Überstunden) führen (Abs. 2)</li>
           <li><strong>Gesetzesaushang</strong> (Kopie ArbZG) am Arbeitsplatz oder über betriebliche IT zugänglich (Abs. 1)</li>
         </ul>
+      </div>
+      <div class="note-box">
+        <strong>EuGH &amp; BAG Kontext:</strong> EuGH C-55/18 (2019) und BAG 1 ABR 22/21 (2022) etablieren eine weitergehende Pflicht zur Aufzeichnung <em>aller</em> Arbeitszeiten. Deutschland bereitet eine ArbZG-Reform vor (Stand: Aug. 2025 als Referentenentwurf). PraxisZeit zeichnet bereits <strong>alle</strong> Stunden lückenlos auf – übertrifft damit §16-Mindestanforderung und ist ideal positioniert.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -679,9 +711,19 @@
           <td>Reports-Seite unter „Hinweise" mit 2-Jahres-Verweis</td>
         </tr>
         <tr>
-          <td>Excel-Export als Nachweis</td>
+          <td>Excel-Export als Nachweis (.xlsx)</td>
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Monats- und Jahresexporte verfügbar</td>
+          <td>3 Exportvarianten: Monatsreport, Jahresreport Classic, Jahresreport Detailliert</td>
+        </tr>
+        <tr>
+          <td>ODS-Export als Nachweis (.ods)</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Alle 3 Varianten auch als ODS (Open Document) seit Commit <code>a503e4f</code></td>
+        </tr>
+        <tr>
+          <td>ArbZG-relevante Felder in Exports</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>sunday_exception_reason</code>, Nachtarbeit-Flag, <code>is_night_worker</code>, <code>exempt_from_arbzg</code> in allen Exports seit <code>6894f56</code></td>
         </tr>
         <tr>
           <td>Gesetzesaushang / Link zum ArbZG</td>
@@ -689,7 +731,7 @@
           <td>Link zu gesetze-im-internet.de/arbzg in Admin-Reports unter „Hinweise"</td>
         </tr>
       </table>
-      <p class="ok-note">§ 16 ist vollständig konform implementiert. ✅</p>
+      <p class="ok-note">§ 16 ist vollständig konform implementiert – PraxisZeit übertrifft die gesetzliche Mindestanforderung. ✅</p>
     </div>
   </div>
 
@@ -698,12 +740,17 @@
     <div class="section-header" onclick="toggle('s18')">
       <span class="section-par">§ 18</span>
       <span class="section-title">Ausnahmen für leitende Angestellte (Nichtanwendung)</span>
-      <span class="section-status">✅</span>
+      <span class="section-status">⚠️</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
       <div class="law-box">
-        <strong>Gesetzliche Regelung:</strong> Leitende Angestellte i.S. §5 Abs. 3 BetrVG sowie <strong>Chefärzte</strong> sind vollständig vom ArbZG ausgenommen. Gilt auch für Praxisinhaber.
+        <strong>Gesetzliche Regelung (§18 Abs. 1):</strong>
+        <ul>
+          <li><strong>Nr. 1:</strong> Leitende Angestellte i.S. §5 Abs. 3 BetrVG sowie <strong>Chefärzte</strong> – vollständig vom ArbZG ausgenommen. Gilt auch für Praxisinhaber.</li>
+          <li><strong>Nr. 2:</strong> Behördenleiter (öffentlicher Dienst – für Arztpraxen nicht relevant)</li>
+          <li><strong>Nr. 3:</strong> Arbeitnehmer in häuslicher Gemeinschaft mit betreuten Personen (Pflegepersonen im Haushalt – selten relevant)</li>
+        </ul>
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -718,36 +765,57 @@
           <td>Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG)" in Benutzerverwaltung</td>
         </tr>
         <tr>
-          <td>Vollständiger Bypass aller Checks</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Alle §3/§4-Checks und DAILY/WEEKLY/SUNDAY/HOLIDAY-Warnungen werden für exempt-Benutzer übersprungen</td>
+          <td>Bypass aller Checks – Mitarbeiter-Selbstservice-Pfad</td>
+          <td><span class="badge badge-ok">✅ Korrekt</span></td>
+          <td>Alle §3/§4-Checks und DAILY/WEEKLY/SUNDAY/HOLIDAY-Warnungen übersprungen in <code>time_entries.py</code></td>
+        </tr>
+        <tr>
+          <td>Bypass – Admin-Direkteintrag-Pfad</td>
+          <td><span class="badge badge-fail">❌ Bug</span></td>
+          <td><strong>Bug:</strong> <code>admin.py → admin_create_time_entry / admin_update_time_entry</code> prüft <code>exempt_from_arbzg</code> <strong>nicht</strong>. Admins können für §18-Befreite keine Einträge &gt;10h anlegen, obwohl dies gesetzlich erlaubt wäre.</td>
+        </tr>
+        <tr>
+          <td>Bypass – Änderungsantrags-Pfad</td>
+          <td><span class="badge badge-fail">❌ Bug</span></td>
+          <td><code>change_requests.py</code> prüft <code>exempt_from_arbzg</code> nicht bei Genehmigung → selber Bug wie Admin-Pfad</td>
         </tr>
       </table>
-      <p class="ok-note">§ 18 ist vollständig konform implementiert. ✅</p>
+      <div class="note-box" style="margin-top:1rem;">
+        <strong>Praxisauswirkung:</strong> §18-Befreite können ihre Zeiten selbst korrekt erfassen. Der Bug tritt nur auf, wenn ein Admin einen Eintrag &gt;10h für sie anlegen oder genehmigen will. Fix: <code>if not user.exempt_from_arbzg:</code> vor §3/§4-Checks in <code>admin.py</code> (Zeilen 508–527) und <code>change_requests.py</code> ergänzen.
+      </div>
     </div>
   </div>
 
-  <!-- Verbleibende Lücken -->
+  <!-- Verbleibende Lücken und Bugs -->
   <div class="section open" id="gaps">
     <div class="section-header" onclick="toggle('gaps')">
       <span class="section-par">Lücken</span>
-      <span class="section-title">Verbleibende Lücken (Gesamtüberblick)</span>
+      <span class="section-title">Lücken &amp; Bugs – Gesamtüberblick</span>
       <span class="section-status">📋</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
+      <p style="margin-bottom:0.75rem; font-size:0.88rem; color:#475569;">🔴 = Bug (Fehler im Code) &nbsp;|&nbsp; 🟡 = Lücke (fehlende Funktion) &nbsp;|&nbsp; 🔵 = Außerhalb System (HR/Lohnbuchhaltung)</p>
       <ul class="gaps-list">
+        <li style="background:#fee2e2;">
+          <span class="gap-tag" style="background:#dc2626;">§5 Bug</span>
+          <div><strong>Split-Schicht False Positives</strong> – <code>rest_time_service.py</code> vergleicht alle aufeinanderfolgenden DB-Einträge, auch intraday-Lücken. Bei Splitschichten (z.B. 08:00–12:00 + 14:00–18:00) wird die Mittagspause fälschlich als Ruhezeit-Verstoß gemeldet. Korrekte Logik: letzter Eintrag je Tag vs. erster Eintrag des Folgetages.</div>
+        </li>
+        <li style="background:#fee2e2;">
+          <span class="gap-tag" style="background:#dc2626;">§18 Bug</span>
+          <div><strong>exempt_from_arbzg fehlt in Admin- und Änderungsantrags-Pfad</strong> – <code>admin.py</code> und <code>change_requests.py</code> prüfen <code>exempt_from_arbzg</code> nicht. §18-Befreite (Praxisinhaber, Chefärzte) können vom Admin keine Einträge &gt;10h bekommen. Fix: <code>if not user.exempt_from_arbzg:</code> vor §3/§4-Checks in beiden Dateien ergänzen.</div>
+        </li>
         <li>
           <span class="gap-tag">§3</span>
           <div><strong>6-Monats-Ausgleichszeitraum</strong> – Kein gleitender Durchschnitt für die 8h-Tagesgrenze. Manuelle Dokumentationsaufgabe des Arbeitgebers. Technisch komplex, selten relevant bei typischen Praxisarbeitszeiten.</div>
         </li>
         <li>
           <span class="gap-tag">§4 Satz 3</span>
-          <div><strong>Pausen-Timing (max. 6h am Stück)</strong> – Das System prüft die Mindest-Pausendauer, aber nicht wann die Pause genommen wurde. Da Start/Ende der Pause nicht erfasst werden, ist die 6h-Kontinuitätsregel nicht systemisch prüfbar.</div>
+          <div><strong>Pausen-Timing (max. 6h am Stück)</strong> – Das System prüft die Mindest-Pausendauer, aber nicht wann die Pause genommen wurde. Da Start/Ende der Pause nicht erfasst werden, ist die 6h-Kontinuitätsregel nicht systemisch prüfbar. Gilt für alle Zeiterfassungssysteme ohne Pausen-Timestamp.</div>
         </li>
         <li>
           <span class="gap-tag">§6 Abs. 2</span>
-          <div><strong>Automatisches 1-Monat-Ausgleichs-Tracking für Nachtarbeitnehmer</strong> – Die 8h-Warnung enthält den Hinweis auf 1-Monat-Ausgleich. Automatisches Tracking (wie bei §3 der 6-Monat-Schnitt) nicht implementiert; bei Arztpraxen mit seltener Nachtarbeit wenig relevant.</div>
+          <div><strong>1-Monat-Ausgleichs-Tracking für Nachtarbeitnehmer</strong> – Die 8h-Warnung enthält den Hinweis auf 1-Monat-Ausgleich. Automatisches Tracking nicht implementiert; bei Arztpraxen mit seltener Nachtarbeit wenig relevant.</div>
         </li>
         <li>
           <span class="gap-tag">§6 Abs. 3</span>
@@ -758,12 +826,16 @@
           <div><strong>Lohnzuschlag / Freizeitausgleich Nachtarbeit</strong> – Anspruch auf 25% Zuschlag oder gleichwertige Freizeit. Lohnbuchhaltungsaufgabe; liegt außerhalb des Zeiterfassungssystems.</div>
         </li>
         <li>
-          <span class="gap-tag">§3/§14</span>
-          <div><strong>6-Monats-Durchschnitt Wochenarbeitszeit</strong> – Nur wöchentliche Momentaufnahme (48h-Warnung); kein gleitender 6-Monats-Schnitt. Aktuelle Warnungen bieten ausreichende Sicherheit für den Praxisalltag.</div>
+          <span class="gap-tag">§3 Code</span>
+          <div><strong>Irreführender Code-Kommentar</strong> – <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §14 ArbZG</code> in <code>time_entries.py</code>. Die 48h-Grenze leitet sich aus §3 ab, nicht aus §14 (Notfall-Ausnahmen). Kein fachlicher Fehler, aber misleading für Entwickler.</div>
         </li>
         <li>
           <span class="gap-tag">§7</span>
-          <div><strong>Tarifvertragliche Abweichungen</strong> – Wenn ein Tarifvertrag gilt, können andere Grenzwerte gelten. PraxisZeit verwendet feste gesetzliche 8h/10h/48h-Werte ohne Konfigurationsmöglichkeit.</div>
+          <div><strong>Tarifvertragliche Abweichungen</strong> – Wenn ein Tarifvertrag gilt, können andere Grenzwerte gelten (z.B. verlängerte Tageshöchstarbeitszeit, modifizierte Ruhezeiten). PraxisZeit verwendet feste gesetzliche 8h/10h/48h-Werte ohne Konfigurationsmöglichkeit.</div>
+        </li>
+        <li>
+          <span class="gap-tag">§16</span>
+          <div><strong>§7 Abs. 7 Opt-in-Register</strong> – §16 Abs. 2 verlangt eine Liste der Arbeitnehmer, die nach §7 Abs. 7 in Überstunden eingewilligt haben. Nur relevant bei Praxen mit entsprechendem Tarifvertrag; für Standard-Praxen ohne TV nicht erforderlich.</div>
         </li>
       </ul>
     </div>
@@ -792,10 +864,56 @@
     </div>
   </div>
 
+  <!-- Handlungsempfehlungen -->
+  <div class="section" id="actions">
+    <div class="section-header" onclick="toggle('actions')">
+      <span class="section-par">Fix</span>
+      <span class="section-title">Handlungsempfehlungen (nach Priorität)</span>
+      <span class="section-status">🔧</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <h3 style="color:#dc2626;">Mittel – Bugs mit fachlicher Auswirkung</h3>
+      <ul class="gaps-list" style="margin-bottom:1rem;">
+        <li style="background:#fee2e2;">
+          <span class="gap-tag" style="background:#dc2626;">§5</span>
+          <div><strong>Split-Schicht-Bug in <code>rest_time_service.py</code> beheben</strong> – Logik umstellen auf: letzter Eintrag je Tag → erster Eintrag des nächsten Arbeitstages. Aktuell werden intraday-Lücken fälschlich als Ruhezeit-Verstöße gemeldet.</div>
+        </li>
+        <li style="background:#fee2e2;">
+          <span class="gap-tag" style="background:#dc2626;">§18</span>
+          <div><strong><code>exempt_from_arbzg</code>-Bypass in <code>admin.py</code> und <code>change_requests.py</code> ergänzen</strong> – Vor §3/§4-Checks in <code>admin_create_time_entry</code>, <code>admin_update_time_entry</code> und change_request-Genehmigung: <code>if not user.exempt_from_arbzg:</code></div>
+        </li>
+      </ul>
+      <h3>Niedrig – Dokumentation und Code-Hygiene</h3>
+      <ul class="gaps-list">
+        <li>
+          <span class="gap-tag">§3</span>
+          <div><strong>Code-Kommentar korrigieren:</strong> <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §14 ArbZG</code> → <code># §3 ArbZG</code> in <code>time_entries.py</code> Zeile 22</div>
+        </li>
+        <li>
+          <span class="gap-tag">§6 Abs. 3</span>
+          <div><strong>Personalakte:</strong> Arbeitsmedizinische Untersuchungen für Nachtarbeitnehmer dokumentieren (vor Beginn, alle 3 Jahre, ab 50: jährlich)</div>
+        </li>
+        <li>
+          <span class="gap-tag">§6 Abs. 5</span>
+          <div><strong>Lohnbuchhaltung:</strong> 25% Nachtarbeitszuschlag oder gleichwertige Freizeit für Nachtarbeitnehmer sicherstellen</div>
+        </li>
+      </ul>
+      <h3>Beobachtung – Externe Entwicklung</h3>
+      <ul class="gaps-list">
+        <li>
+          <span class="gap-tag">§16</span>
+          <div><strong>ArbZG-Novelle (EuGH-Reform):</strong> Sobald Deutschland die Pflicht zur Aufzeichnung aller Stunden gesetzlich kodifiziert (erwartet 2025/2026), ist PraxisZeit bereits vollständig konform – alle Stunden werden lückenlos erfasst.</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
   <div class="hint-box">
     <strong>Rechtlicher Hinweis:</strong> Diese Analyse ersetzt keine Rechtsberatung. Arbeitgeber sind selbst verantwortlich für die Einhaltung des ArbZG.<br>
     Bei Fragen zur Anwendung einzelner Vorschriften sollte ein Fachanwalt für Arbeitsrecht hinzugezogen werden.<br><br>
     Gesetzestext: <a href="https://www.gesetze-im-internet.de/arbzg/">gesetze-im-internet.de/arbzg</a>
+    &nbsp;·&nbsp; Stand dieser Analyse: 28.02.2026
   </div>
 
 </div>
