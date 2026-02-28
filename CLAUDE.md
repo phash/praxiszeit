@@ -260,12 +260,14 @@ id, username (unique), email, password_hash, first_name, last_name,
 role (admin/employee), weekly_hours, vacation_days, work_days_per_week,
 track_hours (bool), calendar_color, use_daily_schedule,
 hours_monday..hours_friday, token_version (int, default 0),
+exempt_from_arbzg (bool, default false),
 is_active, is_hidden, vacation_carryover_deadline,
 created_at, updated_at
 ```
 - `track_hours=False`: Deaktiviert Arbeitszeiterfassung (Soll-Stunden = 0)
 - `calendar_color`: Hex-Farbe für Abwesenheitskalender
 - `token_version`: Wird inkrementiert um alle JWT-Tokens zu invalidieren
+- `exempt_from_arbzg=True`: Überspringt alle §3/§4/§14-Prüfungen und Warnungen (§18 ArbZG – leitende Angestellte)
 - **Indexes:** username (unique), email, role
 
 ### working_hours_changes
@@ -280,10 +282,12 @@ note, created_at
 ### time_entries
 ```sql
 id, user_id (FK), date, start_time, end_time,
-break_minutes, notes, created_at, updated_at
+break_minutes, notes, sunday_exception_reason (nullable text),
+created_at, updated_at
 ```
 - Tägliche Zeiteinträge (von-bis mit Pausen)
 - Berechnete Arbeitszeit: `(end_time - start_time) - break_minutes`
+- `sunday_exception_reason`: Optionaler Dokumentationstext für §10-ArbZG-Ausnahme bei Sonn-/Feiertagsarbeit
 - **Indexes:** user_id, date, (user_id, date) composite
 
 ### absences
@@ -313,6 +317,7 @@ id, date, name, state (Bayern), created_at
 - `006_add_work_days_per_week`: Add `work_days_per_week` to users (flexible Arbeitstage)
 - `007` - `014`: Various feature migrations (change_requests, audit_log, company_closures, error_logs, etc.)
 - `015_add_token_version`: Add `token_version` to users (JWT revocation support)
+- `016_add_sunday_exception_reason_and_arbzg_exempt`: Add `sunday_exception_reason` to time_entries + `exempt_from_arbzg` to users (§10/§18 ArbZG)
 
 ### Datenbank-Operationen
 
@@ -487,6 +492,10 @@ return output
 - `GET /api/admin/reports/export?month={YYYY-MM}` - Excel Monatsexport
 - `GET /api/admin/reports/export-yearly?year={YYYY}` - Excel Jahresexport (detailliert)
 - `GET /api/admin/reports/export-yearly-classic?year={YYYY}` - Excel Jahresexport (classic)
+- `GET /api/admin/reports/rest-time-violations?year={YYYY}` - Ruhezeitverstöße §5 ArbZG
+- `GET /api/admin/reports/sunday-summary?year={YYYY}` - Sonntagsarbeit §11 ArbZG (15-freie-Sonntage)
+- `GET /api/admin/reports/night-work-summary?year={YYYY}` - Nachtarbeit §6 ArbZG (Nachtarbeitnehmer ≥48 Tage)
+- `GET /api/admin/reports/compensatory-rest?year={YYYY}` - Ersatzruhetag-Tracking §11 ArbZG (2/8 Wochen)
 
 ### Admin - Dashboard
 - `GET /api/admin/dashboard` - Teamübersicht mit allen Mitarbeitern und deren Stats
@@ -538,6 +547,41 @@ return output
 - [ ] Admin-Passwort ändern (Startup-Warnung wenn schwach)
 - [ ] HTTPS via SSL-Konfiguration aktivieren
 - [ ] `ENVIRONMENT=production` in Produktions-`.env` setzen
+
+## ⚖️ ArbZG-Compliance
+
+Vollständige Dokumentation: `specs/arbzg-compliance.md`
+
+### Implementierte Checks (alle Eingabepfade: create/update/clock_out/admin/change_requests)
+
+| § | Implementierung | Konstante/Funktion |
+|---|----------------|-------------------|
+| §3 | 8h-Warnung + 10h-Hard-Stop täglich | `MAX_DAILY_HOURS_WARN=8`, `MAX_DAILY_HOURS_HARD=10` in `time_entries.py` |
+| §4 | >6h→30min + >9h→45min Pause | `validate_daily_break()` in `break_validation_service.py` |
+| §5 | 11h-Mindestruhezeit | `check_rest_time_violations()` in `rest_time_service.py` |
+| §6 | Nachtarbeit 23–6 Uhr | `_is_night_work()` in `time_entries.py`, Report: `/api/admin/reports/night-work-summary` |
+| §10 | Ausnahmegrund-Dokumentation | `sunday_exception_reason` Feld auf `TimeEntry` |
+| §11 | 15-freie-Sonntage + Ersatzruhetage | Reports: `sunday-summary`, `compensatory-rest` |
+| §14 | 48h-Wochenwarnung | `MAX_WEEKLY_HOURS_WARN=48`, `_calculate_weekly_net_hours()` |
+| §18 | exempt_from_arbzg-Flag | `User.exempt_from_arbzg` → bypassed alle Checks |
+
+### Warnungs-Flags in `TimeEntryResponse.warnings`
+- `DAILY_HOURS_WARNING` – Tageszeit > 8h (§3)
+- `WEEKLY_HOURS_WARNING` – Wochenzzeit > 48h (§14)
+- `SUNDAY_WORK` – Sonntagsarbeit (§9)
+- `HOLIDAY_WORK` – Feiertagsarbeit (§9)
+
+### exempt_from_arbzg-Muster
+```python
+exempt = current_user.exempt_from_arbzg
+if not exempt:
+    # §4 Pausenpflicht
+    break_error = validate_daily_break(...)
+    # §3 Tageshöchstgrenze
+    if daily_hours > MAX_DAILY_HOURS_HARD: raise HTTPException(422, ...)
+    # §14 Wochenarbeitszeit
+    if weekly_hours > MAX_WEEKLY_HOURS_WARN: warnings.append("WEEKLY_HOURS_WARNING")
+```
 
 ## 🐛 Troubleshooting
 
@@ -1100,11 +1144,12 @@ docker-compose logs -f --since 1h       # Live logs last hour
 - ✅ **Phase 0:** Foundation - Toast-System, ConfirmDialog, Shared Components (Button, Badge, FormInput, FormSelect, FormTextarea, LoadingSpinner, MonthSelector, TableSkeleton)
 - ✅ **Phase 1:** Mobile Navigation - Hamburger-Menu mit Sidebar, Escape-Key-Support, Route-Change-Close
 - ✅ **Phase 2:** Responsive Tables - Card-Layouts auf Mobile für alle Tabellen (TimeTracking, Absences, Users, AdminDashboard)
+- ✅ **Phase 3:** Accessibility (A11y) - FocusTrap, ARIA-Rollen, Keyboard-Nav, Label-Input-Verknüpfungen
 - ✅ **Phase 4:** Calendar & Date Navigation - MonthSelector-Komponente mit Prev/Next
 
-**Offene Phasen:**
-- **Phase 3:** Accessibility (A11y) - aria-labels teilweise vorhanden, noch nicht vollständig
-- **Phase 5:** Polish & Nice-to-haves - Animationen, Skeleton-Loading überall
+- ✅ **Phase 5:** Polish – LoadingSpinner überall, label-Input-Verknüpfungen, Farbkonsistenz
+
+**Alle Phasen abgeschlossen** ✅
 
 **Shared Components** (`frontend/src/components/`):
 - `ConfirmDialog.tsx` - Styled Bestätigungsdialog (ersetzt native `confirm()`)
