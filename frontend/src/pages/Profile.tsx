@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
 import { Lock, Save, Palette } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 // 12 beautiful pastel colors for calendar
 const PASTEL_COLORS = [
@@ -214,8 +215,7 @@ export default function Profile() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Aktuelles Passwort
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 value={passwordData.current_password}
                 onChange={(e) =>
                   setPasswordData({ ...passwordData, current_password: e.target.value })
@@ -227,8 +227,7 @@ export default function Profile() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Neues Passwort</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={passwordData.new_password}
                 onChange={(e) => setPasswordData({ ...passwordData, new_password: e.target.value })}
                 required
@@ -241,8 +240,7 @@ export default function Profile() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Passwort bestätigen
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 value={passwordData.confirm_password}
                 onChange={(e) =>
                   setPasswordData({ ...passwordData, confirm_password: e.target.value })

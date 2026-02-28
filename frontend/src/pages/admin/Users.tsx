@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import PasswordInput from '../../components/PasswordInput';
 import Badge from '../../components/Badge';
 
 interface User {
@@ -463,9 +464,8 @@ export default function Users() {
               {!editingId && (
                 <div>
                   <label htmlFor="f-password" className="block text-sm font-medium text-gray-700 mb-1">Passwort *</label>
-                  <input
+                  <PasswordInput
                     id="f-password"
-                    type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required
@@ -1225,8 +1225,7 @@ export default function Users() {
                 <p className="text-sm text-gray-600 mb-3">
                   Neues Passwort für <strong>{setPasswordModal.userName}</strong>:
                 </p>
-                <input
-                  type="password"
+                <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Neues Passwort (mind. 8 Zeichen)"
