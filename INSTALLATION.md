@@ -161,9 +161,91 @@ docker compose logs -f backend
 
 ---
 
-## HTTPS aktivieren (optional)
+## HTTPS mit Caddy (empfohlen für Produktivbetrieb)
 
-HTTPS verschluesselt die Verbindung zwischen Browser und Server.
+Caddy übernimmt automatisch das SSL-Zertifikatsmanagement via Let's Encrypt.
+**Keine manuellen Zertifikate, kein Browser-Zertifikats-Warndialog.**
+
+### Voraussetzungen
+
+- Eine eigene Domain (z. B. `praxis.example.com`)
+- DNS-Eintrag: Domain zeigt auf die öffentliche Server-IP
+- Ports 80 und 443 (TCP + UDP) offen
+- Docker Compose >= v2.20 (`docker compose version`)
+
+### Schritt 1: Domain in .env eintragen
+
+```bash
+# .env öffnen und ergänzen:
+nano .env
+```
+
+Folgende Zeilen hinzufügen bzw. anpassen:
+
+```
+SERVER_DOMAIN=praxis.example.com
+CORS_ORIGINS=https://praxis.example.com
+```
+
+### Schritt 2: Firewall öffnen
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 443/udp   # HTTP/3 (optional, aber empfohlen)
+```
+
+### Schritt 3: Mit Caddy starten
+
+```bash
+cd ~/praxiszeit
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+```
+
+Caddy holt beim ersten Start automatisch ein Let's-Encrypt-Zertifikat.
+Das Zertifikat wird in einem eigenen Docker-Volume (`caddy_data`) gespeichert und vor Ablauf automatisch erneuert.
+
+Fortschritt beobachten:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml logs -f caddy
+```
+
+Erfolgreich, wenn folgende Zeile erscheint:
+```
+... certificate obtained successfully
+```
+
+### Schritt 4: Im Browser öffnen
+
+```
+https://praxis.example.com
+```
+
+### Updates einspielen (mit Caddy)
+
+```bash
+cd ~/praxiszeit
+git pull
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d --build
+```
+
+### Zurück zu HTTP (ohne Caddy)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml down
+docker compose up -d
+```
+
+> **Hinweis:** Das `caddy_data`-Volume enthält die Let's-Encrypt-Zertifikate.
+> Dieses Volume **nicht löschen** – sonst muss ein neues Zertifikat ausgestellt werden
+> (Let's Encrypt hat Rate Limits: 5 Zertifikate pro Domain und Woche).
+
+---
+
+## HTTPS mit selbstsigniertem Zertifikat (Fallback ohne Domain)
+
+Nur für den Fall, dass keine öffentliche Domain verfügbar ist (z. B. reines Intranet).
+Der Browser zeigt dann eine Sicherheitswarnung – für Produktivbetrieb nicht empfohlen.
 
 ### Schritt 1: Zertifikat generieren
 
@@ -173,7 +255,7 @@ chmod +x ssl/generate-cert.sh
 ./ssl/generate-cert.sh
 ```
 
-Das Skript erkennt automatisch die Server-IP und erstellt ein Zertifikat (10 Jahre gueltig).
+Das Skript erkennt automatisch die Server-IP und erstellt ein Zertifikat (10 Jahre gültig).
 
 ### Schritt 2: Mit HTTPS starten
 
@@ -188,7 +270,7 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 sudo ufw allow 443/tcp
 ```
 
-### Schritt 4: Im Browser oeffnen
+### Schritt 4: Im Browser öffnen
 
 ```
 https://<SERVER-IP>
@@ -199,9 +281,9 @@ Beim **ersten Zugriff** zeigt der Browser eine Warnung ("Nicht sicher" / "NET::E
 - **Firefox:** "Erweitert" → "Risiko akzeptieren und fortfahren"
 - **Edge:** "Erweitert" → "Weiter zu ... (unsicher)"
 
-Diese Warnung erscheint nur einmalig pro Browser/Geraet. Danach ist die Verbindung verschluesselt.
+Diese Warnung erscheint nur einmalig pro Browser/Gerät. Danach ist die Verbindung verschlüsselt.
 
-### Zurueck zu HTTP (falls noetig)
+### Zurück zu HTTP (falls nötig)
 
 ```bash
 docker compose down
@@ -214,11 +296,15 @@ docker compose up -d
 
 ```bash
 cd ~/praxiszeit
-docker compose down
 git pull
-# Ohne SSL:
+
+# Ohne HTTPS:
 docker compose up -d --build
-# Mit SSL:
+
+# Mit Caddy (empfohlen):
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d --build
+
+# Mit selbstsigniertem Zertifikat:
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```
 
