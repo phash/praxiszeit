@@ -5,6 +5,7 @@ import apiClient from '../api/client';
 import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import StampWidget from '../components/StampWidget';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 interface DashboardData {
   year: number;
@@ -142,7 +143,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Lade Dashboard...</div>
+        <LoadingSpinner text="Lade Dashboard..." />
       </div>
     );
   }

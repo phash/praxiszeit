@@ -4,6 +4,7 @@ import apiClient from '../../api/client';
 import { ScrollText, ArrowRight } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import MonthSelector from '../../components/MonthSelector';
+import LoadingSpinner from '../../components/LoadingSpinner';
 
 interface AuditEntry {
   id: string;
@@ -135,7 +136,9 @@ export default function AuditLog() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-4 text-center text-gray-500">Lade Protokoll...</td>
+                  <td colSpan={7} className="px-4 py-8 text-center">
+                    <LoadingSpinner text="Lade Protokoll..." />
+                  </td>
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
@@ -193,7 +196,9 @@ export default function AuditLog() {
         {/* Mobile Cards */}
         <div className="lg:hidden">
           {loading ? (
-            <div className="p-6 text-center text-gray-500">Lade Protokoll...</div>
+            <div className="p-6 flex justify-center">
+              <LoadingSpinner text="Lade Protokoll..." />
+            </div>
           ) : entries.length === 0 ? (
             <div className="p-6 text-center text-gray-500">Keine Einträge vorhanden</div>
           ) : (

@@ -5,6 +5,7 @@ import { Trash2, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 interface ChangeRequest {
   id: string;
@@ -122,8 +123,8 @@ export default function ChangeRequests() {
       {/* Requests List */}
       <div className="space-y-4">
         {loading ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">
-            Lade Anträge...
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 flex justify-center">
+            <LoadingSpinner text="Lade Anträge..." />
           </div>
         ) : requests.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">

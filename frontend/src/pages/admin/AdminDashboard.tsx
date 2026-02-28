@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
+import LoadingSpinner from '../../components/LoadingSpinner';
 
 interface EmployeeReport {
   user_id: string;
@@ -444,8 +445,8 @@ export default function AdminDashboard() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
-                    Lade Daten...
+                  <td colSpan={9} className="px-6 py-8 text-center">
+                    <LoadingSpinner text="Lade Daten..." />
                   </td>
                 </tr>
               ) : filteredAndSortedReport.length === 0 ? (
@@ -498,8 +499,8 @@ export default function AdminDashboard() {
         {/* Mobile Cards */}
         <div className="lg:hidden">
           {loading ? (
-            <div className="p-6 text-center text-gray-500">
-              Lade Daten...
+            <div className="p-6 flex justify-center">
+              <LoadingSpinner text="Lade Daten..." />
             </div>
           ) : filteredAndSortedReport.length === 0 ? (
             <div className="p-6 text-center text-gray-500">
@@ -667,8 +668,8 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-200">
                 {yearlyLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
-                      Lade Daten...
+                    <td colSpan={7} className="px-6 py-8 text-center">
+                      <LoadingSpinner text="Lade Daten..." />
                     </td>
                   </tr>
                 ) : yearlyAbsences.length === 0 ? (
@@ -729,8 +730,8 @@ export default function AdminDashboard() {
           {/* Mobile Cards */}
           <div className="lg:hidden">
             {yearlyLoading ? (
-              <div className="p-6 text-center text-gray-500">
-                Lade Daten...
+              <div className="p-6 flex justify-center">
+                <LoadingSpinner text="Lade Daten..." />
               </div>
             ) : yearlyAbsences.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
@@ -862,7 +863,9 @@ export default function AdminDashboard() {
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
               {detailLoading ? (
-                <div className="text-center py-8 text-gray-500">Lade Details...</div>
+                <div className="py-8 flex justify-center">
+                  <LoadingSpinner text="Lade Details..." />
+                </div>
               ) : (
                 <div className="space-y-6">
                   {/* User Info Section */}
