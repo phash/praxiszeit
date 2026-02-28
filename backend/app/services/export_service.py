@@ -9,6 +9,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service
+from app.config import settings
 from sqlalchemy import extract
 
 _NIGHT_THRESHOLD_MINUTES = 120  # §2 Abs. 4 ArbZG: mind. 2h Nachtzeit = Nachtarbeit
@@ -320,7 +321,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.column_dimensions['J'].width = 35
 
 
-def generate_yearly_report(db: Session, year: int) -> BytesIO:
+def generate_yearly_report(db: Session, year: int, include_health_data: bool = False) -> BytesIO:
     """
     Generate Excel report for all employees for a given year.
     Creates:
@@ -343,14 +344,14 @@ def generate_yearly_report(db: Session, year: int) -> BytesIO:
     users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
 
     # Create overview sheet
-    _create_yearly_overview_sheet(wb, db, users, year)
+    _create_yearly_overview_sheet(wb, db, users, year, include_health_data)
 
     # Create absences overview sheet
-    _create_absences_overview_sheet(wb, db, users, year)
+    _create_absences_overview_sheet(wb, db, users, year, include_health_data)
 
     # Create employee detail sheets
     for user in users:
-        _create_employee_yearly_sheet(wb, db, user, year)
+        _create_employee_yearly_sheet(wb, db, user, year, include_health_data)
 
     # Save to BytesIO
     output = BytesIO()
@@ -360,7 +361,7 @@ def generate_yearly_report(db: Session, year: int) -> BytesIO:
     return output
 
 
-def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], year: int):
+def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], year: int, include_health_data: bool = False):
     """Create overview sheet with all employees."""
     sheet = wb.create_sheet(title="Jahresübersicht", index=0)
 
@@ -444,17 +445,24 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         sheet.cell(row=row, column=8).number_format = '0.0'
         sheet.cell(row=row, column=9).value = float(vacation_account['remaining_days'])
         sheet.cell(row=row, column=9).number_format = '0.0'
-        sheet.cell(row=row, column=10).value = sick_days
-        sheet.cell(row=row, column=10).number_format = '0.0'
+        if include_health_data:
+            sheet.cell(row=row, column=10).value = sick_days
+            sheet.cell(row=row, column=10).number_format = '0.0'
+        else:
+            sheet.cell(row=row, column=10).value = "–"
 
         row += 1
+
+    if not include_health_data:
+        # Mark the column header to indicate data is protected
+        sheet.cell(row=3, column=10).value = "Krankheitstage (geschützt)"
 
     # Adjust column widths
     for col in range(1, 11):
         sheet.column_dimensions[get_column_letter(col)].width = 14
 
 
-def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User], year: int):
+def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User], year: int, include_health_data: bool = False):
     """Create absences overview sheet."""
     sheet = wb.create_sheet(title="Abwesenheiten")
 
@@ -512,14 +520,17 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         other_hours = sum(float(a.hours) for a in other_absences)
         other_days = other_hours / float(daily_target)
 
-        total_days = vacation_days + sick_days + training_days + other_days
+        total_days = vacation_days + (sick_days if include_health_data else 0) + training_days + other_days
 
         # Write data
         sheet.cell(row=row, column=1).value = f"{user.last_name}, {user.first_name}"
         sheet.cell(row=row, column=2).value = vacation_days
         sheet.cell(row=row, column=2).number_format = '0.0'
-        sheet.cell(row=row, column=3).value = sick_days
-        sheet.cell(row=row, column=3).number_format = '0.0'
+        if include_health_data:
+            sheet.cell(row=row, column=3).value = sick_days
+            sheet.cell(row=row, column=3).number_format = '0.0'
+        else:
+            sheet.cell(row=row, column=3).value = "–"
         sheet.cell(row=row, column=4).value = training_days
         sheet.cell(row=row, column=4).number_format = '0.0'
         sheet.cell(row=row, column=5).value = other_days
@@ -530,12 +541,15 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
 
         row += 1
 
+    if not include_health_data:
+        sheet.cell(row=3, column=3).value = "Krank (Tage) (geschützt)"
+
     # Adjust column widths
     for col in range(1, 7):
         sheet.column_dimensions[get_column_letter(col)].width = 16
 
 
-def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: int):
+def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: int, include_health_data: bool = False):
     """
     Create detailed yearly sheet for a single employee with all days.
     Similar to monthly report but for the entire year.
@@ -551,9 +565,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.cell(row=2, column=1).value = "§18 ArbZG-befreit:"
     sheet.cell(row=2, column=1).font = Font(bold=True)
     sheet.cell(row=2, column=2).value = "Ja" if user.exempt_from_arbzg else "Nein"
+    # DSGVO F-006: is_night_worker is health-adjacent data – only show when include_health_data=True
     sheet.cell(row=2, column=4).value = "Nachtarbeitnehmer (§6 Abs. 2 ArbZG):"
     sheet.cell(row=2, column=4).font = Font(bold=True)
-    sheet.cell(row=2, column=5).value = "Ja" if user.is_night_worker else "Nein"
+    sheet.cell(row=2, column=5).value = ("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"
 
     # Row 3: Column headers
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung"]
@@ -787,7 +802,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.column_dimensions['J'].width = 35
 
 
-def generate_yearly_report_classic(db: Session, year: int) -> BytesIO:
+def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False) -> BytesIO:
     """
     Generate classic yearly report (compact format with months as columns).
     Creates one sheet per employee.
@@ -807,7 +822,7 @@ def generate_yearly_report_classic(db: Session, year: int) -> BytesIO:
     users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
 
     for user in users:
-        _create_employee_classic_sheet(wb, db, user, year)
+        _create_employee_classic_sheet(wb, db, user, year, include_health_data)
 
     # Save to BytesIO
     output = BytesIO()
@@ -817,7 +832,7 @@ def generate_yearly_report_classic(db: Session, year: int) -> BytesIO:
     return output
 
 
-def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: int):
+def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: int, include_health_data: bool = False):
     """
     Create classic yearly overview sheet for one employee.
     Format: Months as columns, compact overview with running balances.
@@ -835,12 +850,11 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     month_names = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
                    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
-    # Row 1: Practice header
-    sheet.cell(row=1, column=1).value = "Praxis Dr. Klotz-Rödig"
+    # Row 1: Practice header (DSGVO F-016: use configurable env vars)
+    sheet.cell(row=1, column=1).value = settings.PRACTICE_NAME
     sheet.cell(row=1, column=1).font = header_font
-    sheet.cell(row=1, column=2).value = "Möhlestraße 11"
-    sheet.cell(row=1, column=4).value = "85354"
-    sheet.cell(row=1, column=5).value = "Freising"
+    if settings.PRACTICE_ADDRESS:
+        sheet.cell(row=1, column=2).value = settings.PRACTICE_ADDRESS
 
     # Row 2: Employee name
     sheet.cell(row=2, column=1).value = "Mitarbeiterin"
@@ -854,9 +868,10 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     sheet.cell(row=3, column=15).value = "§18 ArbZG-befreit:"
     sheet.cell(row=3, column=15).font = bold_font
     sheet.cell(row=3, column=16).value = "Ja" if user.exempt_from_arbzg else "Nein"
+    # DSGVO F-006: protect health-adjacent is_night_worker
     sheet.cell(row=2, column=15).value = "Nachtarbeitnehmer (§6 Abs. 2):"
     sheet.cell(row=2, column=15).font = bold_font
-    sheet.cell(row=2, column=16).value = "Ja" if user.is_night_worker else "Nein"
+    sheet.cell(row=2, column=16).value = ("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"
 
     # Row 4: Month headers (columns 3-14 for Jan-Dec)
     sheet.cell(row=4, column=2).value = "Übertrag"
@@ -915,8 +930,12 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
             extract('month', Absence.date) == month
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
-        sheet.cell(row=8, column=col).value = sick_hours
-        sheet.cell(row=8, column=col).number_format = '0.0'
+        if include_health_data:
+            sheet.cell(row=8, column=col).value = sick_hours
+            sheet.cell(row=8, column=col).number_format = '0.0'
+        else:
+            sheet.cell(row=8, column=col).value = "–"
+            sick_hours = 0  # Treat as 0 for subsequent calculations
         sheet.cell(row=8, column=col).alignment = right_align
 
         # Row 9: Vacation hours

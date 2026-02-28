@@ -124,7 +124,6 @@ def get_team_upcoming_absences(
                 user_color=user.calendar_color,
                 type=absence.type,
                 hours=absence.hours,
-                note=absence.note
             ))
 
     return team_absences

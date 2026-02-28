@@ -4,7 +4,7 @@ from sqlalchemy import extract
 from typing import List, Optional
 from datetime import date, datetime, timezone
 from app.database import get_db
-from app.models import User, TimeEntry, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole
+from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
@@ -108,6 +108,129 @@ def list_users(
         query = query.filter(User.is_hidden == False)
     users = query.order_by(User.last_name, User.first_name).all()
     return users
+
+
+@router.get("/users/deletion-candidates")
+def get_deletion_candidates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """DSGVO Art. 17: List inactive users with anonymization/purge eligibility."""
+    inactive_users = db.query(User).filter(User.is_active == False).order_by(User.last_name, User.first_name).all()
+
+    today = date.today()
+    result = []
+
+    for user in inactive_users:
+        last_entry = db.query(TimeEntry).filter(
+            TimeEntry.user_id == user.id
+        ).order_by(TimeEntry.date.desc()).first()
+
+        last_entry_date = last_entry.date if last_entry else None
+        days_since = (today - last_entry_date).days if last_entry_date else None
+        is_anonymized = user.username.startswith("deleted_")
+
+        result.append({
+            "user_id": str(user.id),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "username": user.username,
+            "is_anonymized": is_anonymized,
+            "last_entry_date": last_entry_date.isoformat() if last_entry_date else None,
+            "days_since_last_entry": days_since,
+            "can_anonymize": not is_anonymized,
+            "can_purge": last_entry_date is None or (days_since is not None and days_since >= 730),
+        })
+
+    return result
+
+
+@router.post("/users/{user_id}/anonymize")
+def anonymize_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """DSGVO Art. 17: Anonymize an inactive user in-place. Keeps time entries (ArbZG §16 – 2-year retention), deletes absences."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    if user.is_active:
+        raise HTTPException(status_code=400, detail="Benutzer muss zuerst deaktiviert werden (Art. 17 DSGVO)")
+    if user.username.startswith("deleted_"):
+        raise HTTPException(status_code=400, detail="Benutzer wurde bereits anonymisiert")
+
+    user.first_name = "Gelöschter"
+    user.last_name = "Benutzer"
+    user.username = f"deleted_{str(user.id)[:8]}"
+    user.email = None
+    user.calendar_color = "#9CA3AF"
+
+    # Delete absences (no statutory retention requirement)
+    db.query(Absence).filter(Absence.user_id == user.id).delete()
+
+    log = TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=user.id,
+        changed_by=current_user.id,
+        action="dsgvo_anonymize",
+        source="dsgvo",
+        new_note=f"DSGVO-Anonymisierung durch Admin {current_user.username}",
+    )
+    db.add(log)
+    db.commit()
+
+    return {"message": "Benutzer erfolgreich anonymisiert (Art. 17 DSGVO). Zeiteinträge bleiben für ArbZG §16 erhalten."}
+
+
+@router.delete("/users/{user_id}/purge")
+def purge_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """DSGVO Art. 17: Permanently delete a user and all data. Only allowed after ArbZG §16 retention period (730 days)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    if user.is_active:
+        raise HTTPException(status_code=400, detail="Benutzer muss zuerst deaktiviert werden")
+
+    last_entry = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id
+    ).order_by(TimeEntry.date.desc()).first()
+
+    if last_entry:
+        days_since = (date.today() - last_entry.date).days
+        if days_since < 730:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Aufbewahrungsfrist noch nicht abgelaufen. Letzter Eintrag: {last_entry.date.strftime('%d.%m.%Y')} ({days_since} Tage, Pflicht: 730 Tage gem. ArbZG §16)."
+            )
+
+    # Audit before deletion (use admin's own ID since target will be deleted)
+    log = TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=current_user.id,
+        changed_by=current_user.id,
+        action="dsgvo_purge",
+        source="dsgvo",
+        old_note=f"Endgültige Löschung von User-ID {user_id} ({user.first_name} {user.last_name}) durch Admin {current_user.username}",
+    )
+    db.add(log)
+    db.flush()
+
+    # Remove all FK dependencies before deleting user
+    db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.user_id == user.id).delete()
+    db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.changed_by == user.id).delete()
+    db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id).delete()
+    db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id).delete()
+    db.query(TimeEntry).filter(TimeEntry.user_id == user.id).delete()
+    db.query(Absence).filter(Absence.user_id == user.id).delete()
+    db.delete(user)
+    db.commit()
+
+    return {"message": "Benutzer und alle zugehörigen Daten wurden endgültig gelöscht (Art. 17 DSGVO)."}
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
@@ -344,7 +467,7 @@ def delete_working_hours_change(
 
 @router.get("/change-requests", response_model=List[ChangeRequestResponse])
 def list_all_change_requests(
-    request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
+    request_status: Optional[ChangeRequestStatus] = Query(None, alias="status", description="Filter by status"),
     user_id: Optional[str] = Query(None, description="Filter by user"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),

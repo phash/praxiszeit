@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -254,6 +254,42 @@ export default function Users() {
           fetchUsers();
         } catch (error: any) {
           toast.error(error.response?.data?.detail || 'Fehler beim Ändern der Sichtbarkeit');
+        }
+      },
+    });
+  };
+
+  const handleAnonymize = (userId: string, name: string) => {
+    confirm({
+      title: 'Benutzer anonymisieren (DSGVO Art. 17)',
+      message: `Soll ${name} gemäß DSGVO Art. 17 anonymisiert werden?\n\nDabei werden:\n• Name, Benutzername und E-Mail-Adresse unwiderruflich gelöscht\n• Abwesenheiten (Urlaub, Krankheit) gelöscht\n• Zeiteinträge bleiben für ArbZG §16 (2 Jahre) erhalten\n\nDieser Vorgang kann nicht rückgängig gemacht werden.`,
+      confirmLabel: 'Jetzt anonymisieren',
+      variant: 'warning',
+      onConfirm: async () => {
+        try {
+          await apiClient.post(`/admin/users/${userId}/anonymize`);
+          toast.success(`${name} wurde anonymisiert (Art. 17 DSGVO)`);
+          fetchUsers();
+        } catch (error: any) {
+          toast.error(error.response?.data?.detail || 'Fehler bei der Anonymisierung');
+        }
+      },
+    });
+  };
+
+  const handlePurge = (userId: string, name: string) => {
+    confirm({
+      title: 'Benutzer endgültig löschen (DSGVO Art. 17)',
+      message: `Soll ${name} endgültig und unwiderruflich gelöscht werden?\n\nAlle verbleibenden Daten (Zeiteinträge, Abwesenheiten, Benutzerkonto) werden dauerhaft entfernt.\n\nDieser Vorgang kann NICHT rückgängig gemacht werden.`,
+      confirmLabel: 'Endgültig löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/admin/users/${userId}/purge`);
+          toast.success(`${name} wurde endgültig gelöscht (Art. 17 DSGVO)`);
+          fetchUsers();
+        } catch (error: any) {
+          toast.error(error.response?.data?.detail || 'Fehler beim Löschen');
         }
       },
     });
@@ -898,6 +934,24 @@ export default function Users() {
                       >
                         {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                       </button>
+                      {!user.is_active && !user.username.startsWith('deleted_') && (
+                        <button
+                          onClick={() => handleAnonymize(user.id, `${user.first_name} ${user.last_name}`)}
+                          className="text-amber-600 hover:text-amber-800"
+                          title="Anonymisieren (DSGVO Art. 17)"
+                        >
+                          <UserMinus size={16} />
+                        </button>
+                      )}
+                      {!user.is_active && user.username.startsWith('deleted_') && (
+                        <button
+                          onClick={() => handlePurge(user.id, `${user.first_name} ${user.last_name}`)}
+                          className="text-red-700 hover:text-red-900"
+                          title="Endgültig löschen (DSGVO Art. 17)"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -1029,6 +1083,26 @@ export default function Users() {
                     >
                       {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
+                    {!user.is_active && !user.username.startsWith('deleted_') && (
+                      <button
+                        onClick={() => handleAnonymize(user.id, `${user.first_name} ${user.last_name}`)}
+                        className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition"
+                        aria-label="Anonymisieren (DSGVO Art. 17)"
+                        title="Anonymisieren"
+                      >
+                        <UserMinus size={16} />
+                      </button>
+                    )}
+                    {!user.is_active && user.username.startsWith('deleted_') && (
+                      <button
+                        onClick={() => handlePurge(user.id, `${user.first_name} ${user.last_name}`)}
+                        className="p-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition"
+                        aria-label="Endgültig löschen (DSGVO Art. 17)"
+                        title="Endgültig löschen"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

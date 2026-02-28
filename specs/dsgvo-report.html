@@ -1,0 +1,1640 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DSGVO-Prüfbericht – PraxisZeit (2026-02-28)</title>
+  <style>
+    :root {
+      --critical:   #c0392b;
+      --critical-bg:#fdecea;
+      --high:       #e67e22;
+      --high-bg:    #fef3e2;
+      --medium:     #f39c12;
+      --medium-bg:  #fefbe6;
+      --low:        #2980b9;
+      --low-bg:     #eaf4fc;
+      --ok:         #27ae60;
+      --ok-bg:      #e9f7ef;
+      --grey:       #7f8c8d;
+      --grey-bg:    #f2f3f4;
+      --primary:    #2c3e50;
+      --border:     #d5d8dc;
+      --font:       'Segoe UI', Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.6;
+      color: #2c3e50;
+      background: #f8f9fa;
+    }
+    /* ---- Layout ---- */
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+    /* ---- Header ---- */
+    .report-header {
+      background: linear-gradient(135deg, #1a252f 0%, #2c3e50 60%, #2980b9 100%);
+      color: #fff;
+      padding: 36px 40px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+    .report-header h1 { font-size: 26px; margin-bottom: 6px; }
+    .report-header .subtitle { font-size: 14px; opacity: 0.85; margin-bottom: 16px; }
+    .meta-row { display: flex; gap: 32px; flex-wrap: wrap; margin-top: 12px; }
+    .meta-item { font-size: 13px; opacity: 0.9; }
+    .meta-item strong { display: block; font-size: 11px; text-transform: uppercase;
+                        letter-spacing: .5px; opacity: .7; margin-bottom: 2px; }
+    /* ---- Executive Summary ---- */
+    .exec-summary {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px 28px;
+      margin-bottom: 24px;
+    }
+    .exec-summary h2 { font-size: 18px; margin-bottom: 12px; color: var(--primary); }
+    .verdict {
+      display: inline-block;
+      padding: 6px 18px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 16px;
+    }
+    .verdict.teilweise { background: var(--medium-bg); color: var(--medium); border: 1px solid var(--medium); }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .kpi-box {
+      text-align: center;
+      padding: 16px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .kpi-box .kpi-num { font-size: 32px; font-weight: 700; line-height: 1; }
+    .kpi-box .kpi-label { font-size: 12px; color: var(--grey); margin-top: 4px; }
+    .kpi-box.critical { background: var(--critical-bg); color: var(--critical); }
+    .kpi-box.high     { background: var(--high-bg);     color: var(--high); }
+    .kpi-box.medium   { background: var(--medium-bg);   color: var(--medium); }
+    .kpi-box.low      { background: var(--low-bg);      color: var(--low); }
+    .kpi-box.ok       { background: var(--ok-bg);       color: var(--ok); }
+    /* ---- Section ---- */
+    .section {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-head h2 { font-size: 17px; color: var(--primary); }
+    .section-body { padding: 24px; }
+    /* ---- Finding Card ---- */
+    .finding {
+      border-left: 4px solid var(--border);
+      border-radius: 0 6px 6px 0;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      background: #fafbfc;
+    }
+    .finding.critical { border-left-color: var(--critical); background: var(--critical-bg); }
+    .finding.high     { border-left-color: var(--high);     background: var(--high-bg); }
+    .finding.medium   { border-left-color: var(--medium);   background: var(--medium-bg); }
+    .finding.low      { border-left-color: var(--low);      background: var(--low-bg); }
+    .finding.ok       { border-left-color: var(--ok);       background: var(--ok-bg); }
+    .finding-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .finding-id {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .5px;
+      color: var(--grey);
+      flex-shrink: 0;
+      padding-top: 2px;
+    }
+    .finding h3 { font-size: 15px; flex: 1; color: var(--primary); }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      flex-shrink: 0;
+    }
+    .badge.critical { background: var(--critical); color: #fff; }
+    .badge.high     { background: var(--high);     color: #fff; }
+    .badge.medium   { background: var(--medium);   color: #fff; }
+    .badge.low      { background: var(--low);      color: #fff; }
+    .badge.ok       { background: var(--ok);       color: #fff; }
+    .finding-meta {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .finding-meta span {
+      font-size: 12px;
+      background: rgba(0,0,0,.07);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: 'Consolas','Courier New', monospace;
+    }
+    .finding dl { margin: 0; }
+    .finding dt {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      color: var(--grey);
+      margin-top: 8px;
+    }
+    .finding dd { font-size: 13px; margin-left: 0; margin-top: 2px; }
+    .finding code {
+      background: rgba(0,0,0,.07);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: 'Consolas','Courier New', monospace;
+      font-size: 12px;
+    }
+    /* ---- Checklist ---- */
+    .checklist { list-style: none; padding: 0; }
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .cl-icon { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+               display: flex; align-items: center; justify-content: center;
+               font-size: 12px; font-weight: 700; color: #fff; }
+    .cl-icon.ok       { background: var(--ok); }
+    .cl-icon.fail     { background: var(--critical); }
+    .cl-icon.warn     { background: var(--medium); }
+    .cl-icon.info     { background: var(--low); }
+    .cl-text strong   { display: block; font-weight: 600; margin-bottom: 1px; }
+    .cl-text small    { color: var(--grey); font-size: 12px; }
+    /* ---- Table ---- */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th, .data-table td {
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .data-table th { background: #f0f3f6; font-weight: 600; color: var(--primary); }
+    .data-table tr:hover td { background: #fafbfc; }
+    /* ---- Action List ---- */
+    .action-list { counter-reset: action; list-style: none; padding: 0; }
+    .action-list li {
+      counter-increment: action;
+      display: flex;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .action-list li:last-child { border-bottom: none; }
+    .action-list li::before {
+      content: counter(action);
+      flex-shrink: 0;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .action-list li .act-badge {
+      flex-shrink: 0;
+    }
+    /* ---- Tag ---- */
+    .tag {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      background: var(--grey-bg);
+      color: var(--grey);
+      margin-right: 4px;
+    }
+    /* ---- TOC ---- */
+    .toc { background: #fff; border: 1px solid var(--border); border-radius: 8px;
+           padding: 20px 24px; margin-bottom: 24px; }
+    .toc h2 { font-size: 15px; margin-bottom: 12px; color: var(--primary); }
+    .toc ol { padding-left: 20px; font-size: 13px; }
+    .toc ol li { margin-bottom: 4px; }
+    .toc a { color: var(--low); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    /* ---- Footer ---- */
+    .report-footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--grey);
+      padding: 20px 0;
+      margin-top: 8px;
+    }
+    /* ---- Print ---- */
+    @media print {
+      body { background: #fff; }
+      .page { padding: 12px; }
+      .report-header { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .finding, .kpi-box { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ================================================================ HEADER -->
+  <div class="report-header">
+    <h1>DSGVO-Prüfbericht – PraxisZeit</h1>
+    <div class="subtitle">Datenschutz-Compliance-Analyse | Zeiterfassungssystem für Arztpraxen</div>
+    <div class="meta-row">
+      <div class="meta-item"><strong>Prüfdatum</strong>28. Februar 2026</div>
+      <div class="meta-item"><strong>Prüfer</strong>Datenschutzbeauftragter (KI-gestützt)</div>
+      <div class="meta-item"><strong>Rechtsgrundlage</strong>DSGVO (EU) 2016/679</div>
+      <div class="meta-item"><strong>Systemversion</strong>PraxisZeit 1.0.0</div>
+      <div class="meta-item"><strong>Stack</strong>React + FastAPI + PostgreSQL + Docker</div>
+      <div class="meta-item"><strong>Repository</strong>github.com/phash/praxiszeit</div>
+    </div>
+  </div>
+
+  <!-- ================================================================ INHALTSVERZEICHNIS -->
+  <div class="toc" id="toc">
+    <h2>Inhaltsverzeichnis</h2>
+    <ol>
+      <li><a href="#exec">Executive Summary</a></li>
+      <li><a href="#datenkategorien">Verarbeitete Datenkategorien</a></li>
+      <li><a href="#critical">Kritische Findings (Sofortmaßnahmen)</a></li>
+      <li><a href="#high">Hohe Risiken</a></li>
+      <li><a href="#medium">Mittlere Risiken</a></li>
+      <li><a href="#low">Hinweise und Empfehlungen</a></li>
+      <li><a href="#positiv">Positiv-Befunde</a></li>
+      <li><a href="#dsfa">Datenschutz-Folgenabschätzung (DSFA)</a></li>
+      <li><a href="#betroffenenrechte">Betroffenenrechte (Art. 15–22)</a></li>
+      <li><a href="#checklist">DSGVO-Compliance-Checkliste</a></li>
+      <li><a href="#massnahmen">Empfohlene Maßnahmen (priorisiert)</a></li>
+      <li><a href="#dokumentation">Erforderliche Dokumentation</a></li>
+    </ol>
+  </div>
+
+  <!-- ================================================================ EXECUTIVE SUMMARY -->
+  <div class="exec-summary" id="exec">
+    <h2>Executive Summary</h2>
+    <div class="verdict teilweise">TEILWEISE KONFORM</div>
+    <p style="font-size:14px; margin-bottom:16px;">
+      PraxisZeit verarbeitet personenbezogene Daten von Arbeitnehmerinnen und Arbeitnehmern im Rahmen der
+      gesetzlichen Arbeitszeiterfassung (ArbZG §16). Die technische Implementierung weist erhebliche
+      Stärken auf (Passwort-Hashing, Token-Revocation, Rate Limiting, Audit-Log, Zugriffskontrollen),
+      enthält jedoch mehrere datenschutzrechtliche Lücken, die vor einem Produktiveinsatz geschlossen
+      werden müssen. Besonders kritisch ist das vollständige Fehlen eines dokumentierten Löschkonzepts
+      sowie einer Datenschutzerklärung und eines Verarbeitungsverzeichnisses.
+    </p>
+    <div class="kpi-grid">
+      <div class="kpi-box critical"><div class="kpi-num">4</div><div class="kpi-label">Kritische Findings</div></div>
+      <div class="kpi-box high"><div class="kpi-num">5</div><div class="kpi-label">Hohe Risiken</div></div>
+      <div class="kpi-box medium"><div class="kpi-num">6</div><div class="kpi-label">Mittlere Risiken</div></div>
+      <div class="kpi-box low"><div class="kpi-num">5</div><div class="kpi-label">Hinweise</div></div>
+      <div class="kpi-box ok"><div class="kpi-num">12</div><div class="kpi-label">Positiv-Befunde</div></div>
+    </div>
+  </div>
+
+  <!-- ================================================================ DATENKATEGORIEN -->
+  <div class="section" id="datenkategorien">
+    <div class="section-head">
+      <h2>Verarbeitete Datenkategorien und Rechtsgrundlagen</h2>
+    </div>
+    <div class="section-body">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Datenkategorie</th>
+            <th>Felder / Tabelle</th>
+            <th>Rechtsgrundlage</th>
+            <th>Besondere Kategorie (Art. 9)?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Stammdaten Mitarbeiter</strong></td>
+            <td><code>users</code>: username, first_name, last_name, email, password_hash, role</td>
+            <td>Art. 6 Abs. 1 lit. b (Vertragserfüllung Arbeitsverhältnis)</td>
+            <td>Nein</td>
+          </tr>
+          <tr>
+            <td><strong>Arbeitszeitdaten</strong></td>
+            <td><code>time_entries</code>: date, start_time, end_time, break_minutes, note</td>
+            <td>Art. 6 Abs. 1 lit. c (rechtl. Verpflichtung: ArbZG §16)</td>
+            <td><strong style="color:var(--medium)">Grenzfall</strong> – mittelbar gesundheitsrelevant</td>
+          </tr>
+          <tr>
+            <td><strong>Nachtarbeit</strong></td>
+            <td><code>users</code>: is_night_worker; <code>time_entries</code>: is_night_work (berechnet)</td>
+            <td>Art. 6 Abs. 1 lit. c (ArbZG §6); ggf. Art. 9 Abs. 2 lit. b</td>
+            <td><strong style="color:var(--critical)">Ja – Gesundheitsbezug</strong> (§6 ArbZG: erhöhtes Gesundheitsrisiko)</td>
+          </tr>
+          <tr>
+            <td><strong>Sonntagsarbeit / Ausnahmegrund</strong></td>
+            <td><code>time_entries</code>: sunday_exception_reason, is_sunday_or_holiday</td>
+            <td>Art. 6 Abs. 1 lit. c (ArbZG §9/§10)</td>
+            <td>Nein</td>
+          </tr>
+          <tr>
+            <td><strong>Urlaub und Abwesenheiten</strong></td>
+            <td><code>absences</code>: type (vacation/sick/training/other), note, date</td>
+            <td>Art. 6 Abs. 1 lit. b und lit. c</td>
+            <td><strong style="color:var(--medium)">Ja – Krankheitsdaten</strong> (sick-Abwesenheiten, Art. 9 DSGVO)</td>
+          </tr>
+          <tr>
+            <td><strong>ArbZG-Ausnahmen</strong></td>
+            <td><code>users</code>: exempt_from_arbzg (§18 ArbZG: leitende Angestellte)</td>
+            <td>Art. 6 Abs. 1 lit. c</td>
+            <td>Nein (Beschäftigtenstatus)</td>
+          </tr>
+          <tr>
+            <td><strong>Arbeitsstunden-Änderungen</strong></td>
+            <td><code>working_hours_changes</code>: weekly_hours, effective_from, note</td>
+            <td>Art. 6 Abs. 1 lit. b (Vertragsänderung)</td>
+            <td>Nein</td>
+          </tr>
+          <tr>
+            <td><strong>Fehlerprotokolle</strong></td>
+            <td><code>error_logs</code>: message, traceback, path, user_id, fingerprint</td>
+            <td>Art. 6 Abs. 1 lit. f (berechtigtes Interesse: Systemsicherheit)</td>
+            <td>Nein – aber Risiko personenbezogener Datenlecks in Fehlermeldungen</td>
+          </tr>
+          <tr>
+            <td><strong>Audit-Log (Admin-Änderungen)</strong></td>
+            <td><code>time_entry_audit_logs</code>: old/new values, changed_by, action</td>
+            <td>Art. 6 Abs. 1 lit. f (berechtigtes Interesse: Nachvollziehbarkeit)</td>
+            <td>Nein</td>
+          </tr>
+          <tr>
+            <td><strong>Monitoring-Metriken</strong></td>
+            <td>Prometheus-Metriken: HTTP-Pfade, Status-Codes (keine User-IDs)</td>
+            <td>Art. 6 Abs. 1 lit. f (Systemüberwachung)</td>
+            <td>Nein</td>
+          </tr>
+          <tr>
+            <td><strong>Excel-Exporte</strong></td>
+            <td>Alle Arbeitszeitdaten + Krankheitstage aller Mitarbeiter</td>
+            <td>Art. 6 Abs. 1 lit. c (ArbZG §16)</td>
+            <td>Ja – enthält Krankheitsdaten</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ================================================================ KRITISCHE FINDINGS -->
+  <div class="section" id="critical">
+    <div class="section-head">
+      <h2>Kritische Findings – Sofortmaßnahmen erforderlich</h2>
+    </div>
+    <div class="section-body">
+
+      <!-- F-001 -->
+      <div class="finding critical">
+        <div class="finding-head">
+          <span class="finding-id">F-001</span>
+          <h3>Kein Löschkonzept / keine automatischen Löschroutinen implementiert</h3>
+          <span class="badge critical">Kritisch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 5 Abs. 1 lit. e DSGVO</span>
+          <span>Art. 17 DSGVO</span>
+          <span>Art. 25 DSGVO (Privacy by Design)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Anwendung speichert Mitarbeiterdaten unbegrenzt. Es gibt keine automatische Löschroutine
+            für deaktivierte Benutzer (Soft-Delete via <code>is_active = False</code>), keine
+            Retention-Policy für Fehlerprotokolle, Audit-Logs oder Abwesenheitsdaten nach Zweckerfüllung.
+            Das Docker-Compose-Volume enthält zwar den Hinweis auf die 2-Jahres-Aufbewahrungspflicht nach
+            ArbZG §16, aber keine operative Umsetzung über diesen Zeitraum hinaus.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/models/user.py</code> (Zeile 39: <code>is_active</code> – kein <code>deleted_at</code>)<br>
+            <code>backend/app/routers/admin.py</code> (Zeile 207: DELETE als Soft-Delete, keine Datenlöschung)<br>
+            <code>docker-compose.yml</code> (Zeile 82–85: kein automatisches Backup-Deletion)<br>
+            <code>backend/app/models/error_log.py</code> (keine Retention-Spalte)
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Daten ehemaliger Mitarbeiter werden dauerhaft gespeichert (Name, Arbeitszeiten, Krankheitstage,
+            Abwesenheiten). Nach Beendigung des Beschäftigungsverhältnisses entfällt die Rechtsgrundlage
+            Art. 6 Abs. 1 lit. b DSGVO. Die verbleibenden Daten verstoßen gegen den Grundsatz der
+            Speicherbegrenzung (Art. 5 Abs. 1 lit. e). Bußgeld nach Art. 83 Abs. 4 möglich.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Löschkonzept erstellen: Arbeitszeitdaten (2 Jahre nach ArbZG §16), danach vollständige
+            Löschung (inkl. Name und Stammdaten). 2. Automatische Cron-Job-Routine implementieren, die
+            Datensätze deaktivierter Benutzer nach Ablauf der gesetzlichen Aufbewahrungsfrist physisch löscht.
+            3. Für error_logs und audit_logs Retention von max. 90 Tagen festlegen und automatisieren.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-002 -->
+      <div class="finding critical">
+        <div class="finding-head">
+          <span class="finding-id">F-002</span>
+          <h3>Keine Datenschutzerklärung und kein Verarbeitungsverzeichnis (Art. 13/30 DSGVO)</h3>
+          <span class="badge critical">Kritisch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 13 DSGVO (Informationspflicht)</span>
+          <span>Art. 30 DSGVO (Verarbeitungsverzeichnis)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Anwendung enthält keine Datenschutzerklärung für Mitarbeiter (Art. 13 DSGVO:
+            Informationspflicht bei Datenerhebung). Es existiert kein Verzeichnis der
+            Verarbeitungstätigkeiten (Art. 30 DSGVO) in der Codebase oder Dokumentation.
+            Die Specs-Dokumentation (<code>specs/</code>) enthält keine datenschutzrechtlichen
+            Dokumente.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>praxiszeit/specs/</code> – Verzeichnis enthält nur technische Spezifikationen<br>
+            <code>frontend/src/pages/</code> – kein Impressum/Datenschutz-Link
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Verstoß gegen Art. 13 DSGVO (Informationspflicht gegenüber Betroffenen) und Art. 30 DSGVO
+            (Nachweispflicht des Verantwortlichen). Bußgeld bis 10 Mio. EUR oder 2 % des weltweiten
+            Jahresumsatzes (Art. 83 Abs. 4). Mitarbeiter wurden nicht über Umfang und Zweck der
+            Verarbeitung informiert.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Datenschutzhinweis/Einweisungsblatt für Mitarbeiter erstellen (Art. 13 DSGVO):
+            Verantwortlicher, Zweck, Rechtsgrundlage, Empfänger, Speicherdauer, Betroffenenrechte.
+            2. Verzeichnis der Verarbeitungstätigkeiten (Art. 30) erstellen und pflegen.
+            3. Optional: Datenschutzhinweis in der Login-Seite oder Profilseite einbinden.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-003 -->
+      <div class="finding critical">
+        <div class="finding-head">
+          <span class="finding-id">F-003</span>
+          <h3>Krankheitsdaten in Excel-Exporten ohne besondere Schutzmaßnahmen (Art. 9 DSGVO)</h3>
+          <span class="badge critical">Kritisch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 9 DSGVO (besondere Kategorien)</span>
+          <span>Art. 5 Abs. 1 lit. f (Integrität)</span>
+          <span>Art. 32 DSGVO</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Excel-Exporte (<code>generate_monthly_report</code>, <code>generate_yearly_report</code>,
+            <code>generate_yearly_report_classic</code>) enthalten Krankheitstage/-stunden aller
+            Mitarbeiter im Klartext. Diese Krankheitsdaten sind besondere Kategorien personenbezogener
+            Daten nach Art. 9 DSGVO (Gesundheitsdaten). Die exportierten Dateien werden ohne
+            Verschlüsselung als HTTP-Download ausgeliefert und verbleiben nach dem Export unkontrolliert
+            auf dem Gerät des Admins. Es existiert kein Schutzkonzept für diese Dateien.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/services/export_service.py</code> (Zeile 411–416: sick_absences in Jahresübersicht)<br>
+            <code>backend/app/services/export_service.py</code> (Zeile 491–497: sick_days in Abwesenheitsübersicht)<br>
+            <code>backend/app/services/export_service.py</code> (Zeile 908–919: sick_hours in Classic-Report)<br>
+            <code>backend/app/routers/reports.py</code> (Zeile 164–190: unverschlüsselter StreamingResponse)
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Krankheitsdaten aller Mitarbeiter werden unverschlüsselt exportiert. Bei Verlust oder
+            unbefugtem Zugriff auf das Gerät des Admins: Datenpanne nach Art. 33/34 DSGVO.
+            Ohne Rechtsgrundlage nach Art. 9 Abs. 2 DSGVO (fehlendes Konzept) droht Bußgeld
+            bis 20 Mio. EUR (Art. 83 Abs. 5).
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Rechtliche Prüfung: Ist die Weitergabe von Krankheitsdaten in Sammelexporten
+            durch Betriebsvereinbarung oder Einwilligung gedeckt? 2. Technisch: Krankheitsdaten
+            in separatem, gesondert geschütztem Export anbieten oder pseudonymisieren (z.B. nur
+            "Krankenstunden" ohne Namensnennung im Übersichtsexport). 3. Download-Link mit
+            zusätzlicher Authentifizierung absichern. 4. Export-Protokollierung einführen
+            (wer hat wann welche Datei exportiert).
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-004 -->
+      <div class="finding critical">
+        <div class="finding-head">
+          <span class="finding-id">F-004</span>
+          <h3>Fehlendes Recht auf Löschung (Art. 17 DSGVO) – kein Account-Deletion-Mechanismus</h3>
+          <span class="badge critical">Kritisch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 17 DSGVO (Recht auf Vergessenwerden)</span>
+          <span>Art. 7 Abs. 3 DSGVO (Widerruf)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der DELETE-Endpoint <code>DELETE /api/admin/users/{user_id}</code> führt kein physisches
+            Löschen durch, sondern setzt lediglich <code>is_active = False</code> (Soft-Delete).
+            Alle Stammdaten, Zeiteinträge, Abwesenheiten (inkl. Krankheitsdaten) und Audit-Logs
+            bleiben dauerhaft in der Datenbank erhalten. Es existiert kein Endpoint oder Prozess
+            für das vollständige physische Löschen aller Daten einer Person. Mitarbeiter haben
+            kein technisches Mittel, die Löschung ihrer Daten zu beantragen oder zu erhalten.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/routers/admin.py</code> (Zeile 206–219: <code>deactivate_user</code> – nur Soft-Delete)<br>
+            Kein Endpoint: <code>DELETE /api/admin/users/{id}/purge</code> oder äquivalent
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Betroffene können ihr Recht auf Löschung nicht ausüben (Art. 17 DSGVO). Bei
+            Arbeitnehmer, der Löschung seiner Daten nach Beendigung des Arbeitsverhältnisses
+            beantragt: keine technische Möglichkeit der Erfüllung innerhalb von 30 Tagen
+            (Art. 12 Abs. 3 DSGVO). Beschwerderisiko bei Datenschutzbehörde.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Admin-Endpoint implementieren: <code>DELETE /api/admin/users/{id}/purge</code>
+            mit physischer Löschung aller personenbezogenen Daten, die nicht der gesetzlichen
+            Aufbewahrungspflicht unterliegen. 2. Für ArbZG-pflichtige Daten (Zeiteinträge 2 Jahre):
+            Pseudonymisierung statt Löschung. 3. Prozess dokumentieren: Wie wird ein Löschantrag
+            innerhalb von 30 Tagen bearbeitet?
+          </dd>
+        </dl>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================================================================ HOHE RISIKEN -->
+  <div class="section" id="high">
+    <div class="section-head">
+      <h2>Hohe Risiken</h2>
+    </div>
+    <div class="section-body">
+
+      <!-- F-005 -->
+      <div class="finding high">
+        <div class="finding-head">
+          <span class="finding-id">F-005</span>
+          <h3>Fehlende Datenschutz-Folgenabschätzung (DSFA) nach Art. 35 DSGVO</h3>
+          <span class="badge high">Hoch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 35 DSGVO</span>
+          <span>ErwGr. 91</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            PraxisZeit stellt eine systematische und umfangreiche Überwachung des
+            Arbeitsverhaltens von Mitarbeitern dar (Zeiterfassung pro Tag, Stempeluhr,
+            Überstunden-Tracking, Abwesenheitscontrolling, ArbZG-Compliance-Berichte). Dies
+            erfüllt das Kriterium der "systematischen umfangreichen Überwachung öffentlich
+            zugänglicher Bereiche" bzw. "systematische Verarbeitung von Daten zur Beurteilung
+            persönlicher Aspekte" nach Art. 35 Abs. 3 lit. b DSGVO. Eine DSFA wurde nicht
+            durchgeführt (keine Dokumentation in <code>specs/</code>).
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>praxiszeit/specs/</code> – kein DSFA-Dokument vorhanden<br>
+            Gesamtsystem: Stempeluhr (<code>/api/time-entries/clock-in</code>),
+            Überwachungs-Reports (<code>/api/admin/reports/</code>)
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Ohne DSFA: Verstoß gegen Art. 35 DSGVO (falls erforderlich). Datenschutzbehörden
+            bewerten Arbeitszeitüberwachung häufig als DSFA-pflichtig. Die BfDI-Positionspapiere
+            zur Arbeitnehmerüberwachung sind eindeutig.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            DSFA durchführen und dokumentieren (Risikobewertung, Notwendigkeit und
+            Verhältnismäßigkeit, Schutzmaßnahmen, Konsultation falls erforderlich). Vorab Prüfung
+            mit dem DSB-Schwellenwert-Test nach der BfDI-Orientierungshilfe.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-006 -->
+      <div class="finding high">
+        <div class="finding-head">
+          <span class="finding-id">F-006</span>
+          <h3>Nachtarbeitnehmer-Flag als potenzielle Gesundheitsdaten (Art. 9 DSGVO)</h3>
+          <span class="badge high">Hoch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 9 DSGVO</span>
+          <span>Art. 9 Abs. 2 lit. b (Beschäftigungsverhältnis)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Das Feld <code>is_night_worker</code> auf dem User-Model kennzeichnet Mitarbeiter als
+            Nachtarbeitnehmer gemäß ArbZG §6 Abs. 2. Nachtarbeitnehmer haben nach §6 ArbZG
+            Anspruch auf besondere arbeitsmedizinische Vorsorge. Die Einstufung als
+            Nachtarbeitnehmer enthält implizit eine gesundheitliche Risikoeinschätzung und
+            ist im Kontext des Gesundheitsschutzes am Arbeitsplatz zu sehen.
+            Diese Einstufung wird in Excel-Exporten im Klartext ausgegeben
+            (<code>export_service.py</code> Zeile 95–98).
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/models/user.py</code> (Zeile 43: <code>is_night_worker</code>)<br>
+            <code>backend/app/services/export_service.py</code> (Zeile 95–98: Ausgabe in Excel)
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Fehlendes Schutzkonzept für Verarbeitung von Gesundheitsdaten nach Art. 9 DSGVO
+            (kein expliziter Verweis auf Art. 9 Abs. 2 lit. b in Dokumentation).
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Rechtliche Einordnung klären: Verarbeitung auf Art. 9 Abs. 2 lit. b DSGVO
+            (Beschäftigungsverhältnis + Rechtsvorschrift ArbZG) stützen und dokumentieren.
+            2. In Datenschutzhinweis für Mitarbeiter explizit auf Verarbeitung von
+            Nachtarbeitnehmerstatus hinweisen. 3. Ausgabe in Exporten kritisch prüfen –
+            ggf. aus Übersichtsberichten entfernen.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-007 -->
+      <div class="finding high">
+        <div class="finding-head">
+          <span class="finding-id">F-007</span>
+          <h3>Personenbezogene Daten in Fehlermeldungen / Traceback-Logs (Art. 32 DSGVO)</h3>
+          <span class="badge high">Hoch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 32 DSGVO</span>
+          <span>Art. 5 Abs. 1 lit. f (Integrität/Vertraulichkeit)</span>
+          <span>Art. 33 DSGVO</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der Error-Logging-Mechanismus (<code>error_log_service.py</code>) erfasst vollständige
+            Python-Tracebacks (<code>traceback_str</code>) und Fehlermeldungen (<code>message</code>)
+            in der Datenbank. Fehlermeldungen können personenbezogene Daten enthalten (z.B. SQL-Fehler
+            mit Datenbankfeldinhalten, Exception-Messages mit Benutzer-UUIDs, Request-Daten).
+            Diese werden ohne Filterung gespeichert und sind für Admins in der Error-Monitoring-Seite
+            abrufbar. Zudem werden die SQLAlchemy-Logs (<code>sqlalchemy.engine</code>) direkt in
+            die Error-Log-Tabelle geleitet, was SQL-Queries mit personenbezogenen Daten erfassen kann.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/main.py</code> (Zeile 129–133: DBErrorHandler auf sqlalchemy.engine)<br>
+            <code>backend/app/services/error_log_service.py</code> (Zeile 50–64: message[:2000] unbereinigt)<br>
+            <code>backend/app/routers/error_logs.py</code> (Zeile 39–48: traceback in Response)
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Ungewollte Erfassung personenbezogener Daten in Fehlerprotokollen. Im Falle einer
+            Datenpanne sind auch Fehlerprotokolle zu melden (Art. 33 DSGVO). SQLAlchemy-Engine-Logging
+            auf WARNING-Level kann Abfragedaten mit Personenbezug enthalten.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. SQLAlchemy-Engine-Logging aus DBErrorHandler entfernen oder auf ERROR-Level
+            einschränken. 2. Fehlermeldungen vor Speicherung bereinigen (Scrubbing von
+            UUIDs, E-Mail-Adressen, Namen). 3. Retention für error_logs auf max. 90 Tage
+            begrenzen. 4. Zugriff auf Traceback-Daten nur für authorisierte Systemadministratoren.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-008 -->
+      <div class="finding high">
+        <div class="finding-head">
+          <span class="finding-id">F-008</span>
+          <h3>Fehlender Auftragsverarbeitungsvertrag (AVV) – GitHub-Integration</h3>
+          <span class="badge high">Hoch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 28 DSGVO (Auftragsverarbeitung)</span>
+          <span>Art. 44 DSGVO (Drittlandübermittlung)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Anwendung ermöglicht das Verknüpfen von Fehlerprotokollen mit GitHub-Issues
+            (<code>error_logs.py</code> Zeile 99–110: <code>set_github_url</code>). Dabei
+            wird die GitHub-URL gespeichert. Falls Fehlermeldungen manuell nach GitHub
+            übertragen werden (Issue-Beschreibungen), gelangen potenziell personenbezogene
+            Daten (User-IDs aus Tracebacks, API-Pfade mit Benutzerdaten) zu GitHub Inc.
+            (USA). Kein AVV mit GitHub dokumentiert. Standard-Contractual-Clauses (SCC)
+            für Drittlandübermittlung nicht geprüft.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/routers/error_logs.py</code> (Zeile 99–110: GitHub-URL-Speicherung)<br>
+            <code>backend/app/services/error_log_service.py</code> (Zeile 103–111: set_github_url)
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Drittlandübermittlung ohne hinreichende Garantien (Art. 46 DSGVO). Verstoß gegen
+            Art. 28 DSGVO bei Nutzung ohne AVV. GitHub Inc. sitzt in USA – Schrems II-relevant.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Prüfen ob personenbezogene Daten tatsächlich nach GitHub übermittelt werden.
+            2. Falls ja: AVV mit GitHub abschließen, SCC prüfen. 3. Technisch: Tracebacks
+            vor Übermittlung nach GitHub bereinigen. 4. Datenschutzhinweis um GitHub-Integration
+            erweitern.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-009 -->
+      <div class="finding high">
+        <div class="finding-head">
+          <span class="finding-id">F-009</span>
+          <h3>Keine Datenportabilität (Art. 20 DSGVO) für einzelne Mitarbeiter</h3>
+          <span class="badge high">Hoch</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 20 DSGVO (Datenportabilität)</span>
+          <span>Art. 15 DSGVO (Auskunftsrecht)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Es existiert kein Endpoint, der es einzelnen Mitarbeitern ermöglicht, ihre eigenen
+            Daten in einem maschinenlesbaren Format (JSON, CSV) zu exportieren. Die vorhandenen
+            Excel-Export-Funktionen sind ausschließlich für Admins zugänglich und umfassen alle
+            Mitarbeiter. Ein individueller Datenexport für die betroffene Person selbst fehlt.
+            Das Auskunftsrecht (Art. 15 DSGVO) kann zwar über die UI teilweise wahrgenommen
+            werden (Zeiteinträge einsehen), aber kein vollständiger maschinenlesbarer Export.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/routers/reports.py</code> – alle Export-Endpoints erfordern Admin-Rolle<br>
+            Kein Endpoint: <code>GET /api/me/export</code> oder äquivalent
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Verletzung von Art. 20 DSGVO (Recht auf Datenübertragbarkeit) und Art. 15 DSGVO
+            (Auskunftsrecht auf Kopie der Daten). Beschwerderisiko bei Datenschutzbehörde.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            Endpoint <code>GET /api/me/export</code> implementieren: Gibt alle personenbezogenen
+            Daten des eingeloggten Nutzers als JSON oder CSV zurück (Zeiteinträge, Abwesenheiten,
+            Stammdaten). Für die Ausübung des Auskunftsrechts (Art. 15) reicht auch ein
+            vollständiger strukturierter Download.
+          </dd>
+        </dl>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================================================================ MITTLERE RISIKEN -->
+  <div class="section" id="medium">
+    <div class="section-head">
+      <h2>Mittlere Risiken</h2>
+    </div>
+    <div class="section-body">
+
+      <!-- F-010 -->
+      <div class="finding medium">
+        <div class="finding-head">
+          <span class="finding-id">F-010</span>
+          <h3>localStorage-Speicherung von JWT-Tokens (XSS-Risiko)</h3>
+          <span class="badge medium">Mittel</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 32 DSGVO</span>
+          <span>Art. 5 Abs. 1 lit. f</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Access-Token und Refresh-Token werden im Browser-<code>localStorage</code> gespeichert
+            (<code>authStore.ts</code> Zeile 54–55, <code>client.ts</code> Zeile 14).
+            localStorage ist nicht gegen XSS-Angriffe (Cross-Site-Scripting) geschützt –
+            jedes injizierte Skript kann auf Tokens zugreifen. Die vorhandene CSP-Konfiguration
+            in nginx mildert das Risiko, eliminiert es aber nicht vollständig.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>frontend/src/stores/authStore.ts</code> (Zeile 54–55)<br>
+            <code>frontend/src/api/client.ts</code> (Zeile 14)
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Bei XSS: Diebstahl von Refresh-Token (7 Tage gültig) ermöglicht persistenten
+            Zugriff auf Mitarbeiterdaten. Gesundheitsdaten (Krankheitstage) könnten abgegriffen werden.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            Refresh-Token in <code>HttpOnly</code>-Cookie verlagern. Access-Token kann im
+            Memory (Zustand-Store ohne Persistenz) verbleiben. Alternativ: Silent-Refresh-Pattern.
+            CSP weiter verschärfen (kein <code>unsafe-inline</code>).
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-011 -->
+      <div class="finding medium">
+        <div class="finding-head">
+          <span class="finding-id">F-011</span>
+          <h3>Admin-Zugriff auf alle Mitarbeiterdaten ohne 4-Augen-Prinzip</h3>
+          <span class="badge medium">Mittel</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 5 Abs. 1 lit. f (Integrität)</span>
+          <span>Art. 25 (Privacy by Design)</span>
+          <span>Art. 32 DSGVO</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Administratoren haben uneingeschränkten Zugriff auf alle Mitarbeiterdaten
+            einschließlich Krankheitsdaten (Abwesenheitstyp "sick"), Nachtarbeitnehmer-Status,
+            Excel-Exporte mit Krankenständen. Es gibt kein 4-Augen-Prinzip bei Zugriffen auf
+            sensible Datenkombinationen. Der Admin-Endpoint
+            <code>GET /api/admin/users</code> gibt alle Felder inkl. <code>is_night_worker</code>
+            aus. Es fehlt ein Protokoll, wer wann welche Daten eingesehen hat (kein vollständiges
+            Zugriffsprotokoll).
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/routers/admin.py</code> (Zeile 96–110: list_users – alle Felder)<br>
+            <code>backend/app/routers/reports.py</code> (alle Export-Endpoints: keine Protokollierung)
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Zugriffsprotokoll für sensitive Admin-Aktionen einführen (wer hat wann Daten
+            abgerufen). 2. Krankheitsdaten in separaten, besonders geschützten Reports. 3.
+            Für kleinere Organisationen: Datenschutz-Schulung für Admins.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-012 -->
+      <div class="finding medium">
+        <div class="finding-head">
+          <span class="finding-id">F-012</span>
+          <h3>Keine Verschlüsselung der Datenbankverbindung konfiguriert</h3>
+          <span class="badge medium">Mittel</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 32 DSGVO (Verschlüsselung)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Datenbankverbindung (<code>DATABASE_URL</code>) enthält keine TLS-Parameter.
+            Im Docker-Compose-Netzwerk kommunizieren Backend und Datenbank unverschlüsselt über das
+            interne Bridge-Network. Solange beide Container auf demselben Host laufen, ist das
+            Risiko gering. Bei Nutzung eines externen Datenbankservers (Managed PostgreSQL) wäre
+            die Verbindung unverschlüsselt.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>docker-compose.yml</code> (Zeile 22–25: DATABASE_URL ohne <code>?sslmode=require</code>)<br>
+            <code>backend/app/config.py</code> (Zeile 13: DATABASE_URL – kein TLS erzwungen)
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            <code>?sslmode=require</code> in DATABASE_URL ergänzen und in Installations-Dokumentation
+            als Pflichtparameter markieren. Bei selbst-gehostetem PostgreSQL: SSL-Zertifikat konfigurieren.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-013 -->
+      <div class="finding medium">
+        <div class="finding-head">
+          <span class="finding-id">F-013</span>
+          <h3>Keine Berichtigungs-/Widerspruchsmöglichkeit für Mitarbeiter (Art. 16/21 DSGVO)</h3>
+          <span class="badge medium">Mittel</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 16 DSGVO (Berichtigung)</span>
+          <span>Art. 21 DSGVO (Widerspruch)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Mitarbeiter können ihren eigenen Vor-/Nachnamen und andere Stammdaten nicht selbst
+            berichtigen (<code>Profile.tsx</code> erlaubt nur Passwort-Änderung und Kalenderfarbe).
+            Der Endpoint <code>PUT /api/admin/users/{id}</code> ist ausschließlich Admins
+            vorbehalten. Das Recht auf Berichtigung (Art. 16) erfordert einen erreichbaren
+            Prozess. Ein Widerspruchsrecht (Art. 21) gegen die Verarbeitung auf Basis berechtigter
+            Interessen ist nicht implementiert oder dokumentiert.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>frontend/src/pages/Profile.tsx</code> – nur Passwort und Kalenderfarbe änderbar<br>
+            <code>backend/app/routers/auth.py</code> – kein User-Self-Update-Endpoint
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            1. Self-Service-Endpoint <code>PUT /api/me/profile</code> für Basisdaten (Name, E-Mail)
+            implementieren. 2. Widerspruchsprozess in Datenschutzhinweis dokumentieren (an wen
+            wenden, welcher Prozess). 3. Profilseite um Datenselbstauskunft erweitern.
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-014 -->
+      <div class="finding medium">
+        <div class="finding-head">
+          <span class="finding-id">F-014</span>
+          <h3>Prometheus-Metriken: HTTP-Pfade mit user_id-ähnlichen Mustern</h3>
+          <span class="badge medium">Mittel</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 5 Abs. 1 lit. c (Datensparsamkeit)</span>
+          <span>Art. 25 DSGVO</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Prometheus-Instrumentierung (<code>prometheus_fastapi_instrumentator</code>)
+            erfasst HTTP-Pfade als Labels in Metriken. Pfade wie
+            <code>/api/admin/users/{user_id}</code> oder <code>/api/time-entries/{entry_id}</code>
+            können UUID-Werte in den Metrik-Labels enthalten, wenn keine Parameternormalisierung
+            konfiguriert ist. Diese UUIDs landen dann in den Prometheus-Zeitreihendaten (Retention:
+            konfiguriert in prometheus_data volume, Default Prometheus: 15 Tage).
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/main.py</code> (Zeile 111–115: Instrumentator ohne Pfad-Gruppierung)<br>
+            <code>prometheus/prometheus.yml</code> (kein Pfad-Normalisierungs-Relabeling)
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            <code>group_paths=True</code> in <code>Instrumentator</code> konfigurieren oder
+            Pfadnormalisierung via Prometheus-Relabeling einrichten, sodass IDs durch Platzhalter
+            ersetzt werden (<code>/api/users/{id}</code> statt <code>/api/users/abc-123</code>).
+          </dd>
+        </dl>
+      </div>
+
+      <!-- F-015 -->
+      <div class="finding medium">
+        <div class="finding-head">
+          <span class="finding-id">F-015</span>
+          <h3>Fehlende Authentifizierung für /api/health – mögliche Informationsoffenbarung</h3>
+          <span class="badge medium">Mittel</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 32 DSGVO</span>
+          <span>Art. 5 Abs. 1 lit. f</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der Health-Check-Endpoint <code>GET /api/health</code> und der Root-Endpoint
+            <code>GET /</code> sind ohne Authentifizierung zugänglich. Der Root-Endpoint
+            gibt die API-Dokumentations-URL aus (<code>"docs": "/docs"</code>). In
+            Nicht-Produktionsumgebungen ist Swagger/ReDoc erreichbar. Die Metriken-Endpoint
+            (<code>/metrics</code>) ist in nginx blockiert, aber im Backend selbst ungeschützt.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd>
+            <code>backend/app/main.py</code> (Zeile 188–212: ungeschützte Endpoints)<br>
+            <code>backend/app/main.py</code> (Zeile 111–115: /metrics ohne Auth)
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>
+            /api/health für externe Load-Balancer akzeptabel. Root-Endpoint: <code>"docs": "/docs"</code>
+            in Production entfernen. /metrics: Backend-seitig durch IP-Filter oder Basic-Auth
+            zusätzlich sichern (Tiefenverteidigung).
+          </dd>
+        </dl>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================================================================ HINWEISE -->
+  <div class="section" id="low">
+    <div class="section-head">
+      <h2>Hinweise und Best Practices</h2>
+    </div>
+    <div class="section-body">
+
+      <div class="finding low">
+        <div class="finding-head">
+          <span class="finding-id">F-016</span>
+          <h3>Hartcodierte Praxisadresse in Excel-Export</h3>
+          <span class="badge low">Hinweis</span>
+        </div>
+        <div class="finding-meta"><span>Art. 5 Abs. 1 lit. c</span></div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            In <code>export_service.py</code> (Zeile 839–844) ist die Praxisadresse
+            "Praxis Dr. Klotz-Rödig, Möhlestraße 11, 85354 Freising" hartcodiert.
+            Diese spezifischen Daten sollten konfigurierbar sein und nicht in der Codebase stehen.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd><code>backend/app/services/export_service.py</code> (Zeile 839–844)</dd>
+          <dt>Empfehlung</dt>
+          <dd>Praxisname und -adresse als Umgebungsvariablen (<code>PRACTICE_NAME</code>,
+          <code>PRACTICE_ADDRESS</code>) konfigurierbar machen.</dd>
+        </dl>
+      </div>
+
+      <div class="finding low">
+        <div class="finding-head">
+          <span class="finding-id">F-017</span>
+          <h3>Abwesenheits-Notizfeld ohne Inhaltsbeschränkung</h3>
+          <span class="badge low">Hinweis</span>
+        </div>
+        <div class="finding-meta"><span>Art. 5 Abs. 1 lit. c (Datensparsamkeit)</span></div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Das Notizfeld (<code>note</code>) bei Abwesenheiten und Zeiteinträgen ist ein
+            freies Textfeld ohne inhaltliche Einschränkung. Mitarbeiter oder Admins können
+            hier gesundheitliche Details oder andere sensible Informationen eintragen, die
+            über den Zweck der Zeiterfassung hinausgehen. Diese Notizen werden in Excel-Exports
+            ausgegeben.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd><code>backend/app/models/time_entry.py</code> (Zeile 21: note)<br>
+          <code>backend/app/models/absence.py</code> – note-Feld</dd>
+          <dt>Empfehlung</dt>
+          <dd>Hinweis in der UI: "Bitte keine Gesundheitsangaben oder sensiblen Daten eintragen."
+          Ggf. Zeichenbegrenzung. In Schulung und Datenschutzhinweis thematisieren.</dd>
+        </dl>
+      </div>
+
+      <div class="finding low">
+        <div class="finding-head">
+          <span class="finding-id">F-018</span>
+          <h3>Keine HTTPS-Konfiguration im Standard-Docker-Compose</h3>
+          <span class="badge low">Hinweis</span>
+        </div>
+        <div class="finding-meta"><span>Art. 32 DSGVO (Verschlüsselung in Transit)</span></div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            <code>docker-compose.yml</code> betreibt die Anwendung ohne TLS. Das SSL-Setup
+            ist in <code>docker-compose.ssl.yml</code> ausgelagert. Wird die
+            Standard-Compose-Datei in Production verwendet, läuft die Anwendung unverschlüsselt.
+            JWT-Tokens werden im Klartext übertragen.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd><code>docker-compose.yml</code> (Zeile 43: Port 80:80 ohne TLS)</dd>
+          <dt>Empfehlung</dt>
+          <dd>HTTPS als Pflichtanforderung für Production klar kommunizieren. In
+          INSTALLATION.md explizit warnen. Erwägen: automatische HTTPS-Aktivierung
+          als Default in der Compose-Konfiguration.</dd>
+        </dl>
+      </div>
+
+      <div class="finding low">
+        <div class="finding-head">
+          <span class="finding-id">F-019</span>
+          <h3>Fehlende Zwei-Faktor-Authentifizierung (2FA)</h3>
+          <span class="badge low">Hinweis</span>
+        </div>
+        <div class="finding-meta"><span>Art. 32 DSGVO</span></div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Für Admin-Accounts gibt es keine Zwei-Faktor-Authentifizierung. Admins haben
+            Zugriff auf alle Mitarbeiterdaten inkl. Krankheitsdaten. Ein kompromittiertes
+            Admin-Passwort führt zu vollständigem Datenzugang.
+          </dd>
+          <dt>Empfehlung</dt>
+          <dd>2FA (TOTP) zumindest optional für Admin-Konten implementieren.
+          Im Backlog bereits als Future Feature vermerkt – priorisieren.</dd>
+        </dl>
+      </div>
+
+      <div class="finding low">
+        <div class="finding-head">
+          <span class="finding-id">F-020</span>
+          <h3>Audit-Log erfasst keine Lesezugriffe (nur Schreiboperationen)</h3>
+          <span class="badge low">Hinweis</span>
+        </div>
+        <div class="finding-meta"><span>Art. 5 Abs. 2 DSGVO (Rechenschaftspflicht)</span></div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            <code>time_entry_audit_logs</code> protokolliert nur create/update/delete-Aktionen.
+            Lesezugriffe auf sensitive Daten (z.B. Admin liest Krankenstandsdaten) werden
+            nicht protokolliert. Bei einer Datenpanne ist nicht nachvollziehbar, wer welche
+            Daten eingesehen hat.
+          </dd>
+          <dt>Fundstelle</dt>
+          <dd><code>backend/app/models/time_entry_audit_log.py</code><br>
+          <code>backend/app/routers/admin.py</code> (Zeile 666–690: Audit-Log nur für Writes)</dd>
+          <dt>Empfehlung</dt>
+          <dd>Erweiterung des Audit-Logs auf sensitive Lesezugriffe (Berichte, Exports,
+          Einzelbenutzer-Datenabruf). Mindestprotokollierung: Timestamp, Admin-ID, Aktion, betroffener User.</dd>
+        </dl>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================================================================ POSITIV-BEFUNDE -->
+  <div class="section" id="positiv">
+    <div class="section-head">
+      <h2>Positiv-Befunde – gut gelöste Datenschutzmaßnahmen</h2>
+    </div>
+    <div class="section-body">
+      <ul class="checklist">
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Passwort-Hashing mit bcrypt (Art. 32 DSGVO)</strong>
+            <small>Passwörter werden mit passlib[bcrypt] gehasht, nie im Klartext gespeichert.
+            Passwort-Komplexitätsprüfung (min. 10 Zeichen, Groß/Klein/Ziffer) implementiert.
+            <code>backend/app/services/auth_service.py</code></small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>JWT Token-Revocation via token_version (Art. 32 DSGVO)</strong>
+            <small>Token-Widerruf durch Inkrementierung von <code>token_version</code> bei Passwortänderung
+            und Deaktivierung. Middleware validiert bei jedem Request.
+            <code>backend/app/middleware/auth.py</code></small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Rate Limiting auf Auth-Endpoints (Art. 32 DSGVO)</strong>
+            <small>Login: 5/min, Refresh: 10/min, Passwort-Änderung: 3/min via slowapi.
+            Schutz vor Brute-Force-Angriffen auf Mitarbeiterdaten.
+            <code>backend/app/routers/auth.py</code></small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Rollenbasierte Zugriffskontrolle (Art. 32 DSGVO)</strong>
+            <small>Admin/Employee-Trennung konsequent implementiert. Mitarbeiter sehen nur eigene Daten.
+            <code>require_admin()</code> Dependency auf allen sensitiven Endpoints.</small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Audit-Log für Admin-Änderungen (Art. 5 Abs. 2 DSGVO)</strong>
+            <small>Vollständiges Audit-Log für alle Admin-Änderungen an Zeiteinträgen (create/update/delete)
+            mit old/new values und changed_by. <code>backend/app/models/time_entry_audit_log.py</code></small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>SECRET_KEY-Validierung beim Start (Art. 32 DSGVO)</strong>
+            <small>Schwache/Default-Keys werden beim Start abgelehnt (min. 32 Zeichen, keine
+            Dictionary-Wörter). <code>backend/app/config.py</code></small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Non-Root Docker Container (Art. 32 DSGVO)</strong>
+            <small>Backend läuft als <code>appuser</code> (non-root). Prinzip der minimalen Berechtigung
+            im Container-Kontext umgesetzt.</small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Security Headers in Nginx (Art. 32 DSGVO)</strong>
+            <small>CSP, Referrer-Policy, X-Frame-Options, X-Content-Type-Options konfiguriert.
+            /metrics extern blockiert.</small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Datensparsamkeit bei Benutzernamen (Art. 5 Abs. 1 lit. c)</strong>
+            <small>Login via Username (nicht E-Mail). E-Mail ist optional. Reduziert Pflichterhebung
+            personenbezogener Daten. <code>backend/app/models/user.py</code> (Zeile 22: nullable=True)</small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Service Worker: Kein API-Caching sensibler Daten</strong>
+            <small>API-Responses werden nicht gecacht (Security-Annotation in Codebase). Logout löscht
+            alle Service-Worker-Caches. <code>frontend/src/stores/authStore.ts</code> (Zeile 72–74)</small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>ArbZG-Rechtsgrundlage für 2-Jahres-Aufbewahrung dokumentiert</strong>
+            <small>docker-compose.yml enthält expliziten Hinweis auf §16 ArbZG-Aufbewahrungspflicht
+            für das postgres_data-Volume. Erste Sensibilisierung vorhanden.</small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Swagger/Redoc in Production deaktivierbar (Art. 32 DSGVO)</strong>
+            <small>ENVIRONMENT=production deaktiviert automatisch API-Dokumentationsendpoints.
+            <code>backend/app/main.py</code> (Zeile 93–103)</small>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ================================================================ DSFA -->
+  <div class="section" id="dsfa">
+    <div class="section-head">
+      <h2>Datenschutz-Folgenabschätzung (DSFA) – Art. 35 DSGVO</h2>
+    </div>
+    <div class="section-body">
+      <table class="data-table" style="margin-bottom:20px;">
+        <thead>
+          <tr><th>DSFA-Kriterium (WP248)</th><th>PraxisZeit</th><th>Bewertung</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Bewertung oder Scoring</td>
+            <td>Überstunden-Berechnung, Urlaubskonto-Ampel, ArbZG-Compliance-Score</td>
+            <td><span class="badge medium">Ja</span></td>
+          </tr>
+          <tr>
+            <td>Automatisierte Entscheidung mit Rechtswirkung</td>
+            <td>ArbZG-Hardstop (Verweigerung der Zeiteintragung), Überstunden-Warnung</td>
+            <td><span class="badge medium">Teilweise</span></td>
+          </tr>
+          <tr>
+            <td>Systematische Überwachung</td>
+            <td>Kontinuierliche Arbeitszeiterfassung aller Mitarbeiter, Stempeluhr, Reports</td>
+            <td><span class="badge critical">Ja</span></td>
+          </tr>
+          <tr>
+            <td>Sensitive Daten (Art. 9)</td>
+            <td>Krankheitstage, Nachtarbeitnehmer-Status</td>
+            <td><span class="badge critical">Ja</span></td>
+          </tr>
+          <tr>
+            <td>Daten in großem Umfang</td>
+            <td>Kleines Unternehmen / Arztpraxis – begrenzte Mitarbeiterzahl</td>
+            <td><span class="badge ok">Nein (KMU)</span></td>
+          </tr>
+          <tr>
+            <td>Kombination von Datensätzen</td>
+            <td>Kombination Zeitdaten + Abwesenheiten + Gesundheitsdaten in Exports</td>
+            <td><span class="badge medium">Ja</span></td>
+          </tr>
+          <tr>
+            <td>Vulnerable Gruppen</td>
+            <td>Arbeitnehmer (Abhängigkeitsverhältnis zum Arbeitgeber)</td>
+            <td><span class="badge medium">Ja</span></td>
+          </tr>
+          <tr>
+            <td>Innovative Technologie</td>
+            <td>Standard-Webtechnologie; kein KI-Einsatz</td>
+            <td><span class="badge ok">Nein</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="finding high" style="margin-bottom:0;">
+        <div class="finding-head">
+          <h3>DSFA-Empfehlung</h3>
+          <span class="badge high">Erforderlich</span>
+        </div>
+        <dl>
+          <dt>Bewertung</dt>
+          <dd>
+            Die Prüfung anhand der WP248-Kriterien ergibt: PraxisZeit erfüllt mindestens
+            <strong>4 von 9 DSFA-Auslösekriterien</strong> (systematische Überwachung, sensitive
+            Daten Art. 9, Datenkombination, vulnerable Gruppen). Nach DSK-Kurzpapier Nr. 5 und
+            BfDI-Orientierungshilfe ist eine DSFA bei Arbeitszeitüberwachungssystemen mit
+            Gesundheitsdaten-Verarbeitung in der Regel erforderlich.
+          </dd>
+          <dt>Nächste Schritte</dt>
+          <dd>
+            1. Schwellenwert-Test nach DSK-Kurzpapier Nr. 5 formal durchführen und dokumentieren.<br>
+            2. Bei positivem Ergebnis: DSFA nach Art. 35 Abs. 7 DSGVO erstellen
+            (Beschreibung, Notwendigkeit/Verhältnismäßigkeit, Risikobewertung, Maßnahmen).<br>
+            3. Falls hohes Restrisiko verbleibt: Vorabkonsultation der Datenschutzbehörde (Art. 36).
+          </dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================ BETROFFENENRECHTE -->
+  <div class="section" id="betroffenenrechte">
+    <div class="section-head">
+      <h2>Betroffenenrechte (Art. 15–22 DSGVO) – Implementierungsstand</h2>
+    </div>
+    <div class="section-body">
+      <table class="data-table">
+        <thead>
+          <tr><th>Recht</th><th>Artikel</th><th>Status</th><th>Fundstelle / Anmerkung</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Auskunftsrecht</strong></td>
+            <td>Art. 15</td>
+            <td><span class="badge medium">Teilweise</span></td>
+            <td>Mitarbeiter können eigene Zeiteinträge einsehen. Vollständige Datenkopie (inkl. Audit-Logs, Stammdaten) fehlt. Kein <code>GET /api/me/export</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Berichtigungsrecht</strong></td>
+            <td>Art. 16</td>
+            <td><span class="badge medium">Teilweise</span></td>
+            <td>Zeiteinträge korrigierbar (nur heutiges Datum direkt, ältere über Änderungsantrag). Stammdaten (Name, E-Mail) nur durch Admin änderbar – kein Self-Service.</td>
+          </tr>
+          <tr>
+            <td><strong>Löschungsrecht</strong></td>
+            <td>Art. 17</td>
+            <td><span class="badge critical">Nicht implementiert</span></td>
+            <td>Kein physisches Löschen möglich. Nur Soft-Delete (is_active=False). Alle Daten verbleiben in DB. Kritisch: F-004.</td>
+          </tr>
+          <tr>
+            <td><strong>Einschränkung</strong></td>
+            <td>Art. 18</td>
+            <td><span class="badge critical">Nicht implementiert</span></td>
+            <td>Kein Mechanismus zur Einschränkung der Verarbeitung. Prozess nicht dokumentiert.</td>
+          </tr>
+          <tr>
+            <td><strong>Datenportabilität</strong></td>
+            <td>Art. 20</td>
+            <td><span class="badge critical">Nicht implementiert</span></td>
+            <td>Kein maschinenlesbarer Self-Service-Export für einzelne Mitarbeiter. F-009.</td>
+          </tr>
+          <tr>
+            <td><strong>Widerspruchsrecht</strong></td>
+            <td>Art. 21</td>
+            <td><span class="badge critical">Nicht implementiert</span></td>
+            <td>Kein technischer Mechanismus. Kein dokumentierter Prozess.</td>
+          </tr>
+          <tr>
+            <td><strong>Keine automat. Entscheidung</strong></td>
+            <td>Art. 22</td>
+            <td><span class="badge medium">Teilweise</span></td>
+            <td>ArbZG-Hardstop blockiert automatisch Zeiteinträge. Jedoch ist dies gesetzlich vorgeschrieben (ArbZG §3). Dokumentation empfohlen.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ================================================================ CHECKLISTE -->
+  <div class="section" id="checklist">
+    <div class="section-head">
+      <h2>DSGVO-Compliance-Checkliste</h2>
+    </div>
+    <div class="section-body">
+      <ul class="checklist">
+        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 5 – Datenminimierung (teilweise)</strong><small>Username-Auth, optionale E-Mail. Aber: Notizfelder ohne Inhaltsbeschränkung.</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 5 – Speicherbegrenzung</strong><small>Kein automatisches Löschkonzept. Daten ehemaliger Mitarbeiter unbegrenzt gespeichert. (F-001)</small></div></li>
+        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 5 – Integrität und Vertraulichkeit</strong><small>bcrypt, JWT, Rate Limiting, RBAC, Security Headers implementiert.</small></div></li>
+        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 6 – Rechtsgrundlage vorhanden</strong><small>Art. 6 lit. b (Vertrag) und lit. c (ArbZG §16). Erfordert Dokumentation.</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 9 – Schutz besonderer Kategorien</strong><small>Krankheitsdaten in ungesicherten Exports. Kein explizites Art.-9-Konzept. (F-003, F-006)</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 13 – Informationspflicht</strong><small>Keine Datenschutzerklärung für Mitarbeiter. (F-002)</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 17 – Löschungsrecht</strong><small>Kein physisches Löschen implementiert. (F-004)</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 20 – Datenportabilität</strong><small>Kein Self-Service-Datenexport für Mitarbeiter. (F-009)</small></div></li>
+        <li><div class="cl-icon warn">&#9888;</div><div class="cl-text"><strong>Art. 25 – Privacy by Design</strong><small>Teilweise umgesetzt. Fehlendes Löschkonzept ist Privacy-by-Design-Mangel.</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 28 – Auftragsverarbeitung</strong><small>Kein AVV mit GitHub. (F-008)</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 30 – Verarbeitungsverzeichnis</strong><small>Nicht vorhanden. (F-002)</small></div></li>
+        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 32 – Technische Maßnahmen</strong><small>Großteils gut umgesetzt (siehe Positiv-Befunde). Lücken: localStorage, DB-TLS, kein 2FA.</small></div></li>
+        <li><div class="cl-icon warn">&#9888;</div><div class="cl-text"><strong>Art. 33/34 – Datenpannenmeldung</strong><small>Kein formaler Datenpannen-Prozess dokumentiert. Error-Logging vorhanden, aber kein Eskalationspfad.</small></div></li>
+        <li><div class="cl-icon fail">&#10007;</div><div class="cl-text"><strong>Art. 35 – DSFA</strong><small>Nicht durchgeführt. Wahrscheinlich erforderlich. (F-005)</small></div></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ================================================================ MASSNAHMEN -->
+  <div class="section" id="massnahmen">
+    <div class="section-head">
+      <h2>Empfohlene Maßnahmen – priorisiert</h2>
+    </div>
+    <div class="section-body">
+      <ul class="action-list">
+        <li>
+          <div>
+            <span class="badge critical" style="margin-right:8px;">Sofort</span>
+            <strong>Löschkonzept erstellen und umsetzen</strong> (F-001, F-004)<br>
+            <small style="color:var(--grey);">Retention-Fristen definieren (Zeiteinträge: 2 Jahre ArbZG, danach physisch löschen).
+            Automatische Cron-Job-Routine implementieren. Endpoint für physische Benutzerlöschung
+            (<code>DELETE /api/admin/users/{id}/purge</code>) mit Pseudonymisierung der ArbZG-pflichtigen Daten.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge critical" style="margin-right:8px;">Sofort</span>
+            <strong>Datenschutzhinweis für Mitarbeiter erstellen</strong> (F-002)<br>
+            <small style="color:var(--grey);">Art. 13 DSGVO konformer Datenschutzhinweis: Verantwortlicher, Zweck, Rechtsgrundlage (ArbZG §16, Vertrag),
+            Empfänger, Aufbewahrungsdauer, alle Betroffenenrechte. Mitarbeitern vor Systemnutzung aushändigen.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge critical" style="margin-right:8px;">Sofort</span>
+            <strong>Krankheitsdaten in Exports schützen</strong> (F-003)<br>
+            <small style="color:var(--grey);">Krankheitsstunden/-tage in separaten, gesondert gesicherten Exports. Alternativ:
+            Pseudonymisierung in Übersichtsberichten. Export-Protokollierung einführen.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge critical" style="margin-right:8px;">Sofort</span>
+            <strong>Verarbeitungsverzeichnis (Art. 30) erstellen</strong> (F-002)<br>
+            <small style="color:var(--grey);">Alle Verarbeitungstätigkeiten dokumentieren: Zweck, Kategorien, Empfänger, Löschfristen,
+            TOMs. Als lebendes Dokument in <code>specs/datenschutz/</code> pflegen.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge high" style="margin-right:8px;">Kurzfristig</span>
+            <strong>DSFA durchführen und dokumentieren</strong> (F-005)<br>
+            <small style="color:var(--grey);">Schwellenwert-Test, Risikobewertung, Verhältnismäßigkeitsprüfung, Schutzmaßnahmen dokumentieren.
+            Externe DSB-Beratung empfohlen.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge high" style="margin-right:8px;">Kurzfristig</span>
+            <strong>Self-Service-Datenexport für Mitarbeiter implementieren</strong> (F-009)<br>
+            <small style="color:var(--grey);"><code>GET /api/me/export</code>: Alle eigenen Daten als JSON/CSV (Art. 20 DSGVO).
+            Profilseite um vollständige Datenselbstauskunft erweitern (Art. 15).</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge high" style="margin-right:8px;">Kurzfristig</span>
+            <strong>SQLAlchemy-Engine aus Error-Logger entfernen</strong> (F-007)<br>
+            <small style="color:var(--grey);">Zeile 133 in <code>main.py</code> entfernen. Retention für error_logs auf 90 Tage begrenzen.
+            Traceback-Scrubbing von PII implementieren.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge high" style="margin-right:8px;">Kurzfristig</span>
+            <strong>AVV mit GitHub klären / Datenschutzkonzept GitHub-Integration</strong> (F-008)<br>
+            <small style="color:var(--grey);">Prüfen ob personenbezogene Daten zu GitHub gelangen. Bei Bedarf: DPA abschließen,
+            SCCs prüfen, Tracebacks bereinigen.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge medium" style="margin-right:8px;">Mittelfristig</span>
+            <strong>Refresh-Token in HttpOnly-Cookie verlagern</strong> (F-010)<br>
+            <small style="color:var(--grey);">XSS-Resistenz für langlebige Tokens. Access-Token im Memory-State ohne localStorage-Persistenz.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge medium" style="margin-right:8px;">Mittelfristig</span>
+            <strong>Prometheus Pfad-Normalisierung konfigurieren</strong> (F-014)<br>
+            <small style="color:var(--grey);"><code>group_paths=True</code> im Instrumentator oder Relabeling-Regeln in prometheus.yml.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge medium" style="margin-right:8px;">Mittelfristig</span>
+            <strong>Mitarbeiter-Self-Service für Stammdaten</strong> (F-013)<br>
+            <small style="color:var(--grey);"><code>PUT /api/me/profile</code>: Name, E-Mail korrigierbar (Art. 16 DSGVO).
+            Profilseite entsprechend erweitern.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge medium" style="margin-right:8px;">Mittelfristig</span>
+            <strong>DB-TLS und HTTPS als Pflicht klar kennzeichnen</strong> (F-012, F-018)<br>
+            <small style="color:var(--grey);"><code>?sslmode=require</code> in DATABASE_URL-Dokumentation. HTTPS-Setup als Produktionspflicht hervorheben.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge low" style="margin-right:8px;">Langfristig</span>
+            <strong>2FA für Admin-Konten einführen</strong> (F-019)<br>
+            <small style="color:var(--grey);">TOTP-basierte 2FA, mindestens optional für Admins. Bereits im Backlog – priorisieren.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge low" style="margin-right:8px;">Langfristig</span>
+            <strong>Erweiterung Audit-Log auf Lesezugriffe</strong> (F-020)<br>
+            <small style="color:var(--grey);">Sensitive Datenzugriffe (Reports, Exports, Einzelabruf) protokollieren (wer, wann, was).</small>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ================================================================ DOKUMENTATION -->
+  <div class="section" id="dokumentation">
+    <div class="section-head">
+      <h2>Erforderliche Dokumentation</h2>
+    </div>
+    <div class="section-body">
+      <table class="data-table">
+        <thead>
+          <tr><th>Dokument</th><th>Rechtsgrundlage</th><th>Priorität</th><th>Verantwortlich</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Datenschutzhinweis für Mitarbeiter</strong><br><small>Zweck, Rechtsgrundlagen, Empfänger, Rechte, Kontakt</small></td>
+            <td>Art. 13 DSGVO</td>
+            <td><span class="badge critical">Sofort</span></td>
+            <td>Verantwortlicher / DSB</td>
+          </tr>
+          <tr>
+            <td><strong>Verzeichnis der Verarbeitungstätigkeiten</strong><br><small>Alle Verarbeitungen, Zwecke, Fristen, TOMs</small></td>
+            <td>Art. 30 DSGVO</td>
+            <td><span class="badge critical">Sofort</span></td>
+            <td>Verantwortlicher / DSB</td>
+          </tr>
+          <tr>
+            <td><strong>Löschkonzept / Retention-Policy</strong><br><small>Fristen je Datenkategorie, Löschprozesse</small></td>
+            <td>Art. 5 Abs. 1 lit. e, Art. 17</td>
+            <td><span class="badge critical">Sofort</span></td>
+            <td>IT / DSB</td>
+          </tr>
+          <tr>
+            <td><strong>Datenschutz-Folgenabschätzung (DSFA)</strong><br><small>Systematische Risikobewertung des Gesamtsystems</small></td>
+            <td>Art. 35 DSGVO</td>
+            <td><span class="badge high">Kurzfristig</span></td>
+            <td>Verantwortlicher / DSB / IT</td>
+          </tr>
+          <tr>
+            <td><strong>Auftragsverarbeitungsvertrag (AVV) – GitHub</strong><br><small>Falls personenbezogene Daten nach GitHub übermittelt werden</small></td>
+            <td>Art. 28 DSGVO</td>
+            <td><span class="badge high">Kurzfristig</span></td>
+            <td>Verantwortlicher / Rechtsabteilung</td>
+          </tr>
+          <tr>
+            <td><strong>Technische und Organisatorische Maßnahmen (TOMs)</strong><br><small>Vollständige TOM-Dokumentation nach Art. 32</small></td>
+            <td>Art. 32 DSGVO</td>
+            <td><span class="badge high">Kurzfristig</span></td>
+            <td>IT / DSB</td>
+          </tr>
+          <tr>
+            <td><strong>Datenpannen-Reaktionsplan</strong><br><small>Eskalationspfad, Meldepflicht (72h an Behörde), Benachrichtigung Betroffene</small></td>
+            <td>Art. 33/34 DSGVO</td>
+            <td><span class="badge medium">Mittelfristig</span></td>
+            <td>Verantwortlicher / DSB</td>
+          </tr>
+          <tr>
+            <td><strong>Mitarbeiter-Schulungsnachweis Datenschutz</strong><br><small>Nachweis über Datenschutz-Schulung aller Systemnutzer (insb. Admins)</small></td>
+            <td>Art. 39 Abs. 1 lit. b DSGVO</td>
+            <td><span class="badge medium">Mittelfristig</span></td>
+            <td>HR / DSB</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ================================================================ FOOTER -->
+  <div class="report-footer">
+    <p>DSGVO-Prüfbericht PraxisZeit | Prüfdatum: 28. Februar 2026 | Erstellt durch: KI-gestützten Datenschutzbeauftragten</p>
+    <p style="margin-top:4px;">Rechtsgrundlage: DSGVO (EU) 2016/679 | BfDI-Richtlinien | DSK-Orientierungshilfen</p>
+    <p style="margin-top:4px; font-style:italic;">Dieser Bericht ersetzt keine rechtliche Beratung durch einen zugelassenen Datenschutzbeauftragten oder Rechtsanwalt.</p>
+  </div>
+
+</div>
+</body>
+</html>

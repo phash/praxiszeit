@@ -4,11 +4,25 @@ Uses SHA256 fingerprinting to aggregate repeated errors.
 """
 import hashlib
 import logging
+import re
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.error_log import ErrorLog
+
+# DSGVO F-007: Regex patterns for PII scrubbing
+_UUID_RE = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I)
+_EMAIL_RE = re.compile(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b')
+_NAME_IN_PATH_RE = re.compile(r'(?<=/users/)[0-9a-f-]{36}')
+
+def _scrub_pii(text: str) -> str:
+    """Replace UUIDs and email addresses in log messages with placeholders."""
+    if not text:
+        return text
+    text = _UUID_RE.sub('<uuid>', text)
+    text = _EMAIL_RE.sub('<email>', text)
+    return text
 
 
 def _make_fingerprint(level: str, logger: str, message: str, path: Optional[str]) -> str:
@@ -31,6 +45,11 @@ def log_error(
     """
     Record an error, aggregating repeated occurrences (same fingerprint).
     """
+    # DSGVO F-007: scrub PII before storing
+    message = _scrub_pii(message)
+    if traceback_str:
+        traceback_str = _scrub_pii(traceback_str)
+
     fingerprint = _make_fingerprint(level, logger_name, message, path)
     now = datetime.now(timezone.utc)
 
@@ -98,6 +117,21 @@ def delete_error(db: Session, error_id: str) -> bool:
     db.delete(entry)
     db.commit()
     return True
+
+
+def cleanup_old_errors(db: Session, max_age_days: int = 90) -> int:
+    """DSGVO F-007: Delete resolved/ignored error logs older than max_age_days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    deleted = (
+        db.query(ErrorLog)
+        .filter(
+            ErrorLog.last_seen < cutoff,
+            ErrorLog.status.in_(['resolved', 'ignored'])
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return deleted
 
 
 def set_github_url(db: Session, error_id: str, url: str) -> Optional[ErrorLog]:

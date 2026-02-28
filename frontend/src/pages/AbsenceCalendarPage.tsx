@@ -326,6 +326,7 @@ export default function AbsenceCalendarPage() {
                 placeholder="Optional"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
+              <p className="text-xs text-gray-400 mt-1">Bitte keine Gesundheitsangaben oder sensiblen Daten eintragen.</p>
             </div>
 
             {isDateRange && (

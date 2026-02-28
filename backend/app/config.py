@@ -48,6 +48,10 @@ class Settings(BaseSettings):
             )
         return v
 
+    # Organisation / DSGVO F-016: configurable practice info for Excel exports
+    PRACTICE_NAME: str = "Praxis"
+    PRACTICE_ADDRESS: str = ""
+
     # Holidays
     HOLIDAY_STATE: str = "Bayern"  # German state for public holidays
 

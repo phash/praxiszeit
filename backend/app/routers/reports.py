@@ -1,16 +1,22 @@
+import logging
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
+from starlette.requests import Request
 from typing import List
 from decimal import Decimal
 from io import BytesIO
 from datetime import date
+from urllib.parse import quote
 from app.database import get_db
-from app.models import User, Absence, AbsenceType, TimeEntry
+from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
+from app.core.limiter import limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/reports", tags=["admin-reports"], dependencies=[Depends(require_admin)])
 
@@ -37,6 +43,11 @@ def get_monthly_report(
         year, month_num = map(int, month.split('-'))
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
+
+    logger.info(
+        "DSGVO-Datenzugriff: Monatsreport %s-%02d aufgerufen von Admin %s",
+        year, month_num, current_user.username
+    )
 
     users = _get_active_visible_users(db)
 
@@ -91,6 +102,11 @@ def get_yearly_absences(
     Get yearly absence summary for all employees.
     Shows vacation, sick, training, and other days.
     """
+    logger.info(
+        "DSGVO-Datenzugriff: Jahres-Abwesenheitsübersicht %d aufgerufen von Admin %s",
+        year, current_user.username
+    )
+
     users = _get_active_visible_users(db)
 
     results = []
@@ -162,7 +178,9 @@ def get_yearly_absences(
 
 
 @router.get("/export")
+@limiter.limit("20/minute")
 def export_monthly_report(
+    request: Request,
     month: str = Query(..., description="Month in YYYY-MM format"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -186,13 +204,16 @@ def export_monthly_report(
     return StreamingResponse(
         excel_file,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'}
     )
 
 
 @router.get("/export-yearly")
+@limiter.limit("20/minute")
 def export_yearly_report(
+    request: Request,
     year: int = Query(..., description="Year (e.g., 2026)"),
+    include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -202,42 +223,61 @@ def export_yearly_report(
     - Overview sheet with all employees
     - Absences overview
     - Detail sheet per employee with monthly breakdown
+    Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged).
     """
-    # Generate Excel file
-    excel_file = export_service.generate_yearly_report(db, year)
+    if include_health_data:
+        log = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_export",
+            source="dsgvo",
+            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport {year} exportiert – Admin: {current_user.username}",
+        )
+        db.add(log)
+        db.commit()
 
-    # Create filename
+    excel_file = export_service.generate_yearly_report(db, year, include_health_data)
     filename = f"PraxisZeit_Jahresreport_{year}.xlsx"
-
-    # Return as streaming response
     return StreamingResponse(
         excel_file,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'}
     )
 
 
 @router.get("/export-yearly-classic")
+@limiter.limit("20/minute")
 def export_yearly_report_classic(
+    request: Request,
     year: int = Query(..., description="Year (e.g., 2026)"),
+    include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
     """
     Export yearly report in classic format (compact, months as columns).
     Creates one sheet per employee with 12-month overview.
+    Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged).
     """
-    # Generate Excel file
-    excel_file = export_service.generate_yearly_report_classic(db, year)
+    if include_health_data:
+        log = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_export",
+            source="dsgvo",
+            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport Classic {year} exportiert – Admin: {current_user.username}",
+        )
+        db.add(log)
+        db.commit()
 
-    # Create filename
+    excel_file = export_service.generate_yearly_report_classic(db, year, include_health_data)
     filename = f"PraxisZeit_Jahresreport_Classic_{year}.xlsx"
-
-    # Return as streaming response
     return StreamingResponse(
         excel_file,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'}
     )
 
 
@@ -245,7 +285,9 @@ ODS_MIME = "application/vnd.oasis.opendocument.spreadsheet"
 
 
 @router.get("/export-ods")
+@limiter.limit("20/minute")
 def export_monthly_report_ods(
+    request: Request,
     month: str = Query(..., description="Month in YYYY-MM format"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -261,12 +303,14 @@ def export_monthly_report_ods(
     return StreamingResponse(
         ods_file,
         media_type=ODS_MIME,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'}
     )
 
 
 @router.get("/export-yearly-ods")
+@limiter.limit("20/minute")
 def export_yearly_report_ods(
+    request: Request,
     year: int = Query(..., description="Year (e.g., 2026)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -277,12 +321,14 @@ def export_yearly_report_ods(
     return StreamingResponse(
         ods_file,
         media_type=ODS_MIME,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'}
     )
 
 
 @router.get("/export-yearly-classic-ods")
+@limiter.limit("20/minute")
 def export_yearly_report_classic_ods(
+    request: Request,
     year: int = Query(..., description="Year (e.g., 2026)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -293,7 +339,7 @@ def export_yearly_report_classic_ods(
     return StreamingResponse(
         ods_file,
         media_type=ODS_MIME,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'}
     )
 
 

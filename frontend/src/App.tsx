@@ -15,6 +15,7 @@ import AuditLog from './pages/admin/AuditLog';
 import AdminAbsences from './pages/admin/AdminAbsences';
 import ErrorMonitoring from './pages/admin/ErrorMonitoring';
 import Help from './pages/Help';
+import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
 
 // Protected Route Component
@@ -45,6 +46,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/privacy" element={<Privacy />} />
 
         {/* Protected Employee Routes */}
         <Route
