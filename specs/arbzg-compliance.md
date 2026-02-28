@@ -9,16 +9,16 @@
 
 | § | Thema | Status | Hinweis |
 |---|-------|--------|---------|
-| **§ 2** | Begriffsbestimmungen (Nachtarbeit) | ✅ Korrekt | `_is_night_work()` prüft minutengenau >2h Nachtzeit (§2 Abs. 4); `is_night_worker`-Flag auf User |
-| **§ 3** | Tages-Höchstarbeitszeit (8h/10h + 48h/Woche) | ✅ Vollständig | 6-Monats-Ausgleichszeitraum nicht getrackt |
-| **§ 4** | Pflichtpausen | ✅ Weitgehend | Pausen-Timing (6h-Kontinuität) nicht prüfbar |
-| **§ 5** | Mindestruhezeit (11h) | ✅ Vollständig | – |
-| **§ 6** | Nacht- und Schichtarbeit | ⚠️ Teilweise | 3 Lücken (Untersuchung, Transferrecht, Zuschlag) – 8h-Limit jetzt ✅ |
+| **§ 2** | Begriffsbestimmungen (Nachtarbeit) | ✅ Korrekt | `_is_night_work()` prüft minutengenau >2h Nachtzeit; `is_night_worker`-Flag auf User |
+| **§ 3** | Tages-Höchstarbeitszeit (8h/10h + 48h/Woche) | ✅ Vollständig | 6-Monats-Ausgleichszeitraum nicht getrackt; Code-Kommentar „§14" irreführend (korrekt: §3) |
+| **§ 4** | Pflichtpausen | ✅ Weitgehend | Mindestdauer vollständig; Pausen-Timing (6h-Kontinuität) systemisch nicht prüfbar |
+| **§ 5** | Mindestruhezeit (11h) | ⚠️ Lücke | Split-Schicht-Bug: Intraday-Lücken werden fälschlich als Verstoß gemeldet |
+| **§ 6** | Nacht- und Schichtarbeit | ⚠️ Teilweise | 8h-Limit ✅; `exempt_from_arbzg` fehlt in admin.py + change_requests.py; Abs. 3–6 HR-Aufgaben |
 | **§§ 9/10** | Sonn-/Feiertagsruhe | ✅ Vollständig | – |
 | **§ 11** | Ausgleich Sonn-/Feiertagsarbeit | ✅ Vollständig | – |
-| **§ 14** | Außergewöhnliche Fälle | ℹ️ Nicht anwendbar | Notfall-Ausnahme, kein Regelfall; 48h/Woche aus §3 |
-| **§ 16** | Aufzeichnung & Aufbewahrung | ✅ Vollständig | – |
-| **§ 18** | Ausnahmen leitende Angestellte | ✅ Vollständig | – |
+| **§ 14** | Außergewöhnliche Fälle | ℹ️ Nicht anwendbar | Notfall-Ausnahme; 48h-Wochenwarnung kommt aus §3, nicht §14 |
+| **§ 16** | Aufzeichnung & Aufbewahrung | ✅ Vollständig | PraxisZeit zeichnet ALLE Stunden auf (übertrifft §16-Mindestanforderung); gut positioniert für EuGH-Reform |
+| **§ 18** | Ausnahmen leitende Angestellte | ⚠️ Teilweise | Bypass fehlt in admin.py + change_requests.py; Mitarbeiter-Selbstservice korrekt |
 
 ---
 
@@ -33,11 +33,12 @@
 
 | Anforderung | Status | Details |
 |-------------|--------|---------|
-| Nachtzeit-Fenster (23–6 Uhr) | ✅ | Korrekt in `_is_night_work()` und `_is_night_work()` in `time_entries.py` |
-| Nachtarbeit-Schwellwert >2h | ✅ | `_is_night_work()` prüft minutengenau ob >2h (120 min) in Nachtzeit (23:00–06:00) fallen (§2 Abs. 4 ArbZG) |
+| Nachtzeit-Fenster (23–6 Uhr) | ✅ | Korrekt in `_is_night_work()` in `time_entries.py` |
+| Nachtarbeit-Schwellwert >2h (Abs. 4) | ✅ | `_is_night_work()` prüft minutengenau >120 min in Nachtzeit |
 | Nachtarbeitnehmer-Definition (≥48 Tage) | ✅ | Admin-Report `/api/admin/reports/night-work-summary` verwendet korrekt ≥48-Tage-Schwellwert |
+| `is_night_worker`-Flag auf User-Ebene | ✅ | Migration 017, Admin-UI Checkbox; löst strengere §6-Abs.-2-Warnung aus |
 
-**Bewertung:** Konservative Implementierung (mehr Warnungen als gesetzlich nötig), kein Compliance-Risiko.
+**Bewertung:** Vollständig konform. ✅
 
 ---
 
@@ -48,19 +49,20 @@
 - Verlängerung auf **10 Stunden** zulässig, wenn innerhalb von **6 Kalendermonaten oder 24 Wochen** ein Ausgleich auf ≤ 8h/Tag Durchschnitt erfolgt
 - Implizierte Wochengrenze: 6 Werktage × 8h/Tag = **48h/Woche** im Durchschnitt
 
-> **Hinweis §14:** Die 48h-Wochengrenze ist primär eine Ableitung aus §3 (Tagesdurchschnitt × 6 Werktage). §14 Abs. 3 wiederholt diese Grenze nur für Ausnahmefälle. Der `WEEKLY_HOURS_WARNING`-Check bei 48h implementiert die §3-Schutzintention.
+> **Hinweis zum Code-Kommentar:** `MAX_WEEKLY_HOURS_WARN = 48.0  # §14 ArbZG` in `time_entries.py` ist irreführend. Die 48h-Wochengrenze leitet sich aus **§3** ab (Tagesdurchschnitt × 6 Werktage), nicht aus §14 (Notfall-Ausnahmen). §7 Abs. 8 wiederholt diese Grenze für Tarifvertrags-Abweichungen. Der fachliche Inhalt ist korrekt, nur der Kommentar ist ungenau.
 
 ### Implementierungsstand
 
 | Anforderung | Status | Details |
 |-------------|--------|---------|
 | Warnung bei > 8h/Tag | ✅ | `DAILY_HOURS_WARNING` Flag + Frontend-Toast bei create / update / clock_out |
-| Hard-Stop bei > 10h/Tag | ✅ | HTTP 422 bei allen Eingabepfaden (Mitarbeiter, Admin, Änderungsanträge) |
+| Hard-Stop bei > 10h/Tag | ✅ | HTTP 422 bei Mitarbeiter-Pfad (create/update/clock_out) |
 | §3-Check bei Admin-Direkteintrag | ✅ | `admin.py: admin_create_time_entry / admin_update_time_entry` – §3 nach §4-Prüfung |
 | §3-Check bei Änderungsanträgen | ✅ | `change_requests.py` prüft §3 nach Genehmigung |
 | Warnung bei > 48h/Woche | ✅ | `WEEKLY_HOURS_WARNING` + Frontend-Toast bei allen Eingabepfaden |
-| §18-Ausnahme (exempt_from_arbzg) | ✅ | Alle Checks werden für leitende Angestellte übersprungen |
-| 6-Monats-Ausgleichszeitraum | ❌ | Kein gleitender Durchschnitt; manuelle Dokumentationsaufgabe |
+| §18-Ausnahme im Mitarbeiter-Pfad | ✅ | `exempt_from_arbzg` korrekt geprüft in `time_entries.py` |
+| §18-Ausnahme im Admin-Pfad | ❌ | `exempt_from_arbzg` **nicht** geprüft in `admin.py` → 10h-Limit gilt auch für §18-Befreite |
+| 6-Monats-Ausgleichszeitraum | ❌ | Kein gleitender Durchschnitt; manuelle Dokumentationsaufgabe des Arbeitgebers |
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
@@ -72,6 +74,7 @@
 - Arbeit > 6 Stunden → mind. **30 Minuten** Pause
 - Arbeit > 9 Stunden → mind. **45 Minuten** Pause
 - **Länger als 6 Stunden am Stück** dürfen Arbeitnehmer nicht ohne Ruhepause beschäftigt werden (§ 4 Satz 3)
+- Pausen müssen **im voraus feststehen** (nicht nachträglich erfasst werden)
 - Pausen können aufgeteilt werden (mind. 15 min je Einheit)
 
 ### Implementierungsstand
@@ -79,12 +82,14 @@
 | Anforderung | Status | Details |
 |-------------|--------|---------|
 | Pausenfeld im Zeiteintrag | ✅ | `break_minutes` bei allen Zeiteinträgen erfasst und gespeichert |
-| >6h → mind. 30min Pause | ✅ | `break_validation_service.validate_daily_break()` – aktiv bei create / update / clock_out / admin / change_requests |
-| >9h → mind. 45min Pause | ✅ | `break_validation_service.py` prüft 9h/45min vor 6h/30min |
-| §18-Ausnahme (exempt_from_arbzg) | ✅ | Pausenpflicht-Checks werden für leitende Angestellte übersprungen |
-| Pausen-Timing (max. 6h am Stück) | ⚠️ | Das System prüft die **Gesamtdauer** der Pause, nicht **wann** sie genommen wurde. Die 6h-Kontinuitätsregel (§ 4 Satz 3) ist nicht prüfbar, da Start/Ende der Pause nicht erfasst werden. |
+| >6h → mind. 30min Pause | ✅ | `break_validation_service.validate_daily_break()` – aktiv bei allen 6 Eingabepfaden |
+| >9h → mind. 45min Pause | ✅ | Wird vor der 6h-Prüfung geprüft |
+| §18-Ausnahme (Mitarbeiter-Pfad) | ✅ | Pausenpflicht-Checks werden für leitende Angestellte übersprungen (MA-Pfad) |
+| §18-Ausnahme (Admin-Pfad) | ❌ | Nicht geprüft in `admin.py` / `change_requests.py` |
+| Pausen-Timing (max. 6h am Stück, Satz 3) | ⚠️ | Start/Ende der Pause nicht erfasst → 6h-Kontinuitätsregel systemisch nicht prüfbar |
+| „Im voraus feststehend" (Satz 1) | ⚠️ | System erfasst tatsächlich genommene Pausen; Vorherig-Feststellung ist Prozessfrage |
 
-**Bewertung:** Die kritische Mindestdauer ist vollständig konform. Das Pausen-Timing ist systemisch nicht prüfbar (kein Timestamp für Pausenbeginn/-ende), stellt aber für Arztpraxen mit geregelten Pausenzeiten kein praktisches Risiko dar.
+**Bewertung:** Mindestdauer vollständig konform. Timing systemisch nicht prüfbar – gilt für alle Zeiterfassungssysteme ohne Pausen-Timestamp.
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
@@ -94,7 +99,8 @@
 
 **Gesetzliche Regel:**
 - Mind. **11 Stunden ununterbrochene Ruhezeit** nach dem Ende eines Arbeitstages
-- Ausnahmen in bestimmten Bereichen (z.B. Krankenhäuser, Pflegeeinrichtungen) mit Ausgleich innerhalb 4 Wochen
+- **Ausnahme (Abs. 2):** Krankenhäuser, Pflegeeinrichtungen, Gastronomie etc. können auf bis zu 10h kürzen, wenn innerhalb eines Kalendermonats oder 4 Wochen ein Ausgleich auf ≥ 12h erfolgt
+- **Abs. 3 (Bereitschaftsdienst):** In Krankenhäusern/Pflegeeinrichtungen kann Kürzung durch Bereitschaftsdienst ausgeglichen werden
 
 ### Implementierungsstand
 
@@ -103,8 +109,12 @@
 | 11h-Prüfung zwischen Schichten | ✅ | `rest_time_service.check_rest_time_violations()` vollständig |
 | Admin-Report Ruhezeit-Verstöße | ✅ | `GET /api/admin/reports/rest-time-violations` mit Jahr, optionalem Monat, konfigurierbarem Schwellwert |
 | Frontend-Anzeige | ✅ | Admin Reports-Seite zeigt betroffene Mitarbeiter, Datum und Stunden-Defizit |
+| Split-Schicht-Erkennung | ❌ | **Bug:** `rest_time_service.py` vergleicht alle aufeinanderfolgenden DB-Einträge – auch intraday-Lücken. Bei Split-Schichten (z.B. 08:00–12:00 + 14:00–18:00) wird die 2h-Mittagslücke fälschlich als Verstoß gemeldet. |
+| §5 Abs. 2 Ausgleich (Reduzierung auf 10h) | ❌ | Ausgleichs-Tracking nicht implementiert; 11h-Grenze ist fest kodiert |
 
-**Status: Vollständig konform** ✅
+**Bekannter Bug in `rest_time_service.py`:** Die korrekte Logik wäre: letzten Eintrag des Vortages und ersten Eintrag des Folgetages vergleichen. Aktuell werden ALLE Paare verglichen, was bei mehreren Einträgen an einem Tag zu False Positives führt. Für Praxen mit einer Tagesschicht pro MA kein Problem; bei Splitschichten entstehen Fehlalarme.
+
+**Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
 ---
 
@@ -113,9 +123,9 @@
 **Gesetzliche Regel:**
 - **Nachtzeit:** 23:00–06:00 Uhr (§ 2 Abs. 3)
 - **Nachtarbeitnehmer:** mind. 48 Nächte/Jahr oder regelmäßige Nachtschicht (§ 2 Abs. 5)
-- Max. **8 Stunden** für Nachtarbeitnehmer, verlängerbar auf 10h (Ausgleich innerhalb **1 Monat**, nicht 6 Monate wie bei §3) (Abs. 2)
-- Anspruch auf **arbeitsmedizinische Untersuchung** (Abs. 3): vor Beschäftigungsbeginn, danach alle 3 Jahre (ab 50: jährlich)
-- Recht auf **Wechsel zum Tagesarbeitsplatz** bei gesundheitlichen Gründen, Kind <12 Jahre oder pflegebedürftige Angehörige (Abs. 4)
+- Max. **8 Stunden** für Nachtarbeitnehmer, verlängerbar auf 10h (Ausgleich innerhalb **1 Monat**, nicht 6 Monate wie §3) (Abs. 2)
+- Anspruch auf **arbeitsmedizinische Untersuchung** (Abs. 3): vor Beschäftigungsbeginn, alle 3 Jahre (ab 50: jährlich)
+- Recht auf **Wechsel zum Tagesarbeitsplatz** bei gesundheitlichen Gründen, Kind <12 Jahre oder pflegebedürftigen Angehörigen (Abs. 4)
 - Anspruch auf **25% Lohnzuschlag oder gleichwertige Freizeit** bei Nachtarbeit (Abs. 5)
 - **Gleicher Zugang zur Weiterbildung** wie Tagarbeitnehmer (Abs. 6)
 
@@ -126,17 +136,20 @@
 | Erkennung Nachtarbeit (23–6 Uhr) | ✅ | `_is_night_work()` in `time_entries.py` |
 | `is_night_work` Flag in API | ✅ | In allen `TimeEntryResponse`-Endpoints zurückgegeben |
 | „Nacht"-Badge im Frontend | ✅ | Indigo-Badge in `TimeTracking.tsx` |
-| Admin-Report: Nachtarbeit-Statistik | ✅ | `GET /api/admin/reports/night-work-summary` – Nachtschichten/MA, Nachtarbeitnehmer-Markierung (≥48 Tage/Jahr), Monatsaufschlüsselung |
-| Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2) | ✅ | `is_night_worker`-Flag auf User; Warnung bei >8h Nachtarbeit in allen 6 Validierungspfaden |
-| Kürzerer 1-Monats-Ausgleichszeitraum für Nachtarbeitnehmer (Abs. 2) | ❌ | Nicht implementiert (§3 verwendet 6-Monats-Fenster; Nachtarbeitnehmer haben strengeren 1-Monat) |
-| Tracking arbeitsmedizinischer Untersuchungen (Abs. 3) | ❌ | HR-Verwaltungsaufgabe – sinnvoller in separatem HR-System |
+| Admin-Report: Nachtarbeit-Statistik | ✅ | `GET /api/admin/reports/night-work-summary` – Nachtschichten/MA, Nachtarbeitnehmer-Markierung (≥48 Tage/Jahr) |
+| 8h-Warnung für Nachtarbeitnehmer (Abs. 2) – MA-Pfad | ✅ | `is_night_worker`-Flag auf User; Warnung bei >8h Nachtarbeit in create/update/clock_out |
+| 8h-Warnung für Nachtarbeitnehmer (Abs. 2) – Admin-Pfad | ✅ | In admin_create/admin_update und change_request-Genehmigung |
+| §18-Ausnahme (exempt_from_arbzg) im MA-Pfad | ✅ | Checks werden für leitende Angestellte übersprungen |
+| §18-Ausnahme (exempt_from_arbzg) im Admin-Pfad | ❌ | `exempt_from_arbzg` nicht geprüft in `admin.py` / `change_requests.py` |
+| Kürzerer 1-Monat-Ausgleichszeitraum für Nachtarbeitnehmer (Abs. 2) | ❌ | Warnung enthält Hinweis; automatisches Tracking nicht implementiert |
+| Tracking arbeitsmedizinischer Untersuchungen (Abs. 3) | ❌ | HR-Verwaltungsaufgabe – sinnvoller in Personalakte / separatem HR-System |
 | Recht auf Wechsel Tagesarbeitsplatz (Abs. 4) | ❌ | Arbeitgeber-Pflicht, nicht im System abbildbar; Dokumentation manuell |
 | Lohnzuschlag / Freizeitausgleich (Abs. 5) | ❌ | Lohnbuchhaltungsaufgabe – liegt außerhalb des Zeiterfassungssystems |
 | Gleicher Zugang zur Weiterbildung (Abs. 6) | ❌ | HR-/Organisationspflicht; nicht im System prüfbar |
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
-> **Praxishinweis:** Abs. 4–6 sind Arbeitgeber-Pflichten, die in keinem Zeiterfassungssystem vollständig abgebildet werden können. Der fehlende 8h-Grenzwert für Nachtarbeitnehmer (Abs. 2) ist für eine Arztpraxis mit seltener Nachtarbeit wenig relevant, sollte aber für Praxen mit regelmäßigem Nachtdienst beachtet werden.
+> **Praxishinweis:** Abs. 4–6 sind Arbeitgeber-Pflichten, die kein Zeiterfassungssystem vollständig abbilden kann. Der fehlende Bypass für `exempt_from_arbzg` im Admin-Pfad (Abs. 2) ist ein bekannter Bug: Admins können keine Einträge >10h für §18-Befreite anlegen, obwohl der MA-Selbst-Service das erlaubt.
 
 ---
 
@@ -159,6 +172,7 @@
 | `SUNDAY_WORK` / `HOLIDAY_WORK` Warnings | ✅ | In API-Response + Frontend-Toast |
 | Visuelles Highlighting (orange) | ✅ | Tabellenzeilen + „So/FT"-Badge in `TimeTracking.tsx` |
 | Ausnahmegrund-Feld (§ 10 ArbZG) | ✅ | Optionales Textfeld `sunday_exception_reason` erscheint im Formular bei Sonn-/Feiertagen |
+| `sunday_exception_reason` in Exports | ✅ | Seit `6894f56` in allen 6 Export-Varianten (xlsx + ods) als Bemerkung |
 | §18-Ausnahme (exempt_from_arbzg) | ✅ | Warnungen für leitende Angestellte unterdrückt |
 
 **Status: Vollständig konform** ✅
@@ -192,43 +206,52 @@
 - §14 erlaubt **Abweichungen** von §§3–5, 6 Abs. 2, §§7, 9–11 in **Notfällen und außergewöhnlichen Situationen**, die unabhängig vom Willen der Betroffenen eintreten (z.B. drohender Verderb von Rohstoffen, Katastrophen)
 - §14 Abs. 3: Auch bei Ausnahmefällen gilt eine Obergrenze von **48h/Woche im 6-Monats-Durchschnitt**
 
-> **Wichtige Klarstellung:** §14 ist eine **Notfall-Ausnahmeregel**, kein Regelfall. Die 48h-Wochenwarnung (`WEEKLY_HOURS_WARNING`) in PraxisZeit implementiert die Schutzintention aus **§3** (Tagesdurchschnitt ≤ 8h × 6 Werktage = 48h/Woche). Der Verweis auf "§14" in älteren Dokumenten war irreführend.
+> **Wichtige Klarstellung:** §14 ist eine **Notfall-Ausnahmeregel**, kein Regelfall. Die 48h-Wochenwarnung (`WEEKLY_HOURS_WARNING`) in PraxisZeit implementiert die Schutzintention aus **§3** (Tagesdurchschnitt ≤ 8h × 6 Werktage = 48h/Woche). Der Code-Kommentar `# §14 ArbZG` im `time_entries.py` ist irreführend – die korrekte Referenz ist §3 (+ §7 Abs. 8 für Tarifvertragsfälle).
 
 ### Implementierungsstand
 
 | Anforderung | Status | Details |
 |-------------|--------|---------|
-| Notfall-Ausnahmen nach §14 | ℹ️ Nicht anwendbar | §14-Ausnahmen erfordern behördliche Bewilligung; Zeiterfassungssystem nicht betroffen |
-| 48h/Woche-Warnung (aus §3) | ✅ | `WEEKLY_HOURS_WARNING` – korrekt implementiert, auch wenn als „§14" bezeichnet |
+| Notfall-Ausnahmen nach §14 | ℹ️ Nicht anwendbar | §14-Ausnahmen erfordern außergewöhnliche Notfälle; Zeiterfassungssystem nicht betroffen |
+| 48h/Woche-Warnung (aus §3) | ✅ | `WEEKLY_HOURS_WARNING` – korrekt implementiert |
 
 ---
 
 ## 9. § 16 – Aufzeichnungs- und Aufbewahrungspflicht
 
 **Gesetzliche Regel:**
-- Arbeitgeber muss Arbeitszeiten, die **8 Stunden werktäglich überschreiten**, aufzeichnen
-- Aufzeichnungen mind. **2 Jahre** aufbewahren
-- **Gesetzesaushang** (Kopie des ArbZG) am Arbeitsplatz oder über betriebliche IT zugänglich
+- Arbeitgeber muss Arbeitszeiten, die **8 Stunden werktäglich überschreiten**, aufzeichnen (Abs. 2)
+- Aufzeichnungen mind. **2 Jahre** aufbewahren (Abs. 2)
+- Liste der Arbeitnehmer führen, die nach §7 Abs. 7 in Überstunden eingewilligt haben (Abs. 2)
+- **Gesetzesaushang** (Kopie des ArbZG) am Arbeitsplatz oder über betriebliche IT zugänglich (Abs. 1)
+
+> **EuGH & BAG Kontext:** EuGH C-55/18 (Mai 2019) und BAG 1 ABR 22/21 (September 2022) etablieren eine weitergehende Pflicht zur Aufzeichnung **aller** Arbeitszeiten (nicht nur >8h). Deutschland bereitet eine entsprechende ArbZG-Reform vor (Stand: Aug. 2025 als Referentenentwurf). PraxisZeit zeichnet bereits **alle** Stunden lückenlos auf – übertrifft damit die aktuelle §16-Mindestanforderung und ist optimal für die Reform positioniert.
 
 ### Implementierungsstand
 
 | Anforderung | Status | Details |
 |-------------|--------|---------|
 | Vollständige Zeiterfassung in DB | ✅ | Start, Ende, Pausen, Datum, Mitarbeiter, Ausnahmegrund (`sunday_exception_reason`) |
-| 2-Jahres-Aufbewahrung dokumentiert | ✅ | `INSTALLATION.md`: Backup-Anleitung + Retention-Prozess; Kommentar in `docker-compose.yml` |
+| Aufzeichnung >8h/Tag (§16 Abs. 2) | ✅ | System erfasst alle Stunden – übertrifft gesetzliche Mindestanforderung |
+| 2-Jahres-Aufbewahrung dokumentiert | ✅ | `INSTALLATION.md`: Backup-Anleitung + Retention-Prozess |
 | §16-Hinweis im Admin-Frontend | ✅ | Reports-Seite unter „Hinweise" mit 2-Jahres-Verweis |
-| Excel-Export als Nachweis | ✅ | Monats- und Jahresexporte verfügbar |
+| Excel-Export als Nachweis (xlsx) | ✅ | 3 Monats-/Jahres-Exportvarianten verfügbar |
+| ODS-Export als Nachweis (ods) | ✅ | 3 ODS-Exportvarianten seit Commit `a503e4f` |
+| ArbZG-Flags in Exports | ✅ | `sunday_exception_reason`, Nachtarbeit, `is_night_worker`, `exempt_from_arbzg` seit `6894f56` |
 | Gesetzesaushang / Link zum ArbZG | ✅ | Link zu gesetze-im-internet.de/arbzg in Admin-Reports unter „Hinweise" |
+| §7 Abs. 7 Opt-in-Register | ❌ | Nicht implementiert; bei Praxen ohne Tarifvertrag i.d.R. nicht relevant |
 
-**Status: Vollständig konform** ✅
+**Status: Vollständig konform** ✅ (übertrifft §16-Mindestanforderung)
 
 ---
 
 ## 10. § 18 – Ausnahmen für leitende Angestellte (Nichtanwendung)
 
 **Gesetzliche Regel:**
-- Leitende Angestellte i.S. § 5 Abs. 3 BetrVG sowie **Chefärzte** sind vollständig vom ArbZG ausgenommen
-- Praxisinhaber fallen ebenfalls unter §18
+- **§18 Abs. 1 Nr. 1:** Leitende Angestellte i.S. § 5 Abs. 3 BetrVG sowie **Chefärzte** sind vollständig vom ArbZG ausgenommen
+- **§18 Abs. 1 Nr. 2:** Leiter von öffentlichen Behörden (für Arztpraxen nicht relevant)
+- **§18 Abs. 1 Nr. 3:** Arbeitnehmer in häuslicher Gemeinschaft mit betreuten Personen (Pflegepersonen im Haushalt – selten in Praxen)
+- Praxisinhaber fallen als „leitende Angestellte" unter Nr. 1
 
 ### Implementierungsstand
 
@@ -236,9 +259,13 @@
 |-------------|--------|---------|
 | Ausnahme-Flag auf Benutzerebene | ✅ | `User.exempt_from_arbzg` (Boolean) – DB-Spalte in Migration 016 |
 | Admin-UI zur Verwaltung | ✅ | Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG)" in Benutzerverwaltung |
-| Vollständiger Bypass aller Checks | ✅ | §3/§4/§14-Checks und alle Warnungen (DAILY/WEEKLY/SUNDAY/HOLIDAY) übersprungen |
+| §3/§4 Bypass im MA-Selbstservice-Pfad | ✅ | Alle Checks und Warnungen in `time_entries.py` korrekt übersprungen |
+| §3/§4 Bypass im Admin-Direkteintrag-Pfad | ❌ | **Bug:** `admin.py` prüft `exempt_from_arbzg` NICHT → 10h-Hard-Stop und §4-Fehler gelten auch für Befreite |
+| §3/§4 Bypass im Änderungsantrags-Pfad | ❌ | **Bug:** `change_requests.py` prüft `exempt_from_arbzg` NICHT → selber Bug |
 
-**Status: Vollständig konform** ✅
+**Bußgeldrisiko:** Keines (§18-Befreite unterliegen dem ArbZG nicht; der Bug führt zu übermäßiger Einschränkung, nicht zu einem Compliance-Verstoß).
+
+**Praxisauswirkung:** Ein Admin kann für einen §18-befreiten Mitarbeiter keine Einträge >10h anlegen oder genehmigen, obwohl dies rechtlich zulässig wäre. Der Betroffene kann selbst via Mitarbeiter-Interface Einträge anlegen (korrekt). Handlungsempfehlung: Bug in `admin.py` und `change_requests.py` beheben.
 
 ---
 
@@ -246,9 +273,10 @@
 
 | § | Thema | Relevanz für Arztpraxis | Status |
 |---|-------|------------------------|--------|
-| **§ 7** | Tarifvertragliche Abweichungen | Wenn Tarifvertrag gilt → andere Grenzwerte möglich | Nicht berücksichtigt – feste 8h/10h/48h-Werte |
-| **§ 8** | Gefährliche Arbeiten | Bundesverordnung – nicht selbst konfigurierbar | Nicht anwendbar |
-| **§ 12** | Abweichende Regelungen Sonn-/Feiertage per Tarifvertrag | Wenn Tarifvertrag gilt: min. Freisonntage abweichend | Nicht berücksichtigt |
+| **§ 7** | Tarifvertragliche Abweichungen | Wenn Tarifvertrag gilt → andere Grenzwerte möglich (z.B. >10h/Tag, >11h Ruhezeit) | ⚠️ Nicht berücksichtigt – feste 8h/10h/48h-Werte |
+| **§ 8** | Bundesverordnung für gefährliche Arbeiten | Nur für Sonderverordnungen | Nicht anwendbar |
+| **§ 12** | Sonn-/Feiertagsausnahmen per Tarifvertrag | Wenn TV gilt: mind. Freisonntage abweichend möglich | Nicht berücksichtigt |
+| **§ 13** | Bereichsausnahmen (Notfallverordnungen) | Bundesregierungs-Ermächtigung für Krisenzeiten | Nicht anwendbar |
 | **§ 22** | Bußgeldvorschriften | Bis 30.000 € pro Verstoß | Sanktionsrahmen unverändert |
 | **§ 23** | Strafvorschriften | Freiheitsstrafe bei vorsätzlicher Gesundheitsgefährdung | – |
 
@@ -269,17 +297,36 @@
 
 ---
 
-## 13. Verbleibende Lücken (Gesamtüberblick)
+## 13. Verbleibende Lücken und bekannte Bugs (Gesamtüberblick)
 
-| Anforderung | § | Priorität | Begründung |
-|-------------|---|-----------|------------|
-| 6-Monats-Ausgleichszeitraum | §3 | Niedrig | Rollierender Durchschnitt technisch komplex; bei typischen Praxiszeiten selten relevant |
-| Pausen-Timing (max. 6h am Stück) | §4 Satz 3 | Niedrig | Start/Ende der Pause nicht erfasst; für geregelte Praxiszeiten kein Risiko |
-| Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer | §6 Abs. 2 | Niedrig | Gilt nur für Nachtarbeitnehmer mit >48 Nächten; selten in Arztpraxen (Warnung bereits integriert) |
-| Arbeitsmedizinische Untersuchungen | §6 Abs. 3 | Mittel | HR-Pflicht; sollte in Personalakte dokumentiert werden |
-| Recht auf Tagesarbeitsplatz | §6 Abs. 4 | Niedrig | Arbeitgeber-Pflicht bei Nachweis; nicht systemisch abbildbar |
-| Lohnzuschlag / Freizeitausgleich Nachtarbeit | §6 Abs. 5 | Mittel | Lohnbuchhaltungsaufgabe; Nachweispflicht beim Arbeitgeber |
-| Tarifvertragliche Abweichungen | §7 | Niedrig | PraxisZeit verwendet feste gesetzliche Grenzwerte |
+| Anforderung | § | Typ | Priorität | Begründung |
+|-------------|---|-----|-----------|------------|
+| 6-Monats-Ausgleichszeitraum | §3 | Lücke | Niedrig | Rollierender Durchschnitt technisch komplex; Warnung bereits bei >8h/Tag aktiv |
+| Pausen-Timing (max. 6h am Stück) | §4 Satz 3 | Systemlücke | Niedrig | Kein Pause-Timestamp; für geregelte Praxiszeiten kein Risiko |
+| Split-Schicht False Positives | §5 | **Bug** | **Mittel** | `rest_time_service.py` vergleicht Intraday-Lücken; muss auf Letzteintrag-je-Tag/Ersteintrag-Folgetag umgestellt werden |
+| §18-Bypass fehlt in admin.py/change_requests.py | §3/§4/§18 | **Bug** | **Mittel** | Admin kann keine Einträge >10h für befreite MA anlegen; Selbstservice-Pfad korrekt |
+| Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer | §6 Abs. 2 | Lücke | Niedrig | Warnung mit Hinweis integriert; automatisches Tracking fehlt |
+| Arbeitsmedizinische Untersuchungen | §6 Abs. 3 | HR-Aufgabe | Mittel | Sollte in Personalakte dokumentiert werden |
+| Recht auf Tagesarbeitsplatz | §6 Abs. 4 | Systemaußen | Niedrig | Arbeitgeber-Pflicht bei Nachweis; nicht systemisch abbildbar |
+| Lohnzuschlag / Freizeitausgleich Nachtarbeit | §6 Abs. 5 | Lohnbuchhaltung | Mittel | Nachweispflicht beim Arbeitgeber |
+| Tarifvertragliche Abweichungen | §7 | Lücke | Niedrig | PraxisZeit verwendet feste gesetzliche Grenzwerte |
+| §7 Abs. 7 Opt-in-Register | §16 Abs. 2 | Lücke | Niedrig | Nur relevant bei TV mit §7 Abs. 7-Vereinbarungen |
+
+---
+
+## 14. Handlungsempfehlungen (nach Priorität)
+
+### Mittel – Bugs mit fachlicher Auswirkung
+1. **§5 Split-Schicht-Bug** in `rest_time_service.py`: Logik auf „letzter Eintrag des Vortages vs. erster Eintrag des Folgetages" umstellen statt alle Paare zu vergleichen
+2. **§18-Bypass** in `admin.py` (`admin_create_time_entry`, `admin_update_time_entry`) und `change_requests.py` ergänzen: `if not user.exempt_from_arbzg:` vor §3/§4-Checks
+
+### Niedrig – Dokumentationspflichten (kein Code-Änderungsbedarf)
+3. **§6 Abs. 3** Arbeitsmedizinische Untersuchungen in Personalakte dokumentieren
+4. **§6 Abs. 5** Lohnzuschlag/Freizeitausgleich für Nachtarbeitnehmer in Lohnbuchhaltung sicherstellen
+5. **Code-Kommentar** `# §14 ArbZG` in `time_entries.py` → auf `# §3 ArbZG` korrigieren
+
+### Beobachtung – Externe Entwicklung
+6. **EuGH/BAG Stechuhr-Reform**: Deutsche ArbZG-Novelle (erwartet ab 2025/2026) wird Pflicht zur Aufzeichnung aller Stunden kodifizieren. PraxisZeit ist bereits konform.
 
 ---
 
