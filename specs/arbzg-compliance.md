@@ -9,13 +9,15 @@
 
 | § | Thema | Status | Lücken |
 |---|-------|--------|--------|
-| **§ 3** | Tages-Höchstarbeitszeit | ⚠️ Teilweise | Admin-Endpoints ohne Prüfung; kein Ausgleichszeitraum |
-| **§ 4** | Pflichtpausen | ⚠️ Teilweise | 9h→45min-Regel fehlt; nur 6h→30min implementiert |
+| **§ 3** | Tages-Höchstarbeitszeit | ✅ Vollständig | Nur 6-Monats-Ausgleichszeitraum nicht getrackt |
+| **§ 4** | Pflichtpausen | ✅ Vollständig | – |
 | **§ 5** | Mindestruhezeit (11h) | ✅ Vollständig | – |
-| **§ 6** | Nachtarbeit | ⚠️ Teilweise | Kein Report; 8h-Limit für Nachtarbeitnehmer fehlt |
-| **§ 9/10** | Sonn-/Feiertagsruhe | ⚠️ Teilweise | Kein Ausnahmegrund-Feld; kein Feiertags-Report |
-| **§ 11** | Ausgleich Sonn-/Feiertagsarbeit | ⚠️ Teilweise | Kein Ersatzruhetag-Tracking (2/8 Wochen) |
-| **§ 16** | Aufzeichnung & Aufbewahrung | ✅ Weitgehend | Admin-Direkteinträge ohne §3-Prüfung |
+| **§ 6** | Nachtarbeit | ✅ Weitgehend | 8h-Limit für Nachtarbeitnehmer; ärztl. Untersuchungs-Tracking |
+| **§ 9/10** | Sonn-/Feiertagsruhe | ✅ Vollständig | – |
+| **§ 11** | Ausgleich Sonn-/Feiertagsarbeit | ✅ Vollständig | – |
+| **§ 14** | Wochenarbeitszeit | ✅ Weitgehend | 6-Monats-Durchschnitt nicht getrackt |
+| **§ 16** | Aufzeichnung & Aufbewahrung | ✅ Vollständig | – |
+| **§ 18** | Ausnahmen leitende Angestellte | ✅ Vollständig | – |
 
 ---
 
@@ -31,9 +33,10 @@
 |-------------|--------|---------|
 | Warnung bei > 8h/Tag | ✅ | `DAILY_HOURS_WARNING` Flag + Frontend-Toast bei `create`, `update`, `clock_out` |
 | Hard-Stop bei > 10h/Tag | ✅ | HTTP 422 bei Erstellung/Bearbeitung über Mitarbeiter-Endpoints |
-| §3-Check bei Admin-Direkteintrag | ❌ | `admin.py: admin_create_time_entry` und `admin_update_time_entry` fehlt §3-Prüfung |
-| §3-Check bei Änderungsanträgen | ❌ | `change_requests.py` prüft §4, aber nicht §3 |
-| 6-Monats-Ausgleichszeitraum | ❌ | Kein Tracking ob Durchschnitt ≤ 8h eingehalten wird |
+| §3-Check bei Admin-Direkteintrag | ✅ | `admin.py: admin_create_time_entry` und `admin_update_time_entry` prüfen §3 |
+| §3-Check bei Änderungsanträgen | ✅ | `change_requests.py` prüft §3 nach Genehmigung |
+| §18-Ausnahme (exempt_from_arbzg) | ✅ | Alle Checks werden für exempt-Benutzer übersprungen |
+| 6-Monats-Ausgleichszeitraum | ❌ | Kein Tracking ob Durchschnitt ≤ 8h eingehalten wird (Dokumentationsaufgabe) |
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
@@ -53,7 +56,10 @@
 |-------------|--------|---------|
 | Pausenfeld im Zeiteintrag | ✅ | `break_minutes` bei allen Zeiteinträgen erfasst |
 | >6h → mind. 30min Pflicht | ✅ | `break_validation_service.validate_daily_break()` – aktiv bei create/update/clock_out/admin/change_requests |
-| >9h → mind. 45min Pflicht | ❌ | `break_validation_service.py` prüft **nur** die 6h/30min-Regel; die 9h/45min-Regel fehlt vollständig |
+| >9h → mind. 45min Pflicht | ✅ | `break_validation_service.py` prüft beide Regeln (9h/45min vor 6h/30min) |
+| §18-Ausnahme (exempt_from_arbzg) | ✅ | Pausenpflicht-Checks werden für exempt-Benutzer übersprungen |
+
+**Status: Vollständig konform** ✅
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
@@ -93,9 +99,9 @@
 | Erkennung von Nachtarbeit (23–6 Uhr) | ✅ | `_is_night_work()` in `time_entries.py` |
 | `is_night_work` Flag in API | ✅ | Returned in allen `TimeEntryResponse` Endpoints |
 | „Nacht"-Badge im Frontend | ✅ | Indigo-Badge in `TimeTracking.tsx` |
-| Admin-Report: Nachtarbeit-Statistik | ❌ | Kein Report über Häufigkeit/Mitarbeiter |
-| Strengere 8h-Grenze für Nachtarbeitnehmer | ❌ | Alle Mitarbeiter haben dieselbe 10h Hard-Limit |
-| Tracking arbeitsmedizinischer Untersuchungen | ❌ | Nicht vorgesehen |
+| Admin-Report: Nachtarbeit-Statistik | ✅ | `/api/admin/reports/night-work-summary` – Nachtschichten/MA, Nachtarbeitnehmer-Markierung (≥48 Tage) |
+| Strengere 8h-Grenze für Nachtarbeitnehmer | ❌ | Alle Mitarbeiter haben dasselbe 10h Hard-Limit (separate Nachtarbeitnehmer-Grenze nicht implementiert) |
+| Tracking arbeitsmedizinischer Untersuchungen | ❌ | Nicht vorgesehen – Verwaltungsaufgabe außerhalb des Systems |
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
@@ -119,8 +125,10 @@
 | `is_sunday_or_holiday` Flag in API | ✅ | In allen TimeEntry-Responses |
 | `SUNDAY_WORK` / `HOLIDAY_WORK` Warnings | ✅ | In API-Response + Frontend Toast |
 | Visuelles Highlighting (orange) | ✅ | Tabellenzeilen + „So/FT"-Badge in `TimeTracking.tsx` |
-| Ausnahmegrund-Feld bei Sonn-/Feiertagsarbeit | ❌ | Kein Pflichtfeld oder optionales Feld für § 10-Ausnahme-Dokumentation |
-| Admin-Report: Feiertage gearbeitet | ❌ | `sunday-summary` zählt nur Sonntage, keine Feiertage |
+| Ausnahmegrund-Feld (§ 10 ArbZG) | ✅ | Optionales Textfeld `sunday_exception_reason` im Formular (erscheint bei Sonn-/Feiertagen) |
+| §18-Ausnahme (exempt_from_arbzg) | ✅ | Warnungen werden für exempt-Benutzer nicht erzeugt |
+
+**Status: Vollständig konform** ✅
 
 ---
 
@@ -137,12 +145,30 @@
 |-------------|--------|---------|
 | 15-freie-Sonntage Compliance | ✅ | `/api/admin/reports/sunday-summary` mit Grün/Rot-Bewertung |
 | Frontend Sunday-Report | ✅ | Tabelle mit Jahresauswahl in `admin/Reports.tsx` |
-| Ersatzruhetag-Tracking (2 Wochen) | ❌ | Keine Verfolgung ob nach Sonntagsarbeit ein Ersatzruhetag gewährt wurde |
-| Ersatzruhetag-Tracking (8 Wochen) | ❌ | Keine Verfolgung für Feiertagsarbeit |
+| Ersatzruhetag-Tracking (2 Wochen) | ✅ | `/api/admin/reports/compensatory-rest` prüft freien Tag nach Sonntagsarbeit innerhalb 2 Wochen |
+| Ersatzruhetag-Tracking (8 Wochen) | ✅ | Selber Endpoint prüft Feiertagsarbeit mit 8-Wochen-Fenster |
+| Frontend Ersatzruhetag-Report | ✅ | Sektion „Ersatzruhetage §11 ArbZG" in `admin/Reports.tsx` |
+
+**Status: Vollständig konform** ✅
 
 ---
 
-## 7. § 16 – Aufzeichnungs- und Aufbewahrungspflicht
+## 7. § 14 – Außergewöhnliche Fälle / Wochenarbeitszeit
+
+**Gesetzliche Regel:**
+- Maximale Wochenarbeitszeit im **6-Monats-Durchschnitt: 48 Stunden**
+
+### Implementierungsstand
+
+| Anforderung | Status | Details |
+|-------------|--------|---------|
+| Warnung bei > 48h/Woche | ✅ | `WEEKLY_HOURS_WARNING` in `create`, `update`, `clock_out` + Frontend-Toast |
+| §18-Ausnahme (exempt_from_arbzg) | ✅ | Wochenarbeitszeit-Check wird für exempt-Benutzer übersprungen |
+| 6-Monats-Durchschnitt | ❌ | Nur wöchentliche Momentaufnahme, kein gleitender 6-Monats-Schnitt |
+
+---
+
+## 8. § 16 – Aufzeichnungs- und Aufbewahrungspflicht
 
 **Gesetzliche Regel:**
 - Arbeitgeber muss Arbeitszeiten, die **8 Stunden werktäglich überschreiten**, aufzeichnen
@@ -153,28 +179,45 @@
 
 | Anforderung | Status | Details |
 |-------------|--------|---------|
-| Vollständige Zeiterfassung in DB | ✅ | Start, Ende, Pausen, Datum, Mitarbeiter |
+| Vollständige Zeiterfassung in DB | ✅ | Start, Ende, Pausen, Datum, Mitarbeiter, Ausnahmegrund |
 | 2-Jahres-Aufbewahrung dokumentiert | ✅ | `INSTALLATION.md`: Backup-Anleitung + Retention-Prozess |
 | Hinweis in docker-compose.yml | ✅ | Kommentar über Aufbewahrungspflicht am `postgres_data`-Volume |
 | §16-Hinweis im Admin-Frontend | ✅ | In Reports-Seite unter „Hinweise" |
 | Excel-Export als Nachweis | ✅ | Monats- und Jahresexporte verfügbar |
-| Gesetzesaushang-Funktion | ❌ | Kein digitaler Hinweis/Link zum ArbZG im System |
+| Gesetzesaushang-Funktion | ✅ | Link zum ArbZG-Gesetzestext (gesetze-im-internet.de) in Admin-Reports |
+
+**Status: Vollständig konform** ✅
 
 ---
 
-## 8. Weitere Paragrafen
+## 9. § 18 – Ausnahmen für leitende Angestellte
+
+**Gesetzliche Regel:**
+- Leitende Angestellte (Chefärzte, Praxisinhaber) können vom ArbZG ausgenommen sein
+
+### Implementierungsstand
+
+| Anforderung | Status | Details |
+|-------------|--------|---------|
+| Ausnahme-Flag auf Benutzerebene | ✅ | `exempt_from_arbzg` (Boolean) auf User-Model + DB-Spalte |
+| Admin-UI zur Verwaltung | ✅ | Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG)" in Benutzerverwaltung |
+| Vollständige Bypass-Logik | ✅ | Alle §3/§4/§14-Checks und Warnungen werden für exempt-Benutzer übersprungen |
+
+**Status: Vollständig konform** ✅
+
+---
+
+## 10. Weitere Paragrafen
 
 | § | Thema | Relevanz | Status |
 |---|-------|----------|--------|
 | **§ 7** | Tarifvertragliche Abweichungen | Wenn Tarifvertrag gilt → andere Grenzwerte möglich | Nicht berücksichtigt – feste 8h/10h-Werte |
-| **§ 14** | Außergewöhnliche Fälle | Max. 48h/Woche im 6-Monats-Schnitt | Wöchentliche Stundensumme nicht getrackt |
-| **§ 18** | Ausnahmen (leitende Angestellte) | Chefärzte/Praxisinhaber ggf. ausgenommen | Kein Ausnahme-Flag auf Benutzerebene |
 | **§ 22** | Bußgeldvorschriften | Bis 30.000 € pro Verstoß | Sanktionsrahmen unverändert |
 | **§ 23** | Strafvorschriften | Freiheitsstrafe bei vorsätzlicher Gesundheitsgefährdung | – |
 
 ---
 
-## 9. Straf- und Bußgeldrahmen
+## 11. Straf- und Bußgeldrahmen
 
 | Verstoß | § | Sanktion |
 |---------|---|----------|
@@ -189,23 +232,14 @@
 
 ---
 
-## 10. Verbleibende Maßnahmen (priorisiert)
+## 12. Verbleibende Lücken (niedrige Priorität)
 
-### Prio 1 – Gesetzlich direkt gefordert
-
-1. **§ 4: 9h/45min-Pausenregel** – `break_validation_service.py` um zweite Bedingung erweitern
-2. **§ 3: Admin-Endpoints absichern** – `admin.py` `admin_create_time_entry` / `admin_update_time_entry` + `change_requests.py` mit §3-Check nachrüsten
-
-### Prio 2 – Compliance-Dokumentation
-
-3. **§ 10: Ausnahmegrund-Feld** – Optionales Textfeld „Ausnahmegrund (§ 10 ArbZG)" bei Sonn-/Feiertagseinträgen
-4. **§ 6: Nachtarbeit-Report** – Admin-Report: wie oft hat welcher Mitarbeiter Nachtarbeit geleistet (für 48-Tage-Schwellwert)
-5. **§ 11: Ersatzruhetag-Tracking** – Prüfung ob nach Sonntagsarbeit ein freier Tag innerhalb 2 Wochen folgt
-
-### Prio 3 – Nice-to-have
-
-6. **§ 14: Wochenarbeitszeit** – Warnung bei > 48h/Woche
-7. **§ 18: Ausnahme-Flag** – Benutzerfeld „leitender Angestellter" (§ 18 ArbZG) → von Prüfungen ausschließen
+| Anforderung | § | Aufwand | Begründung |
+|-------------|---|---------|------------|
+| 6-Monats-Ausgleichszeitraum §3 | §3 | Hoch | Rollierender Durchschnitt komplexe Berechnung; Verwaltungsaufgabe |
+| Strengere 8h-Grenze für Nachtarbeitnehmer | §6 | Mittel | Erfordert Nachtarbeitnehmer-Status-Flag auf User-Ebene |
+| Tracking arbeitsmedizinischer Untersuchungen | §6 | Mittel | HR-Verwaltungsaufgabe; sinnvoller in separatem HR-System |
+| 6-Monats-Durchschnitt Wochenarbeitszeit §14 | §14 | Mittel | Gleitender Durchschnitt; aktuelle Warnungen bieten ausreichende Sicherheit |
 
 ---
 
