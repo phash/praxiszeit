@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost,http://localhost:5173"
 
-    # Cookie security (set COOKIE_SECURE=true in production with HTTPS)
-    COOKIE_SECURE: bool = False
+    # Cookie security (set COOKIE_SECURE=false only for local HTTP development)
+    COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "lax"
 
     # TOTP 2FA issuer name shown in authenticator apps

@@ -101,18 +101,19 @@ def _get_active_users(db: Session) -> List[User]:
 # Monthly report
 # ---------------------------------------------------------------------------
 
-def generate_monthly_report(db: Session, year: int, month: int) -> BytesIO:
-    """One sheet per employee, daily rows with target/actual/diff."""
+def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
+    """One sheet per employee, daily rows with target/actual/diff.
+    DSGVO F-003: sick absences are masked when include_health_data=False (default)."""
     doc, bold, normal = _doc_with_styles()
 
     users = _get_active_users(db)
     for user in users:
-        _monthly_sheet(doc, db, user, year, month, bold, normal)
+        _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data)
 
     return _save(doc)
 
 
-def _monthly_sheet(doc, db, user, year, month, bold, normal):
+def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data: bool = False):
     sheet_name = f"{user.last_name} {user.first_name}"[:31]
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
@@ -251,11 +252,17 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal):
             tr.addElement(_str_cell(" | ".join(bemerkung_parts) if bemerkung_parts else ""))
         elif absence:
             target = Decimal("0.00")
-            label = ABSENCE_LABELS.get(absence.type.value, absence.type.value)
+            # DSGVO F-003: mask sick absences unless health data explicitly requested
+            if absence.type.value == "sick" and not include_health_data:
+                label = "Abwesenheit"
+                note_str = ""
+            else:
+                label = ABSENCE_LABELS.get(absence.type.value, absence.type.value)
+                note_str = absence.note or ""
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(f"{label} ({float(absence.hours):.1f}h)"))
-            tr.addElement(_str_cell(absence.note or ""))
+            tr.addElement(_str_cell(note_str))
         else:
             target = daily_target
             diff = float(net - target)

@@ -49,6 +49,9 @@ def log_error(
     message = _scrub_pii(message)
     if traceback_str:
         traceback_str = _scrub_pii(traceback_str)
+        # VULN-012: store only first 2000 chars to avoid leaking full stack frames
+        if len(traceback_str) > 2000:
+            traceback_str = traceback_str[:2000] + '\n... [truncated]'
 
     fingerprint = _make_fingerprint(level, logger_name, message, path)
     now = datetime.now(timezone.utc)
@@ -62,7 +65,7 @@ def log_error(
         existing.count += 1
         existing.last_seen = now
         if traceback_str:
-            existing.traceback = traceback_str
+            existing.traceback = traceback_str  # already truncated above
         db.commit()
         return existing
 
@@ -161,6 +164,9 @@ class DBErrorHandler(logging.Handler):
             tb = None
             if record.exc_info:
                 tb = ''.join(traceback.format_exception(*record.exc_info))
+                # VULN-012: limit traceback size before storing
+                if tb and len(tb) > 2000:
+                    tb = tb[:2000] + '\n... [truncated]'
             level = record.levelname.lower()
             log_error(
                 db=db,

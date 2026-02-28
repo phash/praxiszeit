@@ -62,8 +62,20 @@ export default function Profile() {
       return;
     }
 
-    if (passwordData.new_password.length < 8) {
-      setError('Passwort muss mindestens 8 Zeichen lang sein');
+    if (passwordData.new_password.length < 10) {
+      setError('Passwort muss mindestens 10 Zeichen lang sein');
+      return;
+    }
+    if (!/[A-Z]/.test(passwordData.new_password)) {
+      setError('Passwort muss mindestens einen Großbuchstaben enthalten');
+      return;
+    }
+    if (!/[a-z]/.test(passwordData.new_password)) {
+      setError('Passwort muss mindestens einen Kleinbuchstaben enthalten');
+      return;
+    }
+    if (!/[0-9]/.test(passwordData.new_password)) {
+      setError('Passwort muss mindestens eine Ziffer enthalten');
       return;
     }
 

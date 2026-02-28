@@ -97,6 +97,8 @@ def _enrich_audit_response(log: TimeEntryAuditLog, db: Session) -> AuditLogRespo
 def list_users(
     include_inactive: bool = False,
     include_hidden: bool = False,
+    skip: int = 0,
+    limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -106,7 +108,7 @@ def list_users(
         query = query.filter(User.is_active == True)
     if not include_hidden:
         query = query.filter(User.is_hidden == False)
-    users = query.order_by(User.last_name, User.first_name).all()
+    users = query.order_by(User.last_name, User.first_name).offset(skip).limit(limit).all()
     return users
 
 
@@ -299,8 +301,15 @@ def update_user(
             raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
     update_data = user_data.model_dump(exclude_unset=True)
+
+    # VULN-010: invalidate existing JWTs when role is changed
+    role_changed = 'role' in update_data and update_data['role'] != user.role
+
     for field, value in update_data.items():
         setattr(user, field, value)
+
+    if role_changed:
+        user.token_version = (user.token_version or 0) + 1
 
     db.commit()
     db.refresh(user)
@@ -469,6 +478,8 @@ def delete_working_hours_change(
 def list_all_change_requests(
     request_status: Optional[ChangeRequestStatus] = Query(None, alias="status", description="Filter by status"),
     user_id: Optional[str] = Query(None, description="Filter by user"),
+    skip: int = 0,
+    limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -478,7 +489,7 @@ def list_all_change_requests(
         query = query.filter(ChangeRequest.status == request_status)
     if user_id:
         query = query.filter(ChangeRequest.user_id == user_id)
-    requests = query.order_by(ChangeRequest.created_at.desc()).all()
+    requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
     return [_enrich_cr_response(cr, db) for cr in requests]
 
 
@@ -790,6 +801,8 @@ def admin_delete_time_entry(
 def list_audit_log(
     user_id: Optional[str] = Query(None, description="Filter by affected user"),
     month: Optional[str] = Query(None, description="Filter by month (YYYY-MM)"),
+    skip: int = 0,
+    limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -809,5 +822,5 @@ def list_audit_log(
         except ValueError:
             raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
-    logs = query.order_by(TimeEntryAuditLog.created_at.desc()).all()
+    logs = query.order_by(TimeEntryAuditLog.created_at.desc()).offset(skip).limit(limit).all()
     return [_enrich_audit_response(log, db) for log in logs]

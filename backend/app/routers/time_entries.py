@@ -135,12 +135,15 @@ def _compute_is_editable(entry: TimeEntry, current_user: User) -> bool:
     return entry.date == date.today()
 
 
-def _get_open_entry(db: Session, user_id) -> Optional[TimeEntry]:
+def _get_open_entry(db: Session, user_id, with_lock: bool = False) -> Optional[TimeEntry]:
     """Find an open (clocked-in, no end_time) entry for the user."""
-    return db.query(TimeEntry).filter(
+    query = db.query(TimeEntry).filter(
         TimeEntry.user_id == user_id,
         TimeEntry.end_time.is_(None),
-    ).first()
+    )
+    if with_lock:
+        query = query.with_for_update()
+    return query.first()
 
 
 def _close_stale_entry(db: Session, entry: TimeEntry) -> None:
@@ -192,8 +195,8 @@ def clock_in(
     current_user: User = Depends(get_current_user),
 ):
     """Clock in: create a time entry with start_time=now, end_time=NULL."""
-    # Check for existing open entry
-    open_entry = _get_open_entry(db, current_user.id)
+    # VULN-009: use SELECT FOR UPDATE to prevent race condition on concurrent clock-in
+    open_entry = _get_open_entry(db, current_user.id, with_lock=True)
     if open_entry:
         if open_entry.date != date.today():
             # Stale entry from a previous day: auto-close
