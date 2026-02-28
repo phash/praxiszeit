@@ -297,6 +297,18 @@ docker-compose exec db pg_dump -U praxiszeit praxiszeit > backup.sql
 docker-compose exec -T db psql -U praxiszeit praxiszeit < backup.sql
 ```
 
+## Compliance & Audits
+
+PraxisZeit wird regelmäßig auf Sicherheit, Datenschutz und Arbeitszeitrecht geprüft. Alle Audit-Berichte und Prozessdokumentationen liegen im `specs/`-Verzeichnis:
+
+| Bereich | Ordner | Status |
+|---------|--------|--------|
+| Security (OWASP) | `specs/security/` | ✓ 23 Findings behoben |
+| DSGVO | `specs/dsgvo/` | ✓ 20 Findings behoben |
+| ArbZG §3–§18 | `specs/arbzg/` | ✓ vollständig implementiert |
+
+Jeder Ordner enthält eine `HOWTO.md` mit dem Audit-Prozess, dem Claude-Prompt zur Erstellung und der Regel: **nach jedem Audit → aktualisierten Report erzeugen**.
+
 ## Support & Dokumentation
 
 - **CLAUDE.md** - Umfangreiche Projekt-Dokumentation für Entwickler

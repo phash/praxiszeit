@@ -506,6 +506,7 @@ return output
 ## 🔐 Sicherheit
 
 **Umfassendes Security Audit durchgeführt am 2026-02-20** (23 Findings, alle behoben).
+Berichte und Prozess: `specs/security/` → `HOWTO.md` beschreibt Audit-Durchführung und Prompt.
 
 ### Authentifizierung & Token
 - Passwörter mit bcrypt gehasht (`passlib[bcrypt]`, 72-Byte-Truncation)
@@ -550,7 +551,7 @@ return output
 
 ## ⚖️ ArbZG-Compliance
 
-Vollständige Dokumentation: `specs/arbzg-compliance.md`
+Vollständige Dokumentation: `specs/arbzg/arbzg-compliance.md` | Audit-Prozess: `specs/arbzg/HOWTO.md`
 
 ### Implementierte Checks (alle Eingabepfade: create/update/clock_out/admin/change_requests)
 
@@ -888,8 +889,20 @@ const formatted = format(parseISO(dateString), 'dd.MM.yyyy', { locale: de })
 - **API Alternative**: http://localhost:8000/redoc (ReDoc - statisch, schöner)
 - **README.md**: User-facing Dokumentation (Installation, Features)
 - **CLAUDE.md**: Diese Datei - Entwickler-Dokumentation
+- **ARC42.md**: Architektur-Dokumentation
 - **UX_ROADMAP.md**: UX/UI-Roadmap mit Umsetzungsdetails (alle 6 Phasen abgeschlossen)
 - **Screenshots**: `../screenshots/` Ordner (außerhalb Repo)
+
+### Audit-Dokumentation (`specs/`)
+
+| Ordner | Inhalt | HOWTO |
+|--------|--------|-------|
+| `specs/features/` | Feature-Spezifikationen (SDD) | `specs/README.md` |
+| `specs/security/` | Security-Audit-Berichte | `specs/security/HOWTO.md` |
+| `specs/dsgvo/` | DSGVO-Prüfbericht, DSFA, Verarbeitungsverzeichnis | `specs/dsgvo/HOWTO.md` |
+| `specs/arbzg/` | ArbZG-Compliance-Bericht und -Dokumentation | `specs/arbzg/HOWTO.md` |
+
+**Audit-Regel:** Nach jedem Audit und Behebung der Findings → aktualisierten Report erzeugen (alle Findings als „Behoben" markieren, Verdict aktualisieren). Prozess und Prompts stehen in den jeweiligen `HOWTO.md`-Dateien.
 
 ## 🐛 Wichtige Patterns und Gotchas
 
