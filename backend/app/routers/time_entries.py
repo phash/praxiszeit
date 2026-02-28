@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
 
 MAX_DAILY_HOURS_HARD = 10.0         # §3 ArbZG: absolute Obergrenze
 MAX_DAILY_HOURS_WARN = 8.0          # §3 ArbZG: Regelgrenze (Warnung)
-MAX_WEEKLY_HOURS_WARN = 48.0        # §14 ArbZG: Wöchentliche Höchstarbeitszeit (6-Monats-Schnitt)
+MAX_WEEKLY_HOURS_WARN = 48.0        # §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche
 MAX_NIGHT_WORKER_DAILY_WARN = 8.0   # §6 Abs. 2 ArbZG: Tageslimit für Nachtarbeitnehmer
 NIGHT_THRESHOLD_MINUTES = 120       # §2 Abs. 4 ArbZG: mind. 2h Nachtzeit = Nachtarbeit
 NIGHT_START = time(23, 0)
