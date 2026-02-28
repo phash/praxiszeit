@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_serializer
-from typing import Optional
+from typing import List, Optional
 from datetime import date, time, datetime
 from uuid import UUID
 
@@ -52,6 +52,7 @@ class ChangeRequestResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    warnings: List[str] = []
 
     @field_serializer('id', 'user_id', 'time_entry_id', 'reviewed_by')
     def serialize_uuid(self, value):

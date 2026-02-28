@@ -45,6 +45,7 @@ class UserBase(BaseModel):
     hours_thursday: Optional[float] = Field(None, ge=0, le=24)
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: bool = False  # §18 ArbZG: leitende Angestellte
+    is_night_worker: bool = False  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer (8h-Tageslimit)
 
 
 class UserCreate(UserBase):
@@ -76,6 +77,7 @@ class UserUpdate(BaseModel):
     hours_thursday: Optional[float] = Field(None, ge=0, le=24)
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: Optional[bool] = None  # §18 ArbZG
+    is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
 
 
 class UserResponse(UserBase):
@@ -84,6 +86,7 @@ class UserResponse(UserBase):
     is_active: bool
     is_hidden: bool = False
     exempt_from_arbzg: bool = False  # §18 ArbZG
+    is_night_worker: bool = False  # §6 Abs. 2 ArbZG
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None

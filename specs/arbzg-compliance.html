@@ -271,9 +271,9 @@
           <td><code>_is_night_work()</code> in <code>time_entries.py</code> verwendet korrekt 23–6 Uhr</td>
         </tr>
         <tr>
-          <td>Nachtarbeit-Schwellwert &gt;2h (Abs. 4)</td>
-          <td><span class="badge badge-warn">⚠️ Konservativ</span></td>
-          <td><code>is_night_work</code>-Flag wird bei <em>jeder</em> Nachtzeit-Berührung gesetzt, nicht erst ab 2h. Gesetz: nur bei &gt;2h. Implementierung ist over-flagging (sicherer), kein Compliance-Risiko.</td>
+          <td>Nachtarbeit-Schwellwert &gt;2h (Abs. 4) + <code>is_night_worker</code>-Flag</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>_is_night_work()</code> prüft minutengenau ob &gt;2h (120 min) in Nachtzeit (23:00–06:00) fallen (§2 Abs. 4 ArbZG). <code>is_night_worker</code>-Flag auf User-Ebene (Migration 017, Admin-UI Checkbox).</td>
         </tr>
         <tr>
           <td>Nachtarbeitnehmer-Schwellwert (≥48 Tage)</td>
@@ -478,13 +478,13 @@
         </tr>
         <tr>
           <td>Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2)</td>
-          <td><span class="badge badge-fail">❌ Nicht impl.</span></td>
-          <td>Alle Mitarbeiter haben dasselbe 10h Hard-Limit; kein separates Nachtarbeitnehmer-Flag auf Benutzerebene</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>is_night_worker</code>-Flag auf User-Ebene; Warnung bei &gt;8h Nachtarbeit in allen 6 Validierungspfaden (create/update/clock-out/admin-create/admin-update/change-request)</td>
         </tr>
         <tr>
           <td>Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer (Abs. 2)</td>
-          <td><span class="badge badge-fail">❌ Nicht impl.</span></td>
-          <td>§3 verwendet 6-Monat-Fenster; für Nachtarbeitnehmer gilt strengerer 1-Monat-Ausgleich</td>
+          <td><span class="badge badge-warn">⚠️ Warnung</span></td>
+          <td>Warnung enthält Hinweis auf 1-Monats-Ausgleichspflicht; automatisches Tracking nicht implementiert (selten relevant)</td>
         </tr>
         <tr>
           <td>Tracking arbeitsmedizinischer Untersuchungen (Abs. 3)</td>
@@ -747,11 +747,7 @@
         </li>
         <li>
           <span class="gap-tag">§6 Abs. 2</span>
-          <div><strong>Strengere 8h-Grenze für Nachtarbeitnehmer</strong> – Alle Mitarbeiter haben dasselbe 10h Hard-Limit. Erfordert ein separates Nachtarbeitnehmer-Flag und abweichende Prüflogik. Praxisrelevanz gering, da Nachtarbeit in Arztpraxen selten ist.</div>
-        </li>
-        <li>
-          <span class="gap-tag">§6 Abs. 2</span>
-          <div><strong>Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer</strong> – §3 verwendet ein 6-Monats-Fenster; für Nachtarbeitnehmer gilt ein strengerer 1-Monats-Ausgleich. Nur relevant bei Mitarbeitenden mit regelmäßiger Nachtarbeit.</div>
+          <div><strong>Automatisches 1-Monat-Ausgleichs-Tracking für Nachtarbeitnehmer</strong> – Die 8h-Warnung enthält den Hinweis auf 1-Monat-Ausgleich. Automatisches Tracking (wie bei §3 der 6-Monat-Schnitt) nicht implementiert; bei Arztpraxen mit seltener Nachtarbeit wenig relevant.</div>
         </li>
         <li>
           <span class="gap-tag">§6 Abs. 3</span>
