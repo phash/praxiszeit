@@ -11,6 +11,7 @@ class TimeEntryBase(BaseModel):
     end_time: time
     break_minutes: int = Field(default=0, ge=0)
     note: Optional[str] = None
+    sunday_exception_reason: Optional[str] = None  # §10 ArbZG
 
     @field_validator('end_time')
     @classmethod
@@ -37,6 +38,7 @@ class TimeEntryUpdate(BaseModel):
     end_time: Optional[time] = None
     break_minutes: Optional[int] = Field(None, ge=0)
     note: Optional[str] = None
+    sunday_exception_reason: Optional[str] = None  # §10 ArbZG
 
 
 class TimeEntryResponse(BaseModel):
@@ -52,6 +54,7 @@ class TimeEntryResponse(BaseModel):
     warnings: List[str] = []
     is_sunday_or_holiday: bool = False
     is_night_work: bool = False
+    sunday_exception_reason: Optional[str] = None  # §10 ArbZG
     created_at: datetime
 
     @field_serializer('id', 'user_id')

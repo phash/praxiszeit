@@ -74,6 +74,14 @@ def validate_daily_break(
     # Total effective break = declared breaks + gaps
     total_effective_break = total_declared_breaks + total_gap_minutes
 
+    # ArbZG §4: >9h (540min) requires at least 45min break
+    if net_work_minutes > 540 and total_effective_break < 45:
+        return (
+            f"Bei mehr als 9 Stunden Arbeitszeit ist eine Pause von mindestens 45 Minuten erforderlich (ArbZG §4). "
+            f"Aktuelle Netto-Arbeitszeit: {net_work_minutes // 60}h {net_work_minutes % 60}min, "
+            f"Gesamtpause: {total_effective_break} Minuten."
+        )
+
     # ArbZG §4: >6h (360min) requires at least 30min break
     if net_work_minutes > 360 and total_effective_break < 30:
         return (

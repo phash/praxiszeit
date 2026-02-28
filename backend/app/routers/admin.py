@@ -13,6 +13,7 @@ from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.services import auth_service
 from app.services.break_validation_service import validate_daily_break
+from app.routers.time_entries import _calculate_daily_net_hours, MAX_DAILY_HOURS_HARD
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -140,7 +141,8 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         hours_thursday=user_data.hours_thursday,
         hours_friday=user_data.hours_friday,
         password_hash=auth_service.hash_password(user_data.password),
-        is_active=True
+        is_active=True,
+        exempt_from_arbzg=user_data.exempt_from_arbzg,
     )
 
     db.add(new_user)
@@ -470,7 +472,7 @@ def admin_create_time_entry(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    # Break validation
+    # Break validation (§4 ArbZG)
     break_error = validate_daily_break(
         db=db, user_id=user.id, entry_date=entry_data.date,
         start_time=entry_data.start_time, end_time=entry_data.end_time,
@@ -478,6 +480,18 @@ def admin_create_time_entry(
     )
     if break_error:
         raise HTTPException(status_code=400, detail=break_error)
+
+    # §3 ArbZG: daily hours hard limit
+    daily_hours = _calculate_daily_net_hours(
+        db=db, user_id=user.id, entry_date=entry_data.date,
+        start_time=entry_data.start_time, end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes,
+    )
+    if daily_hours > MAX_DAILY_HOURS_HARD:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+        )
 
     entry = TimeEntry(
         user_id=user.id,
@@ -512,7 +526,7 @@ def admin_update_time_entry(
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 
-    # Break validation
+    # Break validation (§4 ArbZG)
     break_error = validate_daily_break(
         db=db, user_id=entry.user_id, entry_date=entry_data.date,
         start_time=entry_data.start_time, end_time=entry_data.end_time,
@@ -520,6 +534,18 @@ def admin_update_time_entry(
     )
     if break_error:
         raise HTTPException(status_code=400, detail=break_error)
+
+    # §3 ArbZG: daily hours hard limit
+    daily_hours = _calculate_daily_net_hours(
+        db=db, user_id=entry.user_id, entry_date=entry_data.date,
+        start_time=entry_data.start_time, end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
+    )
+    if daily_hours > MAX_DAILY_HOURS_HARD:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+        )
 
     # Create audit log before changing
     _create_audit_log(

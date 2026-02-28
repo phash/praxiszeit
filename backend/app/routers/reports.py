@@ -324,3 +324,161 @@ def get_sunday_summary(
         "employees": result,
         "non_compliant_count": sum(1 for r in result if not r["compliant"]),
     }
+
+
+@router.get("/night-work-summary")
+def get_night_work_summary(
+    year: int = Query(..., description="Year to check (e.g., 2026)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    §6 ArbZG: Night work summary per employee for a given year.
+    Night hours: 23:00–06:00. Reports how many days each employee
+    performed night work and whether they qualify as Nachtarbeitnehmer (>=48 days/year).
+    """
+    from datetime import time as time_type
+
+    NIGHT_START = time_type(23, 0)
+    NIGHT_END = time_type(6, 0)
+
+    def is_night_work(start, end):
+        if start is None or end is None:
+            return False
+        return start < NIGHT_END or end > NIGHT_START
+
+    users = _get_active_visible_users(db)
+    result = []
+    threshold = 48  # §6 ArbZG: Nachtarbeitnehmer if >= 48 days/year
+
+    for user in users:
+        entries = (
+            db.query(TimeEntry)
+            .filter(
+                TimeEntry.user_id == user.id,
+                extract("year", TimeEntry.date) == year,
+                TimeEntry.end_time.isnot(None),
+            )
+            .order_by(TimeEntry.date)
+            .all()
+        )
+
+        night_days = {
+            e.date for e in entries if is_night_work(e.start_time, e.end_time)
+        }
+        night_days_count = len(night_days)
+
+        # Group by month
+        by_month: dict = {}
+        for d in sorted(night_days):
+            m = d.month
+            by_month[m] = by_month.get(m, 0) + 1
+
+        result.append({
+            "user_id": str(user.id),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "night_work_days": night_days_count,
+            "is_nachtarbeitnehmer": night_days_count >= threshold,
+            "nachtarbeitnehmer_threshold": threshold,
+            "by_month": [{"month": m, "days": c} for m, c in sorted(by_month.items())],
+        })
+
+    return {
+        "year": year,
+        "nachtarbeitnehmer_threshold": threshold,
+        "employees": result,
+        "nachtarbeitnehmer_count": sum(1 for r in result if r["is_nachtarbeitnehmer"]),
+    }
+
+
+@router.get("/compensatory-rest")
+def get_compensatory_rest(
+    year: int = Query(..., description="Year to check (e.g., 2026)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    §11 ArbZG: Compensatory rest day tracking.
+    After Sunday work → 1 free day within 2 weeks.
+    After holiday work → 1 free day within 8 weeks.
+    A 'free day' is any weekday without a time entry (Mo-Sa excluding Sundays).
+    """
+    from datetime import timedelta
+
+    users = _get_active_visible_users(db)
+    result = []
+
+    for user in users:
+        entries = (
+            db.query(TimeEntry)
+            .filter(
+                TimeEntry.user_id == user.id,
+                extract("year", TimeEntry.date) == year,
+                TimeEntry.end_time.isnot(None),
+            )
+            .all()
+        )
+
+        worked_dates = {e.date for e in entries}
+
+        # Get all dates worked on Sundays or holidays
+        from app.services.holiday_service import is_holiday as _is_holiday
+
+        sunday_holidays_worked = []
+        for e in entries:
+            weekday = e.date.weekday()
+            is_sun = weekday == 6
+            is_hol = _is_holiday(db, e.date)
+            if is_sun or is_hol:
+                sunday_holidays_worked.append({
+                    "date": e.date,
+                    "type": "sunday" if is_sun else "holiday",
+                })
+
+        # Deduplicate by date
+        seen = set()
+        unique_days = []
+        for item in sunday_holidays_worked:
+            if item["date"] not in seen:
+                seen.add(item["date"])
+                unique_days.append(item)
+
+        violations = []
+        for item in unique_days:
+            d = item["date"]
+            day_type = item["type"]
+            window_days = 14 if day_type == "sunday" else 56  # 2 or 8 weeks
+
+            # Find any free day (Mon–Sat, no entry) within window after d
+            compensated = False
+            for offset in range(1, window_days + 1):
+                candidate = d + timedelta(days=offset)
+                # Free day = Mon(0)–Sat(5), not worked
+                if 0 <= candidate.weekday() <= 5 and candidate not in worked_dates:
+                    compensated = True
+                    break
+
+            if not compensated:
+                violations.append({
+                    "date": d.isoformat(),
+                    "type": day_type,
+                    "window_weeks": window_days // 7,
+                })
+
+        result.append({
+            "user_id": str(user.id),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "sunday_holiday_days_worked": len(unique_days),
+            "violations": violations,
+            "violation_count": len(violations),
+            "compliant": len(violations) == 0,
+        })
+
+    return {
+        "year": year,
+        "employees": result,
+        "total_violations": sum(r["violation_count"] for r in result),
+        "non_compliant_count": sum(1 for r in result if not r["compliant"]),
+    }
