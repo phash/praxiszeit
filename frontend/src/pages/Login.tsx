@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { LogIn, FileText } from 'lucide-react';
+import { LogIn, FileText, Shield } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 
 export default function Login() {
@@ -94,6 +94,16 @@ export default function Login() {
 
         <div className="mt-6 text-center text-sm text-gray-500">
           <p>Bei Problemen wenden Sie sich an Ihren Administrator</p>
+        </div>
+
+        <div className="mt-3 text-center">
+          <Link
+            to="/privacy"
+            className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <Shield size={12} />
+            Datenschutzerklärung
+          </Link>
         </div>
 
         <div className="mt-6 pt-5 border-t border-gray-100">

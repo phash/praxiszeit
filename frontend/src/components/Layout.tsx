@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   BookOpen,
   HelpCircle,
+  Shield,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 
@@ -222,6 +223,13 @@ export default function Layout() {
             )}
           </div>
 
+          <Link
+            to="/privacy"
+            className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors mb-1"
+          >
+            <Shield size={12} />
+            <span>Datenschutzerklärung</span>
+          </Link>
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"

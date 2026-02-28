@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from app.core.limiter import limiter
 from contextlib import asynccontextmanager
 import os
 import sys
@@ -15,7 +15,7 @@ from app.database import engine, SessionLocal
 from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
-from app.services.error_log_service import DBErrorHandler
+from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
 from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs
 
 
@@ -72,7 +72,16 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 4. Sync public holidays for current and next year
+    # 4. DSGVO F-007: Clean up old error logs (>90 days resolved/ignored)
+    db = SessionLocal()
+    try:
+        deleted = cleanup_old_errors(db, max_age_days=90)
+        if deleted:
+            print(f"🗑️  Cleaned up {deleted} old error log entries (>90 days)")
+    finally:
+        db.close()
+
+    # 5. Sync public holidays for current and next year
     print("📅 Syncing public holidays...")
     db = SessionLocal()
     try:
@@ -102,16 +111,16 @@ app = FastAPI(
     openapi_url=None if _is_production else "/openapi.json",
 )
 
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter (shared instance from app.core.limiter)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Prometheus metrics
+# Prometheus metrics – DSGVO F-014: group_paths=True prevents UUIDs in metric labels
 Instrumentator(
     should_instrument_requests_inprogress=True,
     inprogress_name="http_requests_inprogress",
     inprogress_labels=True,
+    should_group_untemplated=True,
 ).instrument(app).expose(app)
 
 # Configure CORS
@@ -126,11 +135,11 @@ app.add_middleware(
 )
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)
+# DSGVO F-007: sqlalchemy.engine intentionally NOT attached (SQL queries can contain PII)
 _db_error_handler = DBErrorHandler(SessionLocal)
 _db_error_handler.setFormatter(logging.Formatter('%(message)s'))
 logging.getLogger('uvicorn.error').addHandler(_db_error_handler)
 logging.getLogger('fastapi').addHandler(_db_error_handler)
-logging.getLogger('sqlalchemy.engine').addHandler(_db_error_handler)
 
 # Register routers
 app.include_router(auth.router)
@@ -188,11 +197,11 @@ async def capture_errors_middleware(request: Request, call_next):
 @app.get("/")
 def root():
     """Root endpoint."""
-    return {
-        "message": "PraxisZeit API",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
+    # DSGVO F-015: don't expose /docs URL in production
+    response = {"message": "PraxisZeit API", "version": "1.0.0"}
+    if not _is_production:
+        response["docs"] = "/docs"
+    return response
 
 
 @app.get("/api/health")

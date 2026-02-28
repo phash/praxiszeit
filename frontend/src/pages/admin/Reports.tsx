@@ -103,6 +103,9 @@ export default function Reports() {
   const [compRest, setCompRest] = useState<CompensatoryRest | null>(null);
   const [compRestLoading, setCompRestLoading] = useState(false);
 
+  // DSGVO Art. 9: Gesundheitsdaten-Schutz bei Jahresexport
+  const [includeHealthData, setIncludeHealthData] = useState(false);
+
   const checkRestViolations = async () => {
     setRestLoading(true);
     try {
@@ -188,7 +191,8 @@ export default function Reports() {
   const handleYearlyExport = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get(`/admin/reports/export-yearly?year=${selectedYear}`, {
+      const healthParam = includeHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/export-yearly?year=${selectedYear}${healthParam}`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -208,7 +212,8 @@ export default function Reports() {
   const handleYearlyClassicExport = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get(`/admin/reports/export-yearly-classic?year=${selectedYear}`, {
+      const healthParam = includeHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/export-yearly-classic?year=${selectedYear}${healthParam}`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -356,7 +361,7 @@ export default function Reports() {
             Exportieren Sie einen Jahresreport mit zwei verschiedenen Formaten zur Auswahl.
           </p>
 
-          <div className="flex items-end space-x-4 mb-6">
+          <div className="flex items-end space-x-4 mb-4">
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Jahr auswählen
@@ -370,6 +375,31 @@ export default function Reports() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
             </div>
+          </div>
+
+          {/* DSGVO Art. 9 – Gesundheitsdaten */}
+          <div className="mb-6">
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={includeHealthData}
+                onChange={(e) => setIncludeHealthData(e.target.checked)}
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                Krankheitsdaten einschließen
+              </span>
+            </label>
+            {includeHealthData && (
+              <div className="mt-3 p-4 bg-amber-50 border border-amber-300 rounded-lg flex items-start space-x-3">
+                <AlertTriangle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">
+                  <strong>Hinweis (Art. 9 DSGVO):</strong> Krankheitsdaten sind besondere Kategorien
+                  personenbezogener Daten. Dieser Export wird im Audit-Log verzeichnet.
+                  Stellen Sie sicher, dass die Weitergabe auf das notwendige Minimum beschränkt ist.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Export Options */}

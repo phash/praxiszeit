@@ -54,7 +54,6 @@ class TeamAbsenceEntry(BaseModel):
     user_color: str
     type: AbsenceType
     hours: float
-    note: Optional[str] = None
 
     class Config:
         from_attributes = True

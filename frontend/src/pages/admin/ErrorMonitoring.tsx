@@ -284,6 +284,9 @@ export default function ErrorMonitoring() {
                   {/* GitHub Issue Link */}
                   <div>
                     <p className="text-xs font-semibold text-gray-500 mb-1 uppercase">GitHub Issue</p>
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">
+                      ⚠ DSGVO-Hinweis (Art. 28): Fehlermeldungen können personenbezogene Daten enthalten. Prüfen Sie vor der GitHub-Übertragung, ob der Traceback sensible Informationen enthält. GitHub Inc. (USA) ist als Auftragsverarbeiter einzustufen.
+                    </p>
                     {err.github_issue_url ? (
                       <div className="flex items-center gap-2">
                         <a

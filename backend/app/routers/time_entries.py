@@ -87,7 +87,6 @@ def _calculate_weekly_net_hours(
     total = sum(net_h(e.start_time, e.end_time, e.break_minutes) for e in existing)
     total += net_h(start_time, end_time, break_minutes)
     return total
-    return total
 
 
 def _is_night_work(start_time: time, end_time: time) -> bool:

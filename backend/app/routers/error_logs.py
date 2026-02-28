@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 from app.database import get_db
 from app.models import User
@@ -26,6 +26,13 @@ class ErrorLogResponse(BaseModel):
     last_seen: datetime
     status: str
     github_issue_url: Optional[str] = None
+
+    @field_validator('traceback', mode='before')
+    @classmethod
+    def truncate_traceback(cls, v):
+        if v and len(v) > 8000:
+            return v[:8000] + '\n... [truncated]'
+        return v
 
     class Config:
         from_attributes = True
@@ -54,7 +61,7 @@ class UpdateStatusRequest(BaseModel):
 
 
 class SetGithubUrlRequest(BaseModel):
-    github_issue_url: str = Field(..., pattern=r'^https?://')
+    github_issue_url: str = Field(..., pattern=r'^https://github\.com/[^/]+/[^/]+/issues/\d+$')
 
 
 @router.get("/", response_model=List[ErrorLogResponse])

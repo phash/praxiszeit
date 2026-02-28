@@ -180,7 +180,7 @@ def create_change_request(
 
 @router.get("/", response_model=List[ChangeRequestResponse])
 def list_change_requests(
-    request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
+    request_status: Optional[ChangeRequestStatus] = Query(None, alias="status", description="Filter by status"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

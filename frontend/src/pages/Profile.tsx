@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
-import { Lock, Save, Palette } from 'lucide-react';
+import { Lock, Save, Palette, User as UserIcon, Download } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 
 // 12 beautiful pastel colors for calendar
@@ -23,6 +23,12 @@ const PASTEL_COLORS = [
 export default function Profile() {
   const { user, setUser } = useAuthStore();
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [profileData, setProfileData] = useState({
+    first_name: user?.first_name || '',
+    last_name: user?.last_name || '',
+    email: user?.email || '',
+  });
   const [passwordData, setPasswordData] = useState({
     current_password: '',
     new_password: '',
@@ -32,6 +38,7 @@ export default function Profile() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [colorMessage, setColorMessage] = useState('');
+  const [profileMessage, setProfileMessage] = useState('');
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +68,39 @@ export default function Profile() {
     }
   };
 
+  const handleProfileUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileMessage('');
+    try {
+      const response = await apiClient.put('/auth/profile', {
+        first_name: profileData.first_name || undefined,
+        last_name: profileData.last_name || undefined,
+        email: profileData.email,
+      });
+      setUser(response.data);
+      setProfileMessage('Daten erfolgreich aktualisiert');
+      setShowProfileEdit(false);
+      setTimeout(() => setProfileMessage(''), 4000);
+    } catch (err: any) {
+      setProfileMessage(err.response?.data?.detail || 'Fehler beim Speichern');
+    }
+  };
+
+  const handleDataExport = async () => {
+    try {
+      const response = await apiClient.get('/auth/me/export', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `PraxisZeit_Datenauszug_${user?.username}.json`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      // silent
+    }
+  };
+
   const handleColorChange = async (color: string) => {
     setSelectedColor(color);
     setColorMessage('');
@@ -83,47 +123,126 @@ export default function Profile() {
 
       {/* User Info */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center space-x-4 mb-6">
-          <div className="w-20 h-20 rounded-full bg-primary text-white flex items-center justify-center text-2xl font-bold">
-            {user?.first_name[0]}
-            {user?.last_name[0]}
+        <div className="flex items-start justify-between mb-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-20 h-20 rounded-full bg-primary text-white flex items-center justify-center text-2xl font-bold">
+              {user?.first_name[0]}
+              {user?.last_name[0]}
+            </div>
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900">
+                {user?.first_name} {user?.last_name}
+              </h2>
+              <p className="text-gray-600">{user?.username}</p>
+              {user?.email && (
+                <p className="text-gray-500 text-sm">{user.email}</p>
+              )}
+            </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">
-              {user?.first_name} {user?.last_name}
-            </h2>
-            <p className="text-gray-600">{user?.username}</p>
-            {user?.email && (
-              <p className="text-gray-500 text-sm">{user.email}</p>
-            )}
-          </div>
+          <button
+            onClick={() => { setShowProfileEdit(!showProfileEdit); setProfileMessage(''); }}
+            className="flex items-center space-x-1 text-sm text-primary hover:text-primary-dark font-medium"
+          >
+            <UserIcon size={15} />
+            <span>{showProfileEdit ? 'Abbrechen' : 'Bearbeiten'}</span>
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {profileMessage && (
+          <div className={`mb-4 px-4 py-3 rounded-lg text-sm border ${profileMessage.includes('Fehler') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+            {profileMessage}
+          </div>
+        )}
+
+        {showProfileEdit ? (
+          <form onSubmit={handleProfileUpdate} className="space-y-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vorname</label>
+                <input
+                  type="text"
+                  value={profileData.first_name}
+                  onChange={e => setProfileData(p => ({ ...p, first_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nachname</label>
+                <input
+                  type="text"
+                  value={profileData.last_name}
+                  onChange={e => setProfileData(p => ({ ...p, last_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">E-Mail (optional)</label>
+                <input
+                  type="email"
+                  value={profileData.email}
+                  onChange={e => setProfileData(p => ({ ...p, email: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  placeholder="beispiel@praxis.de"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="flex items-center space-x-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm"
+            >
+              <Save size={16} />
+              <span>Speichern</span>
+            </button>
+          </form>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-500">Rolle</label>
+              <p className="text-gray-900 mt-1">
+                {user?.role === 'admin' ? 'Administrator' : 'Mitarbeiter:in'}
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-500">Wochenstunden</label>
+              <p className="text-gray-900 mt-1">{user?.weekly_hours} Stunden</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-500">Urlaubstage</label>
+              <p className="text-gray-900 mt-1">{user?.vacation_days} Tage</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-500">Status</label>
+              <p className="text-gray-900 mt-1">
+                {user?.is_active ? (
+                  <span className="text-green-600">Aktiv</span>
+                ) : (
+                  <span className="text-red-600">Inaktiv</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* DSGVO: Datenauszug (Art. 20) */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center justify-between">
           <div>
-            <label className="text-sm font-medium text-gray-500">Rolle</label>
-            <p className="text-gray-900 mt-1">
-              {user?.role === 'admin' ? 'Administrator' : 'Mitarbeiter:in'}
+            <h3 className="text-lg font-semibold flex items-center space-x-2">
+              <Download size={20} />
+              <span>Meine Daten exportieren</span>
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Laden Sie alle zu Ihrer Person gespeicherten Daten herunter (Art. 20 DSGVO – Datenportabilität).
             </p>
           </div>
-          <div>
-            <label className="text-sm font-medium text-gray-500">Wochenstunden</label>
-            <p className="text-gray-900 mt-1">{user?.weekly_hours} Stunden</p>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-500">Urlaubstage</label>
-            <p className="text-gray-900 mt-1">{user?.vacation_days} Tage</p>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-500">Status</label>
-            <p className="text-gray-900 mt-1">
-              {user?.is_active ? (
-                <span className="text-green-600">Aktiv</span>
-              ) : (
-                <span className="text-red-600">Inaktiv</span>
-              )}
-            </p>
-          </div>
+          <button
+            onClick={handleDataExport}
+            className="flex items-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition text-sm font-medium"
+          >
+            <Download size={16} />
+            <span>JSON herunterladen</span>
+          </button>
         </div>
       </div>
 
