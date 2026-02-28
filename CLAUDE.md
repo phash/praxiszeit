@@ -151,7 +151,7 @@ praxiszeit/
 ├── .env.example             # Environment template
 ├── README.md                # User documentation
 ├── CLAUDE.md                # This file
-└── UX_ROADMAP.md            # Planned UI/UX improvements
+└── UX_ROADMAP.md            # UX/UI-Roadmap (alle 6 Phasen abgeschlossen)
 
 ```
 
@@ -888,7 +888,7 @@ const formatted = format(parseISO(dateString), 'dd.MM.yyyy', { locale: de })
 - **API Alternative**: http://localhost:8000/redoc (ReDoc - statisch, schöner)
 - **README.md**: User-facing Dokumentation (Installation, Features)
 - **CLAUDE.md**: Diese Datei - Entwickler-Dokumentation
-- **UX_ROADMAP.md**: Geplante UI/UX-Verbesserungen mit Details
+- **UX_ROADMAP.md**: UX/UI-Roadmap mit Umsetzungsdetails (alle 6 Phasen abgeschlossen)
 - **Screenshots**: `../screenshots/` Ordner (außerhalb Repo)
 
 ## 🐛 Wichtige Patterns und Gotchas
@@ -1146,7 +1146,6 @@ docker-compose logs -f --since 1h       # Live logs last hour
 - ✅ **Phase 2:** Responsive Tables - Card-Layouts auf Mobile für alle Tabellen (TimeTracking, Absences, Users, AdminDashboard)
 - ✅ **Phase 3:** Accessibility (A11y) - FocusTrap, ARIA-Rollen, Keyboard-Nav, Label-Input-Verknüpfungen
 - ✅ **Phase 4:** Calendar & Date Navigation - MonthSelector-Komponente mit Prev/Next
-
 - ✅ **Phase 5:** Polish – LoadingSpinner überall, label-Input-Verknüpfungen, Farbkonsistenz
 
 **Alle Phasen abgeschlossen** ✅
@@ -1165,7 +1164,7 @@ docker-compose logs -f --since 1h       # Live logs last hour
 **Contexts** (`frontend/src/contexts/`):
 - `ToastContext.tsx` - Toast-Provider mit success/error/info/warning
 
-**Siehe `UX_ROADMAP.md` für Details zu offenen Phasen.**
+**Vollständige Umsetzungs-Details: `UX_ROADMAP.md`**
 
 ## 📝 Future Features (Backlog)
 
@@ -1196,4 +1195,4 @@ docker-compose logs -f --since 1h       # Live logs last hour
 
 ---
 
-**Entwickelt mit Claude Sonnet 4.5 & Claude Opus 4.6**
+**Entwickelt mit Claude Sonnet 4.5, Sonnet 4.6 & Opus 4.6**
