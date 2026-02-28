@@ -12,13 +12,13 @@
 | **§ 2** | Begriffsbestimmungen (Nachtarbeit) | ✅ Korrekt | `_is_night_work()` prüft minutengenau >2h Nachtzeit; `is_night_worker`-Flag auf User |
 | **§ 3** | Tages-Höchstarbeitszeit (8h/10h + 48h/Woche) | ✅ Vollständig | 6-Monats-Ausgleichszeitraum nicht getrackt; Code-Kommentar „§14" irreführend (korrekt: §3) |
 | **§ 4** | Pflichtpausen | ✅ Weitgehend | Mindestdauer vollständig; Pausen-Timing (6h-Kontinuität) systemisch nicht prüfbar |
-| **§ 5** | Mindestruhezeit (11h) | ⚠️ Lücke | Split-Schicht-Bug: Intraday-Lücken werden fälschlich als Verstoß gemeldet |
-| **§ 6** | Nacht- und Schichtarbeit | ⚠️ Teilweise | 8h-Limit ✅; `exempt_from_arbzg` fehlt in admin.py + change_requests.py; Abs. 3–6 HR-Aufgaben |
+| **§ 5** | Mindestruhezeit (11h) | ✅ Korrekt | Split-Schicht-Bug behoben (Commit `a488985`): Datumsgruppierung statt Paarvergleich |
+| **§ 6** | Nacht- und Schichtarbeit | ⚠️ Teilweise | 8h-Limit ✅; §18-Bypass jetzt in allen Pfaden korrekt; Abs. 3/5 UI-Hinweise in Reports ✅; Abs. 4/6 außerhalb System |
 | **§§ 9/10** | Sonn-/Feiertagsruhe | ✅ Vollständig | – |
 | **§ 11** | Ausgleich Sonn-/Feiertagsarbeit | ✅ Vollständig | – |
 | **§ 14** | Außergewöhnliche Fälle | ℹ️ Nicht anwendbar | Notfall-Ausnahme; 48h-Wochenwarnung kommt aus §3, nicht §14 |
 | **§ 16** | Aufzeichnung & Aufbewahrung | ✅ Vollständig | PraxisZeit zeichnet ALLE Stunden auf (übertrifft §16-Mindestanforderung); gut positioniert für EuGH-Reform |
-| **§ 18** | Ausnahmen leitende Angestellte | ⚠️ Teilweise | Bypass fehlt in admin.py + change_requests.py; Mitarbeiter-Selbstservice korrekt |
+| **§ 18** | Ausnahmen leitende Angestellte | ✅ Vollständig | Bypass in allen 3 Pfaden korrekt (Commit `a488985`); `exempt_from_arbzg` jetzt in admin.py + change_requests.py geprüft |
 
 ---
 
@@ -49,7 +49,7 @@
 - Verlängerung auf **10 Stunden** zulässig, wenn innerhalb von **6 Kalendermonaten oder 24 Wochen** ein Ausgleich auf ≤ 8h/Tag Durchschnitt erfolgt
 - Implizierte Wochengrenze: 6 Werktage × 8h/Tag = **48h/Woche** im Durchschnitt
 
-> **Hinweis zum Code-Kommentar:** `MAX_WEEKLY_HOURS_WARN = 48.0  # §14 ArbZG` in `time_entries.py` ist irreführend. Die 48h-Wochengrenze leitet sich aus **§3** ab (Tagesdurchschnitt × 6 Werktage), nicht aus §14 (Notfall-Ausnahmen). §7 Abs. 8 wiederholt diese Grenze für Tarifvertrags-Abweichungen. Der fachliche Inhalt ist korrekt, nur der Kommentar ist ungenau.
+> **Code-Kommentar behoben (Commit `a488985`):** `MAX_WEEKLY_HOURS_WARN = 48.0` in `time_entries.py` trägt nun den korrekten Kommentar `# §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche` statt des früheren irreführenden `# §14 ArbZG`.
 
 ### Implementierungsstand
 
@@ -61,7 +61,8 @@
 | §3-Check bei Änderungsanträgen | ✅ | `change_requests.py` prüft §3 nach Genehmigung |
 | Warnung bei > 48h/Woche | ✅ | `WEEKLY_HOURS_WARNING` + Frontend-Toast bei allen Eingabepfaden |
 | §18-Ausnahme im Mitarbeiter-Pfad | ✅ | `exempt_from_arbzg` korrekt geprüft in `time_entries.py` |
-| §18-Ausnahme im Admin-Pfad | ❌ | `exempt_from_arbzg` **nicht** geprüft in `admin.py` → 10h-Limit gilt auch für §18-Befreite |
+| §18-Ausnahme im Admin-Pfad | ✅ | `exempt_from_arbzg` jetzt korrekt geprüft in `admin.py` (`admin_create/update_time_entry`) – Commit `a488985` |
+| §18-Ausnahme im Änderungsantrags-Pfad | ✅ | `exempt_from_arbzg` jetzt korrekt geprüft in `change_requests.py` – Commit `a488985` |
 | 6-Monats-Ausgleichszeitraum | ❌ | Kein gleitender Durchschnitt; manuelle Dokumentationsaufgabe des Arbeitgebers |
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
@@ -85,7 +86,7 @@
 | >6h → mind. 30min Pause | ✅ | `break_validation_service.validate_daily_break()` – aktiv bei allen 6 Eingabepfaden |
 | >9h → mind. 45min Pause | ✅ | Wird vor der 6h-Prüfung geprüft |
 | §18-Ausnahme (Mitarbeiter-Pfad) | ✅ | Pausenpflicht-Checks werden für leitende Angestellte übersprungen (MA-Pfad) |
-| §18-Ausnahme (Admin-Pfad) | ❌ | Nicht geprüft in `admin.py` / `change_requests.py` |
+| §18-Ausnahme (Admin-Pfad + Änderungsanträge) | ✅ | Jetzt korrekt geprüft in `admin.py` und `change_requests.py` – Commit `a488985` |
 | Pausen-Timing (max. 6h am Stück, Satz 3) | ⚠️ | Start/Ende der Pause nicht erfasst → 6h-Kontinuitätsregel systemisch nicht prüfbar |
 | „Im voraus feststehend" (Satz 1) | ⚠️ | System erfasst tatsächlich genommene Pausen; Vorherig-Feststellung ist Prozessfrage |
 
@@ -109,10 +110,10 @@
 | 11h-Prüfung zwischen Schichten | ✅ | `rest_time_service.check_rest_time_violations()` vollständig |
 | Admin-Report Ruhezeit-Verstöße | ✅ | `GET /api/admin/reports/rest-time-violations` mit Jahr, optionalem Monat, konfigurierbarem Schwellwert |
 | Frontend-Anzeige | ✅ | Admin Reports-Seite zeigt betroffene Mitarbeiter, Datum und Stunden-Defizit |
-| Split-Schicht-Erkennung | ❌ | **Bug:** `rest_time_service.py` vergleicht alle aufeinanderfolgenden DB-Einträge – auch intraday-Lücken. Bei Split-Schichten (z.B. 08:00–12:00 + 14:00–18:00) wird die 2h-Mittagslücke fälschlich als Verstoß gemeldet. |
+| Split-Schicht-Erkennung | ✅ | **Behoben (Commit `a488985`):** `rest_time_service.py` gruppiert Einträge jetzt nach Datum; nur noch `max(end_time)` des Vortages vs. `min(start_time)` des Folgetages wird verglichen – keine False Positives bei Splitschichten mehr. |
 | §5 Abs. 2 Ausgleich (Reduzierung auf 10h) | ❌ | Ausgleichs-Tracking nicht implementiert; 11h-Grenze ist fest kodiert |
 
-**Bekannter Bug in `rest_time_service.py`:** Die korrekte Logik wäre: letzten Eintrag des Vortages und ersten Eintrag des Folgetages vergleichen. Aktuell werden ALLE Paare verglichen, was bei mehreren Einträgen an einem Tag zu False Positives führt. Für Praxen mit einer Tagesschicht pro MA kein Problem; bei Splitschichten entstehen Fehlalarme.
+**Behoben in Commit `a488985`:** `check_rest_time_violations()` gruppiert Einträge jetzt nach Datum und vergleicht nur noch den letzten Eintrag (max end_time) des Vortages mit dem ersten Eintrag (min start_time) des Folgetages. Split-Schichten werden korrekt behandelt.
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
@@ -140,16 +141,16 @@
 | 8h-Warnung für Nachtarbeitnehmer (Abs. 2) – MA-Pfad | ✅ | `is_night_worker`-Flag auf User; Warnung bei >8h Nachtarbeit in create/update/clock_out |
 | 8h-Warnung für Nachtarbeitnehmer (Abs. 2) – Admin-Pfad | ✅ | In admin_create/admin_update und change_request-Genehmigung |
 | §18-Ausnahme (exempt_from_arbzg) im MA-Pfad | ✅ | Checks werden für leitende Angestellte übersprungen |
-| §18-Ausnahme (exempt_from_arbzg) im Admin-Pfad | ❌ | `exempt_from_arbzg` nicht geprüft in `admin.py` / `change_requests.py` |
+| §18-Ausnahme (exempt_from_arbzg) – alle Pfade | ✅ | Behoben in Commit `a488985`; `exempt_from_arbzg` jetzt in MA-Pfad, Admin-Pfad und Änderungsantrags-Pfad korrekt geprüft |
 | Kürzerer 1-Monat-Ausgleichszeitraum für Nachtarbeitnehmer (Abs. 2) | ❌ | Warnung enthält Hinweis; automatisches Tracking nicht implementiert |
-| Tracking arbeitsmedizinischer Untersuchungen (Abs. 3) | ❌ | HR-Verwaltungsaufgabe – sinnvoller in Personalakte / separatem HR-System |
+| Tracking arbeitsmedizinischer Untersuchungen (Abs. 3) | ⚠️ | HR-Verwaltungsaufgabe; UI-Hinweis in Reports-Seite ergänzt (Commit `a488985`): Pflichtuntersuchung vor Beginn, alle 3 Jahre, ab 50 jährlich |
 | Recht auf Wechsel Tagesarbeitsplatz (Abs. 4) | ❌ | Arbeitgeber-Pflicht, nicht im System abbildbar; Dokumentation manuell |
-| Lohnzuschlag / Freizeitausgleich (Abs. 5) | ❌ | Lohnbuchhaltungsaufgabe – liegt außerhalb des Zeiterfassungssystems |
+| Lohnzuschlag / Freizeitausgleich (Abs. 5) | ⚠️ | Lohnbuchhaltungsaufgabe; UI-Hinweis in Reports-Seite ergänzt (Commit `a488985`): 25% Zuschlag oder bezahlte Freizeit |
 | Gleicher Zugang zur Weiterbildung (Abs. 6) | ❌ | HR-/Organisationspflicht; nicht im System prüfbar |
 
 **Bußgeldrisiko:** bis **30.000 €** (§ 22 ArbZG)
 
-> **Praxishinweis:** Abs. 4–6 sind Arbeitgeber-Pflichten, die kein Zeiterfassungssystem vollständig abbilden kann. Der fehlende Bypass für `exempt_from_arbzg` im Admin-Pfad (Abs. 2) ist ein bekannter Bug: Admins können keine Einträge >10h für §18-Befreite anlegen, obwohl der MA-Selbst-Service das erlaubt.
+> **Praxishinweis:** Abs. 4–6 sind Arbeitgeber-Pflichten, die kein Zeiterfassungssystem vollständig abbilden kann. Der §18-Bypass-Bug im Admin-Pfad wurde in Commit `a488985` behoben; `exempt_from_arbzg` wird nun in allen Pfaden korrekt ausgewertet. Für Abs. 3 und Abs. 5 wurden UI-Hinweise in der Admin-Reports-Seite ergänzt.
 
 ---
 
@@ -260,12 +261,10 @@
 | Ausnahme-Flag auf Benutzerebene | ✅ | `User.exempt_from_arbzg` (Boolean) – DB-Spalte in Migration 016 |
 | Admin-UI zur Verwaltung | ✅ | Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG)" in Benutzerverwaltung |
 | §3/§4 Bypass im MA-Selbstservice-Pfad | ✅ | Alle Checks und Warnungen in `time_entries.py` korrekt übersprungen |
-| §3/§4 Bypass im Admin-Direkteintrag-Pfad | ❌ | **Bug:** `admin.py` prüft `exempt_from_arbzg` NICHT → 10h-Hard-Stop und §4-Fehler gelten auch für Befreite |
-| §3/§4 Bypass im Änderungsantrags-Pfad | ❌ | **Bug:** `change_requests.py` prüft `exempt_from_arbzg` NICHT → selber Bug |
+| §3/§4 Bypass im Admin-Direkteintrag-Pfad | ✅ | **Behoben (Commit `a488985`):** `admin.py` prüft `exempt_from_arbzg` vor §3/§4-Checks in `admin_create_time_entry` und `admin_update_time_entry` |
+| §3/§4 Bypass im Änderungsantrags-Pfad | ✅ | **Behoben (Commit `a488985`):** `change_requests.py` prüft `exempt_from_arbzg` in `create_change_request` vor §4-Break-Check, §3-Hard-Stop und §6-Nachtarbeiter-Warnung |
 
-**Bußgeldrisiko:** Keines (§18-Befreite unterliegen dem ArbZG nicht; der Bug führt zu übermäßiger Einschränkung, nicht zu einem Compliance-Verstoß).
-
-**Praxisauswirkung:** Ein Admin kann für einen §18-befreiten Mitarbeiter keine Einträge >10h anlegen oder genehmigen, obwohl dies rechtlich zulässig wäre. Der Betroffene kann selbst via Mitarbeiter-Interface Einträge anlegen (korrekt). Handlungsempfehlung: Bug in `admin.py` und `change_requests.py` beheben.
+**Status: Vollständig konform** ✅ – alle drei Pfade (MA-Selbstservice, Admin-Direkteintrag, Änderungsantrag) berücksichtigen `exempt_from_arbzg` korrekt.
 
 ---
 
@@ -301,14 +300,15 @@
 
 | Anforderung | § | Typ | Priorität | Begründung |
 |-------------|---|-----|-----------|------------|
+| ~~Split-Schicht False Positives~~ | ~~§5~~ | ~~Bug~~ | ~~Mittel~~ | **✅ Behoben** in Commit `a488985` |
+| ~~§18-Bypass fehlt in admin.py/change_requests.py~~ | ~~§3/§4/§18~~ | ~~Bug~~ | ~~Mittel~~ | **✅ Behoben** in Commit `a488985` |
+| ~~Code-Kommentar §14 statt §3~~ | ~~§3~~ | ~~Code~~ | ~~Niedrig~~ | **✅ Behoben** in Commit `a488985` |
 | 6-Monats-Ausgleichszeitraum | §3 | Lücke | Niedrig | Rollierender Durchschnitt technisch komplex; Warnung bereits bei >8h/Tag aktiv |
 | Pausen-Timing (max. 6h am Stück) | §4 Satz 3 | Systemlücke | Niedrig | Kein Pause-Timestamp; für geregelte Praxiszeiten kein Risiko |
-| Split-Schicht False Positives | §5 | **Bug** | **Mittel** | `rest_time_service.py` vergleicht Intraday-Lücken; muss auf Letzteintrag-je-Tag/Ersteintrag-Folgetag umgestellt werden |
-| §18-Bypass fehlt in admin.py/change_requests.py | §3/§4/§18 | **Bug** | **Mittel** | Admin kann keine Einträge >10h für befreite MA anlegen; Selbstservice-Pfad korrekt |
 | Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer | §6 Abs. 2 | Lücke | Niedrig | Warnung mit Hinweis integriert; automatisches Tracking fehlt |
-| Arbeitsmedizinische Untersuchungen | §6 Abs. 3 | HR-Aufgabe | Mittel | Sollte in Personalakte dokumentiert werden |
+| Arbeitsmedizinische Untersuchungen | §6 Abs. 3 | HR-Aufgabe | Niedrig | UI-Hinweis in Reports-Seite ergänzt; Dokumentation in Personalakte bleibt Arbeitgeberpflicht |
 | Recht auf Tagesarbeitsplatz | §6 Abs. 4 | Systemaußen | Niedrig | Arbeitgeber-Pflicht bei Nachweis; nicht systemisch abbildbar |
-| Lohnzuschlag / Freizeitausgleich Nachtarbeit | §6 Abs. 5 | Lohnbuchhaltung | Mittel | Nachweispflicht beim Arbeitgeber |
+| Lohnzuschlag / Freizeitausgleich Nachtarbeit | §6 Abs. 5 | Lohnbuchhaltung | Niedrig | UI-Hinweis in Reports-Seite ergänzt; Abwicklung in Lohnbuchhaltung |
 | Tarifvertragliche Abweichungen | §7 | Lücke | Niedrig | PraxisZeit verwendet feste gesetzliche Grenzwerte |
 | §7 Abs. 7 Opt-in-Register | §16 Abs. 2 | Lücke | Niedrig | Nur relevant bei TV mit §7 Abs. 7-Vereinbarungen |
 
@@ -316,17 +316,18 @@
 
 ## 14. Handlungsempfehlungen (nach Priorität)
 
-### Mittel – Bugs mit fachlicher Auswirkung
-1. **§5 Split-Schicht-Bug** in `rest_time_service.py`: Logik auf „letzter Eintrag des Vortages vs. erster Eintrag des Folgetages" umstellen statt alle Paare zu vergleichen
-2. **§18-Bypass** in `admin.py` (`admin_create_time_entry`, `admin_update_time_entry`) und `change_requests.py` ergänzen: `if not user.exempt_from_arbzg:` vor §3/§4-Checks
+### ✅ Erledigt (Commit `a488985`, 28.02.2026)
+1. **§5 Split-Schicht-Bug behoben** – `rest_time_service.py` verwendet jetzt Datumsgruppierung
+2. **§18-Bypass vervollständigt** – `admin.py` und `change_requests.py` prüfen `exempt_from_arbzg` korrekt
+3. **Code-Kommentar korrigiert** – `# §14 ArbZG` → `# §3 ArbZG` in `time_entries.py`
+4. **§6 Abs. 3/5 UI-Hinweise** – Informations-Boxen in Admin-Reports-Seite ergänzt
 
-### Niedrig – Dokumentationspflichten (kein Code-Änderungsbedarf)
-3. **§6 Abs. 3** Arbeitsmedizinische Untersuchungen in Personalakte dokumentieren
-4. **§6 Abs. 5** Lohnzuschlag/Freizeitausgleich für Nachtarbeitnehmer in Lohnbuchhaltung sicherstellen
-5. **Code-Kommentar** `# §14 ArbZG` in `time_entries.py` → auf `# §3 ArbZG` korrigieren
+### Niedrig – Verbleibende Dokumentationspflichten
+5. **§6 Abs. 3** Arbeitsmedizinische Untersuchungen in Personalakte dokumentieren (UI-Hinweis vorhanden)
+6. **§6 Abs. 5** Lohnzuschlag/Freizeitausgleich in Lohnbuchhaltung sicherstellen (UI-Hinweis vorhanden)
 
 ### Beobachtung – Externe Entwicklung
-6. **EuGH/BAG Stechuhr-Reform**: Deutsche ArbZG-Novelle (erwartet ab 2025/2026) wird Pflicht zur Aufzeichnung aller Stunden kodifizieren. PraxisZeit ist bereits konform.
+7. **EuGH/BAG Stechuhr-Reform**: Deutsche ArbZG-Novelle (erwartet ab 2025/2026) wird Pflicht zur Aufzeichnung aller Stunden kodifizieren. PraxisZeit ist bereits konform.
 
 ---
 
