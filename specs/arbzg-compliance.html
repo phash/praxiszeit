@@ -1,823 +1,702 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ArbZG-Compliance – PraxisZeit</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --red:    #dc2626;
-      --red-bg: #fef2f2;
-      --red-border: #fca5a5;
-      --yellow:    #d97706;
-      --yellow-bg: #fffbeb;
-      --yellow-border: #fcd34d;
-      --green:    #16a34a;
-      --green-bg: #f0fdf4;
-      --green-border: #86efac;
-      --blue:    #1d4ed8;
-      --blue-bg: #eff6ff;
-      --blue-border: #93c5fd;
-      --gray-50:  #f9fafb;
-      --gray-100: #f3f4f6;
-      --gray-200: #e5e7eb;
-      --gray-300: #d1d5db;
-      --gray-500: #6b7280;
-      --gray-700: #374151;
-      --gray-900: #111827;
-      --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    }
-
     body {
-      font-family: var(--font);
-      background: var(--gray-50);
-      color: var(--gray-900);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
       line-height: 1.6;
-      min-height: 100vh;
     }
-
-    /* ── Header ── */
-    header {
-      background: linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 60%, #7c3aed 100%);
+    .header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
       color: white;
-      padding: 3rem 2rem 4rem;
-      position: relative;
-      overflow: hidden;
+      padding: 2.5rem 2rem;
+      text-align: center;
     }
-    header::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-    }
-    header .inner {
-      max-width: 960px;
-      margin: 0 auto;
-      position: relative;
-    }
-    header .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.25);
+    .header h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .header .subtitle { opacity: 0.85; font-size: 0.95rem; }
+    .header .date-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 0.25rem 0.9rem;
       border-radius: 999px;
-      padding: 4px 14px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 1rem;
-      backdrop-filter: blur(4px);
+      font-size: 0.8rem;
+      margin-top: 0.75rem;
     }
-    header h1 {
-      font-size: clamp(1.8rem, 4vw, 2.8rem);
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 0.5rem;
-    }
-    header .subtitle {
-      font-size: 1.05rem;
-      opacity: 0.8;
-      margin-bottom: 1.5rem;
-    }
-    header .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1.5rem;
-      font-size: 0.85rem;
-      opacity: 0.7;
-    }
-    header .meta span { display: flex; align-items: center; gap: 5px; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem; }
 
-    /* ── Layout ── */
-    main {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 2rem 1.5rem 4rem;
-    }
-
-    /* ── Summary Cards ── */
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 1rem;
-      margin: -2rem 0 2.5rem;
+      margin-bottom: 2.5rem;
     }
     .summary-card {
       background: white;
       border-radius: 12px;
-      padding: 1.25rem 1.5rem;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -1px rgba(0,0,0,0.04);
-      border-top: 3px solid transparent;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      border-top: 4px solid;
+      text-align: center;
     }
-    .summary-card.red   { border-color: var(--red); }
-    .summary-card.yellow { border-color: var(--yellow); }
-    .summary-card.green  { border-color: var(--green); }
-    .summary-card.blue   { border-color: var(--blue); }
-    .summary-card .count {
-      font-size: 2rem;
-      font-weight: 800;
-      line-height: 1;
-    }
-    .summary-card.red    .count { color: var(--red); }
-    .summary-card.yellow .count { color: var(--yellow); }
-    .summary-card.green  .count { color: var(--green); }
-    .summary-card.blue   .count { color: var(--blue); }
-    .summary-card .label { font-size: 0.8rem; color: var(--gray-500); font-weight: 500; }
+    .summary-card.ok { border-color: #22c55e; }
+    .summary-card.warn { border-color: #f59e0b; }
+    .summary-card.fail { border-color: #ef4444; }
+    .summary-card .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .summary-card .label { font-weight: 600; font-size: 0.85rem; color: #475569; }
+    .summary-card .count { font-size: 2rem; font-weight: 700; margin: 0.25rem 0; }
+    .summary-card.ok .count { color: #16a34a; }
+    .summary-card.warn .count { color: #d97706; }
+    .summary-card.fail .count { color: #dc2626; }
 
-    /* ── Section ── */
-    section { margin-bottom: 3rem; }
-    .section-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: var(--gray-900);
-      margin-bottom: 1rem;
-      padding-bottom: 0.5rem;
-      border-bottom: 2px solid var(--gray-200);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .section-number {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      background: var(--blue);
-      color: white;
-      border-radius: 50%;
-      font-size: 0.8rem;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-
-    /* ── Law Cards ── */
-    .law-card {
+    .section {
       background: white;
-      border-radius: 12px;
-      border: 1px solid var(--gray-200);
+      border-radius: 14px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
       overflow: hidden;
-      margin-bottom: 1rem;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-      transition: box-shadow 0.2s;
     }
-    .law-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .law-card-header {
+    .section-header {
+      padding: 1.1rem 1.5rem;
       display: flex;
       align-items: center;
       gap: 1rem;
-      padding: 1rem 1.25rem;
       cursor: pointer;
       user-select: none;
+      border-bottom: 1px solid transparent;
+      transition: background 0.15s;
     }
-    .law-card-header::-webkit-details-marker { display: none; }
-    .paragraph-badge {
-      flex-shrink: 0;
-      background: var(--gray-900);
-      color: white;
-      border-radius: 8px;
-      padding: 4px 10px;
-      font-size: 0.85rem;
-      font-weight: 700;
-      font-family: var(--mono);
-      letter-spacing: -0.02em;
-    }
-    .law-card-title { font-weight: 700; font-size: 1rem; flex: 1; }
-    .priority-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      border-radius: 999px;
-      padding: 3px 12px;
-      font-size: 0.75rem;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-    .priority-chip.high   { background: var(--red-bg);    color: var(--red);    border: 1px solid var(--red-border); }
-    .priority-chip.medium { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
-    .priority-chip.low    { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); }
-    .chevron { font-size: 0.75rem; color: var(--gray-500); transition: transform 0.2s; }
-    details[open] .chevron { transform: rotate(180deg); }
-
-    .law-card-body { padding: 0 1.25rem 1.25rem; }
-    .rule-box {
-      background: var(--gray-50);
-      border: 1px solid var(--gray-200);
-      border-radius: 8px;
-      padding: 0.875rem 1rem;
-      margin-bottom: 1rem;
-    }
-    .rule-box-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); margin-bottom: 0.5rem; }
-    .rule-box ul { padding-left: 1.25rem; }
-    .rule-box li { font-size: 0.9rem; color: var(--gray-700); margin-bottom: 4px; }
-    .rule-box li strong { color: var(--gray-900); }
-
-    .relevance-block { margin-bottom: 1rem; }
-    .relevance-block .rl-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); margin-bottom: 0.5rem; }
-    .relevance-block ul { padding-left: 1.25rem; }
-    .relevance-block li { font-size: 0.9rem; color: var(--gray-700); margin-bottom: 4px; }
-
-    .recommendation {
-      display: flex;
-      gap: 0.75rem;
-      background: var(--blue-bg);
-      border: 1px solid var(--blue-border);
-      border-radius: 8px;
-      padding: 0.875rem 1rem;
-      align-items: flex-start;
-    }
-    .recommendation .icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
-    .recommendation p { font-size: 0.875rem; color: #1e40af; }
-    .recommendation strong { display: block; margin-bottom: 2px; }
-
-    /* ── Fines Table ── */
-    .fines-grid {
-      display: grid;
-      gap: 0.75rem;
-    }
-    .fine-item {
-      background: white;
-      border: 1px solid var(--gray-200);
-      border-radius: 10px;
-      padding: 1rem 1.25rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-    .fine-item .offense { font-size: 0.9rem; color: var(--gray-700); }
-    .fine-item .offense strong { display: block; color: var(--gray-900); font-weight: 600; margin-bottom: 2px; }
-    .fine-amount {
-      flex-shrink: 0;
-      padding: 4px 14px;
-      border-radius: 999px;
-      font-weight: 700;
-      font-size: 0.875rem;
-      white-space: nowrap;
-    }
-    .fine-amount.danger    { background: var(--red-bg);    color: var(--red);    border: 1px solid var(--red-border); }
-    .fine-amount.criminal  { background: #fdf4ff; color: #7e22ce; border: 1px solid #d8b4fe; }
-    .fine-amount.warning   { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
-
-    /* ── Compliance Matrix ── */
-    .matrix {
-      background: white;
-      border: 1px solid var(--gray-200);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .matrix table { width: 100%; border-collapse: collapse; }
-    .matrix thead tr { background: var(--gray-900); color: white; }
-    .matrix thead th { padding: 0.75rem 1rem; text-align: left; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-    .matrix tbody tr { border-bottom: 1px solid var(--gray-100); }
-    .matrix tbody tr:last-child { border-bottom: none; }
-    .matrix tbody tr:hover { background: var(--gray-50); }
-    .matrix tbody td { padding: 0.875rem 1rem; font-size: 0.875rem; color: var(--gray-700); vertical-align: top; }
-    .matrix tbody td:first-child { font-weight: 500; color: var(--gray-900); }
-    .para-tag { font-family: var(--mono); font-size: 0.78rem; background: var(--gray-100); color: var(--gray-700); padding: 2px 7px; border-radius: 4px; }
-    .dot-high   { color: var(--red); }
-    .dot-medium { color: var(--yellow); }
-    .dot-low    { color: var(--green); }
-    .status-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 2px 10px;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-    .status-missing  { background: var(--red-bg);    color: var(--red);    border: 1px solid var(--red-border); }
-    .status-partial  { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
-    .status-ok       { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); }
-
-    /* ── Action Items ── */
-    .action-list { display: grid; gap: 0.75rem; }
-    .action-item {
-      background: white;
-      border: 1px solid var(--gray-200);
-      border-radius: 10px;
-      padding: 1rem 1.25rem;
-      display: flex;
-      gap: 1rem;
-      align-items: flex-start;
-    }
-    .action-prio {
-      flex-shrink: 0;
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 0.85rem;
-    }
-    .prio-1 { background: var(--red-bg);    color: var(--red);    border: 1px solid var(--red-border); }
-    .prio-2 { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
-    .prio-3 { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); }
-    .action-content .action-title { font-weight: 600; font-size: 0.95rem; color: var(--gray-900); margin-bottom: 3px; }
-    .action-content .action-desc  { font-size: 0.85rem; color: var(--gray-500); }
-
-    /* ── Legal Note ── */
-    .legal-note {
-      background: var(--gray-100);
-      border-left: 4px solid var(--gray-300);
-      border-radius: 0 8px 8px 0;
-      padding: 1rem 1.25rem;
-      font-size: 0.85rem;
-      color: var(--gray-500);
-      margin-top: 2rem;
-    }
-
-    /* ── Footer ── */
-    footer {
-      text-align: center;
-      padding: 2rem;
+    .section-header:hover { background: #f8fafc; }
+    .section.open .section-header { border-bottom-color: #e2e8f0; }
+    .section-par {
       font-size: 0.8rem;
-      color: var(--gray-500);
-      border-top: 1px solid var(--gray-200);
+      font-weight: 700;
+      color: white;
+      background: #2563eb;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      white-space: nowrap;
     }
-    footer a { color: var(--blue); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
+    .section-title { font-weight: 700; font-size: 1.05rem; flex: 1; }
+    .section-status { font-size: 1.3rem; flex-shrink: 0; }
+    .section-chevron { color: #94a3b8; font-size: 0.8rem; transition: transform 0.2s; }
+    .section.open .section-chevron { transform: rotate(180deg); }
+    .section-body { padding: 1.5rem; display: none; }
+    .section.open .section-body { display: block; }
 
-    @media (max-width: 640px) {
-      .law-card-header { flex-wrap: wrap; }
-      .matrix thead th:nth-child(3), .matrix tbody td:nth-child(3) { display: none; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 1rem;
     }
+    th {
+      background: #f8fafc;
+      padding: 0.65rem 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: #475569;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    td {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-ok { background: #dcfce7; color: #166534; }
+    .badge-warn { background: #fef3c7; color: #92400e; }
+    .badge-fail { background: #fee2e2; color: #991b1b; }
+
+    .law-box {
+      background: #eff6ff;
+      border-left: 4px solid #2563eb;
+      padding: 0.9rem 1.1rem;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 1.2rem;
+      font-size: 0.9rem;
+    }
+    .law-box strong { color: #1e40af; }
+    .law-box ul { margin-left: 1.2rem; margin-top: 0.4rem; }
+    .law-box li { margin-bottom: 0.2rem; }
+
+    .prio-list { list-style: none; }
+    .prio-list li {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+    }
+    .prio-list li.p1 { background: #fee2e2; }
+    .prio-list li.p2 { background: #fef3c7; }
+    .prio-list li.p3 { background: #f0fdf4; }
+    .prio-tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 0.15rem;
+    }
+    .p1 .prio-tag { background: #ef4444; color: white; }
+    .p2 .prio-tag { background: #f59e0b; color: white; }
+    .p3 .prio-tag { background: #22c55e; color: white; }
+
+    .fine-table td:last-child { font-weight: 700; color: #dc2626; }
+
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      justify-content: flex-end;
+    }
+    .btn {
+      padding: 0.4rem 1rem;
+      border-radius: 7px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      color: #475569;
+      font-size: 0.82rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #f1f5f9; border-color: #cbd5e1; }
+
+    h3 { font-size: 0.95rem; color: #1e293b; margin: 1rem 0 0.5rem; font-weight: 600; }
+    p { color: #475569; font-size: 0.9rem; margin-bottom: 0.5rem; }
+    code { background: #f1f5f9; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.82rem; color: #1e40af; }
+
+    .hint-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-top: 2rem;
+      text-align: center;
+    }
+    .hint-box strong { color: #1e293b; }
+    .ok-note { margin-top: 0.75rem; color: #16a34a; font-weight: 600; font-size: 0.9rem; }
   </style>
 </head>
 <body>
 
-<header>
-  <div class="inner">
-    <div class="badge">⚖️ Rechtliche Compliance</div>
-    <h1>ArbZG-Compliance</h1>
-    <p class="subtitle">Kritische Paragrafen des Arbeitszeitgesetzes für PraxisZeit</p>
-    <div class="meta">
-      <span>📅 Stand: Februar 2026</span>
-      <span>📖 Quelle: gesetze-im-internet.de/arbzg</span>
-      <span>🏥 Zielgruppe: Arztpraxen</span>
-    </div>
-  </div>
-</header>
+<div class="header">
+  <h1>ArbZG-Compliance – PraxisZeit</h1>
+  <p class="subtitle">Vollständiger Abgleich: Arbeitszeitgesetz ↔ Implementierungsstand</p>
+  <div class="date-badge">Stand: Februar 2026 &nbsp;·&nbsp; Gesetzesquelle: gesetze-im-internet.de/arbzg</div>
+</div>
 
-<main>
+<div class="container">
 
-  <!-- Summary Cards -->
   <div class="summary-grid">
-    <div class="summary-card red">
-      <span class="count">3</span>
-      <span class="label">Hochkritische Lücken</span>
+    <div class="summary-card ok">
+      <div class="icon">✅</div>
+      <div class="count">2</div>
+      <div class="label">Vollständig konform</div>
     </div>
-    <div class="summary-card yellow">
-      <span class="count">3</span>
-      <span class="label">Mittlere Risiken</span>
+    <div class="summary-card warn">
+      <div class="icon">⚠️</div>
+      <div class="count">5</div>
+      <div class="label">Teilweise konform</div>
     </div>
-    <div class="summary-card red">
-      <span class="count">30.000 €</span>
-      <span class="label">Max. Bußgeld pro Verstoß</span>
+    <div class="summary-card fail">
+      <div class="icon">🔴</div>
+      <div class="count">7</div>
+      <div class="label">Offene Lücken</div>
     </div>
-    <div class="summary-card blue">
-      <span class="count">8</span>
-      <span class="label">Relevante Paragrafen</span>
+    <div class="summary-card fail">
+      <div class="icon">💶</div>
+      <div class="count">30.000 €</div>
+      <div class="label">Max. Bußgeld pro Verstoß</div>
     </div>
   </div>
 
-  <!-- Section 1: Hochkritisch -->
-  <section>
-    <h2 class="section-title">
-      <span class="section-number">1</span>
-      Hochkritische Paragrafen
-    </h2>
+  <div class="controls">
+    <button class="btn" onclick="setAll(true)">Alle aufklappen</button>
+    <button class="btn" onclick="setAll(false)">Alle zuklappen</button>
+  </div>
 
-    <!-- § 3 -->
-    <details class="law-card" open>
-      <summary class="law-card-header">
-        <span class="paragraph-badge">§ 3</span>
-        <span class="law-card-title">Tägliche Höchstarbeitszeit</span>
-        <span class="priority-chip high">🔴 Hoch</span>
-        <span class="chevron">▼</span>
-      </summary>
-      <div class="law-card-body">
-        <div class="rule-box">
-          <div class="rule-box-title">Gesetzliche Regel</div>
-          <ul>
-            <li>Maximale Arbeitszeit: <strong>8 Stunden pro Tag</strong></li>
-            <li>Verlängerung auf <strong>10 Stunden</strong> zulässig bei Ausgleich auf ≤ 8h im Schnitt (6-Monats-Fenster)</li>
-          </ul>
-        </div>
-        <div class="relevance-block">
-          <div class="rl-title">Relevanz für PraxisZeit</div>
-          <ul>
-            <li>System erfasst Arbeitszeiten, prüft aber <strong>nicht automatisch</strong> ob 8h/10h-Grenze überschritten wird</li>
-            <li>Einträge von 11–12h werden ohne Warnsignal gespeichert</li>
-            <li>Arbeitgeber haften für Verstöße – fehlende Systemunterstützung erhöht das Risiko</li>
-          </ul>
-        </div>
-        <div class="recommendation">
-          <span class="icon">💡</span>
-          <p><strong>Empfehlung</strong>Warnhinweis bei Einträgen &gt; 8h; zweite Bestätigung erforderlich bei &gt; 10h.</p>
-        </div>
-      </div>
-    </details>
-
-    <!-- § 4 -->
-    <details class="law-card">
-      <summary class="law-card-header">
-        <span class="paragraph-badge">§ 4</span>
-        <span class="law-card-title">Ruhepausen (Pflichtpausen)</span>
-        <span class="priority-chip high">🔴 Hoch</span>
-        <span class="chevron">▼</span>
-      </summary>
-      <div class="law-card-body">
-        <div class="rule-box">
-          <div class="rule-box-title">Gesetzliche Regel</div>
-          <ul>
-            <li>Arbeitszeit &gt; 6h → mind. <strong>30 Min. Pause</strong> Pflicht</li>
-            <li>Arbeitszeit &gt; 9h → mind. <strong>45 Min. Pause</strong> Pflicht</li>
-            <li>Max. Arbeitszeit ohne Pause: <strong>6 Stunden</strong></li>
-          </ul>
-        </div>
-        <div class="relevance-block">
-          <div class="rl-title">Relevanz für PraxisZeit</div>
-          <ul>
-            <li>System kennt <strong>keine Pausenerfassung</strong> – Pausen sind keine eigene Eintragsart</li>
-            <li>Bruttoarbeitszeit ≠ Nettoarbeitszeit → fehlerhafte Auswertungen und Exports</li>
-            <li>Fehlende Pausen sind eine Ordnungswidrigkeit (§ 22: bis <strong>30.000 € Bußgeld</strong>)</li>
-          </ul>
-        </div>
-        <div class="recommendation">
-          <span class="icon">💡</span>
-          <p><strong>Empfehlung</strong>Pausenfeld bei Zeiteinträgen ergänzen; Pflichtvalidierung ab 6h Arbeitszeit einbauen.</p>
-        </div>
-      </div>
-    </details>
-
-    <!-- § 5 -->
-    <details class="law-card">
-      <summary class="law-card-header">
-        <span class="paragraph-badge">§ 5</span>
-        <span class="law-card-title">Mindestruhezeit zwischen Schichten</span>
-        <span class="priority-chip high">🔴 Hoch</span>
-        <span class="chevron">▼</span>
-      </summary>
-      <div class="law-card-body">
-        <div class="rule-box">
-          <div class="rule-box-title">Gesetzliche Regel</div>
-          <ul>
-            <li>Mind. <strong>11 Stunden ununterbrochene Ruhezeit</strong> zwischen zwei Arbeitstagen</li>
-          </ul>
-        </div>
-        <div class="relevance-block">
-          <div class="rl-title">Relevanz für PraxisZeit</div>
-          <ul>
-            <li>Beispiel: Arbeit bis <strong>23:00 Uhr</strong>, Beginn nächsten Tag <strong>07:00 Uhr</strong> = nur 8h Ruhe → illegal</li>
-            <li>System prüft <strong>keine Ruhezeiten</strong> zwischen Einträgen verschiedener Tage</li>
-            <li>Bei Schichtbetrieb in Arztpraxen (Notdienst, verlängerte Sprechzeiten) besonders kritisch</li>
-          </ul>
-        </div>
-        <div class="recommendation">
-          <span class="icon">💡</span>
-          <p><strong>Empfehlung</strong>Warnung einbauen wenn: letzte Buchung + 11h &gt; nächster Buchungsbeginn.</p>
-        </div>
-      </div>
-    </details>
-
-    <!-- § 9 -->
-    <details class="law-card">
-      <summary class="law-card-header">
-        <span class="paragraph-badge">§ 9</span>
-        <span class="law-card-title">Sonntagsruhe</span>
-        <span class="priority-chip high">🔴 Hoch</span>
-        <span class="chevron">▼</span>
-      </summary>
-      <div class="law-card-body">
-        <div class="rule-box">
-          <div class="rule-box-title">Gesetzliche Regel</div>
-          <ul>
-            <li>An Sonn- und gesetzlichen Feiertagen <strong>Beschäftigungsverbot von 0–24 Uhr</strong> (Grundsatz)</li>
-            <li>Ausnahmen nach § 10 für Gesundheitsberufe und Notfalldienste möglich</li>
-          </ul>
-        </div>
-        <div class="relevance-block">
-          <div class="rl-title">Relevanz für PraxisZeit</div>
-          <ul>
-            <li>Feiertagskalender ist vorhanden, aber Zeiteinträge an Sonn-/Feiertagen werden <strong>nicht markiert oder geblockt</strong></li>
-            <li>Ausnahmen nach § 10 müssen mit <strong>Ausnahmegrund dokumentiert</strong> werden</li>
-            <li>Fehlende Dokumentation ist bußgeldbewehrt</li>
-          </ul>
-        </div>
-        <div class="recommendation">
-          <span class="icon">💡</span>
-          <p><strong>Empfehlung</strong>Sonn-/Feiertagseinträge visuell kennzeichnen + optionales Pflichtfeld „Ausnahmegrund nach § 10".</p>
-        </div>
-      </div>
-    </details>
-
-    <!-- § 11 -->
-    <details class="law-card">
-      <summary class="law-card-header">
-        <span class="paragraph-badge">§ 11</span>
-        <span class="law-card-title">Ausgleich für Sonn- und Feiertagsarbeit</span>
-        <span class="priority-chip medium">🟡 Mittel</span>
-        <span class="chevron">▼</span>
-      </summary>
-      <div class="law-card-body">
-        <div class="rule-box">
-          <div class="rule-box-title">Gesetzliche Regel</div>
-          <ul>
-            <li>Mind. <strong>15 beschäftigungsfreie Sonntage</strong> pro Jahr pro Arbeitnehmer</li>
-            <li>Ersatzruhetag nach Sonntagsarbeit: innerhalb <strong>2 Wochen</strong></li>
-            <li>Ersatzruhetag nach Feiertagsarbeit: innerhalb <strong>8 Wochen</strong></li>
-          </ul>
-        </div>
-        <div class="relevance-block">
-          <div class="rl-title">Relevanz für PraxisZeit</div>
-          <ul>
-            <li>System kann Sonntags-Einträge via Excel-Export auswerten, zählt aber <strong>nicht automatisch freie Sonntage</strong></li>
-            <li>Kein automatischer Alarm wenn ein Mitarbeiter die 15-Sonntage-Grenze erreicht</li>
-          </ul>
-        </div>
-        <div class="recommendation">
-          <span class="icon">💡</span>
-          <p><strong>Empfehlung</strong>Report: Anzahl gearbeiteter Sonntage pro Mitarbeiter/Jahr einbauen.</p>
-        </div>
-      </div>
-    </details>
-
-    <!-- § 16 -->
-    <details class="law-card">
-      <summary class="law-card-header">
-        <span class="paragraph-badge">§ 16</span>
-        <span class="law-card-title">Aufzeichnungs- und Aufbewahrungspflicht</span>
-        <span class="priority-chip medium">🟡 Mittel</span>
-        <span class="chevron">▼</span>
-      </summary>
-      <div class="law-card-body">
-        <div class="rule-box">
-          <div class="rule-box-title">Gesetzliche Regel</div>
-          <ul>
-            <li>Arbeitgeber muss <strong>Mehrarbeitszeiten</strong> (über 8h werktäglich) aufzeichnen</li>
-            <li>Aufzeichnungen müssen <strong>mindestens 2 Jahre</strong> aufbewahrt werden</li>
-            <li>Arbeitgeber muss eine Kopie des ArbZG <strong>aushängen oder auslegen</strong></li>
-          </ul>
-        </div>
-        <div class="relevance-block">
-          <div class="rl-title">Relevanz für PraxisZeit</div>
-          <ul>
-            <li>System erfüllt Aufzeichnungspflicht grundsätzlich – Zeiteinträge werden in der Datenbank gespeichert</li>
-            <li><strong>Unklar:</strong> Gibt es ein Datenlöschkonzept? Einträge müssen 2 Jahre abrufbar bleiben</li>
-            <li>Excel-Export reicht als Nachweis wenn regelmäßig archiviert und unveränderlich gespeichert</li>
-          </ul>
-        </div>
-        <div class="recommendation">
-          <span class="icon">💡</span>
-          <p><strong>Empfehlung</strong>Datenbankretention-Richtlinie (min. 2 Jahre) dokumentieren und Exportarchivierung als Prozess definieren.</p>
-        </div>
-      </div>
-    </details>
-  </section>
-
-  <!-- Section 2: Mittlere Relevanz -->
-  <section>
-    <h2 class="section-title">
-      <span class="section-number">2</span>
-      Weitere relevante Paragrafen
-    </h2>
-    <div style="display:grid; gap:0.75rem;">
-
-      <div class="law-card" style="border-left:4px solid var(--yellow);">
-        <div class="law-card-header" style="cursor:default;">
-          <span class="paragraph-badge">§ 6</span>
-          <span class="law-card-title">Nacht- und Schichtarbeit</span>
-          <span class="priority-chip medium">🟡 Mittel</span>
-        </div>
-        <div class="law-card-body" style="padding-top:0;">
-          <p style="font-size:0.875rem;color:var(--gray-700);">
-            Nachtarbeitnehmer (Arbeit in der Zeit 23–6 Uhr): max. <strong>8h/Nacht</strong>, verlängerbar auf 10h mit monatlichem Ausgleich.
-            Recht auf arbeitsmedizinische Untersuchung. System markiert keine Nacht-Einträge und kann Nachtarbeitnehmer nicht identifizieren.
-          </p>
-        </div>
-      </div>
-
-      <div class="law-card" style="border-left:4px solid var(--yellow);">
-        <div class="law-card-header" style="cursor:default;">
-          <span class="paragraph-badge">§ 7</span>
-          <span class="law-card-title">Tarifvertragliche Ausnahmen</span>
-          <span class="priority-chip medium">🟡 Mittel</span>
-        </div>
-        <div class="law-card-body" style="padding-top:0;">
-          <p style="font-size:0.875rem;color:var(--gray-700);">
-            Tarifverträge können abweichende Arbeitszeiten und Ausgleichszeiträume vorsehen. Wenn ein Tarifvertrag gilt,
-            können andere Grenzwerte gelten als die gesetzlichen Standardwerte – das System kennt keine Tarifvertrags-Konfiguration.
-          </p>
-        </div>
-      </div>
-
-      <div class="law-card" style="border-left:4px solid var(--green);">
-        <div class="law-card-header" style="cursor:default;">
-          <span class="paragraph-badge">§ 14</span>
-          <span class="law-card-title">Außergewöhnliche Fälle</span>
-          <span class="priority-chip low">🟢 Niedrig</span>
-        </div>
-        <div class="law-card-body" style="padding-top:0;">
-          <p style="font-size:0.875rem;color:var(--gray-700);">
-            Bei Notfällen/außergewöhnlichen Fällen: max. <strong>48h/Woche</strong> im 6-Monats-Schnitt.
-            Das System erfasst Stunden, prüft aber die Wochensumme nicht und kennt den 48h-Ausnahmefall nicht.
-          </p>
-        </div>
-      </div>
-
+  <!-- § 3 -->
+  <div class="section open" id="s3">
+    <div class="section-header" onclick="toggle('s3')">
+      <span class="section-par">§ 3</span>
+      <span class="section-title">Tägliche Höchstarbeitszeit</span>
+      <span class="section-status">⚠️</span>
+      <span class="section-chevron">▼</span>
     </div>
-  </section>
-
-  <!-- Section 3: Bußgelder -->
-  <section>
-    <h2 class="section-title">
-      <span class="section-number">3</span>
-      Straf- und Bußgeldvorschriften (§§ 22, 23)
-    </h2>
-    <div class="fines-grid">
-      <div class="fine-item">
-        <div class="offense"><strong>Überschreitung der zulässigen Arbeitszeit (§ 3)</strong>Fehlende Pausen (§ 4), Verletzung Ruhezeit (§ 5), unzulässige Sonn-/Feiertagsarbeit (§ 9), fehlende Aufzeichnung (§ 16)</div>
-        <span class="fine-amount danger">bis 30.000 €</span>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li>Max. <strong>8 Stunden</strong> werktägliche Arbeitszeit</li>
+          <li>Verlängerung auf <strong>10 Stunden</strong> erlaubt, wenn Ausgleich innerhalb <strong>6 Kalendermonaten / 24 Wochen</strong> auf ≤ 8h Durchschnitt erfolgt</li>
+        </ul>
       </div>
-      <div class="fine-item">
-        <div class="offense"><strong>Fehlender Gesetzesaushang (§ 16)</strong>Keine Kopie des ArbZG ausgehängt oder ausgelegt</div>
-        <span class="fine-amount warning">bis 5.000 €</span>
-      </div>
-      <div class="fine-item">
-        <div class="offense"><strong>Vorsätzliche Gesundheitsgefährdung (§ 23)</strong>Wissentlicher Verstoß mit Gesundheitsgefahr für Arbeitnehmer</div>
-        <span class="fine-amount criminal">bis 1 Jahr Haft</span>
-      </div>
-      <div class="fine-item">
-        <div class="offense"><strong>Fahrlässige Gesundheitsgefährdung (§ 23)</strong>Grob fahrlässiger Verstoß mit Gesundheitsgefahr für Arbeitnehmer</div>
-        <span class="fine-amount criminal">bis 6 Monate Haft</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- Section 4: Compliance Matrix -->
-  <section>
-    <h2 class="section-title">
-      <span class="section-number">4</span>
-      Compliance-Matrix PraxisZeit
-    </h2>
-    <div class="matrix">
       <table>
-        <thead>
-          <tr>
-            <th>Anforderung</th>
-            <th>§</th>
-            <th>Priorität</th>
-            <th>Status im System</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Tagesarbeitszeit-Warnung &gt; 8h / &gt; 10h</td>
-            <td><span class="para-tag">§ 3</span></td>
-            <td><span class="dot-high">●</span> Hoch</td>
-            <td><span class="status-tag status-missing">✗ Fehlt</span></td>
-          </tr>
-          <tr>
-            <td>Pausenerfassung bei &gt; 6h Arbeit</td>
-            <td><span class="para-tag">§ 4</span></td>
-            <td><span class="dot-high">●</span> Hoch</td>
-            <td><span class="status-tag status-missing">✗ Fehlt</span></td>
-          </tr>
-          <tr>
-            <td>11h Mindestruhezeit zwischen Schichten</td>
-            <td><span class="para-tag">§ 5</span></td>
-            <td><span class="dot-high">●</span> Hoch</td>
-            <td><span class="status-tag status-missing">✗ Fehlt</span></td>
-          </tr>
-          <tr>
-            <td>Sonn-/Feiertagskennzeichnung + Ausnahmegrund</td>
-            <td><span class="para-tag">§ 9/10</span></td>
-            <td><span class="dot-medium">●</span> Mittel</td>
-            <td><span class="status-tag status-partial">~ Teilweise</span></td>
-          </tr>
-          <tr>
-            <td>Zähler freier Sonntage (min. 15/Jahr)</td>
-            <td><span class="para-tag">§ 11</span></td>
-            <td><span class="dot-medium">●</span> Mittel</td>
-            <td><span class="status-tag status-missing">✗ Fehlt</span></td>
-          </tr>
-          <tr>
-            <td>2-jährige Aufbewahrungspflicht</td>
-            <td><span class="para-tag">§ 16</span></td>
-            <td><span class="dot-medium">●</span> Mittel</td>
-            <td><span class="status-tag status-partial">~ Unklar</span></td>
-          </tr>
-          <tr>
-            <td>Zeiteinträge grundsätzlich erfassen</td>
-            <td><span class="para-tag">§ 16</span></td>
-            <td><span class="dot-medium">●</span> Mittel</td>
-            <td><span class="status-tag status-ok">✓ Erfüllt</span></td>
-          </tr>
-          <tr>
-            <td>Nachtarbeitskennzeichnung (23–6 Uhr)</td>
-            <td><span class="para-tag">§ 6</span></td>
-            <td><span class="dot-low">●</span> Niedrig</td>
-            <td><span class="status-tag status-missing">✗ Fehlt</span></td>
-          </tr>
-          <tr>
-            <td>Feiertagskalender vorhanden</td>
-            <td><span class="para-tag">§ 9</span></td>
-            <td><span class="dot-medium">●</span> Mittel</td>
-            <td><span class="status-tag status-ok">✓ Erfüllt</span></td>
-          </tr>
-        </tbody>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>Warnung bei &gt; 8h/Tag</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>DAILY_HOURS_WARNING</code> Flag + Frontend-Toast bei create / update / clock_out</td>
+        </tr>
+        <tr>
+          <td>Hard-Stop bei &gt; 10h/Tag (User-Endpoints)</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>HTTP 422 in <code>time_entries.py</code></td>
+        </tr>
+        <tr>
+          <td>§3-Check bei Admin-Direkteintrag</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td><code>admin.py: admin_create_time_entry / admin_update_time_entry</code> – nur §4-Prüfung, kein §3-Limit</td>
+        </tr>
+        <tr>
+          <td>§3-Check bei Änderungsanträgen</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td><code>change_requests.py</code> ruft validate_daily_break auf, aber keinen §3-Check</td>
+        </tr>
+        <tr>
+          <td>6-Monats-Ausgleichszeitraum</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td>Kein Tracking ob monatlicher Durchschnitt ≤ 8h eingehalten wird</td>
+        </tr>
       </table>
     </div>
-  </section>
-
-  <!-- Section 5: Empfohlene Maßnahmen -->
-  <section>
-    <h2 class="section-title">
-      <span class="section-number">5</span>
-      Empfohlene Maßnahmen (priorisiert)
-    </h2>
-    <div class="action-list">
-      <div class="action-item">
-        <div class="action-prio prio-1">P1</div>
-        <div class="action-content">
-          <div class="action-title">Pausenerfassung als Pflichtfeld einführen</div>
-          <div class="action-desc">Bei Zeiteinträgen &gt; 6h: Pausendauer erfassen. Validierung: Mindestpause 30 Min. bei &gt;6h, 45 Min. bei &gt;9h. (§ 4)</div>
-        </div>
-      </div>
-      <div class="action-item">
-        <div class="action-prio prio-1">P1</div>
-        <div class="action-content">
-          <div class="action-title">Arbeitszeitwarnung bei &gt; 8h und &gt; 10h</div>
-          <div class="action-desc">Warnhinweis bei Einträgen &gt; 8h, zweite Bestätigung bei &gt; 10h, Ablehnung bei &gt; 12h. (§ 3)</div>
-        </div>
-      </div>
-      <div class="action-item">
-        <div class="action-prio prio-1">P1</div>
-        <div class="action-content">
-          <div class="action-title">Ruhezeit-Prüfung zwischen Schichten</div>
-          <div class="action-desc">Warnung wenn letzter Buchungsende + 11h &gt; nächster Buchungsbeginn. (§ 5)</div>
-        </div>
-      </div>
-      <div class="action-item">
-        <div class="action-prio prio-2">P2</div>
-        <div class="action-content">
-          <div class="action-title">Sonn-/Feiertagseinträge kennzeichnen + Ausnahmegrund</div>
-          <div class="action-desc">Visuelle Markierung von Einträgen an Sonn-/Feiertagen + optionaler Freitext „Ausnahmegrund nach § 10". (§§ 9, 10)</div>
-        </div>
-      </div>
-      <div class="action-item">
-        <div class="action-prio prio-2">P2</div>
-        <div class="action-content">
-          <div class="action-title">Report: Gearbeitete Sonntage pro Mitarbeiter/Jahr</div>
-          <div class="action-desc">Automatischer Zähler + Warnung wenn 15-Sonntage-Grenze erreicht wird. (§ 11)</div>
-        </div>
-      </div>
-      <div class="action-item">
-        <div class="action-prio prio-2">P2</div>
-        <div class="action-content">
-          <div class="action-title">Datenbankretention-Richtlinie dokumentieren</div>
-          <div class="action-desc">Sicherstellen dass Zeiteinträge min. 2 Jahre in der DB bleiben; Exportarchivierung als Prozess definieren. (§ 16)</div>
-        </div>
-      </div>
-      <div class="action-item">
-        <div class="action-prio prio-3">P3</div>
-        <div class="action-content">
-          <div class="action-title">Nachtarbeit-Kennzeichnung</div>
-          <div class="action-desc">Einträge, die die Nachtzeit 23–6 Uhr schneiden, als Nachtarbeit kennzeichnen und separat auswerten. (§ 6)</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Legal Note -->
-  <div class="legal-note">
-    ⚠️ <strong>Rechtlicher Hinweis:</strong> Diese Analyse ersetzt keine Rechtsberatung.
-    Arbeitgeber sind selbst verantwortlich für die Einhaltung des ArbZG.
-    Bei Fragen zur Anwendung einzelner Vorschriften sollte ein Fachanwalt für Arbeitsrecht
-    hinzugezogen werden. Gesetzesquelle:
-    <a href="https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html" target="_blank">
-      gesetze-im-internet.de/arbzg
-    </a>
   </div>
 
-</main>
+  <!-- § 4 -->
+  <div class="section open" id="s4">
+    <div class="section-header" onclick="toggle('s4')">
+      <span class="section-par">§ 4</span>
+      <span class="section-title">Ruhepausen (Pflichtpausen)</span>
+      <span class="section-status">⚠️</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li>Arbeit &gt; 6 Stunden → mind. <strong>30 Minuten</strong> Pause</li>
+          <li>Arbeit &gt; 9 Stunden → mind. <strong>45 Minuten</strong> Pause</li>
+          <li>Maximale Arbeitszeit ohne jede Pause: <strong>6 Stunden</strong></li>
+          <li>Pausen können aufgeteilt werden (mind. 15 min je Einheit)</li>
+        </ul>
+      </div>
+      <table>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>Pausenfeld im Zeiteintrag</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>break_minutes</code> bei allen Zeiteinträgen erfasst und gespeichert</td>
+        </tr>
+        <tr>
+          <td>&gt;6h → mind. 30min Pause erzwingen</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>break_validation_service.validate_daily_break()</code> – aktiv bei create / update / clock_out / admin / change_requests</td>
+        </tr>
+        <tr>
+          <td>&gt;9h → mind. 45min Pause erzwingen</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td><code>break_validation_service.py</code> prüft <strong>nur</strong> die 6h/30min-Bedingung – die 9h/45min-Regel fehlt vollständig</td>
+        </tr>
+      </table>
+    </div>
+  </div>
 
-<footer>
-  PraxisZeit · ArbZG-Compliance-Analyse · Stand Februar 2026
-</footer>
+  <!-- § 5 -->
+  <div class="section open" id="s5">
+    <div class="section-header" onclick="toggle('s5')">
+      <span class="section-par">§ 5</span>
+      <span class="section-title">Mindestruhezeit zwischen Schichten</span>
+      <span class="section-status">✅</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li>Mind. <strong>11 Stunden ununterbrochene Ruhezeit</strong> nach Arbeitsende</li>
+          <li>Ausnahmen in bestimmten Bereichen (z.B. Krankenhäuser) mit Ausgleich innerhalb 4 Wochen</li>
+        </ul>
+      </div>
+      <table>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>11h-Prüfung zwischen Schichten</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>rest_time_service.check_rest_time_violations()</code> – vergleicht Ende/Start aufeinanderfolgender Einträge</td>
+        </tr>
+        <tr>
+          <td>Admin-Report Ruhezeit-Verstöße</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>GET /api/admin/reports/rest-time-violations</code> mit Jahr, optionalem Monat, konfigurierbarem Schwellwert</td>
+        </tr>
+        <tr>
+          <td>Frontend-Anzeige</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Admin Reports-Seite zeigt betroffene Mitarbeiter, Datum und Stunden-Defizit</td>
+        </tr>
+      </table>
+      <p class="ok-note">§ 5 ist vollständig konform implementiert. ✅</p>
+    </div>
+  </div>
 
+  <!-- § 6 -->
+  <div class="section open" id="s6">
+    <div class="section-header" onclick="toggle('s6')">
+      <span class="section-par">§ 6</span>
+      <span class="section-title">Nacht- und Schichtarbeit</span>
+      <span class="section-status">⚠️</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li><strong>Nachtzeit:</strong> 23:00–06:00 Uhr (§ 2 Abs. 3)</li>
+          <li><strong>Nachtarbeitnehmer:</strong> mind. 48 Nächte/Jahr oder regelmäßig Nachtarbeit</li>
+          <li>Max. <strong>8 Stunden/Nacht</strong> (verlängerbar auf 10h, Ausgleich innerhalb 1 Monat)</li>
+          <li>Anspruch auf <strong>arbeitsmedizinische Untersuchung</strong></li>
+          <li>Anspruch auf <strong>25%-Lohnzuschlag</strong> oder gleichwertige Freizeit bei regelmäßiger Nachtarbeit</li>
+        </ul>
+      </div>
+      <table>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>Erkennung Nachtarbeit (23–6 Uhr)</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>_is_night_work()</code> in <code>time_entries.py</code></td>
+        </tr>
+        <tr>
+          <td><code>is_night_work</code> Flag in API</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>In allen <code>TimeEntryResponse</code>-Endpoints zurückgegeben</td>
+        </tr>
+        <tr>
+          <td>„Nacht"-Badge im Frontend</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Indigo-Badge in <code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td>Admin-Report: Nachtarbeit-Statistik pro MA</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td>Kein Report über Häufigkeit (48-Nächte-Schwellwert für Nachtarbeitnehmer-Status)</td>
+        </tr>
+        <tr>
+          <td>Strengere 8h-Grenze für Nachtarbeitnehmer</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td>Alle Mitarbeiter haben dieselbe 10h Hard-Limit; keine Differenzierung</td>
+        </tr>
+        <tr>
+          <td>Tracking arbeitsmedizinischer Untersuchungen</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td>Nicht vorgesehen im System</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- §§ 9/10 -->
+  <div class="section open" id="s9">
+    <div class="section-header" onclick="toggle('s9')">
+      <span class="section-par">§§ 9/10</span>
+      <span class="section-title">Sonn- und Feiertagsruhe / Ausnahmen</span>
+      <span class="section-status">⚠️</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>§ 9 – Grundsatz:</strong> Beschäftigungsverbot an Sonn- und Feiertagen <strong>0–24 Uhr</strong><br><br>
+        <strong>§ 10 – Ausnahmen u.a.:</strong> Gesundheitsversorgung, Notfalldienste – <strong>dokumentationspflichtig!</strong><br>
+        <span style="color:#dc2626; font-size:0.88rem;">Arztpraxen können unter § 10 Nr. 1 fallen, müssen aber den Ausnahmegrund nachweisbar dokumentieren.</span>
+      </div>
+      <table>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>Sonntagserkennung</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>weekday() == 6</code> in <code>_enrich_response()</code></td>
+        </tr>
+        <tr>
+          <td>Feiertagserkennung (workalendar)</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>is_holiday()</code> via DB – alle Bundesländer konfigurierbar (default: Bayern)</td>
+        </tr>
+        <tr>
+          <td><code>is_sunday_or_holiday</code> Flag in API</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>In allen <code>TimeEntryResponse</code>-Endpoints</td>
+        </tr>
+        <tr>
+          <td><code>SUNDAY_WORK / HOLIDAY_WORK</code> Warnings</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>In API-Response + Frontend Toast-Benachrichtigung beim Erstellen</td>
+        </tr>
+        <tr>
+          <td>Visuelles Highlighting orange</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Orange Tabellenzeile + „So/FT"-Badge in <code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td>Ausnahmegrund-Feld (§ 10 ArbZG)</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td>Kein Pflicht- oder optionales Feld zur Dokumentation des § 10-Ausnahmegrunds</td>
+        </tr>
+        <tr>
+          <td>Admin-Report: Feiertage gearbeitet</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td><code>sunday-summary</code> zählt nur Sonntage – Feiertage fehlen als separate Statistik</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- § 11 -->
+  <div class="section open" id="s11">
+    <div class="section-header" onclick="toggle('s11')">
+      <span class="section-par">§ 11</span>
+      <span class="section-title">Ausgleich nach Sonn- und Feiertagsarbeit</span>
+      <span class="section-status">⚠️</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li>Mind. <strong>15 beschäftigungsfreie Sonntage</strong> pro Jahr und Arbeitnehmer</li>
+          <li>Ersatzruhetag nach Sonntagsarbeit: innerhalb <strong>2 Wochen</strong></li>
+          <li>Ersatzruhetag nach Feiertagsarbeit: innerhalb <strong>8 Wochen</strong></li>
+        </ul>
+      </div>
+      <table>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>15 freie Sonntage/Jahr – Compliance-Report</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>GET /api/admin/reports/sunday-summary</code> mit Jahresauswahl, Grün/Rot-Bewertung pro MA</td>
+        </tr>
+        <tr>
+          <td>Frontend Sunday-Report</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Tabelle in <code>admin/Reports.tsx</code> mit betroffenen Mitarbeitern</td>
+        </tr>
+        <tr>
+          <td>Ersatzruhetag-Tracking Sonntagsarbeit (2 Wochen)</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td>Keine Prüfung ob nach Sonntagsarbeit innerhalb 2 Wochen ein freier Tag folgt</td>
+        </tr>
+        <tr>
+          <td>Ersatzruhetag-Tracking Feiertagsarbeit (8 Wochen)</td>
+          <td><span class="badge badge-fail">❌ Fehlt</span></td>
+          <td>Keine Verfolgung von Feiertagsersatzruhetagen</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- § 16 -->
+  <div class="section open" id="s16">
+    <div class="section-header" onclick="toggle('s16')">
+      <span class="section-par">§ 16</span>
+      <span class="section-title">Aufzeichnungs- und Aufbewahrungspflicht</span>
+      <span class="section-status">✅</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li>Aufzeichnung aller Arbeitszeiten, die <strong>8 Stunden werktäglich überschreiten</strong></li>
+          <li>Aufbewahrung der Aufzeichnungen: mind. <strong>2 Jahre</strong></li>
+          <li><strong>Gesetzesaushang</strong> (ArbZG) am Arbeitsplatz</li>
+        </ul>
+      </div>
+      <table>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>Vollständige Zeiterfassung in DB</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Start, Ende, Pausen, Datum, Mitarbeiter-ID gespeichert</td>
+        </tr>
+        <tr>
+          <td>2-Jahres-Aufbewahrung dokumentiert</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>INSTALLATION.md</code>: Backup-Anleitung mit pg_dump + Retention-Prozess</td>
+        </tr>
+        <tr>
+          <td>Hinweis in docker-compose.yml</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Kommentar über Aufbewahrungspflicht am <code>postgres_data</code>-Volume</td>
+        </tr>
+        <tr>
+          <td>§16-Hinweis im Admin-Frontend</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Hinweistext in Admin Reports-Seite unter „Hinweise"</td>
+        </tr>
+        <tr>
+          <td>Excel-Export als Nachweis</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Monats- und Jahresexporte (Classic + Detailliert) verfügbar</td>
+        </tr>
+        <tr>
+          <td>Digitaler Gesetzesaushang</td>
+          <td><span class="badge badge-warn">⚠️ Niedrig</span></td>
+          <td>Kein Link/Hinweis auf ArbZG-Text im System – manuell aushängen erforderlich</td>
+        </tr>
+      </table>
+      <p class="ok-note">§ 16 ist weitgehend konform – Gesetzesaushang ist die einzige Lücke (niedriges Risiko). ✅</p>
+    </div>
+  </div>
+
+  <!-- Bußgelder -->
+  <div class="section" id="s22">
+    <div class="section-header" onclick="toggle('s22')">
+      <span class="section-par">§§ 22/23</span>
+      <span class="section-title">Bußgeld- und Strafvorschriften</span>
+      <span class="section-status">⚖️</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <table class="fine-table">
+        <tr><th>Verstoß</th><th>§</th><th>Sanktion</th></tr>
+        <tr><td>Überschreitung der Tages-Höchstarbeitszeit</td><td>§ 3</td><td>bis 30.000 €</td></tr>
+        <tr><td>Fehlende oder unzureichende Ruhepause</td><td>§ 4</td><td>bis 30.000 €</td></tr>
+        <tr><td>Verletzung der 11h-Mindestruhezeit</td><td>§ 5</td><td>bis 30.000 €</td></tr>
+        <tr><td>Verstoß gegen Nachtarbeitsgrenzen</td><td>§ 6</td><td>bis 30.000 €</td></tr>
+        <tr><td>Unzulässige Sonn-/Feiertagsbeschäftigung</td><td>§ 9</td><td>bis 30.000 €</td></tr>
+        <tr><td>Fehlende Aufzeichnung von Überstunden</td><td>§ 16</td><td>bis 30.000 €</td></tr>
+        <tr><td>Fehlender Gesetzesaushang</td><td>§ 16</td><td>bis 5.000 €</td></tr>
+        <tr><td>Vorsätzliche Gesundheitsgefährdung</td><td>§ 23</td><td>Freiheitsstrafe bis 1 Jahr</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Compliance Matrix -->
+  <div class="section" id="sm">
+    <div class="section-header" onclick="toggle('sm')">
+      <span class="section-par">Gesamt</span>
+      <span class="section-title">Vollständige Compliance-Matrix</span>
+      <span class="section-status">📊</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <tr><th style="width:38%">Anforderung</th><th style="width:8%">§</th><th style="width:16%">Status</th><th>Detail</th></tr>
+        <tr><td>Warnung bei &gt;8h/Tag</td><td>§ 3</td><td><span class="badge badge-ok">✅</span></td><td>Toast + Flag bei allen User-Endpoints</td></tr>
+        <tr><td>Hard-Stop bei &gt;10h/Tag (User)</td><td>§ 3</td><td><span class="badge badge-ok">✅</span></td><td>HTTP 422 in time_entries.py</td></tr>
+        <tr><td>§3-Check bei Admin-Direkteintrag</td><td>§ 3</td><td><span class="badge badge-fail">❌</span></td><td>admin.py ohne §3-Prüfung</td></tr>
+        <tr><td>§3-Check bei Änderungsanträgen</td><td>§ 3</td><td><span class="badge badge-fail">❌</span></td><td>change_requests.py ohne §3-Prüfung</td></tr>
+        <tr><td>6-Monats-Ausgleichszeitraum</td><td>§ 3</td><td><span class="badge badge-fail">❌</span></td><td>Kein Durchschnitts-Tracking</td></tr>
+        <tr><td>Pausenfeld erfasst</td><td>§ 4</td><td><span class="badge badge-ok">✅</span></td><td>break_minutes in allen Einträgen</td></tr>
+        <tr><td>&gt;6h → 30min Pause erzwingen</td><td>§ 4</td><td><span class="badge badge-ok">✅</span></td><td>break_validation_service überall aktiv</td></tr>
+        <tr><td>&gt;9h → 45min Pause erzwingen</td><td>§ 4</td><td><span class="badge badge-fail">❌</span></td><td>break_validation_service unvollständig</td></tr>
+        <tr><td>11h Mindestruhezeit prüfen</td><td>§ 5</td><td><span class="badge badge-ok">✅</span></td><td>rest_time_service + Admin-Report</td></tr>
+        <tr><td>Nachtarbeit erkennen (23–6 Uhr)</td><td>§ 6</td><td><span class="badge badge-ok">✅</span></td><td>_is_night_work() + Badge</td></tr>
+        <tr><td>Nachtarbeit-Report / Statistik</td><td>§ 6</td><td><span class="badge badge-fail">❌</span></td><td>Kein Admin-Report</td></tr>
+        <tr><td>8h-Limit für Nachtarbeitnehmer</td><td>§ 6</td><td><span class="badge badge-fail">❌</span></td><td>Alle Mitarbeiter: 10h Limit</td></tr>
+        <tr><td>Sonntagserkennung + Badge</td><td>§ 9</td><td><span class="badge badge-ok">✅</span></td><td>weekday()==6 + Flag + orange Badge</td></tr>
+        <tr><td>Feiertagserkennung (workalendar)</td><td>§ 9</td><td><span class="badge badge-ok">✅</span></td><td>DB-basiert, bundeslandkonfigurierbar</td></tr>
+        <tr><td>SUNDAY_WORK / HOLIDAY_WORK Warnings</td><td>§ 9/10</td><td><span class="badge badge-ok">✅</span></td><td>API + Frontend-Toast</td></tr>
+        <tr><td>Ausnahmegrund-Feld (§ 10)</td><td>§ 10</td><td><span class="badge badge-fail">❌</span></td><td>Kein Dokumentationsfeld</td></tr>
+        <tr><td>15 freie Sonntage/Jahr Report</td><td>§ 11</td><td><span class="badge badge-ok">✅</span></td><td>/api/admin/reports/sunday-summary</td></tr>
+        <tr><td>Ersatzruhetag Sonntag (2 Wochen)</td><td>§ 11</td><td><span class="badge badge-fail">❌</span></td><td>Nicht implementiert</td></tr>
+        <tr><td>Ersatzruhetag Feiertag (8 Wochen)</td><td>§ 11</td><td><span class="badge badge-fail">❌</span></td><td>Nicht implementiert</td></tr>
+        <tr><td>Zeiterfassung vollständig in DB</td><td>§ 16</td><td><span class="badge badge-ok">✅</span></td><td>Alle Felder gespeichert</td></tr>
+        <tr><td>2-Jahre-Retention dokumentiert</td><td>§ 16</td><td><span class="badge badge-ok">✅</span></td><td>INSTALLATION.md + docker-compose</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Maßnahmen -->
+  <div class="section open" id="sp">
+    <div class="section-header" onclick="toggle('sp')">
+      <span class="section-par">Maßnahmen</span>
+      <span class="section-title">Verbleibende Maßnahmen (priorisiert)</span>
+      <span class="section-status">🎯</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <h3>Prio 1 – Gesetzlich direkt gefordert (Bußgeldrisiko)</h3>
+      <ul class="prio-list" style="margin-top:0.5rem;">
+        <li class="p1">
+          <span class="prio-tag">P1</span>
+          <div><strong>§ 4: 9h/45min-Pausenregel</strong> – <code>break_validation_service.py</code> um zweite Bedingung erweitern: bei Netto-Arbeitszeit &gt; 9h muss Gesamtpause ≥ 45min sein</div>
+        </li>
+        <li class="p1">
+          <span class="prio-tag">P1</span>
+          <div><strong>§ 3: Admin-Endpoints absichern</strong> – <code>admin.py: admin_create_time_entry / admin_update_time_entry</code> und <code>change_requests.py</code> mit §3-Tagesgrenze (10h Hard-Stop) nachrüsten</div>
+        </li>
+      </ul>
+
+      <h3>Prio 2 – Compliance-Dokumentation</h3>
+      <ul class="prio-list" style="margin-top:0.5rem;">
+        <li class="p2">
+          <span class="prio-tag">P2</span>
+          <div><strong>§ 10: Ausnahmegrund-Feld</strong> – Optionales Textfeld „Ausnahmegrund (§ 10 ArbZG)" bei Sonn-/Feiertagseinträgen, um Behördenanfragen dokumentieren zu können</div>
+        </li>
+        <li class="p2">
+          <span class="prio-tag">P2</span>
+          <div><strong>§ 6: Nachtarbeit-Report</strong> – Admin-Report: Anzahl Nachtschichten pro Mitarbeiter pro Jahr (Schwellwert: 48 Nächte = Nachtarbeitnehmer-Status)</div>
+        </li>
+        <li class="p2">
+          <span class="prio-tag">P2</span>
+          <div><strong>§ 11: Ersatzruhetag-Tracking</strong> – Prüfung ob nach Sonntagsarbeit innerhalb 2 Wochen ein freier Tag (kein Zeiteintrag) folgt</div>
+        </li>
+      </ul>
+
+      <h3>Prio 3 – Nice-to-have</h3>
+      <ul class="prio-list" style="margin-top:0.5rem;">
+        <li class="p3">
+          <span class="prio-tag">P3</span>
+          <div><strong>§ 14: Wochenarbeitszeit</strong> – Warnung bei &gt; 48h/Woche im Dashboard oder bei Eintragung</div>
+        </li>
+        <li class="p3">
+          <span class="prio-tag">P3</span>
+          <div><strong>§ 18: Ausnahme-Flag</strong> – Benutzerfeld „leitender Angestellter" (§ 18 ArbZG) → von ArbZG-Prüfungen ausschließen</div>
+        </li>
+        <li class="p3">
+          <span class="prio-tag">P3</span>
+          <div><strong>§ 16: Gesetzesaushang</strong> – Link auf ArbZG-Text (gesetze-im-internet.de) in Admin-Bereich ergänzen</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="hint-box">
+    <strong>Rechtlicher Hinweis:</strong> Diese Analyse ersetzt keine Rechtsberatung. Arbeitgeber sind selbst verantwortlich für die Einhaltung des ArbZG.
+    Bei Fragen zur Anwendung einzelner Vorschriften sollte ein Fachanwalt für Arbeitsrecht hinzugezogen werden.
+  </div>
+
+</div>
+
+<script>
+  function toggle(id) {
+    document.getElementById(id).classList.toggle('open');
+  }
+  function setAll(open) {
+    document.querySelectorAll('.section').forEach(s => {
+      open ? s.classList.add('open') : s.classList.remove('open');
+    });
+  }
+</script>
 </body>
 </html>
