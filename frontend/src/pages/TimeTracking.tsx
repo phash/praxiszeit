@@ -22,6 +22,7 @@ interface TimeEntry {
   warnings: string[];
   is_sunday_or_holiday: boolean;
   is_night_work: boolean;
+  sunday_exception_reason?: string | null;
 }
 
 export default function TimeTracking() {
@@ -40,6 +41,7 @@ export default function TimeTracking() {
     end_time: '17:00',
     break_minutes: 0,
     note: '',
+    sunday_exception_reason: '',
   });
   const [errors, setErrors] = useState<{
     start_time?: string;
@@ -153,6 +155,9 @@ export default function TimeTracking() {
       if (saved.warnings?.includes('DAILY_HOURS_WARNING')) {
         toast.warning('Tagesarbeitszeit überschreitet 8 Stunden (§3 ArbZG)');
       }
+      if (saved.warnings?.includes('WEEKLY_HOURS_WARNING')) {
+        toast.warning('Wochenarbeitszeit überschreitet 48 Stunden (§14 ArbZG)');
+      }
       if (saved.warnings?.includes('SUNDAY_WORK')) {
         toast.warning('Achtung: Sonntagsarbeit – Ausnahmegrund nach §10 ArbZG dokumentieren');
       }
@@ -174,6 +179,7 @@ export default function TimeTracking() {
       end_time: entry.end_time ? entry.end_time.substring(0, 5) : '17:00',
       break_minutes: entry.break_minutes,
       note: entry.note || '',
+      sunday_exception_reason: entry.sunday_exception_reason || '',
     });
     setErrors({});
     setShowForm(true);
@@ -218,6 +224,7 @@ export default function TimeTracking() {
       end_time: '17:00',
       break_minutes: 0,
       note: '',
+      sunday_exception_reason: '',
     });
     setErrors({});
   };
@@ -385,6 +392,21 @@ export default function TimeTracking() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
             </div>
+            {(new Date(formData.date + 'T12:00:00').getDay() === 0 ||
+              (editingId && entries.find(e => e.id === editingId)?.is_sunday_or_holiday)) && (
+              <div className="md:col-span-2 lg:col-span-5">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ausnahmegrund (§10 ArbZG) <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.sunday_exception_reason}
+                  onChange={(e) => setFormData({ ...formData, sunday_exception_reason: e.target.value })}
+                  placeholder="z. B. Notdienst, Patientenversorgung (§10 Nr. 1 ArbZG)"
+                  className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 bg-amber-50"
+                />
+              </div>
+            )}
           </form>
         </div>
       )}

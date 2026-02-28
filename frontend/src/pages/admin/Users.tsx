@@ -20,6 +20,7 @@ interface User {
   work_days_per_week: number;
   suggested_vacation_days?: number;
   track_hours: boolean;
+  exempt_from_arbzg: boolean;
   use_daily_schedule: boolean;
   hours_monday: number | null;
   hours_tuesday: number | null;
@@ -64,6 +65,7 @@ export default function Users() {
     vacation_days: 30,
     work_days_per_week: 5,
     track_hours: true,
+    exempt_from_arbzg: false,
     use_daily_schedule: false,
     hours_monday: 8,
     hours_tuesday: 8,
@@ -167,6 +169,7 @@ export default function Users() {
       vacation_days: user.vacation_days,
       work_days_per_week: user.work_days_per_week || 5,
       track_hours: user.track_hours ?? true,
+      exempt_from_arbzg: user.exempt_from_arbzg ?? false,
       use_daily_schedule: user.use_daily_schedule ?? false,
       hours_monday: user.hours_monday ?? 8,
       hours_tuesday: user.hours_tuesday ?? 8,
@@ -266,6 +269,7 @@ export default function Users() {
       vacation_days: 30,
       work_days_per_week: 5,
       track_hours: true,
+      exempt_from_arbzg: false,
       use_daily_schedule: false,
       hours_monday: 8,
       hours_tuesday: 8,
@@ -557,6 +561,19 @@ export default function Users() {
                 />
                 <label htmlFor="track_hours" className="text-sm font-medium text-gray-700 cursor-pointer">
                   Stundenzählung aktiv (Soll-Stunden werden berechnet)
+                </label>
+              </div>
+
+              <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <input
+                  type="checkbox"
+                  id="exempt_from_arbzg"
+                  checked={formData.exempt_from_arbzg}
+                  onChange={(e) => setFormData({ ...formData, exempt_from_arbzg: e.target.checked })}
+                  className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                />
+                <label htmlFor="exempt_from_arbzg" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)
                 </label>
               </div>
 

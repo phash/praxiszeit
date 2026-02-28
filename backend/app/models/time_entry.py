@@ -19,6 +19,7 @@ class TimeEntry(Base):
     end_time = Column(Time, nullable=True)
     break_minutes = Column(Integer, default=0, nullable=False)
     note = Column(Text, nullable=True)
+    sunday_exception_reason = Column(Text, nullable=True)  # §10 ArbZG: reason for Sunday/holiday work
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

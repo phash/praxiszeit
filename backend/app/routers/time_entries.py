@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
 
 MAX_DAILY_HOURS_HARD = 10.0   # §3 ArbZG: absolute Obergrenze
 MAX_DAILY_HOURS_WARN = 8.0    # §3 ArbZG: Regelgrenze (Warnung)
+MAX_WEEKLY_HOURS_WARN = 48.0  # §14 ArbZG: Wöchentliche Höchstarbeitszeit (6-Monats-Schnitt)
 NIGHT_START = time(23, 0)
 NIGHT_END   = time(6, 0)
 
@@ -48,6 +49,41 @@ def _calculate_daily_net_hours(
 
     total = sum(net_h(e.start_time, e.end_time, e.break_minutes) for e in existing)
     total += net_h(start_time, end_time, break_minutes)
+
+
+def _calculate_weekly_net_hours(
+    db: Session,
+    user_id: UUIDType,
+    entry_date: date,
+    start_time: time,
+    end_time: time,
+    break_minutes: int,
+    exclude_entry_id=None,
+) -> float:
+    """Sum all net hours for the ISO calendar week containing entry_date, including the new/updated entry."""
+    from datetime import timedelta
+    iso = entry_date.isocalendar()
+    # Monday of that ISO week
+    monday = entry_date - timedelta(days=entry_date.weekday())
+    sunday = monday + timedelta(days=6)
+
+    query = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user_id,
+        TimeEntry.date >= monday,
+        TimeEntry.date <= sunday,
+        TimeEntry.end_time.isnot(None),
+    )
+    if exclude_entry_id:
+        query = query.filter(TimeEntry.id != exclude_entry_id)
+    existing = query.all()
+
+    def net_h(st: time, et: time, brk: int) -> float:
+        mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
+        return max(0.0, (mins - brk) / 60.0)
+
+    total = sum(net_h(e.start_time, e.end_time, e.break_minutes) for e in existing)
+    total += net_h(start_time, end_time, break_minutes)
+    return total
     return total
 
 
@@ -197,8 +233,9 @@ def clock_out(
 
     now = datetime.now()
     new_end_time = now.time().replace(second=0, microsecond=0)
+    exempt = current_user.exempt_from_arbzg
 
-    # §3 ArbZG: check daily hours before committing
+    # §3 ArbZG: check daily hours before committing – skipped for exempt users
     daily_hours = _calculate_daily_net_hours(
         db=db,
         user_id=current_user.id,
@@ -208,7 +245,7 @@ def clock_out(
         break_minutes=body.break_minutes,
         exclude_entry_id=open_entry.id,
     )
-    if daily_hours > MAX_DAILY_HOURS_HARD:
+    if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
         raise HTTPException(
             status_code=422,
             detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
@@ -223,12 +260,24 @@ def clock_out(
     db.refresh(open_entry)
 
     clock_out_warnings: list[str] = []
-    if daily_hours > MAX_DAILY_HOURS_WARN:
-        clock_out_warnings.append("DAILY_HOURS_WARNING")
-    if open_entry.date.weekday() == 6:
-        clock_out_warnings.append("SUNDAY_WORK")
-    if is_holiday(db, open_entry.date):
-        clock_out_warnings.append("HOLIDAY_WORK")
+    if not exempt:
+        if daily_hours > MAX_DAILY_HOURS_WARN:
+            clock_out_warnings.append("DAILY_HOURS_WARNING")
+        weekly_hours_out = _calculate_weekly_net_hours(
+            db=db,
+            user_id=current_user.id,
+            entry_date=open_entry.date,
+            start_time=open_entry.start_time,
+            end_time=new_end_time,
+            break_minutes=body.break_minutes,
+            exclude_entry_id=open_entry.id,
+        )
+        if weekly_hours_out > MAX_WEEKLY_HOURS_WARN:
+            clock_out_warnings.append("WEEKLY_HOURS_WARNING")
+        if open_entry.date.weekday() == 6:
+            clock_out_warnings.append("SUNDAY_WORK")
+        if is_holiday(db, open_entry.date):
+            clock_out_warnings.append("HOLIDAY_WORK")
 
     response = TimeEntryResponse.model_validate(open_entry)
     _enrich_response(response, open_entry, current_user, db, warnings=clock_out_warnings)
@@ -331,19 +380,22 @@ def create_time_entry(
             detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum"
         )
 
-    # Break validation (ArbZG §4)
-    break_error = validate_daily_break(
-        db=db,
-        user_id=current_user.id,
-        entry_date=entry_data.date,
-        start_time=entry_data.start_time,
-        end_time=entry_data.end_time,
-        break_minutes=entry_data.break_minutes,
-    )
-    if break_error:
-        raise HTTPException(status_code=400, detail=break_error)
+    exempt = current_user.exempt_from_arbzg
 
-    # §3 ArbZG: daily hours check
+    # Break validation (ArbZG §4) – skipped for exempt users
+    if not exempt:
+        break_error = validate_daily_break(
+            db=db,
+            user_id=current_user.id,
+            entry_date=entry_data.date,
+            start_time=entry_data.start_time,
+            end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes,
+        )
+        if break_error:
+            raise HTTPException(status_code=400, detail=break_error)
+
+    # §3 ArbZG: daily hours check – skipped for exempt users
     daily_hours = _calculate_daily_net_hours(
         db=db,
         user_id=current_user.id,
@@ -352,25 +404,34 @@ def create_time_entry(
         end_time=entry_data.end_time,
         break_minutes=entry_data.break_minutes,
     )
-    if daily_hours > MAX_DAILY_HOURS_HARD:
+    if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
         raise HTTPException(
             status_code=422,
             detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
         )
 
-    # Collect warnings
+    # Collect warnings (also skipped for exempt users)
     warnings: list[str] = []
-    if daily_hours > MAX_DAILY_HOURS_WARN:
-        warnings.append("DAILY_HOURS_WARNING")
-
-    # §9/10 ArbZG: weekend/holiday detection
-    weekday = entry_data.date.weekday()
-    is_sunday = weekday == 6
-    holiday = is_holiday(db, entry_data.date)
-    if is_sunday:
-        warnings.append("SUNDAY_WORK")
-    if holiday:
-        warnings.append("HOLIDAY_WORK")
+    if not exempt:
+        if daily_hours > MAX_DAILY_HOURS_WARN:
+            warnings.append("DAILY_HOURS_WARNING")
+        weekly_hours = _calculate_weekly_net_hours(
+            db=db,
+            user_id=current_user.id,
+            entry_date=entry_data.date,
+            start_time=entry_data.start_time,
+            end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes,
+        )
+        if weekly_hours > MAX_WEEKLY_HOURS_WARN:
+            warnings.append("WEEKLY_HOURS_WARNING")
+        weekday = entry_data.date.weekday()
+        is_sunday = weekday == 6
+        holiday = is_holiday(db, entry_data.date)
+        if is_sunday:
+            warnings.append("SUNDAY_WORK")
+        if holiday:
+            warnings.append("HOLIDAY_WORK")
 
     # Create entry
     entry = TimeEntry(
@@ -379,7 +440,8 @@ def create_time_entry(
         start_time=entry_data.start_time,
         end_time=entry_data.end_time,
         break_minutes=entry_data.break_minutes,
-        note=entry_data.note
+        note=entry_data.note,
+        sunday_exception_reason=entry_data.sunday_exception_reason,
     )
 
     db.add(entry)
@@ -424,8 +486,10 @@ def update_time_entry(
     if entry.end_time is not None and entry.end_time <= entry.start_time:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
-    # Break validation (ArbZG §4) - only if entry is complete
-    if entry.end_time is not None:
+    exempt = current_user.exempt_from_arbzg
+
+    # Break validation (ArbZG §4) – skipped for exempt users
+    if not exempt and entry.end_time is not None:
         break_error = validate_daily_break(
             db=db,
             user_id=entry.user_id,
@@ -438,8 +502,8 @@ def update_time_entry(
         if break_error:
             raise HTTPException(status_code=400, detail=break_error)
 
-    # §3 ArbZG: daily hours check (only when entry is complete)
-    if entry.end_time is not None:
+    # §3 ArbZG: daily hours check – skipped for exempt users
+    if not exempt and entry.end_time is not None:
         daily_hours = _calculate_daily_net_hours(
             db=db,
             user_id=entry.user_id,
@@ -459,7 +523,7 @@ def update_time_entry(
     db.refresh(entry)
 
     update_warnings: list[str] = []
-    if entry.end_time is not None:
+    if not exempt and entry.end_time is not None:
         saved_hours = _calculate_daily_net_hours(
             db=db,
             user_id=entry.user_id,
@@ -471,13 +535,25 @@ def update_time_entry(
         )
         if saved_hours > MAX_DAILY_HOURS_WARN:
             update_warnings.append("DAILY_HOURS_WARNING")
+        weekly = _calculate_weekly_net_hours(
+            db=db,
+            user_id=entry.user_id,
+            entry_date=entry.date,
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+            break_minutes=entry.break_minutes,
+            exclude_entry_id=None,
+        )
+        if weekly > MAX_WEEKLY_HOURS_WARN:
+            update_warnings.append("WEEKLY_HOURS_WARNING")
 
-    entry_weekday = entry.date.weekday()
-    if entry_weekday == 6:
-        update_warnings.append("SUNDAY_WORK")
-    entry_is_holiday = is_holiday(db, entry.date)
-    if entry_is_holiday:
-        update_warnings.append("HOLIDAY_WORK")
+    if not exempt:
+        entry_weekday = entry.date.weekday()
+        if entry_weekday == 6:
+            update_warnings.append("SUNDAY_WORK")
+        entry_is_holiday = is_holiday(db, entry.date)
+        if entry_is_holiday:
+            update_warnings.append("HOLIDAY_WORK")
 
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db, warnings=update_warnings)

@@ -44,6 +44,7 @@ class UserBase(BaseModel):
     hours_wednesday: Optional[float] = Field(None, ge=0, le=24)
     hours_thursday: Optional[float] = Field(None, ge=0, le=24)
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
+    exempt_from_arbzg: bool = False  # §18 ArbZG: leitende Angestellte
 
 
 class UserCreate(UserBase):
@@ -74,6 +75,7 @@ class UserUpdate(BaseModel):
     hours_wednesday: Optional[float] = Field(None, ge=0, le=24)
     hours_thursday: Optional[float] = Field(None, ge=0, le=24)
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
+    exempt_from_arbzg: Optional[bool] = None  # §18 ArbZG
 
 
 class UserResponse(UserBase):
@@ -81,6 +83,7 @@ class UserResponse(UserBase):
     role: UserRole
     is_active: bool
     is_hidden: bool = False
+    exempt_from_arbzg: bool = False  # §18 ArbZG
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None

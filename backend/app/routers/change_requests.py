@@ -7,6 +7,7 @@ from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, Change
 from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
 from app.services.break_validation_service import validate_daily_break
+from app.routers.time_entries import _calculate_daily_net_hours, MAX_DAILY_HOURS_HARD
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
 
@@ -83,6 +84,22 @@ def create_change_request(
         )
         if break_error:
             raise HTTPException(status_code=400, detail=break_error)
+
+        # §3 ArbZG: daily hours hard limit
+        daily_hours = _calculate_daily_net_hours(
+            db=db,
+            user_id=current_user.id,
+            entry_date=data.proposed_date,
+            start_time=data.proposed_start_time,
+            end_time=data.proposed_end_time,
+            break_minutes=data.proposed_break_minutes or 0,
+            exclude_entry_id=entry.id if entry else None,
+        )
+        if daily_hours > MAX_DAILY_HOURS_HARD:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+            )
 
     # Check for duplicate pending requests
     existing_pending = db.query(ChangeRequest).filter(

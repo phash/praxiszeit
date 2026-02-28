@@ -40,6 +40,40 @@ interface SundaySummary {
   non_compliant_count: number;
 }
 
+interface NightWorkEmployee {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  night_work_days: number;
+  is_nachtarbeitnehmer: boolean;
+  nachtarbeitnehmer_threshold: number;
+  by_month: { month: number; days: number }[];
+}
+
+interface NightWorkSummary {
+  year: number;
+  nachtarbeitnehmer_threshold: number;
+  employees: NightWorkEmployee[];
+  nachtarbeitnehmer_count: number;
+}
+
+interface CompensatoryRestEmployee {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  sunday_holiday_days_worked: number;
+  violations: { date: string; type: string; window_weeks: number }[];
+  violation_count: number;
+  compliant: boolean;
+}
+
+interface CompensatoryRest {
+  year: number;
+  employees: CompensatoryRestEmployee[];
+  total_violations: number;
+  non_compliant_count: number;
+}
+
 export default function Reports() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -58,6 +92,16 @@ export default function Reports() {
   const [sundayYear, setSundayYear] = useState(new Date().getFullYear());
   const [sundaySummary, setSundaySummary] = useState<SundaySummary | null>(null);
   const [sundayLoading, setSundayLoading] = useState(false);
+
+  // Night work summary (§6 ArbZG)
+  const [nightYear, setNightYear] = useState(new Date().getFullYear());
+  const [nightSummary, setNightSummary] = useState<NightWorkSummary | null>(null);
+  const [nightLoading, setNightLoading] = useState(false);
+
+  // Compensatory rest (§11 ArbZG – Ersatzruhetag)
+  const [compRestYear, setCompRestYear] = useState(new Date().getFullYear());
+  const [compRest, setCompRest] = useState<CompensatoryRest | null>(null);
+  const [compRestLoading, setCompRestLoading] = useState(false);
 
   const checkRestViolations = async () => {
     setRestLoading(true);
@@ -88,6 +132,36 @@ export default function Reports() {
       toast.error('Fehler beim Laden der Sonntagsauswertung');
     } finally {
       setSundayLoading(false);
+    }
+  };
+
+  const checkNightWork = async () => {
+    setNightLoading(true);
+    try {
+      const res = await apiClient.get(`/admin/reports/night-work-summary?year=${nightYear}`);
+      setNightSummary(res.data);
+      if (res.data.nachtarbeitnehmer_count === 0) {
+        toast.success('Keine Nachtarbeitnehmer (≥48 Nachtschichten) gefunden');
+      }
+    } catch {
+      toast.error('Fehler beim Laden der Nachtarbeits-Auswertung');
+    } finally {
+      setNightLoading(false);
+    }
+  };
+
+  const checkCompensatoryRest = async () => {
+    setCompRestLoading(true);
+    try {
+      const res = await apiClient.get(`/admin/reports/compensatory-rest?year=${compRestYear}`);
+      setCompRest(res.data);
+      if (res.data.total_violations === 0) {
+        toast.success('Alle Ersatzruhetag-Anforderungen (§11 ArbZG) sind erfüllt');
+      }
+    } catch {
+      toast.error('Fehler beim Laden der Ersatzruhetag-Prüfung');
+    } finally {
+      setCompRestLoading(false);
     }
   };
 
@@ -434,6 +508,130 @@ export default function Reports() {
         )}
       </div>
 
+      {/* Night Work Summary §6 ArbZG */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-3 mb-2">
+          <Clock className="text-indigo-500" size={24} />
+          <h2 className="text-xl font-semibold">Nachtarbeit §6 ArbZG</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Nachtzeit: 23:00–06:00 Uhr. Mitarbeitende mit ≥<strong>48 Nachtschichten/Jahr</strong> gelten als Nachtarbeitnehmer und haben Anspruch auf arbeitsmedizinische Untersuchung sowie Lohnausgleich.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
+            <input type="number" value={nightYear} onChange={e => setNightYear(parseInt(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2030" />
+          </div>
+          <button onClick={checkNightWork} disabled={nightLoading}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
+            <Clock size={18} />
+            <span>{nightLoading ? 'Prüfe...' : 'Auswerten'}</span>
+          </button>
+        </div>
+
+        {nightSummary !== null && (
+          <div>
+            <div className="mb-3 flex flex-wrap gap-3 text-sm text-gray-600">
+              <span>Jahr: <strong>{nightSummary.year}</strong></span>
+              <span>Schwellwert Nachtarbeitnehmer: <strong>≥{nightSummary.nachtarbeitnehmer_threshold} Tage</strong></span>
+              {nightSummary.nachtarbeitnehmer_count > 0 && (
+                <span className="text-amber-600 font-medium">
+                  ⚠ {nightSummary.nachtarbeitnehmer_count} Nachtarbeitnehmer
+                </span>
+              )}
+            </div>
+            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase">Mitarbeiter:in</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Nachtschichten</th>
+                  <th className="px-4 py-2 text-center text-xs text-gray-500 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {nightSummary.employees.map(emp => (
+                  <tr key={emp.user_id} className={`hover:bg-gray-50 ${emp.is_nachtarbeitnehmer ? 'bg-amber-50' : ''}`}>
+                    <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{emp.night_work_days}</td>
+                    <td className="px-4 py-2 text-center">
+                      {emp.is_nachtarbeitnehmer
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">⚠ Nachtarbeitnehmer</span>
+                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">✓ Unter Schwellwert</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Compensatory Rest §11 ArbZG */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-3 mb-2">
+          <AlertTriangle className="text-orange-500" size={24} />
+          <h2 className="text-xl font-semibold">Ersatzruhetage §11 ArbZG</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Nach <strong>Sonntagsarbeit</strong>: Ersatzruhetag innerhalb <strong>2 Wochen</strong>. Nach <strong>Feiertagsarbeit</strong>: Ersatzruhetag innerhalb <strong>8 Wochen</strong>.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
+            <input type="number" value={compRestYear} onChange={e => setCompRestYear(parseInt(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2030" />
+          </div>
+          <button onClick={checkCompensatoryRest} disabled={compRestLoading}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
+            <AlertTriangle size={18} />
+            <span>{compRestLoading ? 'Prüfe...' : 'Prüfen'}</span>
+          </button>
+        </div>
+
+        {compRest !== null && (
+          <div>
+            <div className="mb-3 flex flex-wrap gap-3 text-sm text-gray-600">
+              <span>Jahr: <strong>{compRest.year}</strong></span>
+              <span>Verstöße gesamt: <strong>{compRest.total_violations}</strong></span>
+              {compRest.non_compliant_count > 0 && (
+                <span className="text-red-600 font-medium">
+                  ⚠ {compRest.non_compliant_count} Mitarbeitende nicht konform
+                </span>
+              )}
+            </div>
+            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase">Mitarbeiter:in</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">So/FT gearbeitet</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Verstöße</th>
+                  <th className="px-4 py-2 text-center text-xs text-gray-500 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {compRest.employees.map(emp => (
+                  <tr key={emp.user_id} className={`hover:bg-gray-50 ${!emp.compliant ? 'bg-red-50' : ''}`}>
+                    <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{emp.sunday_holiday_days_worked}</td>
+                    <td className="px-4 py-2 text-right font-medium">
+                      <span className={emp.compliant ? 'text-green-700' : 'text-red-700'}>{emp.violation_count}</span>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {emp.compliant
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Additional Info */}
       <div className="bg-gray-50 rounded-xl border border-gray-200 p-6">
         <h3 className="font-semibold text-gray-900 mb-3">Hinweise</h3>
@@ -444,6 +642,7 @@ export default function Reports() {
           <li>• Abwesenheiten reduzieren das Soll entsprechend</li>
           <li>• Historische Stundenänderungen werden korrekt berücksichtigt</li>
           <li>• <strong>§16 ArbZG:</strong> Exportierte Berichte und Zeitaufzeichnungen sind mindestens <strong>2 Jahre aufzubewahren</strong></li>
+          <li>• Gesetzestext: <a href="https://www.gesetze-im-internet.de/arbzg/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">Arbeitszeitgesetz (ArbZG) auf gesetze-im-internet.de</a></li>
         </ul>
       </div>
     </div>
