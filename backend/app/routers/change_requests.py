@@ -7,7 +7,10 @@ from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, Change
 from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
 from app.services.break_validation_service import validate_daily_break
-from app.routers.time_entries import _calculate_daily_net_hours, MAX_DAILY_HOURS_HARD
+from app.routers.time_entries import (
+    _calculate_daily_net_hours, _is_night_work,
+    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN,
+)
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
 
@@ -144,7 +147,34 @@ def create_change_request(
     db.commit()
     db.refresh(cr)
 
-    return _enrich_response(cr, db)
+    response = _enrich_response(cr, db)
+
+    # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
+    if (
+        data.request_type in ("create", "update")
+        and data.proposed_start_time
+        and data.proposed_end_time
+    ):
+        daily_hours_check = _calculate_daily_net_hours(
+            db=db,
+            user_id=current_user.id,
+            entry_date=data.proposed_date,
+            start_time=data.proposed_start_time,
+            end_time=data.proposed_end_time,
+            break_minutes=data.proposed_break_minutes or 0,
+            exclude_entry_id=entry.id if entry else None,
+        )
+        if (
+            current_user.is_night_worker
+            and _is_night_work(data.proposed_start_time, data.proposed_end_time)
+            and daily_hours_check > MAX_NIGHT_WORKER_DAILY_WARN
+        ):
+            response.warnings.append(
+                f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours_check:.1f}h). "
+                "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+            )
+
+    return response
 
 
 @router.get("/", response_model=List[ChangeRequestResponse])

@@ -9,11 +9,11 @@
 
 | § | Thema | Status | Hinweis |
 |---|-------|--------|---------|
-| **§ 2** | Begriffsbestimmungen (Nachtarbeit) | ⚠️ Konservativ | `is_night_work` bei any Nachtzeit-Berührung (Gesetz: >2h) |
+| **§ 2** | Begriffsbestimmungen (Nachtarbeit) | ✅ Korrekt | `_is_night_work()` prüft minutengenau >2h Nachtzeit (§2 Abs. 4); `is_night_worker`-Flag auf User |
 | **§ 3** | Tages-Höchstarbeitszeit (8h/10h + 48h/Woche) | ✅ Vollständig | 6-Monats-Ausgleichszeitraum nicht getrackt |
 | **§ 4** | Pflichtpausen | ✅ Weitgehend | Pausen-Timing (6h-Kontinuität) nicht prüfbar |
 | **§ 5** | Mindestruhezeit (11h) | ✅ Vollständig | – |
-| **§ 6** | Nacht- und Schichtarbeit | ⚠️ Teilweise | 4 Lücken (8h-Limit, Untersuchung, Transferrecht, Zuschlag) |
+| **§ 6** | Nacht- und Schichtarbeit | ⚠️ Teilweise | 3 Lücken (Untersuchung, Transferrecht, Zuschlag) – 8h-Limit jetzt ✅ |
 | **§§ 9/10** | Sonn-/Feiertagsruhe | ✅ Vollständig | – |
 | **§ 11** | Ausgleich Sonn-/Feiertagsarbeit | ✅ Vollständig | – |
 | **§ 14** | Außergewöhnliche Fälle | ℹ️ Nicht anwendbar | Notfall-Ausnahme, kein Regelfall; 48h/Woche aus §3 |
@@ -34,7 +34,7 @@
 | Anforderung | Status | Details |
 |-------------|--------|---------|
 | Nachtzeit-Fenster (23–6 Uhr) | ✅ | Korrekt in `_is_night_work()` und `_is_night_work()` in `time_entries.py` |
-| Nachtarbeit-Schwellwert >2h | ⚠️ | `is_night_work`-Flag wird bei **jeder** Nachtzeit-Berührung gesetzt, unabhängig der Dauer; Gesetz verlangt >2h – Implementierung ist konservativer (over-flagging), kein Compliance-Risiko |
+| Nachtarbeit-Schwellwert >2h | ✅ | `_is_night_work()` prüft minutengenau ob >2h (120 min) in Nachtzeit (23:00–06:00) fallen (§2 Abs. 4 ArbZG) |
 | Nachtarbeitnehmer-Definition (≥48 Tage) | ✅ | Admin-Report `/api/admin/reports/night-work-summary` verwendet korrekt ≥48-Tage-Schwellwert |
 
 **Bewertung:** Konservative Implementierung (mehr Warnungen als gesetzlich nötig), kein Compliance-Risiko.
@@ -127,7 +127,7 @@
 | `is_night_work` Flag in API | ✅ | In allen `TimeEntryResponse`-Endpoints zurückgegeben |
 | „Nacht"-Badge im Frontend | ✅ | Indigo-Badge in `TimeTracking.tsx` |
 | Admin-Report: Nachtarbeit-Statistik | ✅ | `GET /api/admin/reports/night-work-summary` – Nachtschichten/MA, Nachtarbeitnehmer-Markierung (≥48 Tage/Jahr), Monatsaufschlüsselung |
-| Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2) | ❌ | Alle Mitarbeiter haben dasselbe 10h Hard-Limit; kein separates Nachtarbeitnehmer-Flag auf Benutzerebene |
+| Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2) | ✅ | `is_night_worker`-Flag auf User; Warnung bei >8h Nachtarbeit in allen 6 Validierungspfaden |
 | Kürzerer 1-Monats-Ausgleichszeitraum für Nachtarbeitnehmer (Abs. 2) | ❌ | Nicht implementiert (§3 verwendet 6-Monats-Fenster; Nachtarbeitnehmer haben strengeren 1-Monat) |
 | Tracking arbeitsmedizinischer Untersuchungen (Abs. 3) | ❌ | HR-Verwaltungsaufgabe – sinnvoller in separatem HR-System |
 | Recht auf Wechsel Tagesarbeitsplatz (Abs. 4) | ❌ | Arbeitgeber-Pflicht, nicht im System abbildbar; Dokumentation manuell |
@@ -275,8 +275,7 @@
 |-------------|---|-----------|------------|
 | 6-Monats-Ausgleichszeitraum | §3 | Niedrig | Rollierender Durchschnitt technisch komplex; bei typischen Praxiszeiten selten relevant |
 | Pausen-Timing (max. 6h am Stück) | §4 Satz 3 | Niedrig | Start/Ende der Pause nicht erfasst; für geregelte Praxiszeiten kein Risiko |
-| 8h-Grenze für Nachtarbeitnehmer | §6 Abs. 2 | Niedrig | Erfordert Nachtarbeitnehmer-Flag; Nachtarbeit in Arztpraxen selten |
-| Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer | §6 Abs. 2 | Niedrig | Gilt nur für Nachtarbeitnehmer mit >48 Nächten; selten in Arztpraxen |
+| Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer | §6 Abs. 2 | Niedrig | Gilt nur für Nachtarbeitnehmer mit >48 Nächten; selten in Arztpraxen (Warnung bereits integriert) |
 | Arbeitsmedizinische Untersuchungen | §6 Abs. 3 | Mittel | HR-Pflicht; sollte in Personalakte dokumentiert werden |
 | Recht auf Tagesarbeitsplatz | §6 Abs. 4 | Niedrig | Arbeitgeber-Pflicht bei Nachweis; nicht systemisch abbildbar |
 | Lohnzuschlag / Freizeitausgleich Nachtarbeit | §6 Abs. 5 | Mittel | Lohnbuchhaltungsaufgabe; Nachweispflicht beim Arbeitgeber |

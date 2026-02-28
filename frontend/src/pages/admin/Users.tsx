@@ -21,6 +21,7 @@ interface User {
   suggested_vacation_days?: number;
   track_hours: boolean;
   exempt_from_arbzg: boolean;
+  is_night_worker: boolean;
   use_daily_schedule: boolean;
   hours_monday: number | null;
   hours_tuesday: number | null;
@@ -66,6 +67,7 @@ export default function Users() {
     work_days_per_week: 5,
     track_hours: true,
     exempt_from_arbzg: false,
+    is_night_worker: false,
     use_daily_schedule: false,
     hours_monday: 8,
     hours_tuesday: 8,
@@ -170,6 +172,7 @@ export default function Users() {
       work_days_per_week: user.work_days_per_week || 5,
       track_hours: user.track_hours ?? true,
       exempt_from_arbzg: user.exempt_from_arbzg ?? false,
+      is_night_worker: user.is_night_worker ?? false,
       use_daily_schedule: user.use_daily_schedule ?? false,
       hours_monday: user.hours_monday ?? 8,
       hours_tuesday: user.hours_tuesday ?? 8,
@@ -270,6 +273,7 @@ export default function Users() {
       work_days_per_week: 5,
       track_hours: true,
       exempt_from_arbzg: false,
+      is_night_worker: false,
       use_daily_schedule: false,
       hours_monday: 8,
       hours_tuesday: 8,
@@ -584,6 +588,19 @@ export default function Users() {
                 />
                 <label htmlFor="exempt_from_arbzg" className="text-sm font-medium text-gray-700 cursor-pointer">
                   ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)
+                </label>
+              </div>
+
+              <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <input
+                  type="checkbox"
+                  id="is_night_worker"
+                  checked={formData.is_night_worker ?? false}
+                  onChange={(e) => setFormData({ ...formData, is_night_worker: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
                 </label>
               </div>
 
