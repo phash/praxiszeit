@@ -54,3 +54,7 @@ ssl/*.pem
 *.db
 *.sqlite
 *.sqlite3
+
+# Tools
+.serena/
+import_celine.py
