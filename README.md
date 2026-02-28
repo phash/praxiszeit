@@ -30,13 +30,27 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 - ✅ **Änderungsanträge** genehmigen/ablehnen
 - ✅ **Fehler-Monitoring** (Backend-Fehler mit Status und GitHub-Integration)
 - ✅ **Änderungsprotokoll** (Audit-Log aller Systemaktionen)
+- ✅ **ArbZG-Compliance-Reports**: Ruhezeitverstöße (§5), Sonntagsarbeit (§11), Nachtarbeit (§6), Ersatzruhetag-Tracking (§11)
+
+### ArbZG-Compliance (§3–§18)
+- ⚖️ **§3**: 8h-Warnung + 10h-Hard-Stop an allen Eingabepfaden (inkl. Admin-Direkteintrag, Änderungsanträge)
+- ⚖️ **§4**: Pflichtpause-Prüfung (>6h→30min, >9h→45min) an allen Eingabepfaden
+- ⚖️ **§5**: 11h-Mindestruhezeit-Prüfung mit Admin-Report
+- ⚖️ **§6**: Nachtarbeit-Erkennung (23–6 Uhr), Badge im Frontend, Admin-Report mit Nachtarbeitnehmer-Schwellwert (≥48 Tage/Jahr)
+- ⚖️ **§9/10**: Sonn-/Feiertagserkennung, Warnungen, optionales Ausnahmegrund-Feld (`sunday_exception_reason`)
+- ⚖️ **§11**: 15-freie-Sonntage-Report + Ersatzruhetag-Tracking (2/8 Wochen)
+- ⚖️ **§14**: 48h-Wochenarbeitszeit-Warnung
+- ⚖️ **§16**: Excel-Export, 2-Jahres-Retention-Dokumentation, Link zum Gesetzestext
+- ⚖️ **§18**: `exempt_from_arbzg`-Flag für leitende Angestellte (Chefärzte, Praxisinhaber)
 
 ### Weitere Features
 - 📱 **PWA** - Installierbar als App auf Smartphone und Desktop
 - 🗓️ **Bayerischer Feiertagskalender** (automatisch berücksichtigt)
 - 📅 **Wochenenden** automatisch ausschließen bei Zeiträumen
 - 📊 **Historische Stundenänderungen** werden korrekt berechnet
-- 🎨 **Responsive Design** (Desktop & Mobile)
+- 🎨 **Responsive Design** – Hamburger-Menü, Card-Layouts auf Mobile für alle Tabellen
+- ♿ **Barrierefreiheit (A11y)** – ARIA-Rollen, FocusTrap, Keyboard-Navigation, screenreader-optimiert
+- 🔔 **Toast-Notifications** – Styled Benachrichtigungen statt browser-native alert/confirm
 - ❤️ **Health Check** (`/api/health`) mit DB-Connectivity-Test
 
 ## Technologie-Stack
@@ -132,7 +146,7 @@ Die Stempeluhr erscheint oben auf dem Dashboard und ermöglicht schnelles Ein-/A
 
 - **users** - Benutzer mit Rollen, Wochenstunden, Urlaubsanspruch, Kalenderfarbe, Tagesplanung
 - **working_hours_changes** - Historie von Stundenänderungen
-- **time_entries** - Zeiteinträge (Start, Ende nullable für Stempeluhr, Pausen)
+- **time_entries** - Zeiteinträge (Start, Ende nullable für Stempeluhr, Pausen, `sunday_exception_reason` §10 ArbZG)
 - **absences** - Abwesenheiten mit Typ und optional Zeitraum
 - **public_holidays** - Bayerische Feiertage
 - **change_requests** - Änderungsanträge für vergangene Einträge
@@ -168,6 +182,8 @@ docker-compose exec backend alembic revision --autogenerate -m "description"
 - `012` - Add absence_type_other_label
 - `013` - Add daily schedule columns to users (use_daily_schedule, hours_monday–friday)
 - `014` - Add error_logs table
+- `015` - Add token_version to users (JWT revocation)
+- `016` - Add sunday_exception_reason to time_entries + exempt_from_arbzg to users (§10/§18 ArbZG)
 
 ## Entwicklung
 
@@ -237,6 +253,10 @@ Die vollständige API-Dokumentation ist verfügbar unter:
 - `GET /api/admin/reports/export?month=YYYY-MM` - Monatsexport Excel
 - `GET /api/admin/reports/export-yearly?year=YYYY` - Jahresexport detailliert
 - `GET /api/admin/reports/export-yearly-classic?year=YYYY` - Jahresexport classic
+- `GET /api/admin/reports/rest-time-violations?year=YYYY` - Ruhezeitverstöße §5 ArbZG
+- `GET /api/admin/reports/sunday-summary?year=YYYY` - Sonntagsarbeit §11 ArbZG
+- `GET /api/admin/reports/night-work-summary?year=YYYY` - Nachtarbeit §6 ArbZG
+- `GET /api/admin/reports/compensatory-rest?year=YYYY` - Ersatzruhetag-Tracking §11 ArbZG
 
 **Dashboard:**
 - `GET /api/dashboard` - Dashboard-Daten
