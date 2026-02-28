@@ -43,9 +43,12 @@ specs/
 │   ├── dsfa.md             # Datenschutz-Folgenabschätzung (Art. 35)
 │   ├── verarbeitungsverzeichnis.md  # Verarbeitungsverzeichnis (Art. 30)
 │   └── vier-augen-prinzip.md        # 4-Augen-Prinzip Richtlinie
-└── arbzg/                  # Arbeitszeitgesetz-Compliance
-    ├── arbzg-compliance.html  # ArbZG-Prüfbericht
-    └── arbzg-compliance.md   # ArbZG-Implementierungsdokumentation
+├── arbzg/                  # Arbeitszeitgesetz-Compliance
+│   ├── arbzg-compliance.html  # ArbZG-Prüfbericht
+│   └── arbzg-compliance.md   # ArbZG-Implementierungsdokumentation
+└── security/               # Security-Audit-Berichte
+    ├── security-audit-report-initial.html    # Erster Audit-Bericht
+    └── security-audit-report-2026-02-28.html # Finaler Bericht (alle 23 Findings behoben)
 ```
 
 ---

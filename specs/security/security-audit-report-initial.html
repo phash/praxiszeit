@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security Audit Report – PraxisZeit 2026</title>
+<style>
+  :root {
+    --critical: #dc2626;
+    --critical-bg: #fef2f2;
+    --critical-border: #fca5a5;
+    --high: #ea580c;
+    --high-bg: #fff7ed;
+    --high-border: #fdba74;
+    --medium: #ca8a04;
+    --medium-bg: #fefce8;
+    --medium-border: #fde047;
+    --low: #2563eb;
+    --low-bg: #eff6ff;
+    --low-border: #93c5fd;
+    --info: #6b7280;
+    --info-bg: #f9fafb;
+    --info-border: #d1d5db;
+    --positive: #16a34a;
+    --positive-bg: #f0fdf4;
+    --positive-border: #86efac;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #1f2937;
+    background: #f8fafc;
+  }
+
+  .page-header {
+    background: linear-gradient(135deg, #1e40af 0%, #1d4ed8 50%, #2563eb 100%);
+    color: white;
+    padding: 40px 60px;
+    border-bottom: 4px solid #1e3a8a;
+  }
+
+  .page-header h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; }
+  .page-header .subtitle { font-size: 1rem; opacity: 0.85; }
+  .page-header .meta { margin-top: 20px; display: flex; gap: 40px; font-size: 0.85rem; opacity: 0.8; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 40px 60px; }
+
+  nav {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  nav h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #374151; }
+  nav ul { list-style: none; columns: 2; gap: 8px; }
+  nav ul li { margin-bottom: 4px; }
+  nav ul li a { color: #2563eb; text-decoration: none; font-size: 0.875rem; }
+  nav ul li a:hover { text-decoration: underline; }
+
+  section { margin-bottom: 48px; }
+  h2.section-title {
+    font-size: 1.4rem; font-weight: 700; color: #111827;
+    border-bottom: 3px solid #2563eb; padding-bottom: 8px; margin-bottom: 24px;
+  }
+  h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; }
+
+  /* Executive Summary Cards */
+  .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 32px; }
+  .summary-card {
+    text-align: center; padding: 20px 16px; border-radius: 8px;
+    border: 2px solid; font-weight: 600;
+  }
+  .summary-card .count { font-size: 2.5rem; font-weight: 800; line-height: 1; }
+  .summary-card .label { font-size: 0.75rem; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .summary-card.critical { background: var(--critical-bg); border-color: var(--critical); color: var(--critical); }
+  .summary-card.high { background: var(--high-bg); border-color: var(--high); color: var(--high); }
+  .summary-card.medium { background: var(--medium-bg); border-color: var(--medium); color: var(--medium); }
+  .summary-card.low { background: var(--low-bg); border-color: var(--low); color: var(--low); }
+  .summary-card.info { background: var(--info-bg); border-color: var(--info); color: var(--info); }
+
+  .risk-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    vertical-align: middle;
+  }
+  .risk-badge.critical { background: var(--critical); color: white; }
+  .risk-badge.high { background: var(--high); color: white; }
+  .risk-badge.medium { background: var(--medium); color: white; }
+  .risk-badge.low { background: var(--low); color: white; }
+  .risk-badge.info { background: var(--info); color: white; }
+
+  /* Finding Cards */
+  .finding {
+    border: 1px solid; border-radius: 8px; margin-bottom: 24px;
+    overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .finding.critical { border-color: var(--critical-border); background: white; }
+  .finding.high { border-color: var(--high-border); background: white; }
+  .finding.medium { border-color: var(--medium-border); background: white; }
+  .finding.low { border-color: var(--low-border); background: white; }
+  .finding.info { border-color: var(--info-border); background: white; }
+
+  .finding-header {
+    padding: 14px 20px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid;
+  }
+  .finding.critical .finding-header { background: var(--critical-bg); border-color: var(--critical-border); }
+  .finding.high .finding-header { background: var(--high-bg); border-color: var(--high-border); }
+  .finding.medium .finding-header { background: var(--medium-bg); border-color: var(--medium-border); }
+  .finding.low .finding-header { background: var(--low-bg); border-color: var(--low-border); }
+  .finding.info .finding-header { background: var(--info-bg); border-color: var(--info-border); }
+
+  .finding-header .finding-id { font-size: 0.75rem; font-weight: 700; color: #6b7280; min-width: 45px; }
+  .finding-header .finding-title { font-size: 1rem; font-weight: 600; color: #111827; flex: 1; }
+
+  .finding-body { padding: 20px; }
+  .finding-body dl { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; }
+  .finding-body dt { font-weight: 600; color: #374151; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 2px; }
+  .finding-body dd { color: #1f2937; }
+
+  pre {
+    background: #1e293b; color: #e2e8f0; padding: 14px 16px;
+    border-radius: 6px; font-family: 'Courier New', monospace; font-size: 0.8rem;
+    overflow-x: auto; margin: 8px 0; white-space: pre-wrap; word-break: break-all;
+    border: 1px solid #334155;
+  }
+  code {
+    background: #f1f5f9; color: #e11d48; padding: 1px 5px;
+    border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.8rem;
+  }
+
+  .separator { border: none; border-top: 1px solid #e5e7eb; margin: 16px 0; }
+
+  /* OWASP Matrix */
+  .owasp-table { width: 100%; border-collapse: collapse; }
+  .owasp-table th, .owasp-table td { padding: 10px 14px; border: 1px solid #e5e7eb; text-align: left; font-size: 0.85rem; }
+  .owasp-table th { background: #1e40af; color: white; font-weight: 600; }
+  .owasp-table tr:nth-child(even) { background: #f9fafb; }
+  .covered { color: #16a34a; font-weight: 600; }
+  .partial { color: #ca8a04; font-weight: 600; }
+  .not-covered { color: #dc2626; font-weight: 600; }
+
+  /* Positive controls */
+  .positive-list { list-style: none; }
+  .positive-list li { padding: 8px 0; border-bottom: 1px solid #e5e7eb; display: flex; align-items: flex-start; gap: 10px; font-size: 0.875rem; }
+  .positive-list li::before { content: ""; display: inline-block; width: 18px; height: 18px; min-width: 18px; background: var(--positive); border-radius: 50%; }
+
+  /* Priority table */
+  .priority-table { width: 100%; border-collapse: collapse; }
+  .priority-table th, .priority-table td { padding: 10px 14px; border: 1px solid #e5e7eb; font-size: 0.875rem; }
+  .priority-table th { background: #374151; color: white; font-weight: 600; }
+  .priority-table tr:nth-child(even) { background: #f9fafb; }
+
+  /* Appendix file list */
+  .file-list { columns: 2; list-style: none; }
+  .file-list li { font-family: monospace; font-size: 0.8rem; color: #374151; padding: 2px 0; }
+  .file-list li::before { content: "- "; color: #9ca3af; }
+
+  .callout {
+    padding: 12px 16px; border-radius: 6px; margin: 12px 0;
+    border-left: 4px solid; font-size: 0.875rem;
+  }
+  .callout.warning { background: #fff7ed; border-color: #ea580c; color: #7c2d12; }
+  .callout.info { background: #eff6ff; border-color: #2563eb; color: #1e3a8a; }
+  .callout.danger { background: #fef2f2; border-color: #dc2626; color: #7f1d1d; }
+
+  footer { background: #1f2937; color: #9ca3af; padding: 24px 60px; font-size: 0.8rem; margin-top: 48px; }
+  footer strong { color: white; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Security Audit Report – PraxisZeit</h1>
+  <div class="subtitle">Vollstaendiger statischer Code- und Konfigurationsaudit der Zeiterfassungsanwendung</div>
+  <div class="meta">
+    <span><strong>Datum:</strong> 2026-02-28</span>
+    <span><strong>Auditor:</strong> Security Auditor Agent (Claude Sonnet 4.6)</span>
+    <span><strong>Scope:</strong> PraxisZeit v1.0 – Gesamtanwendung</span>
+    <span><strong>Methodik:</strong> OWASP Top 10 2021, statische Codeanalyse</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Navigation -->
+  <nav id="top">
+    <h2>Inhaltsverzeichnis</h2>
+    <ul>
+      <li><a href="#executive-summary">1. Executive Summary</a></li>
+      <li><a href="#methodology">2. Methodik &amp; Scope</a></li>
+      <li><a href="#findings">3. Sicherheitsbefunde</a></li>
+      <li><a href="#positive">4. Positive Sicherheitskontrollen</a></li>
+      <li><a href="#priority">5. Massnahmen-Priorisierung</a></li>
+      <li><a href="#owasp">6. OWASP Top 10 Coverage-Matrix</a></li>
+      <li><a href="#appendix">7. Anhang: Geprufte Dateien</a></li>
+    </ul>
+  </nav>
+
+  <!-- Section 1: Executive Summary -->
+  <section id="executive-summary">
+    <h2 class="section-title">1. Executive Summary</h2>
+
+    <div class="summary-grid">
+      <div class="summary-card critical">
+        <div class="count">1</div>
+        <div class="label">Critical</div>
+      </div>
+      <div class="summary-card high">
+        <div class="count">3</div>
+        <div class="label">High</div>
+      </div>
+      <div class="summary-card medium">
+        <div class="count">6</div>
+        <div class="label">Medium</div>
+      </div>
+      <div class="summary-card low">
+        <div class="count">5</div>
+        <div class="label">Low</div>
+      </div>
+      <div class="summary-card info">
+        <div class="count">4</div>
+        <div class="label">Info</div>
+      </div>
+    </div>
+
+    <p>Die PraxisZeit-Anwendung weist eine insgesamt <strong>solide Sicherheitsarchitektur</strong> auf, die viele Best Practices korrekt umsetzt: JWT-Token-Revokation, bcrypt-Passwortspeicherung, Rate-Limiting, nicht-root-Docker-Container und Security-Header. Jedoch wurden bei diesem Audit <strong>19 Befunde</strong> identifiziert, darunter ein kritisches Problem mit dem produktiv eingecheckten <code>.env</code>-File, das reale Credentials exponiert.</p>
+
+    <p style="margin-top:12px;">Die schwerwiegendsten Befunde betreffen: (1) die produktive <code>.env</code>-Datei mit echten Zugangsdaten im Dateisystem, (2) die Verwendung von <code>HS256</code> statt asymmetrischer JWT-Signaturen, (3) fehlende HTTPS-Erzwingung im Default-Setup, (4) schwache Validierung von E-Mail-Feldern im Profil-Update-Endpoint und (5) potenzielle Information-Disclosure in Fehlermeldungen. Die Anwendung ist bei konsequenter Anwendung der Gegenmassnahmen fuer den produktiven Einsatz im lokalen Netzwerk geeignet – eine Internet-Exposition erfordert zwingend die Behebung der Critical- und High-Befunde.</p>
+
+    <div class="callout danger" style="margin-top:20px;">
+      <strong>Wichtig:</strong> Die Datei <code>praxiszeit/.env</code> enthaelt echte Datenbankpasswoerter und den Admin-Passwort-Hash. Diese Datei ist im Arbeitsverzeichnis prsaent. Es muss sichergestellt werden, dass diese Datei niemals in ein Git-Repository eingecheckt wird.
+    </div>
+  </section>
+
+  <!-- Section 2: Methodology -->
+  <section id="methodology">
+    <h2 class="section-title">2. Methodik &amp; Scope</h2>
+    <h3>Vorgehensweise</h3>
+    <p>Der Audit erfolgte in 7 Phasen gemaess der definierten Audit-Methodik:</p>
+    <ul style="margin: 12px 0 0 20px; font-size:0.875rem; line-height:2;">
+      <li><strong>Phase 1 – Reconnaissance:</strong> Codebase-Exploration via PindeX, Ermittlung aller API-Endpunkte, Einstiegspunkte und Datenflueffe</li>
+      <li><strong>Phase 2 – Auth &amp; Authorization:</strong> JWT-Implementierung, Token-Revokation, RBAC, Rate-Limiting, Passwortvalidierung</li>
+      <li><strong>Phase 3 – Input Validation &amp; Injection:</strong> SQL-Injection, XSS, Path-Traversal, Command-Injection, Pydantic-Schemas</li>
+      <li><strong>Phase 4 – Data Security:</strong> Passwortspeicherung, Secrets, Logging, Error-Handling, Daten-Retention</li>
+      <li><strong>Phase 5 – API Security:</strong> CORS, Rate-Limiting, Mass-Assignment, HTTP-Methoden, Content-Type</li>
+      <li><strong>Phase 6 – Infrastructure:</strong> Docker, Nginx, Secrets, Abhaengigkeiten</li>
+      <li><strong>Phase 7 – Business Logic:</strong> IDOR, ArbZG-Umgehung, Change-Request-State-Machine, Export-Scoping</li>
+    </ul>
+
+    <h3 style="margin-top:20px;">Scope</h3>
+    <ul style="margin: 0 0 0 20px; font-size:0.875rem; line-height:2;">
+      <li>Backend: FastAPI (Python 3.12), alle Router, Services, Middleware, Models</li>
+      <li>Frontend: React 18 + TypeScript, API-Client, Auth-Store, Routing</li>
+      <li>Infrastruktur: Docker Compose, Nginx, Prometheus, Grafana</li>
+      <li>Konfiguration: <code>.env</code>, <code>docker-compose.yml</code>, Nginx-Config</li>
+      <li>Abhaengigkeiten: <code>requirements.txt</code>, <code>package.json</code></li>
+    </ul>
+
+    <h3 style="margin-top:20px;">Nicht im Scope</h3>
+    <p style="font-size:0.875rem;">Penetrationstest (dynamisch), Betriebssystem-Haertung, Netzwerk-Infrastruktur ausserhalb Docker, PostgreSQL-Konfiguration (ausser Verbindungsparamter).</p>
+  </section>
+
+  <!-- Section 3: Findings -->
+  <section id="findings">
+    <h2 class="section-title">3. Sicherheitsbefunde</h2>
+
+    <!-- ===================== CRITICAL ===================== -->
+    <h3 id="f01" style="margin-bottom:8px; color:var(--critical);">CRITICAL</h3>
+
+    <div class="finding critical">
+      <div class="finding-header">
+        <span class="finding-id">F-01</span>
+        <span class="finding-title">Produktive .env-Datei mit Klartext-Credentials im Dateisystem</span>
+        <span class="risk-badge critical">Critical</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 9.1 (AV:L/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/.env</code> (Zeilen 3, 7, 8, 15, 20)</dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Datei <code>.env</code> existiert im Projekt-Arbeitsverzeichnis und enthaelt produktive Credentials im Klartext: Datenbankpasswort, SECRET_KEY, Admin-Passwort und Grafana-Passwort. Obwohl <code>.gitignore</code> die Datei ausschliesst, stellt ihre blosse Existenz auf einem Server ein kritisches Risiko dar, wenn der Verzeichnisbaum auch nur einem weiteren Benutzer zugaenglich ist oder bei versehentlichem Commit.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Vollstaendige Kompromittierung: Datenbankzugriff, Admin-Login, Token-Faelschung (SECRET_KEY), Grafana-Zugriff.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# praxiszeit/.env
+POSTGRES_PASSWORD=praxiszeit2025!
+SECRET_KEY=89de4beeb157a47631d6f7161dcb5fac2a06ff8caf12a9e2e9d31392a2ec0ad1...
+DATABASE_URL=postgresql://praxiszeit:praxiszeit2025!@db:5432/praxiszeit
+ADMIN_PASSWORD=Admin2025!
+GRAFANA_ADMIN_PASSWORD=pDvGBiP1hNNzjED_Hn8HOw
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            1. Alle Secrets sofort rotieren (DB-Passwort, SECRET_KEY, Admin-Passwort, Grafana-Passwort).<br>
+            2. Verifizieren, dass <code>.env</code> nicht in Git-History vorhanden ist (<code>git log --all --full-history -- .env</code>).<br>
+            3. In Produktionsumgebungen Docker-Secrets oder einen Secrets-Manager (HashiCorp Vault, AWS Secrets Manager) verwenden.<br>
+            4. Pre-commit-Hook hinzufuegen, der versehentliches Committen von <code>.env</code>-Dateien verhindert.
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-256, OWASP A05:2021 Security Misconfiguration, OWASP A02:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- ===================== HIGH ===================== -->
+    <h3 id="f02" style="margin-bottom:8px; color:var(--high); margin-top:32px;">HIGH</h3>
+
+    <div class="finding high">
+      <div class="finding-header">
+        <span class="finding-id">F-02</span>
+        <span class="finding-title">JWT: HS256 (symmetrisch) statt RS256/ES256 (asymmetrisch)</span>
+        <span class="risk-badge high">High</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 7.4 (AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/services/auth_service.py:11</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Anwendung verwendet <code>HS256</code> (HMAC-SHA256) fuer JWT-Signaturen. Der gleiche <code>SECRET_KEY</code>, der zum Signieren verwendet wird, wird auch zur Verifikation benoetigt. Wenn der SECRET_KEY geleakt wird (z.B. durch eine andere Schwachstelle), koennen Angreifer beliebige JWTs erzeugen und sich als Admin authentifizieren. Bei asymmetrischen Verfahren (RS256/ES256) wuerde ein geleakter Public-Key allein keine Token-Faelschung ermoeglichen.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Bei Offenlegung des SECRET_KEY: vollstaendige Authentifizierungs-Umgehung fuer alle Benutzer.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# auth_service.py:11
+ALGORITHM = "HS256"
+
+def create_access_token(user_id: str, role: str, token_version: int = 0) -> str:
+    ...
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            Migration zu RS256 oder ES256: RSA/EC-Schluesselpaar generieren, Private-Key nur im Backend, Public-Key koennte bei Bedarf publiziert werden. Fuer eine single-service Anwendung ist HS256 akzeptabel, wenn der SECRET_KEY stark ist und sicher verwaltet wird (was durch F-01 beeintraechtigt ist). Prioritaet: zusammen mit F-01 angehen.
+<pre>
+# Empfehlung: RS256 Implementierung
+from jose import jwt
+# Private key zum Signieren
+jwt.encode(payload, private_key, algorithm="RS256")
+# Public key zur Verifikation
+jwt.decode(token, public_key, algorithms=["RS256"])
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-327, OWASP A02:2021, requirements.txt:6 (python-jose Maintenance-Hinweis beachten)</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding high">
+      <div class="finding-header">
+        <span class="finding-id">F-03</span>
+        <span class="finding-title">Kein HTTPS im Default-Setup – Credentials im Klartext uebertragbar</span>
+        <span class="risk-badge high">High</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/docker-compose.yml</code>, <code>praxiszeit/frontend/nginx.conf</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der Standard-Deployment-Stack (<code>docker-compose.yml</code>) konfiguriert ausschliesslich HTTP (Port 80). JWT-Tokens, Passwoerter und alle sensiblen Daten werden ueber das Netzwerk unverschluesselt uebertragen. Das gilt auch fuer das Intranet/lokale Netzwerk. Der SSL-Override (<code>docker-compose.ssl.yml</code>) existiert, ist aber optional und nicht im Default aktiviert.
+            Ausserdem: Der Backend-Port 8000 ist NICHT direkt exponiert (korrekt), aber der API-Zugriff ueber HTTP an Port 80 reicht bei einem LAN-Angreifer aus, um Tokens zu sniffen.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Network-Sniffing ermoeglicht Token-Diebstahl und Passswort-Abhoerung im lokalen Netzwerk. Bei Internet-Exposition: triviales Abfangen aller Credentials.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# docker-compose.yml
+frontend:
+  ports:
+    - "80:80"   # Nur HTTP, kein 443
+
+# nginx.conf
+server {
+    listen 80;  # Kein HTTPS, kein redirect auf 443
+    # Kein HSTS-Header vorhanden
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            1. SSL-Zertifikat beschaffen (Let's Encrypt, selbstsigniert fuer interne Nutzung).<br>
+            2. <code>docker-compose.ssl.yml</code> als Standard verwenden oder in <code>docker-compose.yml</code> integrieren.<br>
+            3. HTTP-zu-HTTPS-Redirect in Nginx konfigurieren:<br>
+<pre>
+server {
+    listen 80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    ...
+}
+</pre>
+            4. HSTS-Header aktivieren (in nginx.conf bereits vorbereitet fuer SSL-Konfiguration).
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-319, OWASP A02:2021, OWASP A05:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding high">
+      <div class="finding-header">
+        <span class="finding-id">F-04</span>
+        <span class="finding-title">E-Mail-Validierung fehlt im Profil-Update – potenzielle Header/Injection</span>
+        <span class="risk-badge high">High</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 7.1 (AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:H/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/auth.py:18</code>, <code>auth.py:170-174</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der <code>PUT /api/auth/profile</code>-Endpoint akzeptiert die E-Mail-Adresse als einfaches <code>Optional[str]</code>-Feld ohne Formatvalidierung. Jeder authentifizierte Benutzer kann eine beliebige Zeichenkette als E-Mail eintragen – einschliesslich HTML, JavaScript oder sonstiger Inhalte. Obwohl dies kein direktes XSS in der React-SPA ausloeست (React escaped standardmaessig), koennte bei zukuenftigen E-Mail-Features (z.B. Passwort-Reset-E-Mails, Benachrichtigungen) eine nicht-validierte E-Mail zu E-Mail-Header-Injection fuehren.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Eintrag beliebiger Strings als E-Mail, potenzielle E-Mail-Header-Injection bei zukuenftiger E-Mail-Funktionalitaet, Daten-Integritaetsproblem.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# auth.py:15-18 – UpdateProfileRequest ohne E-Mail-Validation
+class UpdateProfileRequest(BaseModel):
+    first_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    email: Optional[str] = Field(None, max_length=255)  # Kein Format-Validator!
+
+# auth.py:174 – Beliebiger String wird direkt gespeichert
+current_user.email = profile_data.email if profile_data.email.strip() else None
+</pre>
+          Vergleich: <code>UserCreate</code>-Schema in <code>schemas/user.py</code> verwendet ebenfalls kein <code>EmailStr</code>-Feld (bewusste Entscheidung wegen <code>.local</code>-TLD-Problem, aber ohne Alternative-Validierung).
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            Regex-Validierung fuer E-Mail-Format hinzufuegen:
+<pre>
+from pydantic import field_validator
+import re
+
+class UpdateProfileRequest(BaseModel):
+    email: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v):
+        if v is not None and v.strip():
+            # Einfacher RFC-5322-kompatibler Check
+            pattern = r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'
+            if not re.match(pattern, v.strip()):
+                raise ValueError("Ungueltige E-Mail-Adresse")
+        return v
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-20, OWASP A03:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- ===================== MEDIUM ===================== -->
+    <h3 id="f05" style="margin-bottom:8px; color:var(--medium); margin-top:32px;">MEDIUM</h3>
+
+    <div class="finding medium">
+      <div class="finding-header">
+        <span class="finding-id">F-05</span>
+        <span class="finding-title">Keine serverseitige Rate-Limitierung auf Daten-Endpoints (IDOR-Amplification)</span>
+        <span class="risk-badge medium">Medium</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 5.3 (AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:L)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/time_entries.py</code>, <code>absences.py</code>, <code>dashboard.py</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Rate-Limiting ist nur auf Auth-Endpoints angewendet (Login, Refresh, Passwortaenderung). Alle Daten-Endpoints (Zeit-Eintraege, Abwesenheiten, Dashboard, Berichte) haben keine Anfragen-Beschraenkung. Ein authentifizierter Angreifer koennte massenhaft API-Aufrufe durchfuehren, um (a) die Datenbank zu belasten oder (b) durch systematisches Iterieren ueber IDs andere Benutzer-Daten zu erkunden (IDOR-Exploration). Zwar sind die IDOR-Checks korrekt implementiert, aber die fehlende Rate-Limitierung erleichtert automatisiertes Scanning.
+          </dd>
+          <dt>Impact</dt>
+          <dd>DoS durch Erschoepfung der Datenbankverbindungen, automatisiertes IDOR-Scanning.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# time_entries.py:314 – kein @limiter.limit Decorator
+@router.get("/", response_model=List[TimeEntryResponse])
+def list_time_entries(month: Optional[str] = ..., user_id: Optional[str] = ...,
+                      db: Session = ..., current_user: User = ...):
+
+# Im Vergleich: Auth-Endpoints sind geschuetzt
+@router.post("/login")
+@limiter.limit("5/minute")
+def login(request: Request, ...):
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            Rate-Limiting auf sensiblen Datenzugriffen hinzufuegen:
+<pre>
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+@router.get("/")
+@limiter.limit("60/minute")  # Sinnvoller Grenzwert fuer normale Nutzung
+def list_time_entries(request: Request, ...):
+</pre>
+            Export-Endpoints (Excel) sollten auf 5-10/Stunde begrenzt werden.
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-770, OWASP A04:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding medium">
+      <div class="finding-header">
+        <span class="finding-id">F-06</span>
+        <span class="finding-title">Fehlende CSRF-Schutzmassnahmen</span>
+        <span class="risk-badge medium">Medium</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 5.4 (AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd>Gesamte API; Frontend: <code>api/client.ts</code>, <code>stores/authStore.ts</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Anwendung verwendet JWT-Bearer-Tokens, die in <code>localStorage</code> gespeichert werden. Bei zustandsbehafteten Cookie-basierten Sitzungen waere CSRF ein schwerwiegendes Problem; bei Bearer-Token-Auth ist CSRF reduziert, aber nicht voellig eliminiert: Wenn ein Angreifer eine Seite mit schmalem JavaScript-Code hostet, der zum selben Origin navigiert, koennte er – abhaengig von Browser-Quirks – unter bestimmten Umstaenden Angriffe durchfuehren. Wichtiger: Der Logout-Endpoint (<code>POST /api/auth/logout</code>) ist gar nicht geschuetzt und fuehrt keine echte Server-seitige Invalidierung durch (lediglich Anweisung, Tokens zu loeschen).
+          </dd>
+          <dt>Impact</dt>
+          <dd>Eingeschraenkt bei Bearer-Token-Auth. Logout-Endpoint ohne serverseitige Wirkung.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# auth.py:103-110 – Logout hat keine serverseitige Wirkung
+@router.post("/logout")
+def logout():
+    """
+    Logout endpoint.
+    Client should delete tokens locally.
+    (Optional: implement token blocklist for additional security)
+    """
+    return {"message": "Erfolgreich abgemeldet"}
+
+# authStore.ts:54-55 – Token in localStorage (XSS-Angriffsvektore)
+localStorage.setItem('access_token', access_token);
+localStorage.setItem('refresh_token', refresh_token);
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            1. Logout sollte <code>user.token_version += 1</code> inkrementieren, um den Refresh-Token serverseitig zu invalidieren:<br>
+<pre>
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_user.token_version += 1
+    db.commit()
+    return {"message": "Erfolgreich abgemeldet"}
+</pre>
+            2. Erwaegenswert: HttpOnly-Cookies fuer Refresh-Token (sicherer als localStorage gegen XSS).
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-352, OWASP A01:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding medium">
+      <div class="finding-header">
+        <span class="finding-id">F-07</span>
+        <span class="finding-title">Grafana ohne HTTPS oeffentlich zugaenglich unter /grafana/</span>
+        <span class="risk-badge medium">Medium</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 6.1 (AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/frontend/nginx.conf:49-63</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Grafana ist ueber den Nginx-Reverse-Proxy unter <code>/grafana/</code> oeffentlich erreichbar, ohne zusaetzliche Netzwerk-Zugangsbeschraenkungen. Zwar erfordert Grafana eine Anmeldung (<code>GF_AUTH_ANONYMOUS_ENABLED=false</code>), aber die Oberflaeche ist im Internet erreichbar, wenn Port 80 geoefffnet ist. Bei einer Brute-Force- oder Passwort-Spray-Attacke auf Grafana-Credentials koennte ein Angreifer Zugang zu internen Metriken erhalten.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Brute-Force-Moeglichkeit auf Grafana-Credentials, Exposition interner Monitoringdaten.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# nginx.conf:49-55 – Grafana oeffentlich zugaenglich
+location /grafana/ {
+    proxy_pass http://grafana:3000/grafana/;
+    proxy_set_header Host $host;
+    # Keine IP-Einschraenkung, kein Basic-Auth-Schutz
+}
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            Grafana auf interne IPs beschraenken:
+<pre>
+location /grafana/ {
+    # Nur aus lokalem Netzwerk erreichbar
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    allow 127.0.0.1;
+    deny all;
+    proxy_pass http://grafana:3000/grafana/;
+    ...
+}
+</pre>
+            Alternativ: Grafana-Port nur intern (127.0.0.1) binden wie Prometheus.
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-284, OWASP A05:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding medium">
+      <div class="finding-header">
+        <span class="finding-id">F-08</span>
+        <span class="finding-title">Traceback-Informationen im Error-Log-Admin-Endpoint exponiert</span>
+        <span class="risk-badge medium">Medium</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 4.3 (AV:N/AC:L/PR:H/UI:N/S:U/C:L/I:N/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/error_logs.py:22</code>, <code>app/main.py:188</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der Admin-Endpoint <code>GET /api/admin/errors</code> gibt vollstaendige Python-Tracebacks (<code>traceback</code>-Feld) an den Admin-Browser zurueck. Diese enthalten interne Pfade (<code>/app/...</code>), Bibliotheksversionen, SQL-Queries (sofern vorhanden) und Implementierungsdetails. Zusaetzlich schreibt <code>capture_errors_middleware</code> bei 5xx-Fehlern den vollstaendigen Traceback in die DB. Obwohl nur Admins Zugriff haben, ist dies ein Defense-in-Depth-Problem.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Information Disclosure ueber interne Anwendungsstruktur (nur fuer Admins, aber dennoch unnoetige Exposition).</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# error_logs.py:22 – Traceback wird vollstaendig zurueckgegeben
+class ErrorLogResponse(BaseModel):
+    traceback: Optional[str] = None  # Vollstaendiger Python-Traceback
+
+# main.py:188 – Traceback wird in DB gespeichert
+log_error(
+    ...
+    traceback_str=traceback.format_exc(),  # Vollstaendiger Stack-Trace
+    ...
+)
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            Tracebacks auf Admin-Backend-Logs beschraenken. Im API-Response nur eine Zusammenfassung anzeigen:
+<pre>
+# Traceback fuer Server-Logs, aber kuerzen fuer DB
+traceback_summary = traceback.format_exc()[:500] + "...[truncated]"
+</pre>
+            Falls Tracebacks fuer Debugging benoetigt werden: separates Log-System verwenden (nicht DB).
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-209, OWASP A05:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding medium">
+      <div class="finding-header">
+        <span class="finding-id">F-09</span>
+        <span class="finding-title">Fehlende Validierung der Change-Request-Status-Enum-Werte beim Filter</span>
+        <span class="risk-badge medium">Medium</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 4.3 (AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/admin.py:476-481</code>, <code>change_requests.py:183-192</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der Query-Parameter <code>status</code> in <code>GET /api/admin/change-requests</code> und <code>GET /api/change-requests</code> wird als roher String an SQLAlchemy weitergeleitet, ohne Validierung gegen erlaubte Enum-Werte. SQLAlchemy escaped zwar den Wert (kein SQL-Injection-Risiko), aber ein ungueltigier Status-Wert fuehrt zu einer leeren Ergebnismenge statt einem Fehler, was das API-Verhalten unpraediktabel macht und potenzielle Informationen ueber die Datenbankstruktur liefert.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Unerwartetes API-Verhalten, leichte Information-Disclosure ueber DB-Struktur.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# admin.py:476-481
+query = db.query(ChangeRequest)
+if request_status:
+    # Kein Enum-Check: request_status koennte beliebiger String sein
+    query = query.filter(ChangeRequest.status == request_status)
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+<pre>
+VALID_STATUSES = {"pending", "approved", "rejected"}
+
+if request_status:
+    if request_status not in VALID_STATUSES:
+        raise HTTPException(status_code=400,
+            detail=f"Ungültiger Status. Erlaubt: {', '.join(VALID_STATUSES)}")
+    query = query.filter(ChangeRequest.status == request_status)
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-20, OWASP A03:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding medium">
+      <div class="finding-header">
+        <span class="finding-id">F-10</span>
+        <span class="finding-title">Doppelter Return-Statement in _calculate_weekly_net_hours (toter Code)</span>
+        <span class="risk-badge medium">Medium</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 4.0 (Potential Logic Error)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/time_entries.py:88-90</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die Funktion <code>_calculate_weekly_net_hours</code> hat zwei aufeinanderfolgende <code>return total</code>-Statements. Dies ist toter Code und weist auf einen Copy-Paste-Fehler hin. Obwohl der doppelte Return in Python harmlos ist (nur der erste wird ausgefuehrt), zeigt dies mangelnde Code-Review-Qualitaet und koennte maskieren, dass urspruenglich anderer Code dazwischen stehen sollte.
+          </dd>
+          <dt>Impact</dt>
+          <dd>Kein direkte Sicherheitsauswirkung; zeigt potenziell fehlerhafte Logik.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# time_entries.py:88-90
+    total += net_h(start_time, end_time, break_minutes)
+    return total
+    return total  # &lt;-- Toter Code / Copy-Paste-Fehler
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>Zweites <code>return total</code> entfernen. Code-Review und statische Analyse (pylint, mypy) im CI/CD-Pipeline einbinden.</dd>
+          <dt>Referenz</dt>
+          <dd>CWE-561 (Dead Code)</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- ===================== LOW ===================== -->
+    <h3 id="f11" style="margin-bottom:8px; color:var(--low); margin-top:32px;">LOW</h3>
+
+    <div class="finding low">
+      <div class="finding-header">
+        <span class="finding-id">F-11</span>
+        <span class="finding-title">Fehlender HSTS-Header (HTTP Strict Transport Security) im HTTP-Modus</span>
+        <span class="risk-badge low">Low</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 3.7 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/frontend/nginx.conf:72-76</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>HSTS ist in der Nginx-Konfiguration nicht gesetzt. Selbst wenn HTTPS aktiviert wird, fehlt der Header, der Browser anweist, immer HTTPS zu verwenden. Dies ermoeglicht SSL-Stripping-Angriffe beim ersten Verbindungsaufbau.</dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# nginx.conf:72-76 – Kein HSTS
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-XSS-Protection "1; mode=block" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Content-Security-Policy "..." always;
+# Fehlt: add_header Strict-Transport-Security ...
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+<pre>
+# In der SSL-Nginx-Konfiguration hinzufuegen:
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-523, OWASP A05:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding low">
+      <div class="finding-header">
+        <span class="finding-id">F-12</span>
+        <span class="finding-title">python-jose Abhaengigkeit mit bekannten Maintenance-Problemen</span>
+        <span class="risk-badge low">Low</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 3.1 (AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/requirements.txt:7</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            <code>python-jose</code> wird selbst im Code als "limited maintenance" markiert (<code># NOTE: python-jose has limited maintenance; consider migrating to PyJWT in the future</code>). <code>python-jose</code> hatte in der Vergangenheit CVEs (CVE-2024-33664, CVE-2024-33663 – algorithm confusion attacks bei falsch konfigurierten Optionen). Die aktuelle Nutzung mit explizitem <code>algorithms=[ALGORITHM]</code> in <code>decode_token</code> mindert das Risiko, aber die Migration zu <code>PyJWT</code> ist dennoch empfohlen.
+          </dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# requirements.txt:7
+# NOTE: python-jose has limited maintenance; consider migrating to PyJWT in the future
+python-jose[cryptography]==3.5.*
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            Migration zu <code>PyJWT>=2.8.0</code>. API-Aufruf ist sehr aehnlich:
+<pre>
+import jwt  # PyJWT
+# Encode
+jwt.encode(payload, key, algorithm="HS256")
+# Decode (immer algorithms angeben!)
+jwt.decode(token, key, algorithms=["HS256"])
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CVE-2024-33664, CVE-2024-33663</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding low">
+      <div class="finding-header">
+        <span class="finding-id">F-13</span>
+        <span class="finding-title">Absence-Kalender-Endpoint gibt Abwesenheitsnotizen aller Mitarbeiter an alle Benutzer</span>
+        <span class="risk-badge low">Low</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 3.5 (AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/absences.py:86-130</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der Endpoint <code>GET /api/absences/team/upcoming</code> gibt Abwesenheitseintraege aller aktiven Mitarbeiter zurueck, <strong>inklusive des <code>note</code>-Feldes</strong>. Notizen koennen sensible Informationen enthalten (z.B. medizinische Details bei Krankheitsmeldungen, persoenliche Gruende fuer Urlaub). Da dieser Endpoint fuer alle authentifizierten Benutzer sichtbar ist, handelt es sich um eine unnoetige Datenweitergabe.
+          </dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# absences.py:120 – note-Feld wird an alle Benutzer weitergegeben
+team_absences.append(TeamAbsenceEntry(
+    ...
+    note=absence.note  # Potenzielle sensible Information
+))
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+            <code>note</code>-Feld aus der Team-Kalender-Antwort entfernen oder nur fuer den eigenen Benutzer anzeigen:
+<pre>
+note=absence.note if absence.user_id == current_user.id else None
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-200, OWASP A01:2021, DSGVO Art. 5 (Datensparsamkeit)</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding low">
+      <div class="finding-header">
+        <span class="finding-id">F-14</span>
+        <span class="finding-title">Content-Disposition-Header bei Dateiexport nicht RFC-konform (kein filename* fuer Sonderzeichen)</span>
+        <span class="risk-badge low">Low</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 2.6 (AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:L/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/reports.py:188-190</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Dateinamen in <code>Content-Disposition</code>-Headern werden nicht RFC 5987-konform kodiert. Bei Dateinamen mit Umlauten oder Sonderzeichen (z.B. aus <code>PRACTICE_NAME</code>) koennte dies zu fehlerhafter Darstellung oder – bei manipulierten Dateinamen – zu Response-Splitting fuehren.
+          </dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# reports.py:189 – Einfaches Anhaengen des Dateinamens ohne Encoding
+headers={"Content-Disposition": f"attachment; filename={filename}"}
+# Korrekt waere: filename*=UTF-8''... oder Sanitierung
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+<pre>
+from urllib.parse import quote
+safe_filename = quote(filename, safe='')
+headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}"}
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>RFC 5987, CWE-116</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding low">
+      <div class="finding-header">
+        <span class="finding-id">F-15</span>
+        <span class="finding-title">GitHub-URL-Validierung im Error-Log zu schwach (Protokoll-Only-Check)</span>
+        <span class="risk-badge low">Low</span>
+        <span style="font-size:0.75rem; color:#6b7280; margin-left:auto;">CVSS 2.7 (AV:N/AC:L/PR:H/UI:N/S:U/C:N/I:L/A:N)</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/routers/error_logs.py:57</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der <code>github_issue_url</code>-Validator prueft nur, ob die URL mit <code>http://</code> oder <code>https://</code> beginnt. Damit ist jede beliebige URL erlaubt, nicht nur GitHub-Issues. Ein Admin koennte versehentlich oder boesartig interne URLs oder JavaScript-URLs (<code>javascript://</code> – durch das Pattern jedoch ausgeschlossen) eintragen. Bei Klick in der Admin-UI wuerde der Browser eine beliebige URL oeffnen (Open Redirect).
+          </dd>
+          <dt>Evidenz</dt>
+          <dd>
+<pre>
+# error_logs.py:57 – Zu schwache Validierung
+class SetGithubUrlRequest(BaseModel):
+    github_issue_url: str = Field(..., pattern=r'^https?://')
+    # Erlaubt: https://evil.com, https://localhost/admin/...
+    # Sollte einschraenken auf: https://github.com/*/issues/*
+</pre>
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>
+<pre>
+github_issue_url: str = Field(
+    ...,
+    pattern=r'^https://github\.com/[^/]+/[^/]+/issues/\d+$'
+)
+</pre>
+          </dd>
+          <dt>Referenz</dt>
+          <dd>CWE-601, OWASP A01:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- ===================== INFO ===================== -->
+    <h3 id="f16" style="margin-bottom:8px; color:var(--info); margin-top:32px;">INFORMATIONAL</h3>
+
+    <div class="finding info">
+      <div class="finding-header">
+        <span class="finding-id">F-16</span>
+        <span class="finding-title">JWT-Tokens im localStorage gespeichert (XSS-Exposition)</span>
+        <span class="risk-badge info">Info</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/frontend/src/stores/authStore.ts:54-55</code>, <code>api/client.ts:14</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Access- und Refresh-Token werden in <code>localStorage</code> gespeichert. Bei einer XSS-Schwachstelle (derzeit nicht gefunden, CSP ist aktiv) koennte JavaScript auf diese Tokens zugreifen. Die Alternative waere das Speichern des Refresh-Tokens in einem <code>HttpOnly</code>-Cookie (unzugaenglich fuer JavaScript). Angesichts der aktiven CSP-Policy ist das Risiko reduziert, aber kein Best Practice.
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>Erwaegenswert: Refresh-Token in HttpOnly/SameSite=Strict Cookie; Access-Token nur im Arbeitsspeicher (State, kein localStorage). Dies erfordert Backend-Anpassungen am Refresh-Flow.</dd>
+          <dt>Referenz</dt>
+          <dd>OWASP Auth Cheat Sheet</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding info">
+      <div class="finding-header">
+        <span class="finding-id">F-17</span>
+        <span class="finding-title">Prometheus /metrics Endpunkt direkt am Backend erreichbar (intern)</span>
+        <span class="risk-badge info">Info</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/backend/app/main.py:120-125</code>, <code>nginx.conf:11-14</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der <code>/metrics</code>-Endpunkt wird durch Nginx korrekt geblockt (<code>location = /api/metrics { deny all; }</code>). Jedoch ist Port 8000 des Backends nicht direkt nach aussen exponiert (kein <code>ports</code>-Mapping in <code>docker-compose.yml</code>). Der Prometheus-Scraper greift direkt ueber das Docker-interne Netzwerk auf <code>backend:8000/metrics</code> zu. Dies ist korrekt konfiguriert. Intranet-Benutzer, die Backend-Port 8000 direkt erreichen koennen, koennen jedoch die Metriken abrufen.
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>Sicherstellen, dass Port 8000 des Backends niemals direkt auf dem Host gebunden wird. Aktuell korrekt konfiguriert.</dd>
+          <dt>Referenz</dt>
+          <dd>OWASP A05:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding info">
+      <div class="finding-header">
+        <span class="finding-id">F-18</span>
+        <span class="finding-title">ENVIRONMENT=development als Default – Swagger-Docs im Netzwerk sichtbar</span>
+        <span class="risk-badge info">Info</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/.env:13</code>, <code>config.py:10</code>, <code>main.py:103</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die aktuell eingesetzte <code>.env</code>-Datei hat <code>ENVIRONMENT</code> nicht gesetzt (fehlt im <code>.env</code>), der Default ist <code>"development"</code>. Damit sind Swagger-UI (<code>/docs</code>) und ReDoc (<code>/redoc</code>) aktiv. Im Intranet ist das vertretbar, aber bei Internet-Exposition wuerde die vollstaendige API-Dokumentation oeffentlich zugaenglich sein.
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>In der Produktions-<code>.env</code> explizit setzen: <code>ENVIRONMENT=production</code>. Dies deaktiviert automatisch Swagger und ReDoc.</dd>
+          <dt>Referenz</dt>
+          <dd>OWASP A05:2021</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="finding info">
+      <div class="finding-header">
+        <span class="finding-id">F-19</span>
+        <span class="finding-title">Admin-Passwort "Admin2025!" entspricht dem bekannten Schwach-Passwort-Pattern</span>
+        <span class="risk-badge info">Info</span>
+      </div>
+      <div class="finding-body">
+        <dl>
+          <dt>Ort</dt>
+          <dd><code>praxiszeit/.env:15</code>, <code>app/main.py:68</code></dd>
+          <dt>Beschreibung</dt>
+          <dd>
+            Das Admin-Passwort <code>Admin2025!</code> ist in der <code>.env</code>-Datei gesetzt und entspricht einem gaengigen Pattern (Wort + Jahr + Sonderzeichen). Die Anwendung erkennt dieses Passwort als "schwach" und gibt beim Start eine Warnung aus (<code>weak_passwords = ["Admin2025!", ...]</code>). Das Passwort erfuellt die Mindestanforderungen (10 Zeichen, Gross-/Kleinbuchstabe, Ziffer), ist aber vorhersehbar.
+          </dd>
+          <dt>Massnahme</dt>
+          <dd>Admin-Passwort sofort auf einen zufaelligen, mindestens 20-Zeichen langen Wert aendern. Generator: <code>python -c "import secrets; print(secrets.token_urlsafe(24))"</code></dd>
+          <dt>Referenz</dt>
+          <dd>NIST SP 800-63B</dd>
+        </dl>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Section 4: Positive Security Controls -->
+  <section id="positive">
+    <h2 class="section-title">4. Positive Sicherheitskontrollen</h2>
+    <p style="margin-bottom:16px;">Folgende Sicherheitsmassnahmen wurden korrekt implementiert und positiv bewertet:</p>
+    <ul class="positive-list">
+      <li><strong>Token-Revokation via token_version:</strong> Jede Passwortaenderung und Deaktivierung inkrementiert <code>token_version</code>; jeder Request validiert den <code>tv</code>-Claim gegen die DB. Vollstaendig implementiert in Middleware und Refresh-Endpoint.</li>
+      <li><strong>bcrypt Passwort-Hashing:</strong> <code>passlib[bcrypt]</code> mit korrekter 72-Byte-Truncation. Kein MD5/SHA1.</li>
+      <li><strong>Rate-Limiting auf Auth-Endpoints:</strong> Login 5/min, Refresh 10/min, Passwortaenderung 3/min via slowapi.</li>
+      <li><strong>Passwort-Komplexitaetsanforderungen:</strong> Mindestens 10 Zeichen + Grossbuchstabe + Kleinbuchstabe + Ziffer. Validierung in Pydantic-Schemas.</li>
+      <li><strong>SECRET_KEY-Validierung beim Start:</strong> Mindestlaenge 32 Zeichen, Ablehnung bekannter schwacher Werte.</li>
+      <li><strong>CORS korrekt konfiguriert:</strong> Kein Wildcard (<code>*</code>) als Default, Warnung bei Wildcard-Konfiguration, <code>allow_credentials</code> nur mit spezifischen Origins.</li>
+      <li><strong>ORM (SQLAlchemy) verhindert SQL-Injection:</strong> Konsequente Nutzung des ORM, keine Raw-String-SQL-Konkatenation gefunden.</li>
+      <li><strong>Input-Validierung via Pydantic:</strong> Alle API-Endpunkte nutzen typisierte Pydantic-Schemas mit Field-Constraints. Keine ungefilterten Direkteingaben in die DB.</li>
+      <li><strong>RBAC vollstaendig implementiert:</strong> Admin-Router mit <code>dependencies=[Depends(require_admin)]</code> auf Router-Ebene. Kein einzelner Endpunkt ohne Auth-Check gefunden.</li>
+      <li><strong>IDOR-Schutz:</strong> Benutzer koennen nur eigene Eintraege lesen/schreiben. Admins haben explizit erweiterte Rechte. Checks in time_entries, absences, change_requests konsistent implementiert.</li>
+      <li><strong>exempt_from_arbzg nur durch Admin setzbar:</strong> Das Flag ist ausschliesslich im <code>UserUpdate</code>-Schema des Admin-Routers verfuegbar. Kein User-facing Endpoint erlaubt Selbst-Setzen.</li>
+      <li><strong>Non-root Docker Container:</strong> <code>appuser</code> mit minimalen Rechten im Backend-Container.</li>
+      <li><strong>Nginx Security Headers:</strong> CSP, X-Frame-Options SAMEORIGIN, X-Content-Type-Options nosniff, Referrer-Policy, X-XSS-Protection.</li>
+      <li><strong>Content-Security-Policy:</strong> Strenge CSP ohne <code>unsafe-eval</code>, nur <code>self</code> als Script-Quelle. <code>unsafe-inline</code> nur fuer CSS (vertretbar bei Tailwind-Inline-Styles).</li>
+      <li><strong>Prometheus /metrics extern geblockt:</strong> Nginx blockt <code>/api/metrics</code>. Backend-Port nicht direkt exponiert.</li>
+      <li><strong>Swagger/ReDoc in Produktion deaktivierbar:</strong> Via <code>ENVIRONMENT=production</code>.</li>
+      <li><strong>PII-Scrubbing in Error-Logs:</strong> UUIDs und E-Mail-Adressen werden vor der Speicherung maskiert.</li>
+      <li><strong>DSGVO Art. 20 Datenexport:</strong> <code>/api/auth/me/export</code> nur fuer eigene Daten, strukturierte JSON-Ausgabe.</li>
+      <li><strong>ArbZG §18 exempt_from_arbzg:</strong> Bypass-Flag korrekt implementiert und ausschliesslich durch Admins setzbar.</li>
+      <li><strong>Forwarded-IPs nur aus privaten Netzwerken:</strong> <code>--forwarded-allow-ips='172.16.0.0/12,10.0.0.0/8,192.168.0.0/16'</code> im uvicorn-CMD.</li>
+      <li><strong>Grafana Anonymous-Zugang deaktiviert:</strong> <code>GF_AUTH_ANONYMOUS_ENABLED=false</code>, Sign-Up geblockt.</li>
+      <li><strong>GRAFANA_ADMIN_PASSWORD als Pflichtfeld:</strong> Kein Default-Fallback, Docker wirft Fehler wenn nicht gesetzt.</li>
+      <li><strong>Service-Worker ohne API-Caching:</strong> Sensible API-Antworten werden nicht im Cache-Storage gesichert.</li>
+      <li><strong>Cache-Leerung beim Logout:</strong> <code>caches.keys().then(names =&gt; names.forEach(n =&gt; caches.delete(n)))</code></li>
+      <li><strong>Datenbankverbindung health-checked:</strong> Docker Compose wartet auf DB-Readiness vor Backend-Start.</li>
+    </ul>
+  </section>
+
+  <!-- Section 5: Remediation Priority -->
+  <section id="priority">
+    <h2 class="section-title">5. Massnahmen-Priorisierung</h2>
+    <table class="priority-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Finding</th>
+          <th>Schweregrad</th>
+          <th>Aufwand</th>
+          <th>Massnahme</th>
+          <th>Zeitrahmen</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>F-01: .env Credentials</td>
+          <td><span class="risk-badge critical">Critical</span></td>
+          <td>Niedrig</td>
+          <td>Alle Secrets sofort rotieren</td>
+          <td><strong>Sofort</strong></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>F-03: Kein HTTPS</td>
+          <td><span class="risk-badge high">High</span></td>
+          <td>Mittel</td>
+          <td>SSL-Zertifikat + Nginx SSL-Config aktivieren</td>
+          <td><strong>Vor Internet-Exposition</strong></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>F-06: Logout ohne serverseitige Invalidierung</td>
+          <td><span class="risk-badge medium">Medium</span></td>
+          <td>Niedrig</td>
+          <td>token_version++ beim Logout-Endpoint</td>
+          <td>1 Woche</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>F-04: E-Mail-Validierung fehlt</td>
+          <td><span class="risk-badge high">High</span></td>
+          <td>Niedrig</td>
+          <td>Regex-Validator fuer E-Mail-Feld hinzufuegen</td>
+          <td>1 Woche</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>F-07: Grafana oeffentlich</td>
+          <td><span class="risk-badge medium">Medium</span></td>
+          <td>Niedrig</td>
+          <td>IP-Whitelist in Nginx fuer /grafana/</td>
+          <td>1 Woche</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>F-19: Schwaches Admin-Passwort</td>
+          <td><span class="risk-badge info">Info</span></td>
+          <td>Minimal</td>
+          <td>Admin-PW sofort aendern</td>
+          <td><strong>Sofort</strong></td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>F-18: ENVIRONMENT nicht auf production</td>
+          <td><span class="risk-badge info">Info</span></td>
+          <td>Minimal</td>
+          <td>ENVIRONMENT=production in .env setzen</td>
+          <td>Vor Internet-Exposition</td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>F-05: Kein Rate-Limiting auf Daten-Endpoints</td>
+          <td><span class="risk-badge medium">Medium</span></td>
+          <td>Niedrig</td>
+          <td>@limiter.limit auf kritische Endpoints</td>
+          <td>2 Wochen</td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td>F-13: Absence notes oeffentlich</td>
+          <td><span class="risk-badge low">Low</span></td>
+          <td>Minimal</td>
+          <td>note-Feld aus TeamAbsenceEntry entfernen</td>
+          <td>2 Wochen</td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td>F-02: HS256 statt RS256</td>
+          <td><span class="risk-badge high">High</span></td>
+          <td>Hoch</td>
+          <td>Migration zu RS256 + PyJWT</td>
+          <td>1 Monat</td>
+        </tr>
+        <tr>
+          <td>11</td>
+          <td>F-12: python-jose veraltet</td>
+          <td><span class="risk-badge low">Low</span></td>
+          <td>Mittel</td>
+          <td>Migration zu PyJWT</td>
+          <td>1 Monat</td>
+        </tr>
+        <tr>
+          <td>12</td>
+          <td>F-09: Enum-Validierung fehlt</td>
+          <td><span class="risk-badge medium">Medium</span></td>
+          <td>Minimal</td>
+          <td>Enum-Check hinzufuegen</td>
+          <td>2 Wochen</td>
+        </tr>
+        <tr>
+          <td>13</td>
+          <td>F-10: Doppelter Return</td>
+          <td><span class="risk-badge medium">Medium</span></td>
+          <td>Minimal</td>
+          <td>Toten Code entfernen, CI-Linting einrichten</td>
+          <td>2 Wochen</td>
+        </tr>
+        <tr>
+          <td>14</td>
+          <td>F-08: Traceback-Exposition</td>
+          <td><span class="risk-badge medium">Medium</span></td>
+          <td>Niedrig</td>
+          <td>Tracebacks kuerzen/separieren</td>
+          <td>1 Monat</td>
+        </tr>
+        <tr>
+          <td>15</td>
+          <td>F-11: HSTS fehlt</td>
+          <td><span class="risk-badge low">Low</span></td>
+          <td>Minimal</td>
+          <td>HSTS-Header in SSL-Nginx-Config</td>
+          <td>Bei SSL-Aktivierung</td>
+        </tr>
+        <tr>
+          <td>16</td>
+          <td>F-14: Content-Disposition Encoding</td>
+          <td><span class="risk-badge low">Low</span></td>
+          <td>Minimal</td>
+          <td>RFC 5987 Encoding fuer Dateinamen</td>
+          <td>1 Monat</td>
+        </tr>
+        <tr>
+          <td>17</td>
+          <td>F-15: GitHub-URL-Validierung</td>
+          <td><span class="risk-badge low">Low</span></td>
+          <td>Minimal</td>
+          <td>Strengere URL-Validierung</td>
+          <td>1 Monat</td>
+        </tr>
+        <tr>
+          <td>18</td>
+          <td>F-16: Tokens in localStorage</td>
+          <td><span class="risk-badge info">Info</span></td>
+          <td>Hoch</td>
+          <td>HttpOnly-Cookie fuer Refresh-Token</td>
+          <td>Backlog</td>
+        </tr>
+        <tr>
+          <td>19</td>
+          <td>F-17: Prometheus-Metriken</td>
+          <td><span class="risk-badge info">Info</span></td>
+          <td>Keine</td>
+          <td>Bereits korrekt konfiguriert, keine Aktion noetig</td>
+          <td>N/A</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Section 6: OWASP Matrix -->
+  <section id="owasp">
+    <h2 class="section-title">6. OWASP Top 10 2021 Coverage-Matrix</h2>
+    <table class="owasp-table">
+      <thead>
+        <tr>
+          <th>OWASP Kategorie</th>
+          <th>Status</th>
+          <th>Befunde / Notizen</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>A01:2021 – Broken Access Control</td>
+          <td><span class="partial">Teilweise behoben</span></td>
+          <td>RBAC korrekt; IDOR-Schutz implementiert. Offene Punkte: F-06 (Logout ohne Invalidierung), F-13 (Absence-Notes), F-15 (Open Redirect potenzial)</td>
+        </tr>
+        <tr>
+          <td>A02:2021 – Cryptographic Failures</td>
+          <td><span class="partial">Teilweise behoben</span></td>
+          <td>bcrypt korrekt. F-01 (Credentials im Klartext), F-02 (HS256), F-03 (kein HTTPS), F-11 (kein HSTS)</td>
+        </tr>
+        <tr>
+          <td>A03:2021 – Injection</td>
+          <td><span class="covered">Abgedeckt</span></td>
+          <td>SQLAlchemy ORM verhindert SQL-Injection. Pydantic validiert alle Eingaben. Keine Shell/Command-Injection-Vektoren gefunden.</td>
+        </tr>
+        <tr>
+          <td>A04:2021 – Insecure Design</td>
+          <td><span class="partial">Teilweise behoben</span></td>
+          <td>F-05 (fehlende Rate-Limitierung auf Daten-Endpoints), F-06 (Logout-Design-Problem)</td>
+        </tr>
+        <tr>
+          <td>A05:2021 – Security Misconfiguration</td>
+          <td><span class="partial">Teilweise behoben</span></td>
+          <td>F-01 (.env), F-07 (Grafana), F-08 (Tracebacks), F-18 (ENVIRONMENT)</td>
+        </tr>
+        <tr>
+          <td>A06:2021 – Vulnerable Components</td>
+          <td><span class="partial">Teilweise behoben</span></td>
+          <td>F-12 (python-jose Maintenance). npm overrides fuer minimatch und serialize-javascript korrekt gesetzt. Kein NPM-Audit ausgefuehrt (dynamische Analyse ausserhalb Scope).</td>
+        </tr>
+        <tr>
+          <td>A07:2021 – Identification and Auth Failures</td>
+          <td><span class="partial">Teilweise behoben</span></td>
+          <td>F-02 (HS256), F-06 (Logout). Positiv: Token-Revokation, Rate-Limiting, Passwort-Komplexitaet.</td>
+        </tr>
+        <tr>
+          <td>A08:2021 – Software and Data Integrity</td>
+          <td><span class="covered">Abgedeckt</span></td>
+          <td>Keine Deserialisierungs-Probleme. Pydantic-Parsing korrekt. Excel-Exports aus vertrauenswuerdigen Daten generiert.</td>
+        </tr>
+        <tr>
+          <td>A09:2021 – Security Logging and Monitoring</td>
+          <td><span class="covered">Abgedeckt</span></td>
+          <td>Error-Logging implementiert, Audit-Log fuer Admin-Aktionen, DSGVO-Anonymisierung auditiert. F-08 (Traceback-Detail) als Verbesserung angemerkt.</td>
+        </tr>
+        <tr>
+          <td>A10:2021 – SSRF</td>
+          <td><span class="covered">Abgedeckt</span></td>
+          <td>Keine SSRF-Vektoren gefunden. Keine ausgehenden HTTP-Requests mit benutzerkontrollierten URLs. holiday_service verwendet festkodierte workalendar-Bibliothek.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Section 7: Appendix -->
+  <section id="appendix">
+    <h2 class="section-title">7. Anhang: Geprufte Dateien</h2>
+    <ul class="file-list">
+      <li>praxiszeit/backend/app/main.py</li>
+      <li>praxiszeit/backend/app/config.py</li>
+      <li>praxiszeit/backend/app/database.py</li>
+      <li>praxiszeit/backend/app/middleware/auth.py</li>
+      <li>praxiszeit/backend/app/models/user.py</li>
+      <li>praxiszeit/backend/app/routers/auth.py</li>
+      <li>praxiszeit/backend/app/routers/admin.py</li>
+      <li>praxiszeit/backend/app/routers/time_entries.py</li>
+      <li>praxiszeit/backend/app/routers/absences.py</li>
+      <li>praxiszeit/backend/app/routers/change_requests.py</li>
+      <li>praxiszeit/backend/app/routers/dashboard.py</li>
+      <li>praxiszeit/backend/app/routers/reports.py</li>
+      <li>praxiszeit/backend/app/routers/error_logs.py</li>
+      <li>praxiszeit/backend/app/schemas/user.py</li>
+      <li>praxiszeit/backend/app/schemas/time_entry.py</li>
+      <li>praxiszeit/backend/app/services/auth_service.py</li>
+      <li>praxiszeit/backend/app/services/error_log_service.py</li>
+      <li>praxiszeit/backend/requirements.txt</li>
+      <li>praxiszeit/backend/Dockerfile</li>
+      <li>praxiszeit/frontend/nginx.conf</li>
+      <li>praxiszeit/frontend/Dockerfile</li>
+      <li>praxiszeit/frontend/vite.config.ts</li>
+      <li>praxiszeit/frontend/package.json</li>
+      <li>praxiszeit/frontend/src/api/client.ts</li>
+      <li>praxiszeit/frontend/src/stores/authStore.ts</li>
+      <li>praxiszeit/docker-compose.yml</li>
+      <li>praxiszeit/docker-compose.ssl.yml</li>
+      <li>praxiszeit/.env (Inhalt als Critical-Befund dokumentiert)</li>
+      <li>praxiszeit/.env.example</li>
+      <li>praxiszeit/prometheus/prometheus.yml</li>
+      <li>praxiszeit/.gitignore</li>
+    </ul>
+
+    <h3 style="margin-top:24px;">Nicht geprufte Bereiche (ausserhalb Scope)</h3>
+    <ul style="font-size:0.875rem; margin-left:20px; line-height:2;">
+      <li>Dynamischer Penetrationstest (Runtime-Verhalten)</li>
+      <li>PostgreSQL-Konfiguration (pg_hba.conf, SSL-Konfiguration der DB)</li>
+      <li>Betriebssystem-Haertung des Host-Systems</li>
+      <li>Netzwerk-Infrastruktur (Firewall, Switch-Konfiguration)</li>
+      <li>npm audit (Versionsgenaue CVE-Pruefung der npm-Pakete)</li>
+      <li>pip-audit (Versionsgenaue CVE-Pruefung der Python-Pakete)</li>
+      <li>Grafana-interne Konfiguration und Dashboards</li>
+    </ul>
+  </section>
+
+</div>
+
+<footer>
+  <strong>PraxisZeit Security Audit Report</strong> – Erstellt am 2026-02-28 durch Security Auditor Agent (Claude Sonnet 4.6)<br>
+  Methodik: OWASP Top 10 2021, CWE, statische Code-Analyse. Alle Befunde basieren auf Quellcodeanalyse; kein dynamischer Test durchgefuehrt.<br>
+  <br>
+  Dieser Bericht ist vertraulich und fuer den internen Gebrauch bestimmt.
+</footer>
+
+</body>
+</html>
