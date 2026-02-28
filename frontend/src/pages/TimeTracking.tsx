@@ -440,8 +440,8 @@ export default function TimeTracking() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
-                    Lade Einträge...
+                  <td colSpan={8} className="px-6 py-8 text-center">
+                    <LoadingSpinner text="Lade Einträge..." />
                   </td>
                 </tr>
               ) : entries.length === 0 ? (

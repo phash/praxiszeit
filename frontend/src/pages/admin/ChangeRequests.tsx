@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import apiClient from '../../api/client';
 import { Clock, CheckCircle, XCircle, AlertCircle, Check, X } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import LoadingSpinner from '../../components/LoadingSpinner';
 
 interface ChangeRequest {
   id: string;
@@ -130,8 +131,8 @@ export default function AdminChangeRequests() {
       {/* Requests */}
       <div className="space-y-4">
         {loading ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">
-            Lade Anträge...
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 flex justify-center">
+            <LoadingSpinner text="Lade Anträge..." />
           </div>
         ) : requests.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">
