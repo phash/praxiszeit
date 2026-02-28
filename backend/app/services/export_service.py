@@ -32,7 +32,7 @@ def _is_night_work_export(start_time, end_time) -> bool:
     return nm > _NIGHT_THRESHOLD_MINUTES
 
 
-def generate_monthly_report(db: Session, year: int, month: int) -> BytesIO:
+def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
     """
     Generate Excel report for all employees for a given month.
     Creates one sheet per employee.
@@ -41,6 +41,7 @@ def generate_monthly_report(db: Session, year: int, month: int) -> BytesIO:
         db: Database session
         year: Year
         month: Month (1-12)
+        include_health_data: If False (default), sick absences are shown as "Abwesenheit" (Art. 9 DSGVO protection)
 
     Returns:
         BytesIO object containing Excel file
@@ -53,7 +54,7 @@ def generate_monthly_report(db: Session, year: int, month: int) -> BytesIO:
     users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
 
     for user in users:
-        _create_employee_sheet(wb, db, user, year, month)
+        _create_employee_sheet(wb, db, user, year, month, include_health_data)
 
     # Save to BytesIO
     output = BytesIO()
@@ -63,7 +64,7 @@ def generate_monthly_report(db: Session, year: int, month: int) -> BytesIO:
     return output
 
 
-def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, month: int):
+def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, month: int, include_health_data: bool = False):
     """
     Create a worksheet for a single employee.
 
@@ -221,16 +222,21 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif absence:
             target = Decimal('0.00')
-            absence_type_map = {
-                "vacation": "Urlaub",
-                "sick": "Krank",
-                "training": "Fortbildung",
-                "other": "Sonstiges"
-            }
-            type_name = absence_type_map.get(absence.type.value, absence.type.value)
+            # DSGVO F-003: mask sick absences when health data export not explicitly requested
+            if absence.type.value == "sick" and not include_health_data:
+                type_name = "Abwesenheit"
+                # Do not expose sick note (may contain diagnosis details)
+            else:
+                absence_type_map = {
+                    "vacation": "Urlaub",
+                    "sick": "Krank",
+                    "training": "Fortbildung",
+                    "other": "Sonstiges"
+                }
+                type_name = absence_type_map.get(absence.type.value, absence.type.value)
+                if absence.note:
+                    sheet.cell(row=row, column=10).value = absence.note
             sheet.cell(row=row, column=9).value = f"{type_name} ({float(absence.hours)}h)"
-            if absence.note:
-                sheet.cell(row=row, column=10).value = absence.note
         else:
             # Regulärer Arbeitstag
             target = daily_target
@@ -703,16 +709,20 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif absence:
             target = Decimal('0.00')
-            absence_type_map = {
-                "vacation": "Urlaub",
-                "sick": "Krank",
-                "training": "Fortbildung",
-                "other": "Sonstiges"
-            }
-            type_name = absence_type_map.get(absence.type.value, absence.type.value)
+            # DSGVO F-003: mask sick absences unless health data explicitly requested
+            if absence.type.value == "sick" and not include_health_data:
+                type_name = "Abwesenheit"
+            else:
+                absence_type_map = {
+                    "vacation": "Urlaub",
+                    "sick": "Krank",
+                    "training": "Fortbildung",
+                    "other": "Sonstiges"
+                }
+                type_name = absence_type_map.get(absence.type.value, absence.type.value)
+                if absence.note:
+                    sheet.cell(row=row, column=10).value = absence.note
             sheet.cell(row=row, column=9).value = f"{type_name} ({float(absence.hours)}h)"
-            if absence.note:
-                sheet.cell(row=row, column=10).value = absence.note
         else:
             target = daily_target
             if is_night_wrk:

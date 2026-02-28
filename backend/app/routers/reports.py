@@ -48,6 +48,17 @@ def get_monthly_report(
         "DSGVO-Datenzugriff: Monatsreport %s-%02d aufgerufen von Admin %s",
         year, month_num, current_user.username
     )
+    # F-020: Audit log for sensitive health data read (Art. 9 – sick_hours in response)
+    audit = TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=current_user.id,
+        changed_by=current_user.id,
+        action="health_data_read",
+        source="dsgvo",
+        new_note=f"Monatsreport {year}-{month_num:02d} (inkl. Krankheitsstunden) gelesen von Admin: {current_user.username}",
+    )
+    db.add(audit)
+    db.commit()
 
     users = _get_active_visible_users(db)
 
@@ -106,6 +117,17 @@ def get_yearly_absences(
         "DSGVO-Datenzugriff: Jahres-Abwesenheitsübersicht %d aufgerufen von Admin %s",
         year, current_user.username
     )
+    # F-020: Audit log for sensitive health data read (Art. 9 – sick_days in response)
+    audit = TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=current_user.id,
+        changed_by=current_user.id,
+        action="health_data_read",
+        source="dsgvo",
+        new_note=f"Jahres-Abwesenheitsübersicht {year} (inkl. Krankheitstage) gelesen von Admin: {current_user.username}",
+    )
+    db.add(audit)
+    db.commit()
 
     users = _get_active_visible_users(db)
 
@@ -182,20 +204,34 @@ def get_yearly_absences(
 def export_monthly_report(
     request: Request,
     month: str = Query(..., description="Month in YYYY-MM format"),
+    include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
     """
     Export monthly report as Excel file.
     Creates one sheet per employee with daily breakdown.
+    Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged).
     """
     try:
         year, month_num = map(int, month.split('-'))
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
+    if include_health_data:
+        log = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_export",
+            source="dsgvo",
+            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
+        )
+        db.add(log)
+        db.commit()
+
     # Generate Excel file
-    excel_file = export_service.generate_monthly_report(db, year, month_num)
+    excel_file = export_service.generate_monthly_report(db, year, month_num, include_health_data)
 
     # Create filename
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.xlsx"
@@ -289,16 +325,30 @@ ODS_MIME = "application/vnd.oasis.opendocument.spreadsheet"
 def export_monthly_report_ods(
     request: Request,
     month: str = Query(..., description="Month in YYYY-MM format"),
+    include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """Export monthly report as ODS file (Open Document Spreadsheet)."""
+    """Export monthly report as ODS file (Open Document Spreadsheet).
+    Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged)."""
     try:
         year, month_num = map(int, month.split('-'))
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
-    ods_file = ods_export_service.generate_monthly_report(db, year, month_num)
+    if include_health_data:
+        log = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_export",
+            source="dsgvo",
+            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
+        )
+        db.add(log)
+        db.commit()
+
+    ods_file = ods_export_service.generate_monthly_report(db, year, month_num, include_health_data)
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.ods"
     return StreamingResponse(
         ods_file,

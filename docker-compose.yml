@@ -1,5 +1,10 @@
 version: '3.9'
 
+# DSGVO/F-018: Dieses docker-compose.yml ist für lokale Entwicklung (HTTP).
+# Für den Produktionseinsatz MUSS HTTPS aktiviert werden:
+#   docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+# Alternativ: TLS-Termination durch vorgelagerten Reverse-Proxy (nginx, Traefik).
+
 services:
   db:
     image: postgres:16-alpine

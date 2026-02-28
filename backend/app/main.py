@@ -179,12 +179,13 @@ async def capture_errors_middleware(request: Request, call_next):
         db = SessionLocal()
         try:
             from app.services.error_log_service import log_error
+            tb = traceback.format_exc()
             log_error(
                 db=db,
                 level='critical',
                 logger_name='http',
                 message=str(exc),
-                traceback_str=traceback.format_exc(),
+                traceback_str=tb,  # truncation applied inside log_error
                 path=request.url.path,
                 method=request.method,
                 status_code=500,

@@ -2,8 +2,8 @@
 
 **System:** PraxisZeit – Elektronisches Zeiterfassungssystem
 **Verantwortlicher:** [Name der Praxis / des Unternehmens]
-**Stand:** 2026-02-28
-**Status:** Entwurf – durch Verantwortlichen zu prüfen und zu unterzeichnen
+**Stand:** 2026-02-28 (aktualisiert: technische Maßnahmen vollständig umgesetzt)
+**Status:** Technisch abgeschlossen – durch Verantwortlichen zu prüfen und zu unterzeichnen
 
 ---
 
@@ -35,7 +35,8 @@ Alle Mitarbeitenden der Praxis/des Unternehmens (typisch: 2–50 Personen).
 ### 1.4 Datenkategorien
 
 - **Reguläre Daten:** Name, Kontaktdaten, Arbeitszeiten, Vertragsdaten
-- **Besondere Kategorien (Art. 9):** Krankmeldungen, Nachtarbeitnehmer-Status
+- **Besondere Kategorien (Art. 9):** Krankmeldungen (`type=sick`), Nachtarbeitnehmer-Status (`is_night_worker`-Flag gemäß §6 ArbZG)
+- **Optionale Freitextdaten:** Notizfeld auf Zeiteinträgen (freiwillig, nur bei Bedarf befüllen)
 
 ---
 
@@ -83,6 +84,8 @@ Art. 35 Abs. 3 lit. b DSGVO: Systeme zur „systematischen umfangreichen Überwa
 - Excel-Exporte: Krankheitsdaten standardmäßig ausgeblendet (Privacy by Default)
 - Inaktive Mitarbeitende: Anonymisierungs- und Löschprozess implementiert
 - Aufbewahrung: 2 Jahre entsprechend §16 ArbZG
+- Notizfeld auf Zeiteinträgen: Freiwillig, keine Pflicht zur Befüllung. Mitarbeitende sollten angewiesen werden, nur arbeitsbezogene Informationen einzutragen (F-017)
+- `is_night_worker`-Flag: Gesundheitsbezogen (Art. 9 analog); in Exporten standardmäßig ausgeblendet wie Krankmeldungen (F-006)
 
 ---
 
@@ -95,7 +98,7 @@ Art. 35 Abs. 3 lit. b DSGVO: Systeme zur „systematischen umfangreichen Überwa
 | Unbefugter Zugriff auf Mitarbeiterdaten | Mittel | Hoch | **Hoch** | Rollenmodell, starke Passwörter, JWT-Revocation |
 | Datenverlust / DB-Ausfall | Niedrig | Hoch | **Mittel** | Regelmäßige DB-Backups |
 | Übergang Gesundheitsdaten in Exporte | Niedrig | Hoch | **Mittel** | Privacy by Default – Checkbox mit Audit-Log |
-| Identitätsdiebstahl (Token-Klau via XSS) | Niedrig | Mittel | **Mittel** | CSP-Header, HttpOnly-Cookie empfohlen |
+| Identitätsdiebstahl (Token-Klau via XSS) | Niedrig | Mittel | **Mittel** | CSP-Header, HttpOnly-Cookie implementiert (Refresh-Token) |
 | Überwachungsgefühl / Verhaltensanpassung MA | Mittel | Mittel | **Mittel** | Transparenz durch Datenschutzhinweis, DSFA |
 | Fehler in ArbZG-Berechnungen | Niedrig | Niedrig | **Niedrig** | Tests vorhanden |
 | Weitergabe an Dritte (Lohnbuchhaltung) | Niedrig | Mittel | **Niedrig** | AVV mit Steuerberater abschließen |
@@ -127,8 +130,21 @@ Die verbleibenden Risiken nach Implementierung der Maßnahmen werden als **akzep
 | Datenschutzerklärung (Art. 13) | ✓ | /privacy-Seite |
 | HTTPS | ⚠ | docker-compose.ssl.yml vorhanden; Pflicht in Produktion |
 | DB-Verbindungsverschlüsselung | ⚠ | ?sslmode=require bei externem DB-Server |
-| 2FA für Admins | ✗ | Im Backlog – empfohlen |
-| Lese-Zugriffsprotokoll | ⚠ | Teilweise (Exporte); vollständig empfohlen |
+| Token (Refresh) als HttpOnly Cookie | ✓ | XSS-Schutz für Refresh-Token (F-010) |
+| 2FA für Admins/alle Nutzer | ✓ | Optionale TOTP-2FA für alle Nutzer (QR-Code-Setup im Profil, F-019) |
+| Audit-Log (Lesezugriffe Gesundheitsdaten) | ✓ | health_data_read-Aktion in time_entry_audit_logs (F-020) |
+
+---
+
+## 5b. Auftragsverarbeitung (Art. 28 DSGVO)
+
+| Auftragsverarbeiter | Zweck | Datenübertragung | Maßnahme |
+|---------------------|-------|-----------------|---------|
+| GitHub (optional) | Fehler-Monitoring (Issue-Erstellung) | Fehlermeldungen (keine personenbezogenen Daten im Issue-Titel, technische Details im Body) | AVV mit GitHub Inc. abschließen; alternativ GitHub-Integration deaktivieren (F-008) |
+| Hosting-Anbieter | Server-Betrieb | Alle Systemdaten | AVV mit Hosting-Anbieter abschließen |
+| Steuerberater/Lohnbuchhaltung | Excel-Exports | Arbeitszeitdaten (ohne Krankmeldungen by default) | AVV mit Steuerberater abschließen |
+
+**Hinweis zu GitHub:** Die Fehler-Monitoring-Integration erstellt GitHub Issues bei kritischen Fehlern. Dabei werden keine direkten personenbezogenen Daten (Name, E-Mail) übertragen, jedoch könnten technische Details (IP, Fehlerstacks) indirekt Rückschlüsse erlauben. Bei Deaktivierung der Integration (`GITHUB_TOKEN` nicht konfigurieren) entfällt dieser Verarbeitungsvorgang.
 
 ---
 

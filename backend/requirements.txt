@@ -4,9 +4,13 @@ sqlalchemy==2.0.*
 alembic==1.14.*
 psycopg2-binary==2.9.*
 PyJWT[crypto]==2.9.*
+# VULN-014: passlib 1.7.4 is the latest stable release; no newer version is available upstream.
+# Consider migrating to passlib-maintained fork or using bcrypt directly if passlib becomes abandoned.
 passlib[bcrypt]==1.7.*
-bcrypt==4.0.*
+bcrypt==4.2.*
 python-multipart==0.0.*
+# VULN-014: workalendar is unmaintained (last release 2023); consider replacing with
+# python-holidays (actively maintained) in a future migration.
 workalendar==17.*
 openpyxl==3.1.*
 odfpy==1.4.*

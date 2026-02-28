@@ -243,6 +243,12 @@ def create_absence(
         )
         total_hours_needed = Decimal(str(absence_data.hours)) * len(dates_to_create)
         new_remaining = vacation_account['remaining_hours'] - total_hours_needed
+        # VULN-011: block request when vacation budget would be exceeded
+        if new_remaining < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Urlaubstage überschritten: Verfügbares Guthaben ({float(vacation_account['remaining_hours']):.1f}h) reicht nicht für die beantragten Tage ({float(total_hours_needed):.1f}h)."
+            )
 
     # If sick leave with vacation refund: remove overlapping vacation entries first
     refunded_vacation_dates = []

@@ -171,7 +171,8 @@ export default function Reports() {
   const handleMonthlyExport = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get(`/admin/reports/export?month=${selectedMonth}`, {
+      const healthParam = includeHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/export?month=${selectedMonth}${healthParam}`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -233,7 +234,8 @@ export default function Reports() {
   const handleMonthlyExportOds = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get(`/admin/reports/export-ods?month=${selectedMonth}`, {
+      const healthParam = includeHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/export-ods?month=${selectedMonth}${healthParam}`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -335,6 +337,31 @@ export default function Reports() {
               <Download size={20} />
               <span>{loading ? 'Wird erstellt...' : 'ODS (.ods)'}</span>
             </button>
+          </div>
+
+          {/* DSGVO Art. 9 – Gesundheitsdaten-Schutz für Monatsexport */}
+          <div className="mt-4">
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={includeHealthData}
+                onChange={(e) => setIncludeHealthData(e.target.checked)}
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                Krankheitsdaten einschließen (Art. 9 DSGVO)
+              </span>
+            </label>
+            {includeHealthData && (
+              <div className="mt-3 p-4 bg-amber-50 border border-amber-300 rounded-lg flex items-start space-x-3">
+                <AlertTriangle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">
+                  <strong>Hinweis (Art. 9 DSGVO):</strong> Krankheitsdaten sind besondere Kategorien
+                  personenbezogener Daten. Dieser Export wird im Audit-Log verzeichnet.
+                  Stellen Sie sicher, dass die Weitergabe auf das notwendige Minimum beschränkt ist.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">

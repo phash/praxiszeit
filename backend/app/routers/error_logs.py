@@ -30,8 +30,9 @@ class ErrorLogResponse(BaseModel):
     @field_validator('traceback', mode='before')
     @classmethod
     def truncate_traceback(cls, v):
-        if v and len(v) > 8000:
-            return v[:8000] + '\n... [truncated]'
+        # VULN-012: tracebacks are already stored at max 2000 chars; this is a safety cap
+        if v and len(v) > 2000:
+            return v[:2000] + '\n... [truncated]'
         return v
 
     class Config:

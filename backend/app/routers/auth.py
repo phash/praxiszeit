@@ -289,7 +289,9 @@ def export_my_data(
 # ── F-019: TOTP 2FA endpoints ────────────────────────────────────────────────
 
 @router.post("/totp/setup", response_model=TotpSetupResponse)
+@limiter.limit("3/minute")
 def totp_setup(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -310,7 +312,9 @@ def totp_setup(
 
 
 @router.post("/totp/verify", response_model=UserResponse)
+@limiter.limit("3/minute")
 def totp_verify(
+    request: Request,
     verify_data: TotpVerifyRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -338,7 +342,9 @@ def totp_verify(
 
 
 @router.delete("/totp/disable", response_model=UserResponse)
+@limiter.limit("3/minute")
 def totp_disable(
+    request: Request,
     disable_data: TotpDisableRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
