@@ -17,9 +17,11 @@ from uuid import UUID as UUIDType
 router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
 
 
-MAX_DAILY_HOURS_HARD = 10.0   # §3 ArbZG: absolute Obergrenze
-MAX_DAILY_HOURS_WARN = 8.0    # §3 ArbZG: Regelgrenze (Warnung)
-MAX_WEEKLY_HOURS_WARN = 48.0  # §14 ArbZG: Wöchentliche Höchstarbeitszeit (6-Monats-Schnitt)
+MAX_DAILY_HOURS_HARD = 10.0         # §3 ArbZG: absolute Obergrenze
+MAX_DAILY_HOURS_WARN = 8.0          # §3 ArbZG: Regelgrenze (Warnung)
+MAX_WEEKLY_HOURS_WARN = 48.0        # §14 ArbZG: Wöchentliche Höchstarbeitszeit (6-Monats-Schnitt)
+MAX_NIGHT_WORKER_DAILY_WARN = 8.0   # §6 Abs. 2 ArbZG: Tageslimit für Nachtarbeitnehmer
+NIGHT_THRESHOLD_MINUTES = 120       # §2 Abs. 4 ArbZG: mind. 2h Nachtzeit = Nachtarbeit
 NIGHT_START = time(23, 0)
 NIGHT_END   = time(6, 0)
 
@@ -88,9 +90,22 @@ def _calculate_weekly_net_hours(
 
 
 def _is_night_work(start_time: time, end_time: time) -> bool:
-    """Check if a time entry overlaps with night hours (23:00–06:00) per §6 ArbZG."""
-    # Overlaps night if start < 06:00 or end > 23:00
-    return start_time < NIGHT_END or end_time > NIGHT_START
+    """Gibt True zurück wenn >2h Nachtzeit (23:00–06:00) überschnitten werden (§2 Abs. 4 ArbZG)."""
+    def to_min(t: time) -> int:
+        return t.hour * 60 + t.minute
+
+    s = to_min(start_time)
+    e = to_min(end_time)
+    if e <= s:  # Mitternachtsübergang
+        e += 1440
+
+    # Nachtzeit-Segmente in Minuten seit Tagesbeginn:
+    # 0–360 = 00:00–06:00, 1380–1440 = 23:00–24:00, 1440–1800 = 00:00–06:00 (Folgetag)
+    night_minutes = 0
+    night_minutes += max(0, min(e, 360) - max(s, 0))       # 00:00–06:00
+    night_minutes += max(0, min(e, 1440) - max(s, 1380))   # 23:00–24:00
+    night_minutes += max(0, min(e, 1800) - max(s, 1440))   # 00:00–06:00 (nach Mitternacht)
+    return night_minutes > NIGHT_THRESHOLD_MINUTES
 
 
 def _enrich_response(
@@ -278,6 +293,15 @@ def clock_out(
             clock_out_warnings.append("SUNDAY_WORK")
         if is_holiday(db, open_entry.date):
             clock_out_warnings.append("HOLIDAY_WORK")
+        if (
+            current_user.is_night_worker
+            and _is_night_work(open_entry.start_time, new_end_time)
+            and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
+        ):
+            clock_out_warnings.append(
+                f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
+                "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+            )
 
     response = TimeEntryResponse.model_validate(open_entry)
     _enrich_response(response, open_entry, current_user, db, warnings=clock_out_warnings)
@@ -432,6 +456,15 @@ def create_time_entry(
             warnings.append("SUNDAY_WORK")
         if holiday:
             warnings.append("HOLIDAY_WORK")
+        if (
+            current_user.is_night_worker
+            and _is_night_work(entry_data.start_time, entry_data.end_time)
+            and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
+        ):
+            warnings.append(
+                f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
+                "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+            )
 
     # Create entry
     entry = TimeEntry(
@@ -554,6 +587,16 @@ def update_time_entry(
         entry_is_holiday = is_holiday(db, entry.date)
         if entry_is_holiday:
             update_warnings.append("HOLIDAY_WORK")
+        if (
+            entry.end_time is not None
+            and current_user.is_night_worker
+            and _is_night_work(entry.start_time, entry.end_time)
+            and saved_hours > MAX_NIGHT_WORKER_DAILY_WARN
+        ):
+            update_warnings.append(
+                f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({saved_hours:.1f}h). "
+                "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+            )
 
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db, warnings=update_warnings)
