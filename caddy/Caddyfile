@@ -1,0 +1,17 @@
+# PraxisZeit – Caddyfile
+# Caddy übernimmt SSL-Terminierung und leitet an den internen nginx-Container weiter.
+# Automatisches HTTPS via Let's Encrypt (kein manuelles Zertifikatsmanagement nötig).
+#
+# SERVER_DOMAIN wird aus der .env-Datei übergeben (docker-compose.caddy.yml).
+
+{$SERVER_DOMAIN} {
+
+    # /api/metrics ist nur intern für Prometheus erreichbar – extern sperren
+    @metrics path /api/metrics
+    respond @metrics 404
+
+    # Alles andere → interner nginx-Container (PraxisZeit Frontend + API-Proxy)
+    reverse_proxy frontend:80 {
+        header_up X-Real-IP {remote_host}
+    }
+}
