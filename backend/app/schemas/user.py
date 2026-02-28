@@ -87,6 +87,7 @@ class UserResponse(UserBase):
     is_hidden: bool = False
     exempt_from_arbzg: bool = False  # §18 ArbZG
     is_night_worker: bool = False  # §6 Abs. 2 ArbZG
+    totp_enabled: bool = False  # F-019: 2FA status
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None
@@ -102,17 +103,14 @@ class UserResponse(UserBase):
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
+    totp_code: Optional[str] = Field(None, pattern=r'^\d{6}$')  # F-019: optional TOTP code
 
 
 class LoginResponse(BaseModel):
+    """F-010: refresh_token removed – delivered as HttpOnly cookie instead."""
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     user: UserResponse
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
 
 
 class RefreshResponse(BaseModel):
@@ -145,3 +143,18 @@ class ChangePasswordRequest(BaseModel):
 
 class UpdateCalendarColorRequest(BaseModel):
     calendar_color: str = Field(..., pattern=r'^#[0-9A-Fa-f]{6}$')
+
+
+# F-019: TOTP 2FA schemas
+
+class TotpSetupResponse(BaseModel):
+    otpauth_uri: str
+    secret: str
+
+
+class TotpVerifyRequest(BaseModel):
+    code: str = Field(..., pattern=r'^\d{6}$')
+
+
+class TotpDisableRequest(BaseModel):
+    password: str = Field(..., min_length=1)

@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost,http://localhost:5173"
 
+    # Cookie security (set COOKIE_SECURE=true in production with HTTPS)
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
+
+    # TOTP 2FA issuer name shown in authenticator apps
+    TOTP_ISSUER: str = "PraxisZeit"
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:

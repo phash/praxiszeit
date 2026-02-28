@@ -14,6 +14,7 @@ interface User {
   vacation_days: number;
   calendar_color: string;
   is_active: boolean;
+  totp_enabled: boolean;
   created_at: string;
   use_daily_schedule: boolean;
   hours_monday: number | null;
@@ -26,11 +27,10 @@ interface User {
 interface AuthState {
   user: User | null;
   accessToken: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, totpCode?: string) => Promise<void>;
   logout: () => void;
-  setTokens: (accessToken: string, refreshToken: string, user: User) => void;
+  setTokens: (accessToken: string, user: User) => void;
   setUser: (user: User) => void;
 }
 
@@ -39,33 +39,28 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
 
-      login: async (username: string, password: string) => {
-        const response = await apiClient.post('/auth/login', {
-          username,
-          password,
-        });
+      login: async (username: string, password: string, totpCode?: string) => {
+        const body: Record<string, unknown> = { username, password };
+        if (totpCode) body.totp_code = totpCode;
 
-        const { access_token, refresh_token, user } = response.data;
+        const response = await apiClient.post('/auth/login', body);
+        const { access_token, user } = response.data;
 
-        // Store tokens in localStorage
+        // F-010: refresh token is now an HttpOnly cookie – only store access token
         localStorage.setItem('access_token', access_token);
-        localStorage.setItem('refresh_token', refresh_token);
 
         set({
           user,
           accessToken: access_token,
-          refreshToken: refresh_token,
           isAuthenticated: true,
         });
       },
 
       logout: () => {
-        // Clear all stored tokens
+        // Clear access token from localStorage
         localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
         localStorage.removeItem('auth-storage');
 
         // Clear service worker caches (security: remove any cached API data)
@@ -78,21 +73,13 @@ export const useAuthStore = create<AuthState>()(
         set({
           user: null,
           accessToken: null,
-          refreshToken: null,
           isAuthenticated: false,
         });
       },
 
-      setTokens: (accessToken: string, refreshToken: string, user: User) => {
+      setTokens: (accessToken: string, user: User) => {
         localStorage.setItem('access_token', accessToken);
-        localStorage.setItem('refresh_token', refreshToken);
-
-        set({
-          user,
-          accessToken,
-          refreshToken,
-          isAuthenticated: true,
-        });
+        set({ user, accessToken, isAuthenticated: true });
       },
 
       setUser: (user: User) => {

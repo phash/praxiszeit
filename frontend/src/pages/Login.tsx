@@ -1,12 +1,14 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { LogIn, FileText, Shield } from 'lucide-react';
+import { LogIn, FileText, Shield, Smartphone } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 
 export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [totpRequired, setTotpRequired] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -19,12 +21,19 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login(username, password);
+      await login(username, password, totpRequired ? totpCode : undefined);
       navigate('/');
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail || 'Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.'
-      );
+      // F-019: backend signals "TOTP required" via X-Requires-TOTP header
+      if (err.response?.headers?.['x-requires-totp'] === 'true') {
+        setTotpRequired(true);
+        // Don't show an error – just reveal the TOTP input field
+      } else {
+        setError(
+          err.response?.data?.detail || 'Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.'
+        );
+        if (totpRequired) setTotpCode(''); // Clear wrong TOTP code
+      }
     } finally {
       setLoading(false);
     }
@@ -76,9 +85,38 @@ export default function Login() {
             />
           </div>
 
+          {/* F-019: TOTP field – revealed after first 401 with X-Requires-TOTP */}
+          {totpRequired && (
+            <div>
+              <label htmlFor="totp-code" className="block text-sm font-medium text-gray-700 mb-2">
+                <span className="flex items-center gap-1.5">
+                  <Smartphone size={15} />
+                  2FA-Code (Authenticator-App)
+                </span>
+              </label>
+              <input
+                id="totp-code"
+                type="text"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                required
+                autoComplete="one-time-code"
+                autoFocus
+                className="w-full px-4 py-3 border border-blue-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition text-center text-xl tracking-widest font-mono"
+                placeholder="000000"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Öffnen Sie Ihre Authenticator-App und geben Sie den 6-stelligen Code ein.
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (totpRequired && totpCode.length !== 6)}
             className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
           >
             {loading ? (

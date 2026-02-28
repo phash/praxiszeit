@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import apiClient from '../api/client';
 import {
   LayoutDashboard,
   Clock,
@@ -45,7 +46,13 @@ export default function Layout() {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [sidebarOpen]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      // F-010: call backend to increment token_version and clear the HttpOnly cookie
+      await apiClient.post('/auth/logout');
+    } catch {
+      // Even if the backend call fails, clear local state
+    }
     logout();
     navigate('/login');
   };

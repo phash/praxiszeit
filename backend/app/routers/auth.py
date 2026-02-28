@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from app.core.limiter import limiter
 from sqlalchemy.orm import Session
@@ -6,9 +6,18 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from app.database import get_db
 from app.models import User, TimeEntry, Absence
-from app.schemas.user import LoginRequest, LoginResponse, RefreshRequest, RefreshResponse, UserResponse, ChangePasswordRequest, UpdateCalendarColorRequest
+from app.schemas.user import (
+    LoginRequest, LoginResponse, RefreshResponse, UserResponse,
+    ChangePasswordRequest, UpdateCalendarColorRequest,
+    TotpSetupResponse, TotpVerifyRequest, TotpDisableRequest,
+)
 from app.services import auth_service
 from app.middleware.auth import get_current_user
+from app.config import settings
+
+# Cookie name and path constants
+_REFRESH_COOKIE = "refresh_token"
+_REFRESH_PATH = "/api/auth/refresh"
 
 
 class UpdateProfileRequest(BaseModel):
@@ -31,14 +40,32 @@ class UpdateProfileRequest(BaseModel):
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    """Set the refresh token as an HttpOnly cookie scoped to /api/auth/refresh."""
+    response.set_cookie(
+        key=_REFRESH_COOKIE,
+        value=token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        path=_REFRESH_PATH,
+    )
+
+
+def _delete_refresh_cookie(response: Response) -> None:
+    """Clear the refresh token cookie."""
+    response.delete_cookie(key=_REFRESH_COOKIE, path=_REFRESH_PATH)
+
+
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
-def login(request: Request, login_data: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
     """
     Login with username and password.
-    Returns access token (30min) and refresh token (7 days).
+    F-010: Returns access token in JSON; refresh token set as HttpOnly cookie.
+    F-019: If TOTP is enabled, requires totp_code in the request body.
     """
-    # Find user by username
     user = db.query(User).filter(User.username == login_data.username).first()
 
     if not user or not user.is_active:
@@ -47,34 +74,53 @@ def login(request: Request, login_data: LoginRequest, db: Session = Depends(get_
             detail="Ungültiger Benutzername oder Passwort"
         )
 
-    # Verify password
     if not auth_service.verify_password(login_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
         )
 
-    # Create tokens
+    # F-019: TOTP check
+    if user.totp_enabled:
+        if not login_data.totp_code:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="TOTP-Code erforderlich",
+                headers={"X-Requires-TOTP": "true"},
+            )
+        if not auth_service.verify_totp(user.totp_secret, login_data.totp_code):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Ungültiger TOTP-Code",
+            )
+
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version)
     refresh_token = auth_service.create_refresh_token(str(user.id), user.token_version)
 
+    # F-010: deliver refresh token via HttpOnly cookie, not in JSON
+    _set_refresh_cookie(response, refresh_token)
+
     return LoginResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
-        user=UserResponse.model_validate(user)
+        user=UserResponse.model_validate(user),
     )
 
 
 @router.post("/refresh", response_model=RefreshResponse)
 @limiter.limit("10/minute")
-def refresh_token(request: Request, refresh_data: RefreshRequest, db: Session = Depends(get_db)):
+def refresh_token(request: Request, db: Session = Depends(get_db)):
     """
-    Refresh access token using refresh token.
-    Returns new access token.
+    F-010: Refresh access token.
+    The refresh token is read from the HttpOnly cookie – no request body needed.
     """
-    # Decode refresh token
-    payload = auth_service.decode_token(refresh_data.refresh_token)
+    token = request.cookies.get(_REFRESH_COOKIE)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh-Token fehlt"
+        )
 
+    payload = auth_service.decode_token(token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -88,7 +134,6 @@ def refresh_token(request: Request, refresh_data: RefreshRequest, db: Session = 
             detail="Ungültiger Token"
         )
 
-    # Get user
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         raise HTTPException(
@@ -96,7 +141,6 @@ def refresh_token(request: Request, refresh_data: RefreshRequest, db: Session = 
             detail="Benutzer nicht gefunden oder deaktiviert"
         )
 
-    # Validate token version
     token_version = payload.get("tv", 0)
     if token_version != user.token_version:
         raise HTTPException(
@@ -104,24 +148,22 @@ def refresh_token(request: Request, refresh_data: RefreshRequest, db: Session = 
             detail="Token wurde widerrufen. Bitte erneut anmelden."
         )
 
-    # Create new access token
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version)
-
     return RefreshResponse(access_token=access_token)
 
 
 @router.post("/logout")
 def logout(
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Logout endpoint.
-    Invalidates all existing tokens by incrementing token_version.
-    Client should also delete tokens locally.
+    Logout: invalidates all tokens (increments token_version) and clears the refresh cookie.
     """
     current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
+    _delete_refresh_cookie(response)
     return {"message": "Erfolgreich abgemeldet"}
 
 
@@ -137,17 +179,13 @@ def change_password(
     Change password for the current authenticated user.
     Requires current password verification.
     """
-    # Verify current password
     if not auth_service.verify_password(password_data.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Aktuelles Passwort ist falsch"
         )
 
-    # Hash new password
     new_password_hash = auth_service.hash_password(password_data.new_password)
-
-    # Update password and invalidate all existing tokens
     current_user.password_hash = new_password_hash
     current_user.token_version += 1
     db.commit()
@@ -161,13 +199,10 @@ def update_calendar_color(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Update calendar color for the current authenticated user.
-    """
+    """Update calendar color for the current authenticated user."""
     current_user.calendar_color = request.calendar_color
     db.commit()
     db.refresh(current_user)
-
     return UserResponse.model_validate(current_user)
 
 
@@ -185,7 +220,6 @@ def update_profile(
     if profile_data.last_name is not None:
         current_user.last_name = profile_data.last_name
     if profile_data.email is not None:
-        # Allow empty string to clear email
         current_user.email = profile_data.email if profile_data.email.strip() else None
     db.commit()
     db.refresh(current_user)
@@ -250,3 +284,76 @@ def export_my_data(
             "Content-Type": "application/json; charset=utf-8",
         }
     )
+
+
+# ── F-019: TOTP 2FA endpoints ────────────────────────────────────────────────
+
+@router.post("/totp/setup", response_model=TotpSetupResponse)
+def totp_setup(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    F-019: Initiate TOTP setup.
+    Generates a new secret and saves it on the user (totp_enabled stays False
+    until the user verifies with a valid code via /totp/verify).
+    Returns the otpauth:// URI for QR rendering and the raw secret for manual entry.
+    """
+    secret = auth_service.generate_totp_secret()
+    current_user.totp_secret = secret
+    db.commit()
+
+    return TotpSetupResponse(
+        otpauth_uri=auth_service.get_totp_uri(current_user.username, secret),
+        secret=secret,
+    )
+
+
+@router.post("/totp/verify", response_model=UserResponse)
+def totp_verify(
+    verify_data: TotpVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    F-019: Verify TOTP code and activate 2FA.
+    The user must have called /totp/setup first to get a secret.
+    """
+    if not current_user.totp_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TOTP-Setup nicht initiiert. Bitte zuerst /totp/setup aufrufen."
+        )
+
+    if not auth_service.verify_totp(current_user.totp_secret, verify_data.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ungültiger TOTP-Code. Bitte prüfen Sie Ihre Authenticator-App."
+        )
+
+    current_user.totp_enabled = True
+    db.commit()
+    db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
+@router.delete("/totp/disable", response_model=UserResponse)
+def totp_disable(
+    disable_data: TotpDisableRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    F-019: Disable TOTP 2FA. Requires current password confirmation.
+    """
+    if not auth_service.verify_password(disable_data.password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwort ist falsch"
+        )
+
+    current_user.totp_secret = None
+    current_user.totp_enabled = False
+    db.commit()
+    db.refresh(current_user)
+    return UserResponse.model_validate(current_user)

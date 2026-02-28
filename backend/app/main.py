@@ -131,7 +131,7 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=not _cors_is_wildcard,  # Disable credentials with wildcard origins
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Cookie"],
 )
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)

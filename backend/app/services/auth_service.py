@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import jwt
+import pyotp
 from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from app.config import settings
@@ -68,6 +69,24 @@ def create_refresh_token(user_id: str, token_version: int = 0) -> str:
         "exp": expire
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def generate_totp_secret() -> str:
+    """Generate a random base32 TOTP secret."""
+    return pyotp.random_base32()
+
+
+def get_totp_uri(username: str, secret: str) -> str:
+    """Build the otpauth:// provisioning URI for authenticator apps."""
+    return pyotp.TOTP(secret).provisioning_uri(
+        name=username,
+        issuer_name=settings.TOTP_ISSUER,
+    )
+
+
+def verify_totp(secret: str, code: str) -> bool:
+    """Verify a 6-digit TOTP code. Allows ±1 window (30s tolerance)."""
+    return pyotp.TOTP(secret).verify(code, valid_window=1)
 
 
 def decode_token(token: str) -> Optional[dict]:
