@@ -47,7 +47,7 @@
 |----------------|--------|-----------------|
 | Identifikationsdaten | Benutzername, Vorname, Nachname | Art. 6 Abs. 1 lit. b DSGVO |
 | Kontaktdaten | E-Mail-Adresse (optional) | Art. 6 Abs. 1 lit. b DSGVO |
-| Zugangs­daten | Passwort-Hash (bcrypt), JWT-Token-Version | Art. 6 Abs. 1 lit. b DSGVO |
+| Zugangs­daten | Passwort-Hash (bcrypt), JWT-Token-Version, TOTP-Secret (verschlüsselt, optional) | Art. 6 Abs. 1 lit. b DSGVO |
 | Vertrags­daten | Wochenstunden, Arbeitstage, Urlaubstage, Kalenderfarbe | Art. 6 Abs. 1 lit. b DSGVO |
 
 ### 4.2 Zeiterfassungsdaten
@@ -65,8 +65,11 @@
 | Fortbildung | Datum, Zeitraum | Art. 6 Abs. 1 lit. b DSGVO | Nein |
 | Sonstige Abwesenheit | Datum, Zeitraum | Art. 6 Abs. 1 lit. b DSGVO | Nein |
 | **Krankmeldung** | Datum, Zeitraum | Art. 9 Abs. 2 lit. b DSGVO i.V.m. §26 Abs. 3 BDSG | **Ja (Art. 9)** |
+| **Nachtarbeitnehmer-Status** | `is_night_worker`-Flag (Bool) gem. §6 ArbZG | Art. 6 Abs. 1 lit. c (ArbZG §6); ggf. Art. 9 Abs. 2 lit. b | **Ja – Gesundheitsbezug** (erhöhtes Berufsrisiko) |
 
-> **Hinweis zu Krankheitsdaten:** Das System unterscheidet Abwesenheiten vom Typ "sick". Diese Gesundheitsdaten werden bei Excel-Exporten standardmäßig **nicht** ausgegeben (technische Schutzmaßnahme gem. Art. 25 DSGVO – Privacy by Default). Die Anzeige erfordert eine aktive Freischaltung durch den Admin und wird im Audit-Log protokolliert.
+> **Hinweis zu Krankheitsdaten:** Das System unterscheidet Abwesenheiten vom Typ „sick". Diese Gesundheitsdaten werden bei Excel- und ODS-Exporten standardmäßig **nicht** ausgegeben (Privacy by Default gem. Art. 25 DSGVO, maskiert als „Abwesenheit"). Die Anzeige erfordert aktive Freischaltung durch den Admin und wird im Audit-Log protokolliert (Aktion: `health_export`).
+>
+> **Hinweis zum Nachtarbeitnehmer-Status:** Das `is_night_worker`-Flag ist gesundheitsbezogen (§6 ArbZG: erhöhtes Gesundheitsrisiko) und wird analog zu Krankmeldungsdaten behandelt. JSON-Reportzugriffe werden protokolliert (Aktion: `health_data_read`).
 
 ### 4.4 Verlaufsdaten / Änderungshistorie
 
@@ -113,8 +116,11 @@
 | Lohnbuchhaltung | Intern / Extern (Steuerberater) | Art. 28 DSGVO (Auftragsverarbeitung) | Nein |
 | Datev / Lohnprogramm | Extern (Software) | Art. 28 DSGVO | Nein |
 | Finanzamt (im Rahmen Betriebsprüfung) | Behörde | Art. 6 Abs. 1 lit. c DSGVO | Nein |
+| GitHub Inc. (Fehler-Monitoring, optional) | Extern (Auftragsverarbeiter) | Art. 28 DSGVO (AVV erforderlich) | Nein (EU-Standardvertragsklauseln) |
 
 > **Auftragsverarbeitung:** Wird PraxisZeit auf einem externen Server (Hosting) betrieben, ist ein Auftragsverarbeitungsvertrag (AVV) nach Art. 28 DSGVO mit dem Hosting-Anbieter abzuschließen.
+>
+> **GitHub-Integration:** Bei aktivierter `GITHUB_TOKEN`-Konfiguration erstellt PraxisZeit automatisch GitHub Issues bei kritischen Fehlern. Es werden keine direkten personenbezogenen Daten (Name, E-Mail) im Issue-Titel übertragen. Technische Details im Issue-Body können indirekt Rückschlüsse erlauben. AVV mit GitHub Inc. abschließen oder Integration deaktivieren (kein `GITHUB_TOKEN` konfigurieren).
 
 ---
 
@@ -122,14 +128,17 @@
 
 | Maßnahme | Umsetzung |
 |----------|-----------|
-| **Zugangskontrolle** | Benutzername + Passwort (bcrypt, min. 10 Zeichen + Komplexität), JWT-Tokens |
+| **Zugangskontrolle** | Benutzername + Passwort (bcrypt, min. 10 Zeichen + Komplexität), JWT-Tokens, optionale TOTP-2FA für alle Nutzer |
 | **Zugriffskontrolle** | Rollenmodell (Admin / Mitarbeiter); Mitarbeitende sehen nur eigene Daten |
-| **Weitergabekontrolle** | HTTPS (TLS) für alle Verbindungen; kein API-Caching sensibler Daten |
-| **Eingabekontrolle** | Audit-Log für Admin-Aktionen und DSGVO-relevante Exporte |
+| **Token-Sicherheit** | Refresh-Token als HttpOnly-Cookie (XSS-Schutz); Access-Token kurzlebig (30 min) |
+| **Weitergabekontrolle** | HTTPS (TLS) für alle Verbindungen (Pflicht in Produktion); kein API-Caching sensibler Daten |
+| **Eingabekontrolle** | Audit-Log für Admin-Schreibaktionen und DSGVO-relevante Exporte/Lesezugriffe (Gesundheitsdaten) |
 | **Verfügbarkeitskontrolle** | Docker-Health-Checks, PostgreSQL-Backups |
 | **Trennungsgebot** | Rollenbasierte Datentrennung; Krankheitsdaten in Exporten standardmäßig ausgeblendet |
-| **Privacy by Default** | Gesundheitsdaten im Export deaktiviert; opt-in mit Audit-Log |
-| **Pseudonymisierung** | Anonymisierungsfunktion für ausgeschiedene Mitarbeitende |
+| **Privacy by Default** | Gesundheitsdaten (Krank + Nachtarbeit) in Exporten deaktiviert; opt-in mit Audit-Log |
+| **Pseudonymisierung** | Anonymisierungsfunktion für ausgeschiedene Mitarbeitende (POST /anonymize, DELETE /purge) |
+| **Betroffenenrechte (Art. 16)** | PUT /api/auth/profile: Stammdaten selbst korrigierbar |
+| **Datenportabilität (Art. 20)** | GET /api/auth/me/export: vollständiger JSON-Self-Service-Export |
 
 ---
 
@@ -139,11 +148,11 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 
 | Recht | Grundlage | Umsetzung |
 |-------|-----------|-----------|
-| Auskunft | Art. 15 DSGVO | Einsicht über Profilseite; auf Anfrage vollständiger Datenexport |
-| Berichtigung | Art. 16 DSGVO | Änderungsantrag-Funktion im System |
-| Löschung | Art. 17 DSGVO | Anonymisierung + Purge-Prozess (s. Abschnitt 5) |
-| Einschränkung | Art. 18 DSGVO | Deaktivierung des Kontos auf Anfrage |
-| Datenübertragbarkeit | Art. 20 DSGVO | Excel-Export der eigenen Zeitdaten |
+| Auskunft | Art. 15 DSGVO | Einsicht über Profilseite; Self-Service-Export unter GET /api/auth/me/export |
+| Berichtigung | Art. 16 DSGVO | PUT /api/auth/profile: Name und E-Mail direkt änderbar; Änderungsantrag für Zeiteinträge |
+| Löschung | Art. 17 DSGVO | Anonymisierung + Purge-Prozess (s. Abschnitt 5); POST /anonymize, DELETE /purge |
+| Einschränkung | Art. 18 DSGVO | Deaktivierung des Kontos auf Anfrage (is_active = False) |
+| Datenübertragbarkeit | Art. 20 DSGVO | GET /api/auth/me/export: maschinenlesbarer JSON-Export aller eigenen Daten |
 | Widerspruch | Art. 21 DSGVO | An Verantwortlichen zu richten |
 
 ---
@@ -161,6 +170,7 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 | Datum | Version | Änderung | Bearbeiter |
 |-------|---------|----------|------------|
 | 2026-02-28 | 1.0 | Erstversion | [Name] |
+| 2026-02-28 | 1.1 | TOTP-2FA-Felder, is_night_worker (Art. 9), GitHub als Empfänger, TOM aktualisiert, Betroffenenrechte vervollständigt | Claude Sonnet 4.6 |
 
 ---
 
