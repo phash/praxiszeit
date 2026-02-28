@@ -28,16 +28,24 @@ PraxisZeit nutzt aktuell **Stufe 2 (Spec-anchored)**: Specs existieren parallel 
 
 ```
 specs/
-├── README.md           # Diese Datei – Anleitung
-├── TEMPLATE.md         # Vorlage für neue Specs
-└── features/
-    ├── auth.md         # Authentifizierung & Benutzerverwaltung
-    ├── time-tracking.md  # Zeiterfassung
-    ├── absences.md     # Abwesenheitsverwaltung
-    ├── reports.md      # Berichte & Export
-    ├── dashboard.md    # Dashboard (MA + Admin)
-    ├── holidays.md     # Feiertage & Betriebsferien
-    └── notifications.md  # Benachrichtigungen & Warnungen
+├── README.md               # Diese Datei – Anleitung
+├── TEMPLATE.md             # Vorlage für neue Specs
+├── features/               # Feature-Spezifikationen
+│   ├── auth.md             # Authentifizierung & Benutzerverwaltung
+│   ├── time-tracking.md    # Zeiterfassung
+│   ├── absences.md         # Abwesenheitsverwaltung
+│   ├── reports.md          # Berichte & Export
+│   ├── dashboard.md        # Dashboard (MA + Admin)
+│   ├── holidays.md         # Feiertage & Betriebsferien
+│   └── notifications.md    # Benachrichtigungen & Warnungen
+├── dsgvo/                  # Datenschutz-Dokumentation
+│   ├── dsgvo-report.html   # DSGVO-Prüfbericht (alle Findings behoben)
+│   ├── dsfa.md             # Datenschutz-Folgenabschätzung (Art. 35)
+│   ├── verarbeitungsverzeichnis.md  # Verarbeitungsverzeichnis (Art. 30)
+│   └── vier-augen-prinzip.md        # 4-Augen-Prinzip Richtlinie
+└── arbzg/                  # Arbeitszeitgesetz-Compliance
+    ├── arbzg-compliance.html  # ArbZG-Prüfbericht
+    └── arbzg-compliance.md   # ArbZG-Implementierungsdokumentation
 ```
 
 ---
