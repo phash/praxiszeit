@@ -14,6 +14,7 @@ import Reports from './pages/admin/Reports';
 import AuditLog from './pages/admin/AuditLog';
 import AdminAbsences from './pages/admin/AdminAbsences';
 import ErrorMonitoring from './pages/admin/ErrorMonitoring';
+import Help from './pages/Help';
 import Layout from './components/Layout';
 
 // Protected Route Component
@@ -59,6 +60,7 @@ function App() {
           <Route path="change-requests" element={<ChangeRequests />} />
           <Route path="absences" element={<AbsenceCalendarPage />} />
           <Route path="profile" element={<Profile />} />
+          <Route path="help" element={<Help />} />
         </Route>
 
         {/* Protected Admin Routes */}

@@ -16,13 +16,16 @@ import {
   X,
   AlertTriangle,
   BookOpen,
+  HelpCircle,
 } from 'lucide-react';
+import HelpPanel from './HelpPanel';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -56,6 +59,7 @@ export default function Layout() {
     { path: '/change-requests', label: 'Änderungsanträge', icon: FileEdit },
     { path: '/absences', label: 'Abwesenheiten', icon: Calendar },
     { path: '/profile', label: 'Profil', icon: User },
+    { path: '/help', label: 'Hilfe', icon: HelpCircle },
   ];
 
   const adminNavItems = [
@@ -234,6 +238,19 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {/* Help FAB — hidden on /help itself */}
+      {location.pathname !== '/help' && (
+        <button
+          onClick={() => setHelpOpen(true)}
+          className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full bg-primary text-white shadow-lg hover:bg-primary-dark transition-colors flex items-center justify-center"
+          aria-label="Kontexthilfe öffnen"
+        >
+          <HelpCircle size={22} />
+        </button>
+      )}
+
+      <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }
