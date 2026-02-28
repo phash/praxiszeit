@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -45,13 +46,15 @@
     }
     .summary-card.ok { border-color: #22c55e; }
     .summary-card.warn { border-color: #f59e0b; }
-    .summary-card.fail { border-color: #ef4444; }
+    .summary-card.info { border-color: #94a3b8; }
+    .summary-card.fine { border-color: #ef4444; }
     .summary-card .icon { font-size: 2rem; margin-bottom: 0.5rem; }
     .summary-card .label { font-weight: 600; font-size: 0.85rem; color: #475569; }
     .summary-card .count { font-size: 2rem; font-weight: 700; margin: 0.25rem 0; }
     .summary-card.ok .count { color: #16a34a; }
     .summary-card.warn .count { color: #d97706; }
-    .summary-card.fail .count { color: #dc2626; }
+    .summary-card.info .count { color: #64748b; }
+    .summary-card.fine .count { color: #dc2626; }
 
     .section {
       background: white;
@@ -119,6 +122,7 @@
     .badge-ok { background: #dcfce7; color: #166534; }
     .badge-warn { background: #fef3c7; color: #92400e; }
     .badge-fail { background: #fee2e2; color: #991b1b; }
+    .badge-info { background: #f1f5f9; color: #475569; }
 
     .law-box {
       background: #eff6ff;
@@ -132,7 +136,17 @@
     .law-box ul { margin-left: 1.2rem; margin-top: 0.4rem; }
     .law-box li { margin-bottom: 0.2rem; }
 
-    .gaps-list { list-style: none; }
+    .note-box {
+      background: #fefce8;
+      border-left: 4px solid #ca8a04;
+      padding: 0.75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+      color: #713f12;
+    }
+
+    .gaps-list { list-style: none; margin-top: 0.5rem; }
     .gaps-list li {
       padding: 0.75rem 1rem;
       border-radius: 8px;
@@ -199,7 +213,7 @@
 <div class="header">
   <h1>ArbZG-Compliance – PraxisZeit</h1>
   <p class="subtitle">Vollständiger Abgleich: Arbeitszeitgesetz ↔ Implementierungsstand</p>
-  <div class="date-badge">Stand: Februar 2026 &nbsp;·&nbsp; Gesetzesquelle: <a href="https://www.gesetze-im-internet.de/arbzg/" style="color:white">gesetze-im-internet.de/arbzg</a></div>
+  <div class="date-badge">Stand: 28.02.2026 &nbsp;·&nbsp; Gesetzesquelle: <a href="https://www.gesetze-im-internet.de/arbzg/" style="color:white">gesetze-im-internet.de/arbzg</a></div>
 </div>
 
 <div class="container">
@@ -207,20 +221,20 @@
   <div class="summary-grid">
     <div class="summary-card ok">
       <div class="icon">✅</div>
-      <div class="count">7</div>
-      <div class="label">Vollständig/Weitgehend konform</div>
+      <div class="count">6</div>
+      <div class="label">Vollständig konform</div>
     </div>
     <div class="summary-card warn">
       <div class="icon">⚠️</div>
-      <div class="count">2</div>
-      <div class="label">Weitgehend (kleine Lücken)</div>
+      <div class="count">3</div>
+      <div class="label">Weitgehend / Teilweise</div>
     </div>
-    <div class="summary-card fail">
+    <div class="summary-card info">
       <div class="icon">📋</div>
-      <div class="count">4</div>
-      <div class="label">Verbleibende Lücken (niedrig)</div>
+      <div class="count">8</div>
+      <div class="label">Verbleibende Lücken</div>
     </div>
-    <div class="summary-card fail">
+    <div class="summary-card fine">
       <div class="icon">💶</div>
       <div class="count">30.000 €</div>
       <div class="label">Max. Bußgeld pro Verstoß</div>
@@ -232,11 +246,49 @@
     <button class="btn" onclick="setAll(false)">Alle zuklappen</button>
   </div>
 
+  <!-- § 2 -->
+  <div class="section" id="s2">
+    <div class="section-header" onclick="toggle('s2')">
+      <span class="section-par">§ 2</span>
+      <span class="section-title">Begriffsbestimmungen (Nachtarbeit)</span>
+      <span class="section-status">⚠️</span>
+      <span class="section-chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Definitionen:</strong>
+        <ul>
+          <li><strong>Nachtzeit:</strong> 23:00–06:00 Uhr (Abs. 3)</li>
+          <li><strong>Nachtarbeit:</strong> Arbeit, die <strong>mehr als zwei Stunden</strong> der Nachtzeit umfasst (Abs. 4)</li>
+          <li><strong>Nachtarbeitnehmer:</strong> wer regelmäßig Nachtschicht leistet <strong>oder</strong> an mind. <strong>48 Tagen/Jahr</strong> Nachtarbeit leistet (Abs. 5)</li>
+        </ul>
+      </div>
+      <table>
+        <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>Nachtzeit-Fenster (23–6 Uhr)</td>
+          <td><span class="badge badge-ok">✅ Korrekt</span></td>
+          <td><code>_is_night_work()</code> in <code>time_entries.py</code> verwendet korrekt 23–6 Uhr</td>
+        </tr>
+        <tr>
+          <td>Nachtarbeit-Schwellwert &gt;2h (Abs. 4)</td>
+          <td><span class="badge badge-warn">⚠️ Konservativ</span></td>
+          <td><code>is_night_work</code>-Flag wird bei <em>jeder</em> Nachtzeit-Berührung gesetzt, nicht erst ab 2h. Gesetz: nur bei &gt;2h. Implementierung ist over-flagging (sicherer), kein Compliance-Risiko.</td>
+        </tr>
+        <tr>
+          <td>Nachtarbeitnehmer-Schwellwert (≥48 Tage)</td>
+          <td><span class="badge badge-ok">✅ Korrekt</span></td>
+          <td>Admin-Report <code>/api/admin/reports/night-work-summary</code> verwendet korrekt ≥48-Tage-Markierung</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
   <!-- § 3 -->
   <div class="section open" id="s3">
     <div class="section-header" onclick="toggle('s3')">
       <span class="section-par">§ 3</span>
-      <span class="section-title">Tägliche Höchstarbeitszeit</span>
+      <span class="section-title">Tägliche Höchstarbeitszeit + 48h-Wochengrenze</span>
       <span class="section-status">✅</span>
       <span class="section-chevron">▼</span>
     </div>
@@ -246,7 +298,11 @@
         <ul>
           <li>Max. <strong>8 Stunden</strong> werktägliche Arbeitszeit</li>
           <li>Verlängerung auf <strong>10 Stunden</strong> erlaubt, wenn Ausgleich innerhalb <strong>6 Kalendermonaten / 24 Wochen</strong> auf ≤ 8h Durchschnitt erfolgt</li>
+          <li>Implizierte Wochengrenze: 6 Werktage × 8h Durchschnitt = <strong>48h/Woche</strong></li>
         </ul>
+      </div>
+      <div class="note-box">
+        <strong>Hinweis §14:</strong> Die 48h-Wochengrenze leitet sich aus §3 ab (nicht aus §14). §14 regelt Notfall-Ausnahmen und wiederholt dort nur die 48h-Obergrenze. Der <code>WEEKLY_HOURS_WARNING</code>-Check implementiert die §3-Schutzintention.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -271,6 +327,11 @@
           <td><code>change_requests.py</code> prüft §3 nach Genehmigung</td>
         </tr>
         <tr>
+          <td>Warnung bei &gt; 48h/Woche</td>
+          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><code>WEEKLY_HOURS_WARNING</code> + Frontend-Toast bei allen Eingabepfaden</td>
+        </tr>
+        <tr>
           <td>§18-Ausnahme (exempt_from_arbzg)</td>
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
           <td>Checks werden für leitende Angestellte übersprungen</td>
@@ -278,7 +339,7 @@
         <tr>
           <td>6-Monats-Ausgleichszeitraum</td>
           <td><span class="badge badge-warn">⚠️ Nicht getrackt</span></td>
-          <td>Kein gleitender Durchschnitt; manuelle Dokumentationsaufgabe</td>
+          <td>Kein gleitender Durchschnitt; manuelle Dokumentationsaufgabe des Arbeitgebers</td>
         </tr>
       </table>
     </div>
@@ -298,7 +359,7 @@
         <ul>
           <li>Arbeit &gt; 6 Stunden → mind. <strong>30 Minuten</strong> Pause</li>
           <li>Arbeit &gt; 9 Stunden → mind. <strong>45 Minuten</strong> Pause</li>
-          <li>Maximale Arbeitszeit ohne jede Pause: <strong>6 Stunden</strong></li>
+          <li><strong>Länger als 6 Stunden am Stück</strong> darf nicht ohne Ruhepause gearbeitet werden (Satz 3)</li>
           <li>Pausen können aufgeteilt werden (mind. 15 min je Einheit)</li>
         </ul>
       </div>
@@ -324,8 +385,13 @@
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
           <td>Pausenpflicht-Checks werden für leitende Angestellte übersprungen</td>
         </tr>
+        <tr>
+          <td>Pausen-Timing: max. 6h am Stück (Satz 3)</td>
+          <td><span class="badge badge-warn">⚠️ Nicht prüfbar</span></td>
+          <td>Das System prüft die <em>Gesamtdauer</em> der Pause, nicht wann sie genommen wurde. Start/Ende der Pause nicht erfasst → 6h-Kontinuitätsregel systemisch nicht prüfbar.</td>
+        </tr>
       </table>
-      <p class="ok-note">§ 4 ist vollständig konform implementiert. ✅</p>
+      <p style="margin-top:0.75rem; color:#92400e; font-size:0.88rem;">Das Pausen-Timing (§4 Satz 3) ist in Zeiterfassungssystemen ohne Pausen-Timestamp generell nicht prüfbar. Für geregelte Praxiszeiten mit festen Mittagspausen kein praktisches Risiko.</p>
     </div>
   </div>
 
@@ -342,7 +408,7 @@
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
           <li>Mind. <strong>11 Stunden ununterbrochene Ruhezeit</strong> nach Arbeitsende</li>
-          <li>Ausnahmen in bestimmten Bereichen (z.B. Krankenhäuser) mit Ausgleich innerhalb 4 Wochen</li>
+          <li>Ausnahmen in bestimmten Bereichen (z.B. Krankenhäuser, Pflegeeinrichtungen) mit Ausgleich innerhalb 4 Wochen</li>
         </ul>
       </div>
       <table>
@@ -372,7 +438,7 @@
     <div class="section-header" onclick="toggle('s6')">
       <span class="section-par">§ 6</span>
       <span class="section-title">Nacht- und Schichtarbeit</span>
-      <span class="section-status">✅</span>
+      <span class="section-status">⚠️</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
@@ -380,10 +446,12 @@
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
           <li><strong>Nachtzeit:</strong> 23:00–06:00 Uhr (§ 2 Abs. 3)</li>
-          <li><strong>Nachtarbeitnehmer:</strong> mind. 48 Nächte/Jahr oder regelmäßig Nachtarbeit</li>
-          <li>Max. <strong>8 Stunden/Nacht</strong> für Nachtarbeitnehmer (verlängerbar auf 10h, Ausgleich innerhalb 1 Monat)</li>
-          <li>Anspruch auf <strong>arbeitsmedizinische Untersuchung</strong></li>
-          <li>Anspruch auf <strong>25%-Lohnzuschlag</strong> oder gleichwertige Freizeit bei regelmäßiger Nachtarbeit</li>
+          <li><strong>Nachtarbeitnehmer:</strong> mind. 48 Nächte/Jahr oder regelmäßige Nachtschicht</li>
+          <li>Max. <strong>8 Stunden/Nacht</strong> für Nachtarbeitnehmer, verlängerbar auf 10h mit Ausgleich innerhalb <strong>1 Monat</strong> (Abs. 2)</li>
+          <li>Anspruch auf <strong>arbeitsmedizinische Untersuchung</strong> vor Beschäftigungsbeginn, alle 3 Jahre (ab 50: jährlich) (Abs. 3)</li>
+          <li>Recht auf <strong>Wechsel zum Tagesarbeitsplatz</strong> bei Gesundheitsgefährdung, Kind &lt;12 J., pflegebedürftigen Angehörigen (Abs. 4)</li>
+          <li>Anspruch auf <strong>25% Lohnzuschlag oder gleichwertige Freizeit</strong> (Abs. 5)</li>
+          <li><strong>Gleicher Zugang zur Weiterbildung</strong> wie Tagarbeitnehmer (Abs. 6)</li>
         </ul>
       </div>
       <table>
@@ -409,16 +477,37 @@
           <td><code>GET /api/admin/reports/night-work-summary</code> – Nachtschichten/MA, Nachtarbeitnehmer-Markierung (≥48 Tage/Jahr), Monatsaufschlüsselung</td>
         </tr>
         <tr>
-          <td>Strengere 8h-Grenze für Nachtarbeitnehmer</td>
-          <td><span class="badge badge-warn">⚠️ Nicht impl.</span></td>
-          <td>Alle Mitarbeiter haben dasselbe 10h Hard-Limit; separates Nachtarbeitnehmer-Flag nicht vorhanden</td>
+          <td>Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2)</td>
+          <td><span class="badge badge-fail">❌ Nicht impl.</span></td>
+          <td>Alle Mitarbeiter haben dasselbe 10h Hard-Limit; kein separates Nachtarbeitnehmer-Flag auf Benutzerebene</td>
         </tr>
         <tr>
-          <td>Tracking arbeitsmedizinischer Untersuchungen</td>
+          <td>Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer (Abs. 2)</td>
+          <td><span class="badge badge-fail">❌ Nicht impl.</span></td>
+          <td>§3 verwendet 6-Monat-Fenster; für Nachtarbeitnehmer gilt strengerer 1-Monat-Ausgleich</td>
+        </tr>
+        <tr>
+          <td>Tracking arbeitsmedizinischer Untersuchungen (Abs. 3)</td>
           <td><span class="badge badge-warn">⚠️ Nicht impl.</span></td>
-          <td>HR-Verwaltungsaufgabe – sinnvoller in separatem HR-System</td>
+          <td>HR-Verwaltungsaufgabe – sinnvoller in Personalakte / separatem HR-System</td>
+        </tr>
+        <tr>
+          <td>Recht auf Tagesarbeitsplatz (Abs. 4)</td>
+          <td><span class="badge badge-info">ℹ️ Außerhalb System</span></td>
+          <td>Arbeitgeber-Pflicht bei gesundheitlichem Nachweis, Kind &lt;12 J. oder Pflege – nicht systemisch abbildbar</td>
+        </tr>
+        <tr>
+          <td>Lohnzuschlag / Freizeitausgleich (Abs. 5)</td>
+          <td><span class="badge badge-info">ℹ️ Außerhalb System</span></td>
+          <td>Lohnbuchhaltungsaufgabe; Nachweis obliegt dem Arbeitgeber</td>
+        </tr>
+        <tr>
+          <td>Gleicher Zugang zur Weiterbildung (Abs. 6)</td>
+          <td><span class="badge badge-info">ℹ️ Außerhalb System</span></td>
+          <td>Organisationspflicht des Arbeitgebers, nicht im Zeiterfassungssystem abbildbar</td>
         </tr>
       </table>
+      <p style="margin-top:0.75rem; color:#92400e; font-size:0.88rem;">Abs. 4–6 sind Arbeitgeber-Pflichten, die kein Zeiterfassungssystem vollständig abbilden kann. Für Arztpraxen mit seltener Nachtarbeit sind die Lücken in Abs. 2 praktisch wenig relevant.</p>
     </div>
   </div>
 
@@ -433,7 +522,7 @@
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht (§ 9):</strong> Beschäftigungsverbot 0–24 Uhr<br>
-        <strong>Ausnahmen (§ 10):</strong> u.a. Gesundheitsversorgung, Notdienst → dokumentationspflichtig
+        <strong>Ausnahmen (§ 10):</strong> u.a. Nr. 3 Gesundheitsversorgung/Pflege, Notdienst → dokumentationspflichtig
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -465,7 +554,7 @@
         <tr>
           <td>Ausnahmegrund-Feld (§ 10 ArbZG)</td>
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Optionales Textfeld <code>sunday_exception_reason</code> erscheint im Formular bei Sonn-/Feiertagseintrag</td>
+          <td>Optionales Textfeld <code>sunday_exception_reason</code> erscheint im Formular bei Sonn-/Feiertagen</td>
         </tr>
         <tr>
           <td>§18-Ausnahme (exempt_from_arbzg)</td>
@@ -490,8 +579,9 @@
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
           <li>Mind. <strong>15 beschäftigungsfreie Sonntage</strong> pro Jahr pro Arbeitnehmer</li>
-          <li>Ersatzruhetag nach Sonntagsarbeit: innerhalb <strong>2 Wochen</strong></li>
+          <li>Ersatzruhetag nach Sonntagsarbeit: innerhalb <strong>2 Wochen</strong> (inkl. Beschäftigungstag)</li>
           <li>Ersatzruhetag nach Feiertagsarbeit: innerhalb <strong>8 Wochen</strong></li>
+          <li>Ersatzruhetag unmittelbar in Verbindung mit täglicher Ruhezeit nach §5 (Abs. 4)</li>
         </ul>
       </div>
       <table>
@@ -522,36 +612,33 @@
   </div>
 
   <!-- § 14 -->
-  <div class="section open" id="s14">
+  <div class="section" id="s14">
     <div class="section-header" onclick="toggle('s14')">
       <span class="section-par">§ 14</span>
-      <span class="section-title">Wochenarbeitszeit (48h-Grenze)</span>
-      <span class="section-status">✅</span>
+      <span class="section-title">Außergewöhnliche Fälle (Notfall-Ausnahmen)</span>
+      <span class="section-status">ℹ️</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
       <div class="law-box">
-        <strong>Gesetzliche Pflicht:</strong>
-        <ul>
-          <li>Max. <strong>48 Stunden/Woche</strong> im 6-Monats-Durchschnitt</li>
-        </ul>
+        <strong>Gesetzliche Regelung:</strong><br>
+        §14 erlaubt vorübergehende <strong>Ausnahmen</strong> von §§3–5, 6 Abs. 2, §§7, 9–11 bei <strong>Notfällen</strong> und außergewöhnlichen Situationen (z.B. drohender Verderb von Rohstoffen, Katastrophen), die unabhängig vom Willen der Betroffenen eintreten.<br><br>
+        §14 Abs. 3: Auch in Ausnahmefällen gilt die Obergrenze von <strong>48h/Woche im 6-Monats-Durchschnitt</strong>.
+      </div>
+      <div class="note-box">
+        <strong>Klarstellung:</strong> §14 ist eine <em>Notfall-Ausnahmeregel</em>, kein Regelfall. Die <code>WEEKLY_HOURS_WARNING</code> bei 48h implementiert die Schutzintention aus <strong>§3</strong> (6 Werktage × 8h Durchschnitt). §14 Abs. 3 wiederholt diese Grenze nur für den Ausnahmefall.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>Warnung bei &gt; 48h/Woche</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>WEEKLY_HOURS_WARNING</code> bei create / update / clock_out + Frontend-Toast</td>
+          <td>§14-Notfall-Ausnahmen</td>
+          <td><span class="badge badge-info">ℹ️ Nicht anwendbar</span></td>
+          <td>§14-Ausnahmen setzen außergewöhnliche Notfälle voraus; für Regelzeiterfassung nicht relevant</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme (exempt_from_arbzg)</td>
+          <td>48h/Woche-Obergrenze (aus §3/§14 Abs. 3)</td>
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Wochenarbeitszeit-Check wird für leitende Angestellte übersprungen</td>
-        </tr>
-        <tr>
-          <td>6-Monats-Durchschnitt</td>
-          <td><span class="badge badge-warn">⚠️ Nicht impl.</span></td>
-          <td>Nur wöchentliche Momentaufnahme; gleitender 6-Monats-Schnitt nicht berechnet</td>
+          <td><code>WEEKLY_HOURS_WARNING</code> bei Überschreitung von 48h/Woche – korrekt implementiert</td>
         </tr>
       </table>
     </div>
@@ -569,9 +656,9 @@
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
-          <li>Aufzeichnung aller Arbeitszeiten &gt; 8h werktäglich</li>
-          <li>Aufbewahrung mind. <strong>2 Jahre</strong></li>
-          <li><strong>Gesetzesaushang</strong> am Arbeitsplatz</li>
+          <li>Aufzeichnung aller Arbeitszeiten &gt; 8h werktäglich (Abs. 2)</li>
+          <li>Aufbewahrung mind. <strong>2 Jahre</strong> (Abs. 2)</li>
+          <li><strong>Gesetzesaushang</strong> (Kopie ArbZG) am Arbeitsplatz oder über betriebliche IT zugänglich (Abs. 1)</li>
         </ul>
       </div>
       <table>
@@ -610,13 +697,13 @@
   <div class="section open" id="s18">
     <div class="section-header" onclick="toggle('s18')">
       <span class="section-par">§ 18</span>
-      <span class="section-title">Ausnahmen für leitende Angestellte</span>
+      <span class="section-title">Ausnahmen für leitende Angestellte (Nichtanwendung)</span>
       <span class="section-status">✅</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
       <div class="law-box">
-        <strong>Gesetzliche Regelung:</strong> Leitende Angestellte (Chefärzte, Praxisinhaber) sind vom ArbZG ausgenommen.
+        <strong>Gesetzliche Regelung:</strong> Leitende Angestellte i.S. §5 Abs. 3 BetrVG sowie <strong>Chefärzte</strong> sind vollständig vom ArbZG ausgenommen. Gilt auch für Praxisinhaber.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -631,9 +718,9 @@
           <td>Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG)" in Benutzerverwaltung</td>
         </tr>
         <tr>
-          <td>Vollständiger Bypass</td>
+          <td>Vollständiger Bypass aller Checks</td>
           <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Alle §3/§4/§14-Checks und DAILY/WEEKLY/SUNDAY/HOLIDAY-Warnungen werden für exempt-Benutzer übersprungen</td>
+          <td>Alle §3/§4-Checks und DAILY/WEEKLY/SUNDAY/HOLIDAY-Warnungen werden für exempt-Benutzer übersprungen</td>
         </tr>
       </table>
       <p class="ok-note">§ 18 ist vollständig konform implementiert. ✅</p>
@@ -644,27 +731,43 @@
   <div class="section open" id="gaps">
     <div class="section-header" onclick="toggle('gaps')">
       <span class="section-par">Lücken</span>
-      <span class="section-title">Verbleibende Lücken (niedrige Priorität)</span>
+      <span class="section-title">Verbleibende Lücken (Gesamtüberblick)</span>
       <span class="section-status">📋</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
       <ul class="gaps-list">
         <li>
-          <span class="gap-tag">§3/§14</span>
-          <div><strong>6-Monats-Ausgleichszeitraum</strong> – Kein gleitender Durchschnitt für die 8h/48h-Grenze. Manuelle Dokumentationsaufgabe des Arbeitgebers. Technisch komplex, selten relevant bei typischen Praxisarbeitszeiten.</div>
+          <span class="gap-tag">§3</span>
+          <div><strong>6-Monats-Ausgleichszeitraum</strong> – Kein gleitender Durchschnitt für die 8h-Tagesgrenze. Manuelle Dokumentationsaufgabe des Arbeitgebers. Technisch komplex, selten relevant bei typischen Praxisarbeitszeiten.</div>
         </li>
         <li>
-          <span class="gap-tag">§6</span>
+          <span class="gap-tag">§4 Satz 3</span>
+          <div><strong>Pausen-Timing (max. 6h am Stück)</strong> – Das System prüft die Mindest-Pausendauer, aber nicht wann die Pause genommen wurde. Da Start/Ende der Pause nicht erfasst werden, ist die 6h-Kontinuitätsregel nicht systemisch prüfbar.</div>
+        </li>
+        <li>
+          <span class="gap-tag">§6 Abs. 2</span>
           <div><strong>Strengere 8h-Grenze für Nachtarbeitnehmer</strong> – Alle Mitarbeiter haben dasselbe 10h Hard-Limit. Erfordert ein separates Nachtarbeitnehmer-Flag und abweichende Prüflogik. Praxisrelevanz gering, da Nachtarbeit in Arztpraxen selten ist.</div>
         </li>
         <li>
-          <span class="gap-tag">§6</span>
-          <div><strong>Tracking arbeitsmedizinischer Untersuchungen</strong> – Anspruch auf Untersuchung für Nachtarbeitnehmer. Verwaltungsaufgabe des Arbeitgebers außerhalb des Systems.</div>
+          <span class="gap-tag">§6 Abs. 2</span>
+          <div><strong>Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer</strong> – §3 verwendet ein 6-Monats-Fenster; für Nachtarbeitnehmer gilt ein strengerer 1-Monats-Ausgleich. Nur relevant bei Mitarbeitenden mit regelmäßiger Nachtarbeit.</div>
+        </li>
+        <li>
+          <span class="gap-tag">§6 Abs. 3</span>
+          <div><strong>Arbeitsmedizinische Untersuchungen</strong> – Anspruch auf Untersuchung für Nachtarbeitnehmer (vor Beginn, alle 3 Jahre, ab 50: jährlich). Verwaltungsaufgabe des Arbeitgebers; sollte in Personalakte dokumentiert werden.</div>
+        </li>
+        <li>
+          <span class="gap-tag">§6 Abs. 5</span>
+          <div><strong>Lohnzuschlag / Freizeitausgleich Nachtarbeit</strong> – Anspruch auf 25% Zuschlag oder gleichwertige Freizeit. Lohnbuchhaltungsaufgabe; liegt außerhalb des Zeiterfassungssystems.</div>
+        </li>
+        <li>
+          <span class="gap-tag">§3/§14</span>
+          <div><strong>6-Monats-Durchschnitt Wochenarbeitszeit</strong> – Nur wöchentliche Momentaufnahme (48h-Warnung); kein gleitender 6-Monats-Schnitt. Aktuelle Warnungen bieten ausreichende Sicherheit für den Praxisalltag.</div>
         </li>
         <li>
           <span class="gap-tag">§7</span>
-          <div><strong>Tarifvertragliche Abweichungen</strong> – Wenn ein Tarifvertrag gilt, können andere Grenzwerte gelten. PraxisZeit verwendet feste 8h/10h/48h-Werte ohne Konfigurationsmöglichkeit.</div>
+          <div><strong>Tarifvertragliche Abweichungen</strong> – Wenn ein Tarifvertrag gilt, können andere Grenzwerte gelten. PraxisZeit verwendet feste gesetzliche 8h/10h/48h-Werte ohne Konfigurationsmöglichkeit.</div>
         </li>
       </ul>
     </div>
@@ -673,7 +776,7 @@
   <!-- Bußgeldrahmen -->
   <div class="section" id="fines">
     <div class="section-header" onclick="toggle('fines')">
-      <span class="section-par">§ 22</span>
+      <span class="section-par">§§ 22/23</span>
       <span class="section-title">Straf- und Bußgeldrahmen</span>
       <span class="section-status">💶</span>
       <span class="section-chevron">▼</span>
