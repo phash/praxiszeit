@@ -617,9 +617,29 @@ export default function Reports() {
           <Clock className="text-indigo-500" size={24} />
           <h2 className="text-xl font-semibold">Nachtarbeit §6 ArbZG</h2>
         </div>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-600 mb-3">
           Nachtzeit: 23:00–06:00 Uhr. Mitarbeitende mit ≥<strong>48 Nachtschichten/Jahr</strong> gelten als Nachtarbeitnehmer und haben Anspruch auf arbeitsmedizinische Untersuchung sowie Lohnausgleich.
         </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+            <p className="font-semibold text-amber-800 mb-1">§6 Abs. 3 – Arbeitsmedizinische Untersuchung</p>
+            <ul className="text-amber-700 space-y-0.5">
+              <li>• Pflichtuntersuchung <strong>vor Aufnahme</strong> der Nachtarbeit</li>
+              <li>• Wiederholung alle <strong>3 Jahre</strong> (ab 50 Jahren: jährlich)</li>
+              <li>• Kosten trägt der Arbeitgeber</li>
+              <li>• Auf Verlangen: Versetzung in Tagarbeit (§6 Abs. 4)</li>
+            </ul>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+            <p className="font-semibold text-blue-800 mb-1">§6 Abs. 5 – Lohnausgleich</p>
+            <ul className="text-blue-700 space-y-0.5">
+              <li>• Anspruch auf <strong>25 % Lohnzuschlag</strong> oder</li>
+              <li>• gleichwertige <strong>bezahlte Freizeit</strong> als Ausgleich</li>
+              <li>• Gilt für alle Nachtarbeitnehmer (≥48 Nachtschichten/Jahr)</li>
+              <li>• Tarifvertrag kann abweichende Regelung treffen (§6 Abs. 5 S. 2)</li>
+            </ul>
+          </div>
+        </div>
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>

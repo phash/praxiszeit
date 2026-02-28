@@ -505,37 +505,39 @@ def admin_create_time_entry(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    # Break validation (§4 ArbZG)
-    break_error = validate_daily_break(
-        db=db, user_id=user.id, entry_date=entry_data.date,
-        start_time=entry_data.start_time, end_time=entry_data.end_time,
-        break_minutes=entry_data.break_minutes,
-    )
-    if break_error:
-        raise HTTPException(status_code=400, detail=break_error)
-
-    # §3 ArbZG: daily hours hard limit
-    daily_hours = _calculate_daily_net_hours(
-        db=db, user_id=user.id, entry_date=entry_data.date,
-        start_time=entry_data.start_time, end_time=entry_data.end_time,
-        break_minutes=entry_data.break_minutes,
-    )
-    if daily_hours > MAX_DAILY_HOURS_HARD:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
-        )
-
     admin_create_warnings: list[str] = []
-    if (
-        user.is_night_worker
-        and _is_night_work(entry_data.start_time, entry_data.end_time)
-        and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
-    ):
-        admin_create_warnings.append(
-            f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
-            "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+    if not user.exempt_from_arbzg:
+        # Break validation (§4 ArbZG)
+        break_error = validate_daily_break(
+            db=db, user_id=user.id, entry_date=entry_data.date,
+            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes,
         )
+        if break_error:
+            raise HTTPException(status_code=400, detail=break_error)
+
+        # §3 ArbZG: daily hours hard limit
+        daily_hours = _calculate_daily_net_hours(
+            db=db, user_id=user.id, entry_date=entry_data.date,
+            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes,
+        )
+        if daily_hours > MAX_DAILY_HOURS_HARD:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+            )
+
+        # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
+        if (
+            user.is_night_worker
+            and _is_night_work(entry_data.start_time, entry_data.end_time)
+            and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
+        ):
+            admin_create_warnings.append(
+                f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
+                "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+            )
 
     entry = TimeEntry(
         user_id=user.id,
@@ -572,26 +574,43 @@ def admin_update_time_entry(
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 
-    # Break validation (§4 ArbZG)
-    break_error = validate_daily_break(
-        db=db, user_id=entry.user_id, entry_date=entry_data.date,
-        start_time=entry_data.start_time, end_time=entry_data.end_time,
-        break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
-    )
-    if break_error:
-        raise HTTPException(status_code=400, detail=break_error)
+    # Get user for §18 exempt check and night worker warning
+    affected_user = db.query(User).filter(User.id == entry.user_id).first()
 
-    # §3 ArbZG: daily hours hard limit
-    daily_hours = _calculate_daily_net_hours(
-        db=db, user_id=entry.user_id, entry_date=entry_data.date,
-        start_time=entry_data.start_time, end_time=entry_data.end_time,
-        break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
-    )
-    if daily_hours > MAX_DAILY_HOURS_HARD:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+    admin_update_warnings: list[str] = []
+    if not affected_user or not affected_user.exempt_from_arbzg:
+        # Break validation (§4 ArbZG)
+        break_error = validate_daily_break(
+            db=db, user_id=entry.user_id, entry_date=entry_data.date,
+            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
         )
+        if break_error:
+            raise HTTPException(status_code=400, detail=break_error)
+
+        # §3 ArbZG: daily hours hard limit
+        daily_hours = _calculate_daily_net_hours(
+            db=db, user_id=entry.user_id, entry_date=entry_data.date,
+            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
+        )
+        if daily_hours > MAX_DAILY_HOURS_HARD:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+            )
+
+        # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
+        if (
+            affected_user
+            and affected_user.is_night_worker
+            and _is_night_work(entry_data.start_time, entry_data.end_time)
+            and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
+        ):
+            admin_update_warnings.append(
+                f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
+                "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+            )
 
     # Create audit log before changing
     _create_audit_log(
@@ -615,19 +634,6 @@ def admin_update_time_entry(
 
     db.commit()
     db.refresh(entry)
-
-    admin_update_warnings: list[str] = []
-    affected_user = db.query(User).filter(User.id == entry.user_id).first()
-    if (
-        affected_user
-        and affected_user.is_night_worker
-        and _is_night_work(entry.start_time, entry.end_time)
-        and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
-    ):
-        admin_update_warnings.append(
-            f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
-            "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
-        )
 
     response = TimeEntryResponse.model_validate(entry)
     response.warnings = admin_update_warnings

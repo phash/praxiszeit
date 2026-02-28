@@ -28,8 +28,10 @@ def check_rest_time_violations(
     """
     Check for rest time violations for a user.
 
-    A violation occurs when the time between the end of one work day
-    and the start of the next work day is less than min_rest_hours.
+    A violation occurs when the time between the end of the last entry
+    of one work day and the start of the first entry of the next work day
+    is less than min_rest_hours. Split shifts (multiple entries on the same
+    day) are correctly handled by grouping entries by date first.
 
     Args:
         db: Database session
@@ -55,30 +57,41 @@ def check_rest_time_violations(
     if month:
         query = query.filter(extract('month', TimeEntry.date) == month)
 
-    entries = query.order_by(TimeEntry.date, TimeEntry.end_time).all()
+    entries = query.order_by(TimeEntry.date, TimeEntry.start_time).all()
 
+    # Group entries by date: find the last end_time and first start_time per day.
+    # This correctly handles split shifts (e.g. 08:00-12:00 + 14:00-18:00)
+    # by not treating the intra-day gap as a rest-time violation.
+    day_last_end: Dict = {}
+    day_first_start: Dict = {}
+    for entry in entries:
+        if not entry.end_time or not entry.start_time:
+            continue
+        d = entry.date
+        if d not in day_last_end or entry.end_time > day_last_end[d]:
+            day_last_end[d] = entry.end_time
+        if d not in day_first_start or entry.start_time < day_first_start[d]:
+            day_first_start[d] = entry.start_time
+
+    # Check rest time between consecutive days that have entries
+    sorted_days = sorted(day_last_end.keys())
     violations = []
 
-    for i in range(1, len(entries)):
-        prev = entries[i - 1]
-        curr = entries[i]
+    for i in range(1, len(sorted_days)):
+        prev_date = sorted_days[i - 1]
+        curr_date = sorted_days[i]
 
-        # Only compare consecutive days (skip gaps)
-        if not prev.end_time or not curr.start_time:
-            continue
+        prev_end = datetime.combine(prev_date, day_last_end[prev_date])
+        curr_start = datetime.combine(curr_date, day_first_start[curr_date])
 
-        prev_end = datetime.combine(prev.date, prev.end_time)
-        curr_start = datetime.combine(curr.date, curr.start_time)
-
-        rest_duration = curr_start - prev_end
-        rest_hours = rest_duration.total_seconds() / 3600
+        rest_hours = (curr_start - prev_end).total_seconds() / 3600
 
         if rest_hours < min_rest_hours:
             violations.append({
-                "day1_date": str(prev.date),
-                "day1_end": str(prev.end_time),
-                "day2_date": str(curr.date),
-                "day2_start": str(curr.start_time),
+                "day1_date": str(prev_date),
+                "day1_end": str(day_last_end[prev_date]),
+                "day2_date": str(curr_date),
+                "day2_start": str(day_first_start[curr_date]),
                 "actual_rest_hours": round(rest_hours, 2),
                 "min_rest_hours": min_rest_hours,
                 "deficit_hours": round(min_rest_hours - rest_hours, 2),

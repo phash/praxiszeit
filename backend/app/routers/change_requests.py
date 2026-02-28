@@ -74,8 +74,8 @@ def create_change_request(
         if entry.date >= date.today():
             raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
 
-    # Break validation for CREATE and UPDATE
-    if data.request_type in ("create", "update") and data.proposed_date:
+    # Break validation for CREATE and UPDATE (§18-Ausnahme: exempt_from_arbzg überspringt §3/§4)
+    if not current_user.exempt_from_arbzg and data.request_type in ("create", "update") and data.proposed_date:
         break_error = validate_daily_break(
             db=db,
             user_id=current_user.id,
@@ -149,9 +149,10 @@ def create_change_request(
 
     response = _enrich_response(cr, db)
 
-    # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
+    # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer (§18-Ausnahme beachten)
     if (
-        data.request_type in ("create", "update")
+        not current_user.exempt_from_arbzg
+        and data.request_type in ("create", "update")
         and data.proposed_start_time
         and data.proposed_end_time
     ):
