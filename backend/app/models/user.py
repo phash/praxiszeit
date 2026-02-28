@@ -40,6 +40,7 @@ class User(Base):
     is_hidden = Column(Boolean, default=False, nullable=False, server_default='false')  # Hidden from reports/overviews
     token_version = Column(Integer, default=0, nullable=False, server_default='0')  # Increment to invalidate all tokens
     exempt_from_arbzg = Column(Boolean, default=False, nullable=False, server_default='false')  # §18 ArbZG: leitende Angestellte
+    is_night_worker = Column(Boolean, default=False, nullable=False, server_default='false')  # §6 Abs. 2 ArbZG: reduziertes Tageslimit 8h
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

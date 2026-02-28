@@ -13,7 +13,10 @@ from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.services import auth_service
 from app.services.break_validation_service import validate_daily_break
-from app.routers.time_entries import _calculate_daily_net_hours, MAX_DAILY_HOURS_HARD
+from app.routers.time_entries import (
+    _calculate_daily_net_hours, _is_night_work,
+    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -143,6 +146,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         password_hash=auth_service.hash_password(user_data.password),
         is_active=True,
         exempt_from_arbzg=user_data.exempt_from_arbzg,
+        is_night_worker=user_data.is_night_worker,
     )
 
     db.add(new_user)
@@ -455,7 +459,36 @@ def review_change_request(
 
     db.commit()
     db.refresh(cr)
-    return _enrich_cr_response(cr, db)
+
+    cr_response = _enrich_cr_response(cr, db)
+
+    # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer bei Genehmigung
+    if (
+        review.action == "approve"
+        and cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE)
+        and cr.proposed_start_time
+        and cr.proposed_end_time
+    ):
+        cr_user = db.query(User).filter(User.id == cr.user_id).first()
+        if cr_user and cr_user.is_night_worker:
+            daily_hours_cr = _calculate_daily_net_hours(
+                db=db,
+                user_id=cr.user_id,
+                entry_date=cr.proposed_date,
+                start_time=cr.proposed_start_time,
+                end_time=cr.proposed_end_time,
+                break_minutes=cr.proposed_break_minutes or 0,
+            )
+            if (
+                _is_night_work(cr.proposed_start_time, cr.proposed_end_time)
+                and daily_hours_cr > MAX_NIGHT_WORKER_DAILY_WARN
+            ):
+                cr_response.warnings.append(
+                    f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours_cr:.1f}h). "
+                    "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+                )
+
+    return cr_response
 
 
 # ── Admin Time Entry Management ─────────────────────────────────────────
@@ -493,6 +526,17 @@ def admin_create_time_entry(
             detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
         )
 
+    admin_create_warnings: list[str] = []
+    if (
+        user.is_night_worker
+        and _is_night_work(entry_data.start_time, entry_data.end_time)
+        and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
+    ):
+        admin_create_warnings.append(
+            f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
+            "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+        )
+
     entry = TimeEntry(
         user_id=user.id,
         date=entry_data.date,
@@ -511,7 +555,9 @@ def admin_create_time_entry(
 
     db.commit()
     db.refresh(entry)
-    return entry
+    response = TimeEntryResponse.model_validate(entry)
+    response.warnings = admin_create_warnings
+    return response
 
 
 @router.put("/time-entries/{entry_id}", response_model=TimeEntryResponse)
@@ -569,7 +615,23 @@ def admin_update_time_entry(
 
     db.commit()
     db.refresh(entry)
-    return entry
+
+    admin_update_warnings: list[str] = []
+    affected_user = db.query(User).filter(User.id == entry.user_id).first()
+    if (
+        affected_user
+        and affected_user.is_night_worker
+        and _is_night_work(entry.start_time, entry.end_time)
+        and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
+    ):
+        admin_update_warnings.append(
+            f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours:.1f}h). "
+            "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+        )
+
+    response = TimeEntryResponse.model_validate(entry)
+    response.warnings = admin_update_warnings
+    return response
 
 
 @router.delete("/time-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
