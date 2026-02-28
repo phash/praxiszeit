@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
-import { Lock, Save, Palette, User as UserIcon, Download } from 'lucide-react';
+import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
 
 // 12 beautiful pastel colors for calendar
@@ -39,6 +40,17 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [colorMessage, setColorMessage] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
+
+  // F-019: TOTP 2FA state
+  const [totpEnabled, setTotpEnabled] = useState(user?.totp_enabled ?? false);
+  const [showTotpSetup, setShowTotpSetup] = useState(false);
+  const [totpSetupData, setTotpSetupData] = useState<{ otpauth_uri: string; secret: string } | null>(null);
+  const [totpVerifyCode, setTotpVerifyCode] = useState('');
+  const [showTotpDisable, setShowTotpDisable] = useState(false);
+  const [totpDisablePassword, setTotpDisablePassword] = useState('');
+  const [totpMessage, setTotpMessage] = useState('');
+  const [totpError, setTotpError] = useState('');
+  const [secretCopied, setSecretCopied] = useState(false);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +126,64 @@ export default function Profile() {
       setTimeout(() => setColorMessage(''), 3000);
     } catch (err: any) {
       setColorMessage('Fehler beim Speichern der Farbe');
+    }
+  };
+
+  // ── F-019: TOTP handlers ──────────────────────────────────────────────────
+
+  const handleTotpSetup = async () => {
+    setTotpError('');
+    setTotpMessage('');
+    try {
+      const response = await apiClient.post('/auth/totp/setup');
+      setTotpSetupData(response.data);
+      setShowTotpSetup(true);
+    } catch (err: any) {
+      setTotpError(err.response?.data?.detail || 'Fehler beim Starten der 2FA-Einrichtung');
+    }
+  };
+
+  const handleTotpVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTotpError('');
+    try {
+      const response = await apiClient.post('/auth/totp/verify', { code: totpVerifyCode });
+      setUser(response.data);
+      setTotpEnabled(true);
+      setShowTotpSetup(false);
+      setTotpSetupData(null);
+      setTotpVerifyCode('');
+      setTotpMessage('2FA wurde erfolgreich aktiviert.');
+      setTimeout(() => setTotpMessage(''), 5000);
+    } catch (err: any) {
+      setTotpError(err.response?.data?.detail || 'Ungültiger Code. Bitte erneut versuchen.');
+      setTotpVerifyCode('');
+    }
+  };
+
+  const handleTotpDisable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTotpError('');
+    try {
+      const response = await apiClient.delete('/auth/totp/disable', {
+        data: { password: totpDisablePassword },
+      });
+      setUser(response.data);
+      setTotpEnabled(false);
+      setShowTotpDisable(false);
+      setTotpDisablePassword('');
+      setTotpMessage('2FA wurde deaktiviert.');
+      setTimeout(() => setTotpMessage(''), 5000);
+    } catch (err: any) {
+      setTotpError(err.response?.data?.detail || 'Fehler beim Deaktivieren der 2FA');
+    }
+  };
+
+  const handleCopySecret = () => {
+    if (totpSetupData?.secret) {
+      navigator.clipboard.writeText(totpSetupData.secret);
+      setSecretCopied(true);
+      setTimeout(() => setSecretCopied(false), 2000);
     }
   };
 
@@ -244,6 +314,169 @@ export default function Profile() {
             <span>JSON herunterladen</span>
           </button>
         </div>
+      </div>
+
+      {/* F-019: Zwei-Faktor-Authentifizierung */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-2 mb-1">
+          <Smartphone size={20} />
+          <h3 className="text-lg font-semibold">Zwei-Faktor-Authentifizierung (2FA)</h3>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Schützen Sie Ihr Konto mit einem zusätzlichen Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy).
+        </p>
+
+        {totpMessage && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4 flex items-center gap-2">
+            <CheckCircle size={16} />
+            {totpMessage}
+          </div>
+        )}
+        {totpError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+            {totpError}
+          </div>
+        )}
+
+        {/* Status badge */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            {totpEnabled ? (
+              <>
+                <ShieldCheck size={18} className="text-green-600" />
+                <span className="text-sm font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                  Aktiviert
+                </span>
+              </>
+            ) : (
+              <>
+                <ShieldOff size={18} className="text-gray-400" />
+                <span className="text-sm font-medium text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
+                  Deaktiviert
+                </span>
+              </>
+            )}
+          </div>
+
+          {!totpEnabled && !showTotpSetup && (
+            <button
+              onClick={handleTotpSetup}
+              className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium"
+            >
+              <ShieldCheck size={15} />
+              2FA aktivieren
+            </button>
+          )}
+          {totpEnabled && !showTotpDisable && (
+            <button
+              onClick={() => { setShowTotpDisable(true); setTotpError(''); }}
+              className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 px-4 py-2 rounded-lg transition text-sm font-medium border border-red-200"
+            >
+              <ShieldOff size={15} />
+              2FA deaktivieren
+            </button>
+          )}
+        </div>
+
+        {/* Setup wizard */}
+        {showTotpSetup && totpSetupData && (
+          <div className="border border-blue-200 bg-blue-50 rounded-xl p-5 space-y-4">
+            <p className="text-sm font-medium text-blue-800">
+              Schritt 1: Scannen Sie den QR-Code mit Ihrer Authenticator-App
+            </p>
+            <div className="flex justify-center">
+              <div className="bg-white p-3 rounded-lg shadow-sm inline-block">
+                <QRCodeSVG value={totpSetupData.otpauth_uri} size={180} />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-blue-700 mb-1">
+                Oder tragen Sie den Schlüssel manuell ein:
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs bg-white border border-blue-200 rounded px-3 py-2 font-mono tracking-wider break-all">
+                  {totpSetupData.secret}
+                </code>
+                <button
+                  type="button"
+                  onClick={handleCopySecret}
+                  className="flex-shrink-0 p-2 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition"
+                  title="Kopieren"
+                >
+                  {secretCopied ? <CheckCircle size={16} className="text-green-600" /> : <Copy size={16} className="text-blue-600" />}
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleTotpVerify} className="space-y-3 pt-2 border-t border-blue-200">
+              <p className="text-sm font-medium text-blue-800">
+                Schritt 2: Geben Sie den 6-stelligen Code aus der App ein
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                value={totpVerifyCode}
+                onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                required
+                autoFocus
+                className="w-full px-4 py-3 border border-blue-300 rounded-lg focus:ring-2 focus:ring-primary text-center text-xl tracking-widest font-mono"
+                placeholder="000000"
+              />
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={totpVerifyCode.length !== 6}
+                  className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Bestätigen & 2FA aktivieren
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowTotpSetup(false); setTotpSetupData(null); setTotpVerifyCode(''); setTotpError(''); }}
+                  className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Disable form */}
+        {showTotpDisable && (
+          <div className="border border-red-200 bg-red-50 rounded-xl p-5 space-y-3">
+            <p className="text-sm font-medium text-red-800">
+              Bitte bestätigen Sie Ihr Passwort, um 2FA zu deaktivieren:
+            </p>
+            <form onSubmit={handleTotpDisable} className="space-y-3">
+              <PasswordInput
+                value={totpDisablePassword}
+                onChange={(e) => setTotpDisablePassword(e.target.value)}
+                required
+                placeholder="Ihr aktuelles Passwort"
+                className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-400"
+              />
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={!totpDisablePassword}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50"
+                >
+                  2FA deaktivieren
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowTotpDisable(false); setTotpDisablePassword(''); setTotpError(''); }}
+                  className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
 
       {/* Calendar Color Selection */}
