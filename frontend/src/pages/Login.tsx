@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { LogIn, FileText } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -64,9 +65,8 @@ export default function Login() {
             <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
               Passwort
             </label>
-            <input
+            <PasswordInput
               id="password"
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
