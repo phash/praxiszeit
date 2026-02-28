@@ -20,7 +20,8 @@
     "zustand": "^4.5.0"
   },
   "overrides": {
-    "minimatch": ">=10.2.3"
+    "minimatch": ">=10.2.3",
+    "serialize-javascript": ">=7.0.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
