@@ -11,6 +11,25 @@ from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service
 from sqlalchemy import extract
 
+_NIGHT_THRESHOLD_MINUTES = 120  # §2 Abs. 4 ArbZG: mind. 2h Nachtzeit = Nachtarbeit
+
+
+def _is_night_work_export(start_time, end_time) -> bool:
+    """True wenn >2h Nachtzeit (23:00–06:00), §2 Abs. 4 / §6 ArbZG."""
+    if not start_time or not end_time:
+        return False
+
+    def to_min(t) -> int:
+        return t.hour * 60 + t.minute
+
+    s, e = to_min(start_time), to_min(end_time)
+    if e <= s:
+        e += 1440  # Mitternachtsübergang
+    nm = (max(0, min(e, 360) - max(s, 0))       # 00:00–06:00
+          + max(0, min(e, 1440) - max(s, 1380))  # 23:00–24:00
+          + max(0, min(e, 1800) - max(s, 1440))) # 00:00–06:00 (Folgetag)
+    return nm > _NIGHT_THRESHOLD_MINUTES
+
 
 def generate_monthly_report(db: Session, year: int, month: int) -> BytesIO:
     """
@@ -61,10 +80,28 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     """
     sheet = wb.create_sheet(title=f"{user.last_name} {user.first_name}"[:31])  # Excel sheet name max 31 chars
 
-    # Header row
+    # Row 1–2: ArbZG-relevante Mitarbeiter-Metadaten (§16 ArbZG Aufzeichnungspflicht)
+    sheet.cell(row=1, column=1).value = "Mitarbeiter:"
+    sheet.cell(row=1, column=1).font = Font(bold=True)
+    sheet.cell(row=1, column=2).value = f"{user.first_name} {user.last_name}"
+    sheet.cell(row=1, column=4).value = "Wochenstunden:"
+    sheet.cell(row=1, column=4).font = Font(bold=True)
+    sheet.cell(row=1, column=5).value = float(user.weekly_hours)
+    sheet.cell(row=1, column=7).value = "Monat:"
+    sheet.cell(row=1, column=7).font = Font(bold=True)
+    sheet.cell(row=1, column=8).value = f"{month:02d}/{year}"
+    sheet.cell(row=2, column=1).value = "§18 ArbZG-befreit:"
+    sheet.cell(row=2, column=1).font = Font(bold=True)
+    sheet.cell(row=2, column=2).value = "Ja" if user.exempt_from_arbzg else "Nein"
+    sheet.cell(row=2, column=4).value = "Nachtarbeitnehmer (§6 Abs. 2 ArbZG):"
+    sheet.cell(row=2, column=4).font = Font(bold=True)
+    sheet.cell(row=2, column=5).value = "Ja" if user.is_night_worker else "Nein"
+    # Row 3: blank separator
+
+    # Row 4: Column headers
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung"]
     for col_num, header in enumerate(headers, 1):
-        cell = sheet.cell(row=1, column=col_num)
+        cell = sheet.cell(row=4, column=col_num)
         cell.value = header
         cell.font = Font(bold=True)
         cell.fill = PatternFill(start_color="CCE5FF", end_color="CCE5FF", fill_type="solid")
@@ -100,15 +137,17 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # German weekday names
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
-    row = 2
+    row = 5  # Data starts after 3-row header + blank
     total_net = Decimal('0.00')
     total_target = Decimal('0.00')
+    night_work_count = 0
 
     # Iterate through all days of the month
     for day in range(1, last_day + 1):
         current_date = date(year, month, day)
         weekday = current_date.weekday()
         weekday_name = weekday_names[weekday]
+        is_sunday = weekday == 6
 
         # Check if it's a weekend, holiday, or absence
         is_weekend = weekday >= 5
@@ -125,37 +164,58 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # Get time entry if exists
         entry = entries_by_date.get(current_date)
 
+        # Night work check (§6 / §2 Abs. 4 ArbZG)
+        is_night_wrk = (entry is not None and entry.end_time is not None
+                        and _is_night_work_export(entry.start_time, entry.end_time))
+        if is_night_wrk:
+            night_work_count += 1
+
         if entry:
-            # Time entry exists
             sheet.cell(row=row, column=3).value = entry.start_time.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
             sheet.cell(row=row, column=5).value = entry.break_minutes
             sheet.cell(row=row, column=6).value = float(entry.net_hours)
             sheet.cell(row=row, column=6).number_format = '0.00'
+            # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
+            bemerkung_parts = []
+            if entry.sunday_exception_reason and (is_sunday or is_holiday):
+                bemerkung_parts.append(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}")
             if entry.note:
-                sheet.cell(row=row, column=10).value = entry.note
-
+                bemerkung_parts.append(entry.note)
+            if bemerkung_parts:
+                sheet.cell(row=row, column=10).value = " | ".join(bemerkung_parts)
             net = entry.net_hours
             total_net += net
         else:
-            # No time entry
             net = Decimal('0.00')
             sheet.cell(row=row, column=6).value = 0.00
             sheet.cell(row=row, column=6).number_format = '0.00'
 
-        # Target hours
+        # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if is_weekend:
             target = Decimal('0.00')
-            sheet.cell(row=row, column=9).value = "Wochenende"
-            # Gray background for weekend
+            if is_sunday and entry:
+                abw = "Sonntagsarbeit (§9/§10 ArbZG)"
+            elif is_sunday:
+                abw = "Sonntag"
+            else:
+                abw = "Samstag"
+            if is_night_wrk:
+                abw += " | Nachtarbeit (§6 ArbZG)"
+            sheet.cell(row=row, column=9).value = abw
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
             target = Decimal('0.00')
             holiday = holidays_by_date[current_date]
-            sheet.cell(row=row, column=9).value = f"Feiertag"
-            sheet.cell(row=row, column=10).value = holiday.name
-            # Yellow background for holiday
+            if entry:
+                abw = f"Feiertagsarbeit: {holiday.name} (§9/§10 ArbZG)"
+            else:
+                abw = f"Feiertag: {holiday.name}"
+            if is_night_wrk:
+                abw += " | Nachtarbeit (§6 ArbZG)"
+            sheet.cell(row=row, column=9).value = abw
+            # col 10 (Bemerkung) bereits oben gesetzt – NICHT mit holiday.name überschreiben
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif absence:
@@ -171,8 +231,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             if absence.note:
                 sheet.cell(row=row, column=10).value = absence.note
         else:
-            # Regular working day
+            # Regulärer Arbeitstag
             target = daily_target
+            if is_night_wrk:
+                sheet.cell(row=row, column=9).value = "Nachtarbeit (§6 ArbZG)"
 
         sheet.cell(row=row, column=7).value = float(target)
         sheet.cell(row=row, column=7).number_format = '0.00'
@@ -183,11 +245,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         sheet.cell(row=row, column=8).value = float(diff)
         sheet.cell(row=row, column=8).number_format = '0.00'
 
-        # Color code difference
         if diff > 0:
-            sheet.cell(row=row, column=8).font = Font(color="006400")  # Dark green
+            sheet.cell(row=row, column=8).font = Font(color="006400")
         elif diff < 0:
-            sheet.cell(row=row, column=8).font = Font(color="8B0000")  # Dark red
+            sheet.cell(row=row, column=8).font = Font(color="8B0000")
 
         row += 1
 
@@ -241,6 +302,11 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.cell(row=row, column=2).value = float(vacation_account['remaining_hours'])
     sheet.cell(row=row, column=2).number_format = '0.00'
 
+    row += 1
+    sheet.cell(row=row, column=1).value = "Nachtarbeitstage (§6 ArbZG):"
+    sheet.cell(row=row, column=2).value = night_work_count
+    sheet.cell(row=row, column=1).font = Font(bold=True)
+
     # Adjust column widths
     sheet.column_dimensions['A'].width = 12
     sheet.column_dimensions['B'].width = 10
@@ -250,8 +316,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.column_dimensions['F'].width = 12
     sheet.column_dimensions['G'].width = 12
     sheet.column_dimensions['H'].width = 10
-    sheet.column_dimensions['I'].width = 20
-    sheet.column_dimensions['J'].width = 30
+    sheet.column_dimensions['I'].width = 28
+    sheet.column_dimensions['J'].width = 35
 
 
 def generate_yearly_report(db: Session, year: int) -> BytesIO:
@@ -481,7 +547,15 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.cell(row=1, column=1).font = Font(bold=True, size=14)
     sheet.merge_cells('A1:J1')
 
-    # Headers
+    # Row 2: ArbZG-relevante Mitarbeiter-Flags (§16 ArbZG Aufzeichnungspflicht)
+    sheet.cell(row=2, column=1).value = "§18 ArbZG-befreit:"
+    sheet.cell(row=2, column=1).font = Font(bold=True)
+    sheet.cell(row=2, column=2).value = "Ja" if user.exempt_from_arbzg else "Nein"
+    sheet.cell(row=2, column=4).value = "Nachtarbeitnehmer (§6 Abs. 2 ArbZG):"
+    sheet.cell(row=2, column=4).font = Font(bold=True)
+    sheet.cell(row=2, column=5).value = "Ja" if user.is_night_worker else "Nein"
+
+    # Row 3: Column headers
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung"]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=3, column=col_num)
@@ -516,6 +590,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     row = 4
     total_net = Decimal('0.00')
     total_target = Decimal('0.00')
+    night_work_count = 0
     current_month = 0
 
     # Iterate through all days of the year
@@ -526,7 +601,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     while current_date <= end_date:
         # Add month separator
         if current_date.month != current_month:
-            if current_month > 0:  # Not the first month
+            if current_month > 0:
                 row += 1  # Empty row between months
 
             current_month = current_date.month
@@ -535,7 +610,6 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 "Juli", "August", "September", "Oktober", "November", "Dezember"
             ]
 
-            # Month header
             sheet.cell(row=row, column=1).value = month_names[current_month - 1]
             sheet.cell(row=row, column=1).font = Font(bold=True, size=12)
             sheet.cell(row=row, column=1).fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
@@ -544,57 +618,72 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
         weekday = current_date.weekday()
         weekday_name = weekday_names[weekday]
+        is_sunday = weekday == 6
 
-        # Check if it's a weekend, holiday, or absence
         is_weekend = weekday >= 5
         is_holiday = current_date in holidays_by_date
         absence = absences_by_date.get(current_date)
 
-        # Date column
         sheet.cell(row=row, column=1).value = current_date
         sheet.cell(row=row, column=1).number_format = 'DD.MM.YYYY'
-
-        # Weekday column
         sheet.cell(row=row, column=2).value = weekday_name
 
-        # Get time entry if exists
         entry = entries_by_date.get(current_date)
 
+        # Night work check (§6 / §2 Abs. 4 ArbZG)
+        is_night_wrk = (entry is not None and entry.end_time is not None
+                        and _is_night_work_export(entry.start_time, entry.end_time))
+        if is_night_wrk:
+            night_work_count += 1
+
         if entry:
-            # Time entry exists
             sheet.cell(row=row, column=3).value = entry.start_time.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
             sheet.cell(row=row, column=5).value = entry.break_minutes
             sheet.cell(row=row, column=6).value = float(entry.net_hours)
             sheet.cell(row=row, column=6).number_format = '0.00'
+            # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
+            bemerkung_parts = []
+            if entry.sunday_exception_reason and (is_sunday or is_holiday):
+                bemerkung_parts.append(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}")
             if entry.note:
-                sheet.cell(row=row, column=10).value = entry.note
-
+                bemerkung_parts.append(entry.note)
+            if bemerkung_parts:
+                sheet.cell(row=row, column=10).value = " | ".join(bemerkung_parts)
             net = entry.net_hours
             total_net += net
         else:
-            # No time entry
             net = Decimal('0.00')
             sheet.cell(row=row, column=6).value = 0.00
             sheet.cell(row=row, column=6).number_format = '0.00'
 
-        # Get weekly hours for this specific date (considers historical changes)
         weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
         daily_target = calculation_service.get_daily_target(user, weekly_hours)
 
-        # Target hours
+        # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if is_weekend:
             target = Decimal('0.00')
-            sheet.cell(row=row, column=9).value = "Wochenende"
-            # Gray background for weekend
+            if is_sunday and entry:
+                abw = "Sonntagsarbeit (§9/§10 ArbZG)"
+            elif is_sunday:
+                abw = "Sonntag"
+            else:
+                abw = "Samstag"
+            if is_night_wrk:
+                abw += " | Nachtarbeit (§6 ArbZG)"
+            sheet.cell(row=row, column=9).value = abw
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
             target = Decimal('0.00')
             holiday = holidays_by_date[current_date]
-            sheet.cell(row=row, column=9).value = f"Feiertag"
-            sheet.cell(row=row, column=10).value = holiday.name
-            # Yellow background for holiday
+            if entry:
+                abw = f"Feiertagsarbeit: {holiday.name} (§9/§10 ArbZG)"
+            else:
+                abw = f"Feiertag: {holiday.name}"
+            if is_night_wrk:
+                abw += " | Nachtarbeit (§6 ArbZG)"
+            sheet.cell(row=row, column=9).value = abw
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif absence:
@@ -610,23 +699,22 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             if absence.note:
                 sheet.cell(row=row, column=10).value = absence.note
         else:
-            # Regular working day
             target = daily_target
+            if is_night_wrk:
+                sheet.cell(row=row, column=9).value = "Nachtarbeit (§6 ArbZG)"
 
         sheet.cell(row=row, column=7).value = float(target)
         sheet.cell(row=row, column=7).number_format = '0.00'
         total_target += target
 
-        # Difference
         diff = net - target
         sheet.cell(row=row, column=8).value = float(diff)
         sheet.cell(row=row, column=8).number_format = '0.00'
 
-        # Color code difference
         if diff > 0:
-            sheet.cell(row=row, column=8).font = Font(color="006400")  # Dark green
+            sheet.cell(row=row, column=8).font = Font(color="006400")
         elif diff < 0:
-            sheet.cell(row=row, column=8).font = Font(color="8B0000")  # Dark red
+            sheet.cell(row=row, column=8).font = Font(color="8B0000")
 
         row += 1
         current_date += timedelta(days=1)
@@ -681,6 +769,11 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.cell(row=row, column=2).value = float(vacation_account['remaining_days'])
     sheet.cell(row=row, column=2).number_format = '0.0'
 
+    row += 1
+    sheet.cell(row=row, column=1).value = "Nachtarbeitstage (§6 ArbZG):"
+    sheet.cell(row=row, column=2).value = night_work_count
+    sheet.cell(row=row, column=1).font = Font(bold=True)
+
     # Adjust column widths
     sheet.column_dimensions['A'].width = 12
     sheet.column_dimensions['B'].width = 10
@@ -690,8 +783,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.column_dimensions['F'].width = 12
     sheet.column_dimensions['G'].width = 12
     sheet.column_dimensions['H'].width = 10
-    sheet.column_dimensions['I'].width = 20
-    sheet.column_dimensions['J'].width = 30
+    sheet.column_dimensions['I'].width = 28
+    sheet.column_dimensions['J'].width = 35
 
 
 def generate_yearly_report_classic(db: Session, year: int) -> BytesIO:
@@ -754,10 +847,16 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     sheet.cell(row=2, column=1).font = bold_font
     sheet.cell(row=2, column=2).value = f"{user.first_name} {user.last_name}"
 
-    # Row 3: Year title
+    # Row 3: Year title + ArbZG-Flags
     sheet.cell(row=3, column=1).value = "Jahresarbeitszeiten"
     sheet.cell(row=3, column=1).font = bold_font
     sheet.cell(row=3, column=2).value = year
+    sheet.cell(row=3, column=15).value = "§18 ArbZG-befreit:"
+    sheet.cell(row=3, column=15).font = bold_font
+    sheet.cell(row=3, column=16).value = "Ja" if user.exempt_from_arbzg else "Nein"
+    sheet.cell(row=2, column=15).value = "Nachtarbeitnehmer (§6 Abs. 2):"
+    sheet.cell(row=2, column=15).font = bold_font
+    sheet.cell(row=2, column=16).value = "Ja" if user.is_night_worker else "Nein"
 
     # Row 4: Month headers (columns 3-14 for Jan-Dec)
     sheet.cell(row=4, column=2).value = "Übertrag"
@@ -788,8 +887,9 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     sheet.cell(row=13, column=1).value = "Jan.- Monatsende"
     sheet.cell(row=14, column=1).value = "Überstunden / Minusstunden"
     sheet.cell(row=15, column=1).value = "Resturlaub + Urlaub in Std."
+    sheet.cell(row=16, column=1).value = "Nachtarbeitstage (§6 ArbZG)"
 
-    for row in range(6, 16):
+    for row in range(6, 17):
         sheet.cell(row=row, column=1).font = normal_font
 
     # Calculate data for each month
@@ -884,6 +984,20 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=15, column=col).number_format = '0.0'
         sheet.cell(row=15, column=col).alignment = right_align
 
+        # Row 16: Night work days per month (§6 ArbZG)
+        month_entries = db.query(TimeEntry).filter(
+            TimeEntry.user_id == user.id,
+            extract('year', TimeEntry.date) == year,
+            extract('month', TimeEntry.date) == month,
+            TimeEntry.end_time.isnot(None),
+        ).all()
+        night_days = sum(
+            1 for e in month_entries
+            if _is_night_work_export(e.start_time, e.end_time)
+        )
+        sheet.cell(row=16, column=col).value = night_days
+        sheet.cell(row=16, column=col).alignment = center_align
+
     # Add daily hours info in corner (like in original)
     sheet.cell(row=6, column=17).value = "tägl. Std:"
     sheet.cell(row=6, column=17).font = normal_font
@@ -907,6 +1021,6 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         bottom=Side(style='thin')
     )
 
-    for row in range(4, 16):
+    for row in range(4, 17):
         for col in range(2, 15):
             sheet.cell(row=row, column=col).border = thin_border
