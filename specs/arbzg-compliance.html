@@ -221,18 +221,18 @@
   <div class="summary-grid">
     <div class="summary-card ok">
       <div class="icon">✅</div>
-      <div class="count">5</div>
+      <div class="count">8</div>
       <div class="label">Vollständig konform</div>
     </div>
     <div class="summary-card warn">
       <div class="icon">⚠️</div>
-      <div class="count">5</div>
+      <div class="count">1</div>
       <div class="label">Weitgehend / Teilweise</div>
     </div>
     <div class="summary-card info">
       <div class="icon">📋</div>
-      <div class="count">10</div>
-      <div class="label">Lücken / Bugs</div>
+      <div class="count">7</div>
+      <div class="label">Offene Lücken</div>
     </div>
     <div class="summary-card fine">
       <div class="icon">💶</div>
@@ -301,8 +301,8 @@
           <li>Implizierte Wochengrenze: 6 Werktage × 8h Durchschnitt = <strong>48h/Woche</strong></li>
         </ul>
       </div>
-      <div class="note-box">
-        <strong>Hinweis §3 vs. §14:</strong> Die 48h-Wochengrenze leitet sich aus <strong>§3</strong> ab (6 Werktage × 8h Durchschnitt), nicht aus §14 (Notfall-Ausnahmen). Der Code-Kommentar <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §14 ArbZG</code> in <code>time_entries.py</code> ist fachlich irreführend – korrekt wäre <code># §3 ArbZG</code>. Das Verhalten ist korrekt, nur die Dokumentation stimmt nicht.
+      <div class="note-box" style="background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
+        <strong>✅ Code-Kommentar behoben (Commit <code>a488985</code>):</strong> <code>MAX_WEEKLY_HOURS_WARN = 48.0</code> in <code>time_entries.py</code> trägt nun den korrekten Kommentar <code># §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche</code> statt des früheren <code># §14 ArbZG</code>.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
@@ -338,8 +338,13 @@
         </tr>
         <tr>
           <td>§18-Ausnahme – Admin-Pfad</td>
-          <td><span class="badge badge-fail">❌ Bug</span></td>
-          <td><code>admin.py</code> prüft <code>exempt_from_arbzg</code> <strong>nicht</strong> → 10h-Hard-Stop gilt auch für §18-Befreite, wenn Admin den Eintrag anlegt</td>
+          <td><span class="badge badge-ok">✅ Behoben</span></td>
+          <td>Fix Commit <code>a488985</code>: <code>admin.py</code> prüft <code>exempt_from_arbzg</code> vor allen §3/§4/§6-Checks in <code>admin_create_time_entry</code> und <code>admin_update_time_entry</code></td>
+        </tr>
+        <tr>
+          <td>§18-Ausnahme – Änderungsantrags-Pfad</td>
+          <td><span class="badge badge-ok">✅ Behoben</span></td>
+          <td>Fix Commit <code>a488985</code>: <code>change_requests.py</code> prüft <code>exempt_from_arbzg</code> vor §4/§3-Checks und §6-Nachtarbeiter-Warnung in <code>create_change_request</code></td>
         </tr>
         <tr>
           <td>6-Monats-Ausgleichszeitraum</td>
@@ -391,9 +396,9 @@
           <td>Pausenpflicht-Checks werden für leitende Angestellte übersprungen (MA-Selbstservice-Pfad)</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme – Admin-Pfad</td>
-          <td><span class="badge badge-fail">❌ Bug</span></td>
-          <td><code>exempt_from_arbzg</code> nicht geprüft in <code>admin.py</code> / <code>change_requests.py</code></td>
+          <td>§18-Ausnahme – Admin-Pfad + Änderungsanträge</td>
+          <td><span class="badge badge-ok">✅ Behoben</span></td>
+          <td>Fix Commit <code>a488985</code>: <code>exempt_from_arbzg</code> jetzt korrekt geprüft in <code>admin.py</code> und <code>change_requests.py</code></td>
         </tr>
         <tr>
           <td>Pausen-Timing: max. 6h am Stück (Satz 3)</td>
@@ -410,7 +415,7 @@
     <div class="section-header" onclick="toggle('s5')">
       <span class="section-par">§ 5</span>
       <span class="section-title">Mindestruhezeit zwischen Schichten</span>
-      <span class="section-status">⚠️</span>
+      <span class="section-status">✅</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
@@ -441,8 +446,8 @@
         </tr>
         <tr>
           <td>Split-Schicht-Erkennung</td>
-          <td><span class="badge badge-fail">❌ Bug</span></td>
-          <td><strong>False Positives bei Splitschichten:</strong> <code>rest_time_service.py</code> vergleicht alle aufeinanderfolgenden DB-Einträge, auch intraday-Lücken. Bei Splitschichten (z.B. 08:00–12:00 + 14:00–18:00) wird die 2h-Mittagspause fälschlich als &lt; 11h Ruhezeit gemeldet. Korrekte Logik: letzter Eintrag je Tag vs. erster Eintrag des Folgetages.</td>
+          <td><span class="badge badge-ok">✅ Behoben</span></td>
+          <td><strong>Fix Commit <code>a488985</code>:</strong> <code>rest_time_service.py</code> gruppiert Einträge jetzt nach Datum und vergleicht nur noch <code>max(end_time)</code> des Vortages mit <code>min(start_time)</code> des Folgetages – keine False Positives bei Splitschichten mehr.</td>
         </tr>
         <tr>
           <td>§5 Abs. 2 Ausgleichs-Tracking (Reduktion auf 10h)</td>
@@ -450,8 +455,8 @@
           <td>11h-Grenze ist fest; Ausgleich auf 12h innerhalb 4 Wochen nicht getrackt. Für Arztpraxen ohne Bereitschaftsdienst kein Risiko.</td>
         </tr>
       </table>
-      <div class="note-box" style="margin-top:1rem;">
-        <strong>Bug-Detail:</strong> In <code>rest_time_service.py</code> Zeile 62–76: Die Schleife vergleicht Entry[i-1] mit Entry[i] ohne Rücksicht auf das Datum. Die korrekte Implementierung müsste für jeden Tag den <em>letzten</em> Eintrag finden und mit dem <em>ersten</em> Eintrag des nächsten Arbeitstages vergleichen. Für Praxen mit einer Schicht/Tag kein Problem.
+      <div class="note-box" style="margin-top:1rem; background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
+        <strong>✅ Bug behoben (Commit <code>a488985</code>):</strong> <code>check_rest_time_violations()</code> verwendet jetzt Datumsgruppierung: pro Tag wird <code>max(end_time)</code> (letzter Eintrag) und <code>min(start_time)</code> (erster Eintrag) ermittelt. Anschließend werden nur aufeinanderfolgende Tage verglichen – Splitschichten erzeugen keine falschen Verstöße mehr.
       </div>
     </div>
   </div>
@@ -505,9 +510,9 @@
           <td><code>is_night_worker</code>-Flag auf User-Ebene; Warnung bei &gt;8h Nachtarbeit in allen 6 Validierungspfaden (create/update/clock-out/admin-create/admin-update/change-request)</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme (exempt_from_arbzg) – Nachtarbeit-Warnung in Admin-Pfad</td>
-          <td><span class="badge badge-fail">❌ Bug</span></td>
-          <td><code>exempt_from_arbzg</code> nicht geprüft in <code>admin.py</code> / <code>change_requests.py</code>: §18-Befreite erhalten die Nachtarbeit-Warnung auch im Admin-Direkteintrag. Wird via MA-Selbstservice korrekt unterdrückt.</td>
+          <td>§18-Ausnahme (exempt_from_arbzg) – alle Pfade</td>
+          <td><span class="badge badge-ok">✅ Behoben</span></td>
+          <td>Fix Commit <code>a488985</code>: <code>exempt_from_arbzg</code> jetzt in allen 3 Pfaden korrekt geprüft – MA-Selbstservice, Admin-Direkteintrag und Änderungsanträge</td>
         </tr>
         <tr>
           <td>Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer (Abs. 2)</td>
@@ -516,8 +521,8 @@
         </tr>
         <tr>
           <td>Tracking arbeitsmedizinischer Untersuchungen (Abs. 3)</td>
-          <td><span class="badge badge-warn">⚠️ Nicht impl.</span></td>
-          <td>HR-Verwaltungsaufgabe – sinnvoller in Personalakte / separatem HR-System</td>
+          <td><span class="badge badge-warn">⚠️ HR-Aufgabe</span></td>
+          <td>Dokumentation in Personalakte bleibt Arbeitgeberpflicht; <strong>UI-Hinweis</strong> in Admin-Reports ergänzt (Commit <code>a488985</code>): Pflichtuntersuchung vor Beginn, alle 3 Jahre, ab 50 jährlich, Kosten trägt Arbeitgeber</td>
         </tr>
         <tr>
           <td>Recht auf Tagesarbeitsplatz (Abs. 4)</td>
@@ -526,8 +531,8 @@
         </tr>
         <tr>
           <td>Lohnzuschlag / Freizeitausgleich (Abs. 5)</td>
-          <td><span class="badge badge-info">ℹ️ Außerhalb System</span></td>
-          <td>Lohnbuchhaltungsaufgabe; Nachweis obliegt dem Arbeitgeber</td>
+          <td><span class="badge badge-warn">⚠️ Lohnbuchhaltung</span></td>
+          <td>Abwicklung in Lohnbuchhaltung; <strong>UI-Hinweis</strong> in Admin-Reports ergänzt (Commit <code>a488985</code>): 25% Lohnzuschlag oder gleichwertige bezahlte Freizeit</td>
         </tr>
         <tr>
           <td>Gleicher Zugang zur Weiterbildung (Abs. 6)</td>
@@ -535,7 +540,7 @@
           <td>Organisationspflicht des Arbeitgebers, nicht im Zeiterfassungssystem abbildbar</td>
         </tr>
       </table>
-      <p style="margin-top:0.75rem; color:#92400e; font-size:0.88rem;">Abs. 4–6 sind Arbeitgeber-Pflichten, die kein Zeiterfassungssystem vollständig abbilden kann. Für Arztpraxen mit seltener Nachtarbeit sind die Lücken in Abs. 2 praktisch wenig relevant.</p>
+      <p style="margin-top:0.75rem; color:#92400e; font-size:0.88rem;">Abs. 4–6 sind Arbeitgeber-Pflichten, die kein Zeiterfassungssystem vollständig abbilden kann. Der §18-Bypass-Bug (Abs. 2) wurde in Commit <code>a488985</code> behoben; für Abs. 3 und Abs. 5 wurden informierende UI-Hinweise in der Admin-Reports-Seite ergänzt.</p>
     </div>
   </div>
 
@@ -740,7 +745,7 @@
     <div class="section-header" onclick="toggle('s18')">
       <span class="section-par">§ 18</span>
       <span class="section-title">Ausnahmen für leitende Angestellte (Nichtanwendung)</span>
-      <span class="section-status">⚠️</span>
+      <span class="section-status">✅</span>
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
@@ -771,17 +776,17 @@
         </tr>
         <tr>
           <td>Bypass – Admin-Direkteintrag-Pfad</td>
-          <td><span class="badge badge-fail">❌ Bug</span></td>
-          <td><strong>Bug:</strong> <code>admin.py → admin_create_time_entry / admin_update_time_entry</code> prüft <code>exempt_from_arbzg</code> <strong>nicht</strong>. Admins können für §18-Befreite keine Einträge &gt;10h anlegen, obwohl dies gesetzlich erlaubt wäre.</td>
+          <td><span class="badge badge-ok">✅ Behoben</span></td>
+          <td>Fix Commit <code>a488985</code>: <code>admin.py → admin_create/update_time_entry</code> prüft <code>exempt_from_arbzg</code> vor allen §3/§4/§6-Checks; User-Fetch nach oben verschoben</td>
         </tr>
         <tr>
           <td>Bypass – Änderungsantrags-Pfad</td>
-          <td><span class="badge badge-fail">❌ Bug</span></td>
-          <td><code>change_requests.py</code> prüft <code>exempt_from_arbzg</code> nicht bei Genehmigung → selber Bug wie Admin-Pfad</td>
+          <td><span class="badge badge-ok">✅ Behoben</span></td>
+          <td>Fix Commit <code>a488985</code>: <code>change_requests.py → create_change_request</code> prüft <code>exempt_from_arbzg</code> vor §4-Break-Check, §3-Hard-Stop und §6-Nachtarbeiter-Warnung</td>
         </tr>
       </table>
-      <div class="note-box" style="margin-top:1rem;">
-        <strong>Praxisauswirkung:</strong> §18-Befreite können ihre Zeiten selbst korrekt erfassen. Der Bug tritt nur auf, wenn ein Admin einen Eintrag &gt;10h für sie anlegen oder genehmigen will. Fix: <code>if not user.exempt_from_arbzg:</code> vor §3/§4-Checks in <code>admin.py</code> (Zeilen 508–527) und <code>change_requests.py</code> ergänzen.
+      <div class="note-box" style="margin-top:1rem; background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
+        <strong>✅ Vollständig behoben (Commit <code>a488985</code>):</strong> Alle drei Eingabepfade (MA-Selbstservice, Admin-Direkteintrag, Änderungsantrag) berücksichtigen <code>exempt_from_arbzg</code> jetzt korrekt. §18-Befreite (Praxisinhaber, Chefärzte) können in allen Wegen Einträge &gt;10h anlegen ohne ArbZG-Fehler.
       </div>
     </div>
   </div>
@@ -797,13 +802,17 @@
     <div class="section-body">
       <p style="margin-bottom:0.75rem; font-size:0.88rem; color:#475569;">🔴 = Bug (Fehler im Code) &nbsp;|&nbsp; 🟡 = Lücke (fehlende Funktion) &nbsp;|&nbsp; 🔵 = Außerhalb System (HR/Lohnbuchhaltung)</p>
       <ul class="gaps-list">
-        <li style="background:#fee2e2;">
-          <span class="gap-tag" style="background:#dc2626;">§5 Bug</span>
-          <div><strong>Split-Schicht False Positives</strong> – <code>rest_time_service.py</code> vergleicht alle aufeinanderfolgenden DB-Einträge, auch intraday-Lücken. Bei Splitschichten (z.B. 08:00–12:00 + 14:00–18:00) wird die Mittagspause fälschlich als Ruhezeit-Verstoß gemeldet. Korrekte Logik: letzter Eintrag je Tag vs. erster Eintrag des Folgetages.</div>
+        <li style="background:#f0fdf4; opacity:0.75;">
+          <span class="gap-tag" style="background:#16a34a;">§5 ✅</span>
+          <div><strong>Split-Schicht-Bug behoben</strong> – <code>rest_time_service.py</code> verwendet Datumsgruppierung (Commit <code>a488985</code>). Keine False Positives bei Splitschichten mehr.</div>
         </li>
-        <li style="background:#fee2e2;">
-          <span class="gap-tag" style="background:#dc2626;">§18 Bug</span>
-          <div><strong>exempt_from_arbzg fehlt in Admin- und Änderungsantrags-Pfad</strong> – <code>admin.py</code> und <code>change_requests.py</code> prüfen <code>exempt_from_arbzg</code> nicht. §18-Befreite (Praxisinhaber, Chefärzte) können vom Admin keine Einträge &gt;10h bekommen. Fix: <code>if not user.exempt_from_arbzg:</code> vor §3/§4-Checks in beiden Dateien ergänzen.</div>
+        <li style="background:#f0fdf4; opacity:0.75;">
+          <span class="gap-tag" style="background:#16a34a;">§18 ✅</span>
+          <div><strong>exempt_from_arbzg-Bypass vollständig</strong> – <code>admin.py</code> und <code>change_requests.py</code> prüfen <code>exempt_from_arbzg</code> korrekt (Commit <code>a488985</code>). Alle 3 Pfade konform.</div>
+        </li>
+        <li style="background:#f0fdf4; opacity:0.75;">
+          <span class="gap-tag" style="background:#16a34a;">§3 ✅</span>
+          <div><strong>Code-Kommentar korrigiert</strong> – <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §3 ArbZG</code> (war: <code># §14 ArbZG</code>) in <code>time_entries.py</code> (Commit <code>a488985</code>).</div>
         </li>
         <li>
           <span class="gap-tag">§3</span>
@@ -819,15 +828,11 @@
         </li>
         <li>
           <span class="gap-tag">§6 Abs. 3</span>
-          <div><strong>Arbeitsmedizinische Untersuchungen</strong> – Anspruch auf Untersuchung für Nachtarbeitnehmer (vor Beginn, alle 3 Jahre, ab 50: jährlich). Verwaltungsaufgabe des Arbeitgebers; sollte in Personalakte dokumentiert werden.</div>
+          <div><strong>Arbeitsmedizinische Untersuchungen</strong> – Anspruch auf Untersuchung für Nachtarbeitnehmer (vor Beginn, alle 3 Jahre, ab 50: jährlich). Verwaltungsaufgabe des Arbeitgebers; <strong>UI-Hinweis in Reports-Seite</strong> ergänzt (Commit <code>a488985</code>).</div>
         </li>
         <li>
           <span class="gap-tag">§6 Abs. 5</span>
-          <div><strong>Lohnzuschlag / Freizeitausgleich Nachtarbeit</strong> – Anspruch auf 25% Zuschlag oder gleichwertige Freizeit. Lohnbuchhaltungsaufgabe; liegt außerhalb des Zeiterfassungssystems.</div>
-        </li>
-        <li>
-          <span class="gap-tag">§3 Code</span>
-          <div><strong>Irreführender Code-Kommentar</strong> – <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §14 ArbZG</code> in <code>time_entries.py</code>. Die 48h-Grenze leitet sich aus §3 ab, nicht aus §14 (Notfall-Ausnahmen). Kein fachlicher Fehler, aber misleading für Entwickler.</div>
+          <div><strong>Lohnzuschlag / Freizeitausgleich Nachtarbeit</strong> – 25% Zuschlag oder gleichwertige Freizeit. Lohnbuchhaltungsaufgabe; <strong>UI-Hinweis in Reports-Seite</strong> ergänzt (Commit <code>a488985</code>).</div>
         </li>
         <li>
           <span class="gap-tag">§7</span>
@@ -873,30 +878,34 @@
       <span class="section-chevron">▼</span>
     </div>
     <div class="section-body">
-      <h3 style="color:#dc2626;">Mittel – Bugs mit fachlicher Auswirkung</h3>
+      <h3 style="color:#16a34a;">✅ Erledigt – Commit <code>a488985</code> (28.02.2026)</h3>
       <ul class="gaps-list" style="margin-bottom:1rem;">
-        <li style="background:#fee2e2;">
-          <span class="gap-tag" style="background:#dc2626;">§5</span>
-          <div><strong>Split-Schicht-Bug in <code>rest_time_service.py</code> beheben</strong> – Logik umstellen auf: letzter Eintrag je Tag → erster Eintrag des nächsten Arbeitstages. Aktuell werden intraday-Lücken fälschlich als Ruhezeit-Verstöße gemeldet.</div>
+        <li style="background:#f0fdf4;">
+          <span class="gap-tag" style="background:#16a34a;">§5 ✅</span>
+          <div><strong>Split-Schicht-Bug in <code>rest_time_service.py</code> behoben</strong> – Datumsgruppierung statt Paarvergleich; <code>max(end_time)</code> vs. <code>min(start_time)</code> aufeinanderfolgender Tage</div>
         </li>
-        <li style="background:#fee2e2;">
-          <span class="gap-tag" style="background:#dc2626;">§18</span>
-          <div><strong><code>exempt_from_arbzg</code>-Bypass in <code>admin.py</code> und <code>change_requests.py</code> ergänzen</strong> – Vor §3/§4-Checks in <code>admin_create_time_entry</code>, <code>admin_update_time_entry</code> und change_request-Genehmigung: <code>if not user.exempt_from_arbzg:</code></div>
+        <li style="background:#f0fdf4;">
+          <span class="gap-tag" style="background:#16a34a;">§18 ✅</span>
+          <div><strong><code>exempt_from_arbzg</code>-Bypass vervollständigt</strong> – <code>if not user.exempt_from_arbzg:</code> vor allen §3/§4/§6-Checks in <code>admin.py</code> und <code>change_requests.py</code></div>
+        </li>
+        <li style="background:#f0fdf4;">
+          <span class="gap-tag" style="background:#16a34a;">§3 ✅</span>
+          <div><strong>Code-Kommentar korrigiert:</strong> <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche</code> in <code>time_entries.py</code></div>
+        </li>
+        <li style="background:#f0fdf4;">
+          <span class="gap-tag" style="background:#16a34a;">§6 ✅</span>
+          <div><strong>§6 Abs. 3/5 UI-Hinweise ergänzt</strong> – Informations-Boxen in Admin-Reports-Seite für arbeitsmedizinische Untersuchungspflicht und Lohnzuschlag-Pflicht</div>
         </li>
       </ul>
-      <h3>Niedrig – Dokumentation und Code-Hygiene</h3>
+      <h3>Niedrig – Verbleibende Dokumentationspflichten</h3>
       <ul class="gaps-list">
         <li>
-          <span class="gap-tag">§3</span>
-          <div><strong>Code-Kommentar korrigieren:</strong> <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §14 ArbZG</code> → <code># §3 ArbZG</code> in <code>time_entries.py</code> Zeile 22</div>
-        </li>
-        <li>
           <span class="gap-tag">§6 Abs. 3</span>
-          <div><strong>Personalakte:</strong> Arbeitsmedizinische Untersuchungen für Nachtarbeitnehmer dokumentieren (vor Beginn, alle 3 Jahre, ab 50: jährlich)</div>
+          <div><strong>Personalakte:</strong> Arbeitsmedizinische Untersuchungen für Nachtarbeitnehmer dokumentieren (vor Beginn, alle 3 Jahre, ab 50: jährlich). UI-Hinweis in Reports vorhanden.</div>
         </li>
         <li>
           <span class="gap-tag">§6 Abs. 5</span>
-          <div><strong>Lohnbuchhaltung:</strong> 25% Nachtarbeitszuschlag oder gleichwertige Freizeit für Nachtarbeitnehmer sicherstellen</div>
+          <div><strong>Lohnbuchhaltung:</strong> 25% Nachtarbeitszuschlag oder gleichwertige Freizeit für Nachtarbeitnehmer sicherstellen. UI-Hinweis in Reports vorhanden.</div>
         </li>
       </ul>
       <h3>Beobachtung – Externe Entwicklung</h3>
