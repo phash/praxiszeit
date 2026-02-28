@@ -433,19 +433,22 @@ export default function Users() {
 
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Benutzername *</label>
+                <label htmlFor="f-username" className="block text-sm font-medium text-gray-700 mb-1">Benutzername *</label>
                 <input
+                  id="f-username"
                   type="text"
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                   required
+                  autoFocus
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                   placeholder="benutzername"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">E-Mail (optional)</label>
+                <label htmlFor="f-email" className="block text-sm font-medium text-gray-700 mb-1">E-Mail (optional)</label>
                 <input
+                  id="f-email"
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -455,8 +458,9 @@ export default function Users() {
               </div>
               {!editingId && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Passwort *</label>
+                  <label htmlFor="f-password" className="block text-sm font-medium text-gray-700 mb-1">Passwort *</label>
                   <input
+                    id="f-password"
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -468,8 +472,9 @@ export default function Users() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Rolle</label>
+                <label htmlFor="f-role" className="block text-sm font-medium text-gray-700 mb-1">Rolle</label>
                 <select
+                  id="f-role"
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
@@ -479,8 +484,9 @@ export default function Users() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Vorname</label>
+                <label htmlFor="f-firstname" className="block text-sm font-medium text-gray-700 mb-1">Vorname</label>
                 <input
+                  id="f-firstname"
                   type="text"
                   value={formData.first_name}
                   onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
@@ -489,8 +495,9 @@ export default function Users() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nachname</label>
+                <label htmlFor="f-lastname" className="block text-sm font-medium text-gray-700 mb-1">Nachname</label>
                 <input
+                  id="f-lastname"
                   type="text"
                   value={formData.last_name}
                   onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
@@ -499,8 +506,9 @@ export default function Users() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Wochenstunden</label>
+                <label htmlFor="f-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">Wochenstunden</label>
                 <input
+                  id="f-weekly-hours"
                   type="number"
                   step="0.5"
                   value={formData.weekly_hours}
@@ -512,8 +520,9 @@ export default function Users() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Arbeitstage pro Woche</label>
+                <label htmlFor="f-work-days" className="block text-sm font-medium text-gray-700 mb-1">Arbeitstage pro Woche</label>
                 <input
+                  id="f-work-days"
                   type="number"
                   value={formData.work_days_per_week}
                   onChange={(e) => setFormData({ ...formData, work_days_per_week: parseInt(e.target.value) || 5 })}
@@ -527,8 +536,9 @@ export default function Users() {
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Urlaubstage</label>
+                <label htmlFor="f-vacation" className="block text-sm font-medium text-gray-700 mb-1">Urlaubstage</label>
                 <input
+                  id="f-vacation"
                   type="number"
                   value={formData.vacation_days}
                   onChange={(e) => setFormData({ ...formData, vacation_days: parseInt(e.target.value) })}
@@ -599,14 +609,16 @@ export default function Users() {
                         const key = keys[idx];
                         return (
                           <div key={day} className="text-center">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">{day}</label>
+                            <label htmlFor={`f-hours-${key}`} className="block text-xs font-medium text-gray-600 mb-1">{day}</label>
                             <input
+                              id={`f-hours-${key}`}
                               type="number"
                               step="0.5"
                               min="0"
                               max="24"
                               value={formData[key]}
                               onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
+                              aria-label={`Stunden ${day}`}
                               className="w-full px-2 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-primary text-sm"
                             />
                           </div>
@@ -1013,7 +1025,6 @@ export default function Users() {
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={() => setShowHoursModal(false)}
-          aria-hidden="true"
         >
           <FocusTrap
             focusTrapOptions={{
@@ -1203,6 +1214,9 @@ export default function Users() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Neues Passwort (mind. 8 Zeichen)"
                   minLength={8}
+                  aria-label="Neues Passwort"
+                  aria-describedby={newPassword.length > 0 && newPassword.length < 8 ? 'pw-error' : undefined}
+                  aria-invalid={newPassword.length > 0 && newPassword.length < 8 ? 'true' : 'false'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                   autoFocus
                   onKeyDown={(e) => {
@@ -1212,7 +1226,7 @@ export default function Users() {
                   }}
                 />
                 {newPassword.length > 0 && newPassword.length < 8 && (
-                  <p className="text-xs text-red-500 mt-1">Mindestens 8 Zeichen erforderlich</p>
+                  <p id="pw-error" role="alert" className="text-xs text-red-500 mt-1">Mindestens 8 Zeichen erforderlich</p>
                 )}
               </div>
 

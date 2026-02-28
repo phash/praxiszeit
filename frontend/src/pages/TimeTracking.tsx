@@ -299,8 +299,9 @@ export default function TimeTracking() {
 
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+              <label htmlFor="tt-date" className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
               <input
+                id="tt-date"
                 type="date"
                 value={formData.date}
                 onChange={(e) => {
@@ -383,8 +384,9 @@ export default function TimeTracking() {
               </button>
             </div>
             <div className="md:col-span-2 lg:col-span-5">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
+              <label htmlFor="tt-note" className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
               <input
+                id="tt-note"
                 type="text"
                 value={formData.note}
                 onChange={(e) => setFormData({ ...formData, note: e.target.value })}

@@ -346,8 +346,10 @@ export default function AdminDashboard() {
       {/* Filter Input */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} aria-hidden="true" />
+          <label htmlFor="employee-search" className="sr-only">Mitarbeitende suchen</label>
           <input
+            id="employee-search"
             type="text"
             placeholder="Suche nach Name..."
             value={filterText}
@@ -456,8 +458,12 @@ export default function AdminDashboard() {
                 filteredAndSortedReport.map((emp) => (
                   <tr
                     key={emp.user_id}
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-blue-50"
                     onClick={() => fetchEmployeeDetails(emp)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fetchEmployeeDetails(emp); } }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Details für ${emp.last_name}, ${emp.first_name} anzeigen`}
                   >
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {emp.last_name}, {emp.first_name}
@@ -504,8 +510,12 @@ export default function AdminDashboard() {
               {filteredAndSortedReport.map((emp) => (
                 <div
                   key={emp.user_id}
-                  className="p-4 hover:bg-gray-50 cursor-pointer transition"
+                  className="p-4 hover:bg-gray-50 cursor-pointer transition focus:outline-none focus:bg-blue-50"
                   onClick={() => fetchEmployeeDetails(emp)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fetchEmployeeDetails(emp); } }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Details für ${emp.last_name}, ${emp.first_name} anzeigen`}
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
@@ -570,12 +580,15 @@ export default function AdminDashboard() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-gray-900">Jahresübersicht</h2>
           <div className="flex items-center space-x-3">
+            <label htmlFor="year-select" className="sr-only">Jahr auswählen</label>
             <input
+              id="year-select"
               type="number"
               value={currentYear}
               onChange={(e) => setCurrentYear(parseInt(e.target.value))}
               min="2020"
               max="2030"
+              aria-label="Jahr"
               className="px-4 py-2 border border-gray-300 rounded-lg"
             />
             <Link
@@ -811,7 +824,6 @@ export default function AdminDashboard() {
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
           onClick={closeDetail}
-          aria-hidden="true"
         >
           <FocusTrap
             focusTrapOptions={{
@@ -970,18 +982,21 @@ export default function AdminDashboard() {
                             type="date"
                             value={entryForm.date}
                             onChange={(e) => setEntryForm({ ...entryForm, date: e.target.value })}
+                            aria-label="Datum"
                             className="px-2 py-1 border border-gray-300 rounded text-sm"
                           />
                           <input
                             type="time"
                             value={entryForm.start_time}
                             onChange={(e) => setEntryForm({ ...entryForm, start_time: e.target.value })}
+                            aria-label="Von (Uhrzeit)"
                             className="px-2 py-1 border border-gray-300 rounded text-sm"
                           />
                           <input
                             type="time"
                             value={entryForm.end_time}
                             onChange={(e) => setEntryForm({ ...entryForm, end_time: e.target.value })}
+                            aria-label="Bis (Uhrzeit)"
                             className="px-2 py-1 border border-gray-300 rounded text-sm"
                           />
                           <input
@@ -990,6 +1005,7 @@ export default function AdminDashboard() {
                             value={entryForm.break_minutes}
                             onChange={(e) => setEntryForm({ ...entryForm, break_minutes: parseInt(e.target.value) || 0 })}
                             placeholder="Pause (Min.)"
+                            aria-label="Pause in Minuten"
                             className="px-2 py-1 border border-gray-300 rounded text-sm"
                           />
                           <input
@@ -997,6 +1013,7 @@ export default function AdminDashboard() {
                             value={entryForm.note}
                             onChange={(e) => setEntryForm({ ...entryForm, note: e.target.value })}
                             placeholder="Notiz"
+                            aria-label="Notiz"
                             className="px-2 py-1 border border-gray-300 rounded text-sm"
                           />
                         </div>
@@ -1044,17 +1061,17 @@ export default function AdminDashboard() {
                                 <td className="px-4 py-2 text-right text-sm space-x-1">
                                   <button
                                     onClick={() => handleAdminEditEntry(entry)}
-                                    className="text-primary hover:text-primary-dark"
-                                    title="Bearbeiten"
+                                    className="text-primary hover:text-primary-dark p-1 rounded"
+                                    aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} bearbeiten`}
                                   >
-                                    <Edit2 size={14} />
+                                    <Edit2 size={14} aria-hidden="true" />
                                   </button>
                                   <button
                                     onClick={() => handleAdminDeleteEntry(entry.id)}
-                                    className="text-red-600 hover:text-red-800"
-                                    title="Löschen"
+                                    className="text-red-600 hover:text-red-800 p-1 rounded"
+                                    aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} löschen`}
                                   >
-                                    <Trash2 size={14} />
+                                    <Trash2 size={14} aria-hidden="true" />
                                   </button>
                                 </td>
                               </tr>
