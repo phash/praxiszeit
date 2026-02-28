@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models import User, Absence, AbsenceType, TimeEntry
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
-from app.services import calculation_service, export_service, rest_time_service
+from app.services import calculation_service, export_service, ods_export_service, rest_time_service
 
 router = APIRouter(prefix="/api/admin/reports", tags=["admin-reports"], dependencies=[Depends(require_admin)])
 
@@ -237,6 +237,62 @@ def export_yearly_report_classic(
     return StreamingResponse(
         excel_file,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+ODS_MIME = "application/vnd.oasis.opendocument.spreadsheet"
+
+
+@router.get("/export-ods")
+def export_monthly_report_ods(
+    month: str = Query(..., description="Month in YYYY-MM format"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Export monthly report as ODS file (Open Document Spreadsheet)."""
+    try:
+        year, month_num = map(int, month.split('-'))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
+
+    ods_file = ods_export_service.generate_monthly_report(db, year, month_num)
+    filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.ods"
+    return StreamingResponse(
+        ods_file,
+        media_type=ODS_MIME,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get("/export-yearly-ods")
+def export_yearly_report_ods(
+    year: int = Query(..., description="Year (e.g., 2026)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Export yearly detailed report as ODS file."""
+    ods_file = ods_export_service.generate_yearly_report(db, year)
+    filename = f"PraxisZeit_Jahresreport_{year}.ods"
+    return StreamingResponse(
+        ods_file,
+        media_type=ODS_MIME,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get("/export-yearly-classic-ods")
+def export_yearly_report_classic_ods(
+    year: int = Query(..., description="Year (e.g., 2026)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Export yearly classic report as ODS file."""
+    ods_file = ods_export_service.generate_yearly_report_classic(db, year)
+    filename = f"PraxisZeit_Jahresreport_Classic_{year}.ods"
+    return StreamingResponse(
+        ods_file,
+        media_type=ODS_MIME,
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 

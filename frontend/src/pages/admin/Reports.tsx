@@ -165,10 +165,24 @@ export default function Reports() {
     }
   };
 
-  const handleMonthlyExport = () => {
-    // Download Excel file
-    const url = `/api/admin/reports/export?month=${selectedMonth}`;
-    window.open(url, '_blank');
+  const handleMonthlyExport = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get(`/admin/reports/export?month=${selectedMonth}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `PraxisZeit_Monatsreport_${selectedMonth}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleYearlyExport = async () => {
@@ -211,6 +225,66 @@ export default function Reports() {
     }
   };
 
+  const handleMonthlyExportOds = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get(`/admin/reports/export-ods?month=${selectedMonth}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `PraxisZeit_Monatsreport_${selectedMonth}.ods`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleYearlyExportOds = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get(`/admin/reports/export-yearly-ods?year=${selectedYear}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `PraxisZeit_Jahresreport_${selectedYear}.ods`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleYearlyClassicExportOds = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get(`/admin/reports/export-yearly-classic-ods?year=${selectedYear}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `PraxisZeit_Jahresreport_Classic_${selectedYear}.ods`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div>
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Berichte & Export</h1>
@@ -242,10 +316,19 @@ export default function Reports() {
             </div>
             <button
               onClick={handleMonthlyExport}
-              className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg flex items-center space-x-2 transition"
+              disabled={loading}
+              className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg flex items-center space-x-2 transition disabled:opacity-50"
             >
               <Download size={20} />
-              <span>Excel exportieren</span>
+              <span>{loading ? 'Wird erstellt...' : 'Excel (.xlsx)'}</span>
+            </button>
+            <button
+              onClick={handleMonthlyExportOds}
+              disabled={loading}
+              className="bg-white hover:bg-gray-50 text-primary border border-primary px-6 py-3 rounded-lg flex items-center space-x-2 transition disabled:opacity-50"
+            >
+              <Download size={20} />
+              <span>{loading ? 'Wird erstellt...' : 'ODS (.ods)'}</span>
             </button>
           </div>
 
@@ -307,14 +390,24 @@ export default function Reports() {
                 <li>✓ Überstunden kumuliert</li>
                 <li>✓ Resturlaub</li>
               </ul>
-              <button
-                onClick={handleYearlyClassicExport}
-                disabled={loading}
-                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
-              >
-                <Download size={18} />
-                <span>{loading ? 'Wird erstellt...' : 'Classic Export'}</span>
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleYearlyClassicExport}
+                  disabled={loading}
+                  className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
+                >
+                  <Download size={18} />
+                  <span>{loading ? '...' : 'Excel'}</span>
+                </button>
+                <button
+                  onClick={handleYearlyClassicExportOds}
+                  disabled={loading}
+                  className="flex-1 bg-white hover:bg-gray-50 text-primary border border-primary px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
+                >
+                  <Download size={18} />
+                  <span>{loading ? '...' : 'ODS'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Detailed Format */}
@@ -333,14 +426,24 @@ export default function Reports() {
                 <li>✓ Alle Zeiteinträge</li>
                 <li>✓ Monatstrennungen</li>
               </ul>
-              <button
-                onClick={handleYearlyExport}
-                disabled={loading}
-                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
-              >
-                <Download size={18} />
-                <span>{loading ? 'Wird erstellt...' : 'Detailliert Export'}</span>
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleYearlyExport}
+                  disabled={loading}
+                  className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
+                >
+                  <Download size={18} />
+                  <span>{loading ? '...' : 'Excel'}</span>
+                </button>
+                <button
+                  onClick={handleYearlyExportOds}
+                  disabled={loading}
+                  className="flex-1 bg-white hover:bg-gray-50 text-primary border border-primary px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50"
+                >
+                  <Download size={18} />
+                  <span>{loading ? '...' : 'ODS'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
