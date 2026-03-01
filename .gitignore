@@ -55,6 +55,10 @@ ssl/*.pem
 *.sqlite
 *.sqlite3
 
-# Tools
+# Tools & local dev scripts (not tracked)
 .serena/
 import_celine.py
+tools/
+
+# Generated documentation (HTML/PDF exports)
+docs/generated/
