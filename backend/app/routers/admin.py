@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from typing import List, Optional
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from app.database import get_db
 from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole
 from app.middleware.auth import require_admin
@@ -132,15 +132,30 @@ def get_deletion_candidates(
         days_since = (today - last_entry_date).days if last_entry_date else None
         is_anonymized = user.username.startswith("deleted_")
 
+        # Grace-Period-Berechnung (14 Tage nach Deaktivierung)
+        grace_period_remaining = None
+        grace_period_ends = None
+        in_grace_period = False
+        if user.deactivated_at is not None:
+            days_deactivated = (today - user.deactivated_at.date()).days
+            if days_deactivated < 14:
+                grace_period_remaining = 14 - days_deactivated
+                grace_period_ends = (user.deactivated_at + timedelta(days=14)).date().isoformat()
+                in_grace_period = True
+
         result.append({
             "user_id": str(user.id),
             "first_name": user.first_name,
             "last_name": user.last_name,
             "username": user.username,
             "is_anonymized": is_anonymized,
+            "deactivated_at": user.deactivated_at.isoformat() if user.deactivated_at else None,
+            "grace_period_ends": grace_period_ends,
+            "grace_period_remaining_days": grace_period_remaining,
+            "in_grace_period": in_grace_period,
             "last_entry_date": last_entry_date.isoformat() if last_entry_date else None,
             "days_since_last_entry": days_since,
-            "can_anonymize": not is_anonymized,
+            "can_anonymize": not is_anonymized and not in_grace_period,
             "can_purge": last_entry_date is None or (days_since is not None and days_since >= 730),
         })
 
@@ -161,6 +176,17 @@ def anonymize_user(
         raise HTTPException(status_code=400, detail="Benutzer muss zuerst deaktiviert werden (Art. 17 DSGVO)")
     if user.username.startswith("deleted_"):
         raise HTTPException(status_code=400, detail="Benutzer wurde bereits anonymisiert")
+
+    # 14-Tage-Grace-Period: Anonymisierung erst nach Ablauf der Frist erlaubt
+    if user.deactivated_at is not None:
+        days_since_deactivation = (datetime.now(timezone.utc) - user.deactivated_at).days
+        if days_since_deactivation < 14:
+            remaining = 14 - days_since_deactivation
+            grace_end = (user.deactivated_at + timedelta(days=14)).strftime('%d.%m.%Y')
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sperrfrist läuft noch {remaining} Tag(e). Anonymisierung frühestens am {grace_end} möglich."
+            )
 
     user.first_name = "Gelöschter"
     user.last_name = "Benutzer"
@@ -346,6 +372,7 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.is_active = False
+    user.deactivated_at = datetime.now(timezone.utc)
     user.token_version += 1  # Invalidate all existing tokens
     db.commit()
     return None

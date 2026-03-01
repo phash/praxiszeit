@@ -88,6 +88,7 @@ class UserResponse(UserBase):
     exempt_from_arbzg: bool = False  # §18 ArbZG
     is_night_worker: bool = False  # §6 Abs. 2 ArbZG
     totp_enabled: bool = False  # F-019: 2FA status
+    deactivated_at: Optional[datetime] = None  # Grace-Period-Start
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None

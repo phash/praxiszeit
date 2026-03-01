@@ -31,6 +31,7 @@ interface User {
   hours_friday: number | null;
   is_active: boolean;
   is_hidden: boolean;
+  deactivated_at: string | null;
   created_at: string;
 }
 
@@ -47,6 +48,15 @@ interface WorkingHoursChange {
   weekly_hours: number;
   note?: string;
   created_at: string;
+}
+
+/** Verbleibende Grace-Period-Tage (0 = abgelaufen / kein deactivated_at). */
+function graceRemainingDays(user: User): number {
+  if (!user.deactivated_at) return 0;
+  const deactivated = new Date(user.deactivated_at);
+  const graceEnd = new Date(deactivated.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const remaining = Math.ceil((graceEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, remaining);
 }
 
 export default function Users() {
@@ -934,15 +944,25 @@ export default function Users() {
                       >
                         {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                       </button>
-                      {!user.is_active && !user.username.startsWith('deleted_') && (
-                        <button
-                          onClick={() => handleAnonymize(user.id, `${user.first_name} ${user.last_name}`)}
-                          className="text-amber-600 hover:text-amber-800"
-                          title="Anonymisieren (DSGVO Art. 17)"
-                        >
-                          <UserMinus size={16} />
-                        </button>
-                      )}
+                      {!user.is_active && !user.username.startsWith('deleted_') && (() => {
+                        const remaining = graceRemainingDays(user);
+                        return remaining > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-default"
+                            title={`Sperrfrist: Anonymisierung erst in ${remaining} Tag(en) möglich`}
+                          >
+                            🔒 {remaining}d
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleAnonymize(user.id, `${user.first_name} ${user.last_name}`)}
+                            className="text-amber-600 hover:text-amber-800"
+                            title="Anonymisieren (DSGVO Art. 17)"
+                          >
+                            <UserMinus size={16} />
+                          </button>
+                        );
+                      })()}
                       {!user.is_active && user.username.startsWith('deleted_') && (
                         <button
                           onClick={() => handlePurge(user.id, `${user.first_name} ${user.last_name}`)}
@@ -1083,16 +1103,26 @@ export default function Users() {
                     >
                       {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
-                    {!user.is_active && !user.username.startsWith('deleted_') && (
-                      <button
-                        onClick={() => handleAnonymize(user.id, `${user.first_name} ${user.last_name}`)}
-                        className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition"
-                        aria-label="Anonymisieren (DSGVO Art. 17)"
-                        title="Anonymisieren"
-                      >
-                        <UserMinus size={16} />
-                      </button>
-                    )}
+                    {!user.is_active && !user.username.startsWith('deleted_') && (() => {
+                      const remaining = graceRemainingDays(user);
+                      return remaining > 0 ? (
+                        <div
+                          className="flex items-center gap-1 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 cursor-default"
+                          title={`Sperrfrist: Anonymisierung erst in ${remaining} Tag(en) möglich`}
+                        >
+                          🔒 Sperrfrist: {remaining}d
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleAnonymize(user.id, `${user.first_name} ${user.last_name}`)}
+                          className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition"
+                          aria-label="Anonymisieren (DSGVO Art. 17)"
+                          title="Anonymisieren"
+                        >
+                          <UserMinus size={16} />
+                        </button>
+                      );
+                    })()}
                     {!user.is_active && user.username.startsWith('deleted_') && (
                       <button
                         onClick={() => handlePurge(user.id, `${user.first_name} ${user.last_name}`)}
