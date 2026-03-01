@@ -14,6 +14,7 @@ from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
+from app.routers.time_entries import _is_night_work
 from app.core.limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -489,16 +490,6 @@ def get_night_work_summary(
     Night hours: 23:00–06:00. Reports how many days each employee
     performed night work and whether they qualify as Nachtarbeitnehmer (>=48 days/year).
     """
-    from datetime import time as time_type
-
-    NIGHT_START = time_type(23, 0)
-    NIGHT_END = time_type(6, 0)
-
-    def is_night_work(start, end):
-        if start is None or end is None:
-            return False
-        return start < NIGHT_END or end > NIGHT_START
-
     users = _get_active_visible_users(db)
     result = []
     threshold = 48  # §6 ArbZG: Nachtarbeitnehmer if >= 48 days/year
@@ -516,7 +507,7 @@ def get_night_work_summary(
         )
 
         night_days = {
-            e.date for e in entries if is_night_work(e.start_time, e.end_time)
+            e.date for e in entries if _is_night_work(e.start_time, e.end_time)
         }
         night_days_count = len(night_days)
 

@@ -14,8 +14,8 @@ from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.services import auth_service
 from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
-    _calculate_daily_net_hours, _is_night_work,
-    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN,
+    _calculate_daily_net_hours, _calculate_weekly_net_hours, _is_night_work,
+    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -623,7 +623,7 @@ def review_change_request(
 
     cr_response = _enrich_cr_response(cr, db)
 
-    # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer bei Genehmigung
+    # §6 Abs. 2 / §14 ArbZG: Warnungen bei CREATE/UPDATE-Genehmigung
     if (
         review.action == "approve"
         and cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE)
@@ -631,7 +631,7 @@ def review_change_request(
         and cr.proposed_end_time
     ):
         cr_user = db.query(User).filter(User.id == cr.user_id).first()
-        if cr_user and cr_user.is_night_worker:
+        if cr_user and not cr_user.exempt_from_arbzg:
             daily_hours_cr = _calculate_daily_net_hours(
                 db=db,
                 user_id=cr.user_id,
@@ -640,13 +640,30 @@ def review_change_request(
                 end_time=cr.proposed_end_time,
                 break_minutes=cr.proposed_break_minutes or 0,
             )
+
+            # §6 Abs. 2: Nachtarbeitnehmer-Tageslimit
             if (
-                _is_night_work(cr.proposed_start_time, cr.proposed_end_time)
+                cr_user.is_night_worker
+                and _is_night_work(cr.proposed_start_time, cr.proposed_end_time)
                 and daily_hours_cr > MAX_NIGHT_WORKER_DAILY_WARN
             ):
                 cr_response.warnings.append(
                     f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours_cr:.1f}h). "
                     "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
+                )
+
+            # §14 ArbZG: Wochenarbeitszeit-Warnung (48h)
+            weekly = _calculate_weekly_net_hours(
+                db=db,
+                user_id=cr.user_id,
+                entry_date=cr.proposed_date,
+                start_time=cr.proposed_start_time,
+                end_time=cr.proposed_end_time,
+                break_minutes=cr.proposed_break_minutes or 0,
+            )
+            if weekly > MAX_WEEKLY_HOURS_WARN:
+                cr_response.warnings.append(
+                    f"§14 ArbZG: Wochenarbeitszeit {weekly:.1f}h überschreitet 48h-Grenze."
                 )
 
     return cr_response

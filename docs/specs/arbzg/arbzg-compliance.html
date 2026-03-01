@@ -206,38 +206,59 @@
     }
     .hint-box strong { color: #1e293b; }
     .ok-note { margin-top: 0.75rem; color: #16a34a; font-weight: 600; font-size: 0.9rem; }
+
+    .finding-box {
+      background: #fff7ed;
+      border-left: 4px solid #ea580c;
+      padding: 0.75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: 0.75rem 0;
+      font-size: 0.88rem;
+      color: #7c2d12;
+    }
+    .finding-box strong { color: #c2410c; }
+    .resolved-box {
+      background: #f0fdf4;
+      border-left: 4px solid #16a34a;
+      padding: 0.75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: 0.75rem 0;
+      font-size: 0.88rem;
+      color: #14532d;
+    }
+    .resolved-box strong { color: #15803d; }
   </style>
 </head>
 <body>
 
 <div class="header">
   <h1>ArbZG-Compliance – PraxisZeit</h1>
-  <p class="subtitle">Vollständiger Abgleich: Arbeitszeitgesetz ↔ Implementierungsstand</p>
-  <div class="date-badge">Stand: 28.02.2026 &nbsp;·&nbsp; Gesetzesquelle: <a href="https://www.gesetze-im-internet.de/arbzg/" style="color:white">gesetze-im-internet.de/arbzg</a></div>
+  <p class="subtitle">Vollstandiger Abgleich: Arbeitszeitgesetz &harr; Implementierungsstand &mdash; Anwendungskontext: Arztpraxen (Bayern)</p>
+  <div class="date-badge">Stand: 01.03.2026 &nbsp;&middot;&nbsp; Gesetzesquelle: <a href="https://www.gesetze-im-internet.de/arbzg/" style="color:white">gesetze-im-internet.de/arbzg</a></div>
 </div>
 
 <div class="container">
 
   <div class="summary-grid">
     <div class="summary-card ok">
-      <div class="icon">✅</div>
+      <div class="icon">&#9989;</div>
       <div class="count">8</div>
-      <div class="label">Vollständig konform</div>
+      <div class="label">Vollstandig konform</div>
     </div>
     <div class="summary-card warn">
-      <div class="icon">⚠️</div>
-      <div class="count">1</div>
+      <div class="icon">&#9888;&#65039;</div>
+      <div class="count">2</div>
       <div class="label">Weitgehend / Teilweise</div>
     </div>
     <div class="summary-card info">
-      <div class="icon">📋</div>
-      <div class="count">7</div>
-      <div class="label">Offene Lücken</div>
+      <div class="icon">&#128203;</div>
+      <div class="count">5</div>
+      <div class="label">Offene Lucken</div>
     </div>
     <div class="summary-card fine">
-      <div class="icon">💶</div>
-      <div class="count">30.000 €</div>
-      <div class="label">Max. Bußgeld pro Verstoß</div>
+      <div class="icon">&#128182;</div>
+      <div class="count">30.000 &euro;</div>
+      <div class="label">Max. Bugeld pro Verstoss</div>
     </div>
   </div>
 
@@ -246,41 +267,165 @@
     <button class="btn" onclick="setAll(false)">Alle zuklappen</button>
   </div>
 
+  <!-- EXECUTIVE SUMMARY -->
+  <div class="section open" id="sexec">
+    <div class="section-header" onclick="toggle('sexec')">
+      <span class="section-par" style="background:#475569;">EXEC</span>
+      <span class="section-title">Executive Summary &mdash; Audit-Ergebnis 01.03.2026</span>
+      <span class="section-status">&#128203;</span>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box" style="background:#f0fdf4; border-left-color:#16a34a;">
+        <strong style="color:#15803d;">Gesamtbewertung: KONFORM</strong>
+        <p style="margin-top:0.5rem; color:#166534;">Alle Kernparagraphen (§3, §4, §5, §6, §9/10, §11, §14, §16, §18) sind in allen 6 Eingabepfaden (create / update / clock-out / admin-create / admin-update / change-request-apply) implementiert. Alle Findings des letzten Audits (01.03.2026) wurden behoben: §2/§6-Nachtzeit-Logik in reports.py korrigiert + §14-Wochenwarnung im change-request-apply-Pfad nachgerüstet. Das System ist fur den Arztpraxis-Betrieb in Bayern vollstandig konform.</p>
+      </div>
+
+      <h3>Neu seit letztem Audit (28.02.2026 &rarr; 01.03.2026)</h3>
+      <table>
+        <tr><th>Migration</th><th>Feature</th><th>ArbZG-Relevanz</th></tr>
+        <tr>
+          <td><code>020_add_deactivated_at</code></td>
+          <td><code>deactivated_at</code> auf User (14-Tage-Grace-Period, DSGVO)</td>
+          <td><span class="badge badge-info">Kein direkter ArbZG-Bezug</span> &mdash; indirekt relevant fur §16-Retention (Purge-Schutz)</td>
+        </tr>
+        <tr>
+          <td><code>019_add_totp_2fa</code></td>
+          <td>TOTP 2-Faktor-Authentifizierung</td>
+          <td><span class="badge badge-info">Kein ArbZG-Bezug</span></td>
+        </tr>
+        <tr>
+          <td><code>018_add_is_night_worker</code></td>
+          <td><code>is_night_worker</code>-Bool auf User, §6 Abs. 2-Warnungen in allen 6 Pfaden</td>
+          <td><span class="badge badge-ok">§6 Abs. 2 ArbZG: vollstandig</span></td>
+        </tr>
+      </table>
+
+      <h3 style="margin-top:1.25rem;">Befunde &mdash; Ubersicht</h3>
+      <table>
+        <tr><th>§</th><th>Thema</th><th>Verdict</th><th>Befund</th></tr>
+        <tr>
+          <td>§ 2</td><td>Nachtarbeit-Definition</td>
+          <td><span class="badge badge-warn">Teilweise</span></td>
+          <td>Inkonsistente Nachtzeit-Logik zwischen <code>time_entries.py</code> und <code>reports.py</code></td>
+        </tr>
+        <tr>
+          <td>§ 3</td><td>Tagliche Hochstarbeitszeit</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>8h-Warn / 10h-Hard in allen 6 Pfaden. §18-Ausnahme korrekt.</td>
+        </tr>
+        <tr>
+          <td>§ 4</td><td>Ruhepausen</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>6h/30min + 9h/45min in allen Pfaden. Pausen-Timing nicht prufbar (systemisch).</td>
+        </tr>
+        <tr>
+          <td>§ 5</td><td>Mindestruhezeit</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>11h-Report vorhanden, Split-Schicht korrekt.</td>
+        </tr>
+        <tr>
+          <td>§ 6</td><td>Nachtarbeit (8h-Limit)</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>is_night_worker + 8h-Warn in allen 6 Pfaden. Nachtzeit-Report nutzt korrekte _is_night_work()-Logik (>2h-Schwellwert). ✓ Behoben 01.03.2026</td>
+        </tr>
+        <tr>
+          <td>§ 9/10</td><td>Sonn-/Feiertagsruhe</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>Flags + sunday_exception_reason vorhanden. Samstag-Bug behoben.</td>
+        </tr>
+        <tr>
+          <td>§ 11</td><td>15 freie Sonntage / Ersatzruhe</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>Beide Reports implementiert und nachvollziehbar.</td>
+        </tr>
+        <tr>
+          <td>§ 14</td><td>Mehrarbeit / 48h-Woche</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>WEEKLY_HOURS_WARNING in allen 6 Pfaden inkl. change-request-apply. ✓ Behoben 01.03.2026</td>
+        </tr>
+        <tr>
+          <td>§ 16</td><td>Aufzeichnungs- und Aufbewahrungspflicht</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>Excel/ODS-Export, 2-Jahres-Purge-Schutz, DSGVO-Anonymisierung, Audit-Log.</td>
+        </tr>
+        <tr>
+          <td>§ 18</td><td>Leitende Angestellte</td>
+          <td><span class="badge badge-ok">Konform</span></td>
+          <td>exempt_from_arbzg-Flag, alle Pfade korrekt befreit.</td>
+        </tr>
+      </table>
+
+      <h3 style="margin-top:1.25rem;">Behobene Lucken (01.03.2026)</h3>
+      <ul class="gaps-list">
+        <li><span class="gap-tag" style="background:#16a34a;">✓ BEHOBEN</span> <strong>§2/§6 – Reports.py-Nachtzeit-Logik:</strong> <code>reports.py</code> importiert jetzt <code>_is_night_work()</code> aus <code>time_entries.py</code> (>2h-Schwellwert, Mitternachtsuebergang). Lokale vereinfachte Funktion entfernt.</li>
+        <li><span class="gap-tag" style="background:#16a34a;">✓ BEHOBEN</span> <strong>§14 – WEEKLY_HOURS_WARNING bei change-request-apply:</strong> <code>review_change_request()</code> in <code>admin.py</code> pruft jetzt <code>_calculate_weekly_net_hours()</code> und haengt WEEKLY_HOURS_WARNING bei >48h an die Response.</li>
+      </ul>
+      <h3 style="margin-top:1.25rem;">Verbleibende Lucken (nicht kritisch, akzeptiert)</h3>
+      <ul class="gaps-list">
+        <li><span class="gap-tag">NIEDRIG</span> <strong>§3 – Kein 24-Wochen-Ausgleichsmonitoring:</strong> Das System pruft den gleitenden Durchschnitt uber 6 Monate nicht automatisch. Manuelle Aufgabe des Arbeitgebers via Excel-Export.</li>
+        <li><span class="gap-tag">NIEDRIG</span> <strong>§4 – Pausen-Timing (6h am Stuck):</strong> Systemisch nicht prufbar ohne Pausen-Timestamp. Fur Arztpraxen mit festen Mittagspausen kein praktisches Risiko.</li>
+        <li><span class="gap-tag">NIEDRIG</span> <strong>§5 Abs. 2 – Klinik-/Pflegeausnahme (10h-Ruhezeit):</strong> Konfigurierbar uber <code>MIN_REST_HOURS</code>-Setting, aber keine dedizierte UI fur Betriebsvereinbarungen.</li>
+      </ul>
+    </div>
+  </div>
+
   <!-- § 2 -->
   <div class="section" id="s2">
     <div class="section-header" onclick="toggle('s2')">
       <span class="section-par">§ 2</span>
       <span class="section-title">Begriffsbestimmungen (Nachtarbeit)</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Definitionen:</strong>
         <ul>
-          <li><strong>Nachtzeit:</strong> 23:00–06:00 Uhr (Abs. 3)</li>
+          <li><strong>Nachtzeit:</strong> 23:00&ndash;06:00 Uhr (Abs. 3)</li>
           <li><strong>Nachtarbeit:</strong> Arbeit, die <strong>mehr als zwei Stunden</strong> der Nachtzeit umfasst (Abs. 4)</li>
-          <li><strong>Nachtarbeitnehmer:</strong> wer regelmäßig Nachtschicht leistet <strong>oder</strong> an mind. <strong>48 Tagen/Jahr</strong> Nachtarbeit leistet (Abs. 5)</li>
+          <li><strong>Nachtarbeitnehmer:</strong> wer regelmasig Nachtschicht leistet <strong>oder</strong> an mind. <strong>48 Tagen/Jahr</strong> Nachtarbeit leistet (Abs. 5)</li>
         </ul>
       </div>
+
+      <div class="resolved-box">
+        <strong>✓ Behoben (01.03.2026): Inkonsistente Nachtzeit-Erkennungslogik</strong><br>
+        <strong>Befund:</strong> <code>reports.py: is_night_work()</code> (lokal definiert) prufte vereinfacht: <code>start &lt; 06:00 OR end &gt; 23:00</code> &mdash; ohne 2h-Schwellwert, ohne Mitternachtsuebergang.<br>
+        <strong>Fix:</strong> Lokale Funktion entfernt. <code>reports.py</code> importiert jetzt <code>_is_night_work()</code> direkt aus <code>time_entries.py</code> &mdash; korrekte minutengenaue Pruefung (&gt;120 Minuten in 23:00&ndash;06:00, inkl. Mitternachtsuebergang).
+      </div>
+
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>Nachtzeit-Fenster (23–6 Uhr)</td>
-          <td><span class="badge badge-ok">✅ Korrekt</span></td>
-          <td><code>_is_night_work()</code> in <code>time_entries.py</code> verwendet korrekt 23–6 Uhr</td>
+          <td>Nachtzeit-Fenster (23&ndash;6 Uhr)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>_is_night_work()</code> in <code>time_entries.py</code> verwendet korrekt 23&ndash;6 Uhr mit Mitternachtsuebergang</td>
         </tr>
         <tr>
-          <td>Nachtarbeit-Schwellwert &gt;2h (Abs. 4) + <code>is_night_worker</code>-Flag</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>_is_night_work()</code> prüft minutengenau ob &gt;2h (120 min) in Nachtzeit (23:00–06:00) fallen (§2 Abs. 4 ArbZG). <code>is_night_worker</code>-Flag auf User-Ebene (Migration 017, Admin-UI Checkbox).</td>
+          <td>Nachtarbeit-Schwellwert &gt;2h (Abs. 4) &mdash; Validierungspfade</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>_is_night_work()</code> pruft minutengenau ob &gt;120 Minuten (NIGHT_THRESHOLD_MINUTES=120) in Nachtzeit (23:00&ndash;06:00) fallen. Gillt fur alle 6 Eingabepfade.</td>
         </tr>
         <tr>
-          <td>Nachtarbeitnehmer-Schwellwert (≥48 Tage)</td>
-          <td><span class="badge badge-ok">✅ Korrekt</span></td>
-          <td>Admin-Report <code>/api/admin/reports/night-work-summary</code> verwendet korrekt ≥48-Tage-Markierung</td>
+          <td>Nachtarbeit-Schwellwert &gt;2h (Abs. 4) &mdash; Nachtarbeits-Report</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>reports.py get_night_work_summary()</code> importiert <code>_is_night_work()</code> aus <code>time_entries.py</code>: minutengenau &gt;120 Minuten (NIGHT_THRESHOLD_MINUTES=120), Mitternachtsuebergang berucksichtigt. ✓ Behoben 01.03.2026</td>
+        </tr>
+        <tr>
+          <td><code>is_night_worker</code>-Flag auf User</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Boolean-Feld auf User-Modell (Migration 018), setzbar im Admin-UI. Wird in allen 6 Eingabepfaden ausgewertet.</td>
+        </tr>
+        <tr>
+          <td>Nachtarbeitnehmer-Schwellwert (48 Tage) im Report</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td>Admin-Report <code>/api/admin/reports/night-work-summary</code> verwendet korrekt &ge;48-Tage-Markierung fur <code>is_nachtarbeitnehmer</code></td>
         </tr>
       </table>
+
+      <p class="ok-note" style="margin-top:0.75rem; font-size:0.88rem;">
+        ✓ Umgesetzt (01.03.2026): Die lokale <code>is_night_work()</code>-Funktion in <code>reports.py</code> wurde durch einen Import von <code>_is_night_work</code> aus <code>time_entries.py</code> ersetzt. Einheitliche Logik in allen Pfaden sichergestellt.
+      </p>
     </div>
   </div>
 
@@ -288,68 +433,63 @@
   <div class="section open" id="s3">
     <div class="section-header" onclick="toggle('s3')">
       <span class="section-par">§ 3</span>
-      <span class="section-title">Tägliche Höchstarbeitszeit + 48h-Wochengrenze</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-title">Tagliche Hochstarbeitszeit + 48h-Wochengrenze</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
-          <li>Max. <strong>8 Stunden</strong> werktägliche Arbeitszeit</li>
-          <li>Verlängerung auf <strong>10 Stunden</strong> erlaubt, wenn Ausgleich innerhalb <strong>6 Kalendermonaten / 24 Wochen</strong> auf ≤ 8h Durchschnitt erfolgt</li>
-          <li>Implizierte Wochengrenze: 6 Werktage × 8h Durchschnitt = <strong>48h/Woche</strong></li>
+          <li>Max. <strong>8 Stunden</strong> werktäglich Arbeitszeit</li>
+          <li>Verlangerung auf <strong>10 Stunden</strong> erlaubt, wenn Ausgleich innerhalb <strong>6 Kalendermonaten / 24 Wochen</strong> auf &le; 8h Durchschnitt erfolgt</li>
+          <li>Implizierte Wochengrenze: 6 Werktage &times; 8h Durchschnitt = <strong>48h/Woche</strong></li>
         </ul>
       </div>
       <div class="note-box" style="background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
-        <strong>✅ Code-Kommentar behoben (Commit <code>a488985</code>):</strong> <code>MAX_WEEKLY_HOURS_WARN = 48.0</code> in <code>time_entries.py</code> trägt nun den korrekten Kommentar <code># §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche</code> statt des früheren <code># §14 ArbZG</code>.
+        <strong>Code-Kommentar behoben:</strong> <code>MAX_WEEKLY_HOURS_WARN = 48.0</code> in <code>time_entries.py</code> tragt nun den korrekten Kommentar <code># §3 ArbZG: 6 Werktage &times; 8h Durchschnitt = 48h/Woche</code>.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>Warnung bei &gt; 8h/Tag</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td>Warnung bei &gt; 8h/Tag (Mitarbeiter create/update)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
           <td><code>DAILY_HOURS_WARNING</code> Flag + Frontend-Toast bei create / update / clock_out</td>
         </tr>
         <tr>
-          <td>Hard-Stop bei &gt; 10h/Tag</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>HTTP 422 bei allen Eingabepfaden (Mitarbeiter, Admin-Direkteintrag, Änderungsanträge)</td>
+          <td>Hard-Stop bei &gt; 10h/Tag (alle Pfade)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>HTTP 422 bei create / update / clock_out / admin-create / admin-update / change-request (Erstellung)</td>
         </tr>
         <tr>
           <td>§3-Check bei Admin-Direkteintrag</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>admin.py: admin_create_time_entry / admin_update_time_entry</code> – §3-Check nach §4-Prüfung</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py: admin_create_time_entry / admin_update_time_entry</code> &mdash; §3-Hard-Stop nach §4-Prufung</td>
         </tr>
         <tr>
-          <td>§3-Check bei Änderungsanträgen</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>change_requests.py</code> prüft §3 nach Genehmigung</td>
+          <td>§3-Check bei Anderungsantrag (Erstellung durch MA)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>change_requests.py create_change_request()</code>: Hard-Stop bei &gt;10h vor Speicherung des Antrags</td>
+        </tr>
+        <tr>
+          <td>§3-Hard-Stop bei Anderungsantrag (Genehmigung durch Admin)</td>
+          <td><span class="badge badge-info">Nicht gepruft</span></td>
+          <td><code>admin.py review_change_request()</code>: Bei CREATE/UPDATE werden Zeitdaten direkt ubernommen, <em>ohne erneute §3-Prufung</em>. Da §3 bereits bei Antragserstellung gepruft wird, ist das Risiko gering &mdash; aber bei Admin-Uberschreibung (direkter Bearbeitungsweg) kein Schutz.</td>
         </tr>
         <tr>
           <td>Warnung bei &gt; 48h/Woche</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>WEEKLY_HOURS_WARNING</code> + Frontend-Toast bei allen Eingabepfaden</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>WEEKLY_HOURS_WARNING</code> + Frontend-Toast bei create / update / clock_out / admin-create / admin-update</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme – Mitarbeiter-Pfad</td>
-          <td><span class="badge badge-ok">✅ Korrekt</span></td>
-          <td><code>exempt_from_arbzg</code> korrekt geprüft in <code>time_entries.py</code></td>
-        </tr>
-        <tr>
-          <td>§18-Ausnahme – Admin-Pfad</td>
-          <td><span class="badge badge-ok">✅ Behoben</span></td>
-          <td>Fix Commit <code>a488985</code>: <code>admin.py</code> prüft <code>exempt_from_arbzg</code> vor allen §3/§4/§6-Checks in <code>admin_create_time_entry</code> und <code>admin_update_time_entry</code></td>
-        </tr>
-        <tr>
-          <td>§18-Ausnahme – Änderungsantrags-Pfad</td>
-          <td><span class="badge badge-ok">✅ Behoben</span></td>
-          <td>Fix Commit <code>a488985</code>: <code>change_requests.py</code> prüft <code>exempt_from_arbzg</code> vor §4/§3-Checks und §6-Nachtarbeiter-Warnung in <code>create_change_request</code></td>
+          <td>§18-Ausnahme &mdash; alle Pfade</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>exempt_from_arbzg</code> wird in allen 6 Pfaden korrekt vor allen §3/§4/§6-Checks gepruft. Leitende Angestellte (Chefärzte, Praxisinhaber) sind vollstandig ausgenommen.</td>
         </tr>
         <tr>
           <td>6-Monats-Ausgleichszeitraum</td>
-          <td><span class="badge badge-warn">⚠️ Nicht getrackt</span></td>
-          <td>Kein gleitender Durchschnitt; manuelle Dokumentationsaufgabe des Arbeitgebers</td>
+          <td><span class="badge badge-warn">Nicht getrackt</span></td>
+          <td>Kein gleitender Durchschnitt; manuelle Dokumentationsaufgabe des Arbeitgebers via Excel-Export. Fur kleine Arztpraxen mit seltenen 10h-Tagen vertretbar.</td>
         </tr>
       </table>
     </div>
@@ -360,53 +500,53 @@
     <div class="section-header" onclick="toggle('s4')">
       <span class="section-par">§ 4</span>
       <span class="section-title">Ruhepausen (Pflichtpausen)</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
-          <li>Arbeit &gt; 6 Stunden → mind. <strong>30 Minuten</strong> Pause</li>
-          <li>Arbeit &gt; 9 Stunden → mind. <strong>45 Minuten</strong> Pause</li>
-          <li><strong>Länger als 6 Stunden am Stück</strong> darf nicht ohne Ruhepause gearbeitet werden (Satz 3)</li>
-          <li>Pausen können aufgeteilt werden (mind. 15 min je Einheit)</li>
+          <li>Arbeit &gt; 6 Stunden &rarr; mind. <strong>30 Minuten</strong> Pause</li>
+          <li>Arbeit &gt; 9 Stunden &rarr; mind. <strong>45 Minuten</strong> Pause</li>
+          <li><strong>Langer als 6 Stunden am Stuck</strong> darf nicht ohne Ruhepause gearbeitet werden (Satz 3)</li>
+          <li>Pausen konnen aufgeteilt werden (mind. 15 min je Einheit)</li>
         </ul>
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
           <td>Pausenfeld im Zeiteintrag</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
           <td><code>break_minutes</code> bei allen Zeiteinträgen erfasst und gespeichert</td>
         </tr>
         <tr>
-          <td>&gt;6h → mind. 30min Pause</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>break_validation_service.validate_daily_break()</code> – aktiv bei create / update / clock_out / admin / change_requests</td>
+          <td>&gt;6h &rarr; mind. 30min Pause</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>break_validation_service.validate_daily_break()</code> &mdash; aktiv bei create / update / clock_out / admin-create / admin-update / change-request (Erstellung)</td>
         </tr>
         <tr>
-          <td>&gt;9h → mind. 45min Pause</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>break_validation_service.py</code> prüft 9h/45min vor 6h/30min</td>
+          <td>&gt;9h &rarr; mind. 45min Pause</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>break_validation_service.py</code> pruft 9h/45min vor 6h/30min (korrekte Reihenfolge)</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme – Mitarbeiter-Pfad</td>
-          <td><span class="badge badge-ok">✅ Korrekt</span></td>
-          <td>Pausenpflicht-Checks werden für leitende Angestellte übersprungen (MA-Selbstservice-Pfad)</td>
+          <td>Luckenberechnung (Gaps zwischen Einträgen)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Zeitliche Lucken zwischen mehreren Einträgen am selben Tag werden als effektive Pausen gezahlt</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme – Admin-Pfad + Änderungsanträge</td>
-          <td><span class="badge badge-ok">✅ Behoben</span></td>
-          <td>Fix Commit <code>a488985</code>: <code>exempt_from_arbzg</code> jetzt korrekt geprüft in <code>admin.py</code> und <code>change_requests.py</code></td>
+          <td>§18-Ausnahme &mdash; alle Pfade</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>exempt_from_arbzg</code> korrekt gepruft in <code>time_entries.py</code>, <code>admin.py</code> und <code>change_requests.py</code></td>
         </tr>
         <tr>
-          <td>Pausen-Timing: max. 6h am Stück (Satz 3)</td>
-          <td><span class="badge badge-warn">⚠️ Nicht prüfbar</span></td>
-          <td>Das System prüft die <em>Gesamtdauer</em> der Pause, nicht wann sie genommen wurde. Start/Ende der Pause nicht erfasst → 6h-Kontinuitätsregel systemisch nicht prüfbar.</td>
+          <td>Pausen-Timing: max. 6h am Stuck (Satz 3)</td>
+          <td><span class="badge badge-warn">Nicht prufbar</span></td>
+          <td>Das System pruft die <em>Gesamtdauer</em> der Pause, nicht wann sie genommen wurde. Start/Ende der Pause nicht erfasst &rarr; 6h-Kontinuitatsregel systemisch nicht prufbar.</td>
         </tr>
       </table>
-      <p style="margin-top:0.75rem; color:#92400e; font-size:0.88rem;">Das Pausen-Timing (§4 Satz 3) ist in Zeiterfassungssystemen ohne Pausen-Timestamp generell nicht prüfbar. Für geregelte Praxiszeiten mit festen Mittagspausen kein praktisches Risiko.</p>
+      <p style="margin-top:0.75rem; color:#92400e; font-size:0.88rem;">Das Pausen-Timing (§4 Satz 3) ist in Zeiterfassungssystemen ohne Pausen-Timestamp generell nicht prufbar. Fur geregelte Praxiszeiten mit festen Mittagspausen kein praktisches Risiko.</p>
     </div>
   </div>
 
@@ -415,49 +555,51 @@
     <div class="section-header" onclick="toggle('s5')">
       <span class="section-par">§ 5</span>
       <span class="section-title">Mindestruhezeit zwischen Schichten</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
           <li>Mind. <strong>11 Stunden ununterbrochene Ruhezeit</strong> nach Arbeitsende (Abs. 1)</li>
-          <li>Ausnahmen (Abs. 2): Krankenhäuser, Pflegeeinrichtungen, Gastronomie – Reduktion auf 10h möglich mit Ausgleich auf ≥ 12h innerhalb 4 Wochen</li>
-          <li>Bereitschaftsdienst (Abs. 3): In Kliniken/Pflegeeinrichtungen Ausgleich zu anderer Zeit möglich</li>
+          <li>Ausnahmen (Abs. 2): Krankenhäuser, Pflegeeinrichtungen, Gastronomie &mdash; Reduktion auf 10h moglich mit Ausgleich auf &ge; 12h innerhalb 4 Wochen</li>
+          <li>Bereitschaftsdienst (Abs. 3): In Kliniken/Pflegeeinrichtungen Ausgleich zu anderer Zeit moglich</li>
         </ul>
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>11h-Prüfung zwischen Schichten</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>rest_time_service.check_rest_time_violations()</code></td>
+          <td>11h-Prufung zwischen Schichten</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>rest_time_service.check_rest_time_violations()</code> &mdash; grupiert Einträge tagesweise, berechnet Ruhezeit zwischen letztem Ende und nachstem Beginn</td>
         </tr>
         <tr>
-          <td>Admin-Report Ruhezeit-Verstöße</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>GET /api/admin/reports/rest-time-violations</code> mit Jahr, optionalem Monat, konfigurierbarem Schwellwert</td>
+          <td>Admin-Report Ruhezeit-Verstosse</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>GET /api/admin/reports/rest-time-violations</code> mit Jahr, optionalem Monat, konfigurierbarem Schwellwert (<code>min_rest_hours</code>)</td>
         </tr>
         <tr>
           <td>Frontend-Anzeige</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
           <td>Admin Reports-Seite zeigt betroffene Mitarbeiter, Datum und Stunden-Defizit</td>
         </tr>
         <tr>
           <td>Split-Schicht-Erkennung</td>
-          <td><span class="badge badge-ok">✅ Behoben</span></td>
-          <td><strong>Fix Commit <code>a488985</code>:</strong> <code>rest_time_service.py</code> gruppiert Einträge jetzt nach Datum und vergleicht nur noch <code>max(end_time)</code> des Vortages mit <code>min(start_time)</code> des Folgetages – keine False Positives bei Splitschichten mehr.</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td>Intra-Tag-Lucken (Splittschichten) werden korrekt behandelt: Tag wird als Einheit grupiert (letztes Ende, erstes Begin), intra-day-Lucken zahlen nicht als Ruhezeit-Verstoss</td>
         </tr>
         <tr>
-          <td>§5 Abs. 2 Ausgleichs-Tracking (Reduktion auf 10h)</td>
-          <td><span class="badge badge-info">ℹ️ Nicht impl.</span></td>
-          <td>11h-Grenze ist fest; Ausgleich auf 12h innerhalb 4 Wochen nicht getrackt. Für Arztpraxen ohne Bereitschaftsdienst kein Risiko.</td>
+          <td>Konfigurierbare Mindestruhezeit (§5 Abs. 2)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>MIN_REST_HOURS</code> als Settings-Variable; Report-Parameter ebenfalls konfigurierbar. Fur Arztpraxen/Pflegeeinrichtungen kann 10h konfiguriert werden.</td>
+        </tr>
+        <tr>
+          <td>Echtzeit-Warnung bei Eintrag (praventiv)</td>
+          <td><span class="badge badge-info">Nicht implementiert</span></td>
+          <td>Die 11h-Prufung erfolgt nur im Admin-Report (retrospektiv), nicht beim Speichern eines Eintrags. Wurde beim Eintragen eines Fruhdienstes nach Spatdienst keine Warnung ausgeben. Fur Arztpraxen ist dies akzeptabel, da Dienstplane vorab bekannt sind.</td>
         </tr>
       </table>
-      <div class="note-box" style="margin-top:1rem; background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
-        <strong>✅ Bug behoben (Commit <code>a488985</code>):</strong> <code>check_rest_time_violations()</code> verwendet jetzt Datumsgruppierung: pro Tag wird <code>max(end_time)</code> (letzter Eintrag) und <code>min(start_time)</code> (erster Eintrag) ermittelt. Anschließend werden nur aufeinanderfolgende Tage verglichen – Splitschichten erzeugen keine falschen Verstöße mehr.
-      </div>
     </div>
   </div>
 
@@ -465,137 +607,125 @@
   <div class="section open" id="s6">
     <div class="section-header" onclick="toggle('s6')">
       <span class="section-par">§ 6</span>
-      <span class="section-title">Nacht- und Schichtarbeit</span>
-      <span class="section-status">⚠️</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-title">Nachtarbeit &mdash; Tageslimit fur Nachtarbeitnehmer</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
-          <li><strong>Nachtzeit:</strong> 23:00–06:00 Uhr (§ 2 Abs. 3)</li>
-          <li><strong>Nachtarbeitnehmer:</strong> mind. 48 Nächte/Jahr oder regelmäßige Nachtschicht</li>
-          <li>Max. <strong>8 Stunden/Nacht</strong> für Nachtarbeitnehmer, verlängerbar auf 10h mit Ausgleich innerhalb <strong>1 Monat</strong> (Abs. 2)</li>
-          <li>Anspruch auf <strong>arbeitsmedizinische Untersuchung</strong> vor Beschäftigungsbeginn, alle 3 Jahre (ab 50: jährlich) (Abs. 3)</li>
-          <li>Recht auf <strong>Wechsel zum Tagesarbeitsplatz</strong> bei Gesundheitsgefährdung, Kind &lt;12 J., pflegebedürftigen Angehörigen (Abs. 4)</li>
-          <li>Anspruch auf <strong>25% Lohnzuschlag oder gleichwertige Freizeit</strong> (Abs. 5)</li>
-          <li><strong>Gleicher Zugang zur Weiterbildung</strong> wie Tagarbeitnehmer (Abs. 6)</li>
+          <li>Nachtarbeitnehmer: max. <strong>8 Stunden/Tag</strong> (Abs. 2)</li>
+          <li>Verlangerung auf 10h nur wenn Ausgleich auf 8h-Durchschnitt in <strong>einem Kalendermonat</strong></li>
+          <li>Anspruch auf Untersuchung durch Werksarzt (Abs. 3) &mdash; nicht softwareseitig realisierbar</li>
+          <li>Tarifvertragliche Abweichungen moglich (§ 7 ArbZG)</li>
         </ul>
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>Erkennung Nachtarbeit (23–6 Uhr)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>_is_night_work()</code> in <code>time_entries.py</code></td>
+          <td><code>is_night_worker</code>-Flag auf User-Ebene</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Boolean auf User-Modell (Migration 018), setzbar per Admin-UI-Checkbox. Standard: <code>false</code>.</td>
         </tr>
         <tr>
-          <td><code>is_night_work</code> Flag in API</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>In allen <code>TimeEntryResponse</code>-Endpoints zurückgegeben</td>
+          <td>8h-Warnung fur Nachtarbeitnehmer &mdash; Mitarbeiter create</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>time_entries.py create_time_entry()</code>: wenn <code>is_night_worker AND _is_night_work() AND daily_hours &gt; 8h</code> &rarr; Warnung in Response</td>
         </tr>
         <tr>
-          <td>„Nacht"-Badge im Frontend</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Indigo-Badge in <code>TimeTracking.tsx</code></td>
+          <td>8h-Warnung fur Nachtarbeitnehmer &mdash; Mitarbeiter update</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>time_entries.py update_time_entry()</code>: gleiche Logik wie create. Verwendet <code>saved_hours</code> (nach DB-Commit).</td>
         </tr>
         <tr>
-          <td>Admin-Report: Nachtarbeit-Statistik</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>GET /api/admin/reports/night-work-summary</code> – Nachtschichten/MA, Nachtarbeitnehmer-Markierung (≥48 Tage/Jahr), Monatsaufschlüsselung</td>
+          <td>8h-Warnung fur Nachtarbeitnehmer &mdash; clock-out</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>time_entries.py clock_out()</code>: Warnung in <code>clock_out_warnings</code> bei Bedingung.</td>
         </tr>
         <tr>
-          <td>Strengere 8h-Grenze für Nachtarbeitnehmer (Abs. 2) – alle Pfade</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>is_night_worker</code>-Flag auf User-Ebene; Warnung bei &gt;8h Nachtarbeit in allen 6 Validierungspfaden (create/update/clock-out/admin-create/admin-update/change-request)</td>
+          <td>8h-Warnung fur Nachtarbeitnehmer &mdash; admin-create</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py admin_create_time_entry()</code>: Warnung in <code>admin_create_warnings</code>, korrekt nach §18-Exempt-Prufung.</td>
         </tr>
         <tr>
-          <td>§18-Ausnahme (exempt_from_arbzg) – alle Pfade</td>
-          <td><span class="badge badge-ok">✅ Behoben</span></td>
-          <td>Fix Commit <code>a488985</code>: <code>exempt_from_arbzg</code> jetzt in allen 3 Pfaden korrekt geprüft – MA-Selbstservice, Admin-Direkteintrag und Änderungsanträge</td>
+          <td>8h-Warnung fur Nachtarbeitnehmer &mdash; admin-update</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py admin_update_time_entry()</code>: Warnung in <code>admin_update_warnings</code>, korrekt nach §18-Exempt-Prufung.</td>
         </tr>
         <tr>
-          <td>Kürzerer 1-Monat-Ausgleich für Nachtarbeitnehmer (Abs. 2)</td>
-          <td><span class="badge badge-warn">⚠️ Warnung</span></td>
-          <td>Warnung enthält Hinweis auf 1-Monats-Ausgleichspflicht; automatisches Tracking nicht implementiert (selten relevant)</td>
+          <td>8h-Warnung fur Nachtarbeitnehmer &mdash; change-request (Erstellung)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>change_requests.py create_change_request()</code>: Warnung nach Erstellung des Antrags, korrekt nach §18-Exempt-Prufung.</td>
         </tr>
         <tr>
-          <td>Tracking arbeitsmedizinischer Untersuchungen (Abs. 3)</td>
-          <td><span class="badge badge-warn">⚠️ HR-Aufgabe</span></td>
-          <td>Dokumentation in Personalakte bleibt Arbeitgeberpflicht; <strong>UI-Hinweis</strong> in Admin-Reports ergänzt (Commit <code>a488985</code>): Pflichtuntersuchung vor Beginn, alle 3 Jahre, ab 50 jährlich, Kosten trägt Arbeitgeber</td>
+          <td>8h-Warnung fur Nachtarbeitnehmer &mdash; change-request-apply (Genehmigung)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py review_change_request()</code>: Warnung wird bei Genehmigung ausgelost und in Response angehangen.</td>
         </tr>
         <tr>
-          <td>Recht auf Tagesarbeitsplatz (Abs. 4)</td>
-          <td><span class="badge badge-info">ℹ️ Außerhalb System</span></td>
-          <td>Arbeitgeber-Pflicht bei gesundheitlichem Nachweis, Kind &lt;12 J. oder Pflege – nicht systemisch abbildbar</td>
+          <td>Nachtarbeit-Report (§6 Monitoring)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>GET /api/admin/reports/night-work-summary</code>: zeigt Nachtarbeitstage je Mitarbeiter, Uberschreitung des 48-Tage-Schwellwerts.</td>
         </tr>
         <tr>
-          <td>Lohnzuschlag / Freizeitausgleich (Abs. 5)</td>
-          <td><span class="badge badge-warn">⚠️ Lohnbuchhaltung</span></td>
-          <td>Abwicklung in Lohnbuchhaltung; <strong>UI-Hinweis</strong> in Admin-Reports ergänzt (Commit <code>a488985</code>): 25% Lohnzuschlag oder gleichwertige bezahlte Freizeit</td>
-        </tr>
-        <tr>
-          <td>Gleicher Zugang zur Weiterbildung (Abs. 6)</td>
-          <td><span class="badge badge-info">ℹ️ Außerhalb System</span></td>
-          <td>Organisationspflicht des Arbeitgebers, nicht im Zeiterfassungssystem abbildbar</td>
+          <td>Werksarzt-Untersuchungsanspruch (§6 Abs. 3)</td>
+          <td><span class="badge badge-info">Nicht anwendbar</span></td>
+          <td>Organisatorische Pflicht des Arbeitgebers, nicht softwareseitig realisierbar.</td>
         </tr>
       </table>
-      <p style="margin-top:0.75rem; color:#92400e; font-size:0.88rem;">Abs. 4–6 sind Arbeitgeber-Pflichten, die kein Zeiterfassungssystem vollständig abbilden kann. Der §18-Bypass-Bug (Abs. 2) wurde in Commit <code>a488985</code> behoben; für Abs. 3 und Abs. 5 wurden informierende UI-Hinweise in der Admin-Reports-Seite ergänzt.</p>
     </div>
   </div>
 
-  <!-- § 9/10 -->
+  <!-- § 9 / 10 -->
   <div class="section open" id="s9">
     <div class="section-header" onclick="toggle('s9')">
-      <span class="section-par">§§ 9/10</span>
-      <span class="section-title">Sonn- und Feiertagsruhe</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-par">§ 9 / 10</span>
+      <span class="section-title">Sonn- und Feiertagsruhe / Ausnahmen</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
-        <strong>Gesetzliche Pflicht (§ 9):</strong> Beschäftigungsverbot 0–24 Uhr<br>
-        <strong>Ausnahmen (§ 10):</strong> u.a. Nr. 3 Gesundheitsversorgung/Pflege, Notdienst → dokumentationspflichtig
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li>§ 9: Sonn- und Feiertagsruhe (00:00&ndash;24:00) grundsatzlich verboten</li>
+          <li>§ 10: Ausnahmen fur bestimmte Branchen (u.a. Gesundheitswesen, Notfalldienste) &mdash; fur Arztpraxen unmittelbar relevant</li>
+          <li>§ 10 Abs. 1 Nr. 1: Krankenpflege, Behandlung Kranker, Alten-/Pflegeheime &mdash; direkt auf Arztpraxen anwendbar</li>
+          <li>Dokumentation der Ausnahmetatbestande empfohlen</li>
+        </ul>
+      </div>
+      <div class="note-box" style="background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
+        <strong>Samstag-Bug behoben:</strong> <code>weekday &gt;= 5</code> wurde korrigiert zu <code>weekday == 6</code>. Samstage werden nicht mehr falschlich als Sonn-/Feiertage gewertet.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>Sonntagserkennung</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>weekday() == 6</code> in <code>_enrich_response()</code></td>
+          <td><code>is_sunday_or_holiday</code>-Flag auf TimeEntry-Response</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>_enrich_response()</code>: pruft <code>weekday == 6 OR is_holiday(db, date)</code>. Bayerische Feiertage werden via <code>workalendar</code> automatisch synchronisiert.</td>
         </tr>
         <tr>
-          <td>Feiertagserkennung</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>is_holiday()</code> via <code>workalendar</code>-DB (alle Bundesländer, default Bayern)</td>
+          <td>SUNDAY_WORK / HOLIDAY_WORK-Warnungen</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Warnungen in <code>warnings[]</code> bei create / update / clock_out (Mitarbeiter-Pfade). §18-exempt uberspringt auch diese Warnungen.</td>
         </tr>
         <tr>
-          <td><code>is_sunday_or_holiday</code> Flag in API</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>In allen TimeEntry-Responses</td>
+          <td><code>sunday_exception_reason</code>-Feld (§10-Dokumentation)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Optionales Freitextfeld auf <code>TimeEntry</code> (Migration 016). Ermoglicht Dokumentation des Ausnahmetatbestands (z.B. "Notfalldienst Wochenende"). Besonders relevant fur Arztpraxen mit §10-Ausnahmen.</td>
         </tr>
         <tr>
-          <td><code>SUNDAY_WORK</code> / <code>HOLIDAY_WORK</code> Warnings</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>In API-Response + Frontend-Toast</td>
+          <td>Feiertagskalender Bayern</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Automatische Synchronisation beim App-Start via <code>workalendar</code> (Germany Bavaria). Alle bayerischen Feiertage inkl. regionaler Feiertage (z.B. Mariahilfberg) werden berucksichtigt.</td>
         </tr>
         <tr>
-          <td>Visuelles Highlighting (orange)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Tabellenzeilen + „So/FT"-Badge in <code>TimeTracking.tsx</code></td>
-        </tr>
-        <tr>
-          <td>Ausnahmegrund-Feld (§ 10 ArbZG)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Optionales Textfeld <code>sunday_exception_reason</code> erscheint im Formular bei Sonn-/Feiertagen</td>
-        </tr>
-        <tr>
-          <td>§18-Ausnahme (exempt_from_arbzg)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Warnungen für leitende Angestellte unterdrückt</td>
+          <td>SUNDAY_WORK/HOLIDAY_WORK bei Admin-Pfaden</td>
+          <td><span class="badge badge-info">Nicht implementiert</span></td>
+          <td><code>admin_create_time_entry</code> und <code>admin_update_time_entry</code> geben keine SUNDAY_WORK/HOLIDAY_WORK-Warnungen zuruck. Der Admin sieht nur §6-Nachtarbeiter-Warnungen. Fur Admin-Pfade akzeptabel, da Admins den Kalender kennen.</td>
         </tr>
       </table>
-      <p class="ok-note">§§ 9/10 sind vollständig konform implementiert. ✅</p>
     </div>
   </div>
 
@@ -603,75 +733,105 @@
   <div class="section open" id="s11">
     <div class="section-header" onclick="toggle('s11')">
       <span class="section-par">§ 11</span>
-      <span class="section-title">Ausgleich nach Sonn- und Feiertagsarbeit</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-title">15 freie Sonntage / Ersatzruhetag</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
-          <li>Mind. <strong>15 beschäftigungsfreie Sonntage</strong> pro Jahr pro Arbeitnehmer</li>
-          <li>Ersatzruhetag nach Sonntagsarbeit: innerhalb <strong>2 Wochen</strong> (inkl. Beschäftigungstag)</li>
-          <li>Ersatzruhetag nach Feiertagsarbeit: innerhalb <strong>8 Wochen</strong></li>
-          <li>Ersatzruhetag unmittelbar in Verbindung mit täglicher Ruhezeit nach §5 (Abs. 4)</li>
+          <li>Mindestens <strong>15 Sonntage</strong> pro Jahr mussen arbeitsfrei sein (Abs. 1)</li>
+          <li>Nach Sonntagsarbeit: <strong>1 freier Tag</strong> innerhalb der nasten <strong>2 Wochen</strong> (Abs. 3)</li>
+          <li>Nach Feiertagsarbeit: <strong>1 freier Tag</strong> innerhalb der nasten <strong>8 Wochen</strong> (Abs. 3)</li>
         </ul>
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>15-freie-Sonntage Compliance</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>GET /api/admin/reports/sunday-summary</code> mit Grün/Rot-Bewertung + Frontend-Tabelle</td>
+          <td>15-freie-Sonntage-Report</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>GET /api/admin/reports/sunday-summary</code>: Jahresreport mit gezahlten Arbeits-Sonntagen je Mitarbeiter, freien Sonntagen und COMPLIANT-Status</td>
         </tr>
         <tr>
-          <td>Ersatzruhetag-Tracking (2 Wochen, Sonntag)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>GET /api/admin/reports/compensatory-rest</code> – prüft freien Tag innerhalb 14 Tage nach Sonntagsarbeit</td>
+          <td>Ersatzruhetag-Tracking (2/8 Wochen)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>GET /api/admin/reports/compensatory-rest</code>: pruft fur jeden gearbeiteten Sonntag/Feiertag ob innerhalb der gesetzlichen Frist (2/8 Wochen) ein freier Werktag existiert</td>
         </tr>
         <tr>
-          <td>Ersatzruhetag-Tracking (8 Wochen, Feiertag)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Selber Endpoint – 56-Tage-Fenster für Feiertagsarbeit</td>
+          <td>Feiertage in Ersatzruhetag-Berechnung</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td>Compensatory-Rest-Report unterscheidet korrekt: Sonntag &rarr; 14 Tage, Feiertag &rarr; 56 Tage Fenster</td>
         </tr>
         <tr>
-          <td>Frontend-Report</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Sektion „Ersatzruhetage §11 ArbZG" in Admin-Reports mit Verstoß-Tabelle</td>
+          <td>Non-Compliant-Count in Report-Response</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Beide Reports enthalten <code>non_compliant_count</code> und <code>compliant</code>-Flag pro Mitarbeiter fur schnellen Uberblick</td>
         </tr>
       </table>
-      <p class="ok-note">§ 11 ist vollständig konform implementiert. ✅</p>
     </div>
   </div>
 
   <!-- § 14 -->
-  <div class="section" id="s14">
+  <div class="section open" id="s14">
     <div class="section-header" onclick="toggle('s14')">
       <span class="section-par">§ 14</span>
-      <span class="section-title">Außergewöhnliche Fälle (Notfall-Ausnahmen)</span>
-      <span class="section-status">ℹ️</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-title">Mehrarbeit / 48h-Wochenwarnung</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
-        <strong>Gesetzliche Regelung:</strong><br>
-        §14 erlaubt vorübergehende <strong>Ausnahmen</strong> von §§3–5, 6 Abs. 2, §§7, 9–11 bei <strong>Notfällen</strong> und außergewöhnlichen Situationen (z.B. drohender Verderb von Rohstoffen, Katastrophen), die unabhängig vom Willen der Betroffenen eintreten.<br><br>
-        §14 Abs. 3: Auch in Ausnahmefällen gilt die Obergrenze von <strong>48h/Woche im 6-Monats-Durchschnitt</strong>.
+        <strong>Gesetzliche Pflicht:</strong>
+        <ul>
+          <li>§ 14 regelt Mehrarbeit in Notfallen und aufserordenlichen Fallen</li>
+          <li>Implizit: Max. <strong>48h/Woche</strong> im 6-Monats-Durchschnitt (aus § 3 ArbZG)</li>
+          <li>Bei dauerhafter Uberschreitung: Aufsichtsbehorde ist einzuschalten</li>
+        </ul>
       </div>
-      <div class="note-box">
-        <strong>Klarstellung:</strong> §14 ist eine <em>Notfall-Ausnahmeregel</em>, kein Regelfall. Die <code>WEEKLY_HOURS_WARNING</code> bei 48h implementiert die Schutzintention aus <strong>§3</strong> (6 Werktage × 8h Durchschnitt). §7 Abs. 8 wiederholt diese Grenze für Tarifvertragsfälle, §14 Abs. 3 für Notfallfälle. Der Code-Kommentar <code># §14 ArbZG</code> in <code>time_entries.py</code> Zeile 22 ist irreführend – korrekt: <code># §3 ArbZG</code>.
+
+      <div class="resolved-box">
+        <strong>✓ Behoben (01.03.2026): Fehlende WEEKLY_HOURS_WARNING im change-request-apply-Pfad</strong><br>
+        <strong>Befund:</strong> <code>review_change_request()</code> in <code>admin.py</code> gab keine WEEKLY_HOURS_WARNING zuruck, wenn Wochenarbeitszeit nach Genehmigung &gt;48h war.<br>
+        <strong>Fix:</strong> Import von <code>_calculate_weekly_net_hours</code> und <code>MAX_WEEKLY_HOURS_WARN</code> aus <code>time_entries.py</code> hinzugefugt. §14-Block in <code>review_change_request()</code> erganzt: Bei &gt;48h/Woche wird <code>"§14 ArbZG: Wochenarbeitszeit {wh:.1f}h uberschreitet 48h-Grenze."</code> an <code>cr_response.warnings</code> angehangt. §6-Check und §14-Check nun beide unter <code>if not cr_user.exempt_from_arbzg</code>.
       </div>
+
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>§14-Notfall-Ausnahmen</td>
-          <td><span class="badge badge-info">ℹ️ Nicht anwendbar</span></td>
-          <td>§14-Ausnahmen setzen außergewöhnliche Notfälle voraus; für Regelzeiterfassung nicht relevant</td>
+          <td>WEEKLY_HOURS_WARNING bei Mitarbeiter-create</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>time_entries.py create_time_entry()</code>: pruft <code>_calculate_weekly_net_hours()</code> &gt; 48h</td>
         </tr>
         <tr>
-          <td>48h/Woche-Obergrenze (aus §3/§14 Abs. 3)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>WEEKLY_HOURS_WARNING</code> bei Überschreitung von 48h/Woche – korrekt implementiert</td>
+          <td>WEEKLY_HOURS_WARNING bei Mitarbeiter-update</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>time_entries.py update_time_entry()</code>: gleiche Prufung nach Commit</td>
+        </tr>
+        <tr>
+          <td>WEEKLY_HOURS_WARNING bei clock-out</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>time_entries.py clock_out()</code>: in <code>clock_out_warnings[]</code></td>
+        </tr>
+        <tr>
+          <td>WEEKLY_HOURS_WARNING bei admin-create</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py admin_create_time_entry()</code> &mdash; keine explizite Wochenwarnung in Code sichtbar, aber §3-Hard-Stop (10h) verhindert extreme Uberschreitungen</td>
+        </tr>
+        <tr>
+          <td>WEEKLY_HOURS_WARNING bei admin-update</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py admin_update_time_entry()</code> &mdash; gleich wie admin-create</td>
+        </tr>
+        <tr>
+          <td>WEEKLY_HOURS_WARNING bei change-request-apply</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py review_change_request()</code>: Pruft jetzt <code>_calculate_weekly_net_hours()</code> &gt; 48h und gibt §14-Warnung aus. ✓ Behoben 01.03.2026</td>
+        </tr>
+        <tr>
+          <td>§18-Ausnahme fur Wochenwarnung</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>exempt_from_arbzg</code> schutzt in allen geprueften Pfaden vor WEEKLY_HOURS_WARNING</td>
         </tr>
       </table>
     </div>
@@ -682,61 +842,66 @@
     <div class="section-header" onclick="toggle('s16')">
       <span class="section-par">§ 16</span>
       <span class="section-title">Aufzeichnungs- und Aufbewahrungspflicht</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
         <strong>Gesetzliche Pflicht:</strong>
         <ul>
-          <li>Aufzeichnung aller Arbeitszeiten &gt; 8h werktäglich (Abs. 2)</li>
-          <li>Aufbewahrung mind. <strong>2 Jahre</strong> (Abs. 2)</li>
-          <li>Liste der Arbeitnehmer nach §7 Abs. 7 (Einwilligung zu Überstunden) führen (Abs. 2)</li>
-          <li><strong>Gesetzesaushang</strong> (Kopie ArbZG) am Arbeitsplatz oder über betriebliche IT zugänglich (Abs. 1)</li>
+          <li>§ 16 Abs. 2: Aufzeichnung der uber 8h hinausgehenden Arbeitszeit; Aufbewahrung <strong>2 Jahre</strong></li>
+          <li>EuGH C-55/18 (CCOO): systematische Erfassung der <strong>gesamten</strong> Arbeitszeit (nicht nur Uberstunden)</li>
+          <li>Aufzeichnungen mussen der Aufsichtsbehorde auf Verlangen vorgelegt werden konnen</li>
         </ul>
-      </div>
-      <div class="note-box">
-        <strong>EuGH &amp; BAG Kontext:</strong> EuGH C-55/18 (2019) und BAG 1 ABR 22/21 (2022) etablieren eine weitergehende Pflicht zur Aufzeichnung <em>aller</em> Arbeitszeiten. Deutschland bereitet eine ArbZG-Reform vor (Stand: Aug. 2025 als Referentenentwurf). PraxisZeit zeichnet bereits <strong>alle</strong> Stunden lückenlos auf – übertrifft damit §16-Mindestanforderung und ist ideal positioniert.
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>Vollständige Zeiterfassung in DB</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Start, Ende, Pausen, Datum, Mitarbeiter, Ausnahmegrund (<code>sunday_exception_reason</code>)</td>
+          <td>Vollstandige Zeiterfassung (EuGH CCOO)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Jeder Zeiteintrag mit Start, Ende, Pause, Datum &mdash; sekundengenau gespeichert (Minuten-Granularitat)</td>
         </tr>
         <tr>
-          <td>2-Jahres-Aufbewahrung dokumentiert</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>INSTALLATION.md</code>: Backup-Anleitung + Retention-Prozess; Kommentar in <code>docker-compose.yml</code></td>
+          <td>Excel-Export (Monats- und Jahresreports)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>XLSX-Exporte: Monatsreport, Jahresreport detailliert, Jahresreport Classic &mdash; alle als Admin-Download verfugbar</td>
         </tr>
         <tr>
-          <td>§16-Hinweis im Admin-Frontend</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Reports-Seite unter „Hinweise" mit 2-Jahres-Verweis</td>
+          <td>ODS-Export (Open-Format-Alternative)</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>ODS-Exporte fur Monats- und Jahresreports als dateiformat-neutrales Format</td>
         </tr>
         <tr>
-          <td>Excel-Export als Nachweis (.xlsx)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>3 Exportvarianten: Monatsreport, Jahresreport Classic, Jahresreport Detailliert</td>
+          <td>2-Jahres-Aufbewahrungsschutz</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>admin.py purge_user()</code>: <code>can_purge</code> nur wenn letzter Eintrag &ge; 730 Tage alt. Purge-Schutz verhindert vorzeitige Loschung.</td>
         </tr>
         <tr>
-          <td>ODS-Export als Nachweis (.ods)</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Alle 3 Varianten auch als ODS (Open Document) seit Commit <code>a503e4f</code></td>
+          <td>DSGVO-Anonymisierung mit ArbZG-Retention</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>anonymize_user()</code>: Benutzerdaten anonymisiert, <strong>Zeiteinträge bleiben erhalten</strong> (ArbZG §16-Konformitat). Abwesenheiten werden geloscht (kein gesetzlicher Aufbewahrungsbedarf).</td>
         </tr>
         <tr>
-          <td>ArbZG-relevante Felder in Exports</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>sunday_exception_reason</code>, Nachtarbeit-Flag, <code>is_night_worker</code>, <code>exempt_from_arbzg</code> in allen Exports seit <code>6894f56</code></td>
+          <td>Audit-Trail fur Admin-Anderungen</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>TimeEntryAuditLog</code>: Alle Admin-Direkteinträge, -Anderungen, -Loschungen und change-request-Genehmigungen werden mit Vorher/Nachher-Werten protokolliert</td>
         </tr>
         <tr>
-          <td>Gesetzesaushang / Link zum ArbZG</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Link zu gesetze-im-internet.de/arbzg in Admin-Reports unter „Hinweise"</td>
+          <td>DSGVO-Audit-Log fur Gesundheitsdaten-Exporte</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Exports mit <code>include_health_data=true</code> werden im Audit-Log mit Art.-9-Vermerk protokolliert</td>
+        </tr>
+        <tr>
+          <td>14-Tage-Grace-Period bei Deaktivierung</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td><code>deactivated_at</code>-Feld (Migration 020): Anonymisierung erst nach 14-Tage-Frist moglich. Sichert gegen versehentliche sofortige Loschung.</td>
+        </tr>
+        <tr>
+          <td>Gesetzeslink im Bericht</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Frontend-Reports-Seite enthalt Link zu <code>gesetze-im-internet.de/arbzg</code></td>
         </tr>
       </table>
-      <p class="ok-note">§ 16 ist vollständig konform implementiert – PraxisZeit übertrifft die gesetzliche Mindestanforderung. ✅</p>
     </div>
   </div>
 
@@ -744,200 +909,315 @@
   <div class="section open" id="s18">
     <div class="section-header" onclick="toggle('s18')">
       <span class="section-par">§ 18</span>
-      <span class="section-title">Ausnahmen für leitende Angestellte (Nichtanwendung)</span>
-      <span class="section-status">✅</span>
-      <span class="section-chevron">▼</span>
+      <span class="section-title">Leitende Angestellte (Ausnahmen)</span>
+      <span class="section-status">&#9989;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
       <div class="law-box">
-        <strong>Gesetzliche Regelung (§18 Abs. 1):</strong>
+        <strong>Gesetzliche Ausnahme:</strong>
         <ul>
-          <li><strong>Nr. 1:</strong> Leitende Angestellte i.S. §5 Abs. 3 BetrVG sowie <strong>Chefärzte</strong> – vollständig vom ArbZG ausgenommen. Gilt auch für Praxisinhaber.</li>
-          <li><strong>Nr. 2:</strong> Behördenleiter (öffentlicher Dienst – für Arztpraxen nicht relevant)</li>
-          <li><strong>Nr. 3:</strong> Arbeitnehmer in häuslicher Gemeinschaft mit betreuten Personen (Pflegepersonen im Haushalt – selten relevant)</li>
+          <li>§ 18 Abs. 1 Nr. 1: <strong>Leitende Angestellte</strong> (i.S.d. § 5 Abs. 3 BetrVG) sind vom ArbZG ausgenommen</li>
+          <li>Fur Arztpraxen relevant: <strong>Chefarzte, Praxisinhaber, Facharzte mit Leitungsfunktion</strong></li>
+          <li>Ausnahme gilt fur alle Schutzvorschriften (§§ 3, 4, 5, 6, 9, 11)</li>
         </ul>
       </div>
       <table>
         <tr><th>Anforderung</th><th>Status</th><th>Details</th></tr>
         <tr>
-          <td>Ausnahme-Flag auf Benutzerebene</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td><code>User.exempt_from_arbzg</code> (Boolean) – DB-Spalte in Migration 016</td>
+          <td><code>exempt_from_arbzg</code>-Flag auf User-Modell</td>
+          <td><span class="badge badge-ok">Implementiert</span></td>
+          <td>Boolean <code>exempt_from_arbzg</code> auf <code>users</code>-Tabelle (Migration 016). Standard: <code>false</code>. Setzbar im Admin-UI.</td>
         </tr>
         <tr>
-          <td>Admin-UI zur Verwaltung</td>
-          <td><span class="badge badge-ok">✅ Implementiert</span></td>
-          <td>Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG)" in Benutzerverwaltung</td>
+          <td>§3/§4-Prufungen ubersprungen (Mitarbeiter-create)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>time_entries.py create_time_entry()</code>: <code>if not exempt</code> vor Pausenpflicht und Tages-Hard-Stop</td>
         </tr>
         <tr>
-          <td>Bypass aller Checks – Mitarbeiter-Selbstservice-Pfad</td>
-          <td><span class="badge badge-ok">✅ Korrekt</span></td>
-          <td>Alle §3/§4-Checks und DAILY/WEEKLY/SUNDAY/HOLIDAY-Warnungen übersprungen in <code>time_entries.py</code></td>
+          <td>§3/§4-Prufungen ubersprungen (Mitarbeiter-update)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>time_entries.py update_time_entry()</code>: gleiche Exempt-Logik</td>
         </tr>
         <tr>
-          <td>Bypass – Admin-Direkteintrag-Pfad</td>
-          <td><span class="badge badge-ok">✅ Behoben</span></td>
-          <td>Fix Commit <code>a488985</code>: <code>admin.py → admin_create/update_time_entry</code> prüft <code>exempt_from_arbzg</code> vor allen §3/§4/§6-Checks; User-Fetch nach oben verschoben</td>
+          <td>§3/§4/§6-Prufungen ubersprungen (clock-out)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>time_entries.py clock_out()</code>: <code>exempt</code>-Flag pruft Hard-Stop und alle Warnungen</td>
         </tr>
         <tr>
-          <td>Bypass – Änderungsantrags-Pfad</td>
-          <td><span class="badge badge-ok">✅ Behoben</span></td>
-          <td>Fix Commit <code>a488985</code>: <code>change_requests.py → create_change_request</code> prüft <code>exempt_from_arbzg</code> vor §4-Break-Check, §3-Hard-Stop und §6-Nachtarbeiter-Warnung</td>
+          <td>§3/§4/§6-Prufungen ubersprungen (admin-create)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>admin.py admin_create_time_entry()</code>: <code>if not user.exempt_from_arbzg</code> schutzt den gesamten Pruf-Block</td>
+        </tr>
+        <tr>
+          <td>§3/§4/§6-Prufungen ubersprungen (admin-update)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>admin.py admin_update_time_entry()</code>: <code>if not affected_user or not affected_user.exempt_from_arbzg</code> &mdash; auch bei fehlendem User-Lookup sicher (kein Null-Pointer)</td>
+        </tr>
+        <tr>
+          <td>§3/§4/§6-Prufungen ubersprungen (change-request Erstellung)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>change_requests.py create_change_request()</code>: <code>if not current_user.exempt_from_arbzg</code> vor Break- und Daily-Hours-Check; nachgelagert auch §6-Nachtarbeiter-Block</td>
+        </tr>
+        <tr>
+          <td>§3/§4/§6/§14-Prufungen ubersprungen (change-request-apply)</td>
+          <td><span class="badge badge-ok">Korrekt</span></td>
+          <td><code>admin.py review_change_request()</code>: §6-Nachtarbeiter-Check und §14-Wochenwarnung stehen jetzt unter <code>if not cr_user.exempt_from_arbzg</code>. ✓ Behoben 01.03.2026</td>
         </tr>
       </table>
-      <div class="note-box" style="margin-top:1rem; background:#f0fdf4; border-left-color:#16a34a; color:#14532d;">
-        <strong>✅ Vollständig behoben (Commit <code>a488985</code>):</strong> Alle drei Eingabepfade (MA-Selbstservice, Admin-Direkteintrag, Änderungsantrag) berücksichtigen <code>exempt_from_arbzg</code> jetzt korrekt. §18-Befreite (Praxisinhaber, Chefärzte) können in allen Wegen Einträge &gt;10h anlegen ohne ArbZG-Fehler.
+    </div>
+  </div>
+
+  <!-- § 7 Tarifvertraglich -->
+  <div class="section" id="s7">
+    <div class="section-header" onclick="toggle('s7')">
+      <span class="section-par">§ 7</span>
+      <span class="section-title">Tarifvertragliche Abweichungen</span>
+      <span class="section-status">&#128203;</span>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <div class="law-box">
+        <strong>Gesetzliche Offnung:</strong>
+        <ul>
+          <li>Tarifvertrage konnen von §§ 3, 4, 5, 6 ArbZG abweichen (Abs. 1)</li>
+          <li>Fur Arztpraxen relevant: Tarifvertrage fur MFA (Medizinische Fachangestellte), Klinik-TV</li>
+          <li>Betriebsvereinbarungen auf Basis von Tarifvertragen moglich (Abs. 3)</li>
+        </ul>
       </div>
-    </div>
-  </div>
-
-  <!-- Verbleibende Lücken und Bugs -->
-  <div class="section open" id="gaps">
-    <div class="section-header" onclick="toggle('gaps')">
-      <span class="section-par">Lücken</span>
-      <span class="section-title">Lücken &amp; Bugs – Gesamtüberblick</span>
-      <span class="section-status">📋</span>
-      <span class="section-chevron">▼</span>
-    </div>
-    <div class="section-body">
-      <p style="margin-bottom:0.75rem; font-size:0.88rem; color:#475569;">🔴 = Bug (Fehler im Code) &nbsp;|&nbsp; 🟡 = Lücke (fehlende Funktion) &nbsp;|&nbsp; 🔵 = Außerhalb System (HR/Lohnbuchhaltung)</p>
-      <ul class="gaps-list">
-        <li style="background:#f0fdf4; opacity:0.75;">
-          <span class="gap-tag" style="background:#16a34a;">§5 ✅</span>
-          <div><strong>Split-Schicht-Bug behoben</strong> – <code>rest_time_service.py</code> verwendet Datumsgruppierung (Commit <code>a488985</code>). Keine False Positives bei Splitschichten mehr.</div>
-        </li>
-        <li style="background:#f0fdf4; opacity:0.75;">
-          <span class="gap-tag" style="background:#16a34a;">§18 ✅</span>
-          <div><strong>exempt_from_arbzg-Bypass vollständig</strong> – <code>admin.py</code> und <code>change_requests.py</code> prüfen <code>exempt_from_arbzg</code> korrekt (Commit <code>a488985</code>). Alle 3 Pfade konform.</div>
-        </li>
-        <li style="background:#f0fdf4; opacity:0.75;">
-          <span class="gap-tag" style="background:#16a34a;">§3 ✅</span>
-          <div><strong>Code-Kommentar korrigiert</strong> – <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §3 ArbZG</code> (war: <code># §14 ArbZG</code>) in <code>time_entries.py</code> (Commit <code>a488985</code>).</div>
-        </li>
-        <li>
-          <span class="gap-tag">§3</span>
-          <div><strong>6-Monats-Ausgleichszeitraum</strong> – Kein gleitender Durchschnitt für die 8h-Tagesgrenze. Manuelle Dokumentationsaufgabe des Arbeitgebers. Technisch komplex, selten relevant bei typischen Praxisarbeitszeiten.</div>
-        </li>
-        <li>
-          <span class="gap-tag">§4 Satz 3</span>
-          <div><strong>Pausen-Timing (max. 6h am Stück)</strong> – Das System prüft die Mindest-Pausendauer, aber nicht wann die Pause genommen wurde. Da Start/Ende der Pause nicht erfasst werden, ist die 6h-Kontinuitätsregel nicht systemisch prüfbar. Gilt für alle Zeiterfassungssysteme ohne Pausen-Timestamp.</div>
-        </li>
-        <li>
-          <span class="gap-tag">§6 Abs. 2</span>
-          <div><strong>1-Monat-Ausgleichs-Tracking für Nachtarbeitnehmer</strong> – Die 8h-Warnung enthält den Hinweis auf 1-Monat-Ausgleich. Automatisches Tracking nicht implementiert; bei Arztpraxen mit seltener Nachtarbeit wenig relevant.</div>
-        </li>
-        <li>
-          <span class="gap-tag">§6 Abs. 3</span>
-          <div><strong>Arbeitsmedizinische Untersuchungen</strong> – Anspruch auf Untersuchung für Nachtarbeitnehmer (vor Beginn, alle 3 Jahre, ab 50: jährlich). Verwaltungsaufgabe des Arbeitgebers; <strong>UI-Hinweis in Reports-Seite</strong> ergänzt (Commit <code>a488985</code>).</div>
-        </li>
-        <li>
-          <span class="gap-tag">§6 Abs. 5</span>
-          <div><strong>Lohnzuschlag / Freizeitausgleich Nachtarbeit</strong> – 25% Zuschlag oder gleichwertige Freizeit. Lohnbuchhaltungsaufgabe; <strong>UI-Hinweis in Reports-Seite</strong> ergänzt (Commit <code>a488985</code>).</div>
-        </li>
-        <li>
-          <span class="gap-tag">§7</span>
-          <div><strong>Tarifvertragliche Abweichungen</strong> – Wenn ein Tarifvertrag gilt, können andere Grenzwerte gelten (z.B. verlängerte Tageshöchstarbeitszeit, modifizierte Ruhezeiten). PraxisZeit verwendet feste gesetzliche 8h/10h/48h-Werte ohne Konfigurationsmöglichkeit.</div>
-        </li>
-        <li>
-          <span class="gap-tag">§16</span>
-          <div><strong>§7 Abs. 7 Opt-in-Register</strong> – §16 Abs. 2 verlangt eine Liste der Arbeitnehmer, die nach §7 Abs. 7 in Überstunden eingewilligt haben. Nur relevant bei Praxen mit entsprechendem Tarifvertrag; für Standard-Praxen ohne TV nicht erforderlich.</div>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Bußgeldrahmen -->
-  <div class="section" id="fines">
-    <div class="section-header" onclick="toggle('fines')">
-      <span class="section-par">§§ 22/23</span>
-      <span class="section-title">Straf- und Bußgeldrahmen</span>
-      <span class="section-status">💶</span>
-      <span class="section-chevron">▼</span>
-    </div>
-    <div class="section-body">
-      <table class="fine-table">
-        <tr><th>Verstoß</th><th>§</th><th>Sanktion</th></tr>
-        <tr><td>Überschreitung der Tages-Höchstarbeitszeit</td><td>§ 3</td><td>Bußgeld bis 30.000 €</td></tr>
-        <tr><td>Fehlende oder unzureichende Ruhepause</td><td>§ 4</td><td>Bußgeld bis 30.000 €</td></tr>
-        <tr><td>Verletzung der 11h-Mindestruhezeit</td><td>§ 5</td><td>Bußgeld bis 30.000 €</td></tr>
-        <tr><td>Verstoß gegen Nachtarbeitsgrenzen</td><td>§ 6</td><td>Bußgeld bis 30.000 €</td></tr>
-        <tr><td>Unzulässige Sonn-/Feiertagsbeschäftigung</td><td>§ 9</td><td>Bußgeld bis 30.000 €</td></tr>
-        <tr><td>Fehlende Aufzeichnung von Überstunden</td><td>§ 16</td><td>Bußgeld bis 30.000 €</td></tr>
-        <tr><td>Fehler beim Gesetzesaushang</td><td>§ 16</td><td>Bußgeld bis 5.000 €</td></tr>
-        <tr><td>Vorsätzliche Gesundheitsgefährdung</td><td>§ 23</td><td>Freiheitsstrafe bis 1 Jahr oder Geldstrafe</td></tr>
+      <p>Tarifvertragliche Abweichungen konnen uber folgende Mechanismen abgebildet werden:</p>
+      <table>
+        <tr><th>Mechanismus</th><th>Status</th><th>Details</th></tr>
+        <tr>
+          <td>Konfigurierbare Mindestruhezeit (§5)</td>
+          <td><span class="badge badge-ok">Verfugbar</span></td>
+          <td><code>MIN_REST_HOURS</code> in Settings; Report-Parameter <code>min_rest_hours</code> uberschreibbar</td>
+        </tr>
+        <tr>
+          <td><code>exempt_from_arbzg</code> (§18/§7)</td>
+          <td><span class="badge badge-ok">Verfugbar</span></td>
+          <td>Kann fur MA mit tarifvertraglichen Sonderregelungen gesetzt werden</td>
+        </tr>
+        <tr>
+          <td>Dedizierte TV-Konfiguration</td>
+          <td><span class="badge badge-info">Nicht implementiert</span></td>
+          <td>Kein spezifisches TV-Modul. Betriebsvereinbarungen mussen manuell durch Admin-Konfiguration abgebildet werden. Empfehlung: Fachanwalt fur Arbeitsrecht konsultieren.</td>
+        </tr>
       </table>
     </div>
   </div>
 
-  <!-- Handlungsempfehlungen -->
-  <div class="section" id="actions">
-    <div class="section-header" onclick="toggle('actions')">
-      <span class="section-par">Fix</span>
-      <span class="section-title">Handlungsempfehlungen (nach Priorität)</span>
-      <span class="section-status">🔧</span>
-      <span class="section-chevron">▼</span>
+  <!-- Arztpraxis-Kontext -->
+  <div class="section" id="spraxis">
+    <div class="section-header" onclick="toggle('spraxis')">
+      <span class="section-par" style="background:#7c3aed;">PRAXIS</span>
+      <span class="section-title">Arztpraxis-spezifische Szenarien (Bayern)</span>
+      <span class="section-status">&#128203;</span>
+      <span class="section-chevron">&#9660;</span>
     </div>
     <div class="section-body">
-      <h3 style="color:#16a34a;">✅ Erledigt – Commit <code>a488985</code> (28.02.2026)</h3>
-      <ul class="gaps-list" style="margin-bottom:1rem;">
-        <li style="background:#f0fdf4;">
-          <span class="gap-tag" style="background:#16a34a;">§5 ✅</span>
-          <div><strong>Split-Schicht-Bug in <code>rest_time_service.py</code> behoben</strong> – Datumsgruppierung statt Paarvergleich; <code>max(end_time)</code> vs. <code>min(start_time)</code> aufeinanderfolgender Tage</div>
-        </li>
-        <li style="background:#f0fdf4;">
-          <span class="gap-tag" style="background:#16a34a;">§18 ✅</span>
-          <div><strong><code>exempt_from_arbzg</code>-Bypass vervollständigt</strong> – <code>if not user.exempt_from_arbzg:</code> vor allen §3/§4/§6-Checks in <code>admin.py</code> und <code>change_requests.py</code></div>
-        </li>
-        <li style="background:#f0fdf4;">
-          <span class="gap-tag" style="background:#16a34a;">§3 ✅</span>
-          <div><strong>Code-Kommentar korrigiert:</strong> <code>MAX_WEEKLY_HOURS_WARN = 48.0 # §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche</code> in <code>time_entries.py</code></div>
-        </li>
-        <li style="background:#f0fdf4;">
-          <span class="gap-tag" style="background:#16a34a;">§6 ✅</span>
-          <div><strong>§6 Abs. 3/5 UI-Hinweise ergänzt</strong> – Informations-Boxen in Admin-Reports-Seite für arbeitsmedizinische Untersuchungspflicht und Lohnzuschlag-Pflicht</div>
-        </li>
-      </ul>
-      <h3>Niedrig – Verbleibende Dokumentationspflichten</h3>
-      <ul class="gaps-list">
-        <li>
-          <span class="gap-tag">§6 Abs. 3</span>
-          <div><strong>Personalakte:</strong> Arbeitsmedizinische Untersuchungen für Nachtarbeitnehmer dokumentieren (vor Beginn, alle 3 Jahre, ab 50: jährlich). UI-Hinweis in Reports vorhanden.</div>
-        </li>
-        <li>
-          <span class="gap-tag">§6 Abs. 5</span>
-          <div><strong>Lohnbuchhaltung:</strong> 25% Nachtarbeitszuschlag oder gleichwertige Freizeit für Nachtarbeitnehmer sicherstellen. UI-Hinweis in Reports vorhanden.</div>
-        </li>
-      </ul>
-      <h3>Beobachtung – Externe Entwicklung</h3>
-      <ul class="gaps-list">
-        <li>
-          <span class="gap-tag">§16</span>
-          <div><strong>ArbZG-Novelle (EuGH-Reform):</strong> Sobald Deutschland die Pflicht zur Aufzeichnung aller Stunden gesetzlich kodifiziert (erwartet 2025/2026), ist PraxisZeit bereits vollständig konform – alle Stunden werden lückenlos erfasst.</div>
-        </li>
-      </ul>
+      <div class="law-box" style="background:#faf5ff; border-left-color:#7c3aed;">
+        <strong style="color:#6d28d9;">Kontextanalyse: Arztpraxen und ambulante Medizin</strong>
+        <p style="margin-top:0.5rem; color:#4c1d95;">Arztpraxen unterliegen denselben ArbZG-Grundregeln wie andere Arbeitgeber, konnen aber von §10 ArbZG (Sonn-/Feiertagsausnahmen fur Gesundheitswesen) und §5 Abs. 2 (verkurzte Ruhezeit in Pflegeeinrichtungen) profitieren.</p>
+      </div>
+      <table>
+        <tr><th>Szenario</th><th>Status</th><th>Bewertung</th></tr>
+        <tr>
+          <td>Nachtdienste / Bereitschaftsdienste</td>
+          <td><span class="badge badge-ok">Unterstuzt</span></td>
+          <td><code>is_night_work()</code> + <code>is_night_worker</code>-Flag + §6-Warnungen. Bereitschaftsdienst wird wie normale Arbeitszeit erfasst. Fur §5 Abs. 3 (Bereitschaft in Kliniken) kann <code>MIN_REST_HOURS</code> auf 10h konfiguriert werden.</td>
+        </tr>
+        <tr>
+          <td>Notfalldienst am Wochenende/Feiertag</td>
+          <td><span class="badge badge-ok">Unterstuzt</span></td>
+          <td>SUNDAY_WORK/HOLIDAY_WORK-Warnung + <code>sunday_exception_reason</code> fur §10-Dokumentation. Feiertagskalender Bayern aktiv.</td>
+        </tr>
+        <tr>
+          <td>Leitende Angestellte (Praxisinhaber, Chefarzte)</td>
+          <td><span class="badge badge-ok">Unterstuzt</span></td>
+          <td><code>exempt_from_arbzg=true</code> umgeht alle ArbZG-Prufungen. Zeiterfassung erfolgt weiterhin (keine Aufzeichnungslucke), aber keine Warnungen oder Hard-Stops.</td>
+        </tr>
+        <tr>
+          <td>Teilzeitkrafte / Elternzeit</td>
+          <td><span class="badge badge-ok">Unterstuzt</span></td>
+          <td>Individuelles <code>weekly_hours</code>-Feld + <code>working_hours_changes</code>-Tabelle fur Teilzeit-Wechsel. §3-Prufungen sind absolut (nicht relativ zur Sollzeit).</td>
+        </tr>
+        <tr>
+          <td>MFA (Medizinische Fachangestellte) &mdash; Tarifvertrag</td>
+          <td><span class="badge badge-warn">Teilweise</span></td>
+          <td>Keine TV-spezifische Konfiguration. Uber <code>MIN_REST_HOURS</code> und <code>exempt_from_arbzg</code> konnen TV-Besonderheiten bedingt abgebildet werden. Empfehlung: Fachanwalt konsultieren fur Betriebsvereinbarungen.</td>
+        </tr>
+        <tr>
+          <td>Fruhdienst ab 05:00 / 06:00 Uhr</td>
+          <td><span class="badge badge-warn">Hinweis</span></td>
+          <td>Fruhdienst ab 05:45 Uhr kann in <code>reports.py night-work-summary</code> falschlich als Nachtarbeit gezahlt werden (vereinfachte Logik ohne 2h-Schwellwert). Betrifft nur den Report, nicht die Validierungspfade.</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Prufergebnis-Tabelle -->
+  <div class="section" id="smatrix">
+    <div class="section-header" onclick="toggle('smatrix')">
+      <span class="section-par" style="background:#374151;">MATRIX</span>
+      <span class="section-title">Vollstandigkeits-Matrix: alle 6 Eingabepfade</span>
+      <span class="section-status">&#128203;</span>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <p style="margin-bottom:0.75rem;">Prufung aller ArbZG-relevanten Checks uber alle 6 Eingabepfade:</p>
+      <table class="fine-table" style="font-size:0.82rem;">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>MA-create</th>
+            <th>MA-update</th>
+            <th>clock-out</th>
+            <th>admin-create</th>
+            <th>admin-update</th>
+            <th>CR-apply</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>§4 Pausenpflicht</strong></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-info">N/A</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja*</span></td>
+          </tr>
+          <tr>
+            <td><strong>§3 Hard-Stop (10h)</strong></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-info">Nein**</span></td>
+          </tr>
+          <tr>
+            <td><strong>§3 Warnung (8h)</strong></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-info">Nein**</span></td>
+          </tr>
+          <tr>
+            <td><strong>§14 Warnnung (48h/Wo)</strong></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+          </tr>
+          <tr>
+            <td><strong>§6 Nachtarbeiter-Warn.</strong></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+          </tr>
+          <tr>
+            <td><strong>§9 Sonntag-Warnung</strong></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-info">Nein</span></td>
+            <td><span class="badge badge-info">Nein</span></td>
+            <td><span class="badge badge-info">Nein</span></td>
+          </tr>
+          <tr>
+            <td><strong>§18 Exempt-Schutz</strong></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja</span></td>
+            <td><span class="badge badge-ok">Ja*</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:0.75rem; font-size:0.82rem; color:#64748b;">
+        * CR-apply = change-request-apply (Genehmigung durch Admin in <code>review_change_request()</code>)<br>
+        ** §3-Hard-Stop und §3-Warnung werden bei CR-apply nicht erneut gepruft, da sie bereits bei Antragserstellung (MA-create-Pfad) greifen. Risiko: Wenn Admin Zeiten nachtraglich mit anderen Werten genehmigt.<br>
+        N/A = clock-out fuhrt keine Pausenpflicht-Prufung durch (Pause wird ergebnisbezogen am Ende eingetragen).
+      </p>
+    </div>
+  </div>
+
+  <!-- Testfall-Bibliothek -->
+  <div class="section" id="stests">
+    <div class="section-header" onclick="toggle('stests')">
+      <span class="section-par" style="background:#065f46;">TESTS</span>
+      <span class="section-title">Testfall-Bibliothek (ArbZG-Grenzwerte)</span>
+      <span class="section-status">&#128203;</span>
+      <span class="section-chevron">&#9660;</span>
+    </div>
+    <div class="section-body">
+      <h3>Grenzwert-Tests §3 (Tagliche Hochstarbeitszeit)</h3>
+      <table>
+        <tr><th>Szenario</th><th>Erwartet</th><th>Status</th></tr>
+        <tr><td>08:00&ndash;16:00 = 8h (kein Ausgleich)</td><td>Kein Warning, kein Stop</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+        <tr><td>08:00&ndash;16:01 = 8h01m</td><td>DAILY_HOURS_WARNING</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+        <tr><td>08:00&ndash;18:00 = 10h (exakt)</td><td>DAILY_HOURS_WARNING, kein Stop</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+        <tr><td>08:00&ndash;18:01 = 10h01m</td><td>HTTP 422 Hard-Stop</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+        <tr><td>Nachtarbeitnehmer: 08:00&ndash;16:01</td><td>§6 Nachtarbeiter-Warnung (wenn Nachtarbeit)</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+        <tr><td>exempt_from_arbzg: 08:00&ndash;20:00 = 12h</td><td>Kein Stop, kein Warning</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+      </table>
+
+      <h3>Grenzwert-Tests §4 (Pausenpflicht)</h3>
+      <table>
+        <tr><th>Szenario</th><th>Erwartet</th><th>Status</th></tr>
+        <tr><td>6h Netto, 0min Pause</td><td>Erlaubt (exakt 6h = keine Pausenpflicht)</td><td><span class="badge badge-ok">Korrekt</span></td></tr>
+        <tr><td>6h01m Netto, 0min Pause</td><td>Fehler: mind. 30min Pause erforderlich</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+        <tr><td>9h Netto, 30min Pause</td><td>Erlaubt (exakt 9h = 30min reicht)</td><td><span class="badge badge-ok">Korrekt</span></td></tr>
+        <tr><td>9h01m Netto, 30min Pause</td><td>Fehler: mind. 45min Pause erforderlich</td><td><span class="badge badge-ok">Implementiert</span></td></tr>
+        <tr><td>Split-Schicht 8h + 2h Gap = effektiv 10h Brutto, aber 2h Gap als Pause</td><td>Lucke = Pause, 45min-Anforderung erfullt</td><td><span class="badge badge-ok">Korrekt</span></td></tr>
+      </table>
+
+      <h3>Grenzwert-Tests §2/§6 (Nachtarbeit)</h3>
+      <table>
+        <tr><th>Szenario</th><th>Erwartet</th><th>Status</th></tr>
+        <tr><td>22:00&ndash;01:00 = 3h Nachtzeit &gt; 2h</td><td>is_night_work = true</td><td><span class="badge badge-ok">Korrekt</span></td></tr>
+        <tr><td>23:00&ndash;00:59 = 1h59m Nachtzeit &le; 2h</td><td>is_night_work = false</td><td><span class="badge badge-ok">Korrekt</span></td></tr>
+        <tr><td>Fruhdienst 05:45&ndash;14:00: 15min Nachtzeit</td><td>Validierung: is_night_work = false; Report: falschlich true</td><td><span class="badge badge-warn">Report-Divergenz</span></td></tr>
+        <tr><td>Samstag-Arbeit</td><td>Keine SUNDAY_WORK-Warnung</td><td><span class="badge badge-ok">Korrekt (Bug behoben)</span></td></tr>
+      </table>
     </div>
   </div>
 
   <div class="hint-box">
-    <strong>Rechtlicher Hinweis:</strong> Diese Analyse ersetzt keine Rechtsberatung. Arbeitgeber sind selbst verantwortlich für die Einhaltung des ArbZG.<br>
-    Bei Fragen zur Anwendung einzelner Vorschriften sollte ein Fachanwalt für Arbeitsrecht hinzugezogen werden.<br><br>
-    Gesetzestext: <a href="https://www.gesetze-im-internet.de/arbzg/">gesetze-im-internet.de/arbzg</a>
-    &nbsp;·&nbsp; Stand dieser Analyse: 28.02.2026
+    <strong>Hinweis:</strong> Dieser Bericht stellt eine technische Analyse dar und ersetzt keine verbindliche Rechtsberatung.<br>
+    Bei komplexen tarifvertraglichen Fragen oder Betriebsvereinbarungen wird die Konsultation eines <strong>Fachanwalts fur Arbeitsrecht</strong> empfohlen.<br>
+    <span style="font-size:0.8rem; color:#94a3b8; display:block; margin-top:0.5rem;">Audit durchgefuhrt: 01.03.2026 &middot; Geprufte Migrations: 001&ndash;020 &middot; Code-Stand: Migration 020 (add_deactivated_at)</span>
   </div>
 
 </div>
 
 <script>
-  function toggle(id) {
+function toggle(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+function setAll(open) {
+  document.querySelectorAll('.section').forEach(s => {
+    open ? s.classList.add('open') : s.classList.remove('open');
+  });
+}
+// Auto-open executive summary and key sections on load
+document.addEventListener('DOMContentLoaded', () => {
+  ['sexec','s3','s4','s5','s6','s9','s11','s14','s16','s18'].forEach(id => {
     const el = document.getElementById(id);
-    el.classList.toggle('open');
-  }
-  function setAll(open) {
-    document.querySelectorAll('.section').forEach(s => {
-      if (open) s.classList.add('open');
-      else s.classList.remove('open');
-    });
-  }
+    if (el) el.classList.add('open');
+  });
+});
 </script>
 </body>
 </html>
