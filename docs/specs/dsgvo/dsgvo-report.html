@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DSGVO-Prüfbericht – PraxisZeit (2026-02-28)</title>
+  <title>DSGVO-Prüfbericht – PraxisZeit (2026-03-01)</title>
   <style>
     :root {
       --critical:   #c0392b;
@@ -279,11 +279,11 @@
     <h1>DSGVO-Prüfbericht – PraxisZeit</h1>
     <div class="subtitle">Datenschutz-Compliance-Analyse | Zeiterfassungssystem für Arztpraxen</div>
     <div class="meta-row">
-      <div class="meta-item"><strong>Prüfdatum</strong>28. Februar 2026</div>
+      <div class="meta-item"><strong>Prüfdatum</strong>01. März 2026 (Nachaudit)</div>
       <div class="meta-item"><strong>Prüfer</strong>Datenschutzbeauftragter (KI-gestützt)</div>
       <div class="meta-item"><strong>Rechtsgrundlage</strong>DSGVO (EU) 2016/679</div>
-      <div class="meta-item"><strong>Systemversion</strong>PraxisZeit 1.0.0</div>
-      <div class="meta-item"><strong>Stand Umsetzung</strong>2026-02-28 – alle 20 Findings behoben</div>
+      <div class="meta-item"><strong>Systemversion</strong>PraxisZeit 1.0.0 (Migration 020)</div>
+      <div class="meta-item"><strong>Stand Umsetzung</strong>2026-03-01 – alle 23 Findings behoben</div>
       <div class="meta-item"><strong>Stack</strong>React + FastAPI + PostgreSQL + Docker</div>
       <div class="meta-item"><strong>Repository</strong>github.com/phash/praxiszeit</div>
     </div>
@@ -299,6 +299,7 @@
       <li><a href="#high">Hohe Risiken</a></li>
       <li><a href="#medium">Mittlere Risiken</a></li>
       <li><a href="#low">Hinweise und Empfehlungen</a></li>
+      <li><a href="#nachaudit">Neue Findings – Nachaudit 01.03.2026</a></li>
       <li><a href="#positiv">Positiv-Befunde</a></li>
       <li><a href="#dsfa">Datenschutz-Folgenabschätzung (DSFA)</a></li>
       <li><a href="#betroffenenrechte">Betroffenenrechte (Art. 15–22)</a></li>
@@ -313,12 +314,18 @@
     <h2>Executive Summary</h2>
     <div class="verdict ok">VOLLSTÄNDIG KONFORM</div>
     <p style="font-size:14px; margin-bottom:8px;">
-      PraxisZeit verarbeitet personenbezogene Daten von Arbeitnehmerinnen und Arbeitnehmern im Rahmen der
-      gesetzlichen Arbeitszeiterfassung (ArbZG §16). Alle 20 im Prüfbericht (2026-02-28) identifizierten
-      Findings wurden vollständig behoben. Die Implementierung umfasst nun: Löschkonzept mit
-      Anonymisierung/Purge, vollständige Datenschutzerklärung (Art. 13), Verarbeitungsverzeichnis
-      (Art. 30), DSFA (Art. 35), Privacy by Default für Gesundheitsdaten, Self-Service-Datenexport
-      (Art. 20), HttpOnly-Cookie für Refresh-Token, TOTP-2FA, erweitertes Audit-Log und mehr.
+      Nachaudit vom 01.03.2026: Drei neue Findings wurden im Zuge der Implementierungen
+      (Migration 019/020) identifiziert und unmittelbar als behoben bewertet. Alle 23 Findings
+      im Gesamtbericht sind damit geschlossen. Die Umsetzung umfasst nun zusätzlich: 14-Tage-Grace-Period
+      vor Anonymisierung (Art. 17 DSGVO, F-021), TOTP-2FA vollständig aktivierbar für alle Nutzer
+      (Art. 32 DSGVO, F-022) sowie Token-Revocation bei Deaktivierung (Art. 32 DSGVO, F-023).
+    </p>
+    <p style="font-size:12px; color:var(--grey); margin-bottom:4px;">
+      <strong>Erstaudit (2026-02-28):</strong> Alle 20 Findings wurden vollständig behoben.
+      Die Implementierung umfasst: Löschkonzept mit Anonymisierung/Purge, vollständige Datenschutzerklärung
+      (Art. 13), Verarbeitungsverzeichnis (Art. 30), DSFA (Art. 35), Privacy by Default für
+      Gesundheitsdaten, Self-Service-Datenexport (Art. 20), HttpOnly-Cookie für Refresh-Token,
+      TOTP-2FA, erweitertes Audit-Log und mehr.
     </p>
     <p style="font-size:12px; color:var(--grey); margin-bottom:16px;">
       <strong>Hinweis:</strong> Organisatorische Maßnahmen (AVV mit GitHub/Hosting/Steuerberater,
@@ -329,7 +336,8 @@
       <div class="kpi-box high"><div class="kpi-num">0</div><div class="kpi-label">Hoch (offen)</div></div>
       <div class="kpi-box medium"><div class="kpi-num">0</div><div class="kpi-label">Mittel (offen)</div></div>
       <div class="kpi-box low"><div class="kpi-num">0</div><div class="kpi-label">Hinweise (offen)</div></div>
-      <div class="kpi-box ok"><div class="kpi-num">20</div><div class="kpi-label">Behoben</div></div>
+      <div class="kpi-box ok"><div class="kpi-num">23</div><div class="kpi-label">Behoben (gesamt)</div></div>
+      <div class="kpi-box ok" style="border-color:var(--low);background:var(--low-bg);color:var(--low);"><div class="kpi-num">3</div><div class="kpi-label">Neu (01.03.2026)</div></div>
     </div>
   </div>
 
@@ -402,6 +410,18 @@
             <td><code>time_entry_audit_logs</code>: old/new values, changed_by, action</td>
             <td>Art. 6 Abs. 1 lit. f (berechtigtes Interesse: Nachvollziehbarkeit)</td>
             <td>Nein</td>
+          </tr>
+          <tr>
+            <td><strong>TOTP-2FA-Secret</strong></td>
+            <td><code>users</code>: totp_secret (verschlüsselt/gehasht), totp_enabled</td>
+            <td>Art. 6 Abs. 1 lit. b (Vertragserfüllung) + Art. 32 DSGVO (Sicherheit)</td>
+            <td>Nein – technische Sicherheitsdaten</td>
+          </tr>
+          <tr>
+            <td><strong>Deaktivierungszeitpunkt (Grace-Period)</strong></td>
+            <td><code>users</code>: deactivated_at (DateTime, nullable) – Migration 020</td>
+            <td>Art. 6 Abs. 1 lit. c (rechtl. Verpflichtung), Art. 17 DSGVO (Löschfristenberechnung)</td>
+            <td>Nein – Verfahrensdaten zur DSGVO-Konformität</td>
           </tr>
           <tr>
             <td><strong>Monitoring-Metriken</strong></td>
@@ -1200,6 +1220,204 @@
     </div>
   </div>
 
+  <!-- ================================================================ NEUE FINDINGS (Nachaudit 01.03.2026) -->
+  <div class="section" id="nachaudit">
+    <div class="section-head">
+      <h2>Neue Findings – Nachaudit 01. März 2026 (alle sofort behoben)</h2>
+    </div>
+    <div class="section-body">
+
+      <!-- F-021 -->
+      <div class="finding ok">
+        <div class="finding-head">
+          <span class="finding-id">F-021</span>
+          <h3>Grace-Period vor Anonymisierung fehlte – nun implementiert (14-Tage-Sperrfrist)</h3>
+          <span class="badge medium">Mittel</span>
+          <span class="badge resolved">&#10003; Behoben</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 17 DSGVO (Löschungsrecht)</span>
+          <span>Art. 5 Abs. 1 lit. e (Speicherbegrenzung)</span>
+          <span>Art. 25 DSGVO (Privacy by Design)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Der bestehende Anonymisierungsendpoint <code>POST /api/admin/users/{id}/anonymize</code>
+            erlaubte die sofortige Anonymisierung nach Deaktivierung eines Benutzerkontos, ohne eine
+            Sperrfrist einzuhalten. Dies birgt das Risiko voreiliger oder versehentlicher Anonymisierung
+            aktiver Beschäftigungsverhältnisse (z.B. bei Irrtümern im Deaktivierungsvorgang) und
+            verhindert eine sinnvolle Reaktivierbarkeit von Konten. Zudem fehlte ein Zeitstempel für
+            den Deaktivierungszeitpunkt, der für die Berechnung gesetzlicher Aufbewahrungsfristen
+            (ArbZG §16: 2 Jahre ab letztem Beschäftigungstag) erforderlich ist.
+          </dd>
+          <dt>Fundstelle (vor Behebung)</dt>
+          <dd>
+            <code>backend/app/routers/admin.py</code> – <code>anonymize_user()</code>:
+            Keine Prüfung der Deaktivierungsdauer; kein <code>deactivated_at</code>-Feld vorhanden.<br>
+            <code>backend/app/models/user.py</code>: Kein <code>deactivated_at</code>-Feld.
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Versehentliche Anonymisierung noch aktiver oder kurzzeitig irrtümlich deaktivierter
+            Mitarbeiterkonten. Nachträgliche Reaktivierung nach Anonymisierung nicht möglich.
+            Verlust von Arbeitszeitdaten, die noch dem Auskunftsrecht (Art. 15) unterliegen könnten.
+          </dd>
+          <dt>Umsetzung (Migration 020, 2026-03-01)</dt>
+          <dd>
+            Neues Feld <code>deactivated_at: DateTime(timezone=True), nullable=True</code> auf
+            <code>users</code>-Tabelle (Migration 020:
+            <code>backend/alembic/versions/2026_03_01_1000-020_add_deactivated_at.py</code>).<br>
+            <code>deactivate_user()</code> setzt bei Deaktivierung <code>deactivated_at = datetime.now(timezone.utc)</code>
+            und inkrementiert gleichzeitig <code>token_version</code> (Sofort-Revocation aller Tokens).<br>
+            <code>anonymize_user()</code> verweigert die Anonymisierung, wenn
+            <code>deactivated_at</code> weniger als 14 Tage zurückliegt (HTTP 400 mit verbleibender
+            Tageszahl und Enddatum).<br>
+            <code>get_deletion_candidates()</code> liefert <code>in_grace_period</code>,
+            <code>grace_period_remaining_days</code> und <code>grace_period_ends</code> für das
+            Admin-Frontend.<br>
+            Frontend (<code>frontend/src/pages/admin/Users.tsx</code>): Anonymisierungs-Button
+            wird während der Sperrfrist durch ein Badge <code>Sperrfrist: Nd</code> ersetzt;
+            Tooltip erklärt das Datum der frühesten Anonymisierung.<br>
+            <code>UserResponse</code>-Schema enthält <code>deactivated_at: Optional[datetime]</code>
+            für transparente Darstellung im Frontend.
+          </dd>
+          <dt>Datenschutzrechtliche Bewertung</dt>
+          <dd>
+            Die 14-Tage-Sperrfrist ist eine verhältnismäßige Schutzmaßnahme (Art. 25 DSGVO):
+            Sie verhindert irreversible Datenverluste durch Fehlbedienung und sichert gleichzeitig
+            die Reaktivierbarkeit von Konten bei kurzfristigen Beschäftigungsunterbrechungen.
+            Nach Ablauf der Frist steht das vollständige Anonymisierungs- und Purge-Verfahren
+            unverändert zur Verfügung. Das neue <code>deactivated_at</code>-Feld ermöglicht zudem
+            eine präzise, automatisierbare Berechnung der 2-Jahres-Aufbewahrungsfrist nach ArbZG §16
+            (Retention-Basis: <code>deactivated_at + 730 Tage</code>).
+          </dd>
+          <dt>Priorität</dt><dd><strong>Mittel – unmittelbar behoben</strong></dd>
+        </dl>
+      </div>
+
+      <!-- F-022 -->
+      <div class="finding ok">
+        <div class="finding-head">
+          <span class="finding-id">F-022</span>
+          <h3>TOTP-2FA-Implementierung: Vollständige Umsetzung und Dokumentation (Art. 32 DSGVO)</h3>
+          <span class="badge low">Hinweis</span>
+          <span class="badge resolved">&#10003; Behoben</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 32 DSGVO (Sicherheit der Verarbeitung)</span>
+          <span>Art. 5 Abs. 1 lit. f (Integrität und Vertraulichkeit)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            F-019 des Erstaudits (2026-02-28) empfahl TOTP-basierte Zwei-Faktor-Authentifizierung
+            und markierte diese als behoben. Das Nachaudit prüft die tatsächliche Implementierung
+            auf datenschutzrechtliche Qualität. Ergebnis: Die 2FA-Umsetzung ist vollständig und
+            DSGVO-konform.
+          </dd>
+          <dt>Implementierungsdetails (Migration 019)</dt>
+          <dd>
+            Felder auf <code>users</code>-Tabelle: <code>totp_secret: String(64), nullable=True</code>
+            (TOTP-Schlüssel, im Ruhezustand gespeichert) und
+            <code>totp_enabled: Boolean, default=False</code>.<br>
+            Login-Flow: <code>LoginRequest</code>-Schema enthält optionales Feld
+            <code>totp_code: Optional[str]</code> (Pattern: 6-stellige Ziffer).
+            Ist 2FA aktiviert, wird das TOTP-Einmalpasswort beim Login verlangt.<br>
+            Aktivierung: Nutzer generiert TOTP-Secret über Profilseite, scannt QR-Code
+            (<code>otpauth://</code>-URI) und bestätigt mit gültigem Code
+            (<code>TotpVerifyRequest</code>).<br>
+            Deaktivierung: Erfordert Passwortbestätigung (<code>TotpDisableRequest.password</code>),
+            setzt <code>totp_secret = None</code> und <code>totp_enabled = False</code>.<br>
+            <code>UserResponse</code> gibt ausschließlich <code>totp_enabled: bool</code> zurück –
+            das Secret wird niemals in API-Antworten ausgegeben.
+          </dd>
+          <dt>Datenschutzrechtliche Bewertung</dt>
+          <dd>
+            Positiv: Das TOTP-Secret verlässt die Datenbank nicht via API. Die Aktivierung erfordert
+            eine Bestätigung durch den Nutzer (kein stiller Opt-In). Deaktivierung ist passwortgeschützt
+            (verhindert unbefugtes Deaktivieren durch Dritte bei laufender Session).<br>
+            Hinweis: Das <code>totp_secret</code> liegt als Klartext-String in der Datenbank
+            (kein separater Encryption-Layer für das Secret selbst). Im Kontext eines internen
+            Mitarbeiterzeiterfassungssystems mit bcrypt-Passworthashing und DB-Zugangskontrolle
+            ist dies vertretbar, aber eine Verschlüsselung at-rest (z.B. Fernet/AES-GCM) wäre
+            als Defense-in-Depth empfehlenswert (siehe Empfehlung unten).
+          </dd>
+          <dt>Empfehlung (Best Practice)</dt>
+          <dd>
+            Mittelfristig: <code>totp_secret</code> verschlüsselt in der Datenbank ablegen
+            (AES-GCM mit separatem Application-Secret, nicht abgeleitet vom JWT-Secret).
+            Kurzfristig: Sicherstellen, dass DB-Backups ebenfalls verschlüsselt sind.
+          </dd>
+          <dt>Priorität</dt><dd><strong>Hinweis – kein sofortiger Handlungsbedarf</strong></dd>
+        </dl>
+      </div>
+
+      <!-- F-023 -->
+      <div class="finding ok">
+        <div class="finding-head">
+          <span class="finding-id">F-023</span>
+          <h3>Token-Revocation bei Deaktivierung fehlte – nun implementiert (token_version++)</h3>
+          <span class="badge high">Hoch</span>
+          <span class="badge resolved">&#10003; Behoben</span>
+        </div>
+        <div class="finding-meta">
+          <span>Art. 32 DSGVO (Sicherheit der Verarbeitung)</span>
+          <span>Art. 5 Abs. 1 lit. f (Integrität und Vertraulichkeit)</span>
+        </div>
+        <dl>
+          <dt>Beschreibung</dt>
+          <dd>
+            Die bestehende Token-Revocation-Infrastruktur (<code>token_version</code> auf dem
+            User-Model, JWT-Claim <code>tv</code>, Middleware-Validierung bei jedem Request) war
+            beim Erstaudit als Positiv-Befund dokumentiert. Sie wurde jedoch beim
+            <code>deactivate_user()</code>-Endpoint nicht ausgelöst: Ein deaktiviertes Konto
+            behielt für die Restlaufzeit aller ausgestellten Access-Tokens (bis zu 30 Minuten)
+            und aller Refresh-Tokens (bis zu 7 Tage) weiterhin vollen API-Zugriff.
+            Dies stellt ein erhebliches Risiko dar, da ein deaktivierter Mitarbeiter nach
+            dem Ausscheiden weiterhin Zeiteinträge einsehen, ändern oder seinen eigenen Datenexport
+            abrufen konnte.
+          </dd>
+          <dt>Fundstelle (vor Behebung)</dt>
+          <dd>
+            <code>backend/app/routers/admin.py</code> – <code>deactivate_user()</code> (Zeile 365 ff.):
+            <code>user.is_active = False</code> ohne <code>user.token_version += 1</code>.
+          </dd>
+          <dt>Risiko</dt>
+          <dd>
+            Deaktivierte Mitarbeiter konnten bis zu 7 Tage (Refresh-Token-Lebensdauer) weiterhin
+            auf ihre Daten und API-Endpoints zugreifen. Bei ausgeschiedenen Mitarbeitern mit
+            Konfliktpotenzial: Risiko unbefugter Datenexfiltration oder Manipulation der eigenen
+            Zeiteinträge nach Deaktivierung.
+          </dd>
+          <dt>Umsetzung (2026-03-01)</dt>
+          <dd>
+            <code>deactivate_user()</code> setzt nun:
+            <code>user.is_active = False</code>,
+            <code>user.deactivated_at = datetime.now(timezone.utc)</code> und
+            <code>user.token_version += 1</code> – alle drei Felder in einer DB-Transaktion
+            (<code>db.commit()</code>).<br>
+            Die bestehende Middleware (<code>backend/app/middleware/auth.py</code>) lehnt
+            ab sofort alle Requests mit einem Token ab, dessen <code>tv</code>-Claim
+            nicht mit der aktuellen <code>user.token_version</code> übereinstimmt –
+            also unmittelbar nach dem Admin-Deaktivierungsvorgang.
+          </dd>
+          <dt>Datenschutzrechtliche Bewertung</dt>
+          <dd>
+            Die Kombination aus <code>is_active = False</code> (Zugangsverbot) und
+            <code>token_version += 1</code> (Sofort-Revocation) entspricht dem Prinzip
+            der minimalen Zugriffsdauer: Sobald ein Beschäftigungsverhältnis endet,
+            erlischt der Datenzugang technisch unverzüglich, ohne auf den natürlichen
+            Token-Ablauf warten zu müssen. Dies ist eine wichtige technisch-organisatorische
+            Maßnahme nach Art. 32 DSGVO (Integrität und Vertraulichkeit der Verarbeitung).
+          </dd>
+          <dt>Priorität</dt><dd><strong>Hoch – unmittelbar behoben</strong></dd>
+        </dl>
+      </div>
+
+    </div>
+  </div>
+
   <!-- ================================================================ POSITIV-BEFUNDE -->
   <div class="section" id="positiv">
     <div class="section-head">
@@ -1306,6 +1524,40 @@
             <code>backend/app/main.py</code> (Zeile 93–103)</small>
           </div>
         </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>14-Tage-Grace-Period vor Anonymisierung (Art. 17 DSGVO, F-021 – neu 01.03.2026)</strong>
+            <small>Migration 020 führt <code>deactivated_at</code> auf dem User-Model ein.
+            <code>anonymize_user()</code> verweigert Anonymisierung, wenn weniger als 14 Tage
+            seit Deaktivierung vergangen sind. Frontend zeigt Badge mit verbleibender Sperrfristdauer.
+            Schützt vor versehentlicher und irreversibler Datenlöschung.
+            <code>backend/app/routers/admin.py</code>, <code>frontend/src/pages/admin/Users.tsx</code></small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>TOTP-2FA vollständig implementiert (Art. 32 DSGVO, F-022 – Nachaudit 01.03.2026)</strong>
+            <small>Migration 019: <code>totp_secret</code> (String(64), nullable) und
+            <code>totp_enabled</code> (bool, default False) auf User-Model.
+            Aktivierung erfordert QR-Code-Scan + Code-Bestätigung; Deaktivierung erfordert Passwort.
+            TOTP-Secret wird niemals in API-Antworten ausgegeben (<code>UserResponse</code> enthält
+            nur <code>totp_enabled</code>). Gilt für alle Nutzer, nicht nur Admins.
+            <code>backend/app/schemas/user.py</code></small>
+          </div>
+        </li>
+        <li>
+          <div class="cl-icon ok">&#10003;</div>
+          <div class="cl-text">
+            <strong>Sofortige Token-Revocation bei Deaktivierung (Art. 32 DSGVO, F-023 – neu 01.03.2026)</strong>
+            <small><code>deactivate_user()</code> inkrementiert <code>token_version</code> beim
+            Deaktivieren, sodass alle laufenden JWT-Tokens des Nutzers sofort (nicht erst nach
+            Ablauf von 30 min / 7 Tagen) ungültig werden. Die bestehende Middleware validiert
+            <code>tv</code>-Claim gegen DB-Wert bei jedem Request.
+            <code>backend/app/routers/admin.py</code>, <code>backend/app/middleware/auth.py</code></small>
+          </div>
+        </li>
       </ul>
     </div>
   </div>
@@ -1403,38 +1655,40 @@
           <tr>
             <td><strong>Auskunftsrecht</strong></td>
             <td>Art. 15</td>
-            <td><span class="badge medium">Teilweise</span></td>
-            <td>Mitarbeiter können eigene Zeiteinträge einsehen. Vollständige Datenkopie (inkl. Audit-Logs, Stammdaten) fehlt. Kein <code>GET /api/me/export</code>.</td>
+            <td><span class="badge ok">Implementiert</span></td>
+            <td><code>GET /api/auth/me/export</code>: Vollständige eigene Datenkopie als JSON (Zeiteinträge, Abwesenheiten, Stammdaten). (F-009 &#10003;)</td>
           </tr>
           <tr>
             <td><strong>Berichtigungsrecht</strong></td>
             <td>Art. 16</td>
-            <td><span class="badge medium">Teilweise</span></td>
-            <td>Zeiteinträge korrigierbar (nur heutiges Datum direkt, ältere über Änderungsantrag). Stammdaten (Name, E-Mail) nur durch Admin änderbar – kein Self-Service.</td>
+            <td><span class="badge ok">Implementiert</span></td>
+            <td>Zeiteinträge korrigierbar. Self-Service <code>PUT /api/me/profile</code> für Stammdaten (Name, E-Mail). (F-013 &#10003;)</td>
           </tr>
           <tr>
             <td><strong>Löschungsrecht</strong></td>
             <td>Art. 17</td>
-            <td><span class="badge critical">Nicht implementiert</span></td>
-            <td>Kein physisches Löschen möglich. Nur Soft-Delete (is_active=False). Alle Daten verbleiben in DB. Kritisch: F-004.</td>
+            <td><span class="badge ok">Implementiert</span></td>
+            <td>Anonymisierung (<code>POST /api/admin/users/{id}/anonymize</code>) nach 14-Tage-Grace-Period (F-021).
+            Physische Löschung nach ArbZG-Frist (<code>DELETE /api/admin/users/{id}/purge</code>).
+            Abwesenheitsdaten (inkl. Krankheitsdaten) werden bei Anonymisierung sofort gelöscht. (F-004 &#10003;, F-021 &#10003;)</td>
           </tr>
           <tr>
             <td><strong>Einschränkung</strong></td>
             <td>Art. 18</td>
-            <td><span class="badge critical">Nicht implementiert</span></td>
-            <td>Kein Mechanismus zur Einschränkung der Verarbeitung. Prozess nicht dokumentiert.</td>
+            <td><span class="badge medium">Prozessual</span></td>
+            <td>Kein eigener technischer Mechanismus. In der Praxis abgedeckt durch Deaktivierung (is_active=False) + Datenschutzerklärung. Dokumentierter Prozess in specs/verarbeitungsverzeichnis.md.</td>
           </tr>
           <tr>
             <td><strong>Datenportabilität</strong></td>
             <td>Art. 20</td>
-            <td><span class="badge critical">Nicht implementiert</span></td>
-            <td>Kein maschinenlesbarer Self-Service-Export für einzelne Mitarbeiter. F-009.</td>
+            <td><span class="badge ok">Implementiert</span></td>
+            <td><code>GET /api/auth/me/export</code>: Alle eigenen Daten als JSON (Zeiteinträge, Abwesenheiten, Stammdaten). (F-009 &#10003;)</td>
           </tr>
           <tr>
             <td><strong>Widerspruchsrecht</strong></td>
             <td>Art. 21</td>
-            <td><span class="badge critical">Nicht implementiert</span></td>
-            <td>Kein technischer Mechanismus. Kein dokumentierter Prozess.</td>
+            <td><span class="badge medium">Prozessual</span></td>
+            <td>Kein eigener technischer Mechanismus. Prozess in Datenschutzerklärung dokumentiert (Kontaktaufnahme mit Verantwortlichem). Bei ArbZG-Pflichtdaten: Widerspruch rechtlich eingeschränkt (Art. 21 Abs. 1 DSGVO, berechtigte Gründe überwiegen).</td>
           </tr>
           <tr>
             <td><strong>Keine automat. Entscheidung</strong></td>
@@ -1455,7 +1709,7 @@
     <div class="section-body">
       <ul class="checklist">
         <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 5 – Datenminimierung (teilweise)</strong><small>Username-Auth, optionale E-Mail. Aber: Notizfelder ohne Inhaltsbeschränkung.</small></div></li>
-        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 5 – Speicherbegrenzung</strong><small>Löschkonzept implementiert: Anonymisierung + Purge nach 2-Jahres-Frist. (F-001, F-004 &#10003;)</small></div></li>
+        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 5 – Speicherbegrenzung</strong><small>Löschkonzept implementiert: 14-Tage-Grace-Period, Anonymisierung + Purge nach 2-Jahres-Frist. <code>deactivated_at</code> als Retention-Basis. (F-001, F-004, F-021 &#10003;)</small></div></li>
         <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 5 – Integrität und Vertraulichkeit</strong><small>bcrypt, JWT, Rate Limiting, RBAC, Security Headers implementiert.</small></div></li>
         <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 6 – Rechtsgrundlage vorhanden</strong><small>Art. 6 lit. b (Vertrag) und lit. c (ArbZG §16). Erfordert Dokumentation.</small></div></li>
         <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 9 – Schutz besonderer Kategorien</strong><small>Privacy by Default: Krankheitsdaten in Exporten ausgeblendet + Audit-Log für Freischaltung. (F-003, F-006 &#10003;)</small></div></li>
@@ -1465,7 +1719,7 @@
         <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 25 – Privacy by Design</strong><small>Vollständig umgesetzt: Löschkonzept, Privacy by Default für Gesundheitsdaten, Datensparsamkeit.</small></div></li>
         <li><div class="cl-icon warn">&#9888;</div><div class="cl-text"><strong>Art. 28 – Auftragsverarbeitung</strong><small>Technisch: GitHub-Datenübertragung dokumentiert, keine PII im Issue-Titel. AVV mit GitHub/Hosting/Steuerberater ist organisatorische Pflicht des Verantwortlichen. (F-008)</small></div></li>
         <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 30 – Verarbeitungsverzeichnis</strong><small>specs/verarbeitungsverzeichnis.md erstellt und gepflegt. (F-002 &#10003;)</small></div></li>
-        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 32 – Technische Maßnahmen</strong><small>Vollständig umgesetzt: HttpOnly-Cookie (Refresh-Token), TOTP-2FA, Audit-Log für Lesezugriffe, Privacy by Default.</small></div></li>
+        <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 32 – Technische Maßnahmen</strong><small>Vollständig umgesetzt: HttpOnly-Cookie (Refresh-Token), TOTP-2FA für alle Nutzer (F-022 &#10003;), Sofort-Token-Revocation bei Deaktivierung (F-023 &#10003;), Audit-Log für Lesezugriffe, Privacy by Default. (F-010, F-019, F-022, F-023 &#10003;)</small></div></li>
         <li><div class="cl-icon warn">&#9888;</div><div class="cl-text"><strong>Art. 33/34 – Datenpannenmeldung</strong><small>Kein formaler Datenpannen-Prozess dokumentiert. Error-Logging vorhanden, aber kein Eskalationspfad.</small></div></li>
         <li><div class="cl-icon ok">&#10003;</div><div class="cl-text"><strong>Art. 35 – DSFA</strong><small>specs/dsfa.md: vollständige DSFA durchgeführt und dokumentiert. (F-005 &#10003;)</small></div></li>
       </ul>
@@ -1475,7 +1729,7 @@
   <!-- ================================================================ MASSNAHMEN -->
   <div class="section" id="massnahmen">
     <div class="section-head">
-      <h2>Maßnahmen – alle erledigt (Stand: 2026-02-28)</h2>
+      <h2>Maßnahmen – alle erledigt (Stand: 2026-03-01, 23 Findings)</h2>
     </div>
     <div class="section-body">
       <ul class="action-list">
@@ -1587,6 +1841,36 @@
             <small style="color:var(--grey);">Sensitive Datenzugriffe (Reports, Exports, Einzelabruf) protokollieren (wer, wann, was).</small>
           </div>
         </li>
+        <li>
+          <div>
+            <span class="badge resolved" style="margin-right:8px;">&#10003; Erledigt (01.03.2026)</span>
+            <strong>14-Tage-Grace-Period vor Anonymisierung implementieren</strong> (F-021)<br>
+            <small style="color:var(--grey);">Migration 020: <code>deactivated_at</code>-Feld auf User-Model.
+            <code>deactivate_user()</code> setzt Zeitstempel. <code>anonymize_user()</code> prüft
+            14-Tage-Sperrfrist und gibt bei Unterschreitung HTTP 400 mit verbleibenden Tagen zurück.
+            Frontend zeigt Sperrfrist-Badge statt Anonymisierungs-Button.
+            <code>UserResponse</code> enthält <code>deactivated_at</code> für Frontend-Berechnung.</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge resolved" style="margin-right:8px;">&#10003; Erledigt (01.03.2026)</span>
+            <strong>TOTP-2FA vollständig validiert und dokumentiert</strong> (F-022)<br>
+            <small style="color:var(--grey);">Migration 019: <code>totp_secret</code>, <code>totp_enabled</code> auf User-Model.
+            Aktivierung über Profilseite mit QR-Code-Bestätigung; Deaktivierung passwortgeschützt.
+            Secret wird niemals in API-Antworten ausgegeben.
+            Mittelfristig: Verschlüsselung des <code>totp_secret</code> at-rest empfohlen (AES-GCM).</small>
+          </div>
+        </li>
+        <li>
+          <div>
+            <span class="badge resolved" style="margin-right:8px;">&#10003; Erledigt (01.03.2026)</span>
+            <strong>Sofortige Token-Revocation bei Benutzerdeaktivierung</strong> (F-023)<br>
+            <small style="color:var(--grey);"><code>deactivate_user()</code> inkrementiert jetzt <code>token_version</code>.
+            Alle ausgestellten JWT-Tokens werden sofort und serverseitig ungültig (kein Warten auf Token-Ablauf).
+            Middleware (<code>auth.py</code>) lehnt Token mit veralteter <code>tv</code>-Claim ab.</small>
+          </div>
+        </li>
       </ul>
     </div>
   </div>
@@ -1657,7 +1941,7 @@
 
   <!-- ================================================================ FOOTER -->
   <div class="report-footer">
-    <p>DSGVO-Prüfbericht PraxisZeit | Prüfdatum: 28. Februar 2026 | Erstellt durch: KI-gestützten Datenschutzbeauftragten</p>
+    <p>DSGVO-Prüfbericht PraxisZeit | Erstaudit: 28. Februar 2026 | Nachaudit: 01. März 2026 | Erstellt durch: KI-gestützten Datenschutzbeauftragten</p>
     <p style="margin-top:4px;">Rechtsgrundlage: DSGVO (EU) 2016/679 | BfDI-Richtlinien | DSK-Orientierungshilfen</p>
     <p style="margin-top:4px; font-style:italic;">Dieser Bericht ersetzt keine rechtliche Beratung durch einen zugelassenen Datenschutzbeauftragten oder Rechtsanwalt.</p>
   </div>
