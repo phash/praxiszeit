@@ -16,7 +16,7 @@ from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests
 
 
 @asynccontextmanager
@@ -152,6 +152,7 @@ app.include_router(reports.router)
 app.include_router(change_requests.router)
 app.include_router(company_closures.router)
 app.include_router(error_logs.router)
+app.include_router(vacation_requests.router)
 
 
 @app.middleware("http")
@@ -203,6 +204,22 @@ def root():
     if not _is_production:
         response["docs"] = "/docs"
     return response
+
+
+@app.get("/api/settings")
+def get_public_settings():
+    """Public endpoint returning runtime-configurable UI settings (no auth required)."""
+    from app.models.system_setting import SystemSetting
+    db = SessionLocal()
+    try:
+        def _get(key, default="false"):
+            s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+            return s.value if s else default
+        return {
+            "vacation_approval_required": _get("vacation_approval_required", "false").lower() == "true"
+        }
+    finally:
+        db.close()
 
 
 @app.get("/api/health")

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
-import { Plus, X, Trash2 } from 'lucide-react';
+import { Plus, X, Trash2, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -10,6 +10,24 @@ import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../consta
 import Badge from '../components/Badge';
 import MonthSelector from '../components/MonthSelector';
 import { useAuthStore } from '../stores/authStore';
+
+interface VacationRequest {
+  id: string;
+  date: string;
+  end_date?: string;
+  hours: number;
+  note?: string;
+  status: string;
+  rejection_reason?: string;
+  created_at: string;
+}
+
+const vrStatusConfig = {
+  pending: { label: 'Offen', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+  approved: { label: 'Genehmigt', color: 'bg-green-100 text-green-800', icon: CheckCircle },
+  rejected: { label: 'Abgelehnt', color: 'bg-red-100 text-red-800', icon: XCircle },
+  withdrawn: { label: 'Zurückgezogen', color: 'bg-gray-100 text-gray-600', icon: XCircle },
+};
 
 interface CalendarEntry {
   date: string;
@@ -58,6 +76,9 @@ function getHoursForDate(user: AuthUser | null | undefined, dateStr: string): nu
 export default function AbsenceCalendarPage() {
   const toast = useToast();
   const { user: currentUser } = useAuthStore();
+  const [activeTab, setActiveTab] = useState<'calendar' | 'requests'>('calendar');
+  const [vacationApprovalRequired, setVacationApprovalRequired] = useState(false);
+  const [myVacationRequests, setMyVacationRequests] = useState<VacationRequest[]>([]);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [viewMode, setViewMode] = useState<'month' | 'year'>('month');
@@ -76,8 +97,24 @@ export default function AbsenceCalendarPage() {
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   useEffect(() => {
+    apiClient.get('/settings').then((res) => {
+      setVacationApprovalRequired(res.data.vacation_approval_required === true);
+    }).catch(() => {});
+    fetchMyVacationRequests();
+  }, []);
+
+  useEffect(() => {
     fetchData();
   }, [currentMonth, currentYear, viewMode]);
+
+  const fetchMyVacationRequests = async () => {
+    try {
+      const res = await apiClient.get('/vacation-requests');
+      setMyVacationRequests(res.data);
+    } catch {
+      // ignore – endpoint may not exist if feature is off
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -117,6 +154,23 @@ export default function AbsenceCalendarPage() {
 
   const doSubmit = async (refundVacation: boolean) => {
     try {
+      // If vacation and approval required: create a vacation request instead
+      if (formData.type === 'vacation' && vacationApprovalRequired) {
+        await apiClient.post('/vacation-requests', {
+          date: formData.date,
+          end_date: isDateRange && formData.end_date ? formData.end_date : null,
+          hours: formData.hours,
+          note: formData.note || null,
+        });
+        toast.success('Urlaubsantrag gestellt – wartet auf Genehmigung');
+        fetchMyVacationRequests();
+        setShowForm(false);
+        setIsDateRange(false);
+        setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '' });
+        setActiveTab('requests');
+        return;
+      }
+
       const submitData = {
         date: formData.date,
         end_date: isDateRange && formData.end_date ? formData.end_date : null,
@@ -206,16 +260,123 @@ export default function AbsenceCalendarPage() {
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Abwesenheitskalender</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-        >
-          {showForm ? <X size={20} /> : <Plus size={20} />}
-          <span>{showForm ? 'Abbrechen' : 'Abwesenheit eintragen'}</span>
-        </button>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Abwesenheiten</h1>
+        {activeTab === 'calendar' && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+          >
+            {showForm ? <X size={20} /> : <Plus size={20} />}
+            <span>{showForm ? 'Abbrechen' : 'Abwesenheit eintragen'}</span>
+          </button>
+        )}
       </div>
+
+      {/* Tabs */}
+      <div className="flex space-x-2 mb-6">
+        <button
+          onClick={() => setActiveTab('calendar')}
+          className={`px-4 py-2 rounded-lg font-medium transition ${
+            activeTab === 'calendar'
+              ? 'bg-primary text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Kalender
+        </button>
+        {vacationApprovalRequired && (
+          <button
+            onClick={() => { setActiveTab('requests'); fetchMyVacationRequests(); }}
+            className={`px-4 py-2 rounded-lg font-medium transition flex items-center space-x-2 ${
+              activeTab === 'requests'
+                ? 'bg-primary text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <span>Meine Anträge</span>
+            {myVacationRequests.filter((r) => r.status === 'pending').length > 0 && (
+              <span className="bg-amber-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">
+                {myVacationRequests.filter((r) => r.status === 'pending').length}
+              </span>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* ── My Vacation Requests Tab ── */}
+      {activeTab === 'requests' && (
+        <div className="space-y-4">
+          {myVacationRequests.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center text-gray-500">
+              <Clock className="mx-auto mb-2 text-gray-400" size={32} />
+              <p>Keine Urlaubsanträge vorhanden</p>
+            </div>
+          ) : (
+            myVacationRequests.map((vr) => {
+              const cfg = vrStatusConfig[vr.status as keyof typeof vrStatusConfig] || vrStatusConfig.pending;
+              const StatusIcon = cfg.icon;
+              return (
+                <div key={vr.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="flex items-center space-x-3 mb-1">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${cfg.color}`}>
+                          <StatusIcon size={14} className="mr-1" />
+                          {cfg.label}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Gestellt: {format(new Date(vr.created_at), 'dd.MM.yyyy HH:mm')}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 mt-1">
+                        {format(new Date(vr.date + 'T00:00:00'), 'dd.MM.yyyy')}
+                        {vr.end_date && ` – ${format(new Date(vr.end_date + 'T00:00:00'), 'dd.MM.yyyy')}`}
+                        {' · '}{vr.hours} h/Tag
+                      </p>
+                      {vr.note && <p className="text-sm text-gray-500 mt-0.5">{vr.note}</p>}
+                    </div>
+                    {vr.status === 'pending' && (
+                      <button
+                        onClick={() =>
+                          confirm({
+                            title: 'Antrag zurückziehen',
+                            message: 'Urlaubsantrag wirklich zurückziehen?',
+                            confirmLabel: 'Zurückziehen',
+                            variant: 'danger',
+                            onConfirm: async () => {
+                              try {
+                                await apiClient.delete(`/vacation-requests/${vr.id}`);
+                                toast.success('Antrag zurückgezogen');
+                                fetchMyVacationRequests();
+                              } catch {
+                                toast.error('Fehler beim Zurückziehen');
+                              }
+                            },
+                          })
+                        }
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        title="Antrag zurückziehen"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                  {vr.status === 'rejected' && vr.rejection_reason && (
+                    <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
+                      <span className="font-medium text-red-800">Ablehnungsgrund: </span>
+                      <span className="text-red-700">{vr.rejection_reason}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── Calendar Tab ── */}
+      {activeTab === 'calendar' && <>
 
       {/* Absence Form */}
       {showForm && (
@@ -591,7 +752,7 @@ export default function AbsenceCalendarPage() {
       )}
 
       {/* Legend */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6" key="legend">
         <h3 className="font-semibold mb-3">Legende</h3>
         <div className="flex flex-wrap gap-4">
           {Object.entries(typeLabels).map(([key, label]) => (
@@ -716,6 +877,8 @@ export default function AbsenceCalendarPage() {
           )}
         </div>
       </div>
+
+      </>}
     </div>
   );
 }
