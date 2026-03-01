@@ -1053,3 +1053,269 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     for row in range(4, 17):
         for col in range(2, 15):
             sheet.cell(row=row, column=col).border = thin_border
+
+
+# ---------------------------------------------------------------------------
+# PDF Export (reportlab)
+# ---------------------------------------------------------------------------
+
+def generate_monthly_report_pdf(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
+    """
+    Generate PDF monthly report for all employees.
+    One page per employee, landscape A4.
+    Same data as Excel monthly report.
+    """
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+
+    output = BytesIO()
+    doc = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        rightMargin=15 * mm, leftMargin=15 * mm,
+        topMargin=12 * mm, bottomMargin=12 * mm,
+        title=f"PraxisZeit Monatsreport {month:02d}/{year}",
+    )
+
+    # Styles
+    s_normal = ParagraphStyle('n', fontName='Helvetica', fontSize=7, leading=9)
+    s_bold = ParagraphStyle('b', fontName='Helvetica-Bold', fontSize=7, leading=9)
+    s_center = ParagraphStyle('c', fontName='Helvetica', fontSize=7, leading=9, alignment=TA_CENTER)
+    s_title = ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=10, leading=13)
+    s_sum_lbl = ParagraphStyle('sl', fontName='Helvetica-Bold', fontSize=7.5, leading=10)
+    s_sum_val = ParagraphStyle('sv', fontName='Helvetica', fontSize=7.5, leading=10)
+
+    def colored(text, hex_color, bold=False):
+        fn = 'Helvetica-Bold' if bold else 'Helvetica'
+        return Paragraph(text, ParagraphStyle('col', fontName=fn, fontSize=7, leading=9,
+                                              textColor=colors.HexColor(hex_color)))
+
+    month_names = ['Januar', 'Februar', 'Maerz', 'April', 'Mai', 'Juni',
+                   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+
+    users = (db.query(User)
+             .filter(User.is_active == True)
+             .order_by(User.last_name, User.first_name)
+             .all())
+
+    # Landscape A4: 297mm − 30mm margins = 267mm usable
+    col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 16*mm, 14*mm, 16*mm, 74*mm, 74*mm]
+    weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    absence_type_map = {"vacation": "Urlaub", "sick": "Krank", "training": "Fortbildung", "other": "Sonstiges"}
+
+    story = []
+
+    for i, user in enumerate(users):
+        if i > 0:
+            story.append(PageBreak())
+
+        # ── Title ──
+        story.append(Paragraph(
+            f"PraxisZeit \u2013 Monatsreport {month_names[month - 1]} {year}",
+            s_title
+        ))
+        story.append(Spacer(1, 2 * mm))
+
+        # ── Employee meta ──
+        arbzg_flag = " | \u00a718-befreit" if user.exempt_from_arbzg else ""
+        night_flag = " | Nachtarbeitnehmer (\u00a76)" if user.is_night_worker else ""
+        meta_label = f"{user.first_name} {user.last_name}  \u2013  {float(user.weekly_hours):.1f}h/Woche{arbzg_flag}{night_flag}"
+        story.append(Paragraph(meta_label, ParagraphStyle('meta', fontName='Helvetica', fontSize=8, leading=10,
+                                                           textColor=colors.HexColor('#374151'))))
+        story.append(Spacer(1, 2 * mm))
+
+        # ── Fetch data ──
+        _, last_day = monthrange(year, month)
+        daily_target = calculation_service.get_daily_target(user)
+
+        time_entries = db.query(TimeEntry).filter(
+            TimeEntry.user_id == user.id,
+            extract('year', TimeEntry.date) == year,
+            extract('month', TimeEntry.date) == month,
+        ).all()
+        entries_by_date = {e.date: e for e in time_entries}
+
+        absences = db.query(Absence).filter(
+            Absence.user_id == user.id,
+            extract('year', Absence.date) == year,
+            extract('month', Absence.date) == month,
+        ).all()
+        absences_by_date = {a.date: a for a in absences}
+
+        holidays = db.query(PublicHoliday).filter(
+            extract('year', PublicHoliday.date) == year,
+            extract('month', PublicHoliday.date) == month,
+        ).all()
+        holidays_by_date = {h.date: h for h in holidays}
+
+        # ── Build table ──
+        headers = ['Datum', 'WT', 'Von', 'Bis', 'Pause\n(Min)', 'Netto\n(Std)', 'Soll\n(Std)', 'Diff.', 'Abwesenheit', 'Bemerkung']
+        table_data = [[Paragraph(h, ParagraphStyle('hdr', fontName='Helvetica-Bold', fontSize=7,
+                                                    leading=9, alignment=TA_CENTER))
+                       for h in headers]]
+        row_bgs = {}  # row_index -> HexColor
+
+        total_net = Decimal('0.00')
+        total_target = Decimal('0.00')
+        night_work_count = 0
+
+        for day in range(1, last_day + 1):
+            cur = date(year, month, day)
+            wd = cur.weekday()
+            is_weekend = wd >= 5
+            is_sunday = wd == 6
+            is_holiday = cur in holidays_by_date
+            absence = absences_by_date.get(cur)
+            entry = entries_by_date.get(cur)
+
+            is_night = (entry is not None and entry.end_time is not None
+                        and _is_night_work_export(entry.start_time, entry.end_time))
+            if is_night:
+                night_work_count += 1
+
+            if entry:
+                von = entry.start_time.strftime('%H:%M')
+                bis = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
+                pause_str = str(entry.break_minutes or 0)
+                netto_val = float(entry.net_hours)
+                net = entry.net_hours
+                total_net += net
+                bem_parts = []
+                if entry.sunday_exception_reason and (is_sunday or is_holiday):
+                    bem_parts.append(f"\u00a710: {entry.sunday_exception_reason}")
+                if entry.note:
+                    bem_parts.append(entry.note)
+                bem = " | ".join(bem_parts)
+            else:
+                von = bis = pause_str = bem = ''
+                netto_val = 0.0
+                net = Decimal('0.00')
+
+            if is_weekend:
+                target = Decimal('0.00')
+                if is_sunday and entry:
+                    abw = 'Sonntagsarbeit (\u00a79/\u00a710)'
+                elif is_sunday:
+                    abw = 'Sonntag'
+                else:
+                    abw = 'Samstag'
+                if is_night:
+                    abw += ' | Nachtarbeit'
+                bg = colors.HexColor('#E8E8E8')
+            elif is_holiday:
+                target = Decimal('0.00')
+                hname = holidays_by_date[cur].name
+                abw = f"Feiertagsarbeit: {hname}" if entry else f"Feiertag: {hname}"
+                if is_night:
+                    abw += ' | Nachtarbeit'
+                bg = colors.HexColor('#FFFFCC')
+            elif absence:
+                target = Decimal('0.00')
+                if absence.type.value == 'sick' and not include_health_data:
+                    type_name = 'Abwesenheit'
+                    bem = ''
+                else:
+                    type_name = absence_type_map.get(absence.type.value, absence.type.value)
+                    if absence.note and include_health_data:
+                        bem = absence.note
+                abw = f"{type_name} ({float(absence.hours):.1f}h)"
+                bg = None
+            else:
+                target = daily_target
+                abw = 'Nachtarbeit (\u00a76 ArbZG)' if is_night else ''
+                bg = None
+
+            total_target += target
+            diff = net - target
+            diff_str = f"{float(diff):+.2f}"
+            if diff > 0:
+                diff_cell = colored(diff_str, '#006400', bold=True)
+            elif diff < 0:
+                diff_cell = colored(diff_str, '#8B0000', bold=True)
+            else:
+                diff_cell = Paragraph(diff_str, s_center)
+
+            row = [
+                Paragraph(cur.strftime('%d.%m.%Y'), s_normal),
+                Paragraph(weekday_names[wd], s_center),
+                Paragraph(von, s_center),
+                Paragraph(bis, s_center),
+                Paragraph(pause_str, s_center),
+                Paragraph(f"{netto_val:.2f}", s_center),
+                Paragraph(f"{float(target):.2f}", s_center),
+                diff_cell,
+                Paragraph(abw, s_normal),
+                Paragraph(bem, s_normal),
+            ]
+            table_data.append(row)
+            if bg:
+                row_bgs[len(table_data) - 1] = bg
+
+        tbl_style = [
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#CCE5FF')),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#CCCCCC')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ]
+        for row_idx, bg_color in row_bgs.items():
+            tbl_style.append(('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color))
+
+        main_tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+        main_tbl.setStyle(TableStyle(tbl_style))
+        story.append(main_tbl)
+
+        # ── Summary ──
+        story.append(Spacer(1, 4 * mm))
+        monthly_balance = total_net - total_target
+        overtime_account = calculation_service.get_overtime_account(db, user, year, month)
+        vacation_account = calculation_service.get_vacation_account(db, user, year)
+
+        bal_color = '#006400' if monthly_balance > 0 else ('#8B0000' if monthly_balance < 0 else '#1e293b')
+        ot_color = '#006400' if overtime_account > 0 else ('#8B0000' if overtime_account < 0 else '#1e293b')
+
+        summary_rows = [
+            [Paragraph('Zusammenfassung', ParagraphStyle('st', fontName='Helvetica-Bold', fontSize=8, leading=10)), ''],
+            [Paragraph('Soll-Stunden:', s_sum_lbl), Paragraph(f"{float(total_target):.2f} h", s_sum_val)],
+            [Paragraph('Ist-Stunden:', s_sum_lbl), Paragraph(f"{float(total_net):.2f} h", s_sum_val)],
+            [Paragraph('Saldo Monat:', s_sum_lbl),
+             Paragraph(f"{float(monthly_balance):+.2f} h",
+                       ParagraphStyle('sb', fontName='Helvetica-Bold', fontSize=7.5,
+                                      textColor=colors.HexColor(bal_color)))],
+            [Paragraph('\u00dcberstunden kumuliert:', s_sum_lbl),
+             Paragraph(f"{float(overtime_account):+.2f} h",
+                       ParagraphStyle('so', fontName='Helvetica-Bold', fontSize=7.5,
+                                      textColor=colors.HexColor(ot_color)))],
+            [Paragraph('Urlaub genommen:', s_sum_lbl),
+             Paragraph(f"{float(vacation_account['used_hours']):.2f} h", s_sum_val)],
+            [Paragraph('Urlaub Rest:', s_sum_lbl),
+             Paragraph(f"{float(vacation_account['remaining_hours']):.2f} h", s_sum_val)],
+            [Paragraph('Nachtarbeitstage (\u00a76 ArbZG):', s_sum_lbl),
+             Paragraph(str(night_work_count), s_sum_val)],
+        ]
+        sum_tbl = Table(summary_rows, colWidths=[55 * mm, 35 * mm])
+        sum_tbl.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 7.5),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#CCE5FF')),
+            ('SPAN', (0, 0), (1, 0)),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#CCCCCC')),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFC')),
+        ]))
+        story.append(sum_tbl)
+
+    doc.build(story)
+    output.seek(0)
+    return output

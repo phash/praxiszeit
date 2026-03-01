@@ -231,6 +231,27 @@ export default function Reports() {
     }
   };
 
+  const handleMonthlyExportPdf = async () => {
+    setLoading(true);
+    try {
+      const healthParam = includeHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/export-pdf?month=${selectedMonth}${healthParam}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `PraxisZeit_Monatsreport_${selectedMonth}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      toast.error('PDF-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleMonthlyExportOds = async () => {
     setLoading(true);
     try {
@@ -336,6 +357,14 @@ export default function Reports() {
             >
               <Download size={20} />
               <span>{loading ? 'Wird erstellt...' : 'ODS (.ods)'}</span>
+            </button>
+            <button
+              onClick={handleMonthlyExportPdf}
+              disabled={loading}
+              className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg flex items-center space-x-2 transition disabled:opacity-50"
+            >
+              <Download size={20} />
+              <span>{loading ? 'Wird erstellt...' : 'PDF (.pdf)'}</span>
             </button>
           </div>
 

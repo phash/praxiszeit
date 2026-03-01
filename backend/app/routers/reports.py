@@ -358,6 +358,42 @@ def export_monthly_report_ods(
     )
 
 
+@router.get("/export-pdf")
+@limiter.limit("20/minute")
+def export_monthly_report_pdf(
+    request: Request,
+    month: str = Query(..., description="Month in YYYY-MM format"),
+    include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Export monthly report as PDF file (landscape A4, one page per employee)."""
+    try:
+        year, month_num = map(int, month.split('-'))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
+
+    if include_health_data:
+        log = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_export",
+            source="dsgvo",
+            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im PDF-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
+        )
+        db.add(log)
+        db.commit()
+
+    pdf_file = export_service.generate_monthly_report_pdf(db, year, month_num, include_health_data)
+    filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.pdf"
+    return StreamingResponse(
+        pdf_file,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'}
+    )
+
+
 @router.get("/export-yearly-ods")
 @limiter.limit("20/minute")
 def export_yearly_report_ods(
