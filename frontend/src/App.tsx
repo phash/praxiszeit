@@ -14,6 +14,7 @@ import Reports from './pages/admin/Reports';
 import AuditLog from './pages/admin/AuditLog';
 import AdminAbsences from './pages/admin/AdminAbsences';
 import ErrorMonitoring from './pages/admin/ErrorMonitoring';
+import VacationApprovals from './pages/admin/VacationApprovals';
 import Help from './pages/Help';
 import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
@@ -81,6 +82,7 @@ function App() {
           <Route path="audit-log" element={<AuditLog />} />
           <Route path="absences" element={<AdminAbsences />} />
           <Route path="errors" element={<ErrorMonitoring />} />
+          <Route path="vacation-approvals" element={<VacationApprovals />} />
         </Route>
 
         {/* Fallback */}

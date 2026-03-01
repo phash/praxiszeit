@@ -19,6 +19,7 @@ import {
   BookOpen,
   HelpCircle,
   Shield,
+  ClipboardCheck,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 
@@ -78,6 +79,7 @@ export default function Layout() {
     { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar },
     { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText },
     { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle },
+    { path: '/admin/vacation-approvals', label: 'Urlaubsanträge', icon: ClipboardCheck },
   ];
 
   return (
