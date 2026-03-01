@@ -167,7 +167,7 @@ Neue Migration erstellen:
 docker-compose exec backend alembic revision --autogenerate -m "description"
 ```
 
-**Aktuelle Migrationen:**
+**Aktuelle Migrationen (001–020):**
 - `001` - Initial Schema (User, TimeEntry, Absence, PublicHoliday)
 - `002` - Add track_hours field
 - `003` - Add end_date to absences (Zeiträume)
@@ -178,12 +178,14 @@ docker-compose exec backend alembic revision --autogenerate -m "description"
 - `008` - Add time_entry_audit_logs
 - `009` - Make end_time nullable (Stempeluhr)
 - `010` - Add username field, make email optional
-- `011` - Add clock_in_note to time_entries
-- `012` - Add absence_type_other_label
-- `013` - Add daily schedule columns to users (use_daily_schedule, hours_monday–friday)
+- `011–013` - Vacation carryover deadline, company closures, daily schedule
 - `014` - Add error_logs table
-- `015` - Add token_version to users (JWT revocation)
-- `016` - Add sunday_exception_reason to time_entries + exempt_from_arbzg to users (§10/§18 ArbZG)
+- `015` - Add hidden flag to users
+- `016` - Add token_version to users (JWT revocation)
+- `017` - Add sunday_exception_reason + exempt_from_arbzg (§10/§18 ArbZG)
+- `018` - Add is_night_worker to users (§6 ArbZG)
+- `019` - Add TOTP 2FA (totp_secret, totp_enabled)
+- `020` - Add deactivated_at to users (14-Tage-Grace-Period DSGVO)
 
 ## Entwicklung
 
@@ -299,23 +301,24 @@ docker-compose exec -T db psql -U praxiszeit praxiszeit < backup.sql
 
 ## Compliance & Audits
 
-PraxisZeit wird regelmäßig auf Sicherheit, Datenschutz und Arbeitszeitrecht geprüft. Alle Audit-Berichte und Prozessdokumentationen liegen im `specs/`-Verzeichnis:
+PraxisZeit wird regelmäßig auf Sicherheit, Datenschutz und Arbeitszeitrecht geprüft. Alle Audit-Berichte und Prozessdokumentationen liegen in `docs/specs/`:
 
 | Bereich | Ordner | Status |
 |---------|--------|--------|
-| Security (OWASP) | `specs/security/` | ✓ 23 Findings behoben |
-| DSGVO | `specs/dsgvo/` | ✓ 20 Findings behoben |
-| ArbZG §3–§18 | `specs/arbzg/` | ✓ vollständig implementiert |
+| Security (OWASP) | `docs/specs/security/` | ✓ 23 Findings behoben |
+| DSGVO | `docs/specs/dsgvo/` | ✓ 20 Findings behoben |
+| ArbZG §3–§18 | `docs/specs/arbzg/` | ✓ vollständig implementiert |
 
 Jeder Ordner enthält eine `HOWTO.md` mit dem Audit-Prozess, dem Claude-Prompt zur Erstellung und der Regel: **nach jedem Audit → aktualisierten Report erzeugen**.
 
 ## Support & Dokumentation
 
 - **CLAUDE.md** - Umfangreiche Projekt-Dokumentation für Entwickler
-- **PraxisZeit-Mitarbeiter-Handbuch.pdf** - Benutzerhandbuch für Mitarbeiter
-- **PraxisZeit-Admin-Handbuch.pdf** - Technisches Handbuch für Administratoren
-- **PraxisZeit-Cheat-Sheet.pdf** - Schnellreferenz für den Schreibtisch
-- **ARC42.md** - Architekturdokumentation (ARC42-Format)
+- **docs/handbuch/** - Markdown-Handbücher für Mitarbeiter und Admins
+- **docs/generated/** - Generierte PDF/HTML-Handbücher (lokal, nicht im Repo)
+- **docs/ARC42.md** - Architekturdokumentation (ARC42-Format)
+- **docs/INSTALLATION.md** - Detaillierte Installationsanleitung
+- **docs/specs/** - Audit-Berichte (Security, DSGVO, ArbZG)
 - **API Docs** - http://localhost:8000/docs
 - **GitHub Issues** - https://github.com/phash/praxiszeit/issues
 
