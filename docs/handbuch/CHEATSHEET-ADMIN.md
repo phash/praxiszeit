@@ -4,7 +4,7 @@
 
 ## 🔐 Login & Navigation
 **URL:** `http://[Server-Adresse]/login`
-Admin-Navigation: Dashboard · Benutzer · Kalender · Berichte · Korrekturanträge · Audit-Log · Fehler · Betriebsferien
+Admin-Navigation: Dashboard · Benutzer · Kalender · Berichte · Korrekturanträge · **Urlaubsanträge** · Audit-Log · Fehler · Betriebsferien
 
 ---
 
@@ -37,6 +37,21 @@ Admin-Navigation: Dashboard · Benutzer · Kalender · Berichte · Korrekturantr
 
 **Exportieren:** Berichte → Typ & Zeitraum wählen → Exportieren → Excel-Download
 **Aufbewahrungspflicht: 2 Jahre** (§16 ArbZG)
+
+---
+
+## 🏖️ Urlaubsanträge genehmigen
+
+**Urlaubsanträge** (Admin-Navigation)
+
+**Toggle oben:** Genehmigungspflicht ein-/ausschalten
+- **Aus** (Standard): Mitarbeiter buchen Urlaub direkt
+- **Ein**: Urlaub landet als „Offen" zur Genehmigung
+
+**Antrag genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen
+**Antrag ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
+
+> Mitarbeiter sehen Status + Ablehnungsgrund im Tab „Meine Anträge"
 
 ---
 

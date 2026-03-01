@@ -41,6 +41,13 @@ Benutzername + Passwort eingeben → Anmelden
 
 **Abwesenheit löschen:** Auf den Eintrag im Kalender klicken → Löschen-Symbol
 
+### Bei aktiver Urlaubsgenehmigungspflicht
+
+Wenn der Admin die Genehmigungspflicht aktiviert hat:
+- Urlaub-Submit → **Antrag** wird gestellt (kein direkter Eintrag)
+- Tab **„Meine Anträge"** zeigt Status: Offen / Genehmigt / Abgelehnt
+- **Offene Anträge** können zurückgezogen werden (🗑 Symbol)
+
 ---
 
 ## 📋 Korrekturantrag stellen

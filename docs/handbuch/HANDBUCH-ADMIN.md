@@ -12,12 +12,13 @@
 4. [Benutzerverwaltung](#4-benutzerverwaltung)
 5. [Abwesenheitskalender](#5-abwesenheitskalender)
 6. [Berichte und Exporte](#6-berichte-und-exporte)
-7. [Korrekturanträge prüfen](#7-korrekturanträge-prüfen)
-8. [Änderungsprotokoll (Audit-Log)](#8-änderungsprotokoll-audit-log)
-9. [Fehler-Monitoring](#9-fehler-monitoring)
-10. [Betriebsferien verwalten](#10-betriebsferien-verwalten)
-11. [ArbZG-Compliance-Berichte](#11-arbzg-compliance-berichte)
-12. [Rechtliche Grundlagen](#12-rechtliche-grundlagen)
+7. [Urlaubsanträge genehmigen](#7-urlaubsanträge-genehmigen)
+8. [Korrekturanträge prüfen](#8-korrekturanträge-prüfen)
+9. [Änderungsprotokoll (Audit-Log)](#9-änderungsprotokoll-audit-log)
+10. [Fehler-Monitoring](#10-fehler-monitoring)
+11. [Betriebsferien verwalten](#11-betriebsferien-verwalten)
+12. [ArbZG-Compliance-Berichte](#12-arbzg-compliance-berichte)
+13. [Rechtliche Grundlagen](#13-rechtliche-grundlagen)
 
 ---
 
@@ -62,6 +63,7 @@ Das Admin-Dashboard gibt Ihnen eine sofortige **Gesamtübersicht über Ihr gesam
 - Abwesenheitskalender
 - Berichte
 - Korrekturanträge
+- **Urlaubsanträge** *(neu)*
 - Änderungsprotokoll
 - Fehler-Monitoring
 - Betriebsferien
@@ -230,7 +232,61 @@ Der Berichtsbereich ermöglicht den Export aller relevanten Arbeitszeitdaten.
 
 ---
 
-## 7. Korrekturanträge prüfen
+## 7. Urlaubsanträge genehmigen
+
+Wenn die Genehmigungspflicht aktiviert ist, landen Urlaubsanträge von Mitarbeitern zur Prüfung beim Admin.
+
+### Genehmigungspflicht konfigurieren
+
+**Admin-Navigation → Urlaubsanträge**
+
+Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspflichtig"**:
+
+| Toggle | Verhalten |
+|--------|-----------|
+| **Aus** (Standard) | Mitarbeiter buchen Urlaub direkt – kein Antrag erforderlich |
+| **Ein** | Urlaubsanträge landen als „Offen" beim Admin; erst nach Genehmigung wird der Urlaub eingetragen |
+
+> **Hinweis:** Die Einstellung wirkt sofort. Bereits gestellte Anträge bleiben unberührt.
+
+### Urlaubsanträge prüfen
+
+Die Seite zeigt alle Urlaubsanträge. Filter-Tabs ermöglichen die Ansicht nach Status:
+
+| Tab | Inhalt |
+|-----|--------|
+| **Offen** | Noch nicht entschiedene Anträge |
+| **Genehmigt** | Genehmigte Anträge (Urlaub bereits eingetragen) |
+| **Abgelehnt** | Abgelehnte Anträge (inkl. Ablehnungsgrund) |
+| **Alle** | Gesamte Historie |
+
+Jede Antragskarte zeigt:
+- **Mitarbeitername**, Antragszeitpunkt
+- **Urlaubszeitraum** (Datum oder Von–Bis) und **Stunden pro Tag**
+- **Notiz** des Mitarbeiters (falls vorhanden)
+
+### Antrag genehmigen
+
+1. Klicken Sie auf **„Genehmigen"** (grüner Button)
+2. Das System erstellt automatisch Abwesenheitseinträge für alle Werktage im Zeitraum
+   - Wochenenden und Feiertage werden ausgeschlossen
+   - Urlaubsbudget wird geprüft – bei Überschreitung erscheint eine Fehlermeldung
+   - Bei aktivem Tagesplan (`use_daily_schedule`) werden die individuellen Tagessoll-Stunden verwendet
+3. Der Antrag erhält Status **„Genehmigt"**
+
+> **Achtung:** Eine Genehmigung ist unwiderruflich. Zum Stornieren müssen die entstandenen Abwesenheitseinträge manuell gelöscht werden.
+
+### Antrag ablehnen
+
+1. Klicken Sie auf **„Ablehnen"** (rot hinterlegter Button)
+2. Optional: Ablehnungsgrund im Textfeld eintragen
+3. Klicken Sie auf **„Ablehnen"** zur Bestätigung
+
+Der Mitarbeiter sieht den Ablehnungsgrund im Tab „Meine Anträge" auf der Abwesenheitsseite.
+
+---
+
+## 8. Korrekturanträge prüfen
 
 Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich geändert werden müssen. Als Admin prüfen und genehmigen oder lehnen Sie diese ab.
 
@@ -269,7 +325,7 @@ Die Liste zeigt alle offenen und vergangenen Korrekturanträge:
 
 ---
 
-## 8. Änderungsprotokoll (Audit-Log)
+## 9. Änderungsprotokoll (Audit-Log)
 
 Das Audit-Log protokolliert alle wichtigen Aktionen im System vollständig und unveränderlich.
 
@@ -307,7 +363,7 @@ Nutzen Sie die Filteroptionen:
 
 ---
 
-## 9. Fehler-Monitoring
+## 10. Fehler-Monitoring
 
 Das Fehler-Monitoring zeigt technische Fehler, die in der Anwendung aufgetreten sind.
 
@@ -338,7 +394,7 @@ Jeder Eintrag zeigt:
 
 ---
 
-## 10. Betriebsferien verwalten
+## 11. Betriebsferien verwalten
 
 Betriebsferien sind betriebsweite Schließzeiten, die für alle Mitarbeiter automatisch als Abwesenheit eingetragen werden.
 
@@ -372,7 +428,7 @@ Um Betriebsferien zu stornieren, klicken Sie auf das **Löschen-Symbol** in der 
 
 ---
 
-## 11. ArbZG-Compliance-Berichte
+## 12. ArbZG-Compliance-Berichte
 
 PraxisZeit überwacht automatisch die Einhaltung des Arbeitszeitgesetzes. Dieser Abschnitt erklärt die speziellen Compliance-Berichte.
 
@@ -471,7 +527,7 @@ Neben den Berichten prüft PraxisZeit beim Erstellen und Bearbeiten von Zeiteint
 
 ---
 
-## 12. Rechtliche Grundlagen
+## 13. Rechtliche Grundlagen
 
 PraxisZeit wurde so entwickelt, dass die wichtigsten Anforderungen des **Arbeitszeitgesetzes (ArbZG)** automatisch durchgesetzt und dokumentiert werden.
 

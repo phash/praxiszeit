@@ -2,7 +2,7 @@
 
 **Status:** Done
 **Erstellt:** 2026-02-01
-**Zuletzt aktualisiert:** 2026-02-17
+**Zuletzt aktualisiert:** 2026-03-01
 **Zugehörige Issues:** #8, #12, #16
 
 ---
@@ -52,7 +52,7 @@ Als **Admin** möchte ich Betriebsferien (Betriebsurlaub) für alle Mitarbeiter 
 
 ### Out of Scope
 
-- Urlaubsantrags-Workflow (Beantragen → Genehmigen)
+- ~~Urlaubsantrags-Workflow (Beantragen → Genehmigen)~~ → **implementiert** (siehe `vacation-requests.md`)
 - Halbtages-Abwesenheiten
 
 ---
