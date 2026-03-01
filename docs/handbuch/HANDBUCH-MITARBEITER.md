@@ -16,7 +16,8 @@
    - 3.3 [Korrekturantrag stellen](#33-korrekturantrag-stellen)
 4. [Abwesenheiten](#4-abwesenheiten)
    - 4.1 [Abwesenheit eintragen](#41-abwesenheit-eintragen)
-   - 4.2 [Abwesenheit löschen](#42-abwesenheit-löschen)
+   - 4.2 [Urlaubsantrag stellen (bei Genehmigungspflicht)](#42-urlaubsantrag-stellen-bei-genehmigungspflicht)
+   - 4.3 [Abwesenheit löschen](#43-abwesenheit-löschen)
 5. [Korrekturanträge verwalten](#5-korrekturanträge-verwalten)
 6. [Profil & Passwort](#6-profil--passwort)
 7. [Mobil-Nutzung](#7-mobil-nutzung)
@@ -177,9 +178,12 @@ Klicken Sie in der Navigation auf **Abwesenheiten**.
 
 ![Abwesenheitskalender](screenshots/06-ma-abwesenheiten-kalender.png)
 
-Die Seite zeigt:
-- **Kalender oben:** Monats- oder Jahresansicht aller Team-Abwesenheiten (farbcodiert)
-- **Liste unten:** Ihre eigenen Abwesenheiten mit Datum, Typ und Stunden
+Die Seite zeigt zwei Tabs:
+
+| Tab | Inhalt |
+|-----|--------|
+| **Kalender** | Monats- oder Jahresansicht aller Team-Abwesenheiten + Ihre eigenen Einträge |
+| **Meine Anträge** | Nur sichtbar wenn Genehmigungspflicht aktiv – zeigt Ihre gestellten Urlaubsanträge |
 
 **Legende der Farben:**
 
@@ -220,7 +224,38 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 
 ---
 
-### 4.2 Abwesenheit löschen
+### 4.2 Urlaubsantrag stellen (bei Genehmigungspflicht)
+
+Wenn Ihr Administrator die **Genehmigungspflicht für Urlaub** aktiviert hat, funktioniert das Einreichen von Urlaub anders:
+
+1. Klicken Sie auf **+ Abwesenheit eintragen**
+2. Wählen Sie Typ **Urlaub** und füllen Sie Datum, Zeitraum und Stunden aus
+3. Klicken Sie auf **Speichern**
+
+Statt direkt eingetragen zu werden erscheint die Meldung: **„Urlaubsantrag gestellt – wartet auf Genehmigung"**
+
+Die App wechselt automatisch zum Tab **„Meine Anträge"**, wo Sie den Status Ihres Antrags verfolgen können.
+
+**Statusbedeutungen:**
+
+| Status | Bedeutung |
+|--------|-----------|
+| **Offen** | Antrag wartet auf Entscheidung des Administrators |
+| **Genehmigt** | Urlaub wurde genehmigt und in Ihrem Kalender eingetragen |
+| **Abgelehnt** | Antrag wurde abgelehnt – Ablehnungsgrund wird angezeigt |
+| **Zurückgezogen** | Sie haben den Antrag selbst zurückgezogen |
+
+**Antrag zurückziehen:**
+Solange der Antrag noch **Offen** ist, können Sie ihn zurückziehen:
+1. Tab **„Meine Anträge"** öffnen
+2. Auf das **Löschen-Symbol** (🗑) neben dem Antrag klicken
+3. Bestätigen
+
+> **Hinweis:** Andere Abwesenheitstypen (Krank, Fortbildung, Sonstiges) sind nicht genehmigungspflichtig und werden weiterhin direkt eingetragen.
+
+---
+
+### 4.3 Abwesenheit löschen
 
 In der Liste Ihrer Abwesenheiten befindet sich rechts der Button **Löschen**. Bestätigen Sie die Löschung im Dialogfenster.
 
