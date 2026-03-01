@@ -147,11 +147,37 @@ praxiszeit/
 │       ├── api/             # API client
 │       ├── App.tsx          # Router (wrapped in ToastProvider)
 │       └── main.tsx         # Entry point
+├── docs/                    # Gesamte Projektdokumentation (git-tracked)
+│   ├── ARC42.md             # Architekturdokumentation
+│   ├── INSTALLATION.md      # Installationsanleitung
+│   ├── SECURITY.md          # Security-Übersicht
+│   ├── UX_ROADMAP.md        # UX/UI-Roadmap (alle 6 Phasen abgeschlossen)
+│   ├── handbuch/            # Markdown-Handbücher + Screenshots
+│   │   ├── HANDBUCH-ADMIN.md
+│   │   ├── HANDBUCH-MITARBEITER.md
+│   │   ├── CHEATSHEET-ADMIN.md
+│   │   ├── CHEATSHEET-MITARBEITER.md
+│   │   └── screenshots/     # Handbuch-Screenshots (27 Bilder)
+│   ├── specs/               # Audit-Docs und Feature-Spezifikationen
+│   │   ├── features/        # Feature-Spezifikationen (SDD)
+│   │   ├── security/        # Security-Audit-Berichte + HOWTO.md
+│   │   ├── arbzg/           # ArbZG-Compliance-Bericht + HOWTO.md
+│   │   └── dsgvo/           # DSGVO-Prüfbericht, DSFA, Verarbeitungsverzeichnis
+│   └── generated/           # Generierte HTML/PDF-Handbücher (gitignored)
+├── scripts/                 # Ops-Skripte (git-tracked)
+│   └── backup-db.sh
+├── tools/                   # Lokale Dev-Tools (gitignored, nicht im Repo)
+│   ├── handbook/            # Handbuch-Generierungs-Skripte (Puppeteer/JS)
+│   ├── screenshots/         # Rohe Screenshot-Ordner
+│   └── testing/             # Manuelle Test-Skripte
+├── grafana/                 # Grafana-Dashboards und Datasource-Config
+├── prometheus/              # Prometheus-Config
+├── ssl/                     # SSL-Zertifikate (gitignored)
 ├── docker-compose.yml       # Multi-container orchestration
+├── docker-compose.ssl.yml   # SSL-Overlay
 ├── .env.example             # Environment template
 ├── README.md                # User documentation
-├── CLAUDE.md                # This file
-└── UX_ROADMAP.md            # UX/UI-Roadmap (alle 6 Phasen abgeschlossen)
+└── CLAUDE.md                # This file
 
 ```
 
@@ -506,7 +532,7 @@ return output
 ## 🔐 Sicherheit
 
 **Umfassendes Security Audit durchgeführt am 2026-02-20** (23 Findings, alle behoben).
-Berichte und Prozess: `specs/security/` → `HOWTO.md` beschreibt Audit-Durchführung und Prompt.
+Berichte und Prozess: `docs/specs/security/` → `HOWTO.md` beschreibt Audit-Durchführung und Prompt.
 
 ### Authentifizierung & Token
 - Passwörter mit bcrypt gehasht (`passlib[bcrypt]`, 72-Byte-Truncation)
@@ -551,7 +577,7 @@ Berichte und Prozess: `specs/security/` → `HOWTO.md` beschreibt Audit-Durchfü
 
 ## ⚖️ ArbZG-Compliance
 
-Vollständige Dokumentation: `specs/arbzg/arbzg-compliance.md` | Audit-Prozess: `specs/arbzg/HOWTO.md`
+Vollständige Dokumentation: `docs/specs/arbzg/arbzg-compliance.md` | Audit-Prozess: `docs/specs/arbzg/HOWTO.md`
 
 ### Implementierte Checks (alle Eingabepfade: create/update/clock_out/admin/change_requests)
 
@@ -889,18 +915,20 @@ const formatted = format(parseISO(dateString), 'dd.MM.yyyy', { locale: de })
 - **API Alternative**: http://localhost:8000/redoc (ReDoc - statisch, schöner)
 - **README.md**: User-facing Dokumentation (Installation, Features)
 - **CLAUDE.md**: Diese Datei - Entwickler-Dokumentation
-- **ARC42.md**: Architektur-Dokumentation
-- **UX_ROADMAP.md**: UX/UI-Roadmap mit Umsetzungsdetails (alle 6 Phasen abgeschlossen)
-- **Screenshots**: `../screenshots/` Ordner (außerhalb Repo)
+- **docs/ARC42.md**: Architektur-Dokumentation
+- **docs/UX_ROADMAP.md**: UX/UI-Roadmap mit Umsetzungsdetails (alle 6 Phasen abgeschlossen)
+- **docs/handbuch/**: Markdown-Handbücher für Mitarbeiter und Admins (mit Screenshots)
+- **docs/generated/**: Generierte PDF/HTML-Versionen der Handbücher (gitignored, lokal)
+- **tools/**: Lokale Dev-Tools, Screenshot-Generierung, Test-Skripte (gitignored)
 
-### Audit-Dokumentation (`specs/`)
+### Audit-Dokumentation (`docs/specs/`)
 
 | Ordner | Inhalt | HOWTO |
 |--------|--------|-------|
-| `specs/features/` | Feature-Spezifikationen (SDD) | `specs/README.md` |
-| `specs/security/` | Security-Audit-Berichte | `specs/security/HOWTO.md` |
-| `specs/dsgvo/` | DSGVO-Prüfbericht, DSFA, Verarbeitungsverzeichnis | `specs/dsgvo/HOWTO.md` |
-| `specs/arbzg/` | ArbZG-Compliance-Bericht und -Dokumentation | `specs/arbzg/HOWTO.md` |
+| `docs/specs/features/` | Feature-Spezifikationen (SDD) | `docs/specs/README.md` |
+| `docs/specs/security/` | Security-Audit-Berichte | `docs/specs/security/HOWTO.md` |
+| `docs/specs/dsgvo/` | DSGVO-Prüfbericht, DSFA, Verarbeitungsverzeichnis | `docs/specs/dsgvo/HOWTO.md` |
+| `docs/specs/arbzg/` | ArbZG-Compliance-Bericht und -Dokumentation | `docs/specs/arbzg/HOWTO.md` |
 
 **Audit-Regel:** Nach jedem Audit und Behebung der Findings → aktualisierten Report erzeugen (alle Findings als „Behoben" markieren, Verdict aktualisieren). Prozess und Prompts stehen in den jeweiligen `HOWTO.md`-Dateien.
 
@@ -1177,7 +1205,7 @@ docker-compose logs -f --since 1h       # Live logs last hour
 **Contexts** (`frontend/src/contexts/`):
 - `ToastContext.tsx` - Toast-Provider mit success/error/info/warning
 
-**Vollständige Umsetzungs-Details: `UX_ROADMAP.md`**
+**Vollständige Umsetzungs-Details: `docs/UX_ROADMAP.md`**
 
 ## 📝 Future Features (Backlog)
 
