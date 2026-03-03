@@ -1,0 +1,17 @@
+{
+  "name": "praxiszeit-e2e",
+  "private": true,
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:ui": "npx playwright test --ui",
+    "test:debug": "npx playwright test --debug",
+    "test:auth": "npx playwright test tests/auth/",
+    "test:employee": "npx playwright test tests/employee/",
+    "test:admin": "npx playwright test tests/admin/",
+    "test:shared": "npx playwright test tests/shared/"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}
