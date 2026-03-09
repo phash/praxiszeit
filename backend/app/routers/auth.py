@@ -22,6 +22,10 @@ from app.config import settings
 _REFRESH_COOKIE = "refresh_token"
 _REFRESH_PATH = "/api/auth/refresh"
 
+# Magic bytes for image format verification
+_JPEG_MAGIC = b'\xff\xd8\xff'
+_PNG_MAGIC  = b'\x89PNG'
+
 
 class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -300,17 +304,15 @@ async def update_profile_picture(
     """Upload profile picture. Max 500KB, JPEG or PNG only. Magic bytes verified."""
     contents = await file.read()
     if len(contents) > 512_000:
-        raise HTTPException(status_code=400, detail="Bild zu groß (max. 500 KB)")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bild zu groß (max. 500 KB)")
 
     # Magic bytes check – client-controlled Content-Type not trusted (C1)
-    _JPEG_MAGIC = b'\xff\xd8\xff'
-    _PNG_MAGIC  = b'\x89PNG'
     if contents[:3] == _JPEG_MAGIC:
         mime = "image/jpeg"
     elif contents[:4] == _PNG_MAGIC:
         mime = "image/png"
     else:
-        raise HTTPException(status_code=400, detail="Nur JPEG oder PNG erlaubt")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nur JPEG oder PNG erlaubt")
 
     data_uri = f"data:{mime};base64,{base64.b64encode(contents).decode()}"
     current_user.profile_picture = data_uri
