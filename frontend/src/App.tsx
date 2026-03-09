@@ -16,6 +16,7 @@ import AdminAbsences from './pages/admin/AdminAbsences';
 import ErrorMonitoring from './pages/admin/ErrorMonitoring';
 import VacationApprovals from './pages/admin/VacationApprovals';
 import AdminSettings from './pages/admin/Settings';
+import UserJournal from './pages/admin/UserJournal';
 import Help from './pages/Help';
 import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
@@ -78,6 +79,7 @@ function App() {
         >
           <Route index element={<AdminDashboard />} />
           <Route path="users" element={<Users />} />
+          <Route path="users/:userId/journal" element={<UserJournal />} />
           <Route path="change-requests" element={<AdminChangeRequests />} />
           <Route path="reports" element={<Reports />} />
           <Route path="audit-log" element={<AuditLog />} />

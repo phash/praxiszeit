@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -63,6 +64,7 @@ function graceRemainingDays(user: User): number {
 }
 
 export default function Users() {
+  const navigate = useNavigate();
   const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
@@ -944,6 +946,15 @@ export default function Users() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right text-sm space-x-3">
+                      {/* Journal button */}
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/admin/users/${user.id}/journal`)}
+                        className="p-1.5 rounded hover:bg-blue-50 text-blue-500 hover:text-blue-700 transition-colors"
+                        title="Monatsjournal anzeigen"
+                      >
+                        <BookOpen className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => handleEdit(user)}
                         className="text-primary hover:text-primary-dark"
