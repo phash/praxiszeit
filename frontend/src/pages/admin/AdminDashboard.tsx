@@ -102,6 +102,12 @@ export default function AdminDashboard() {
   }, [currentMonth]);
 
   useEffect(() => {
+    if (selectedEmployee) {
+      fetchEmployeeDetails(selectedEmployee);
+    }
+  }, [currentMonth]);
+
+  useEffect(() => {
     fetchYearlyAbsences();
   }, [currentYear]);
 
