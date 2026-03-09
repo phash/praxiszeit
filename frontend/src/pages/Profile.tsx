@@ -65,9 +65,7 @@ export default function Profile() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await apiClient.put('/auth/profile-picture', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await apiClient.put('/auth/profile-picture', formData);
       setUser(response.data);
       setProfileMessage('Profilbild aktualisiert');
       setTimeout(() => setProfileMessage(''), 4000);
