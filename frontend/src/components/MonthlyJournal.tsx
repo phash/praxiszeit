@@ -5,6 +5,8 @@ import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../hooks/useConfirm';
+import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 
@@ -121,6 +123,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0' });
   const [saving, setSaving] = useState(false);
@@ -181,7 +184,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       const payload = {
         start_time: start,
         end_time: end,
-        break_minutes: parseInt(editState.breakMinutes, 10) || 0,
+        break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
       };
       const existing = day.time_entries[0];
       if (existing) {
@@ -202,25 +205,44 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     }
   }
 
-  async function handleAdminDelete(day: JournalDay) {
+  function handleAdminDelete(day: JournalDay) {
     const entry = day.time_entries[0];
     if (!entry) return;
-    setSaving(true);
-    try {
-      await apiClient.delete(`/admin/time-entries/${entry.id}`);
-      toast.success('Eintrag gelöscht');
-      cancelEdit();
-      setReloadKey(k => k + 1);
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Fehler beim Löschen'));
-    } finally {
-      setSaving(false);
-    }
+    confirm({
+      title: 'Eintrag löschen',
+      message: 'Soll dieser Eintrag wirklich gelöscht werden?',
+      variant: 'danger',
+      confirmLabel: 'Löschen',
+      onConfirm: () => {
+        setSaving(true);
+        apiClient.delete(`/admin/time-entries/${entry.id}`)
+          .then(() => {
+            toast.success('Eintrag gelöscht');
+            cancelEdit();
+            setReloadKey(k => k + 1);
+          })
+          .catch((err: unknown) => {
+            toast.error(getErrorMessage(err, 'Fehler beim Löschen'));
+          })
+          .finally(() => {
+            setSaving(false);
+          });
+      },
+    });
   }
 
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <MonthSelector value={selectedMonth} onChange={setSelectedMonth} />
 
       {loading && <LoadingSpinner />}
