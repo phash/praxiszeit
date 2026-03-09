@@ -9,6 +9,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
+import SubmitChangesModal from './SubmitChangesModal';
 
 // ---- Types ----------------------------------------------------------------
 
@@ -130,9 +131,6 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [draftChanges, setDraftChanges] = useState<DraftChange[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  // These are used in Task 3; referenced here to satisfy noUnusedLocals:
-  void draftChanges; void setDraftChanges; void showSubmitModal; void setShowSubmitModal;
-
   useEffect(() => {
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -231,6 +229,44 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     });
   }
 
+  function handleEmployeeSave(day: JournalDay) {
+    const start = editState.startTime;
+    const end = editState.endTime;
+    if (!start || !end) {
+      toast.error('Von und Bis sind Pflichtfelder');
+      return;
+    }
+    const existing = day.time_entries[0];
+    const change: DraftChange = {
+      type: existing ? 'update' : 'create',
+      date: day.date,
+      entryId: existing?.id,
+      startTime: start,
+      endTime: end,
+      breakMinutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
+    };
+    setDraftChanges(prev => {
+      const filtered = prev.filter(c => c.date !== day.date);
+      return [...filtered, change];
+    });
+    cancelEdit();
+  }
+
+  function handleEmployeeDelete(day: JournalDay) {
+    const entry = day.time_entries[0];
+    if (!entry) return;
+    const change: DraftChange = {
+      type: 'delete',
+      date: day.date,
+      entryId: entry.id,
+    };
+    setDraftChanges(prev => {
+      const filtered = prev.filter(c => c.date !== day.date);
+      return [...filtered, change];
+    });
+    cancelEdit();
+  }
+
 
   return (
     <div className="space-y-4">
@@ -270,7 +306,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                 {data.days.map((day) => {
                   const dateObj = parseISO(day.date);
                   const isGray = isNonWorkDay(day);
-                  const rowClass = isGray ? 'bg-gray-50 text-gray-400' : 'bg-white';
+                  const draft = draftChanges.find(c => c.date === day.date);
+                  const isDraft = !!draft;
+                  const isDraftDelete = draft?.type === 'delete';
+                  const rowClass = isGray
+                    ? 'bg-gray-50 text-gray-400'
+                    : isDraft
+                    ? 'bg-amber-50'
+                    : 'bg-white';
 
                   const entry = day.time_entries[0] ?? null;
                   const vonBis =
@@ -328,6 +371,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
                             />
                           </div>
+                        ) : isDraft && draft!.type !== 'delete' ? (
+                          <span className="text-amber-700">{draft!.startTime}–{draft!.endTime}</span>
+                        ) : isDraftDelete ? (
+                          <span className="line-through text-gray-400">{vonBis}</span>
                         ) : vonBis}
                       </td>
                       <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
@@ -355,7 +402,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                         {editingDate === day.date ? (
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => isAdminView ? void handleAdminSave(day) : cancelEdit()}
+                              onClick={() => isAdminView ? void handleAdminSave(day) : handleEmployeeSave(day)}
                               disabled={saving}
                               className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
                               title="Speichern"
@@ -372,7 +419,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             </button>
                             {day.time_entries.length > 0 && (
                               <button
-                                onClick={() => isAdminView ? void handleAdminDelete(day) : cancelEdit()}
+                                onClick={() => isAdminView ? void handleAdminDelete(day) : handleEmployeeDelete(day)}
                                 disabled={saving}
                                 className="p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
                                 title="Löschen"
@@ -439,7 +486,42 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
               </p>
             </div>
           </div>
+
+          {/* Employee: pending changes footer */}
+          {!isAdminView && draftChanges.length > 0 && (
+            <div className="sticky bottom-4 bg-amber-50 border border-amber-200 rounded-lg shadow-md p-3 flex items-center justify-between">
+              <span className="text-sm text-amber-800">
+                <strong>{draftChanges.length}</strong> Änderung{draftChanges.length > 1 ? 'en' : ''} ausstehend
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDraftChanges([])}
+                  className="text-sm text-amber-700 hover:text-amber-900 underline"
+                >
+                  Verwerfen
+                </button>
+                <button
+                  onClick={() => setShowSubmitModal(true)}
+                  className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+                >
+                  Absenden
+                </button>
+              </div>
+            </div>
+          )}
         </>
+      )}
+
+      {showSubmitModal && (
+        <SubmitChangesModal
+          changes={draftChanges}
+          onSuccess={() => {
+            setShowSubmitModal(false);
+            setDraftChanges([]);
+            setReloadKey(k => k + 1);
+          }}
+          onClose={() => setShowSubmitModal(false)}
+        />
       )}
     </div>
   );
