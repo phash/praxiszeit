@@ -1,4 +1,5 @@
 import pytest
+from datetime import date
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base
@@ -66,3 +67,33 @@ def test_admin(db):
     db.commit()
     db.refresh(admin)
     return admin
+
+
+@pytest.fixture(scope="function")
+def public_holiday(db):
+    """Ein Feiertag (Neujahr 2026) für Tests."""
+    from app.models.public_holiday import PublicHoliday
+    h = PublicHoliday(
+        date=date(2026, 1, 1),
+        name="Neujahr",
+        year=2026,
+    )
+    db.add(h)
+    db.commit()
+    db.refresh(h)
+    return h
+
+
+@pytest.fixture(scope="function")
+def working_hours_change(db, test_user):
+    """Historische Arbeitsstunden-Änderung (20h ab 2026-01-01) für test_user."""
+    from app.models import WorkingHoursChange
+    change = WorkingHoursChange(
+        user_id=test_user.id,
+        weekly_hours=20.0,
+        effective_from=date(2026, 1, 1),
+    )
+    db.add(change)
+    db.commit()
+    db.refresh(change)
+    return change
