@@ -197,6 +197,15 @@ def test_working_days_february_2026(db):
     assert result == 20
 
 
+def test_working_days_does_not_deduct_holidays(db):
+    """get_working_days_in_month ignoriert Feiertage (by design – nur Wochenenden)."""
+    h = PublicHoliday(date=date(2026, 1, 1), name="Neujahr", year=2026)
+    db.add(h)
+    db.commit()
+    result = calculation_service.get_working_days_in_month(db, 2026, 1)
+    assert result == 22  # Unverändert – Funktion berücksichtigt Feiertage nicht
+
+
 # ============================================================
 # get_monthly_target
 # ============================================================
@@ -373,5 +382,4 @@ def test_overtime_account_cumulates_across_months(db, test_user):
     _make_entry(db, test_user, date(2026, 1, 9), 8, 18)   # 10h Ist
     _make_entry(db, test_user, date(2026, 2, 9), 8, 16)   # 8h Ist
     result = calculation_service.get_overtime_account(db, test_user, 2026, 2)
-    assert isinstance(result, Decimal)
-    assert result < Decimal('0')  # Soll >> Ist → negativ
+    assert result == Decimal('-318.00')
