@@ -169,6 +169,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     setEditingDate(null);
   }
 
+  // Stubs — replaced in Task 2 (admin) and Task 3 (employee)
+  function handleSave(_day: JournalDay) { cancelEdit(); }
+  function handleDelete(_day: JournalDay) { cancelEdit(); }
+
   return (
     <div className="space-y-4">
       <MonthSelector value={selectedMonth} onChange={setSelectedMonth} />
@@ -283,7 +287,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                         {editingDate === day.date ? (
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={cancelEdit}
+                              onClick={() => handleSave(day)}
                               disabled={saving}
                               className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
                               title="Speichern"
@@ -300,7 +304,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             </button>
                             {day.time_entries.length > 0 && (
                               <button
-                                onClick={cancelEdit}
+                                onClick={() => handleDelete(day)}
                                 disabled={saving}
                                 className="p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
                                 title="Löschen"
@@ -310,7 +314,11 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             )}
                           </div>
                         ) : !isGray && isPastDay(day.date) ? (
-                          day.time_entries.length > 0 ? (
+                          day.time_entries.length > 1 ? (
+                            <span className="text-xs text-gray-400 px-1" title="Mehrere Einträge – Bearbeitung hier nicht möglich">
+                              {day.time_entries.length}×
+                            </span>
+                          ) : day.time_entries.length === 1 ? (
                             <button
                               onClick={() => startEdit(day)}
                               className="p-1 text-gray-400 hover:text-gray-600"
