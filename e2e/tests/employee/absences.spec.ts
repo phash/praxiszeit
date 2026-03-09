@@ -139,4 +139,68 @@ test.describe('Employee Absences', () => {
     // Verify it was selected
     await expect(typeSelect).toHaveValue('sick');
   });
+
+  test('erstellt Überstundenausgleich-Abwesenheit', async ({ employeePage, adminApi, testEmployee }) => {
+    // Form öffnen
+    await employeePage.getByRole('button', { name: 'Abwesenheit eintragen' }).click();
+
+    // Typ auf Überstundenausgleich setzen
+    const typeSelect = employeePage.locator('select').first();
+    await typeSelect.selectOption('overtime');
+    await expect(typeSelect).toHaveValue('overtime');
+
+    // Datum setzen (zukünftiger Werktag)
+    const future = new Date();
+    future.setDate(future.getDate() + 14);
+    if (future.getDay() === 6) future.setDate(future.getDate() + 2);
+    if (future.getDay() === 0) future.setDate(future.getDate() + 1);
+    const dateStr = future.toISOString().split('T')[0];
+
+    const dateInput = employeePage.locator('input[type="date"]').first();
+    await dateInput.fill(dateStr);
+
+    // Speichern
+    await employeePage.getByRole('button', { name: 'Speichern' }).click();
+
+    // Erfolgstoast
+    await expect(
+      employeePage.locator('[role="alert"]').filter({ hasText: /eingetragen|erfolgreich/ })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Cleanup via API
+    try {
+      const year = future.getFullYear();
+      const month = future.getMonth() + 1;
+      const absences = await adminApi.get(`/admin/users/${testEmployee.id}/absences?year=${year}&month=${month}`);
+      const toDelete = Array.isArray(absences)
+        ? absences.filter((a: any) => a.type === 'overtime' && a.date === dateStr)
+        : [];
+      for (const a of toDelete) {
+        await adminApi.delete(`/absences/${a.id}`);
+      }
+    } catch { /* best effort cleanup */ }
+  });
+
+  test('Überstundenausgleich erscheint in der Abwesenheitsliste', async ({ employeePage, createAbsence }) => {
+    // Abwesenheit per API erstellen
+    const future = new Date();
+    future.setDate(future.getDate() + 21);
+    if (future.getDay() === 6) future.setDate(future.getDate() + 2);
+    if (future.getDay() === 0) future.setDate(future.getDate() + 1);
+    const dateStr = future.toISOString().split('T')[0];
+
+    await createAbsence({
+      date: dateStr,
+      type: 'overtime',
+      hours: 8,
+    });
+
+    // Seite neu laden
+    await employeePage.reload();
+    await employeePage.waitForLoadState('networkidle');
+
+    // "Überstundenausgleich" in der Tabelle sehen
+    const table = employeePage.locator('table');
+    await expect(table.getByText('Überstundenausgleich')).toBeVisible({ timeout: 10000 });
+  });
 });
