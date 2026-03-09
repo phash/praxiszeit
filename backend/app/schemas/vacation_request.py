@@ -29,6 +29,7 @@ class VacationRequestResponse(BaseModel):
     date: date
     end_date: Optional[date] = None
     hours: float
+    days: Optional[float] = None  # Number of workdays (excluding weekends/holidays)
     note: Optional[str] = None
     status: str
     rejection_reason: Optional[str] = None

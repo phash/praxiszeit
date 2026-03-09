@@ -167,6 +167,14 @@ def get_yearly_absences(
         training_hours = sum(float(a.hours) for a in training_absences)
         training_days = training_hours / float(daily_target)
 
+        overtime_comp_absences = db.query(Absence).filter(
+            Absence.user_id == user.id,
+            Absence.type == AbsenceType.OVERTIME,
+            extract('year', Absence.date) == year
+        ).all()
+        overtime_comp_hours = sum(float(a.hours) for a in overtime_comp_absences)
+        overtime_comp_days = overtime_comp_hours / float(daily_target)
+
         other_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.OTHER,
@@ -175,7 +183,7 @@ def get_yearly_absences(
         other_hours = sum(float(a.hours) for a in other_absences)
         other_days = other_hours / float(daily_target)
 
-        total_days = vacation_days + sick_days + training_days + other_days
+        total_days = vacation_days + sick_days + training_days + overtime_comp_days + other_days
 
         # Calculate remaining vacation
         vacation_account = calculation_service.get_vacation_account(db, user, year)
@@ -192,6 +200,7 @@ def get_yearly_absences(
             remaining_vacation_days=float(remaining_vacation_days),
             sick_days=sick_days,
             training_days=training_days,
+            overtime_comp_days=overtime_comp_days,
             other_days=other_days,
             overtime_year=float(overtime_year),
             total_days=total_days

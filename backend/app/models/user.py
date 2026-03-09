@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Numeric, Integer, Enum, DateTime, Date
+from sqlalchemy import Column, String, Boolean, Numeric, Integer, Enum, DateTime, Date, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -43,6 +43,9 @@ class User(Base):
     is_night_worker = Column(Boolean, default=False, nullable=False, server_default='false')  # §6 Abs. 2 ArbZG: reduziertes Tageslimit 8h
     totp_secret = Column(String(64), nullable=True)  # F-019: TOTP secret (None if 2FA not set up)
     totp_enabled = Column(Boolean, default=False, nullable=False, server_default='false')  # F-019: 2FA active
+    first_work_day = Column(Date, nullable=True)  # Erster Arbeitstag
+    last_work_day = Column(Date, nullable=True)   # Letzter Arbeitstag
+    profile_picture = Column(Text, nullable=True)  # Base64 data URI
     deactivated_at = Column(DateTime(timezone=True), nullable=True)  # Grace-Period-Start bei Deaktivierung
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File, status
 from fastapi.responses import JSONResponse
 from app.core.limiter import limiter
 from sqlalchemy.orm import Session
@@ -6,6 +6,7 @@ from sqlalchemy import func
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timezone
+import base64
 from app.database import get_db
 from app.models import User, TimeEntry, Absence
 from app.schemas.user import (
@@ -286,6 +287,38 @@ def export_my_data(
             "Content-Type": "application/json; charset=utf-8",
         }
     )
+
+
+@router.put("/profile-picture", response_model=UserResponse)
+async def update_profile_picture(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload profile picture. Max 500KB, JPEG or PNG only."""
+    contents = await file.read()
+    if len(contents) > 512_000:
+        raise HTTPException(status_code=400, detail="Bild zu groß (max. 500 KB)")
+    if file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=400, detail="Nur JPEG oder PNG erlaubt")
+
+    data_uri = f"data:{file.content_type};base64,{base64.b64encode(contents).decode()}"
+    current_user.profile_picture = data_uri
+    db.commit()
+    db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
+@router.delete("/profile-picture", response_model=UserResponse)
+def delete_profile_picture(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove profile picture."""
+    current_user.profile_picture = None
+    db.commit()
+    db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
 
 
 # ── F-019: TOTP 2FA endpoints ────────────────────────────────────────────────

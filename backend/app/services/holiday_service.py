@@ -1,7 +1,8 @@
 from datetime import date, datetime
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models.public_holiday import PublicHoliday
+from app.models.system_setting import SystemSetting
 from app.config import settings
 
 
@@ -38,24 +39,24 @@ HOLIDAY_NAME_DE = {
     "World Children's Day": "Weltkindertag",
 }
 
-# Supported German states mapping
+# Supported German states mapping (class names from workalendar.europe)
 SUPPORTED_STATES = {
-    "Bayern": "workalendar.europe.Bavaria",
     "Baden-Württemberg": "workalendar.europe.BadenWurttemberg",
+    "Bayern": "workalendar.europe.Bavaria",
     "Berlin": "workalendar.europe.Berlin",
     "Brandenburg": "workalendar.europe.Brandenburg",
     "Bremen": "workalendar.europe.Bremen",
     "Hamburg": "workalendar.europe.Hamburg",
-    "Hessen": "workalendar.europe.Hessen",
+    "Hessen": "workalendar.europe.Hesse",
     "Mecklenburg-Vorpommern": "workalendar.europe.MecklenburgVorpommern",
-    "Niedersachsen": "workalendar.europe.NordrheinWestfalen",  # closest
-    "Nordrhein-Westfalen": "workalendar.europe.NordrheinWestfalen",
-    "Rheinland-Pfalz": "workalendar.europe.RheinlandPfalz",
+    "Niedersachsen": "workalendar.europe.LowerSaxony",
+    "Nordrhein-Westfalen": "workalendar.europe.NorthRhineWestphalia",
+    "Rheinland-Pfalz": "workalendar.europe.RhinelandPalatinate",
     "Saarland": "workalendar.europe.Saarland",
-    "Sachsen": "workalendar.europe.Sachsen",
-    "Sachsen-Anhalt": "workalendar.europe.SachsenAnhalt",
+    "Sachsen": "workalendar.europe.Saxony",
+    "Sachsen-Anhalt": "workalendar.europe.SaxonyAnhalt",
     "Schleswig-Holstein": "workalendar.europe.SchleswigHolstein",
-    "Thüringen": "workalendar.europe.Thueringen",
+    "Thüringen": "workalendar.europe.Thuringia",
 }
 
 
@@ -64,9 +65,17 @@ def _translate_name(name: str) -> str:
     return HOLIDAY_NAME_DE.get(name, name)
 
 
-def _get_calendar():
-    """Return the workalendar calendar for the configured state."""
-    state = settings.HOLIDAY_STATE
+def get_holiday_state(db: Session) -> str:
+    """Read the holiday state from SystemSetting, fall back to config."""
+    s = db.query(SystemSetting).filter(SystemSetting.key == "holiday_state").first()
+    if s and s.value in SUPPORTED_STATES:
+        return s.value
+    return settings.HOLIDAY_STATE
+
+
+def _get_calendar(state: Optional[str] = None):
+    """Return the workalendar calendar for the given or configured state."""
+    state = state or settings.HOLIDAY_STATE
     module_path = SUPPORTED_STATES.get(state, "workalendar.europe.Bavaria")
     module_name, class_name = module_path.rsplit(".", 1)
     import importlib
@@ -75,15 +84,15 @@ def _get_calendar():
     return cal_class()
 
 
-def sync_holidays(db: Session, year: int) -> int:
+def sync_holidays(db: Session, year: int, state: Optional[str] = None) -> int:
     """
     Synchronize public holidays for a given year into the database.
-    Uses the configured state (HOLIDAY_STATE env var).
+    Uses the given state or falls back to configured state.
     Translates holiday names to German.
 
     Returns number of holidays synced.
     """
-    cal = _get_calendar()
+    cal = _get_calendar(state)
     holidays = cal.holidays(year)
 
     count = 0
@@ -125,12 +134,23 @@ def is_holiday(db: Session, check_date: date) -> bool:
     return holiday is not None
 
 
-def sync_current_and_next_year(db: Session) -> dict:
+def delete_all_holidays(db: Session) -> int:
+    """Delete all holidays from the database. Used when switching Bundesland."""
+    count = db.query(PublicHoliday).count()
+    db.query(PublicHoliday).delete()
+    db.commit()
+    return count
+
+
+def sync_current_and_next_year(db: Session, state: Optional[str] = None) -> dict:
     """
     Sync holidays for current and next year.
-    Called during application startup.
+    Called during application startup and when Bundesland changes.
     Also updates names of existing holidays to German.
     """
+    if state is None:
+        state = get_holiday_state(db)
+
     current_year = datetime.now().year
     next_year = current_year + 1
 
@@ -142,15 +162,15 @@ def sync_current_and_next_year(db: Session) -> dict:
             h.name = german_name
     db.commit()
 
-    current_count = sync_holidays(db, current_year)
-    next_count = sync_holidays(db, next_year)
+    current_count = sync_holidays(db, current_year, state)
+    next_count = sync_holidays(db, next_year, state)
 
     return {
         "current_year": current_year,
         "current_count": current_count,
         "next_year": next_year,
         "next_count": next_count,
-        "state": settings.HOLIDAY_STATE,
+        "state": state,
     }
 
 

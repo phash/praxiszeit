@@ -17,6 +17,7 @@ interface VacationRequest {
   date: string;
   end_date?: string;
   hours: number;
+  days?: number;
   note?: string;
   status: string;
   rejection_reason?: string;
@@ -34,7 +35,7 @@ interface CalendarEntry {
   date: string;
   user_first_name: string;
   user_last_name: string;
-  type: 'vacation' | 'sick' | 'training' | 'other';
+  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
   hours: number;
 }
 
@@ -42,7 +43,7 @@ interface Absence {
   id: string;
   date: string;
   end_date?: string;
-  type: 'vacation' | 'sick' | 'training' | 'other';
+  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
   hours: number;
   note?: string;
 }
@@ -91,7 +92,7 @@ export default function AbsenceCalendarPage() {
   const [formData, setFormData] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
     end_date: '',
-    type: 'vacation' as 'vacation' | 'sick' | 'training' | 'other',
+    type: 'vacation' as 'vacation' | 'sick' | 'training' | 'overtime' | 'other',
     hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8,
     note: '',
   });
@@ -103,6 +104,19 @@ export default function AbsenceCalendarPage() {
     }).catch(() => {});
     fetchMyVacationRequests();
   }, []);
+
+  // Pre-fill hours from daily-target endpoint when type is "overtime"
+  useEffect(() => {
+    if (formData.type === 'overtime' && formData.date) {
+      apiClient.get(`/absences/daily-target?date=${formData.date}`)
+        .then((res) => {
+          if (res.data.hours > 0) {
+            setFormData(prev => ({ ...prev, hours: res.data.hours }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [formData.type, formData.date]);
 
   useEffect(() => {
     fetchData();
@@ -333,7 +347,7 @@ export default function AbsenceCalendarPage() {
                       <p className="text-sm font-medium text-gray-900 mt-1">
                         {format(new Date(vr.date + 'T00:00:00'), 'dd.MM.yyyy')}
                         {vr.end_date && ` – ${format(new Date(vr.end_date + 'T00:00:00'), 'dd.MM.yyyy')}`}
-                        {' · '}{vr.hours} h/Tag
+                        {' · '}{vr.days != null ? `${vr.days} Tag${vr.days !== 1 ? 'e' : ''}` : `${vr.hours} h/Tag`}
                       </p>
                       {vr.note && <p className="text-sm text-gray-500 mt-0.5">{vr.note}</p>}
                     </div>
@@ -439,7 +453,8 @@ export default function AbsenceCalendarPage() {
                 >
                   <option value="vacation">Urlaub</option>
                   <option value="sick">Krank</option>
-                  <option value="training">Fortbildung</option>
+                  <option value="training">Fortbildung (außer Haus)</option>
+                  <option value="overtime">Überstundenausgleich</option>
                   <option value="other">Sonstiges</option>
                 </select>
               </div>
@@ -455,12 +470,22 @@ export default function AbsenceCalendarPage() {
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
-                {currentUser?.use_daily_schedule && !isDateRange && (
+                {formData.type === 'vacation' && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Urlaub wird in Tagen berechnet (Regelarbeitszeit pro Tag)
+                  </p>
+                )}
+                {formData.type === 'overtime' && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Vorausgefüllt mit Regelstunden des Tages
+                  </p>
+                )}
+                {formData.type !== 'vacation' && formData.type !== 'overtime' && currentUser?.use_daily_schedule && !isDateRange && (
                   <p className="text-xs text-blue-600 mt-1">
                     Automatisch aus Tagesplan
                   </p>
                 )}
-                {currentUser?.use_daily_schedule && isDateRange && (
+                {formData.type !== 'vacation' && formData.type !== 'overtime' && currentUser?.use_daily_schedule && isDateRange && (
                   <p className="text-xs text-blue-600 mt-1">
                     Bei Tagesplan werden Stunden pro Tag automatisch berechnet
                   </p>

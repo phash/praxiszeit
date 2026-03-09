@@ -266,7 +266,7 @@ const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '3. Abwesenheiten eintragen',
     content: (
       <div className="space-y-2">
-        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum.</p>
+        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges) und das Datum.</p>
         <p>Für Zeiträume aktivieren Sie die Checkbox „Zeitraum" und geben Sie ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
       </div>
     ),

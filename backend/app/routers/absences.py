@@ -13,6 +13,18 @@ from app.services import calculation_service
 router = APIRouter(prefix="/api/absences", tags=["absences"])
 
 
+@router.get("/daily-target")
+def get_daily_target_for_date_endpoint(
+    target_date: date = Query(..., alias="date"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get daily target hours for a specific date (for pre-filling absence forms)."""
+    weekly = calculation_service.get_weekly_hours_for_date(db, current_user, target_date)
+    daily = calculation_service.get_daily_target_for_date(current_user, target_date, weekly_hours=weekly)
+    return {"date": str(target_date), "hours": float(daily)}
+
+
 @router.get("/", response_model=List[AbsenceResponse])
 def list_absences(
     year: Optional[int] = Query(None, description="Filter by year"),

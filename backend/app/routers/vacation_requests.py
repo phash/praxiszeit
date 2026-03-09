@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta, date
 
 from app.database import get_db
-from app.models import User, UserRole
+from app.models import User, UserRole, PublicHoliday
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import get_current_user
@@ -19,6 +19,29 @@ def get_setting(db: Session, key: str, default: str = "") -> str:
     return s.value if s else default
 
 
+def _count_workdays(start: date, end: date, db: Session) -> int:
+    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive)."""
+    # Gather holidays for all affected years
+    years = set()
+    cur = start
+    while cur <= end:
+        years.add(cur.year)
+        cur += timedelta(days=1)
+
+    holidays = set()
+    for y in years:
+        for h in db.query(PublicHoliday).filter(PublicHoliday.year == y).all():
+            holidays.add(h.date)
+
+    count = 0
+    cur = start
+    while cur <= end:
+        if cur.weekday() < 5 and cur not in holidays:
+            count += 1
+        cur += timedelta(days=1)
+    return count
+
+
 def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
     resp = VacationRequestResponse.model_validate(vr)
     user = db.query(User).filter(User.id == vr.user_id).first()
@@ -30,6 +53,9 @@ def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
         if reviewer:
             resp.reviewer_first_name = reviewer.first_name
             resp.reviewer_last_name = reviewer.last_name
+    # Compute workdays
+    end = vr.end_date if vr.end_date else vr.date
+    resp.days = _count_workdays(vr.date, end, db)
     return resp
 
 

@@ -208,6 +208,13 @@ def clock_in(
             )
 
     now = datetime.now()
+
+    # Check first/last work day
+    if current_user.first_work_day and now.date() < current_user.first_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
+    if current_user.last_work_day and now.date() > current_user.last_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
+
     entry = TimeEntry(
         user_id=current_user.id,
         date=now.date(),
@@ -393,6 +400,12 @@ def create_time_entry(
             status_code=403,
             detail="Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden"
         )
+
+    # Check first/last work day
+    if current_user.first_work_day and entry_data.date < current_user.first_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
+    if current_user.last_work_day and entry_data.date > current_user.last_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
 
     # Check for overlapping entries on the same date
     existing = db.query(TimeEntry).filter(

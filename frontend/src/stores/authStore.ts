@@ -16,6 +16,7 @@ interface User {
   track_hours: boolean;
   is_active: boolean;
   totp_enabled: boolean;
+  profile_picture?: string | null;
   created_at: string;
   use_daily_schedule: boolean;
   hours_monday: number | null;

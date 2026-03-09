@@ -170,10 +170,12 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     ).all()
     holiday_dates = {h.date for h in holidays}
 
+    # Exclude TRAINING from target reduction - counts as worked time (außer Haus)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         extract('year', Absence.date) == year,
-        extract('month', Absence.date) == month
+        extract('month', Absence.date) == month,
+        Absence.type != AbsenceType.TRAINING
     ).all()
     absence_dates = {a.date for a in absences}
 
@@ -318,9 +320,16 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     # Use current weekly hours for conversion
     daily_target = get_daily_target(user)
 
-    # Calculate budget in hours
-    budget_days = user.vacation_days
-    budget_hours = Decimal(str(budget_days)) * daily_target
+    # Calculate budget in hours, pro-rated for first/last work day
+    budget_days = Decimal(str(user.vacation_days))
+    if user.first_work_day and user.first_work_day.year == year:
+        months_remaining = Decimal(str(12 - user.first_work_day.month + 1))
+        budget_days = (Decimal(str(user.vacation_days)) * months_remaining / Decimal('12')).quantize(Decimal('0.1'))
+    if user.last_work_day and user.last_work_day.year == year:
+        months_worked = Decimal(str(user.last_work_day.month))
+        budget_days_last = (Decimal(str(user.vacation_days)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
+        budget_days = min(budget_days, budget_days_last)
+    budget_hours = budget_days * daily_target
 
     # Calculate used vacation hours
     vacation_absences = db.query(Absence).filter(
@@ -337,10 +346,10 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     remaining_days = remaining_hours / daily_target if daily_target > 0 else Decimal('0')
 
     return {
-        "budget_hours": budget_hours.quantize(Decimal('0.01')),
-        "budget_days": budget_days,
-        "used_hours": used_hours.quantize(Decimal('0.01')),
-        "used_days": used_days.quantize(Decimal('0.1')),
-        "remaining_hours": remaining_hours.quantize(Decimal('0.01')),
-        "remaining_days": remaining_days.quantize(Decimal('0.1'))
+        "budget_hours": float(budget_hours.quantize(Decimal('0.01'))),
+        "budget_days": float(budget_days),
+        "used_hours": float(used_hours.quantize(Decimal('0.01'))),
+        "used_days": float(used_days.quantize(Decimal('0.1'))),
+        "remaining_hours": float(remaining_hours.quantize(Decimal('0.01'))),
+        "remaining_days": float(remaining_days.quantize(Decimal('0.1')))
     }

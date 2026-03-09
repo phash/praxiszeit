@@ -11,6 +11,7 @@ class AbsenceType(str, enum.Enum):
     VACATION = "vacation"
     SICK = "sick"
     TRAINING = "training"
+    OVERTIME = "overtime"
     OTHER = "other"
 
 

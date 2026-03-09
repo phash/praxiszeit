@@ -657,6 +657,12 @@ export default function AdminDashboard() {
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                     <span className="flex items-center justify-end space-x-1">
+                      <span>ÜStd.-Ausgl.</span>
+                      <span className="inline-block w-3 h-3 rounded-full bg-purple-500"></span>
+                    </span>
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    <span className="flex items-center justify-end space-x-1">
                       <span>Überstunden</span>
                       <span className="inline-block w-3 h-3 rounded-full bg-green-500"></span>
                     </span>
@@ -667,13 +673,13 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-200">
                 {yearlyLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center">
+                    <td colSpan={8} className="px-6 py-8 text-center">
                       <LoadingSpinner text="Lade Daten..." />
                     </td>
                   </tr>
                 ) : yearlyAbsences.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                    <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                       Keine Daten verfügbar
                     </td>
                   </tr>
@@ -707,6 +713,11 @@ export default function AdminDashboard() {
                       <td className="px-6 py-4 text-right text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
                           {emp.training_days.toFixed(1)} Tage
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          {(emp as any).overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
@@ -794,6 +805,16 @@ export default function AdminDashboard() {
                         </div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
                           {emp.training_days.toFixed(1)} Tage
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="inline-block w-3 h-3 rounded-full bg-purple-500"></span>
+                          <span className="text-sm text-gray-600">ÜStd.-Ausgleich</span>
+                        </div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          {(emp as any).overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
                         </span>
                       </div>
 
@@ -1116,6 +1137,8 @@ export default function AdminDashboard() {
                                         ? 'bg-red-100 text-red-800'
                                         : absence.type === 'training'
                                         ? 'bg-orange-100 text-orange-800'
+                                        : absence.type === 'overtime'
+                                        ? 'bg-purple-100 text-purple-800'
                                         : 'bg-gray-100 text-gray-800'
                                     }`}
                                   >
@@ -1124,7 +1147,9 @@ export default function AdminDashboard() {
                                       : absence.type === 'sick'
                                       ? 'Krank'
                                       : absence.type === 'training'
-                                      ? 'Fortbildung'
+                                      ? 'Fortbildung (außer Haus)'
+                                      : absence.type === 'overtime'
+                                      ? 'Überstundenausgleich'
                                       : 'Sonstiges'}
                                   </span>
                                 </td>
