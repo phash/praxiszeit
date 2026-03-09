@@ -241,4 +241,58 @@ test.describe('Admin User Management', () => {
     const userRows = adminPage.locator('table tbody tr, [role="button"]').filter({ hasText: 'admin' });
     await expect(userRows).toHaveCount(0, { timeout: 5000 });
   });
+
+  test('Abwesenheit vor erstem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
+    // first_work_day auf 30 Tage in der Zukunft setzen
+    const future = new Date();
+    future.setDate(future.getDate() + 30);
+    const futureDateStr = future.toISOString().split('T')[0];
+    await adminApi.put(`/admin/users/${testEmployee.id}`, {
+      first_work_day: futureDateStr,
+    });
+
+    // Employee versucht eine Abwesenheit HEUTE (vor first_work_day) einzutragen
+    await employeePage.goto('/absences');
+    await employeePage.getByRole('button', { name: 'Abwesenheit eintragen' }).click();
+    const today = new Date().toISOString().split('T')[0];
+    await employeePage.locator('input[type="date"]').first().fill(today);
+    await employeePage.getByRole('button', { name: 'Speichern' }).click();
+
+    // Fehler-Feedback prüfen – toast.error() rendert als [role="alert"]
+    await expect(
+      employeePage.locator('[role="alert"]').filter({ hasText: /ersten Arbeitstag|Datum liegt vor/i })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Cleanup: first_work_day entfernen (best effort – testEmployee fixture löscht den User ohnehin)
+    try {
+      await adminApi.put(`/admin/users/${testEmployee.id}`, { first_work_day: null });
+    } catch { /* best effort */ }
+  });
+
+  test('Abwesenheit nach letztem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
+    // last_work_day auf gestern setzen
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    await adminApi.put(`/admin/users/${testEmployee.id}`, {
+      last_work_day: yesterdayStr,
+    });
+
+    // Employee versucht eine Abwesenheit HEUTE (nach last_work_day) einzutragen
+    await employeePage.goto('/absences');
+    await employeePage.getByRole('button', { name: 'Abwesenheit eintragen' }).click();
+    const today = new Date().toISOString().split('T')[0];
+    await employeePage.locator('input[type="date"]').first().fill(today);
+    await employeePage.getByRole('button', { name: 'Speichern' }).click();
+
+    // Fehler-Feedback prüfen – toast.error() rendert als [role="alert"]
+    await expect(
+      employeePage.locator('[role="alert"]').filter({ hasText: /letzten Arbeitstag|Datum liegt nach/i })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Cleanup: last_work_day entfernen (best effort – testEmployee fixture löscht den User ohnehin)
+    try {
+      await adminApi.put(`/admin/users/${testEmployee.id}`, { last_work_day: null });
+    } catch { /* best effort */ }
+  });
 });
