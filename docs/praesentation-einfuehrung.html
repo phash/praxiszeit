@@ -357,6 +357,40 @@
     /* ── Abschlussfolie ── */
     .big-emoji { font-size: 5rem; margin-bottom: 20px; }
 
+    /* ── Screenshot-Split-Layout ── */
+    .split {
+      display: flex;
+      align-items: center;
+      gap: 40px;
+      width: 100%;
+      max-width: 1200px;
+      margin-top: 20px;
+    }
+    .split-text {
+      flex: 1 1 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      text-align: left;
+    }
+    .split-img {
+      flex: 0 0 46%;
+      max-width: 46%;
+    }
+    .screenshot {
+      width: 100%;
+      border-radius: 14px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+      border: 1px solid rgba(0,0,0,0.08);
+      display: block;
+    }
+    .screenshot-caption {
+      font-size: 0.78rem;
+      color: var(--grau);
+      margin-top: 8px;
+      text-align: center;
+    }
+
     /* ── Hilfreich auf Beamer ── */
     @media (min-width: 1400px) {
       h1 { font-size: 4.2rem; }
@@ -503,33 +537,45 @@
     <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
       👤 Für Mitarbeiterinnen &amp; Mitarbeiter
     </div>
-    <h2 style="margin-bottom:8px;">Login &amp; Dashboard</h2>
-    <p class="lead" style="color:var(--grau); margin-bottom:28px;">
-      Der erste Blick nach dem Einloggen zeigt alles Wichtige auf einen Blick.
-    </p>
-
-    <div class="grid grid-3" style="max-width:900px;">
-      <div class="card">
-        <div class="card-icon icon-blau">🔐</div>
-        <h3>Login</h3>
-        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
-          E-Mail-Adresse &amp; Passwort eingeben.<br>
-          Passwort beim ersten Login im Profil ändern.
+    <div class="split">
+      <div class="split-text">
+        <h2 style="margin-bottom:16px;">Login &amp; Dashboard</h2>
+        <p style="color:var(--grau); font-size:1rem; line-height:1.6; margin-bottom:20px;">
+          Der erste Blick nach dem Einloggen zeigt alles Wichtige auf einen Blick.
         </p>
+        <div style="display:flex; flex-direction:column; gap:12px; width:100%;">
+          <div class="card blau-rand" style="padding:14px 18px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:1.4rem;">🔐</span>
+              <div>
+                <h3 style="font-size:0.95rem;">Login</h3>
+                <p style="color:var(--grau); font-size:0.85rem;">E-Mail &amp; Passwort – beim ersten Login sofort ändern.</p>
+              </div>
+            </div>
+          </div>
+          <div class="card blau-rand" style="padding:14px 18px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:1.4rem;">📅</span>
+              <div>
+                <h3 style="font-size:0.95rem;">Monatssaldo</h3>
+                <p style="color:var(--grau); font-size:0.85rem;">Ist-Stunden, Soll-Stunden &amp; Überstundensaldo auf einen Blick.</p>
+              </div>
+            </div>
+          </div>
+          <div class="card blau-rand" style="padding:14px 18px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:1.4rem;">🌴</span>
+              <div>
+                <h3 style="font-size:0.95rem;">Urlaubskonto</h3>
+                <p style="color:var(--grau); font-size:0.85rem;">Resturlaub mit Ampel-Anzeige (grün / gelb / rot).</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-icon icon-blau">📅</div>
-        <h3>Monatsübersicht</h3>
-        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
-          Aktuelle Ist-Stunden, Soll-Stunden und der Stundensaldo des laufenden Monats.
-        </p>
-      </div>
-      <div class="card">
-        <div class="card-icon icon-gruen">🌴</div>
-        <h3>Urlaubskonto</h3>
-        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
-          Restlicher Jahresurlaub sofort sichtbar – mit Ampel-Anzeige (grün / gelb / rot).
-        </p>
+      <div class="split-img">
+        <img src="screenshots/praesentation/02-dashboard.png" alt="Dashboard-Ansicht" class="screenshot">
+        <p class="screenshot-caption">Dashboard – Ansicht nach dem Login</p>
       </div>
     </div>
   </section>
@@ -541,36 +587,43 @@
     <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
       👤 Für Mitarbeiterinnen &amp; Mitarbeiter
     </div>
-    <h2>Zeiten erfassen</h2>
-
-    <div class="steps">
-      <div class="step">
-        <div class="step-nr">1</div>
-        <div class="step-text">
-          <strong>„Zeiterfassung" im Menü öffnen</strong>
-          <span>Die Wochenansicht zeigt Mo–Fr mit je einer Zeile pro Tag.</span>
+    <div class="split">
+      <div class="split-text">
+        <h2 style="margin-bottom:20px;">Zeiten erfassen</h2>
+        <div style="display:flex; flex-direction:column; gap:10px; width:100%;">
+          <div class="step">
+            <div class="step-nr">1</div>
+            <div class="step-text">
+              <strong>„Zeiterfassung" im Menü öffnen</strong>
+              <span>Monatsansicht mit allen Arbeitstagen.</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-nr">2</div>
+            <div class="step-text">
+              <strong>„+ Neuer Eintrag" klicken</strong>
+              <span>Datum, Von, Bis &amp; Pause eintragen.</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-nr">3</div>
+            <div class="step-text">
+              <strong>Speichern – fertig!</strong>
+              <span>Soll/Ist-Saldo wird automatisch berechnet.</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-nr">✓</div>
+            <div class="step-text">
+              <strong>Notizfeld optional</strong>
+              <span>Anmerkungen zum Tag eintragbar.</span>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="step">
-        <div class="step-nr">2</div>
-        <div class="step-text">
-          <strong>Tag anklicken → Beginn, Ende &amp; Pause eintragen</strong>
-          <span>Beispiel: 08:00 – 16:30 Uhr, 30 Min. Pause = 8 Std. Nettoarbeitszeit.</span>
-        </div>
-      </div>
-      <div class="step">
-        <div class="step-nr">3</div>
-        <div class="step-text">
-          <strong>Speichern – fertig!</strong>
-          <span>Soll/Ist-Vergleich und Überstundensaldo werden automatisch berechnet.</span>
-        </div>
-      </div>
-      <div class="step">
-        <div class="step-nr">✓</div>
-        <div class="step-text">
-          <strong>Notizen möglich</strong>
-          <span>Optionales Freitext-Feld für besondere Anmerkungen zum Tag.</span>
-        </div>
+      <div class="split-img">
+        <img src="screenshots/praesentation/03-zeiterfassung-neuer-eintrag.png" alt="Neuer Zeiteintrag" class="screenshot">
+        <p class="screenshot-caption">Formular „Neuer Zeiteintrag"</p>
       </div>
     </div>
   </section>
@@ -582,43 +635,41 @@
     <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
       👤 Für Mitarbeiterinnen &amp; Mitarbeiter
     </div>
-    <h2>Abwesenheiten eintragen</h2>
-    <p class="lead" style="color:var(--grau);">Urlaub, Krankheit &amp; mehr in wenigen Sekunden erfasst.</p>
-
-    <div class="grid grid-4" style="max-width:1000px; margin-top:28px;">
-      <div class="card">
-        <div style="font-size:2rem; margin-bottom:10px;">🌴</div>
-        <span class="badge badge-blau">Urlaub</span>
-        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
-          Einzeltag oder Zeitraum – Wochenenden &amp; Feiertage werden automatisch ausgeschlossen.
+    <div class="split">
+      <div class="split-text">
+        <h2 style="margin-bottom:8px;">Abwesenheiten eintragen</h2>
+        <p style="color:var(--grau); font-size:0.95rem; margin-bottom:16px;">Urlaub, Krankheit &amp; mehr in wenigen Sekunden erfasst.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; width:100%;">
+          <div class="card" style="padding:14px;">
+            <div style="font-size:1.6rem; margin-bottom:6px;">🌴</div>
+            <span class="badge badge-blau" style="font-size:0.8rem;">Urlaub</span>
+            <p style="color:var(--grau); font-size:0.82rem; margin-top:8px; line-height:1.4;">Einzel- oder Zeitraum. Wochenenden &amp; Feiertage automatisch ausgeschlossen.</p>
+          </div>
+          <div class="card" style="padding:14px;">
+            <div style="font-size:1.6rem; margin-bottom:6px;">🤒</div>
+            <span class="badge badge-rot" style="font-size:0.8rem;">Krankheit</span>
+            <p style="color:var(--grau); font-size:0.82rem; margin-top:8px; line-height:1.4;">Zählt nicht auf das Urlaubskonto.</p>
+          </div>
+          <div class="card" style="padding:14px;">
+            <div style="font-size:1.6rem; margin-bottom:6px;">📚</div>
+            <span class="badge badge-gelb" style="font-size:0.8rem;">Fortbildung</span>
+            <p style="color:var(--grau); font-size:0.82rem; margin-top:8px; line-height:1.4;">Externe Schulungen separat erfasst.</p>
+          </div>
+          <div class="card" style="padding:14px;">
+            <div style="font-size:1.6rem; margin-bottom:6px;">📋</div>
+            <span class="badge" style="background:var(--grau-hell); color:var(--grau); font-size:0.8rem;">Sonstiges</span>
+            <p style="color:var(--grau); font-size:0.82rem; margin-top:8px; line-height:1.4;">Mit freiem Notizfeld.</p>
+          </div>
+        </div>
+        <p style="margin-top:14px; color:var(--grau); font-size:0.88rem;">
+          📆 Im <strong>Teamkalender</strong> sind alle Abwesenheiten auf einen Blick sichtbar.
         </p>
       </div>
-      <div class="card">
-        <div style="font-size:2rem; margin-bottom:10px;">🤒</div>
-        <span class="badge badge-rot">Krankheit</span>
-        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
-          Krankmeldung eintragen – zählt nicht auf das Urlaubskonto.
-        </p>
-      </div>
-      <div class="card">
-        <div style="font-size:2rem; margin-bottom:10px;">📚</div>
-        <span class="badge badge-gelb">Fortbildung</span>
-        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
-          Externe Schulungen &amp; Fortbildungstage separat erfasst.
-        </p>
-      </div>
-      <div class="card">
-        <div style="font-size:2rem; margin-bottom:10px;">📋</div>
-        <span class="badge" style="background:var(--grau-hell); color:var(--grau);">Sonstiges</span>
-        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
-          Für alle anderen Abwesenheitsgründe mit freiem Notizfeld.
-        </p>
+      <div class="split-img">
+        <img src="screenshots/praesentation/04-abwesenheiten.png" alt="Abwesenheiten-Kalender" class="screenshot">
+        <p class="screenshot-caption">Abwesenheitskalender mit Monatsansicht</p>
       </div>
     </div>
-
-    <p style="margin-top:24px; color:var(--grau); font-size:0.95rem;">
-      📆 Im <strong>Abwesenheitskalender</strong> sehen alle Teammitglieder die Übersicht für das gesamte Team.
-    </p>
   </section>
 
   <!-- ══════════════════════════════════════════════
@@ -628,33 +679,45 @@
     <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
       👤 Für Mitarbeiterinnen &amp; Mitarbeiter
     </div>
-    <h2>Mein Profil</h2>
-
-    <div class="grid grid-2" style="max-width:780px; margin-top:28px;">
-      <div class="card gruen-rand">
-        <div class="card-icon icon-gruen">🔑</div>
-        <h3>Passwort ändern</h3>
-        <p style="color:var(--grau); font-size:0.95rem; line-height:1.5;">
-          Bitte beim <strong>ersten Login sofort</strong> ein persönliches Passwort vergeben.<br><br>
-          Anforderungen: mindestens 10 Zeichen, Groß- &amp; Kleinbuchstaben, eine Ziffer.
-        </p>
+    <div class="split">
+      <div class="split-text">
+        <h2 style="margin-bottom:20px;">Mein Profil</h2>
+        <div style="display:flex; flex-direction:column; gap:12px; width:100%;">
+          <div class="card gruen-rand" style="padding:16px 18px;">
+            <div style="display:flex; align-items:flex-start; gap:12px;">
+              <span style="font-size:1.5rem;">🔑</span>
+              <div>
+                <h3 style="font-size:0.95rem;">Passwort ändern</h3>
+                <p style="color:var(--grau); font-size:0.85rem; line-height:1.5;">
+                  Beim <strong>ersten Login sofort</strong> ändern.<br>
+                  Mind. 10 Zeichen, Groß- &amp; Kleinbuchstaben, eine Ziffer.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="card blau-rand" style="padding:16px 18px;">
+            <div style="display:flex; align-items:flex-start; gap:12px;">
+              <span style="font-size:1.5rem;">👤</span>
+              <div>
+                <h3 style="font-size:0.95rem;">Persönliche Daten &amp; Kalenderfarbe</h3>
+                <p style="color:var(--grau); font-size:0.85rem; line-height:1.5;">
+                  Wochenstunden, Urlaubstage &amp; eigene Farbe im Teamkalender einsehbar.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div style="background:white; border-radius:12px; padding:14px 18px; border-left:4px solid var(--warnung);">
+            <strong style="font-size:0.9rem;">⚠️ Sicherheitshinweis:</strong>
+            <p style="color:var(--grau); font-size:0.85rem; margin-top:4px;">
+              Zugangsdaten sind persönlich – nicht weitergeben. Bei Verlust sofort die Praxisleitung informieren.
+            </p>
+          </div>
+        </div>
       </div>
-      <div class="card blau-rand">
-        <div class="card-icon icon-blau">👤</div>
-        <h3>Persönliche Daten</h3>
-        <p style="color:var(--grau); font-size:0.95rem; line-height:1.5;">
-          Name, E-Mail-Adresse und vertraglich vereinbarte Wochenstunden sind hier einsehbar.<br><br>
-          Änderungen an Stammdaten erfolgen über die Praxisleitung.
-        </p>
+      <div class="split-img">
+        <img src="screenshots/praesentation/05-profil.png" alt="Profil-Seite" class="screenshot">
+        <p class="screenshot-caption">Profil – Daten &amp; Passwort verwalten</p>
       </div>
-    </div>
-
-    <div style="margin-top:28px; background:white; border-radius:14px; padding:16px 24px; max-width:680px; border-left:4px solid var(--warnung);">
-      <strong>⚠️ Sicherheitshinweis:</strong>
-      <span style="color:var(--grau); font-size:0.95rem;">
-        Zugangsdaten sind persönlich und dürfen nicht weitergegeben werden.
-        Bei Verlust bitte sofort die Praxisleitung informieren.
-      </span>
     </div>
   </section>
 
