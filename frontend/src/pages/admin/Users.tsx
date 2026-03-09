@@ -863,9 +863,9 @@ export default function Users() {
                       <div className="text-sm font-medium text-gray-900">{user.last_name}, {user.first_name}</div>
                       {(user.first_work_day || user.last_work_day) && (
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {user.first_work_day && <span>ab {new Date(user.first_work_day).toLocaleDateString('de-DE')}</span>}
+                          {user.first_work_day && <span>ab {new Date(user.first_work_day + 'T00:00:00').toLocaleDateString('de-DE')}</span>}
                           {user.first_work_day && user.last_work_day && <span> — </span>}
-                          {user.last_work_day && <span>bis {new Date(user.last_work_day).toLocaleDateString('de-DE')}</span>}
+                          {user.last_work_day && <span>bis {new Date(user.last_work_day + 'T00:00:00').toLocaleDateString('de-DE')}</span>}
                         </div>
                       )}
                     </td>
@@ -1073,13 +1073,13 @@ export default function Users() {
                     {user.first_work_day && (
                       <div>
                         <span className="text-gray-500 block">Erster Arbeitstag</span>
-                        <p className="font-medium">{new Date(user.first_work_day).toLocaleDateString('de-DE')}</p>
+                        <p className="font-medium">{new Date(user.first_work_day + 'T00:00:00').toLocaleDateString('de-DE')}</p>
                       </div>
                     )}
                     {user.last_work_day && (
                       <div>
                         <span className="text-gray-500 block">Letzter Arbeitstag</span>
-                        <p className="font-medium">{new Date(user.last_work_day).toLocaleDateString('de-DE')}</p>
+                        <p className="font-medium">{new Date(user.last_work_day + 'T00:00:00').toLocaleDateString('de-DE')}</p>
                       </div>
                     )}
                   </div>
