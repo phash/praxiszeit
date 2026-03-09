@@ -4,6 +4,7 @@ from datetime import date
 from app.models.public_holiday import PublicHoliday
 from app.models.system_setting import SystemSetting
 from app.services import holiday_service
+from app.config import settings
 
 
 @pytest.fixture
@@ -45,7 +46,6 @@ def test_get_holiday_state_from_db(db):
 
 def test_get_holiday_state_fallback(db):
     """`get_holiday_state` → Fallback auf settings.HOLIDAY_STATE wenn kein DB-Eintrag."""
-    from app.config import settings
     result = holiday_service.get_holiday_state(db)
     assert result == settings.HOLIDAY_STATE
 
@@ -55,7 +55,6 @@ def test_get_holiday_state_fallback(db):
 def test_delete_all_holidays_removes_entries(db, public_holiday):
     """`delete_all_holidays` → löscht alle Einträge, gibt Anzahl zurück."""
     count = holiday_service.delete_all_holidays(db)
-    db.flush()
     assert count == 1
     remaining = db.query(PublicHoliday).count()
     assert remaining == 0
@@ -109,5 +108,7 @@ def test_sync_current_and_next_year_returns_dict(db):
     assert "current_count" in result
     assert "next_count" in result
     assert result["state"] == "Bayern"
+    assert result["current_count"] > 0
+    assert result["next_count"] > 0
     total = db.query(PublicHoliday).count()
     assert total > 0
