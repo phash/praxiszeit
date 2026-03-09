@@ -15,6 +15,7 @@ from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview
 from app.services import auth_service, calculation_service
+from app.services.calculation_service import count_workdays
 from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours, _is_night_work,
@@ -948,28 +949,6 @@ def update_setting(
 
 # ── Vacation Request Management (Admin) ─────────────────────────────────
 
-def _count_workdays_for_vr(start: date, end: date, db: Session) -> int:
-    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive)."""
-    years = set()
-    cur = start
-    while cur <= end:
-        years.add(cur.year)
-        cur += timedelta(days=1)
-
-    holidays = set()
-    for y in years:
-        for h in db.query(PublicHoliday).filter(PublicHoliday.year == y).all():
-            holidays.add(h.date)
-
-    count = 0
-    cur = start
-    while cur <= end:
-        if cur.weekday() < 5 and cur not in holidays:
-            count += 1
-        cur += timedelta(days=1)
-    return count
-
-
 def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResponse:
     resp = VacationRequestResponse.model_validate(vr)
     user = db.query(User).filter(User.id == vr.user_id).first()
@@ -983,7 +962,7 @@ def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResp
             resp.reviewer_last_name = reviewer.last_name
     # Compute workdays
     end = vr.end_date if vr.end_date else vr.date
-    resp.days = _count_workdays_for_vr(vr.date, end, db)
+    resp.days = count_workdays(db, vr.date, end)
     return resp
 
 

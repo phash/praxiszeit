@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from calendar import monthrange
 from typing import Dict
@@ -361,3 +361,25 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         "remaining_hours": float(remaining_hours.quantize(Decimal('0.01'))),
         "remaining_days": float(remaining_days.quantize(Decimal('0.1')))
     }
+
+
+def count_workdays(db: Session, start: date, end: date) -> int:
+    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive)."""
+    years: set = set()
+    cur = start
+    while cur <= end:
+        years.add(cur.year)
+        cur += timedelta(days=1)
+
+    holidays: set = set()
+    for year in years:
+        year_holidays = db.query(PublicHoliday).filter(PublicHoliday.year == year).all()
+        holidays.update(h.date for h in year_holidays)
+
+    count = 0
+    cur = start
+    while cur <= end:
+        if cur.weekday() < 5 and cur not in holidays:
+            count += 1
+        cur += timedelta(days=1)
+    return count
