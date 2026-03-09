@@ -279,7 +279,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
-      <MonthSelector value={selectedMonth} onChange={setSelectedMonth} />
+      <MonthSelector
+        value={selectedMonth}
+        onChange={(month) => {
+          setSelectedMonth(month);
+          setDraftChanges([]);
+          cancelEdit();
+        }}
+      />
 
       {loading && <LoadingSpinner />}
       {error && <p className="text-red-600">{error}</p>}
