@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
+import { getErrorMessage } from '../utils/errorMessage';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 
@@ -100,6 +101,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
     const url = isAdminView
       ? `/admin/users/${userId}/journal?year=${year}&month=${month}`
@@ -109,10 +111,15 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     setError(null);
 
     apiClient
-      .get(url)
+      .get(url, { signal: controller.signal })
       .then((res) => setData(res.data))
-      .catch(() => setError('Journal konnte nicht geladen werden.'))
+      .catch((err) => {
+        if (err?.code === 'ERR_CANCELED') return;
+        setError(getErrorMessage(err, 'Journal konnte nicht geladen werden.'));
+      })
       .finally(() => setLoading(false));
+
+    return () => controller.abort();
   }, [selectedMonth, userId, isAdminView]);
 
   const isNonWorkDay = (day: JournalDay) =>
