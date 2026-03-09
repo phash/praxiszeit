@@ -17,6 +17,7 @@ import ErrorMonitoring from './pages/admin/ErrorMonitoring';
 import VacationApprovals from './pages/admin/VacationApprovals';
 import AdminSettings from './pages/admin/Settings';
 import UserJournal from './pages/admin/UserJournal';
+import Journal from './pages/Journal';
 import Help from './pages/Help';
 import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
@@ -64,6 +65,7 @@ function App() {
           <Route path="time-tracking" element={<TimeTracking />} />
           <Route path="change-requests" element={<ChangeRequests />} />
           <Route path="absences" element={<AbsenceCalendarPage />} />
+          <Route path="journal" element={<Journal />} />
           <Route path="profile" element={<Profile />} />
           <Route path="help" element={<Help />} />
         </Route>
