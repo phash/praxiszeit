@@ -28,6 +28,7 @@ export default function SubmitChangesModal({ changes, onSuccess, onClose }: Prop
       return;
     }
     setSubmitting(true);
+    let submittedCount = 0;
     try {
       for (const change of changes) {
         const payload: Record<string, unknown> = {
@@ -42,11 +43,17 @@ export default function SubmitChangesModal({ changes, onSuccess, onClose }: Prop
           payload.proposed_break_minutes = change.breakMinutes ?? 0;
         }
         await apiClient.post('/change-requests/', payload);
+        submittedCount++;
       }
       toast.success(`${changes.length} Änderungsantrag${changes.length > 1 ? 'anträge' : ''} eingereicht`);
       onSuccess();
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Fehler beim Einreichen'));
+      const failedIndex = submittedCount + 1;
+      toast.error(
+        submittedCount > 0
+          ? `Eintrag ${failedIndex} von ${changes.length} fehlgeschlagen: ${getErrorMessage(err, 'Fehler')}`
+          : getErrorMessage(err, 'Fehler beim Einreichen')
+      );
     } finally {
       setSubmitting(false);
     }
@@ -57,7 +64,7 @@ export default function SubmitChangesModal({ changes, onSuccess, onClose }: Prop
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">Änderungsanträge einreichen</h2>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} disabled={submitting} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50">
             <X size={20} />
           </button>
         </div>
