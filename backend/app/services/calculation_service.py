@@ -323,10 +323,18 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     # Calculate budget in hours, pro-rated for first/last work day
     budget_days = Decimal(str(user.vacation_days))
     if user.first_work_day and user.first_work_day.year == year:
-        months_remaining = Decimal(str(12 - user.first_work_day.month + 1))
+        fwd = user.first_work_day
+        days_in_month = monthrange(fwd.year, fwd.month)[1]
+        days_remaining = days_in_month - fwd.day + 1  # inklusive Starttag
+        # Vollständige Monate nach Startmonat + Anteil des Startmonats
+        months_remaining = Decimal(str(12 - fwd.month)) + Decimal(str(days_remaining)) / Decimal(str(days_in_month))
         budget_days = (Decimal(str(user.vacation_days)) * months_remaining / Decimal('12')).quantize(Decimal('0.1'))
     if user.last_work_day and user.last_work_day.year == year:
-        months_worked = Decimal(str(user.last_work_day.month))
+        lwd = user.last_work_day
+        days_in_month = monthrange(lwd.year, lwd.month)[1]
+        days_worked = lwd.day  # inklusive letzten Tag
+        # Vollständige Monate vor Endmonat + Anteil des Endmonats
+        months_worked = Decimal(str(lwd.month - 1)) + Decimal(str(days_worked)) / Decimal(str(days_in_month))
         budget_days_last = (Decimal(str(user.vacation_days)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
         budget_days = min(budget_days, budget_days_last)
     budget_hours = budget_days * daily_target
