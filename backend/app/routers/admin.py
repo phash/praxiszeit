@@ -301,6 +301,8 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         is_active=True,
         exempt_from_arbzg=user_data.exempt_from_arbzg,
         is_night_worker=user_data.is_night_worker,
+        first_work_day=user_data.first_work_day,
+        last_work_day=user_data.last_work_day,
     )
 
     db.add(new_user)
@@ -885,7 +887,7 @@ def _get_setting(db: Session, key: str, default: str = "") -> str:
     return s.value if s else default
 
 
-_ALLOWED_SETTINGS = {"vacation_approval_required"}
+_ALLOWED_SETTINGS = {"vacation_approval_required", "holiday_state"}
 
 
 @router.get("/settings")
@@ -906,11 +908,19 @@ def update_setting(
     current_user: User = Depends(require_admin),
 ):
     """Update a system setting value."""
+    from app.services import holiday_service
+
     if key not in _ALLOWED_SETTINGS:
         raise HTTPException(status_code=400, detail=f"Unbekannte Einstellung: {key}")
     value = body.get("value")
     if value is None:
         raise HTTPException(status_code=422, detail="Feld 'value' fehlt")
+
+    # Validate holiday_state against supported states
+    if key == "holiday_state":
+        if str(value) not in holiday_service.SUPPORTED_STATES:
+            raise HTTPException(status_code=400, detail=f"Ungültiges Bundesland: {value}")
+
     s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
     if not s:
         s = SystemSetting(key=key, value=str(value))
@@ -919,10 +929,38 @@ def update_setting(
         s.value = str(value)
     db.commit()
     db.refresh(s)
+
+    # Re-sync holidays when Bundesland changes
+    if key == "holiday_state":
+        holiday_service.delete_all_holidays(db)
+        holiday_service.sync_current_and_next_year(db, state=str(value))
+
     return {"key": s.key, "value": s.value, "updated_at": s.updated_at}
 
 
 # ── Vacation Request Management (Admin) ─────────────────────────────────
+
+def _count_workdays_for_vr(start: date, end: date, db: Session) -> int:
+    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive)."""
+    years = set()
+    cur = start
+    while cur <= end:
+        years.add(cur.year)
+        cur += timedelta(days=1)
+
+    holidays = set()
+    for y in years:
+        for h in db.query(PublicHoliday).filter(PublicHoliday.year == y).all():
+            holidays.add(h.date)
+
+    count = 0
+    cur = start
+    while cur <= end:
+        if cur.weekday() < 5 and cur not in holidays:
+            count += 1
+        cur += timedelta(days=1)
+    return count
+
 
 def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResponse:
     resp = VacationRequestResponse.model_validate(vr)
@@ -935,6 +973,9 @@ def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResp
         if reviewer:
             resp.reviewer_first_name = reviewer.first_name
             resp.reviewer_last_name = reviewer.last_name
+    # Compute workdays
+    end = vr.end_date if vr.end_date else vr.date
+    resp.days = _count_workdays_for_vr(vr.date, end, db)
     return resp
 
 

@@ -46,6 +46,8 @@ class UserBase(BaseModel):
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: bool = False  # §18 ArbZG: leitende Angestellte
     is_night_worker: bool = False  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer (8h-Tageslimit)
+    first_work_day: Optional[date] = None  # Erster Arbeitstag
+    last_work_day: Optional[date] = None   # Letzter Arbeitstag
 
 
 class UserCreate(UserBase):
@@ -79,6 +81,8 @@ class UserUpdate(BaseModel):
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: Optional[bool] = None  # §18 ArbZG
     is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
+    first_work_day: Optional[date] = None   # Erster Arbeitstag
+    last_work_day: Optional[date] = None    # Letzter Arbeitstag
 
 
 class UserResponse(UserBase):
@@ -89,6 +93,7 @@ class UserResponse(UserBase):
     exempt_from_arbzg: bool = False  # §18 ArbZG
     is_night_worker: bool = False  # §6 Abs. 2 ArbZG
     totp_enabled: bool = False  # F-019: 2FA status
+    profile_picture: Optional[str] = None
     deactivated_at: Optional[datetime] = None  # Grace-Period-Start
     created_at: datetime
     suggested_vacation_days: int

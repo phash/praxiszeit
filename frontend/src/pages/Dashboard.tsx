@@ -46,6 +46,7 @@ interface YearlyAbsenceSummary {
   vacation_days: number;
   sick_days: number;
   training_days: number;
+  overtime_days: number;
   other_days: number;
   total_days: number;
 }
@@ -62,7 +63,7 @@ interface TeamAbsence {
   user_first_name: string;
   user_last_name: string;
   user_color: string;
-  type: 'vacation' | 'sick' | 'training' | 'other';
+  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
   hours: number;
   note?: string;
 }
@@ -73,7 +74,7 @@ const MONTH_NAMES = [
 ];
 
 interface AbsenceEntry {
-  type: 'vacation' | 'sick' | 'training' | 'other';
+  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
   hours: number;
 }
 
@@ -123,13 +124,15 @@ export default function Dashboard() {
         const vacation_days = sumAbsenceDays(absences, 'vacation', dailyTarget);
         const sick_days = sumAbsenceDays(absences, 'sick', dailyTarget);
         const training_days = sumAbsenceDays(absences, 'training', dailyTarget);
+        const overtime_days = sumAbsenceDays(absences, 'overtime', dailyTarget);
         const other_days = sumAbsenceDays(absences, 'other', dailyTarget);
         const summary = {
           vacation_days,
           sick_days,
           training_days,
+          overtime_days,
           other_days,
-          total_days: vacation_days + sick_days + training_days + other_days,
+          total_days: vacation_days + sick_days + training_days + overtime_days + other_days,
         };
 
         setYearlyAbsences(summary);
@@ -367,6 +370,10 @@ export default function Dashboard() {
               <div className="text-sm text-gray-600 mt-1">Fortbildung</div>
             </div>
             <div className="text-center">
+              <div className="text-3xl font-bold text-purple-600">{yearlyAbsences.overtime_days.toFixed(1)}</div>
+              <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
+            </div>
+            <div className="text-center">
               <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days.toFixed(1)}</div>
               <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
             </div>
@@ -393,7 +400,8 @@ export default function Dashboard() {
                 const typeLabels: Record<string, string> = {
                   vacation: 'Urlaub',
                   sick: 'Krank',
-                  training: 'Fortbildung',
+                  training: 'Fortbildung (außer Haus)',
+                  overtime: 'Überstundenausgleich',
                   other: 'Sonstiges',
                 };
 

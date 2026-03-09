@@ -74,7 +74,7 @@ export const helpContent: Record<string, HelpEntry> = {
           <h3 className="font-semibold text-gray-800 mb-2">Abwesenheit eintragen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Auf <span className="font-medium">„Abwesenheit eintragen"</span> klicken</li>
-            <li>Typ wählen: Urlaub / Krank / Fortbildung / Sonstiges</li>
+            <li>Typ wählen: Urlaub / Krank / Fortbildung / Überstundenausgleich / Sonstiges</li>
             <li>Einzeltag: nur Startdatum; Zeitraum: Checkbox aktivieren + Enddatum</li>
             <li>Optional: Notiz</li>
             <li>Speichern</li>
@@ -85,7 +85,8 @@ export const helpContent: Record<string, HelpEntry> = {
           <ul className="space-y-1 text-sm text-gray-600">
             <li>🔵 <span className="font-medium">Urlaub</span> – zieht vom Urlaubskonto ab</li>
             <li>🔴 <span className="font-medium">Krank</span> – keine Urlaubswirkung</li>
-            <li>🟠 <span className="font-medium">Fortbildung</span> – gilt als Arbeitszeit</li>
+            <li>🟠 <span className="font-medium">Fortbildung (außer Haus)</span> – gilt als Arbeitszeit</li>
+            <li>🟣 <span className="font-medium">Überstundenausgleich</span> – Abbau von Überstunden</li>
             <li>⚫ <span className="font-medium">Sonstiges</span> – freie Verwendung</li>
           </ul>
         </section>

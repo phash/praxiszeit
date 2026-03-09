@@ -85,8 +85,9 @@ async def lifespan(app: FastAPI):
     print("📅 Syncing public holidays...")
     db = SessionLocal()
     try:
-        result = holiday_service.sync_current_and_next_year(db)
-        print(f"✅ Holidays synced: {result['current_year']}({result['current_count']}), "
+        state = holiday_service.get_holiday_state(db)
+        result = holiday_service.sync_current_and_next_year(db, state=state)
+        print(f"✅ Holidays synced for {result['state']}: {result['current_year']}({result['current_count']}), "
               f"{result['next_year']}({result['next_count']})")
     finally:
         db.close()

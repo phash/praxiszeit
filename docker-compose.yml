@@ -26,6 +26,7 @@ services:
   backend:
     build: ./backend
     environment:
+      TZ: Europe/Berlin
       DATABASE_URL: ${DATABASE_URL}
       SECRET_KEY: ${SECRET_KEY}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}

@@ -120,11 +120,12 @@ test.describe('Employee Absences', () => {
     // Open the form
     await employeePage.getByRole('button', { name: 'Abwesenheit eintragen' }).click();
 
-    // Check all 4 options in the type select
+    // Check all 5 options in the type select
     const typeSelect = employeePage.locator('select').first();
     await expect(typeSelect.locator('option[value="vacation"]')).toHaveText('Urlaub');
     await expect(typeSelect.locator('option[value="sick"]')).toHaveText('Krank');
-    await expect(typeSelect.locator('option[value="training"]')).toHaveText('Fortbildung');
+    await expect(typeSelect.locator('option[value="training"]')).toHaveText('Fortbildung (außer Haus)');
+    await expect(typeSelect.locator('option[value="overtime"]')).toHaveText('Überstundenausgleich');
     await expect(typeSelect.locator('option[value="other"]')).toHaveText('Sonstiges');
   });
 

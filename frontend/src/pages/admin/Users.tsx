@@ -30,6 +30,8 @@ interface User {
   hours_wednesday: number | null;
   hours_thursday: number | null;
   hours_friday: number | null;
+  first_work_day: string | null;
+  last_work_day: string | null;
   is_active: boolean;
   is_hidden: boolean;
   deactivated_at: string | null;
@@ -80,6 +82,8 @@ export default function Users() {
     track_hours: true,
     exempt_from_arbzg: false,
     is_night_worker: false,
+    first_work_day: '',
+    last_work_day: '',
     use_daily_schedule: false,
     hours_monday: 8,
     hours_tuesday: 8,
@@ -154,13 +158,19 @@ export default function Users() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Convert empty date strings to null for the API
+      const payload = {
+        ...formData,
+        first_work_day: formData.first_work_day || null,
+        last_work_day: formData.last_work_day || null,
+      };
       if (editingId) {
         // When editing, send only the fields that can be updated (exclude password)
-        const { password, ...updateData } = formData;
+        const { password, ...updateData } = payload;
         await apiClient.put(`/admin/users/${editingId}`, updateData);
         toast.success('Benutzer erfolgreich aktualisiert');
       } else {
-        await apiClient.post('/admin/users', formData);
+        await apiClient.post('/admin/users', payload);
         toast.success('Benutzer erfolgreich erstellt');
       }
       fetchUsers();
@@ -185,6 +195,8 @@ export default function Users() {
       track_hours: user.track_hours ?? true,
       exempt_from_arbzg: user.exempt_from_arbzg ?? false,
       is_night_worker: user.is_night_worker ?? false,
+      first_work_day: user.first_work_day || '',
+      last_work_day: user.last_work_day || '',
       use_daily_schedule: user.use_daily_schedule ?? false,
       hours_monday: user.hours_monday ?? 8,
       hours_tuesday: user.hours_tuesday ?? 8,
@@ -322,6 +334,8 @@ export default function Users() {
       track_hours: true,
       exempt_from_arbzg: false,
       is_night_worker: false,
+      first_work_day: '',
+      last_work_day: '',
       use_daily_schedule: false,
       hours_monday: 8,
       hours_tuesday: 8,
@@ -516,10 +530,13 @@ export default function Users() {
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required
-                    minLength={8}
+                    minLength={10}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    placeholder="Mind. 8 Zeichen"
+                    placeholder="Mind. 10 Zeichen"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
+                  </p>
                 </div>
               )}
               <div>
@@ -649,6 +666,26 @@ export default function Users() {
                 <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
                   Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
                 </label>
+              </div>
+
+              {/* First / Last Work Day */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Erster Arbeitstag</label>
+                <input
+                  type="date"
+                  value={formData.first_work_day}
+                  onChange={(e) => setFormData({ ...formData, first_work_day: e.target.value })}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Letzter Arbeitstag</label>
+                <input
+                  type="date"
+                  value={formData.last_work_day}
+                  onChange={(e) => setFormData({ ...formData, last_work_day: e.target.value })}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
               </div>
 
               {/* Daily Schedule Toggle */}
@@ -822,8 +859,15 @@ export default function Users() {
               ) : (
                 filteredAndSortedUsers.map((user) => (
                   <tr key={user.id} className={`hover:bg-gray-50 ${!user.is_active ? 'opacity-50' : ''} ${user.is_hidden ? 'bg-gray-50/70' : ''}`}>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                      {user.last_name}, {user.first_name}
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-gray-900">{user.last_name}, {user.first_name}</div>
+                      {(user.first_work_day || user.last_work_day) && (
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {user.first_work_day && <span>ab {new Date(user.first_work_day).toLocaleDateString('de-DE')}</span>}
+                          {user.first_work_day && user.last_work_day && <span> — </span>}
+                          {user.last_work_day && <span>bis {new Date(user.last_work_day).toLocaleDateString('de-DE')}</span>}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{user.username}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">
@@ -1026,6 +1070,18 @@ export default function Users() {
                       <span className="text-gray-500 block">Arbeitstage</span>
                       <p className="font-medium">{user.work_days_per_week}/Wo</p>
                     </div>
+                    {user.first_work_day && (
+                      <div>
+                        <span className="text-gray-500 block">Erster Arbeitstag</span>
+                        <p className="font-medium">{new Date(user.first_work_day).toLocaleDateString('de-DE')}</p>
+                      </div>
+                    )}
+                    {user.last_work_day && (
+                      <div>
+                        <span className="text-gray-500 block">Letzter Arbeitstag</span>
+                        <p className="font-medium">{new Date(user.last_work_day).toLocaleDateString('de-DE')}</p>
+                      </div>
+                    )}
                   </div>
 
                   {vacationInfo[user.id] && (
@@ -1333,27 +1389,30 @@ export default function Users() {
                 <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Neues Passwort (mind. 8 Zeichen)"
-                  minLength={8}
+                  placeholder="Neues Passwort (mind. 10 Zeichen)"
+                  minLength={10}
                   aria-label="Neues Passwort"
-                  aria-describedby={newPassword.length > 0 && newPassword.length < 8 ? 'pw-error' : undefined}
-                  aria-invalid={newPassword.length > 0 && newPassword.length < 8 ? 'true' : 'false'}
+                  aria-describedby={newPassword.length > 0 && newPassword.length < 10 ? 'pw-error' : 'pw-hint'}
+                  aria-invalid={newPassword.length > 0 && newPassword.length < 10 ? 'true' : 'false'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newPassword.length >= 8) {
+                    if (e.key === 'Enter' && newPassword.length >= 10) {
                       handleSetPasswordSubmit();
                     }
                   }}
                 />
-                {newPassword.length > 0 && newPassword.length < 8 && (
-                  <p id="pw-error" role="alert" className="text-xs text-red-500 mt-1">Mindestens 8 Zeichen erforderlich</p>
+                <p id="pw-hint" className="text-xs text-gray-500 mt-1">
+                  Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
+                </p>
+                {newPassword.length > 0 && newPassword.length < 10 && (
+                  <p id="pw-error" role="alert" className="text-xs text-red-500 mt-1">Mindestens 10 Zeichen erforderlich</p>
                 )}
               </div>
 
               <button
                 onClick={handleSetPasswordSubmit}
-                disabled={newPassword.length < 8}
+                disabled={newPassword.length < 10}
                 className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Key size={18} />

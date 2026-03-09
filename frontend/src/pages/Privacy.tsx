@@ -89,7 +89,7 @@ export default function Privacy() {
               </li>
               <li className="flex gap-2">
                 <span className="text-primary mt-1">•</span>
-                <span><strong>Abwesenheitsdaten:</strong> Urlaub, Fortbildung, sonstige Abwesenheiten</span>
+                <span><strong>Abwesenheitsdaten:</strong> Urlaub, Fortbildung, Überstundenausgleich, sonstige Abwesenheiten</span>
               </li>
               <li className="flex gap-2">
                 <span className="text-primary mt-1">•</span>

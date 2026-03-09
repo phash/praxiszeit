@@ -80,6 +80,7 @@ export default function Layout() {
     { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText },
     { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle },
     { path: '/admin/vacation-approvals', label: 'Urlaubsanträge', icon: ClipboardCheck },
+    { path: '/admin/settings', label: 'Einstellungen', icon: Settings },
   ];
 
   return (
@@ -190,18 +191,22 @@ export default function Layout() {
 
         {/* User Info & Logout */}
         <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-semibold">
-              {user?.first_name?.[0]}
-              {user?.last_name?.[0]}
-            </div>
+          <Link to="/profile" className="flex items-center space-x-3 mb-3 hover:bg-gray-50 rounded-lg p-1 -m-1 transition-colors">
+            {user?.profile_picture ? (
+              <img src={user.profile_picture} className="w-10 h-10 rounded-full object-cover" alt="" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-semibold">
+                {user?.first_name?.[0]}
+                {user?.last_name?.[0]}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">
                 {user?.first_name} {user?.last_name}
               </p>
               <p className="text-xs text-gray-500 truncate">{user?.username}</p>
             </div>
-          </div>
+          </Link>
           {/* Handbuch-Downloads */}
           <div className="mb-2 flex flex-col gap-1">
             <a

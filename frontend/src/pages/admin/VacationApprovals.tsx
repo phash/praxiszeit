@@ -14,6 +14,7 @@ interface VacationRequest {
   date: string;
   end_date?: string;
   hours: number;
+  days?: number;
   note?: string;
   status: string;
   rejection_reason?: string;
@@ -223,7 +224,7 @@ export default function VacationApprovals() {
                       </span>
                     </p>
                     <p>
-                      Stunden pro Tag: <span className="font-medium">{vr.hours} h</span>
+                      Arbeitstage: <span className="font-medium">{vr.days != null ? `${vr.days} Tag${vr.days !== 1 ? 'e' : ''}` : `${vr.hours} h`}</span>
                     </p>
                     {vr.note && (
                       <p>

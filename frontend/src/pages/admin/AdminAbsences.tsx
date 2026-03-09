@@ -29,7 +29,7 @@ interface Absence {
   id: string;
   date: string;
   end_date?: string;
-  type: 'vacation' | 'sick' | 'training' | 'other';
+  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
   hours: number;
   note?: string;
 }
@@ -50,7 +50,7 @@ export default function AdminAbsences() {
   const [formData, setFormData] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
     end_date: '',
-    type: 'vacation' as 'vacation' | 'sick' | 'training' | 'other',
+    type: 'vacation' as 'vacation' | 'sick' | 'training' | 'overtime' | 'other',
     hours: 8,
     note: '',
   });
@@ -452,7 +452,8 @@ export default function AdminAbsences() {
                 >
                   <option value="vacation">Urlaub</option>
                   <option value="sick">Krank</option>
-                  <option value="training">Fortbildung</option>
+                  <option value="training">Fortbildung (außer Haus)</option>
+                  <option value="overtime">Überstundenausgleich</option>
                   <option value="other">Sonstiges</option>
                 </select>
               </div>

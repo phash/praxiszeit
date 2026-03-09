@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
-import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle } from 'lucide-react';
+import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle, Camera, Trash2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
@@ -52,6 +52,40 @@ export default function Profile() {
   const [totpMessage, setTotpMessage] = useState('');
   const [totpError, setTotpError] = useState('');
   const [secretCopied, setSecretCopied] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 512_000) {
+      setProfileMessage('Bild zu groß (max. 500 KB)');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await apiClient.put('/auth/profile-picture', formData);
+      setUser(response.data);
+      setProfileMessage('Profilbild aktualisiert');
+      setTimeout(() => setProfileMessage(''), 4000);
+    } catch (err: any) {
+      setProfileMessage(getErrorMessage(err, 'Fehler beim Hochladen'));
+    }
+    // Reset input so re-uploading the same file triggers onChange
+    e.target.value = '';
+  };
+
+  const handleDeleteProfilePicture = async () => {
+    try {
+      const response = await apiClient.delete('/auth/profile-picture');
+      setUser(response.data);
+      setProfileMessage('Profilbild entfernt');
+      setTimeout(() => setProfileMessage(''), 4000);
+    } catch (err: any) {
+      setProfileMessage(getErrorMessage(err, 'Fehler beim Entfernen'));
+    }
+  };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -208,9 +242,18 @@ export default function Profile() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center space-x-4">
-            <div className="w-20 h-20 rounded-full bg-primary text-white flex items-center justify-center text-2xl font-bold">
-              {user?.first_name?.[0]}
-              {user?.last_name?.[0]}
+            <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+              {user?.profile_picture ? (
+                <img src={user.profile_picture} className="w-20 h-20 rounded-full object-cover" alt="Profilbild" />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-primary text-white flex items-center justify-center text-2xl font-bold">
+                  {user?.first_name?.[0]}{user?.last_name?.[0]}
+                </div>
+              )}
+              <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <Camera size={24} className="text-white" />
+              </div>
+              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleFileUpload} />
             </div>
             <div>
               <h2 className="text-2xl font-semibold text-gray-900">
@@ -219,6 +262,15 @@ export default function Profile() {
               <p className="text-gray-600">{user?.username}</p>
               {user?.email && (
                 <p className="text-gray-500 text-sm">{user.email}</p>
+              )}
+              {user?.profile_picture && (
+                <button
+                  onClick={handleDeleteProfilePicture}
+                  className="flex items-center space-x-1 text-xs text-red-500 hover:text-red-700 mt-1"
+                >
+                  <Trash2 size={12} />
+                  <span>Profilbild entfernen</span>
+                </button>
               )}
             </div>
           </div>
@@ -596,9 +648,12 @@ export default function Profile() {
                 value={passwordData.new_password}
                 onChange={(e) => setPasswordData({ ...passwordData, new_password: e.target.value })}
                 required
-                minLength={8}
+                minLength={10}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
+              </p>
             </div>
 
             <div>
@@ -640,7 +695,7 @@ export default function Profile() {
 
         {!showPasswordForm && (
           <p className="text-sm text-gray-500">
-            Ihr Passwort sollte mindestens 8 Zeichen lang sein.
+            Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
           </p>
         )}
       </div>

@@ -30,11 +30,11 @@ def list_holidays(
 
 @router.get("/states")
 def list_states(
-    current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """List supported German federal states for holiday configuration."""
-    from app.config import settings
     return {
         "states": holiday_service.get_supported_states(),
-        "current_state": settings.HOLIDAY_STATE,
+        "current_state": holiday_service.get_holiday_state(db),
     }
