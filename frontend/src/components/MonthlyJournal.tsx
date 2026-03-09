@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isBefore, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
+import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
+import { useToast } from '../contexts/ToastContext';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 
@@ -42,6 +44,21 @@ interface JournalData {
   days: JournalDay[];
   monthly_summary: { actual_hours: number; target_hours: number; balance: number };
   yearly_overtime: number;
+}
+
+interface EditState {
+  startTime: string;    // "HH:mm"
+  endTime: string;      // "HH:mm"
+  breakMinutes: string; // string for <input> binding
+}
+
+export interface DraftChange {
+  type: 'create' | 'update' | 'delete';
+  date: string;           // "YYYY-MM-DD"
+  entryId?: string;       // for update/delete
+  startTime?: string;     // for create/update
+  endTime?: string;       // for create/update
+  breakMinutes?: number;  // for create/update
 }
 
 // ---- Helper functions -----------------------------------------------------
@@ -86,6 +103,10 @@ function formatHoursSimple(h: number): string {
   return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`;
 }
 
+function isPastDay(dateStr: string): boolean {
+  return isBefore(parseISO(dateStr), startOfDay(new Date()));
+}
+
 // ---- Main component -------------------------------------------------------
 
 interface MonthlyJournalProps {
@@ -99,6 +120,15 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [data, setData] = useState<JournalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+  const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0' });
+  const [saving, setSaving] = useState(false);
+  const [draftChanges, setDraftChanges] = useState<DraftChange[]>([]);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  // These are used in Tasks 2 & 3; referenced here to satisfy noUnusedLocals:
+  void toast; void setSaving; void draftChanges; void setDraftChanges; void showSubmitModal; void setShowSubmitModal; void setReloadKey;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,10 +150,24 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [selectedMonth, userId, isAdminView]);
+  }, [selectedMonth, userId, isAdminView, reloadKey]);
 
   const isNonWorkDay = (day: JournalDay) =>
     day.type === 'weekend' || day.type === 'holiday';
+
+  function startEdit(day: JournalDay) {
+    const entry = day.time_entries[0] ?? null;
+    setEditingDate(day.date);
+    setEditState({
+      startTime: entry?.start_time ?? '',
+      endTime: entry?.end_time ?? '',
+      breakMinutes: String(entry?.break_minutes ?? 0),
+    });
+  }
+
+  function cancelEdit() {
+    setEditingDate(null);
+  }
 
   return (
     <div className="space-y-4">
@@ -147,6 +191,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                   <th className="px-3 py-2 text-right">Ist</th>
                   <th className="px-3 py-2 text-right">Soll</th>
                   <th className="px-3 py-2 text-right">Saldo</th>
+                  <th className="px-3 py-2 text-right w-16"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -195,10 +240,35 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                         )}
                       </td>
                       <td className="px-3 py-2 hidden md:table-cell text-gray-600 whitespace-nowrap">
-                        {isGray ? '–' : vonBis}
+                        {isGray ? '–' : editingDate === day.date ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="time"
+                              value={editState.startTime}
+                              onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))}
+                              className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                            />
+                            <span className="text-gray-400">–</span>
+                            <input
+                              type="time"
+                              value={editState.endTime}
+                              onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))}
+                              className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                            />
+                          </div>
+                        ) : vonBis}
                       </td>
                       <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
-                        {isGray ? '' : pause}
+                        {isGray ? '' : editingDate === day.date ? (
+                          <input
+                            type="number"
+                            min={0}
+                            max={480}
+                            value={editState.breakMinutes}
+                            onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
+                            className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right"
+                          />
+                        ) : pause}
                       </td>
                       <td className="px-3 py-2 text-right text-gray-700">
                         {isGray ? '' : formatHoursSimple(day.actual_hours)}
@@ -208,6 +278,56 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                       </td>
                       <td className={`px-3 py-2 text-right ${balanceColor}`}>
                         {isGray ? '' : formatHours(day.balance)}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        {editingDate === day.date ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={cancelEdit}
+                              disabled={saving}
+                              className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
+                              title="Speichern"
+                            >
+                              <Check size={15} />
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              disabled={saving}
+                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                              title="Abbrechen"
+                            >
+                              <X size={15} />
+                            </button>
+                            {day.time_entries.length > 0 && (
+                              <button
+                                onClick={cancelEdit}
+                                disabled={saving}
+                                className="p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
+                                title="Löschen"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          </div>
+                        ) : !isGray && isPastDay(day.date) ? (
+                          day.time_entries.length > 0 ? (
+                            <button
+                              onClick={() => startEdit(day)}
+                              className="p-1 text-gray-400 hover:text-gray-600"
+                              title="Bearbeiten"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => startEdit(day)}
+                              className="p-1 text-blue-400 hover:text-blue-600"
+                              title="Eintrag anlegen"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          )
+                        ) : null}
                       </td>
                     </tr>
                   );
