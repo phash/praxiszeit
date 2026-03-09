@@ -25,8 +25,8 @@ class ChangeRequest(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    request_type = Column(Enum(ChangeRequestType), nullable=False)
-    status = Column(Enum(ChangeRequestStatus), default=ChangeRequestStatus.PENDING, nullable=False, index=True)
+    request_type = Column(Enum(ChangeRequestType, values_callable=lambda e: [x.value for x in e]), nullable=False)
+    status = Column(Enum(ChangeRequestStatus, values_callable=lambda e: [x.value for x in e]), default=ChangeRequestStatus.PENDING, nullable=False, index=True)
 
     # Reference to existing time entry (nullable for CREATE requests)
     time_entry_id = Column(UUID(as_uuid=True), ForeignKey("time_entries.id", ondelete="SET NULL"), nullable=True, index=True)

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { LogIn, FileText, Shield, Smartphone } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
+import { getErrorMessage } from '../utils/errorMessage';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -30,7 +31,7 @@ export default function Login() {
         // Don't show an error – just reveal the TOTP input field
       } else {
         setError(
-          err.response?.data?.detail || 'Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.'
+          getErrorMessage(err, 'Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.')
         );
         if (totpRequired) setTotpCode(''); // Clear wrong TOTP code
       }

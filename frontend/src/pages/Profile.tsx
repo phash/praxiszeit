@@ -4,6 +4,7 @@ import apiClient from '../api/client';
 import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
+import { getErrorMessage } from '../utils/errorMessage';
 
 // 12 beautiful pastel colors for calendar
 const PASTEL_COLORS = [
@@ -88,7 +89,7 @@ export default function Profile() {
       setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
       setShowPasswordForm(false);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Fehler beim Ändern des Passworts');
+      setError(getErrorMessage(err, 'Fehler beim Ändern des Passworts'));
     }
   };
 
@@ -106,7 +107,7 @@ export default function Profile() {
       setShowProfileEdit(false);
       setTimeout(() => setProfileMessage(''), 4000);
     } catch (err: any) {
-      setProfileMessage(err.response?.data?.detail || 'Fehler beim Speichern');
+      setProfileMessage(getErrorMessage(err, 'Fehler beim Speichern'));
     }
   };
 
@@ -151,7 +152,7 @@ export default function Profile() {
       setTotpSetupData(response.data);
       setShowTotpSetup(true);
     } catch (err: any) {
-      setTotpError(err.response?.data?.detail || 'Fehler beim Starten der 2FA-Einrichtung');
+      setTotpError(getErrorMessage(err, 'Fehler beim Starten der 2FA-Einrichtung'));
     }
   };
 
@@ -168,7 +169,7 @@ export default function Profile() {
       setTotpMessage('2FA wurde erfolgreich aktiviert.');
       setTimeout(() => setTotpMessage(''), 5000);
     } catch (err: any) {
-      setTotpError(err.response?.data?.detail || 'Ungültiger Code. Bitte erneut versuchen.');
+      setTotpError(getErrorMessage(err, 'Ungültiger Code. Bitte erneut versuchen.'));
       setTotpVerifyCode('');
     }
   };
@@ -187,7 +188,7 @@ export default function Profile() {
       setTotpMessage('2FA wurde deaktiviert.');
       setTimeout(() => setTotpMessage(''), 5000);
     } catch (err: any) {
-      setTotpError(err.response?.data?.detail || 'Fehler beim Deaktivieren der 2FA');
+      setTotpError(getErrorMessage(err, 'Fehler beim Deaktivieren der 2FA'));
     }
   };
 
@@ -208,8 +209,8 @@ export default function Profile() {
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center space-x-4">
             <div className="w-20 h-20 rounded-full bg-primary text-white flex items-center justify-center text-2xl font-bold">
-              {user?.first_name[0]}
-              {user?.last_name[0]}
+              {user?.first_name?.[0]}
+              {user?.last_name?.[0]}
             </div>
             <div>
               <h2 className="text-2xl font-semibold text-gray-900">

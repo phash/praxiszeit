@@ -23,7 +23,7 @@ class Absence(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)  # Start date (or single day if end_date is NULL)
     end_date = Column(Date, nullable=True, index=True)  # End date for date ranges (NULL for single day)
-    type = Column(Enum(AbsenceType), nullable=False)
+    type = Column(Enum(AbsenceType, values_callable=lambda e: [x.value for x in e]), nullable=False)
     hours = Column(Numeric(4, 2), nullable=False)  # Hours absent per day
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

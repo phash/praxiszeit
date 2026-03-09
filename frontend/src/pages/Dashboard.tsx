@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree } from 'lucide-reac
 import { useToast } from '../contexts/ToastContext';
 import StampWidget from '../components/StampWidget';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuthStore } from '../stores/authStore';
 
 interface DashboardData {
   year: number;
@@ -77,6 +78,7 @@ interface AbsenceEntry {
 }
 
 function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], dailyTarget: number): number {
+  if (!dailyTarget || dailyTarget <= 0) return 0;
   return absences
     .filter(a => a.type === type)
     .reduce((sum, a) => sum + a.hours, 0) / dailyTarget;
@@ -84,6 +86,8 @@ function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], da
 
 export default function Dashboard() {
   const toast = useToast();
+  const { user } = useAuthStore();
+  const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
@@ -157,7 +161,7 @@ export default function Dashboard() {
       <StampWidget />
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      {trackHours && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {/* Monthly Balance */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
@@ -296,10 +300,10 @@ export default function Dashboard() {
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Monthly Overview Table */}
-      {overtimeAccount && overtimeAccount.history.length > 0 && (
+      {trackHours && overtimeAccount && overtimeAccount.history.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900">Monatsübersicht</h2>
@@ -346,7 +350,7 @@ export default function Dashboard() {
       )}
 
       {/* Yearly Absence Overview */}
-      {yearlyAbsences && (
+      {trackHours && yearlyAbsences && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
           <h2 className="text-xl font-bold text-gray-900 mb-6">Jahresübersicht {new Date().getFullYear()}</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -467,7 +471,7 @@ export default function Dashboard() {
                                       style={{ backgroundColor: absence.user_color }}
                                       title={`${absence.user_first_name} ${absence.user_last_name} - ${typeLabels[absence.type]}${absence.note ? ': ' + absence.note : ''}`}
                                     >
-                                      {absence.user_first_name[0]}. {absence.user_last_name}
+                                      {absence.user_first_name?.[0]}. {absence.user_last_name}
                                     </div>
                                   ))}
                                 </div>

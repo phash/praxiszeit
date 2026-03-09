@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { LogIn, LogOut } from 'lucide-react';
 import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { useAuthStore } from '../stores/authStore';
+import { getErrorMessage } from '../utils/errorMessage';
 
 interface ClockStatus {
   is_clocked_in: boolean;
@@ -15,6 +17,7 @@ interface ClockStatus {
 
 export default function StampWidget() {
   const toast = useToast();
+  const { user } = useAuthStore();
   const [status, setStatus] = useState<ClockStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -54,7 +57,7 @@ export default function StampWidget() {
       toast.success('Erfolgreich eingestempelt');
       await fetchStatus();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Fehler beim Einstempeln');
+      toast.error(getErrorMessage(err, 'Fehler beim Einstempeln'));
     } finally {
       setActing(false);
     }
@@ -73,7 +76,7 @@ export default function StampWidget() {
       setBreakMinutes(0);
       await fetchStatus();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Fehler beim Ausstempeln');
+      toast.error(getErrorMessage(err, 'Fehler beim Ausstempeln'));
     } finally {
       setActing(false);
     }
@@ -89,6 +92,9 @@ export default function StampWidget() {
     const m = minutes % 60;
     return `${h}h ${m.toString().padStart(2, '0')}min`;
   };
+
+  // Don't show stamp widget if time tracking is inactive for this user
+  if (user && user.track_hours === false) return null;
 
   if (loading) {
     return (

@@ -9,6 +9,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ChangeRequestForm from '../components/ChangeRequestForm';
 import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
+import { getErrorMessage } from '../utils/errorMessage';
 
 interface TimeEntry {
   id: string;
@@ -167,7 +168,7 @@ export default function TimeTracking() {
       fetchEntries();
       resetForm();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 

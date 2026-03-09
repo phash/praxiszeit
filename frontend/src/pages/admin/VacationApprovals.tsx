@@ -4,6 +4,7 @@ import apiClient from '../../api/client';
 import { Clock, CheckCircle, XCircle, AlertCircle, Check, X } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface VacationRequest {
   id: string;
@@ -90,7 +91,7 @@ export default function VacationApprovals() {
       toast.success('Urlaubsantrag genehmigt');
       fetchRequests();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Genehmigen');
+      toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
     }
   };
 
@@ -105,7 +106,7 @@ export default function VacationApprovals() {
       setRejectionReason('');
       fetchRequests();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Ablehnen');
+      toast.error(getErrorMessage(error, 'Fehler beim Ablehnen'));
     }
   };
 

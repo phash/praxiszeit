@@ -4,6 +4,7 @@ import apiClient from '../../api/client';
 import { Clock, CheckCircle, XCircle, AlertCircle, Check, X } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface ChangeRequest {
   id: string;
@@ -74,7 +75,7 @@ export default function AdminChangeRequests() {
       toast.success('Antrag genehmigt');
       fetchRequests();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Genehmigen');
+      toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
     }
   };
 
@@ -89,7 +90,7 @@ export default function AdminChangeRequests() {
       setRejectionReason('');
       fetchRequests();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Ablehnen');
+      toast.error(getErrorMessage(error, 'Fehler beim Ablehnen'));
     }
   };
 

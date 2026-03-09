@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import extract
+from sqlalchemy import extract, func
 from typing import List, Optional
 from datetime import date, datetime, timezone, timedelta
 from app.database import get_db
@@ -276,12 +276,12 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = D
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Create a new user (admin only)."""
-    existing_user = db.query(User).filter(User.username == user_data.username).first()
+    existing_user = db.query(User).filter(func.lower(User.username) == user_data.username.lower()).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
     new_user = User(
-        username=user_data.username,
+        username=user_data.username.lower(),
         email=user_data.email or None,
         first_name=user_data.first_name,
         last_name=user_data.last_name,
@@ -324,8 +324,8 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    if user_data.username and user_data.username != user.username:
-        existing = db.query(User).filter(User.username == user_data.username).first()
+    if user_data.username and user_data.username.lower() != user.username.lower():
+        existing = db.query(User).filter(func.lower(User.username) == user_data.username.lower()).first()
         if existing:
             raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
@@ -506,7 +506,7 @@ def delete_working_hours_change(
 
 @router.get("/change-requests", response_model=List[ChangeRequestResponse])
 def list_all_change_requests(
-    request_status: Optional[ChangeRequestStatus] = Query(None, alias="status", description="Filter by status"),
+    request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
     user_id: Optional[str] = Query(None, description="Filter by user"),
     skip: int = 0,
     limit: int = Query(default=100, le=500),
@@ -516,7 +516,11 @@ def list_all_change_requests(
     """List all change requests (admin view)."""
     query = db.query(ChangeRequest)
     if request_status:
-        query = query.filter(ChangeRequest.status == request_status)
+        try:
+            status_enum = ChangeRequestStatus(request_status)
+            query = query.filter(ChangeRequest.status == status_enum)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Ungültiger Status: {request_status}")
     if user_id:
         query = query.filter(ChangeRequest.user_id == user_id)
     requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
