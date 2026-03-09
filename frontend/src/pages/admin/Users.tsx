@@ -948,12 +948,11 @@ export default function Users() {
                     <td className="px-6 py-4 text-right text-sm space-x-3">
                       {/* Journal button */}
                       <button
-                        type="button"
                         onClick={() => navigate(`/admin/users/${user.id}/journal`)}
-                        className="p-1.5 rounded hover:bg-blue-50 text-blue-500 hover:text-blue-700 transition-colors"
+                        className="text-blue-600 hover:text-blue-800"
                         title="Monatsjournal anzeigen"
                       >
-                        <BookOpen className="w-4 h-4" />
+                        <BookOpen size={16} />
                       </button>
                       <button
                         onClick={() => handleEdit(user)}
@@ -1120,6 +1119,14 @@ export default function Users() {
                   )}
 
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => navigate(`/admin/users/${user.id}/journal`)}
+                      className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition"
+                      aria-label="Monatsjournal anzeigen"
+                      title="Monatsjournal anzeigen"
+                    >
+                      <BookOpen size={16} />
+                    </button>
                     <button
                       onClick={() => handleEdit(user)}
                       className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition"
