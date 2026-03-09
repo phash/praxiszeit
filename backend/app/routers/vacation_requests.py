@@ -9,6 +9,7 @@ from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import get_current_user
 from app.schemas.vacation_request import VacationRequestCreate, VacationRequestResponse
+from app.services.calculation_service import count_workdays
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
@@ -17,29 +18,6 @@ def get_setting(db: Session, key: str, default: str = "") -> str:
     """Retrieve a value from system_settings."""
     s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
     return s.value if s else default
-
-
-def _count_workdays(start: date, end: date, db: Session) -> int:
-    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive)."""
-    # Gather holidays for all affected years
-    years = set()
-    cur = start
-    while cur <= end:
-        years.add(cur.year)
-        cur += timedelta(days=1)
-
-    holidays = set()
-    for y in years:
-        for h in db.query(PublicHoliday).filter(PublicHoliday.year == y).all():
-            holidays.add(h.date)
-
-    count = 0
-    cur = start
-    while cur <= end:
-        if cur.weekday() < 5 and cur not in holidays:
-            count += 1
-        cur += timedelta(days=1)
-    return count
 
 
 def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
@@ -55,7 +33,7 @@ def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
             resp.reviewer_last_name = reviewer.last_name
     # Compute workdays
     end = vr.end_date if vr.end_date else vr.date
-    resp.days = _count_workdays(vr.date, end, db)
+    resp.days = count_workdays(db, vr.date, end)
     return resp
 
 
