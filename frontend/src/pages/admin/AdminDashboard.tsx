@@ -131,7 +131,7 @@ export default function AdminDashboard() {
     setSelectedEmployee(employee);
     setDetailLoading(true);
     try {
-      const [year, month] = currentMonth.split('-');
+      const [year] = currentMonth.split('-');
 
       // Fetch user details
       const userResponse = await apiClient.get(`/admin/users/${employee.user_id}`);
