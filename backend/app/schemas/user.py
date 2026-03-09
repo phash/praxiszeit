@@ -1,5 +1,5 @@
 import re
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
@@ -49,6 +49,13 @@ class UserBase(BaseModel):
     first_work_day: Optional[date] = None  # Erster Arbeitstag
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
 
+    @model_validator(mode='after')
+    def check_work_day_order(self):
+        if self.first_work_day and self.last_work_day:
+            if self.first_work_day >= self.last_work_day:
+                raise ValueError("Erster Arbeitstag muss vor dem letzten Arbeitstag liegen")
+        return self
+
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=10)
@@ -83,6 +90,13 @@ class UserUpdate(BaseModel):
     is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
+
+    @model_validator(mode='after')
+    def check_work_day_order(self):
+        if self.first_work_day and self.last_work_day:
+            if self.first_work_day >= self.last_work_day:
+                raise ValueError("Erster Arbeitstag muss vor dem letzten Arbeitstag liegen")
+        return self
 
 
 class UserResponse(UserBase):
