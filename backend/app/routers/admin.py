@@ -923,18 +923,26 @@ def update_setting(
 
     s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
     if not s:
-        s = SystemSetting(key=key, value=str(value))
+        s = SystemSetting(key=key, value=str(value), description=key)
         db.add(s)
     else:
         s.value = str(value)
-    db.commit()
-    db.refresh(s)
 
-    # Re-sync holidays when Bundesland changes
     if key == "holiday_state":
-        holiday_service.delete_all_holidays(db)
-        holiday_service.sync_current_and_next_year(db, state=str(value))
+        # Atomarer Delete + Sync: alles in einer Transaktion (C2, I5)
+        try:
+            holiday_service.delete_all_holidays(db)   # kein commit
+            holiday_service.sync_current_and_next_year(db, state=str(value))  # commitet am Ende
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Einstellung gespeichert, aber Feiertage konnten nicht synchronisiert werden: {e}"
+            )
+    else:
+        db.commit()
 
+    db.refresh(s)
     return {"key": s.key, "value": s.value, "updated_at": s.updated_at}
 
 

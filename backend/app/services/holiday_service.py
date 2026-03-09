@@ -87,10 +87,8 @@ def _get_calendar(state: Optional[str] = None):
 def sync_holidays(db: Session, year: int, state: Optional[str] = None) -> int:
     """
     Synchronize public holidays for a given year into the database.
-    Uses the given state or falls back to configured state.
-    Translates holiday names to German.
-
-    Returns number of holidays synced.
+    Caller is responsible for committing.
+    Returns number of holidays added.
     """
     cal = _get_calendar(state)
     holidays = cal.holidays(year)
@@ -112,10 +110,9 @@ def sync_holidays(db: Session, year: int, state: Optional[str] = None) -> int:
             db.add(holiday)
             count += 1
         elif existing.name != german_name:
-            # Update name if translation changed
             existing.name = german_name
 
-    db.commit()
+    # No commit – let the caller manage the transaction
     return count
 
 
@@ -135,10 +132,10 @@ def is_holiday(db: Session, check_date: date) -> bool:
 
 
 def delete_all_holidays(db: Session) -> int:
-    """Delete all holidays from the database. Used when switching Bundesland."""
+    """Delete all holidays from the database. Caller is responsible for committing."""
     count = db.query(PublicHoliday).count()
     db.query(PublicHoliday).delete()
-    db.commit()
+    # No commit – let the caller manage the transaction
     return count
 
 
@@ -146,7 +143,7 @@ def sync_current_and_next_year(db: Session, state: Optional[str] = None) -> dict
     """
     Sync holidays for current and next year.
     Called during application startup and when Bundesland changes.
-    Also updates names of existing holidays to German.
+    Performs a single commit at the end.
     """
     if state is None:
         state = get_holiday_state(db)
@@ -154,16 +151,17 @@ def sync_current_and_next_year(db: Session, state: Optional[str] = None) -> dict
     current_year = datetime.now().year
     next_year = current_year + 1
 
-    # Force-update names of all existing holidays to German
+    # Force-update names of all existing holidays to German (no intermediate commit)
     all_holidays = db.query(PublicHoliday).all()
     for h in all_holidays:
         german_name = _translate_name(h.name)
         if german_name != h.name:
             h.name = german_name
-    db.commit()
 
     current_count = sync_holidays(db, current_year, state)
     next_count = sync_holidays(db, next_year, state)
+
+    db.commit()  # Single commit for the entire operation
 
     return {
         "current_year": current_year,
