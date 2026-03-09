@@ -99,7 +99,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
                 {
                     "id": str(a.id),
                     "type": a.type.value,
-                    "hours": float(a.hours),
+                    "hours": float(Decimal(str(a.hours)).quantize(Decimal("0.01"))),
                 }
                 for a in day_absences
             ],
