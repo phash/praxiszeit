@@ -127,8 +127,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [draftChanges, setDraftChanges] = useState<DraftChange[]>([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  // These are used in Tasks 2 & 3; referenced here to satisfy noUnusedLocals:
-  void toast; void setSaving; void draftChanges; void setDraftChanges; void showSubmitModal; void setShowSubmitModal; void setReloadKey;
+  // These are used in Task 3; referenced here to satisfy noUnusedLocals:
+  void draftChanges; void setDraftChanges; void showSubmitModal; void setShowSubmitModal;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -169,9 +169,55 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     setEditingDate(null);
   }
 
-  // Stubs — replaced in Task 2 (admin) and Task 3 (employee)
-  function handleSave(_day: JournalDay) { cancelEdit(); }
-  function handleDelete(_day: JournalDay) { cancelEdit(); }
+  async function handleAdminSave(day: JournalDay) {
+    const start = editState.startTime;
+    const end = editState.endTime;
+    if (!start || !end) {
+      toast.error('Von und Bis sind Pflichtfelder');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        start_time: start,
+        end_time: end,
+        break_minutes: parseInt(editState.breakMinutes, 10) || 0,
+      };
+      const existing = day.time_entries[0];
+      if (existing) {
+        await apiClient.put(`/admin/time-entries/${existing.id}`, payload);
+      } else {
+        await apiClient.post(`/admin/users/${userId}/time-entries`, {
+          date: day.date,
+          ...payload,
+        });
+      }
+      toast.success('Gespeichert');
+      cancelEdit();
+      setReloadKey(k => k + 1);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Speichern'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAdminDelete(day: JournalDay) {
+    const entry = day.time_entries[0];
+    if (!entry) return;
+    setSaving(true);
+    try {
+      await apiClient.delete(`/admin/time-entries/${entry.id}`);
+      toast.success('Eintrag gelöscht');
+      cancelEdit();
+      setReloadKey(k => k + 1);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Löschen'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
 
   return (
     <div className="space-y-4">
@@ -287,7 +333,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                         {editingDate === day.date ? (
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => handleSave(day)}
+                              onClick={() => isAdminView ? void handleAdminSave(day) : cancelEdit()}
                               disabled={saving}
                               className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
                               title="Speichern"
@@ -304,7 +350,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             </button>
                             {day.time_entries.length > 0 && (
                               <button
-                                onClick={() => handleDelete(day)}
+                                onClick={() => isAdminView ? void handleAdminDelete(day) : cancelEdit()}
                                 disabled={saving}
                                 className="p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
                                 title="Löschen"
