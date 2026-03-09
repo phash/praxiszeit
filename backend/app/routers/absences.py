@@ -203,6 +203,18 @@ def create_absence(
             detail="Enddatum muss nach dem Startdatum liegen"
         )
 
+    # Arbeitszeitraum-Prüfung (I2)
+    if target_user.first_work_day and start_date < target_user.first_work_day:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Datum liegt vor dem ersten Arbeitstag ({target_user.first_work_day.strftime('%d.%m.%Y')})"
+        )
+    if target_user.last_work_day and end_date > target_user.last_work_day:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Datum liegt nach dem letzten Arbeitstag ({target_user.last_work_day.strftime('%d.%m.%Y')})"
+        )
+
     # Generate list of weekdays (Mon-Fri, excluding weekends and holidays)
     dates_to_create = []
     current_date = start_date
