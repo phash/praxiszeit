@@ -77,6 +77,66 @@ test.describe('Employee Profile', () => {
     expect(download.suggestedFilename()).toContain('PraxisZeit_Datenauszug');
   });
 
+  test('Profilbild: Upload gültiges JPEG zeigt Erfolgsmeldung', async ({ employeePage }) => {
+    // Minimal valid JPEG bytes (1x1 pixel)
+    const jpegBytes = Buffer.from([
+      0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
+      0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07, 0x07, 0x07, 0x09,
+      0x09, 0x08, 0x0A, 0x0C, 0x14, 0x0D, 0x0C, 0x0B, 0x0B, 0x0C, 0x19, 0x12,
+      0x13, 0x0F, 0x14, 0x1D, 0x1A, 0x1F, 0x1E, 0x1D, 0x1A, 0x1C, 0x1C, 0x20,
+      0x24, 0x2E, 0x27, 0x20, 0x22, 0x2C, 0x23, 0x1C, 0x1C, 0x28, 0x37, 0x29,
+      0x2C, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1F, 0x27, 0x39, 0x3D, 0x38, 0x32,
+      0x3C, 0x2E, 0x33, 0x34, 0x32, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01,
+      0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00,
+      0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+      0x09, 0x0A, 0x0B, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F,
+      0x00, 0xFB, 0xFF, 0xD9,
+    ]);
+
+    // The file input is hidden (display:none) — setInputFiles works on hidden inputs
+    await employeePage.locator('input[type="file"]').setInputFiles({
+      name: 'test.jpg',
+      mimeType: 'image/jpeg',
+      buffer: jpegBytes,
+    });
+
+    // Expect success message
+    await expect(employeePage.getByText('Profilbild aktualisiert')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('Profilbild: Ungültiger Dateityp zeigt Fehlermeldung', async ({ employeePage }) => {
+    // Bytes with no JPEG/PNG magic bytes — backend will reject with 400
+    const invalidBytes = Buffer.from('This is not an image file content at all');
+
+    await employeePage.locator('input[type="file"]').setInputFiles({
+      name: 'test.txt',
+      mimeType: 'application/octet-stream',
+      buffer: invalidBytes,
+    });
+
+    // Backend returns "Nur JPEG oder PNG erlaubt" → getErrorMessage passes it through
+    await expect(employeePage.getByText('Nur JPEG oder PNG erlaubt')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('Profilbild: Datei zu groß zeigt Fehlermeldung', async ({ employeePage }) => {
+    // 501 KB buffer with JPEG magic bytes — client-side check fires first (>512_000 bytes)
+    const oversizeBuffer = Buffer.alloc(501 * 1024, 0);
+    oversizeBuffer[0] = 0xFF;
+    oversizeBuffer[1] = 0xD8;
+    oversizeBuffer[2] = 0xFF;
+
+    await employeePage.locator('input[type="file"]').setInputFiles({
+      name: 'big.jpg',
+      mimeType: 'image/jpeg',
+      buffer: oversizeBuffer,
+    });
+
+    // Client-side check fires before API call
+    await expect(employeePage.getByText('Bild zu groß (max. 500 KB)')).toBeVisible({ timeout: 5000 });
+  });
+
   test('password change section', async ({ employeePage, testEmployee, adminApi }) => {
     // Click "Ändern" to open the password form
     await employeePage.getByRole('button', { name: 'Ändern' }).click();
