@@ -53,7 +53,7 @@ class User(Base):
     @property
     def suggested_vacation_days(self) -> int:
         """Calculate vacation days per specification: 30 × (work_days / 5)."""
-        return round(30 * (self.work_days_per_week or 5) / 5)
+        return max(0, round(30 * (self.work_days_per_week or 5) / 5))
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, role={self.role})>"

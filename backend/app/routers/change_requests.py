@@ -203,7 +203,10 @@ def list_change_requests(
             status_enum = ChangeRequestStatus(request_status)
             query = query.filter(ChangeRequest.status == status_enum)
         except ValueError:
-            pass
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ungültiger Status: {request_status}"
+            )
 
     requests = query.order_by(ChangeRequest.created_at.desc()).all()
     return [_enrich_response(cr, db) for cr in requests]
