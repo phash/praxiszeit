@@ -23,7 +23,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    role = Column(Enum(UserRole, values_callable=lambda e: [x.value for x in e]), default=UserRole.EMPLOYEE, nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
     weekly_hours = Column(Numeric(4, 1), nullable=False)  # e.g., 20.0, 30.0, 38.5
     vacation_days = Column(Integer, nullable=False, default=30)
     work_days_per_week = Column(Integer, nullable=False, default=5)
