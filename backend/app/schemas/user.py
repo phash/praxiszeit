@@ -107,6 +107,45 @@ class UserResponse(UserBase):
         from_attributes = True
 
 
+class UserListResponse(BaseModel):
+    """Lightweight user response for list endpoints – excludes profile_picture blob."""
+    id: UUID
+    role: UserRole
+    username: str
+    first_name: str
+    last_name: str
+    email: Optional[str] = None
+    weekly_hours: float
+    vacation_days: int
+    work_days_per_week: int
+    track_hours: bool
+    is_active: bool
+    is_hidden: bool = False
+    calendar_color: str = '#93C5FD'
+    use_daily_schedule: bool = False
+    hours_monday: Optional[float] = None
+    hours_tuesday: Optional[float] = None
+    hours_wednesday: Optional[float] = None
+    hours_thursday: Optional[float] = None
+    hours_friday: Optional[float] = None
+    exempt_from_arbzg: bool = False
+    is_night_worker: bool = False
+    first_work_day: Optional[date] = None
+    last_work_day: Optional[date] = None
+    totp_enabled: bool = False
+    deactivated_at: Optional[datetime] = None
+    created_at: datetime
+    suggested_vacation_days: int
+    vacation_carryover_deadline: Optional[date] = None
+
+    @field_serializer('id')
+    def serialize_uuid(self, value: UUID) -> str:
+        return str(value)
+
+    class Config:
+        from_attributes = True
+
+
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)

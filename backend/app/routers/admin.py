@@ -8,7 +8,7 @@ from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeReque
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
 from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse
@@ -97,7 +97,7 @@ def _enrich_audit_response(log: TimeEntryAuditLog, db: Session) -> AuditLogRespo
 
 # ── User Management ──────────────────────────────────────────────────────
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users", response_model=List[UserListResponse])
 def list_users(
     include_inactive: bool = False,
     include_hidden: bool = False,
