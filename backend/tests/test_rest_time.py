@@ -1,5 +1,4 @@
 """Tests für ArbZG §5 Ruhezeitvalidierung."""
-import pytest
 from datetime import date, time
 from app.models import TimeEntry
 from app.services.rest_time_service import check_rest_time_violations
@@ -16,6 +15,7 @@ def _make_entry(db, user, d, start_h, start_m, end_h, end_m):
     )
     db.add(entry)
     db.commit()
+    db.refresh(entry)
     return entry
 
 
@@ -45,6 +45,8 @@ def test_insufficient_rest_creates_violation(db, test_user):
     assert v["actual_rest_hours"] == 9.0
     assert v["min_rest_hours"] == 11
     assert v["deficit_hours"] == 2.0
+    assert v["day1_end"] == "22:00:00"
+    assert v["day2_start"] == "07:00:00"
 
 
 def test_violation_fields_are_complete(db, test_user):
@@ -77,6 +79,9 @@ def test_multiple_violations_in_month(db, test_user):
     _make_entry(db, test_user, date(2026, 3, 21), 7, 0, 15, 0)
     violations = check_rest_time_violations(db, test_user, 2026, month=3)
     assert len(violations) == 2
+    dates = {v["day1_date"] for v in violations}
+    assert "2026-03-10" in dates
+    assert "2026-03-20" in dates
 
 
 def test_month_filter_excludes_other_months(db, test_user):
