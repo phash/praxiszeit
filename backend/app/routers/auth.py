@@ -290,19 +290,29 @@ def export_my_data(
 
 
 @router.put("/profile-picture", response_model=UserResponse)
+@limiter.limit("20/minute")
 async def update_profile_picture(
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Upload profile picture. Max 500KB, JPEG or PNG only."""
+    """Upload profile picture. Max 500KB, JPEG or PNG only. Magic bytes verified."""
     contents = await file.read()
     if len(contents) > 512_000:
         raise HTTPException(status_code=400, detail="Bild zu groß (max. 500 KB)")
-    if file.content_type not in ("image/jpeg", "image/png"):
+
+    # Magic bytes check – client-controlled Content-Type not trusted (C1)
+    _JPEG_MAGIC = b'\xff\xd8\xff'
+    _PNG_MAGIC  = b'\x89PNG'
+    if contents[:3] == _JPEG_MAGIC:
+        mime = "image/jpeg"
+    elif contents[:4] == _PNG_MAGIC:
+        mime = "image/png"
+    else:
         raise HTTPException(status_code=400, detail="Nur JPEG oder PNG erlaubt")
 
-    data_uri = f"data:{file.content_type};base64,{base64.b64encode(contents).decode()}"
+    data_uri = f"data:{mime};base64,{base64.b64encode(contents).decode()}"
     current_user.profile_picture = data_uri
     db.commit()
     db.refresh(current_user)
