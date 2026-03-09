@@ -8,13 +8,12 @@ test.describe('Admin Einstellungen', () => {
     await expect(adminPage.getByRole('heading', { name: 'Einstellungen' })).toBeVisible();
   });
 
-  test('zeigt Bundesland-Dropdown mit Optionen', async ({ adminPage }) => {
+  test('zeigt Bundesland-Dropdown mit allen Optionen', async ({ adminPage }) => {
     const select = adminPage.locator('#holiday-state');
     await expect(select).toBeVisible();
+    // 16 Bundesländer müssen geladen sein (holiday_service.SUPPORTED_STATES)
     const options = select.locator('option');
-    // Mindestens 10 Bundesländer (16 total)
-    const count = await options.count();
-    expect(count).toBeGreaterThanOrEqual(10);
+    await expect(options).toHaveCount(16);
     // Bayern muss enthalten sein
     await expect(select.locator('option[value="Bayern"]')).toBeAttached();
   });
