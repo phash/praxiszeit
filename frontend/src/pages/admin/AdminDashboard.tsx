@@ -141,8 +141,7 @@ export default function AdminDashboard() {
       const entriesResponse = await apiClient.get('/time-entries', {
         params: {
           user_id: employee.user_id,
-          year: parseInt(year),
-          month: parseInt(month)
+          month: currentMonth
         }
       });
       setEmployeeTimeEntries(entriesResponse.data);
@@ -151,8 +150,7 @@ export default function AdminDashboard() {
       const absencesResponse = await apiClient.get('/absences', {
         params: {
           user_id: employee.user_id,
-          year: parseInt(year),
-          month: parseInt(month)
+          year: parseInt(year)
         }
       });
       setEmployeeAbsences(absencesResponse.data);
