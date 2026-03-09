@@ -8,6 +8,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 import MonthSelector from '../../components/MonthSelector';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface CompanyClosure {
   id: string;
@@ -102,7 +103,7 @@ export default function AdminAbsences() {
       setClosureForm({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
       loadClosures();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 
@@ -181,7 +182,7 @@ export default function AdminAbsences() {
       setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 8, note: '' });
       loadAbsences(targetId);
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 

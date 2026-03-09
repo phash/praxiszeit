@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import apiClient from '../api/client';
+import { getErrorMessage } from '../utils/errorMessage';
 
 interface TimeEntry {
   id: string;
@@ -53,7 +54,7 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
       });
       onSuccess();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Fehler beim Erstellen des Antrags');
+      setError(getErrorMessage(err, 'Fehler beim Erstellen des Antrags'));
     } finally {
       setSubmitting(false);
     }

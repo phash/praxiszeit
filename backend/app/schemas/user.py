@@ -69,6 +69,7 @@ class UserUpdate(BaseModel):
     track_hours: Optional[bool] = None
     is_active: Optional[bool] = None
     is_hidden: Optional[bool] = None
+    calendar_color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
     vacation_carryover_deadline: Optional[date] = None  # Individual deadline, None = default
     use_daily_schedule: Optional[bool] = None
     hours_monday: Optional[float] = Field(None, ge=0, le=24)

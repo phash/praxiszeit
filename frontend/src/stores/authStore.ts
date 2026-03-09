@@ -13,6 +13,7 @@ interface User {
   work_days_per_week: number;
   vacation_days: number;
   calendar_color: string;
+  track_hours: boolean;
   is_active: boolean;
   totp_enabled: boolean;
   created_at: string;

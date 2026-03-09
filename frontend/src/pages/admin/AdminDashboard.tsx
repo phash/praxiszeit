@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
+import { getErrorMessage } from '../../utils/errorMessage';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
 interface EmployeeReport {
@@ -218,7 +219,7 @@ export default function AdminDashboard() {
       setEmployeeTimeEntries(entriesResponse.data);
       fetchAuditForUser(selectedEmployee.user_id);
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 

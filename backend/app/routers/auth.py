@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from app.core.limiter import limiter
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
+from datetime import datetime, timezone
 from app.database import get_db
 from app.models import User, TimeEntry, Absence
 from app.schemas.user import (
@@ -66,7 +68,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     F-010: Returns access token in JSON; refresh token set as HttpOnly cookie.
     F-019: If TOTP is enabled, requires totp_code in the request body.
     """
-    user = db.query(User).filter(User.username == login_data.username).first()
+    user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
 
     if not user or not user.is_active:
         raise HTTPException(
@@ -240,7 +242,7 @@ def export_my_data(
     data = {
         "export_info": {
             "basis": "Art. 20 DSGVO – Recht auf Datenübertragbarkeit",
-            "exported_at": __import__('datetime').datetime.utcnow().isoformat() + "Z",
+            "exported_at": datetime.now(timezone.utc).isoformat(),
             "user_id": str(current_user.id),
         },
         "stammdaten": {
@@ -260,7 +262,7 @@ def export_my_data(
                 "start_time": str(e.start_time),
                 "end_time": str(e.end_time),
                 "break_minutes": e.break_minutes,
-                "notes": e.notes,
+                "note": e.note,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in time_entries
@@ -270,7 +272,7 @@ def export_my_data(
                 "date": str(a.date),
                 "end_date": str(a.end_date) if a.end_date else None,
                 "type": a.type.value,
-                "notes": a.notes,
+                "note": a.note,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
             }
             for a in absences

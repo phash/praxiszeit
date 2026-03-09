@@ -180,7 +180,7 @@ def create_change_request(
 
 @router.get("/", response_model=List[ChangeRequestResponse])
 def list_change_requests(
-    request_status: Optional[ChangeRequestStatus] = Query(None, alias="status", description="Filter by status"),
+    request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -188,7 +188,11 @@ def list_change_requests(
     query = db.query(ChangeRequest).filter(ChangeRequest.user_id == current_user.id)
 
     if request_status:
-        query = query.filter(ChangeRequest.status == request_status)
+        try:
+            status_enum = ChangeRequestStatus(request_status)
+            query = query.filter(ChangeRequest.status == status_enum)
+        except ValueError:
+            pass
 
     requests = query.order_by(ChangeRequest.created_at.desc()).all()
     return [_enrich_response(cr, db) for cr in requests]

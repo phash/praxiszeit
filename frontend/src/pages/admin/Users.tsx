@@ -8,6 +8,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import PasswordInput from '../../components/PasswordInput';
 import Badge from '../../components/Badge';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface User {
   id: string;
@@ -165,7 +166,7 @@ export default function Users() {
       fetchUsers();
       resetForm();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 
@@ -209,7 +210,7 @@ export default function Users() {
       setSetPasswordModal(null);
       setNewPassword('');
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Setzen des Passworts');
+      toast.error(getErrorMessage(error, 'Fehler beim Setzen des Passworts'));
     }
   };
 
@@ -225,7 +226,7 @@ export default function Users() {
           toast.success(`${name} deaktiviert`);
           fetchUsers();
         } catch (error: any) {
-          toast.error(error.response?.data?.detail || 'Fehler beim Deaktivieren');
+          toast.error(getErrorMessage(error, 'Fehler beim Deaktivieren'));
         }
       },
     });
@@ -243,7 +244,7 @@ export default function Users() {
           toast.success(`${name} reaktiviert`);
           fetchUsers();
         } catch (error: any) {
-          toast.error(error.response?.data?.detail || 'Fehler beim Reaktivieren');
+          toast.error(getErrorMessage(error, 'Fehler beim Reaktivieren'));
         }
       },
     });
@@ -263,7 +264,7 @@ export default function Users() {
           toast.success(currentlyHidden ? `${name} ist jetzt sichtbar` : `${name} ausgeblendet`);
           fetchUsers();
         } catch (error: any) {
-          toast.error(error.response?.data?.detail || 'Fehler beim Ändern der Sichtbarkeit');
+          toast.error(getErrorMessage(error, 'Fehler beim Ändern der Sichtbarkeit'));
         }
       },
     });
@@ -281,7 +282,7 @@ export default function Users() {
           toast.success(`${name} wurde anonymisiert (Art. 17 DSGVO)`);
           fetchUsers();
         } catch (error: any) {
-          toast.error(error.response?.data?.detail || 'Fehler bei der Anonymisierung');
+          toast.error(getErrorMessage(error, 'Fehler bei der Anonymisierung'));
         }
       },
     });
@@ -299,7 +300,7 @@ export default function Users() {
           toast.success(`${name} wurde endgültig gelöscht (Art. 17 DSGVO)`);
           fetchUsers();
         } catch (error: any) {
-          toast.error(error.response?.data?.detail || 'Fehler beim Löschen');
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen'));
         }
       },
     });
@@ -365,7 +366,7 @@ export default function Users() {
       });
       toast.success('Stundenänderung erfolgreich hinzugefügt');
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Hinzufügen');
+      toast.error(getErrorMessage(error, 'Fehler beim Hinzufügen'));
     }
   };
 

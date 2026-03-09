@@ -8,6 +8,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
 import Badge from '../components/Badge';
+import { getErrorMessage } from '../utils/errorMessage';
 import MonthSelector from '../components/MonthSelector';
 import { useAuthStore } from '../stores/authStore';
 
@@ -189,7 +190,7 @@ export default function AbsenceCalendarPage() {
       setIsDateRange(false);
       setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '' });
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Fehler beim Speichern');
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 
@@ -599,7 +600,7 @@ export default function AbsenceCalendarPage() {
                           key={idx}
                           className={`text-xs px-2 py-1 rounded border ${typeColors[entry.type]}`}
                         >
-                          {entry.user_first_name} {entry.user_last_name[0]}.
+                          {entry.user_first_name} {entry.user_last_name?.[0]}.
                         </div>
                       ))}
                     </div>
