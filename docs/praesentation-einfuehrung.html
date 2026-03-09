@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PraxisZeit – Einführung · Praxis Dr. Klotz-Rödig</title>
+  <style>
+    :root {
+      --blau:       #2563EB;
+      --blau-dunkel:#1E40AF;
+      --blau-hell:  #EFF6FF;
+      --blau-mittel:#BFDBFE;
+      --akzent:     #10B981;
+      --warnung:    #F59E0B;
+      --text:       #1E293B;
+      --grau:       #64748B;
+      --grau-hell:  #F1F5F9;
+      --weiss:      #FFFFFF;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0F172A;
+      color: var(--text);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ── Fortschrittsbalken ── */
+    #progress {
+      position: fixed;
+      top: 0; left: 0;
+      height: 4px;
+      background: var(--blau);
+      transition: width 0.4s ease;
+      z-index: 100;
+    }
+
+    /* ── Folien-Container ── */
+    #deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 60px 80px;
+      opacity: 0;
+      transform: translateX(60px);
+      transition: opacity 0.45s ease, transform 0.45s ease;
+      pointer-events: none;
+      text-align: center;
+    }
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+    .slide.exit {
+      opacity: 0;
+      transform: translateX(-60px);
+    }
+
+    /* ── Hintergrundvarianten ── */
+    .bg-blau   { background: linear-gradient(135deg, #1E40AF 0%, #2563EB 60%, #3B82F6 100%); color: var(--weiss); }
+    .bg-weiss  { background: var(--weiss); }
+    .bg-hell   { background: var(--blau-hell); }
+    .bg-dunkel { background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); color: var(--weiss); }
+    .bg-akzent { background: linear-gradient(135deg, #065F46 0%, #059669 100%); color: var(--weiss); }
+
+    /* ── Typografie ── */
+    .overline {
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      opacity: 0.75;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(2.4rem, 5vw, 4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 20px;
+    }
+    h2 {
+      font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 24px;
+    }
+    h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    p.lead {
+      font-size: clamp(1rem, 2vw, 1.3rem);
+      line-height: 1.6;
+      max-width: 720px;
+      opacity: 0.9;
+    }
+    .subtitle {
+      font-size: 1.15rem;
+      opacity: 0.8;
+      margin-bottom: 12px;
+    }
+
+    /* ── Karten-Grid ── */
+    .grid {
+      display: grid;
+      gap: 20px;
+      width: 100%;
+      max-width: 1100px;
+      margin-top: 32px;
+    }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+    .card {
+      background: var(--weiss);
+      border-radius: 16px;
+      padding: 28px 24px;
+      text-align: left;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .card.blau-rand { border-left: 4px solid var(--blau); }
+    .card.gruen-rand { border-left: 4px solid var(--akzent); }
+    .card.gelb-rand { border-left: 4px solid var(--warnung); }
+    .card-icon {
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 12px;
+    }
+    .icon-blau { background: var(--blau-mittel); }
+    .icon-gruen { background: #D1FAE5; }
+    .icon-gelb { background: #FEF3C7; }
+    .icon-rot { background: #FEE2E2; }
+
+    /* ── Listen ── */
+    .list {
+      list-style: none;
+      text-align: left;
+      max-width: 800px;
+      width: 100%;
+      margin-top: 24px;
+    }
+    .list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      font-size: 1.05rem;
+      line-height: 1.5;
+    }
+    .list li:last-child { border-bottom: none; }
+    .list .bullet {
+      flex-shrink: 0;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .bullet-blau { background: var(--blau); color: white; }
+    .bullet-gruen { background: var(--akzent); color: white; }
+
+    /* ── Gesetz-Box ── */
+    .law-box {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 16px;
+      padding: 28px 36px;
+      max-width: 900px;
+      margin-top: 28px;
+      backdrop-filter: blur(8px);
+    }
+    .law-box .law-ref {
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      opacity: 0.7;
+      margin-bottom: 8px;
+    }
+    .law-box blockquote {
+      font-size: 1.15rem;
+      font-style: italic;
+      line-height: 1.7;
+      opacity: 0.95;
+    }
+
+    /* ── Highlight-Zahl ── */
+    .stat-row {
+      display: flex;
+      gap: 32px;
+      margin-top: 32px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .stat {
+      background: rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 24px 36px;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .stat-zahl {
+      font-size: 2.8rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .stat-label { font-size: 0.9rem; opacity: 0.8; }
+
+    /* ── Step-Liste ── */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 800px;
+      width: 100%;
+      margin-top: 28px;
+      text-align: left;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      background: var(--weiss);
+      border-radius: 14px;
+      padding: 18px 24px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .step-nr {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--blau);
+      color: white;
+      font-weight: 800;
+      font-size: 1rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-text strong { display: block; font-size: 1rem; margin-bottom: 2px; }
+    .step-text span { font-size: 0.9rem; color: var(--grau); }
+
+    /* ── Zugangsdaten-Box ── */
+    .access-box {
+      background: var(--weiss);
+      border-radius: 20px;
+      padding: 36px 48px;
+      max-width: 680px;
+      width: 100%;
+      margin-top: 32px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+      text-align: left;
+    }
+    .access-box .row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--grau-hell);
+    }
+    .access-box .row:last-child { border-bottom: none; }
+    .access-box .label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--grau);
+      width: 110px;
+      flex-shrink: 0;
+    }
+    .access-box .value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--blau);
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ── Tag-Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 99px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .badge-blau { background: var(--blau-mittel); color: var(--blau-dunkel); }
+    .badge-gruen { background: #D1FAE5; color: #065F46; }
+    .badge-gelb { background: #FEF3C7; color: #92400E; }
+    .badge-rot  { background: #FEE2E2; color: #991B1B; }
+
+    /* ── Folientrenner (Mitarbeiter / Admin) ── */
+    .divider-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 99px;
+      padding: 6px 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+
+    /* ── Navigation ── */
+    #nav {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      z-index: 100;
+    }
+    .nav-btn {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: white;
+      font-size: 1.2rem;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(8px);
+    }
+    .nav-btn:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.6); }
+    .nav-btn:disabled { opacity: 0.3; cursor: default; }
+    #slide-counter {
+      color: rgba(255,255,255,0.7);
+      font-size: 0.9rem;
+      font-weight: 500;
+      min-width: 60px;
+      text-align: center;
+    }
+
+    /* ── Abschlussfolie ── */
+    .big-emoji { font-size: 5rem; margin-bottom: 20px; }
+
+    /* ── Hilfreich auf Beamer ── */
+    @media (min-width: 1400px) {
+      h1 { font-size: 4.2rem; }
+      h2 { font-size: 3rem; }
+      p.lead { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<div id="deck">
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 1 · Titel
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-blau active" id="s1">
+    <div style="margin-bottom:24px; font-size:3.5rem;">🕐</div>
+    <div class="overline">Praxis Dr. Klotz-Rödig · 09. März 2026</div>
+    <h1>PraxisZeit</h1>
+    <p class="lead" style="font-size:1.5rem; font-weight:300;">
+      Digitale Zeiterfassung – Einführung &amp; Schulung
+    </p>
+    <div style="margin-top:48px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+      <span class="badge" style="background:rgba(255,255,255,0.2); color:white; font-size:0.9rem;">Für Mitarbeiterinnen &amp; Mitarbeiter</span>
+      <span class="badge" style="background:rgba(255,255,255,0.2); color:white; font-size:0.9rem;">Für Administratoren</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 2 · Warum Zeiterfassung?
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-dunkel" id="s2">
+    <div class="overline" style="color:rgba(255,255,255,0.6);">Rechtliche Grundlage</div>
+    <h2 style="color:white;">Warum müssen wir<br>Arbeitszeiten erfassen?</h2>
+
+    <div class="law-box">
+      <div class="law-ref">EuGH-Urteil · 14. Mai 2019 · Az. C-55/18 · „Stechuhr-Urteil"</div>
+      <blockquote>
+        „Arbeitgeber sind verpflichtet, ein objektives, verlässliches und zugängliches
+        System einzurichten, das die von den Arbeitnehmern geleistete tägliche Arbeitszeit
+        misst."
+      </blockquote>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-zahl">§ 16</div>
+        <div class="stat-label">ArbZG – Aufzeichnungspflicht</div>
+      </div>
+      <div class="stat">
+        <div class="stat-zahl">2 J.</div>
+        <div class="stat-label">Aufbewahrungspflicht</div>
+      </div>
+      <div class="stat">
+        <div class="stat-zahl" style="color:#FCA5A5;">15.000 €</div>
+        <div class="stat-label">max. Bußgeld bei Verstoß</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 3 · Was bedeutet das für uns?
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-weiss" id="s3">
+    <div class="overline" style="color:var(--blau);">Unsere Pflichten</div>
+    <h2>Was bedeutet das konkret?</h2>
+
+    <ul class="list">
+      <li>
+        <span class="bullet bullet-blau">1</span>
+        <div>
+          <strong>Arbeitsbeginn &amp; Arbeitsende erfassen</strong>
+          Jede Mitarbeiterin und jeder Mitarbeiter trägt täglich Beginn und Ende der Arbeitszeit ein.
+        </div>
+      </li>
+      <li>
+        <span class="bullet bullet-blau">2</span>
+        <div>
+          <strong>Pausen dokumentieren</strong>
+          Gesetzliche Pausenpflicht: ab 6 Stunden → 30 Minuten, ab 9 Stunden → 45 Minuten (§ 4 ArbZG).
+        </div>
+      </li>
+      <li>
+        <span class="bullet bullet-blau">3</span>
+        <div>
+          <strong>Abwesenheiten melden</strong>
+          Urlaub, Krankheit und Fortbildungen werden digital eingetragen – kein Papierchaos mehr.
+        </div>
+      </li>
+      <li>
+        <span class="bullet bullet-blau">4</span>
+        <div>
+          <strong>Praxisleitung ist verantwortlich</strong>
+          Die Aufzeichnungen müssen jederzeit für Prüfbehörden (Zollbehörden, Finanzamt) bereitliegen.
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 4 · PraxisZeit – die Lösung
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-hell" id="s4">
+    <div class="overline" style="color:var(--blau);">Unsere Lösung</div>
+    <h2>PraxisZeit – einfach &amp; gesetzeskonform</h2>
+
+    <div class="grid grid-3" style="margin-top:32px;">
+      <div class="card blau-rand">
+        <div class="card-icon icon-blau">⏱️</div>
+        <h3>Zeiterfassung</h3>
+        <p style="color:var(--grau); font-size:0.95rem; line-height:1.5;">
+          Arbeitszeiten schnell eintragen. Automatische Berechnung von Über- und Unterstunden.
+        </p>
+      </div>
+      <div class="card blau-rand">
+        <div class="card-icon icon-gruen">🏖️</div>
+        <h3>Urlaubsverwaltung</h3>
+        <p style="color:var(--grau); font-size:0.95rem; line-height:1.5;">
+          Urlaub, Krankheit &amp; Fortbildung digital beantragen und im Team-Kalender sehen.
+        </p>
+      </div>
+      <div class="card blau-rand">
+        <div class="card-icon icon-blau">📊</div>
+        <h3>Berichte &amp; Exports</h3>
+        <p style="color:var(--grau); font-size:0.95rem; line-height:1.5;">
+          Monats- und Jahresberichte per Klick als Excel-Datei – prüfungssicher archiviert.
+        </p>
+      </div>
+    </div>
+
+    <div style="margin-top:32px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+      <span class="badge badge-gruen">✓ ArbZG-konform</span>
+      <span class="badge badge-gruen">✓ DSGVO-konform</span>
+      <span class="badge badge-blau">✓ Läuft in der Praxis – kein Cloud-Abo</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 5 · Login & Dashboard
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-weiss" id="s5">
+    <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
+      👤 Für Mitarbeiterinnen &amp; Mitarbeiter
+    </div>
+    <h2 style="margin-bottom:8px;">Login &amp; Dashboard</h2>
+    <p class="lead" style="color:var(--grau); margin-bottom:28px;">
+      Der erste Blick nach dem Einloggen zeigt alles Wichtige auf einen Blick.
+    </p>
+
+    <div class="grid grid-3" style="max-width:900px;">
+      <div class="card">
+        <div class="card-icon icon-blau">🔐</div>
+        <h3>Login</h3>
+        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
+          E-Mail-Adresse &amp; Passwort eingeben.<br>
+          Passwort beim ersten Login im Profil ändern.
+        </p>
+      </div>
+      <div class="card">
+        <div class="card-icon icon-blau">📅</div>
+        <h3>Monatsübersicht</h3>
+        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
+          Aktuelle Ist-Stunden, Soll-Stunden und der Stundensaldo des laufenden Monats.
+        </p>
+      </div>
+      <div class="card">
+        <div class="card-icon icon-gruen">🌴</div>
+        <h3>Urlaubskonto</h3>
+        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
+          Restlicher Jahresurlaub sofort sichtbar – mit Ampel-Anzeige (grün / gelb / rot).
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 6 · Zeiterfassung
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-hell" id="s6">
+    <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
+      👤 Für Mitarbeiterinnen &amp; Mitarbeiter
+    </div>
+    <h2>Zeiten erfassen</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-nr">1</div>
+        <div class="step-text">
+          <strong>„Zeiterfassung" im Menü öffnen</strong>
+          <span>Die Wochenansicht zeigt Mo–Fr mit je einer Zeile pro Tag.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-nr">2</div>
+        <div class="step-text">
+          <strong>Tag anklicken → Beginn, Ende &amp; Pause eintragen</strong>
+          <span>Beispiel: 08:00 – 16:30 Uhr, 30 Min. Pause = 8 Std. Nettoarbeitszeit.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-nr">3</div>
+        <div class="step-text">
+          <strong>Speichern – fertig!</strong>
+          <span>Soll/Ist-Vergleich und Überstundensaldo werden automatisch berechnet.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-nr">✓</div>
+        <div class="step-text">
+          <strong>Notizen möglich</strong>
+          <span>Optionales Freitext-Feld für besondere Anmerkungen zum Tag.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 7 · Abwesenheiten
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-weiss" id="s7">
+    <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
+      👤 Für Mitarbeiterinnen &amp; Mitarbeiter
+    </div>
+    <h2>Abwesenheiten eintragen</h2>
+    <p class="lead" style="color:var(--grau);">Urlaub, Krankheit &amp; mehr in wenigen Sekunden erfasst.</p>
+
+    <div class="grid grid-4" style="max-width:1000px; margin-top:28px;">
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:10px;">🌴</div>
+        <span class="badge badge-blau">Urlaub</span>
+        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
+          Einzeltag oder Zeitraum – Wochenenden &amp; Feiertage werden automatisch ausgeschlossen.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:10px;">🤒</div>
+        <span class="badge badge-rot">Krankheit</span>
+        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
+          Krankmeldung eintragen – zählt nicht auf das Urlaubskonto.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:10px;">📚</div>
+        <span class="badge badge-gelb">Fortbildung</span>
+        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
+          Externe Schulungen &amp; Fortbildungstage separat erfasst.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:10px;">📋</div>
+        <span class="badge" style="background:var(--grau-hell); color:var(--grau);">Sonstiges</span>
+        <p style="color:var(--grau); font-size:0.88rem; margin-top:10px; line-height:1.5;">
+          Für alle anderen Abwesenheitsgründe mit freiem Notizfeld.
+        </p>
+      </div>
+    </div>
+
+    <p style="margin-top:24px; color:var(--grau); font-size:0.95rem;">
+      📆 Im <strong>Abwesenheitskalender</strong> sehen alle Teammitglieder die Übersicht für das gesamte Team.
+    </p>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 8 · Mein Profil
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-hell" id="s8">
+    <div class="divider-label" style="background:var(--blau-mittel); color:var(--blau-dunkel); border:none;">
+      👤 Für Mitarbeiterinnen &amp; Mitarbeiter
+    </div>
+    <h2>Mein Profil</h2>
+
+    <div class="grid grid-2" style="max-width:780px; margin-top:28px;">
+      <div class="card gruen-rand">
+        <div class="card-icon icon-gruen">🔑</div>
+        <h3>Passwort ändern</h3>
+        <p style="color:var(--grau); font-size:0.95rem; line-height:1.5;">
+          Bitte beim <strong>ersten Login sofort</strong> ein persönliches Passwort vergeben.<br><br>
+          Anforderungen: mindestens 10 Zeichen, Groß- &amp; Kleinbuchstaben, eine Ziffer.
+        </p>
+      </div>
+      <div class="card blau-rand">
+        <div class="card-icon icon-blau">👤</div>
+        <h3>Persönliche Daten</h3>
+        <p style="color:var(--grau); font-size:0.95rem; line-height:1.5;">
+          Name, E-Mail-Adresse und vertraglich vereinbarte Wochenstunden sind hier einsehbar.<br><br>
+          Änderungen an Stammdaten erfolgen über die Praxisleitung.
+        </p>
+      </div>
+    </div>
+
+    <div style="margin-top:28px; background:white; border-radius:14px; padding:16px 24px; max-width:680px; border-left:4px solid var(--warnung);">
+      <strong>⚠️ Sicherheitshinweis:</strong>
+      <span style="color:var(--grau); font-size:0.95rem;">
+        Zugangsdaten sind persönlich und dürfen nicht weitergegeben werden.
+        Bei Verlust bitte sofort die Praxisleitung informieren.
+      </span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 9 · Admins: Benutzerverwaltung
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-weiss" id="s9">
+    <div class="divider-label" style="background:#FEF3C7; color:#92400E; border:none;">
+      🔧 Nur für Administratoren
+    </div>
+    <h2>Benutzerverwaltung</h2>
+
+    <ul class="list" style="max-width:860px;">
+      <li>
+        <span class="bullet bullet-blau">➕</span>
+        <div>
+          <strong>Mitarbeiterin / Mitarbeiter anlegen</strong>
+          Name, E-Mail, Wochenstunden, Urlaubstage &amp; Startkennwort festlegen. Das System verschickt keine automatische E-Mail – Zugangsdaten bitte persönlich übergeben.
+        </div>
+      </li>
+      <li>
+        <span class="bullet bullet-blau">✏️</span>
+        <div>
+          <strong>Daten bearbeiten</strong>
+          Stundenänderungen (z. B. Teilzeit) werden mit Wirkungsdatum gespeichert – die gesamte Überstunden-Historie bleibt korrekt.
+        </div>
+      </li>
+      <li>
+        <span class="bullet bullet-blau">🔒</span>
+        <div>
+          <strong>Konto deaktivieren</strong>
+          Ausgeschiedene Mitarbeiterinnen werden deaktiviert (nicht gelöscht) – alle Daten bleiben für die 2-jährige Aufbewahrungspflicht erhalten.
+        </div>
+      </li>
+      <li>
+        <span class="bullet bullet-blau">🎨</span>
+        <div>
+          <strong>Kalenderfarbe</strong>
+          Jede Person bekommt eine individuelle Farbe im Team-Abwesenheitskalender.
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 10 · Admins: Berichte & Exports
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-hell" id="s10">
+    <div class="divider-label" style="background:#FEF3C7; color:#92400E; border:none;">
+      🔧 Nur für Administratoren
+    </div>
+    <h2>Berichte &amp; Exports</h2>
+
+    <div class="grid grid-3" style="max-width:1000px; margin-top:28px;">
+      <div class="card blau-rand">
+        <div style="font-size:1.8rem; margin-bottom:10px;">📄</div>
+        <h3>Monatsreport</h3>
+        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
+          Alle Mitarbeiterinnen, tagesgenaue Einträge, Soll/Ist, Abwesenheiten.<br>
+          <strong>Excel-Export</strong> per Klick.
+        </p>
+      </div>
+      <div class="card blau-rand">
+        <div style="font-size:1.8rem; margin-bottom:10px;">📊</div>
+        <h3>Jahresreport Classic</h3>
+        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
+          Kompakte 12-Monats-Übersicht: Soll, Ist, Saldo, Urlaubstage, Krankheitstage.
+        </p>
+      </div>
+      <div class="card blau-rand">
+        <div style="font-size:1.8rem; margin-bottom:10px;">📋</div>
+        <h3>Jahresreport Detailliert</h3>
+        <p style="color:var(--grau); font-size:0.9rem; line-height:1.5;">
+          365 Tage pro Mitarbeiterin – vollständige Dokumentation für Prüfbehörden.
+        </p>
+      </div>
+    </div>
+
+    <div style="margin-top:28px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+      <span class="badge badge-gruen">✓ Prüfungssicher (ArbZG § 16)</span>
+      <span class="badge badge-gruen">✓ 2-Jahres-Archiv automatisch</span>
+      <span class="badge badge-blau">✓ ArbZG-Warnmeldungen im System</span>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 11 · Jetzt starten
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-akzent" id="s11">
+    <div class="overline" style="color:rgba(255,255,255,0.75);">Ab sofort verfügbar</div>
+    <h2 style="color:white;">Jetzt loslegen!</h2>
+    <p class="lead" style="color:rgba(255,255,255,0.9); margin-bottom:8px;">
+      Die Anwendung läuft in der Praxis – kein Download, kein App-Store.
+    </p>
+
+    <div class="access-box">
+      <div class="row">
+        <span class="label">🌐 Adresse</span>
+        <span class="value">http://praxiszeit.local</span>
+      </div>
+      <div class="row">
+        <span class="label">📧 Login</span>
+        <span class="value">Ihre E-Mail-Adresse</span>
+      </div>
+      <div class="row">
+        <span class="label">🔑 Passwort</span>
+        <span class="value">Beim ersten Login ändern!</span>
+      </div>
+      <div class="row">
+        <span class="label">📱 Gerät</span>
+        <span class="value">PC, Tablet &amp; Smartphone</span>
+      </div>
+    </div>
+
+    <p style="margin-top:24px; color:rgba(255,255,255,0.8); font-size:0.95rem;">
+      🖥️ Einfach im Browser öffnen – Google Chrome, Firefox oder Edge empfohlen.
+    </p>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       FOLIE 12 · Fragen?
+  ══════════════════════════════════════════════ -->
+  <section class="slide bg-blau" id="s12">
+    <div class="big-emoji">🙋</div>
+    <h1>Fragen?</h1>
+    <p class="lead" style="opacity:0.9; margin-bottom:36px;">
+      Wir nehmen uns jetzt Zeit für Ihre Fragen.<br>
+      Bei späteren Fragen steht die Praxisleitung gern zur Verfügung.
+    </p>
+
+    <div style="display:flex; gap:16px; flex-wrap:wrap; justify-content:center;">
+      <div style="background:rgba(255,255,255,0.15); border-radius:14px; padding:20px 32px; text-align:center; border:1px solid rgba(255,255,255,0.25);">
+        <div style="font-size:1.8rem; margin-bottom:6px;">⏱️</div>
+        <div style="font-weight:700; font-size:1.1rem;">PraxisZeit</div>
+        <div style="opacity:0.75; font-size:0.9rem;">Digitale Zeiterfassung</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.15); border-radius:14px; padding:20px 32px; text-align:center; border:1px solid rgba(255,255,255,0.25);">
+        <div style="font-size:1.8rem; margin-bottom:6px;">🏥</div>
+        <div style="font-weight:700; font-size:1.1rem;">Praxis Dr. Klotz-Rödig</div>
+        <div style="opacity:0.75; font-size:0.9rem;">09. März 2026</div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- #deck -->
+
+<!-- Navigation -->
+<div id="nav">
+  <button class="nav-btn" id="btn-prev" onclick="changeSlide(-1)" disabled>&#8592;</button>
+  <span id="slide-counter">1 / 12</span>
+  <button class="nav-btn" id="btn-next" onclick="changeSlide(1)">&#8594;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total  = slides.length;
+  let current  = 0;
+
+  function showSlide(n) {
+    slides[current].classList.remove('active');
+    slides[current].classList.add('exit');
+    setTimeout(() => slides[current].classList.remove('exit'), 450);
+
+    current = (n + total) % total;
+    slides[current].classList.add('active');
+
+    // Fortschritt
+    const pct = ((current + 1) / total * 100).toFixed(1);
+    document.getElementById('progress').style.width = pct + '%';
+    document.getElementById('slide-counter').textContent = (current + 1) + ' / ' + total;
+    document.getElementById('btn-prev').disabled = current === 0;
+    document.getElementById('btn-next').disabled = current === total - 1;
+  }
+
+  function changeSlide(dir) {
+    if (dir === -1 && current === 0) return;
+    if (dir === 1 && current === total - 1) return;
+    showSlide(current + dir);
+  }
+
+  // Tastaturnavigation
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault(); changeSlide(1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault(); changeSlide(-1);
+    }
+  });
+
+  // Klick zum Weiterschalten (nicht auf Nav-Buttons)
+  document.getElementById('deck').addEventListener('click', e => {
+    if (!e.target.closest('#nav')) changeSlide(1);
+  });
+
+  // Initialer Fortschrittsbalken
+  document.getElementById('progress').style.width = (1 / total * 100).toFixed(1) + '%';
+</script>
+</body>
+</html>
