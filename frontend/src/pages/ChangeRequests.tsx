@@ -165,7 +165,7 @@ export default function ChangeRequests() {
                     <div className="bg-gray-50 rounded-lg p-3">
                       <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
                       <div className="text-sm space-y-1">
-                        <p>Datum: {cr.original_date}</p>
+                        <p>Datum: {format(new Date(cr.original_date + 'T00:00:00'), 'dd.MM.yyyy')}</p>
                         <p>Von: {cr.original_start_time?.substring(0, 5)} - Bis: {cr.original_end_time?.substring(0, 5)}</p>
                         <p>Pause: {cr.original_break_minutes} min</p>
                         {cr.original_note && <p>Notiz: {cr.original_note}</p>}
@@ -178,7 +178,7 @@ export default function ChangeRequests() {
                         {cr.request_type === 'create' ? 'Neuer Eintrag' : 'Gewünscht'}
                       </h4>
                       <div className="text-sm space-y-1">
-                        <p>Datum: {cr.proposed_date}</p>
+                        <p>Datum: {format(new Date(cr.proposed_date + 'T00:00:00'), 'dd.MM.yyyy')}</p>
                         <p>Von: {cr.proposed_start_time?.substring(0, 5)} - Bis: {cr.proposed_end_time?.substring(0, 5)}</p>
                         <p>Pause: {cr.proposed_break_minutes} min</p>
                         {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
