@@ -68,7 +68,6 @@ export default function Layout() {
     { path: '/time-tracking', label: 'Zeiterfassung', icon: Clock },
     { path: '/absences', label: 'Abwesenheiten', icon: Calendar },
     { path: '/profile', label: 'Profil', icon: User },
-    { path: '/help', label: 'Hilfe', icon: HelpCircle },
   ];
 
   const adminNavItems = [
@@ -245,14 +244,24 @@ export default function Layout() {
             <Shield size={12} />
             <span>Datenschutzerklärung</span>
           </Link>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <LogOut size={16} />
-            <span>Abmelden</span>
-          </button>
-          <p className="text-center text-xs text-gray-300 mt-2">v{__APP_VERSION__}</p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setHelpOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label="Hilfe öffnen"
+            >
+              <HelpCircle size={16} />
+              <span>Hilfe</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <LogOut size={16} />
+              <span>Abmelden</span>
+            </button>
+          </div>
+          <p className="text-center text-xs text-gray-300 mt-1">v{__APP_VERSION__}</p>
         </div>
       </aside>
 
@@ -262,17 +271,6 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
-
-      {/* Help FAB — hidden on /help itself */}
-      {location.pathname !== '/help' && (
-        <button
-          onClick={() => setHelpOpen(true)}
-          className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full bg-primary text-white shadow-lg hover:bg-primary-dark transition-colors flex items-center justify-center"
-          aria-label="Kontexthilfe öffnen"
-        >
-          <HelpCircle size={22} />
-        </button>
-      )}
 
       <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>

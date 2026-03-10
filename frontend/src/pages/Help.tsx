@@ -80,7 +80,7 @@ function CheatsheetMitarbeiter() {
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">📋 Korrekturantrag stellen</h3>
         <ol className="text-sm text-gray-600 list-decimal list-inside space-y-0.5">
-          <li>Korrekturanträge → Neuer Antrag</li>
+          <li>Zeiterfassung → Tab „Anträge" → Neuer Antrag</li>
           <li>Betroffenes Datum wählen</li>
           <li>Korrekte Zeiten eintragen</li>
           <li>Begründung schreiben → Absenden</li>
@@ -111,7 +111,7 @@ function CheatsheetMitarbeiter() {
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🔑 Passwort ändern</h3>
         <p className="text-sm text-gray-600">Profil → Abschnitt „Passwort ändern" → Altes + Neues Passwort + Bestätigen → Speichern</p>
-        <p className="text-sm text-gray-500 mt-1">Mind. 10 Zeichen, Groß- + Kleinbuchstabe, mind. eine Ziffer.</p>
+        <p className="text-sm text-gray-500 mt-1">Mind. 8 Zeichen, Groß- + Kleinbuchstabe, mind. eine Ziffer.</p>
       </section>
     </div>
   );
@@ -123,7 +123,8 @@ function CheatsheetAdmin() {
       {/* Login */}
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🔐 Login & Navigation</h3>
-        <p className="text-sm text-gray-600">Admin-Navigation: Dashboard · Benutzer · Kalender · Berichte · Korrekturanträge · Audit-Log · Fehler-Monitoring</p>
+        <p className="text-sm text-gray-600">Mitarbeiter: Dashboard · Zeiterfassung (Einträge, Journal, Anträge) · Abwesenheiten · Profil</p>
+        <p className="text-sm text-gray-600 mt-1">Admin zusätzlich: Admin-Dashboard · Benutzerverwaltung · Berichte · Abwesenheiten · Audit-Log · Einstellungen</p>
       </section>
 
       {/* Benutzerverwaltung */}
@@ -275,7 +276,7 @@ const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '4. Korrekturanträge stellen',
     content: (
       <div className="space-y-2">
-        <p>Wenn ein vergangener Zeiteintrag korrigiert werden muss, navigieren Sie zu <strong>Korrekturanträge → Neuer Antrag</strong>.</p>
+        <p>Wenn ein vergangener Zeiteintrag korrigiert werden muss, navigieren Sie zu <strong>Zeiterfassung → Tab „Anträge" → Neuer Antrag</strong>.</p>
         <p>Wählen Sie das betroffene Datum, tragen Sie die korrekten Werte ein und schreiben Sie eine Begründung. Der Administrator prüft und genehmigt oder lehnt den Antrag ab.</p>
       </div>
     ),
@@ -293,7 +294,7 @@ const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '6. Profil & Passwort',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Profil</strong> können Sie Ihr Passwort ändern (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer) und Ihre Kalenderfarbe für den Team-Kalender festlegen.</p>
+        <p>Unter <strong>Profil</strong> können Sie Ihr Passwort ändern (mind. 8 Zeichen, Groß-/Kleinbuchstabe, Ziffer) und Ihre Kalenderfarbe für den Team-Kalender festlegen.</p>
         <p>Persönliche Daten wie Name und Wochenstunden können nur vom Administrator geändert werden.</p>
       </div>
     ),
