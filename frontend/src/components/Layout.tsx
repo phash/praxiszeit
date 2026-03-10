@@ -252,6 +252,7 @@ export default function Layout() {
             <LogOut size={16} />
             <span>Abmelden</span>
           </button>
+          <p className="text-center text-xs text-gray-300 mt-2">v{__APP_VERSION__}</p>
         </div>
       </aside>
 
