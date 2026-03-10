@@ -144,13 +144,24 @@ export default function TimeTracking() {
       return;
     }
 
+    // Smart break default: auto-set 30 min when creating entry >6h with no break
+    let submitData = { ...formData };
+    if (!editingId && submitData.break_minutes === 0) {
+      const [sh, sm] = submitData.start_time.split(':').map(Number);
+      const [eh, em] = submitData.end_time.split(':').map(Number);
+      const grossMinutes = (eh * 60 + em) - (sh * 60 + sm);
+      if (grossMinutes > 360) {
+        submitData = { ...submitData, break_minutes: 30 };
+      }
+    }
+
     try {
       let response;
       if (editingId) {
-        response = await apiClient.put(`/time-entries/${editingId}`, formData);
+        response = await apiClient.put(`/time-entries/${editingId}`, submitData);
         toast.success('Zeiteintrag erfolgreich aktualisiert');
       } else {
-        response = await apiClient.post('/time-entries', formData);
+        response = await apiClient.post('/time-entries', submitData);
         toast.success('Zeiteintrag erfolgreich erstellt');
       }
       const saved: TimeEntry = response.data;
