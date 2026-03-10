@@ -266,11 +266,38 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16" tabIndex={-1}>
+      <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-16 lg:pb-0" tabIndex={-1}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-200 z-30 flex items-stretch">
+        {[
+          { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+          { path: '/time-tracking', icon: Clock, label: 'Zeiten' },
+          { path: '/absences', icon: Calendar, label: 'Abwesen.' },
+          { path: '/profile', icon: User, label: 'Profil' },
+          ...(user?.role === 'admin' ? [{ path: '/admin', icon: Settings, label: 'Admin' }] : []),
+        ].map((item) => {
+          const Icon = item.icon;
+          const active = location.pathname === item.path ||
+            (item.path !== '/' && location.pathname.startsWith(item.path));
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex-1 flex flex-col items-center justify-center space-y-0.5 transition-colors ${
+                active ? 'text-primary' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
+              <span className="text-[10px] font-medium leading-none">{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
       <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
