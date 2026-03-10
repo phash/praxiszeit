@@ -256,7 +256,7 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main id="main-content" className="flex-1 overflow-y-auto lg:mt-0 mt-16" tabIndex={-1}>
+      <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:mt-0 mt-16" tabIndex={-1}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <Outlet />
         </div>
