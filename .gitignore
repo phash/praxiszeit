@@ -62,3 +62,4 @@ tools/
 
 # Generated documentation (HTML/PDF exports)
 docs/generated/
+.worktrees/
