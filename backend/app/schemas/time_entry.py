@@ -40,6 +40,14 @@ class TimeEntryUpdate(BaseModel):
     note: Optional[str] = None
     sunday_exception_reason: Optional[str] = None  # §10 ArbZG
 
+    @field_validator('end_time')
+    @classmethod
+    def validate_end_after_start(cls, v, info):
+        if v is not None and 'start_time' in info.data and info.data['start_time'] is not None:
+            if v <= info.data['start_time']:
+                raise ValueError('Endzeit muss nach Startzeit liegen')
+        return v
+
 
 class TimeEntryResponse(BaseModel):
     id: UUID

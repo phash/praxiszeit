@@ -14,7 +14,7 @@ from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
-from app.routers.time_entries import _is_night_work
+from app.services.arbzg_utils import is_night_work
 from app.core.limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -552,7 +552,7 @@ def get_night_work_summary(
         )
 
         night_days = {
-            e.date for e in entries if _is_night_work(e.start_time, e.end_time)
+            e.date for e in entries if is_night_work(e.start_time, e.end_time)
         }
         night_days_count = len(night_days)
 

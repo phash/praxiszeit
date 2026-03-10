@@ -67,8 +67,10 @@ async def lifespan(app: FastAPI):
         ):
             weak_passwords = ["Admin2025!", "admin123", "password", "admin"]
             if settings.ADMIN_PASSWORD in weak_passwords or len(settings.ADMIN_PASSWORD) < 12:
-                print("⚠️  SECURITY WARNING: Admin account uses a weak/default password!")
-                print("⚠️  Change it immediately via Admin > Benutzerverwaltung or ADMIN_PASSWORD env var.")
+                msg = "SECURITY: Admin account uses a weak/default password! Set a strong ADMIN_PASSWORD in .env."
+                if settings.ENVIRONMENT == "production":
+                    raise RuntimeError(msg)
+                print(f"⚠️  {msg}")
     finally:
         db.close()
 
@@ -91,6 +93,11 @@ async def lifespan(app: FastAPI):
               f"{result['next_year']}({result['next_count']})")
     finally:
         db.close()
+
+    # Configuration sanity checks
+    if settings.COOKIE_SECURE and settings.ENVIRONMENT != "production":
+        print("⚠️  COOKIE_SECURE=True but ENVIRONMENT is not 'production'. "
+              "The refresh-token cookie will NOT be sent over HTTP — set COOKIE_SECURE=false in .env for local development.")
 
     print("✅ PraxisZeit backend ready!")
 

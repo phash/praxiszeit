@@ -18,7 +18,7 @@ from odf.table import Table, TableColumn, TableRow, TableCell
 
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service
-from app.services.export_service import _is_night_work_export
+from app.services.arbzg_utils import is_night_work
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = (entry is not None and entry.end_time is not None
-                        and _is_night_work_export(entry.start_time, entry.end_time))
+                        and is_night_work(entry.start_time, entry.end_time))
         if is_night_wrk:
             night_work_count += 1
 
@@ -471,7 +471,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = (entry is not None and entry.end_time is not None
-                        and _is_night_work_export(entry.start_time, entry.end_time))
+                        and is_night_work(entry.start_time, entry.end_time))
         if is_night_wrk:
             night_work_count += 1
 
@@ -629,7 +629,7 @@ def _classic_sheet(doc, db, user, year, bold):
         ).all()
         night_days = sum(
             1 for e in month_entries
-            if _is_night_work_export(e.start_time, e.end_time)
+            if is_night_work(e.start_time, e.end_time)
         )
 
         tr = TableRow()
@@ -651,7 +651,7 @@ def _classic_sheet(doc, db, user, year, bold):
             extract("year", TimeEntry.date) == year,
             TimeEntry.end_time.isnot(None),
         ).all()
-        if _is_night_work_export(e.start_time, e.end_time)
+        if is_night_work(e.start_time, e.end_time)
     )
     tr = TableRow()
     tr.addElement(_str_cell("Gesamt", style=bold))

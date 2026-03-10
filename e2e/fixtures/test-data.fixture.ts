@@ -38,6 +38,7 @@ export type TestDataFixtures = {
     note?: string;
     user_id?: string;
   }) => Promise<any>;
+  createChangeRequest: (data: Record<string, unknown>) => Promise<any>;
 };
 
 export const testDataTest = authTest.extend<TestDataFixtures>({
@@ -140,6 +141,21 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
       try {
         await adminApi.delete(`/absences/${id}`);
       } catch { /* already deleted */ }
+    }
+  },
+
+  createChangeRequest: async ({ employeeApi, adminApi }, use) => {
+    const createdIds: string[] = [];
+    const factory = async (data: Record<string, unknown>) => {
+      const result = await employeeApi.post('/change-requests', data);
+      if (result?.id) createdIds.push(result.id);
+      return result;
+    };
+    await use(factory);
+    for (const id of createdIds) {
+      try {
+        await adminApi.delete(`/admin/change-requests/${id}`);
+      } catch { /* already resolved or deleted */ }
     }
   },
 });
