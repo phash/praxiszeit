@@ -65,7 +65,9 @@ export default function Profile() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await apiClient.put('/auth/profile-picture', formData);
+      const response = await apiClient.put('/auth/profile-picture', formData, {
+        headers: { 'Content-Type': undefined },
+      });
       setUser(response.data);
       setProfileMessage('Profilbild aktualisiert');
       setTimeout(() => setProfileMessage(''), 4000);
@@ -648,7 +650,6 @@ export default function Profile() {
                 value={passwordData.new_password}
                 onChange={(e) => setPasswordData({ ...passwordData, new_password: e.target.value })}
                 required
-                minLength={10}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
               <p className="text-xs text-gray-500 mt-1">
