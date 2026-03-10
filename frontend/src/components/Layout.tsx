@@ -118,7 +118,7 @@ export default function Layout() {
       <aside
         className={`
           w-64 bg-white border-r border-gray-200 flex flex-col
-          fixed lg:relative inset-y-0 left-0 z-50
+          fixed lg:sticky lg:top-0 lg:h-screen inset-y-0 left-0 z-50
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -139,7 +139,7 @@ export default function Layout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {/* Employee Navigation */}
           {navItems.map((item) => {
             const Icon = item.icon;
