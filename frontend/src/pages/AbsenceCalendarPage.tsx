@@ -290,13 +290,13 @@ export default function AbsenceCalendarPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex space-x-2 mb-6">
+      <div className="flex border-b border-gray-200 mb-6">
         <button
           onClick={() => setActiveTab('calendar')}
-          className={`px-4 py-2 rounded-lg font-medium transition ${
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'calendar'
-              ? 'bg-primary text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
           }`}
         >
           Kalender
@@ -304,10 +304,10 @@ export default function AbsenceCalendarPage() {
         {vacationApprovalRequired && (
           <button
             onClick={() => { setActiveTab('requests'); fetchMyVacationRequests(); }}
-            className={`px-4 py-2 rounded-lg font-medium transition flex items-center space-x-2 ${
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center space-x-2 ${
               activeTab === 'requests'
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
             }`}
           >
             <span>Meine Anträge</span>
@@ -533,26 +533,22 @@ export default function AbsenceCalendarPage() {
 
       {/* View Mode Toggle and Selector */}
       <div className="mb-4 flex items-center space-x-4">
-        <div className="flex items-center space-x-2">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
             onClick={() => setViewMode('month')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              viewMode === 'month'
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            className={`px-3 py-1.5 font-medium transition-colors ${
+              viewMode === 'month' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
-            Monatsansicht
+            Monat
           </button>
           <button
             onClick={() => setViewMode('year')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              viewMode === 'year'
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            className={`px-3 py-1.5 font-medium transition-colors border-l border-gray-200 ${
+              viewMode === 'year' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
-            Jahresansicht
+            Jahr
           </button>
         </div>
         {viewMode === 'month' ? (
