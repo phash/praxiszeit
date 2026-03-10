@@ -2,13 +2,14 @@
 Service für den Import historischer Zeiterfassungsdaten aus TimeRec-XLS-Dateien.
 Dateiformat: Sheet "Zeiterfassung", Spalten: Datum, Tag, Total, Ein, Aus, Tagesnotiz
 """
+import uuid
 import xlrd
 from datetime import datetime, timedelta, date, time
 from typing import Optional
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from app.models import TimeEntry, User
+from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.services.arbzg_utils import is_night_work
 
 EXCEL_EPOCH = datetime(1899, 12, 30)
@@ -41,6 +42,7 @@ def _excel_serial_to_datetime(serial: float) -> datetime:
 
 def _calc_break_minutes(start: time, end: time) -> int:
     """ArbZG §4: Pausen automatisch nach Brutto-Arbeitszeit berechnen."""
+    # Note: assumes end > start (no overnight shifts). TimeRec format does not produce overnight entries.
     gross_seconds = (end.hour * 3600 + end.minute * 60) - (start.hour * 3600 + start.minute * 60)
     gross_hours = gross_seconds / 3600.0
     if gross_hours > 9:
@@ -74,13 +76,13 @@ def _check_arbzg(
         if rest_hours < MIN_REST_HOURS:
             warnings.append(
                 f"§5 ArbZG: Ruhezeit {rest_hours:.1f}h unterschreitet 11h-Minimum "
-                f"(Vorletzter Eintrag endete {prev_end_dt.strftime('%d.%m %H:%M')})"
+                f"(Vorheriger Eintrag endete {prev_end_dt.strftime('%d.%m %H:%M')})"
             )
 
     return warnings
 
 
-def parse_xls(file_bytes: bytes, user_id, db: Session) -> list[ImportedEntry]:
+def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[ImportedEntry]:
     """
     Parst eine TimeRec-XLS-Datei und gibt ImportedEntry-Liste zurück.
     Ermittelt Konflikte (user_id+date+start_time) und ArbZG-Warnungen.
@@ -117,7 +119,7 @@ def parse_xls(file_bytes: bytes, user_id, db: Session) -> list[ImportedEntry]:
 
         ein_dt = _excel_serial_to_datetime(ein_serial)
         aus_dt = _excel_serial_to_datetime(aus_serial)
-        note = str(notiz_raw).strip() if notiz_raw else None
+        note = str(notiz_raw).strip() if notiz_raw is not None and str(notiz_raw).strip() else None
 
         entry_date = ein_dt.date()
         # Sekunden auf 0 setzen (XLS hat keine Sekunden)
@@ -170,19 +172,17 @@ def parse_xls(file_bytes: bytes, user_id, db: Session) -> list[ImportedEntry]:
 
 
 def execute_import(
-    user_id,
+    user_id: uuid.UUID,
     entries: list[ImportedEntry],
     overwrite: bool,
     db: Session,
-    changed_by_id,
+    changed_by_id: uuid.UUID,
     filename: str,
 ) -> ImportResult:
     """
     Führt den Import durch. Bei overwrite=True werden Konflikte überschrieben,
     sonst übersprungen. Schreibt Audit-Log-Einträge.
     """
-    from app.models import TimeEntryAuditLog
-
     imported = 0
     skipped = 0
     overwritten = 0
@@ -192,6 +192,9 @@ def execute_import(
         for w in entry.arbzg_warnings:
             all_warnings.append(f"{entry.date.strftime('%d.%m.%Y')}: {w}")
 
+        # Re-query conflict: has_conflict on ImportedEntry reflects preview state.
+        # A new entry may have been created between preview and confirm, so we
+        # re-check here rather than trusting the frontend's has_conflict flag.
         existing = (
             db.query(TimeEntry)
             .filter(
