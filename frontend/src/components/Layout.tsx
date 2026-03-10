@@ -20,6 +20,7 @@ import {
   HelpCircle,
   Shield,
   ClipboardCheck,
+  Upload,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 
@@ -81,6 +82,7 @@ export default function Layout() {
     { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText },
     { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle },
     { path: '/admin/vacation-approvals', label: 'Urlaubsanträge', icon: ClipboardCheck },
+    { path: '/admin/import', label: 'Import', icon: Upload },
     { path: '/admin/settings', label: 'Einstellungen', icon: Settings },
   ];
 

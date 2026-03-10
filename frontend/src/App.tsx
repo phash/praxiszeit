@@ -15,6 +15,7 @@ import AuditLog from './pages/admin/AuditLog';
 import AdminAbsences from './pages/admin/AdminAbsences';
 import ErrorMonitoring from './pages/admin/ErrorMonitoring';
 import VacationApprovals from './pages/admin/VacationApprovals';
+import ImportXls from './pages/admin/ImportXls';
 import AdminSettings from './pages/admin/Settings';
 import UserJournal from './pages/admin/UserJournal';
 import Journal from './pages/Journal';
@@ -88,6 +89,7 @@ function App() {
           <Route path="absences" element={<AdminAbsences />} />
           <Route path="errors" element={<ErrorMonitoring />} />
           <Route path="vacation-approvals" element={<VacationApprovals />} />
+          <Route path="import" element={<ImportXls />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
 
