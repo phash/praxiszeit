@@ -107,12 +107,12 @@ test.describe('Admin Vacation Approvals', () => {
       return;
     }
 
-    // Create a vacation request as employee
+    // Create a vacation request as employee (via /vacation-requests, not /absences,
+    // so it appears in the admin vacation approvals page as a VacationRequest)
     const futureDate = daysFromNow(35);
     try {
-      await employeeApi.post('/absences', {
+      await employeeApi.post('/vacation-requests', {
         date: futureDate,
-        type: 'vacation',
         hours: 8,
         note: 'E2E approve test',
       });
@@ -128,12 +128,18 @@ test.describe('Admin Vacation Approvals', () => {
     await adminPage.getByRole('button', { name: 'Offen' }).click();
     await adminPage.waitForLoadState('networkidle');
 
-    // Find approve button
-    const approveButton = adminPage.getByRole('button', { name: 'Genehmigen' }).first();
-    const hasApprove = await approveButton.isVisible({ timeout: 5000 }).catch(() => false);
+    // Find the specific card for THIS test employee (other employees' pending requests
+    // may also be visible — clicking the wrong card can trigger an already-processed request)
+    const employeeCard = adminPage.locator('.rounded-xl.bg-white, div.bg-white.rounded-xl').filter({
+      hasText: testEmployee.last_name,
+    }).filter({
+      has: adminPage.getByRole('button', { name: 'Genehmigen' }),
+    }).first();
+
+    const hasApprove = await employeeCard.isVisible({ timeout: 5000 }).catch(() => false);
 
     if (hasApprove) {
-      await approveButton.click();
+      await employeeCard.getByRole('button', { name: 'Genehmigen' }).click();
       await expect(
         adminPage.locator('[role="alert"]').filter({ hasText: /genehmigt/ })
       ).toBeVisible({ timeout: 10000 });

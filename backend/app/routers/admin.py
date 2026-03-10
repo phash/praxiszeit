@@ -1074,8 +1074,8 @@ def review_vacation_request(
 
     # Check vacation budget
     vacation_account = calculation_service.get_vacation_account(db, target_user, start_date.year)
-    total_hours_needed = Decimal(str(vr.hours)) * len(dates_to_create)
-    if vacation_account['remaining_hours'] - total_hours_needed < 0:
+    total_hours_needed = float(vr.hours) * len(dates_to_create)
+    if float(vacation_account['remaining_hours']) - total_hours_needed < 0:
         raise HTTPException(
             status_code=400,
             detail=(
