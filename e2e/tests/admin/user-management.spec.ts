@@ -228,6 +228,10 @@ test.describe('Admin User Management', () => {
   });
 
   test('Abwesenheit vor erstem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
+    // Reset vacation_approval_required – if left true by another test, the absence form routes to
+    // /vacation-requests (no first_work_day check there) and the error toast never appears.
+    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch { /* best effort */ }
+
     // first_work_day auf 30 Tage in der Zukunft setzen
     const future = new Date();
     future.setDate(future.getDate() + 30);
@@ -255,6 +259,9 @@ test.describe('Admin User Management', () => {
   });
 
   test('Abwesenheit nach letztem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
+    // Reset vacation_approval_required – same reason as the test above.
+    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch { /* best effort */ }
+
     // last_work_day auf gestern setzen
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);

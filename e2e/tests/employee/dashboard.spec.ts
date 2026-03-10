@@ -29,8 +29,8 @@ test.describe('Employee Dashboard', () => {
     // Wait for success toast
     await expect(employeePage.locator('[role="alert"]').filter({ hasText: 'eingestempelt' })).toBeVisible({ timeout: 10000 });
 
-    // Check clocked-in state
-    await expect(employeePage.getByText(/Eingestempelt seit/)).toBeVisible();
+    // Check clocked-in state (fetchStatus() is called after toast, needs extra time)
+    await expect(employeePage.getByText(/Eingestempelt seit/)).toBeVisible({ timeout: 10000 });
 
     // Click clock out to reveal break input
     await employeePage.getByRole('button', { name: 'Ausstempeln' }).click();

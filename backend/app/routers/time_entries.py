@@ -155,8 +155,8 @@ def get_clock_status(
         _close_stale_entry(db, open_entry)
         return ClockStatusResponse(is_clocked_in=False)
 
-    # Calculate elapsed minutes
-    now = datetime.now(timezone.utc)
+    # Calculate elapsed minutes (start_time is a naive local time; use naive now)
+    now = datetime.now()
     start_dt = datetime.combine(open_entry.date, open_entry.start_time)
     elapsed = int((now - start_dt).total_seconds() / 60)
 
