@@ -554,14 +554,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Quick Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-blue-900 mb-2">Willkommen bei PraxisZeit</h3>
-        <p className="text-blue-700">
-          Nutzen Sie die Navigation links, um Ihre Zeiteinträge zu verwalten, Abwesenheiten einzutragen
-          oder Ihre Übersicht anzusehen.
-        </p>
-      </div>
     </div>
   );
 }
