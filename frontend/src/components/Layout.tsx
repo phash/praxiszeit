@@ -85,7 +85,7 @@ export default function Layout() {
   ];
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="h-screen bg-background flex overflow-hidden">
       {/* Skip to Content Link for Accessibility */}
       <a
         href="#main-content"
@@ -118,7 +118,7 @@ export default function Layout() {
       <aside
         className={`
           w-64 bg-white border-r border-gray-200 flex flex-col
-          fixed lg:sticky lg:top-0 lg:h-screen inset-y-0 left-0 z-50
+          fixed lg:relative inset-y-0 left-0 z-50
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -256,7 +256,7 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:mt-0 mt-16" tabIndex={-1}>
+      <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16" tabIndex={-1}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <Outlet />
         </div>
