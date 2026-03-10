@@ -4,7 +4,6 @@ import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import TimeTracking from './pages/TimeTracking';
-import ChangeRequests from './pages/ChangeRequests';
 import AbsenceCalendarPage from './pages/AbsenceCalendarPage';
 import Profile from './pages/Profile';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -18,7 +17,6 @@ import VacationApprovals from './pages/admin/VacationApprovals';
 import ImportXls from './pages/admin/ImportXls';
 import AdminSettings from './pages/admin/Settings';
 import UserJournal from './pages/admin/UserJournal';
-import Journal from './pages/Journal';
 import Help from './pages/Help';
 import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
@@ -64,9 +62,9 @@ function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="time-tracking" element={<TimeTracking />} />
-          <Route path="change-requests" element={<ChangeRequests />} />
+          <Route path="change-requests" element={<Navigate to="/time-tracking?tab=requests" replace />} />
           <Route path="absences" element={<AbsenceCalendarPage />} />
-          <Route path="journal" element={<Journal />} />
+          <Route path="journal" element={<Navigate to="/time-tracking?tab=journal" replace />} />
           <Route path="profile" element={<Profile />} />
           <Route path="help" element={<Help />} />
         </Route>
