@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../api/client';
-import { Trash2, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Trash2, Clock, CheckCircle, XCircle, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
 
 interface ChangeRequest {
   id: string;
@@ -128,9 +129,8 @@ export default function ChangeRequests() {
             <LoadingSpinner text="Lade Anträge..." />
           </div>
         ) : requests.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">
-            <AlertCircle className="mx-auto mb-2 text-gray-400" size={32} />
-            <p>Keine Änderungsanträge vorhanden</p>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <EmptyState icon={FileEdit} title="Keine Änderungsanträge" description="Neue Anträge stellst du über den 'Antrag'-Button in der Zeiterfassung." />
           </div>
         ) : (
           requests.map((cr) => {

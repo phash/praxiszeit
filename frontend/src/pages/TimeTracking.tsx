@@ -13,6 +13,7 @@ import ChangeRequestForm from '../components/ChangeRequestForm';
 import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
 import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
 import { getErrorMessage } from '../utils/errorMessage';
 
 interface TimeEntry {
@@ -547,8 +548,8 @@ export default function TimeTracking() {
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
-                    Keine Einträge für diesen Monat
+                  <td colSpan={8}>
+                    <EmptyState title="Keine Einträge für diesen Monat" />
                   </td>
                 </tr>
               ) : (
@@ -646,9 +647,7 @@ export default function TimeTracking() {
               <LoadingSpinner text="Lade Einträge..." />
             </div>
           ) : entries.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              Keine Einträge für diesen Monat
-            </div>
+            <EmptyState title="Keine Einträge für diesen Monat" />
           ) : (
             <>
               <div className="divide-y divide-gray-200">
