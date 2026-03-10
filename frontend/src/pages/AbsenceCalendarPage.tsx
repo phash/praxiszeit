@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
-import { Plus, X, Trash2, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, X, Trash2, Clock, CheckCircle, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -561,14 +561,24 @@ export default function AbsenceCalendarPage() {
             onChange={setCurrentMonth}
           />
         ) : (
-          <input
-            type="number"
-            value={currentYear}
-            onChange={(e) => setCurrentYear(parseInt(e.target.value))}
-            min="2020"
-            max={new Date().getFullYear() + 1}
-            className="px-4 py-2 border border-gray-300 rounded-lg"
-          />
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setCurrentYear(y => y - 1)}
+              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+              aria-label="Vorheriges Jahr"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="font-medium text-gray-800 w-16 text-center">{currentYear}</span>
+            <button
+              onClick={() => setCurrentYear(y => y + 1)}
+              disabled={currentYear >= new Date().getFullYear() + 1}
+              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-40"
+              aria-label="Nächstes Jahr"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         )}
       </div>
 
