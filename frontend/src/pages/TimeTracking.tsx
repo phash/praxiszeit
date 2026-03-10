@@ -380,11 +380,40 @@ export default function TimeTracking() {
       {activeTab === 'eintraege' && <>
 
       {/* Entry Form */}
+      <style>{`
+        @keyframes slideUpSheet {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h3 className="text-lg font-semibold mb-4">
-            {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
-          </h3>
+        <>
+          {/* Mobile backdrop */}
+          <div
+            className="md:hidden fixed inset-0 bg-black/40 z-40"
+            onClick={resetForm}
+          />
+          <div
+            className="bg-white border-gray-200 md:rounded-xl md:shadow-sm md:border md:p-6 md:mb-6 fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t md:static md:rounded-xl md:shadow-sm md:border md:pb-0"
+            style={{ animation: 'slideUpSheet 0.25s ease-out' }}
+          >
+            {/* Mobile handle bar */}
+            <div className="md:hidden flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 bg-gray-300 rounded-full" />
+            </div>
+            {/* Mobile header with close button */}
+            <div className="md:hidden flex items-center justify-between px-4 pb-3 border-b border-gray-100">
+              <h3 className="text-base font-semibold text-gray-900">
+                {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
+              </h3>
+              <button onClick={resetForm} className="p-2 text-gray-500 hover:text-gray-700">
+                <X size={20} />
+              </button>
+            </div>
+            {/* Desktop title */}
+            <h3 className="hidden md:block text-lg font-semibold mb-4">
+              {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
+            </h3>
           {errors.overlap && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
               <p className="text-sm text-red-800 font-medium">{errors.overlap}</p>
@@ -396,7 +425,7 @@ export default function TimeTracking() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <form id="time-entry-form" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 p-4 md:p-0 pb-4 md:pb-0 overflow-y-auto max-h-[65vh] md:max-h-none md:overflow-visible">
             <div>
               <label htmlFor="tt-date" className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
               <input
@@ -478,7 +507,7 @@ export default function TimeTracking() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
             </div>
-            <div>
+            <div className="hidden md:block">
               <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
               <Button type="submit" variant="primary" size="md" icon={Save} fullWidth>
                 Speichern
@@ -512,7 +541,23 @@ export default function TimeTracking() {
               </div>
             )}
           </form>
-        </div>
+            {/* Sticky save button for mobile */}
+            <div className="md:hidden px-4 py-3 border-t border-gray-100 bg-white">
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                fullWidth
+                onClick={() => {
+                  const formEl = document.querySelector<HTMLFormElement>('#time-entry-form');
+                  formEl?.requestSubmit();
+                }}
+              >
+                Speichern
+              </Button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Month Selector */}
