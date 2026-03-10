@@ -1,7 +1,7 @@
 # ArbZG-Compliance – Vollständiger Abgleich für PraxisZeit
 
 > Ist-Analyse des Arbeitszeitgesetzes (ArbZG) gegenüber dem aktuellen Implementierungsstand von PraxisZeit.
-> Stand: **28.02.2026** | Gesetz: https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html
+> Stand: **10.03.2026** (zuletzt: XLS-Import-Audit) | Gesetz: https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html
 
 ---
 
@@ -19,6 +19,7 @@
 | **§ 14** | Außergewöhnliche Fälle | ℹ️ Nicht anwendbar | Notfall-Ausnahme; 48h-Wochenwarnung kommt aus §3, nicht §14 |
 | **§ 16** | Aufzeichnung & Aufbewahrung | ✅ Vollständig | PraxisZeit zeichnet ALLE Stunden auf (übertrifft §16-Mindestanforderung); gut positioniert für EuGH-Reform |
 | **§ 18** | Ausnahmen leitende Angestellte | ✅ Vollständig | Bypass in allen 3 Pfaden korrekt (Commit `a488985`); `exempt_from_arbzg` jetzt in admin.py + change_requests.py geprüft |
+| **XLS-Import** | §3/§4/§5/§6 im Import-Pfad | 🟡 Teilweise | §4 Pausenberechnung ✅; §3/§5/§6 Warnungen ✅; `exempt_from_arbzg` nicht ausgewertet ⚠️; `is_night_worker` §6 Abs.2 nicht geprüft ⚠️ |
 
 ---
 
@@ -328,6 +329,81 @@
 
 ### Beobachtung – Externe Entwicklung
 7. **EuGH/BAG Stechuhr-Reform**: Deutsche ArbZG-Novelle (erwartet ab 2025/2026) wird Pflicht zur Aufzeichnung aller Stunden kodifizieren. PraxisZeit ist bereits konform.
+
+---
+
+---
+
+## 15. XLS-Import-Feature – ArbZG Quick-Check (2026-03-10)
+
+> Audit des neu implementierten Features `POST /api/admin/import/preview` + `/confirm`
+> Datei: `backend/app/services/xls_import_service.py`
+> Gesamtbewertung: 🟡 **Teilweise konform** (keine kritischen Verstöße, zwei Lücken)
+
+### §4 – Pausenberechnung im Import-Service
+
+| Anforderung | Status | Details |
+|-------------|--------|---------|
+| >6h → 30 min Pause | ✅ KONFORM | `_calc_break_minutes()`: `gross_hours > 6 → 30` |
+| >9h → 45 min Pause | ✅ KONFORM | `_calc_break_minutes()`: `gross_hours > 9 → 45` |
+| Grenzwert exakt 6h → 0 min | ✅ KONFORM | Strikte `>` Bedingung (nicht `>=`) |
+| Grenzwert exakt 9h → 30 min | ✅ KONFORM | Strikte `>` Bedingung (nicht `>=`) |
+| Berechnung auf Brutto-Basis | ✅ Design-konform | Spec schreibt explizit Brutto-Berechnung vor; kein Overnight-Shift im TimeRec-Format |
+
+### §3, §5, §6 – Warnungen im Import-Service
+
+| Anforderung | Status | Details |
+|-------------|--------|---------|
+| §3: Netto >10h → Warnung | ✅ KONFORM | `_check_arbzg()`: `net_hours > 10.0 → Warning` |
+| §5: Ruhezeit <11h → Warnung | ✅ KONFORM | Prüft Abstand zu Voreintrag (inkl. letzten DB-Eintrag vor Import) |
+| §6: Nachtarbeit-Erkennung | ✅ KONFORM | Nutzt `is_night_work()` aus `arbzg_utils.py` |
+| Warnungen nicht blockierend | ✅ KONFORM | Import läuft durch; Warnungen werden im Preview/Result angezeigt |
+| §18 `exempt_from_arbzg` im Import-Pfad | ⚠️ LÜCKE | `_check_arbzg()` prüft `exempt_from_arbzg` **nicht** — §18-befreite User erhalten trotzdem Warnungen |
+| §6 Abs. 2: 8h-Limit für `is_night_worker` | ⚠️ LÜCKE | `is_night_worker`-Flag des Users wird nicht abgefragt; strengere 8h-Warnung für Nachtarbeitnehmer fehlt im Import-Pfad |
+
+### Audit-Trail & §16 Aufzeichnung
+
+| Anforderung | Status | Details |
+|-------------|--------|---------|
+| Audit-Log pro neuem Eintrag | ✅ KONFORM | `TimeEntryAuditLog(action="create", source="import")` |
+| Audit-Log bei Überschreibung | ✅ KONFORM | `action="update"` mit alten Werten (`old_date`, `old_start_time`, `old_end_time`, `old_note`) |
+| Sammel-Eintrag pro Import | ✅ KONFORM | `action="import"`, speichert Dateiname + Zählungen in `new_note` |
+| Admin-only Zugriff | ✅ KONFORM | Beide Endpoints mit `require_admin` abgesichert |
+
+### Funde & Empfehlungen
+
+**Fund 1 – MITTEL: `exempt_from_arbzg` nicht ausgewertet** (Risiko: niedrig, da nur Warnungen)
+
+```python
+# xls_import_service.py, _check_arbzg() — aktuelle Signatur:
+def _check_arbzg(entry_date, start, end, break_min, prev_end_dt) -> list[str]:
+
+# Empfehlung: User-Flag mitgeben und früh zurückgeben
+def _check_arbzg(entry_date, start, end, break_min, prev_end_dt, exempt: bool = False) -> list[str]:
+    if exempt:
+        return []
+    ...
+```
+
+Und in `parse_xls()` den User laden und `exempt_from_arbzg` übergeben.
+
+**Fund 2 – NIEDRIG: `is_night_worker` §6 Abs. 2 nicht geprüft**
+
+Im regulären Eintragspfad (`time_entries.py`) wird bei `is_night_worker=True` eine strengere 8h-Warnung (statt 10h) erzeugt. Im Import-Pfad fehlt diese Unterscheidung. Da historische Daten importiert werden und Warnungen nicht blockieren, ist das Risiko gering.
+
+### Gesamtbewertung XLS-Import
+
+| Kriterium | Bewertung |
+|-----------|-----------|
+| §4 Pausenberechnung | 🟢 KONFORM |
+| §3 Tageslimit-Warnung | 🟢 KONFORM |
+| §5 Ruhezeit-Warnung | 🟢 KONFORM |
+| §6 Nachtarbeit-Warnung | 🟢 KONFORM |
+| §18 exempt_from_arbzg | 🟡 TEILWEISE (Warnungen erscheinen trotz Befreiung) |
+| §16 Audit-Trail | 🟢 KONFORM |
+| Admin-only Sicherung | 🟢 KONFORM |
+
+**Kein kritischer oder schwerer ArbZG-Verstoß.** Die Lücke bei `exempt_from_arbzg` ist tolerierbar, da die Import-Warnungen rein informativ sind und den Import nicht blockieren. Behebung empfohlen für Konsistenz mit dem Rest des Systems.
 
 ---
 
