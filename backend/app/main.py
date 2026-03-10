@@ -16,7 +16,7 @@ from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls
 
 
 @asynccontextmanager
@@ -162,6 +162,7 @@ app.include_router(company_closures.router)
 app.include_router(error_logs.router)
 app.include_router(vacation_requests.router)
 app.include_router(journal.router)
+app.include_router(import_xls.router)
 
 
 @app.middleware("http")
