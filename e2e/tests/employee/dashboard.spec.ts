@@ -1,9 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Employee Dashboard', () => {
-  // Rate limiting on login (5/min) can cause setup timeouts
-  test.slow();
-
   test('shows monthly balance card', async ({ employeePage }) => {
     await expect(employeePage.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
     await expect(employeePage.getByText('Monatssaldo')).toBeVisible();

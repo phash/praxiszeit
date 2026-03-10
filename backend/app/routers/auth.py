@@ -66,7 +66,7 @@ def _delete_refresh_cookie(response: Response) -> None:
 
 
 @router.post("/login", response_model=LoginResponse)
-@limiter.limit("5/minute")
+@limiter.limit(settings.LOGIN_RATE_LIMIT)
 def login(request: Request, response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
     """
     Login with username and password.

@@ -1,8 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Admin Error Monitoring', () => {
-  test.slow();
-
   test('page loads with heading and tabs', async ({ adminPage }) => {
     await adminPage.goto('/admin/errors');
     await expect(adminPage.getByRole('heading', { name: 'Fehler-Monitoring' })).toBeVisible();

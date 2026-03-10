@@ -2,9 +2,6 @@ import { test, expect } from '../../fixtures/base.fixture';
 import { today, daysAgo, previousWeekday } from '../../helpers/date.helper';
 
 test.describe('Employee Time Tracking', () => {
-  // Rate limiting on login (5/min) can cause setup timeouts
-  test.slow();
-
   test.beforeEach(async ({ employeePage }) => {
     await employeePage.goto('/time-tracking');
     await expect(employeePage.getByRole('heading', { name: 'Zeiterfassung' })).toBeVisible();
@@ -200,11 +197,13 @@ test.describe('Employee Time Tracking', () => {
     // Navigate to the correct month containing the past entry
     const changeRequestBtn = employeePage.locator('button[aria-label*="Änderungsantrag"]');
     for (let i = 0; i < 3; i++) {
-      // Wait for table data to settle before checking
-      await employeePage.waitForTimeout(1000);
       if ((await changeRequestBtn.count()) > 0) break;
       await employeePage.getByRole('button', { name: 'Vorheriger Monat' }).click();
-      await employeePage.waitForLoadState('networkidle');
+      // Wait for React to render new month's data before checking count again
+      const found = await changeRequestBtn.first()
+        .waitFor({ state: 'visible', timeout: 4000 })
+        .then(() => true).catch(() => false);
+      if (found) break;
     }
 
     // Should have change request (FileEdit) button instead of edit/delete
@@ -228,21 +227,28 @@ test.describe('Employee Time Tracking', () => {
     await employeePage.reload();
     await employeePage.waitForLoadState('networkidle');
 
-    // Navigate to the correct month, waiting for table data after each click
+    // Navigate to the correct month.
+    // waitForLoadState('networkidle') fires before React has re-rendered the new month's data,
+    // so after each navigation we wait for the button to actually appear in the DOM (up to 4s).
+    // If not found (different month, no locked entries), navigate back and try again.
     const changeRequestBtn = employeePage.locator('button[aria-label*="Änderungsantrag"]');
     for (let i = 0; i < 3; i++) {
-      // Wait for table data to settle before checking
-      await employeePage.waitForTimeout(1000);
       if ((await changeRequestBtn.count()) > 0) break;
       await employeePage.getByRole('button', { name: 'Vorheriger Monat' }).click();
-      await employeePage.waitForLoadState('networkidle');
+      // Wait for React to render the new month's data (button visible = found, timeout = try next month)
+      const found = await changeRequestBtn.first()
+        .waitFor({ state: 'visible', timeout: 4000 })
+        .then(() => true).catch(() => false);
+      if (found) break;
     }
 
-    // Wait for the button to appear (may still be loading after last navigation)
+    // Confirm the button is present and wait for the page to fully settle
     await expect(changeRequestBtn.first()).toBeVisible({ timeout: 10000 });
+    await employeePage.waitForLoadState('networkidle');
 
-    // Click the button - use force to bypass any transient detachment from React re-renders
-    await changeRequestBtn.first().click({ timeout: 5000 });
+    // Use force:true to skip Playwright's CSS stability check — the button may briefly
+    // detach/reattach as React finishes its render cycle after month navigation.
+    await changeRequestBtn.first().click({ force: true });
 
     // The modal should appear with "Begründung" field
     await expect(employeePage.getByText('Begründung')).toBeVisible({ timeout: 5000 });

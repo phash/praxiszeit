@@ -2,8 +2,6 @@ import { test, expect } from '../../fixtures/base.fixture';
 import { nextWeekday, daysFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin Vacation Approvals', () => {
-  test.slow();
-
   test('page loads with toggle and filter tabs', async ({ adminPage }) => {
     await adminPage.goto('/admin/vacation-approvals');
     await expect(adminPage.getByRole('heading', { name: 'Urlaubsanträge' })).toBeVisible();
@@ -34,7 +32,7 @@ test.describe('Admin Vacation Approvals', () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Wait for the toast to dismiss
-    await adminPage.waitForTimeout(2000);
+    await expect(adminPage.locator('[role="alert"]').filter({ hasText: /Genehmigungspflicht|aktiviert|deaktiviert/ })).not.toBeVisible({ timeout: 6000 });
 
     // Click toggle second time to revert
     await toggle.click();

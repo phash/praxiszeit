@@ -1,9 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Employee Journal', () => {
-  // Rate limiting on login can cause setup timeouts
-  test.slow();
-
   test('Journal-Seite erreichbar über Sidebar', async ({ employeePage }) => {
     await employeePage.goto('/');
     await employeePage.locator('nav').getByRole('link', { name: 'Journal' }).click();

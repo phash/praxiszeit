@@ -1,8 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Navigation & Access Control', () => {
-  test.slow();
-
   test('employee sees no admin links', async ({ employeePage }) => {
     // Employee sidebar/navigation should NOT contain admin links
     await employeePage.goto('/');
@@ -56,7 +54,6 @@ test.describe('Navigation & Access Control', () => {
 
     // Click hamburger to open sidebar
     await hamburgerButton.click();
-    await employeePage.waitForTimeout(400); // wait for CSS transition
 
     // After clicking, navigation links should become visible
     await expect(dashboardLink).toBeVisible();
@@ -69,7 +66,6 @@ test.describe('Navigation & Access Control', () => {
 
     // Close the menu
     await closeButton.click();
-    await employeePage.waitForTimeout(400); // wait for CSS transition
 
     // Hamburger should be visible again
     await expect(hamburgerButton).toBeVisible();

@@ -1,8 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Admin Einstellungen', () => {
-  test.slow();
-
   test.beforeEach(async ({ adminPage }) => {
     await adminPage.goto('/admin/settings');
     await expect(adminPage.getByRole('heading', { name: 'Einstellungen' })).toBeVisible();

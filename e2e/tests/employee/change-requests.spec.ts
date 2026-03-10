@@ -2,9 +2,6 @@ import { test, expect } from '../../fixtures/base.fixture';
 import { daysAgo } from '../../helpers/date.helper';
 
 test.describe('Employee Change Requests', () => {
-  // Rate limiting on login (5/min) can cause setup timeouts
-  test.slow();
-
   test('create change request for past entry', async ({
     employeePage,
     testEmployee,
@@ -169,7 +166,7 @@ test.describe('Employee Change Requests', () => {
       await employeePage.getByRole('button', { name: 'Antrag stellen' }).click();
 
       // Wait for success or failure
-      await employeePage.waitForTimeout(3000);
+      await expect(employeePage.locator('[role="alert"]').filter({ hasText: /Änderungsantrag|erstellt|erfolgreich/ }).or(employeePage.locator('text=Fehler'))).toBeVisible({ timeout: 5000 });
       apiCreated = true; // created via UI
     }
 

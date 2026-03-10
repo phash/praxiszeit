@@ -2,9 +2,6 @@ import { test, expect } from '../../fixtures/base.fixture';
 import { nextWeekday, daysFromNow } from '../../helpers/date.helper';
 
 test.describe('Employee Absences', () => {
-  // Rate limiting on login (5/min) can cause setup timeouts
-  test.slow();
-
   test.beforeEach(async ({ employeePage }) => {
     await employeePage.goto('/absences');
     await expect(employeePage.getByRole('heading', { name: 'Abwesenheiten', exact: true })).toBeVisible();
