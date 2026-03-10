@@ -370,7 +370,7 @@ export default function AbsenceCalendarPage() {
                             },
                           })
                         }
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
                         title="Antrag zurückziehen"
                       >
                         <Trash2 size={16} />
@@ -464,6 +464,7 @@ export default function AbsenceCalendarPage() {
                 </label>
                 <input
                   type="number"
+                  inputMode="numeric"
                   step="0.5"
                   value={formData.hours}
                   onChange={(e) => setFormData({ ...formData, hours: parseFloat(e.target.value) })}
@@ -878,7 +879,7 @@ export default function AbsenceCalendarPage() {
                     </div>
                     <button
                       onClick={() => handleDelete(absence.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
                       aria-label="Abwesenheit löschen"
                     >
                       <Trash2 size={18} />

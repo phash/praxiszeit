@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Button from '../components/Button';
 
 interface ChangeRequest {
   id: string;
@@ -152,13 +153,9 @@ export default function ChangeRequests() {
                     </span>
                   </div>
                   {cr.status === 'pending' && (
-                    <button
-                      onClick={() => handleWithdraw(cr.id)}
-                      className="text-red-500 hover:text-red-700 p-1"
-                      title="Zurückziehen"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <Button variant="danger" size="sm" icon={Trash2} onClick={() => handleWithdraw(cr.id)}>
+                      Zurückziehen
+                    </Button>
                   )}
                 </div>
 
