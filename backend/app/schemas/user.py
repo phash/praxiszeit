@@ -167,10 +167,11 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """F-010: refresh_token removed – delivered as HttpOnly cookie instead."""
+    """F-010: refresh_token removed – delivered as HttpOnly cookie instead.
+    profile_picture is excluded here (up to ~690 KB); fetch it lazily via GET /api/auth/me."""
     access_token: str
     token_type: str = "bearer"
-    user: UserResponse
+    user: UserListResponse
 
 
 class RefreshResponse(BaseModel):

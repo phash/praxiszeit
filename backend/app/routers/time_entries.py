@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import extract, and_
 from typing import List, Optional
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timezone
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole
 from app.middleware.auth import get_current_user
@@ -12,6 +12,7 @@ from app.schemas.time_entry import (
 )
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break
+from app.services.arbzg_utils import is_night_work, NIGHT_THRESHOLD_MINUTES
 from uuid import UUID as UUIDType
 
 router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
@@ -21,7 +22,6 @@ MAX_DAILY_HOURS_HARD = 10.0         # §3 ArbZG: absolute Obergrenze
 MAX_DAILY_HOURS_WARN = 8.0          # §3 ArbZG: Regelgrenze (Warnung)
 MAX_WEEKLY_HOURS_WARN = 48.0        # §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche
 MAX_NIGHT_WORKER_DAILY_WARN = 8.0   # §6 Abs. 2 ArbZG: Tageslimit für Nachtarbeitnehmer
-NIGHT_THRESHOLD_MINUTES = 120       # §2 Abs. 4 ArbZG: mind. 2h Nachtzeit = Nachtarbeit
 NIGHT_START = time(23, 0)
 NIGHT_END   = time(6, 0)
 
@@ -89,24 +89,6 @@ def _calculate_weekly_net_hours(
     return total
 
 
-def _is_night_work(start_time: time, end_time: time) -> bool:
-    """Gibt True zurück wenn >2h Nachtzeit (23:00–06:00) überschnitten werden (§2 Abs. 4 ArbZG)."""
-    def to_min(t: time) -> int:
-        return t.hour * 60 + t.minute
-
-    s = to_min(start_time)
-    e = to_min(end_time)
-    if e <= s:  # Mitternachtsübergang
-        e += 1440
-
-    # Nachtzeit-Segmente in Minuten seit Tagesbeginn:
-    # 0–360 = 00:00–06:00, 1380–1440 = 23:00–24:00, 1440–1800 = 00:00–06:00 (Folgetag)
-    night_minutes = 0
-    night_minutes += max(0, min(e, 360) - max(s, 0))       # 00:00–06:00
-    night_minutes += max(0, min(e, 1440) - max(s, 1380))   # 23:00–24:00
-    night_minutes += max(0, min(e, 1800) - max(s, 1440))   # 00:00–06:00 (nach Mitternacht)
-    return night_minutes > NIGHT_THRESHOLD_MINUTES
-
 
 def _enrich_response(
     response: "TimeEntryResponse",
@@ -121,7 +103,7 @@ def _enrich_response(
     holiday = is_holiday(db, entry.date)
     response.is_sunday_or_holiday = weekday == 6 or bool(holiday)
     response.is_night_work = (
-        _is_night_work(entry.start_time, entry.end_time)
+        is_night_work(entry.start_time, entry.end_time)
         if entry.end_time else False
     )
     response.warnings = warnings or []
@@ -174,7 +156,7 @@ def get_clock_status(
         return ClockStatusResponse(is_clocked_in=False)
 
     # Calculate elapsed minutes
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     start_dt = datetime.combine(open_entry.date, open_entry.start_time)
     elapsed = int((now - start_dt).total_seconds() / 60)
 
@@ -207,7 +189,7 @@ def clock_in(
                 detail="Bereits eingestempelt. Bitte zuerst ausstempeln.",
             )
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
 
     # Check first/last work day
     if current_user.first_work_day and now.date() < current_user.first_work_day:
@@ -256,7 +238,7 @@ def clock_out(
             detail="Offener Eintrag von einem früheren Tag wurde automatisch geschlossen. Bitte neu einstempeln.",
         )
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     new_end_time = now.time().replace(second=0, microsecond=0)
     exempt = current_user.exempt_from_arbzg
 
@@ -305,7 +287,7 @@ def clock_out(
             clock_out_warnings.append("HOLIDAY_WORK")
         if (
             current_user.is_night_worker
-            and _is_night_work(open_entry.start_time, new_end_time)
+            and is_night_work(open_entry.start_time, new_end_time)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             clock_out_warnings.append(
@@ -474,7 +456,7 @@ def create_time_entry(
             warnings.append("HOLIDAY_WORK")
         if (
             current_user.is_night_worker
-            and _is_night_work(entry_data.start_time, entry_data.end_time)
+            and is_night_work(entry_data.start_time, entry_data.end_time)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             warnings.append(
@@ -572,6 +554,7 @@ def update_time_entry(
     db.refresh(entry)
 
     update_warnings: list[str] = []
+    saved_hours = 0.0  # defined here so the night-worker check below can always reference it
     if not exempt and entry.end_time is not None:
         saved_hours = _calculate_daily_net_hours(
             db=db,
@@ -606,7 +589,7 @@ def update_time_entry(
         if (
             entry.end_time is not None
             and current_user.is_night_worker
-            and _is_night_work(entry.start_time, entry.end_time)
+            and is_night_work(entry.start_time, entry.end_time)
             and saved_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             update_warnings.append(

@@ -9,27 +9,9 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service
+from app.services.arbzg_utils import is_night_work
 from app.config import settings
 from sqlalchemy import extract
-
-_NIGHT_THRESHOLD_MINUTES = 120  # §2 Abs. 4 ArbZG: mind. 2h Nachtzeit = Nachtarbeit
-
-
-def _is_night_work_export(start_time, end_time) -> bool:
-    """True wenn >2h Nachtzeit (23:00–06:00), §2 Abs. 4 / §6 ArbZG."""
-    if not start_time or not end_time:
-        return False
-
-    def to_min(t) -> int:
-        return t.hour * 60 + t.minute
-
-    s, e = to_min(start_time), to_min(end_time)
-    if e <= s:
-        e += 1440  # Mitternachtsübergang
-    nm = (max(0, min(e, 360) - max(s, 0))       # 00:00–06:00
-          + max(0, min(e, 1440) - max(s, 1380))  # 23:00–24:00
-          + max(0, min(e, 1800) - max(s, 1440))) # 00:00–06:00 (Folgetag)
-    return nm > _NIGHT_THRESHOLD_MINUTES
 
 
 def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
@@ -168,7 +150,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = (entry is not None and entry.end_time is not None
-                        and _is_night_work_export(entry.start_time, entry.end_time))
+                        and is_night_work(entry.start_time, entry.end_time))
         if is_night_wrk:
             night_work_count += 1
 
@@ -663,7 +645,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = (entry is not None and entry.end_time is not None
-                        and _is_night_work_export(entry.start_time, entry.end_time))
+                        and is_night_work(entry.start_time, entry.end_time))
         if is_night_wrk:
             night_work_count += 1
 
@@ -1032,7 +1014,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         ).all()
         night_days = sum(
             1 for e in month_entries
-            if _is_night_work_export(e.start_time, e.end_time)
+            if is_night_work(e.start_time, e.end_time)
         )
         sheet.cell(row=16, column=col).value = night_days
         sheet.cell(row=16, column=col).alignment = center_align
@@ -1183,7 +1165,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             entry = entries_by_date.get(cur)
 
             is_night = (entry is not None and entry.end_time is not None
-                        and _is_night_work_export(entry.start_time, entry.end_time))
+                        and is_night_work(entry.start_time, entry.end_time))
             if is_night:
                 night_work_count += 1
 

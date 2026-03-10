@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import extract, func
 from typing import List, Optional
@@ -18,9 +19,10 @@ from app.services import auth_service, calculation_service
 from app.services.calculation_service import count_workdays
 from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
-    _calculate_daily_net_hours, _calculate_weekly_net_hours, _is_night_work,
+    _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
+from app.services.arbzg_utils import is_night_work
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -183,7 +185,7 @@ def anonymize_user(
 
     # 14-Tage-Grace-Period: Anonymisierung erst nach Ablauf der Frist erlaubt
     if user.deactivated_at is not None:
-        days_since_deactivation = (datetime.now(timezone.utc) - user.deactivated_at).days
+        days_since_deactivation = (datetime.now(timezone.utc).date() - user.deactivated_at.date()).days
         if days_since_deactivation < 14:
             remaining = 14 - days_since_deactivation
             grace_end = (user.deactivated_at + timedelta(days=14)).strftime('%d.%m.%Y')
@@ -575,6 +577,17 @@ def review_change_request(
     cr.reviewed_at = datetime.now(timezone.utc)
 
     if cr.request_type == ChangeRequestType.CREATE:
+        # Guard against duplicate entries (same user, date, start_time)
+        duplicate = db.query(TimeEntry).filter(
+            TimeEntry.user_id == cr.user_id,
+            TimeEntry.date == cr.proposed_date,
+            TimeEntry.start_time == cr.proposed_start_time,
+        ).first()
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
+            )
         # Create new time entry
         entry = TimeEntry(
             user_id=cr.user_id,
@@ -654,7 +667,7 @@ def review_change_request(
             # §6 Abs. 2: Nachtarbeitnehmer-Tageslimit
             if (
                 cr_user.is_night_worker
-                and _is_night_work(cr.proposed_start_time, cr.proposed_end_time)
+                and is_night_work(cr.proposed_start_time, cr.proposed_end_time)
                 and daily_hours_cr > MAX_NIGHT_WORKER_DAILY_WARN
             ):
                 cr_response.warnings.append(
@@ -719,7 +732,7 @@ def admin_create_time_entry(
         # §6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
             user.is_night_worker
-            and _is_night_work(entry_data.start_time, entry_data.end_time)
+            and is_night_work(entry_data.start_time, entry_data.end_time)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             admin_create_warnings.append(
@@ -792,7 +805,7 @@ def admin_update_time_entry(
         if (
             affected_user
             and affected_user.is_night_worker
-            and _is_night_work(entry_data.start_time, entry_data.end_time)
+            and is_night_work(entry_data.start_time, entry_data.end_time)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             admin_update_warnings.append(
@@ -901,10 +914,14 @@ def list_settings(
     return [{"key": r.key, "value": r.value, "description": r.description, "updated_at": r.updated_at} for r in rows]
 
 
+class SettingUpdate(BaseModel):
+    value: str
+
+
 @router.put("/settings/{key}")
 def update_setting(
     key: str,
-    body: dict,
+    body: SettingUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -913,13 +930,11 @@ def update_setting(
 
     if key not in _ALLOWED_SETTINGS:
         raise HTTPException(status_code=400, detail=f"Unbekannte Einstellung: {key}")
-    value = body.get("value")
-    if value is None:
-        raise HTTPException(status_code=422, detail="Feld 'value' fehlt")
+    value = body.value
 
     # Validate holiday_state against supported states
     if key == "holiday_state":
-        if str(value) not in holiday_service.SUPPORTED_STATES:
+        if value not in holiday_service.SUPPORTED_STATES:
             raise HTTPException(status_code=400, detail=f"Ungültiges Bundesland: {value}")
 
     s = db.query(SystemSetting).filter(SystemSetting.key == key).first()

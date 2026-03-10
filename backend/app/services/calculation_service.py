@@ -252,7 +252,9 @@ def get_monthly_balance(db: Session, user: User, year: int, month: int) -> Decim
 def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: int) -> Decimal:
     """
     Calculate cumulative overtime account from employment start up to specified month.
-    This is the sum of all monthly balances.
+
+    Optimised: fetches all time entries, absences, holidays, and working-hours changes
+    in a single batch (4 queries total) instead of 3+ queries per month.
 
     Args:
         db: Database session
@@ -263,7 +265,12 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
     Returns:
         Cumulative overtime as Decimal
     """
-    # Get the first time entry to determine employment start
+    if not user.track_hours:
+        return Decimal('0.00')
+
+    up_to_date = date(up_to_year, up_to_month, monthrange(up_to_year, up_to_month)[1])
+
+    # --- single-pass bulk fetches ---
     first_entry = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id
     ).order_by(TimeEntry.date).first()
@@ -271,20 +278,74 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
     if not first_entry:
         return Decimal('0.00')
 
-    start_year = first_entry.date.year
-    start_month = first_entry.date.month
+    start_date = date(first_entry.date.year, first_entry.date.month, 1)
 
+    # All time entries in range (group by month in memory)
+    entries = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.date >= start_date,
+        TimeEntry.date <= up_to_date,
+    ).all()
+    # month_key → sum of net_hours
+    actual_by_month: Dict[tuple, Decimal] = {}
+    for e in entries:
+        key = (e.date.year, e.date.month)
+        actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(e.net_hours))
+
+    # All absences in range (exclude TRAINING — same rule as get_monthly_target)
+    absences = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.date >= start_date,
+        Absence.date <= up_to_date,
+        Absence.type != AbsenceType.TRAINING,
+    ).all()
+    absence_dates: set[date] = {a.date for a in absences}
+
+    # All public holidays in range
+    holidays = db.query(PublicHoliday).filter(
+        PublicHoliday.date >= start_date,
+        PublicHoliday.date <= up_to_date,
+    ).all()
+    holiday_dates: set[date] = {h.date for h in holidays}
+
+    # All working-hours changes for this user
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+    def _weekly_hours_for_date(d: date) -> Decimal:
+        """Return the weekly hours effective on date d (no DB query)."""
+        result = Decimal(str(user.weekly_hours))
+        for change in wh_changes:
+            if change.effective_from <= d:
+                result = Decimal(str(change.weekly_hours))
+            else:
+                break
+        return result
+
+    # --- iterate months and compute balance in memory ---
     total_balance = Decimal('0.00')
-
-    # Iterate through all months from start to target month
-    current_year = start_year
-    current_month = start_month
+    current_year, current_month = first_entry.date.year, first_entry.date.month
 
     while (current_year < up_to_year) or (current_year == up_to_year and current_month <= up_to_month):
-        balance = get_monthly_balance(db, user, current_year, current_month)
-        total_balance += balance
+        key = (current_year, current_month)
 
-        # Move to next month
+        # Monthly target (mirrors get_monthly_target logic)
+        _, last_day = monthrange(current_year, current_month)
+        monthly_target = Decimal('0')
+        for day in range(1, last_day + 1):
+            d = date(current_year, current_month, day)
+            if d.weekday() >= 5:
+                continue
+            if d in holiday_dates or d in absence_dates:
+                continue
+            weekly_hours = _weekly_hours_for_date(d)
+            daily_target = get_daily_target_for_date(user, d, weekly_hours)
+            monthly_target += daily_target
+
+        monthly_actual = actual_by_month.get(key, Decimal('0'))
+        total_balance += (monthly_actual - monthly_target)
+
         if current_month == 12:
             current_month = 1
             current_year += 1

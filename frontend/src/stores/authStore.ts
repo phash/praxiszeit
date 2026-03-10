@@ -58,6 +58,16 @@ export const useAuthStore = create<AuthState>()(
           accessToken: access_token,
           isAuthenticated: true,
         });
+
+        // Lazily fetch full profile (incl. profile_picture) — excluded from login response for performance
+        try {
+          const meResponse = await apiClient.get('/auth/me', {
+            headers: { Authorization: `Bearer ${access_token}` },
+          });
+          set((state) => ({ user: { ...state.user!, ...meResponse.data } }));
+        } catch {
+          // Non-fatal: app works without profile_picture
+        }
       },
 
       logout: () => {

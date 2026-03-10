@@ -3,14 +3,15 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
 from app.database import get_db
-from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus
+from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole
 from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
 from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
-    _calculate_daily_net_hours, _is_night_work,
+    _calculate_daily_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN,
 )
+from app.services.arbzg_utils import is_night_work
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
 
@@ -178,7 +179,7 @@ def create_change_request(
         )
         if (
             current_user.is_night_worker
-            and _is_night_work(data.proposed_start_time, data.proposed_end_time)
+            and is_night_work(data.proposed_start_time, data.proposed_end_time)
             and daily_hours_check > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             response.warnings.append(
@@ -222,7 +223,7 @@ def get_change_request(
     cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id).first()
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
-    if cr.user_id != current_user.id and current_user.role != "admin":
+    if cr.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
     return _enrich_response(cr, db)
 

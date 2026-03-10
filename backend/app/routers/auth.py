@@ -10,7 +10,7 @@ import base64
 from app.database import get_db
 from app.models import User, TimeEntry, Absence
 from app.schemas.user import (
-    LoginRequest, LoginResponse, RefreshResponse, UserResponse,
+    LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
     ChangePasswordRequest, UpdateCalendarColorRequest,
     TotpSetupResponse, TotpVerifyRequest, TotpDisableRequest,
 )
@@ -109,7 +109,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     return LoginResponse(
         access_token=access_token,
-        user=UserResponse.model_validate(user),
+        user=UserListResponse.model_validate(user),
     )
 
 
@@ -172,6 +172,15 @@ def logout(
     db.commit()
     _delete_refresh_cookie(response)
     return {"message": "Erfolgreich abgemeldet"}
+
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    """
+    Return the full profile of the authenticated user, including profile_picture.
+    Use this to lazily load data not included in the login response.
+    """
+    return UserResponse.model_validate(current_user)
 
 
 @router.post("/change-password")

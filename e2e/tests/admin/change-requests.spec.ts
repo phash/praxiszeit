@@ -17,7 +17,7 @@ test.describe('Admin Change Requests', () => {
     adminPage,
     testEmployee,
     createTimeEntry,
-    employeeApi,
+    createChangeRequest,
   }) => {
     // Create a past entry (locked)
     const pastDate = daysAgo(14);
@@ -31,7 +31,7 @@ test.describe('Admin Change Requests', () => {
     // Create a change request via employee API
     let requestCreated = false;
     try {
-      await employeeApi.post('/change-requests', {
+      await createChangeRequest({
         request_type: 'update',
         time_entry_id: entry.id,
         proposed_date: pastDate,
@@ -75,7 +75,7 @@ test.describe('Admin Change Requests', () => {
     adminPage,
     testEmployee,
     createTimeEntry,
-    employeeApi,
+    createChangeRequest,
   }) => {
     // Create a past entry (locked)
     const pastDate = daysAgo(14);
@@ -89,7 +89,7 @@ test.describe('Admin Change Requests', () => {
     // Create a change request via employee API
     let requestCreated = false;
     try {
-      await employeeApi.post('/change-requests', {
+      await createChangeRequest({
         request_type: 'update',
         time_entry_id: entry.id,
         proposed_date: pastDate,
