@@ -166,16 +166,16 @@ export default function TimeTracking() {
       }
       const saved: TimeEntry = response.data;
       if (saved.warnings?.includes('DAILY_HOURS_WARNING')) {
-        toast.warning('Tagesarbeitszeit überschreitet 8 Stunden (§3 ArbZG)');
+        toast.warning('Tagesarbeitszeit über 8 Stunden');
       }
       if (saved.warnings?.includes('WEEKLY_HOURS_WARNING')) {
-        toast.warning('Wochenarbeitszeit überschreitet 48 Stunden (§14 ArbZG)');
+        toast.warning('Wochenarbeitszeit über 48 Stunden');
       }
       if (saved.warnings?.includes('SUNDAY_WORK')) {
-        toast.warning('Achtung: Sonntagsarbeit – Ausnahmegrund nach §10 ArbZG dokumentieren');
+        toast.warning('Sonntagsarbeit eingetragen – bitte Ausnahmegrund angeben');
       }
       if (saved.warnings?.includes('HOLIDAY_WORK')) {
-        toast.warning('Achtung: Feiertagsarbeit – Ausnahmegrund nach §10 ArbZG dokumentieren');
+        toast.warning('Feiertagsarbeit eingetragen – bitte Ausnahmegrund angeben');
       }
       fetchEntries();
       resetForm();
@@ -412,13 +412,13 @@ export default function TimeTracking() {
               (editingId && entries.find(e => e.id === editingId)?.is_sunday_or_holiday)) && (
               <div className="md:col-span-2 lg:col-span-5">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ausnahmegrund (§10 ArbZG) <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
+                  Ausnahmegrund <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
                 </label>
                 <input
                   type="text"
                   value={formData.sunday_exception_reason}
                   onChange={(e) => setFormData({ ...formData, sunday_exception_reason: e.target.value })}
-                  placeholder="z. B. Notdienst, Patientenversorgung (§10 Nr. 1 ArbZG)"
+                  placeholder="z. B. Notdienst, Patientenversorgung"
                   className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 bg-amber-50"
                 />
               </div>
@@ -475,12 +475,12 @@ export default function TimeTracking() {
                           <span>{format(entryDate, 'dd.MM.yyyy')}</span>
                           <div className="flex gap-1 flex-wrap">
                             {entry.is_sunday_or_holiday && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800" title="Sonn-/Feiertagsarbeit – §9/10 ArbZG">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800" title="Sonn- oder Feiertagsarbeit">
                                 So/FT
                               </span>
                             )}
                             {entry.is_night_work && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800" title="Nachtarbeit (23–6 Uhr) – §6 ArbZG">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800" title="Nachtarbeit (23–6 Uhr)">
                                 Nacht
                               </span>
                             )}
