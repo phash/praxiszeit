@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
-import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle, Camera, Trash2 } from 'lucide-react';
+import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
@@ -52,6 +52,8 @@ export default function Profile() {
   const [totpMessage, setTotpMessage] = useState('');
   const [totpError, setTotpError] = useState('');
   const [secretCopied, setSecretCopied] = useState(false);
+
+  const [showExtendedSettings, setShowExtendedSettings] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -361,245 +363,6 @@ export default function Profile() {
         )}
       </div>
 
-      {/* DSGVO: Datenauszug (Art. 20) */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold flex items-center space-x-2">
-              <Download size={20} />
-              <span>Meine Daten exportieren</span>
-            </h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Laden Sie alle zu Ihrer Person gespeicherten Daten herunter (Art. 20 DSGVO – Datenportabilität).
-            </p>
-          </div>
-          <button
-            onClick={handleDataExport}
-            className="flex items-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition text-sm font-medium"
-          >
-            <Download size={16} />
-            <span>JSON herunterladen</span>
-          </button>
-        </div>
-      </div>
-
-      {/* F-019: Zwei-Faktor-Authentifizierung */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center space-x-2 mb-1">
-          <Smartphone size={20} />
-          <h3 className="text-lg font-semibold">Zwei-Faktor-Authentifizierung (2FA)</h3>
-        </div>
-        <p className="text-sm text-gray-600 mb-4">
-          Schützen Sie Ihr Konto mit einem zusätzlichen Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy).
-        </p>
-
-        {totpMessage && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4 flex items-center gap-2">
-            <CheckCircle size={16} />
-            {totpMessage}
-          </div>
-        )}
-        {totpError && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-            {totpError}
-          </div>
-        )}
-
-        {/* Status badge */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            {totpEnabled ? (
-              <>
-                <ShieldCheck size={18} className="text-green-600" />
-                <span className="text-sm font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
-                  Aktiviert
-                </span>
-              </>
-            ) : (
-              <>
-                <ShieldOff size={18} className="text-gray-400" />
-                <span className="text-sm font-medium text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
-                  Deaktiviert
-                </span>
-              </>
-            )}
-          </div>
-
-          {!totpEnabled && !showTotpSetup && (
-            <button
-              onClick={handleTotpSetup}
-              className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium"
-            >
-              <ShieldCheck size={15} />
-              2FA aktivieren
-            </button>
-          )}
-          {totpEnabled && !showTotpDisable && (
-            <button
-              onClick={() => { setShowTotpDisable(true); setTotpError(''); }}
-              className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 px-4 py-2 rounded-lg transition text-sm font-medium border border-red-200"
-            >
-              <ShieldOff size={15} />
-              2FA deaktivieren
-            </button>
-          )}
-        </div>
-
-        {/* Setup wizard */}
-        {showTotpSetup && totpSetupData && (
-          <div className="border border-blue-200 bg-blue-50 rounded-xl p-5 space-y-4">
-            <p className="text-sm font-medium text-blue-800">
-              Schritt 1: Scannen Sie den QR-Code mit Ihrer Authenticator-App
-            </p>
-            <div className="flex justify-center">
-              <div className="bg-white p-3 rounded-lg shadow-sm inline-block">
-                <QRCodeSVG value={totpSetupData.otpauth_uri} size={180} />
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-blue-700 mb-1">
-                Oder tragen Sie den Schlüssel manuell ein:
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs bg-white border border-blue-200 rounded px-3 py-2 font-mono tracking-wider break-all">
-                  {totpSetupData.secret}
-                </code>
-                <button
-                  type="button"
-                  onClick={handleCopySecret}
-                  className="flex-shrink-0 p-2 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition"
-                  title="Kopieren"
-                >
-                  {secretCopied ? <CheckCircle size={16} className="text-green-600" /> : <Copy size={16} className="text-blue-600" />}
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleTotpVerify} className="space-y-3 pt-2 border-t border-blue-200">
-              <p className="text-sm font-medium text-blue-800">
-                Schritt 2: Geben Sie den 6-stelligen Code aus der App ein
-              </p>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="\d{6}"
-                maxLength={6}
-                value={totpVerifyCode}
-                onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                required
-                autoFocus
-                className="w-full px-4 py-3 border border-blue-300 rounded-lg focus:ring-2 focus:ring-primary text-center text-xl tracking-widest font-mono"
-                placeholder="000000"
-              />
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={totpVerifyCode.length !== 6}
-                  className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Bestätigen & 2FA aktivieren
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowTotpSetup(false); setTotpSetupData(null); setTotpVerifyCode(''); setTotpError(''); }}
-                  className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Disable form */}
-        {showTotpDisable && (
-          <div className="border border-red-200 bg-red-50 rounded-xl p-5 space-y-3">
-            <p className="text-sm font-medium text-red-800">
-              Bitte bestätigen Sie Ihr Passwort, um 2FA zu deaktivieren:
-            </p>
-            <form onSubmit={handleTotpDisable} className="space-y-3">
-              <PasswordInput
-                value={totpDisablePassword}
-                onChange={(e) => setTotpDisablePassword(e.target.value)}
-                required
-                placeholder="Ihr aktuelles Passwort"
-                className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-400"
-              />
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={!totpDisablePassword}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50"
-                >
-                  2FA deaktivieren
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowTotpDisable(false); setTotpDisablePassword(''); setTotpError(''); }}
-                  className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-      </div>
-
-      {/* Calendar Color Selection */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center space-x-2 mb-4">
-          <Palette size={20} />
-          <h3 className="text-lg font-semibold">Kalenderfarbe</h3>
-        </div>
-        <p className="text-sm text-gray-600 mb-4">
-          Wählen Sie eine Farbe für Ihre Einträge im Team-Kalender
-        </p>
-
-        {colorMessage && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">
-            {colorMessage}
-          </div>
-        )}
-
-        {/* Color Preview */}
-        <div className="flex items-center space-x-3 mb-4">
-          <div
-            className="w-12 h-12 rounded-lg border-2 border-gray-300"
-            style={{ backgroundColor: selectedColor }}
-          ></div>
-          <div>
-            <p className="text-sm font-medium text-gray-700">Gewählte Farbe</p>
-            <p className="text-xs text-gray-500">{selectedColor}</p>
-          </div>
-        </div>
-
-        {/* Color Palette */}
-        <div className="grid grid-cols-6 gap-3">
-          {PASTEL_COLORS.map((color) => (
-            <button
-              key={color.hex}
-              onClick={() => handleColorChange(color.hex)}
-              className={`relative w-full aspect-square rounded-lg transition-all hover:scale-110 ${
-                selectedColor === color.hex
-                  ? 'ring-4 ring-primary ring-offset-2 scale-110'
-                  : 'hover:ring-2 hover:ring-gray-300'
-              }`}
-              style={{ backgroundColor: color.hex }}
-              title={color.name}
-            >
-              {selectedColor === color.hex && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center">
-                    <div className="w-2 h-2 bg-primary rounded-full"></div>
-                  </div>
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Password Change */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
@@ -698,6 +461,265 @@ export default function Profile() {
           <p className="text-sm text-gray-500">
             Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
           </p>
+        )}
+      </div>
+
+      {/* Weitere Einstellungen */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
+        <button
+          onClick={() => setShowExtendedSettings(s => !s)}
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+          aria-expanded={showExtendedSettings}
+        >
+          <span className="font-medium text-gray-800">Weitere Einstellungen</span>
+          {showExtendedSettings
+            ? <ChevronUp size={18} className="text-gray-500" />
+            : <ChevronDown size={18} className="text-gray-500" />
+          }
+        </button>
+        {showExtendedSettings && (
+          <div className="border-t border-gray-200 divide-y divide-gray-100">
+
+            {/* F-019: Zwei-Faktor-Authentifizierung */}
+            <div className="p-6">
+              <div className="flex items-center space-x-2 mb-1">
+                <Smartphone size={20} />
+                <h3 className="text-lg font-semibold">Zwei-Faktor-Authentifizierung (2FA)</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Schützen Sie Ihr Konto mit einem zusätzlichen Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy).
+              </p>
+
+              {totpMessage && (
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4 flex items-center gap-2">
+                  <CheckCircle size={16} />
+                  {totpMessage}
+                </div>
+              )}
+              {totpError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+                  {totpError}
+                </div>
+              )}
+
+              {/* Status badge */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  {totpEnabled ? (
+                    <>
+                      <ShieldCheck size={18} className="text-green-600" />
+                      <span className="text-sm font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                        Aktiviert
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldOff size={18} className="text-gray-400" />
+                      <span className="text-sm font-medium text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
+                        Deaktiviert
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {!totpEnabled && !showTotpSetup && (
+                  <button
+                    onClick={handleTotpSetup}
+                    className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium"
+                  >
+                    <ShieldCheck size={15} />
+                    2FA aktivieren
+                  </button>
+                )}
+                {totpEnabled && !showTotpDisable && (
+                  <button
+                    onClick={() => { setShowTotpDisable(true); setTotpError(''); }}
+                    className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 px-4 py-2 rounded-lg transition text-sm font-medium border border-red-200"
+                  >
+                    <ShieldOff size={15} />
+                    2FA deaktivieren
+                  </button>
+                )}
+              </div>
+
+              {/* Setup wizard */}
+              {showTotpSetup && totpSetupData && (
+                <div className="border border-blue-200 bg-blue-50 rounded-xl p-5 space-y-4">
+                  <p className="text-sm font-medium text-blue-800">
+                    Schritt 1: Scannen Sie den QR-Code mit Ihrer Authenticator-App
+                  </p>
+                  <div className="flex justify-center">
+                    <div className="bg-white p-3 rounded-lg shadow-sm inline-block">
+                      <QRCodeSVG value={totpSetupData.otpauth_uri} size={180} />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-blue-700 mb-1">
+                      Oder tragen Sie den Schlüssel manuell ein:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs bg-white border border-blue-200 rounded px-3 py-2 font-mono tracking-wider break-all">
+                        {totpSetupData.secret}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={handleCopySecret}
+                        className="flex-shrink-0 p-2 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition"
+                        title="Kopieren"
+                      >
+                        {secretCopied ? <CheckCircle size={16} className="text-green-600" /> : <Copy size={16} className="text-blue-600" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleTotpVerify} className="space-y-3 pt-2 border-t border-blue-200">
+                    <p className="text-sm font-medium text-blue-800">
+                      Schritt 2: Geben Sie den 6-stelligen Code aus der App ein
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d{6}"
+                      maxLength={6}
+                      value={totpVerifyCode}
+                      onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      required
+                      autoFocus
+                      className="w-full px-4 py-3 border border-blue-300 rounded-lg focus:ring-2 focus:ring-primary text-center text-xl tracking-widest font-mono"
+                      placeholder="000000"
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={totpVerifyCode.length !== 6}
+                        className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Bestätigen & 2FA aktivieren
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowTotpSetup(false); setTotpSetupData(null); setTotpVerifyCode(''); setTotpError(''); }}
+                        className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
+                      >
+                        Abbrechen
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Disable form */}
+              {showTotpDisable && (
+                <div className="border border-red-200 bg-red-50 rounded-xl p-5 space-y-3">
+                  <p className="text-sm font-medium text-red-800">
+                    Bitte bestätigen Sie Ihr Passwort, um 2FA zu deaktivieren:
+                  </p>
+                  <form onSubmit={handleTotpDisable} className="space-y-3">
+                    <PasswordInput
+                      value={totpDisablePassword}
+                      onChange={(e) => setTotpDisablePassword(e.target.value)}
+                      required
+                      placeholder="Ihr aktuelles Passwort"
+                      className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-400"
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={!totpDisablePassword}
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50"
+                      >
+                        2FA deaktivieren
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowTotpDisable(false); setTotpDisablePassword(''); setTotpError(''); }}
+                        className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
+                      >
+                        Abbrechen
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </div>
+
+            {/* Calendar Color Selection */}
+            <div className="p-6">
+              <div className="flex items-center space-x-2 mb-4">
+                <Palette size={20} />
+                <h3 className="text-lg font-semibold">Kalenderfarbe</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Wählen Sie eine Farbe für Ihre Einträge im Team-Kalender
+              </p>
+
+              {colorMessage && (
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">
+                  {colorMessage}
+                </div>
+              )}
+
+              {/* Color Preview */}
+              <div className="flex items-center space-x-3 mb-4">
+                <div
+                  className="w-12 h-12 rounded-lg border-2 border-gray-300"
+                  style={{ backgroundColor: selectedColor }}
+                ></div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Gewählte Farbe</p>
+                  <p className="text-xs text-gray-500">{selectedColor}</p>
+                </div>
+              </div>
+
+              {/* Color Palette */}
+              <div className="grid grid-cols-6 gap-3">
+                {PASTEL_COLORS.map((color) => (
+                  <button
+                    key={color.hex}
+                    onClick={() => handleColorChange(color.hex)}
+                    className={`relative w-full aspect-square rounded-lg transition-all hover:scale-110 ${
+                      selectedColor === color.hex
+                        ? 'ring-4 ring-primary ring-offset-2 scale-110'
+                        : 'hover:ring-2 hover:ring-gray-300'
+                    }`}
+                    style={{ backgroundColor: color.hex }}
+                    title={color.name}
+                  >
+                    {selectedColor === color.hex && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center">
+                          <div className="w-2 h-2 bg-primary rounded-full"></div>
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* DSGVO: Datenauszug (Art. 20) */}
+            <div className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold flex items-center space-x-2">
+                    <Download size={20} />
+                    <span>Meine Daten exportieren</span>
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Laden Sie alle zu Ihrer Person gespeicherten Daten herunter (Art. 20 DSGVO – Datenportabilität).
+                  </p>
+                </div>
+                <button
+                  onClick={handleDataExport}
+                  className="flex items-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition text-sm font-medium"
+                >
+                  <Download size={16} />
+                  <span>JSON herunterladen</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
         )}
       </div>
     </div>
