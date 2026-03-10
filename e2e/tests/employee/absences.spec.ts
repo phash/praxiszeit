@@ -25,9 +25,9 @@ test.describe('Employee Absences', () => {
     // Submit
     await employeePage.getByRole('button', { name: 'Speichern' }).click();
 
-    // Check for success toast
+    // Check for success toast (direct entry or vacation-request depending on global setting)
     await expect(
-      employeePage.locator('[role="alert"]').filter({ hasText: /eingetragen|erfolgreich/ })
+      employeePage.locator('[role="alert"]').filter({ hasText: /eingetragen|erfolgreich|gestellt/ })
     ).toBeVisible({ timeout: 10000 });
   });
 
