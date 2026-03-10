@@ -471,26 +471,15 @@ export default function AbsenceCalendarPage() {
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
-                {formData.type === 'vacation' && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Urlaub wird in Tagen berechnet (Regelarbeitszeit pro Tag)
-                  </p>
-                )}
-                {formData.type === 'overtime' && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Vorausgefüllt mit Regelstunden des Tages
-                  </p>
-                )}
-                {formData.type !== 'vacation' && formData.type !== 'overtime' && currentUser?.use_daily_schedule && !isDateRange && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Automatisch aus Tagesplan
-                  </p>
-                )}
-                {formData.type !== 'vacation' && formData.type !== 'overtime' && currentUser?.use_daily_schedule && isDateRange && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Bei Tagesplan werden Stunden pro Tag automatisch berechnet
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  {formData.type === 'vacation'
+                    ? 'Stunden = Regelarbeitszeit pro Tag (für Urlaubsberechnung)'
+                    : formData.type === 'overtime'
+                    ? 'Vorausgefüllt mit Ihren Sollstunden des Tages'
+                    : currentUser?.use_daily_schedule
+                    ? 'Stunden werden aus Ihrem Tagesplan übernommen'
+                    : 'Stunden, die als Abwesenheit angerechnet werden'}
+                </p>
               </div>
               {!isDateRange && (
                 <div>
@@ -645,17 +634,12 @@ export default function AbsenceCalendarPage() {
           {/* Mobile List View */}
           <div className="sm:hidden">
             {days
-              .filter((day) => {
-                const dateStr = format(day, 'yyyy-MM-dd');
-                const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
-                const dayHoliday = holidays.find((h) => h.date === dateStr);
-                return dayEntries.length > 0 || dayHoliday;
-              })
+              .filter((day) => day.getDay() !== 0 && day.getDay() !== 6) // show all weekdays
               .map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd');
                 const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
-                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                const hasContent = dayEntries.length > 0 || !!dayHoliday;
 
                 return (
                   <div key={dateStr} className="border-b border-gray-200 p-4">
@@ -664,10 +648,20 @@ export default function AbsenceCalendarPage() {
                         <p className="font-semibold text-gray-900">
                           {format(day, 'EEEE, dd. MMMM', { locale: de })}
                         </p>
-                        {isWeekend && (
-                          <span className="text-xs text-gray-500">Wochenende</span>
-                        )}
                       </div>
+                      {!dayHoliday && (
+                        <button
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, date: dateStr, hours: getHoursForDate(currentUser, dateStr) || prev.hours }));
+                            setShowForm(true);
+                            setIsDateRange(false);
+                          }}
+                          className="p-2 text-gray-400 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+                          aria-label={`Abwesenheit für ${format(day, 'dd. MMMM', { locale: de })} eintragen`}
+                        >
+                          <Plus size={18} />
+                        </button>
+                      )}
                     </div>
                     <div className="space-y-2">
                       {/* Holiday */}
@@ -692,18 +686,14 @@ export default function AbsenceCalendarPage() {
                           </p>
                         </div>
                       ))}
+                      {/* Placeholder for days without content */}
+                      {!hasContent && (
+                        <p className="text-sm text-gray-400 italic">Keine Abwesenheit</p>
+                      )}
                     </div>
                   </div>
                 );
               })}
-            {days.filter((day) => {
-              const dateStr = format(day, 'yyyy-MM-dd');
-              const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
-              const dayHoliday = holidays.find((h) => h.date === dateStr);
-              return dayEntries.length > 0 || dayHoliday;
-            }).length === 0 && (
-              <EmptyState title="Keine Abwesenheiten oder Feiertage in diesem Monat" />
-            )}
           </div>
         </div>
       ) : (
