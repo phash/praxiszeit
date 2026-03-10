@@ -30,6 +30,46 @@ interface TimeEntry {
   sunday_exception_reason?: string | null;
 }
 
+interface DailyScheduleUser {
+  use_daily_schedule: boolean;
+  hours_monday: number | null;
+  hours_tuesday: number | null;
+  hours_wednesday: number | null;
+  hours_thursday: number | null;
+  hours_friday: number | null;
+  weekly_hours: number;
+  work_days_per_week: number;
+}
+
+/** Returns the user's daily target hours for a given date string "YYYY-MM-DD". */
+function getDailyTargetHours(user: DailyScheduleUser | null, dateStr: string): number {
+  if (!user) return 8;
+  if (user.use_daily_schedule) {
+    const weekday = new Date(dateStr + 'T00:00:00').getDay(); // 0=Sun,1=Mon,...
+    const map: Record<number, number | null | undefined> = {
+      1: user.hours_monday,
+      2: user.hours_tuesday,
+      3: user.hours_wednesday,
+      4: user.hours_thursday,
+      5: user.hours_friday,
+    };
+    return map[weekday] ?? 0;
+  }
+  // No daily schedule: distribute weekly_hours over work_days
+  const weekday = new Date(dateStr + 'T00:00:00').getDay();
+  if (weekday === 0 || weekday === 6) return 0; // weekend
+  return user.work_days_per_week > 0 ? user.weekly_hours / user.work_days_per_week : 8;
+}
+
+/** Adds `hours` to a "HH:mm" start time and returns the result as "HH:mm". */
+function addHoursToTime(startTime: string, hours: number): string {
+  const [h, m] = startTime.split(':').map(Number);
+  const totalMins = h * 60 + m + Math.round(hours * 60);
+  const endH = Math.floor(totalMins / 60) % 24;
+  const endM = totalMins % 60;
+  return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+}
+
 export default function TimeTracking() {
   const toast = useToast();
   const { user } = useAuthStore();
@@ -242,10 +282,13 @@ export default function TimeTracking() {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const targetHours = getDailyTargetHours(user, today);
+    const defaultEnd = targetHours > 0 ? addHoursToTime('08:00', targetHours) : '17:00';
     setFormData({
-      date: format(new Date(), 'yyyy-MM-dd'),
+      date: today,
       start_time: '08:00',
-      end_time: '17:00',
+      end_time: defaultEnd,
       break_minutes: 0,
       note: '',
       sunday_exception_reason: '',
@@ -360,7 +403,12 @@ export default function TimeTracking() {
                 type="date"
                 value={formData.date}
                 onChange={(e) => {
-                  setFormData({ ...formData, date: e.target.value });
+                  const newDate = e.target.value;
+                  const targetHours = getDailyTargetHours(user, newDate);
+                  const newEndTime = targetHours > 0
+                    ? addHoursToTime(formData.start_time, targetHours)
+                    : formData.end_time;
+                  setFormData({ ...formData, date: newDate, end_time: newEndTime });
                   setErrors({});
                 }}
                 required
