@@ -102,6 +102,37 @@ def test_no_rest_warning_for_sufficient_rest():
     assert not any("§5" in w for w in warnings)
 
 
+def test_exempt_user_gets_no_warnings():
+    # §18: exempt=True → alle Prüfungen übersprungen
+    prev_end = datetime(2026, 1, 11, 23, 0)  # nur 9h Ruhezeit
+    warnings = _check_arbzg(
+        date(2026, 1, 12), time(7, 0), time(18, 30), 45, prev_end,
+        exempt=True,
+    )
+    assert warnings == []
+
+
+def test_night_worker_8h_warning():
+    # §6 Abs. 2: is_night_worker=True → Warnung ab >8h netto statt >10h
+    # 7:00–16:30 = 9.5h brutto, 45min Pause → 8.75h netto → über 8h-Limit
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(16, 30), 45, None, is_night_worker=True)
+    assert any("§6 Abs. 2" in w for w in warnings)
+    assert not any("§3" in w for w in warnings)  # §3 nicht zusätzlich
+
+
+def test_night_worker_no_warning_under_8h():
+    # 7:00–14:30 = 7.5h brutto, 30min Pause → 7h netto → unter 8h → keine §6-Abs.-2-Warnung
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(14, 30), 30, None, is_night_worker=True)
+    assert not any("§6 Abs. 2" in w for w in warnings)
+
+
+def test_non_night_worker_no_8h_warning():
+    # Normaler User mit 9h netto → §3-Warnung, kein §6-Abs.-2
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, is_night_worker=False)
+    assert any("§3" in w for w in warnings)
+    assert not any("§6 Abs. 2" in w for w in warnings)
+
+
 # ── parse_xls ────────────────────────────────────────────────────────────────
 
 def test_parse_xls_extracts_data_rows(db, test_user):
@@ -198,6 +229,31 @@ def test_parse_xls_empty_note_is_none(db, test_user):
     ]
     entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
     assert entries[0].note is None
+
+
+def test_parse_xls_exempt_user_no_arbzg_warnings(db, test_user):
+    # §18: exempt_from_arbzg=True → keine Warnungen, auch bei langer Arbeitszeit
+    test_user.exempt_from_arbzg = True
+    db.commit()
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 7, 0), _dt(2026, 1, 12, 18, 30)),  # 10.75h netto
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    assert entries[0].arbzg_warnings == []
+
+
+def test_parse_xls_night_worker_gets_8h_warning(db, test_user):
+    # §6 Abs. 2: is_night_worker=True → 8h-Warnung statt 10h
+    test_user.is_night_worker = True
+    db.commit()
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        # 7:00–16:30 = 9.5h brutto, 45min Pause → 8.75h netto → über 8h-Limit
+        _make_data_row(_dt(2026, 1, 12, 7, 0), _dt(2026, 1, 12, 16, 30)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    assert any("§6 Abs. 2" in w for w in entries[0].arbzg_warnings)
 
 
 # ── execute_import ────────────────────────────────────────────────────────────

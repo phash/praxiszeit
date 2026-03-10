@@ -52,31 +52,52 @@ def _calc_break_minutes(start: time, end: time) -> int:
     return 0
 
 
+NIGHT_WORKER_MAX_NET_HOURS = 8.0  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer
+
+
 def _check_arbzg(
     entry_date: date,
     start: time,
     end: time,
     break_min: int,
     prev_end_dt: Optional[datetime],
+    exempt: bool = False,
+    is_night_worker: bool = False,
 ) -> list[str]:
-    """ArbZG-Warnungen ermitteln (§3 Tageslimit, §5 Ruhezeit, §6 Nachtarbeit)."""
+    """ArbZG-Warnungen ermitteln (§3 Tageslimit, §5 Ruhezeit, §6 Nachtarbeit).
+
+    exempt=True (§18 ArbZG): alle Prüfungen werden übersprungen.
+    is_night_worker=True (§6 Abs. 2 ArbZG): 8h-Limit statt 10h.
+    """
+    if exempt:
+        return []
+
     warnings = []
     gross_seconds = (end.hour * 3600 + end.minute * 60) - (start.hour * 3600 + start.minute * 60)
     net_hours = (gross_seconds / 3600.0) - (break_min / 60.0)
 
-    if net_hours > MAX_DAILY_NET_HOURS:
-        warnings.append(f"§3 ArbZG: Tägliche Netto-Arbeitszeit {net_hours:.1f}h überschreitet 10h-Limit")
+    # §6 Abs. 2: strengeres 8h-Limit für Nachtarbeitnehmer
+    if is_night_worker and net_hours > NIGHT_WORKER_MAX_NET_HOURS:
+        warnings.append(
+            f"§6 Abs. 2 ArbZG: Nachtarbeitnehmer — Netto-Arbeitszeit {net_hours:.1f}h überschreitet 8h-Limit"
+        )
+    elif net_hours > MAX_DAILY_NET_HOURS:
+        # §3: allgemeines 10h-Tageslimit
+        warnings.append(
+            f"§3 ArbZG: Netto-Arbeitszeit {net_hours:.1f}h überschreitet das 10h-Tageslimit"
+        )
 
     if is_night_work(start, end):
-        warnings.append("§6 ArbZG: Nachtarbeit erkannt (>2h zwischen 23:00–06:00)")
+        # §6 Abs. 1: Nachtarbeit-Erkennung (>2h zwischen 23:00–06:00)
+        warnings.append("§6 ArbZG: Nachtarbeit (>2h in der Nachtzeit 23:00–06:00)")
 
     if prev_end_dt is not None:
         curr_start_dt = datetime.combine(entry_date, start)
         rest_hours = (curr_start_dt - prev_end_dt).total_seconds() / 3600.0
         if rest_hours < MIN_REST_HOURS:
             warnings.append(
-                f"§5 ArbZG: Ruhezeit {rest_hours:.1f}h unterschreitet 11h-Minimum "
-                f"(Vorheriger Eintrag endete {prev_end_dt.strftime('%d.%m %H:%M')})"
+                f"§5 ArbZG: Ruhezeit {rest_hours:.1f}h unterschreitet das 11h-Minimum "
+                f"(vorheriger Eintrag endete {prev_end_dt.strftime('%d.%m.%Y %H:%M')})"
             )
 
     return warnings
@@ -102,6 +123,11 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
             f"Sheet 'Zeiterfassung' nicht gefunden. "
             f"Vorhandene Sheets: {', '.join(wb.sheet_names())}"
         )
+
+    # §18-Bypass und §6 Abs. 2: User-Flags einmalig laden
+    user = db.query(User).filter(User.id == user_id).first()
+    exempt = getattr(user, "exempt_from_arbzg", False) or False
+    is_night_worker = getattr(user, "is_night_worker", False) or False
 
     ws = wb.sheet_by_name("Zeiterfassung")
     entries: list[ImportedEntry] = []
@@ -140,7 +166,10 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
             if last_db_entry and last_db_entry.end_time:
                 check_prev = datetime.combine(last_db_entry.date, last_db_entry.end_time)
 
-        arbzg_warnings = _check_arbzg(entry_date, start_t, end_t, break_min, check_prev)
+        arbzg_warnings = _check_arbzg(
+            entry_date, start_t, end_t, break_min, check_prev,
+            exempt=exempt, is_night_worker=is_night_worker,
+        )
 
         # Konflikt-Check nach UniqueConstraint (user_id + date + start_time)
         existing = (
