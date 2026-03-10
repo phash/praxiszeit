@@ -9,6 +9,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ChangeRequestForm from '../components/ChangeRequestForm';
 import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
+import Button from '../components/Button';
 import { getErrorMessage } from '../utils/errorMessage';
 
 interface TimeEntry {
@@ -262,22 +263,25 @@ export default function TimeTracking() {
         <h1 className="text-3xl font-bold text-gray-900">Zeiterfassung</h1>
         <div className="flex items-center space-x-2">
           {!isAdmin && (
-            <button
+            <Button
+              variant="secondary"
+              size="md"
+              icon={FileEdit}
               onClick={openCreateChangeRequest}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
               title="Antrag für vergangenen Tag stellen"
+              className="bg-amber-500 hover:bg-amber-600 text-white focus:ring-amber-400"
             >
-              <FileEdit size={20} />
               <span className="hidden sm:inline">Antrag</span>
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            variant={showForm ? 'ghost' : 'primary'}
+            size="md"
+            icon={showForm ? X : Plus}
             onClick={() => setShowForm(!showForm)}
-            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
           >
-            {showForm ? <X size={20} /> : <Plus size={20} />}
-            <span>{showForm ? 'Abbrechen' : 'Neuer Eintrag'}</span>
-          </button>
+            {showForm ? 'Abbrechen' : 'Neuer Eintrag'}
+          </Button>
         </div>
       </div>
 
@@ -364,6 +368,7 @@ export default function TimeTracking() {
               <input
                 id="break-minutes"
                 type="number"
+                inputMode="numeric"
                 min="0"
                 max="480"
                 value={formData.break_minutes}
@@ -376,13 +381,9 @@ export default function TimeTracking() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
-              <button
-                type="submit"
-                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
-              >
-                <Save size={18} />
-                <span>Speichern</span>
-              </button>
+              <Button type="submit" variant="primary" size="md" icon={Save} fullWidth>
+                Speichern
+              </Button>
             </div>
             <div className="md:col-span-2 lg:col-span-5">
               <label htmlFor="tt-note" className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>

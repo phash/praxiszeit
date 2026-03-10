@@ -388,6 +388,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                         {isGray ? '' : editingDate === day.date ? (
                           <input
                             type="number"
+                            inputMode="numeric"
                             min={0}
                             max={480}
                             value={editState.breakMinutes}
@@ -411,7 +412,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <button
                               onClick={() => isAdminView ? void handleAdminSave(day) : handleEmployeeSave(day)}
                               disabled={saving}
-                              className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
+                              className="p-2.5 text-green-600 hover:text-green-800 disabled:opacity-50"
                               title="Speichern"
                             >
                               <Check size={15} />
@@ -419,7 +420,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <button
                               onClick={cancelEdit}
                               disabled={saving}
-                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                              className="p-2.5 text-gray-400 hover:text-gray-600 disabled:opacity-50"
                               title="Abbrechen"
                             >
                               <X size={15} />
@@ -428,7 +429,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               <button
                                 onClick={() => isAdminView ? void handleAdminDelete(day) : handleEmployeeDelete(day)}
                                 disabled={saving}
-                                className="p-1 text-red-400 hover:text-red-600 disabled:opacity-50"
+                                className="p-2.5 text-red-400 hover:text-red-600 disabled:opacity-50"
                                 title="Löschen"
                               >
                                 <Trash2 size={15} />
@@ -443,7 +444,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : day.time_entries.length === 1 ? (
                             <button
                               onClick={() => startEdit(day)}
-                              className="p-1 text-gray-400 hover:text-gray-600"
+                              className="p-2.5 text-gray-400 hover:text-gray-600"
                               title="Bearbeiten"
                             >
                               <Pencil size={14} />
@@ -451,7 +452,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : (
                             <button
                               onClick={() => startEdit(day)}
-                              className="p-1 text-blue-400 hover:text-blue-600"
+                              className="p-2.5 text-blue-400 hover:text-blue-600"
                               title="Eintrag anlegen"
                             >
                               <Plus size={14} />
