@@ -394,7 +394,7 @@ export default function TimeTracking() {
             onClick={resetForm}
           />
           <div
-            className="bg-white border-gray-200 md:rounded-xl md:shadow-sm md:border md:p-6 md:mb-6 fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t md:static md:rounded-xl md:shadow-sm md:border md:pb-0"
+            className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-sm md:border md:p-6 md:mb-6"
             style={{ animation: 'slideUpSheet 0.25s ease-out' }}
           >
             {/* Mobile handle bar */}
