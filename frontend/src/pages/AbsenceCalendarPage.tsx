@@ -10,6 +10,7 @@ import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../consta
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import MonthSelector from '../components/MonthSelector';
+import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 
 interface VacationRequest {
@@ -323,9 +324,8 @@ export default function AbsenceCalendarPage() {
       {activeTab === 'requests' && (
         <div className="space-y-4">
           {myVacationRequests.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center text-gray-500">
-              <Clock className="mx-auto mb-2 text-gray-400" size={32} />
-              <p>Keine Urlaubsanträge vorhanden</p>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <EmptyState icon={Clock} title="Keine Urlaubsanträge vorhanden" />
             </div>
           ) : (
             myVacationRequests.map((vr) => {
@@ -706,9 +706,7 @@ export default function AbsenceCalendarPage() {
               const dayHoliday = holidays.find((h) => h.date === dateStr);
               return dayEntries.length > 0 || dayHoliday;
             }).length === 0 && (
-              <div className="p-6 text-center text-gray-500">
-                Keine Abwesenheiten oder Feiertage in diesem Monat
-              </div>
+              <EmptyState title="Keine Abwesenheiten oder Feiertage in diesem Monat" />
             )}
           </div>
         </div>
@@ -822,8 +820,8 @@ export default function AbsenceCalendarPage() {
             <tbody className="divide-y divide-gray-200">
               {myAbsences.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                    Keine Abwesenheiten
+                  <td colSpan={5}>
+                    <EmptyState title="Keine Abwesenheiten" />
                   </td>
                 </tr>
               ) : (
@@ -863,9 +861,7 @@ export default function AbsenceCalendarPage() {
         {/* Mobile Cards */}
         <div className="md:hidden">
           {myAbsences.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              Keine Abwesenheiten
-            </div>
+            <EmptyState title="Keine Abwesenheiten" />
           ) : (
             <div className="divide-y divide-gray-200">
               {myAbsences.map((absence) => (

@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree, ChevronDown, Chevr
 import { useToast } from '../contexts/ToastContext';
 import StampWidget from '../components/StampWidget';
 import LoadingSpinner from '../components/LoadingSpinner';
+import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 
 interface DashboardData {
@@ -418,7 +419,7 @@ export default function Dashboard() {
         </div>
         <div className="p-6">
           {teamAbsences.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">Keine geplanten Abwesenheiten</p>
+            <EmptyState title="Keine geplanten Abwesenheiten" />
           ) : (
             <div className="space-y-8">
               {(() => {
@@ -565,9 +566,7 @@ export default function Dashboard() {
                           const dateKey = format(day, 'yyyy-MM-dd');
                           return (absencesByDate[dateKey] || []).length > 0;
                         }).length === 0 && (
-                          <p className="text-gray-500 text-center py-4 text-sm">
-                            Keine Abwesenheiten in diesem Monat
-                          </p>
+                          <EmptyState title="Keine Abwesenheiten in diesem Zeitraum" />
                         )}
                       </div>
                     </div>
