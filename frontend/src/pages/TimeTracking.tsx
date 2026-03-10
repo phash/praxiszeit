@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
+import Journal from './Journal';
+import ChangeRequests from './ChangeRequests';
 import { Plus, Edit2, Trash2, Save, X, Lock, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
@@ -57,6 +60,14 @@ export default function TimeTracking() {
   const [crModalOpen, setCrModalOpen] = useState(false);
   const [crEntry, setCrEntry] = useState<TimeEntry | null>(null);
   const [crType, setCrType] = useState<'create' | 'update' | 'delete'>('update');
+
+  // Tab navigation
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') ?? 'eintraege';
+
+  const setTab = (tab: string) => {
+    setSearchParams(tab === 'eintraege' ? {} : { tab });
+  };
 
   useEffect(() => {
     fetchEntries();
@@ -270,31 +281,59 @@ export default function TimeTracking() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Zeiterfassung</h1>
-        <div className="flex items-center space-x-2">
-          {!isAdmin && (
+        {activeTab === 'eintraege' && (
+          <div className="flex items-center space-x-2">
+            {!isAdmin && (
+              <Button
+                variant="secondary"
+                size="md"
+                icon={FileEdit}
+                onClick={openCreateChangeRequest}
+                title="Antrag für vergangenen Tag stellen"
+                className="bg-amber-500 hover:bg-amber-600 text-white focus:ring-amber-400"
+              >
+                <span className="hidden sm:inline">Antrag</span>
+              </Button>
+            )}
             <Button
-              variant="secondary"
+              variant={showForm ? 'ghost' : 'primary'}
               size="md"
-              icon={FileEdit}
-              onClick={openCreateChangeRequest}
-              title="Antrag für vergangenen Tag stellen"
-              className="bg-amber-500 hover:bg-amber-600 text-white focus:ring-amber-400"
+              icon={showForm ? X : Plus}
+              onClick={() => setShowForm(!showForm)}
             >
-              <span className="hidden sm:inline">Antrag</span>
+              {showForm ? 'Abbrechen' : 'Neuer Eintrag'}
             </Button>
-          )}
-          <Button
-            variant={showForm ? 'ghost' : 'primary'}
-            size="md"
-            icon={showForm ? X : Plus}
-            onClick={() => setShowForm(!showForm)}
-          >
-            {showForm ? 'Abbrechen' : 'Neuer Eintrag'}
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
+
+      {/* Tab Bar */}
+      <div className="flex border-b border-gray-200 mb-6">
+        {[
+          { id: 'eintraege', label: 'Einträge' },
+          { id: 'journal', label: 'Journal' },
+          { id: 'requests', label: 'Anträge' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'journal' && <Journal />}
+      {activeTab === 'requests' && <ChangeRequests />}
+      {activeTab === 'eintraege' && <>
 
       {/* Entry Form */}
       {showForm && (
@@ -659,6 +698,7 @@ export default function TimeTracking() {
           )}
         </div>
       </div>
+      </>}
     </div>
   );
 }

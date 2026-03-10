@@ -66,9 +66,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/time-tracking', label: 'Zeiterfassung', icon: Clock },
-    { path: '/change-requests', label: 'Änderungsanträge', icon: FileEdit },
     { path: '/absences', label: 'Abwesenheiten', icon: Calendar },
-    { path: '/journal', label: 'Journal', icon: BookOpen },
     { path: '/profile', label: 'Profil', icon: User },
     { path: '/help', label: 'Hilfe', icon: HelpCircle },
   ];
