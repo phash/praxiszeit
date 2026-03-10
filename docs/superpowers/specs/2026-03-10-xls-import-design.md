@@ -108,9 +108,11 @@ class ImportedEntry(BaseModel):
 
 - Excel-Serial → datetime via `datetime(1899,12,30) + timedelta(days=serial)`
 - Netto-Dauer = (end_time - start_time) in Stunden
-- `break_minutes`: netto >9h → 45, netto >6h → 30, sonst 0
-- Konflikt-Check: `SELECT` auf `time_entries` für `user_id + date + start_time`
-- ArbZG-Prüfung: §3 (>10h), §5 (Ruhezeit <11h zum Voreintrag), §6 (Nachtarbeit)
+- `break_minutes`: netto >9h → 45, netto >6h → 30, sonst 0 (direkt im Service berechnet, unabhängig vom `break_validation_service` der für User-Requests zuständig ist)
+- **Konflikt-Definition:** Eintrag mit gleichem `user_id + date + start_time` — entspricht dem bestehenden `UniqueConstraint` der DB. Zeitüberschneidungen mit abweichender Startzeit sind kein Konflikt (konsistent mit bestehender Admin-Logik).
+- **ArbZG §5 (Ruhezeit):** Für den ersten Eintrag im Import wird der letzte existierende DB-Eintrag des Benutzers vor dem Import-Zeitraum abgefragt.
+- ArbZG-Prüfung: §3 (>10h Brutto), §5 (Ruhezeit <11h zum zeitlich vorherigen Eintrag), §6 (Nachtarbeit)
+- **Datei-Größenlimit:** Max. 5 MB — bei Überschreitung 400-Fehler
 
 #### Audit-Log-Einträge
 
@@ -142,6 +144,7 @@ Nach erfolgreichem Import:
 #### Schritt 3 — Ergebnis
 
 - Drei Kennzahlen-Kacheln: Importiert (grün) / Überschrieben (rot) / ArbZG-Warnungen (gelb)
+- ArbZG-Warnungsliste (wenn vorhanden): aufklappbare Detail-Liste mit allen Warnmeldungen
 - Hinweis: „Import wurde im Audit-Log protokolliert"
 - Button „Weiteren Import starten" (Reset auf Schritt 1)
 
@@ -159,6 +162,7 @@ Neuer Eintrag „Import" in der bestehenden Admin-Sidebar/Navigation (nach beste
 | Kein gültiges XLS | 400 + Toast |
 | Keine Datenzeilen gefunden | 400 + Toast |
 | `user_id` nicht gefunden | 400 + Toast |
+| Datei > 5 MB | 400 + Toast |
 | Netzwerkfehler beim Confirm | Toast, Schritt 2 bleibt aktiv |
 | Alle Einträge vorhanden, overwrite=false | Schritt 3 mit 0 importiert + Hinweis |
 
@@ -166,8 +170,15 @@ Neuer Eintrag „Import" in der bestehenden Admin-Sidebar/Navigation (nach beste
 
 ## Abhängigkeiten
 
-- **Backend:** `xlrd` (bereits im Projekt oder hinzufügen), bestehender Audit-Log-Service
+- **Backend:** `xlrd==1.2.0` (muss explizit gepinnt werden — xlrd ≥ 2.0 unterstützt `.xls` nicht mehr), bestehender Audit-Log-Service
 - **Frontend:** Bestehende `useToast()`, `useConfirm()`, Admin-User-API — keine neuen npm-Pakete
+
+---
+
+## Sicherheitshinweise
+
+- **Admin-only:** Beide Endpoints sind auf Admin-Rolle beschränkt. Admins können für jeden Benutzer importieren (inkl. andere Admins).
+- **Confirm-Endpoint vertraut Client-Daten:** Der `/confirm`-Endpoint nimmt die vom Client gesendeten Einträge entgegen (keine erneute Server-seitige XLS-Verarbeitung). Da der Endpoint Admin-only ist, wird dieses Risiko als akzeptabel eingestuft.
 
 ---
 
