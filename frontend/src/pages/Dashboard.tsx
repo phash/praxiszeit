@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
-import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree } from 'lucide-react';
+import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import StampWidget from '../components/StampWidget';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -96,6 +96,7 @@ export default function Dashboard() {
   const [teamAbsences, setTeamAbsences] = useState<TeamAbsence[]>([]);
   const [nextVacation, setNextVacation] = useState<NextVacation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -352,41 +353,65 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Yearly Absence Overview */}
-      {trackHours && yearlyAbsences && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">Jahresübersicht {new Date().getFullYear()}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600">{yearlyAbsences.vacation_days.toFixed(1)}</div>
-              <div className="text-sm text-gray-600 mt-1">Urlaub</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-red-600">{yearlyAbsences.sick_days.toFixed(1)}</div>
-              <div className="text-sm text-gray-600 mt-1">Krank</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-orange-600">{yearlyAbsences.training_days.toFixed(1)}</div>
-              <div className="text-sm text-gray-600 mt-1">Fortbildung</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-purple-600">{yearlyAbsences.overtime_days.toFixed(1)}</div>
-              <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days.toFixed(1)}</div>
-              <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-gray-900">{yearlyAbsences.total_days.toFixed(1)}</div>
-              <div className="text-sm text-gray-600 mt-1">Gesamt</div>
-            </div>
-          </div>
+      {/* Details Toggle */}
+      {trackHours && (
+        <div className="mb-4 flex justify-center">
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
+          >
+            {showDetails ? (
+              <>
+                <ChevronUp size={16} />
+                <span>Details ausblenden</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown size={16} />
+                <span>Details anzeigen (Jahresübersicht & Team-Kalender)</span>
+              </>
+            )}
+          </button>
         </div>
       )}
 
-      {/* Team Absences Calendar */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+      {showDetails && (
+        <>
+          {/* Yearly Absence Overview */}
+          {trackHours && yearlyAbsences && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Jahresübersicht {new Date().getFullYear()}</h2>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-blue-600">{yearlyAbsences.vacation_days.toFixed(1)}</div>
+                  <div className="text-sm text-gray-600 mt-1">Urlaub</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-red-600">{yearlyAbsences.sick_days.toFixed(1)}</div>
+                  <div className="text-sm text-gray-600 mt-1">Krank</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-orange-600">{yearlyAbsences.training_days.toFixed(1)}</div>
+                  <div className="text-sm text-gray-600 mt-1">Fortbildung</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-purple-600">{yearlyAbsences.overtime_days.toFixed(1)}</div>
+                  <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days.toFixed(1)}</div>
+                  <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-gray-900">{yearlyAbsences.total_days.toFixed(1)}</div>
+                  <div className="text-sm text-gray-600 mt-1">Gesamt</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Team Absences Calendar */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900">Geplante Abwesenheiten im Team</h3>
           <p className="text-sm text-gray-500 mt-1">Kalenderübersicht der nächsten 3 Monate</p>
@@ -552,7 +577,9 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      </div>
+        </div>
+        </>
+      )}
 
     </div>
   );
