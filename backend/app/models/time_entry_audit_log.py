@@ -31,7 +31,7 @@ class TimeEntryAuditLog(Base):
     new_break_minutes = Column(Integer, nullable=True)
     new_note = Column(Text, nullable=True)
 
-    source = Column(String(20), nullable=False, default="manual")  # "manual" or "change_request"
+    source = Column(String(20), nullable=False, default="manual")  # "manual", "change_request", or "import"
     change_request_id = Column(UUID(as_uuid=True), ForeignKey("change_requests.id", ondelete="SET NULL"), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
