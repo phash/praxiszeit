@@ -1,8 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Help & Info Pages', () => {
-  test.slow();
-
   test('help page loads', async ({ employeePage }) => {
     // Navigate via SPA link (direct /help URL may be intercepted by nginx)
     await employeePage.goto('/');

@@ -12,8 +12,15 @@ interface TestUser {
   last_name: string;
 }
 
+interface EmployeeLogin {
+  api: ApiHelper;
+  access_token: string;
+  user: any;
+}
+
 export type TestDataFixtures = {
   testEmployee: TestUser;
+  testEmployeeLogin: EmployeeLogin;
   employeePage: Page;
   employeeApi: ApiHelper;
   createTimeEntry: (userId: string, data: {
@@ -50,7 +57,6 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
       track_hours: true,
     };
     const response = await adminApi.post('/admin/users', userData);
-    // API returns { user: { id, ... } } via UserCreateResponse schema
     const createdUser = response.user ?? response;
     const userId = createdUser.id;
 
@@ -70,39 +76,39 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
     }
   },
 
-  employeePage: async ({ browser, testEmployee }, use) => {
+  // Single login shared between employeePage and employeeApi — halves login API calls
+  testEmployeeLogin: async ({ testEmployee }, use) => {
+    const api = new ApiHelper();
+    const loginData = await api.login(testEmployee.username, testEmployee.password);
+    await use({ api, access_token: loginData.access_token, user: loginData.user });
+  },
+
+  employeePage: async ({ browser, testEmployeeLogin }, use) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    const api = new ApiHelper();
-    const { access_token, user } = await api.login(
-      testEmployee.username,
-      testEmployee.password
-    );
+    const { access_token, user } = testEmployeeLogin;
 
-    await page.goto('/');
-    await page.evaluate(
-      ({ token, user }) => {
-        localStorage.setItem('access_token', token);
-        localStorage.setItem(
-          'auth-storage',
-          JSON.stringify({
-            state: { user, isAuthenticated: true },
-            version: 0,
-          })
-        );
-      },
-      { token: access_token, user }
-    );
+    // Inject token before navigation — single goto instead of two
+    await page.addInitScript(({ token, user }) => {
+      localStorage.setItem('access_token', token);
+      localStorage.setItem(
+        'auth-storage',
+        JSON.stringify({
+          state: { user, isAuthenticated: true },
+          version: 0,
+        })
+      );
+    }, { token: access_token, user });
+
     await page.goto('/');
     await page.waitForURL('/');
     await use(page);
     await context.close();
   },
 
-  employeeApi: async ({ testEmployee }, use) => {
-    const api = new ApiHelper();
-    await api.login(testEmployee.username, testEmployee.password);
-    await use(api);
+  employeeApi: async ({ testEmployeeLogin }, use) => {
+    // Reuse the same ApiHelper instance — no second login call
+    await use(testEmployeeLogin.api);
   },
 
   createTimeEntry: async ({ adminApi }, use) => {

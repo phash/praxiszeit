@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # TOTP 2FA issuer name shown in authenticator apps
     TOTP_ISSUER: str = "PraxisZeit"
 
+    # Rate limiting (increase for E2E test environments)
+    LOGIN_RATE_LIMIT: str = "5/minute"
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:

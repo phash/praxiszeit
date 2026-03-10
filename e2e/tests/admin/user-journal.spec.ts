@@ -1,8 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Admin User Journal', () => {
-  test.slow();
-
   test('öffnet Journal über Icon-Button in User-Liste', async ({ adminPage, testEmployee }) => {
     await adminPage.goto('/admin/users');
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
@@ -10,7 +8,6 @@ test.describe('Admin User Journal', () => {
     // Search by username (unique) to find exactly the test employee
     const searchInput = adminPage.getByPlaceholder('Suche nach Name oder Benutzername...');
     await searchInput.fill(testEmployee.username);
-    await adminPage.waitForTimeout(500);
 
     // Click the journal icon button for the test employee
     // The actions column may be off-screen horizontally, so scroll into view first

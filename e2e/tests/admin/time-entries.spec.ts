@@ -2,8 +2,6 @@ import { test, expect } from '../../fixtures/base.fixture';
 import { previousWeekday, daysAgo } from '../../helpers/date.helper';
 
 test.describe('Admin Time Entries', () => {
-  test.slow();
-
   test('create entry for employee via admin dashboard', async ({ adminPage, testEmployee }) => {
     await adminPage.goto('/admin');
     await expect(adminPage.getByRole('heading', { name: 'Admin-Dashboard' })).toBeVisible();
@@ -59,9 +57,6 @@ test.describe('Admin Time Entries', () => {
     await expect(employeeRow).toBeVisible({ timeout: 10000 });
     await employeeRow.click();
 
-    // Wait for detail view
-    await adminPage.waitForTimeout(1000);
-
     // Find an edit button on an entry
     const editButton = adminPage.locator('button[aria-label*="bearbeiten"], button[title*="Bearbeiten"]').first();
     const hasEditButton = await editButton.isVisible({ timeout: 5000 }).catch(() => false);
@@ -69,7 +64,7 @@ test.describe('Admin Time Entries', () => {
     if (hasEditButton) {
       await editButton.click();
       // Wait for form to show
-      await adminPage.waitForTimeout(500);
+      await expect(adminPage.getByRole('button', { name: 'Speichern' })).toBeVisible({ timeout: 5000 });
       // Save (just re-save without changes to test the flow)
       await adminPage.getByRole('button', { name: 'Speichern' }).click();
 
@@ -101,9 +96,6 @@ test.describe('Admin Time Entries', () => {
     const employeeRow = adminPage.locator(`[aria-label*="${testEmployee.last_name}"]`).first();
     await expect(employeeRow).toBeVisible({ timeout: 10000 });
     await employeeRow.click();
-
-    // Wait for detail view
-    await adminPage.waitForTimeout(1000);
 
     // Find delete button
     const deleteButton = adminPage.locator('button[aria-label*="löschen"], button[title*="Löschen"]').first();
@@ -141,9 +133,6 @@ test.describe('Admin Time Entries', () => {
     await adminPage.goto('/admin/audit-log');
     await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
     await adminPage.waitForLoadState('networkidle');
-
-    // Wait for entries to load
-    await adminPage.waitForTimeout(2000);
 
     // Check that the page shows data (either table or cards or "Keine Einträge")
     const hasEntries = await adminPage.getByText('Admin').first().isVisible({ timeout: 5000 }).catch(() => false);

@@ -21,7 +21,8 @@ interface LoginResponse {
 }
 
 export class ApiHelper {
-  private token: string = '';
+  token: string = '';
+  userData: LoginResponse['user'] | null = null;
 
   async login(username: string, password: string): Promise<LoginResponse> {
     const maxRetries = 5;
@@ -40,6 +41,7 @@ export class ApiHelper {
       if (!res.ok) throw new Error(`Login failed: ${res.status} ${await res.text()}`);
       const data = await res.json();
       this.token = data.access_token;
+      this.userData = data.user;
       return data;
     }
     throw new Error('Login failed: max retries exceeded');

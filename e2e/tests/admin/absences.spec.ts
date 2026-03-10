@@ -2,8 +2,6 @@ import { test, expect } from '../../fixtures/base.fixture';
 import { nextWeekday, daysFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin Absences', () => {
-  test.slow();
-
   test('create absence for employee', async ({ adminPage, testEmployee }) => {
     await adminPage.goto('/admin/absences');
     await expect(adminPage.getByRole('heading', { name: 'Abwesenheiten verwalten' })).toBeVisible();
@@ -23,7 +21,6 @@ test.describe('Admin Absences', () => {
     }
     expect(targetValue).not.toBe('');
     await employeeSelect.selectOption(targetValue);
-    await adminPage.waitForTimeout(500);
 
     // Click "Abwesenheit eintragen"
     await adminPage.getByRole('button', { name: 'Abwesenheit eintragen' }).click();
@@ -82,7 +79,6 @@ test.describe('Admin Absences', () => {
     expect(targetValue).not.toBe('');
     await employeeSelect.selectOption(targetValue);
     await adminPage.waitForLoadState('networkidle');
-    await adminPage.waitForTimeout(1000);
 
     // Find delete button
     const deleteButton = adminPage.locator('button[aria-label="Löschen"]').first();
@@ -109,7 +105,7 @@ test.describe('Admin Absences', () => {
 
     // Switch to Betriebsferien tab
     await adminPage.getByRole('button', { name: 'Betriebsferien' }).click();
-    await adminPage.waitForTimeout(500);
+    await expect(adminPage.getByRole('button', { name: 'Betriebsferien erstellen' })).toBeVisible();
 
     // Click "Betriebsferien erstellen"
     await adminPage.getByRole('button', { name: 'Betriebsferien erstellen' }).click();
@@ -155,7 +151,6 @@ test.describe('Admin Absences', () => {
     // Switch to Betriebsferien tab
     await adminPage.getByRole('button', { name: 'Betriebsferien' }).click();
     await adminPage.waitForLoadState('networkidle');
-    await adminPage.waitForTimeout(1000);
 
     // Find delete button for the closure
     const deleteButton = adminPage.locator('button[aria-label="Betriebsferien löschen"]').first();
@@ -185,12 +180,10 @@ test.describe('Admin Absences', () => {
 
     // Switch to Betriebsferien
     await adminPage.getByRole('button', { name: 'Betriebsferien' }).click();
-    await adminPage.waitForTimeout(500);
     await expect(adminPage.getByText('Betriebsferien').first()).toBeVisible();
 
     // Switch back
     await adminPage.getByRole('button', { name: 'Mitarbeiter-Abwesenheiten' }).click();
-    await adminPage.waitForTimeout(500);
     // Verify the employee select dropdown is visible (contains "Alle Mitarbeiter" option)
     const selectDropdown = adminPage.locator('select').first();
     await expect(selectDropdown).toBeVisible();

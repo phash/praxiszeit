@@ -1,8 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Admin Audit Log', () => {
-  test.slow();
-
   test('page loads with heading and filters', async ({ adminPage }) => {
     await adminPage.goto('/admin/audit-log');
     await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();

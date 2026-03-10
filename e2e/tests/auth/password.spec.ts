@@ -11,8 +11,6 @@ function getPasswordField(page: Page, labelText: string) {
 }
 
 test.describe('Password Change', () => {
-  // These tests may need extra time due to login rate limiting (5/min)
-  test.slow();
   test('employee can change password and login with new one', async ({
     employeePage,
     testEmployee,

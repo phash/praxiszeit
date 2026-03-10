@@ -1,8 +1,6 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Admin User Management', () => {
-  test.slow();
-
   test('user list is visible', async ({ adminPage }) => {
     await adminPage.goto('/admin/users');
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
@@ -52,9 +50,6 @@ test.describe('Admin User Management', () => {
     const searchInput = adminPage.getByPlaceholder('Suche nach Name oder Benutzername...');
     await searchInput.fill(testEmployee.last_name);
 
-    // Wait for filter to apply
-    await adminPage.waitForTimeout(500);
-
     // Find and click edit button
     const editButton = adminPage.locator('button[title="Bearbeiten"]').first();
     await expect(editButton).toBeVisible({ timeout: 5000 });
@@ -96,7 +91,6 @@ test.describe('Admin User Management', () => {
     // Search for the new user
     const searchInput = adminPage.getByPlaceholder('Suche nach Name oder Benutzername...');
     await searchInput.fill('Deact');
-    await adminPage.waitForTimeout(500);
 
     // Find deactivate button
     const deactButton = adminPage.locator('button[title="Deaktivieren"]').first();
@@ -140,12 +134,10 @@ test.describe('Admin User Management', () => {
 
     // Show inactive users
     await adminPage.getByText('Inaktive anzeigen').click();
-    await adminPage.waitForTimeout(1000);
 
     // Search for the deactivated user
     const searchInput = adminPage.getByPlaceholder('Suche nach Name oder Benutzername...');
     await searchInput.fill('React');
-    await adminPage.waitForTimeout(500);
 
     // Find reactivate button
     const reactivateButton = adminPage.locator('button[title="Reaktivieren"]').first();
@@ -173,7 +165,6 @@ test.describe('Admin User Management', () => {
     // Search for test employee
     const searchInput = adminPage.getByPlaceholder('Suche nach Name oder Benutzername...');
     await searchInput.fill(testEmployee.last_name);
-    await adminPage.waitForTimeout(500);
 
     // Find and click "Passwort setzen" button
     const setPwdButton = adminPage.locator('button[title="Passwort setzen"]').first();
@@ -200,7 +191,6 @@ test.describe('Admin User Management', () => {
     // Search for test employee
     const searchInput = adminPage.getByPlaceholder('Suche nach Name oder Benutzername...');
     await searchInput.fill(testEmployee.last_name);
-    await adminPage.waitForTimeout(500);
 
     // Find the hide/unhide button (eye icon)
     const hideButton = adminPage.locator('button[title="Ausblenden"], button[title="Einblenden"]').first();
@@ -214,9 +204,6 @@ test.describe('Admin User Management', () => {
       await dialog.getByRole('button').last().click();
     }
 
-    // Wait for state change
-    await adminPage.waitForTimeout(1000);
-
     // The page should not error out
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
   });
@@ -229,12 +216,10 @@ test.describe('Admin User Management', () => {
 
     // Type "admin" - should show admin user
     await searchInput.fill('admin');
-    await adminPage.waitForTimeout(500);
     await expect(adminPage.getByText('admin').first()).toBeVisible();
 
     // Type nonexistent - should filter out
     await searchInput.fill('zzz_nonexistent_user_12345');
-    await adminPage.waitForTimeout(500);
 
     // The admin text should no longer be visible in the user list
     // (the heading still says "Benutzerverwaltung" but the table should be empty or filtered)

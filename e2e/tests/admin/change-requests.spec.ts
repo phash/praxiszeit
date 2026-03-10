@@ -2,8 +2,6 @@ import { test, expect } from '../../fixtures/base.fixture';
 import { daysAgo } from '../../helpers/date.helper';
 
 test.describe('Admin Change Requests', () => {
-  test.slow();
-
   test('shows filter tabs', async ({ adminPage }) => {
     await adminPage.goto('/admin/change-requests');
     await expect(adminPage.getByRole('heading', { name: 'Änderungsanträge' })).toBeVisible();

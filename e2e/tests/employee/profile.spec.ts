@@ -11,9 +11,6 @@ function getPasswordField(page: Page, labelText: string) {
 }
 
 test.describe('Employee Profile', () => {
-  // Rate limiting on login (5/min) can cause setup timeouts
-  test.slow();
-
   test.beforeEach(async ({ employeePage }) => {
     await employeePage.goto('/profile');
     await expect(employeePage.getByRole('heading', { name: 'Profil' })).toBeVisible();
