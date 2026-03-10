@@ -9,7 +9,6 @@ import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
-import SubmitChangesModal from './SubmitChangesModal';
 
 // ---- Types ----------------------------------------------------------------
 
@@ -53,15 +52,6 @@ interface EditState {
   startTime: string;    // "HH:mm"
   endTime: string;      // "HH:mm"
   breakMinutes: string; // string for <input> binding
-}
-
-export interface DraftChange {
-  type: 'create' | 'update' | 'delete';
-  date: string;           // "YYYY-MM-DD"
-  entryId?: string;       // for update/delete
-  startTime?: string;     // for create/update
-  endTime?: string;       // for create/update
-  breakMinutes?: number;  // for create/update
 }
 
 // ---- Helper functions -----------------------------------------------------
@@ -128,8 +118,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0' });
   const [saving, setSaving] = useState(false);
-  const [draftChanges, setDraftChanges] = useState<DraftChange[]>([]);
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submittingDate, setSubmittingDate] = useState<string | null>(null);
+  const [submitReason, setSubmitReason] = useState('');
+  const [savingChangeRequest, setSavingChangeRequest] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
@@ -168,6 +159,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
   function cancelEdit() {
     setEditingDate(null);
+    setSubmittingDate(null);
   }
 
   async function handleAdminSave(day: JournalDay) {
@@ -229,42 +221,69 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     });
   }
 
-  function handleEmployeeSave(day: JournalDay) {
+  function startEmployeeSubmit(day: JournalDay) {
     const start = editState.startTime;
     const end = editState.endTime;
     if (!start || !end) {
       toast.error('Von und Bis sind Pflichtfelder');
       return;
     }
-    const existing = day.time_entries[0];
-    const change: DraftChange = {
-      type: existing ? 'update' : 'create',
-      date: day.date,
-      entryId: existing?.id,
-      startTime: start,
-      endTime: end,
-      breakMinutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
-    };
-    setDraftChanges(prev => {
-      const filtered = prev.filter(c => c.date !== day.date);
-      return [...filtered, change];
-    });
-    cancelEdit();
+    setSubmittingDate(day.date);
+    setSubmitReason('');
+  }
+
+  async function confirmEmployeeSubmit(day: JournalDay) {
+    if (!submitReason.trim()) {
+      toast.error('Bitte eine Begründung angeben');
+      return;
+    }
+    setSavingChangeRequest(true);
+    try {
+      const existing = day.time_entries[0];
+      const payload: Record<string, unknown> = {
+        request_type: existing ? 'update' : 'create',
+        reason: submitReason.trim(),
+        proposed_date: day.date,
+        proposed_start_time: editState.startTime,
+        proposed_end_time: editState.endTime,
+        proposed_break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
+      };
+      if (existing) payload.time_entry_id = existing.id;
+      await apiClient.post('/change-requests/', payload);
+      toast.success('Änderungsantrag eingereicht');
+      setSubmittingDate(null);
+      cancelEdit();
+      setReloadKey(k => k + 1);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Einreichen'));
+    } finally {
+      setSavingChangeRequest(false);
+    }
   }
 
   function handleEmployeeDelete(day: JournalDay) {
-    const entry = day.time_entries[0];
+    const entry = day.time_entries?.[0];
     if (!entry) return;
-    const change: DraftChange = {
-      type: 'delete',
-      date: day.date,
-      entryId: entry.id,
-    };
-    setDraftChanges(prev => {
-      const filtered = prev.filter(c => c.date !== day.date);
-      return [...filtered, change];
+    confirm({
+      title: 'Lösch-Antrag stellen',
+      message: 'Einen Lösch-Antrag für diesen Eintrag einreichen?',
+      confirmLabel: 'Antrag stellen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.post('/change-requests/', {
+            request_type: 'delete',
+            time_entry_id: entry.id,
+            reason: 'Eintrag fehlerhaft erfasst',
+          });
+          toast.success('Lösch-Antrag eingereicht');
+          cancelEdit();
+          setReloadKey(k => k + 1);
+        } catch (err) {
+          toast.error(getErrorMessage(err, 'Fehler'));
+        }
+      },
     });
-    cancelEdit();
   }
 
 
@@ -283,7 +302,6 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         value={selectedMonth}
         onChange={(month) => {
           setSelectedMonth(month);
-          setDraftChanges([]);
           cancelEdit();
         }}
       />
@@ -313,13 +331,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                 {data.days.map((day) => {
                   const dateObj = parseISO(day.date);
                   const isGray = isNonWorkDay(day);
-                  const draft = draftChanges.find(c => c.date === day.date);
-                  const isDraft = !!draft;
-                  const isDraftDelete = draft?.type === 'delete';
+
                   const rowClass = isGray
                     ? 'bg-gray-50 text-gray-400'
-                    : isDraft
-                    ? 'bg-amber-50'
                     : 'bg-white';
 
                   const entry = day.time_entries[0] ?? null;
@@ -344,123 +358,151 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                       : 'text-gray-600';
 
                   return (
-                    <tr key={day.date} className={`${rowClass} hover:bg-gray-50 transition-colors`}>
-                      <td className="px-3 py-2 font-medium whitespace-nowrap">
-                        {format(dateObj, 'dd.MM.', { locale: de })}
-                      </td>
-                      <td className="px-3 py-2 hidden sm:table-cell">
-                        {format(dateObj, 'EEE', { locale: de })}
-                      </td>
-                      <td className={`px-3 py-2 ${TYPE_COLORS[day.type]}`}>
-                        {day.is_holiday && day.holiday_name
-                          ? day.holiday_name
-                          : TYPE_LABELS[day.type] ?? day.type}
-                        {multiEntry && (
-                          <span className="ml-1 text-xs text-gray-400">
-                            ({day.time_entries.length}×)
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 hidden md:table-cell text-gray-600 whitespace-nowrap">
-                        {isGray ? '–' : editingDate === day.date ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="time"
-                              value={editState.startTime}
-                              onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))}
-                              className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
-                            />
-                            <span className="text-gray-400">–</span>
-                            <input
-                              type="time"
-                              value={editState.endTime}
-                              onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))}
-                              className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
-                            />
-                          </div>
-                        ) : isDraft && draft!.type !== 'delete' ? (
-                          <span className="text-amber-700">{draft!.startTime}–{draft!.endTime}</span>
-                        ) : isDraftDelete ? (
-                          <span className="line-through text-gray-400">{vonBis}</span>
-                        ) : vonBis}
-                      </td>
-                      <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
-                        {isGray ? '' : editingDate === day.date ? (
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            max={480}
-                            value={editState.breakMinutes}
-                            onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
-                            className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right"
-                          />
-                        ) : pause}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {isGray ? '' : formatHoursSimple(day.actual_hours)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-500">
-                        {isGray ? '' : formatHoursSimple(day.target_hours)}
-                      </td>
-                      <td className={`px-3 py-2 text-right ${balanceColor}`}>
-                        {isGray ? '' : formatHours(day.balance)}
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                        {editingDate === day.date ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => isAdminView ? void handleAdminSave(day) : handleEmployeeSave(day)}
-                              disabled={saving}
-                              className="p-2.5 text-green-600 hover:text-green-800 disabled:opacity-50"
-                              title="Speichern"
-                            >
-                              <Check size={15} />
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              disabled={saving}
-                              className="p-2.5 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                              title="Abbrechen"
-                            >
-                              <X size={15} />
-                            </button>
-                            {day.time_entries.length > 0 && (
-                              <button
-                                onClick={() => isAdminView ? void handleAdminDelete(day) : handleEmployeeDelete(day)}
-                                disabled={saving}
-                                className="p-2.5 text-red-400 hover:text-red-600 disabled:opacity-50"
-                                title="Löschen"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            )}
-                          </div>
-                        ) : !isGray && isPastDay(day.date) ? (
-                          day.time_entries.length > 1 ? (
-                            <span className="text-xs text-gray-400 px-1" title="Mehrere Einträge – Bearbeitung hier nicht möglich">
-                              {day.time_entries.length}×
+                    <>
+                      <tr key={day.date} className={`${rowClass} hover:bg-gray-50 transition-colors`}>
+                        <td className="px-3 py-2 font-medium whitespace-nowrap">
+                          {format(dateObj, 'dd.MM.', { locale: de })}
+                        </td>
+                        <td className="px-3 py-2 hidden sm:table-cell">
+                          {format(dateObj, 'EEE', { locale: de })}
+                        </td>
+                        <td className={`px-3 py-2 ${TYPE_COLORS[day.type]}`}>
+                          {day.is_holiday && day.holiday_name
+                            ? day.holiday_name
+                            : TYPE_LABELS[day.type] ?? day.type}
+                          {multiEntry && (
+                            <span className="ml-1 text-xs text-gray-400">
+                              ({day.time_entries.length}×)
                             </span>
-                          ) : day.time_entries.length === 1 ? (
-                            <button
-                              onClick={() => startEdit(day)}
-                              className="p-2.5 text-gray-400 hover:text-gray-600"
-                              title="Bearbeiten"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => startEdit(day)}
-                              className="p-2.5 text-blue-400 hover:text-blue-600"
-                              title="Eintrag anlegen"
-                            >
-                              <Plus size={14} />
-                            </button>
-                          )
-                        ) : null}
-                      </td>
-                    </tr>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 hidden md:table-cell text-gray-600 whitespace-nowrap">
+                          {isGray ? '–' : editingDate === day.date ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="time"
+                                value={editState.startTime}
+                                onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))}
+                                className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                              />
+                              <span className="text-gray-400">–</span>
+                              <input
+                                type="time"
+                                value={editState.endTime}
+                                onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))}
+                                className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                              />
+                            </div>
+                          ) : vonBis}
+                        </td>
+                        <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
+                          {isGray ? '' : editingDate === day.date ? (
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={480}
+                              value={editState.breakMinutes}
+                              onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
+                              className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right"
+                            />
+                          ) : pause}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {isGray ? '' : formatHoursSimple(day.actual_hours)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500">
+                          {isGray ? '' : formatHoursSimple(day.target_hours)}
+                        </td>
+                        <td className={`px-3 py-2 text-right ${balanceColor}`}>
+                          {isGray ? '' : formatHours(day.balance)}
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {editingDate === day.date ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => isAdminView ? void handleAdminSave(day) : startEmployeeSubmit(day)}
+                                disabled={saving}
+                                className="p-2.5 text-green-600 hover:text-green-800 disabled:opacity-50"
+                                title="Speichern"
+                              >
+                                <Check size={15} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                disabled={saving}
+                                className="p-2.5 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                                title="Abbrechen"
+                              >
+                                <X size={15} />
+                              </button>
+                              {day.time_entries.length > 0 && (
+                                <button
+                                  onClick={() => isAdminView ? void handleAdminDelete(day) : handleEmployeeDelete(day)}
+                                  disabled={saving}
+                                  className="p-2.5 text-red-400 hover:text-red-600 disabled:opacity-50"
+                                  title="Löschen"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </div>
+                          ) : !isGray && isPastDay(day.date) ? (
+                            day.time_entries.length > 1 ? (
+                              <span className="text-xs text-gray-400 px-1" title="Mehrere Einträge – Bearbeitung hier nicht möglich">
+                                {day.time_entries.length}×
+                              </span>
+                            ) : day.time_entries.length === 1 ? (
+                              <button
+                                onClick={() => startEdit(day)}
+                                className="p-2.5 text-gray-400 hover:text-gray-600"
+                                title="Bearbeiten"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => startEdit(day)}
+                                className="p-2.5 text-blue-400 hover:text-blue-600"
+                                title="Eintrag anlegen"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            )
+                          ) : null}
+                        </td>
+                      </tr>
+                      {submittingDate === day.date && !isAdminView && (
+                        <tr key={`${day.date}-reason`} className="bg-blue-50">
+                          <td colSpan={9} className="px-3 py-2">
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <input
+                                type="text"
+                                value={submitReason}
+                                onChange={(e) => setSubmitReason(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') void confirmEmployeeSubmit(day); }}
+                                placeholder="Begründung eingeben (Pflicht)"
+                                className="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => void confirmEmployeeSubmit(day)}
+                                disabled={!submitReason.trim() || savingChangeRequest}
+                                className="px-3 py-1 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50"
+                              >
+                                {savingChangeRequest ? '…' : 'Absenden'}
+                              </button>
+                              <button
+                                onClick={() => setSubmittingDate(null)}
+                                className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                              >
+                                Abbrechen
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   );
                 })}
               </tbody>
@@ -494,42 +536,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
               </p>
             </div>
           </div>
-
-          {/* Employee: pending changes footer */}
-          {!isAdminView && draftChanges.length > 0 && (
-            <div className="sticky bottom-4 bg-amber-50 border border-amber-200 rounded-lg shadow-md p-3 flex items-center justify-between">
-              <span className="text-sm text-amber-800">
-                <strong>{draftChanges.length}</strong> Änderung{draftChanges.length > 1 ? 'en' : ''} ausstehend
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setDraftChanges([])}
-                  className="text-sm text-amber-700 hover:text-amber-900 underline"
-                >
-                  Verwerfen
-                </button>
-                <button
-                  onClick={() => setShowSubmitModal(true)}
-                  className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700"
-                >
-                  Absenden
-                </button>
-              </div>
-            </div>
-          )}
         </>
-      )}
-
-      {showSubmitModal && (
-        <SubmitChangesModal
-          changes={draftChanges}
-          onSuccess={() => {
-            setShowSubmitModal(false);
-            setDraftChanges([]);
-            setReloadKey(k => k + 1);
-          }}
-          onClose={() => setShowSubmitModal(false)}
-        />
       )}
     </div>
   );
