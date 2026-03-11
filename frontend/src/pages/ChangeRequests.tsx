@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../api/client';
-import { Trash2, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Trash2, Clock, CheckCircle, XCircle, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
 
 interface ChangeRequest {
   id: string;
@@ -127,9 +129,8 @@ export default function ChangeRequests() {
             <LoadingSpinner text="Lade Anträge..." />
           </div>
         ) : requests.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">
-            <AlertCircle className="mx-auto mb-2 text-gray-400" size={32} />
-            <p>Keine Änderungsanträge vorhanden</p>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <EmptyState icon={FileEdit} title="Keine Änderungsanträge" description="Neue Anträge stellst du über den 'Antrag'-Button in der Zeiterfassung." />
           </div>
         ) : (
           requests.map((cr) => {
@@ -152,13 +153,9 @@ export default function ChangeRequests() {
                     </span>
                   </div>
                   {cr.status === 'pending' && (
-                    <button
-                      onClick={() => handleWithdraw(cr.id)}
-                      className="text-red-500 hover:text-red-700 p-1"
-                      title="Zurückziehen"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <Button variant="danger" size="sm" icon={Trash2} onClick={() => handleWithdraw(cr.id)}>
+                      Zurückziehen
+                    </Button>
                   )}
                 </div>
 
@@ -168,7 +165,7 @@ export default function ChangeRequests() {
                     <div className="bg-gray-50 rounded-lg p-3">
                       <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
                       <div className="text-sm space-y-1">
-                        <p>Datum: {cr.original_date}</p>
+                        <p>Datum: {format(new Date(cr.original_date + 'T00:00:00'), 'dd.MM.yyyy')}</p>
                         <p>Von: {cr.original_start_time?.substring(0, 5)} - Bis: {cr.original_end_time?.substring(0, 5)}</p>
                         <p>Pause: {cr.original_break_minutes} min</p>
                         {cr.original_note && <p>Notiz: {cr.original_note}</p>}
@@ -181,7 +178,7 @@ export default function ChangeRequests() {
                         {cr.request_type === 'create' ? 'Neuer Eintrag' : 'Gewünscht'}
                       </h4>
                       <div className="text-sm space-y-1">
-                        <p>Datum: {cr.proposed_date}</p>
+                        <p>Datum: {format(new Date(cr.proposed_date + 'T00:00:00'), 'dd.MM.yyyy')}</p>
                         <p>Von: {cr.proposed_start_time?.substring(0, 5)} - Bis: {cr.proposed_end_time?.substring(0, 5)}</p>
                         <p>Pause: {cr.proposed_break_minutes} min</p>
                         {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}

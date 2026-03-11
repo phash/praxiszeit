@@ -112,8 +112,8 @@ export default function StampWidget() {
   return (
     <div className={`rounded-xl shadow-sm border p-6 mb-8 ${
       isClockedIn
-        ? 'bg-green-50 border-green-200'
-        : 'bg-white border-gray-200'
+        ? 'bg-green-100 border-green-300'
+        : 'bg-gray-50 border-gray-200'
     }`}>
       <div className="flex flex-col sm:flex-row items-center gap-4">
         {/* Status info */}
@@ -121,7 +121,7 @@ export default function StampWidget() {
           {isClockedIn ? (
             <>
               <p className="text-sm text-green-700 font-medium">Eingestempelt seit {startTime}</p>
-              <p className="text-2xl font-bold text-green-800">{formatElapsed(elapsed)}</p>
+              <p className="text-3xl font-bold text-green-800">{formatElapsed(elapsed)}</p>
             </>
           ) : (
             <p className="text-sm text-gray-600">Nicht eingestempelt</p>
@@ -134,6 +134,7 @@ export default function StampWidget() {
             <label className="text-sm text-gray-700 whitespace-nowrap">Pause (Min.):</label>
             <input
               type="number"
+              inputMode="numeric"
               min="0"
               max="480"
               value={breakMinutes}
@@ -155,18 +156,18 @@ export default function StampWidget() {
           <button
             onClick={handleClockOut}
             disabled={acting}
-            className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold rounded-xl transition text-lg shadow-sm"
+            className="flex items-center gap-2 px-8 py-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold rounded-xl transition text-xl shadow-sm"
           >
-            <LogOut size={22} />
+            <LogOut size={24} />
             <span>{showBreakInput ? 'Jetzt ausstempeln' : 'Ausstempeln'}</span>
           </button>
         ) : (
           <button
             onClick={handleClockIn}
             disabled={acting}
-            className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-xl transition text-lg shadow-sm"
+            className="flex items-center gap-2 px-8 py-4 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-xl transition text-xl shadow-sm"
           >
-            <LogIn size={22} />
+            <LogIn size={24} />
             <span>Einstempeln</span>
           </button>
         )}

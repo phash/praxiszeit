@@ -35,6 +35,14 @@ export const helpContent: Record<string, HelpEntry> = {
     content: (
       <div className="space-y-4">
         <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Tabs</h3>
+          <ul className="space-y-1 text-sm text-gray-600">
+            <li><span className="font-medium">Einträge</span> – Monatliche Zeittabelle, neue Einträge</li>
+            <li><span className="font-medium">Journal</span> – Tagesübersicht des Monats</li>
+            <li><span className="font-medium">Anträge</span> – Korrekturanträge stellen &amp; verfolgen</li>
+          </ul>
+        </section>
+        <section>
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag erstellen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Klicken Sie auf <span className="font-medium">„Hinzufügen"</span></li>
@@ -145,7 +153,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
           </ol>
           <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded p-2 text-blue-700">
-            Anforderungen: mind. 10 Zeichen, Groß- + Kleinbuchstabe, mindestens eine Ziffer.
+            Anforderungen: mind. 8 Zeichen, Groß- + Kleinbuchstabe, mindestens eine Ziffer.
           </div>
         </section>
         <section>
@@ -354,16 +362,23 @@ export const getFallbackHelp = (): HelpEntry => ({
       <section>
         <h3 className="font-semibold text-gray-800 mb-2">Navigation</h3>
         <ul className="space-y-1 text-sm text-gray-600">
-          <li>🏠 <span className="font-medium">Dashboard</span> – Ihre Übersicht</li>
-          <li>⏱️ <span className="font-medium">Zeiterfassung</span> – Arbeitszeiten eintragen</li>
+          <li>🏠 <span className="font-medium">Dashboard</span> – Ihre tägliche Übersicht</li>
+          <li>⏱️ <span className="font-medium">Zeiterfassung</span> – Einträge · Journal · Anträge</li>
           <li>📅 <span className="font-medium">Abwesenheiten</span> – Urlaub, Krank, etc.</li>
-          <li>📋 <span className="font-medium">Korrekturanträge</span> – Korrekturen beantragen</li>
           <li>👤 <span className="font-medium">Profil</span> – Passwort & Einstellungen</li>
         </ul>
       </section>
       <section>
+        <h3 className="font-semibold text-gray-800 mb-2">Korrekturanträge</h3>
+        <p className="text-sm text-gray-600">Zeiterfassung → Tab „Anträge" → Neuer Antrag.</p>
+      </section>
+      <section>
+        <h3 className="font-semibold text-gray-800 mb-2">Journal</h3>
+        <p className="text-sm text-gray-600">Zeiterfassung → Tab „Journal" – Monatsübersicht mit allen Tagen.</p>
+      </section>
+      <section>
         <h3 className="font-semibold text-gray-800 mb-2">Weiteres</h3>
-        <p className="text-sm text-gray-600">Auf der Hilfe-Seite finden Sie die vollständige Kurzanleitung und das Handbuch.</p>
+        <p className="text-sm text-gray-600">Klicken Sie auf „Hilfe" in der Sidebar für die vollständige Kurzanleitung und das Handbuch.</p>
       </section>
     </div>
   ),
