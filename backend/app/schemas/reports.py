@@ -33,7 +33,7 @@ class VacationAccount(BaseModel):
     """Vacation account for a year."""
     year: int
     budget_hours: float
-    budget_days: int
+    budget_days: float
     used_hours: float
     used_days: float
     remaining_hours: float
