@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
+import Journal from './Journal';
+import ChangeRequests from './ChangeRequests';
 import { Plus, Edit2, Trash2, Save, X, Lock, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
@@ -9,6 +12,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ChangeRequestForm from '../components/ChangeRequestForm';
 import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
+import Button from '../components/Button';
+import EmptyState from '../components/EmptyState';
 import { getErrorMessage } from '../utils/errorMessage';
 
 interface TimeEntry {
@@ -24,6 +29,46 @@ interface TimeEntry {
   is_sunday_or_holiday: boolean;
   is_night_work: boolean;
   sunday_exception_reason?: string | null;
+}
+
+interface DailyScheduleUser {
+  use_daily_schedule: boolean;
+  hours_monday: number | null;
+  hours_tuesday: number | null;
+  hours_wednesday: number | null;
+  hours_thursday: number | null;
+  hours_friday: number | null;
+  weekly_hours: number;
+  work_days_per_week: number;
+}
+
+/** Returns the user's daily target hours for a given date string "YYYY-MM-DD". */
+function getDailyTargetHours(user: DailyScheduleUser | null, dateStr: string): number {
+  if (!user) return 8;
+  if (user.use_daily_schedule) {
+    const weekday = new Date(dateStr + 'T00:00:00').getDay(); // 0=Sun,1=Mon,...
+    const map: Record<number, number | null | undefined> = {
+      1: user.hours_monday,
+      2: user.hours_tuesday,
+      3: user.hours_wednesday,
+      4: user.hours_thursday,
+      5: user.hours_friday,
+    };
+    return map[weekday] ?? 0;
+  }
+  // No daily schedule: distribute weekly_hours over work_days
+  const weekday = new Date(dateStr + 'T00:00:00').getDay();
+  if (weekday === 0 || weekday === 6) return 0; // weekend
+  return user.work_days_per_week > 0 ? user.weekly_hours / user.work_days_per_week : 8;
+}
+
+/** Adds `hours` to a "HH:mm" start time and returns the result as "HH:mm". */
+function addHoursToTime(startTime: string, hours: number): string {
+  const [h, m] = startTime.split(':').map(Number);
+  const totalMins = h * 60 + m + Math.round(hours * 60);
+  const endH = Math.floor(totalMins / 60) % 24;
+  const endM = totalMins % 60;
+  return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 }
 
 export default function TimeTracking() {
@@ -56,6 +101,14 @@ export default function TimeTracking() {
   const [crModalOpen, setCrModalOpen] = useState(false);
   const [crEntry, setCrEntry] = useState<TimeEntry | null>(null);
   const [crType, setCrType] = useState<'create' | 'update' | 'delete'>('update');
+
+  // Tab navigation
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') ?? 'eintraege';
+
+  const setTab = (tab: string) => {
+    setSearchParams(tab === 'eintraege' ? {} : { tab });
+  };
 
   useEffect(() => {
     fetchEntries();
@@ -143,27 +196,38 @@ export default function TimeTracking() {
       return;
     }
 
+    // Smart break default: auto-set 30 min when creating entry >6h with no break
+    let submitData = { ...formData };
+    if (!editingId && submitData.break_minutes === 0) {
+      const [sh, sm] = submitData.start_time.split(':').map(Number);
+      const [eh, em] = submitData.end_time.split(':').map(Number);
+      const grossMinutes = (eh * 60 + em) - (sh * 60 + sm);
+      if (grossMinutes > 360) {
+        submitData = { ...submitData, break_minutes: 30 };
+      }
+    }
+
     try {
       let response;
       if (editingId) {
-        response = await apiClient.put(`/time-entries/${editingId}`, formData);
+        response = await apiClient.put(`/time-entries/${editingId}`, submitData);
         toast.success('Zeiteintrag erfolgreich aktualisiert');
       } else {
-        response = await apiClient.post('/time-entries', formData);
+        response = await apiClient.post('/time-entries', submitData);
         toast.success('Zeiteintrag erfolgreich erstellt');
       }
       const saved: TimeEntry = response.data;
       if (saved.warnings?.includes('DAILY_HOURS_WARNING')) {
-        toast.warning('Tagesarbeitszeit überschreitet 8 Stunden (§3 ArbZG)');
+        toast.warning('Tagesarbeitszeit über 8 Stunden');
       }
       if (saved.warnings?.includes('WEEKLY_HOURS_WARNING')) {
-        toast.warning('Wochenarbeitszeit überschreitet 48 Stunden (§14 ArbZG)');
+        toast.warning('Wochenarbeitszeit über 48 Stunden');
       }
       if (saved.warnings?.includes('SUNDAY_WORK')) {
-        toast.warning('Achtung: Sonntagsarbeit – Ausnahmegrund nach §10 ArbZG dokumentieren');
+        toast.warning('Sonntagsarbeit eingetragen – bitte Ausnahmegrund angeben');
       }
       if (saved.warnings?.includes('HOLIDAY_WORK')) {
-        toast.warning('Achtung: Feiertagsarbeit – Ausnahmegrund nach §10 ArbZG dokumentieren');
+        toast.warning('Feiertagsarbeit eingetragen – bitte Ausnahmegrund angeben');
       }
       fetchEntries();
       resetForm();
@@ -219,10 +283,13 @@ export default function TimeTracking() {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const targetHours = getDailyTargetHours(user, today);
+    const defaultEnd = targetHours > 0 ? addHoursToTime('08:00', targetHours) : '17:00';
     setFormData({
-      date: format(new Date(), 'yyyy-MM-dd'),
+      date: today,
       start_time: '08:00',
-      end_time: '17:00',
+      end_time: defaultEnd,
       break_minutes: 0,
       note: '',
       sunday_exception_reason: '',
@@ -258,35 +325,95 @@ export default function TimeTracking() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Zeiterfassung</h1>
-        <div className="flex items-center space-x-2">
-          {!isAdmin && (
-            <button
-              onClick={openCreateChangeRequest}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-              title="Antrag für vergangenen Tag stellen"
+        {activeTab === 'eintraege' && (
+          <div className="flex items-center space-x-2">
+            {!isAdmin && (
+              <Button
+                variant="secondary"
+                size="md"
+                icon={FileEdit}
+                onClick={openCreateChangeRequest}
+                title="Antrag für vergangenen Tag stellen"
+                className="bg-amber-500 hover:bg-amber-600 text-white focus:ring-amber-400"
+              >
+                <span className="hidden sm:inline">Antrag</span>
+              </Button>
+            )}
+            <Button
+              variant={showForm ? 'ghost' : 'primary'}
+              size="md"
+              icon={showForm ? X : Plus}
+              onClick={() => setShowForm(!showForm)}
             >
-              <FileEdit size={20} />
-              <span className="hidden sm:inline">Antrag</span>
-            </button>
-          )}
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-          >
-            {showForm ? <X size={20} /> : <Plus size={20} />}
-            <span>{showForm ? 'Abbrechen' : 'Neuer Eintrag'}</span>
-          </button>
-        </div>
+              {showForm ? 'Abbrechen' : 'Neuer Eintrag'}
+            </Button>
+          </div>
+        )}
       </div>
 
+      {/* Tab Bar */}
+      <div className="flex border-b border-gray-200 mb-6">
+        {[
+          { id: 'eintraege', label: 'Einträge' },
+          { id: 'journal', label: 'Journal' },
+          { id: 'requests', label: 'Anträge' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'journal' && <Journal />}
+      {activeTab === 'requests' && <ChangeRequests />}
+      {activeTab === 'eintraege' && <>
+
       {/* Entry Form */}
+      <style>{`
+        @keyframes slideUpSheet {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h3 className="text-lg font-semibold mb-4">
-            {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
-          </h3>
+        <>
+          {/* Mobile backdrop */}
+          <div
+            className="md:hidden fixed inset-0 bg-black/40 z-40"
+            onClick={resetForm}
+          />
+          <div
+            className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-sm md:border md:p-6 md:mb-6"
+            style={{ animation: 'slideUpSheet 0.25s ease-out' }}
+          >
+            {/* Mobile handle bar */}
+            <div className="md:hidden flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 bg-gray-300 rounded-full" />
+            </div>
+            {/* Mobile header with close button */}
+            <div className="md:hidden flex items-center justify-between px-4 pb-3 border-b border-gray-100">
+              <h3 className="text-base font-semibold text-gray-900">
+                {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
+              </h3>
+              <button onClick={resetForm} className="p-2 text-gray-500 hover:text-gray-700">
+                <X size={20} />
+              </button>
+            </div>
+            {/* Desktop title */}
+            <h3 className="hidden md:block text-lg font-semibold mb-4">
+              {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
+            </h3>
           {errors.overlap && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
               <p className="text-sm text-red-800 font-medium">{errors.overlap}</p>
@@ -298,7 +425,7 @@ export default function TimeTracking() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <form id="time-entry-form" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 p-4 md:p-0 pb-4 md:pb-0 overflow-y-auto max-h-[65vh] md:max-h-none md:overflow-visible">
             <div>
               <label htmlFor="tt-date" className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
               <input
@@ -306,7 +433,12 @@ export default function TimeTracking() {
                 type="date"
                 value={formData.date}
                 onChange={(e) => {
-                  setFormData({ ...formData, date: e.target.value });
+                  const newDate = e.target.value;
+                  const targetHours = getDailyTargetHours(user, newDate);
+                  const newEndTime = targetHours > 0
+                    ? addHoursToTime(formData.start_time, targetHours)
+                    : formData.end_time;
+                  setFormData({ ...formData, date: newDate, end_time: newEndTime });
                   setErrors({});
                 }}
                 required
@@ -364,6 +496,7 @@ export default function TimeTracking() {
               <input
                 id="break-minutes"
                 type="number"
+                inputMode="numeric"
                 min="0"
                 max="480"
                 value={formData.break_minutes}
@@ -374,15 +507,11 @@ export default function TimeTracking() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
             </div>
-            <div>
+            <div className="hidden md:block">
               <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
-              <button
-                type="submit"
-                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
-              >
-                <Save size={18} />
-                <span>Speichern</span>
-              </button>
+              <Button type="submit" variant="primary" size="md" icon={Save} fullWidth>
+                Speichern
+              </Button>
             </div>
             <div className="md:col-span-2 lg:col-span-5">
               <label htmlFor="tt-note" className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
@@ -400,19 +529,35 @@ export default function TimeTracking() {
               (editingId && entries.find(e => e.id === editingId)?.is_sunday_or_holiday)) && (
               <div className="md:col-span-2 lg:col-span-5">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ausnahmegrund (§10 ArbZG) <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
+                  Ausnahmegrund <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
                 </label>
                 <input
                   type="text"
                   value={formData.sunday_exception_reason}
                   onChange={(e) => setFormData({ ...formData, sunday_exception_reason: e.target.value })}
-                  placeholder="z. B. Notdienst, Patientenversorgung (§10 Nr. 1 ArbZG)"
+                  placeholder="z. B. Notdienst, Patientenversorgung"
                   className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 bg-amber-50"
                 />
               </div>
             )}
           </form>
-        </div>
+            {/* Sticky save button for mobile */}
+            <div className="md:hidden px-4 py-3 border-t border-gray-100 bg-white">
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                fullWidth
+                onClick={() => {
+                  const formEl = document.querySelector<HTMLFormElement>('#time-entry-form');
+                  formEl?.requestSubmit();
+                }}
+              >
+                Speichern
+              </Button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Month Selector */}
@@ -448,8 +593,8 @@ export default function TimeTracking() {
                 </tr>
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
-                    Keine Einträge für diesen Monat
+                  <td colSpan={8}>
+                    <EmptyState title="Keine Einträge für diesen Monat" />
                   </td>
                 </tr>
               ) : (
@@ -463,12 +608,12 @@ export default function TimeTracking() {
                           <span>{format(entryDate, 'dd.MM.yyyy')}</span>
                           <div className="flex gap-1 flex-wrap">
                             {entry.is_sunday_or_holiday && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800" title="Sonn-/Feiertagsarbeit – §9/10 ArbZG">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800" title="Sonn- oder Feiertagsarbeit">
                                 So/FT
                               </span>
                             )}
                             {entry.is_night_work && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800" title="Nachtarbeit (23–6 Uhr) – §6 ArbZG">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800" title="Nachtarbeit (23–6 Uhr)">
                                 Nacht
                               </span>
                             )}
@@ -547,9 +692,7 @@ export default function TimeTracking() {
               <LoadingSpinner text="Lade Einträge..." />
             </div>
           ) : entries.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              Keine Einträge für diesen Monat
-            </div>
+            <EmptyState title="Keine Einträge für diesen Monat" />
           ) : (
             <>
               <div className="divide-y divide-gray-200">
@@ -647,6 +790,7 @@ export default function TimeTracking() {
           )}
         </div>
       </div>
+      </>}
     </div>
   );
 }

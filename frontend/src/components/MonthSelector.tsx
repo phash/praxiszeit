@@ -32,7 +32,7 @@ export default function MonthSelector({ value, onChange, className = '' }: Month
       {/* Previous Month Button */}
       <button
         onClick={handlePrevious}
-        className="p-2 rounded-lg hover:bg-gray-100 transition"
+        className="p-2.5 rounded-lg hover:bg-gray-100 transition"
         aria-label="Vorheriger Monat"
         title="Vorheriger Monat"
       >
@@ -50,7 +50,7 @@ export default function MonthSelector({ value, onChange, className = '' }: Month
       {/* Next Month Button */}
       <button
         onClick={handleNext}
-        className="p-2 rounded-lg hover:bg-gray-100 transition"
+        className="p-2.5 rounded-lg hover:bg-gray-100 transition"
         aria-label="Nächster Monat"
         title="Nächster Monat"
       >

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
-import { Plus, X, Trash2, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, X, Trash2, Clock, CheckCircle, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -10,6 +10,7 @@ import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../consta
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import MonthSelector from '../components/MonthSelector';
+import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 
 interface VacationRequest {
@@ -289,13 +290,13 @@ export default function AbsenceCalendarPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex space-x-2 mb-6">
+      <div className="flex border-b border-gray-200 mb-6">
         <button
           onClick={() => setActiveTab('calendar')}
-          className={`px-4 py-2 rounded-lg font-medium transition ${
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'calendar'
-              ? 'bg-primary text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
           }`}
         >
           Kalender
@@ -303,10 +304,10 @@ export default function AbsenceCalendarPage() {
         {vacationApprovalRequired && (
           <button
             onClick={() => { setActiveTab('requests'); fetchMyVacationRequests(); }}
-            className={`px-4 py-2 rounded-lg font-medium transition flex items-center space-x-2 ${
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center space-x-2 ${
               activeTab === 'requests'
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
             }`}
           >
             <span>Meine Anträge</span>
@@ -323,9 +324,8 @@ export default function AbsenceCalendarPage() {
       {activeTab === 'requests' && (
         <div className="space-y-4">
           {myVacationRequests.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center text-gray-500">
-              <Clock className="mx-auto mb-2 text-gray-400" size={32} />
-              <p>Keine Urlaubsanträge vorhanden</p>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <EmptyState icon={Clock} title="Keine Urlaubsanträge vorhanden" />
             </div>
           ) : (
             myVacationRequests.map((vr) => {
@@ -370,7 +370,7 @@ export default function AbsenceCalendarPage() {
                             },
                           })
                         }
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
                         title="Antrag zurückziehen"
                       >
                         <Trash2 size={16} />
@@ -464,32 +464,22 @@ export default function AbsenceCalendarPage() {
                 </label>
                 <input
                   type="number"
+                  inputMode="numeric"
                   step="0.5"
                   value={formData.hours}
                   onChange={(e) => setFormData({ ...formData, hours: parseFloat(e.target.value) })}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
-                {formData.type === 'vacation' && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Urlaub wird in Tagen berechnet (Regelarbeitszeit pro Tag)
-                  </p>
-                )}
-                {formData.type === 'overtime' && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Vorausgefüllt mit Regelstunden des Tages
-                  </p>
-                )}
-                {formData.type !== 'vacation' && formData.type !== 'overtime' && currentUser?.use_daily_schedule && !isDateRange && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Automatisch aus Tagesplan
-                  </p>
-                )}
-                {formData.type !== 'vacation' && formData.type !== 'overtime' && currentUser?.use_daily_schedule && isDateRange && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Bei Tagesplan werden Stunden pro Tag automatisch berechnet
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  {formData.type === 'vacation'
+                    ? 'Stunden = Regelarbeitszeit pro Tag (für Urlaubsberechnung)'
+                    : formData.type === 'overtime'
+                    ? 'Vorausgefüllt mit Ihren Sollstunden des Tages'
+                    : currentUser?.use_daily_schedule
+                    ? 'Stunden werden aus Ihrem Tagesplan übernommen'
+                    : 'Stunden, die als Abwesenheit angerechnet werden'}
+                </p>
               </div>
               {!isDateRange && (
                 <div>
@@ -532,26 +522,22 @@ export default function AbsenceCalendarPage() {
 
       {/* View Mode Toggle and Selector */}
       <div className="mb-4 flex items-center space-x-4">
-        <div className="flex items-center space-x-2">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
             onClick={() => setViewMode('month')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              viewMode === 'month'
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            className={`px-3 py-1.5 font-medium transition-colors ${
+              viewMode === 'month' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
-            Monatsansicht
+            Monat
           </button>
           <button
             onClick={() => setViewMode('year')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              viewMode === 'year'
-                ? 'bg-primary text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            className={`px-3 py-1.5 font-medium transition-colors border-l border-gray-200 ${
+              viewMode === 'year' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
-            Jahresansicht
+            Jahr
           </button>
         </div>
         {viewMode === 'month' ? (
@@ -560,14 +546,24 @@ export default function AbsenceCalendarPage() {
             onChange={setCurrentMonth}
           />
         ) : (
-          <input
-            type="number"
-            value={currentYear}
-            onChange={(e) => setCurrentYear(parseInt(e.target.value))}
-            min="2020"
-            max={new Date().getFullYear() + 1}
-            className="px-4 py-2 border border-gray-300 rounded-lg"
-          />
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setCurrentYear(y => y - 1)}
+              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+              aria-label="Vorheriges Jahr"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="font-medium text-gray-800 w-16 text-center">{currentYear}</span>
+            <button
+              onClick={() => setCurrentYear(y => y + 1)}
+              disabled={currentYear >= new Date().getFullYear() + 1}
+              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-40"
+              aria-label="Nächstes Jahr"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         )}
       </div>
 
@@ -638,17 +634,12 @@ export default function AbsenceCalendarPage() {
           {/* Mobile List View */}
           <div className="sm:hidden">
             {days
-              .filter((day) => {
-                const dateStr = format(day, 'yyyy-MM-dd');
-                const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
-                const dayHoliday = holidays.find((h) => h.date === dateStr);
-                return dayEntries.length > 0 || dayHoliday;
-              })
+              .filter((day) => day.getDay() !== 0 && day.getDay() !== 6) // show all weekdays
               .map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd');
                 const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
-                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                const hasContent = dayEntries.length > 0 || !!dayHoliday;
 
                 return (
                   <div key={dateStr} className="border-b border-gray-200 p-4">
@@ -657,10 +648,20 @@ export default function AbsenceCalendarPage() {
                         <p className="font-semibold text-gray-900">
                           {format(day, 'EEEE, dd. MMMM', { locale: de })}
                         </p>
-                        {isWeekend && (
-                          <span className="text-xs text-gray-500">Wochenende</span>
-                        )}
                       </div>
+                      {!dayHoliday && (
+                        <button
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, date: dateStr, hours: getHoursForDate(currentUser, dateStr) || prev.hours }));
+                            setShowForm(true);
+                            setIsDateRange(false);
+                          }}
+                          className="p-2 text-gray-400 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+                          aria-label={`Abwesenheit für ${format(day, 'dd. MMMM', { locale: de })} eintragen`}
+                        >
+                          <Plus size={18} />
+                        </button>
+                      )}
                     </div>
                     <div className="space-y-2">
                       {/* Holiday */}
@@ -685,20 +686,14 @@ export default function AbsenceCalendarPage() {
                           </p>
                         </div>
                       ))}
+                      {/* Placeholder for days without content */}
+                      {!hasContent && (
+                        <p className="text-sm text-gray-400 italic">Keine Abwesenheit</p>
+                      )}
                     </div>
                   </div>
                 );
               })}
-            {days.filter((day) => {
-              const dateStr = format(day, 'yyyy-MM-dd');
-              const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
-              const dayHoliday = holidays.find((h) => h.date === dateStr);
-              return dayEntries.length > 0 || dayHoliday;
-            }).length === 0 && (
-              <div className="p-6 text-center text-gray-500">
-                Keine Abwesenheiten oder Feiertage in diesem Monat
-              </div>
-            )}
           </div>
         </div>
       ) : (
@@ -811,8 +806,8 @@ export default function AbsenceCalendarPage() {
             <tbody className="divide-y divide-gray-200">
               {myAbsences.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                    Keine Abwesenheiten
+                  <td colSpan={5}>
+                    <EmptyState title="Keine Abwesenheiten" />
                   </td>
                 </tr>
               ) : (
@@ -852,9 +847,7 @@ export default function AbsenceCalendarPage() {
         {/* Mobile Cards */}
         <div className="md:hidden">
           {myAbsences.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              Keine Abwesenheiten
-            </div>
+            <EmptyState title="Keine Abwesenheiten" />
           ) : (
             <div className="divide-y divide-gray-200">
               {myAbsences.map((absence) => (
@@ -878,7 +871,7 @@ export default function AbsenceCalendarPage() {
                     </div>
                     <button
                       onClick={() => handleDelete(absence.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                      className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
                       aria-label="Abwesenheit löschen"
                     >
                       <Trash2 size={18} />
