@@ -9,8 +9,8 @@ from app.models.user import UserRole
 
 def _validate_password_complexity(password: str) -> str:
     """Validate password meets complexity requirements."""
-    if len(password) < 10:
-        raise ValueError("Passwort muss mindestens 10 Zeichen lang sein")
+    if len(password) < 8:
+        raise ValueError("Passwort muss mindestens 8 Zeichen lang sein")
     if not re.search(r"[A-Z]", password):
         raise ValueError("Passwort muss mindestens einen Grossbuchstaben enthalten")
     if not re.search(r"[a-z]", password):
@@ -58,7 +58,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=10)
+    password: str = Field(..., min_length=8)
     role: UserRole = UserRole.EMPLOYEE
 
     @field_validator("password")
@@ -180,7 +180,7 @@ class RefreshResponse(BaseModel):
 
 
 class AdminSetPassword(BaseModel):
-    password: str = Field(..., min_length=10)
+    password: str = Field(..., min_length=8)
 
     @field_validator("password")
     @classmethod
@@ -194,7 +194,7 @@ class UserCreateResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=10)
+    new_password: str = Field(..., min_length=8)
 
     @field_validator("new_password")
     @classmethod
