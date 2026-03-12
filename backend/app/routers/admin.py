@@ -12,7 +12,7 @@ from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
 from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
-from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse
+from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview
 from app.services import auth_service, calculation_service
@@ -766,7 +766,7 @@ def admin_create_time_entry(
 @router.put("/time-entries/{entry_id}", response_model=TimeEntryResponse)
 def admin_update_time_entry(
     entry_id: str,
-    entry_data: TimeEntryCreate,
+    entry_data: TimeEntryUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -778,22 +778,28 @@ def admin_update_time_entry(
     # Get user for §18 exempt check and night worker warning
     affected_user = db.query(User).filter(User.id == entry.user_id).first()
 
+    # Use provided values or fall back to existing
+    update_date = entry_data.date if entry_data.date is not None else entry.date
+    update_start_time = entry_data.start_time if entry_data.start_time is not None else entry.start_time
+    update_end_time = entry_data.end_time if entry_data.end_time is not None else entry.end_time
+    update_break_minutes = entry_data.break_minutes if entry_data.break_minutes is not None else entry.break_minutes
+
     admin_update_warnings: list[str] = []
     if not affected_user or not affected_user.exempt_from_arbzg:
         # Break validation (§4 ArbZG)
         break_error = validate_daily_break(
-            db=db, user_id=entry.user_id, entry_date=entry_data.date,
-            start_time=entry_data.start_time, end_time=entry_data.end_time,
-            break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
+            db=db, user_id=entry.user_id, entry_date=update_date,
+            start_time=update_start_time, end_time=update_end_time,
+            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
         )
         if break_error:
             raise HTTPException(status_code=400, detail=break_error)
 
         # §3 ArbZG: daily hours hard limit
         daily_hours = _calculate_daily_net_hours(
-            db=db, user_id=entry.user_id, entry_date=entry_data.date,
-            start_time=entry_data.start_time, end_time=entry_data.end_time,
-            break_minutes=entry_data.break_minutes, exclude_entry_id=entry.id,
+            db=db, user_id=entry.user_id, entry_date=update_date,
+            start_time=update_start_time, end_time=update_end_time,
+            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
             raise HTTPException(
@@ -805,7 +811,7 @@ def admin_update_time_entry(
         if (
             affected_user
             and affected_user.is_night_worker
-            and is_night_work(entry_data.start_time, entry_data.end_time)
+            and is_night_work(update_start_time, update_end_time)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             admin_update_warnings.append(
@@ -818,20 +824,26 @@ def admin_update_time_entry(
         db, entry.id, entry.user_id, current_user.id,
         action="update", old_entry=entry,
         new_entry={
-            "date": entry_data.date,
-            "start_time": entry_data.start_time,
-            "end_time": entry_data.end_time,
-            "break_minutes": entry_data.break_minutes,
-            "note": entry_data.note,
+            "date": update_date,
+            "start_time": update_start_time,
+            "end_time": update_end_time,
+            "break_minutes": update_break_minutes,
+            "note": entry_data.note if entry_data.note is not None else entry.note,
         },
         source="manual",
     )
 
-    entry.date = entry_data.date
-    entry.start_time = entry_data.start_time
-    entry.end_time = entry_data.end_time
-    entry.break_minutes = entry_data.break_minutes
-    entry.note = entry_data.note
+    # Apply only provided updates
+    if entry_data.date is not None:
+        entry.date = entry_data.date
+    if entry_data.start_time is not None:
+        entry.start_time = entry_data.start_time
+    if entry_data.end_time is not None:
+        entry.end_time = entry_data.end_time
+    if entry_data.break_minutes is not None:
+        entry.break_minutes = entry_data.break_minutes
+    if entry_data.note is not None:
+        entry.note = entry_data.note
 
     db.commit()
     db.refresh(entry)
