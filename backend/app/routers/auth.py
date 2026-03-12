@@ -205,8 +205,13 @@ def change_password(
     current_user.password_hash = new_password_hash
     current_user.token_version += 1
     db.commit()
+    db.refresh(current_user)
 
-    return {"message": "Passwort erfolgreich geändert"}
+    # Issue a fresh token so the frontend session stays valid after the version bump
+    new_access_token = auth_service.create_access_token(
+        str(current_user.id), current_user.role.value, current_user.token_version
+    )
+    return {"message": "Passwort erfolgreich geändert", "access_token": new_access_token}
 
 
 @router.put("/calendar-color", response_model=UserResponse)

@@ -23,7 +23,7 @@ const PASTEL_COLORS = [
 ];
 
 export default function Profile() {
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, setTokens } = useAuthStore();
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [profileData, setProfileData] = useState({
@@ -119,10 +119,14 @@ export default function Profile() {
     }
 
     try {
-      await apiClient.post('/auth/change-password', {
+      const response = await apiClient.post('/auth/change-password', {
         current_password: passwordData.current_password,
         new_password: passwordData.new_password,
       });
+      // Update stored token to keep the session valid after token_version bump
+      if (response.data.access_token && user) {
+        setTokens(response.data.access_token, user);
+      }
       setMessage('Passwort erfolgreich geändert');
       setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
       setShowPasswordForm(false);
