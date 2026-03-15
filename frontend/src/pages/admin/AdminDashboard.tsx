@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Edit2, Trash2, Save, ScrollText } from 'lucide-react';
+import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Edit2, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -131,6 +131,25 @@ export default function AdminDashboard() {
     } finally {
       setYearlyLoading(false);
     }
+  };
+
+  const handleYearClosing = () => {
+    confirm({
+      title: `Jahresabschluss ${currentYear}`,
+      message: `Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden berechnet und als Übernahme in ${currentYear + 1} gespeichert. Bestehende Übernahmen für ${currentYear + 1} werden überschrieben.\n\nFortfahren?`,
+      confirmLabel: 'Jahresabschluss erstellen',
+      variant: 'warning',
+      onConfirm: async () => {
+        try {
+          const res = await apiClient.post(`/admin/year-closing/${currentYear}`);
+          const count = res.data.employees?.length || 0;
+          toast.success(`Jahresabschluss ${currentYear} erstellt: ${count} Mitarbeiter übernommen nach ${currentYear + 1}`);
+          fetchYearlyAbsences();
+        } catch (error: any) {
+          toast.error(getErrorMessage(error, 'Fehler beim Jahresabschluss'));
+        }
+      },
+    });
   };
 
   const fetchEmployeeDetails = async (employee: EmployeeReport) => {
@@ -597,6 +616,14 @@ export default function AdminDashboard() {
               aria-label="Jahr"
               className="px-4 py-2 border border-gray-300 rounded-lg"
             />
+            <button
+              onClick={handleYearClosing}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+              title={`Jahresabschluss ${currentYear} erstellen`}
+            >
+              <BookCheck size={20} />
+              <span className="hidden sm:inline">Jahresabschluss</span>
+            </button>
             <Link
               to="/admin/reports"
               className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
