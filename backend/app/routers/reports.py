@@ -189,10 +189,9 @@ def get_yearly_absences(
         vacation_account = calculation_service.get_vacation_account(db, user, year)
         remaining_vacation_days = vacation_account['remaining_days']
 
-        # Calculate cumulative overtime for the year (up to current month)
-        today = date.today()
-        up_to_month = today.month if year == today.year else 12
-        overtime_year = calculation_service.get_overtime_account(db, user, year, up_to_month)
+        # Calculate overtime for the year (up to today for current year, full year otherwise)
+        ytd = calculation_service.get_ytd_summary(db, user, year)
+        overtime_year = ytd['overtime']
 
         results.append(EmployeeYearlyAbsences(
             user_id=str(user.id),
