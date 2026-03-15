@@ -5,12 +5,13 @@ from sqlalchemy import extract, func
 from typing import List, Optional
 from datetime import date, datetime, timezone, timedelta
 from app.database import get_db
-from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole, PublicHoliday, AbsenceType
+from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole, PublicHoliday, AbsenceType, YearCarryover
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
+from app.schemas.year_carryover import YearCarryoverCreate, YearCarryoverResponse
 from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate
 from app.schemas.time_entry_audit_log import AuditLogResponse
@@ -1120,3 +1121,62 @@ def review_vacation_request(
     db.commit()
     db.refresh(vr)
     return _enrich_vr_response(vr, db)
+
+
+# ──────────────────── Year Carryover ────────────────────
+
+
+@router.get("/users/{user_id}/carryovers", response_model=List[YearCarryoverResponse])
+def list_carryovers(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """List all year carryovers for a user."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    carryovers = db.query(YearCarryover).filter(
+        YearCarryover.user_id == user_id
+    ).order_by(YearCarryover.year.desc()).all()
+
+    return carryovers
+
+
+@router.put("/users/{user_id}/carryovers/{year}", response_model=YearCarryoverResponse)
+def upsert_carryover(
+    user_id: str,
+    year: int,
+    data: YearCarryoverCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Create or update year carryover (overtime hours & vacation days from previous year)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    if year < 2000 or year > 2100:
+        raise HTTPException(status_code=400, detail="Ungültiges Jahr")
+
+    carryover = db.query(YearCarryover).filter(
+        YearCarryover.user_id == user_id,
+        YearCarryover.year == year,
+    ).first()
+
+    if carryover:
+        carryover.overtime_hours = data.overtime_hours
+        carryover.vacation_days = data.vacation_days
+    else:
+        carryover = YearCarryover(
+            user_id=user_id,
+            year=year,
+            overtime_hours=data.overtime_hours,
+            vacation_days=data.vacation_days,
+        )
+        db.add(carryover)
+
+    db.commit()
+    db.refresh(carryover)
+    return carryover

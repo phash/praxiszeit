@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole
 from app.middleware.auth import get_current_user
-from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount
+from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime
 from app.services import calculation_service
 from sqlalchemy import extract
 
@@ -96,6 +96,27 @@ def get_overtime_account(
     return OvertimeAccount(
         current_balance=current_balance,
         history=history
+    )
+
+
+@router.get("/ytd-overtime", response_model=YtdOvertime)
+def get_ytd_overtime(
+    year: Optional[int] = Query(None, description="Year (default: current year)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get year-to-date overtime summary.
+    Calculates target and actual hours from Jan 1 to today.
+    """
+    now = datetime.now()
+    year = year or now.year
+
+    summary = calculation_service.get_ytd_summary(db, current_user, year)
+
+    return YtdOvertime(
+        year=year,
+        **summary
     )
 
 
