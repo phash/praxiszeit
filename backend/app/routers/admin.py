@@ -1180,3 +1180,30 @@ def upsert_carryover(
     db.commit()
     db.refresh(carryover)
     return carryover
+
+
+@router.post("/year-closing/{year}")
+def create_year_closing(
+    year: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Create year-end closing: calculates overtime balance and remaining vacation
+    for all active users at Dec 31 and creates carryover records for year+1.
+    """
+    if year < 2000 or year > 2100:
+        raise HTTPException(status_code=400, detail="Ungültiges Jahr")
+
+    users = db.query(User).filter(
+        User.is_active == True,
+        User.track_hours == True,
+    ).all()
+
+    results = calculation_service.create_year_closing(db, year, users)
+
+    return {
+        "year": year,
+        "next_year": year + 1,
+        "employees": results,
+    }
