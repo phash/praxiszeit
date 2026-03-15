@@ -29,6 +29,15 @@ class OvertimeAccount(BaseModel):
     history: List[OvertimeHistory]
 
 
+class YtdOvertime(BaseModel):
+    """Year-to-date overtime summary (Jan 1 to today)."""
+    year: int
+    target_hours: float
+    actual_hours: float
+    overtime: float
+    carryover_hours: float = 0.0
+
+
 class VacationAccount(BaseModel):
     """Vacation account for a year."""
     year: int

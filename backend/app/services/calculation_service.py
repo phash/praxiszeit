@@ -4,7 +4,7 @@ from calendar import monthrange
 from typing import Dict
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange
+from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
 
 
 def get_weekly_hours_for_date(db: Session, user: User, target_date: date) -> Decimal:
@@ -323,8 +323,16 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
                 break
         return result
 
+    # --- year carryovers (overtime from previous years) ---
+    carryovers = db.query(YearCarryover).filter(
+        YearCarryover.user_id == user.id,
+        YearCarryover.year >= first_entry.date.year,
+        YearCarryover.year <= up_to_year,
+    ).all()
+    carryover_total = sum((Decimal(str(c.overtime_hours)) for c in carryovers), start=Decimal('0'))
+
     # --- iterate months and compute balance in memory ---
-    total_balance = Decimal('0.00')
+    total_balance = carryover_total
     current_year, current_month = first_entry.date.year, first_entry.date.month
 
     while (current_year < up_to_year) or (current_year == up_to_year and current_month <= up_to_month):
@@ -353,6 +361,100 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
             current_month += 1
 
     return total_balance.quantize(Decimal('0.01'))
+
+
+def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
+    """
+    Calculate year-to-date summary from Jan 1 to today.
+
+    Sums daily targets and actual hours for all working days from Jan 1
+    of the given year up to and including today.
+
+    Args:
+        db: Database session
+        user: User object
+        year: Year (default: current year)
+
+    Returns:
+        Dict with target_hours, actual_hours, overtime
+    """
+    if not user.track_hours:
+        return {"target_hours": 0.0, "actual_hours": 0.0, "overtime": 0.0}
+
+    today = date.today()
+    if year is None:
+        year = today.year
+
+    # End date: today if current year, else Dec 31
+    end = today if year == today.year else date(year, 12, 31)
+    start = date(year, 1, 1)
+
+    if start > end:
+        return {"target_hours": 0.0, "actual_hours": 0.0, "overtime": 0.0}
+
+    # Fetch holidays in range
+    holidays = db.query(PublicHoliday).filter(
+        PublicHoliday.date >= start,
+        PublicHoliday.date <= end,
+    ).all()
+    holiday_dates: set = {h.date for h in holidays}
+
+    # Fetch absences in range (exclude TRAINING - same as get_monthly_target)
+    absences = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.date >= start,
+        Absence.date <= end,
+        Absence.type != AbsenceType.TRAINING,
+    ).all()
+    absence_dates: set = {a.date for a in absences}
+
+    # Fetch working hours changes
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+    def _weekly_hours_for_date(d: date) -> Decimal:
+        result = Decimal(str(user.weekly_hours))
+        for change in wh_changes:
+            if change.effective_from <= d:
+                result = Decimal(str(change.weekly_hours))
+            else:
+                break
+        return result
+
+    # Sum daily targets
+    total_target = Decimal('0')
+    current = start
+    while current <= end:
+        if current.weekday() < 5 and current not in holiday_dates and current not in absence_dates:
+            weekly_hours = _weekly_hours_for_date(current)
+            daily_target = get_daily_target_for_date(user, current, weekly_hours)
+            total_target += daily_target
+        current += timedelta(days=1)
+
+    # Sum actual hours
+    entries = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.date >= start,
+        TimeEntry.date <= end,
+    ).all()
+    total_actual = sum((Decimal(str(e.net_hours)) for e in entries), start=Decimal('0'))
+
+    # Include overtime carryover for this year
+    carryover = db.query(YearCarryover).filter(
+        YearCarryover.user_id == user.id,
+        YearCarryover.year == year,
+    ).first()
+    carryover_hours = Decimal(str(carryover.overtime_hours)) if carryover else Decimal('0')
+
+    overtime = total_actual - total_target + carryover_hours
+
+    return {
+        "target_hours": float(total_target.quantize(Decimal('0.01'))),
+        "actual_hours": float(total_actual.quantize(Decimal('0.01'))),
+        "overtime": float(overtime.quantize(Decimal('0.01'))),
+        "carryover_hours": float(carryover_hours.quantize(Decimal('0.01'))),
+    }
 
 
 def get_vacation_account(db: Session, user: User, year: int) -> Dict:
@@ -398,6 +500,14 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         months_worked = Decimal(str(lwd.month - 1)) + Decimal(str(days_worked)) / Decimal(str(days_in_month))
         budget_days_last = (Decimal(str(user.vacation_days)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
         budget_days = min(budget_days, budget_days_last)
+    # Add carryover vacation days from previous year
+    carryover = db.query(YearCarryover).filter(
+        YearCarryover.user_id == user.id,
+        YearCarryover.year == year,
+    ).first()
+    carryover_days = Decimal(str(carryover.vacation_days)) if carryover else Decimal('0')
+    budget_days += carryover_days
+
     budget_hours = budget_days * daily_target
 
     # Calculate used vacation hours
