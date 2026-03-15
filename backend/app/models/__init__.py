@@ -9,6 +9,7 @@ from app.models.company_closure import CompanyClosure
 from app.models.error_log import ErrorLog
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
+from app.models.year_carryover import YearCarryover
 
 __all__ = [
     "User",
@@ -27,4 +28,5 @@ __all__ = [
     "VacationRequest",
     "VacationRequestStatus",
     "SystemSetting",
+    "YearCarryover",
 ]
