@@ -172,6 +172,19 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   async function handleAdminSave(day: JournalDay) {
     setSaving(true);
     try {
+      const hadTimeEntry = day.time_entries.length > 0;
+      const hadAbsence = day.absences.length > 0;
+      const switchingToAbsence = hadTimeEntry && editState.entryType !== 'work';
+      const switchingToWork = hadAbsence && editState.entryType === 'work';
+
+      // Delete old entry if type changed
+      if (switchingToAbsence && day.time_entries[0]) {
+        await apiClient.delete(`/admin/time-entries/${day.time_entries[0].id}`);
+      }
+      if (switchingToWork && day.absences[0]) {
+        await apiClient.delete(`/absences/${day.absences[0].id}`);
+      }
+
       if (editState.entryType === 'work') {
         const start = editState.startTime;
         const end = editState.endTime;
@@ -185,7 +198,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           end_time: end,
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
         };
-        const existing = day.time_entries[0];
+        const existing = !switchingToWork ? day.time_entries[0] : null;
         if (existing) {
           await apiClient.put(`/admin/time-entries/${existing.id}`, payload);
         } else {
@@ -195,7 +208,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           });
         }
       } else {
-        // Absence entry
+        // Delete existing absence of different type if present, then create new
+        if (hadAbsence && day.absences[0] && !switchingToWork) {
+          await apiClient.delete(`/absences/${day.absences[0].id}`);
+        }
         await apiClient.post('/absences', {
           user_id: userId,
           date: day.date,
@@ -214,27 +230,31 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   }
 
   function handleAdminDelete(day: JournalDay) {
-    const entry = day.time_entries[0];
-    if (!entry) return;
+    const timeEntry = day.time_entries[0];
+    const absence = day.absences[0];
+    if (!timeEntry && !absence) return;
     confirm({
       title: 'Eintrag löschen',
       message: 'Soll dieser Eintrag wirklich gelöscht werden?',
       variant: 'danger',
       confirmLabel: 'Löschen',
-      onConfirm: () => {
+      onConfirm: async () => {
         setSaving(true);
-        apiClient.delete(`/admin/time-entries/${entry.id}`)
-          .then(() => {
-            toast.success('Eintrag gelöscht');
-            cancelEdit();
-            setReloadKey(k => k + 1);
-          })
-          .catch((err: unknown) => {
-            toast.error(getErrorMessage(err, 'Fehler beim Löschen'));
-          })
-          .finally(() => {
-            setSaving(false);
-          });
+        try {
+          if (timeEntry) {
+            await apiClient.delete(`/admin/time-entries/${timeEntry.id}`);
+          }
+          if (absence) {
+            await apiClient.delete(`/absences/${absence.id}`);
+          }
+          toast.success('Eintrag gelöscht');
+          cancelEdit();
+          setReloadKey(k => k + 1);
+        } catch (err: unknown) {
+          toast.error(getErrorMessage(err, 'Fehler beim Löschen'));
+        } finally {
+          setSaving(false);
+        }
       },
     });
   }
@@ -385,7 +405,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           {format(dateObj, 'EEE', { locale: de })}
                         </td>
                         <td className={`px-3 py-2 ${TYPE_COLORS[day.type]}`}>
-                          {editingDate === day.date && isAdminView && !day.time_entries.length && !day.absences.length ? (
+                          {editingDate === day.date && isAdminView ? (
                             <select
                               value={editState.entryType}
                               onChange={(e) => setEditState(s => ({ ...s, entryType: e.target.value as EditState['entryType'] }))}
@@ -483,7 +503,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               >
                                 <X size={15} />
                               </button>
-                              {day.time_entries.length > 0 && (
+                              {(day.time_entries.length > 0 || day.absences.length > 0) && (
                                 <button
                                   onClick={() => isAdminView ? void handleAdminDelete(day) : handleEmployeeDelete(day)}
                                   disabled={saving}
@@ -499,7 +519,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               <span className="text-xs text-gray-400 px-1" title="Mehrere Einträge – Bearbeitung hier nicht möglich">
                                 {day.time_entries.length}×
                               </span>
-                            ) : day.time_entries.length === 1 ? (
+                            ) : (day.time_entries.length === 1 || day.absences.length > 0) ? (
                               <button
                                 onClick={() => startEdit(day)}
                                 className="p-2.5 text-gray-400 hover:text-gray-600"
