@@ -88,6 +88,8 @@ export default function AdminDashboard() {
     end_time: '17:00',
     break_minutes: 0,
     note: '',
+    entry_type: 'work' as 'work' | 'sick' | 'training' | 'overtime' | 'other',
+    absence_hours: 8,
   });
   const [auditLog, setAuditLog] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -220,18 +222,45 @@ export default function AdminDashboard() {
       end_time: entry.end_time.substring(0, 5),
       break_minutes: entry.break_minutes,
       note: entry.note || '',
+      entry_type: 'work',
+      absence_hours: 8,
     });
   };
 
   const handleAdminSaveEntry = async () => {
     if (!selectedEmployee) return;
     try {
-      if (editingEntryId) {
-        await apiClient.put(`/admin/time-entries/${editingEntryId}`, entryForm);
-        toast.success('Eintrag aktualisiert');
+      if (entryForm.entry_type === 'work') {
+        // Normal time entry
+        if (editingEntryId) {
+          await apiClient.put(`/admin/time-entries/${editingEntryId}`, {
+            date: entryForm.date,
+            start_time: entryForm.start_time,
+            end_time: entryForm.end_time,
+            break_minutes: entryForm.break_minutes,
+            note: entryForm.note,
+          });
+          toast.success('Eintrag aktualisiert');
+        } else {
+          await apiClient.post(`/admin/users/${selectedEmployee.user_id}/time-entries`, {
+            date: entryForm.date,
+            start_time: entryForm.start_time,
+            end_time: entryForm.end_time,
+            break_minutes: entryForm.break_minutes,
+            note: entryForm.note,
+          });
+          toast.success('Eintrag erstellt');
+        }
       } else {
-        await apiClient.post(`/admin/users/${selectedEmployee.user_id}/time-entries`, entryForm);
-        toast.success('Eintrag erstellt');
+        // Absence entry (sick, training, overtime comp, other)
+        await apiClient.post('/absences', {
+          user_id: selectedEmployee.user_id,
+          date: entryForm.date,
+          type: entryForm.entry_type,
+          hours: entryForm.absence_hours,
+          note: entryForm.note || null,
+        });
+        toast.success('Abwesenheit erstellt');
       }
       setEditingEntryId(null);
       setShowNewEntryForm(false);
@@ -240,6 +269,11 @@ export default function AdminDashboard() {
         params: { user_id: selectedEmployee.user_id, month: currentMonth }
       });
       setEmployeeTimeEntries(entriesResponse.data);
+      // Refresh absences
+      const absencesResponse = await apiClient.get('/absences', {
+        params: { user_id: selectedEmployee.user_id, year: currentMonth.split('-')[0] }
+      });
+      setEmployeeAbsences(absencesResponse.data);
       fetchAuditForUser(selectedEmployee.user_id);
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
@@ -1021,6 +1055,8 @@ export default function AdminDashboard() {
                             end_time: '17:00',
                             break_minutes: 0,
                             note: '',
+                            entry_type: 'work',
+                            absence_hours: 8,
                           });
                         }}
                         className="text-sm bg-primary hover:bg-primary-dark text-white px-3 py-1 rounded-lg flex items-center space-x-1 transition"
@@ -1034,6 +1070,20 @@ export default function AdminDashboard() {
                     {(editingEntryId || showNewEntryForm) && (
                       <div className="px-4 py-3 bg-blue-50 border-b border-blue-200">
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                          {!editingEntryId && (
+                            <select
+                              value={entryForm.entry_type}
+                              onChange={(e) => setEntryForm({ ...entryForm, entry_type: e.target.value as any })}
+                              aria-label="Eintragstyp"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm col-span-2 md:col-span-1"
+                            >
+                              <option value="work">Arbeit</option>
+                              <option value="sick">Krank</option>
+                              <option value="training">Fortbildung</option>
+                              <option value="overtime">Überstundenausgleich</option>
+                              <option value="other">Sonstiges</option>
+                            </select>
+                          )}
                           <input
                             type="date"
                             value={entryForm.date}
@@ -1041,29 +1091,45 @@ export default function AdminDashboard() {
                             aria-label="Datum"
                             className="px-2 py-1 border border-gray-300 rounded text-sm"
                           />
-                          <input
-                            type="time"
-                            value={entryForm.start_time}
-                            onChange={(e) => setEntryForm({ ...entryForm, start_time: e.target.value })}
-                            aria-label="Von (Uhrzeit)"
-                            className="px-2 py-1 border border-gray-300 rounded text-sm"
-                          />
-                          <input
-                            type="time"
-                            value={entryForm.end_time}
-                            onChange={(e) => setEntryForm({ ...entryForm, end_time: e.target.value })}
-                            aria-label="Bis (Uhrzeit)"
-                            className="px-2 py-1 border border-gray-300 rounded text-sm"
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            value={entryForm.break_minutes}
-                            onChange={(e) => setEntryForm({ ...entryForm, break_minutes: parseInt(e.target.value) || 0 })}
-                            placeholder="Pause (Min.)"
-                            aria-label="Pause in Minuten"
-                            className="px-2 py-1 border border-gray-300 rounded text-sm"
-                          />
+                          {(entryForm.entry_type === 'work' || editingEntryId) ? (
+                            <>
+                              <input
+                                type="time"
+                                value={entryForm.start_time}
+                                onChange={(e) => setEntryForm({ ...entryForm, start_time: e.target.value })}
+                                aria-label="Von (Uhrzeit)"
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                              <input
+                                type="time"
+                                value={entryForm.end_time}
+                                onChange={(e) => setEntryForm({ ...entryForm, end_time: e.target.value })}
+                                aria-label="Bis (Uhrzeit)"
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                value={entryForm.break_minutes}
+                                onChange={(e) => setEntryForm({ ...entryForm, break_minutes: parseInt(e.target.value) || 0 })}
+                                placeholder="Pause (Min.)"
+                                aria-label="Pause in Minuten"
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                            </>
+                          ) : (
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              max="24"
+                              value={entryForm.absence_hours}
+                              onChange={(e) => setEntryForm({ ...entryForm, absence_hours: parseFloat(e.target.value) || 0 })}
+                              placeholder="Stunden"
+                              aria-label="Stunden"
+                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          )}
                           <input
                             type="text"
                             value={entryForm.note}

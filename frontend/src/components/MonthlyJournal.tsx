@@ -52,6 +52,8 @@ interface EditState {
   startTime: string;    // "HH:mm"
   endTime: string;      // "HH:mm"
   breakMinutes: string; // string for <input> binding
+  entryType: 'work' | 'sick' | 'training' | 'overtime' | 'other';
+  absenceHours: string;
 }
 
 // ---- Helper functions -----------------------------------------------------
@@ -116,7 +118,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingDate, setEditingDate] = useState<string | null>(null);
-  const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0' });
+  const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0', entryType: 'work', absenceHours: '8' });
   const [saving, setSaving] = useState(false);
   const [submittingDate, setSubmittingDate] = useState<string | null>(null);
   const [submitReason, setSubmitReason] = useState('');
@@ -149,11 +151,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
   function startEdit(day: JournalDay) {
     const entry = day.time_entries[0] ?? null;
+    const absence = day.absences[0] ?? null;
+    const hasTimeEntry = !!entry;
+    const hasAbsence = !hasTimeEntry && !!absence;
     setEditingDate(day.date);
     setEditState({
       startTime: entry?.start_time ?? '',
       endTime: entry?.end_time ?? '',
       breakMinutes: String(entry?.break_minutes ?? 0),
+      entryType: hasAbsence ? (absence.type as EditState['entryType']) : 'work',
+      absenceHours: hasAbsence ? String(absence.hours) : '8',
     });
   }
 
@@ -163,26 +170,37 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   }
 
   async function handleAdminSave(day: JournalDay) {
-    const start = editState.startTime;
-    const end = editState.endTime;
-    if (!start || !end) {
-      toast.error('Von und Bis sind Pflichtfelder');
-      return;
-    }
     setSaving(true);
     try {
-      const payload = {
-        start_time: start,
-        end_time: end,
-        break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
-      };
-      const existing = day.time_entries[0];
-      if (existing) {
-        await apiClient.put(`/admin/time-entries/${existing.id}`, payload);
+      if (editState.entryType === 'work') {
+        const start = editState.startTime;
+        const end = editState.endTime;
+        if (!start || !end) {
+          toast.error('Von und Bis sind Pflichtfelder');
+          setSaving(false);
+          return;
+        }
+        const payload = {
+          start_time: start,
+          end_time: end,
+          break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
+        };
+        const existing = day.time_entries[0];
+        if (existing) {
+          await apiClient.put(`/admin/time-entries/${existing.id}`, payload);
+        } else {
+          await apiClient.post(`/admin/users/${userId}/time-entries`, {
+            date: day.date,
+            ...payload,
+          });
+        }
       } else {
-        await apiClient.post(`/admin/users/${userId}/time-entries`, {
+        // Absence entry
+        await apiClient.post('/absences', {
+          user_id: userId,
           date: day.date,
-          ...payload,
+          type: editState.entryType,
+          hours: parseFloat(editState.absenceHours) || 0,
         });
       }
       toast.success('Gespeichert');
@@ -367,36 +385,65 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           {format(dateObj, 'EEE', { locale: de })}
                         </td>
                         <td className={`px-3 py-2 ${TYPE_COLORS[day.type]}`}>
-                          {day.is_holiday && day.holiday_name
-                            ? day.holiday_name
-                            : TYPE_LABELS[day.type] ?? day.type}
-                          {multiEntry && (
-                            <span className="ml-1 text-xs text-gray-400">
-                              ({day.time_entries.length}×)
-                            </span>
+                          {editingDate === day.date && isAdminView && !day.time_entries.length && !day.absences.length ? (
+                            <select
+                              value={editState.entryType}
+                              onChange={(e) => setEditState(s => ({ ...s, entryType: e.target.value as EditState['entryType'] }))}
+                              className="border border-gray-300 rounded px-1 py-0.5 text-sm"
+                            >
+                              <option value="work">Arbeit</option>
+                              <option value="sick">Krank</option>
+                              <option value="training">Fortbildung</option>
+                              <option value="overtime">ÜSt-Ausgleich</option>
+                              <option value="other">Sonstiges</option>
+                            </select>
+                          ) : (
+                            <>
+                              {day.is_holiday && day.holiday_name
+                                ? day.holiday_name
+                                : TYPE_LABELS[day.type] ?? day.type}
+                              {multiEntry && (
+                                <span className="ml-1 text-xs text-gray-400">
+                                  ({day.time_entries.length}×)
+                                </span>
+                              )}
+                            </>
                           )}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-gray-600 whitespace-nowrap">
                           {isGray ? '–' : editingDate === day.date ? (
-                            <div className="flex items-center gap-1">
+                            editState.entryType === 'work' ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="time"
+                                  value={editState.startTime}
+                                  onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))}
+                                  className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                                />
+                                <span className="text-gray-400">–</span>
+                                <input
+                                  type="time"
+                                  value={editState.endTime}
+                                  onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))}
+                                  className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                                />
+                              </div>
+                            ) : (
                               <input
-                                type="time"
-                                value={editState.startTime}
-                                onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))}
-                                className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                                type="number"
+                                step="0.5"
+                                min={0}
+                                max={24}
+                                value={editState.absenceHours}
+                                onChange={(e) => setEditState(s => ({ ...s, absenceHours: e.target.value }))}
+                                className="w-20 border border-gray-300 rounded px-1 py-0.5 text-sm"
+                                placeholder="Stunden"
                               />
-                              <span className="text-gray-400">–</span>
-                              <input
-                                type="time"
-                                value={editState.endTime}
-                                onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))}
-                                className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
-                              />
-                            </div>
+                            )
                           ) : vonBis}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
-                          {isGray ? '' : editingDate === day.date ? (
+                          {isGray ? '' : editingDate === day.date && editState.entryType === 'work' ? (
                             <input
                               type="number"
                               inputMode="numeric"
@@ -406,7 +453,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
                               className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right"
                             />
-                          ) : pause}
+                          ) : editingDate === day.date ? '' : pause}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700">
                           {isGray ? '' : formatHoursSimple(day.actual_hours)}
