@@ -118,6 +118,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [addingDate, setAddingDate] = useState<string | null>(null); // separate state for adding new entry
   const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0', entryType: 'work', absenceHours: '8' });
   const [saving, setSaving] = useState(false);
   const [submittingDate, setSubmittingDate] = useState<string | null>(null);
@@ -164,9 +165,55 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     });
   }
 
+  function startAdd(day: JournalDay) {
+    setAddingDate(day.date);
+    setEditingDate(null);
+    setEditState({
+      startTime: '',
+      endTime: '',
+      breakMinutes: '0',
+      entryType: 'work',
+      absenceHours: '8',
+    });
+  }
+
   function cancelEdit() {
     setEditingDate(null);
+    setAddingDate(null);
     setSubmittingDate(null);
+  }
+
+  async function handleAdminAdd(dateStr: string) {
+    setSaving(true);
+    try {
+      if (editState.entryType === 'work') {
+        if (!editState.startTime || !editState.endTime) {
+          toast.error('Von und Bis sind Pflichtfelder');
+          setSaving(false);
+          return;
+        }
+        await apiClient.post(`/admin/users/${userId}/time-entries`, {
+          date: dateStr,
+          start_time: editState.startTime,
+          end_time: editState.endTime,
+          break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
+        });
+      } else {
+        await apiClient.post('/absences', {
+          user_id: userId,
+          date: dateStr,
+          type: editState.entryType,
+          hours: parseFloat(editState.absenceHours) || 0,
+        });
+      }
+      toast.success('Eintrag hinzugefügt');
+      cancelEdit();
+      setReloadKey(k => k + 1);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Speichern'));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleAdminSave(day: JournalDay) {
@@ -515,30 +562,81 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               )}
                             </div>
                           ) : !isGray && isPastDay(day.date) ? (
-                            day.time_entries.length > 1 ? (
-                              <span className="text-xs text-gray-400 px-1" title="Mehrere Einträge – Bearbeitung hier nicht möglich">
-                                {day.time_entries.length}×
-                              </span>
-                            ) : (day.time_entries.length === 1 || day.absences.length > 0) ? (
-                              <button
-                                onClick={() => startEdit(day)}
-                                className="p-2.5 text-gray-400 hover:text-gray-600"
-                                title="Bearbeiten"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => startEdit(day)}
-                                className="p-2.5 text-blue-400 hover:text-blue-600"
-                                title="Eintrag anlegen"
-                              >
-                                <Plus size={14} />
-                              </button>
-                            )
+                            <div className="flex items-center justify-end gap-0.5">
+                              {(day.time_entries.length > 0 || day.absences.length > 0) && (
+                                <button
+                                  onClick={() => startEdit(day)}
+                                  className="p-2 text-gray-400 hover:text-gray-600"
+                                  title="Bearbeiten"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                              )}
+                              {isAdminView && (
+                                <button
+                                  onClick={() => startAdd(day)}
+                                  className="p-2 text-blue-400 hover:text-blue-600"
+                                  title="Weiteren Eintrag hinzufügen"
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              )}
+                              {!isAdminView && day.time_entries.length === 0 && day.absences.length === 0 && (
+                                <button
+                                  onClick={() => startEdit(day)}
+                                  className="p-2 text-blue-400 hover:text-blue-600"
+                                  title="Eintrag anlegen"
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              )}
+                            </div>
                           ) : null}
                         </td>
                       </tr>
+                      {/* Add-new-entry row */}
+                      {addingDate === day.date && isAdminView && (
+                        <tr key={`${day.date}-add`} className="bg-green-50">
+                          <td className="px-3 py-2"></td>
+                          <td className="px-3 py-2 hidden sm:table-cell"></td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={editState.entryType}
+                              onChange={(e) => setEditState(s => ({ ...s, entryType: e.target.value as EditState['entryType'] }))}
+                              className="border border-gray-300 rounded px-1 py-0.5 text-sm"
+                            >
+                              <option value="work">Arbeit</option>
+                              <option value="sick">Krank</option>
+                              <option value="training">Fortbildung</option>
+                              <option value="overtime">ÜSt-Ausgleich</option>
+                              <option value="other">Sonstiges</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 hidden md:table-cell">
+                            {editState.entryType === 'work' ? (
+                              <div className="flex items-center gap-1">
+                                <input type="time" value={editState.startTime} onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))} className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm" />
+                                <span className="text-gray-400">–</span>
+                                <input type="time" value={editState.endTime} onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))} className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm" />
+                              </div>
+                            ) : (
+                              <input type="number" step="0.5" min={0} max={24} value={editState.absenceHours} onChange={(e) => setEditState(s => ({ ...s, absenceHours: e.target.value }))} className="w-20 border border-gray-300 rounded px-1 py-0.5 text-sm" placeholder="Stunden" />
+                            )}
+                          </td>
+                          <td className="px-3 py-2 hidden md:table-cell text-right">
+                            {editState.entryType === 'work' && (
+                              <input type="number" min={0} max={480} value={editState.breakMinutes} onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))} className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right" />
+                            )}
+                          </td>
+                          <td colSpan={3}></td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => void handleAdminAdd(day.date)} disabled={saving} className="p-2.5 text-green-600 hover:text-green-800 disabled:opacity-50" title="Hinzufügen"><Check size={15} /></button>
+                              <button onClick={cancelEdit} disabled={saving} className="p-2.5 text-gray-400 hover:text-gray-600 disabled:opacity-50" title="Abbrechen"><X size={15} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       {submittingDate === day.date && !isAdminView && (
                         <tr key={`${day.date}-reason`} className="bg-blue-50">
                           <td colSpan={9} className="px-3 py-2">
