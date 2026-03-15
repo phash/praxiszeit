@@ -52,6 +52,14 @@ interface YearlyAbsenceSummary {
   total_days: number;
 }
 
+interface YtdOvertime {
+  year: number;
+  target_hours: number;
+  actual_hours: number;
+  overtime: number;
+  carryover_hours: number;
+}
+
 interface NextVacation {
   date: string;
   end_date?: string;
@@ -94,6 +102,7 @@ export default function Dashboard() {
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsenceSummary | null>(null);
+  const [ytdOvertime, setYtdOvertime] = useState<YtdOvertime | null>(null);
   const [teamAbsences, setTeamAbsences] = useState<TeamAbsence[]>([]);
   const [nextVacation, setNextVacation] = useState<NextVacation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,13 +112,14 @@ export default function Dashboard() {
     const fetchData = async () => {
       try {
         const currentYear = new Date().getFullYear();
-        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absencesRes, nextVacationRes] = await Promise.all([
+        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absencesRes, nextVacationRes, ytdRes] = await Promise.all([
           apiClient.get('/dashboard'),
           apiClient.get('/dashboard/overtime'),
           apiClient.get('/dashboard/vacation'),
           apiClient.get('/absences/team/upcoming'),
           apiClient.get('/absences', { params: { year: currentYear } }),
           apiClient.get('/absences/next-vacation'),
+          apiClient.get('/dashboard/ytd-overtime'),
         ]);
 
         setDashboardData(dashboardRes.data);
@@ -117,6 +127,7 @@ export default function Dashboard() {
         setVacationAccount(vacationRes.data);
         setTeamAbsences(teamAbsencesRes.data);
         setNextVacation(nextVacationRes.data);
+        setYtdOvertime(ytdRes.data);
 
         // Calculate yearly absence summary
         const absences: AbsenceEntry[] = absencesRes.data;
@@ -378,36 +389,74 @@ export default function Dashboard() {
 
       {showDetails && (
         <>
-          {/* Yearly Absence Overview */}
-          {trackHours && yearlyAbsences && (
+          {/* Yearly Overview */}
+          {trackHours && (yearlyAbsences || ytdOvertime) && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
               <h2 className="text-xl font-bold text-gray-900 mb-6">Jahresübersicht {new Date().getFullYear()}</h2>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-600">{yearlyAbsences.vacation_days.toFixed(1)}</div>
-                  <div className="text-sm text-gray-600 mt-1">Urlaub</div>
+
+              {/* YTD Overtime Summary */}
+              {ytdOvertime && (
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                  <h3 className="text-sm font-medium text-gray-600 mb-3">Stunden 01.01. bis heute</h3>
+                  <div className={`grid ${ytdOvertime.carryover_hours !== 0 ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3'} gap-4`}>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-gray-700">{ytdOvertime.target_hours.toFixed(1)}h</div>
+                      <div className="text-sm text-gray-500 mt-1">Soll</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-gray-700">{ytdOvertime.actual_hours.toFixed(1)}h</div>
+                      <div className="text-sm text-gray-500 mt-1">Ist</div>
+                    </div>
+                    {ytdOvertime.carryover_hours !== 0 && (
+                      <div className="text-center">
+                        <div className={`text-2xl font-bold ${ytdOvertime.carryover_hours >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                          {ytdOvertime.carryover_hours >= 0 ? '+' : ''}{ytdOvertime.carryover_hours.toFixed(1)}h
+                        </div>
+                        <div className="text-sm text-gray-500 mt-1">Übertrag Vorjahr</div>
+                      </div>
+                    )}
+                    <div className="text-center">
+                      <div className={`text-2xl font-bold ${ytdOvertime.overtime >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {ytdOvertime.overtime >= 0 ? '+' : ''}{ytdOvertime.overtime.toFixed(1)}h
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">Überstunden</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-red-600">{yearlyAbsences.sick_days.toFixed(1)}</div>
-                  <div className="text-sm text-gray-600 mt-1">Krank</div>
+              )}
+
+              {/* Absence Summary */}
+              {yearlyAbsences && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-600 mb-3">Abwesenheiten</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-blue-600">{yearlyAbsences.vacation_days.toFixed(1)}</div>
+                      <div className="text-sm text-gray-600 mt-1">Urlaub</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-red-600">{yearlyAbsences.sick_days.toFixed(1)}</div>
+                      <div className="text-sm text-gray-600 mt-1">Krank</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-orange-600">{yearlyAbsences.training_days.toFixed(1)}</div>
+                      <div className="text-sm text-gray-600 mt-1">Fortbildung</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-purple-600">{yearlyAbsences.overtime_days.toFixed(1)}</div>
+                      <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days.toFixed(1)}</div>
+                      <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-gray-900">{yearlyAbsences.total_days.toFixed(1)}</div>
+                      <div className="text-sm text-gray-600 mt-1">Gesamt</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-orange-600">{yearlyAbsences.training_days.toFixed(1)}</div>
-                  <div className="text-sm text-gray-600 mt-1">Fortbildung</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-600">{yearlyAbsences.overtime_days.toFixed(1)}</div>
-                  <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days.toFixed(1)}</div>
-                  <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-gray-900">{yearlyAbsences.total_days.toFixed(1)}</div>
-                  <div className="text-sm text-gray-600 mt-1">Gesamt</div>
-                </div>
-              </div>
+              )}
             </div>
           )}
 
