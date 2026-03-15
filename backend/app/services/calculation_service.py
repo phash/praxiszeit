@@ -251,10 +251,11 @@ def get_monthly_balance(db: Session, user: User, year: int, month: int) -> Decim
 
 def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: int) -> Decimal:
     """
-    Calculate cumulative overtime account from employment start up to specified month.
+    Calculate cumulative overtime account up to specified month.
 
-    Optimised: fetches all time entries, absences, holidays, and working-hours changes
-    in a single batch (4 queries total) instead of 3+ queries per month.
+    If a YearCarryover exists, uses it as the starting balance and only
+    iterates months from that year forward (avoids double-counting).
+    Otherwise falls back to calculating from the first time entry.
 
     Args:
         db: Database session
@@ -270,23 +271,40 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
 
     up_to_date = date(up_to_year, up_to_month, monthrange(up_to_year, up_to_month)[1])
 
+    # --- determine starting point ---
+    # Find the most recent carryover at or before up_to_year
+    latest_carryover = db.query(YearCarryover).filter(
+        YearCarryover.user_id == user.id,
+        YearCarryover.year <= up_to_year,
+    ).order_by(YearCarryover.year.desc()).first()
+
+    if latest_carryover:
+        # Start from Jan of the carryover year with the carryover value
+        start_year = latest_carryover.year
+        start_month = 1
+        initial_balance = Decimal(str(latest_carryover.overtime_hours))
+        start_date = date(start_year, 1, 1)
+    else:
+        # No carryover: start from first time entry
+        first_entry = db.query(TimeEntry).filter(
+            TimeEntry.user_id == user.id
+        ).order_by(TimeEntry.date).first()
+
+        if not first_entry:
+            return Decimal('0.00')
+
+        start_year = first_entry.date.year
+        start_month = first_entry.date.month
+        initial_balance = Decimal('0.00')
+        start_date = date(start_year, start_month, 1)
+
     # --- single-pass bulk fetches ---
-    first_entry = db.query(TimeEntry).filter(
-        TimeEntry.user_id == user.id
-    ).order_by(TimeEntry.date).first()
-
-    if not first_entry:
-        return Decimal('0.00')
-
-    start_date = date(first_entry.date.year, first_entry.date.month, 1)
-
     # All time entries in range (group by month in memory)
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
         TimeEntry.date >= start_date,
         TimeEntry.date <= up_to_date,
     ).all()
-    # month_key → sum of net_hours
     actual_by_month: Dict[tuple, Decimal] = {}
     for e in entries:
         key = (e.date.year, e.date.month)
@@ -323,17 +341,9 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
                 break
         return result
 
-    # --- year carryovers (overtime from previous years) ---
-    carryovers = db.query(YearCarryover).filter(
-        YearCarryover.user_id == user.id,
-        YearCarryover.year >= first_entry.date.year,
-        YearCarryover.year <= up_to_year,
-    ).all()
-    carryover_total = sum((Decimal(str(c.overtime_hours)) for c in carryovers), start=Decimal('0'))
-
     # --- iterate months and compute balance in memory ---
-    total_balance = carryover_total
-    current_year, current_month = first_entry.date.year, first_entry.date.month
+    total_balance = initial_balance
+    current_year, current_month = start_year, start_month
 
     while (current_year < up_to_year) or (current_year == up_to_year and current_month <= up_to_month):
         key = (current_year, current_month)
@@ -554,3 +564,60 @@ def count_workdays(db: Session, start: date, end: date) -> int:
             count += 1
         cur += timedelta(days=1)
     return count
+
+
+def create_year_closing(db: Session, year: int, users: list) -> list:
+    """
+    Create year-end closing for all given users.
+
+    For each user, calculates the cumulative overtime balance at Dec 31
+    and the remaining vacation days, then creates/updates a YearCarryover
+    record for year+1.
+
+    Args:
+        db: Database session
+        year: The year being closed (carryovers are created for year+1)
+        users: List of User objects
+
+    Returns:
+        List of dicts with user info and carryover values
+    """
+    next_year = year + 1
+    results = []
+
+    for user in users:
+        # Calculate overtime balance at end of year
+        overtime_balance = get_overtime_account(db, user, year, 12)
+
+        # Calculate remaining vacation days
+        vacation_account = get_vacation_account(db, user, year)
+        remaining_vacation = Decimal(str(vacation_account['remaining_days']))
+
+        # Create or update carryover for next year
+        carryover = db.query(YearCarryover).filter(
+            YearCarryover.user_id == user.id,
+            YearCarryover.year == next_year,
+        ).first()
+
+        if carryover:
+            carryover.overtime_hours = overtime_balance
+            carryover.vacation_days = remaining_vacation
+        else:
+            carryover = YearCarryover(
+                user_id=user.id,
+                year=next_year,
+                overtime_hours=overtime_balance,
+                vacation_days=remaining_vacation,
+            )
+            db.add(carryover)
+
+        results.append({
+            "user_id": str(user.id),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "overtime_hours": float(overtime_balance),
+            "vacation_days": float(remaining_vacation.quantize(Decimal('0.1'))),
+        })
+
+    db.commit()
+    return results
