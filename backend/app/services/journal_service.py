@@ -69,11 +69,24 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
         else:
             day_type = "empty"
 
-        actual_hours = Decimal(str(sum(e.net_hours for e in day_entries)))
+        time_hours = Decimal(str(sum(e.net_hours for e in day_entries)))
+        absence_sum = Decimal(str(sum(float(a.hours) for a in day_absences))) if day_absences else Decimal("0")
 
-        if is_weekend or is_holiday_day or (day_absences and day_absences[0].type != AbsenceType.TRAINING):
+        if is_weekend or is_holiday_day:
+            actual_hours = time_hours
             target_hours = Decimal("0")
+        elif day_absences and not day_entries:
+            # Pure absence day: show absence hours in Ist column
+            actual_hours = absence_sum
+            if day_absences[0].type == AbsenceType.TRAINING:
+                # Training counts like work – use normal daily target
+                weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
+                target_hours = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+            else:
+                # Sick / vacation / overtime / other: target = absence hours → balance = 0
+                target_hours = absence_sum
         else:
+            actual_hours = time_hours
             weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
             target_hours = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
 
