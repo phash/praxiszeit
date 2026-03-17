@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
 import { LogIn, LogOut, Play, Square, Check } from 'lucide-react';
-import { format } from 'date-fns';
 import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuthStore } from '../stores/authStore';
@@ -161,7 +160,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         <div className="flex justify-center gap-3 mb-6">
           <div className="bg-muted rounded-full px-4 py-2 text-center">
             <div className="text-sm font-semibold tabular-nums">
-              {startTime ? format(new Date(startTime), 'HH:mm') : '—'}
+              {startTime ? (startTime.includes('T') ? startTime.split('T')[1] : startTime).substring(0, 5) : '—'}
             </div>
             <div className="text-xs text-text-secondary">Start</div>
           </div>

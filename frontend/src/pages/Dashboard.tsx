@@ -230,7 +230,7 @@ export default function Dashboard() {
             <div className={`w-2 h-2 rounded-full ${clockStatus?.is_clocked_in ? 'bg-success' : 'bg-gray-300'}`} />
             <span className="text-sm font-medium text-text-primary">
               {clockStatus?.is_clocked_in && clockStatus.current_entry
-                ? `Eingestempelt seit ${format(new Date(clockStatus.current_entry.start_time), 'HH:mm')}`
+                ? `Eingestempelt seit ${(clockStatus.current_entry.start_time.includes('T') ? clockStatus.current_entry.start_time.split('T')[1] : clockStatus.current_entry.start_time).substring(0, 5)}`
                 : 'Nicht eingestempelt'}
             </span>
           </div>
