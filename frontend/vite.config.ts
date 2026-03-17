@@ -17,7 +17,7 @@ export default defineConfig({
         name: 'PraxisZeit - Zeiterfassung',
         short_name: 'PraxisZeit',
         description: 'Zeiterfassung fuer Arztpraxen',
-        theme_color: '#2563EB',
+        theme_color: '#4A90B8',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
