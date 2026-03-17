@@ -17,6 +17,7 @@ import MonthSelector from '../components/MonthSelector';
 import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
 import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
+import { useUIStore } from '../stores/uiStore';
 
 interface TimeEntry {
   id: string;
@@ -133,14 +134,20 @@ function WeekDots({
           const hasEntry = entryDates.has(dateStr);
           const isToday = dateStr === today;
           return (
-            <button key={dateStr} onClick={() => onDotClick(dateStr)} className="flex flex-col items-center gap-1">
-              <span className="text-[10px] text-text-secondary uppercase">
+            <button
+              key={dateStr}
+              onClick={() => onDotClick(dateStr)}
+              className="flex flex-col items-center gap-1 min-w-[44px] min-h-[44px] justify-center"
+              aria-label={`${format(new Date(dateStr + 'T00:00:00'), 'EEEE, d. MMMM', { locale: de })}${hasEntry ? ', Eintrag vorhanden' : ''}${isToday ? ', heute' : ''}`}
+              aria-pressed={isToday}
+            >
+              <span className="text-[10px] text-text-secondary uppercase" aria-hidden="true">
                 {format(new Date(dateStr + 'T00:00:00'), 'EEEEEE', { locale: de })}
               </span>
-              <span className="text-xs tabular-nums text-text-secondary">
+              <span className="text-xs tabular-nums text-text-secondary" aria-hidden="true">
                 {new Date(dateStr + 'T00:00:00').getDate()}
               </span>
-              <div className={`w-2 h-2 rounded-full transition-colors ${hasEntry ? 'bg-primary' : 'bg-muted'} ${isToday ? 'ring-2 ring-primary ring-offset-1' : ''}`} />
+              <div aria-hidden="true" className={`w-2 h-2 rounded-full transition-colors ${hasEntry ? 'bg-primary' : 'bg-muted'} ${isToday ? 'ring-2 ring-primary ring-offset-1' : ''}`} />
             </button>
           );
         })}
@@ -155,6 +162,7 @@ function WeekDots({
 export default function TimeTracking() {
   const toast = useToast();
   const { user } = useAuthStore();
+  const { stampVersion } = useUIStore();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -195,6 +203,12 @@ export default function TimeTracking() {
   useEffect(() => {
     fetchEntries();
   }, [currentMonth]);
+
+  // Refresh entries after FAB clock-in/out
+  useEffect(() => {
+    if (stampVersion === 0) return;
+    fetchEntries();
+  }, [stampVersion]);
 
   const fetchEntries = async () => {
     try {
@@ -474,8 +488,12 @@ export default function TimeTracking() {
           <div
             className="md:hidden fixed inset-0 bg-black/40 z-40"
             onClick={resetForm}
+            aria-hidden="true"
           />
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="entry-form-title"
             className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-sm md:border md:p-6 md:mb-6"
             style={{ animation: 'slideUpSheet 0.25s ease-out' }}
           >
@@ -485,15 +503,15 @@ export default function TimeTracking() {
             </div>
             {/* Mobile header with close button */}
             <div className="md:hidden flex items-center justify-between px-4 pb-3 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-gray-900">
+              <h3 id="entry-form-title" className="text-base font-semibold text-gray-900">
                 {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
               </h3>
-              <button onClick={resetForm} className="p-2 text-gray-500 hover:text-gray-700">
-                <X size={20} />
+              <button onClick={resetForm} className="p-2 text-gray-500 hover:text-gray-700" aria-label="Formular schließen">
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             {/* Desktop title */}
-            <h3 className="hidden md:block text-lg font-semibold mb-4">
+            <h3 id="entry-form-title" className="hidden md:block text-lg font-semibold mb-4">
               {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
             </h3>
           {errors.overlap && (
@@ -610,10 +628,11 @@ export default function TimeTracking() {
             {(new Date(formData.date + 'T12:00:00').getDay() === 0 ||
               (editingId && entries.find(e => e.id === editingId)?.is_sunday_or_holiday)) && (
               <div className="md:col-span-2 lg:col-span-5">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="sunday-exception-reason" className="block text-sm font-medium text-gray-700 mb-1">
                   Ausnahmegrund <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
                 </label>
                 <input
+                  id="sunday-exception-reason"
                   type="text"
                   value={formData.sunday_exception_reason}
                   onChange={(e) => setFormData({ ...formData, sunday_exception_reason: e.target.value })}

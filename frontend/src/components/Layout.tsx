@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
@@ -37,6 +37,8 @@ export default function Layout() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [sheetClosing, setSheetClosing] = useState(false);
+  const fabRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
 
   // Clock status for FAB appearance
   useEffect(() => {
@@ -61,6 +63,17 @@ export default function Layout() {
     setTimeout(() => {
       closeStampSheet();
       setSheetClosing(false);
+      fabRef.current?.focus();
+    }, 250);
+  };
+
+  // Dismiss without stamping – no notifyStampChange
+  const handleSheetDismiss = () => {
+    setSheetClosing(true);
+    setTimeout(() => {
+      closeStampSheet();
+      setSheetClosing(false);
+      fabRef.current?.focus();
     }, 250);
   };
 
@@ -69,17 +82,24 @@ export default function Layout() {
     setSidebarOpen(false);
   }, [location.pathname]);
 
-  // Close sidebar on escape key
+  // Close sidebar / stamp sheet on Escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && sidebarOpen) {
-        setSidebarOpen(false);
+      if (e.key === 'Escape') {
+        if (isStampSheetOpen) handleSheetDismiss();
+        else if (sidebarOpen) setSidebarOpen(false);
       }
     };
-
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [sidebarOpen]);
+  }, [sidebarOpen, isStampSheetOpen]);
+
+  // Move focus into stamp sheet when it opens
+  useEffect(() => {
+    if (isStampSheetOpen) {
+      setTimeout(() => sheetRef.current?.focus(), 50);
+    }
+  }, [isStampSheetOpen]);
 
   const handleLogout = async () => {
     try {
@@ -311,13 +331,13 @@ export default function Layout() {
           {/* FAB - Centered Stamp Button */}
           {user?.track_hours && (
             <button
+              ref={fabRef}
               onClick={openStampSheet}
               className={`absolute left-1/2 -translate-x-1/2 -top-3 z-[31] w-14 h-14 rounded-full shadow-elevated flex items-center justify-center transition-all duration-300 active:scale-90 ${
                 isClockedIn
-                  ? 'bg-gradient-to-br from-success to-[#4AA87A]'
+                  ? 'bg-gradient-to-br from-success to-[#4AA87A] fab-pulse'
                   : 'bg-gradient-to-br from-primary to-primary-dark'
               }`}
-              style={isClockedIn ? { animation: 'fabPulse 3s ease-in-out infinite' } : undefined}
               aria-label={isClockedIn ? 'Eingestempelt – Stempeluhr öffnen' : 'Stempeluhr öffnen'}
             >
               {isClockedIn ? <Timer size={24} className="text-white" /> : <Play size={24} className="text-white ml-0.5" />}
@@ -368,10 +388,15 @@ export default function Layout() {
           <div
             className="fixed inset-0 bg-black/40 z-40 lg:hidden transition-opacity duration-200"
             style={{ opacity: sheetClosing ? 0 : 1 }}
-            onClick={handleStampSuccess}
+            onClick={handleSheetDismiss}
           />
           <div
-            className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-surface rounded-t-3xl shadow-elevated"
+            ref={sheetRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stamp-sheet-title"
+            tabIndex={-1}
+            className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-surface rounded-t-3xl shadow-elevated focus:outline-none"
             style={{
               animation: sheetClosing ? undefined : 'slideUp 300ms ease-out',
               transform: sheetClosing ? 'translateY(100%)' : 'translateY(0)',
@@ -381,9 +406,9 @@ export default function Layout() {
           >
             <div className="flex items-center justify-between px-4 pt-3 pb-2">
               <div className="w-8" />
-              <div className="w-10 h-1 bg-gray-300 rounded-full" />
+              <div className="w-10 h-1 bg-gray-300 rounded-full" aria-hidden="true" />
               <button
-                onClick={handleStampSuccess}
+                onClick={handleSheetDismiss}
                 className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition"
                 aria-label="Schließen"
               >
@@ -391,6 +416,7 @@ export default function Layout() {
               </button>
             </div>
             <div className="px-6 pb-6">
+              <h2 id="stamp-sheet-title" className="sr-only">Stempeluhr</h2>
               <StampWidget variant="sheet" onSuccess={handleStampSuccess} />
             </div>
           </div>

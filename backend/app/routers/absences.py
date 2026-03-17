@@ -289,8 +289,10 @@ def create_absence(
     # Create absences for all dates
     created_absences = []
     for date in dates_to_create:
-        # Use per-day hours if user has daily schedule, otherwise use provided hours
-        if getattr(target_user, 'use_daily_schedule', False):
+        # §3 EntgFG: for sick leave always credit the employee's scheduled daily hours,
+        # not a caller-supplied value. For daily-schedule users, use their per-weekday
+        # target; for standard users, derive from weekly_hours / work_days_per_week.
+        if absence_data.type == AbsenceType.SICK or getattr(target_user, 'use_daily_schedule', False):
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date))
             if hours_for_day == 0:
                 continue  # Skip days with 0 scheduled hours

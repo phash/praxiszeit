@@ -23,7 +23,8 @@ interface StampWidgetProps {
 function formatTimer(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = Math.floor(minutes % 60);
-  const s = Math.round((minutes % 1) * 60);
+  let s = Math.round((minutes % 1) * 60);
+  if (s === 60) s = 0;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
@@ -175,8 +176,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         {/* Break Input */}
         {showBreakInput && (
           <div className="mb-4">
-            <label className="block text-sm text-text-secondary mb-1">Pause (Minuten)</label>
+            <label htmlFor="break-minutes-sheet" className="block text-sm text-text-secondary mb-1">Pause (Minuten)</label>
             <input
+              id="break-minutes-sheet"
               type="number"
               inputMode="numeric"
               min={0}
@@ -239,8 +241,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         {/* Break input (shown before clock-out) */}
         {showBreakInput && (
           <div className="flex items-center gap-2">
-            <label className="text-sm text-text-secondary whitespace-nowrap">Pause (Min.):</label>
+            <label htmlFor="break-minutes-inline" className="text-sm text-text-secondary whitespace-nowrap">Pause (Min.):</label>
             <input
+              id="break-minutes-inline"
               type="number"
               inputMode="numeric"
               min="0"

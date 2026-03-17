@@ -268,13 +268,17 @@ export default function Dashboard() {
           ? (startTime.includes('T') ? startTime.split('T')[1] : startTime).substring(0, 5)
           : null;
 
+        const progressPct = todayTarget > 0 ? Math.round((todayActual / todayTarget) * 100) : 0;
+
         return (
-          <div
-            className={`md:hidden rounded-2xl shadow-card p-5 mb-6 cursor-pointer active:shadow-soft transition-all ${cardBg}`}
+          <button
+            type="button"
+            className={`md:hidden w-full text-left rounded-2xl shadow-card p-5 mb-6 active:shadow-soft transition-all ${cardBg}`}
             onClick={openStampSheet}
+            aria-label={isClockedIn ? 'Stempeluhr öffnen – eingestempelt' : 'Stempeluhr öffnen'}
           >
             <div className="flex items-center gap-2 mb-3">
-              <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+              <div className={`w-2 h-2 rounded-full ${dotColor}`} aria-hidden="true" />
               <span className="text-sm font-medium text-text-primary">
                 {isClockedIn && startDisplay
                   ? `Eingestempelt seit ${startDisplay}`
@@ -285,10 +289,17 @@ export default function Dashboard() {
             </div>
             {todayTarget > 0 && (
               <>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-1.5 bg-muted rounded-full overflow-hidden mb-2"
+                  role="progressbar"
+                  aria-valuenow={progressPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`Heutige Arbeitszeit: ${progressPct}%`}
+                >
                   <div
                     className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-all duration-1000`}
-                    style={{ width: `${Math.min((todayActual / todayTarget) * 100, 100)}%` }}
+                    style={{ width: `${Math.min(progressPct, 100)}%` }}
                   />
                 </div>
                 <p className="text-xs text-text-secondary">
@@ -296,7 +307,7 @@ export default function Dashboard() {
                 </p>
               </>
             )}
-          </div>
+          </button>
         );
       })()}
 

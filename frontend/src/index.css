@@ -54,6 +54,14 @@ body {
   50% { box-shadow: 0 0 0 10px rgba(92, 184, 138, 0); }
 }
 
+.fab-pulse {
+  animation: fabPulse 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fab-pulse { animation: none; }
+}
+
 @keyframes stampSuccess {
   0% { opacity: 0; transform: scale(0.5); }
   50% { opacity: 1; transform: scale(1.1); }

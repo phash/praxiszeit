@@ -208,10 +208,11 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
 def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decimal:
     """
     Calculate actual hours worked in a month.
-    Sum of all net_hours from TimeEntry records + training (Fortbildung) hours.
+    Sum of all net_hours from TimeEntry records + credited absence hours.
 
-    Training hours count as worked time because training days are normal
-    work days where the employee is absent but credited for the hours.
+    Training (Fortbildung) and sick-leave (Kranktage) hours count as worked time:
+    - Training: employee is absent but credited for the planned hours.
+    - Sick: §3 EntgFG – employee must be credited as if they worked the planned hours.
 
     Args:
         db: Database session
@@ -469,7 +470,7 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
             total_target += daily_target
         current += timedelta(days=1)
 
-    # Sum actual hours (time entries + training hours)
+    # Sum actual hours (time entries + credited absence hours: training + sick)
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
         TimeEntry.date >= start,

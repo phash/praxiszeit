@@ -4,8 +4,9 @@
 export function formatHoursHM(hours: number): string {
   const sign = hours < 0 ? '-' : '';
   const abs = Math.abs(hours);
-  const h = Math.floor(abs);
-  const m = Math.round((abs - h) * 60);
+  let h = Math.floor(abs);
+  let m = Math.round((abs - h) * 60);
+  if (m === 60) { h++; m = 0; }
   return `${sign}${h}:${String(m).padStart(2, '0')}`;
 }
 

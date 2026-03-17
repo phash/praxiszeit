@@ -1,0 +1,2157 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Review – PR #66 | PraxisZeit | 2026-03-17</title>
+  <style>
+    /* ── Reset & Base ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --c-bg:         #F7F8FA;
+      --c-surface:    #FFFFFF;
+      --c-border:     #E2E8F0;
+      --c-text:       #1A202C;
+      --c-muted:      #64748B;
+      --c-heading:    #0F172A;
+
+      --c-critical:   #DC2626;
+      --c-critical-bg:#FEF2F2;
+      --c-critical-bd:#FECACA;
+
+      --c-high:       #EA580C;
+      --c-high-bg:    #FFF7ED;
+      --c-high-bd:    #FED7AA;
+
+      --c-medium:     #D97706;
+      --c-medium-bg:  #FFFBEB;
+      --c-medium-bd:  #FDE68A;
+
+      --c-low:        #2563EB;
+      --c-low-bg:     #EFF6FF;
+      --c-low-bd:     #BFDBFE;
+
+      --c-pass:       #059669;
+      --c-pass-bg:    #ECFDF5;
+      --c-pass-bd:    #A7F3D0;
+
+      --c-partial:    #7C3AED;
+      --c-partial-bg: #F5F3FF;
+      --c-partial-bd: #DDD6FE;
+
+      --c-info:       #0891B2;
+      --c-info-bg:    #ECFEFF;
+      --c-info-bd:    #A5F3FC;
+
+      --c-code-bg:    #1E293B;
+      --c-code-text:  #E2E8F0;
+
+      --radius:       8px;
+      --radius-sm:    4px;
+      --shadow-sm:    0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md:    0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--c-text);
+      background: var(--c-bg);
+    }
+
+    a { color: var(--c-info); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ──────────────────────────────────────────────────── */
+    .page-wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────── */
+    .report-header {
+      background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%);
+      color: #fff;
+      padding: 40px 48px 36px;
+      margin: 0 -24px 40px;
+    }
+
+    .report-header .project-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.85);
+      margin-bottom: 16px;
+    }
+
+    .report-header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -.3px;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    .report-header .pr-subtitle {
+      font-size: 14px;
+      color: rgba(255,255,255,.7);
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      margin-bottom: 24px;
+    }
+
+    .header-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,.15);
+    }
+
+    .header-meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .header-meta-item .label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.5);
+    }
+
+    .header-meta-item .value {
+      font-size: 14px;
+      font-weight: 600;
+      color: rgba(255,255,255,.9);
+    }
+
+    .header-meta-item .value a {
+      color: #93C5FD;
+    }
+
+    /* ── TOC ─────────────────────────────────────────────────────── */
+    .toc-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 40px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .toc-card h2 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+      margin-bottom: 14px;
+    }
+
+    .toc-list {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 6px 20px;
+    }
+
+    .toc-list li a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--c-text);
+      padding: 4px 0;
+    }
+
+    .toc-list li a:hover { color: var(--c-info); text-decoration: none; }
+
+    .toc-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* ── Executive Summary ───────────────────────────────────────── */
+    .exec-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+
+    .stat-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stat-card .stat-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+    }
+
+    .stat-card .stat-value {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .stat-card .stat-sub {
+      font-size: 12px;
+      color: var(--c-muted);
+    }
+
+    .stat-red    { color: var(--c-critical); }
+    .stat-orange { color: var(--c-high); }
+    .stat-yellow { color: var(--c-medium); }
+    .stat-blue   { color: var(--c-low); }
+    .stat-purple { color: var(--c-partial); }
+
+    /* ── Section Wrapper ─────────────────────────────────────────── */
+    .section {
+      margin-bottom: 56px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid var(--c-border);
+    }
+
+    .section-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .section-header h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--c-heading);
+    }
+
+    .section-header .section-num {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--c-muted);
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    /* ── Summary Table ───────────────────────────────────────────── */
+    .summary-table-wrap {
+      overflow-x: auto;
+      margin-bottom: 32px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--c-surface);
+      font-size: 13.5px;
+    }
+
+    .summary-table thead tr {
+      background: #F1F5F9;
+    }
+
+    .summary-table th {
+      padding: 11px 14px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 11.5px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+      border-bottom: 2px solid var(--c-border);
+      white-space: nowrap;
+    }
+
+    .summary-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--c-border);
+      vertical-align: top;
+    }
+
+    .summary-table tbody tr:last-child td { border-bottom: none; }
+    .summary-table tbody tr:hover { background: #FAFBFC; }
+
+    /* ── Badges ──────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      border: 1px solid;
+    }
+
+    .badge-critical {
+      color: var(--c-critical);
+      background: var(--c-critical-bg);
+      border-color: var(--c-critical-bd);
+    }
+
+    .badge-high {
+      color: var(--c-high);
+      background: var(--c-high-bg);
+      border-color: var(--c-high-bd);
+    }
+
+    .badge-medium {
+      color: var(--c-medium);
+      background: var(--c-medium-bg);
+      border-color: var(--c-medium-bd);
+    }
+
+    .badge-low {
+      color: var(--c-low);
+      background: var(--c-low-bg);
+      border-color: var(--c-low-bd);
+    }
+
+    .badge-pass {
+      color: var(--c-pass);
+      background: var(--c-pass-bg);
+      border-color: var(--c-pass-bd);
+    }
+
+    .badge-partial {
+      color: var(--c-partial);
+      background: var(--c-partial-bg);
+      border-color: var(--c-partial-bd);
+    }
+
+    .badge-info {
+      color: var(--c-info);
+      background: var(--c-info-bg);
+      border-color: var(--c-info-bd);
+    }
+
+    /* ── Finding Cards ───────────────────────────────────────────── */
+    .findings-group {
+      margin-bottom: 36px;
+    }
+
+    .findings-group-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .findings-group-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--c-border);
+    }
+
+    .finding-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .finding-card-critical { border-left: 4px solid var(--c-critical); }
+    .finding-card-high     { border-left: 4px solid var(--c-high); }
+    .finding-card-medium   { border-left: 4px solid var(--c-medium); }
+    .finding-card-low      { border-left: 4px solid var(--c-low); }
+    .finding-card-pass     { border-left: 4px solid var(--c-pass); }
+    .finding-card-partial  { border-left: 4px solid var(--c-partial); }
+    .finding-card-doc      { border-left: 4px solid var(--c-info); }
+
+    .finding-header {
+      padding: 14px 20px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .finding-header:hover { background: #FAFBFC; }
+
+    .finding-id {
+      font-size: 12px;
+      font-weight: 800;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      color: var(--c-muted);
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      border-radius: var(--radius-sm);
+      padding: 2px 7px;
+      flex-shrink: 0;
+    }
+
+    .finding-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--c-heading);
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .finding-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .confidence-pill {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--c-muted);
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      border-radius: 10px;
+      padding: 2px 8px;
+    }
+
+    .finding-body {
+      padding: 0 20px 20px;
+    }
+
+    .finding-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+      margin: 14px 0 5px;
+    }
+
+    .finding-text {
+      font-size: 14px;
+      color: var(--c-text);
+      line-height: 1.7;
+    }
+
+    .file-ref {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 12.5px;
+      background: var(--c-code-bg);
+      color: #93C5FD;
+      padding: 3px 10px;
+      border-radius: var(--radius-sm);
+    }
+
+    .fix-box {
+      background: #F0FDF4;
+      border: 1px solid #BBF7D0;
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      margin-top: 4px;
+      font-size: 13.5px;
+      color: #14532D;
+      line-height: 1.6;
+    }
+
+    .fix-box strong {
+      color: #15803D;
+      font-weight: 700;
+    }
+
+    .note-box {
+      background: var(--c-info-bg);
+      border: 1px solid var(--c-info-bd);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      margin-top: 4px;
+      font-size: 13.5px;
+      color: #0E7490;
+      line-height: 1.6;
+    }
+
+    .wcag-ref {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--c-partial);
+      background: var(--c-partial-bg);
+      border: 1px solid var(--c-partial-bd);
+      border-radius: 10px;
+      padding: 2px 8px;
+    }
+
+    /* ── Code block ──────────────────────────────────────────────── */
+    code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 12.5px;
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: #0F172A;
+    }
+
+    pre {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px;
+      background: var(--c-code-bg);
+      color: var(--c-code-text);
+      padding: 16px 20px;
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      line-height: 1.6;
+      margin-top: 6px;
+    }
+
+    pre .kw  { color: #C084FC; }
+    pre .fn  { color: #60A5FA; }
+    pre .str { color: #86EFAC; }
+    pre .cm  { color: #64748B; font-style: italic; }
+    pre .num { color: #FCA5A5; }
+
+    /* ── Legal Table ─────────────────────────────────────────────── */
+    .legal-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: var(--c-surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .legal-table th {
+      background: #F1F5F9;
+      padding: 11px 16px;
+      text-align: left;
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+      border-bottom: 2px solid var(--c-border);
+    }
+
+    .legal-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--c-border);
+      vertical-align: top;
+    }
+
+    .legal-table tbody tr:last-child td { border-bottom: none; }
+    .legal-table tbody tr:hover { background: #FAFBFC; }
+
+    .legal-para {
+      font-weight: 700;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    /* ── Verdict ─────────────────────────────────────────────────── */
+    .verdict-section {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 32px 36px;
+      box-shadow: var(--shadow-md);
+      margin-top: 48px;
+    }
+
+    .verdict-section h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--c-heading);
+      margin-bottom: 20px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid var(--c-border);
+    }
+
+    .verdict-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .verdict-item {
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      border: 1px solid;
+    }
+
+    .verdict-item h4 {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .verdict-item p {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .verdict-block {
+      background: #FEF2F2;
+      border-color: #FECACA;
+    }
+
+    .verdict-block h4 { color: var(--c-critical); }
+
+    .verdict-warn {
+      background: var(--c-high-bg);
+      border-color: var(--c-high-bd);
+    }
+
+    .verdict-warn h4 { color: var(--c-high); }
+
+    .verdict-ok {
+      background: var(--c-pass-bg);
+      border-color: var(--c-pass-bd);
+    }
+
+    .verdict-ok h4 { color: var(--c-pass); }
+
+    .verdict-recommendation {
+      background: #FAFBFC;
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-sm);
+      padding: 18px 22px;
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    .verdict-recommendation strong { color: var(--c-critical); }
+
+    /* ── Misc ────────────────────────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: var(--c-border);
+      margin: 36px 0;
+    }
+
+    .pass-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .pass-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      padding: 10px 16px;
+      background: var(--c-pass-bg);
+      border: 1px solid var(--c-pass-bd);
+      border-radius: var(--radius-sm);
+      color: #064E3B;
+    }
+
+    .pass-list .pass-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .pass-list .pass-text { flex: 1; }
+    .pass-list .pass-law  { font-weight: 700; color: var(--c-pass); }
+
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--c-muted);
+      padding: 28px 0 0;
+      border-top: 1px solid var(--c-border);
+      margin-top: 60px;
+    }
+
+    /* ── Responsive ──────────────────────────────────────────────── */
+    @media (max-width: 720px) {
+      .report-header { padding: 28px 24px; }
+      .report-header h1 { font-size: 22px; }
+      .exec-summary { grid-template-columns: repeat(2, 1fr); }
+      .verdict-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     HEADER
+═══════════════════════════════════════════════════════════════════ -->
+<div class="report-header">
+  <div class="page-wrap">
+    <div class="project-badge">&#128337; PraxisZeit &middot; Code Review Report</div>
+    <h1>PR #66 – Code Review, Accessibility &amp; Legal Compliance</h1>
+    <div class="pr-subtitle">feat(ux): H:MM format, sick hours §3 EntgFG, live dashboard refresh</div>
+
+    <div class="header-meta">
+      <div class="header-meta-item">
+        <span class="label">Pull Request</span>
+        <span class="value">
+          <a href="https://github.com/phash/praxiszeit/pull/66" target="_blank" rel="noopener">#66 on GitHub &#8599;</a>
+        </span>
+      </div>
+      <div class="header-meta-item">
+        <span class="label">Branch</span>
+        <span class="value">feat/mobile-refresh &rarr; master</span>
+      </div>
+      <div class="header-meta-item">
+        <span class="label">Datum</span>
+        <span class="value">2026-03-17</span>
+      </div>
+      <div class="header-meta-item">
+        <span class="label">Dateien</span>
+        <span class="value">21 ge&auml;ndert</span>
+      </div>
+      <div class="header-meta-item">
+        <span class="label">Zeilen</span>
+        <span class="value">+2422 / &minus;244</span>
+      </div>
+      <div class="header-meta-item">
+        <span class="label">Erstellt von</span>
+        <span class="value">Claude Code (claude-sonnet-4-6)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-wrap">
+
+<!-- ══════════════════════════════════════════════════════════════════
+     TABLE OF CONTENTS
+═══════════════════════════════════════════════════════════════════ -->
+<div class="toc-card" id="top">
+  <h2>Inhaltsverzeichnis</h2>
+  <ul class="toc-list">
+    <li>
+      <a href="#exec">
+        <span class="toc-num" style="background:#E2E8F0;color:#475569;">&#9776;</span>
+        Executive Summary
+      </a>
+    </li>
+    <li>
+      <a href="#section-code">
+        <span class="toc-num" style="background:#FEF2F2;color:#DC2626;">1</span>
+        Code Review (Bugs &amp; Qualit&auml;t)
+      </a>
+    </li>
+    <li>
+      <a href="#section-a11y">
+        <span class="toc-num" style="background:#FFF7ED;color:#EA580C;">2</span>
+        Accessibility Audit (WCAG 2.1 AA)
+      </a>
+    </li>
+    <li>
+      <a href="#section-legal">
+        <span class="toc-num" style="background:#ECFDF5;color:#059669;">3</span>
+        ArbZG / EntgFG Rechtskonformit&auml;t
+      </a>
+    </li>
+    <li>
+      <a href="#verdict">
+        <span class="toc-num" style="background:#F5F3FF;color:#7C3AED;">&#10003;</span>
+        Gesamturteil &amp; Empfehlungen
+      </a>
+    </li>
+  </ul>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     EXECUTIVE SUMMARY
+═══════════════════════════════════════════════════════════════════ -->
+<div id="exec" class="exec-summary">
+  <div class="stat-card">
+    <span class="stat-label">Kritische Bugs</span>
+    <span class="stat-value stat-red">2</span>
+    <span class="stat-sub">Konfidenz &ge; 88%</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Mittlere Bugs</span>
+    <span class="stat-value stat-orange">2</span>
+    <span class="stat-sub">Konfidenz &ge; 82%</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">WCAG Verstö&szlig;e</span>
+    <span class="stat-value stat-orange">12+</span>
+    <span class="stat-sub">Level A &amp; AA</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">A11y Critical</span>
+    <span class="stat-value stat-red">4</span>
+    <span class="stat-sub">Level A – Dialog/Focus</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Rechtl. Gaps</span>
+    <span class="stat-value stat-yellow">2</span>
+    <span class="stat-sub">§3 EntgFG Durchsetzung</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">ArbZG Paragraphen</span>
+    <span class="stat-value stat-purple">4/4</span>
+    <span class="stat-sub">§3 §4 §5 §9/10 PASS</span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 1 – CODE REVIEW
+═══════════════════════════════════════════════════════════════════ -->
+<div class="section" id="section-code">
+  <div class="section-header">
+    <div class="section-icon" style="background:#FEF2F2;">&#128027;</div>
+    <div>
+      <span class="section-num">Abschnitt 1</span>
+      <h2>Code Review – Bugs &amp; Qualit&auml;t</h2>
+    </div>
+  </div>
+
+  <!-- Summary Table -->
+  <div class="summary-table-wrap">
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Titel</th>
+          <th>Schweregrad</th>
+          <th>Konfidenz</th>
+          <th>Datei</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>BUG-1</code></td>
+          <td>formatHoursHM: Minuten-&Uuml;berlauf (m=60)</td>
+          <td><span class="badge badge-critical">&#9679; Kritisch</span></td>
+          <td>88%</td>
+          <td><code>errorMessage.ts</code></td>
+        </tr>
+        <tr>
+          <td><code>BUG-2</code></td>
+          <td>Backdrop ruft handleStampSuccess statt closeStampSheet</td>
+          <td><span class="badge badge-critical">&#9679; Kritisch</span></td>
+          <td>95%</td>
+          <td><code>Layout.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>BUG-3</code></td>
+          <td>stampVersion nicht in TimeTracking.tsx verdrahtet</td>
+          <td><span class="badge badge-medium">&#9679; Mittel</span></td>
+          <td>85%</td>
+          <td><code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>BUG-4</code></td>
+          <td>StampWidget formatTimer: Sekunden-&Uuml;berlauf (s=60)</td>
+          <td><span class="badge badge-medium">&#9679; Mittel</span></td>
+          <td>82%</td>
+          <td><code>StampWidget.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>DOC-1</code></td>
+          <td>get_monthly_actual Docstring veraltet</td>
+          <td><span class="badge badge-low">&#9679; Niedrig</span></td>
+          <td>95%</td>
+          <td><code>calculation_service.py</code></td>
+        </tr>
+        <tr>
+          <td><code>DOC-2</code></td>
+          <td>get_ytd_summary Inline-Kommentar veraltet</td>
+          <td><span class="badge badge-low">&#9679; Niedrig</span></td>
+          <td>90%</td>
+          <td><code>calculation_service.py</code></td>
+        </tr>
+        <tr>
+          <td><code>Q-1</code></td>
+          <td>@fontsource-variable/dm-sans nicht verwendet</td>
+          <td><span class="badge badge-low">&#9679; Niedrig</span></td>
+          <td>80%</td>
+          <td><code>package.json</code></td>
+        </tr>
+        <tr>
+          <td><code>Q-2</code></td>
+          <td>user.weekly_hours direkt verwendet (CLAUDE.md Verletzung)</td>
+          <td><span class="badge badge-medium">&#9679; Mittel</span></td>
+          <td>90%</td>
+          <td><code>Dashboard.tsx</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── CRITICAL BUGS ── -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-critical">Kritische Bugs</span>
+      Konfidenz &ge; 88%
+    </div>
+
+    <!-- BUG 1 -->
+    <div class="finding-card finding-card-critical" id="bug1">
+      <div class="finding-header">
+        <span class="finding-id">BUG-1</span>
+        <span class="finding-title">formatHoursHM: Minuten-&Uuml;berlauf (m = 60)</span>
+        <div class="finding-meta">
+          <span class="badge badge-critical">&#9679; Kritisch</span>
+          <span class="confidence-pill">Konfidenz: 88%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/utils/errorMessage.ts</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          <code>Math.round((abs - h) * 60)</code> kann den Wert <code>60</code> zur&uuml;ckgeben,
+          wenn der Bruchteil nahe <code>1.0</code> liegt – z.B. <code>1.9999h</code> &rarr; Ausgabe
+          <strong>"1:60"</strong> statt <strong>"2:00"</strong>. Dieses Problem tritt bevorzugt
+          bei Dezimalwerten auf, die durch Python&apos;s <code>Decimal&rarr;float</code>-Serialisierung
+          erzeugt werden und Flie&szlig;komma-Artefakte enthalten.
+        </p>
+
+        <p class="finding-label">Reproduktion</p>
+        <pre><span class="cm">// Beispiel: Python gibt 1.9999999 zurück</span>
+<span class="kw">const</span> val = <span class="num">1.9999999</span>;
+<span class="kw">const</span> h = <span class="fn">Math.floor</span>(val);        <span class="cm">// → 1</span>
+<span class="kw">const</span> m = <span class="fn">Math.round</span>((val - h) * <span class="num">60</span>); <span class="cm">// → 60  ← Bug!</span>
+<span class="cm">// Ausgabe: "1:60" (ungültig)</span></pre>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <strong>Empfehlung:</strong> Nach dem Runden pr&uuml;fen:<br />
+          <code>if (m === 60) &#123; h++; m = 0; &#125;</code><br />
+          Alternativ <code>Math.floor</code> statt <code>Math.round</code> verwenden – beide
+          &Auml;nderungen sind einzeilig und haben kein Risiko-Potential.
+        </div>
+      </div>
+    </div>
+
+    <!-- BUG 2 -->
+    <div class="finding-card finding-card-critical" id="bug2">
+      <div class="finding-header">
+        <span class="finding-id">BUG-2</span>
+        <span class="finding-title">Backdrop ruft handleStampSuccess statt closeStampSheet</span>
+        <div class="finding-meta">
+          <span class="badge badge-critical">&#9679; Kritisch</span>
+          <span class="confidence-pill">Konfidenz: 95%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/components/Layout.tsx</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Der <code>onClick</code>-Handler des Backdrop-Elements beim Stempelblatt ruft
+          <code>handleStampSuccess()</code> statt <code>closeStampSheet()</code>.
+          Dadurch wird <code>notifyStampChange()</code> ausgel&ouml;st, was das
+          <code>stampVersion</code>-Increment triggert. Das Dashboard f&uuml;hrt daraufhin
+          <strong>5 API-Calls</strong> aus – auch dann, wenn der User den Dialog nur
+          schlie&szlig;t, <em>ohne gestempelt zu haben</em>.
+        </p>
+
+        <p class="finding-label">Auswirkung</p>
+        <p class="finding-text">
+          Unn&ouml;tige Server-Last bei jedem Schlie&szlig;en des Dialogs; verf&auml;lschte
+          Reload-Semantik; potentiell falsche UI-Zust&auml;nde wenn der Server sich in einem
+          Zustand zwischen zwei Stempelungen befindet.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <strong>Backdrop</strong> und <strong>X-Button</strong> m&uuml;ssen
+          <code>closeStampSheet()</code> aufrufen, nicht <code>handleStampSuccess()</code>.
+          <code>handleStampSuccess()</code> darf nur nach einem tats&auml;chlichen API-Erfolg
+          (Einstempeln/Ausstempeln) aufgerufen werden.
+        </div>
+      </div>
+    </div>
+  </div><!-- /critical bugs -->
+
+  <!-- ── MEDIUM BUGS ── -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-medium">Mittlere Bugs</span>
+      Konfidenz &ge; 82%
+    </div>
+
+    <!-- BUG 3 -->
+    <div class="finding-card finding-card-medium" id="bug3">
+      <div class="finding-header">
+        <span class="finding-id">BUG-3</span>
+        <span class="finding-title">stampVersion nicht in TimeTracking.tsx verdrahtet</span>
+        <div class="finding-meta">
+          <span class="badge badge-medium">&#9679; Mittel</span>
+          <span class="confidence-pill">Konfidenz: 85%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/TimeTracking.tsx</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Nach dem Stempeln &uuml;ber das FAB-Bottom-Sheet aktualisiert sich die
+          Zeiterfassungsseite nicht automatisch. Nur <code>Dashboard.tsx</code> abonniert
+          <code>stampVersion</code>. Ein User, der nach dem Ausstempeln auf der
+          Zeiterfassungsseite verbleibt, sieht veraltete Daten.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <strong>Empfehlung:</strong> <code>stampVersion</code>-Subscription und
+          zugeh&ouml;rigen <code>useEffect</code> in <code>TimeTracking.tsx</code> erg&auml;nzen –
+          analog zur Implementierung in <code>Dashboard.tsx</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- BUG 4 -->
+    <div class="finding-card finding-card-medium" id="bug4">
+      <div class="finding-header">
+        <span class="finding-id">BUG-4</span>
+        <span class="finding-title">StampWidget formatTimer: Sekunden-&Uuml;berlauf (s = 60)</span>
+        <div class="finding-meta">
+          <span class="badge badge-medium">&#9679; Mittel</span>
+          <span class="confidence-pill">Konfidenz: 82%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/components/StampWidget.tsx</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          <code>Math.round((minutes % 1) * 60)</code> kann den Wert <code>60</code>
+          zur&uuml;ckgeben, wenn Flie&szlig;komma-Addition &uuml;ber viele Sekunden/Minuten
+          akkumuliert. Ergibt Ausgaben wie <strong>"01:29:60"</strong> statt
+          <strong>"01:30:00"</strong>.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <strong>Option A:</strong> <code>Math.floor</code> statt <code>Math.round</code> verwenden.<br />
+          <strong>Option B:</strong> &Uuml;berlauf abfangen:
+          <code>if (s === 60) &#123; m++; s = 0; &#125;</code>
+        </div>
+      </div>
+    </div>
+  </div><!-- /medium bugs -->
+
+  <!-- ── DOCUMENTATION ISSUES ── -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-info">Dokumentation</span>
+      Konfidenz &ge; 90%
+    </div>
+
+    <div class="finding-card finding-card-doc" id="doc1">
+      <div class="finding-header">
+        <span class="finding-id">DOC-1</span>
+        <span class="finding-title">get_monthly_actual Docstring veraltet</span>
+        <div class="finding-meta">
+          <span class="badge badge-low">&#9679; Niedrig</span>
+          <span class="confidence-pill">Konfidenz: 95%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; backend/app/services/calculation_service.py</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">ca. Zeile 211–214</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Der Docstring erw&auml;hnt nur &ldquo;training (Fortbildung) hours&rdquo;. Nach diesem PR
+          werden auch <code>SICK</code>-Stunden gez&auml;hlt (§3 EntgFG). Der Docstring
+          wurde nicht aktualisiert und ist damit irref&uuml;hrend.
+        </p>
+      </div>
+    </div>
+
+    <div class="finding-card finding-card-doc" id="doc2">
+      <div class="finding-header">
+        <span class="finding-id">DOC-2</span>
+        <span class="finding-title">get_ytd_summary Inline-Kommentar veraltet</span>
+        <div class="finding-meta">
+          <span class="badge badge-low">&#9679; Niedrig</span>
+          <span class="confidence-pill">Konfidenz: 90%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; backend/app/services/calculation_service.py</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">ca. Zeile 472</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Kommentar <code># Sum actual hours (time entries + training hours)</code> ist
+          veraltet – <code>SICK</code>-Stunden werden ebenfalls summiert. Sollte aktualisiert
+          werden zu <code># Sum actual hours (time entries + training hours + sick hours §3 EntgFG)</code>.
+        </p>
+      </div>
+    </div>
+  </div><!-- /doc issues -->
+
+  <!-- ── QUALITY ISSUES ── -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-medium">Qualit&auml;t</span>
+      Konfidenz &ge; 80%
+    </div>
+
+    <div class="finding-card finding-card-low" id="q1">
+      <div class="finding-header">
+        <span class="finding-id">Q-1</span>
+        <span class="finding-title">@fontsource-variable/dm-sans npm-Paket nicht verwendet</span>
+        <div class="finding-meta">
+          <span class="badge badge-low">&#9679; Niedrig</span>
+          <span class="confidence-pill">Konfidenz: 80%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Dateien</p>
+        <p>
+          <span class="file-ref">&#128196; frontend/package.json</span>
+          &nbsp;
+          <span class="file-ref">&#128196; frontend/src/index.css</span>
+        </p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Das npm-Paket <code>@fontsource-variable/dm-sans</code> ist in
+          <code>package.json</code> installiert, wird jedoch nicht referenziert.
+          <code>index.css</code> verwendet eine manuelle WOFF2-Datei unter
+          <code>/fonts/DMSans-Variable.woff2</code>. Das Paket ist totes Gewicht
+          ("dead weight") und erh&ouml;ht unn&ouml;tig die Bundle-Gr&ouml;&szlig;e.
+        </p>
+
+        <div class="fix-box">
+          <strong>Empfehlung:</strong> Entweder das Paket entfernen und bei manueller
+          WOFF2-Datei bleiben, oder auf das Paket umstellen und die manuelle Datei entfernen.
+          Inkonsistenz vermeiden.
+        </div>
+      </div>
+    </div>
+
+    <div class="finding-card finding-card-medium" id="q2">
+      <div class="finding-header">
+        <span class="finding-id">Q-2</span>
+        <span class="finding-title">user.weekly_hours direkt verwendet (CLAUDE.md-Regel verletzt)</span>
+        <div class="finding-meta">
+          <span class="badge badge-medium">&#9679; Mittel</span>
+          <span class="confidence-pill">Konfidenz: 90%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/Dashboard.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 272–300</span></p>
+
+        <p class="finding-label">Verletzte Regel</p>
+        <div class="note-box">
+          CLAUDE.md: <strong>&ldquo;get_weekly_hours_for_date() immer pro Tag – nie user.weekly_hours direkt&rdquo;</strong>
+        </div>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          In der Abwesenheits-Tagesberechnung und Status-Card wird
+          <code>user.weekly_hours / (user.work_days_per_week || 5)</code> verwendet.
+          Dies ist eine Frontend-Approximation; f&uuml;r
+          <code>use_daily_schedule=true</code>-User mit ungleichm&auml;&szlig;igen
+          Arbeitstagen (z.B. Montag = 9h, Freitag = 5h) ergibt der Durchschnitt
+          falsche Werte f&uuml;r individuelle Tage.
+        </p>
+
+        <div class="note-box">
+          <strong>Hinweis:</strong> <code>get_weekly_hours_for_date()</code> ist eine
+          Backend-Funktion. Die Frontend-Alternative ist die per-Wochentag-Tabelle
+          (<code>hours_monday..hours_friday</code>), die in der Status-Card IIFE
+          bereits teilweise verwendet wird. Konsistenz herstellen.
+        </div>
+      </div>
+    </div>
+  </div><!-- /quality issues -->
+
+</div><!-- /section 1 -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 2 – ACCESSIBILITY
+═══════════════════════════════════════════════════════════════════ -->
+<div class="section" id="section-a11y">
+  <div class="section-header">
+    <div class="section-icon" style="background:#FFF7ED;">&#9855;</div>
+    <div>
+      <span class="section-num">Abschnitt 2</span>
+      <h2>Accessibility Audit – WCAG 2.1 AA</h2>
+    </div>
+  </div>
+
+  <p style="font-size:14px;color:var(--c-muted);margin-bottom:20px;line-height:1.7;">
+    Gesamtbewertung: Mehrere WCAG 2.1 AA-Verletzungen gefunden. Das Mobile-Redesign
+    f&uuml;hrt mehrere neue Interaktionsmuster ein (Bottom-Sheets, FAB, Status-Karten)
+    ohne die entsprechende Barrierefreiheits-Implementierung.
+  </p>
+
+  <!-- Summary Table -->
+  <div class="summary-table-wrap">
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Titel</th>
+          <th>WCAG</th>
+          <th>Level</th>
+          <th>Konfidenz</th>
+          <th>Datei</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>A-C1</code></td>
+          <td>Stamp-Bottom-Sheet: kein Fokus-Management, kein dialog-Role</td>
+          <td><span class="wcag-ref">2.1.2 &amp; 2.4.3</span></td>
+          <td><span class="badge badge-critical">A – Kritisch</span></td>
+          <td>98%</td>
+          <td><code>Layout.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-C2</code></td>
+          <td>Status-Card: nicht-fokussierbares div mit onClick</td>
+          <td><span class="wcag-ref">2.1.1 &amp; 4.1.2</span></td>
+          <td><span class="badge badge-critical">A – Kritisch</span></td>
+          <td>99%</td>
+          <td><code>Dashboard.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-C3</code></td>
+          <td>WeekDots Buttons: kein aria-label, Status nur visuell</td>
+          <td><span class="wcag-ref">4.1.2</span></td>
+          <td><span class="badge badge-critical">A – Kritisch</span></td>
+          <td>97%</td>
+          <td><code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-C4</code></td>
+          <td>Formular-Bottom-Sheet: kein dialog-Role, kein Fokus-Mgmt.</td>
+          <td><span class="wcag-ref">2.1.2 &amp; 4.1.2</span></td>
+          <td><span class="badge badge-critical">A – Kritisch</span></td>
+          <td>98%</td>
+          <td><code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-H1</code></td>
+          <td>Progress-Bar: kein role="progressbar"</td>
+          <td><span class="wcag-ref">4.1.2</span></td>
+          <td><span class="badge badge-high">A – Hoch</span></td>
+          <td>99%</td>
+          <td><code>Dashboard.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-H2</code></td>
+          <td>Status-Dot nicht aria-hidden (dekorativ)</td>
+          <td><span class="wcag-ref">1.4.1</span></td>
+          <td><span class="badge badge-high">A – Hoch</span></td>
+          <td>90%</td>
+          <td><code>Dashboard.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-H3</code></td>
+          <td>FAB Pulse-Animation ignoriert prefers-reduced-motion</td>
+          <td><span class="wcag-ref">2.3.3 (AAA)</span></td>
+          <td><span class="badge badge-high">Best Practice</span></td>
+          <td>95%</td>
+          <td><code>Layout.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-H4</code></td>
+          <td>Farb-Kontrast text-secondary auf gef&auml;rbten Karten (3.1:1)</td>
+          <td><span class="wcag-ref">1.4.3</span></td>
+          <td><span class="badge badge-high">AA – Hoch</span></td>
+          <td>85%</td>
+          <td><code>Dashboard.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-H5</code></td>
+          <td>Pause-Input: Label nicht programmatisch verkn&uuml;pft</td>
+          <td><span class="wcag-ref">1.3.1 &amp; 4.1.2</span></td>
+          <td><span class="badge badge-high">A – Hoch</span></td>
+          <td>96%</td>
+          <td><code>StampWidget.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-H7</code></td>
+          <td>Sonntags-Ausnahmegrund: Label nicht verkn&uuml;pft</td>
+          <td><span class="wcag-ref">1.3.1</span></td>
+          <td><span class="badge badge-high">A – Hoch</span></td>
+          <td>99%</td>
+          <td><code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-H8</code></td>
+          <td>WeekDots &amp; Nav-Buttons: Touch-Targets &lt; 44px</td>
+          <td><span class="wcag-ref">2.5.8 (2.2)</span></td>
+          <td><span class="badge badge-high">AA – Hoch</span></td>
+          <td>88–92%</td>
+          <td><code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-M1</code></td>
+          <td>TimeBar Progressanzeige kein ARIA</td>
+          <td><span class="wcag-ref">4.1.2</span></td>
+          <td><span class="badge badge-medium">A – Mittel</span></td>
+          <td>90%</td>
+          <td><code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-M3</code></td>
+          <td>Aktiver-Tab Dot nicht aria-hidden</td>
+          <td><span class="wcag-ref">4.1.2</span></td>
+          <td><span class="badge badge-medium">A – Mittel</span></td>
+          <td>88%</td>
+          <td><code>Layout.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-M5</code></td>
+          <td>Schloss-Icon in Eintrags-Header nicht aria-hidden</td>
+          <td><span class="wcag-ref">1.3.1</span></td>
+          <td><span class="badge badge-medium">A – Mittel</span></td>
+          <td>88%</td>
+          <td><code>TimeTracking.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-L3</code></td>
+          <td>Skeleton-Loading ohne aria-busy / Live-Region</td>
+          <td><span class="wcag-ref">4.1.3</span></td>
+          <td><span class="badge badge-low">AA – Niedrig</span></td>
+          <td>78%</td>
+          <td><code>Dashboard.tsx</code></td>
+        </tr>
+        <tr>
+          <td><code>A-L5</code></td>
+          <td>Zwei h1-Elemente im DOM (Mobile + Desktop)</td>
+          <td><span class="wcag-ref">1.3.1</span></td>
+          <td><span class="badge badge-low">A – Niedrig</span></td>
+          <td>85%</td>
+          <td><code>Dashboard.tsx</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── CRITICAL ── -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-critical">WCAG Level A – Kritisch</span>
+      Nicht per Tastatur bedienbar / Screen-Reader-Barrieren
+    </div>
+
+    <!-- A-C1 -->
+    <div class="finding-card finding-card-critical" id="ac1">
+      <div class="finding-header">
+        <span class="finding-id">A-C1</span>
+        <span class="finding-title">Stamp-Bottom-Sheet: Kein Fokus-Management, kein dialog-Role</span>
+        <div class="finding-meta">
+          <span class="badge badge-critical">Level A</span>
+          <span class="wcag-ref">2.1.2 No Keyboard Trap</span>
+          <span class="wcag-ref">2.4.3 Focus Order</span>
+          <span class="confidence-pill">98%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/components/Layout.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 366–398</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Das Bottom-Sheet hat kein <code>role="dialog"</code>, kein
+          <code>aria-modal="true"</code>, kein <code>aria-labelledby</code>.
+          Fokus wird beim &Ouml;ffnen nicht in das Sheet bewegt, beim Schlie&szlig;en
+          nicht zur&uuml;ck zum FAB. Keyboard-User k&ouml;nnen in den Hintergrund tabben.
+          Kein Escape-Key-Handler vorhanden.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <strong>Mindestanforderungen:</strong><br />
+          &bull; <code>role="dialog"</code> <code>aria-modal="true"</code> <code>aria-labelledby="stamp-sheet-title"</code> erg&auml;nzen<br />
+          &bull; <code>useRef</code> + <code>focus()</code> beim &Ouml;ffnen auf erstes fokussierbares Element<br />
+          &bull; Fokus-R&uuml;ckgabe an FAB beim Schlie&szlig;en<br />
+          &bull; <code>onKeyDown</code> f&uuml;r Escape-Taste erg&auml;nzen
+        </div>
+      </div>
+    </div>
+
+    <!-- A-C2 -->
+    <div class="finding-card finding-card-critical" id="ac2">
+      <div class="finding-header">
+        <span class="finding-id">A-C2</span>
+        <span class="finding-title">Status-Card: nicht-fokussierbares &lt;div&gt; mit onClick</span>
+        <div class="finding-meta">
+          <span class="badge badge-critical">Level A</span>
+          <span class="wcag-ref">2.1.1 Keyboard</span>
+          <span class="wcag-ref">4.1.2 Name, Role, Value</span>
+          <span class="confidence-pill">99%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/Dashboard.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 272–300</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Die mobile Status-Card ist ein <code>&lt;div&gt;</code> mit
+          <code>onClick=&#123;openStampSheet&#125;</code>, hat aber kein
+          <code>tabIndex</code>, keine <code>role="button"</code> und kein
+          <code>onKeyDown</code>. Das Element ist nicht per Tastatur erreichbar;
+          Screen-Reader k&uuml;ndigen keinerlei Interaktivit&auml;t an.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <strong>Option A (bevorzugt):</strong> <code>&lt;button&gt;</code> statt <code>&lt;div&gt;</code> verwenden.<br />
+          <strong>Option B:</strong> <code>tabIndex=&#123;0&#125;</code> <code>role="button"</code>
+          <code>onKeyDown</code> (Enter/Space) erg&auml;nzen.
+        </div>
+      </div>
+    </div>
+
+    <!-- A-C3 -->
+    <div class="finding-card finding-card-critical" id="ac3">
+      <div class="finding-header">
+        <span class="finding-id">A-C3</span>
+        <span class="finding-title">WeekDots Buttons: Kein aria-label, Status nur &uuml;ber Farbe</span>
+        <div class="finding-meta">
+          <span class="badge badge-critical">Level A</span>
+          <span class="wcag-ref">4.1.2 Name, Role, Value</span>
+          <span class="confidence-pill">97%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/TimeTracking.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 136–145</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Jeder Tag-Button zeigt nur eine Zwei-Buchstaben-Abk&uuml;rzung ohne vollst&auml;ndige
+          ARIA-Beschriftung. Der farbige Punkt (hat Eintrag / kein Eintrag / heute)
+          kommuniziert Status ausschlie&szlig;lich &uuml;ber Farbe – kein Alternativtext.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <code>aria-label=&#123;`$&#123;fullDayName&#125; $&#123;day.format('D. MMMM')&#125;, $&#123;hasEntry ? 'Eintrag vorhanden' : 'kein Eintrag'&#125;`&#125;</code>
+          auf jedem Tages-Button erg&auml;nzen.
+        </div>
+      </div>
+    </div>
+
+    <!-- A-C4 -->
+    <div class="finding-card finding-card-critical" id="ac4">
+      <div class="finding-header">
+        <span class="finding-id">A-C4</span>
+        <span class="finding-title">Formular-Bottom-Sheet TimeTracking: Kein dialog-Role, kein Fokus-Management</span>
+        <div class="finding-meta">
+          <span class="badge badge-critical">Level A</span>
+          <span class="wcag-ref">2.1.2</span>
+          <span class="wcag-ref">4.1.2</span>
+          <span class="confidence-pill">98%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/TimeTracking.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 471–643</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Identische Probleme wie <a href="#ac1">A-C1</a> f&uuml;r das
+          Eintrags-Erfassungsformular auf Mobile. Kein <code>role="dialog"</code>,
+          kein Fokus-Management beim &Ouml;ffnen/Schlie&szlig;en, kein Escape-Handler.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          Identische Ma&szlig;nahmen wie A-C1 anwenden. Erwägen, eine wiederverwendbare
+          <code>BottomSheet</code>-Komponente zu extrahieren, die alle Dialog-Anforderungen
+          kapselt.
+        </div>
+      </div>
+    </div>
+  </div><!-- /a11y critical -->
+
+  <!-- ── HIGH ── -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-high">Hoch – Level A / AA</span>
+      Bedeutende Barrierefreiheitsprobleme
+    </div>
+
+    <!-- A-H1 -->
+    <div class="finding-card finding-card-high" id="ah1">
+      <div class="finding-header">
+        <span class="finding-id">A-H1</span>
+        <span class="finding-title">Progress-Bar: kein ARIA (role="progressbar")</span>
+        <div class="finding-meta">
+          <span class="badge badge-high">Level A</span>
+          <span class="wcag-ref">4.1.2</span>
+          <span class="confidence-pill">99%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/Dashboard.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 287–293</span></p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          <code>&lt;div role="progressbar"
+          aria-valuenow=&#123;Math.round((todayActual/todayTarget)*100)&#125;
+          aria-valuemin=&#123;0&#125; aria-valuemax=&#123;100&#125;
+          aria-label="Heutige Arbeitszeit"&gt;</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- A-H3 -->
+    <div class="finding-card finding-card-high" id="ah3">
+      <div class="finding-header">
+        <span class="finding-id">A-H3</span>
+        <span class="finding-title">FAB Pulse-Animation ignoriert prefers-reduced-motion</span>
+        <div class="finding-meta">
+          <span class="badge badge-info">Best Practice</span>
+          <span class="wcag-ref">2.3.3 Animation (AAA)</span>
+          <span class="confidence-pill">95%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/components/Layout.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeile 320</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Inline-Style <code>style=&#123;isClockedIn ? &#123; animation: 'fabPulse 3s ease-in-out infinite' &#125; : undefined&#125;</code>
+          &uuml;berschreibt die CSS <code>@media (prefers-reduced-motion)</code>-Regel (die nur
+          Stylesheet-Regeln betrifft). Nutzer mit eingeschalteter "Bewegung reduzieren"-Option
+          sehen weiterhin das Pulsen.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          CSS-Klasse statt Inline-Style verwenden, oder
+          <code>window.matchMedia('(prefers-reduced-motion: reduce)').matches</code>
+          im React-State abfragen und Animation damit steuern.
+        </div>
+      </div>
+    </div>
+
+    <!-- A-H4 -->
+    <div class="finding-card finding-card-high" id="ah4">
+      <div class="finding-header">
+        <span class="finding-id">A-H4</span>
+        <span class="finding-title">Farb-Kontrast text-secondary auf gef&auml;rbten Karten-Hintergr&uuml;nden</span>
+        <div class="finding-meta">
+          <span class="badge badge-high">AA</span>
+          <span class="wcag-ref">1.4.3 Contrast Minimum</span>
+          <span class="confidence-pill">85%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/Dashboard.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 259–264</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          <code>text-text-secondary</code> (<code>#6B7F8E</code>) auf
+          <code>bg-success/8</code> (~<code>#EFF8F4</code>): Kontrast
+          <strong style="color:var(--c-critical);">~3.2:1</strong> — unterschreitet
+          4.5:1 AA-Anforderung. Auf <code>bg-danger/8</code> (~<code>#FCF1F1</code>):
+          <strong style="color:var(--c-critical);">~3.1:1</strong>.
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          Dunklere Textfarbe auf gef&auml;rbten Hintergr&uuml;nden verwenden oder
+          Hintergrund-Opazit&auml;t reduzieren bis mindestens 4.5:1 erreicht ist.
+        </div>
+      </div>
+    </div>
+
+    <!-- A-H5 -->
+    <div class="finding-card finding-card-high" id="ah5">
+      <div class="finding-header">
+        <span class="finding-id">A-H5</span>
+        <span class="finding-title">Pause-Input: Label nicht programmatisch verkn&uuml;pft (htmlFor fehlt)</span>
+        <div class="finding-meta">
+          <span class="badge badge-high">Level A</span>
+          <span class="wcag-ref">1.3.1 Info and Relationships</span>
+          <span class="wcag-ref">4.1.2</span>
+          <span class="confidence-pill">96%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/components/StampWidget.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeile 178</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          <code>&lt;label&gt;</code> f&uuml;r Pause-Minuten-Eingabe hat kein
+          <code>htmlFor</code>, <code>&lt;input&gt;</code> hat keine <code>id</code>.
+          Screen-Reader lesen "Pause (Minuten)" nicht vor, wenn das Feld fokussiert wird.
+        </p>
+      </div>
+    </div>
+
+    <!-- A-H7 -->
+    <div class="finding-card finding-card-high" id="ah7">
+      <div class="finding-header">
+        <span class="finding-id">A-H7</span>
+        <span class="finding-title">Sonntags-Ausnahmegrund: Label nicht mit Input verkn&uuml;pft</span>
+        <div class="finding-meta">
+          <span class="badge badge-high">Level A</span>
+          <span class="wcag-ref">1.3.1 Info and Relationships</span>
+          <span class="confidence-pill">99%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/TimeTracking.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 613–623</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Label "Ausnahmegrund – Sonn-/Feiertagsarbeit" hat kein <code>htmlFor</code>,
+          zugeordnetes <code>&lt;input&gt;</code> hat keine <code>id</code>.
+          Programmatische Verkn&uuml;pfung fehlt vollst&auml;ndig.
+        </p>
+      </div>
+    </div>
+
+    <!-- A-H8 -->
+    <div class="finding-card finding-card-high" id="ah8">
+      <div class="finding-header">
+        <span class="finding-id">A-H8</span>
+        <span class="finding-title">WeekDots &amp; Nav-Buttons: Touch-Targets unter 44px Mindestgr&ouml;&szlig;e</span>
+        <div class="finding-meta">
+          <span class="badge badge-high">AA (WCAG 2.2)</span>
+          <span class="wcag-ref">2.5.8 Target Size Minimum</span>
+          <span class="confidence-pill">88–92%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/TimeTracking.tsx</span>
+        <span style="font-size:12px;color:var(--c-muted);margin-left:8px;">Zeilen 128–148</span></p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          ChevronLeft/Right Buttons ca. <strong>24&times;24px</strong>,
+          Tages-Buttons ca. <strong>20&times;38px</strong> – beide unter der
+          44&times;44px-Mindestgr&ouml;&szlig;e gem&auml;&szlig; WCAG 2.5.8 (Mobilger&auml;te).
+        </p>
+
+        <p class="finding-label">Fix</p>
+        <div class="fix-box">
+          Touch-Target-Gr&ouml;&szlig;e auf mindestens 44&times;44px erh&ouml;hen via
+          <code>min-w-[44px] min-h-[44px]</code> oder durch transparente Padding-Erweiterung.
+        </div>
+      </div>
+    </div>
+  </div><!-- /a11y high -->
+
+  <!-- ── MEDIUM & LOW (condensed) ── -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-medium">Mittel &amp; Niedrig</span>
+      Weitere WCAG-Verletzungen
+    </div>
+
+    <div class="finding-card finding-card-medium" id="am1">
+      <div class="finding-header">
+        <span class="finding-id">A-M1</span>
+        <span class="finding-title">TimeBar Progressanzeige: Kein ARIA</span>
+        <div class="finding-meta">
+          <span class="badge badge-medium">Level A</span>
+          <span class="wcag-ref">4.1.2</span>
+          <span class="confidence-pill">90%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/TimeTracking.tsx</span></p>
+        <p class="finding-text" style="margin-top:12px;">
+          Die Fortschrittsanzeige in der Zeiterfassungsseite hat kein
+          <code>role="progressbar"</code>, kein <code>aria-valuenow</code>,
+          kein <code>aria-valuemin/max</code>. Identischer Fix wie A-H1.
+        </p>
+      </div>
+    </div>
+
+    <div class="finding-card finding-card-medium" id="am3">
+      <div class="finding-header">
+        <span class="finding-id">A-M3</span>
+        <span class="finding-title">Aktiver-Tab Dot nicht aria-hidden (dekoratives Element)</span>
+        <div class="finding-meta">
+          <span class="badge badge-medium">Level A</span>
+          <span class="wcag-ref">4.1.2</span>
+          <span class="confidence-pill">88%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/components/Layout.tsx</span></p>
+        <p class="finding-text" style="margin-top:12px;">
+          Der kleine Punkt unter dem aktiven Tab-Icon kommuniziert den aktiven Status
+          nur visuell. Das Element sollte <code>aria-hidden="true"</code> tragen, da der
+          Tab selbst bereits <code>aria-current="page"</code> haben sollte.
+        </p>
+      </div>
+    </div>
+
+    <div class="finding-card finding-card-medium" id="am5">
+      <div class="finding-header">
+        <span class="finding-id">A-M5</span>
+        <span class="finding-title">Schloss-Icon in Eintrags-Header nicht aria-hidden</span>
+        <div class="finding-meta">
+          <span class="badge badge-medium">Level A</span>
+          <span class="wcag-ref">1.3.1</span>
+          <span class="confidence-pill">88%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/TimeTracking.tsx</span></p>
+        <p class="finding-text" style="margin-top:12px;">
+          Dekoratives SVG-Schloss-Icon in gesperrten Eintrags-Headern fehlt
+          <code>aria-hidden="true"</code>. Screen-Reader lesen das Icon als leeren Link.
+        </p>
+      </div>
+    </div>
+
+    <div class="finding-card finding-card-low" id="al3">
+      <div class="finding-header">
+        <span class="finding-id">A-L3</span>
+        <span class="finding-title">Skeleton-Loading ohne aria-busy oder Live-Region</span>
+        <div class="finding-meta">
+          <span class="badge badge-low">AA</span>
+          <span class="wcag-ref">4.1.3 Status Messages</span>
+          <span class="confidence-pill">78%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/Dashboard.tsx</span></p>
+        <p class="finding-text" style="margin-top:12px;">
+          W&auml;hrend des Skeleton-Loadings fehlt <code>aria-busy="true"</code> am
+          Container oder eine Live-Region, die Screen-Reader &uuml;ber den Ladezustand
+          informiert.
+        </p>
+      </div>
+    </div>
+
+    <div class="finding-card finding-card-low" id="al5">
+      <div class="finding-header">
+        <span class="finding-id">A-L5</span>
+        <span class="finding-title">Zwei h1-Elemente im DOM (Mobile + Desktop)</span>
+        <div class="finding-meta">
+          <span class="badge badge-low">Level A</span>
+          <span class="wcag-ref">1.3.1 Info and Relationships</span>
+          <span class="confidence-pill">85%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Datei</p>
+        <p><span class="file-ref">&#128196; frontend/src/pages/Dashboard.tsx</span></p>
+        <p class="finding-text" style="margin-top:12px;">
+          Mobile und Desktop verwenden jeweils ein <code>&lt;h1&gt;</code>, beide sind
+          gleichzeitig im DOM (nur per CSS versteckt). Screen-Reader sehen zwei
+          <code>&lt;h1&gt;</code> auf einer Seite. Das <code>aria-hidden="true"</code>
+          auf dem jeweils versteckten Element setzen oder nur eines im DOM halten.
+        </p>
+      </div>
+    </div>
+  </div><!-- /a11y medium/low -->
+
+</div><!-- /section 2 -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 3 – LEGAL COMPLIANCE
+═══════════════════════════════════════════════════════════════════ -->
+<div class="section" id="section-legal">
+  <div class="section-header">
+    <div class="section-icon" style="background:#ECFDF5;">&#9878;</div>
+    <div>
+      <span class="section-num">Abschnitt 3</span>
+      <h2>ArbZG / EntgFG Rechtskonformit&auml;t</h2>
+    </div>
+  </div>
+
+  <p style="font-size:14px;color:var(--c-muted);margin-bottom:24px;line-height:1.7;">
+    Gesamtbewertung: Die ArbZG-Enforcement-Pfade (§3 Tagesgrenze, §4 Pausen, §5 Ruhezeit,
+    §9/10 Sonntage) sind durch diesen PR nicht ber&uuml;hrt und bleiben korrekt implementiert.
+    Das PR implementiert das korrekte rechtliche Konzept f&uuml;r §3 EntgFG. Es gibt jedoch
+    einen bedeutenden Gap in der Durchsetzung.
+  </p>
+
+  <!-- Legal Summary Table -->
+  <div class="summary-table-wrap" style="margin-bottom:36px;">
+    <table class="legal-table">
+      <thead>
+        <tr>
+          <th>Paragraph</th>
+          <th>Bezeichnung</th>
+          <th>Status</th>
+          <th>Anmerkung</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="legal-para">§3 ArbZG</span></td>
+          <td>T&auml;gliche H&ouml;chstarbeitszeit (8h/10h)</td>
+          <td><span class="badge badge-pass">&#10003; PASS</span></td>
+          <td style="font-size:13px;color:var(--c-muted);">Enforcement-Pfad in <code>time_entries.py</code> unberhrt</td>
+        </tr>
+        <tr>
+          <td><span class="legal-para">§4 ArbZG</span></td>
+          <td>Ruhepausen (30min / 45min)</td>
+          <td><span class="badge badge-pass">&#10003; PASS</span></td>
+          <td style="font-size:13px;color:var(--c-muted);"><code>break_validation_service.py</code> unber&uuml;hrt</td>
+        </tr>
+        <tr>
+          <td><span class="legal-para">§5 ArbZG</span></td>
+          <td>Mindestruhezeit (11h)</td>
+          <td><span class="badge badge-pass">&#10003; PASS</span></td>
+          <td style="font-size:13px;color:var(--c-muted);"><code>rest_time_service.py</code> unber&uuml;hrt</td>
+        </tr>
+        <tr>
+          <td><span class="legal-para">§9/10 ArbZG</span></td>
+          <td>Sonn- und Feiertagsruhe</td>
+          <td><span class="badge badge-pass">&#10003; PASS</span></td>
+          <td style="font-size:13px;color:var(--c-muted);">Tracking in <code>time_entries.py</code> unber&uuml;hrt</td>
+        </tr>
+        <tr>
+          <td><span class="legal-para">§3 EntgFG</span></td>
+          <td>Entgeltfortzahlung im Krankheitsfall</td>
+          <td><span class="badge badge-partial">&#9654; TEILWEISE</span></td>
+          <td style="font-size:13px;color:var(--c-partial);">Korrekte Logik, Gap in Durchsetzung – siehe L-F1, L-F2</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- PASSED -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-pass">&#10003; Nicht betroffene Paragraphen</span>
+      ArbZG Enforcement-Pfade unver&auml;ndert korrekt
+    </div>
+
+    <ul class="pass-list">
+      <li>
+        <span class="pass-icon">&#10003;</span>
+        <span class="pass-text">
+          <span class="pass-law">§3 ArbZG</span> – T&auml;gliche H&ouml;chstarbeitszeit (8h Warnung / 10h Hard-Limit):
+          Enforcement-Pfad in <code>time_entries.py</code> unber&uuml;hrt. Alle 6 Pfade
+          (create/update/clock-out/admin-create/admin-update/change-request) weiterhin aktiv.
+        </span>
+      </li>
+      <li>
+        <span class="pass-icon">&#10003;</span>
+        <span class="pass-text">
+          <span class="pass-law">§4 ArbZG</span> – Ruhepausen (6h&rarr;30min, 9h&rarr;45min):
+          <code>break_validation_service.py</code> unber&uuml;hrt.
+        </span>
+      </li>
+      <li>
+        <span class="pass-icon">&#10003;</span>
+        <span class="pass-text">
+          <span class="pass-law">§5 ArbZG</span> – Mindestruhezeit 11h:
+          <code>rest_time_service.py</code> unber&uuml;hrt.
+        </span>
+      </li>
+      <li>
+        <span class="pass-icon">&#10003;</span>
+        <span class="pass-text">
+          <span class="pass-law">§9/10 ArbZG</span> – Sonn- und Feiertagsruhe:
+          <code>is_sunday_or_holiday</code>-Flag und <code>sunday_exception_reason</code>-Feld
+          in <code>time_entries.py</code> unber&uuml;hrt.
+        </span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- GAPS -->
+  <div class="findings-group">
+    <div class="findings-group-title">
+      <span class="badge badge-partial">! Gaps gefunden</span>
+      §3 EntgFG – Durchsetzungsl&uuml;cken
+    </div>
+
+    <!-- L-F1 -->
+    <div class="finding-card finding-card-medium" id="lf1">
+      <div class="finding-header">
+        <span class="finding-id">L-F1</span>
+        <span class="finding-title">§3 EntgFG: absence.hours nicht server-seitig auf Tagessoll validiert</span>
+        <div class="finding-meta">
+          <span class="badge badge-medium">&#9679; Mittel</span>
+          <span class="confidence-pill">Konfidenz: 90%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Betroffenes Gesetz</p>
+        <p>
+          <span class="wcag-ref" style="color:var(--c-pass);background:var(--c-pass-bg);border-color:var(--c-pass-bd);">§3 EntgFG – Entgeltfortzahlung im Krankheitsfall</span>
+        </p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          F&uuml;r SICK-Abwesenheiten wird <code>absence.hours</code> bei Erstellung gespeichert.
+          F&uuml;r Nutzer mit <code>use_daily_schedule=True</code> wird der Wert korrekt
+          server-seitig aus <code>get_daily_target_for_date()</code> berechnet.
+          F&uuml;r <strong>Standard-Wochenstunden-User</strong> kommt der Wert jedoch
+          vom API-Aufrufer (Formular-Eingabe) <strong>ohne server-seitige Validierung</strong>
+          gegen den tats&auml;chlichen Tagessoll.
+        </p>
+
+        <p class="finding-label">Rechtliches Risiko</p>
+        <div class="fix-box" style="background:#FEF2F2;border-color:#FECACA;color:#7F1D1D;">
+          <strong style="color:var(--c-critical);">Risiko:</strong> Ein Admin, der
+          <code>0h</code> oder einen falschen Wert eingibt, verletzt §3 EntgFG f&uuml;r
+          den Mitarbeiter (Defizit trotz Krankheit) oder erzeugt falsche &Uuml;berstunden.
+        </div>
+
+        <p class="finding-label">Empfehlung</p>
+        <div class="fix-box">
+          In <code>absences.py</code> f&uuml;r SICK-Abwesenheiten <strong>immer</strong>
+          server-seitig <code>get_daily_target_for_date()</code> aufrufen, unabh&auml;ngig
+          von <code>use_daily_schedule</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- L-F2 -->
+    <div class="finding-card finding-card-low" id="lf2">
+      <div class="finding-header">
+        <span class="finding-id">L-F2</span>
+        <span class="finding-title">§3 EntgFG: Veraltete absence.hours nach Stunden&auml;nderung</span>
+        <div class="finding-meta">
+          <span class="badge badge-low">&#9679; Niedrig</span>
+          <span class="confidence-pill">Konfidenz: 85%</span>
+        </div>
+      </div>
+      <div class="finding-body">
+        <p class="finding-label">Betroffenes Gesetz</p>
+        <p>
+          <span class="wcag-ref" style="color:var(--c-pass);background:var(--c-pass-bg);border-color:var(--c-pass-bd);">§3 EntgFG – Entgeltfortzahlung im Krankheitsfall</span>
+        </p>
+
+        <p class="finding-label">Beschreibung</p>
+        <p class="finding-text">
+          Wenn ein Mitarbeitender eine Stundenreduzierung erh&auml;lt (z.B. 40h&rarr;30h/Woche),
+          bleiben alte SICK-Eintr&auml;ge mit den alten Stundenwerten gespeichert.
+          <code>get_monthly_target</code> verwendet <code>get_weekly_hours_for_date()</code>
+          (historisch korrekt), aber <code>get_monthly_actual</code> liest
+          <code>a.hours</code> (m&ouml;glicherweise veraltet).
+        </p>
+
+        <div class="note-box">
+          <strong>Rechtliche Einsch&auml;tzung:</strong> Rechtlich ist der zum Zeitpunkt
+          der Erkrankung g&uuml;ltige Wert korrekt (§3 EntgFG = "wie wenn gearbeitet"),
+          also ist das Verhalten <em>m&ouml;glicherweise korrekt</em> – aber es ist
+          nicht dokumentiert und <em>akkzidentell richtig</em>. Dokumentation empfohlen.
+        </div>
+      </div>
+    </div>
+  </div><!-- /legal gaps -->
+
+</div><!-- /section 3 -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     OVERALL VERDICT
+═══════════════════════════════════════════════════════════════════ -->
+<div class="verdict-section" id="verdict">
+  <h2>&#9741; Gesamturteil &amp; Empfehlungen</h2>
+
+  <div class="verdict-grid">
+    <div class="verdict-item verdict-block">
+      <h4>Vor Merge beheben (Blocker)</h4>
+      <p>
+        <strong>BUG-2</strong> (Backdrop-Handler) muss behoben werden – dieser erzeugt
+        unn&ouml;tige API-Last bei jedem Schlie&szlig;en des Dialogs.<br /><br />
+        <strong>A-C1 + A-C4</strong> (Bottom-Sheet Dialog-Role + Fokus-Management)
+        sind Level-A-Barrierefreiheitsanforderungen und nicht optional.
+      </p>
+    </div>
+    <div class="verdict-item verdict-warn">
+      <h4>Kurzfristig nachliefern (Sprint)</h4>
+      <p>
+        <strong>BUG-1 + BUG-4</strong> (Minuten/Sekunden-&Uuml;berlauf) –
+        einzeilige Fixes, kein Risiko.<br /><br />
+        <strong>A-C2 + A-C3</strong> (Status-Card Semantik, WeekDot Labels) –
+        grundlegende Tastatur-Bedienbarkeit.<br /><br />
+        <strong>L-F1</strong> (§3 EntgFG Servervalidierung) – rechtliche Absicherung.
+      </p>
+    </div>
+    <div class="verdict-item verdict-ok">
+      <h4>Funktional korrekt</h4>
+      <p>
+        §3 EntgFG-Logik ist konzeptionell richtig implementiert.<br /><br />
+        Alle vier ArbZG-Paragraphen (§3, §4, §5, §9/10) bleiben korrekt
+        und werden durch diesen PR nicht ber&uuml;hrt.
+      </p>
+    </div>
+  </div>
+
+  <div class="verdict-recommendation">
+    <strong>Merge-Empfehlung:</strong> Das PR ist <strong>nicht sofort merge-f&auml;hig</strong>
+    ohne Adressierung von BUG-2 und A-C1/A-C4 (Keyboard-Trap-Risiko ist ein WCAG-Level-A-Blocker).
+    Nach Behebung dieser drei Findings und BUG-1/BUG-4 (triviale Fixes) kann der PR gemergt werden.
+    Die verbleibenden Quality- und Documentation-Findings (DOC-1, DOC-2, Q-1, Q-2) sowie
+    die mittleren und niedrigen A11y-Findings sollten in einem nachfolgenden
+    Accessibility-Sprint (<em>UX Phase 6</em>) systematisch adressiert werden.
+  </div>
+
+  <div style="margin-top:28px;">
+    <div class="summary-table-wrap">
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Kategorie</th>
+            <th>Kritisch</th>
+            <th>Hoch</th>
+            <th>Mittel</th>
+            <th>Niedrig</th>
+            <th>Gesamt</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Code Review (Bugs)</td>
+            <td><span class="badge badge-critical">2</span></td>
+            <td>&ndash;</td>
+            <td><span class="badge badge-medium">2</span></td>
+            <td>&ndash;</td>
+            <td><strong>4</strong></td>
+          </tr>
+          <tr>
+            <td>Dokumentation</td>
+            <td>&ndash;</td>
+            <td>&ndash;</td>
+            <td>&ndash;</td>
+            <td><span class="badge badge-low">2</span></td>
+            <td><strong>2</strong></td>
+          </tr>
+          <tr>
+            <td>Qualit&auml;t</td>
+            <td>&ndash;</td>
+            <td>&ndash;</td>
+            <td><span class="badge badge-medium">1</span></td>
+            <td><span class="badge badge-low">1</span></td>
+            <td><strong>2</strong></td>
+          </tr>
+          <tr>
+            <td>Accessibility (WCAG)</td>
+            <td><span class="badge badge-critical">4</span></td>
+            <td><span class="badge badge-high">6</span></td>
+            <td><span class="badge badge-medium">3</span></td>
+            <td><span class="badge badge-low">2</span></td>
+            <td><strong>15+</strong></td>
+          </tr>
+          <tr>
+            <td>Rechtlich (ArbZG/EntgFG)</td>
+            <td>&ndash;</td>
+            <td>&ndash;</td>
+            <td><span class="badge badge-medium">1</span></td>
+            <td><span class="badge badge-low">1</span></td>
+            <td><strong>2</strong></td>
+          </tr>
+          <tr style="background:#F8FAFC;font-weight:700;">
+            <td><strong>GESAMT</strong></td>
+            <td><span class="badge badge-critical">6</span></td>
+            <td><span class="badge badge-high">6</span></td>
+            <td><span class="badge badge-medium">7</span></td>
+            <td><span class="badge badge-low">6</span></td>
+            <td><strong>25</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div><!-- /verdict -->
+
+<footer>
+  PraxisZeit Code Review Report &mdash; PR #66 &mdash; Erstellt: 2026-03-17 &mdash;
+  Reviewer: Claude Code (claude-sonnet-4-6) &mdash;
+  <a href="https://github.com/phash/praxiszeit/pull/66" target="_blank" rel="noopener">github.com/phash/praxiszeit/pull/66</a>
+  <br /><br />
+  Dieses Dokument enth&auml;lt keine externen Abh&auml;ngigkeiten.
+  Alle Schweregrade basieren auf statischer Analyse; Validierung im laufenden System empfohlen.
+</footer>
+
+</div><!-- /page-wrap -->
+</body>
+</html>
