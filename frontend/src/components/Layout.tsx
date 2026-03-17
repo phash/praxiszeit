@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { useUIStore } from '../stores/uiStore';
 import apiClient from '../api/client';
 import {
   LayoutDashboard,
@@ -21,15 +22,46 @@ import {
   Shield,
   ClipboardCheck,
   Upload,
+  Play,
+  Timer,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
+import StampWidget from './StampWidget';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
+  const { isStampSheetOpen, openStampSheet, closeStampSheet } = useUIStore();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [isClockedIn, setIsClockedIn] = useState(false);
+  const [sheetClosing, setSheetClosing] = useState(false);
+
+  // Clock status for FAB appearance
+  useEffect(() => {
+    if (!user?.track_hours) return;
+    const checkStatus = async () => {
+      try {
+        const res = await apiClient.get('/time-entries/clock-status');
+        setIsClockedIn(res.data.is_clocked_in);
+      } catch { /* ignore */ }
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 60000);
+    return () => clearInterval(interval);
+  }, [user?.track_hours]);
+
+  const handleStampSuccess = () => {
+    apiClient.get('/time-entries/clock-status').then(res => {
+      setIsClockedIn(res.data.is_clocked_in);
+    }).catch(() => {});
+    setSheetClosing(true);
+    setTimeout(() => {
+      closeStampSheet();
+      setSheetClosing(false);
+    }, 250);
+  };
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -94,14 +126,14 @@ export default function Layout() {
       </a>
 
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-30">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border flex items-center justify-between px-4 z-30">
         <h1 className="text-xl font-bold text-primary">PraxisZeit</h1>
         <button
           onClick={() => setSidebarOpen(true)}
-          className="p-2 rounded-lg hover:bg-gray-100 transition"
+          className="p-2 rounded-xl hover:bg-muted transition"
           aria-label="Menü öffnen"
         >
-          <Menu size={24} />
+          <Menu size={24} className="text-text-primary" />
         </button>
       </div>
 
@@ -116,21 +148,21 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         className={`
-          w-64 bg-white border-r border-gray-200 flex flex-col
+          w-64 bg-surface border-r border-border flex flex-col
           fixed lg:relative inset-y-0 left-0 z-50
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
         {/* Logo/Title */}
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-6 border-b border-border flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-primary">PraxisZeit</h1>
-            <p className="text-sm text-gray-500 mt-1">Zeiterfassung</p>
+            <p className="text-sm text-text-secondary mt-1">Zeiterfassung</p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition"
+            className="lg:hidden p-2 rounded-xl hover:bg-muted transition"
             aria-label="Menü schließen"
           >
             <X size={24} />
@@ -149,8 +181,8 @@ export default function Layout() {
                 to={item.path}
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                   active
-                    ? 'bg-primary text-white'
-                    : 'text-gray-700 hover:bg-gray-100'
+                    ? 'bg-primary-light text-primary-dark'
+                    : 'text-text-secondary hover:bg-muted'
                 }`}
               >
                 <Icon size={20} />
@@ -162,8 +194,8 @@ export default function Layout() {
           {/* Admin Navigation */}
           {user?.role === 'admin' && (
             <>
-              <div className="my-4 border-t border-gray-200 pt-4">
-                <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              <div className="my-4 border-t border-border pt-4">
+                <p className="px-4 text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">
                   Administration
                 </p>
               </div>
@@ -190,8 +222,8 @@ export default function Layout() {
         </nav>
 
         {/* User Info & Logout */}
-        <div className="p-4 border-t border-gray-200">
-          <Link to="/profile" className="flex items-center space-x-3 mb-3 hover:bg-gray-50 rounded-lg p-1 -m-1 transition-colors">
+        <div className="p-4 border-t border-border">
+          <Link to="/profile" className="flex items-center space-x-3 mb-3 hover:bg-muted rounded-xl p-1 -m-1 transition-colors">
             {user?.profile_picture ? (
               <img src={user.profile_picture} className="w-10 h-10 rounded-full object-cover" alt="" />
             ) : (
@@ -201,10 +233,10 @@ export default function Layout() {
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">
+              <p className="text-sm font-medium text-text-primary truncate">
                 {user?.first_name} {user?.last_name}
               </p>
-              <p className="text-xs text-gray-500 truncate">{user?.username}</p>
+              <p className="text-xs text-text-secondary truncate">{user?.username}</p>
             </div>
           </Link>
           {/* Handbuch-Downloads */}
@@ -266,38 +298,103 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-16 lg:pb-0" tabIndex={-1}>
+      <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-20 lg:pb-0 bg-background" tabIndex={-1}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <Outlet />
         </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-200 z-30 flex items-stretch">
-        {[
-          { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-          { path: '/time-tracking', icon: Clock, label: 'Zeiten' },
-          { path: '/absences', icon: Calendar, label: 'Abwesen.' },
-          { path: '/profile', icon: User, label: 'Profil' },
-          ...(user?.role === 'admin' ? [{ path: '/admin', icon: Settings, label: 'Admin' }] : []),
-        ].map((item) => {
-          const Icon = item.icon;
-          const active = location.pathname === item.path ||
-            (item.path !== '/' && location.pathname.startsWith(item.path));
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex-1 flex flex-col items-center justify-center space-y-0.5 transition-colors ${
-                active ? 'text-primary' : 'text-gray-500 hover:text-gray-700'
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="relative">
+          {/* FAB - Centered Stamp Button */}
+          {user?.track_hours && (
+            <button
+              onClick={openStampSheet}
+              className={`absolute left-1/2 -translate-x-1/2 -top-3 z-[31] w-14 h-14 rounded-full shadow-elevated flex items-center justify-center transition-all duration-300 active:scale-90 ${
+                isClockedIn
+                  ? 'bg-gradient-to-br from-success to-[#4AA87A]'
+                  : 'bg-gradient-to-br from-primary to-primary-dark'
               }`}
+              style={isClockedIn ? { animation: 'fabPulse 3s ease-in-out infinite' } : undefined}
+              aria-label={isClockedIn ? 'Eingestempelt – Stempeluhr öffnen' : 'Stempeluhr öffnen'}
             >
-              <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
-              <span className="text-[10px] font-medium leading-none">{item.label}</span>
-            </Link>
-          );
-        })}
+              {isClockedIn ? <Timer size={24} className="text-white" /> : <Play size={24} className="text-white ml-0.5" />}
+            </button>
+          )}
+
+          {/* Nav Bar */}
+          <div className="bg-white/[0.85] supports-[backdrop-filter]:backdrop-blur-xl border-t border-border rounded-t-3xl">
+            <div className="flex items-center h-16">
+              {[
+                { to: '/', icon: LayoutDashboard, label: 'Home', exact: true },
+                { to: '/time-tracking', icon: Clock, label: 'Journal' },
+              ].map((item) => {
+                const Icon = item.icon;
+                const active = item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);
+                return (
+                  <Link key={item.to} to={item.to} className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 min-w-[44px] min-h-[44px] transition-colors ${active ? 'text-primary' : 'text-text-secondary'}`}>
+                    <Icon size={22} strokeWidth={1.75} />
+                    <span className="text-[10px] font-medium">{item.label}</span>
+                    {active && <div className="w-1 h-1 rounded-full bg-primary" />}
+                  </Link>
+                );
+              })}
+              {/* FAB spacer */}
+              <div className="w-[72px] shrink-0" />
+              {[
+                { to: '/absences', icon: Calendar, label: 'Abwes.' },
+                { to: '/profile', icon: User, label: 'Profil' },
+              ].map((item) => {
+                const Icon = item.icon;
+                const active = location.pathname.startsWith(item.to);
+                return (
+                  <Link key={item.to} to={item.to} className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 min-w-[44px] min-h-[44px] transition-colors ${active ? 'text-primary' : 'text-text-secondary'}`}>
+                    <Icon size={22} strokeWidth={1.75} />
+                    <span className="text-[10px] font-medium">{item.label}</span>
+                    {active && <div className="w-1 h-1 rounded-full bg-primary" />}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </nav>
+
+      {/* Stamp Bottom Sheet */}
+      {isStampSheetOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-40 lg:hidden transition-opacity duration-200"
+            style={{ opacity: sheetClosing ? 0 : 1 }}
+            onClick={handleStampSuccess}
+          />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-surface rounded-t-3xl shadow-elevated"
+            style={{
+              animation: sheetClosing ? undefined : 'slideUp 300ms ease-out',
+              transform: sheetClosing ? 'translateY(100%)' : 'translateY(0)',
+              transition: sheetClosing ? 'transform 250ms ease-in' : undefined,
+              paddingBottom: 'env(safe-area-inset-bottom)',
+            }}
+          >
+            <div className="flex items-center justify-between px-4 pt-3 pb-2">
+              <div className="w-8" />
+              <div className="w-10 h-1 bg-gray-300 rounded-full" />
+              <button
+                onClick={handleStampSuccess}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition"
+                aria-label="Schließen"
+              >
+                <X size={18} className="text-text-secondary" />
+              </button>
+            </div>
+            <div className="px-6 pb-6">
+              <StampWidget variant="sheet" onSuccess={handleStampSuccess} />
+            </div>
+          </div>
+        </>
+      )}
 
       <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
