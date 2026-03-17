@@ -16,7 +16,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
 import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
-import { getErrorMessage } from '../utils/errorMessage';
+import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
 
 interface TimeEntry {
   id: string;
@@ -407,10 +407,10 @@ export default function TimeTracking() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-text-primary">Zeiterfassung</h1>
+      <div className="flex items-center justify-between gap-2 mb-6 min-w-0">
+        <h1 className="text-2xl sm:text-3xl font-bold text-text-primary truncate">Zeiterfassung</h1>
         {activeTab === 'eintraege' && (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2 shrink-0">
             {!isAdmin && (
               <Button
                 variant="secondary"
@@ -429,7 +429,7 @@ export default function TimeTracking() {
               icon={showForm ? X : Plus}
               onClick={() => setShowForm(!showForm)}
             >
-              {showForm ? 'Abbrechen' : 'Neuer Eintrag'}
+              <span className="hidden sm:inline">{showForm ? 'Abbrechen' : 'Neuer Eintrag'}</span>
             </Button>
           </div>
         )}
@@ -709,7 +709,7 @@ export default function TimeTracking() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.break_minutes} min</td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                        {entry.net_hours.toFixed(2)} h
+                        {formatHoursHM(entry.net_hours)} h
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.note || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm space-x-1">
@@ -759,7 +759,7 @@ export default function TimeTracking() {
               {entries.length > 0 && (
                 <tr className="bg-gray-50 font-semibold">
                   <td colSpan={5} className="px-6 py-4 text-sm text-gray-900">Summe</td>
-                  <td className="px-6 py-4 text-sm text-gray-900">{totalNet.toFixed(2)} h</td>
+                  <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(totalNet)} h</td>
                   <td colSpan={2}></td>
                 </tr>
               )}
@@ -800,13 +800,13 @@ export default function TimeTracking() {
                           {format(entryDate, 'EEEE, d. MMMM', { locale: de })}
                           {!entry.is_editable && <Lock size={12} className="inline ml-1 text-text-secondary" />}
                         </div>
-                        <span className="text-lg font-bold tabular-nums text-primary">{entry.net_hours.toFixed(1)}h</span>
+                        <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(entry.net_hours)}h</span>
                       </div>
                       <TimeBar startTime={entry.start_time} endTime={entry.end_time} />
                       <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                         <div className="flex justify-between">
                           <span className="text-text-secondary">Arbeitszeit</span>
-                          <span className="font-medium tabular-nums">{entry.net_hours.toFixed(1)}h</span>
+                          <span className="font-medium tabular-nums">{formatHoursHM(entry.net_hours)}h</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-text-secondary">Pause</span>
@@ -853,7 +853,7 @@ export default function TimeTracking() {
                 <div className="p-4 bg-muted rounded-2xl mt-3">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-text-primary">Summe</span>
-                    <span className="text-lg font-bold tabular-nums text-primary">{totalNet.toFixed(2)} h</span>
+                    <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(totalNet)} h</span>
                   </div>
                 </div>
               )}

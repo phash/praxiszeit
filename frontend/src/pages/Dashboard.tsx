@@ -6,6 +6,7 @@ import apiClient from '../api/client';
 import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useUIStore } from '../stores/uiStore';
+import { formatHoursHM } from '../utils/errorMessage';
 import StampWidget from '../components/StampWidget';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
@@ -99,10 +100,10 @@ function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], da
 export default function Dashboard() {
   const toast = useToast();
   const { user } = useAuthStore();
-  const { openStampSheet } = useUIStore();
+  const { openStampSheet, stampVersion } = useUIStore();
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [clockStatus, setClockStatus] = useState<{ is_clocked_in: boolean; current_entry?: { start_time: string } } | null>(null);
+  const [clockStatus, setClockStatus] = useState<{ is_clocked_in: boolean; elapsed_minutes?: number | null; current_entry?: { start_time: string } } | null>(null);
   const [recentEntries, setRecentEntries] = useState<Array<{ id: string; date: string; start_time: string; end_time: string | null; net_hours: number }>>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
@@ -147,8 +148,9 @@ export default function Dashboard() {
 
         // Calculate yearly absence summary
         const absences: AbsenceEntry[] = absencesRes.data;
-        const daysInMonth = new Date(dashboardRes.data.year, dashboardRes.data.month, 0).getDate();
-        const dailyTarget = dashboardRes.data.target_hours / daysInMonth;
+        const dailyTarget = user
+          ? user.weekly_hours / (user.work_days_per_week || 5)
+          : 8;
 
         const vacation_days = sumAbsenceDays(absences, 'vacation', dailyTarget);
         const sick_days = sumAbsenceDays(absences, 'sick', dailyTarget);
@@ -176,8 +178,24 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  const actualHours = dashboardData?.actual_hours ?? 0;
-  const targetHours = dashboardData?.target_hours ?? 8;
+  // Refresh balances and clock status after stamp actions (clock-in/out)
+  useEffect(() => {
+    if (stampVersion === 0 || !trackHours) return;
+    const currentMonth = format(new Date(), 'yyyy-MM');
+    Promise.all([
+      apiClient.get('/time-entries/clock-status'),
+      apiClient.get('/dashboard'),
+      apiClient.get('/dashboard/overtime'),
+      apiClient.get('/dashboard/ytd-overtime'),
+      apiClient.get(`/time-entries?month=${currentMonth}`),
+    ]).then(([clockRes, dashRes, overtimeRes, ytdRes, entriesRes]) => {
+      setClockStatus(clockRes.data);
+      setDashboardData(dashRes.data);
+      setOvertimeAccount(overtimeRes.data);
+      setYtdOvertime(ytdRes.data);
+      setRecentEntries(entriesRes.data.slice(-5).reverse());
+    }).catch(() => {});
+  }, [stampVersion]);
 
   if (loading) {
     return (
@@ -221,37 +239,73 @@ export default function Dashboard() {
       <h1 className="hidden md:block text-3xl font-bold text-text-primary mb-8">Dashboard</h1>
 
       {/* Status Card - Mobile Hero */}
-      {trackHours && (
-        <div
-          className="md:hidden bg-surface rounded-2xl shadow-card p-5 mb-6 cursor-pointer active:shadow-soft transition-shadow"
-          onClick={openStampSheet}
-        >
-          <div className="flex items-center gap-2 mb-3">
-            <div className={`w-2 h-2 rounded-full ${clockStatus?.is_clocked_in ? 'bg-success' : 'bg-gray-300'}`} />
-            <span className="text-sm font-medium text-text-primary">
-              {clockStatus?.is_clocked_in && clockStatus.current_entry
-                ? `Eingestempelt seit ${(clockStatus.current_entry.start_time.includes('T') ? clockStatus.current_entry.start_time.split('T')[1] : clockStatus.current_entry.start_time).substring(0, 5)}`
-                : 'Nicht eingestempelt'}
-            </span>
+      {trackHours && (() => {
+        // Calculate today's target hours from user schedule
+        const weekday = new Date().getDay(); // 0=Sun, 1=Mon...6=Sat
+        const dayFields = [null, 'hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday', null] as const;
+        let todayTarget = 0;
+        if (user && weekday >= 1 && weekday <= 5) {
+          if (user.use_daily_schedule) {
+            const field = dayFields[weekday];
+            todayTarget = field ? ((user as unknown as Record<string, number | null>)[field] ?? 0) : 0;
+          } else {
+            todayTarget = user.weekly_hours / (user.work_days_per_week || 5);
+          }
+        }
+        const isWorkday = todayTarget > 0;
+        const todayActual = (clockStatus?.elapsed_minutes ?? 0) / 60;
+        const isClockedIn = clockStatus?.is_clocked_in ?? false;
+        const shouldBeClockedIn = isWorkday && !isClockedIn;
+        const cardBg = isClockedIn
+          ? 'bg-success/8 border border-success/25'
+          : shouldBeClockedIn
+          ? 'bg-danger/8 border border-danger/25'
+          : 'bg-surface border border-transparent';
+        const dotColor = isClockedIn ? 'bg-success' : shouldBeClockedIn ? 'bg-danger' : 'bg-gray-300';
+        const barColor = isClockedIn ? 'from-success to-[#4AA87A]' : 'from-primary to-primary-dark';
+        const startTime = clockStatus?.current_entry?.start_time;
+        const startDisplay = startTime
+          ? (startTime.includes('T') ? startTime.split('T')[1] : startTime).substring(0, 5)
+          : null;
+
+        return (
+          <div
+            className={`md:hidden rounded-2xl shadow-card p-5 mb-6 cursor-pointer active:shadow-soft transition-all ${cardBg}`}
+            onClick={openStampSheet}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+              <span className="text-sm font-medium text-text-primary">
+                {isClockedIn && startDisplay
+                  ? `Eingestempelt seit ${startDisplay}`
+                  : shouldBeClockedIn
+                  ? 'Noch nicht eingestempelt'
+                  : 'Nicht eingestempelt'}
+              </span>
+            </div>
+            {todayTarget > 0 && (
+              <>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
+                  <div
+                    className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-all duration-1000`}
+                    style={{ width: `${Math.min((todayActual / todayTarget) * 100, 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-text-secondary">
+                  {formatHoursHM(todayActual)} von {formatHoursHM(todayTarget)} h heute
+                </p>
+              </>
+            )}
           </div>
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
-            <div
-              className="h-full bg-gradient-to-r from-primary to-primary-dark rounded-full transition-all duration-1000"
-              style={{ width: `${Math.min((actualHours / targetHours) * 100, 100)}%` }}
-            />
-          </div>
-          <p className="text-xs text-text-secondary">
-            {actualHours.toFixed(1)} von {targetHours.toFixed(1)} Std
-          </p>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Stat Pills - Mobile */}
       {trackHours && (
         <div className="grid grid-cols-3 gap-3 mb-6 md:hidden">
           <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
             <div className={`text-xl font-bold tabular-nums ${(overtimeAccount?.current_balance ?? 0) >= 0 ? 'text-success' : 'text-danger'}`}>
-              {(overtimeAccount?.current_balance ?? 0) >= 0 ? '+' : ''}{(overtimeAccount?.current_balance ?? 0).toFixed(1)}
+              {(overtimeAccount?.current_balance ?? 0) >= 0 ? '+' : ''}{formatHoursHM(overtimeAccount?.current_balance ?? 0)}
             </div>
             <div className="text-xs text-text-secondary mt-1">Überstd.</div>
           </div>
@@ -286,7 +340,7 @@ export default function Dashboard() {
                   {entry.start_time?.slice(0, 5)}–{entry.end_time?.slice(0, 5) || '…'}
                 </span>
                 <span className="text-sm font-medium tabular-nums text-text-primary">
-                  {entry.net_hours.toFixed(1)}h
+                  {formatHoursHM(entry.net_hours)}h
                 </span>
               </div>
             ))}
@@ -320,17 +374,16 @@ export default function Dashboard() {
                   dashboardData.balance >= 0 ? 'text-success' : 'text-danger'
                 }`}
               >
-                {dashboardData.balance >= 0 ? '+' : ''}
-                {dashboardData.balance.toFixed(2)} h
+                {dashboardData.balance >= 0 ? '+' : ''}{formatHoursHM(dashboardData.balance)} h
               </p>
               <div className="mt-4 space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Soll:</span>
-                  <span className="font-medium">{dashboardData.target_hours.toFixed(2)} h</span>
+                  <span className="font-medium">{formatHoursHM(dashboardData.target_hours)} h</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Ist:</span>
-                  <span className="font-medium">{dashboardData.actual_hours.toFixed(2)} h</span>
+                  <span className="font-medium">{formatHoursHM(dashboardData.actual_hours)} h</span>
                 </div>
               </div>
             </>
@@ -355,8 +408,7 @@ export default function Dashboard() {
                   overtimeAccount.current_balance >= 0 ? 'text-success' : 'text-danger'
                 }`}
               >
-                {overtimeAccount.current_balance >= 0 ? '+' : ''}
-                {overtimeAccount.current_balance.toFixed(2)} h
+                {overtimeAccount.current_balance >= 0 ? '+' : ''}{formatHoursHM(overtimeAccount.current_balance)} h
               </p>
             </>
           )}
@@ -467,20 +519,20 @@ export default function Dashboard() {
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {format(new Date(month.year, month.month - 1), 'MMMM yyyy', { locale: de })}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{month.target.toFixed(1)}h</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{month.actual.toFixed(1)}h</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{formatHoursHM(month.target)}h</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{formatHoursHM(month.actual)}h</td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`font-medium ${
                         month.balance >= 0 ? 'text-success' : 'text-danger'
                       }`}>
-                        {month.balance >= 0 ? '+' : ''}{month.balance.toFixed(1)}h
+                        {month.balance >= 0 ? '+' : ''}{formatHoursHM(month.balance)}h
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`font-semibold ${
                         month.cumulative >= 0 ? 'text-success' : 'text-danger'
                       }`}>
-                        {month.cumulative >= 0 ? '+' : ''}{month.cumulative.toFixed(1)}h
+                        {month.cumulative >= 0 ? '+' : ''}{formatHoursHM(month.cumulative)}h
                       </span>
                     </td>
                   </tr>
@@ -526,24 +578,24 @@ export default function Dashboard() {
                   <h3 className="text-sm font-medium text-text-secondary mb-3">Stunden 01.01. bis heute</h3>
                   <div className={`grid ${ytdOvertime.carryover_hours !== 0 ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3'} gap-4`}>
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-gray-700">{ytdOvertime.target_hours.toFixed(1)}h</div>
+                      <div className="text-2xl font-bold text-gray-700">{formatHoursHM(ytdOvertime.target_hours)}h</div>
                       <div className="text-sm text-gray-500 mt-1">Soll</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-gray-700">{ytdOvertime.actual_hours.toFixed(1)}h</div>
+                      <div className="text-2xl font-bold text-gray-700">{formatHoursHM(ytdOvertime.actual_hours)}h</div>
                       <div className="text-sm text-gray-500 mt-1">Ist</div>
                     </div>
                     {ytdOvertime.carryover_hours !== 0 && (
                       <div className="text-center">
                         <div className={`text-2xl font-bold ${ytdOvertime.carryover_hours >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                          {ytdOvertime.carryover_hours >= 0 ? '+' : ''}{ytdOvertime.carryover_hours.toFixed(1)}h
+                          {ytdOvertime.carryover_hours >= 0 ? '+' : ''}{formatHoursHM(ytdOvertime.carryover_hours)}h
                         </div>
                         <div className="text-sm text-gray-500 mt-1">Übertrag Vorjahr</div>
                       </div>
                     )}
                     <div className="text-center">
                       <div className={`text-2xl font-bold ${ytdOvertime.overtime >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {ytdOvertime.overtime >= 0 ? '+' : ''}{ytdOvertime.overtime.toFixed(1)}h
+                        {ytdOvertime.overtime >= 0 ? '+' : ''}{formatHoursHM(ytdOvertime.overtime)}h
                       </div>
                       <div className="text-sm text-gray-500 mt-1">Überstunden</div>
                     </div>

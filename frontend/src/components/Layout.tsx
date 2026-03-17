@@ -30,7 +30,7 @@ import StampWidget from './StampWidget';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
-  const { isStampSheetOpen, openStampSheet, closeStampSheet } = useUIStore();
+  const { isStampSheetOpen, openStampSheet, closeStampSheet, notifyStampChange } = useUIStore();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -56,6 +56,7 @@ export default function Layout() {
     apiClient.get('/time-entries/clock-status').then(res => {
       setIsClockedIn(res.data.is_clocked_in);
     }).catch(() => {});
+    notifyStampChange();
     setSheetClosing(true);
     setTimeout(() => {
       closeStampSheet();
