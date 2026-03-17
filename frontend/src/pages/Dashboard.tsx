@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths } from 'date-fns';
 import { de } from 'date-fns/locale';
+import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
 import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useUIStore } from '../stores/uiStore';
 import StampWidget from '../components/StampWidget';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
@@ -97,8 +99,11 @@ function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], da
 export default function Dashboard() {
   const toast = useToast();
   const { user } = useAuthStore();
+  const { openStampSheet } = useUIStore();
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [clockStatus, setClockStatus] = useState<{ is_clocked_in: boolean; current_entry?: { start_time: string } } | null>(null);
+  const [recentEntries, setRecentEntries] = useState<Array<{ id: string; date: string; start_time: string; end_time: string | null; net_hours: number }>>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsenceSummary | null>(null);
@@ -128,6 +133,17 @@ export default function Dashboard() {
         setTeamAbsences(teamAbsencesRes.data);
         setNextVacation(nextVacationRes.data);
         setYtdOvertime(ytdRes.data);
+
+        // Fetch recent entries + clock status for mobile
+        try {
+          const currentMonth = format(new Date(), 'yyyy-MM');
+          const [entriesRes, clockRes] = await Promise.all([
+            apiClient.get(`/time-entries?month=${currentMonth}`),
+            trackHours ? apiClient.get('/time-entries/clock-status') : Promise.resolve({ data: null }),
+          ]);
+          setRecentEntries(entriesRes.data.slice(-5).reverse());
+          if (clockRes.data) setClockStatus(clockRes.data);
+        } catch { /* non-critical */ }
 
         // Calculate yearly absence summary
         const absences: AbsenceEntry[] = absencesRes.data;
@@ -160,28 +176,138 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
+  const actualHours = dashboardData?.actual_hours ?? 0;
+  const targetHours = dashboardData?.target_hours ?? 8;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner text="Lade Dashboard..." />
-      </div>
+      <>
+        {/* Mobile skeleton */}
+        <div className="md:hidden space-y-4 page-enter">
+          <div className="skeleton h-7 w-3/5 mb-1" />
+          <div className="skeleton h-4 w-2/5 mb-6" />
+          <div className="skeleton h-24 rounded-2xl mb-6" />
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="skeleton h-20 rounded-2xl" />
+            <div className="skeleton h-20 rounded-2xl" />
+            <div className="skeleton h-20 rounded-2xl" />
+          </div>
+          <div className="skeleton h-12 rounded-2xl mb-2" />
+          <div className="skeleton h-12 rounded-2xl mb-2" />
+          <div className="skeleton h-12 rounded-2xl" />
+        </div>
+        {/* Desktop spinner */}
+        <div className="hidden md:flex items-center justify-center h-64">
+          <LoadingSpinner text="Lade Dashboard..." />
+        </div>
+      </>
     );
   }
 
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
+    <div className="page-enter">
+      {/* Greeting - Mobile */}
+      <div className="md:hidden mb-6">
+        <h1 className="text-2xl font-semibold text-text-primary">
+          Hallo, {user?.first_name || 'Willkommen'}
+        </h1>
+        <p className="text-sm text-text-secondary">
+          {format(new Date(), 'EEEE, d. MMMM yyyy', { locale: de })}
+        </p>
+      </div>
 
-      {/* Stamp Widget */}
-      <StampWidget />
+      {/* Greeting - Desktop */}
+      <h1 className="hidden md:block text-3xl font-bold text-text-primary mb-8">Dashboard</h1>
+
+      {/* Status Card - Mobile Hero */}
+      {trackHours && (
+        <div
+          className="md:hidden bg-surface rounded-2xl shadow-card p-5 mb-6 cursor-pointer active:shadow-soft transition-shadow"
+          onClick={openStampSheet}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <div className={`w-2 h-2 rounded-full ${clockStatus?.is_clocked_in ? 'bg-success' : 'bg-gray-300'}`} />
+            <span className="text-sm font-medium text-text-primary">
+              {clockStatus?.is_clocked_in && clockStatus.current_entry
+                ? `Eingestempelt seit ${format(new Date(clockStatus.current_entry.start_time), 'HH:mm')}`
+                : 'Nicht eingestempelt'}
+            </span>
+          </div>
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
+            <div
+              className="h-full bg-gradient-to-r from-primary to-primary-dark rounded-full transition-all duration-1000"
+              style={{ width: `${Math.min((actualHours / targetHours) * 100, 100)}%` }}
+            />
+          </div>
+          <p className="text-xs text-text-secondary">
+            {actualHours.toFixed(1)} von {targetHours.toFixed(1)} Std
+          </p>
+        </div>
+      )}
+
+      {/* Stat Pills - Mobile */}
+      {trackHours && (
+        <div className="grid grid-cols-3 gap-3 mb-6 md:hidden">
+          <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
+            <div className={`text-xl font-bold tabular-nums ${(overtimeAccount?.current_balance ?? 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+              {(overtimeAccount?.current_balance ?? 0) >= 0 ? '+' : ''}{(overtimeAccount?.current_balance ?? 0).toFixed(1)}
+            </div>
+            <div className="text-xs text-text-secondary mt-1">Überstd.</div>
+          </div>
+          <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
+            <div className="text-xl font-bold tabular-nums text-text-primary">
+              {vacationAccount?.remaining_days?.toFixed(1) ?? '—'}
+            </div>
+            <div className="text-xs text-text-secondary mt-1">Urlaub</div>
+          </div>
+          <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
+            <div className="text-xl font-bold tabular-nums text-text-primary">
+              {yearlyAbsences?.sick_days?.toFixed(1) ?? '0'}
+            </div>
+            <div className="text-xs text-text-secondary mt-1">Krank</div>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Entries - Mobile */}
+      {recentEntries.length > 0 && (
+        <div className="md:hidden bg-surface rounded-2xl shadow-soft mb-6">
+          <div className="px-4 py-3 border-b border-muted">
+            <h3 className="text-sm font-semibold text-text-primary">Letzte Einträge</h3>
+          </div>
+          <div className="divide-y divide-muted">
+            {recentEntries.map(entry => (
+              <div key={entry.id} className="px-4 py-3 flex items-center justify-between">
+                <span className="text-sm text-text-secondary">
+                  {format(new Date(entry.date + 'T00:00:00'), 'EE d.MM', { locale: de })}
+                </span>
+                <span className="text-sm text-text-secondary tabular-nums">
+                  {entry.start_time?.slice(0, 5)}–{entry.end_time?.slice(0, 5) || '…'}
+                </span>
+                <span className="text-sm font-medium tabular-nums text-text-primary">
+                  {entry.net_hours.toFixed(1)}h
+                </span>
+              </div>
+            ))}
+          </div>
+          <Link to="/time-tracking" className="block px-4 py-3 text-sm text-primary font-medium text-center border-t border-muted">
+            Alle anzeigen →
+          </Link>
+        </div>
+      )}
+
+      {/* Stamp Widget - Desktop only */}
+      <div className="hidden md:block">
+        <StampWidget />
+      </div>
 
       {/* Stats Grid */}
       {trackHours && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {/* Monthly Balance */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-surface rounded-2xl shadow-card border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Monatssaldo</h3>
+            <h3 className="text-sm font-medium text-text-secondary">Monatssaldo</h3>
             <Calendar className="text-primary" size={24} />
           </div>
           {dashboardData && (
@@ -191,7 +317,7 @@ export default function Dashboard() {
               </p>
               <p
                 className={`text-3xl font-bold ${
-                  dashboardData.balance >= 0 ? 'text-green-600' : 'text-red-600'
+                  dashboardData.balance >= 0 ? 'text-success' : 'text-danger'
                 }`}
               >
                 {dashboardData.balance >= 0 ? '+' : ''}
@@ -212,13 +338,13 @@ export default function Dashboard() {
         </div>
 
         {/* Overtime Account */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-surface rounded-2xl shadow-card border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Überstundenkonto</h3>
+            <h3 className="text-sm font-medium text-text-secondary">Überstundenkonto</h3>
             {overtimeAccount && overtimeAccount.current_balance >= 0 ? (
-              <TrendingUp className="text-green-600" size={24} />
+              <TrendingUp className="text-success" size={24} />
             ) : (
-              <TrendingDown className="text-red-600" size={24} />
+              <TrendingDown className="text-danger" size={24} />
             )}
           </div>
           {overtimeAccount && (
@@ -226,7 +352,7 @@ export default function Dashboard() {
               <p className="text-xs text-gray-500 mb-2">Kumulierter Saldo</p>
               <p
                 className={`text-3xl font-bold ${
-                  overtimeAccount.current_balance >= 0 ? 'text-green-600' : 'text-red-600'
+                  overtimeAccount.current_balance >= 0 ? 'text-success' : 'text-danger'
                 }`}
               >
                 {overtimeAccount.current_balance >= 0 ? '+' : ''}
@@ -237,9 +363,9 @@ export default function Dashboard() {
         </div>
 
         {/* Vacation Account */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-surface rounded-2xl shadow-card border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Urlaubskonto</h3>
+            <h3 className="text-sm font-medium text-text-secondary">Urlaubskonto</h3>
             <Clock className="text-primary" size={24} />
           </div>
           {vacationAccount && (
@@ -273,10 +399,10 @@ export default function Dashboard() {
         </div>
 
         {/* Vacation Countdown */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-surface rounded-2xl shadow-card border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Urlaubscountdown</h3>
-            <Palmtree className="text-green-600" size={24} />
+            <h3 className="text-sm font-medium text-text-secondary">Urlaubscountdown</h3>
+            <Palmtree className="text-success" size={24} />
           </div>
           {nextVacation ? (
             <>
@@ -285,7 +411,7 @@ export default function Dashboard() {
                   ? 'Heute beginnt dein Urlaub!'
                   : `Noch ${nextVacation.days_until === 1 ? '1 Tag' : `${nextVacation.days_until} Tage`}`}
               </p>
-              <p className="text-3xl font-bold text-green-600">
+              <p className="text-3xl font-bold text-success">
                 {nextVacation.days_until === 0 ? '🏖️' : nextVacation.days_until}
                 {nextVacation.days_until > 0 && <span className="text-lg ml-1">Tage</span>}
               </p>
@@ -320,7 +446,7 @@ export default function Dashboard() {
 
       {/* Monthly Overview Table */}
       {trackHours && overtimeAccount && overtimeAccount.history.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+        <div className="bg-surface rounded-2xl shadow-card border border-border overflow-hidden mb-8">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900">Monatsübersicht</h2>
           </div>
@@ -345,14 +471,14 @@ export default function Dashboard() {
                     <td className="px-6 py-4 text-sm text-gray-600">{month.actual.toFixed(1)}h</td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`font-medium ${
-                        month.balance >= 0 ? 'text-green-600' : 'text-red-600'
+                        month.balance >= 0 ? 'text-success' : 'text-danger'
                       }`}>
                         {month.balance >= 0 ? '+' : ''}{month.balance.toFixed(1)}h
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`font-semibold ${
-                        month.cumulative >= 0 ? 'text-green-600' : 'text-red-600'
+                        month.cumulative >= 0 ? 'text-success' : 'text-danger'
                       }`}>
                         {month.cumulative >= 0 ? '+' : ''}{month.cumulative.toFixed(1)}h
                       </span>
@@ -370,7 +496,7 @@ export default function Dashboard() {
         <div className="mb-4 flex justify-center">
           <button
             onClick={() => setShowDetails(!showDetails)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-text-secondary hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
           >
             {showDetails ? (
               <>
@@ -391,13 +517,13 @@ export default function Dashboard() {
         <>
           {/* Yearly Overview */}
           {trackHours && (yearlyAbsences || ytdOvertime) && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+            <div className="bg-surface rounded-2xl shadow-card border border-border p-6 mb-8">
               <h2 className="text-xl font-bold text-gray-900 mb-6">Jahresübersicht {new Date().getFullYear()}</h2>
 
               {/* YTD Overtime Summary */}
               {ytdOvertime && (
                 <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <h3 className="text-sm font-medium text-gray-600 mb-3">Stunden 01.01. bis heute</h3>
+                  <h3 className="text-sm font-medium text-text-secondary mb-3">Stunden 01.01. bis heute</h3>
                   <div className={`grid ${ytdOvertime.carryover_hours !== 0 ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3'} gap-4`}>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-gray-700">{ytdOvertime.target_hours.toFixed(1)}h</div>
@@ -416,7 +542,7 @@ export default function Dashboard() {
                       </div>
                     )}
                     <div className="text-center">
-                      <div className={`text-2xl font-bold ${ytdOvertime.overtime >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <div className={`text-2xl font-bold ${ytdOvertime.overtime >= 0 ? 'text-success' : 'text-danger'}`}>
                         {ytdOvertime.overtime >= 0 ? '+' : ''}{ytdOvertime.overtime.toFixed(1)}h
                       </div>
                       <div className="text-sm text-gray-500 mt-1">Überstunden</div>
@@ -428,14 +554,14 @@ export default function Dashboard() {
               {/* Absence Summary */}
               {yearlyAbsences && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-600 mb-3">Abwesenheiten</h3>
+                  <h3 className="text-sm font-medium text-text-secondary mb-3">Abwesenheiten</h3>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="text-center">
                       <div className="text-3xl font-bold text-blue-600">{yearlyAbsences.vacation_days.toFixed(1)}</div>
                       <div className="text-sm text-gray-600 mt-1">Urlaub</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-red-600">{yearlyAbsences.sick_days.toFixed(1)}</div>
+                      <div className="text-3xl font-bold text-danger">{yearlyAbsences.sick_days.toFixed(1)}</div>
                       <div className="text-sm text-gray-600 mt-1">Krank</div>
                     </div>
                     <div className="text-center">
@@ -461,7 +587,7 @@ export default function Dashboard() {
           )}
 
           {/* Team Absences Calendar */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+          <div className="bg-surface rounded-2xl shadow-card border border-border overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900">Geplante Abwesenheiten im Team</h3>
           <p className="text-sm text-gray-500 mt-1">Kalenderübersicht der nächsten 3 Monate</p>
