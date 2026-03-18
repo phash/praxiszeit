@@ -52,23 +52,35 @@ export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }:
 
   useEffect(() => {
     if (!open || !drawerRef.current) return;
-    const focusable = drawerRef.current.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    first?.focus();
+    // Focus the close button on open
+    closeButtonRef.current?.focus();
 
     function handleTab(e: KeyboardEvent) {
-      if (e.key !== 'Tab') return;
+      if (e.key !== 'Tab' || !drawerRef.current) return;
+      const focusable = Array.from(drawerRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      ));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
       if (e.shiftKey) {
-        if (document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
       } else {
-        if (document.activeElement === last) { e.preventDefault(); first?.focus(); }
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     }
     document.addEventListener('keydown', handleTab);
     return () => document.removeEventListener('keydown', handleTab);
+  }, [open]);
+
+  // Body scroll lock on mobile
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
   }, [open]);
 
   const downloadUrl = getDownloadUrl(isAdmin, activeTab);
@@ -91,6 +103,7 @@ export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }:
         role="dialog"
         aria-modal="true"
         aria-label="Dokumentation"
+        aria-hidden={!open}
         className={`
           fixed z-50 bg-white flex flex-col shadow-2xl transition-transform duration-300
           md:inset-y-0 md:right-0 md:w-[70%] md:max-w-2xl
