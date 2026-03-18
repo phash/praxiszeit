@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface AccordionItem {
   title: string;
-  content: React.ReactNode;
+  content: ReactNode;
 }
 
 // ── Accordion ────────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ export const handbuchAdminSections: AccordionItem[] = [
 
 // ── DocViewerContent ─────────────────────────────────────────────────────────
 
-type DocTab = 'cheatsheet' | 'handbuch';
+export type DocTab = 'cheatsheet' | 'handbuch';
 
 interface DocViewerContentProps {
   isAdmin: boolean;
