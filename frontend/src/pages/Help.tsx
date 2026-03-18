@@ -7,10 +7,12 @@ import { Download, HelpCircle, ChevronDown, ChevronRight } from 'lucide-react';
 function CheatsheetMitarbeiter() {
   return (
     <div className="space-y-8">
-      {/* Login */}
+      {/* Navigation */}
       <section>
-        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🔐 Login</h3>
-        <p className="text-sm text-gray-600">Benutzernamen und Passwort eingeben → <span className="font-medium">Anmelden</span>.</p>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🔐 Login & Navigation</h3>
+        <p className="text-sm text-gray-600 mb-1">Benutzernamen und Passwort eingeben → <span className="font-medium">Anmelden</span>.</p>
+        <p className="text-sm text-gray-500">Desktop (links): Dashboard · Zeiterfassung · Abwesenheiten · Profil</p>
+        <p className="text-sm text-gray-500">Mobil (unten): Home · Journal · Abwes. · Profil | ☰ öffnet vollständige Navigation</p>
       </section>
 
       {/* Zeiterfassung */}
@@ -20,11 +22,12 @@ function CheatsheetMitarbeiter() {
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Neuer Eintrag</p>
             <ol className="text-sm text-gray-600 list-decimal list-inside space-y-0.5">
-              <li>Zeiterfassung → Hinzufügen</li>
-              <li>Datum, Start- und Endzeit eintragen</li>
+              <li>Zeiterfassung → Tab <strong>Einträge</strong> → <strong>+ Neuer Eintrag</strong></li>
+              <li>Datum, Von, Bis eintragen</li>
               <li>Pause in Minuten (Pflicht!)</li>
               <li>Speichern</li>
             </ol>
+            <p className="text-sm text-gray-500 mt-1">Mobil: <strong>+</strong>-Button oben rechts auf der Seite</p>
           </div>
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Pflichtpausen (§4 ArbZG)</p>
@@ -57,6 +60,19 @@ function CheatsheetMitarbeiter() {
         </div>
       </section>
 
+      {/* Korrekturanträge */}
+      <section>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">📋 Korrekturantrag stellen</h3>
+        <p className="text-sm text-gray-600 mb-1">Bei gesperrten oder älteren Einträgen:</p>
+        <ol className="text-sm text-gray-600 list-decimal list-inside space-y-0.5">
+          <li>Zeiterfassung → Tab <strong>Einträge</strong> → Zeile des Eintrags</li>
+          <li>Button <strong>Änderungsantrag</strong> klicken</li>
+          <li>Korrekte Zeiten eintragen + Begründung</li>
+          <li><strong>Antrag stellen</strong></li>
+        </ol>
+        <p className="text-sm text-gray-500 mt-2">Status einsehen: Zeiterfassung → Tab <strong>Anträge</strong> (Filter: Alle/Offen/Genehmigt/Abgelehnt)</p>
+      </section>
+
       {/* Abwesenheiten */}
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🗓️ Abwesenheiten</h3>
@@ -68,24 +84,13 @@ function CheatsheetMitarbeiter() {
             </tr>
           </thead>
           <tbody>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Abwesenheit eintragen</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Formular öffnen</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">+ Abwesenheit eintragen</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Formular öffnen, Typ wählen</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 text-gray-600">Einzeltag</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Nur Startdatum</td></tr>
             <tr><td className="px-3 py-2 border border-gray-200 text-gray-600">Zeitraum</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Checkbox „Zeitraum" + Enddatum</td></tr>
-            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 text-gray-600">Eintrag löschen</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Im Kalender klicken → Löschen-Symbol</td></tr>
+            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 text-gray-600">Eintrag löschen</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Kalender-Eintrag anklicken → Löschen</td></tr>
           </tbody>
         </table>
-      </section>
-
-      {/* Korrekturanträge */}
-      <section>
-        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">📋 Korrekturantrag stellen</h3>
-        <ol className="text-sm text-gray-600 list-decimal list-inside space-y-0.5">
-          <li>Zeiterfassung → Tab „Anträge" → Neuer Antrag</li>
-          <li>Betroffenes Datum wählen</li>
-          <li>Korrekte Zeiten eintragen</li>
-          <li>Begründung schreiben → Absenden</li>
-        </ol>
-        <p className="text-sm text-gray-500 mt-2">Admin genehmigt oder lehnt ab. Status ist in der Liste sichtbar.</p>
+        <p className="text-sm text-gray-500">Bei Urlaubsgenehmigungspflicht: Tab <strong>„Meine Anträge"</strong> zeigt Status</p>
       </section>
 
       {/* Dashboard */}
@@ -99,9 +104,10 @@ function CheatsheetMitarbeiter() {
             </tr>
           </thead>
           <tbody>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Monatssaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Über-/Unterstunden diesen Monat</td></tr>
-            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Überstunden gesamt</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Saldo über alle Monate</td></tr>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Urlaub verbleibend</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Verfügbare Urlaubstage</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Tagessaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Heute: Ist vs. Tagessoll (grün = eingestempelt)</td></tr>
+            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Monatssaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Über-/Unterstunden diesen Monat (H:MM)</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Überstunden</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Kumulierter Jahressaldo</td></tr>
+            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Urlaub</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Verbleibende Urlaubstage</td></tr>
           </tbody>
         </table>
         <p className="text-sm text-gray-500 mt-2">Grüner Saldo (+) = Überstunden | Roter Saldo (–) = Fehlstunden</p>
@@ -110,8 +116,8 @@ function CheatsheetMitarbeiter() {
       {/* Passwort */}
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🔑 Passwort ändern</h3>
-        <p className="text-sm text-gray-600">Profil → Abschnitt „Passwort ändern" → Altes + Neues Passwort + Bestätigen → Speichern</p>
-        <p className="text-sm text-gray-500 mt-1">Mind. 8 Zeichen, Groß- + Kleinbuchstabe, mind. eine Ziffer.</p>
+        <p className="text-sm text-gray-600">Profil → <strong>Passwort ändern</strong> → Ändern → Altes + Neues Passwort + Bestätigen → Speichern</p>
+        <p className="text-sm text-gray-500 mt-1">Mind. 10 Zeichen, Groß- + Kleinbuchstabe + Ziffer.</p>
       </section>
     </div>
   );
@@ -123,8 +129,8 @@ function CheatsheetAdmin() {
       {/* Login */}
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🔐 Login & Navigation</h3>
-        <p className="text-sm text-gray-600">Mitarbeiter: Dashboard · Zeiterfassung (Einträge, Journal, Anträge) · Abwesenheiten · Profil</p>
-        <p className="text-sm text-gray-600 mt-1">Admin zusätzlich: Admin-Dashboard · Benutzerverwaltung · Berichte · Abwesenheiten · Audit-Log · Einstellungen</p>
+        <p className="text-sm text-gray-600">Mitarbeiter-Bereich: Dashboard · Zeiterfassung · Abwesenheiten · Profil</p>
+        <p className="text-sm text-gray-600 mt-1">Administration: Admin-Dashboard · Benutzerverwaltung · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Urlaubsanträge · Import · Einstellungen</p>
       </section>
 
       {/* Benutzerverwaltung */}
@@ -248,45 +254,46 @@ const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '1. Erste Schritte & Login',
     content: (
       <div className="space-y-2">
-        <p>Öffnen Sie PraxisZeit im Browser und melden Sie sich mit Ihrem Benutzernamen und Passwort an. Nach dem Login landen Sie automatisch auf dem Dashboard.</p>
+        <p>Öffnen Sie PraxisZeit im Browser und melden Sie sich mit Ihrem <strong>Benutzernamen</strong> und <strong>Passwort</strong> an. Nach dem Login landen Sie automatisch auf dem Dashboard.</p>
         <p>Falls Sie Ihr Passwort vergessen haben, wenden Sie sich an Ihren Administrator.</p>
       </div>
     ),
   },
   {
-    title: '2. Zeiterfassung – Einträge erstellen & bearbeiten',
+    title: '2. Dashboard & Saldo verstehen',
     content: (
       <div className="space-y-2">
-        <p>Navigieren Sie zu <strong>Zeiterfassung</strong>. Klicken Sie auf <strong>Hinzufügen</strong>, wählen Sie Datum, Start- und Endzeit, tragen Sie die Pause in Minuten ein und speichern Sie den Eintrag.</p>
-        <p>Einträge der aktuellen Woche können direkt bearbeitet werden. Ältere Einträge erfordern einen Korrekturantrag.</p>
+        <p>Das Dashboard zeigt Ihren <strong>Tagessaldo</strong> (heute: Ist vs. Tagessoll), den <strong>Monatssaldo</strong> (Ist – Soll in H:MM), den kumulierten Jahressaldo und das Urlaubskonto.</p>
+        <p>Grüner Saldo = Überstunden, roter Saldo = Fehlstunden. Auf mobilen Geräten wird die untere Tab-Leiste zur Navigation genutzt.</p>
+      </div>
+    ),
+  },
+  {
+    title: '3. Zeiterfassung – Einträge erstellen & bearbeiten',
+    content: (
+      <div className="space-y-2">
+        <p>Navigieren Sie zu <strong>Zeiterfassung → Tab „Einträge"</strong>. Klicken Sie auf <strong>+ Neuer Eintrag</strong>. Das Formular erscheint direkt über der Tabelle – Datum, Von, Bis und Pause ausfüllen, dann Speichern.</p>
+        <p>Aktuelle entsperrte Einträge können direkt über <strong>Bearbeiten</strong> geändert werden. Ältere oder gesperrte Einträge erfordern einen Korrekturantrag.</p>
         <p className="text-amber-700 font-medium">ArbZG: Pflichtpause ab 6h (30 Min.), ab 9h (45 Min.). Maximum 10h Nettoarbeitszeit.</p>
       </div>
     ),
   },
   {
-    title: '3. Abwesenheiten eintragen',
+    title: '4. Korrekturanträge stellen & verwalten',
     content: (
       <div className="space-y-2">
-        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges) und das Datum.</p>
-        <p>Für Zeiträume aktivieren Sie die Checkbox „Zeitraum" und geben Sie ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
+        <p>Wenn ein gesperrter Eintrag korrigiert werden muss: <strong>Zeiterfassung → Tab „Einträge"</strong> → in der Aktionsspalte auf <strong>Änderungsantrag</strong> klicken → korrekte Zeiten + Begründung eingeben → Antrag stellen.</p>
+        <p>Den Status aller Anträge sehen Sie unter <strong>Zeiterfassung → Tab „Anträge"</strong>. Filter: Alle / Offen / Genehmigt / Abgelehnt. Offene Anträge können mit <strong>Zurückziehen</strong> storniert werden.</p>
       </div>
     ),
   },
   {
-    title: '4. Korrekturanträge stellen',
+    title: '5. Abwesenheiten eintragen',
     content: (
       <div className="space-y-2">
-        <p>Wenn ein vergangener Zeiteintrag korrigiert werden muss, navigieren Sie zu <strong>Zeiterfassung → Tab „Anträge" → Neuer Antrag</strong>.</p>
-        <p>Wählen Sie das betroffene Datum, tragen Sie die korrekten Werte ein und schreiben Sie eine Begründung. Der Administrator prüft und genehmigt oder lehnt den Antrag ab.</p>
-      </div>
-    ),
-  },
-  {
-    title: '5. Dashboard & Saldo verstehen',
-    content: (
-      <div className="space-y-2">
-        <p>Das Dashboard zeigt Ihren Monatssaldo (Ist – Soll), den kumulierten Gesamtsaldo und das Urlaubskonto. Ein positiver Saldo bedeutet Überstunden, ein negativer Fehlstunden.</p>
-        <p>Das Balkendiagramm zeigt die letzten 6 Monate auf einen Blick.</p>
+        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum.</p>
+        <p>Für Zeiträume aktivieren Sie die Checkbox <strong>„Zeitraum"</strong> und geben ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
+        <p>Wenn Urlaubsgenehmigungspflicht aktiv ist, wechselt die App nach dem Absenden automatisch zum Tab <strong>„Meine Anträge"</strong>.</p>
       </div>
     ),
   },
@@ -294,8 +301,8 @@ const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '6. Profil & Passwort',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Profil</strong> können Sie Ihr Passwort ändern (mind. 8 Zeichen, Groß-/Kleinbuchstabe, Ziffer) und Ihre Kalenderfarbe für den Team-Kalender festlegen.</p>
-        <p>Persönliche Daten wie Name und Wochenstunden können nur vom Administrator geändert werden.</p>
+        <p>Unter <strong>Profil</strong> sehen Sie Ihre persönlichen Daten. Über <strong>Passwort ändern → Ändern</strong> setzen Sie ein neues Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer).</p>
+        <p>Persönliche Daten wie Name und Wochenstunden können nur vom Administrator geändert werden. Unter <strong>Weitere Einstellungen</strong> finden Sie optionale Darstellungsoptionen.</p>
       </div>
     ),
   },
@@ -303,56 +310,65 @@ const handbuchMitarbeiterSections: AccordionItem[] = [
 
 const handbuchAdminSections: AccordionItem[] = [
   {
-    title: '1. Benutzerverwaltung',
+    title: '1. Admin-Dashboard & Teamübersicht',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Benutzerverwaltung</strong> können Sie Mitarbeiter anlegen, bearbeiten und deaktivieren. Löschen Sie Mitarbeiter nie – setzen Sie stattdessen den Status auf „Inaktiv" (Aufbewahrungspflicht §16 ArbZG, 2 Jahre).</p>
-        <p>Für Teilzeit-Anpassungen tragen Sie bei „Benutzer bearbeiten" die neuen Wochenstunden mit Wirkungsdatum ein. Historische Salden bleiben korrekt.</p>
+        <p>Das <strong>Admin-Dashboard</strong> zeigt alle aktiven Mitarbeiter mit Soll, Ist, Saldo (H:MM), kumulierten Überstunden, verbleibenden Urlaubstagen und Kranktagen für den gewählten Monat.</p>
+        <p>Klicken Sie auf den Pfeil am Ende einer Zeile für die Detailansicht. Nutzen Sie die Suche zum Filtern nach Name.</p>
       </div>
     ),
   },
   {
-    title: '2. Berichte & Excel-Exporte',
+    title: '2. Benutzerverwaltung',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Berichte</strong> können Sie drei Export-Typen erstellen: Monatsreport (für Gehaltsabrechnung), Jahresreport Classic (kompakt) und Jahresreport Detailliert (vollständig, für Steuerberater).</p>
-        <p>Die exportierten Berichte müssen gemäß §16 ArbZG mindestens 2 Jahre aufbewahrt werden.</p>
+        <p>Unter <strong>Benutzerverwaltung</strong> legen Sie Mitarbeiter an (<strong>Neuer Mitarbeiter:in</strong>), bearbeiten und deaktivieren sie. Niemals löschen – Status auf „Inaktiv" setzen (Aufbewahrungspflicht §16 ArbZG, 2 Jahre).</p>
+        <p>Für Teilzeit-Anpassungen: Benutzer öffnen → neue Wochenstunden + <strong>Wirkungsdatum</strong> eintragen. Historische Salden bleiben korrekt. Checkboxen: „ArbZG-Prüfungen aussetzen" für §18, „Nachtarbeitnehmer" für §6.</p>
       </div>
     ),
   },
   {
-    title: '3. Korrekturanträge genehmigen',
+    title: '3. Berichte & Excel-Exporte',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Korrekturanträge</strong> sehen Sie alle offenen Anträge. Vergleichen Sie Alt- und Neuwerte, lesen Sie die Begründung und genehmigen oder lehnen Sie den Antrag ab.</p>
-        <p>Bei Ablehnung können Sie optional einen Grund eingeben, der dem Mitarbeiter angezeigt wird.</p>
+        <p>Unter <strong>Berichte</strong> stehen drei Export-Typen bereit: <strong>Monatsreport</strong> (Gehaltsabrechnung), <strong>Jahresreport Classic</strong> (12 Monate kompakt) und <strong>Jahresreport Detailliert</strong> (365 Tage, für Steuerberater). Jeder Report ist als Excel oder CSV verfügbar.</p>
+        <p>Aufbewahrungspflicht: <strong>2 Jahre</strong> (§16 ArbZG). Regelmäßig exportieren und sicher archivieren.</p>
       </div>
     ),
   },
   {
-    title: '4. Betriebsferien einrichten',
+    title: '4. Korrekturanträge genehmigen',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Abwesenheiten</strong> können Betriebsferien angelegt werden. Nach dem Speichern erhalten alle aktiven Mitarbeiter automatisch Abwesenheitseinträge (ohne Urlaubsabzug).</p>
-        <p>Beim Löschen von Betriebsferien werden die Einträge bei allen Mitarbeitern automatisch entfernt.</p>
+        <p>Unter <strong>Änderungsanträge</strong> sehen Sie alle offenen Anträge. Antrag öffnen → Alt- und Neuwerte vergleichen → Begründung lesen → <strong>Genehmigen</strong> oder <strong>Ablehnen</strong> (mit optionalem Grund).</p>
+        <p>Bei Genehmigung wird der Zeiteintrag sofort geändert. Der Mitarbeiter sieht den Status unter Zeiterfassung → Tab „Anträge".</p>
       </div>
     ),
   },
   {
-    title: '5. ArbZG-Berichte & Compliance',
+    title: '5. Urlaubsanträge & Betriebsferien',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Berichte</strong> finden Sie spezialisierte ArbZG-Berichte: Ruhezeitverstöße (§5), Sonntagsarbeit mit 15-freie-Sonntage-Tracking (§11) und Nachtarbeit-Übersicht (§6).</p>
-        <p>Das System prüft automatisch alle gesetzlichen Grenzen bei der Eingabe von Zeiteinträgen. Mitarbeiter mit ArbZG-Ausnahme (§18) sind von den Prüfungen ausgenommen.</p>
+        <p><strong>Urlaubsanträge:</strong> Toggle „Genehmigungspflicht" aktiviert den Workflow. Anträge erscheinen als „Offen" → Genehmigen (grün) oder Ablehnen (rot, optional Grund).</p>
+        <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug). Beim Löschen werden alle Einträge entfernt.</p>
       </div>
     ),
   },
   {
-    title: '6. Audit-Log & Fehler-Monitoring',
+    title: '6. ArbZG-Berichte & Compliance',
     content: (
       <div className="space-y-2">
-        <p>Das <strong>Änderungsprotokoll</strong> zeichnet alle Admin-Aktionen auf und kann nicht gelöscht werden. Es dient als Nachweis gemäß §16 ArbZG.</p>
-        <p>Das <strong>Fehler-Monitoring</strong> zeigt automatisch erfasste Backend-Fehler mit Stacktrace und ermöglicht die direkte Meldung als GitHub Issue.</p>
+        <p>Unter <strong>Berichte</strong> (nach unten scrollen) finden Sie: <strong>§5 Ruhezeitverstöße</strong> (&lt;11h zwischen Arbeitstagen), <strong>§6 Nachtarbeit</strong> (≥48 Nachtarbeitstage/Jahr), <strong>§11 Sonntagsarbeit</strong> (max. 37/Jahr) und <strong>§11 Ersatzruhetag</strong> (Fristen überwachen).</p>
+        <p>Das System prüft bei jeder Eingabe automatisch §3 (10h-Hard-Stop), §4 (Pausenpflicht), §6 (8h für Nachtarbeitnehmer), §9/10 (Sonntagsarbeit), §14 (48h-Wochenwarnung).</p>
+      </div>
+    ),
+  },
+  {
+    title: '7. Audit-Log & Fehler-Monitoring',
+    content: (
+      <div className="space-y-2">
+        <p>Das <strong>Änderungsprotokoll</strong> zeichnet alle Aktionen unveränderlich auf (Login, Zeiteinträge, Abwesenheiten, Benutzerverwaltung, Korrekturanträge). Dient als Nachweis gem. §16 ArbZG bei Betriebsprüfungen.</p>
+        <p>Das <strong>Fehler-Monitoring</strong> zeigt Backend-Fehler mit Häufigkeit und Kontext. Wiederkehrende Fehler als GitHub Issue melden (Button in der Detailansicht).</p>
       </div>
     ),
   },
