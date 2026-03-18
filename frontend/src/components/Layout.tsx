@@ -263,7 +263,7 @@ export default function Layout() {
           {/* Handbuch-Downloads */}
           <div className="mb-2 flex flex-col gap-1">
             <a
-              href="/docs/Cheat-Sheet.pdf"
+              href={user?.role === 'admin' ? '/help/CHEATSHEET-ADMIN.md' : '/help/CHEATSHEET-MITARBEITER.md'}
               download
               className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
             >
@@ -271,23 +271,13 @@ export default function Layout() {
               <span>Cheat-Sheet</span>
             </a>
             <a
-              href="/docs/Mitarbeiter-Handbuch.pdf"
+              href={user?.role === 'admin' ? '/help/HANDBUCH-ADMIN.md' : '/help/HANDBUCH-MITARBEITER.md'}
               download
               className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
             >
               <FileText size={13} />
-              <span>Mitarbeiter-Handbuch</span>
+              <span>{user?.role === 'admin' ? 'Admin-Handbuch' : 'Mitarbeiter-Handbuch'}</span>
             </a>
-            {user?.role === 'admin' && (
-              <a
-                href="/docs/Admin-Handbuch.pdf"
-                download
-                className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
-              >
-                <FileText size={13} />
-                <span>Admin-Handbuch</span>
-              </a>
-            )}
           </div>
 
           <Link

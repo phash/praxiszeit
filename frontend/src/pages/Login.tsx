@@ -149,7 +149,7 @@ export default function Login() {
           <p className="text-xs text-gray-400 text-center mb-3">Dokumentation</p>
           <div className="flex justify-center gap-3 flex-wrap">
             <a
-              href="/docs/Mitarbeiter-Handbuch.pdf"
+              href="/help/HANDBUCH-MITARBEITER.md"
               download
               className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
             >
@@ -158,7 +158,7 @@ export default function Login() {
             </a>
             <span className="text-gray-300">·</span>
             <a
-              href="/docs/Cheat-Sheet.pdf"
+              href="/help/CHEATSHEET-MITARBEITER.md"
               download
               className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
             >
