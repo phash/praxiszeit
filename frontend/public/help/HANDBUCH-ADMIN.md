@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 1.0 | Stand: Februar 2026**
+**Version 2.0 | Stand: März 2026**
 
 ---
 
@@ -12,12 +12,15 @@
 4. [Benutzerverwaltung](#4-benutzerverwaltung)
 5. [Abwesenheitskalender](#5-abwesenheitskalender)
 6. [Berichte und Exporte](#6-berichte-und-exporte)
-7. [Korrekturanträge prüfen](#7-korrekturanträge-prüfen)
-8. [Änderungsprotokoll (Audit-Log)](#8-änderungsprotokoll-audit-log)
-9. [Fehler-Monitoring](#9-fehler-monitoring)
-10. [Betriebsferien verwalten](#10-betriebsferien-verwalten)
-11. [ArbZG-Compliance-Berichte](#11-arbzg-compliance-berichte)
-12. [Rechtliche Grundlagen](#12-rechtliche-grundlagen)
+7. [Urlaubsanträge genehmigen](#7-urlaubsanträge-genehmigen)
+8. [Korrekturanträge prüfen](#8-korrekturanträge-prüfen)
+9. [Änderungsprotokoll (Audit-Log)](#9-änderungsprotokoll-audit-log)
+10. [Fehler-Monitoring](#10-fehler-monitoring)
+11. [Betriebsferien verwalten](#11-betriebsferien-verwalten)
+12. [Import](#12-import)
+13. [Einstellungen](#13-einstellungen)
+14. [ArbZG-Compliance-Berichte](#14-arbzg-compliance-berichte)
+15. [Rechtliche Grundlagen](#15-rechtliche-grundlagen)
 
 ---
 
@@ -25,26 +28,24 @@
 
 Dieses Handbuch richtet sich an **Administratoren** von PraxisZeit. Als Admin haben Sie Zugriff auf alle Bereiche der Anwendung – von der Benutzerverwaltung über Berichte bis hin zu gesetzlichen Compliance-Auswertungen.
 
-**Wichtig:** Mit der Admin-Rolle tragen Sie die Verantwortung für die gesetzeskonforme Dokumentation der Arbeitszeiten gemäß dem **Arbeitszeitgesetz (ArbZG)**. PraxisZeit unterstützt Sie dabei mit automatischen Prüfungen und Berichten.
+**Navigation:** In der linken Seitenleiste finden Sie zwei Bereiche:
+- **Mitarbeiter-Bereich**: Dashboard, Zeiterfassung, Abwesenheiten, Profil (Ihre eigene Zeiterfassung)
+- **Administration**: Admin-Dashboard, Benutzerverwaltung, Änderungsanträge, Berichte, Abwesenheiten, Änderungsprotokoll, Fehler-Monitoring, Urlaubsanträge, Import, Einstellungen
 
-**Rechtsgrundlage:** Das ArbZG ([Arbeitszeitgesetz](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)) verpflichtet Arbeitgeber zur Arbeitszeitaufzeichnung und legt verbindliche Grenzen für Arbeitszeiten fest. PraxisZeit implementiert alle relevanten §§ automatisch.
+**Rechtliche Verantwortung:** Als Admin sind Sie für die gesetzeskonforme Dokumentation der Arbeitszeiten gemäß dem **Arbeitszeitgesetz (ArbZG)** verantwortlich. PraxisZeit unterstützt Sie mit automatischen Prüfungen und Berichten.
 
 ---
 
 ## 2. Login und Zugangsdaten
-
-Der Login für Administratoren erfolgt über dieselbe Seite wie für Mitarbeiter.
 
 ![Login-Seite](screenshots/01-ma-login.png)
 
 **Zugang:**
 - **URL:** `http://[Ihre-Server-Adresse]/login`
 - **Benutzername:** Ihr Administrator-Benutzername
-- **Passwort:** Ihr Passwort
+- **Passwort:** Ihr Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer)
 
-> **Hinweis:** Das initiale Admin-Passwort muss beim ersten Login geändert werden. Sichere Passwörter müssen mindestens 10 Zeichen, einen Großbuchstaben, einen Kleinbuchstaben und eine Ziffer enthalten.
-
-Nach erfolgreichem Login werden Sie automatisch zum Admin-Dashboard weitergeleitet. Das Navigationsmenü auf der linken Seite zeigt Ihnen alle Admin-Bereiche.
+Nach erfolgreichem Login werden Sie automatisch zum Dashboard weitergeleitet. Die Admin-Navigation erscheint unter dem Abschnitt **„Administration"** in der linken Seitenleiste.
 
 ---
 
@@ -54,35 +55,34 @@ Das Admin-Dashboard gibt Ihnen eine sofortige **Gesamtübersicht über Ihr gesam
 
 ![Admin-Dashboard](screenshots/14-admin-dashboard.png)
 
-### Was Sie auf dem Dashboard sehen
+### Teamübersicht
 
-**Erweiterte Navigation (linke Seite):**
-- Dashboard (Admin-Ansicht)
-- Benutzerverwaltung
-- Abwesenheitskalender
-- Berichte
-- Korrekturanträge
-- Änderungsprotokoll
-- Fehler-Monitoring
-- Betriebsferien
-
-**Teamübersicht (Hauptbereich):**
 Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdaten:
 
 | Spalte | Bedeutung |
 |--------|-----------|
 | **Name** | Vor- und Nachname des Mitarbeiters |
+| **Wochenstd.** | Aktuell gültige Wochenstunden |
 | **Soll** | Zu leistende Stunden im aktuellen Monat |
 | **Ist** | Tatsächlich geleistete Stunden |
-| **Saldo** | Differenz Ist – Soll (+ = Überstunden, – = Fehlstunden) |
-| **Urlaub** | Verbleibende Urlaubstage (Ampelfarbe) |
+| **Saldo** | Differenz Ist – Soll (H:MM, + = Überstunden, – = Fehlstunden) |
+| **Übersto. Kum.** | Kumulierter Jahressaldo |
+| **Urlaub** | Verbleibende Urlaubsstunden (Ampelfarbe) |
+| **Krank** | Kranktage im aktuellen Monat |
 
-**Ampel-System Urlaub:**
-- 🟢 **Grün**: Mehr als 50% Restanspruch vorhanden
-- 🟡 **Gelb**: 25–50% Restanspruch
-- 🔴 **Rot**: Weniger als 25% Restanspruch – Handlungsbedarf
+### Statistiken (oben)
 
-> **Tipp:** Klicken Sie auf einen Mitarbeiter-Namen, um direkt zu dessen Detailansicht zu springen.
+- **Mitarbeitende:** Anzahl aktiver Mitarbeiter
+- **Ø Saldo (Monat):** Durchschnittlicher Monatssaldo aller Mitarbeiter
+- **Monat:** Aktuell angezeigter Monat
+
+**Monat wechseln:** Mit den Pfeilen `<` und `>` wechseln Sie den angezeigten Monat.
+
+**Suche:** Nutzen Sie das Suchfeld, um nach einem bestimmten Mitarbeiter zu filtern.
+
+**Detailansicht:** Klicken Sie auf den Pfeil am Ende einer Zeile, um die Detailansicht des Mitarbeiters zu öffnen.
+
+> **Tipp:** Der Ampelindikator beim Urlaub zeigt auf einen Blick, wer dringend Urlaub nehmen sollte.
 
 ---
 
@@ -94,237 +94,225 @@ Die Benutzerverwaltung ist das Herzstück der Admin-Funktion.
 
 ### Übersicht aller Mitarbeiter
 
-Die Liste zeigt alle aktiven Mitarbeiter mit folgenden Informationen:
-- **Name und Benutzername**
-- **Wochenstunden** (aktuell gültige Stundenvereinbarung)
-- **Arbeitstage/Woche**
-- **Urlaubstage** (Jahresbudget)
-- **Rolle** (Admin / Mitarbeiter)
-- **Status** (Aktiv / Inaktiv)
+Die Liste zeigt alle aktiven Mitarbeiter mit:
+- **Name** und **Benutzername** (Kürzel)
+- **Rolle** (Mitarbeiter:in / Admin)
+- **Wochenstd.** und **Arbeitstage**
+- **Urlaubskonto** (Budget, Genommen, Übrig – mit Ampelfarbe)
+
+**Filter:** Aktivieren Sie **„Inaktive anzeigen"** oder **„Ausgeblendete anzeigen"** um deaktivierte Mitarbeiter einzublenden.
 
 ### Neuen Mitarbeiter anlegen
 
 ![Neuen Benutzer anlegen](screenshots/16-admin-benutzer-formular.png)
 
-Klicken Sie auf **„Neuer Benutzer"** und füllen Sie das Formular aus:
+Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 
 **Pflichtfelder:**
 | Feld | Beschreibung |
 |------|-------------|
-| **Benutzername** | Eindeutiger Login-Name (z. B. `maria.hoffmann`) |
-| **Vorname / Nachname** | Name des Mitarbeiters |
-| **Passwort** | Initiales Passwort (mind. 10 Zeichen) |
-| **Wochenstunden** | Vertraglich vereinbarte Wochenstunden |
-| **Arbeitstage/Woche** | Anzahl der Arbeitstage (1–5) |
-| **Urlaubstage** | Jährlicher Urlaubsanspruch |
-| **Rolle** | Mitarbeiter oder Admin |
+| **Benutzername** | Eindeutiger Login-Name (z. B. `m.hoffmann`) |
+| **Passwort** | Initiales Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer) |
+| **Rolle** | Mitarbeiter:in oder Admin |
+| **Wochenstunden** | Vertraglich vereinbarte Wochenstunden (Standard: 40) |
+| **Arbeitstage pro Woche** | Anzahl der Arbeitstage 1–7 (Standard: 5) |
+| **Urlaubstage** | Jährlicher Urlaubsanspruch (Standard: 30) |
 
 **Optionale Felder:**
 | Feld | Beschreibung |
 |------|-------------|
-| **E-Mail** | Nur für Benachrichtigungen (optional) |
-| **Kalenderfarbe** | Farbe im Teamkalender (Hex-Code, z. B. `#2563EB`) |
-| **Stundenzählung deaktivieren** | Für Mitarbeiter ohne Zeiterfassungspflicht |
-| **ArbZG-Ausnahme** | Für leitende Angestellte nach §18 ArbZG |
-| **Tagesplan verwenden** | Individuelle Stundenverteilung Mo–Fr |
+| **E-Mail** | Für Kontaktzwecke (optional) |
+| **Vorname / Nachname** | Anzeigename |
+| **Stundenzählung aktiv** | Deaktivieren für Mitarbeiter ohne Zeiterfassungspflicht |
+| **ArbZG-Prüfungen aussetzen** | Für leitende Angestellte nach § 18 ArbZG |
+| **Nachtarbeitnehmer** | § 6 ArbZG – 8h-Tageslimit bei Nachtarbeit |
+| **Erster / Letzter Arbeitstag** | Eintrittsdatum und ggf. geplantes Austrittsdatum |
+| **Individuelle Tagesstunden** | Abweichende Stundenverteilung Mo–Fr statt einheitlich |
 
-> **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte (Geschäftsführer, Prokuristen) können von den ArbZG-Arbeitszeitbeschränkungen ausgenommen werden. Aktivieren Sie das Flag „ArbZG-Ausnahme" nur für Personen, die tatsächlich unter §18 ArbZG fallen.
+> **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte können von ArbZG-Beschränkungen ausgenommen werden. Aktivieren Sie dieses Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen.
 
 ### Mitarbeiter bearbeiten
 
 ![Mitarbeiter bearbeiten](screenshots/17-admin-benutzer-bearbeiten.png)
 
-Klicken Sie in der Benutzerliste auf **„Bearbeiten"** neben dem gewünschten Mitarbeiter.
+Klicken Sie in der Benutzerliste auf den Namen des Mitarbeiters.
 
-**Wichtige Hinweise beim Bearbeiten:**
+**Stundenänderungen:**
+Wenn Sie die Wochenstunden ändern (z. B. bei Teilzeitumstellung), wird ein Eintrag in der **Stundenhistorie** erstellt. Frühere Monate werden weiterhin mit den damals gültigen Stunden berechnet.
 
-**Stundenänderungen mit Wirkungsdatum:**
-Wenn Sie die Wochenstunden eines Mitarbeiters ändern (z. B. bei Umstellung auf Teilzeit), wird automatisch ein Eintrag in der **Arbeitszeiten-Historie** erstellt. Damit bleiben historische Saldoberechnungen korrekt – frühere Monate werden mit den damals gültigen Stunden berechnet.
-
-Vorgehensweise:
-1. Klicken Sie auf „Bearbeiten" beim Mitarbeiter
-2. Tragen Sie die neuen Wochenstunden ein
-3. Geben Sie das **Wirkungsdatum** an (ab wann gelten die neuen Stunden?)
-4. Optional: Notiz zur Änderung (z. B. „Wechsel auf 50% Teilzeit auf Wunsch")
-5. Speichern
+1. Name/Kürzel des Mitarbeiters öffnen
+2. Neue Wochenstunden eintragen
+3. **Wirkungsdatum** angeben (ab wann gelten die neuen Stunden)
+4. Speichern
 
 **Mitarbeiter deaktivieren:**
-Statt Mitarbeiter zu löschen, deaktivieren Sie diese. Deaktivierte Mitarbeiter erscheinen nicht mehr in Berichten und können sich nicht mehr einloggen, aber ihre historischen Daten bleiben erhalten.
+Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich nicht mehr einloggen, historische Daten bleiben erhalten.
 
-> **Rechtlicher Hinweis (§16 ArbZG):** Aufzeichnungen über Arbeitszeiten müssen **mindestens 2 Jahre** aufbewahrt werden. Löschen Sie daher keine Mitarbeiterdaten, sondern deaktivieren Sie die Konten.
+> **Rechtlicher Hinweis (§16 ArbZG):** Arbeitszeitaufzeichnungen müssen **mindestens 2 Jahre** aufbewahrt werden. Löschen Sie daher niemals Mitarbeiterdaten – deaktivieren Sie die Konten.
 
 ---
 
 ## 5. Abwesenheitskalender
 
-Der Abwesenheitskalender zeigt alle Abwesenheiten des Teams auf einen Blick.
-
 ![Abwesenheitskalender Admin](screenshots/18-admin-abwesenheitskalender.png)
 
 ### Kalenderansicht
 
-Der Kalender zeigt farbcodierte Balken für jeden Mitarbeiter:
+Farbcodierte Balken pro Mitarbeiter:
 - **Blau**: Urlaub
 - **Rot**: Krankheit
 - **Orange**: Fortbildung
 - **Grau**: Sonstige Abwesenheit
 
-Jeder Mitarbeiter hat zudem eine individuelle **Kalenderfarbe** (konfigurierbar in der Benutzerverwaltung), die seine Balken kennzeichnet.
+Jeder Mitarbeiter hat zusätzlich eine individuelle **Kalenderfarbe** (konfigurierbar in der Benutzerverwaltung).
 
-### Navigation
+### Als Admin Abwesenheit eintragen
 
-- **Monatspfeile** (`<` / `>`): Vorheriger / nächster Monat
-- **„Heute"**: Zurück zum aktuellen Monat
-
-### Als Admin Abwesenheiten eintragen
-
-Als Administrator können Sie Abwesenheiten für jeden Mitarbeiter eintragen:
 1. Klicken Sie auf **„Abwesenheit eintragen"**
-2. Wählen Sie den Mitarbeiter aus dem Dropdown
-3. Wählen Sie Datum und Typ
-4. Optional: Zeitraum mit Enddatum
-5. Speichern
+2. Wählen Sie den **Mitarbeiter** aus dem Dropdown
+3. Wählen Sie Datum, Typ und ggf. Zeitraum
+4. Speichern
 
-> **Rechtlicher Hinweis (§16 ArbZG):** Lückenlose Dokumentation von Abwesenheiten ist Teil der gesetzlichen Aufzeichnungspflicht.
+### Betriebsferien im Kalender
+
+Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle aktiven Mitarbeiter gleichzeitig (→ [Abschnitt 11](#11-betriebsferien-verwalten)).
 
 ---
 
 ## 6. Berichte und Exporte
 
-Der Berichtsbereich ermöglicht den Export aller relevanten Arbeitszeitdaten.
-
 ![Berichte](screenshots/19-admin-berichte.png)
 
-### Verfügbare Berichte
+### Monatsreport
 
-#### Monatsreport (detailliert)
 - **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
-- **Format:** Excel-Datei (.xlsx)
-- **Details pro Mitarbeiter:** Datum, Wochentag, Start, Ende, Pause, Ist-Stunden, Soll-Stunden, Abwesenheitstyp
-- **Summenzeile:** Gesamt-Ist, Gesamt-Soll, Monatssaldo
+- **Format:** Excel (.xlsx) oder CSV
+- **Details pro Mitarbeiter:** Datum, Wochentag, Start, Ende, Pause, Ist-Stunden, Soll-Stunden, Abwesenheitstyp, Monatssaldo
 
 **Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
 
-#### Jahresreport Classic (kompakte 12-Monats-Übersicht)
+### Jahresreport Classic
+
+- **Format:** Excel (.xlsx) oder CSV, ca. 17 KB
 - **Inhalt:** Pro Mitarbeiter eine Zeile pro Monat
-- **Format:** Excel-Datei (.xlsx), ~17 KB
 - **Details:** Soll, Ist, Saldo, Urlaubstage, Krankheitstage, Fortbildungstage
 
 **Verwendung:** Jahresüberblick, schnelle Kontrolle
 
-#### Jahresreport Detailliert (365 Tage)
+### Jahresreport Detailliert
+
+- **Format:** Excel (.xlsx) oder CSV, ca. 108 KB
 - **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter
-- **Format:** Excel-Datei (.xlsx), ~108 KB
-- **Generierungszeit:** 3–5 Sekunden (bitte warten)
+- **Hinweis:** Generierungszeit 3–5 Sekunden
 
 **Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung
 
 ### Bericht erstellen
 
-1. Wählen Sie den **Berichtstyp** (Monatsreport / Jahresreport Classic / Jahresreport Detailliert)
+1. Wählen Sie den **Berichtstyp**
 2. Wählen Sie **Monat** oder **Jahr**
-3. Klicken Sie auf **„Exportieren"**
-4. Die Excel-Datei wird automatisch heruntergeladen
+3. Optional: **„Krankheiten einstellen"** – legt fest, ab welchem Datum § 3 EntgFG (Kranktage als gearbeitete Zeit) gilt
+4. Klicken Sie auf **Excel** oder **CSV**
+5. Die Datei wird automatisch heruntergeladen
 
-> **Rechtlicher Hinweis (§16 ArbZG):** Der Arbeitgeber ist verpflichtet, Arbeitszeitaufzeichnungen **2 Jahre** aufzubewahren. Exportieren Sie regelmäßig (mindestens jährlich) und sichern Sie die Dateien an einem sicheren Ort.
+> **Rechtlicher Hinweis (§16 ArbZG):** Exportieren Sie regelmäßig (mindestens jährlich) und sichern Sie die Dateien sicher für **2 Jahre**.
 
 ---
 
-## 7. Korrekturanträge prüfen
+## 7. Urlaubsanträge genehmigen
 
-Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich geändert werden müssen. Als Admin prüfen und genehmigen oder lehnen Sie diese ab.
+Wenn die Genehmigungspflicht aktiviert ist, landen Urlaubsanträge von Mitarbeitern zur Prüfung beim Admin.
+
+### Genehmigungspflicht konfigurieren
+
+**Admin-Navigation → Urlaubsanträge**
+
+Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspflichtig"**:
+
+| Toggle | Verhalten |
+|--------|-----------|
+| **Aus** (Standard) | Mitarbeiter buchen Urlaub direkt |
+| **Ein** | Urlaubsanträge landen als „Offen" beim Admin |
+
+### Antrag genehmigen
+
+1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, Notiz
+2. Klicken Sie auf **„Genehmigen"** (grüner Button)
+3. Das System trägt automatisch Abwesenheiten für alle Werktage ein (Wochenenden und Feiertage ausgeschlossen)
+
+> **Achtung:** Eine Genehmigung ist unwiderruflich. Zum Stornieren müssen die erstellten Abwesenheitseinträge manuell gelöscht werden.
+
+### Antrag ablehnen
+
+1. Klicken Sie auf **„Ablehnen"** (roter Button)
+2. Optional: Ablehnungsgrund eingeben
+3. Bestätigen
+
+Der Mitarbeiter sieht den Ablehnungsgrund im Tab „Meine Anträge".
+
+---
+
+## 8. Korrekturanträge prüfen
+
+Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich geändert werden müssen.
 
 ![Korrekturanträge Admin](screenshots/20-admin-korrekturantraege.png)
-
-### Übersicht der Anträge
-
-Die Liste zeigt alle offenen und vergangenen Korrekturanträge:
-
-| Spalte | Bedeutung |
-|--------|-----------|
-| **Mitarbeiter** | Wer hat den Antrag gestellt? |
-| **Datum** | Welches Datum soll korrigiert werden? |
-| **Aktuell** | Bestehender Eintrag (Start/Ende/Pause) |
-| **Neu gewünscht** | Vom Mitarbeiter gewünschte Werte |
-| **Begründung** | Warum wird die Änderung beantragt? |
-| **Status** | Ausstehend / Genehmigt / Abgelehnt |
 
 ### Antrag prüfen und entscheiden
 
 ![Korrekturantrag Details](screenshots/21-admin-korrekturantrag-details.png)
 
-1. Klicken Sie auf **„Prüfen"** neben dem Antrag
+1. Klicken Sie auf den Antrag oder **„Prüfen"**
 2. Das Formular zeigt den aktuellen und den gewünschten Eintrag im Vergleich
 3. Lesen Sie die Begründung des Mitarbeiters
 4. Entscheiden Sie:
-   - **„Genehmigen"**: Der Zeiteintrag wird automatisch geändert
-   - **„Ablehnen"**: Geben Sie optional einen Ablehnungsgrund ein
+   - **„Genehmigen"**: Zeiteintrag wird automatisch geändert
+   - **„Ablehnen"**: Optionalen Ablehnungsgrund eingeben
 
-**Nach der Entscheidung:**
-- Der Mitarbeiter sieht den Status seines Antrags in seiner eigenen Ansicht
-- Bei Genehmigung: Zeiteintrag wird sofort aktualisiert, Saldo neu berechnet
-- Bei Ablehnung: Der bisherige Eintrag bleibt unverändert
+**Filter-Tabs:** Alle / Offen / Genehmigt / Abgelehnt
 
-> **Empfehlung:** Prüfen Sie Korrekturanträge zeitnah. Ausstehende Anträge können die Monatsabrechnung verzögern.
+> **Empfehlung:** Prüfen Sie Korrekturanträge zeitnah, damit der Monatssaldo der Mitarbeiter aktuell bleibt.
 
 ---
 
-## 8. Änderungsprotokoll (Audit-Log)
+## 9. Änderungsprotokoll (Audit-Log)
 
-Das Audit-Log protokolliert alle wichtigen Aktionen im System vollständig und unveränderlich.
+Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränderlich.
 
 ![Audit-Log](screenshots/22-admin-auditlog.png)
 
 ### Was wird protokolliert?
 
-Das Audit-Log erfasst alle relevanten Aktionen:
-
 | Aktion | Beispiel |
 |--------|---------|
 | **Login/Logout** | Wer hat sich wann eingeloggt? |
-| **Zeiteinträge** | Erstellen, Ändern, Löschen von Zeiteinträgen |
+| **Zeiteinträge** | Erstellen, Ändern, Löschen |
 | **Abwesenheiten** | Neue Abwesenheiten, Stornierungen |
 | **Benutzerverwaltung** | Neue Benutzer, Passwortänderungen, Deaktivierungen |
 | **Korrekturanträge** | Stellen, Genehmigen, Ablehnen |
-| **Betriebsferien** | Anlegen und Löschen von Betriebsferien |
-
-### Log-Einträge lesen
-
-Jeder Log-Eintrag enthält:
-- **Zeitstempel** (Datum und Uhrzeit)
-- **Benutzer** (wer hat die Aktion ausgeführt?)
-- **Aktion** (was wurde getan?)
-- **Details** (betroffene Daten, z. B. geänderter Zeiteintrag)
+| **Betriebsferien** | Anlegen und Löschen |
 
 ### Filter und Suche
 
-Nutzen Sie die Filteroptionen:
 - **Zeitraum**: Von–Bis-Datum wählen
 - **Benutzer**: Nur Aktionen eines bestimmten Mitarbeiters
 - **Aktion**: Nur bestimmte Aktionstypen
 
-> **Rechtlicher Hinweis:** Das Audit-Log erfüllt die Anforderungen an eine unveränderliche Aufzeichnung gemäß §16 ArbZG und kann bei Betriebsprüfungen als Nachweis dienen.
+> **Rechtlicher Hinweis:** Das Audit-Log erfüllt die Anforderungen einer unveränderlichen Aufzeichnung gem. § 16 ArbZG und kann bei Betriebsprüfungen als Nachweis dienen.
 
 ---
 
-## 9. Fehler-Monitoring
+## 10. Fehler-Monitoring
 
-Das Fehler-Monitoring zeigt technische Fehler, die in der Anwendung aufgetreten sind.
+Das Fehler-Monitoring zeigt technische Fehler, die im Betrieb aufgetreten sind.
 
 ![Fehler-Monitoring](screenshots/23-admin-fehlermonitoring.png)
-
-### Wann ist das relevant?
-
-Das Fehler-Monitoring ist relevant, wenn:
-- Mitarbeiter berichten, dass etwas nicht funktioniert
-- Sie eine Fehlfunktion selbst bemerken
-- Sie die Stabilität des Systems überprüfen möchten
 
 ### Fehler-Liste
 
 Jeder Eintrag zeigt:
 - **Zeitstempel** des Fehlers
-- **Fehlertyp** (z. B. Verbindungsfehler, Datenbankfehler)
+- **Fehlertyp** und Beschreibung
 - **Häufigkeit** (wie oft ist dieser Fehler aufgetreten?)
 - **Benutzerkontext** (welcher Benutzer war betroffen?)
 
@@ -332,13 +320,11 @@ Jeder Eintrag zeigt:
 
 1. **Lesen Sie die Fehlermeldung** – oft gibt es eine verständliche Beschreibung
 2. **Prüfen Sie die Häufigkeit** – einmalige Fehler sind meist unkritisch
-3. **Bei wiederkehrenden Fehlern**: Notieren Sie Zeitstempel und Fehlermeldung und kontaktieren Sie Ihren IT-Support
-
-> **Tipp:** Klicken Sie auf einen Fehler, um Details anzuzeigen – oft enthält die Fehlermeldung bereits den Hinweis auf die Ursache.
+3. **Bei wiederkehrenden Fehlern**: Zeitstempel und Fehlermeldung notieren, IT-Support kontaktieren oder direkt als GitHub Issue melden (Button in der Detailansicht)
 
 ---
 
-## 10. Betriebsferien verwalten
+## 11. Betriebsferien verwalten
 
 Betriebsferien sind betriebsweite Schließzeiten, die für alle Mitarbeiter automatisch als Abwesenheit eingetragen werden.
 
@@ -352,160 +338,153 @@ Betriebsferien sind betriebsweite Schließzeiten, die für alle Mitarbeiter auto
 
 ### Betriebsferien anlegen
 
-1. Klicken Sie auf **„Neue Betriebsferien"**
-2. Füllen Sie das Formular aus:
-   - **Bezeichnung** (z. B. „Weihnachtsschließzeit 2026")
-   - **Von** (Startdatum)
-   - **Bis** (Enddatum)
+Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie auf **„Neue Betriebsferien"**:
+
+1. **Bezeichnung** (z. B. „Weihnachtsschließzeit 2026")
+2. **Von** (Startdatum) und **Bis** (Enddatum)
 3. Speichern
 
 **Was passiert automatisch:**
-- Alle aktiven Mitarbeiter erhalten für jeden Werktag im Zeitraum einen Abwesenheitseintrag vom Typ „Sonstiges"
-- Urlaubstage werden **nicht** verbraucht (Betriebsferien sind kein regulärer Urlaub)
+- Alle aktiven Mitarbeiter erhalten für jeden Werktag Abwesenheitseinträge (Typ: Sonstiges)
+- Urlaubstage werden **nicht** verbraucht
 - Wochenenden und gesetzliche Feiertage werden übersprungen
 
 ### Betriebsferien löschen
 
-Um Betriebsferien zu stornieren, klicken Sie auf das **Löschen-Symbol** in der Liste. Die entsprechenden Abwesenheitseinträge werden automatisch für alle Mitarbeiter entfernt.
-
-> **Hinweis:** Das Löschen von Betriebsferien storniert auch die automatisch erstellten Abwesenheitseinträge. Bereits manuell ergänzte Einträge im gleichen Zeitraum bleiben unberührt.
+Klicken Sie auf das Löschen-Symbol. Die Abwesenheitseinträge werden bei allen Mitarbeitern automatisch entfernt.
 
 ---
 
-## 11. ArbZG-Compliance-Berichte
+## 12. Import
 
-PraxisZeit überwacht automatisch die Einhaltung des Arbeitszeitgesetzes. Dieser Abschnitt erklärt die speziellen Compliance-Berichte.
+Unter **Import** können Sie Zeiteinträge oder Abwesenheitsdaten aus externen Quellen (z. B. CSV-Dateien) in das System importieren.
+
+Dieser Bereich ist für die initiale Datenübernahme oder die Massenbefüllung bei der Einführung von PraxisZeit vorgesehen.
+
+**Vorgehensweise:** Laden Sie die Vorlagendatei herunter, befüllen Sie sie gemäß der Vorgaben und laden Sie die Datei wieder hoch.
+
+---
+
+## 13. Einstellungen
+
+Unter **Einstellungen** konfigurieren Sie systemweite Parameter:
+
+- **Genehmigungspflicht für Urlaubsanträge** (alternativ auch über den Urlaubsanträge-Bereich konfigurierbar)
+- Weitere systemweite Konfigurationsoptionen
+
+---
+
+## 14. ArbZG-Compliance-Berichte
+
+PraxisZeit überwacht automatisch die Einhaltung des Arbeitszeitgesetzes.
 
 ![ArbZG-Berichte](screenshots/25-admin-arbzg-berichte.png)
 
-### Überblick der Compliance-Berichte
-
-Auf der Berichte-Seite finden Sie (weiter unten auf der Seite) die ArbZG-spezifischen Auswertungen:
+Die ArbZG-spezifischen Auswertungen finden Sie auf der **Berichte-Seite** weiter unten.
 
 ---
 
 ### §5 ArbZG – Ruhezeitverstöße
 
 **Gesetzliche Anforderung:**
-Nach §5 ArbZG müssen Arbeitnehmer nach Beendigung der täglichen Arbeitszeit eine ununterbrochene Ruhezeit von **mindestens 11 Stunden** haben, bevor sie wieder arbeiten dürfen.
+Nach § 5 ArbZG müssen Arbeitnehmer nach Beendigung der täglichen Arbeitszeit eine ununterbrochene Ruhezeit von **mindestens 11 Stunden** haben.
 
 [§5 ArbZG](https://www.gesetze-im-internet.de/arbzg/__5.html)
 
 **Was der Bericht zeigt:**
 - Alle Fälle, bei denen die 11-Stunden-Ruhezeit unterschritten wurde
-- Mitarbeitername, betroffene Daten (Tag 1 Ende → Tag 2 Beginn), tatsächliche Ruhezeit
+- Mitarbeitername, betroffene Daten, tatsächliche Ruhezeit
 
 **Handlungsbedarf:**
-- Ruhezeitverstöße müssen dokumentiert und Ursachen beseitigt werden
-- In dringenden Ausnahmefällen (§7 ArbZG) kann die Ruhezeit auf 9 Stunden verkürzt werden, wenn innerhalb von 4 Wochen der Ausgleich erfolgt
+- Ruhezeitverstöße dokumentieren und Ursachen beseitigen
+- In Ausnahmefällen (§ 7 ArbZG) kann die Ruhezeit auf 9 Stunden verkürzt werden (Ausgleich innerhalb von 4 Wochen)
 
 ---
 
 ### §6 ArbZG – Nachtarbeit-Auswertung
 
 **Gesetzliche Anforderung:**
-Nach §6 ArbZG haben Nachtarbeitnehmer (mehr als 48 Arbeitstage pro Jahr zwischen 23:00 und 6:00 Uhr) besondere Schutzrechte. Für sie gilt eine reduzierte tägliche Höchstarbeitszeit von **8 Stunden** (statt 10 Stunden).
+Nachtarbeitnehmer (> 48 Nachtarbeitstage/Jahr, 23–6 Uhr) haben eine reduzierte Tageshöchstarbeitszeit von **8 Stunden**.
 
 [§6 ArbZG](https://www.gesetze-im-internet.de/arbzg/__6.html)
 
 **Was der Bericht zeigt:**
-- Mitarbeiter, die im gewählten Jahr 48+ Nachtarbeitstage hatten
-- Anzahl der Nachtarbeitstage
-- Warnungen bei Überschreitung der 8-Stunden-Grenze
+- Mitarbeiter mit 48+ Nachtarbeitstagen im gewählten Jahr
+- Anzahl der Nachtarbeitstage und 8h-Warnungen
 
 **Handlungsbedarf:**
-- Nachtarbeitnehmer müssen regelmäßig arbeitsmedizinisch untersucht werden (§6 Abs. 3 ArbZG)
-- Bei mehr als 48 Nachtarbeitstagen gilt die 8h-Grenze statt der 10h-Grenze
+- Regelmäßige arbeitsmedizinische Untersuchung anbieten (§ 6 Abs. 3 ArbZG)
 
 ---
 
 ### §11 ArbZG – Sonntagsarbeit (15-freie-Sonntage-Regel)
 
 **Gesetzliche Anforderung:**
-Nach §11 ArbZG müssen Arbeitnehmer mindestens **15 Sonntage pro Jahr** beschäftigungsfrei haben.
+Arbeitnehmer müssen mindestens **15 Sonntage pro Jahr** beschäftigungsfrei haben.
 
 [§11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html)
 
 **Was der Bericht zeigt:**
 - Anzahl der gearbeiteten Sonntage pro Mitarbeiter im gewählten Jahr
-- Warnung, wenn die 15 freien Sonntage nicht eingehalten werden
-- Wert: 52 Sonntage im Jahr – 15 Pflichtfreie = **max. 37 Arbeitsonntage**
-
-**Handlungsbedarf:**
-- Bei drohender Überschreitung: Dienstplanung anpassen
-- Alle Sonntagseinsätze müssen mit einem Ausnahmegrund dokumentiert werden (Feld im Zeiteintrag)
+- Warnung bei Annäherung an oder Überschreitung der 37 Arbeitsonntage (52 − 15)
 
 ---
 
 ### §11 ArbZG – Ersatzruhetag-Tracking
 
 **Gesetzliche Anforderung:**
-Wer am Sonntag arbeitet, hat gemäß §11 ArbZG Anspruch auf einen **Ersatzruhetag**:
-- Bei Sonntagsarbeit: Ersatzruhetag innerhalb der folgenden **2 Wochen**
-- Bei Feiertagsarbeit: Ersatzruhetag innerhalb der folgenden **8 Wochen**
-
-[§11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html)
+Bei Sonntagsarbeit: Ersatzruhetag innerhalb von **2 Wochen**.
+Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
 
 **Was der Bericht zeigt:**
 - Alle Sonntagseinsätze ohne dokumentierten Ersatzruhetag
-- Frist bis zur Gewährung des Ersatzruhetags
-- Status: Innerhalb Frist / Frist abgelaufen
+- Frist und Status (innerhalb Frist / Frist abgelaufen)
 
 **Handlungsbedarf:**
-- Überwachen Sie offene Ersatzruhetag-Verpflichtungen regelmäßig
-- Tragen Sie gewährte Ersatzruhetage als Abwesenheit (Typ: Sonstiges) ein
+- Gewährte Ersatzruhetage als Abwesenheit (Typ: Sonstiges) eintragen
 
 ---
 
 ### Automatische Warnungen im Alltag
 
-Neben den Berichten prüft PraxisZeit beim Erstellen und Bearbeiten von Zeiteinträgen automatisch:
-
 | Warnung | Auslöser | Rechtsgrundlage |
 |---------|----------|----------------|
-| **Tageshöchstgrenze** | > 10h Arbeitszeit | §3 ArbZG |
-| **Pausenpflicht** | < 30 min bei >6h / < 45 min bei >9h | §4 ArbZG |
-| **Sonntagsarbeit** | Eintrag an einem Sonntag oder Feiertag | §9 ArbZG |
-| **Wochenhöchstgrenze** | > 48h in einer Woche | §14 ArbZG |
-| **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | §6 ArbZG |
+| **Tageshöchstgrenze** | > 10h Arbeitszeit | § 3 ArbZG |
+| **8h-Warnung** | > 8h Arbeitszeit | § 3 ArbZG |
+| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h | § 4 ArbZG |
+| **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag | § 9 ArbZG |
+| **Wochenhöchstgrenze** | > 48h/Woche | § 14 ArbZG |
+| **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | § 6 ArbZG |
 
 ---
 
-## 12. Rechtliche Grundlagen
-
-PraxisZeit wurde so entwickelt, dass die wichtigsten Anforderungen des **Arbeitszeitgesetzes (ArbZG)** automatisch durchgesetzt und dokumentiert werden.
-
-**Referenz:** [Arbeitszeitgesetz – Volltext](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)
-
-### Überblick der implementierten §§
+## 15. Rechtliche Grundlagen
 
 | Paragraph | Inhalt | Umsetzung in PraxisZeit |
 |-----------|--------|------------------------|
-| [§3](https://www.gesetze-im-internet.de/arbzg/__3.html) | Werktägliche Arbeitszeit max. 8h (verlängerbar auf 10h) | Warnung bei >8h, Sperrung bei >10h Zeiteintrag |
-| [§4](https://www.gesetze-im-internet.de/arbzg/__4.html) | Ruhepausen: 30 min ab 6h, 45 min ab 9h Arbeitszeit | Automatische Pausenvalidierung bei jedem Eintrag |
-| [§5](https://www.gesetze-im-internet.de/arbzg/__5.html) | Ruhezeit zwischen zwei Arbeitstagen min. 11 Stunden | Ruhezeitbericht im Admin-Bereich |
-| [§6](https://www.gesetze-im-internet.de/arbzg/__6.html) | Nachtarbeit 23–6 Uhr: besondere Schutzrechte (max. 8h/Tag für Nachtarbeitnehmer) | Nachtarbeit-Flag, 8h-Warnung, Nachtarbeit-Report |
-| [§9](https://www.gesetze-im-internet.de/arbzg/__9.html) | Sonn- und Feiertagsruhe | Warnung bei Sonntags- oder Feiertagseintrag |
-| [§10](https://www.gesetze-im-internet.de/arbzg/__10.html) | Ausnahmen Sonn-/Feiertagsarbeit: Dokumentationspflicht | Pflichtfeld „Ausnahmegrund" bei Sonntagseintrag |
+| [§3](https://www.gesetze-im-internet.de/arbzg/__3.html) | Max. 8h/Tag (bis 10h mit Ausgleich) | Warnung > 8h, Sperrung > 10h |
+| [§4](https://www.gesetze-im-internet.de/arbzg/__4.html) | Ruhepausen: 30 Min. ab 6h, 45 Min. ab 9h | Automatische Pausenvalidierung |
+| [§5](https://www.gesetze-im-internet.de/arbzg/__5.html) | Ruhezeit mind. 11h | Ruhezeitbericht im Admin-Bereich |
+| [§6](https://www.gesetze-im-internet.de/arbzg/__6.html) | Nachtarbeit 23–6 Uhr: max. 8h für Nachtarbeitnehmer | Nachtarbeit-Flag, 8h-Warnung, Nachtarbeit-Report |
+| [§9](https://www.gesetze-im-internet.de/arbzg/__9.html) | Sonn- und Feiertagsruhe | Warnung bei Eintrag an Sonntag/Feiertag |
+| [§10](https://www.gesetze-im-internet.de/arbzg/__10.html) | Ausnahmen Sonn-/Feiertagsarbeit | Pflichtfeld „Ausnahmegrund" |
 | [§11](https://www.gesetze-im-internet.de/arbzg/__11.html) | Min. 15 freie Sonntage/Jahr; Ersatzruhetag | 15-freie-Sonntage-Report; Ersatzruhetag-Tracking |
-| [§14](https://www.gesetze-im-internet.de/arbzg/__14.html) | Außergewöhnliche Fälle: max. 48h/Woche als Warnschwelle | Wochenwarnung bei >48h |
-| [§16](https://www.gesetze-im-internet.de/arbzg/__16.html) | Aufzeichnungspflicht: 2 Jahre Aufbewahrung | Excel-Exporte; Audit-Log; Datenretention |
-| [§18](https://www.gesetze-im-internet.de/arbzg/__18.html) | Ausnahmen für leitende Angestellte | `ArbZG-Ausnahme`-Flag auf Benutzerebene |
+| [§14](https://www.gesetze-im-internet.de/arbzg/__14.html) | Außergewöhnliche Fälle: 48h/Woche Warnschwelle | Wochenwarnung > 48h |
+| [§16](https://www.gesetze-im-internet.de/arbzg/__16.html) | Aufzeichnungspflicht: 2 Jahre Aufbewahrung | Excel-Exporte; Audit-Log |
+| [§18](https://www.gesetze-im-internet.de/arbzg/__18.html) | Ausnahmen für leitende Angestellte | `ArbZG-Prüfungen aussetzen`-Flag |
 
 ### Admin-Pflichten im Überblick
 
-Als Admin sind Sie verantwortlich für:
-
-1. **Regelmäßige Datenexporte** (mindestens monatlich) und sichere Aufbewahrung über 2 Jahre
+1. **Regelmäßige Datenexporte** (mindestens monatlich) und sichere Aufbewahrung für 2 Jahre
 2. **Zeitnahe Prüfung** von Korrekturanträgen
 3. **Überwachung der ArbZG-Berichte** – besonders §5 (Ruhezeit) und §11 (Sonntage)
 4. **Dokumentation von Ausnahmen** (Sonntagsarbeit, verlängerte Arbeitszeiten)
 5. **Aktuelle Benutzerdaten** – bei Stundenänderungen immer Wirkungsdatum eintragen
-6. **Regelmäßiger Abgleich** Urlaubskonten mit tatsächlichem Urlaubsanspruch
+6. **Abgleich Urlaubskonten** mit tatsächlichem Urlaubsanspruch
 
-> **Haftungshinweis:** PraxisZeit unterstützt Sie bei der Einhaltung des ArbZG, ersetzt aber keine Rechtsberatung. Bei Unsicherheiten zu arbeitsrechtlichen Fragen wenden Sie sich an einen Fachanwalt für Arbeitsrecht oder Ihren Arbeitgeberverband.
+> **Haftungshinweis:** PraxisZeit unterstützt Sie bei der Einhaltung des ArbZG, ersetzt aber keine Rechtsberatung. Bei arbeitsrechtlichen Fragen wenden Sie sich an einen Fachanwalt für Arbeitsrecht.
 
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Februar 2026*
+*Stand: März 2026*

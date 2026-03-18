@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 1.0 · **Stand:** Februar 2026
+**Version:** 2.0 · **Stand:** März 2026
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -14,13 +14,14 @@
    - 3.1 [Arbeitszeit eintragen](#31-arbeitszeit-eintragen)
    - 3.2 [Eintrag bearbeiten oder löschen](#32-eintrag-bearbeiten-oder-löschen)
    - 3.3 [Korrekturantrag stellen](#33-korrekturantrag-stellen)
+   - 3.4 [Anträge verwalten (Anträge-Tab)](#34-anträge-verwalten-anträge-tab)
 4. [Abwesenheiten](#4-abwesenheiten)
    - 4.1 [Abwesenheit eintragen](#41-abwesenheit-eintragen)
-   - 4.2 [Abwesenheit löschen](#42-abwesenheit-löschen)
-5. [Korrekturanträge verwalten](#5-korrekturanträge-verwalten)
-6. [Profil & Passwort](#6-profil--passwort)
-7. [Mobil-Nutzung](#7-mobil-nutzung)
-8. [Häufige Fragen (FAQ)](#8-häufige-fragen-faq)
+   - 4.2 [Urlaubsantrag stellen (bei Genehmigungspflicht)](#42-urlaubsantrag-stellen-bei-genehmigungspflicht)
+   - 4.3 [Abwesenheit löschen](#43-abwesenheit-löschen)
+5. [Profil & Passwort](#5-profil--passwort)
+6. [Mobil-Nutzung](#6-mobil-nutzung)
+7. [Häufige Fragen (FAQ)](#7-häufige-fragen-faq)
 
 ---
 
@@ -37,7 +38,7 @@
 3. Klicken Sie auf **Anmelden**
 
 > **Passwort vergessen?** Wenden Sie sich an Ihren Administrator.
-> Ein Link „Dokumentation" am unteren Rand öffnet dieses Handbuch direkt aus der App.
+> Am unteren Rand der Seite finden Sie unter „Dokumentation" direkte Download-Links zum Handbuch und Cheat-Sheet.
 
 ---
 
@@ -53,17 +54,16 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 | Kachel | Was wird angezeigt |
 |--------|-------------------|
-| **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats. Grün = Plus, Rot = Minus |
-| **Überstundenkonto** | Kumulierter Saldo aller Monate in diesem Jahr |
+| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll (grün = eingestempelt, rot = noch nicht eingestempelt an einem Arbeitstag) |
+| **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats (H:MM) |
+| **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
-| **Urlaubscountdown** | Tage bis zum nächsten geplanten Urlaub |
 
-> 💡 **Warum wird das Urlaubskonto in Tagen angezeigt?**
-> Der Resturlaub richtet sich nach Ihrem individuellen Jahresbudget (Vollzeit vs. Teilzeit). Das Budget entspricht Ihren vertraglich vereinbarten Urlaubstagen.
+> **Zeitanzeige:** Stunden werden im Format H:MM angezeigt (z. B. „8:30" für 8 Stunden 30 Minuten). Negative Salden werden mit einem Minus-Zeichen dargestellt (z. B. „-2:15").
 
 ### Monatsübersicht (Tabelle)
 
-Zeigt die letzten Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto.
+Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto.
 
 - **Grün** = Plusstunden
 - **Rot** = Minusstunden
@@ -74,7 +74,7 @@ Zeigt die Abwesenheitstage des laufenden Jahres nach Typ (Urlaub, Krank, Fortbil
 
 ### Geplante Abwesenheiten im Team
 
-Übersicht der in den nächsten 3 Monaten geplanten Abwesenheiten Ihrer Kolleginnen und Kollegen – so sehen Sie auf einen Blick, wer wann fehlt.
+Übersicht der in den nächsten 3 Monaten geplanten Abwesenheiten Ihrer Kolleginnen und Kollegen.
 
 ---
 
@@ -82,11 +82,17 @@ Zeigt die Abwesenheitstage des laufenden Jahres nach Typ (Urlaub, Krank, Fortbil
 
 Klicken Sie in der linken Navigation auf **Zeiterfassung**.
 
-![Zeiterfassung – Monatsansicht](screenshots/03-ma-zeiterfassung.png)
+![Zeiterfassung – Einträge](screenshots/03-ma-zeiterfassung.png)
 
-Die Zeiterfassung zeigt alle Einträge des aktuell gewählten Monats.
+Die Seite gliedert sich in **drei Tabs**:
 
-**Spalten der Tabelle:**
+| Tab | Inhalt |
+|-----|--------|
+| **Einträge** | Monatsübersicht aller Zeiteinträge + Eingabeformular |
+| **Journal** | Tagesjournal-Ansicht der Einträge |
+| **Anträge** | Ihre gestellten Änderungsanträge |
+
+**Spalten der Einträge-Tabelle:**
 
 | Spalte | Bedeutung |
 |--------|-----------|
@@ -97,14 +103,13 @@ Die Zeiterfassung zeigt alle Einträge des aktuell gewählten Monats.
 | **Pause** | Pausenzeit in Minuten |
 | **Netto** | Tatsächliche Nettoarbeitszeit (ohne Pause) |
 | **Notiz** | Optionaler Kommentar |
-| **Aktionen** | Sperren, Korrekturantrag, Löschen |
+| **Aktionen** | Bearbeiten, Löschen, Korrekturantrag |
 
 **Monat wechseln:** Mit den Pfeilen `<` und `>` neben dem Monatsnamen blättern Sie zwischen den Monaten.
 
-> **Rechtlicher Hintergrund:** Die Aufzeichnungspflicht der Arbeitszeit ergibt sich aus
-> [§ 16 Abs. 2 ArbZG](https://www.gesetze-im-internet.de/arbzg/__16.html):
-> *„Der Arbeitgeber ist verpflichtet, die über 8 Stunden hinausgehende Arbeitszeit … aufzuzeichnen."*
-> PraxisZeit dokumentiert automatisch alle täglichen Zeiten und macht diese auf Verlangen abrufbar.
+> **Rechtlicher Hintergrund:** Die Aufzeichnungspflicht ergibt sich aus
+> [§ 16 Abs. 2 ArbZG](https://www.gesetze-im-internet.de/arbzg/__16.html).
+> PraxisZeit dokumentiert alle täglichen Zeiten und hält sie für 2 Jahre vor.
 
 ---
 
@@ -112,62 +117,83 @@ Die Zeiterfassung zeigt alle Einträge des aktuell gewählten Monats.
 
 Klicken Sie oben rechts auf **+ Neuer Eintrag**.
 
-![Zeiteintrag Formular](screenshots/05-ma-zeiteintrag-formular.png)
+![Zeiteintrag Formular](screenshots/04-ma-zeiteintrag-formular.png)
+
+Das Eingabeformular erscheint direkt oberhalb der Eintrags-Tabelle.
 
 **Felder ausfüllen:**
 
-1. **Datum** – Wählen Sie den Arbeitstag aus
+1. **Datum** – Wählen Sie den Arbeitstag aus (Vorbelegt: heute)
 2. **Von** – Arbeitsbeginn (Format: `08:00`)
 3. **Bis** – Arbeitsende (Format: `17:00`)
 4. **Pause (Min.)** – Pausenzeit in Minuten (z. B. `30`)
-5. **Notiz** – Optional: Anmerkung zum Tag
+5. **Notiz** – Optional: Anmerkung zum Tag (keine Gesundheitsdaten eintragen)
 
-Klicken Sie dann auf **Speichern**.
+Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das Formular.
 
-> ⚠️ **Warnung bei langen Arbeitszeiten:**
-> PraxisZeit prüft Ihre Eingaben automatisch auf Einhaltung des Arbeitszeitgesetzes:
+> **Warnung bei langen Arbeitszeiten:**
+> PraxisZeit prüft Eingaben automatisch auf ArbZG-Einhaltung:
 >
-> - **> 8 Stunden Netto:** Sie erhalten einen Hinweis gem. [§ 3 ArbZG](https://www.gesetze-im-internet.de/arbzg/__3.html)
->   *„Die werktägliche Arbeitszeit der Arbeitnehmer darf 8 Stunden nicht überschreiten."* (Überschreitung bis 10h möglich, wenn Ausgleich erfolgt)
-> - **> 10 Stunden Netto:** Eintrag wird blockiert (Tageshöchstgrenze nach § 3 ArbZG)
+> - **> 8 Stunden Netto:** Hinweis gem. [§ 3 ArbZG](https://www.gesetze-im-internet.de/arbzg/__3.html)
+> - **> 10 Stunden Netto:** Eintrag wird blockiert (Tageshöchstgrenze)
 > - **Zu kurze Pause:** Warnung gem. [§ 4 ArbZG](https://www.gesetze-im-internet.de/arbzg/__4.html):
->   Bei > 6h Arbeit → mind. 30 Min. Pause; bei > 9h → mind. 45 Min. Pause
+>   bei > 6h → mind. 30 Min.; bei > 9h → mind. 45 Min.
 
 ---
 
 ### 3.2 Eintrag bearbeiten oder löschen
 
-In der Spalte **Aktionen** finden Sie drei Icons:
+In der Spalte **Aktionen** finden Sie Buttons je nach Zustand des Eintrags:
 
-| Icon | Funktion |
-|------|----------|
-| 🔒 Schloss | Eintrag sperren (kann danach nur der Admin ändern) |
-| 📝 Korrektur | Korrekturantrag stellen (wenn der Eintrag bereits gesperrt ist) |
-| 🗑 Löschen | Eintrag löschen (nur wenn nicht gesperrt) |
+| Button | Funktion |
+|--------|----------|
+| **Bearbeiten** | Öffnet das Formular mit den bestehenden Werten (nur für entsperrte, aktuelle Einträge) |
+| **Löschen** | Entfernt den Eintrag dauerhaft (nur wenn nicht gesperrt) |
+| **Änderungsantrag** | Korrekturantrag stellen (für gesperrte oder ältere Einträge) |
+| **Löschantrag** | Antrag auf Löschung eines gesperrten Eintrags stellen |
 
-> **Warum können gesperrte Einträge nicht direkt geändert werden?**
-> Sobald ein Eintrag vom Administrator gesperrt wird, gilt er als bestätigt. Korrekturen erfordern dann einen formellen Antrag (→ [Abschnitt 3.3](#33-korrekturantrag-stellen)).
-> Dies dient der Nachvollziehbarkeit gem. [§ 16 ArbZG](https://www.gesetze-im-internet.de/arbzg/__16.html) (Aufzeichnungspflicht).
+> **Warum können ältere Einträge nicht direkt geändert werden?**
+> Nach einer Sperrfrist gelten Einträge als bestätigt. Korrekturen erfordern dann einen formellen Antrag (→ [Abschnitt 3.3](#33-korrekturantrag-stellen)).
+> Dies dient der Nachvollziehbarkeit gem. [§ 16 ArbZG](https://www.gesetze-im-internet.de/arbzg/__16.html).
 
 ---
 
 ### 3.3 Korrekturantrag stellen
 
-Falls ein Eintrag gesperrt ist oder Sie nachträglich eine Korrektur beantragen möchten, klicken Sie oben rechts auf **Antrag** (orangener Button).
+Wenn ein Eintrag gesperrt ist oder Sie nachträglich eine Korrektur beantragen möchten, klicken Sie in der Zeile des betroffenen Eintrags auf den Button **Änderungsantrag**.
 
-![Korrekturantrag Formular](screenshots/09-ma-korrekturantrag-formular.png)
+Ein Dialog öffnet sich mit dem Vergleich von aktuellem und gewünschtem Eintrag:
 
-**Antrag ausfüllen:**
+1. Passen Sie die **Von**, **Bis** und **Pause**-Felder auf die korrekten Werte an
+2. Tragen Sie eine **Begründung** ein (Pflichtfeld)
+3. Klicken Sie auf **Antrag stellen**
 
-1. Wählen Sie den betreffenden **Zeiteintrag** (Datum)
-2. Tragen Sie die **gewünschten neuen Zeiten** ein (Von, Bis, Pause)
-3. Begründen Sie die Korrektur im Feld **Grund**
-4. Klicken Sie auf **Absenden**
+Für eine vollständige Löschung eines gesperrten Eintrags klicken Sie stattdessen auf **Löschantrag**, geben eine Begründung ein und bestätigen.
 
 **Was danach passiert:**
 - Der Antrag erscheint beim Administrator zur Prüfung
-- Sie sehen den Status unter **Änderungsanträge** (→ [Abschnitt 5](#5-korrekturanträge-verwalten))
+- Sie sehen den Status unter **Zeiterfassung → Tab „Anträge"**
 - Bei Ablehnung erhalten Sie eine Begründung
+
+---
+
+### 3.4 Anträge verwalten (Anträge-Tab)
+
+Wechseln Sie im Tab-Menü der Zeiterfassung auf **Anträge**.
+
+![Änderungsanträge](screenshots/08-ma-korrekturantraege.png)
+
+Hier sehen Sie alle Ihre gestellten Korrekturanträge mit ihrem aktuellen Status:
+
+| Status | Bedeutung |
+|--------|-----------|
+| **Offen** | Antrag wartet auf Prüfung durch den Administrator |
+| **Genehmigt** | Antrag wurde genehmigt, Zeiteintrag wurde korrigiert |
+| **Abgelehnt** | Antrag wurde abgelehnt – Begründung wird angezeigt |
+
+**Filter:** Verwenden Sie die Tabs **Alle / Offen / Genehmigt / Abgelehnt**.
+
+**Antrag zurückziehen:** Solange ein Antrag noch **Offen** ist, können Sie ihn über den Button **Zurückziehen** stornieren.
 
 ---
 
@@ -177,9 +203,12 @@ Klicken Sie in der Navigation auf **Abwesenheiten**.
 
 ![Abwesenheitskalender](screenshots/06-ma-abwesenheiten-kalender.png)
 
-Die Seite zeigt:
-- **Kalender oben:** Monats- oder Jahresansicht aller Team-Abwesenheiten (farbcodiert)
-- **Liste unten:** Ihre eigenen Abwesenheiten mit Datum, Typ und Stunden
+Die Seite zeigt zwei Tabs:
+
+| Tab | Inhalt |
+|-----|--------|
+| **Kalender** | Monats- oder Jahresansicht aller Team-Abwesenheiten |
+| **Meine Anträge** | Nur sichtbar wenn Genehmigungspflicht aktiv – Ihre Urlaubsanträge |
 
 **Legende der Farben:**
 
@@ -201,57 +230,61 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 **Felder:**
 
 1. **Datum** – Beginn der Abwesenheit
-2. **Zeitraum** – Aktivieren Sie diese Option für mehrere Tage, dann erscheint ein Enddatum-Feld. Wochenenden und Feiertage werden automatisch ausgeschlossen.
+2. **Zeitraum** – Aktivieren Sie diese Option für mehrere Tage; Wochenenden und Feiertage werden automatisch ausgeschlossen
 3. **Typ** – Urlaub / Krank / Fortbildung / Sonstiges
-4. **Notiz** – Optional (z. B. Krankheitsnotiz, Fortbildungsthema)
+4. **Notiz** – Optional
 5. **Speichern**
 
-> 📅 **Hinweis zu Urlaubstagen:**
-> Das System berechnet automatisch, wie viele Urlaubstage eingetragen werden und zieht diese von Ihrem Budget ab. Das Budget richtet sich nach Ihrer wöchentlichen Arbeitszeit.
+> **Hinweis zu Urlaubstagen:**
+> Das System berechnet automatisch, wie viele Urlaubstage eingetragen werden und zieht diese von Ihrem Budget ab.
 
-**Abwesenheitstypen und ihre Bedeutung:**
+**Abwesenheitstypen:**
 
 | Typ | Wann eintragen |
 |-----|---------------|
 | **Urlaub** | Genehmigter Erholungsurlaub |
-| **Krank** | Krankheitstage (Bitte Krankmeldung gemäß Praxisregelung einreichen) |
+| **Krank** | Krankheitstage – Krankmeldung nach Praxisregelung einreichen |
 | **Fortbildung** | Externe Schulungen, Seminare, Pflichtfortbildungen |
 | **Sonstiges** | Arzttermine, Behördengänge, sonstige Freistellungen |
 
----
-
-### 4.2 Abwesenheit löschen
-
-In der Liste Ihrer Abwesenheiten befindet sich rechts der Button **Löschen**. Bestätigen Sie die Löschung im Dialogfenster.
-
-> ⚠️ Einträge, die bereits vom Administrator bestätigt wurden, können nicht mehr selbst gelöscht werden. Wenden Sie sich in diesem Fall an Ihren Administrator.
+> **Gut zu wissen – Kranktage und Stundensaldo:** Kranktage werden nach § 3 EntgFG als gearbeitete Stunden angerechnet (Soll-Stunden als Ist), sodass keine Minusstunden entstehen.
 
 ---
 
-## 5. Korrekturanträge verwalten
+### 4.2 Urlaubsantrag stellen (bei Genehmigungspflicht)
 
-Klicken Sie in der Navigation auf **Änderungsanträge**.
+Wenn Ihr Administrator die **Genehmigungspflicht für Urlaub** aktiviert hat:
 
-![Korrekturanträge](screenshots/08-ma-korrekturantraege.png)
+1. Klicken Sie auf **+ Abwesenheit eintragen**
+2. Wählen Sie Typ **Urlaub**, füllen Sie Datum und ggf. Zeitraum aus
+3. Klicken Sie auf **Speichern**
 
-Hier sehen Sie alle Ihre Korrekturanträge mit ihrem Status:
+Statt direkt eingetragen zu werden, erscheint die Meldung: **„Urlaubsantrag gestellt"**.
+
+Die App wechselt automatisch zum Tab **„Meine Anträge"**, wo Sie den Status verfolgen können.
+
+**Statusbedeutungen:**
 
 | Status | Bedeutung |
 |--------|-----------|
-| **Offen** | Antrag wartet auf Prüfung durch den Administrator |
-| **Genehmigt** | Antrag wurde genehmigt, Zeitstempel wurde korrigiert |
-| **Abgelehnt** | Antrag wurde abgelehnt – Begründung wird angezeigt |
+| **Offen** | Antrag wartet auf Entscheidung des Administrators |
+| **Genehmigt** | Urlaub wurde genehmigt und in Ihrem Kalender eingetragen |
+| **Abgelehnt** | Antrag abgelehnt – Ablehnungsgrund wird angezeigt |
+| **Zurückgezogen** | Sie haben den Antrag selbst zurückgezogen |
 
-**Filter:** Verwenden Sie die Tabs **Alle / Offen / Genehmigt / Abgelehnt**, um die Ansicht einzuschränken.
-
-> **Tipp:** Bei einem abgelehnten Antrag lesen Sie die Begründung des Administrators. Häufige Gründe für Ablehnung:
-> - Fehlender Nachweis für geänderte Pausenzeiten (§ 4 ArbZG)
-> - Überschreitung der täglichen Höchstarbeitszeit (§ 3 ArbZG)
-> - Zeitraum liegt zu weit in der Vergangenheit
+**Antrag zurückziehen:** Unter **„Meine Anträge"** klicken Sie auf das Löschen-Symbol neben einem offenen Antrag und bestätigen.
 
 ---
 
-## 6. Profil & Passwort
+### 4.3 Abwesenheit löschen
+
+In der Listenansicht Ihrer Abwesenheiten befindet sich der Button **Löschen**. Bestätigen Sie die Löschung im Dialogfenster.
+
+> Bereits vom Administrator bestätigte Einträge können nicht mehr selbst gelöscht werden. Wenden Sie sich an Ihren Administrator.
+
+---
+
+## 5. Profil & Passwort
 
 Klicken Sie in der Navigation auf **Profil**.
 
@@ -259,23 +292,31 @@ Klicken Sie in der Navigation auf **Profil**.
 
 Hier sehen Sie Ihre **persönlichen Daten** (vom Administrator hinterlegt):
 
-- Vor- und Nachname
-- Benutzername
-- E-Mail-Adresse (falls hinterlegt)
-- Wöchentliche Soll-Stunden und Urlaubstage
+- Vor- und Nachname, Benutzername, E-Mail-Adresse
+- Rolle, Wochenstunden, Urlaubstage, Status
 
 ### Passwort ändern
 
-1. Geben Sie Ihr **aktuelles Passwort** ein
-2. Geben Sie ein **neues Passwort** ein (mind. 10 Zeichen, Großbuchstabe, Kleinbuchstabe, Ziffer)
-3. Wiederholen Sie das neue Passwort
-4. Klicken Sie auf **Passwort ändern**
+Klicken Sie in der Karte **Passwort ändern** auf **Ändern**.
 
-> 🔒 **Sicherheitshinweis:** Wählen Sie ein sicheres Passwort und geben Sie es nicht weiter. Nach einer Passwortänderung werden alle anderen aktiven Sitzungen automatisch abgemeldet.
+1. Geben Sie Ihr **aktuelles Passwort** ein
+2. Geben Sie ein **neues Passwort** ein
+   - Mindestens 10 Zeichen
+   - Mindestens 1 Großbuchstabe
+   - Mindestens 1 Kleinbuchstabe
+   - Mindestens 1 Ziffer
+3. Wiederholen Sie das neue Passwort
+4. Klicken Sie auf **Speichern**
+
+> **Sicherheitshinweis:** Nach einer Passwortänderung werden alle anderen aktiven Sitzungen automatisch abgemeldet.
+
+### Weitere Einstellungen
+
+Unter **Weitere Einstellungen** (aufklappbar) können Sie persönliche Darstellungsoptionen anpassen, z. B. Ihre Kalenderfarbe im Teamkalender.
 
 ---
 
-## 7. Mobil-Nutzung
+## 6. Mobil-Nutzung
 
 PraxisZeit ist vollständig für mobile Geräte optimiert.
 
@@ -283,43 +324,56 @@ PraxisZeit ist vollständig für mobile Geräte optimiert.
 |:---:|:---:|:---:|
 | ![Mobile Dashboard](screenshots/11-ma-mobile-dashboard.png) | ![Mobile Zeiterfassung](screenshots/12-ma-mobile-zeiterfassung.png) | ![Mobile Menu](screenshots/13-ma-mobile-menu.png) |
 
-**Navigation auf dem Smartphone:**
+### Navigation auf dem Smartphone
 
-1. Tippen Sie auf das **Hamburger-Menü** (☰) oben links
-2. Das Navigationsmenü öffnet sich von der Seite
-3. Tippen Sie auf den gewünschten Bereich
-4. Das Menü schließt sich automatisch
+Am oberen Rand erscheint ein **Hamburger-Menü** (☰). Tippen Sie darauf, um das vollständige Navigationsmenü zu öffnen.
 
-**Installation als App (PWA):**
+Am unteren Rand befindet sich eine **Tab-Leiste** mit Direktzugriffen:
 
-Auf unterstützten Geräten (iOS/Android) können Sie PraxisZeit wie eine App installieren:
+| Tab | Funktion |
+|-----|---------|
+| **Home** | Dashboard |
+| **Journal** | Zeiterfassungs-Journal |
+| **Abwes.** | Abwesenheitskalender |
+| **Profil** | Ihr Profil |
+
+### Neuen Eintrag auf dem Smartphone
+
+Tippen Sie auf den **+ Button** oben rechts auf der Zeiterfassungsseite, um das Eingabeformular zu öffnen.
+
+### Installation als App (PWA)
+
+Auf unterstützten Geräten können Sie PraxisZeit wie eine App installieren:
 - **Android (Chrome):** Tippen Sie auf „Zum Startbildschirm hinzufügen"
 - **iOS (Safari):** Teilen-Symbol → „Zum Home-Bildschirm"
 
 ---
 
-## 8. Häufige Fragen (FAQ)
+## 7. Häufige Fragen (FAQ)
 
 **F: Ich sehe meinen Eintrag nicht mehr, obwohl ich ihn gespeichert habe.**
 A: Überprüfen Sie, ob Sie den richtigen Monat anzeigen. Nutzen Sie die Pfeile `<` `>` neben dem Monatsnamen.
 
 **F: Ich bekomme eine Warnung bei der Eingabe meiner Arbeitszeit.**
 A: PraxisZeit prüft die gesetzlichen Grenzen:
-- Netto > 8h: Hinweis (zulässig, wenn Ausgleich vorhanden – § 3 ArbZG)
+- Netto > 8h: Hinweis (zulässig mit Ausgleich – § 3 ArbZG)
 - Netto > 10h: Blockiert (Tageshöchstgrenze – § 3 ArbZG)
 - Zu kurze Pause: Warnung (§ 4 ArbZG – bei >6h mind. 30 Min., bei >9h mind. 45 Min.)
 
 **F: Wie berechnet sich mein Urlaubsanspruch?**
-A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet. Die genaue Einstellung nimmt Ihr Administrator vor.
+A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet.
 
 **F: Was bedeutet der rote „-" Wert bei Überstunden?**
-A: Ein negativer Wert bedeutet, dass Sie weniger gearbeitet haben als Ihre Sollstunden. Ein positiver Wert bedeutet Mehrarbeit (Überstunden).
+A: Ein negativer Wert bedeutet, dass Sie weniger gearbeitet haben als Ihre Sollstunden.
 
 **F: Kann ich eine Abwesenheit für mehrere Tage eintragen?**
-A: Ja. Im Abwesenheitsformular aktivieren Sie die Option **Zeitraum** und geben Start- und Enddatum ein. Das System trägt automatisch nur Werktage (Mo–Fr) ein und überspringt Wochenenden und Feiertage.
+A: Ja. Im Abwesenheitsformular aktivieren Sie die Option **Zeitraum** und geben Start- und Enddatum ein. Das System trägt nur Werktage (Mo–Fr) ein und überspringt Wochenenden und Feiertage.
+
+**F: Wie stelle ich einen Korrekturantrag für einen alten Eintrag?**
+A: Navigieren Sie zu **Zeiterfassung → Tab „Einträge"**, suchen Sie den betroffenen Eintrag und klicken Sie auf den **Änderungsantrag**-Button in der Aktionsspalte. Bei entsperrten Einträgen nutzen Sie direkt den **Bearbeiten**-Button.
 
 **F: Was passiert bei Sonntagsarbeit?**
-A: Sonntagsarbeit wird im System markiert. Ihr Administrator wird informiert. Als Ausgleich steht Ihnen gem. [§ 11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html) ein Ersatzruhetag zu (innerhalb von 2 Wochen, oder 8 Wochen bei Feiertagsarbeit).
+A: Sonntagsarbeit wird markiert. Als Ausgleich steht Ihnen gem. [§ 11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html) ein Ersatzruhetag zu (innerhalb von 2 Wochen).
 
 **F: Ich habe mein Passwort vergessen.**
 A: Wenden Sie sich an Ihren Administrator. Er kann Ihr Passwort zurücksetzen.
@@ -328,7 +382,7 @@ A: Wenden Sie sich an Ihren Administrator. Er kann Ihr Passwort zurücksetzen.
 
 ## Rechtliche Grundlagen
 
-PraxisZeit unterstützt die Einhaltung des **Arbeitszeitgesetzes (ArbZG)**. Die wichtigsten Regelungen, die das System abbildet:
+PraxisZeit unterstützt die Einhaltung des **Arbeitszeitgesetzes (ArbZG)**:
 
 | Paragraph | Thema | Regelung |
 |-----------|-------|----------|
@@ -336,12 +390,11 @@ PraxisZeit unterstützt die Einhaltung des **Arbeitszeitgesetzes (ArbZG)**. Die 
 | [§ 4 ArbZG](https://www.gesetze-im-internet.de/arbzg/__4.html) | Ruhepausen | >6h → 30 Min.; >9h → 45 Min. Pause |
 | [§ 5 ArbZG](https://www.gesetze-im-internet.de/arbzg/__5.html) | Ruhezeit | Mind. 11h zwischen Arbeitsende und -beginn |
 | [§ 9 ArbZG](https://www.gesetze-im-internet.de/arbzg/__9.html) | Sonn-/Feiertagsruhe | Grundsätzlich kein Arbeiten an Sonn-/Feiertagen |
-| [§ 10 ArbZG](https://www.gesetze-im-internet.de/arbzg/__10.html) | Ausnahmen Sonntagsarbeit | Dokumentationspflicht bei Ausnahmen |
 | [§ 11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html) | Ersatzruhetag | Mindestens 15 Sonntage/Jahr frei |
-| [§ 16 ArbZG](https://www.gesetze-im-internet.de/arbzg/__16.html) | Aufzeichnungspflicht | Überstunden und alle Zeiten müssen 2 Jahre aufbewahrt werden |
+| [§ 16 ArbZG](https://www.gesetze-im-internet.de/arbzg/__16.html) | Aufzeichnungspflicht | Alle Zeiten müssen 2 Jahre aufbewahrt werden |
 
 Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v1.0 | Februar 2026*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.0 | März 2026*
