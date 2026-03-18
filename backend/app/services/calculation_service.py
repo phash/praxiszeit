@@ -240,9 +240,9 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
         extract('year', Absence.date) == year,
         extract('month', Absence.date) == month,
     ).all()
-    credited_hours = sum(float(a.hours) for a in credited_absences)
+    credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences), Decimal('0'))
 
-    return Decimal(str(total + credited_hours)).quantize(Decimal('0.01'))
+    return (Decimal(str(total)) + credited_hours).quantize(Decimal('0.01'))
 
 
 def get_monthly_balance(db: Session, user: User, year: int, month: int) -> Decimal:
