@@ -349,7 +349,7 @@ export default function Layout() {
             <div className="flex items-center h-16">
               {[
                 { to: '/', icon: LayoutDashboard, label: 'Home', exact: true },
-                { to: '/time-tracking', icon: Clock, label: 'Journal' },
+                { to: '/journal', icon: Clock, label: 'Journal' },
               ].map((item) => {
                 const Icon = item.icon;
                 const active = item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);

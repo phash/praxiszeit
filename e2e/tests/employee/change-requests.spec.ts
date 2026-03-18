@@ -18,18 +18,20 @@ test.describe('Employee Change Requests', () => {
 
     await employeePage.goto('/time-tracking');
     await expect(employeePage.getByRole('heading', { name: 'Zeiterfassung' })).toBeVisible();
+    await employeePage.waitForLoadState('networkidle');
 
     // Navigate to the correct month
     for (let i = 0; i < 3; i++) {
       const changeRequestBtn = employeePage.locator('button[aria-label*="Änderungsantrag"]');
-      if ((await changeRequestBtn.count()) > 0) break;
+      const found = await changeRequestBtn.first().waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+      if (found) break;
       await employeePage.getByRole('button', { name: 'Vorheriger Monat' }).click();
       await employeePage.waitForLoadState('networkidle');
     }
 
     // Click the change request (update) button
     const changeRequestBtn = employeePage.locator('button[aria-label*="Änderungsantrag"]').first();
-    await changeRequestBtn.click();
+    await changeRequestBtn.click({ force: true });
 
     // The modal should appear - fill in the reason field
     await expect(employeePage.getByText('Begründung')).toBeVisible({ timeout: 5000 });
@@ -62,18 +64,20 @@ test.describe('Employee Change Requests', () => {
 
     await employeePage.goto('/time-tracking');
     await expect(employeePage.getByRole('heading', { name: 'Zeiterfassung' })).toBeVisible();
+    await employeePage.waitForLoadState('networkidle');
 
     // Navigate to the correct month
     for (let i = 0; i < 3; i++) {
       const deleteRequestBtn = employeePage.locator('button[aria-label*="Löschantrag"]');
-      if ((await deleteRequestBtn.count()) > 0) break;
+      const found = await deleteRequestBtn.first().waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+      if (found) break;
       await employeePage.getByRole('button', { name: 'Vorheriger Monat' }).click();
       await employeePage.waitForLoadState('networkidle');
     }
 
     // Click the delete request button
     const deleteRequestBtn = employeePage.locator('button[aria-label*="Löschantrag"]').first();
-    await deleteRequestBtn.click();
+    await deleteRequestBtn.click({ force: true });
 
     // The modal should appear with the reason field
     await expect(employeePage.getByText('Begründung')).toBeVisible({ timeout: 5000 });

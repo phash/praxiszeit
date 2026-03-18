@@ -48,6 +48,9 @@ test.describe('Employee Profile', () => {
   });
 
   test('change calendar color', async ({ employeePage }) => {
+    // Expand "Weitere Einstellungen" to reveal Kalenderfarbe section
+    await employeePage.getByRole('button', { name: 'Weitere Einstellungen' }).click();
+
     // Check that "Kalenderfarbe" section is visible
     await expect(employeePage.getByText('Kalenderfarbe')).toBeVisible();
 
@@ -61,6 +64,9 @@ test.describe('Employee Profile', () => {
   });
 
   test('DSGVO data export', async ({ employeePage }) => {
+    // Expand "Weitere Einstellungen" to reveal DSGVO section
+    await employeePage.getByRole('button', { name: 'Weitere Einstellungen' }).click();
+
     // Check that the download button exists
     const downloadButton = employeePage.getByRole('button', { name: 'JSON herunterladen' });
     await expect(downloadButton).toBeVisible();
