@@ -2315,51 +2315,52 @@
 
   <div class="note-box" style="margin-bottom:24px;background:#ECFDF5;border-color:#A7F3D0;color:#064E3B;">
     <strong>&#10003; Aktualisiert 2026-03-18:</strong> E2E-Testsuite (114 Tests) ausgef&uuml;hrt.
-    Zwei zus&auml;tzliche Anwendungsfehler (APP-1, APP-2) gefunden und behoben.
-    111 von 114 Tests bestehen; 0 Fehler; 2 flaky (Rate-Limit), 1 skip (bekannter Backend-Bug).
+    Alle urspr&uuml;nglichen Blocker (BUG-1, BUG-2, BUG-3, BUG-4, A-C1, A-C4) wurden in commit
+    <code>f2b87ea</code> behoben. Zwei zus&auml;tzliche Anwendungsfehler (APP-1, APP-2) durch E2E
+    entdeckt und ebenfalls gefixt. 111 von 114 Tests bestehen; 0 Fehler; 2 flaky (Rate-Limit), 1 skip (Backend-Bug).
   </div>
 
   <div class="verdict-grid">
-    <div class="verdict-item verdict-block">
-      <h4>Noch offen (Blocker)</h4>
+    <div class="verdict-item verdict-ok">
+      <h4>&#10003; Alle Blocker behoben</h4>
       <p>
-        <strong>BUG-2</strong> (Backdrop-Handler l&ouml;st <code>handleStampSuccess</code> aus) –
-        unn&ouml;tige API-Last; wurde durch E2E-Tests nicht gedeckt, da der Test den normalen
-        Stempelfluss testet, nicht das &bdquo;Schlie&szlig;en ohne Stempeln&ldquo;-Szenario.<br /><br />
-        <strong>A-C1 + A-C4</strong> (Bottom-Sheet Dialog-Role + Fokus-Management) –
-        WCAG Level A; kein automatischer E2E-Test m&ouml;glich, manuelle Pr&uuml;fung erforderlich.
+        <strong>BUG-2</strong> Backdrop &rarr; <code>handleSheetDismiss</code> ✓<br />
+        <strong>BUG-1</strong> <code>if (m === 60) &#123; h++; m = 0; &#125;</code> ✓<br />
+        <strong>BUG-4</strong> <code>if (s === 60) s = 0;</code> ✓<br />
+        <strong>BUG-3</strong> <code>stampVersion</code> in TimeTracking verdrahtet ✓<br />
+        <strong>A-C1</strong> <code>role="dialog"</code> + <code>aria-modal</code> ✓<br />
+        <strong>A-C4</strong> Focus-Management (<code>sheetRef.focus()</code> / <code>fabRef.focus()</code>) ✓<br />
+        <strong>APP-1</strong> Journal-Nav-Link ✓ &nbsp;<strong>APP-2</strong> nginx /help ✓
       </p>
     </div>
     <div class="verdict-item verdict-warn">
-      <h4>Kurzfristig nachliefern (Sprint)</h4>
+      <h4>A11y-Sprint (nachgelagert)</h4>
       <p>
-        <strong>BUG-1 + BUG-4</strong> (Minuten/Sekunden-&Uuml;berlauf) –
-        einzeilige Fixes, kein Risiko.<br /><br />
         <strong>A-C2 + A-C3</strong> (Status-Card Semantik, WeekDot Labels) –
-        grundlegende Tastatur-Bedienbarkeit.<br /><br />
-        <strong>L-F1</strong> (§3 EntgFG Servervalidierung) – rechtliche Absicherung.
+        grundlegende Tastatur-Bedienbarkeit, keine Merge-Blocker.<br /><br />
+        Restliche mittlere/niedrige WCAG-Findings – systematisch in
+        <em>UX Phase 6</em> adressieren.
       </p>
     </div>
-    <div class="verdict-item verdict-ok">
-      <h4>Behoben / Best&auml;tigt</h4>
+    <div class="verdict-item" style="background:var(--c-info-bg);border-color:var(--c-info-bd);">
+      <h4 style="color:var(--c-info);">Backend (separater Fix)</h4>
       <p>
-        <strong>APP-1</strong> (Journal-Nav-Link) &amp; <strong>APP-2</strong> (nginx /help) –
-        beide durch E2E entdeckt und gefixt.<br /><br />
-        §3 EntgFG-Logik ist konzeptionell richtig; alle ArbZG-Paragraphen
-        (§3, §4, §5, §9/10, §16) durch E2E-Tests validiert &ndash; alle PASS.
+        DB-Enum-Mismatch <code>changerequeststatus</code> (UPPERCASE vs. lowercase) &rarr;
+        HTTP 500 bei API-Erstellung von &Auml;nderungsantr&auml;gen. 1 E2E-Test geskippt.
+        Erfordert Backend-Migration + separaten PR.
       </p>
     </div>
   </div>
 
   <div class="verdict-recommendation">
-    <strong>Merge-Empfehlung (aktualisiert):</strong> Das PR enth&auml;lt jetzt
-    die zwei durch E2E gefundenen App-Bugfixes (APP-1, APP-2).
-    Die urspr&uuml;nglich identifizierten Blocker <strong>BUG-2</strong> und
-    <strong>A-C1/A-C4</strong> (Keyboard-Trap-Risiko) sind weiterhin offen
-    und sollten vor dem Merge adressiert werden.
-    BUG-1/BUG-4 (triviale Fixes) und die mittleren/niedrigen A11y-Findings
-    k&ouml;nnen in einem nachfolgenden Accessibility-Sprint (<em>UX Phase 6</em>)
-    systematisch adressiert werden.
+    <strong>Merge-Empfehlung (Stand 2026-03-18):</strong> Das PR ist
+    <strong style="color:var(--c-pass);">merge-f&auml;hig</strong>.
+    Alle urspr&uuml;nglichen Blocker (BUG-1–4, A-C1, A-C4) wurden in commit <code>f2b87ea</code>
+    behoben; APP-1 und APP-2 in <code>d092595</code>.
+    Die verbleibenden mittleren und niedrigen A11y-Findings (A-C2/A-C3 und weitere)
+    sowie L-F1 (§3 EntgFG Servervalidierung) sind keine Blocker und k&ouml;nnen in einem
+    nachfolgenden Sprint (<em>UX Phase 6</em>) adressiert werden.
+    Der Backend-Enum-Bug ben&ouml;tigt einen separaten Fix-PR.
   </div>
 
   <div style="margin-top:28px;">
