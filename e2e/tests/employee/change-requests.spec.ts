@@ -117,9 +117,7 @@ test.describe('Employee Change Requests', () => {
     await employeePage.waitForLoadState('networkidle');
   });
 
-  // KNOWN ISSUE: Backend has a DB enum mismatch (changerequeststatus "REJECTED" vs "rejected")
-  // causing 500 errors when creating change requests via API. This test is skipped until fixed.
-  test.skip('withdraw pending request', async ({
+  test('withdraw pending request', async ({
     employeePage,
     testEmployee,
     createTimeEntry,
@@ -135,60 +133,24 @@ test.describe('Employee Change Requests', () => {
     });
 
     // Create a change request via API
-    // Note: This may fail with 500 due to a backend DB enum bug.
-    // If it fails, we create the request via UI instead.
-    let apiCreated = false;
-    try {
-      await employeeApi.post('/change-requests', {
-        request_type: 'update',
-        time_entry_id: entry.id,
-        proposed_date: pastDate,
-        proposed_start_time: '08:00',
-        proposed_end_time: '17:00',
-        proposed_break_minutes: 30,
-        proposed_note: '',
-        reason: 'E2E test change request to withdraw',
-      });
-      apiCreated = true;
-    } catch {
-      // API creation failed (likely backend enum bug), create via UI
-      await employeePage.goto('/time-tracking');
-      await expect(employeePage.getByRole('heading', { name: 'Zeiterfassung' })).toBeVisible();
-
-      // Navigate to the correct month with the locked entry
-      for (let i = 0; i < 3; i++) {
-        const changeRequestBtn = employeePage.locator('button[aria-label*="Änderungsantrag"]');
-        if ((await changeRequestBtn.count()) > 0) break;
-        await employeePage.getByRole('button', { name: 'Vorheriger Monat' }).click();
-        await employeePage.waitForLoadState('networkidle');
-      }
-
-      const crBtn = employeePage.locator('button[aria-label*="Änderungsantrag"]').first();
-      await crBtn.click();
-      await expect(employeePage.getByText('Begründung')).toBeVisible({ timeout: 5000 });
-      await employeePage.locator('textarea').fill('E2E test change request to withdraw');
-      await employeePage.getByRole('button', { name: 'Antrag stellen' }).click();
-
-      // Wait for success or failure
-      await expect(employeePage.locator('[role="alert"]').filter({ hasText: /Änderungsantrag|erstellt|erfolgreich/ }).or(employeePage.locator('text=Fehler'))).toBeVisible({ timeout: 5000 });
-      apiCreated = true; // created via UI
-    }
-
-    if (!apiCreated) {
-      // Both paths failed, skip
-      test.skip();
-      return;
-    }
+    await employeeApi.post('/change-requests', {
+      request_type: 'update',
+      time_entry_id: entry.id,
+      proposed_date: pastDate,
+      proposed_start_time: '08:00',
+      proposed_end_time: '17:00',
+      proposed_break_minutes: 30,
+      proposed_note: '',
+      reason: 'E2E test change request to withdraw',
+    });
 
     // Navigate to change requests page
     await employeePage.goto('/change-requests');
     await expect(employeePage.getByRole('heading', { name: 'Änderungsanträge' })).toBeVisible();
-
-    // Wait for requests to load
     await employeePage.waitForLoadState('networkidle');
 
-    // Find and click the withdraw button (trash icon on pending request)
-    const withdrawButton = employeePage.locator('button[title="Zurückziehen"]').first();
+    // Find and click the withdraw button on the pending request
+    const withdrawButton = employeePage.getByRole('button', { name: 'Zurückziehen' }).first();
     await expect(withdrawButton).toBeVisible({ timeout: 10000 });
     await withdrawButton.click();
 
