@@ -2,12 +2,8 @@ import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Help & Info Pages', () => {
   test('help page loads', async ({ employeePage }) => {
-    // Navigate via SPA link (direct /help URL may be intercepted by nginx)
-    await employeePage.goto('/');
-    await employeePage.waitForLoadState('networkidle');
-
-    // Click the "Hilfe" link in the sidebar navigation
-    await employeePage.getByRole('link', { name: 'Hilfe' }).click();
+    // Navigate directly to /help route (Hilfe in sidebar opens a panel, not a link)
+    await employeePage.goto('/help');
     await employeePage.waitForLoadState('networkidle');
 
     // Help page has heading "Hilfe & Dokumentation"

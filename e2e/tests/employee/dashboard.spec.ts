@@ -21,7 +21,7 @@ test.describe('Employee Dashboard', () => {
 
   test('stamp widget: clock in and out', async ({ employeePage }) => {
     // Should start as "Nicht eingestempelt"
-    await expect(employeePage.getByText('Nicht eingestempelt')).toBeVisible();
+    await expect(employeePage.getByText('Nicht eingestempelt', { exact: true })).toBeVisible();
 
     // Clock in
     await employeePage.getByRole('button', { name: 'Einstempeln' }).click();
@@ -45,7 +45,7 @@ test.describe('Employee Dashboard', () => {
     await expect(employeePage.locator('[role="alert"]').filter({ hasText: 'ausgestempelt' })).toBeVisible({ timeout: 10000 });
 
     // Should be back to not clocked in
-    await expect(employeePage.getByText('Nicht eingestempelt')).toBeVisible();
+    await expect(employeePage.getByText('Nicht eingestempelt', { exact: true })).toBeVisible();
   });
 
   test('monthly overview table visible', async ({ employeePage, testEmployee, createTimeEntry }) => {
@@ -72,6 +72,9 @@ test.describe('Employee Dashboard', () => {
   });
 
   test('team absences calendar visible', async ({ employeePage }) => {
-    await expect(employeePage.getByText('Geplante Abwesenheiten im Team')).toBeVisible();
+    await employeePage.waitForLoadState('networkidle');
+    // Team calendar is inside the "Details" toggle section - expand it first
+    await employeePage.getByRole('button', { name: /Details anzeigen/ }).click();
+    await expect(employeePage.getByText('Geplante Abwesenheiten im Team')).toBeVisible({ timeout: 10000 });
   });
 });

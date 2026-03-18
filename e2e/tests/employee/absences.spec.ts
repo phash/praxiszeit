@@ -103,14 +103,14 @@ test.describe('Employee Absences', () => {
   });
 
   test('toggle month/year view', async ({ employeePage }) => {
-    // Check that "Jahresansicht" button is visible
-    await expect(employeePage.getByRole('button', { name: 'Jahresansicht' })).toBeVisible();
+    // Check that "Jahr" button is visible (switch to year view)
+    await expect(employeePage.getByRole('button', { name: 'Jahr' })).toBeVisible();
 
     // Click to switch to year view
-    await employeePage.getByRole('button', { name: 'Jahresansicht' }).click();
+    await employeePage.getByRole('button', { name: 'Jahr' }).click();
 
-    // Now "Monatsansicht" button should be visible (year view is active)
-    await expect(employeePage.getByRole('button', { name: 'Monatsansicht' })).toBeVisible();
+    // Now "Monat" button should be visible (year view is active, can switch back)
+    await expect(employeePage.getByRole('button', { name: 'Monat' })).toBeVisible();
   });
 
   test('absence type options are all present', async ({ employeePage }) => {

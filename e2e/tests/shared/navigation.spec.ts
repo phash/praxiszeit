@@ -58,7 +58,8 @@ test.describe('Navigation & Access Control', () => {
     // After clicking, navigation links should become visible
     await expect(dashboardLink).toBeVisible();
     await expect(employeePage.getByRole('link', { name: 'Zeiterfassung' })).toBeVisible();
-    await expect(employeePage.getByRole('link', { name: 'Hilfe' })).toBeVisible();
+    // Hilfe is a button (opens panel), not a link – check Abmelden button instead
+    await expect(employeePage.getByRole('button', { name: 'Abmelden' })).toBeVisible();
 
     // Close button should be visible (aria-label="Menü schließen")
     const closeButton = employeePage.getByRole('button', { name: 'Menü schließen' });
