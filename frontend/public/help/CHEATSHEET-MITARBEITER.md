@@ -2,21 +2,35 @@
 
 ---
 
-## 🔐 Login
+## Anmelden
 **URL:** `http://[Server-Adresse]/login`
-Benutzername + Passwort eingeben → Anmelden
+Benutzernamen + Passwort eingeben → **Anmelden**
 
 ---
 
-## ⏱️ Zeiterfassung (tägliche Aufgabe)
+## Navigation
+**Desktop (linke Leiste):** Dashboard · Zeiterfassung · Abwesenheiten · Profil
+
+**Mobil (unten):** Home · Journal · Abwes. · Profil
+**Mobil-Menü:** ☰ (oben rechts) öffnet vollständige Navigation
+
+---
+
+## Zeiterfassung (tägliche Aufgabe)
 
 ### Neuen Zeiteintrag erstellen
-**Zeiterfassung** → **Hinzufügen**
-- Datum wählen
-- Startzeit und Endzeit eintragen
-- Pause in Minuten eintragen *(Pflicht!)*
+**Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag**
+- Datum, Startzeit (Von), Endzeit (Bis)
+- Pause in Minuten *(Pflicht!)*
 - Optional: Notiz
 - **Speichern**
+
+Mobil: **+**-Button oben rechts auf der Zeiterfassungsseite
+
+### Eintrag bearbeiten / löschen
+Aktionsspalte in der Einträge-Tabelle:
+- **Bearbeiten** – bei entsperrten Einträgen
+- **Löschen** – bei nicht gesperrten Einträgen
 
 ### Pflicht-Pausen (§4 ArbZG)
 | Arbeitszeit | Mindestpause |
@@ -25,80 +39,93 @@ Benutzername + Passwort eingeben → Anmelden
 | > 9 Stunden | **45 Minuten** |
 
 ### Tagesgrenze (§3 ArbZG)
-- ⚠️ **Warnung** ab 8 Stunden Nettoarbeitszeit
-- 🚫 **Gesperrt** ab 10 Stunden Nettoarbeitszeit
+- Warnung ab **8 Stunden** Nettoarbeitszeit
+- Gesperrt ab **10 Stunden** Nettoarbeitszeit
 
 ---
 
-## 🗓️ Abwesenheiten
+## Korrekturantrag stellen
 
-| Schaltfläche | Aktion |
-|-------------|--------|
-| **Abwesenheit eintragen** | Formular öffnen |
+Wenn ein Eintrag gesperrt / zu alt ist:
+
+**Zeiterfassung → Tab Einträge** → Zeile des Eintrags → **Änderungsantrag**-Button
+1. Korrekte Zeiten eintragen
+2. Begründung schreiben
+3. **Antrag stellen**
+
+Für Löschung: **Löschantrag**-Button → Begründung → Bestätigen
+
+---
+
+## Anträge einsehen
+
+**Zeiterfassung → Tab Anträge**
+
+| Status | Bedeutung |
+|--------|-----------|
+| Offen | Wartet auf Admin-Entscheidung |
+| Genehmigt | Angenommen, Eintrag korrigiert |
+| Abgelehnt | Abgelehnt – Begründung sichtbar |
+
+Filter: Alle / Offen / Genehmigt / Abgelehnt
+Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
+
+---
+
+## Abwesenheiten
+
+**Abwesenheiten → + Abwesenheit eintragen**
+
+| Schritt | Aktion |
+|---------|--------|
 | Typ wählen | Urlaub / Krank / Fortbildung / Sonstiges |
-| Einzeltag | Nur Startdatum eintragen |
-| Zeitraum | Checkbox „Zeitraum" aktivieren + Enddatum |
+| Einzeltag | Nur Startdatum |
+| Zeitraum | Checkbox „Zeitraum" + Enddatum |
+| Speichern | Wochenenden/Feiertage werden übersprungen |
 
-**Abwesenheit löschen:** Auf den Eintrag im Kalender klicken → Löschen-Symbol
+**Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol
 
----
-
-## 📋 Korrekturantrag stellen
-
-Wenn ein vergangener Eintrag falsch ist (kein direktes Bearbeiten möglich):
-
-**Korrekturanträge** → **Neuer Antrag**
-1. Betroffenes Datum wählen
-2. Korrekte Zeiten eintragen
-3. Begründung schreiben
-4. Absenden
-
-→ Admin genehmigt oder lehnt ab. Status im Bereich „Korrekturanträge" sichtbar.
+### Bei aktiver Urlaubsgenehmigungspflicht
+- Urlaub-Speichern → **Antrag** (kein direkter Eintrag)
+- Tab **„Meine Anträge"** zeigt Status
+- Offene Anträge können zurückgezogen werden
 
 ---
 
-## 📊 Dashboard verstehen
+## Dashboard verstehen
 
 | Karte | Bedeutung |
 |-------|----------|
-| **Monatssaldo** | Über-/Unterstunden diesen Monat |
-| **Überstunden gesamt** | Saldo über alle Monate |
-| **Urlaub verbleibend** | Noch verfügbare Urlaubstage |
+| **Tagessaldo** | Heute: Ist-Zeit vs. Tagessoll (grün = eingestempelt) |
+| **Monatssaldo** | Über-/Unterstunden diesen Monat (H:MM) |
+| **Überstunden** | Kumulierter Jahressaldo |
+| **Urlaub** | Verbleibende Urlaubstage |
 
-**Saldo grün (+)** = Überstunden | **Saldo rot (–)** = Fehlstunden
+**Grüner Saldo (+)** = Überstunden · **Roter Saldo (–)** = Fehlstunden
 
 ---
 
-## 🔑 Passwort ändern
+## Passwort ändern
 
-**Profil** (linke Navigation) → Abschnitt „Passwort ändern"
+**Profil → Passwort ändern → Ändern**
 - Altes Passwort eingeben
-- Neues Passwort (min. 10 Zeichen, Groß- + Kleinbuchstabe + Ziffer)
-- Bestätigen → Speichern
+- Neues Passwort: **min. 10 Zeichen** + Groß- + Kleinbuchstabe + Ziffer
+- Bestätigen → **Speichern**
 
 ---
 
-## 📱 Mobile Nutzung
-
-Die App funktioniert im Browser auf dem Smartphone:
-- Hamburger-Menü (☰) öffnet die Navigation
-- Alle Funktionen vollständig nutzbar
-- **App installieren:** Browser-Menü → „Zum Startbildschirm hinzufügen"
-
----
-
-## ❓ Häufige Probleme
+## Häufige Probleme
 
 | Problem | Lösung |
 |---------|--------|
-| Eintrag lässt sich nicht speichern | Pause prüfen (§4 ArbZG: Pflicht!) |
+| Eintrag nicht speicherbar | Pause prüfen (§4 ArbZG Pflicht!) |
 | Zeiteintrag zu lang | Max. 10h netto (§3 ArbZG) |
-| Urlaub falsch | Korrekturantrag stellen |
-| Passwort vergessen | Admin kontaktieren |
+| Eintrag lässt sich nicht bearbeiten | Zu alt → Änderungsantrag stellen |
+| Passwort vergessen | Administrator kontaktieren |
 
 ---
 
-## 📞 Ihr Admin-Kontakt
+## Ihr Admin-Kontakt
 
 **Name:** ____________________________
 
