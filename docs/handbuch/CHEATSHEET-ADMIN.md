@@ -2,45 +2,63 @@
 
 ---
 
-## 🔐 Login & Navigation
+## Login & Navigation
 **URL:** `http://[Server-Adresse]/login`
-Admin-Navigation: Dashboard · Benutzer · Kalender · Berichte · Korrekturanträge · **Urlaubsanträge** · Audit-Log · Fehler · Betriebsferien
+
+**Mitarbeiter-Bereich:** Dashboard · Zeiterfassung · Abwesenheiten · Profil
+
+**Administration:** Admin-Dashboard · Benutzerverwaltung · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Urlaubsanträge · Import · Einstellungen
 
 ---
 
-## 👤 Benutzerverwaltung
+## Benutzerverwaltung
 
 ### Neuen Mitarbeiter anlegen
-**Benutzerverwaltung** → **Neuer Benutzer**
-- Benutzername (Login), Vor-/Nachname, Passwort
+**Benutzerverwaltung** → **Neuer Mitarbeiter:in**
+- Benutzername (Login-Name), Passwort (mind. 10 Zeichen)
+- Vorname / Nachname, E-Mail (optional)
 - Wochenstunden, Arbeitstage/Woche, Urlaubstage
-- Rolle: Mitarbeiter oder Admin
-- Optional: Kalenderfarbe, ArbZG-Ausnahme (§18)
+- Rolle: Mitarbeiter:in oder Admin
+- Optional: ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6)
 
 ### Stundenänderung (Teilzeit etc.)
-**Benutzer bearbeiten** → neue Wochenstunden + **Wirkungsdatum** eintragen
+**Benutzer öffnen** → neue Wochenstunden + **Wirkungsdatum** eintragen
 → Historische Salden bleiben korrekt!
 
-### Mitarbeiter deaktivieren (nie löschen!)
-**Benutzer bearbeiten** → Status „Inaktiv"
+### Mitarbeiter deaktivieren (niemals löschen!)
+**Benutzer öffnen** → Status „Inaktiv"
 → Daten 2 Jahre aufbewahren (§16 ArbZG)
 
 ---
 
-## 📊 Berichte & Exporte
+## Admin-Dashboard
 
-| Bericht | Inhalt | Verwendung |
-|---------|--------|------------|
-| **Monatsreport** | Tägliche Einträge aller MA | Gehaltsabrechnung |
-| **Jahresreport Classic** | 12 Monate kompakt | Jahresüberblick |
-| **Jahresreport Detailliert** | 365 Tage, ~5s | Steuerberater, Prüfung |
+| Spalte | Bedeutung |
+|--------|-----------|
+| **Soll/Ist** | Stunden des gewählten Monats |
+| **Saldo** | Differenz in H:MM |
+| **Übersto. Kum.** | Kumulierter Jahressaldo |
+| **Urlaub** | Verbleibende Tage (Ampel) |
+| **Krank** | Kranktage im Monat |
 
-**Exportieren:** Berichte → Typ & Zeitraum wählen → Exportieren → Excel-Download
+Klick auf Pfeil → Detailansicht des Mitarbeiters
+
+---
+
+## Berichte & Exporte
+
+| Bericht | Inhalt | Formate |
+|---------|--------|---------|
+| **Monatsreport** | Tägliche Einträge aller MA | Excel + CSV |
+| **Jahresreport Classic** | 12 Monate kompakt | Excel + CSV |
+| **Jahresreport Detailliert** | 365 Tage, ~5s | Excel + CSV |
+
+**Exportieren:** Berichte → Typ & Zeitraum wählen → Excel oder CSV klicken
 **Aufbewahrungspflicht: 2 Jahre** (§16 ArbZG)
 
 ---
 
-## 🏖️ Urlaubsanträge genehmigen
+## Urlaubsanträge genehmigen
 
 **Urlaubsanträge** (Admin-Navigation)
 
@@ -48,74 +66,63 @@ Admin-Navigation: Dashboard · Benutzer · Kalender · Berichte · Korrekturantr
 - **Aus** (Standard): Mitarbeiter buchen Urlaub direkt
 - **Ein**: Urlaub landet als „Offen" zur Genehmigung
 
-**Antrag genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen
-**Antrag ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
-
-> Mitarbeiter sehen Status + Ablehnungsgrund im Tab „Meine Anträge"
+**Genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen
+**Ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
 
 ---
 
-## ✅ Korrekturanträge prüfen
+## Korrekturanträge prüfen
 
-**Korrekturanträge** → offene Anträge → **Prüfen**
+**Änderungsanträge** → offene Anträge → Antrag öffnen
 - Alt vs. Neu vergleichen, Begründung lesen
 - **Genehmigen** → Eintrag wird sofort geändert
 - **Ablehnen** → optional Ablehnungsgrund eintragen
 
 ---
 
-## 📅 Betriebsferien
+## Betriebsferien
 
-**Betriebsferien** → **Neue Betriebsferien**
+**Abwesenheiten → Tab Betriebsferien → Neue Betriebsferien**
 - Bezeichnung + Von–Bis → Speichern
 - → Alle MA erhalten automatisch Abwesenheitseinträge (keine Urlaubstage!)
 - Löschen: Einträge werden bei allen MA automatisch entfernt
 
 ---
 
-## ⚖️ ArbZG-Pflichten – Tägliche Automatik
+## ArbZG-Pflichten – Automatik bei Zeiterfassung
 
 | Prüfung | Grenze | § |
 |---------|--------|---|
-| Tagesarbeitszeit | Warnung >8h, Sperrung >10h | §3 |
-| Pausenpflicht | >6h → 30 min / >9h → 45 min | §4 |
+| Tagesarbeitszeit Warnung | > 8h Netto | §3 |
+| Tagesarbeitszeit Sperrung | > 10h Netto | §3 |
+| Pausenpflicht | > 6h → 30 Min. / > 9h → 45 Min. | §4 |
+| Nachtarbeitnehmer | > 8h täglich | §6 |
 | Sonntagsarbeit | Warnung + Ausnahmegrund-Pflicht | §9/§10 |
-| Wochenstunden | Warnung >48h | §14 |
-| Nachtarbeit | 8h-Grenze für Nachtarbeitnehmer | §6 |
+| Wochenstunden | Warnung > 48h | §14 |
 
 ---
 
-## 📋 ArbZG-Compliance-Berichte (regelmäßig prüfen!)
+## ArbZG-Compliance-Berichte (regelmäßig prüfen!)
+
+**Berichte** → nach unten scrollen → ArbZG-Berichte
 
 | Bericht | Inhalt | Handlungsbedarf bei |
 |---------|--------|-------------------|
 | **§5 Ruhezeitverstöße** | Fälle < 11h Ruhezeit | Sofort! Ursachen beseitigen |
 | **§6 Nachtarbeit** | MA mit ≥ 48 Nachtarbeitstagen/Jahr | Arbeitsmed. Untersuchung anbieten |
-| **§11 Sonntagsarbeit** | Sonntage pro MA, Ziel: max. 37/Jahr | Dienstplanung anpassen |
-| **§11 Ersatzruhetag** | Offene Ersatzruhetag-Pflichten | Ausgleich innerhalb 2 Wochen |
-
-**Pfad:** Berichte → nach unten scrollen → ArbZG-Berichte
+| **§11 Sonntagsarbeit** | Sonntage pro MA (Ziel: max. 37/Jahr) | Dienstplanung anpassen |
+| **§11 Ersatzruhetag** | Offene Ersatzruhetag-Pflichten | Ausgleich: Sonntag 2 Wo / Feiertag 8 Wo |
 
 ---
 
-## 🔍 Audit-Log & Monitoring
+## Audit-Log & Monitoring
 
-**Audit-Log:** Alle Aktionen lückenlos protokolliert → Betriebsprüfungsnachweis
-**Fehler-Monitoring:** Technische Fehler → bei wiederkehrenden Fehlern IT kontaktieren
-
----
-
-## 🚨 Notfall-Checkliste Monatsabschluss
-
-- [ ] Alle Korrekturanträge geprüft und entschieden
-- [ ] Monatsreport exportiert und gesichert
-- [ ] §5 Ruhezeitbericht geprüft (Verstöße dokumentieren)
-- [ ] §11 Ersatzruhetage nachgeführt
-- [ ] Offene Urlaubstage geprüft (Ampel-System im Dashboard)
+**Änderungsprotokoll:** Alle Aktionen lückenlos protokolliert → Betriebsprüfungsnachweis
+**Fehler-Monitoring:** Technische Fehler → bei wiederkehrenden Fehlern IT kontaktieren oder GitHub Issue öffnen
 
 ---
 
-## ⚠️ Wichtige Limits
+## Wichtige Limits
 
 | Regel | Wert | § |
 |-------|------|---|
@@ -128,7 +135,17 @@ Admin-Navigation: Dashboard · Benutzer · Kalender · Berichte · Korrekturantr
 
 ---
 
-## 📞 Notfall-Kontakte
+## Notfall-Checkliste Monatsabschluss
+
+- [ ] Alle Korrekturanträge geprüft und entschieden
+- [ ] Monatsreport exportiert und gesichert
+- [ ] §5 Ruhezeitbericht geprüft (Verstöße dokumentieren)
+- [ ] §11 Ersatzruhetage nachgeführt
+- [ ] Offene Urlaubstage geprüft (Ampel-System im Admin-Dashboard)
+
+---
+
+## Notfall-Kontakte
 
 **IT-Support:** ____________________________
 
