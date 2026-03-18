@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 import StampWidget from './StampWidget';
+import { DocDrawer } from './DocDrawer';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
@@ -35,6 +36,8 @@ export default function Layout() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [sheetClosing, setSheetClosing] = useState(false);
   const fabRef = useRef<HTMLButtonElement>(null);
@@ -262,22 +265,20 @@ export default function Layout() {
           </Link>
           {/* Handbuch-Downloads */}
           <div className="mb-2 flex flex-col gap-1">
-            <a
-              href={user?.role === 'admin' ? '/help/CHEATSHEET-ADMIN.md' : '/help/CHEATSHEET-MITARBEITER.md'}
-              download
-              className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+            <button
+              onClick={() => { setDrawerTab('cheatsheet'); setDrawerOpen(true); }}
+              className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors w-full text-left"
             >
               <BookOpen size={13} />
               <span>Cheat-Sheet</span>
-            </a>
-            <a
-              href={user?.role === 'admin' ? '/help/HANDBUCH-ADMIN.md' : '/help/HANDBUCH-MITARBEITER.md'}
-              download
-              className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+            </button>
+            <button
+              onClick={() => { setDrawerTab('handbuch'); setDrawerOpen(true); }}
+              className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors w-full text-left"
             >
               <FileText size={13} />
               <span>{user?.role === 'admin' ? 'Admin-Handbuch' : 'Mitarbeiter-Handbuch'}</span>
-            </a>
+            </button>
           </div>
 
           <Link
@@ -414,6 +415,13 @@ export default function Layout() {
       )}
 
       <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      <DocDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        isAdmin={user?.role === 'admin'}
+        initialTab={drawerTab}
+      />
     </div>
   );
 }
