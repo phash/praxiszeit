@@ -170,12 +170,14 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     ).all()
     holiday_dates = {h.date for h in holidays}
 
-    # Exclude TRAINING from target reduction - counts as worked time (außer Haus)
+    # Exclude TRAINING and SICK from target reduction:
+    # - TRAINING counts as worked time (außer Haus)
+    # - SICK: §3 EntgFG - employee must be credited as if they worked the planned hours
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         extract('year', Absence.date) == year,
         extract('month', Absence.date) == month,
-        Absence.type != AbsenceType.TRAINING
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK])
     ).all()
     absence_dates = {a.date for a in absences}
 
@@ -206,10 +208,11 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
 def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decimal:
     """
     Calculate actual hours worked in a month.
-    Sum of all net_hours from TimeEntry records + training (Fortbildung) hours.
+    Sum of all net_hours from TimeEntry records + credited absence hours.
 
-    Training hours count as worked time because training days are normal
-    work days where the employee is absent but credited for the hours.
+    Training (Fortbildung) and sick-leave (Kranktage) hours count as worked time:
+    - Training: employee is absent but credited for the planned hours.
+    - Sick: §3 EntgFG – employee must be credited as if they worked the planned hours.
 
     Args:
         db: Database session
@@ -228,16 +231,18 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
 
     total = sum(entry.net_hours for entry in entries)
 
-    # Training hours count as actual worked hours
-    training_absences = db.query(Absence).filter(
+    # Training and sick hours count as actual worked hours:
+    # - TRAINING: außer Haus, credited as worked
+    # - SICK: §3 EntgFG - credited as if the planned hours were worked
+    credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
-        Absence.type == AbsenceType.TRAINING,
+        Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
         extract('year', Absence.date) == year,
         extract('month', Absence.date) == month,
     ).all()
-    training_hours = sum(float(a.hours) for a in training_absences)
+    credited_hours = sum(float(a.hours) for a in credited_absences)
 
-    return Decimal(str(total + training_hours)).quantize(Decimal('0.01'))
+    return Decimal(str(total + credited_hours)).quantize(Decimal('0.01'))
 
 
 def get_monthly_balance(db: Session, user: User, year: int, month: int) -> Decimal:
@@ -322,23 +327,23 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         key = (e.date.year, e.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(e.net_hours))
 
-    # Training hours count as actual worked hours
-    training_absences = db.query(Absence).filter(
+    # Training and sick hours count as actual worked hours (§3 EntgFG)
+    credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start_date,
         Absence.date <= up_to_date,
-        Absence.type == AbsenceType.TRAINING,
+        Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
-    for ta in training_absences:
-        key = (ta.date.year, ta.date.month)
-        actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ta.hours))
+    for ca in credited_absences:
+        key = (ca.date.year, ca.date.month)
+        actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
 
-    # All absences in range (exclude TRAINING — same rule as get_monthly_target)
+    # All absences in range (exclude TRAINING and SICK — same rule as get_monthly_target)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start_date,
         Absence.date <= up_to_date,
-        Absence.type != AbsenceType.TRAINING,
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
     absence_dates: set[date] = {a.date for a in absences}
 
@@ -432,12 +437,12 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     ).all()
     holiday_dates: set = {h.date for h in holidays}
 
-    # Fetch absences in range (exclude TRAINING - same as get_monthly_target)
+    # Fetch absences in range (exclude TRAINING and SICK - same as get_monthly_target)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start,
         Absence.date <= end,
-        Absence.type != AbsenceType.TRAINING,
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
     absence_dates: set = {a.date for a in absences}
 
@@ -465,7 +470,7 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
             total_target += daily_target
         current += timedelta(days=1)
 
-    # Sum actual hours (time entries + training hours)
+    # Sum actual hours (time entries + credited absence hours: training + sick)
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
         TimeEntry.date >= start,
@@ -473,13 +478,13 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     ).all()
     total_actual = sum((Decimal(str(e.net_hours)) for e in entries), start=Decimal('0'))
 
-    training_absences = db.query(Absence).filter(
+    credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start,
         Absence.date <= end,
-        Absence.type == AbsenceType.TRAINING,
+        Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
-    total_actual += sum((Decimal(str(a.hours)) for a in training_absences), start=Decimal('0'))
+    total_actual += sum((Decimal(str(a.hours)) for a in credited_absences), start=Decimal('0'))
 
     # Include overtime carryover for this year
     carryover = db.query(YearCarryover).filter(

@@ -32,7 +32,7 @@ export default function MonthSelector({ value, onChange, className = '' }: Month
       {/* Previous Month Button */}
       <button
         onClick={handlePrevious}
-        className="p-2.5 rounded-lg hover:bg-gray-100 transition"
+        className="p-2.5 rounded-xl hover:bg-muted transition"
         aria-label="Vorheriger Monat"
         title="Vorheriger Monat"
       >
@@ -40,9 +40,9 @@ export default function MonthSelector({ value, onChange, className = '' }: Month
       </button>
 
       {/* Current Month/Year Display */}
-      <div className="flex items-center space-x-2 px-4 py-2 bg-gray-50 rounded-lg min-w-[180px] justify-center">
-        <Calendar size={18} className="text-gray-500" />
-        <span className="font-medium text-gray-900">
+      <div className="flex items-center space-x-2 px-4 py-2 bg-muted rounded-xl min-w-[180px] justify-center">
+        <Calendar size={18} className="text-text-secondary" />
+        <span className="font-semibold text-text-primary">
           {format(currentDate, 'MMMM yyyy', { locale: de })}
         </span>
       </div>
@@ -50,7 +50,7 @@ export default function MonthSelector({ value, onChange, className = '' }: Month
       {/* Next Month Button */}
       <button
         onClick={handleNext}
-        className="p-2.5 rounded-lg hover:bg-gray-100 transition"
+        className="p-2.5 rounded-xl hover:bg-muted transition"
         aria-label="Nächster Monat"
         title="Nächster Monat"
       >
@@ -61,7 +61,7 @@ export default function MonthSelector({ value, onChange, className = '' }: Month
       {!isCurrentMonth && (
         <button
           onClick={handleToday}
-          className="px-3 py-2 text-sm font-medium text-primary hover:bg-blue-50 rounded-lg transition"
+          className="px-3 py-2 text-sm font-medium text-primary hover:bg-primary-light rounded-xl transition"
           title="Zum aktuellen Monat springen"
         >
           Heute

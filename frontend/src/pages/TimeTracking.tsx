@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
+import { de } from 'date-fns/locale';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import apiClient from '../api/client';
 import Journal from './Journal';
@@ -14,7 +16,8 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import MonthSelector from '../components/MonthSelector';
 import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
-import { getErrorMessage } from '../utils/errorMessage';
+import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
+import { useUIStore } from '../stores/uiStore';
 
 interface TimeEntry {
   id: string;
@@ -71,9 +74,95 @@ function addHoursToTime(startTime: string, hours: number): string {
   return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 }
 
+function TimeBar({ startTime, endTime }: { startTime: string; endTime: string | null }) {
+  if (!endTime) return null;
+  const dayStart = 6 * 60;
+  const dayEnd = 20 * 60;
+  const range = dayEnd - dayStart;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  const left = Math.max(0, ((startMin - dayStart) / range) * 100);
+  const width = Math.min(100 - left, Math.max(0, ((endMin - startMin) / range) * 100));
+  return (
+    <div className="my-3">
+      <div className="relative h-2 bg-muted rounded-full">
+        <div
+          className="absolute h-full bg-gradient-to-r from-primary to-primary-dark rounded-full"
+          style={{ left: `${left}%`, width: `${width}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-[10px] text-text-secondary tabular-nums">{startTime.substring(0, 5)}</span>
+        <span className="text-[10px] text-text-secondary tabular-nums">{endTime.substring(0, 5)}</span>
+      </div>
+    </div>
+  );
+}
+
+function WeekDots({
+  entries,
+  weekOffset,
+  onWeekChange,
+  onDotClick,
+}: {
+  entries: { date: string }[];
+  weekOffset: number;
+  onWeekChange: (dir: -1 | 1) => void;
+  onDotClick: (date: string) => void;
+}) {
+  const now = new Date();
+  const day = now.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(monday.getDate() + mondayOffset + weekOffset * 7);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + i);
+    return format(d, 'yyyy-MM-dd');
+  });
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const entryDates = new Set(entries.map(e => e.date));
+  return (
+    <div className="flex items-center gap-1 px-1 py-3 md:hidden">
+      <button onClick={() => onWeekChange(-1)} className="p-1 rounded-lg hover:bg-muted transition" aria-label="Vorherige Woche">
+        <ChevronLeft size={16} className="text-text-secondary" />
+      </button>
+      <div className="flex-1 flex items-center justify-between">
+        {days.map(dateStr => {
+          const hasEntry = entryDates.has(dateStr);
+          const isToday = dateStr === today;
+          return (
+            <button
+              key={dateStr}
+              onClick={() => onDotClick(dateStr)}
+              className="flex flex-col items-center gap-1 min-w-[44px] min-h-[44px] justify-center"
+              aria-label={`${format(new Date(dateStr + 'T00:00:00'), 'EEEE, d. MMMM', { locale: de })}${hasEntry ? ', Eintrag vorhanden' : ''}${isToday ? ', heute' : ''}`}
+              aria-pressed={isToday}
+            >
+              <span className="text-[10px] text-text-secondary uppercase" aria-hidden="true">
+                {format(new Date(dateStr + 'T00:00:00'), 'EEEEEE', { locale: de })}
+              </span>
+              <span className="text-xs tabular-nums text-text-secondary" aria-hidden="true">
+                {new Date(dateStr + 'T00:00:00').getDate()}
+              </span>
+              <div aria-hidden="true" className={`w-2 h-2 rounded-full transition-colors ${hasEntry ? 'bg-primary' : 'bg-muted'} ${isToday ? 'ring-2 ring-primary ring-offset-1' : ''}`} />
+            </button>
+          );
+        })}
+      </div>
+      <button onClick={() => onWeekChange(1)} className="p-1 rounded-lg hover:bg-muted transition" aria-label="Nächste Woche">
+        <ChevronRight size={16} className="text-text-secondary" />
+      </button>
+    </div>
+  );
+}
+
 export default function TimeTracking() {
   const toast = useToast();
   const { user } = useAuthStore();
+  const { stampVersion } = useUIStore();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -96,6 +185,7 @@ export default function TimeTracking() {
     break_time?: string;
   }>({});
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+  const [weekOffset, setWeekOffset] = useState(0);
 
   // Change request modal
   const [crModalOpen, setCrModalOpen] = useState(false);
@@ -113,6 +203,12 @@ export default function TimeTracking() {
   useEffect(() => {
     fetchEntries();
   }, [currentMonth]);
+
+  // Refresh entries after FAB clock-in/out
+  useEffect(() => {
+    if (stampVersion === 0) return;
+    fetchEntries();
+  }, [stampVersion]);
 
   const fetchEntries = async () => {
     try {
@@ -325,10 +421,10 @@ export default function TimeTracking() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Zeiterfassung</h1>
+      <div className="flex items-center justify-between gap-2 mb-6 min-w-0">
+        <h1 className="text-2xl sm:text-3xl font-bold text-text-primary truncate">Zeiterfassung</h1>
         {activeTab === 'eintraege' && (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2 shrink-0">
             {!isAdmin && (
               <Button
                 variant="secondary"
@@ -347,14 +443,14 @@ export default function TimeTracking() {
               icon={showForm ? X : Plus}
               onClick={() => setShowForm(!showForm)}
             >
-              {showForm ? 'Abbrechen' : 'Neuer Eintrag'}
+              <span className="hidden sm:inline">{showForm ? 'Abbrechen' : 'Neuer Eintrag'}</span>
             </Button>
           </div>
         )}
       </div>
 
       {/* Tab Bar */}
-      <div className="flex border-b border-gray-200 mb-6">
+      <div className="flex gap-1 bg-muted rounded-xl p-1 mb-6">
         {[
           { id: 'eintraege', label: 'Einträge' },
           { id: 'journal', label: 'Journal' },
@@ -363,10 +459,10 @@ export default function TimeTracking() {
           <button
             key={tab.id}
             onClick={() => setTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`flex-1 px-4 py-2 text-sm font-medium rounded-xl transition-all ${
               activeTab === tab.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                ? 'bg-primary text-white shadow-soft'
+                : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {tab.label}
@@ -392,8 +488,12 @@ export default function TimeTracking() {
           <div
             className="md:hidden fixed inset-0 bg-black/40 z-40"
             onClick={resetForm}
+            aria-hidden="true"
           />
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="entry-form-title"
             className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-sm md:border md:p-6 md:mb-6"
             style={{ animation: 'slideUpSheet 0.25s ease-out' }}
           >
@@ -403,15 +503,15 @@ export default function TimeTracking() {
             </div>
             {/* Mobile header with close button */}
             <div className="md:hidden flex items-center justify-between px-4 pb-3 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-gray-900">
+              <h3 id="entry-form-title" className="text-base font-semibold text-gray-900">
                 {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
               </h3>
-              <button onClick={resetForm} className="p-2 text-gray-500 hover:text-gray-700">
-                <X size={20} />
+              <button onClick={resetForm} className="p-2 text-gray-500 hover:text-gray-700" aria-label="Formular schließen">
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             {/* Desktop title */}
-            <h3 className="hidden md:block text-lg font-semibold mb-4">
+            <h3 id="entry-form-title" className="hidden md:block text-lg font-semibold mb-4">
               {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
             </h3>
           {errors.overlap && (
@@ -528,10 +628,11 @@ export default function TimeTracking() {
             {(new Date(formData.date + 'T12:00:00').getDay() === 0 ||
               (editingId && entries.find(e => e.id === editingId)?.is_sunday_or_holiday)) && (
               <div className="md:col-span-2 lg:col-span-5">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="sunday-exception-reason" className="block text-sm font-medium text-gray-700 mb-1">
                   Ausnahmegrund <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
                 </label>
                 <input
+                  id="sunday-exception-reason"
                   type="text"
                   value={formData.sunday_exception_reason}
                   onChange={(e) => setFormData({ ...formData, sunday_exception_reason: e.target.value })}
@@ -627,7 +728,7 @@ export default function TimeTracking() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.break_minutes} min</td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                        {entry.net_hours.toFixed(2)} h
+                        {formatHoursHM(entry.net_hours)} h
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.note || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm space-x-1">
@@ -677,7 +778,7 @@ export default function TimeTracking() {
               {entries.length > 0 && (
                 <tr className="bg-gray-50 font-semibold">
                   <td colSpan={5} className="px-6 py-4 text-sm text-gray-900">Summe</td>
-                  <td className="px-6 py-4 text-sm text-gray-900">{totalNet.toFixed(2)} h</td>
+                  <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(totalNet)} h</td>
                   <td colSpan={2}></td>
                 </tr>
               )}
@@ -688,101 +789,90 @@ export default function TimeTracking() {
         {/* Mobile Cards */}
         <div className="md:hidden">
           {loading ? (
-            <div className="p-6">
-              <LoadingSpinner text="Lade Einträge..." />
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <div key={i} className="skeleton h-32 rounded-2xl" />)}
             </div>
           ) : entries.length === 0 ? (
             <EmptyState title="Keine Einträge für diesen Monat" />
           ) : (
             <>
-              <div className="divide-y divide-gray-200">
-                {entries.map((entry) => {
+              <WeekDots
+                entries={entries}
+                weekOffset={weekOffset}
+                onWeekChange={(dir) => setWeekOffset(prev => prev + dir)}
+                onDotClick={(date) => {
+                  document.getElementById(`entry-${date}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+              />
+              <div className="space-y-3">
+                {entries.map((entry, i) => {
                   const entryDate = new Date(entry.date + 'T00:00:00');
-                  const weekday = weekdayNames[entryDate.getDay()];
                   return (
-                    <div key={entry.id} className={`p-4 ${!entry.is_editable ? 'bg-gray-50/50' : ''}`}>
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {format(entryDate, 'dd.MM.yyyy')}
-                            {!entry.is_editable && (
-                              <Lock size={12} className="inline ml-1 text-gray-400" />
-                            )}
-                          </p>
-                          <p className="text-sm text-gray-500">{weekday}</p>
+                    <div
+                      key={entry.id}
+                      id={`entry-${entry.date}`}
+                      className="bg-surface rounded-2xl shadow-soft p-4"
+                      style={{ animation: `fadeSlideIn 200ms ease-out ${i * 50}ms both` }}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="font-semibold text-text-primary">
+                          {format(entryDate, 'EEEE, d. MMMM', { locale: de })}
+                          {!entry.is_editable && <Lock size={12} className="inline ml-1 text-text-secondary" />}
                         </div>
-                        <div className="flex space-x-2">
-                          {entry.is_editable ? (
-                            <>
-                              <button
-                                onClick={() => handleEdit(entry)}
-                                className="p-2 text-primary hover:bg-blue-50 rounded-lg transition"
-                                aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} bearbeiten`}
-                              >
-                                <Edit2 size={18} />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(entry.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                                aria-label={`Eintrag vom ${format(entryDate, 'dd.MM.yyyy')} löschen`}
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => openChangeRequest(entry, 'update')}
-                                className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition"
-                                title="Änderungsantrag"
-                              >
-                                <FileEdit size={18} />
-                              </button>
-                              <button
-                                onClick={() => openChangeRequest(entry, 'delete')}
-                                className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition"
-                                title="Löschantrag"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </>
-                          )}
+                        <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(entry.net_hours)}h</span>
+                      </div>
+                      <TimeBar startTime={entry.start_time} endTime={entry.end_time} />
+                      <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                        <div className="flex justify-between">
+                          <span className="text-text-secondary">Arbeitszeit</span>
+                          <span className="font-medium tabular-nums">{formatHoursHM(entry.net_hours)}h</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-text-secondary">Pause</span>
+                          <span className="font-medium tabular-nums">{entry.break_minutes} min</span>
                         </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
-                        <div>
-                          <span className="text-gray-500 block">Von</span>
-                          <p className="font-medium">{entry.start_time.substring(0, 5)}</p>
+                      {entry.note && <p className="text-sm text-text-secondary mb-3">{entry.note}</p>}
+                      {entry.is_editable ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(entry)}
+                            className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-sm text-text-secondary hover:bg-muted transition"
+                          >
+                            <Edit2 size={14} /> Bearbeiten
+                          </button>
+                          <button
+                            onClick={() => handleDelete(entry.id)}
+                            className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-sm text-danger hover:bg-red-50 transition"
+                          >
+                            <Trash2 size={14} /> Löschen
+                          </button>
                         </div>
-                        <div>
-                          <span className="text-gray-500 block">Bis</span>
-                          <p className="font-medium">
-                            {entry.end_time ? entry.end_time.substring(0, 5) : <span className="text-green-600">offen</span>}
-                          </p>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => openChangeRequest(entry, 'update')}
+                            className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-sm text-amber-600 hover:bg-amber-50 transition"
+                          >
+                            <FileEdit size={14} /> Ändern
+                          </button>
+                          <button
+                            onClick={() => openChangeRequest(entry, 'delete')}
+                            className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-sm text-danger hover:bg-red-50 transition"
+                          >
+                            <Trash2 size={14} /> Löschen
+                          </button>
                         </div>
-                        <div>
-                          <span className="text-gray-500 block">Pause</span>
-                          <p className="font-medium">{entry.break_minutes} min</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-500">Netto-Arbeitszeit</span>
-                          <span className="text-lg font-bold text-primary">{entry.net_hours.toFixed(2)} h</span>
-                        </div>
-                        {entry.note && (
-                          <p className="text-sm text-gray-600 mt-2">{entry.note}</p>
-                        )}
-                      </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
               {entries.length > 0 && (
-                <div className="p-4 bg-gray-50 border-t border-gray-200">
+                <div className="p-4 bg-muted rounded-2xl mt-3">
                   <div className="flex justify-between items-center">
-                    <span className="font-semibold text-gray-900">Summe</span>
-                    <span className="text-lg font-bold text-primary">{totalNet.toFixed(2)} h</span>
+                    <span className="font-semibold text-text-primary">Summe</span>
+                    <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(totalNet)} h</span>
                   </div>
                 </div>
               )}

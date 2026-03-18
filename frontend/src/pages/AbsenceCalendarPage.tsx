@@ -276,15 +276,15 @@ export default function AbsenceCalendarPage() {
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Abwesenheiten</h1>
+      <div className="flex items-center justify-between gap-2 mb-6 min-w-0">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Abwesenheiten</h1>
         {activeTab === 'calendar' && (
           <button
             onClick={() => setShowForm(!showForm)}
-            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+            className="shrink-0 bg-primary hover:bg-primary-dark text-white px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 transition"
           >
             {showForm ? <X size={20} /> : <Plus size={20} />}
-            <span>{showForm ? 'Abbrechen' : 'Abwesenheit eintragen'}</span>
+            <span className="hidden sm:inline">{showForm ? 'Abbrechen' : 'Abwesenheit eintragen'}</span>
           </button>
         )}
       </div>

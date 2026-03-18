@@ -50,8 +50,8 @@ test.describe('Employee Time Tracking', () => {
     await expect(editButton).toBeVisible({ timeout: 5000 });
     await editButton.click();
 
-    // Wait for form to show with pre-filled data
-    await expect(employeePage.getByText('Eintrag bearbeiten')).toBeVisible({ timeout: 5000 });
+    // Wait for form to show with pre-filled data (desktop heading has "hidden md:block", use last())
+    await expect(employeePage.getByText('Eintrag bearbeiten').last()).toBeVisible({ timeout: 5000 });
 
     // Verify form is pre-filled with entry data
     await expect(employeePage.locator('#start-time')).toHaveValue('16:00');
