@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import extract, and_
 from typing import List, Optional
 from datetime import datetime, date, time, timezone
+from app.services.timezone_service import LOCAL_TZ, now_local as _now_local, today_local as _today_local
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole
 from app.middleware.auth import get_current_user
@@ -114,7 +115,7 @@ def _compute_is_editable(entry: TimeEntry, current_user: User) -> bool:
     """Check if a time entry is editable by the current user."""
     if current_user.role == UserRole.ADMIN:
         return True
-    return entry.date == date.today()
+    return entry.date == _today_local()
 
 
 def _get_open_entry(db: Session, user_id, with_lock: bool = False) -> Optional[TimeEntry]:
@@ -151,13 +152,13 @@ def get_clock_status(
         return ClockStatusResponse(is_clocked_in=False)
 
     # If the open entry is from a previous day, auto-close it
-    if open_entry.date != date.today():
+    if open_entry.date != _today_local():
         _close_stale_entry(db, open_entry)
         return ClockStatusResponse(is_clocked_in=False)
 
-    # Calculate elapsed minutes; clock-in stores UTC time, so use UTC here too
-    now = datetime.now(timezone.utc)
-    start_dt = datetime.combine(open_entry.date, open_entry.start_time, tzinfo=timezone.utc)
+    # Calculate elapsed minutes in local time
+    now = _now_local()
+    start_dt = datetime.combine(open_entry.date, open_entry.start_time, tzinfo=LOCAL_TZ)
     elapsed = int((now - start_dt).total_seconds() / 60)
 
     response_entry = TimeEntryResponse.model_validate(open_entry)
@@ -180,7 +181,7 @@ def clock_in(
     # VULN-009: use SELECT FOR UPDATE to prevent race condition on concurrent clock-in
     open_entry = _get_open_entry(db, current_user.id, with_lock=True)
     if open_entry:
-        if open_entry.date != date.today():
+        if open_entry.date != _today_local():
             # Stale entry from a previous day: auto-close
             _close_stale_entry(db, open_entry)
         else:
@@ -189,7 +190,7 @@ def clock_in(
                 detail="Bereits eingestempelt. Bitte zuerst ausstempeln.",
             )
 
-    now = datetime.now(timezone.utc)
+    now = _now_local()
 
     # Check first/last work day
     if current_user.first_work_day and now.date() < current_user.first_work_day:
@@ -231,14 +232,14 @@ def clock_out(
         )
 
     # If stale entry from a previous day, auto-close and error
-    if open_entry.date != date.today():
+    if open_entry.date != _today_local():
         _close_stale_entry(db, open_entry)
         raise HTTPException(
             status_code=400,
             detail="Offener Eintrag von einem früheren Tag wurde automatisch geschlossen. Bitte neu einstempeln.",
         )
 
-    now = datetime.now(timezone.utc)
+    now = _now_local()
     new_end_time = now.time().replace(second=0, microsecond=0)
     exempt = current_user.exempt_from_arbzg
 
@@ -377,7 +378,7 @@ def create_time_entry(
     """Create a new time entry."""
 
     # Edit protection: employees can only create entries for today
-    if current_user.role != UserRole.ADMIN and entry_data.date != date.today():
+    if current_user.role != UserRole.ADMIN and entry_data.date != _today_local():
         raise HTTPException(
             status_code=403,
             detail="Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden"
@@ -502,7 +503,7 @@ def update_time_entry(
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
 
     # Edit protection: employees can only edit today's entries
-    if current_user.role != UserRole.ADMIN and entry.date != date.today():
+    if current_user.role != UserRole.ADMIN and entry.date != _today_local():
         raise HTTPException(
             status_code=403,
             detail="Einträge vergangener Tage können nur per Änderungsantrag geändert werden"
@@ -619,7 +620,7 @@ def delete_time_entry(
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
 
     # Edit protection: employees can only delete today's entries
-    if current_user.role != UserRole.ADMIN and entry.date != date.today():
+    if current_user.role != UserRole.ADMIN and entry.date != _today_local():
         raise HTTPException(
             status_code=403,
             detail="Einträge vergangener Tage können nur per Änderungsantrag gelöscht werden"

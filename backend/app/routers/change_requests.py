@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
+from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole
 from app.middleware.auth import get_current_user
@@ -62,7 +63,7 @@ def create_change_request(
         if not all([data.proposed_date, data.proposed_start_time, data.proposed_end_time]):
             raise HTTPException(status_code=400, detail="Datum, Von und Bis sind für neue Einträge erforderlich")
         # Must be for a past day
-        if data.proposed_date >= date.today():
+        if data.proposed_date >= today_local():
             raise HTTPException(status_code=400, detail="Änderungsanträge sind nur für vergangene Tage möglich")
         # Arbeitszeitraum-Prüfung (I1)
         if current_user.first_work_day and data.proposed_date < current_user.first_work_day:
@@ -83,7 +84,7 @@ def create_change_request(
 
     # For DELETE, entry must be from past
     if data.request_type == "delete" and entry:
-        if entry.date >= date.today():
+        if entry.date >= today_local():
             raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
 
     # Break validation for CREATE and UPDATE (§18-Ausnahme: exempt_from_arbzg überspringt §3/§4)

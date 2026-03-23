@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import extract, func
 from typing import List, Optional
 from datetime import date, datetime, timezone, timedelta
+from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeRequest, ChangeRequestStatus, ChangeRequestType, TimeEntryAuditLog, UserRole, PublicHoliday, AbsenceType, YearCarryover
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
@@ -127,7 +128,7 @@ def get_deletion_candidates(
     """DSGVO Art. 17: List inactive users with anonymization/purge eligibility."""
     inactive_users = db.query(User).filter(User.is_active == False).order_by(User.last_name, User.first_name).all()
 
-    today = date.today()
+    today = today_local()
     result = []
 
     for user in inactive_users:
@@ -236,7 +237,7 @@ def purge_user(
     ).order_by(TimeEntry.date.desc()).first()
 
     if last_entry:
-        days_since = (date.today() - last_entry.date).days
+        days_since = (today_local() - last_entry.date).days
         if days_since < 730:
             raise HTTPException(
                 status_code=409,
@@ -463,10 +464,10 @@ def create_working_hours_change(
     )
     db.add(change)
 
-    if change_data.effective_from <= date.today():
+    if change_data.effective_from <= today_local():
         most_recent = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == user_id,
-            WorkingHoursChange.effective_from <= date.today()
+            WorkingHoursChange.effective_from <= today_local()
         ).order_by(WorkingHoursChange.effective_from.desc()).first()
         if most_recent:
             user.weekly_hours = most_recent.weekly_hours
@@ -498,7 +499,7 @@ def delete_working_hours_change(
 
     most_recent = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
-        WorkingHoursChange.effective_from <= date.today()
+        WorkingHoursChange.effective_from <= today_local()
     ).order_by(WorkingHoursChange.effective_from.desc()).first()
 
     if most_recent:
