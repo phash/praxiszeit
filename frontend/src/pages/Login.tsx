@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { LogIn, FileText, Shield, Smartphone } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
+import { DocModal } from '../components/DocModal';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -12,6 +13,8 @@ export default function Login() {
   const [totpRequired, setTotpRequired] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
 
   const { login } = useAuthStore();
   const navigate = useNavigate();
@@ -148,25 +151,29 @@ export default function Login() {
         <div className="mt-6 pt-5 border-t border-gray-100">
           <p className="text-xs text-gray-400 text-center mb-3">Dokumentation</p>
           <div className="flex justify-center gap-3 flex-wrap">
-            <a
-              href="/help/HANDBUCH-MITARBEITER.md"
-              download
+            <button
+              onClick={() => { setModalTab('handbuch'); setModalOpen(true); }}
               className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
             >
               <FileText size={13} />
               Mitarbeiter-Handbuch
-            </a>
+            </button>
             <span className="text-gray-300">·</span>
-            <a
-              href="/help/CHEATSHEET-MITARBEITER.md"
-              download
+            <button
+              onClick={() => { setModalTab('cheatsheet'); setModalOpen(true); }}
               className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-primary transition-colors"
             >
               <FileText size={13} />
               Cheat-Sheet
-            </a>
+            </button>
           </div>
         </div>
+
+        <DocModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          initialTab={modalTab}
+        />
       </div>
     </div>
   );
