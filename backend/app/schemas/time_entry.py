@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, field_serializer
 from typing import Optional, List
 from datetime import date, time, datetime
+from app.services.timezone_service import today_local
 from decimal import Decimal
 from uuid import UUID
 
@@ -23,7 +24,7 @@ class TimeEntryBase(BaseModel):
     @field_validator('date')
     @classmethod
     def validate_not_future(cls, v):
-        if v > date.today():
+        if v > today_local():
             raise ValueError('Datum darf nicht in der Zukunft liegen')
         return v
 
