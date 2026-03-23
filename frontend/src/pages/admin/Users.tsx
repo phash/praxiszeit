@@ -5,6 +5,7 @@ import apiClient from '../../api/client';
 import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
+import { useAuthStore } from '../../stores/authStore';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import PasswordInput from '../../components/PasswordInput';
@@ -76,6 +77,7 @@ function graceRemainingDays(user: User): number {
 export default function Users() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
   const [loading, setLoading] = useState(true);
@@ -188,6 +190,11 @@ export default function Users() {
         // When editing, send only the fields that can be updated (exclude password)
         const { password, ...updateData } = payload;
         await apiClient.put(`/admin/users/${editingId}`, updateData);
+        // If the admin edited themselves, refresh the auth store so Dashboard/Layout update
+        if (currentUser && editingId === currentUser.id) {
+          const meRes = await apiClient.get('/auth/me');
+          setCurrentUser(meRes.data);
+        }
         toast.success('Benutzer erfolgreich aktualisiert');
       } else {
         await apiClient.post('/admin/users', payload);

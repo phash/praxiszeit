@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from typing import List, Optional
 from datetime import timedelta, date
+from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import User, Absence, AbsenceType, UserRole, PublicHoliday
 from app.middleware.auth import get_current_user
@@ -104,7 +105,7 @@ def get_team_upcoming_absences(
     Visible to all authenticated users.
     Shows unique absence periods (groups consecutive days with same end_date).
     """
-    today = date.today()
+    today = today_local()
 
     # Get all future absences from active users
     absences = db.query(Absence).join(User).filter(
@@ -150,7 +151,7 @@ def get_next_vacation(
     Returns the start date, optional end date, and days until the vacation.
     Returns null if no upcoming vacation is found.
     """
-    today = date.today()
+    today = today_local()
 
     next_vacation = db.query(Absence).filter(
         Absence.user_id == current_user.id,
