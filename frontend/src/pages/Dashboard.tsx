@@ -3,7 +3,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths 
 import { de } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
-import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useUIStore } from '../stores/uiStore';
 import { formatHoursHM } from '../utils/errorMessage';
@@ -111,6 +111,8 @@ export default function Dashboard() {
   const [ytdOvertime, setYtdOvertime] = useState<YtdOvertime | null>(null);
   const [teamAbsences, setTeamAbsences] = useState<TeamAbsence[]>([]);
   const [nextVacation, setNextVacation] = useState<NextVacation | null>(null);
+  const [missingBookings, setMissingBookings] = useState<Array<{ date: string; type: string; start_time?: string }>>([]);
+  const [teamMissingBookings, setTeamMissingBookings] = useState<Array<{ user_id: string; first_name: string; last_name: string; entries: Array<{ date: string; type: string; start_time?: string }> }>>([]);
   const [loading, setLoading] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
 
@@ -134,6 +136,16 @@ export default function Dashboard() {
         setTeamAbsences(teamAbsencesRes.data);
         setNextVacation(nextVacationRes.data);
         setYtdOvertime(ytdRes.data);
+
+        // Fetch missing bookings
+        try {
+          const missingRes = await apiClient.get('/dashboard/missing-bookings');
+          setMissingBookings(missingRes.data.entries || []);
+          if (user?.role === 'admin') {
+            const teamMissingRes = await apiClient.get('/dashboard/missing-bookings/team');
+            setTeamMissingBookings(teamMissingRes.data || []);
+          }
+        } catch { /* non-critical */ }
 
         // Fetch recent entries + clock status for mobile
         try {
@@ -237,6 +249,56 @@ export default function Dashboard() {
 
       {/* Greeting - Desktop */}
       <h1 className="hidden md:block text-3xl font-bold text-text-primary mb-8">Dashboard</h1>
+
+      {/* Missing Bookings Warning - Own */}
+      {missingBookings.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-danger shrink-0 mt-0.5" size={20} />
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-red-800">Buchung fehlt</h3>
+              <ul className="mt-1 space-y-0.5">
+                {missingBookings.map((entry) => (
+                  <li key={entry.date + entry.type} className="text-sm text-red-700">
+                    {format(new Date(entry.date + 'T00:00:00'), 'EE dd.MM.', { locale: de })}
+                    {entry.type === 'open'
+                      ? ` – offen seit ${entry.start_time}`
+                      : ' – kein Eintrag'}
+                  </li>
+                ))}
+              </ul>
+              <Link to="/time-tracking" className="inline-block mt-2 text-sm font-medium text-red-800 hover:text-red-900 underline">
+                Zur Zeiterfassung →
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Missing Bookings Warning - Team (Admin) */}
+      {teamMissingBookings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-amber-800">Fehlende Buchungen im Team</h3>
+              <div className="mt-1 space-y-2">
+                {teamMissingBookings.map((member) => (
+                  <div key={member.user_id}>
+                    <span className="text-sm font-medium text-amber-800">{member.first_name} {member.last_name}:</span>
+                    <span className="text-sm text-amber-700 ml-1">
+                      {member.entries.map(e =>
+                        format(new Date(e.date + 'T00:00:00'), 'dd.MM.', { locale: de }) +
+                        (e.type === 'open' ? ` (offen)` : '')
+                      ).join(', ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Status Card - Mobile Hero */}
       {trackHours && (() => {

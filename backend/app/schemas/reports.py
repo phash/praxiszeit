@@ -76,6 +76,19 @@ class PublicHolidayResponse(BaseModel):
         from_attributes = True
 
 
+class MissingBookingEntry(BaseModel):
+    """A single missing or incomplete booking."""
+    date: date
+    type: str  # "open" (end_time NULL) or "missing" (no entry on workday)
+    start_time: Optional[str] = None  # For open entries
+
+class MissingBookings(BaseModel):
+    """Missing bookings for a single user."""
+    user_id: str
+    first_name: str
+    last_name: str
+    entries: List[MissingBookingEntry]
+
 class EmployeeYearlyAbsences(BaseModel):
     """Yearly absence summary for a single employee."""
     user_id: str
