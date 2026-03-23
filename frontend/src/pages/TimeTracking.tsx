@@ -703,7 +703,7 @@ export default function TimeTracking() {
                   const entryDate = new Date(entry.date + 'T00:00:00');
                   const weekday = weekdayNames[entryDate.getDay()];
                   return (
-                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.is_editable ? 'bg-gray-50/50' : ''} ${entry.is_sunday_or_holiday ? 'bg-orange-50/40' : ''}`}>
+                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.end_time && new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'bg-red-50 border-l-4 border-l-danger' : !entry.is_editable ? 'bg-gray-50/50' : ''} ${entry.is_sunday_or_holiday ? 'bg-orange-50/40' : ''}`}>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         <div className="flex flex-col gap-1">
                           <span>{format(entryDate, 'dd.MM.yyyy')}</span>
@@ -724,7 +724,7 @@ export default function TimeTracking() {
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{entry.start_time.substring(0, 5)}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {entry.end_time ? entry.end_time.substring(0, 5) : <span className="text-green-600 font-medium">offen</span>}
+                        {entry.end_time ? entry.end_time.substring(0, 5) : <span className={`font-medium ${new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'text-danger' : 'text-green-600'}`}>offen</span>}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.break_minutes} min</td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
@@ -811,7 +811,7 @@ export default function TimeTracking() {
                     <div
                       key={entry.id}
                       id={`entry-${entry.date}`}
-                      className="bg-surface rounded-2xl shadow-soft p-4"
+                      className={`rounded-2xl shadow-soft p-4 ${!entry.end_time && new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'bg-red-50 border-l-4 border-l-danger' : 'bg-surface'}`}
                       style={{ animation: `fadeSlideIn 200ms ease-out ${i * 50}ms both` }}
                     >
                       <div className="flex justify-between items-start">
