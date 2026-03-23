@@ -74,7 +74,8 @@ def main():
             new_end = add_hours_to_time(old_end, OFFSET_HOURS) if old_end else None
 
             end_str = str(old_end)[:5] if old_end else "open"
-            new_end_str = str(new_end)[:5] if new_end else "open"
+            midnight_cross = old_end and old_end > time(23, 0)
+            new_end_str = "NULL ⚠" if midnight_cross else (str(new_end)[:5] if new_end else "open")
 
             print(f"{name:<25} {entry_date}  {str(old_start)[:5]}  -> {str(new_start)[:5]}  {end_str:<8}-> {new_end_str}")
 
@@ -120,6 +121,7 @@ def main():
             return
 
         # Apply the correction
+        # Normal case: shift both times by +1h
         result = conn.execute(text("""
             UPDATE time_entries
             SET start_time = start_time + interval '1 hours',
@@ -131,10 +133,28 @@ def main():
             WHERE date >= :cutoff
               AND created_at < :fix_deployed
               AND user_id NOT IN (SELECT id FROM users WHERE username = :exclude)
+              AND (end_time IS NULL OR end_time + interval '1 hours' >= start_time + interval '1 hours')
+              AND (end_time IS NULL OR end_time <= time '23:00')
+        """), {"cutoff": CUTOFF_DATE, "fix_deployed": FIX_DEPLOYED_AT, "exclude": EXCLUDE_USERNAME})
+
+        # Midnight crossing: shift start_time, set end_time = NULL (open entry)
+        midnight_result = conn.execute(text("""
+            UPDATE time_entries
+            SET start_time = start_time + interval '1 hours',
+                end_time = NULL,
+                updated_at = NOW()
+            WHERE date >= :cutoff
+              AND created_at < :fix_deployed
+              AND user_id NOT IN (SELECT id FROM users WHERE username = :exclude)
+              AND end_time IS NOT NULL
+              AND end_time > time '23:00'
         """), {"cutoff": CUTOFF_DATE, "fix_deployed": FIX_DEPLOYED_AT, "exclude": EXCLUDE_USERNAME})
         conn.commit()
 
-        print(f"\n>>> APPLIED: {result.rowcount} entries corrected by +{OFFSET_HOURS}h.\n")
+        print(f"\n>>> APPLIED: {result.rowcount} entries corrected by +{OFFSET_HOURS}h.")
+        if midnight_result.rowcount > 0:
+            print(f">>> {midnight_result.rowcount} entries had midnight-crossing end_time → set to NULL (open).")
+        print()
 
 
 if __name__ == "__main__":
