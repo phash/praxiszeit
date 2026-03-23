@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from app.services.timezone_service import today_local
 from decimal import Decimal
 from calendar import monthrange
 from typing import Dict
@@ -419,7 +420,7 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     if not user.track_hours:
         return {"target_hours": 0.0, "actual_hours": 0.0, "overtime": 0.0}
 
-    today = date.today()
+    today = today_local()
     if year is None:
         year = today.year
 
