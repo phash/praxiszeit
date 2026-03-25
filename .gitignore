@@ -54,6 +54,8 @@ ssl/*.pem
 *.db
 *.sqlite
 *.sqlite3
+*.sql.gz
+*.dump
 
 # Tools & local dev scripts (not tracked)
 .serena/
