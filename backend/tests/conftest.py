@@ -1,4 +1,5 @@
 import pytest
+import uuid
 from datetime import date
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -6,6 +7,7 @@ from app.database import Base
 from app.models import User, UserRole
 from app.services import auth_service
 
+DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 # Test database URL
 TEST_DATABASE_URL = "sqlite:///./test.db"
@@ -28,7 +30,24 @@ def db():
 
 
 @pytest.fixture(scope="function")
-def test_user(db):
+def default_tenant(db):
+    """Create the default tenant for tests."""
+    from app.models.tenant import Tenant
+    tenant = Tenant(
+        id=DEFAULT_TENANT_ID,
+        name="Default",
+        slug="default",
+        is_active=True,
+        mode="single",
+    )
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+@pytest.fixture(scope="function")
+def test_user(db, default_tenant):
     """Create a test employee user."""
     user = User(
         username="testuser",
@@ -40,7 +59,8 @@ def test_user(db):
         weekly_hours=40.0,
         vacation_days=30,
         work_days_per_week=5,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(user)
     db.commit()
@@ -49,7 +69,7 @@ def test_user(db):
 
 
 @pytest.fixture(scope="function")
-def test_admin(db):
+def test_admin(db, default_tenant):
     """Create a test admin user."""
     admin = User(
         username="adminuser",
@@ -61,7 +81,8 @@ def test_admin(db):
         weekly_hours=40.0,
         vacation_days=30,
         work_days_per_week=5,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(admin)
     db.commit()
@@ -70,13 +91,14 @@ def test_admin(db):
 
 
 @pytest.fixture(scope="function")
-def public_holiday(db):
+def public_holiday(db, default_tenant):
     """Ein Feiertag (Neujahr 2026) für Tests."""
     from app.models.public_holiday import PublicHoliday
     h = PublicHoliday(
         date=date(2026, 1, 1),
         name="Neujahr",
         year=2026,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(h)
     db.commit()
