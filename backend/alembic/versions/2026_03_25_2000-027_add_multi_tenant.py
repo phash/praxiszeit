@@ -88,8 +88,50 @@ def upgrade() -> None:
     op.create_unique_constraint('uq_tenant_year_carryover_user_year', 'year_carryovers',
                                 ['tenant_id', 'user_id', 'year'])
 
+    # 6. Enable RLS on all tables with tenant_id
+    all_tables = _NOT_NULL_TABLES + ['users', 'system_settings']
+    for table in all_tables:
+        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+
+    # 7. Create RLS policies — standard tables (NOT NULL tenant_id)
+    for table in _NOT_NULL_TABLES:
+        op.execute(f"""
+            CREATE POLICY tenant_isolation ON {table}
+            USING (
+                current_setting('app.tenant_id', true) IS NULL
+                OR tenant_id = current_setting('app.tenant_id')::uuid
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) IS NULL
+                OR tenant_id = current_setting('app.tenant_id')::uuid
+            )
+        """)
+
+    # 8. Create RLS policies — nullable tenant_id tables (users, system_settings)
+    for table in ['users', 'system_settings']:
+        op.execute(f"""
+            CREATE POLICY tenant_isolation ON {table}
+            USING (
+                current_setting('app.tenant_id', true) IS NULL
+                OR tenant_id = current_setting('app.tenant_id')::uuid
+                OR tenant_id IS NULL
+            )
+            WITH CHECK (
+                current_setting('app.tenant_id', true) IS NULL
+                OR tenant_id = current_setting('app.tenant_id')::uuid
+                OR tenant_id IS NULL
+            )
+        """)
+
 
 def downgrade() -> None:
+    # Remove RLS policies and disable RLS
+    all_tables = _NOT_NULL_TABLES + ['users', 'system_settings']
+    for table in all_tables:
+        op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
+        op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
+
     # Reverse unique constraints
     op.drop_constraint('uq_tenant_year_carryover_user_year', 'year_carryovers', type_='unique')
     op.create_unique_constraint('uq_year_carryover_user_year', 'year_carryovers',
