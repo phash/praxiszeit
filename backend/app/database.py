@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.config import settings
 
@@ -24,3 +24,8 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def set_tenant_context(db, tenant_id: str):
+    """Set PostgreSQL session variable for RLS. Must be called within a transaction."""
+    db.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(tenant_id)})

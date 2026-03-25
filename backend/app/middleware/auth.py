@@ -1,7 +1,7 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from app.database import get_db
+from app.database import get_db, set_tenant_context
 from app.models import User, UserRole
 from app.services import auth_service
 
@@ -10,6 +10,7 @@ security = HTTPBearer()
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
@@ -17,6 +18,7 @@ def get_current_user(
     Dependency to get the current authenticated user from JWT token.
 
     Args:
+        request: FastAPI request (used to store tenant_id in request.state)
         credentials: HTTP Authorization header with Bearer token
         db: Database session
 
@@ -58,6 +60,16 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token wurde widerrufen. Bitte erneut anmelden."
         )
+
+    # Set tenant context for RLS
+    # tid from JWT, fallback to user.tenant_id (backward compat for old tokens)
+    tenant_id = payload.get("tid") or (str(user.tenant_id) if user.tenant_id else None)
+    if tenant_id:
+        set_tenant_context(db, tenant_id)
+        request.state.tenant_id = tenant_id
+    else:
+        # Superadmin — no tenant context, RLS bypassed
+        request.state.tenant_id = None
 
     return user
 
