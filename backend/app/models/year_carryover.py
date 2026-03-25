@@ -14,6 +14,7 @@ class YearCarryover(Base):
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     year = Column(Integer, nullable=False)  # The year these carryovers apply TO
     overtime_hours = Column(Numeric(8, 2), nullable=False, default=0)  # Overtime hours from previous year
