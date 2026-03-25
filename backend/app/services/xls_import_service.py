@@ -207,6 +207,7 @@ def execute_import(
     db: Session,
     changed_by_id: uuid.UUID,
     filename: str,
+    tenant_id: uuid.UUID | None = None,
 ) -> ImportResult:
     """
     Führt den Import durch. Bei overwrite=True werden Konflikte überschrieben,
@@ -256,6 +257,7 @@ def execute_import(
                 new_end_time=entry.end_time,
                 new_break_minutes=entry.break_minutes,
                 new_note=entry.note,
+                tenant_id=tenant_id,
             )
             existing.end_time = entry.end_time
             existing.break_minutes = entry.break_minutes
@@ -265,6 +267,7 @@ def execute_import(
         else:
             new_entry = TimeEntry(
                 user_id=user_id,
+                tenant_id=tenant_id,
                 date=entry.date,
                 start_time=entry.start_time,
                 end_time=entry.end_time,
@@ -285,6 +288,7 @@ def execute_import(
                 new_end_time=entry.end_time,
                 new_break_minutes=entry.break_minutes,
                 new_note=entry.note,
+                tenant_id=tenant_id,
             )
             db.add(log)
             imported += 1
@@ -303,6 +307,7 @@ def execute_import(
         action="import",
         source="import",
         new_note=summary,
+        tenant_id=tenant_id,
     )
     db.add(summary_log)
     db.commit()
