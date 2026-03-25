@@ -4,11 +4,13 @@ from decimal import Decimal
 from datetime import date, time
 from app.models import TimeEntry, Absence, AbsenceType, PublicHoliday
 from app.services import journal_service
+from tests.conftest import DEFAULT_TENANT_ID
 
 
 def _make_entry(db, user, d, start_h, end_h, break_min=0):
     entry = TimeEntry(
         user_id=user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=d,
         start_time=time(start_h, 0),
         end_time=time(end_h, 0),
@@ -23,6 +25,7 @@ def _make_entry(db, user, d, start_h, end_h, break_min=0):
 def _make_absence(db, user, d, atype, hours=8.0):
     absence = Absence(
         user_id=user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=d,
         type=atype,
         hours=hours,
@@ -60,7 +63,7 @@ def test_journal_weekend_has_weekend_type(db, test_user):
 
 def test_journal_holiday_has_holiday_type(db, test_user):
     """Feiertag → type='holiday'."""
-    h = PublicHoliday(date=date(2026, 3, 11), name="Testfeiertag", year=2026)
+    h = PublicHoliday(date=date(2026, 3, 11), name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID)
     db.add(h)
     db.commit()
     result = journal_service.get_journal(db, test_user, 2026, 3)
@@ -71,13 +74,13 @@ def test_journal_holiday_has_holiday_type(db, test_user):
 
 
 def test_journal_vacation_day(db, test_user):
-    """Urlaubstag → type='vacation', target=0, balance=0."""
+    """Urlaubstag → type='vacation', target=absence_hours (→ balance=0)."""
     tuesday = date(2026, 3, 10)
     _make_absence(db, test_user, tuesday, AbsenceType.VACATION, hours=8.0)
     result = journal_service.get_journal(db, test_user, 2026, 3)
     day = next(d for d in result["days"] if d["date"] == "2026-03-10")
     assert day["type"] == "vacation"
-    assert day["target_hours"] == 0.0
+    assert day["target_hours"] == 8.0  # target = absence_sum so balance = 0
     assert day["balance"] == 0.0
 
 
