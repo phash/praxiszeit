@@ -88,38 +88,41 @@ def upgrade() -> None:
     op.create_unique_constraint('uq_tenant_year_carryover_user_year', 'year_carryovers',
                                 ['tenant_id', 'user_id', 'year'])
 
-    # 6. Enable RLS on all tables with tenant_id
-    all_tables = _NOT_NULL_TABLES + ['users', 'system_settings']
+    # 6. Enable RLS on all tables with tenant_id (including error_logs)
+    all_tables = _NOT_NULL_TABLES + _NULLABLE_TABLES
     for table in all_tables:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
 
     # 7. Create RLS policies — standard tables (NOT NULL tenant_id)
+    #    Uses explicit app.is_superadmin flag instead of IS NULL bypass
+    #    NULLIF guards against empty string being cast to uuid
     for table in _NOT_NULL_TABLES:
         op.execute(f"""
             CREATE POLICY tenant_isolation ON {table}
             USING (
-                current_setting('app.tenant_id', true) IS NULL
-                OR tenant_id = current_setting('app.tenant_id')::uuid
+                current_setting('app.is_superadmin', true) = 'true'
+                OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
             )
             WITH CHECK (
-                current_setting('app.tenant_id', true) IS NULL
-                OR tenant_id = current_setting('app.tenant_id')::uuid
+                current_setting('app.is_superadmin', true) = 'true'
+                OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
             )
         """)
 
-    # 8. Create RLS policies — nullable tenant_id tables (users, system_settings)
-    for table in ['users', 'system_settings']:
+    # 8. Create RLS policies — nullable tenant_id tables (users, system_settings, error_logs)
+    #    Allows rows with tenant_id IS NULL (e.g. superadmin users, errors without context)
+    for table in _NULLABLE_TABLES:
         op.execute(f"""
             CREATE POLICY tenant_isolation ON {table}
             USING (
-                current_setting('app.tenant_id', true) IS NULL
-                OR tenant_id = current_setting('app.tenant_id')::uuid
+                current_setting('app.is_superadmin', true) = 'true'
+                OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
                 OR tenant_id IS NULL
             )
             WITH CHECK (
-                current_setting('app.tenant_id', true) IS NULL
-                OR tenant_id = current_setting('app.tenant_id')::uuid
+                current_setting('app.is_superadmin', true) = 'true'
+                OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
                 OR tenant_id IS NULL
             )
         """)
@@ -127,7 +130,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Remove RLS policies and disable RLS
-    all_tables = _NOT_NULL_TABLES + ['users', 'system_settings']
+    all_tables = _NOT_NULL_TABLES + _NULLABLE_TABLES
     for table in all_tables:
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
