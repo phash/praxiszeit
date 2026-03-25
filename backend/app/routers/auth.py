@@ -101,8 +101,9 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 detail="Ungültiger TOTP-Code",
             )
 
-    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version)
-    refresh_token = auth_service.create_refresh_token(str(user.id), user.token_version)
+    tenant_id_str = str(user.tenant_id) if user.tenant_id else None
+    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)
+    refresh_token = auth_service.create_refresh_token(str(user.id), user.token_version, tenant_id_str)
 
     # F-010: deliver refresh token via HttpOnly cookie, not in JSON
     _set_refresh_cookie(response, refresh_token)
@@ -155,7 +156,8 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             detail="Token wurde widerrufen. Bitte erneut anmelden."
         )
 
-    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version)
+    tenant_id_str = str(user.tenant_id) if user.tenant_id else None
+    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)
     return RefreshResponse(access_token=access_token)
 
 
@@ -208,8 +210,9 @@ def change_password(
     db.refresh(current_user)
 
     # Issue a fresh token so the frontend session stays valid after the version bump
+    tenant_id_str = str(current_user.tenant_id) if current_user.tenant_id else None
     new_access_token = auth_service.create_access_token(
-        str(current_user.id), current_user.role.value, current_user.token_version
+        str(current_user.id), current_user.role.value, current_user.token_version, tenant_id_str
     )
     return {"message": "Passwort erfolgreich geändert", "access_token": new_access_token}
 
