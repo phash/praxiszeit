@@ -10,7 +10,7 @@ class YearCarryover(Base):
 
     __tablename__ = "year_carryovers"
     __table_args__ = (
-        UniqueConstraint('user_id', 'year', name='uq_year_carryover_user_year'),
+        UniqueConstraint('tenant_id', 'user_id', 'year', name='uq_tenant_year_carryover_user_year'),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

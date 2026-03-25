@@ -11,7 +11,7 @@ import logging
 import traceback
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
-from app.database import engine, SessionLocal
+from app.database import engine, SessionLocal, set_tenant_context
 from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
@@ -110,7 +110,7 @@ async def lifespan(app: FastAPI):
     print("📅 Syncing public holidays...")
     db = SessionLocal()
     try:
-        db.execute(text("SET LOCAL app.tenant_id = '00000000-0000-0000-0000-000000000001'"))
+        set_tenant_context(db, '00000000-0000-0000-0000-000000000001')
         state = holiday_service.get_holiday_state(db)
         result = holiday_service.sync_current_and_next_year(db, state=state, tenant_id=default_tenant_id)
         print(f"✅ Holidays synced for {result['state']}: {result['current_year']}({result['current_count']}), "
@@ -247,7 +247,10 @@ def get_public_settings():
     db = SessionLocal()
     try:
         def _get(key, default="false"):
-            s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+            s = db.query(SystemSetting).filter(
+                SystemSetting.key == key,
+                SystemSetting.tenant_id.is_(None)  # Only global settings
+            ).first()
             return s.value if s else default
         return {
             "vacation_approval_required": _get("vacation_approval_required", "false").lower() == "true"
