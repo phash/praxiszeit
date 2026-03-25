@@ -3,12 +3,14 @@ import pytest
 from datetime import date, time
 from app.models import TimeEntry
 from app.services.break_validation_service import validate_daily_break
+from tests.conftest import DEFAULT_TENANT_ID
 
 
 def _make_entry(db, user, start_h, start_m, end_h, end_m, break_min=0, d=None):
     """Helper: Zeiteintrag erstellen und committen."""
     entry = TimeEntry(
         user_id=user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=d or date(2026, 3, 10),
         start_time=time(start_h, start_m),
         end_time=time(end_h, end_m),
@@ -97,6 +99,7 @@ def test_open_entry_without_end_time_ignored(db, test_user):
     # Open clock-in entry - should NOT count toward work time
     open_entry = TimeEntry(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2026, 3, 10),
         start_time=time(6, 0),
         end_time=None,  # Open!
