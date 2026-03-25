@@ -11,6 +11,7 @@ class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     level = Column(String(20), nullable=False, index=True)          # 'error', 'warning', 'critical'
     logger = Column(String(200), nullable=False)
     message = Column(Text, nullable=False)
