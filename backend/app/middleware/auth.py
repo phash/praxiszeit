@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import get_db, set_tenant_context, set_superadmin_context
 from app.models import User, UserRole
+from app.models.tenant import Tenant
 from app.services import auth_service
 
 # HTTP Bearer token security scheme
@@ -61,9 +62,26 @@ def get_current_user(
             detail="Token wurde widerrufen. Bitte erneut anmelden."
         )
 
-    # Set tenant context for RLS
-    # tid from JWT, fallback to user.tenant_id (backward compat for old tokens)
-    tenant_id = payload.get("tid") or (str(user.tenant_id) if user.tenant_id else None)
+    # Validate tenant is active
+    if user.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        if tenant and not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant deaktiviert"
+            )
+
+    # Validate JWT tid matches DB tenant_id (prevent stale tokens after tenant change)
+    jwt_tid = payload.get("tid")
+    db_tid = str(user.tenant_id) if user.tenant_id else None
+    if jwt_tid and db_tid and jwt_tid != db_tid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token tenant mismatch. Bitte erneut anmelden."
+        )
+
+    # Set tenant context for RLS — always use DB truth
+    tenant_id = db_tid
     if tenant_id:
         set_tenant_context(db, tenant_id)
         request.state.tenant_id = tenant_id
