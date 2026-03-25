@@ -57,6 +57,7 @@ def get_monthly_report(
         action="health_data_read",
         source="dsgvo",
         new_note=f"Monatsreport {year}-{month_num:02d} (inkl. Krankheitsstunden) gelesen von Admin: {current_user.username}",
+        tenant_id=current_user.tenant_id,
     )
     db.add(audit)
     db.commit()
@@ -126,6 +127,7 @@ def get_yearly_absences(
         action="health_data_read",
         source="dsgvo",
         new_note=f"Jahres-Abwesenheitsübersicht {year} (inkl. Krankheitstage) gelesen von Admin: {current_user.username}",
+        tenant_id=current_user.tenant_id,
     )
     db.add(audit)
     db.commit()
@@ -237,6 +239,7 @@ def export_monthly_report(
             action="health_export",
             source="dsgvo",
             new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
         )
         db.add(log)
         db.commit()
@@ -280,6 +283,7 @@ def export_yearly_report(
             action="health_export",
             source="dsgvo",
             new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport {year} exportiert – Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
         )
         db.add(log)
         db.commit()
@@ -315,6 +319,7 @@ def export_yearly_report_classic(
             action="health_export",
             source="dsgvo",
             new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport Classic {year} exportiert – Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
         )
         db.add(log)
         db.commit()
@@ -355,6 +360,7 @@ def export_monthly_report_ods(
             action="health_export",
             source="dsgvo",
             new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
         )
         db.add(log)
         db.commit()
@@ -391,6 +397,7 @@ def export_monthly_report_pdf(
             action="health_export",
             source="dsgvo",
             new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im PDF-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
         )
         db.add(log)
         db.commit()

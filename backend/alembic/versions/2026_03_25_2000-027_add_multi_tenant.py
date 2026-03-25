@@ -24,12 +24,12 @@ _NOT_NULL_TABLES = [
     'year_carryovers',
     'public_holidays',
     'company_closures',
-    'error_logs',
 ]
 
 _NULLABLE_TABLES = [
     'users',
     'system_settings',
+    'error_logs',  # nullable: errors can be logged without tenant context (e.g. middleware)
 ]
 
 

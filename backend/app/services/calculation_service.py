@@ -642,6 +642,7 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
         else:
             carryover = YearCarryover(
                 user_id=user.id,
+                tenant_id=user.tenant_id,
                 year=next_year,
                 overtime_hours=overtime_balance,
                 vacation_days=remaining_vacation,
