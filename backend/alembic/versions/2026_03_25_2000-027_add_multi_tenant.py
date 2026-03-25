@@ -68,8 +68,9 @@ def upgrade() -> None:
         op.create_foreign_key(f'fk_{table}_tenant_id', table, 'tenants', ['tenant_id'], ['id'])
         op.create_index(f'ix_{table}_tenant_id', table, ['tenant_id'])
 
-    # 5. Drop old unique constraints and create new tenant-scoped ones
-    op.drop_constraint('users_username_key', 'users', type_='unique')
+    # 5. Drop old unique constraints/indexes and create new tenant-scoped ones
+    # username uniqueness was created as a unique INDEX in migration 010
+    op.drop_index('ix_users_username', table_name='users')
     op.create_unique_constraint('uq_tenant_username', 'users', ['tenant_id', 'username'])
 
     op.drop_constraint('uq_user_date_start', 'time_entries', type_='unique')
@@ -152,7 +153,7 @@ def downgrade() -> None:
                                 ['user_id', 'date', 'start_time'])
 
     op.drop_constraint('uq_tenant_username', 'users', type_='unique')
-    op.create_unique_constraint('users_username_key', 'users', ['username'])
+    op.create_index('ix_users_username', 'users', ['username'], unique=True)
 
     # Drop tenant_id from all tables
     all_tables = _NULLABLE_TABLES + _NOT_NULL_TABLES
