@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from app.database import get_db, set_tenant_context
+from app.database import get_db, set_tenant_context, set_superadmin_context
 from app.models import User, UserRole
 from app.services import auth_service
 
@@ -68,7 +68,8 @@ def get_current_user(
         set_tenant_context(db, tenant_id)
         request.state.tenant_id = tenant_id
     else:
-        # Superadmin — no tenant context, RLS bypassed
+        # Superadmin — explicitly grant access to all tenants
+        set_superadmin_context(db)
         request.state.tenant_id = None
 
     return user
