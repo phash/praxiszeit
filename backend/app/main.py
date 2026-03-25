@@ -38,7 +38,29 @@ async def lifespan(app: FastAPI):
 
     # 2. Migrations are handled by Dockerfile CMD (alembic upgrade head)
 
-    # 3. Create admin user if it doesn't exist
+    # 3. Ensure default tenant exists
+    from app.models.tenant import Tenant
+    import uuid as _uuid
+    db = SessionLocal()
+    try:
+        default_tenant = db.query(Tenant).filter(Tenant.slug == "default").first()
+        if not default_tenant:
+            print("🏢 Creating default tenant...")
+            default_tenant = Tenant(
+                id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                name="Default",
+                slug="default",
+                is_active=True,
+                mode="single",
+            )
+            db.add(default_tenant)
+            db.commit()
+            print("✅ Default tenant created")
+        default_tenant_id = default_tenant.id
+    finally:
+        db.close()
+
+    # 4. Create admin user if it doesn't exist
     db = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
@@ -53,7 +75,8 @@ async def lifespan(app: FastAPI):
                 role=UserRole.ADMIN,
                 weekly_hours=40.0,
                 vacation_days=30,
-                is_active=True
+                is_active=True,
+                tenant_id=default_tenant_id,
             )
             db.add(admin)
             db.commit()
@@ -74,7 +97,7 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 4. DSGVO F-007: Clean up old error logs (>90 days resolved/ignored)
+    # 5. DSGVO F-007: Clean up old error logs (>90 days resolved/ignored)
     db = SessionLocal()
     try:
         deleted = cleanup_old_errors(db, max_age_days=90)
@@ -83,12 +106,13 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 5. Sync public holidays for current and next year
+    # 6. Sync public holidays for current and next year
     print("📅 Syncing public holidays...")
     db = SessionLocal()
     try:
+        db.execute(text("SET LOCAL app.tenant_id = '00000000-0000-0000-0000-000000000001'"))
         state = holiday_service.get_holiday_state(db)
-        result = holiday_service.sync_current_and_next_year(db, state=state)
+        result = holiday_service.sync_current_and_next_year(db, state=state, tenant_id=default_tenant_id)
         print(f"✅ Holidays synced for {result['state']}: {result['current_year']}({result['current_count']}), "
               f"{result['next_year']}({result['next_count']})")
     finally:
