@@ -1,3 +1,4 @@
+from app.models.tenant import Tenant
 from app.models.user import User, UserRole
 from app.models.time_entry import TimeEntry
 from app.models.absence import Absence, AbsenceType
@@ -12,6 +13,7 @@ from app.models.system_setting import SystemSetting
 from app.models.year_carryover import YearCarryover
 
 __all__ = [
+    "Tenant",
     "User",
     "UserRole",
     "TimeEntry",
