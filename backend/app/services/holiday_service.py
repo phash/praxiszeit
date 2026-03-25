@@ -84,7 +84,7 @@ def _get_calendar(state: Optional[str] = None):
     return cal_class()
 
 
-def sync_holidays(db: Session, year: int, state: Optional[str] = None) -> int:
+def sync_holidays(db: Session, year: int, state: Optional[str] = None, tenant_id=None) -> int:
     """
     Synchronize public holidays for a given year into the database.
     Caller is responsible for committing.
@@ -105,7 +105,8 @@ def sync_holidays(db: Session, year: int, state: Optional[str] = None) -> int:
             holiday = PublicHoliday(
                 date=holiday_date,
                 name=german_name,
-                year=year
+                year=year,
+                tenant_id=tenant_id,
             )
             db.add(holiday)
             count += 1
@@ -139,7 +140,7 @@ def delete_all_holidays(db: Session) -> int:
     return count
 
 
-def sync_current_and_next_year(db: Session, state: Optional[str] = None) -> dict:
+def sync_current_and_next_year(db: Session, state: Optional[str] = None, tenant_id=None) -> dict:
     """
     Sync holidays for current and next year.
     Called during application startup and when Bundesland changes.
@@ -158,8 +159,8 @@ def sync_current_and_next_year(db: Session, state: Optional[str] = None) -> dict
         if german_name != h.name:
             h.name = german_name
 
-    current_count = sync_holidays(db, current_year, state)
-    next_count = sync_holidays(db, next_year, state)
+    current_count = sync_holidays(db, current_year, state, tenant_id=tenant_id)
+    next_count = sync_holidays(db, next_year, state, tenant_id=tenant_id)
 
     db.commit()  # Single commit for the entire operation
 
