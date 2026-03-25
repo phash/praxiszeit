@@ -923,9 +923,12 @@ def list_audit_log(
 
 # ── System Settings ──────────────────────────────────────────────────────
 
-def _get_setting(db: Session, key: str, default: str = "") -> str:
+def _get_setting(db: Session, key: str, default: str = "", tenant_id=None) -> str:
     """Retrieve a value from system_settings."""
-    s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    q = db.query(SystemSetting).filter(SystemSetting.key == key)
+    if tenant_id is not None:
+        q = q.filter(SystemSetting.tenant_id == tenant_id)
+    s = q.first()
     return s.value if s else default
 
 
@@ -938,7 +941,7 @@ def list_settings(
     current_user: User = Depends(require_admin),
 ):
     """List all system settings."""
-    rows = db.query(SystemSetting).all()
+    rows = db.query(SystemSetting).filter(SystemSetting.tenant_id == current_user.tenant_id).all()
     return [{"key": r.key, "value": r.value, "description": r.description, "updated_at": r.updated_at} for r in rows]
 
 
@@ -965,9 +968,12 @@ def update_setting(
         if value not in holiday_service.SUPPORTED_STATES:
             raise HTTPException(status_code=400, detail=f"Ungültiges Bundesland: {value}")
 
-    s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    s = db.query(SystemSetting).filter(
+        SystemSetting.key == key,
+        SystemSetting.tenant_id == current_user.tenant_id
+    ).first()
     if not s:
-        s = SystemSetting(key=key, value=str(value), description=key)
+        s = SystemSetting(key=key, value=str(value), description=key, tenant_id=current_user.tenant_id)
         db.add(s)
     else:
         s.value = str(value)
@@ -976,7 +982,7 @@ def update_setting(
         # Atomarer Delete + Sync: alles in einer Transaktion (C2, I5)
         try:
             holiday_service.delete_all_holidays(db)   # kein commit
-            holiday_service.sync_current_and_next_year(db, state=str(value))  # commitet am Ende
+            holiday_service.sync_current_and_next_year(db, state=str(value), tenant_id=current_user.tenant_id)  # commitet am Ende
         except Exception as e:
             db.rollback()
             raise HTTPException(
