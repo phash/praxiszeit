@@ -23,8 +23,11 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
-# Override sqlalchemy.url with DATABASE_URL from settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Override sqlalchemy.url — prefer DATABASE_URL_MIGRATIONS (superuser) for schema changes,
+# fall back to DATABASE_URL (app user) when running outside Docker or for local dev.
+import os
+db_url = os.environ.get("DATABASE_URL_MIGRATIONS", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", db_url)
 
 
 def run_migrations_offline() -> None:
