@@ -394,12 +394,12 @@ class TestSuperadminBypass:
             conn.close()
 
 
-# ===== Tests: System Settings (nullable tenant_id) ==========================
+# ===== Tests: System Settings (NOT NULL tenant_id, composite PK) =============
 
 class TestSystemSettingsIsolation:
-    """Verify that system_settings with nullable tenant_id behaves correctly.
+    """Verify that system_settings with NOT NULL tenant_id behaves correctly.
 
-    The policy: tenant sees own settings + global (tenant_id IS NULL).
+    The policy: tenant sees only own settings (no global/NULL settings).
     """
 
     def test_tenant_a_sees_own_settings_only(self, app_engine, seed_data):

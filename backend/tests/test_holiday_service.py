@@ -39,7 +39,7 @@ def test_is_holiday_false_for_non_holiday(db, public_holiday):
 
 def test_get_holiday_state_from_db(db):
     """`get_holiday_state` liest aus DB-SystemSetting."""
-    setting = SystemSetting(key="holiday_state", value="Bayern")
+    setting = SystemSetting(key="holiday_state", value="Bayern", tenant_id=DEFAULT_TENANT_ID)
     db.add(setting)
     db.commit()
     result = holiday_service.get_holiday_state(db)
