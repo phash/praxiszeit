@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timezone
 import base64
-from app.database import get_db
+from app.database import get_db, set_superadmin_context
 from app.models import User, TimeEntry, Absence
 from app.schemas.user import (
     LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
@@ -73,6 +73,8 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     F-010: Returns access token in JSON; refresh token set as HttpOnly cookie.
     F-019: If TOTP is enabled, requires totp_code in the request body.
     """
+    # Login needs to see all users across tenants (no tenant context yet)
+    set_superadmin_context(db)
     user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
 
     if not user or not user.is_active:
@@ -142,6 +144,8 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             detail="Ungültiger Token"
         )
 
+    # Refresh needs to see user across tenants (token carries tid but RLS not set yet)
+    set_superadmin_context(db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         raise HTTPException(
