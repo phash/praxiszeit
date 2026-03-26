@@ -40,9 +40,12 @@ async def lifespan(app: FastAPI):
 
     # 3. Ensure default tenant exists
     from app.models.tenant import Tenant
+    from app.database import set_tenant_context, set_superadmin_context
     import uuid as _uuid
     db = SessionLocal()
     try:
+        # Startup runs as non-superuser — need superadmin context to bypass RLS
+        set_superadmin_context(db)
         default_tenant = db.query(Tenant).filter(Tenant.slug == "default").first()
         if not default_tenant:
             print("🏢 Creating default tenant...")
@@ -63,6 +66,7 @@ async def lifespan(app: FastAPI):
     # 4. Create admin user if it doesn't exist
     db = SessionLocal()
     try:
+        set_tenant_context(db, str(default_tenant_id))
         admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
         if not admin:
             print(f"👤 Creating admin user: {settings.ADMIN_USERNAME}")
@@ -100,6 +104,7 @@ async def lifespan(app: FastAPI):
     # 5. DSGVO F-007: Clean up old error logs (>90 days resolved/ignored)
     db = SessionLocal()
     try:
+        set_superadmin_context(db)
         deleted = cleanup_old_errors(db, max_age_days=90)
         if deleted:
             print(f"🗑️  Cleaned up {deleted} old error log entries (>90 days)")
@@ -198,6 +203,8 @@ async def capture_errors_middleware(request: Request, call_next):
             db = SessionLocal()
             try:
                 from app.services.error_log_service import log_error
+                from app.database import set_superadmin_context as _set_sa
+                _set_sa(db)  # Error logging needs to bypass RLS
                 log_error(
                     db=db,
                     level='error',
@@ -214,6 +221,8 @@ async def capture_errors_middleware(request: Request, call_next):
         db = SessionLocal()
         try:
             from app.services.error_log_service import log_error
+            from app.database import set_superadmin_context as _set_sa
+            _set_sa(db)  # Error logging needs to bypass RLS
             tb = traceback.format_exc()
             log_error(
                 db=db,
@@ -244,8 +253,10 @@ def root():
 def get_public_settings():
     """Public endpoint returning runtime-configurable UI settings (no auth required)."""
     from app.models.system_setting import SystemSetting
+    from app.database import set_superadmin_context as _set_sa
     db = SessionLocal()
     try:
+        _set_sa(db)  # Public endpoint needs to read global settings
         def _get(key, default="false"):
             s = db.query(SystemSetting).filter(
                 SystemSetting.key == key,
