@@ -58,7 +58,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=10)
     role: UserRole = UserRole.EMPLOYEE
 
     @field_validator("password")
@@ -69,6 +69,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=100)
+    role: Optional[UserRole] = None
     email: Optional[str] = None
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -180,7 +181,7 @@ class RefreshResponse(BaseModel):
 
 
 class AdminSetPassword(BaseModel):
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=10)
 
     @field_validator("password")
     @classmethod
@@ -194,7 +195,7 @@ class UserCreateResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8)
+    new_password: str = Field(..., min_length=10)
 
     @field_validator("new_password")
     @classmethod
