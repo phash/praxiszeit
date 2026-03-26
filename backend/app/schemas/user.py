@@ -9,8 +9,8 @@ from app.models.user import UserRole
 
 def _validate_password_complexity(password: str) -> str:
     """Validate password meets complexity requirements."""
-    if len(password) < 8:
-        raise ValueError("Passwort muss mindestens 8 Zeichen lang sein")
+    if len(password) < 10:
+        raise ValueError("Passwort muss mindestens 10 Zeichen lang sein")
     if not re.search(r"[A-Z]", password):
         raise ValueError("Passwort muss mindestens einen Grossbuchstaben enthalten")
     if not re.search(r"[a-z]", password):

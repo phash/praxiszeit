@@ -57,7 +57,10 @@ def preview_import(
     if not target_user:
         raise HTTPException(status_code=400, detail="Benutzer nicht gefunden")
 
-    content = file.file.read()
+    # Size check before reading entire file into memory (5MB limit)
+    content = file.file.read(5 * 1024 * 1024 + 1)
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Datei zu groß (max. 5 MB)")
 
     try:
         entries = parse_xls(content, user_id, db)

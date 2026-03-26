@@ -5,11 +5,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import base64
+from collections import defaultdict
 from app.database import get_db, set_superadmin_context
 from app.models import User, TimeEntry, Absence
 from app.models.tenant import Tenant
+
+# In-memory failed login tracking (resets on restart, per-username)
+_failed_logins: dict[str, list[datetime]] = defaultdict(list)
+_LOCKOUT_ATTEMPTS = 5
+_LOCKOUT_WINDOW = timedelta(minutes=15)
 from app.schemas.user import (
     LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
     ChangePasswordRequest, UpdateCalendarColorRequest,
@@ -74,17 +80,31 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     F-010: Returns access token in JSON; refresh token set as HttpOnly cookie.
     F-019: If TOTP is enabled, requires totp_code in the request body.
     """
+    # Account lockout: block after 5 failed attempts within 15 minutes
+    username_lower = login_data.username.lower()
+    now = datetime.now(timezone.utc)
+    attempts = _failed_logins[username_lower]
+    # Prune old attempts outside the window
+    _failed_logins[username_lower] = [t for t in attempts if now - t < _LOCKOUT_WINDOW]
+    if len(_failed_logins[username_lower]) >= _LOCKOUT_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Konto vorübergehend gesperrt. Bitte in 15 Minuten erneut versuchen."
+        )
+
     # Login needs to see all users across tenants (no tenant context yet)
     set_superadmin_context(db)
     user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
 
     if not user or not user.is_active:
+        _failed_logins[username_lower].append(now)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
         )
 
     if not auth_service.verify_password(login_data.password, user.password_hash):
+        _failed_logins[username_lower].append(now)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
@@ -112,6 +132,9 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Ungültiger TOTP-Code",
             )
+
+    # Clear failed login counter on success
+    _failed_logins.pop(username_lower, None)
 
     tenant_id_str = str(user.tenant_id) if user.tenant_id else None
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)

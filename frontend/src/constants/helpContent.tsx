@@ -153,7 +153,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
           </ol>
           <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded p-2 text-blue-700">
-            Anforderungen: mind. 8 Zeichen, Groß- + Kleinbuchstabe, mindestens eine Ziffer.
+            Anforderungen: mind. 10 Zeichen, Groß- + Kleinbuchstabe, mindestens eine Ziffer.
           </div>
         </section>
         <section>
