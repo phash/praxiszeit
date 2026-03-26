@@ -46,7 +46,9 @@ def get_current_user(
             detail="Ungültiger Token"
         )
 
-    # Get user from database
+    # Get user from database — need superadmin context for initial lookup
+    # (RLS blocks the query before we know which tenant to set)
+    set_superadmin_context(db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         raise HTTPException(
