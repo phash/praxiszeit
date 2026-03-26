@@ -54,6 +54,14 @@ ssl/*.pem
 *.db
 *.sqlite
 *.sqlite3
+*.sql
+*.sql.gz
+*.dump
+
+# Testing
+e2e/test-results/
+e2e/playwright-report/
+.pytest_cache/
 
 # Tools & local dev scripts (not tracked)
 .serena/

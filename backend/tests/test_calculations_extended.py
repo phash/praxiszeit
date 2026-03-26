@@ -7,6 +7,7 @@ from app.models import (
     PublicHoliday, WorkingHoursChange
 )
 from app.services import calculation_service
+from tests.conftest import DEFAULT_TENANT_ID
 
 
 def _make_user(db, **kwargs):
@@ -22,6 +23,7 @@ def _make_user(db, **kwargs):
         vacation_days=30,
         work_days_per_week=5,
         is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     defaults.update(kwargs)
     user = User(**defaults)
@@ -35,6 +37,7 @@ def _make_entry(db, user, d, start_h, end_h, break_min=0):
     """Helper: Zeiteintrag erstellen und committen."""
     entry = TimeEntry(
         user_id=user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=d,
         start_time=time(start_h, 0),
         end_time=time(end_h, 0),
@@ -62,6 +65,7 @@ def test_weekly_hours_with_history_before_date(db, test_user):
     """Historischer Eintrag vor Datum → historische Stunden."""
     change = WorkingHoursChange(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         weekly_hours=20.0,
         effective_from=date(2026, 1, 1),
     )
@@ -77,6 +81,7 @@ def test_weekly_hours_with_history_after_date_ignored(db, test_user):
     """Historischer Eintrag NACH Datum → wird ignoriert, user.weekly_hours gilt."""
     change = WorkingHoursChange(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         weekly_hours=20.0,
         effective_from=date(2026, 6, 1),
     )
@@ -92,11 +97,13 @@ def test_weekly_hours_most_recent_history_wins(db, test_user):
     """Mehrere historische Einträge → der neueste (≤ Datum) gewinnt."""
     change_old = WorkingHoursChange(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         weekly_hours=20.0,
         effective_from=date(2026, 1, 1),
     )
     change_new = WorkingHoursChange(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         weekly_hours=32.0,
         effective_from=date(2026, 2, 1),
     )
@@ -199,7 +206,7 @@ def test_working_days_february_2026(db):
 
 def test_working_days_does_not_deduct_holidays(db):
     """get_working_days_in_month ignoriert Feiertage (by design – nur Wochenenden)."""
-    h = PublicHoliday(date=date(2026, 1, 1), name="Neujahr", year=2026)
+    h = PublicHoliday(date=date(2026, 1, 1), name="Neujahr", year=2026, tenant_id=DEFAULT_TENANT_ID)
     db.add(h)
     db.commit()
     result = calculation_service.get_working_days_in_month(db, 2026, 1)
@@ -214,7 +221,7 @@ def test_monthly_target_with_holiday_reduces_target(db, test_user):
     """Feiertag an Werktag → Soll wird um 8h reduziert."""
     target_without = calculation_service.get_monthly_target(db, test_user, 2026, 1)
     # 01.01.2026 ist Donnerstag (Werktag)
-    h = PublicHoliday(date=date(2026, 1, 1), name="Neujahr", year=2026)
+    h = PublicHoliday(date=date(2026, 1, 1), name="Neujahr", year=2026, tenant_id=DEFAULT_TENANT_ID)
     db.add(h)
     db.commit()
     target_with = calculation_service.get_monthly_target(db, test_user, 2026, 1)
@@ -226,6 +233,7 @@ def test_monthly_target_with_vacation_reduces(db, test_user):
     target_without = calculation_service.get_monthly_target(db, test_user, 2026, 3)
     absence = Absence(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2026, 3, 10),  # Dienstag
         type=AbsenceType.VACATION,
         hours=8.0,
@@ -241,6 +249,7 @@ def test_monthly_target_training_does_not_reduce(db, test_user):
     target_without = calculation_service.get_monthly_target(db, test_user, 2026, 3)
     absence = Absence(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2026, 3, 10),
         type=AbsenceType.TRAINING,
         hours=8.0,
@@ -256,6 +265,7 @@ def test_monthly_target_with_overtime_absence_reduces(db, test_user):
     target_without = calculation_service.get_monthly_target(db, test_user, 2026, 3)
     absence = Absence(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2026, 3, 10),
         type=AbsenceType.OVERTIME,
         hours=8.0,
@@ -347,7 +357,7 @@ def test_count_workdays_simple_week(db):
 
 def test_count_workdays_excludes_holiday(db):
     """Feiertag im Bereich → wird abgezogen."""
-    h = PublicHoliday(date=date(2026, 3, 11), name="Testfeiertag", year=2026)
+    h = PublicHoliday(date=date(2026, 3, 11), name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID)
     db.add(h)
     db.commit()
     result = calculation_service.count_workdays(db, date(2026, 3, 9), date(2026, 3, 13))

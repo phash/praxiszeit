@@ -14,6 +14,7 @@ class WorkingHoursChange(Base):
     __tablename__ = "working_hours_changes"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     effective_from = Column(Date, nullable=False, index=True)  # Date from which these hours are valid
     weekly_hours = Column(Numeric(4, 1), nullable=False)  # e.g., 20.0, 30.0, 38.5

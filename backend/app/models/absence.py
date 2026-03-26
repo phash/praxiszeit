@@ -21,6 +21,7 @@ class Absence(Base):
     __tablename__ = "absences"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)  # Start date (or single day if end_date is NULL)
     end_date = Column(Date, nullable=True, index=True)  # End date for date ranges (NULL for single day)
@@ -30,7 +31,7 @@ class Absence(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint('user_id', 'date', 'type', name='uq_user_date_type'),
+        UniqueConstraint('tenant_id', 'user_id', 'date', 'type', name='uq_tenant_user_date_type'),
     )
 
     def __repr__(self):

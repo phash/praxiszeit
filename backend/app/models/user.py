@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Numeric, Integer, Enum, DateTime, Date, Text
+from sqlalchemy import Column, String, Boolean, Numeric, Integer, Enum, DateTime, Date, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -18,7 +18,8 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    username = Column(String(100), unique=True, nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    username = Column(String(100), nullable=False, index=True)
     email = Column(String(255), nullable=True, index=True)
     password_hash = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)

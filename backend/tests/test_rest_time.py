@@ -2,12 +2,14 @@
 from datetime import date, time
 from app.models import TimeEntry
 from app.services.rest_time_service import check_rest_time_violations
+from tests.conftest import DEFAULT_TENANT_ID
 
 
 def _make_entry(db, user, d, start_h, start_m, end_h, end_m):
     """Helper: Zeiteintrag erstellen und committen."""
     entry = TimeEntry(
         user_id=user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=d,
         start_time=time(start_h, start_m),
         end_time=time(end_h, end_m),

@@ -27,7 +27,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(user_id: str, role: str, token_version: int = 0) -> str:
+def create_access_token(user_id: str, role: str, token_version: int = 0, tenant_id: str = None) -> str:
     """
     Create JWT access token with 30 minutes expiry.
 
@@ -35,6 +35,7 @@ def create_access_token(user_id: str, role: str, token_version: int = 0) -> str:
         user_id: User UUID as string
         role: User role (admin or employee)
         token_version: Current token version for revocation support
+        tenant_id: Optional tenant UUID as string; added as "tid" claim if provided
 
     Returns:
         Encoded JWT token
@@ -47,16 +48,19 @@ def create_access_token(user_id: str, role: str, token_version: int = 0) -> str:
         "tv": token_version,
         "exp": expire
     }
+    if tenant_id is not None:
+        payload["tid"] = tenant_id
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(user_id: str, token_version: int = 0) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0, tenant_id: str = None) -> str:
     """
     Create JWT refresh token with 7 days expiry.
 
     Args:
         user_id: User UUID as string
         token_version: Current token version for revocation support
+        tenant_id: Optional tenant UUID as string; added as "tid" claim if provided
 
     Returns:
         Encoded JWT token
@@ -68,6 +72,8 @@ def create_refresh_token(user_id: str, token_version: int = 0) -> str:
         "tv": token_version,
         "exp": expire
     }
+    if tenant_id is not None:
+        payload["tid"] = tenant_id
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 

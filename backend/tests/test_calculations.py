@@ -4,6 +4,7 @@ from decimal import Decimal
 from datetime import date, time
 from app.models import User, UserRole, TimeEntry, Absence, AbsenceType, PublicHoliday
 from app.services import calculation_service
+from tests.conftest import DEFAULT_TENANT_ID
 
 
 def test_get_daily_target(test_user):
@@ -26,7 +27,8 @@ def test_get_daily_target_parttime(db):
         weekly_hours=20.0,  # Part-time: 20 hours/week
         vacation_days=15,
         work_days_per_week=5,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(user)
     db.commit()
@@ -50,7 +52,8 @@ def test_get_daily_target_with_work_days(db):
         weekly_hours=40.0,
         vacation_days=30,
         work_days_per_week=5,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(user_ft)
     db.commit()
@@ -68,7 +71,8 @@ def test_get_daily_target_with_work_days(db):
         weekly_hours=20.0,
         vacation_days=12,
         work_days_per_week=2,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(user_pt_2d)
     db.commit()
@@ -86,7 +90,8 @@ def test_get_daily_target_with_work_days(db):
         weekly_hours=20.0,
         vacation_days=30,
         work_days_per_week=5,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(user_pt_5d)
     db.commit()
@@ -107,7 +112,8 @@ def test_vacation_acceptance_criteria(db):
         weekly_hours=20.0,
         vacation_days=12,
         work_days_per_week=2,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(user1)
     db.commit()
@@ -127,7 +133,8 @@ def test_vacation_acceptance_criteria(db):
         weekly_hours=20.0,
         vacation_days=30,
         work_days_per_week=5,
-        is_active=True
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(user2)
     db.commit()
@@ -161,6 +168,7 @@ def test_get_monthly_actual_with_entries(db, test_user):
     # Add some time entries
     entry1 = TimeEntry(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2025, 1, 6),  # Monday
         start_time=time(8, 0),
         end_time=time(17, 0),
@@ -169,6 +177,7 @@ def test_get_monthly_actual_with_entries(db, test_user):
     )
     entry2 = TimeEntry(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2025, 1, 7),  # Tuesday
         start_time=time(8, 0),
         end_time=time(16, 30),
@@ -192,6 +201,7 @@ def test_get_monthly_balance(db, test_user):
     # Add a time entry
     entry = TimeEntry(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2025, 1, 6),  # Monday
         start_time=time(8, 0),
         end_time=time(18, 0),  # 10h - 1h break = 9h net
@@ -226,6 +236,7 @@ def test_get_vacation_account_with_usage(db, test_user):
     # Add vacation absence (8 hours = 1 day)
     absence = Absence(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2025, 1, 15),
         type=AbsenceType.VACATION,
         hours=Decimal('8.0'),
@@ -254,6 +265,7 @@ def test_time_entry_net_hours_calculation(db, test_user):
     """Test that time entry net_hours hybrid property calculates correctly."""
     entry = TimeEntry(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2025, 1, 6),
         start_time=time(8, 0),
         end_time=time(17, 30),

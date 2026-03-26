@@ -138,6 +138,7 @@ def create_change_request(
     # Create the change request
     cr = ChangeRequest(
         user_id=current_user.id,
+        tenant_id=current_user.tenant_id,
         request_type=data.request_type,
         time_entry_id=data.time_entry_id,
         proposed_date=data.proposed_date,
