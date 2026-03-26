@@ -517,6 +517,18 @@ def delete_working_hours_change(
 
 # ── Change Request Management (Admin) ───────────────────────────────────
 
+@router.get("/change-requests/pending-count")
+def get_pending_change_request_count(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Return count of pending change requests for admin badge."""
+    count = db.query(ChangeRequest).filter(
+        ChangeRequest.status == ChangeRequestStatus.PENDING
+    ).count()
+    return {"count": count}
+
+
 @router.get("/change-requests", response_model=List[ChangeRequestResponse])
 def list_all_change_requests(
     request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),

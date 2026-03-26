@@ -40,8 +40,23 @@ export default function Layout() {
   const [drawerTab, setDrawerTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [sheetClosing, setSheetClosing] = useState(false);
+  const [pendingCRCount, setPendingCRCount] = useState(0);
   const fabRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
+
+  // Pending change request count for admin badge
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    const fetchCount = async () => {
+      try {
+        const res = await apiClient.get('/admin/change-requests/pending-count');
+        setPendingCRCount(res.data.count);
+      } catch { /* ignore */ }
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 60000);
+    return () => clearInterval(interval);
+  }, [user?.role]);
 
   // Clock status for FAB appearance
   useEffect(() => {
@@ -127,16 +142,16 @@ export default function Layout() {
   ];
 
   const adminNavItems = [
-    { path: '/admin', label: 'Admin-Dashboard', icon: Settings },
-    { path: '/admin/users', label: 'Benutzerverwaltung', icon: Users },
-    { path: '/admin/change-requests', label: 'Änderungsanträge', icon: FileEdit },
-    { path: '/admin/reports', label: 'Berichte', icon: FileText },
-    { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar },
-    { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText },
-    { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle },
-    { path: '/admin/vacation-approvals', label: 'Urlaubsanträge', icon: ClipboardCheck },
-    { path: '/admin/import', label: 'Import', icon: Upload },
-    { path: '/admin/settings', label: 'Einstellungen', icon: Settings },
+    { path: '/admin', label: 'Admin-Dashboard', icon: Settings, badge: 0 },
+    { path: '/admin/users', label: 'Benutzerverwaltung', icon: Users, badge: 0 },
+    { path: '/admin/change-requests', label: 'Änderungsanträge', icon: FileEdit, badge: pendingCRCount },
+    { path: '/admin/reports', label: 'Berichte', icon: FileText, badge: 0 },
+    { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar, badge: 0 },
+    { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText, badge: 0 },
+    { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle, badge: 0 },
+    { path: '/admin/vacation-approvals', label: 'Urlaubsanträge', icon: ClipboardCheck, badge: 0 },
+    { path: '/admin/import', label: 'Import', icon: Upload, badge: 0 },
+    { path: '/admin/settings', label: 'Einstellungen', icon: Settings, badge: 0 },
   ];
 
   return (
@@ -230,14 +245,23 @@ export default function Layout() {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                    className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
                       active
                         ? 'bg-primary text-white'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
-                    <Icon size={20} />
-                    <span className="font-medium">{item.label}</span>
+                    <div className="flex items-center space-x-3">
+                      <Icon size={20} />
+                      <span className="font-medium">{item.label}</span>
+                    </div>
+                    {item.badge > 0 && (
+                      <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold rounded-full ${
+                        active ? 'bg-white text-primary' : 'bg-red-500 text-white'
+                      }`}>
+                        {item.badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
