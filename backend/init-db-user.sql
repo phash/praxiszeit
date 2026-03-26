@@ -1,9 +1,11 @@
 -- Create non-superuser app role for RLS enforcement
 -- This script runs on first database initialization only
+-- Password is set via: ALTER ROLE praxiszeit_app PASSWORD '<value>'
+-- after running this script (see deployment docs)
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'praxiszeit_app') THEN
-        CREATE ROLE praxiszeit_app LOGIN PASSWORD 'praxiszeit_app';
+        CREATE ROLE praxiszeit_app LOGIN;
     END IF;
 END
 $$;
