@@ -24,6 +24,7 @@ class ChangeRequest(Base):
     __tablename__ = "change_requests"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     request_type = Column(Enum(ChangeRequestType, values_callable=lambda e: [x.value for x in e]), nullable=False)
     status = Column(Enum(ChangeRequestStatus, values_callable=lambda e: [x.value for x in e]), default=ChangeRequestStatus.PENDING, nullable=False, index=True)

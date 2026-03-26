@@ -302,6 +302,7 @@ def create_absence(
 
         absence = Absence(
             user_id=target_user.id,
+            tenant_id=current_user.tenant_id,
             date=date,
             end_date=end_date if absence_data.end_date else None,  # Store end_date for reference
             type=absence_data.type,

@@ -44,6 +44,7 @@ def _create_audit_log(
     new_entry=None,
     source: str = "manual",
     change_request_id=None,
+    tenant_id=None,
 ):
     """Create an audit log entry for a time entry change."""
     log = TimeEntryAuditLog(
@@ -53,6 +54,7 @@ def _create_audit_log(
         action=action,
         source=source,
         change_request_id=change_request_id,
+        tenant_id=tenant_id,
     )
     if old_entry:
         log.old_date = _get_field(old_entry, 'date')
@@ -212,6 +214,7 @@ def anonymize_user(
         action="dsgvo_anonymize",
         source="dsgvo",
         new_note=f"DSGVO-Anonymisierung durch Admin {current_user.username}",
+        tenant_id=current_user.tenant_id,
     )
     db.add(log)
     db.commit()
@@ -252,6 +255,7 @@ def purge_user(
         action="dsgvo_purge",
         source="dsgvo",
         old_note=f"Endgültige Löschung von User-ID {user_id} ({user.first_name} {user.last_name}) durch Admin {current_user.username}",
+        tenant_id=current_user.tenant_id,
     )
     db.add(log)
     db.flush()
@@ -308,6 +312,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         is_night_worker=user_data.is_night_worker,
         first_work_day=user_data.first_work_day,
         last_work_day=user_data.last_work_day,
+        tenant_id=current_user.tenant_id,
     )
 
     db.add(new_user)
@@ -458,6 +463,7 @@ def create_working_hours_change(
 
     change = WorkingHoursChange(
         user_id=user_id,
+        tenant_id=current_user.tenant_id,
         effective_from=change_data.effective_from,
         weekly_hours=change_data.weekly_hours,
         note=change_data.note
@@ -593,6 +599,7 @@ def review_change_request(
         # Create new time entry
         entry = TimeEntry(
             user_id=cr.user_id,
+            tenant_id=current_user.tenant_id,
             date=cr.proposed_date,
             start_time=cr.proposed_start_time,
             end_time=cr.proposed_end_time,
@@ -606,6 +613,7 @@ def review_change_request(
             db, entry.id, cr.user_id, current_user.id,
             action="create", new_entry=entry,
             source="change_request", change_request_id=cr.id,
+            tenant_id=current_user.tenant_id,
         )
 
     elif cr.request_type == ChangeRequestType.UPDATE:
@@ -624,6 +632,7 @@ def review_change_request(
                 "note": cr.proposed_note,
             },
             source="change_request", change_request_id=cr.id,
+            tenant_id=current_user.tenant_id,
         )
         # Apply changes
         entry.date = cr.proposed_date
@@ -640,6 +649,7 @@ def review_change_request(
                 db, entry.id, cr.user_id, current_user.id,
                 action="delete", old_entry=entry,
                 source="change_request", change_request_id=cr.id,
+                tenant_id=current_user.tenant_id,
             )
             db.delete(entry)
 
@@ -744,6 +754,7 @@ def admin_create_time_entry(
 
     entry = TimeEntry(
         user_id=user.id,
+        tenant_id=current_user.tenant_id,
         date=entry_data.date,
         start_time=entry_data.start_time,
         end_time=entry_data.end_time,
@@ -756,6 +767,7 @@ def admin_create_time_entry(
     _create_audit_log(
         db, entry.id, user.id, current_user.id,
         action="create", new_entry=entry, source="manual",
+        tenant_id=current_user.tenant_id,
     )
 
     db.commit()
@@ -833,6 +845,7 @@ def admin_update_time_entry(
             "note": entry_data.note if entry_data.note is not None else entry.note,
         },
         source="manual",
+        tenant_id=current_user.tenant_id,
     )
 
     # Apply only provided updates
@@ -869,6 +882,7 @@ def admin_delete_time_entry(
     _create_audit_log(
         db, entry.id, entry.user_id, current_user.id,
         action="delete", old_entry=entry, source="manual",
+        tenant_id=current_user.tenant_id,
     )
 
     db.delete(entry)
@@ -909,9 +923,12 @@ def list_audit_log(
 
 # ── System Settings ──────────────────────────────────────────────────────
 
-def _get_setting(db: Session, key: str, default: str = "") -> str:
+def _get_setting(db: Session, key: str, default: str = "", tenant_id=None) -> str:
     """Retrieve a value from system_settings."""
-    s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    q = db.query(SystemSetting).filter(SystemSetting.key == key)
+    if tenant_id is not None:
+        q = q.filter(SystemSetting.tenant_id == tenant_id)
+    s = q.first()
     return s.value if s else default
 
 
@@ -924,7 +941,7 @@ def list_settings(
     current_user: User = Depends(require_admin),
 ):
     """List all system settings."""
-    rows = db.query(SystemSetting).all()
+    rows = db.query(SystemSetting).filter(SystemSetting.tenant_id == current_user.tenant_id).all()
     return [{"key": r.key, "value": r.value, "description": r.description, "updated_at": r.updated_at} for r in rows]
 
 
@@ -951,9 +968,12 @@ def update_setting(
         if value not in holiday_service.SUPPORTED_STATES:
             raise HTTPException(status_code=400, detail=f"Ungültiges Bundesland: {value}")
 
-    s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    s = db.query(SystemSetting).filter(
+        SystemSetting.key == key,
+        SystemSetting.tenant_id == current_user.tenant_id
+    ).first()
     if not s:
-        s = SystemSetting(key=key, value=str(value), description=key)
+        s = SystemSetting(key=key, value=str(value), description=key, tenant_id=current_user.tenant_id)
         db.add(s)
     else:
         s.value = str(value)
@@ -962,7 +982,7 @@ def update_setting(
         # Atomarer Delete + Sync: alles in einer Transaktion (C2, I5)
         try:
             holiday_service.delete_all_holidays(db)   # kein commit
-            holiday_service.sync_current_and_next_year(db, state=str(value))  # commitet am Ende
+            holiday_service.sync_current_and_next_year(db, state=str(value), tenant_id=current_user.tenant_id)  # commitet am Ende
         except Exception as e:
             db.rollback()
             raise HTTPException(
@@ -1110,6 +1130,7 @@ def review_vacation_request(
 
         absence = Absence(
             user_id=target_user.id,
+            tenant_id=current_user.tenant_id,
             date=d,
             end_date=vr.end_date,
             type=AbsenceType.VACATION,
@@ -1172,6 +1193,7 @@ def upsert_carryover(
     else:
         carryover = YearCarryover(
             user_id=user_id,
+            tenant_id=current_user.tenant_id,
             year=year,
             overtime_hours=data.overtime_hours,
             vacation_days=data.vacation_days,

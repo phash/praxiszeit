@@ -13,6 +13,7 @@ class TimeEntry(Base):
     __tablename__ = "time_entries"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)
     start_time = Column(Time, nullable=False)
@@ -24,7 +25,7 @@ class TimeEntry(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint('user_id', 'date', 'start_time', name='uq_user_date_start'),
+        UniqueConstraint('tenant_id', 'user_id', 'date', 'start_time', name='uq_tenant_user_date_start'),
     )
 
     @hybrid_property

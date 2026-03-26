@@ -16,6 +16,7 @@ from app.services.xls_import_service import (
     ImportedEntry,
     MAX_FILE_SIZE_BYTES,
 )
+from tests.conftest import DEFAULT_TENANT_ID
 
 
 # ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -165,6 +166,7 @@ def test_parse_xls_detects_conflict(db, test_user):
     # Vorhandenen Eintrag in DB anlegen
     existing = TimeEntry(
         user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
         date=date(2026, 1, 12),
         start_time=time(7, 15),
         end_time=time(12, 45),
@@ -276,7 +278,8 @@ def _make_entries(n=1) -> list[ImportedEntry]:
 def test_execute_import_creates_entries(db, test_user, test_admin):
     entries = _make_entries(2)
     result = execute_import(test_user.id, entries, overwrite=False, db=db,
-                            changed_by_id=test_admin.id, filename="test.xls")
+                            changed_by_id=test_admin.id, filename="test.xls",
+                            tenant_id=DEFAULT_TENANT_ID)
     assert result.imported == 2
     assert result.skipped == 0
     assert result.overwritten == 0
@@ -286,7 +289,7 @@ def test_execute_import_creates_entries(db, test_user, test_admin):
 
 def test_execute_import_skips_conflict_without_overwrite(db, test_user, test_admin):
     # Vorhandener Eintrag
-    existing = TimeEntry(user_id=test_user.id, date=date(2026, 1, 12),
+    existing = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, 12),
                          start_time=time(7, 15), end_time=time(12, 45), break_minutes=30)
     db.add(existing)
     db.commit()
@@ -295,7 +298,8 @@ def test_execute_import_skips_conflict_without_overwrite(db, test_user, test_adm
                              end_time=time(13, 0), break_minutes=30, note=None,
                              has_conflict=True, arbzg_warnings=[])]
     result = execute_import(test_user.id, entries, overwrite=False, db=db,
-                            changed_by_id=test_admin.id, filename="test.xls")
+                            changed_by_id=test_admin.id, filename="test.xls",
+                            tenant_id=DEFAULT_TENANT_ID)
     assert result.skipped == 1
     assert result.imported == 0
     # Bestehender Eintrag unverändert
@@ -304,7 +308,7 @@ def test_execute_import_skips_conflict_without_overwrite(db, test_user, test_adm
 
 
 def test_execute_import_overwrites_conflict(db, test_user, test_admin):
-    existing = TimeEntry(user_id=test_user.id, date=date(2026, 1, 12),
+    existing = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, 12),
                          start_time=time(7, 15), end_time=time(12, 45), break_minutes=30)
     db.add(existing)
     db.commit()
@@ -313,7 +317,8 @@ def test_execute_import_overwrites_conflict(db, test_user, test_admin):
                              end_time=time(13, 0), break_minutes=30, note="updated",
                              has_conflict=True, arbzg_warnings=[])]
     result = execute_import(test_user.id, entries, overwrite=True, db=db,
-                            changed_by_id=test_admin.id, filename="test.xls")
+                            changed_by_id=test_admin.id, filename="test.xls",
+                            tenant_id=DEFAULT_TENANT_ID)
     assert result.overwritten == 1
     db.refresh(existing)
     assert existing.end_time == time(13, 0)
@@ -324,7 +329,8 @@ def test_execute_import_writes_audit_log(db, test_user, test_admin):
     from app.models import TimeEntryAuditLog
     entries = _make_entries(1)
     execute_import(test_user.id, entries, overwrite=False, db=db,
-                   changed_by_id=test_admin.id, filename="test.xls")
+                   changed_by_id=test_admin.id, filename="test.xls",
+                   tenant_id=DEFAULT_TENANT_ID)
     logs = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.user_id == test_user.id).all()
     # 1 create-Log + 1 summary-Log
     assert len(logs) == 2
@@ -336,7 +342,7 @@ def test_execute_import_writes_audit_log(db, test_user, test_admin):
 def test_execute_import_audit_log_for_overwrite(db, test_user, test_admin):
     """Jeder überschriebene Eintrag erhält einen eigenen Audit-Log-Eintrag mit alten Werten."""
     from app.models import TimeEntryAuditLog
-    existing = TimeEntry(user_id=test_user.id, date=date(2026, 1, 12),
+    existing = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, 12),
                          start_time=time(7, 15), end_time=time(12, 45), break_minutes=30,
                          note="alt")
     db.add(existing)
@@ -346,7 +352,8 @@ def test_execute_import_audit_log_for_overwrite(db, test_user, test_admin):
                              end_time=time(13, 0), break_minutes=30, note="neu",
                              has_conflict=True, arbzg_warnings=[])]
     execute_import(test_user.id, entries, overwrite=True, db=db,
-                   changed_by_id=test_admin.id, filename="test.xls")
+                   changed_by_id=test_admin.id, filename="test.xls",
+                   tenant_id=DEFAULT_TENANT_ID)
 
     update_logs = db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.user_id == test_user.id,
@@ -363,6 +370,7 @@ def test_execute_import_returns_arbzg_warnings(db, test_user, test_admin):
                              end_time=time(12, 45), break_minutes=30, note=None,
                              has_conflict=False, arbzg_warnings=["§3 ArbZG: Test-Warnung"])]
     result = execute_import(test_user.id, entries, overwrite=False, db=db,
-                            changed_by_id=test_admin.id, filename="test.xls")
+                            changed_by_id=test_admin.id, filename="test.xls",
+                            tenant_id=DEFAULT_TENANT_ID)
     assert len(result.warnings) == 1
     assert "§3" in result.warnings[0]

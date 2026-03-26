@@ -200,6 +200,7 @@ def clock_in(
 
     entry = TimeEntry(
         user_id=current_user.id,
+        tenant_id=current_user.tenant_id,
         date=now.date(),
         start_time=now.time().replace(second=0, microsecond=0),
         end_time=None,
@@ -468,6 +469,7 @@ def create_time_entry(
     # Create entry
     entry = TimeEntry(
         user_id=current_user.id,
+        tenant_id=current_user.tenant_id,
         date=entry_data.date,
         start_time=entry_data.start_time,
         end_time=entry_data.end_time,

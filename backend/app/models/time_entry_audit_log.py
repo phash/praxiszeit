@@ -11,6 +11,7 @@ class TimeEntryAuditLog(Base):
     __tablename__ = "time_entry_audit_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     time_entry_id = Column(UUID(as_uuid=True), ForeignKey("time_entries.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)  # affected employee
     changed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)  # admin who made change

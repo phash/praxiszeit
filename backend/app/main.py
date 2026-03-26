@@ -11,7 +11,7 @@ import logging
 import traceback
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
-from app.database import engine, SessionLocal
+from app.database import engine, SessionLocal, set_tenant_context
 from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
@@ -38,9 +38,35 @@ async def lifespan(app: FastAPI):
 
     # 2. Migrations are handled by Dockerfile CMD (alembic upgrade head)
 
-    # 3. Create admin user if it doesn't exist
+    # 3. Ensure default tenant exists
+    from app.models.tenant import Tenant
+    from app.database import set_tenant_context, set_superadmin_context
+    import uuid as _uuid
     db = SessionLocal()
     try:
+        # Startup runs as non-superuser — need superadmin context to bypass RLS
+        set_superadmin_context(db)
+        default_tenant = db.query(Tenant).filter(Tenant.slug == "default").first()
+        if not default_tenant:
+            print("🏢 Creating default tenant...")
+            default_tenant = Tenant(
+                id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                name="Default",
+                slug="default",
+                is_active=True,
+                mode="single",
+            )
+            db.add(default_tenant)
+            db.commit()
+            print("✅ Default tenant created")
+        default_tenant_id = default_tenant.id
+    finally:
+        db.close()
+
+    # 4. Create admin user if it doesn't exist
+    db = SessionLocal()
+    try:
+        set_tenant_context(db, str(default_tenant_id))
         admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
         if not admin:
             print(f"👤 Creating admin user: {settings.ADMIN_USERNAME}")
@@ -53,7 +79,8 @@ async def lifespan(app: FastAPI):
                 role=UserRole.ADMIN,
                 weekly_hours=40.0,
                 vacation_days=30,
-                is_active=True
+                is_active=True,
+                tenant_id=default_tenant_id,
             )
             db.add(admin)
             db.commit()
@@ -74,21 +101,23 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 4. DSGVO F-007: Clean up old error logs (>90 days resolved/ignored)
+    # 5. DSGVO F-007: Clean up old error logs (>90 days resolved/ignored)
     db = SessionLocal()
     try:
+        set_superadmin_context(db)
         deleted = cleanup_old_errors(db, max_age_days=90)
         if deleted:
             print(f"🗑️  Cleaned up {deleted} old error log entries (>90 days)")
     finally:
         db.close()
 
-    # 5. Sync public holidays for current and next year
+    # 6. Sync public holidays for current and next year
     print("📅 Syncing public holidays...")
     db = SessionLocal()
     try:
+        set_tenant_context(db, '00000000-0000-0000-0000-000000000001')
         state = holiday_service.get_holiday_state(db)
-        result = holiday_service.sync_current_and_next_year(db, state=state)
+        result = holiday_service.sync_current_and_next_year(db, state=state, tenant_id=default_tenant_id)
         print(f"✅ Holidays synced for {result['state']}: {result['current_year']}({result['current_count']}), "
               f"{result['next_year']}({result['next_count']})")
     finally:
@@ -174,6 +203,8 @@ async def capture_errors_middleware(request: Request, call_next):
             db = SessionLocal()
             try:
                 from app.services.error_log_service import log_error
+                from app.database import set_superadmin_context as _set_sa
+                _set_sa(db)  # Error logging needs to bypass RLS
                 log_error(
                     db=db,
                     level='error',
@@ -190,6 +221,8 @@ async def capture_errors_middleware(request: Request, call_next):
         db = SessionLocal()
         try:
             from app.services.error_log_service import log_error
+            from app.database import set_superadmin_context as _set_sa
+            _set_sa(db)  # Error logging needs to bypass RLS
             tb = traceback.format_exc()
             log_error(
                 db=db,
@@ -220,10 +253,15 @@ def root():
 def get_public_settings():
     """Public endpoint returning runtime-configurable UI settings (no auth required)."""
     from app.models.system_setting import SystemSetting
+    from app.database import set_superadmin_context as _set_sa
     db = SessionLocal()
     try:
+        _set_sa(db)  # Public endpoint needs to read global settings
         def _get(key, default="false"):
-            s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+            s = db.query(SystemSetting).filter(
+                SystemSetting.key == key,
+                SystemSetting.tenant_id.is_(None)  # Only global settings
+            ).first()
             return s.value if s else default
         return {
             "vacation_approval_required": _get("vacation_approval_required", "false").lower() == "true"

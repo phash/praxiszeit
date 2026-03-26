@@ -7,8 +7,9 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timezone
 import base64
-from app.database import get_db
+from app.database import get_db, set_superadmin_context
 from app.models import User, TimeEntry, Absence
+from app.models.tenant import Tenant
 from app.schemas.user import (
     LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
     ChangePasswordRequest, UpdateCalendarColorRequest,
@@ -73,6 +74,8 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     F-010: Returns access token in JSON; refresh token set as HttpOnly cookie.
     F-019: If TOTP is enabled, requires totp_code in the request body.
     """
+    # Login needs to see all users across tenants (no tenant context yet)
+    set_superadmin_context(db)
     user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
 
     if not user or not user.is_active:
@@ -86,6 +89,15 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
         )
+
+    # Check tenant is active before issuing tokens
+    if user.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        if tenant and not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant deaktiviert"
+            )
 
     # F-019: TOTP check
     if user.totp_enabled:
@@ -101,8 +113,9 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 detail="Ungültiger TOTP-Code",
             )
 
-    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version)
-    refresh_token = auth_service.create_refresh_token(str(user.id), user.token_version)
+    tenant_id_str = str(user.tenant_id) if user.tenant_id else None
+    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)
+    refresh_token = auth_service.create_refresh_token(str(user.id), user.token_version, tenant_id_str)
 
     # F-010: deliver refresh token via HttpOnly cookie, not in JSON
     _set_refresh_cookie(response, refresh_token)
@@ -141,6 +154,8 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             detail="Ungültiger Token"
         )
 
+    # Refresh needs to see user across tenants (token carries tid but RLS not set yet)
+    set_superadmin_context(db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
         raise HTTPException(
@@ -155,7 +170,17 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             detail="Token wurde widerrufen. Bitte erneut anmelden."
         )
 
-    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version)
+    # Check tenant is active before issuing new access token
+    if user.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        if tenant and not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant deaktiviert"
+            )
+
+    tenant_id_str = str(user.tenant_id) if user.tenant_id else None
+    access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)
     return RefreshResponse(access_token=access_token)
 
 
@@ -208,8 +233,9 @@ def change_password(
     db.refresh(current_user)
 
     # Issue a fresh token so the frontend session stays valid after the version bump
+    tenant_id_str = str(current_user.tenant_id) if current_user.tenant_id else None
     new_access_token = auth_service.create_access_token(
-        str(current_user.id), current_user.role.value, current_user.token_version
+        str(current_user.id), current_user.role.value, current_user.token_version, tenant_id_str
     )
     return {"message": "Passwort erfolgreich geändert", "access_token": new_access_token}
 

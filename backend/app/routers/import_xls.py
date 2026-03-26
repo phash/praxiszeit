@@ -93,4 +93,5 @@ def confirm_import(
         db=db,
         changed_by_id=current_admin.id,
         filename=body.filename or "import.xls",
+        tenant_id=current_admin.tenant_id,
     )

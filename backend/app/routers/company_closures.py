@@ -92,7 +92,8 @@ def create_closure(
         name=data.name,
         start_date=data.start_date,
         end_date=data.end_date,
-        created_by=current_user.id
+        created_by=current_user.id,
+        tenant_id=current_user.tenant_id,
     )
     db.add(closure)
     db.flush()  # Get ID without commit
@@ -121,6 +122,7 @@ def create_closure(
             if not existing:
                 absence = Absence(
                     user_id=employee.id,
+                    tenant_id=current_user.tenant_id,
                     date=workday,
                     end_date=data.end_date,
                     type=AbsenceType.VACATION,

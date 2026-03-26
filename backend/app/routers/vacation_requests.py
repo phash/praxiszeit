@@ -55,6 +55,7 @@ def create_vacation_request(
 
     vr = VacationRequest(
         user_id=current_user.id,
+        tenant_id=current_user.tenant_id,
         date=data.date,
         end_date=data.end_date,
         hours=data.hours,

@@ -41,6 +41,7 @@ def log_error(
     method: Optional[str] = None,
     status_code: Optional[int] = None,
     user_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> ErrorLog:
     """
     Record an error, aggregating repeated occurrences (same fingerprint).
@@ -78,6 +79,7 @@ def log_error(
         method=method,
         status_code=status_code,
         user_id=user_id,
+        tenant_id=tenant_id,
         fingerprint=fingerprint,
         count=1,
         first_seen=now,
