@@ -35,14 +35,18 @@ def _restore_tenant_context(session, transaction, connection):
 def set_tenant_context(db, tenant_id: str):
     """Set tenant context on a session. Persists across commits via event listener."""
     db._tenant_id = str(tenant_id)
+    db._is_superadmin = False  # Clear superadmin — tenant context is mutually exclusive
     # Also set immediately for the current transaction
     db.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(tenant_id)})
+    db.execute(text("SET LOCAL app.is_superadmin = ''"))
 
 
 def set_superadmin_context(db):
     """Grant superadmin access (bypasses RLS). Persists across commits via event listener."""
     db._is_superadmin = True
+    db._tenant_id = None  # Clear tenant — superadmin context is mutually exclusive
     db.execute(text("SET LOCAL app.is_superadmin = 'true'"))
+    db.execute(text("SET LOCAL app.tenant_id = ''"))
 
 
 def get_db():

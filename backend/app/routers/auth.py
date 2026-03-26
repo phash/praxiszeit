@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import base64
 from app.database import get_db, set_superadmin_context
 from app.models import User, TimeEntry, Absence
+from app.models.tenant import Tenant
 from app.schemas.user import (
     LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
     ChangePasswordRequest, UpdateCalendarColorRequest,
@@ -89,6 +90,15 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
             detail="Ungültiger Benutzername oder Passwort"
         )
 
+    # Check tenant is active before issuing tokens
+    if user.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        if tenant and not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant deaktiviert"
+            )
+
     # F-019: TOTP check
     if user.totp_enabled:
         if not login_data.totp_code:
@@ -159,6 +169,15 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token wurde widerrufen. Bitte erneut anmelden."
         )
+
+    # Check tenant is active before issuing new access token
+    if user.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        if tenant and not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant deaktiviert"
+            )
 
     tenant_id_str = str(user.tenant_id) if user.tenant_id else None
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)

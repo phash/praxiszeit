@@ -62,10 +62,11 @@ def validate_daily_break(
     total_declared_breaks = sum(b["break_minutes"] for b in blocks)
 
     # Calculate gaps between consecutive blocks (these count as breaks too)
+    # §4 Satz 2 ArbZG: Pausenabschnitte müssen mindestens 15 Minuten betragen
     total_gap_minutes = 0
     for i in range(1, len(blocks)):
         gap = blocks[i]["start"] - blocks[i - 1]["end"]
-        if gap > 0:
+        if gap >= 15:
             total_gap_minutes += gap
 
     # Net work time = gross time - declared breaks
