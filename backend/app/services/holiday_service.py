@@ -97,9 +97,10 @@ def sync_holidays(db: Session, year: int, state: Optional[str] = None, tenant_id
     for holiday_date, holiday_name in holidays:
         german_name = _translate_name(holiday_name)
 
-        existing = db.query(PublicHoliday).filter(
-            PublicHoliday.date == holiday_date
-        ).first()
+        query = db.query(PublicHoliday).filter(PublicHoliday.date == holiday_date)
+        if tenant_id is not None:
+            query = query.filter(PublicHoliday.tenant_id == tenant_id)
+        existing = query.first()
 
         if not existing:
             holiday = PublicHoliday(
@@ -132,10 +133,14 @@ def is_holiday(db: Session, check_date: date) -> bool:
     return holiday is not None
 
 
-def delete_all_holidays(db: Session) -> int:
-    """Delete all holidays from the database. Caller is responsible for committing."""
-    count = db.query(PublicHoliday).count()
-    db.query(PublicHoliday).delete()
+def delete_all_holidays(db: Session, tenant_id=None) -> int:
+    """Delete holidays from the database. If tenant_id given, only for that tenant.
+    Caller is responsible for committing."""
+    query = db.query(PublicHoliday)
+    if tenant_id is not None:
+        query = query.filter(PublicHoliday.tenant_id == tenant_id)
+    count = query.count()
+    query.delete()
     # No commit – let the caller manage the transaction
     return count
 
