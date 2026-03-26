@@ -162,12 +162,6 @@ def seed_data(admin_engine):
     })
 
     # ---- Create system_settings ----
-    # Global setting (tenant_id IS NULL)
-    conn.execute(text("""
-        INSERT INTO system_settings (key, tenant_id, value, description)
-        VALUES (:key, NULL, :val, :desc)
-    """), {"key": "rls_test_global", "val": "global_value", "desc": "RLS test global setting"})
-
     # Tenant A setting
     conn.execute(text("""
         INSERT INTO system_settings (key, tenant_id, value, description)
@@ -408,8 +402,8 @@ class TestSystemSettingsIsolation:
     The policy: tenant sees own settings + global (tenant_id IS NULL).
     """
 
-    def test_tenant_a_sees_own_and_global_settings(self, app_engine, seed_data):
-        """11. Tenant A sees own settings + global settings (tenant_id IS NULL)."""
+    def test_tenant_a_sees_own_settings_only(self, app_engine, seed_data):
+        """11. Tenant A sees only own settings (tenant_id is NOT NULL)."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             rows = conn.execute(text(
@@ -418,8 +412,6 @@ class TestSystemSettingsIsolation:
             keys = {row[0] for row in rows}
             # Should see its own setting
             assert "rls_test_setting_a" in keys
-            # Should see global setting (tenant_id IS NULL)
-            assert "rls_test_global" in keys
             # Should NOT see Tenant B's setting
             assert "rls_test_setting_b" not in keys
         finally:
