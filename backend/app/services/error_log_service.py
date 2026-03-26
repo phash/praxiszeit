@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.error_log import ErrorLog
+from app.database import set_superadmin_context
 
 # DSGVO F-007: Regex patterns for PII scrubbing
 _UUID_RE = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I)
@@ -163,6 +164,7 @@ class DBErrorHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         try:
             db: Session = self._factory()
+            set_superadmin_context(db)  # RLS: see all errors for dedup
             tb = None
             if record.exc_info:
                 tb = ''.join(traceback.format_exception(*record.exc_info))
