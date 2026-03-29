@@ -3,14 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Use sudo if not root (prod server requires it for Docker)
-if [ "$(id -u)" -ne 0 ]; then
-    SUDO="sudo"
-else
-    SUDO=""
-fi
-
-COMPOSE="$SUDO docker compose -f docker-compose.yml -f docker-compose.ssl.yml"
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.ssl.yml"
 
 echo "=== PraxisZeit Deploy ==="
 
