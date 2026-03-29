@@ -71,26 +71,24 @@ def get_absence_calendar(
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
-    # Get all absences for the month
-    absences = db.query(Absence).join(User).filter(
+    # Get all absences for the month, fetching User columns in the same query
+    rows = db.query(Absence, User.first_name, User.last_name).join(User).filter(
         User.is_active == True,
         User.is_hidden == False,
         extract('year', Absence.date) == year,
         extract('month', Absence.date) == month_num
     ).order_by(Absence.date).all()
 
-    # Convert to calendar entries
+    # Convert to calendar entries (no extra queries needed)
     calendar_entries = []
-    for absence in absences:
-        user = db.query(User).filter(User.id == absence.user_id).first()
-        if user:
-            calendar_entries.append(AbsenceCalendarEntry(
-                date=absence.date,
-                user_first_name=user.first_name,
-                user_last_name=user.last_name,
-                type=absence.type,
-                hours=absence.hours
-            ))
+    for absence, first_name, last_name in rows:
+        calendar_entries.append(AbsenceCalendarEntry(
+            date=absence.date,
+            user_first_name=first_name,
+            user_last_name=last_name,
+            type=absence.type,
+            hours=absence.hours
+        ))
 
     return calendar_entries
 
@@ -107,8 +105,10 @@ def get_team_upcoming_absences(
     """
     today = today_local()
 
-    # Get all future absences from active users
-    absences = db.query(Absence).join(User).filter(
+    # Get all future absences from active users, fetching User columns in the same query
+    rows = db.query(
+        Absence, User.first_name, User.last_name, User.calendar_color
+    ).join(User).filter(
         User.is_active == True,
         User.is_hidden == False,
         Absence.date >= today
@@ -118,11 +118,7 @@ def get_team_upcoming_absences(
     seen = set()
     team_absences = []
 
-    for absence in absences:
-        user = db.query(User).filter(User.id == absence.user_id).first()
-        if not user:
-            continue
-
+    for absence, first_name, last_name, calendar_color in rows:
         # Create a unique key for this absence period
         key = (absence.user_id, absence.date, absence.end_date or absence.date, absence.type)
 
@@ -131,9 +127,9 @@ def get_team_upcoming_absences(
             team_absences.append(TeamAbsenceEntry(
                 date=absence.date,
                 end_date=absence.end_date,
-                user_first_name=user.first_name,
-                user_last_name=user.last_name,
-                user_color=user.calendar_color,
+                user_first_name=first_name,
+                user_last_name=last_name,
+                user_color=calendar_color,
                 type=absence.type,
                 hours=absence.hours,
             ))

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from typing import List, Optional
 from datetime import date, time, datetime
 from uuid import UUID
@@ -58,5 +58,4 @@ class ChangeRequestResponse(BaseModel):
     def serialize_uuid(self, value):
         return str(value) if value else None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

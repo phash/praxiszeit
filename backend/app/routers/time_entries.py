@@ -267,6 +267,19 @@ def clock_out(
 
     clock_out_warnings: list[str] = []
     if not exempt:
+        # ArbZG §4: break validation (warning only, don't block clock-out)
+        break_error = validate_daily_break(
+            db=db,
+            user_id=current_user.id,
+            entry_date=open_entry.date,
+            start_time=open_entry.start_time,
+            end_time=new_end_time,
+            break_minutes=body.break_minutes,
+            exclude_entry_id=open_entry.id,
+        )
+        if break_error:
+            clock_out_warnings.append(f"BREAK_WARNING: {break_error}")
+    if not exempt:
         if daily_hours > MAX_DAILY_HOURS_WARN:
             clock_out_warnings.append("DAILY_HOURS_WARNING")
         weekly_hours_out = _calculate_weekly_net_hours(

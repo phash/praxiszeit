@@ -37,11 +37,8 @@ const statusConfig = {
   rejected: { label: 'Abgelehnt', color: 'bg-red-100 text-red-800', icon: XCircle },
 };
 
-const typeLabels: Record<string, string> = {
-  create: 'Neuer Eintrag',
-  update: 'Änderung',
-  delete: 'Löschung',
-};
+import { CHANGE_REQUEST_TYPE_LABELS } from '../../constants/changeRequestTypes';
+const typeLabels = CHANGE_REQUEST_TYPE_LABELS;
 
 export default function AdminChangeRequests() {
   const toast = useToast();

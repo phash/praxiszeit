@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, UserCheck, Save, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, UserCheck, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
-import { useAuthStore } from '../../stores/authStore';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import PasswordInput from '../../components/PasswordInput';
 import Badge from '../../components/Badge';
 import { getErrorMessage } from '../../utils/errorMessage';
+import SetPasswordModal from './users/SetPasswordModal';
+import CarryoverModal from './users/CarryoverModal';
+import WorkingHoursModal from './users/WorkingHoursModal';
+import UserForm from './users/UserForm';
 
 interface User {
   id: string;
@@ -46,25 +47,6 @@ interface VacationInfo {
   remaining_days: number;
 }
 
-interface WorkingHoursChange {
-  id: string;
-  user_id: string;
-  effective_from: string;
-  weekly_hours: number;
-  note?: string;
-  created_at: string;
-}
-
-interface YearCarryover {
-  id: string;
-  user_id: string;
-  year: number;
-  overtime_hours: number;
-  vacation_days: number;
-  created_at: string;
-  updated_at: string;
-}
-
 /** Verbleibende Grace-Period-Tage (0 = abgelaufen / kein deactivated_at). */
 function graceRemainingDays(user: User): number {
   if (!user.deactivated_at) return 0;
@@ -77,54 +59,16 @@ function graceRemainingDays(user: User): number {
 export default function Users() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    password: '',
-    first_name: '',
-    last_name: '',
-    role: 'employee' as 'admin' | 'employee',
-    weekly_hours: 40,
-    vacation_days: 30,
-    work_days_per_week: 5,
-    track_hours: true,
-    exempt_from_arbzg: false,
-    is_night_worker: false,
-    first_work_day: '',
-    last_work_day: '',
-    use_daily_schedule: false,
-    hours_monday: 8,
-    hours_tuesday: 8,
-    hours_wednesday: 8,
-    hours_thursday: 8,
-    hours_friday: 8,
-  });
-  const [showHoursModal, setShowHoursModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
-  const [hoursFormData, setHoursFormData] = useState({
-    effective_from: '',
-    weekly_hours: 40,
-    note: '',
-  });
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
-  const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
   const [setPasswordModal, setSetPasswordModal] = useState<{ userId: string; userName: string } | null>(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [showCarryoverModal, setShowCarryoverModal] = useState(false);
   const [carryoverUser, setCarryoverUser] = useState<User | null>(null);
-  const [carryovers, setCarryovers] = useState<YearCarryover[]>([]);
-  const [carryoverFormData, setCarryoverFormData] = useState({
-    year: new Date().getFullYear(),
-    overtime_hours: 0,
-    vacation_days: 0,
-  });
+  const [hoursModalUser, setHoursModalUser] = useState<User | null>(null);
+
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   // Sorting & Filtering
@@ -137,13 +81,6 @@ export default function Users() {
   useEffect(() => {
     fetchUsers();
   }, [showInactive, showHidden]);
-
-  useEffect(() => {
-    if (formData.work_days_per_week > 0) {
-      const suggested = Math.round(30 * formData.work_days_per_week / 5);
-      setSuggestedVacation(suggested);
-    }
-  }, [formData.work_days_per_week]);
 
   const fetchUsers = async () => {
     try {
@@ -177,136 +114,24 @@ export default function Users() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      // Convert empty date strings to null for the API
-      const payload = {
-        ...formData,
-        first_work_day: formData.first_work_day || null,
-        last_work_day: formData.last_work_day || null,
-      };
-      if (editingId) {
-        // When editing, send only the fields that can be updated (exclude password)
-        const { password, ...updateData } = payload;
-        await apiClient.put(`/admin/users/${editingId}`, updateData);
-        // If the admin edited themselves, refresh the auth store so Dashboard/Layout update
-        if (currentUser && editingId === currentUser.id) {
-          const meRes = await apiClient.get('/auth/me');
-          setCurrentUser(meRes.data);
-        }
-        toast.success('Benutzer erfolgreich aktualisiert');
-      } else {
-        await apiClient.post('/admin/users', payload);
-        toast.success('Benutzer erfolgreich erstellt');
-      }
-      fetchUsers();
-      resetForm();
-    } catch (error: any) {
-      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
-    }
-  };
-
   const handleEdit = (user: User) => {
-    setEditingId(user.id);
-    setFormData({
-      username: user.username,
-      email: user.email || '',
-      password: '',
-      first_name: user.first_name,
-      last_name: user.last_name,
-      role: user.role,
-      weekly_hours: user.weekly_hours,
-      vacation_days: user.vacation_days,
-      work_days_per_week: user.work_days_per_week || 5,
-      track_hours: user.track_hours ?? true,
-      exempt_from_arbzg: user.exempt_from_arbzg ?? false,
-      is_night_worker: user.is_night_worker ?? false,
-      first_work_day: user.first_work_day || '',
-      last_work_day: user.last_work_day || '',
-      use_daily_schedule: user.use_daily_schedule ?? false,
-      hours_monday: user.hours_monday ?? 8,
-      hours_tuesday: user.hours_tuesday ?? 8,
-      hours_wednesday: user.hours_wednesday ?? 8,
-      hours_thursday: user.hours_thursday ?? 8,
-      hours_friday: user.hours_friday ?? 8,
-    });
+    setEditingUser(user);
     setShowForm(true);
   };
 
+  const handleFormSaved = () => {
+    fetchUsers();
+    setShowForm(false);
+    setEditingUser(null);
+  };
+
+  const handleFormCancel = () => {
+    setShowForm(false);
+    setEditingUser(null);
+  };
+
   const handleSetPassword = (userId: string, name: string) => {
-    setNewPassword('');
     setSetPasswordModal({ userId, userName: name });
-  };
-
-  const handleSetPasswordSubmit = async () => {
-    if (!setPasswordModal || newPassword.length < 10) return;
-    try {
-      await apiClient.post(`/admin/users/${setPasswordModal.userId}/set-password`, {
-        password: newPassword,
-      });
-      toast.success('Passwort erfolgreich gesetzt');
-      setSetPasswordModal(null);
-      setNewPassword('');
-    } catch (error: any) {
-      toast.error(getErrorMessage(error, 'Fehler beim Setzen des Passworts'));
-    }
-  };
-
-  const handleOpenCarryover = async (user: User) => {
-    setCarryoverUser(user);
-    setCarryoverFormData({
-      year: new Date().getFullYear(),
-      overtime_hours: 0,
-      vacation_days: 0,
-    });
-    try {
-      const res = await apiClient.get(`/admin/users/${user.id}/carryovers`);
-      setCarryovers(res.data);
-
-      // Pre-fill form with current year's carryover if it exists
-      const currentYear = new Date().getFullYear();
-      const existing = res.data.find((c: YearCarryover) => c.year === currentYear);
-      if (existing) {
-        setCarryoverFormData({
-          year: currentYear,
-          overtime_hours: existing.overtime_hours,
-          vacation_days: existing.vacation_days,
-        });
-      }
-    } catch {
-      setCarryovers([]);
-    }
-    setShowCarryoverModal(true);
-  };
-
-  const handleCarryoverSubmit = async () => {
-    if (!carryoverUser) return;
-    try {
-      await apiClient.put(
-        `/admin/users/${carryoverUser.id}/carryovers/${carryoverFormData.year}`,
-        {
-          overtime_hours: carryoverFormData.overtime_hours,
-          vacation_days: carryoverFormData.vacation_days,
-        }
-      );
-      toast.success(`Übernahme für ${carryoverFormData.year} gespeichert`);
-      // Refresh list
-      const res = await apiClient.get(`/admin/users/${carryoverUser.id}/carryovers`);
-      setCarryovers(res.data);
-      fetchUsers(); // Refresh vacation info
-    } catch (error: any) {
-      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
-    }
-  };
-
-  const handleCarryoverYearChange = (year: number) => {
-    const existing = carryovers.find(c => c.year === year);
-    setCarryoverFormData({
-      year,
-      overtime_hours: existing?.overtime_hours ?? 0,
-      vacation_days: existing?.vacation_days ?? 0,
-    });
   };
 
   const handleDeactivate = (userId: string, name: string) => {
@@ -401,92 +226,6 @@ export default function Users() {
     });
   };
 
-  const resetForm = () => {
-    setShowForm(false);
-    setEditingId(null);
-    setFormData({
-      username: '',
-      email: '',
-      password: '',
-      first_name: '',
-      last_name: '',
-      role: 'employee',
-      weekly_hours: 40,
-      vacation_days: 30,
-      work_days_per_week: 5,
-      track_hours: true,
-      exempt_from_arbzg: false,
-      is_night_worker: false,
-      first_work_day: '',
-      last_work_day: '',
-      use_daily_schedule: false,
-      hours_monday: 8,
-      hours_tuesday: 8,
-      hours_wednesday: 8,
-      hours_thursday: 8,
-      hours_friday: 8,
-    });
-  };
-
-  const handleOpenHoursModal = async (user: User) => {
-    setSelectedUser(user);
-    setShowHoursModal(true);
-    setHoursFormData({
-      effective_from: new Date().toISOString().split('T')[0],
-      weekly_hours: user.weekly_hours,
-      note: '',
-    });
-    await fetchHoursChanges(user.id);
-  };
-
-  const fetchHoursChanges = async (userId: string) => {
-    try {
-      const response = await apiClient.get(`/admin/users/${userId}/working-hours-changes`);
-      setHoursChanges(response.data);
-    } catch (error) {
-      toast.error('Fehler beim Laden der Stundenhistorie');
-    }
-  };
-
-  const handleAddHoursChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedUser) return;
-
-    try {
-      await apiClient.post(`/admin/users/${selectedUser.id}/working-hours-changes`, hoursFormData);
-      await fetchHoursChanges(selectedUser.id);
-      await fetchUsers(); // Refresh user list to show updated current hours
-      setHoursFormData({
-        effective_from: new Date().toISOString().split('T')[0],
-        weekly_hours: selectedUser.weekly_hours,
-        note: '',
-      });
-      toast.success('Stundenänderung erfolgreich hinzugefügt');
-    } catch (error: any) {
-      toast.error(getErrorMessage(error, 'Fehler beim Hinzufügen'));
-    }
-  };
-
-  const handleDeleteHoursChange = (changeId: string) => {
-    if (!selectedUser) return;
-    confirm({
-      title: 'Stundenänderung löschen',
-      message: 'Möchten Sie diese Stundenänderung wirklich löschen?',
-      confirmLabel: 'Löschen',
-      variant: 'danger',
-      onConfirm: async () => {
-        try {
-          await apiClient.delete(`/admin/users/${selectedUser.id}/working-hours-changes/${changeId}`);
-          await fetchHoursChanges(selectedUser.id);
-          await fetchUsers();
-          toast.success('Stundenänderung erfolgreich gelöscht');
-        } catch (error) {
-          toast.error('Fehler beim Löschen der Stundenänderung');
-        }
-      },
-    });
-  };
-
   // Sorting function
   const handleSort = (field: keyof User) => {
     if (sortField === field) {
@@ -564,7 +303,14 @@ export default function Users() {
             Ausgeblendete anzeigen
           </label>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => {
+              if (showForm) {
+                handleFormCancel();
+              } else {
+                setEditingUser(null);
+                setShowForm(true);
+              }
+            }}
             className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
           >
             {showForm ? <X size={20} /> : <Plus size={20} />}
@@ -575,263 +321,10 @@ export default function Users() {
 
       {/* User Form */}
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h3 className="text-lg font-semibold mb-4">
-            {editingId ? 'Benutzer bearbeiten' : 'Neue:n Benutzer:in anlegen'}
-          </h3>
-
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="f-username" className="block text-sm font-medium text-gray-700 mb-1">Benutzername *</label>
-                <input
-                  id="f-username"
-                  type="text"
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  required
-                  autoFocus
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                  placeholder="benutzername"
-                />
-              </div>
-              <div>
-                <label htmlFor="f-email" className="block text-sm font-medium text-gray-700 mb-1">E-Mail (optional)</label>
-                <input
-                  id="f-email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                  placeholder="name@example.de"
-                />
-              </div>
-              {!editingId && (
-                <div>
-                  <label htmlFor="f-password" className="block text-sm font-medium text-gray-700 mb-1">Passwort *</label>
-                  <PasswordInput
-                    id="f-password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required
-                    minLength={10}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    placeholder="Mind. 10 Zeichen"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
-                  </p>
-                </div>
-              )}
-              <div>
-                <label htmlFor="f-role" className="block text-sm font-medium text-gray-700 mb-1">Rolle</label>
-                <select
-                  id="f-role"
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                >
-                  <option value="employee">Mitarbeiter:in</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="f-firstname" className="block text-sm font-medium text-gray-700 mb-1">Vorname</label>
-                <input
-                  id="f-firstname"
-                  type="text"
-                  value={formData.first_name}
-                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div>
-                <label htmlFor="f-lastname" className="block text-sm font-medium text-gray-700 mb-1">Nachname</label>
-                <input
-                  id="f-lastname"
-                  type="text"
-                  value={formData.last_name}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div>
-                <label htmlFor="f-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">Wochenstunden</label>
-                <input
-                  id="f-weekly-hours"
-                  type="number"
-                  step="0.5"
-                  value={formData.weekly_hours}
-                  onChange={(e) => setFormData({ ...formData, weekly_hours: parseFloat(e.target.value) })}
-                  required
-                  min="0"
-                  max="60"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div>
-                <label htmlFor="f-work-days" className="block text-sm font-medium text-gray-700 mb-1">Arbeitstage pro Woche</label>
-                <input
-                  id="f-work-days"
-                  type="number"
-                  value={formData.work_days_per_week}
-                  onChange={(e) => setFormData({ ...formData, work_days_per_week: parseInt(e.target.value) || 5 })}
-                  required
-                  min="1"
-                  max="7"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Anzahl der Arbeitstage pro Woche (1-7)
-                </p>
-              </div>
-              <div>
-                <label htmlFor="f-vacation" className="block text-sm font-medium text-gray-700 mb-1">Urlaubstage</label>
-                <input
-                  id="f-vacation"
-                  type="number"
-                  value={formData.vacation_days}
-                  onChange={(e) => setFormData({ ...formData, vacation_days: parseInt(e.target.value) })}
-                  required
-                  min="0"
-                  max="50"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-                {suggestedVacation !== null && formData.vacation_days !== suggestedVacation && (
-                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                    💡 <strong>Empfehlung:</strong> {suggestedVacation} Tage
-                    (basierend auf {formData.work_days_per_week} Arbeitstagen/Woche)
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, vacation_days: suggestedVacation })}
-                      className="ml-2 text-blue-600 underline"
-                    >
-                      Übernehmen
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="track_hours"
-                  checked={formData.track_hours}
-                  onChange={(e) => setFormData({ ...formData, track_hours: e.target.checked })}
-                  className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                />
-                <label htmlFor="track_hours" className="text-sm font-medium text-gray-700 cursor-pointer">
-                  Stundenzählung aktiv (Soll-Stunden werden berechnet)
-                </label>
-              </div>
-
-              <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
-                <input
-                  type="checkbox"
-                  id="exempt_from_arbzg"
-                  checked={formData.exempt_from_arbzg}
-                  onChange={(e) => setFormData({ ...formData, exempt_from_arbzg: e.target.checked })}
-                  className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
-                />
-                <label htmlFor="exempt_from_arbzg" className="text-sm font-medium text-gray-700 cursor-pointer">
-                  ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)
-                </label>
-              </div>
-
-              <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <input
-                  type="checkbox"
-                  id="is_night_worker"
-                  checked={formData.is_night_worker ?? false}
-                  onChange={(e) => setFormData({ ...formData, is_night_worker: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
-                  Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
-                </label>
-              </div>
-
-              {/* First / Last Work Day */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Erster Arbeitstag</label>
-                <input
-                  type="date"
-                  value={formData.first_work_day}
-                  onChange={(e) => setFormData({ ...formData, first_work_day: e.target.value })}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Letzter Arbeitstag</label>
-                <input
-                  type="date"
-                  value={formData.last_work_day}
-                  onChange={(e) => setFormData({ ...formData, last_work_day: e.target.value })}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-              </div>
-
-              {/* Daily Schedule Toggle */}
-              {formData.track_hours && (
-                <div className="md:col-span-2 border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <input
-                      type="checkbox"
-                      id="use_daily_schedule"
-                      checked={formData.use_daily_schedule}
-                      onChange={(e) => setFormData({ ...formData, use_daily_schedule: e.target.checked })}
-                      className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                    />
-                    <label htmlFor="use_daily_schedule" className="text-sm font-medium text-gray-700 cursor-pointer">
-                      Individuelle Tagesstunden (statt einheitlich {(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)
-                    </label>
-                  </div>
-                  {formData.use_daily_schedule && (
-                    <div className="grid grid-cols-5 gap-2">
-                      {(['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const).map((day, idx) => {
-                        const keys = ['hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday'] as const;
-                        const key = keys[idx];
-                        return (
-                          <div key={day} className="text-center">
-                            <label htmlFor={`f-hours-${key}`} className="block text-xs font-medium text-gray-600 mb-1">{day}</label>
-                            <input
-                              id={`f-hours-${key}`}
-                              type="number"
-                              step="0.5"
-                              min="0"
-                              max="24"
-                              value={formData[key]}
-                              onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
-                              aria-label={`Stunden ${day}`}
-                              className="w-full px-2 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-primary text-sm"
-                            />
-                          </div>
-                        );
-                      })}
-                      <div className="col-span-5 text-xs text-gray-500 mt-1">
-                        Summe: {(formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday).toFixed(1)}h/Woche
-                        {formData.weekly_hours > 0 && (formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday) !== formData.weekly_hours && (
-                          <span className="text-amber-600 ml-2">
-                            (Gesamtwochenstunden: {formData.weekly_hours}h – bitte anpassen!)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="md:col-span-2">
-                <button
-                  type="submit"
-                  className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
-                >
-                  <Save size={18} />
-                  <span>Speichern</span>
-                </button>
-              </div>
-            </form>
-        </div>
+        <UserForm
+          editUser={editingUser}
+          onSaved={handleFormSaved}
+        />
       )}
 
       {/* Filter Input */}
@@ -1043,14 +536,14 @@ export default function Users() {
                         <Edit2 size={16} />
                       </button>
                       <button
-                        onClick={() => handleOpenHoursModal(user)}
+                        onClick={() => setHoursModalUser(user)}
                         className="text-blue-600 hover:text-blue-800"
                         title="Stundenverlauf"
                       >
                         <Clock size={16} />
                       </button>
                       <button
-                        onClick={() => handleOpenCarryover(user)}
+                        onClick={() => setCarryoverUser(user)}
                         className="text-teal-600 hover:text-teal-800"
                         title="Vorjahresübernahme"
                       >
@@ -1224,7 +717,7 @@ export default function Users() {
                       <span>Bearbeiten</span>
                     </button>
                     <button
-                      onClick={() => handleOpenHoursModal(user)}
+                      onClick={() => setHoursModalUser(user)}
                       className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
                       aria-label="Stundenverlauf anzeigen"
                       title="Stundenverlauf"
@@ -1232,7 +725,7 @@ export default function Users() {
                       <Clock size={16} />
                     </button>
                     <button
-                      onClick={() => handleOpenCarryover(user)}
+                      onClick={() => setCarryoverUser(user)}
                       className="p-2 bg-teal-50 text-teal-600 rounded-lg hover:bg-teal-100 transition"
                       aria-label="Vorjahresübernahme"
                       title="Vorjahresübernahme"
@@ -1313,353 +806,33 @@ export default function Users() {
       </div>
 
       {/* Working Hours History Modal */}
-      {showHoursModal && selectedUser && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowHoursModal(false)}
-        >
-          <FocusTrap
-            focusTrapOptions={{
-              allowOutsideClick: true,
-              escapeDeactivates: true,
-              onDeactivate: () => setShowHoursModal(false),
-            }}
-          >
-            <div 
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="hours-modal-title"
-              className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                <div>
-                  <h2 id="hours-modal-title" className="text-2xl font-bold text-gray-900">Stundenverlauf</h2>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {selectedUser.first_name} {selectedUser.last_name} • Aktuell: {selectedUser.weekly_hours} Std/Woche
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowHoursModal(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                  aria-label={`Stundenverlauf für ${selectedUser.first_name} ${selectedUser.last_name} schließen`}
-                >
-                  <X size={24} />
-                </button>
-              </div>
-
-            <div className="p-6">
-              {/* Add New Change Form */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-blue-900 mb-3">Neue Stundenänderung</h3>
-                <form onSubmit={handleAddHoursChange} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Gültig ab
-                    </label>
-                    <input
-                      type="date"
-                      value={hoursFormData.effective_from}
-                      onChange={(e) => setHoursFormData({ ...hoursFormData, effective_from: e.target.value })}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Wochenstunden
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={hoursFormData.weekly_hours}
-                      onChange={(e) => setHoursFormData({ ...hoursFormData, weekly_hours: parseFloat(e.target.value) })}
-                      required
-                      min="0"
-                      max="60"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Notiz (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={hoursFormData.note}
-                      onChange={(e) => setHoursFormData({ ...hoursFormData, note: e.target.value })}
-                      placeholder="z.B. Teilzeitänderung"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <button
-                      type="submit"
-                      className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
-                    >
-                      <Plus size={18} />
-                      <span>Hinzufügen</span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* History List */}
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Verlauf</h3>
-                {hoursChanges.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">Keine Änderungen vorhanden</p>
-                ) : (
-                  <div className="space-y-3">
-                    {hoursChanges.map((change) => (
-                      <div
-                        key={change.id}
-                        className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            Ab {new Date(change.effective_from).toLocaleDateString('de-DE', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                            })}: {change.weekly_hours} Std/Woche
-                          </p>
-                          {change.note && (
-                            <p className="text-sm text-gray-600 mt-1">{change.note}</p>
-                          )}
-                          <p className="text-xs text-gray-500 mt-1">
-                            Erstellt: {new Date(change.created_at).toLocaleDateString('de-DE', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleDeleteHoursChange(change.id)}
-                          className="text-red-600 hover:text-red-800"
-                          title="Löschen"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  <strong>Hinweis:</strong> Die Berechnungen von Soll-Stunden berücksichtigen automatisch die
-                  historischen Werte. Wenn z.B. jemand ab 15.03. von 20h auf 30h wechselt, werden für den
-                  März die ersten 14 Tage mit 20h und ab dem 15. mit 30h berechnet.
-                </p>
-              </div>
-            </div>
-          </div>
-          </FocusTrap>
-        </div>
+      {hoursModalUser && (
+        <WorkingHoursModal
+          userId={hoursModalUser.id}
+          userName={`${hoursModalUser.first_name} ${hoursModalUser.last_name}`}
+          currentWeeklyHours={hoursModalUser.weekly_hours}
+          onClose={() => setHoursModalUser(null)}
+          onChanged={fetchUsers}
+        />
       )}
 
       {/* Set Password Modal */}
       {setPasswordModal && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          onClick={() => setSetPasswordModal(null)}
-        >
-          <FocusTrap
-            focusTrapOptions={{
-              allowOutsideClick: true,
-              escapeDeactivates: true,
-              onDeactivate: () => setSetPasswordModal(null),
-            }}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="password-modal-title"
-              className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 id="password-modal-title" className="text-xl font-semibold text-gray-900">
-                  Passwort setzen
-                </h3>
-                <button
-                  onClick={() => setSetPasswordModal(null)}
-                  className="text-gray-400 hover:text-gray-600 transition"
-                  aria-label="Modal schließen"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-3">
-                  Neues Passwort für <strong>{setPasswordModal.userName}</strong>:
-                </p>
-                <PasswordInput
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Neues Passwort (mind. 10 Zeichen)"
-                  minLength={10}
-                  aria-label="Neues Passwort"
-                  aria-describedby={newPassword.length > 0 && newPassword.length < 10 ? 'pw-error' : 'pw-hint'}
-                  aria-invalid={newPassword.length > 0 && newPassword.length < 10 ? 'true' : 'false'}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newPassword.length >= 10) {
-                      handleSetPasswordSubmit();
-                    }
-                  }}
-                />
-                <p id="pw-hint" className="text-xs text-gray-500 mt-1">
-                  Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
-                </p>
-                {newPassword.length > 0 && newPassword.length < 10 && (
-                  <p id="pw-error" role="alert" className="text-xs text-red-500 mt-1">Mindestens 10 Zeichen erforderlich</p>
-                )}
-              </div>
-
-              <button
-                onClick={handleSetPasswordSubmit}
-                disabled={newPassword.length < 10}
-                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Key size={18} />
-                <span>Passwort setzen</span>
-              </button>
-
-              <button
-                onClick={() => setSetPasswordModal(null)}
-                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition"
-              >
-                Abbrechen
-              </button>
-            </div>
-          </FocusTrap>
-        </div>
+        <SetPasswordModal
+          userId={setPasswordModal.userId}
+          userName={setPasswordModal.userName}
+          onClose={() => setSetPasswordModal(null)}
+        />
       )}
 
       {/* Carryover Modal */}
-      {showCarryoverModal && carryoverUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <FocusTrap focusTrapOptions={{ allowOutsideClick: true, onDeactivate: () => setShowCarryoverModal(false), initialFocus: false }}>
-            <div className="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Vorjahresübernahme: {carryoverUser.first_name} {carryoverUser.last_name}
-                </h3>
-                <button
-                  onClick={() => setShowCarryoverModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <p className="text-sm text-gray-600 mb-4">
-                Überstunden und Resturlaub aus dem Vorjahr übernehmen. Die Werte werden auf das Stundenkonto bzw. den Jahresurlaub angerechnet.
-              </p>
-
-              {/* Year selector */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
-                <select
-                  value={carryoverFormData.year}
-                  onChange={(e) => handleCarryoverYearChange(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                >
-                  {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Werte gelten als Übernahme <strong>in</strong> das gewählte Jahr
-                </p>
-              </div>
-
-              {/* Overtime hours */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Überstunden aus Vorjahr (Stunden)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={carryoverFormData.overtime_hours}
-                  onChange={(e) => setCarryoverFormData({ ...carryoverFormData, overtime_hours: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Positive Werte = Überstunden-Guthaben, negative = Minusstunden
-                </p>
-              </div>
-
-              {/* Vacation days */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Resturlaub aus Vorjahr (Tage)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={carryoverFormData.vacation_days}
-                  onChange={(e) => setCarryoverFormData({ ...carryoverFormData, vacation_days: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Wird zum Jahresurlaub {carryoverFormData.year} addiert
-                </p>
-              </div>
-
-              <button
-                onClick={handleCarryoverSubmit}
-                className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-3"
-              >
-                <Save size={18} />
-                <span>Speichern</span>
-              </button>
-
-              {/* Existing carryovers table */}
-              {carryovers.length > 0 && (
-                <div className="mt-4 border-t border-gray-200 pt-4">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Gespeicherte Übernahmen</h4>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b">
-                        <th className="py-1 pr-4">Jahr</th>
-                        <th className="py-1 pr-4">Überstunden</th>
-                        <th className="py-1">Resturlaub</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {carryovers.map(c => (
-                        <tr
-                          key={c.id}
-                          className={`border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${c.year === carryoverFormData.year ? 'bg-blue-50' : ''}`}
-                          onClick={() => handleCarryoverYearChange(c.year)}
-                        >
-                          <td className="py-1.5 pr-4 font-medium">{c.year}</td>
-                          <td className={`py-1.5 pr-4 ${c.overtime_hours >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {c.overtime_hours >= 0 ? '+' : ''}{c.overtime_hours.toFixed(1)}h
-                          </td>
-                          <td className="py-1.5">{c.vacation_days.toFixed(1)} Tage</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <button
-                onClick={() => setShowCarryoverModal(false)}
-                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition mt-3"
-              >
-                Schließen
-              </button>
-            </div>
-          </FocusTrap>
-        </div>
+      {carryoverUser && (
+        <CarryoverModal
+          userId={carryoverUser.id}
+          userName={`${carryoverUser.first_name} ${carryoverUser.last_name}`}
+          onClose={() => setCarryoverUser(null)}
+          onSaved={fetchUsers}
+        />
       )}
     </div>
   );

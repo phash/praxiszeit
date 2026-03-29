@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from uuid import UUID
 from app.database import get_db
 from app.models import User
@@ -13,6 +13,8 @@ router = APIRouter(prefix="/api/admin/errors", tags=["admin-errors"], dependenci
 
 
 class ErrorLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     level: str
     logger: str
@@ -34,9 +36,6 @@ class ErrorLogResponse(BaseModel):
         if v and len(v) > 2000:
             return v[:2000] + '\n... [truncated]'
         return v
-
-    class Config:
-        from_attributes = True
 
     @classmethod
     def from_orm_custom(cls, obj):

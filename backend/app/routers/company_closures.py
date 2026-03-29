@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import date, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 
 from app.database import get_db
@@ -21,15 +21,14 @@ class CompanyClosureCreate(BaseModel):
 
 
 class CompanyClosureResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     name: str
     start_date: date
     end_date: date
     created_by: str
     affected_employees: int = 0
-
-    class Config:
-        from_attributes = True
 
 
 def _get_workdays(start: date, end: date, holidays: set) -> List[date]:

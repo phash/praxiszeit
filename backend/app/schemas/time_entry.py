@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, field_serializer
 from typing import Optional, List
 from datetime import date, time, datetime
 from app.services.timezone_service import today_local
@@ -70,8 +70,7 @@ class TimeEntryResponse(BaseModel):
     def serialize_uuid(self, value: UUID) -> str:
         return str(value)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # --- Clock-in/out schemas ---
