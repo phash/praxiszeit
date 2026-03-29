@@ -94,3 +94,34 @@ def create_year_closing(
         "next_year": year + 1,
         "employees": results,
     }
+
+
+@router.delete("/year-closing/{year}")
+def delete_year_closing(
+    year: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Delete year-end closing: removes all carryover records for year+1
+    that were created by the year closing.
+    """
+    if year < 2000 or year > 2100:
+        raise HTTPException(status_code=400, detail="Ungültiges Jahr")
+
+    next_year = year + 1
+    deleted = db.query(YearCarryover).filter(
+        YearCarryover.year == next_year,
+        YearCarryover.tenant_id == current_user.tenant_id,
+    ).delete(synchronize_session=False)
+
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail=f"Kein Jahresabschluss für {year} gefunden")
+
+    db.commit()
+
+    return {
+        "year": year,
+        "next_year": next_year,
+        "deleted_count": deleted,
+    }
