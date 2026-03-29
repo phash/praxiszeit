@@ -84,6 +84,34 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 
 > **Tipp:** Der Ampelindikator beim Urlaub zeigt auf einen Blick, wer dringend Urlaub nehmen sollte.
 
+### Jahresabschluss
+
+Unterhalb der Monatsübersicht finden Sie die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeiter. Hier können Sie den Jahresabschluss durchführen.
+
+#### Jahresabschluss erstellen
+
+1. Wählen Sie das gewünschte **Jahr** im Zahlenfeld aus
+2. Klicken Sie auf den orangefarbenen Button **Jahresabschluss**
+3. Im Bestätigungsdialog werden Sie informiert, dass Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter berechnet und als Übernahme ins Folgejahr gespeichert werden
+4. Bestätigen Sie mit **Jahresabschluss erstellen**
+
+Der Jahresabschluss berechnet für jeden aktiven Mitarbeiter:
+- **Überstunden-Saldo** zum 31.12. des gewählten Jahres
+- **Resturlaub** (nicht genommene Urlaubstage)
+
+Diese Werte werden als Vorjahresübernahme für das Folgejahr gespeichert und fließen dort in die Stunden- und Urlaubsberechnung ein.
+
+#### Jahresabschluss löschen
+
+Falls ein Jahresabschluss versehentlich erstellt wurde, können Sie ihn wieder löschen:
+
+1. Wählen Sie das Jahr, dessen Abschluss Sie löschen möchten
+2. Klicken Sie auf den roten Button **Abschluss löschen**
+3. Lesen Sie den Bestätigungsdialog sorgfältig — die Löschung ist **unwiderruflich**
+4. Bestätigen Sie mit **Jahresabschluss löschen**
+
+> **Wichtig:** Das Löschen entfernt **alle** Übernahmen für das Folgejahr — auch manuell eingetragene Vorjahresübernahmen einzelner Mitarbeiter. Prüfen Sie daher vor dem Löschen, ob manuelle Übernahmen existieren, die Sie anschließend neu eintragen müssen.
+
 ---
 
 ## 4. Benutzerverwaltung

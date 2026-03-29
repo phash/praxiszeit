@@ -135,6 +135,18 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 ---
 
+## Jahresabschluss
+
+| Aktion | Button | Beschreibung |
+|--------|--------|--------------|
+| **Erstellen** | 🟠 Jahresabschluss | Berechnet Überstunden-Saldo + Resturlaub aller aktiven MA und übernimmt sie ins Folgejahr |
+| **Löschen** | 🔴 Abschluss löschen | Entfernt alle Übernahmen fürs Folgejahr unwiderruflich (inkl. manueller Übernahmen!) |
+
+**Wo:** Admin-Dashboard → Jahresübersicht → Jahr auswählen → Button klicken
+**Achtung:** Löschen betrifft **alle** Mitarbeiter und kann nicht rückgängig gemacht werden. Bestätigungsdialog lesen!
+
+---
+
 ## Notfall-Checkliste Monatsabschluss
 
 - [ ] Alle Korrekturanträge geprüft und entschieden
