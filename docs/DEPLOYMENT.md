@@ -10,9 +10,7 @@
 ## Deployment ausführen
 
 ```bash
-ssh manuel@192.168.178.44
-cd /opt/praxiszeit/praxiszeit
-./deploy.sh
+ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 ```
 
 `deploy.sh` macht: `git pull` → `build frontend backend` → `up -d` (mit SSL-Overlay) → Health-Check.

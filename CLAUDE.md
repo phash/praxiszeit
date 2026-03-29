@@ -15,15 +15,14 @@ docker compose down
 
 ### Prod-Deployment
 ```bash
-ssh manuel@192.168.178.44
-cd /opt/praxiszeit/praxiszeit && ./deploy.sh
+ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 ```
 → Details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ### Tests
 ```bash
 cd e2e && npx playwright test                                    # E2E (114 Tests)
-docker compose exec backend pytest tests/ -v                     # Backend Unit (156 Tests)
+docker compose exec backend pytest tests/ -v                     # Backend Unit (504 Tests)
 docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (13 Tests)
 ```
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
