@@ -182,7 +182,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
             <select
               id="f-role"
               value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
+              onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'employee' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             >
               <option value="employee">Mitarbeiter:in</option>

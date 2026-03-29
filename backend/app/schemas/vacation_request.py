@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import date, datetime
 from typing import Optional, Literal
 import uuid
@@ -44,4 +44,4 @@ class VacationRequestResponse(BaseModel):
     reviewer_first_name: Optional[str] = None
     reviewer_last_name: Optional[str] = None
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
