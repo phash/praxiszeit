@@ -154,6 +154,25 @@ export default function AdminDashboard() {
     });
   };
 
+  const handleDeleteYearClosing = () => {
+    confirm({
+      title: `Jahresabschluss ${currentYear} löschen`,
+      message: `Alle Übernahmen (Überstunden + Resturlaub) für ${currentYear + 1}, die durch den Jahresabschluss ${currentYear} erzeugt wurden, werden unwiderruflich gelöscht.\n\nDies betrifft alle Mitarbeiter. Manuelle Übernahmen für ${currentYear + 1} gehen ebenfalls verloren.\n\nWirklich löschen?`,
+      confirmLabel: 'Jahresabschluss löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const res = await apiClient.delete(`/admin/year-closing/${currentYear}`);
+          const count = res.data.deleted_count || 0;
+          toast.success(`Jahresabschluss ${currentYear} gelöscht: ${count} Übernahmen für ${currentYear + 1} entfernt`);
+          fetchYearlyAbsences();
+        } catch (error: any) {
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen des Jahresabschlusses'));
+        }
+      },
+    });
+  };
+
   const fetchEmployeeDetails = async (employee: EmployeeReport) => {
     setSelectedEmployee(employee);
     setDetailLoading(true);
@@ -657,6 +676,14 @@ export default function AdminDashboard() {
             >
               <BookCheck size={20} />
               <span className="hidden sm:inline">Jahresabschluss</span>
+            </button>
+            <button
+              onClick={handleDeleteYearClosing}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
+              title={`Jahresabschluss ${currentYear} löschen`}
+            >
+              <Trash2 size={20} />
+              <span className="hidden sm:inline">Abschluss löschen</span>
             </button>
             <Link
               to="/admin/reports"
