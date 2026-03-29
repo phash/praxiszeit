@@ -14,9 +14,12 @@ from app.services.calculation_service import count_workdays
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
 
-def get_setting(db: Session, key: str, default: str = "") -> str:
-    """Retrieve a value from system_settings."""
-    s = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+def get_setting(db: Session, key: str, tenant_id, default: str = "") -> str:
+    """Retrieve a tenant-scoped value from system_settings."""
+    s = db.query(SystemSetting).filter(
+        SystemSetting.key == key,
+        SystemSetting.tenant_id == tenant_id,
+    ).first()
     return s.value if s else default
 
 
@@ -47,7 +50,7 @@ def create_vacation_request(
     Create a vacation approval request.
     Only available when vacation_approval_required=true.
     """
-    if get_setting(db, "vacation_approval_required", "false").lower() != "true":
+    if get_setting(db, "vacation_approval_required", current_user.tenant_id, "false").lower() != "true":
         raise HTTPException(
             status_code=400,
             detail="Urlaubsanträge sind nicht aktiviert. Urlaub direkt über Abwesenheiten buchen.",

@@ -162,7 +162,15 @@ def purge_user(
                 detail=f"Aufbewahrungsfrist noch nicht abgelaufen. Letzter Eintrag: {last_entry.date.strftime('%d.%m.%Y')} ({days_since} Tage, Pflicht: 730 Tage gem. ArbZG §16)."
             )
 
-    # Audit before deletion (use admin's own ID since target will be deleted)
+    # Remove FK dependencies before deleting user.
+    # For changed_by references: SET NULL to preserve other users' audit trails.
+    db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.changed_by == user.id
+    ).update({TimeEntryAuditLog.changed_by: None}, synchronize_session=False)
+    # Delete the purged user's own audit log entries.
+    db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.user_id == user.id).delete()
+
+    # Audit after cleaning up the user's logs (use admin's own ID since target will be deleted)
     log = TimeEntryAuditLog(
         time_entry_id=None,
         user_id=current_user.id,
@@ -174,10 +182,6 @@ def purge_user(
     )
     db.add(log)
     db.flush()
-
-    # Remove all FK dependencies before deleting user
-    db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.user_id == user.id).delete()
-    db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.changed_by == user.id).delete()
     db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id).delete()
     db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id).delete()
     db.query(TimeEntry).filter(TimeEntry.user_id == user.id).delete()
@@ -257,6 +261,7 @@ def update_user(
             raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
     update_data = user_data.model_dump(exclude_unset=True)
+    update_data.pop('is_active', None)  # Prevent bypassing the dedicated deactivate endpoint
 
     # VULN-010: invalidate existing JWTs when role is changed
     role_changed = 'role' in update_data and update_data['role'] != user.role
@@ -316,6 +321,7 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.is_active = True
+    user.deactivated_at = None
     db.commit()
     db.refresh(user)
     return user

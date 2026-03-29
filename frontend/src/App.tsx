@@ -20,6 +20,7 @@ import UserJournal from './pages/admin/UserJournal';
 import Help from './pages/Help';
 import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Protected Route Component
 function ProtectedRoute({
@@ -46,7 +47,8 @@ function App() {
   return (
     <ToastProvider>
       <BrowserRouter>
-        <Routes>
+        <ErrorBoundary>
+          <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/privacy" element={<Privacy />} />
@@ -93,7 +95,8 @@ function App() {
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          </Routes>
+        </ErrorBoundary>
     </BrowserRouter>
     </ToastProvider>
   );

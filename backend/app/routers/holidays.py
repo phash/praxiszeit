@@ -4,6 +4,7 @@ from typing import List
 from datetime import datetime
 from app.database import get_db
 from app.middleware.auth import get_current_user
+from app.services.timezone_service import today_local
 from app.models import User
 from app.schemas.reports import PublicHolidayResponse
 from app.services import holiday_service
@@ -21,7 +22,7 @@ def list_holidays(
     List public holidays for a specific year.
     Available to all authenticated users.
     """
-    year = year or datetime.now().year
+    year = year or today_local().year
 
     holidays = holiday_service.get_holidays(db, year)
 
@@ -36,5 +37,5 @@ def list_states(
     """List supported German federal states for holiday configuration."""
     return {
         "states": holiday_service.get_supported_states(),
-        "current_state": holiday_service.get_holiday_state(db),
+        "current_state": holiday_service.get_holiday_state(db, tenant_id=current_user.tenant_id),
     }

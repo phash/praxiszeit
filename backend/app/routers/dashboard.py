@@ -8,7 +8,9 @@ from app.models.absence import Absence
 from app.middleware.auth import get_current_user
 from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry
 from app.services import calculation_service
+from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
+from app.services.timezone_service import today_local, now_local
 from sqlalchemy import extract, and_
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -16,7 +18,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 def _get_missing_bookings_for_user(db: Session, user: User) -> List[MissingBookingEntry]:
     """Find open entries (end_time NULL) and workdays without any entry/absence."""
-    today = date.today()
+    today = today_local()
     entries: List[MissingBookingEntry] = []
 
     # 1) Open entries: end_time is NULL, date < today
@@ -65,24 +67,12 @@ def _get_missing_bookings_for_user(db: Session, user: User) -> List[MissingBooki
             absence_dates.add(d)
             d += timedelta(days=1)
 
-    # Determine work schedule
-    day_hours = [None] * 7  # Mon=0..Sun=6
-    if user.use_daily_schedule:
-        day_hours[0] = float(user.hours_monday or 0)
-        day_hours[1] = float(user.hours_tuesday or 0)
-        day_hours[2] = float(user.hours_wednesday or 0)
-        day_hours[3] = float(user.hours_thursday or 0)
-        day_hours[4] = float(user.hours_friday or 0)
-    else:
-        daily = float(user.weekly_hours) / (user.work_days_per_week or 5)
-        for i in range(user.work_days_per_week or 5):
-            day_hours[i] = daily
-
-    # Check each day
+    # Check each day using calculation_service for correct per-date targets
     d = start_date
     while d <= end_date:
-        weekday = d.weekday()  # Mon=0..Sun=6
-        is_workday = day_hours[weekday] is not None and day_hours[weekday] > 0
+        weekly_hours = get_weekly_hours_for_date(db, user, d)
+        daily_target = float(get_daily_target_for_date(user, d, weekly_hours))
+        is_workday = daily_target > 0
         if is_workday and d not in entry_dates and d not in absence_dates:
             if not is_holiday(db, d):
                 entries.append(MissingBookingEntry(date=d, type="missing"))
@@ -104,7 +94,7 @@ def get_dashboard(
     Shows target, actual, and balance for the month.
     """
     # Use current month if not specified
-    now = datetime.now()
+    now = now_local()
     year = year or now.year
     month = month or now.month
 
@@ -136,7 +126,7 @@ def get_overtime_account(
     ).order_by(TimeEntry.date).first()
 
     history = []
-    now = datetime.now()
+    now = now_local()
 
     if first_entry:
         start_year = first_entry.date.year
@@ -189,7 +179,7 @@ def get_ytd_overtime(
     Get year-to-date overtime summary.
     Calculates target and actual hours from Jan 1 to today.
     """
-    now = datetime.now()
+    now = now_local()
     year = year or now.year
 
     summary = calculation_service.get_ytd_summary(db, current_user, year)
@@ -214,7 +204,7 @@ def get_vacation_account(
     Regular users can only query their own data.
     Admins can query any user's data by providing user_id.
     """
-    year = year or datetime.now().year
+    year = year or now_local().year
 
     # Determine which user to query
     target_user = current_user
@@ -231,14 +221,13 @@ def get_vacation_account(
     account = calculation_service.get_vacation_account(db, target_user, year)
 
     # Determine carryover deadline (individual or default: March 31 of next year)
-    from datetime import date as date_type
     if target_user.vacation_carryover_deadline:
         carryover_deadline = target_user.vacation_carryover_deadline
     else:
-        carryover_deadline = date_type(year + 1, 3, 31)
+        carryover_deadline = date(year + 1, 3, 31)
 
     # Warning: remaining vacation AND deadline hasn't passed yet
-    today = date_type.today()
+    today = today_local()
     has_warning = (
         float(account["remaining_days"]) > 0
         and today.year == year  # only warn for current year

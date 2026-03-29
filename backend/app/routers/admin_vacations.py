@@ -123,9 +123,12 @@ def review_vacation_request(
                 detail=f"Es existiert bereits ein Urlaubseintrag am {d.strftime('%d.%m.%Y')}",
             )
 
-    # Check vacation budget
+    # Check vacation budget (per-day hours via calculation_service)
     vacation_account = calculation_service.get_vacation_account(db, target_user, start_date.year)
-    total_hours_needed = float(vr.hours) * len(dates_to_create)
+    total_hours_needed = sum(
+        float(calculation_service.get_daily_target_for_date(target_user, d))
+        for d in dates_to_create
+    )
     if float(vacation_account['remaining_hours']) - total_hours_needed < 0:
         raise HTTPException(
             status_code=400,

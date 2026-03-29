@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import User
 from app.middleware.auth import get_current_user, require_admin
 from app.services import journal_service
+from app.services.timezone_service import now_local
 from app.schemas.journal import JournalResponse
 
 router = APIRouter(prefix="/api", tags=["journal"])
@@ -22,7 +23,7 @@ def get_user_journal(
     current_user: User = Depends(require_admin),
 ):
     """Monatsjournal eines Mitarbeiters (Admin-Zugriff)."""
-    now = datetime.now()
+    now = now_local()
     year = year or now.year
     month = month or now.month
 
@@ -41,7 +42,7 @@ def get_my_journal(
     current_user: User = Depends(get_current_user),
 ):
     """Monatsjournal des aktuell eingeloggten Mitarbeiters."""
-    now = datetime.now()
+    now = now_local()
     year = year or now.year
     month = month or now.month
 

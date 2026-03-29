@@ -240,7 +240,7 @@ export default function Users() {
   };
 
   const handleSetPasswordSubmit = async () => {
-    if (!setPasswordModal || newPassword.length < 8) return;
+    if (!setPasswordModal || newPassword.length < 10) return;
     try {
       await apiClient.post(`/admin/users/${setPasswordModal.userId}/set-password`, {
         password: newPassword,

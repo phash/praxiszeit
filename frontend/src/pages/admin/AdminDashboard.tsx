@@ -50,6 +50,7 @@ interface YearlyAbsences {
   sick_days: number;
   training_days: number;
   other_days: number;
+  overtime_comp_days?: number;
   overtime_year: number;
   total_days: number;
 }
@@ -811,7 +812,7 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          {(emp as any).overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
+                          {emp.overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
@@ -908,7 +909,7 @@ export default function AdminDashboard() {
                           <span className="text-sm text-gray-600">ÜStd.-Ausgleich</span>
                         </div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          {(emp as any).overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
+                          {emp.overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
                         </span>
                       </div>
 

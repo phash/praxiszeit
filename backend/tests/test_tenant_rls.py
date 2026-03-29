@@ -16,6 +16,7 @@ users, time_entries, absences, public_holidays, and system_settings.  All
 test data is cleaned up after the module finishes, leaving the production
 database untouched.
 """
+import os
 import uuid
 import pytest
 from datetime import date, time
@@ -25,8 +26,14 @@ from sqlalchemy.orm import sessionmaker
 # ---------------------------------------------------------------------------
 # Connection strings (inside Docker network, host = "db")
 # ---------------------------------------------------------------------------
-APP_DB_URL = "postgresql://praxiszeit_app:praxiszeit_app@db:5432/praxiszeit"
-ADMIN_DB_URL = "postgresql://praxiszeit:praxiszeit_dev_2026@db:5432/praxiszeit"
+APP_DB_URL = os.environ.get(
+    "APP_DB_URL",
+    "postgresql://praxiszeit_app:praxiszeit_app@db:5432/praxiszeit",
+)
+ADMIN_DB_URL = os.environ.get(
+    "ADMIN_DB_URL",
+    "postgresql://praxiszeit:praxiszeit_dev_2026@db:5432/praxiszeit",
+)
 
 # ---------------------------------------------------------------------------
 # Deterministic UUIDs for test tenants -- will never collide with real data
