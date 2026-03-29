@@ -9,7 +9,7 @@ from app.models import User, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate
 from app.schemas.time_entry_audit_log import AuditLogResponse
-from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response
+from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses
 from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
@@ -234,4 +234,4 @@ def list_audit_log(
             raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
     logs = query.order_by(TimeEntryAuditLog.created_at.desc()).offset(skip).limit(limit).all()
-    return [_enrich_audit_response(log, db) for log in logs]
+    return _enrich_audit_responses(logs, db)

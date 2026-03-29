@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional
@@ -68,12 +68,11 @@ class EmployeeMonthlyReport(BaseModel):
 
 class PublicHolidayResponse(BaseModel):
     """Public holiday response."""
+    model_config = ConfigDict(from_attributes=True)
+
     date: date
     name: str
     year: int
-
-    class Config:
-        from_attributes = True
 
 
 class MissingBookingEntry(BaseModel):

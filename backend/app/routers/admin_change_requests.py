@@ -9,7 +9,7 @@ from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, Chan
 from app.middleware.auth import require_admin
 from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
 from app.schemas.time_entry import TimeEntryResponse
-from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response
+from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response, _enrich_cr_responses
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
@@ -51,7 +51,7 @@ def list_all_change_requests(
     if user_id:
         query = query.filter(ChangeRequest.user_id == user_id)
     requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
-    return [_enrich_cr_response(cr, db) for cr in requests]
+    return _enrich_cr_responses(requests, db)
 
 
 @router.get("/change-requests/{request_id}", response_model=ChangeRequestResponse)

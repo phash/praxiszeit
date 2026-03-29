@@ -11,6 +11,7 @@ import StampWidget from '../components/StampWidget';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
+import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
 
 interface DashboardData {
   year: number;
@@ -722,13 +723,7 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-8">
               {(() => {
-                const typeLabels: Record<string, string> = {
-                  vacation: 'Urlaub',
-                  sick: 'Krank',
-                  training: 'Fortbildung (außer Haus)',
-                  overtime: 'Überstundenausgleich',
-                  other: 'Sonstiges',
-                };
+                const typeLabels = ABSENCE_TYPE_LABELS;
 
 
                 // Organize absences by date (backend already created entries for each day)

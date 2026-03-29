@@ -1,5 +1,5 @@
 import re
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
@@ -118,8 +118,7 @@ class UserResponse(UserBase):
     def serialize_uuid(self, value: UUID) -> str:
         return str(value)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserListResponse(BaseModel):
@@ -157,8 +156,7 @@ class UserListResponse(BaseModel):
     def serialize_uuid(self, value: UUID) -> str:
         return str(value)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LoginRequest(BaseModel):

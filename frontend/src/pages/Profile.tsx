@@ -5,6 +5,7 @@ import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff
 import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
+import { useToast } from '../contexts/ToastContext';
 
 // 12 beautiful pastel colors for calendar
 const PASTEL_COLORS = [
@@ -23,6 +24,7 @@ const PASTEL_COLORS = [
 ];
 
 export default function Profile() {
+  const toast = useToast();
   const { user, setUser, setTokens } = useAuthStore();
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
@@ -163,8 +165,8 @@ export default function Profile() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch {
-      // silent
+    } catch (error: any) {
+      toast.error(getErrorMessage(error, 'Fehler beim Datenexport'));
     }
   };
 

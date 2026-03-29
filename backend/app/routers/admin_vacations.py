@@ -16,20 +16,40 @@ router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(re
 
 
 def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResponse:
-    resp = VacationRequestResponse.model_validate(vr)
-    user = db.query(User).filter(User.id == vr.user_id).first()
-    if user:
-        resp.user_first_name = user.first_name
-        resp.user_last_name = user.last_name
-    if vr.reviewed_by:
-        reviewer = db.query(User).filter(User.id == vr.reviewed_by).first()
-        if reviewer:
-            resp.reviewer_first_name = reviewer.first_name
-            resp.reviewer_last_name = reviewer.last_name
-    # Compute workdays
-    end = vr.end_date if vr.end_date else vr.date
-    resp.days = count_workdays(db, vr.date, end)
-    return resp
+    """Add user names to the vacation request response (single item)."""
+    return _enrich_vr_responses([vr], db)[0]
+
+
+def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse]:
+    """Add user names to vacation request responses (batch, single query)."""
+    if not vrs:
+        return []
+    user_ids = set()
+    for vr in vrs:
+        user_ids.add(vr.user_id)
+        if vr.reviewed_by:
+            user_ids.add(vr.reviewed_by)
+    user_ids.discard(None)
+    users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+    user_map = {u.id: u for u in users}
+
+    results = []
+    for vr in vrs:
+        resp = VacationRequestResponse.model_validate(vr)
+        user = user_map.get(vr.user_id)
+        if user:
+            resp.user_first_name = user.first_name
+            resp.user_last_name = user.last_name
+        if vr.reviewed_by:
+            reviewer = user_map.get(vr.reviewed_by)
+            if reviewer:
+                resp.reviewer_first_name = reviewer.first_name
+                resp.reviewer_last_name = reviewer.last_name
+        # Compute workdays
+        end = vr.end_date if vr.end_date else vr.date
+        resp.days = count_workdays(db, vr.date, end)
+        results.append(resp)
+    return results
 
 
 @router.get("/vacation-requests", response_model=List[VacationRequestResponse])
@@ -48,7 +68,7 @@ def list_all_vacation_requests(
     if user_id:
         query = query.filter(VacationRequest.user_id == user_id)
     requests = query.order_by(VacationRequest.created_at.desc()).offset(skip).limit(limit).all()
-    return [_enrich_vr_response(vr, db) for vr in requests]
+    return _enrich_vr_responses(requests, db)
 
 
 @router.post("/vacation-requests/{request_id}/review", response_model=VacationRequestResponse)

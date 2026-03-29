@@ -32,8 +32,8 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
     # Remove default sheet
     wb.remove(wb.active)
 
-    # Get all active employees
-    users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
+    # Get all active, non-hidden employees
+    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
 
     for user in users:
         _create_employee_sheet(wb, db, user, year, month, include_health_data)
@@ -328,8 +328,8 @@ def generate_yearly_report(db: Session, year: int, include_health_data: bool = F
     # Remove default sheet
     wb.remove(wb.active)
 
-    # Get all active employees
-    users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
+    # Get all active, non-hidden employees
+    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
 
     # Create overview sheet
     _create_yearly_overview_sheet(wb, db, users, year, include_health_data)
@@ -820,8 +820,8 @@ def generate_yearly_report_classic(db: Session, year: int, include_health_data: 
     # Remove default sheet
     wb.remove(wb.active)
 
-    # Get all active employees
-    users = db.query(User).filter(User.is_active == True).order_by(User.last_name, User.first_name).all()
+    # Get all active, non-hidden employees
+    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
 
     for user in users:
         _create_employee_classic_sheet(wb, db, user, year, include_health_data)
@@ -1090,7 +1090,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
     users = (db.query(User)
-             .filter(User.is_active == True)
+             .filter(User.is_active == True, User.is_hidden == False)
              .order_by(User.last_name, User.first_name)
              .all())
 
