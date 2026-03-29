@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.public_holiday import PublicHoliday
 from app.models.system_setting import SystemSetting
 from app.config import settings
+from app.services.timezone_service import today_local
 
 
 # German translations for holiday names returned by workalendar
@@ -65,9 +66,12 @@ def _translate_name(name: str) -> str:
     return HOLIDAY_NAME_DE.get(name, name)
 
 
-def get_holiday_state(db: Session) -> str:
+def get_holiday_state(db: Session, tenant_id=None) -> str:
     """Read the holiday state from SystemSetting, fall back to config."""
-    s = db.query(SystemSetting).filter(SystemSetting.key == "holiday_state").first()
+    query = db.query(SystemSetting).filter(SystemSetting.key == "holiday_state")
+    if tenant_id is not None:
+        query = query.filter(SystemSetting.tenant_id == tenant_id)
+    s = query.first()
     if s and s.value in SUPPORTED_STATES:
         return s.value
     return settings.HOLIDAY_STATE
@@ -152,9 +156,9 @@ def sync_current_and_next_year(db: Session, state: Optional[str] = None, tenant_
     Performs a single commit at the end.
     """
     if state is None:
-        state = get_holiday_state(db)
+        state = get_holiday_state(db, tenant_id=tenant_id)
 
-    current_year = datetime.now().year
+    current_year = today_local().year
     next_year = current_year + 1
 
     # Force-update names of all existing holidays to German (no intermediate commit)

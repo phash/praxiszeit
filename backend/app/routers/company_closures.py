@@ -7,8 +7,9 @@ from uuid import UUID
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, UserRole
 from app.schemas.absence import AbsenceResponse
+from app.services import calculation_service
 
 router = APIRouter(prefix="/api/company-closures", tags=["company-closures"])
 
@@ -61,7 +62,7 @@ def list_closures(
     result = []
     for c in closures:
         # Count affected (employees with vacation created for this closure)
-        employees = db.query(User).filter(User.is_active == True, User.role != "admin").all()
+        employees = db.query(User).filter(User.is_active == True, User.role != UserRole.ADMIN).all()
         affected = len(employees)  # all active employees are affected
         result.append(CompanyClosureResponse(
             id=str(c.id),
@@ -108,6 +109,7 @@ def create_closure(
     # Get all active employees (non-admin)
     employees = db.query(User).filter(
         User.is_active == True,
+        User.role != UserRole.ADMIN,
     ).all()
 
     affected = 0
@@ -126,7 +128,7 @@ def create_closure(
                     date=workday,
                     end_date=data.end_date,
                     type=AbsenceType.VACATION,
-                    hours=employee.weekly_hours / employee.work_days_per_week if employee.work_days_per_week > 0 else 8,
+                    hours=float(calculation_service.get_daily_target_for_date(employee, workday)),
                     note=f"Betriebsferien: {data.name}"
                 )
                 db.add(absence)
@@ -159,7 +161,10 @@ def delete_closure(
     if not closure:
         raise HTTPException(status_code=404, detail="Betriebsferien nicht gefunden")
 
-    # Remove vacation absences created for this closure (identified by note)
+    # LIMITATION: Absences are matched by note string, not by FK to closure.
+    # If the closure name was edited or an absence note was changed manually,
+    # this deletion will miss those entries. A proper fix requires adding a
+    # closure_id FK column on the Absence model (needs migration).
     note_pattern = f"Betriebsferien: {closure.name}"
     holidays = _get_holidays_for_range(db, closure.start_date, closure.end_date)
     workdays = _get_workdays(closure.start_date, closure.end_date, holidays)

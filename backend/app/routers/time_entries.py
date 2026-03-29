@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import extract, and_
+from sqlalchemy import extract
 from typing import List, Optional
 from datetime import datetime, date, time, timezone
 from app.services.timezone_service import LOCAL_TZ, now_local as _now_local, today_local as _today_local
@@ -27,6 +27,12 @@ NIGHT_START = time(23, 0)
 NIGHT_END   = time(6, 0)
 
 
+def _net_hours(st: time, et: time, brk: int) -> float:
+    """Calculate net working hours from start/end time and break minutes."""
+    mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
+    return max(0.0, (mins - brk) / 60.0)
+
+
 def _calculate_daily_net_hours(
     db: Session,
     user_id: UUIDType,
@@ -46,12 +52,8 @@ def _calculate_daily_net_hours(
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
 
-    def net_h(st: time, et: time, brk: int) -> float:
-        mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
-        return max(0.0, (mins - brk) / 60.0)
-
-    total = sum(net_h(e.start_time, e.end_time, e.break_minutes) for e in existing)
-    total += net_h(start_time, end_time, break_minutes)
+    total = sum(_net_hours(e.start_time, e.end_time, e.break_minutes) for e in existing)
+    total += _net_hours(start_time, end_time, break_minutes)
     return total
 
 
@@ -66,7 +68,6 @@ def _calculate_weekly_net_hours(
 ) -> float:
     """Sum all net hours for the ISO calendar week containing entry_date, including the new/updated entry."""
     from datetime import timedelta
-    iso = entry_date.isocalendar()
     # Monday of that ISO week
     monday = entry_date - timedelta(days=entry_date.weekday())
     sunday = monday + timedelta(days=6)
@@ -81,12 +82,8 @@ def _calculate_weekly_net_hours(
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
 
-    def net_h(st: time, et: time, brk: int) -> float:
-        mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
-        return max(0.0, (mins - brk) / 60.0)
-
-    total = sum(net_h(e.start_time, e.end_time, e.break_minutes) for e in existing)
-    total += net_h(start_time, end_time, break_minutes)
+    total = sum(_net_hours(e.start_time, e.end_time, e.break_minutes) for e in existing)
+    total += _net_hours(start_time, end_time, break_minutes)
     return total
 
 

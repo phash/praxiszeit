@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import os
 import sys
 import logging
+import uuid
 import traceback
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
@@ -116,7 +117,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         set_tenant_context(db, '00000000-0000-0000-0000-000000000001')
-        state = holiday_service.get_holiday_state(db)
+        state = holiday_service.get_holiday_state(db, tenant_id=default_tenant_id)
         result = holiday_service.sync_current_and_next_year(db, state=state, tenant_id=default_tenant_id)
         print(f"✅ Holidays synced for {result['state']}: {result['current_year']}({result['current_count']}), "
               f"{result['next_year']}({result['next_count']})")
@@ -260,7 +261,7 @@ def get_public_settings():
         def _get(key, default="false"):
             s = db.query(SystemSetting).filter(
                 SystemSetting.key == key,
-                SystemSetting.tenant_id.is_(None)  # Only global settings
+                SystemSetting.tenant_id == uuid.UUID("00000000-0000-0000-0000-000000000001")
             ).first()
             return s.value if s else default
         return {

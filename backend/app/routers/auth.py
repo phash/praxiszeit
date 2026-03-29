@@ -12,8 +12,12 @@ from app.database import get_db, set_superadmin_context
 from app.models import User, TimeEntry, Absence
 from app.models.tenant import Tenant
 
-# In-memory failed login tracking (resets on restart, per-username)
+# In-memory failed login tracking (resets on restart, per-username).
+# NOTE: This dict is per-worker; in multi-worker deployments each worker
+# tracks independently, so effective lockout threshold is multiplied by
+# the number of workers.
 _failed_logins: dict[str, list[datetime]] = defaultdict(list)
+_MAX_TRACKED_USERS = 10000
 _LOCKOUT_ATTEMPTS = 5
 _LOCKOUT_WINDOW = timedelta(minutes=15)
 from app.schemas.user import (
@@ -50,6 +54,19 @@ class UpdateProfileRequest(BaseModel):
         except EmailNotValidError as e:
             raise ValueError(f'Ungültiges E-Mail-Format: {e}')
         return v
+
+def _evict_failed_logins_if_needed():
+    """Evict the oldest half of tracked users when the dict exceeds the size cap."""
+    if len(_failed_logins) > _MAX_TRACKED_USERS:
+        # Sort by most recent attempt timestamp, keep the newer half
+        sorted_users = sorted(
+            _failed_logins.keys(),
+            key=lambda u: max(_failed_logins[u]) if _failed_logins[u] else datetime.min.replace(tzinfo=timezone.utc),
+        )
+        to_remove = sorted_users[: len(sorted_users) // 2]
+        for u in to_remove:
+            del _failed_logins[u]
+
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -98,6 +115,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     if not user or not user.is_active:
         _failed_logins[username_lower].append(now)
+        _evict_failed_logins_if_needed()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
@@ -105,6 +123,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     if not auth_service.verify_password(login_data.password, user.password_hash):
         _failed_logins[username_lower].append(now)
+        _evict_failed_logins_if_needed()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"

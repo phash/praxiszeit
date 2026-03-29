@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { format, parseISO, isBefore, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
@@ -443,8 +443,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                       : 'text-gray-600';
 
                   return (
-                    <>
-                      <tr key={day.date} className={`${rowClass} hover:bg-gray-50 transition-colors`}>
+                    <React.Fragment key={day.date}>
+                      <tr className={`${rowClass} hover:bg-gray-50 transition-colors`}>
                         <td className="px-3 py-2 font-medium whitespace-nowrap">
                           {format(dateObj, 'dd.MM.', { locale: de })}
                         </td>
@@ -667,7 +667,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           </td>
                         </tr>
                       )}
-                    </>
+                    </React.Fragment>
                   );
                 })}
               </tbody>

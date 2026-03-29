@@ -180,7 +180,6 @@ export default function Dashboard() {
 
         setYearlyAbsences(summary);
       } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
         toast.error('Fehler beim Laden des Dashboards');
       } finally {
         setLoading(false);
