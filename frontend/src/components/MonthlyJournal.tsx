@@ -284,7 +284,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
   function handleAdminDelete(day: JournalDay) {
     const timeEntry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
-    const absence = day.absences[0];
+    const absence = !editingEntryId ? day.absences[0] : null; // nur löschen wenn kein spezifischer Eintrag editiert wird
     if (!timeEntry && !absence) return;
     confirm({
       title: 'Eintrag löschen',
