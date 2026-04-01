@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
 from app.models.absence import AbsenceType
@@ -11,6 +11,8 @@ class AbsenceBase(BaseModel):
     end_date: Optional[date] = None  # End date for ranges (NULL for single day)
     type: AbsenceType
     hours: float = Field(..., ge=0, le=24)  # Hours per day
+    start_time: Optional[time] = None  # NULL = ganzer Tag
+    end_time: Optional[time] = None    # NULL = ganzer Tag
     note: Optional[str] = None
 
 
