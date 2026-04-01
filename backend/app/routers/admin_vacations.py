@@ -1,6 +1,6 @@
 """Admin sub-router: Vacation Request Management."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -166,22 +166,25 @@ def review_vacation_request(
                 detail=f"Es existiert bereits ein {absence_type_str}-Eintrag am {d.strftime('%d.%m.%Y')}",
             )
 
-    # Check vacation budget only for VACATION type
+    # Check vacation budget only for VACATION type (per year for cross-year requests)
     if absence_type == AbsenceType.VACATION:
-        vacation_account = calculation_service.get_vacation_account(db, target_user, start_date.year)
-        total_hours_needed = sum(
-            float(calculation_service.get_daily_target_for_date(target_user, d))
-            for d in dates_to_create
-        )
-        if float(vacation_account['remaining_hours']) - total_hours_needed < 0:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Urlaubstage überschritten: Verfügbares Guthaben "
-                    f"({float(vacation_account['remaining_hours']):.1f}h) reicht nicht für die "
-                    f"beantragten Tage ({float(total_hours_needed):.1f}h)."
-                ),
+        dates_by_year = {}
+        for d in dates_to_create:
+            dates_by_year.setdefault(d.year, []).append(d)
+        for check_year, year_dates in dates_by_year.items():
+            vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
+            year_hours_needed = sum(
+                float(calculation_service.get_daily_target_for_date(
+                    target_user, d,
+                    weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                ))
+                for d in year_dates
             )
+            if float(vacation_account['remaining_hours']) - year_hours_needed < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Nicht genügend Urlaubstage für {check_year} ({vacation_account['remaining_days']:.1f} Tage verfügbar)",
+                )
 
     # Delete existing time entries on the affected dates (Fall 2: overwrite)
     # Log deletions for audit trail, then bulk-delete with tenant scope
@@ -202,7 +205,8 @@ def review_vacation_request(
     # Create absence entries
     for d in dates_to_create:
         if getattr(target_user, 'use_daily_schedule', False):
-            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d))
+            weekly = calculation_service.get_weekly_hours_for_date(db, target_user, d)
+            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
             if hours_for_day == 0:
                 continue
         else:
