@@ -17,6 +17,7 @@ class AbsenceBase(BaseModel):
 class AbsenceCreate(AbsenceBase):
     user_id: Optional[str] = None  # Admin only: create absence for another user
     refund_vacation: bool = False  # If sick: refund overlapping vacation days
+    keep_time_entries: bool = False  # Don't delete existing time entries (mixed days)
 
 
 class AbsenceResponse(AbsenceBase):
