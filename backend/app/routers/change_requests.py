@@ -75,12 +75,19 @@ def create_change_request(
     if data.request_type == "update":
         if not all([data.proposed_date, data.proposed_start_time, data.proposed_end_time]):
             raise HTTPException(status_code=400, detail="Datum, Von und Bis sind erforderlich")
+        if data.proposed_date >= today_local():
+            raise HTTPException(status_code=400, detail="Änderungsanträge sind nur für vergangene Tage möglich")
         # Arbeitszeitraum-Prüfung (I1)
         if data.proposed_date:
             if current_user.first_work_day and data.proposed_date < current_user.first_work_day:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Datum liegt vor dem ersten Arbeitstag")
             if current_user.last_work_day and data.proposed_date > current_user.last_work_day:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Datum liegt nach dem letzten Arbeitstag")
+
+    # Time range validation for CREATE and UPDATE
+    if data.request_type in ("create", "update") and data.proposed_start_time and data.proposed_end_time:
+        if data.proposed_start_time >= data.proposed_end_time:
+            raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
     # For DELETE, entry must be from past
     if data.request_type == "delete" and entry:
