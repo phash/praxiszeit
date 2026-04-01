@@ -134,6 +134,8 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
                     "id": str(a.id),
                     "type": a.type.value,
                     "hours": float(Decimal(str(a.hours)).quantize(Decimal("0.01"))),
+                    "start_time": a.start_time.strftime("%H:%M") if a.start_time else None,
+                    "end_time": a.end_time.strftime("%H:%M") if a.end_time else None,
                 }
                 for a in day_absences
             ],
