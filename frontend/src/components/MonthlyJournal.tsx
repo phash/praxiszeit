@@ -421,18 +421,6 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                     ? 'bg-gray-50 text-gray-400'
                     : 'bg-white';
 
-                  const entry = day.time_entries[0] ?? null;
-                  const vonBis =
-                    entry && entry.start_time && entry.end_time
-                      ? `${entry.start_time}–${entry.end_time}`
-                      : '–';
-                  const pause =
-                    entry && entry.break_minutes > 0
-                      ? `${entry.break_minutes} min`
-                      : '–';
-
-                  const multiEntry = day.time_entries.length > 1;
-
                   const balanceColor =
                     isGray || day.type === 'empty'
                       ? 'text-gray-400'
@@ -469,11 +457,6 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               {day.is_holiday && day.holiday_name
                                 ? day.holiday_name
                                 : TYPE_LABELS[day.type] ?? day.type}
-                              {multiEntry && (
-                                <span className="ml-1 text-xs text-gray-400">
-                                  ({day.time_entries.length}×)
-                                </span>
-                              )}
                             </>
                           )}
                         </td>
@@ -507,7 +490,15 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 placeholder="Stunden"
                               />
                             )
-                          ) : vonBis}
+                          ) : day.time_entries.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {day.time_entries.map((e, i) => (
+                                <div key={i}>
+                                  {e.start_time && e.end_time ? `${e.start_time}–${e.end_time}` : '–'}
+                                </div>
+                              ))}
+                            </div>
+                          ) : '–'}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
                           {isGray ? '' : editingDate === day.date && editState.entryType === 'work' ? (
@@ -520,7 +511,15 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
                               className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right"
                             />
-                          ) : editingDate === day.date ? '' : pause}
+                          ) : editingDate === day.date ? '' : day.time_entries.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {day.time_entries.map((e, i) => (
+                                <div key={i}>
+                                  {e.break_minutes > 0 ? `${e.break_minutes} min` : '–'}
+                                </div>
+                              ))}
+                            </div>
+                          ) : '–'}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700">
                           {isGray ? '' : formatHoursSimple(day.actual_hours)}
