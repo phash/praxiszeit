@@ -49,7 +49,7 @@ class TimeEntry(Base):
 
         net = duration_hours - break_hours
 
-        return Decimal(str(round(net, 2)))
+        return Decimal(str(max(round(net, 2), 0)))
 
     def __repr__(self):
         return f"<TimeEntry(id={self.id}, user_id={self.user_id}, date={self.date}, net_hours={self.net_hours})>"

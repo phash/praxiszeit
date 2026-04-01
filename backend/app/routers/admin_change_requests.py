@@ -320,6 +320,8 @@ def review_change_request(
 
     cr_response = _enrich_cr_response(cr, db)
 
+    # NOTE: ArbZG warnings are informational and calculated post-commit.
+    # Hard limits (§3 daily max, §4 breaks) are enforced at CR creation time.
     # SS6 Abs. 2 / SS14 ArbZG: Warnungen bei CREATE/UPDATE-Genehmigung
     if (
         review.action == "approve"

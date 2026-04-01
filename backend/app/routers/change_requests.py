@@ -232,7 +232,7 @@ def create_change_request(
             ChangeRequest.proposed_date == data.proposed_date,
         )
     existing = existing_pending.first()
-    if existing and data.time_entry_id:
+    if existing:
         raise HTTPException(status_code=400, detail="Es existiert bereits ein offener Antrag für diesen Eintrag")
 
     # Create the change request
