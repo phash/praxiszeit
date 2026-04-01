@@ -532,6 +532,54 @@ class TestDailyScheduleEdgeCases:
         expected = Decimal('104.00')
         assert target == expected
 
+    def test_vacation_account_basic(self, db, test_user):
+        """Urlaubskonto ohne Abwesenheiten zeigt volles Budget."""
+        account = calculation_service.get_vacation_account(db, test_user, 2026)
+        assert account["budget_days"] == 30.0
+        assert account["used_days"] == 0.0
+        assert account["remaining_days"] == 30.0
+
+    def test_vacation_account_with_usage(self, db, test_user):
+        """Urlaubskonto nach genommenen Urlaubstagen."""
+        _make_absence(db, test_user, date(2026, 3, 9), AbsenceType.VACATION, 8.0)
+        _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.VACATION, 8.0)
+        account = calculation_service.get_vacation_account(db, test_user, 2026)
+        assert account["used_days"] == 2.0
+        assert account["remaining_days"] == 28.0
+
+    def test_vacation_account_with_carryover(self, db, test_user):
+        """Urlaubskonto mit Übertrag aus Vorjahr."""
+        carryover = YearCarryover(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            year=2026, overtime_hours=0, vacation_days=5.0,
+        )
+        db.add(carryover)
+        db.commit()
+        account = calculation_service.get_vacation_account(db, test_user, 2026)
+        assert account["budget_days"] == 35.0  # 30 + 5 Übertrag
+
+    def test_vacation_prorata_mid_year_hire(self, db):
+        """Urlaubskonto pro-rata bei Einstellung Mitte des Jahres."""
+        user = _make_user(
+            db, username="midyear", email="midyear@test.de",
+            vacation_days=24,
+            first_work_day=date(2026, 7, 1),
+        )
+        account = calculation_service.get_vacation_account(db, user, 2026)
+        # 6 Monate → 24 × 6/12 = 12 Tage
+        assert account["budget_days"] == 12.0
+
+    def test_vacation_prorata_departure(self, db):
+        """Urlaubskonto pro-rata bei Ausscheiden Mitte des Jahres."""
+        user = _make_user(
+            db, username="leaving", email="leaving@test.de",
+            vacation_days=24,
+            last_work_day=date(2026, 6, 30),
+        )
+        account = calculation_service.get_vacation_account(db, user, 2026)
+        # 6 Monate → 24 × 6/12 = 12 Tage
+        assert account["budget_days"] == 12.0
+
     def test_overtime_comp_on_zero_hour_day(self, db):
         """Überstundenausgleich an einem 0h-Tag hat keinen Effekt auf Soll."""
         user = _make_user(
@@ -546,3 +594,165 @@ class TestDailyScheduleEdgeCases:
         _make_absence(db, user, date(2026, 3, 10), AbsenceType.OVERTIME, 0.0)
         target_after = calculation_service.get_monthly_target(db, user, 2026, 3)
         assert target_after == target_before
+
+
+# =============================================================================
+# Jahresabschluss — Edge Cases
+# =============================================================================
+
+class TestYearClosingEdgeCases:
+    """Edge Cases beim Jahresabschluss."""
+
+    def test_year_closing_captures_overtime(self, db, test_user):
+        """Jahresabschluss berechnet korrekte Überstunden."""
+        _make_entry(db, test_user, date(2025, 12, 1), 8, 18, break_min=0)  # 10h
+        results = calculation_service.create_year_closing(db, 2025, [test_user])
+        assert len(results) == 1
+        assert results[0]["overtime_hours"] < 0
+
+    def test_year_closing_captures_vacation(self, db, test_user):
+        """Jahresabschluss berechnet korrekten Resturlaub."""
+        _make_absence(db, test_user, date(2025, 6, 9), AbsenceType.VACATION, 8.0)
+        _make_absence(db, test_user, date(2025, 6, 10), AbsenceType.VACATION, 8.0)
+        results = calculation_service.create_year_closing(db, 2025, [test_user])
+        assert results[0]["vacation_days"] == 28.0
+
+    def test_year_closing_carryover_affects_next_year_vacation(self, db, test_user):
+        """Übertrag aus Jahresabschluss erhöht Urlaubsbudget im Folgejahr."""
+        budget_before = calculation_service.get_vacation_account(db, test_user, 2026)["budget_days"]
+        carryover = YearCarryover(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            year=2026, overtime_hours=0, vacation_days=5.0,
+        )
+        db.add(carryover)
+        db.commit()
+        budget_after = calculation_service.get_vacation_account(db, test_user, 2026)["budget_days"]
+        assert budget_after == budget_before + 5.0
+
+    def test_year_closing_carryover_affects_next_year_overtime(self, db, test_user):
+        """Übertrag aus Jahresabschluss ist Startbilanz für Folgejahr."""
+        carryover = YearCarryover(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            year=2026, overtime_hours=25.0, vacation_days=0,
+        )
+        db.add(carryover)
+        db.commit()
+        overtime = calculation_service.get_overtime_account(db, test_user, 2026, 1)
+        # 25h Übertrag - 176h Januar-Soll = -151h
+        assert overtime == Decimal('-151.00')
+
+    def test_year_closing_negative_overtime_carryover(self, db, test_user):
+        """Negativer Überstundenübertrag wird korrekt übernommen."""
+        carryover = YearCarryover(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            year=2026, overtime_hours=-20.0, vacation_days=0,
+        )
+        db.add(carryover)
+        db.commit()
+        overtime = calculation_service.get_overtime_account(db, test_user, 2026, 1)
+        assert overtime < Decimal('-20.00')
+
+    def test_year_closing_mid_year_hire(self, db):
+        """Jahresabschluss für Mitte-des-Jahres-Einstellung."""
+        user = _make_user(
+            db, username="newhire", email="newhire@test.de",
+            vacation_days=24, first_work_day=date(2025, 7, 1),
+        )
+        results = calculation_service.create_year_closing(db, 2025, [user])
+        assert results[0]["vacation_days"] == 12.0
+
+    def test_year_closing_overwrite_is_idempotent(self, db, test_user):
+        """Zweimaliges Ausführen liefert gleiche Ergebnisse."""
+        results1 = calculation_service.create_year_closing(db, 2025, [test_user])
+        results2 = calculation_service.create_year_closing(db, 2025, [test_user])
+        assert results1[0]["overtime_hours"] == results2[0]["overtime_hours"]
+        assert results1[0]["vacation_days"] == results2[0]["vacation_days"]
+
+    def test_year_closing_with_overtime_comp(self, db, test_user):
+        """Überstundenausgleich reduziert Überstundenkonto bei Jahresabschluss."""
+        # Alle Dezember-Werktage arbeiten + 1 Tag Ausgleich
+        dec_workdays = [date(2025, 12, d) for d in range(1, 32)
+                        if date(2025, 12, d).weekday() < 5]
+        for d in dec_workdays[:5]:  # Nur erste Woche
+            _make_entry(db, test_user, d, 7, 17, break_min=0)  # 10h/Tag
+
+        overtime_before = calculation_service.get_overtime_account(db, test_user, 2025, 12)
+
+        # Arbeitszeit am 8.12. (Mo) erstellen und dann durch Ausgleich ersetzen
+        _make_entry(db, test_user, date(2025, 12, 8), 8, 16, break_min=0)  # 8h
+        overtime_with_work = calculation_service.get_overtime_account(db, test_user, 2025, 12)
+        assert overtime_with_work > overtime_before  # 8h mehr gearbeitet
+
+        # Eintrag löschen und stattdessen Überstundenausgleich → 0h Ist statt 8h
+        from app.models import TimeEntry
+        db.query(TimeEntry).filter(
+            TimeEntry.user_id == test_user.id,
+            TimeEntry.date == date(2025, 12, 8),
+        ).delete()
+        _make_absence(db, test_user, date(2025, 12, 8), AbsenceType.OVERTIME, 8.0)
+        overtime_with_comp = calculation_service.get_overtime_account(db, test_user, 2025, 12)
+
+        # Ausgleich (0h Ist) ist schlechter als arbeiten (8h Ist)
+        assert overtime_with_comp < overtime_with_work
+
+
+# =============================================================================
+# Berechnungen — weitere Unit Tests
+# =============================================================================
+
+class TestCalculationUnits:
+    """Weitere Unit-Tests für Berechnungsfunktionen."""
+
+    def test_monthly_actual_sums_multiple_entries(self, db, test_user):
+        """get_monthly_actual summiert mehrere Einträge pro Tag."""
+        _make_entry(db, test_user, date(2026, 3, 9), 8, 12)
+        _make_entry(db, test_user, date(2026, 3, 9), 13, 17, start_m=0, end_m=0)
+        _make_entry(db, test_user, date(2026, 3, 10), 8, 16)
+        actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
+        assert actual == Decimal('16.00')
+
+    def test_monthly_actual_with_break(self, db, test_user):
+        """Pausen werden von Ist-Stunden abgezogen."""
+        _make_entry(db, test_user, date(2026, 3, 9), 8, 17, break_min=60)
+        actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
+        assert actual == Decimal('8.00')
+
+    def test_get_daily_target_standard(self, db, test_user):
+        """Standard-User: 40h/5 Tage = 8h/Tag."""
+        target = calculation_service.get_daily_target(test_user)
+        assert target == Decimal('8.00')
+
+    def test_get_daily_target_parttime(self, db):
+        """Teilzeit-User: 20h/5 Tage = 4h/Tag."""
+        user = _make_user(db, username="pt", email="pt@test.de", weekly_hours=20.0)
+        target = calculation_service.get_daily_target(user)
+        assert target == Decimal('4.00')
+
+    def test_get_daily_target_3day_week(self, db):
+        """3-Tage-Woche: 24h/3 Tage = 8h/Tag."""
+        user = _make_user(
+            db, username="3day", email="3day@test.de",
+            weekly_hours=24.0, work_days_per_week=3,
+        )
+        target = calculation_service.get_daily_target(user)
+        assert target == Decimal('8.00')
+
+    def test_sick_does_not_reduce_target(self, db, test_user):
+        """Krankheit reduziert Soll NICHT (§3 EntgFG)."""
+        target_before = calculation_service.get_monthly_target(db, test_user, 2026, 3)
+        _make_absence(db, test_user, date(2026, 3, 9), AbsenceType.SICK, 8.0)
+        target_after = calculation_service.get_monthly_target(db, test_user, 2026, 3)
+        assert target_after == target_before
+
+    def test_sick_counts_as_actual(self, db, test_user):
+        """Krankheit wird als Ist-Stunden gutgeschrieben."""
+        _make_absence(db, test_user, date(2026, 3, 9), AbsenceType.SICK, 8.0)
+        actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
+        assert actual == Decimal('8.00')
+
+    def test_other_absence_reduces_target(self, db, test_user):
+        """Sonstige Abwesenheit reduziert Soll."""
+        target_before = calculation_service.get_monthly_target(db, test_user, 2026, 3)
+        _make_absence(db, test_user, date(2026, 3, 9), AbsenceType.OTHER, 8.0)
+        target_after = calculation_service.get_monthly_target(db, test_user, 2026, 3)
+        assert target_after < target_before
