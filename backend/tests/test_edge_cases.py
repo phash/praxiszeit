@@ -436,6 +436,28 @@ class TestJournalMultiEntry:
         assert day["actual_hours"] == 8.0  # 4h + 4h (Krank zählt als Ist)
         assert day["balance"] == 0.0
 
+    def test_mixed_day_work_plus_vacation(self, db, test_user):
+        """Gemischter Tag: Arbeitszeit + Urlaub → Soll reduziert, Ist = nur Arbeit."""
+        _make_entry(db, test_user, date(2026, 3, 10), 8, 12, break_min=0)  # 4h Arbeit
+        _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.VACATION, 4.0)
+        journal = journal_service.get_journal(db, test_user, 2026, 3)
+        day = next(d for d in journal["days"] if d["date"] == "2026-03-10")
+        assert day["type"] == "mixed"
+        assert day["actual_hours"] == 4.0  # Nur Arbeitsstunden
+        assert day["target_hours"] == 4.0  # 8h - 4h Urlaub
+        assert day["balance"] == 0.0
+
+    def test_mixed_day_work_plus_overtime_comp(self, db, test_user):
+        """Gemischter Tag: Arbeitszeit + Überstundenausgleich → Soll reduziert."""
+        _make_entry(db, test_user, date(2026, 3, 10), 8, 12, break_min=0)  # 4h Arbeit
+        _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.OVERTIME, 4.0)
+        journal = journal_service.get_journal(db, test_user, 2026, 3)
+        day = next(d for d in journal["days"] if d["date"] == "2026-03-10")
+        assert day["type"] == "mixed"
+        assert day["actual_hours"] == 4.0  # Nur Arbeitsstunden, OVERTIME zählt nicht als Ist
+        assert day["target_hours"] == 4.0  # 8h - 4h Überstundenausgleich
+        assert day["balance"] == 0.0
+
     def test_three_entries_summed_correctly(self, db, test_user):
         """Drei Einträge werden korrekt summiert."""
         _make_entry(db, test_user, date(2026, 3, 10), 7, 9, break_min=0)    # 2h

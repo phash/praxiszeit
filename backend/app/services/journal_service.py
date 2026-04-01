@@ -100,7 +100,12 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
             daily_target = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
             actual_hours = time_hours + credited_sum
-            target_hours = daily_target
+            # VACATION/OTHER/OVERTIME reduce target on mixed days
+            target_reducing_sum = Decimal(str(sum(
+                float(a.hours) for a in day_absences
+                if a.type not in (AbsenceType.TRAINING, AbsenceType.SICK)
+            )))
+            target_hours = daily_target - target_reducing_sum
         else:
             actual_hours = time_hours
             weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
