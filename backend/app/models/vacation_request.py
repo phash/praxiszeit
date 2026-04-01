@@ -24,6 +24,7 @@ class VacationRequest(Base):
     date = Column(Date, nullable=False, index=True)
     end_date = Column(Date, nullable=True)
     hours = Column(Numeric(5, 2), nullable=False)
+    absence_type = Column(String(20), nullable=False, default="vacation")
     note = Column(Text, nullable=True)
     status = Column(String(20), nullable=False, default=VacationRequestStatus.PENDING.value, index=True)
     rejection_reason = Column(Text, nullable=True)

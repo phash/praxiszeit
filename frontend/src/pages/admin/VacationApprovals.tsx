@@ -5,6 +5,7 @@ import { Clock, CheckCircle, XCircle, AlertCircle, Check, X } from 'lucide-react
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 
 interface VacationRequest {
   id: string;
@@ -15,6 +16,7 @@ interface VacationRequest {
   end_date?: string;
   hours: number;
   days?: number;
+  absence_type?: string;
   note?: string;
   status: string;
   rejection_reason?: string;
@@ -66,7 +68,7 @@ export default function VacationApprovals() {
       const res = await apiClient.get(`/admin/vacation-requests${params}`);
       setRequests(res.data);
     } catch {
-      toast.error('Fehler beim Laden der Urlaubsanträge');
+      toast.error('Fehler beim Laden der Anträge');
     } finally {
       setLoading(false);
     }
@@ -89,7 +91,7 @@ export default function VacationApprovals() {
   const handleApprove = async (id: string) => {
     try {
       await apiClient.post(`/admin/vacation-requests/${id}/review`, { action: 'approve' });
-      toast.success('Urlaubsantrag genehmigt');
+      toast.success('Antrag genehmigt');
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
@@ -102,7 +104,7 @@ export default function VacationApprovals() {
         action: 'reject',
         rejection_reason: rejectionReason || undefined,
       });
-      toast.success('Urlaubsantrag abgelehnt');
+      toast.success('Antrag abgelehnt');
       setRejectingId(null);
       setRejectionReason('');
       fetchRequests();
@@ -117,7 +119,7 @@ export default function VacationApprovals() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Urlaubsanträge</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Abwesenheitsanträge</h1>
           {filter === 'pending' && pendingCount > 0 && (
             <p className="text-sm text-amber-600 mt-1">{pendingCount} offene Anträge</p>
           )}
@@ -127,11 +129,11 @@ export default function VacationApprovals() {
       {/* Setting Toggle */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6 flex items-center justify-between">
         <div>
-          <p className="font-medium text-gray-900">Urlaubsanträge genehmigungspflichtig</p>
+          <p className="font-medium text-gray-900">Abwesenheitsanträge genehmigungspflichtig</p>
           <p className="text-sm text-gray-500 mt-0.5">
             {approvalRequired
-              ? 'Mitarbeiter müssen Urlaub beantragen – Admin-Freigabe erforderlich.'
-              : 'Mitarbeiter buchen Urlaub direkt ohne Admin-Freigabe.'}
+              ? 'Mitarbeiter müssen Abwesenheiten beantragen – Admin-Freigabe erforderlich (außer Krankmeldungen).'
+              : 'Mitarbeiter buchen Abwesenheiten direkt ohne Admin-Freigabe.'}
           </p>
         </div>
         <button
@@ -199,6 +201,11 @@ export default function VacationApprovals() {
                       <span className="font-semibold text-gray-900">
                         {vr.user_last_name}, {vr.user_first_name}
                       </span>
+                      {vr.absence_type && (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ABSENCE_TYPE_COLORS[vr.absence_type as AbsenceType] || 'bg-gray-100 text-gray-800'}`}>
+                          {ABSENCE_TYPE_LABELS[vr.absence_type as AbsenceType] || vr.absence_type}
+                        </span>
+                      )}
                       <span
                         className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${config.color}`}
                       >

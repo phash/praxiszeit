@@ -62,6 +62,7 @@ def create_vacation_request(
         date=data.date,
         end_date=data.end_date,
         hours=data.hours,
+        absence_type=data.absence_type or "vacation",
         note=data.note,
         status=VacationRequestStatus.PENDING.value,
     )
