@@ -100,6 +100,7 @@ def review_change_request(
         return _enrich_cr_response(cr, db)
 
     # Approve: validate preconditions BEFORE changing status
+    entry = None
     if cr.request_type == ChangeRequestType.CREATE:
         duplicate = db.query(TimeEntry).filter(
             TimeEntry.user_id == cr.user_id,
@@ -128,6 +129,11 @@ def review_change_request(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
                 )
+
+    elif cr.request_type == ChangeRequestType.DELETE:
+        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+        if not entry:
+            raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
 
     # All preconditions met — now mark as approved
     cr.status = ChangeRequestStatus.APPROVED
@@ -177,15 +183,14 @@ def review_change_request(
             entry.note = cr.proposed_note
 
     elif cr.request_type == ChangeRequestType.DELETE:
-        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
-        if entry:
-            _create_audit_log(
-                db, entry.id, cr.user_id, current_user.id,
-                action="delete", old_entry=entry,
-                source="change_request", change_request_id=cr.id,
-                tenant_id=current_user.tenant_id,
-            )
-            db.delete(entry)
+        # entry already fetched in precondition check above
+        _create_audit_log(
+            db, entry.id, cr.user_id, current_user.id,
+            action="delete", old_entry=entry,
+            source="change_request", change_request_id=cr.id,
+            tenant_id=current_user.tenant_id,
+        )
+        db.delete(entry)
 
     db.commit()
     db.refresh(cr)
