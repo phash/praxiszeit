@@ -284,20 +284,21 @@ def create_absence(
                 db.delete(vacation_entry)
                 refunded_vacation_dates.append(date)
 
-    # Delete existing time entries on affected dates (consistency with approval flow)
-    existing_entries = db.query(TimeEntry).filter(
-        TimeEntry.user_id == target_user.id,
-        TimeEntry.tenant_id == current_user.tenant_id,
-        TimeEntry.date.in_(dates_to_create),
-    ).all()
-    for entry in existing_entries:
-        _create_audit_log(
-            db, entry.id, target_user.id, current_user.id,
-            action="delete", old_entry=entry,
-            source="absence_creation",
-            tenant_id=current_user.tenant_id,
-        )
-        db.delete(entry)
+    # Delete existing time entries on affected dates (unless keep_time_entries for mixed days)
+    if not absence_data.keep_time_entries:
+        existing_entries = db.query(TimeEntry).filter(
+            TimeEntry.user_id == target_user.id,
+            TimeEntry.tenant_id == current_user.tenant_id,
+            TimeEntry.date.in_(dates_to_create),
+        ).all()
+        for entry in existing_entries:
+            _create_audit_log(
+                db, entry.id, target_user.id, current_user.id,
+                action="delete", old_entry=entry,
+                source="absence_creation",
+                tenant_id=current_user.tenant_id,
+            )
+            db.delete(entry)
 
     # Create absences for all dates
     created_absences = []

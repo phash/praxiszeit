@@ -188,7 +188,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     setSubmittingDate(null);
   }
 
-  async function handleAdminAdd(dateStr: string) {
+  async function handleAdminAdd(dateStr: string, day?: JournalDay) {
     setSaving(true);
     try {
       if (editState.entryType === 'work') {
@@ -204,11 +204,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
         });
       } else {
+        const hasExistingEntries = day && day.time_entries.length > 0;
         await apiClient.post('/absences', {
           user_id: userId,
           date: dateStr,
           type: editState.entryType,
           hours: parseFloat(editState.absenceHours) || 0,
+          keep_time_entries: hasExistingEntries,
         });
       }
       toast.success('Eintrag hinzugefügt');
@@ -265,11 +267,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         if (hadAbsence && day.absences[0] && !switchingToWork) {
           await apiClient.delete(`/absences/${day.absences[0].id}`);
         }
+        const remainingEntries = day.time_entries.filter(e => e.id !== editingEntryId);
         await apiClient.post('/absences', {
           user_id: userId,
           date: day.date,
           type: editState.entryType,
           hours: parseFloat(editState.absenceHours) || 0,
+          keep_time_entries: remainingEntries.length > 0,
         });
       }
       toast.success('Gespeichert');
@@ -672,7 +676,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           <td colSpan={3}></td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => void handleAdminAdd(day.date)} disabled={saving} className="p-2.5 text-green-600 hover:text-green-800 disabled:opacity-50" title="Hinzufügen"><Check size={15} /></button>
+                              <button onClick={() => void handleAdminAdd(day.date, day)} disabled={saving} className="p-2.5 text-green-600 hover:text-green-800 disabled:opacity-50" title="Hinzufügen"><Check size={15} /></button>
                               <button onClick={cancelEdit} disabled={saving} className="p-2.5 text-gray-400 hover:text-gray-600 disabled:opacity-50" title="Abbrechen"><X size={15} /></button>
                             </div>
                           </td>
