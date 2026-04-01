@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import timedelta, date
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry
+from app.models import User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service
@@ -261,19 +261,29 @@ def create_absence(
             detail="Keine gültigen Arbeitstage im angegebenen Zeitraum"
         )
 
-    # Check for existing absences
+    # Check for existing absences (any type — no double-booking allowed)
+    skip_dates = []
     for date in dates_to_create:
         existing = db.query(Absence).filter(
             Absence.user_id == target_user.id,
             Absence.date == date,
-            Absence.type == absence_data.type
         ).first()
 
         if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Es existiert bereits eine Abwesenheit dieses Typs am {date.strftime('%d.%m.%Y')}"
-            )
+            if existing.type == absence_data.type:
+                skip_dates.append(date)  # Skip duplicate of same type (idempotent)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Am {date.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})"
+                )
+    dates_to_create = [d for d in dates_to_create if d not in skip_dates]
+
+    if not dates_to_create:
+        raise HTTPException(
+            status_code=400,
+            detail="Alle Tage im Zeitraum haben bereits eine Abwesenheit dieses Typs"
+        )
 
     # For vacation, check remaining vacation days (per year for cross-year ranges)
     if absence_data.type == AbsenceType.VACATION:
@@ -300,6 +310,20 @@ def create_absence(
                 Absence.type == AbsenceType.VACATION
             ).first()
             if vacation_entry:
+                # Audit-Log: Urlaubsrückgabe dokumentieren
+                audit_log = TimeEntryAuditLog(
+                    time_entry_id=None,
+                    user_id=target_user.id,
+                    changed_by=current_user.id,
+                    action="delete",
+                    old_date=vacation_entry.date,
+                    old_start_time=vacation_entry.start_time,
+                    old_end_time=vacation_entry.end_time,
+                    old_note=f"absence:{vacation_entry.type.value}:{float(vacation_entry.hours)}h",
+                    source="vacation_refund",
+                    tenant_id=current_user.tenant_id,
+                )
+                db.add(audit_log)
                 db.delete(vacation_entry)
                 refunded_vacation_dates.append(date)
 

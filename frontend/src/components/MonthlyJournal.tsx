@@ -24,6 +24,8 @@ interface AbsenceItem {
   id: string;
   type: string;
   hours: number;
+  start_time: string | null;
+  end_time: string | null;
 }
 
 interface JournalDay {
@@ -95,9 +97,11 @@ function formatHours(h: number): string {
 
 function formatHoursSimple(h: number): string {
   if (h === 0) return '–';
-  const hours = Math.floor(h);
-  const mins = Math.round((h - hours) * 60);
-  return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`;
+  const abs = Math.abs(h);
+  const hours = Math.floor(abs);
+  const mins = Math.round((abs - hours) * 60);
+  const prefix = h < 0 ? '-' : '';
+  return mins > 0 ? `${prefix}${hours}h ${mins}min` : `${prefix}${hours}h`;
 }
 
 function isPastDay(dateStr: string): boolean {
@@ -317,11 +321,11 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   }
 
   function startEmployeeSubmit(day: JournalDay) {
-    const start = editState.startTime;
-    const end = editState.endTime;
-    if (!start || !end) {
-      toast.error('Von und Bis sind Pflichtfelder');
-      return;
+    if (editState.entryType === 'work') {
+      if (!editState.startTime || !editState.endTime) {
+        toast.error('Von und Bis sind Pflichtfelder');
+        return;
+      }
     }
     setSubmittingDate(day.date);
     setSubmitReason('');
@@ -334,16 +338,33 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     }
     setSavingChangeRequest(true);
     try {
-      const existing = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
-      const payload: Record<string, unknown> = {
-        request_type: existing ? 'update' : 'create',
-        reason: submitReason.trim(),
-        proposed_date: day.date,
-        proposed_start_time: editState.startTime,
-        proposed_end_time: editState.endTime,
-        proposed_break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
-      };
-      if (existing) payload.time_entry_id = existing.id;
+      let payload: Record<string, unknown>;
+
+      if (editState.entryType === 'work') {
+        // TimeEntry CR (existing logic)
+        const existing = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
+        payload = {
+          request_type: existing ? 'update' : 'create',
+          entry_kind: 'time_entry',
+          reason: submitReason.trim(),
+          proposed_date: day.date,
+          proposed_start_time: editState.startTime,
+          proposed_end_time: editState.endTime,
+          proposed_break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
+        };
+        if (existing) payload.time_entry_id = existing.id;
+      } else {
+        // Absence CR
+        payload = {
+          request_type: 'create',
+          entry_kind: 'absence',
+          reason: submitReason.trim(),
+          proposed_date: day.date,
+          proposed_absence_type: editState.entryType,
+          proposed_absence_hours: parseFloat(editState.absenceHours) || 0,
+        };
+      }
+
       await apiClient.post('/change-requests/', payload);
       toast.success('Änderungsantrag eingereicht');
       setSubmittingDate(null);
@@ -520,7 +541,19 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               ))}
                               {day.type === 'mixed' && day.absences.map((a, i) => (
                                 <div key={`a${i}`} className="text-gray-400">
-                                  {formatHoursSimple(a.hours)}
+                                  {a.start_time && a.end_time
+                                    ? `${a.start_time}–${a.end_time}`
+                                    : 'ganzer Tag'}
+                                </div>
+                              ))}
+                            </div>
+                          ) : day.absences.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {day.absences.map((a, i) => (
+                                <div key={`a${i}`} className="text-gray-400">
+                                  {a.start_time && a.end_time
+                                    ? `${a.start_time}–${a.end_time}`
+                                    : 'ganzer Tag'}
                                 </div>
                               ))}
                             </div>
