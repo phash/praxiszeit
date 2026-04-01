@@ -47,6 +47,10 @@ def create_change_request(
     if data.request_type not in ("create", "update", "delete"):
         raise HTTPException(status_code=400, detail="Ungültiger Antragstyp")
 
+    # Validate entry_kind
+    if data.entry_kind not in ("time_entry", "absence"):
+        raise HTTPException(status_code=400, detail="Ungültiger Antragstyp (entry_kind)")
+
     # --- Absence CR branch ---
     if data.entry_kind == "absence":
         # For UPDATE/DELETE: absence_id required, fetch and validate ownership

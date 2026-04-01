@@ -42,7 +42,7 @@ class AbsenceCalendarEntry(BaseModel):
     date: date
     user_first_name: str
     user_last_name: str
-    type: AbsenceType
+    type: str  # str statt AbsenceType: DSGVO Art. 9 — "sick" wird ggf. zu "absent" maskiert
     hours: float
 
 
@@ -55,7 +55,7 @@ class TeamAbsenceEntry(BaseModel):
     user_first_name: str
     user_last_name: str
     user_color: str
-    type: AbsenceType
+    type: str  # str statt AbsenceType: DSGVO Art. 9 — "sick" wird ggf. zu "absent" maskiert
     hours: float
 
 

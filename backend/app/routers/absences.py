@@ -81,13 +81,22 @@ def get_absence_calendar(
     ).order_by(Absence.date).all()
 
     # Convert to calendar entries (no extra queries needed)
+    # DSGVO Art. 9: Krankheitsdaten sind besonders schützenswert.
+    # Nicht-Admins sehen fremde Krankmeldungen nur als "absent".
     calendar_entries = []
     for absence, first_name, last_name in rows:
+        display_type = absence.type.value
+        if (
+            absence.type == AbsenceType.SICK
+            and current_user.role != UserRole.ADMIN
+            and absence.user_id != current_user.id
+        ):
+            display_type = "absent"
         calendar_entries.append(AbsenceCalendarEntry(
             date=absence.date,
             user_first_name=first_name,
             user_last_name=last_name,
-            type=absence.type,
+            type=display_type,
             hours=absence.hours
         ))
 
@@ -119,19 +128,28 @@ def get_team_upcoming_absences(
     seen = set()
     team_absences = []
 
+    # DSGVO Art. 9: Krankheitsdaten sind besonders schützenswert.
+    # Nicht-Admins sehen fremde Krankmeldungen nur als "absent".
     for absence, first_name, last_name, calendar_color in rows:
         # Create a unique key for this absence period
         key = (absence.user_id, absence.date, absence.end_date or absence.date, absence.type)
 
         if key not in seen:
             seen.add(key)
+            display_type = absence.type.value
+            if (
+                absence.type == AbsenceType.SICK
+                and current_user.role != UserRole.ADMIN
+                and absence.user_id != current_user.id
+            ):
+                display_type = "absent"
             team_absences.append(TeamAbsenceEntry(
                 date=absence.date,
                 end_date=absence.end_date,
                 user_first_name=first_name,
                 user_last_name=last_name,
                 user_color=calendar_color,
-                type=absence.type,
+                type=display_type,
                 hours=absence.hours,
             ))
 
