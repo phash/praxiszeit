@@ -1036,10 +1036,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
             extract('month', TimeEntry.date) == month,
             TimeEntry.end_time.isnot(None),
         ).all()
-        night_days = sum(
-            1 for e in month_entries
-            if is_night_work(e.start_time, e.end_time)
-        )
+        night_days = len({e.date for e in month_entries if is_night_work(e.start_time, e.end_time)})
         sheet.cell(row=16, column=col).value = night_days
         sheet.cell(row=16, column=col).alignment = center_align
 
@@ -1246,8 +1243,11 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                     bem = ''
                 else:
                     type_name = absence_type_map.get(absence.type.value, absence.type.value)
-                    if absence.note and include_health_data:
-                        bem = absence.note
+                    if absence.note:
+                        if absence.type == AbsenceType.SICK and not include_health_data:
+                            pass  # Don't show sick notes without health data permission
+                        else:
+                            bem = absence.note
                 abw = f"{type_name} ({float(absence.hours):.1f}h)"
                 bg = None
             else:

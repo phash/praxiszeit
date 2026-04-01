@@ -182,6 +182,13 @@ def purge_user(
     )
     db.add(log)
     db.flush()
+    # Clean up vacation requests
+    from app.models.vacation_request import VacationRequest
+    db.query(VacationRequest).filter(VacationRequest.user_id == user.id).delete(synchronize_session=False)
+    # Nullify reviewed_by references
+    db.query(VacationRequest).filter(VacationRequest.reviewed_by == user.id).update(
+        {"reviewed_by": None}, synchronize_session=False
+    )
     db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id).delete()
     db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id).delete()
     db.query(TimeEntry).filter(TimeEntry.user_id == user.id).delete()

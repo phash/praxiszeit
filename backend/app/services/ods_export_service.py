@@ -388,7 +388,8 @@ def _absences_overview_sheet(doc, db, users, year, bold):
 
     headers = [
         "Mitarbeiter",
-        "Urlaub (Tage)", "Krank (Tage)", "Fortbildung (Tage)", "Sonstiges (Tage)",
+        "Urlaub (Tage)", "Krank (Tage)", "Fortbildung (Tage)",
+        "ÜStd.-Ausgleich (Tage)", "Sonstiges (Tage)",
         "Gesamt (Tage)", "Resturlaub (Tage)",
     ]
     table.addElement(_header_row(headers, bold))
@@ -410,6 +411,7 @@ def _absences_overview_sheet(doc, db, users, year, bold):
         vac = days(AbsenceType.VACATION)
         sick = days(AbsenceType.SICK)
         train = days(AbsenceType.TRAINING)
+        overtime_comp = days(AbsenceType.OVERTIME)
         other = days(AbsenceType.OTHER)
 
         vac_acc = calculation_service.get_vacation_account(db, user, year)
@@ -420,8 +422,9 @@ def _absences_overview_sheet(doc, db, users, year, bold):
         tr.addElement(_float_cell(vac))
         tr.addElement(_float_cell(sick))
         tr.addElement(_float_cell(train))
+        tr.addElement(_float_cell(overtime_comp))
         tr.addElement(_float_cell(other))
-        tr.addElement(_float_cell(vac + sick + train + other))
+        tr.addElement(_float_cell(vac + sick + train + overtime_comp + other))
         tr.addElement(_float_cell(remaining))
         table.addElement(tr)
 
@@ -648,10 +651,7 @@ def _classic_sheet(doc, db, user, year, bold):
             extract("month", TimeEntry.date) == m,
             TimeEntry.end_time.isnot(None),
         ).all()
-        night_days = sum(
-            1 for e in month_entries
-            if is_night_work(e.start_time, e.end_time)
-        )
+        night_days = len({e.date for e in month_entries if is_night_work(e.start_time, e.end_time)})
 
         tr = TableRow()
         tr.addElement(_str_cell(MONTH_NAMES[m - 1]))
@@ -666,14 +666,14 @@ def _classic_sheet(doc, db, user, year, bold):
         table.addElement(tr)
 
     # Total row (night work total counted over all months)
-    total_night = sum(
-        1 for e in db.query(TimeEntry).filter(
+    total_night = len({
+        e.date for e in db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
             extract("year", TimeEntry.date) == year,
             TimeEntry.end_time.isnot(None),
         ).all()
         if is_night_work(e.start_time, e.end_time)
-    )
+    })
     tr = TableRow()
     tr.addElement(_str_cell("Gesamt", style=bold))
     tr.addElement(_float_cell(total_target))
