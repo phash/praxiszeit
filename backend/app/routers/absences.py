@@ -320,6 +320,8 @@ def create_absence(
             end_date=end_date if absence_data.end_date else None,  # Store end_date for reference
             type=absence_data.type,
             hours=hours_for_day,
+            start_time=absence_data.start_time,
+            end_time=absence_data.end_time,
             note=absence_data.note
         )
         db.add(absence)
