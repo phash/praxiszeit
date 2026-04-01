@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import date
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole
+from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole, Absence, AbsenceType
 from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
 from app.services.break_validation_service import validate_daily_break
@@ -46,6 +46,74 @@ def create_change_request(
     # Validate request_type
     if data.request_type not in ("create", "update", "delete"):
         raise HTTPException(status_code=400, detail="Ungültiger Antragstyp")
+
+    # --- Absence CR branch ---
+    if data.entry_kind == "absence":
+        # For UPDATE/DELETE: absence_id required, fetch and validate ownership
+        absence = None
+        if data.request_type in ("update", "delete"):
+            if not data.absence_id:
+                raise HTTPException(status_code=400, detail="absence_id erforderlich für Absence-Änderung/Löschung")
+            absence = db.query(Absence).filter(Absence.id == data.absence_id).first()
+            if not absence:
+                raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
+            if absence.user_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Zugriff verweigert")
+
+        # For CREATE/UPDATE: validate required fields
+        if data.request_type in ("create", "update"):
+            if not data.proposed_absence_type:
+                raise HTTPException(status_code=400, detail="Abwesenheitstyp erforderlich")
+            if not data.proposed_date:
+                raise HTTPException(status_code=400, detail="Datum erforderlich")
+            if data.proposed_date >= today_local():
+                raise HTTPException(status_code=400, detail="Änderungsanträge sind nur für vergangene Tage möglich")
+            # Validate absence type is valid
+            try:
+                AbsenceType(data.proposed_absence_type)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Ungültiger Abwesenheitstyp: {data.proposed_absence_type}")
+            # Need either hours or start/end time
+            if data.proposed_absence_hours is None and not (data.proposed_start_time and data.proposed_end_time):
+                raise HTTPException(status_code=400, detail="Stunden oder Start-/Endzeit erforderlich")
+            if data.proposed_start_time and data.proposed_end_time:
+                if data.proposed_start_time >= data.proposed_end_time:
+                    raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
+
+        # For DELETE: validate absence exists (already fetched above)
+        if data.request_type == "delete" and absence:
+            if absence.date >= today_local():
+                raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
+
+        # Create the CR
+        cr = ChangeRequest(
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+            request_type=data.request_type,
+            entry_kind="absence",
+            absence_id=data.absence_id if data.request_type in ("update", "delete") else None,
+            proposed_date=data.proposed_date,
+            proposed_start_time=data.proposed_start_time,
+            proposed_end_time=data.proposed_end_time,
+            proposed_absence_type=data.proposed_absence_type,
+            proposed_absence_hours=data.proposed_absence_hours,
+            reason=data.reason,
+        )
+
+        # Snapshot original values for update/delete
+        if data.request_type in ("update", "delete") and absence:
+            cr.original_date = absence.date
+            cr.original_absence_type = absence.type.value
+            cr.original_absence_hours = float(absence.hours)
+            cr.original_start_time = absence.start_time
+            cr.original_end_time = absence.end_time
+
+        db.add(cr)
+        db.commit()
+        db.refresh(cr)
+        return _enrich_response(cr, db)
+
+    # --- TimeEntry CR branch (existing logic) ---
 
     # For UPDATE and DELETE, time_entry_id is required
     entry = None
