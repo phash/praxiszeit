@@ -99,13 +99,8 @@ def review_change_request(
         db.refresh(cr)
         return _enrich_cr_response(cr, db)
 
-    # Approve: apply the change
-    cr.status = ChangeRequestStatus.APPROVED
-    cr.reviewed_by = current_user.id
-    cr.reviewed_at = datetime.now(timezone.utc)
-
+    # Approve: validate preconditions BEFORE changing status
     if cr.request_type == ChangeRequestType.CREATE:
-        # Guard against duplicate entries (same user, date, start_time)
         duplicate = db.query(TimeEntry).filter(
             TimeEntry.user_id == cr.user_id,
             TimeEntry.date == cr.proposed_date,
@@ -116,7 +111,30 @@ def review_change_request(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
             )
-        # Create new time entry
+    elif cr.request_type == ChangeRequestType.UPDATE:
+        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+        if not entry:
+            raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+        # Check for unique constraint violation on date/start_time change
+        if cr.proposed_date != entry.date or cr.proposed_start_time != entry.start_time:
+            dup = db.query(TimeEntry).filter(
+                TimeEntry.user_id == cr.user_id,
+                TimeEntry.date == cr.proposed_date,
+                TimeEntry.start_time == cr.proposed_start_time,
+                TimeEntry.id != entry.id,
+            ).first()
+            if dup:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
+                )
+
+    # All preconditions met — now mark as approved
+    cr.status = ChangeRequestStatus.APPROVED
+    cr.reviewed_by = current_user.id
+    cr.reviewed_at = datetime.now(timezone.utc)
+
+    if cr.request_type == ChangeRequestType.CREATE:
         entry = TimeEntry(
             user_id=cr.user_id,
             tenant_id=current_user.tenant_id,
@@ -127,7 +145,7 @@ def review_change_request(
             note=cr.proposed_note,
         )
         db.add(entry)
-        db.flush()  # Get the entry ID
+        db.flush()
         cr.time_entry_id = entry.id
         _create_audit_log(
             db, entry.id, cr.user_id, current_user.id,
@@ -137,10 +155,7 @@ def review_change_request(
         )
 
     elif cr.request_type == ChangeRequestType.UPDATE:
-        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
-        if not entry:
-            raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
-        # Audit log with old values
+        # entry already fetched in precondition check above
         _create_audit_log(
             db, entry.id, cr.user_id, current_user.id,
             action="update", old_entry=entry,
@@ -154,7 +169,6 @@ def review_change_request(
             source="change_request", change_request_id=cr.id,
             tenant_id=current_user.tenant_id,
         )
-        # Apply changes
         entry.date = cr.proposed_date
         entry.start_time = cr.proposed_start_time
         entry.end_time = cr.proposed_end_time
