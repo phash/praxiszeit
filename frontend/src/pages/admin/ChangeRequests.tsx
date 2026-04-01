@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { format } from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, startOfYear, endOfYear, subYears } from 'date-fns';
 import apiClient from '../../api/client';
 import { Clock, CheckCircle, XCircle, AlertCircle, Check, X } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
@@ -31,6 +31,12 @@ interface ChangeRequest {
   created_at: string;
 }
 
+interface UserOption {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
 const statusConfig = {
   pending: { label: 'Offen', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
   approved: { label: 'Genehmigt', color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -40,6 +46,34 @@ const statusConfig = {
 import { CHANGE_REQUEST_TYPE_LABELS } from '../../constants/changeRequestTypes';
 const typeLabels = CHANGE_REQUEST_TYPE_LABELS;
 
+type TimeRange = '1m' | '3m' | 'year' | 'prev_year' | 'custom';
+
+function getDateRange(range: TimeRange): { from: string; to: string } {
+  const now = new Date();
+  switch (range) {
+    case '1m': {
+      const d = subMonths(now, 1);
+      return { from: format(startOfMonth(d), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') };
+    }
+    case '3m': {
+      const d = subMonths(now, 2);
+      return { from: format(startOfMonth(d), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') };
+    }
+    case 'year':
+      return { from: format(startOfYear(now), 'yyyy-MM-dd'), to: format(endOfYear(now), 'yyyy-MM-dd') };
+    case 'prev_year': {
+      const prev = subYears(now, 1);
+      return { from: format(startOfYear(prev), 'yyyy-MM-dd'), to: format(endOfYear(prev), 'yyyy-MM-dd') };
+    }
+    case 'custom':
+      return { from: '', to: '' };
+  }
+}
+
+function formatDateDE(dateStr: string): string {
+  return format(new Date(dateStr + 'T00:00:00'), 'dd.MM.yyyy');
+}
+
 export default function AdminChangeRequests() {
   const toast = useToast();
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
@@ -47,15 +81,43 @@ export default function AdminChangeRequests() {
   const [filter, setFilter] = useState('pending');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [selectedUser, setSelectedUser] = useState('');
+  const [timeRange, setTimeRange] = useState<TimeRange>('3m');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  useEffect(() => {
+    apiClient.get('/admin/users').then(res => {
+      const sorted = res.data
+        .filter((u: any) => !u.hidden)
+        .sort((a: any, b: any) => a.last_name.localeCompare(b.last_name));
+      setUsers(sorted);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchRequests();
-  }, [filter]);
+  }, [filter, selectedUser, timeRange, customFrom, customTo]);
 
   const fetchRequests = async () => {
+    setLoading(true);
     try {
-      const params = filter ? `?status=${filter}` : '';
-      const response = await apiClient.get(`/admin/change-requests${params}`);
+      const params = new URLSearchParams();
+      if (filter) params.set('status', filter);
+      if (selectedUser) params.set('user_id', selectedUser);
+      if (filter !== 'pending') {
+        if (timeRange === 'custom') {
+          if (customFrom) params.set('date_from', customFrom);
+          if (customTo) params.set('date_to', customTo);
+        } else {
+          const { from, to } = getDateRange(timeRange);
+          params.set('date_from', from);
+          params.set('date_to', to);
+        }
+      }
+      const qs = params.toString();
+      const response = await apiClient.get(`/admin/change-requests${qs ? '?' + qs : ''}`);
       setRequests(response.data);
     } catch (error) {
       toast.error('Fehler beim Laden der Änderungsanträge');
@@ -104,8 +166,8 @@ export default function AdminChangeRequests() {
         </div>
       </div>
 
-      {/* Filter */}
-      <div className="flex space-x-2 mb-6">
+      {/* Status-Filter */}
+      <div className="flex space-x-2 mb-4">
         {[
           { value: 'pending', label: 'Offen' },
           { value: 'approved', label: 'Genehmigt' },
@@ -114,7 +176,7 @@ export default function AdminChangeRequests() {
         ].map((f) => (
           <button
             key={f.value}
-            onClick={() => { setFilter(f.value); setLoading(true); }}
+            onClick={() => setFilter(f.value)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
               filter === f.value
                 ? 'bg-primary text-white'
@@ -124,6 +186,63 @@ export default function AdminChangeRequests() {
             {f.label}
           </button>
         ))}
+      </div>
+
+      {/* User + Zeitraum Filter */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <select
+          value={selectedUser}
+          onChange={(e) => setSelectedUser(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+        >
+          <option value="">Alle Mitarbeiter</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>{u.last_name}, {u.first_name}</option>
+          ))}
+        </select>
+
+        {filter !== 'pending' && (
+          <>
+            <div className="flex space-x-1">
+              {([
+                { value: '1m', label: '1 Monat' },
+                { value: '3m', label: '3 Monate' },
+                { value: 'year', label: 'Jahr' },
+                { value: 'prev_year', label: 'Vorjahr' },
+                { value: 'custom', label: 'Zeitraum' },
+              ] as { value: TimeRange; label: string }[]).map((r) => (
+                <button
+                  key={r.value}
+                  onClick={() => setTimeRange(r.value)}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition ${
+                    timeRange === r.value
+                      ? 'bg-gray-700 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {timeRange === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+                />
+                <span className="text-gray-400">–</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+                />
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Requests */}
@@ -169,8 +288,8 @@ export default function AdminChangeRequests() {
                     <div className="bg-gray-50 rounded-lg p-3">
                       <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
                       <div className="text-sm space-y-1">
-                        <p>Datum: <span className="font-medium">{cr.original_date}</span></p>
-                        <p>Zeit: <span className="font-medium">{cr.original_start_time?.substring(0, 5)} - {cr.original_end_time?.substring(0, 5)}</span></p>
+                        <p>Datum: <span className="font-medium">{formatDateDE(cr.original_date)}</span></p>
+                        <p>Zeit: <span className="font-medium">{cr.original_start_time?.substring(0, 5)} – {cr.original_end_time?.substring(0, 5)}</span></p>
                         <p>Pause: <span className="font-medium">{cr.original_break_minutes} min</span></p>
                         {cr.original_note && <p>Notiz: {cr.original_note}</p>}
                       </div>
@@ -182,8 +301,8 @@ export default function AdminChangeRequests() {
                         {cr.request_type === 'create' ? 'Neuer Eintrag' : 'Gewünscht'}
                       </h4>
                       <div className="text-sm space-y-1">
-                        <p>Datum: <span className="font-medium">{cr.proposed_date}</span></p>
-                        <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} - {cr.proposed_end_time?.substring(0, 5)}</span></p>
+                        <p>Datum: <span className="font-medium">{formatDateDE(cr.proposed_date)}</span></p>
+                        <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} – {cr.proposed_end_time?.substring(0, 5)}</span></p>
                         <p>Pause: <span className="font-medium">{cr.proposed_break_minutes} min</span></p>
                         {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
                       </div>

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from app.database import get_db
 from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType
 from app.middleware.auth import require_admin
@@ -35,6 +35,8 @@ def get_pending_change_request_count(
 def list_all_change_requests(
     request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
     user_id: Optional[str] = Query(None, description="Filter by user"),
+    date_from: Optional[date] = Query(None, description="Filter: created_at >= date_from"),
+    date_to: Optional[date] = Query(None, description="Filter: created_at <= date_to"),
     skip: int = 0,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
@@ -50,6 +52,10 @@ def list_all_change_requests(
             raise HTTPException(status_code=400, detail=f"Ungültiger Status: {request_status}")
     if user_id:
         query = query.filter(ChangeRequest.user_id == user_id)
+    if date_from:
+        query = query.filter(ChangeRequest.created_at >= datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc))
+    if date_to:
+        query = query.filter(ChangeRequest.created_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc))
     requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
     return _enrich_cr_responses(requests, db)
 
