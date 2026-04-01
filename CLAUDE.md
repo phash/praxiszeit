@@ -22,7 +22,7 @@ ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 ### Tests
 ```bash
 cd e2e && npx playwright test                                    # E2E (114 Tests)
-docker compose exec backend pytest tests/ -v                     # Backend Unit (504 Tests)
+docker compose exec backend pytest tests/ -v                     # Backend Unit (335 Tests)
 docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (13 Tests)
 ```
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
@@ -35,6 +35,9 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - Stunden-Anzeige: `formatHoursHM()` aus `utils/errorMessage.ts` (H:MM, Overflow-safe)
 - Cross-Page Refresh nach Stempeln: `uiStore.notifyStampChange()` → `stampVersion` Effect
 - Bulk-Deletes: `synchronize_session=False` + expliziter `tenant_id`-Filter
+- **Überstundenausgleich:** Soll bleibt, Ist=0h (NICHT Soll reduzieren!)
+- **Absence-Typ-Matrix:** Siehe `docs/BACKEND-ARCHITEKTUR.md` → Berechnungsmodell
+- **CR-Approval:** Precondition-Checks VOR Status-Änderung (Race-Condition-Fix)
 
 ### Multi-Tenant
 - **Jede neue Tabelle** braucht `tenant_id` FK + RLS-Policy + Eintrag in Migration

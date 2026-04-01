@@ -2,7 +2,7 @@
 
 **Status:** Done
 **Erstellt:** 2026-02-01
-**Zuletzt aktualisiert:** 2026-03-01
+**Zuletzt aktualisiert:** 2026-04-01
 **Zugehörige Issues:** #8, #12, #16
 
 ---
@@ -19,7 +19,7 @@ Mitarbeiter erfassen Abwesenheiten (Urlaub, Krank, Fortbildung, Sonstiges) als e
 
 Als **Mitarbeiter** möchte ich Abwesenheiten eintragen, damit mein Urlaubskonto und Soll-Stunden korrekt berechnet werden.
 
-- [x] **REQ-1**: Abwesenheitstypen: Urlaub, Krank, Fortbildung, Sonstiges
+- [x] **REQ-1**: Abwesenheitstypen: Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges
 - [x] **REQ-2**: Einzeltag oder Zeitraum (Start–Ende) eintragen
 - [x] **REQ-3**: Bei Zeitraum: nur Werktage (Mo–Fr), keine Wochenenden, keine Feiertage
 - [x] **REQ-4**: Abwesenheitskalender zeigt alle Teammitglieder farbcodiert
@@ -49,6 +49,8 @@ Als **Admin** möchte ich Betriebsferien (Betriebsurlaub) für alle Mitarbeiter 
 
 - [x] Urlaubsstunden basieren auf individuellem Tagessoll (`weekly_hours / work_days_per_week`)
 - [x] Feiertage werden beim Zeitraum automatisch ausgeschlossen
+- [x] **REQ-17**: Überstundenausgleich: Soll bleibt bestehen, Ist = 0h, Überstundenkonto sinkt um Tagessoll
+- [x] **REQ-18**: Gemischte Tage (TimeEntry + Absence) zeigen jeden Eintrag auf eigener Zeile mit korrektem Typ
 
 ### Out of Scope
 
@@ -67,7 +69,7 @@ CREATE TABLE absences (
     user_id UUID REFERENCES users(id) NOT NULL,
     date DATE NOT NULL,
     end_date DATE,              -- NULL = Einzeltag, gesetzt = Zeitraum
-    type VARCHAR(20) NOT NULL,  -- 'vacation' | 'sick' | 'training' | 'other'
+    type VARCHAR(20) NOT NULL,  -- 'vacation' | 'sick' | 'training' | 'overtime' | 'other'
     hours DECIMAL(4,2) NOT NULL,
     notes VARCHAR(500),
     created_at TIMESTAMPTZ DEFAULT NOW(),
