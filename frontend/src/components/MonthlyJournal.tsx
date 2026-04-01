@@ -462,7 +462,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <>
                               {day.is_holiday && day.holiday_name
                                 ? day.holiday_name
-                                : day.type === 'mixed' ? (
+                                : (day.time_entries.length > 1 || day.type === 'mixed') ? (
                                   <div className="space-y-0.5">
                                     {day.time_entries.map((_, i) => (
                                       <div key={`w${i}`} className="text-gray-900">Arbeitszeit</div>
