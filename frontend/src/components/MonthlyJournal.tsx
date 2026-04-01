@@ -587,7 +587,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             </div>
                           ) : !isGray && isPastDay(day.date) ? (
                             <div className="flex flex-col items-end">
-                              {day.time_entries.length > 0 ? (
+                              {(day.time_entries.length > 0 || day.absences.length > 0) ? (
                                 <div className="space-y-0.5">
                                   {day.time_entries.map((e) => (
                                     <div key={e.id} className="flex items-center justify-end gap-0.5">
@@ -600,15 +600,18 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                       </button>
                                     </div>
                                   ))}
+                                  {day.absences.map((a) => (
+                                    <div key={a.id} className="flex items-center justify-end gap-0.5">
+                                      <button
+                                        onClick={() => startEdit(day)}
+                                        className="p-1.5 text-gray-400 hover:text-gray-600"
+                                        title={`${TYPE_LABELS[a.type] || a.type} bearbeiten`}
+                                      >
+                                        <Pencil size={13} />
+                                      </button>
+                                    </div>
+                                  ))}
                                 </div>
-                              ) : day.absences.length > 0 ? (
-                                <button
-                                  onClick={() => startEdit(day)}
-                                  className="p-2 text-gray-400 hover:text-gray-600"
-                                  title="Bearbeiten"
-                                >
-                                  <Pencil size={14} />
-                                </button>
                               ) : null}
                               {isAdminView && (
                                 <button
