@@ -89,6 +89,27 @@ def create_change_request(
             if absence.date >= today_local():
                 raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
 
+        # Check for duplicate pending absence requests
+        if data.request_type == "create" and data.proposed_date:
+            existing_pending = db.query(ChangeRequest).filter(
+                ChangeRequest.user_id == current_user.id,
+                ChangeRequest.status == ChangeRequestStatus.PENDING,
+                ChangeRequest.entry_kind == "absence",
+                ChangeRequest.request_type == ChangeRequestType.CREATE,
+                ChangeRequest.proposed_date == data.proposed_date,
+                ChangeRequest.proposed_absence_type == data.proposed_absence_type,
+            ).first()
+            if existing_pending:
+                raise HTTPException(status_code=400, detail="Es existiert bereits ein offener Antrag für dieses Datum und diesen Typ")
+        elif data.request_type in ("update", "delete") and data.absence_id:
+            existing_pending = db.query(ChangeRequest).filter(
+                ChangeRequest.user_id == current_user.id,
+                ChangeRequest.status == ChangeRequestStatus.PENDING,
+                ChangeRequest.absence_id == data.absence_id,
+            ).first()
+            if existing_pending:
+                raise HTTPException(status_code=400, detail="Es existiert bereits ein offener Antrag für diese Abwesenheit")
+
         # Create the CR
         cr = ChangeRequest(
             user_id=current_user.id,

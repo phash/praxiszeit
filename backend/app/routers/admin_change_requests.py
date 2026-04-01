@@ -160,12 +160,15 @@ def review_change_request(
     cr.reviewed_by = current_user.id
     cr.reviewed_at = datetime.now(timezone.utc)
 
+    # Use the CR's tenant_id (from the requesting user), not the admin's
+    cr_tenant_id = cr.tenant_id
+
     # TimeEntry CR actions
     if cr.entry_kind != "absence":
         if cr.request_type == ChangeRequestType.CREATE:
             entry = TimeEntry(
                 user_id=cr.user_id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
                 date=cr.proposed_date,
                 start_time=cr.proposed_start_time,
                 end_time=cr.proposed_end_time,
@@ -179,7 +182,7 @@ def review_change_request(
                 db, entry.id, cr.user_id, current_user.id,
                 action="create", new_entry=entry,
                 source="change_request", change_request_id=cr.id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
             )
 
         elif cr.request_type == ChangeRequestType.UPDATE:
@@ -195,7 +198,7 @@ def review_change_request(
                     "note": cr.proposed_note,
                 },
                 source="change_request", change_request_id=cr.id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
             )
             entry.date = cr.proposed_date
             entry.start_time = cr.proposed_start_time
@@ -210,7 +213,7 @@ def review_change_request(
                 db, entry.id, cr.user_id, current_user.id,
                 action="delete", old_entry=entry,
                 source="change_request", change_request_id=cr.id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
             )
             db.delete(entry)
 
@@ -232,7 +235,7 @@ def review_change_request(
 
             new_absence = Absence(
                 user_id=cr.user_id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
                 date=cr.proposed_date,
                 type=AbsenceType(cr.proposed_absence_type),
                 hours=hours,
@@ -255,7 +258,7 @@ def review_change_request(
                 new_note=f"absence:{cr.proposed_absence_type}:{hours}h",
                 source="change_request",
                 change_request_id=cr.id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
             )
             db.add(audit)
 
@@ -273,7 +276,7 @@ def review_change_request(
                 old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
                 source="change_request",
                 change_request_id=cr.id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
             )
 
             if cr.proposed_absence_type:
@@ -307,7 +310,7 @@ def review_change_request(
                 old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
                 source="change_request",
                 change_request_id=cr.id,
-                tenant_id=current_user.tenant_id,
+                tenant_id=cr_tenant_id,
             )
             db.add(audit)
             db.delete(absence)

@@ -275,19 +275,20 @@ def create_absence(
                 detail=f"Es existiert bereits eine Abwesenheit dieses Typs am {date.strftime('%d.%m.%Y')}"
             )
 
-    # For vacation, check remaining vacation days
+    # For vacation, check remaining vacation days (per year for cross-year ranges)
     if absence_data.type == AbsenceType.VACATION:
-        vacation_account = calculation_service.get_vacation_account(
-            db, target_user, start_date.year
-        )
-        total_hours_needed = float(absence_data.hours) * len(dates_to_create)
-        new_remaining = vacation_account['remaining_hours'] - total_hours_needed
-        # VULN-011: block request when vacation budget would be exceeded
-        if new_remaining < 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Urlaubstage überschritten: Verfügbares Guthaben ({float(vacation_account['remaining_hours']):.1f}h) reicht nicht für die beantragten Tage ({float(total_hours_needed):.1f}h)."
-            )
+        # Group dates by year for budget check
+        dates_by_year = {}
+        for d in dates_to_create:
+            dates_by_year.setdefault(d.year, []).append(d)
+        for check_year, year_dates in dates_by_year.items():
+            vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
+            year_hours_needed = float(absence_data.hours) * len(year_dates)
+            if year_hours_needed > vacation_account["remaining_hours"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Nicht genügend Urlaubstage für {check_year} ({vacation_account['remaining_days']:.1f} Tage verfügbar)"
+                )
 
     # If sick leave with vacation refund: remove overlapping vacation entries first
     refunded_vacation_dates = []
@@ -325,7 +326,8 @@ def create_absence(
         # not a caller-supplied value. For daily-schedule users, use their per-weekday
         # target; for standard users, derive from weekly_hours / work_days_per_week.
         if absence_data.type == AbsenceType.SICK or getattr(target_user, 'use_daily_schedule', False):
-            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date))
+            weekly = calculation_service.get_weekly_hours_for_date(db, target_user, date)
+            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, weekly_hours=weekly))
             if hours_for_day == 0:
                 continue  # Skip days with 0 scheduled hours
         else:
