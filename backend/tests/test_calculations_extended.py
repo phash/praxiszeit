@@ -260,8 +260,8 @@ def test_monthly_target_training_does_not_reduce(db, test_user):
     assert target_with == target_without
 
 
-def test_monthly_target_with_overtime_absence_reduces(db, test_user):
-    """OVERTIME-Abwesenheit reduziert Soll."""
+def test_monthly_target_with_overtime_absence_unchanged(db, test_user):
+    """OVERTIME-Abwesenheit lässt Soll unverändert – Überstundenkonto sinkt durch 0h Ist."""
     target_without = calculation_service.get_monthly_target(db, test_user, 2026, 3)
     absence = Absence(
         user_id=test_user.id,
@@ -273,7 +273,7 @@ def test_monthly_target_with_overtime_absence_reduces(db, test_user):
     db.add(absence)
     db.commit()
     target_with = calculation_service.get_monthly_target(db, test_user, 2026, 3)
-    assert target_with == target_without - Decimal('8.00')
+    assert target_with == target_without
 
 
 # ============================================================
