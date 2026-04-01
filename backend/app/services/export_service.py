@@ -93,15 +93,16 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
 
     # Get data
     _, last_day = monthrange(year, month)
-    daily_target = calculation_service.get_daily_target(user)
 
-    # Get all time entries for the month
+    # Get all time entries for the month (list-based: multiple entries per day)
     time_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
         extract('year', TimeEntry.date) == year,
         extract('month', TimeEntry.date) == month
-    ).all()
-    entries_by_date = {entry.date: entry for entry in time_entries}
+    ).order_by(TimeEntry.start_time).all()
+    entries_by_date: dict = {}
+    for entry in time_entries:
+        entries_by_date.setdefault(entry.date, []).append(entry)
 
     # Get all absences for the month
     absences = db.query(Absence).filter(
@@ -145,40 +146,51 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # Weekday column
         sheet.cell(row=row, column=2).value = weekday_name
 
-        # Get time entry if exists
-        entry = entries_by_date.get(current_date)
+        # Get time entries if exist (may be multiple per day)
+        day_entries = entries_by_date.get(current_date, [])
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
-        is_night_wrk = (entry is not None and entry.end_time is not None
-                        and is_night_work(entry.start_time, entry.end_time))
+        is_night_wrk = any(
+            e.end_time is not None and is_night_work(e.start_time, e.end_time)
+            for e in day_entries
+        )
         if is_night_wrk:
             night_work_count += 1
 
-        if entry:
-            sheet.cell(row=row, column=3).value = entry.start_time.strftime('%H:%M')
-            sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
-            sheet.cell(row=row, column=5).value = entry.break_minutes
-            sheet.cell(row=row, column=6).value = float(entry.net_hours)
+        if day_entries:
+            first_start = day_entries[0].start_time
+            last_end = day_entries[-1].end_time
+            total_break = sum(e.break_minutes or 0 for e in day_entries)
+            total_day_net = sum(e.net_hours for e in day_entries)
+            sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
+            sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
+            sheet.cell(row=row, column=5).value = total_break
+            sheet.cell(row=row, column=6).value = float(total_day_net)
             sheet.cell(row=row, column=6).number_format = '0.00'
             # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
             bemerkung_parts = []
-            if entry.sunday_exception_reason and (is_sunday or is_holiday):
-                bemerkung_parts.append(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}")
-            if entry.note:
-                bemerkung_parts.append(entry.note)
+            for e in day_entries:
+                if e.sunday_exception_reason and (is_sunday or is_holiday):
+                    bemerkung_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
+                if e.note:
+                    bemerkung_parts.append(e.note)
             if bemerkung_parts:
                 sheet.cell(row=row, column=10).value = " | ".join(bemerkung_parts)
-            net = entry.net_hours
+            net = total_day_net
             total_net += net
         else:
             net = Decimal('0.00')
             sheet.cell(row=row, column=6).value = 0.00
             sheet.cell(row=row, column=6).number_format = '0.00'
 
+        # Per-day target using historical weekly hours
+        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if is_weekend:
             target = Decimal('0.00')
-            if is_sunday and entry:
+            if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
             elif is_sunday:
                 abw = "Sonntag"
@@ -192,7 +204,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         elif is_holiday:
             target = Decimal('0.00')
             holiday = holidays_by_date[current_date]
-            if entry:
+            if day_entries:
                 abw = f"Feiertagsarbeit: {holiday.name} (§9/§10 ArbZG)"
             else:
                 abw = f"Feiertag: {holiday.name}"
@@ -213,6 +225,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                     "vacation": "Urlaub",
                     "sick": "Krank",
                     "training": "Fortbildung",
+                    "overtime": "Überstundenausgleich",
                     "other": "Sonstiges"
                 }
                 type_name = absence_type_map.get(absence.type.value, absence.type.value)
@@ -391,7 +404,7 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         # Vacation account
         vacation_account = calculation_service.get_vacation_account(db, user, year)
 
-        # Sick days
+        # Sick days (uses current daily target for hours-to-days conversion — approximate)
         daily_target = calculation_service.get_daily_target(user)
         if daily_target == 0:
             daily_target = Decimal('8.0')
@@ -471,6 +484,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
     # Data rows
     row = 4
     for user in users:
+        # Uses current daily target for hours-to-days conversion — approximate for display
         daily_target = calculation_service.get_daily_target(user)
         if daily_target == 0:
             daily_target = Decimal('8.0')
@@ -577,12 +591,14 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         cell.fill = PatternFill(start_color="CCE5FF", end_color="CCE5FF", fill_type="solid")
         cell.alignment = Alignment(horizontal="center")
 
-    # Get all time entries for the year
+    # Get all time entries for the year (list-based: multiple entries per day)
     time_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
         extract('year', TimeEntry.date) == year
-    ).all()
-    entries_by_date = {entry.date: entry for entry in time_entries}
+    ).order_by(TimeEntry.start_time).all()
+    entries_by_date: dict = {}
+    for entry in time_entries:
+        entries_by_date.setdefault(entry.date, []).append(entry)
 
     # Get all absences for the year
     absences = db.query(Absence).filter(
@@ -641,29 +657,36 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         sheet.cell(row=row, column=1).number_format = 'DD.MM.YYYY'
         sheet.cell(row=row, column=2).value = weekday_name
 
-        entry = entries_by_date.get(current_date)
+        day_entries = entries_by_date.get(current_date, [])
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
-        is_night_wrk = (entry is not None and entry.end_time is not None
-                        and is_night_work(entry.start_time, entry.end_time))
+        is_night_wrk = any(
+            e.end_time is not None and is_night_work(e.start_time, e.end_time)
+            for e in day_entries
+        )
         if is_night_wrk:
             night_work_count += 1
 
-        if entry:
-            sheet.cell(row=row, column=3).value = entry.start_time.strftime('%H:%M')
-            sheet.cell(row=row, column=4).value = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
-            sheet.cell(row=row, column=5).value = entry.break_minutes
-            sheet.cell(row=row, column=6).value = float(entry.net_hours)
+        if day_entries:
+            first_start = day_entries[0].start_time
+            last_end = day_entries[-1].end_time
+            total_break = sum(e.break_minutes or 0 for e in day_entries)
+            total_day_net = sum(e.net_hours for e in day_entries)
+            sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
+            sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
+            sheet.cell(row=row, column=5).value = total_break
+            sheet.cell(row=row, column=6).value = float(total_day_net)
             sheet.cell(row=row, column=6).number_format = '0.00'
             # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
             bemerkung_parts = []
-            if entry.sunday_exception_reason and (is_sunday or is_holiday):
-                bemerkung_parts.append(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}")
-            if entry.note:
-                bemerkung_parts.append(entry.note)
+            for e in day_entries:
+                if e.sunday_exception_reason and (is_sunday or is_holiday):
+                    bemerkung_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
+                if e.note:
+                    bemerkung_parts.append(e.note)
             if bemerkung_parts:
                 sheet.cell(row=row, column=10).value = " | ".join(bemerkung_parts)
-            net = entry.net_hours
+            net = total_day_net
             total_net += net
         else:
             net = Decimal('0.00')
@@ -671,12 +694,12 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             sheet.cell(row=row, column=6).number_format = '0.00'
 
         weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
-        daily_target = calculation_service.get_daily_target(user, weekly_hours)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if is_weekend:
             target = Decimal('0.00')
-            if is_sunday and entry:
+            if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
             elif is_sunday:
                 abw = "Sonntag"
@@ -690,7 +713,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         elif is_holiday:
             target = Decimal('0.00')
             holiday = holidays_by_date[current_date]
-            if entry:
+            if day_entries:
                 abw = f"Feiertagsarbeit: {holiday.name} (§9/§10 ArbZG)"
             else:
                 abw = f"Feiertag: {holiday.name}"
@@ -709,6 +732,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                     "vacation": "Urlaub",
                     "sick": "Krank",
                     "training": "Fortbildung",
+                    "overtime": "Überstundenausgleich",
                     "other": "Sonstiges"
                 }
                 type_name = absence_type_map.get(absence.type.value, absence.type.value)
@@ -1019,7 +1043,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=16, column=col).value = night_days
         sheet.cell(row=16, column=col).alignment = center_align
 
-    # Add daily hours info in corner (like in original)
+    # Add daily hours info in corner (current value — informational)
     sheet.cell(row=6, column=17).value = "tägl. Std:"
     sheet.cell(row=6, column=17).font = normal_font
     daily_hours = calculation_service.get_daily_target(user)
@@ -1097,7 +1121,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     # Landscape A4: 297mm − 30mm margins = 267mm usable
     col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 16*mm, 14*mm, 16*mm, 74*mm, 74*mm]
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-    absence_type_map = {"vacation": "Urlaub", "sick": "Krank", "training": "Fortbildung", "other": "Sonstiges"}
+    absence_type_map = {"vacation": "Urlaub", "sick": "Krank", "training": "Fortbildung", "overtime": "Überstundenausgleich", "other": "Sonstiges"}
 
     story = []
 
@@ -1122,14 +1146,15 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
         # ── Fetch data ──
         _, last_day = monthrange(year, month)
-        daily_target = calculation_service.get_daily_target(user)
 
         time_entries = db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
             extract('year', TimeEntry.date) == year,
             extract('month', TimeEntry.date) == month,
-        ).all()
-        entries_by_date = {e.date: e for e in time_entries}
+        ).order_by(TimeEntry.start_time).all()
+        entries_by_date: dict = {}
+        for te in time_entries:
+            entries_by_date.setdefault(te.date, []).append(te)
 
         absences = db.query(Absence).filter(
             Absence.user_id == user.id,
@@ -1162,34 +1187,43 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             is_sunday = wd == 6
             is_holiday = cur in holidays_by_date
             absence = absences_by_date.get(cur)
-            entry = entries_by_date.get(cur)
+            day_entries = entries_by_date.get(cur, [])
 
-            is_night = (entry is not None and entry.end_time is not None
-                        and is_night_work(entry.start_time, entry.end_time))
+            is_night = any(
+                e.end_time is not None and is_night_work(e.start_time, e.end_time)
+                for e in day_entries
+            )
             if is_night:
                 night_work_count += 1
 
-            if entry:
-                von = entry.start_time.strftime('%H:%M')
-                bis = entry.end_time.strftime('%H:%M') if entry.end_time else 'offen'
-                pause_str = str(entry.break_minutes or 0)
-                netto_val = float(entry.net_hours)
-                net = entry.net_hours
+            if day_entries:
+                von = day_entries[0].start_time.strftime('%H:%M')
+                last_end = day_entries[-1].end_time
+                bis = last_end.strftime('%H:%M') if last_end else 'offen'
+                pause_str = str(sum(e.break_minutes or 0 for e in day_entries))
+                total_day_net = sum(e.net_hours for e in day_entries)
+                netto_val = float(total_day_net)
+                net = total_day_net
                 total_net += net
                 bem_parts = []
-                if entry.sunday_exception_reason and (is_sunday or is_holiday):
-                    bem_parts.append(f"\u00a710: {entry.sunday_exception_reason}")
-                if entry.note:
-                    bem_parts.append(entry.note)
+                for e in day_entries:
+                    if e.sunday_exception_reason and (is_sunday or is_holiday):
+                        bem_parts.append(f"\u00a710: {e.sunday_exception_reason}")
+                    if e.note:
+                        bem_parts.append(e.note)
                 bem = " | ".join(bem_parts)
             else:
                 von = bis = pause_str = bem = ''
                 netto_val = 0.0
                 net = Decimal('0.00')
 
+            # Per-day target using historical weekly hours
+            weekly_h = calculation_service.get_weekly_hours_for_date(db, user, cur)
+            daily_target = calculation_service.get_daily_target_for_date(user, cur, weekly_hours=weekly_h)
+
             if is_weekend:
                 target = Decimal('0.00')
-                if is_sunday and entry:
+                if is_sunday and day_entries:
                     abw = 'Sonntagsarbeit (\u00a79/\u00a710)'
                 elif is_sunday:
                     abw = 'Sonntag'
@@ -1201,7 +1235,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             elif is_holiday:
                 target = Decimal('0.00')
                 hname = holidays_by_date[cur].name
-                abw = f"Feiertagsarbeit: {hname}" if entry else f"Feiertag: {hname}"
+                abw = f"Feiertagsarbeit: {hname}" if day_entries else f"Feiertag: {hname}"
                 if is_night:
                     abw += ' | Nachtarbeit'
                 bg = colors.HexColor('#FFFFCC')

@@ -58,6 +58,7 @@ def _get_missing_bookings_for_user(db: Session, user: User) -> List[MissingBooki
     absence_dates = set()
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.date >= start_date,
         Absence.date <= end_date,
     ).all()
     for absence in absences:

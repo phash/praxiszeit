@@ -89,11 +89,15 @@ def get_monthly_report(
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
 
+        # Use weekly_hours valid at start of report month, not current value
+        report_date = date(year, month_num, 1)
+        hist_weekly = calculation_service.get_weekly_hours_for_date(db, user, report_date)
+
         reports.append(EmployeeMonthlyReport(
             user_id=str(user.id),
             first_name=user.first_name,
             last_name=user.last_name,
-            weekly_hours=float(user.weekly_hours),
+            weekly_hours=float(hist_weekly),
             target_hours=float(target),
             actual_hours=float(actual),
             balance=float(balance),
@@ -137,7 +141,9 @@ def get_yearly_absences(
     results = []
 
     for user in users:
-        # Get daily target hours for this user
+        # Uses current daily target for hours-to-days conversion — approximate for display.
+        # The hour totals are always exact; only the "days" column is an approximation
+        # when weekly_hours changed during the year.
         daily_target = calculation_service.get_daily_target(user)
 
         # If daily_target is 0, we can't calculate days
