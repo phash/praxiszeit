@@ -34,6 +34,7 @@ ABSENCE_LABELS = {
     "vacation": "Urlaub",
     "sick": "Krank",
     "training": "Fortbildung",
+    "overtime": "Überstundenausgleich",
     "other": "Sonstiges",
 }
 
@@ -147,16 +148,14 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     table.addElement(_header_row(headers, bold))
 
     _, last_day = monthrange(year, month)
-    daily_target = calculation_service.get_daily_target(user)
 
-    entries_by_date = {
-        e.date: e
-        for e in db.query(TimeEntry).filter(
-            TimeEntry.user_id == user.id,
-            extract("year", TimeEntry.date) == year,
-            extract("month", TimeEntry.date) == month,
-        ).all()
-    }
+    entries_by_date: dict = {}
+    for e in db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        extract("year", TimeEntry.date) == year,
+        extract("month", TimeEntry.date) == month,
+    ).order_by(TimeEntry.start_time).all():
+        entries_by_date.setdefault(e.date, []).append(e)
     absences_by_date = {
         a.date: a
         for a in db.query(Absence).filter(
@@ -184,11 +183,13 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         is_weekend = weekday >= 5
         is_holiday = current_date in holidays_by_date
         absence = absences_by_date.get(current_date)
-        entry = entries_by_date.get(current_date)
+        day_entries = entries_by_date.get(current_date, [])
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
-        is_night_wrk = (entry is not None and entry.end_time is not None
-                        and is_night_work(entry.start_time, entry.end_time))
+        is_night_wrk = any(
+            e.end_time is not None and is_night_work(e.start_time, e.end_time)
+            for e in day_entries
+        )
         if is_night_wrk:
             night_work_count += 1
 
@@ -196,12 +197,16 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         tr.addElement(_str_cell(current_date.strftime("%d.%m.%Y")))
         tr.addElement(_str_cell(WEEKDAY_NAMES[weekday]))
 
-        if entry:
-            tr.addElement(_str_cell(entry.start_time.strftime("%H:%M")))
-            tr.addElement(_str_cell(entry.end_time.strftime("%H:%M") if entry.end_time else "offen"))
-            tr.addElement(_int_cell(entry.break_minutes or 0))
-            tr.addElement(_float_cell(float(entry.net_hours)))
-            net = entry.net_hours
+        if day_entries:
+            first_start = day_entries[0].start_time
+            last_end = day_entries[-1].end_time
+            total_break = sum(e.break_minutes or 0 for e in day_entries)
+            total_day_net = sum(e.net_hours for e in day_entries)
+            tr.addElement(_str_cell(first_start.strftime("%H:%M")))
+            tr.addElement(_str_cell(last_end.strftime("%H:%M") if last_end else "offen"))
+            tr.addElement(_int_cell(total_break))
+            tr.addElement(_float_cell(float(total_day_net)))
+            net = total_day_net
             total_net += net
         else:
             tr.addElement(_empty_cell())
@@ -210,10 +215,14 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(0.0))
             net = Decimal("0.00")
 
+        # Per-day target using historical weekly hours
+        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+
         # Soll + Abwesenheit + Bemerkung
         if is_weekend:
             target = Decimal("0.00")
-            if is_sunday and entry:
+            if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
             elif is_sunday:
                 abw = "Sonntag"
@@ -225,16 +234,17 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(abw))
             # Bemerkung: §10-Ausnahmegrund wenn vorhanden
-            if entry and entry.sunday_exception_reason:
-                tr.addElement(_str_cell(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}"))
-            elif entry and entry.note:
-                tr.addElement(_str_cell(entry.note))
-            else:
-                tr.addElement(_empty_cell())
+            bem_parts = []
+            for e in day_entries:
+                if e.sunday_exception_reason:
+                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
+                elif e.note:
+                    bem_parts.append(e.note)
+            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif is_holiday:
             target = Decimal("0.00")
             holiday = holidays_by_date[current_date]
-            if entry:
+            if day_entries:
                 abw = f"Feiertagsarbeit: {holiday.name} (§9/§10 ArbZG)"
             else:
                 abw = f"Feiertag: {holiday.name}"
@@ -243,13 +253,13 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(abw))
-            # Bemerkung: §10-Ausnahmegrund wenn vorhanden (holiday.name ist jetzt in col 9)
-            bemerkung_parts = []
-            if entry and entry.sunday_exception_reason:
-                bemerkung_parts.append(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}")
-            if entry and entry.note:
-                bemerkung_parts.append(entry.note)
-            tr.addElement(_str_cell(" | ".join(bemerkung_parts) if bemerkung_parts else ""))
+            bem_parts = []
+            for e in day_entries:
+                if e.sunday_exception_reason:
+                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
+                if e.note:
+                    bem_parts.append(e.note)
+            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif absence:
             target = Decimal("0.00")
             # DSGVO F-003: mask sick absences unless health data explicitly requested
@@ -270,7 +280,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(diff))
             abw = "Nachtarbeit (§6 ArbZG)" if is_night_wrk else ""
             tr.addElement(_str_cell(abw))
-            tr.addElement(_str_cell(entry.note if entry and entry.note else ""))
+            notes = " | ".join(e.note for e in day_entries if e.note)
+            tr.addElement(_str_cell(notes))
 
         total_target += target
         table.addElement(tr)
@@ -383,6 +394,7 @@ def _absences_overview_sheet(doc, db, users, year, bold):
     table.addElement(_header_row(headers, bold))
 
     for user in users:
+        # Uses current daily target for hours-to-days conversion — approximate for display
         dt = float(calculation_service.get_daily_target(user)) or 8.0
 
         def days(atype):
@@ -435,13 +447,12 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
     ]
     table.addElement(_header_row(headers, bold))
 
-    entries_by_date = {
-        e.date: e
-        for e in db.query(TimeEntry).filter(
-            TimeEntry.user_id == user.id,
-            extract("year", TimeEntry.date) == year,
-        ).all()
-    }
+    entries_by_date: dict = {}
+    for e in db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        extract("year", TimeEntry.date) == year,
+    ).order_by(TimeEntry.start_time).all():
+        entries_by_date.setdefault(e.date, []).append(e)
     absences_by_date = {
         a.date: a
         for a in db.query(Absence).filter(
@@ -466,12 +477,15 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
         is_weekend = weekday >= 5
         is_holiday = current_date in holidays_by_date
         absence = absences_by_date.get(current_date)
-        entry = entries_by_date.get(current_date)
-        daily_target = calculation_service.get_weekly_hours_for_date(db, user, current_date) / 5
+        day_entries = entries_by_date.get(current_date, [])
+        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
-        is_night_wrk = (entry is not None and entry.end_time is not None
-                        and is_night_work(entry.start_time, entry.end_time))
+        is_night_wrk = any(
+            e.end_time is not None and is_night_work(e.start_time, e.end_time)
+            for e in day_entries
+        )
         if is_night_wrk:
             night_work_count += 1
 
@@ -479,12 +493,16 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
         tr.addElement(_str_cell(current_date.strftime("%d.%m.%Y")))
         tr.addElement(_str_cell(WEEKDAY_NAMES[weekday]))
 
-        if entry:
-            tr.addElement(_str_cell(entry.start_time.strftime("%H:%M")))
-            tr.addElement(_str_cell(entry.end_time.strftime("%H:%M") if entry.end_time else "offen"))
-            tr.addElement(_int_cell(entry.break_minutes or 0))
-            tr.addElement(_float_cell(float(entry.net_hours)))
-            net = float(entry.net_hours)
+        if day_entries:
+            first_start = day_entries[0].start_time
+            last_end = day_entries[-1].end_time
+            total_break = sum(e.break_minutes or 0 for e in day_entries)
+            total_day_net = sum(float(e.net_hours) for e in day_entries)
+            tr.addElement(_str_cell(first_start.strftime("%H:%M")))
+            tr.addElement(_str_cell(last_end.strftime("%H:%M") if last_end else "offen"))
+            tr.addElement(_int_cell(total_break))
+            tr.addElement(_float_cell(total_day_net))
+            net = total_day_net
         else:
             tr.addElement(_empty_cell())
             tr.addElement(_empty_cell())
@@ -493,7 +511,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
             net = 0.0
 
         if is_weekend:
-            if is_sunday and entry:
+            if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
             elif is_sunday:
                 abw = "Sonntag"
@@ -504,15 +522,16 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(abw))
-            if entry and entry.sunday_exception_reason:
-                tr.addElement(_str_cell(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}"))
-            elif entry and entry.note:
-                tr.addElement(_str_cell(entry.note))
-            else:
-                tr.addElement(_empty_cell())
+            bem_parts = []
+            for e in day_entries:
+                if e.sunday_exception_reason:
+                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
+                elif e.note:
+                    bem_parts.append(e.note)
+            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif is_holiday:
             holiday = holidays_by_date[current_date]
-            if entry:
+            if day_entries:
                 abw = f"Feiertagsarbeit: {holiday.name} (§9/§10 ArbZG)"
             else:
                 abw = f"Feiertag: {holiday.name}"
@@ -521,12 +540,13 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(abw))
-            bemerkung_parts = []
-            if entry and entry.sunday_exception_reason:
-                bemerkung_parts.append(f"§10-Ausnahmegrund: {entry.sunday_exception_reason}")
-            if entry and entry.note:
-                bemerkung_parts.append(entry.note)
-            tr.addElement(_str_cell(" | ".join(bemerkung_parts) if bemerkung_parts else ""))
+            bem_parts = []
+            for e in day_entries:
+                if e.sunday_exception_reason:
+                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
+                if e.note:
+                    bem_parts.append(e.note)
+            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif absence:
             label = ABSENCE_LABELS.get(absence.type.value, absence.type.value)
             tr.addElement(_float_cell(0.0))
@@ -539,7 +559,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
             tr.addElement(_float_cell(net - target))
             abw = "Nachtarbeit (§6 ArbZG)" if is_night_wrk else ""
             tr.addElement(_str_cell(abw))
-            tr.addElement(_str_cell(entry.note if entry and entry.note else ""))
+            notes = " | ".join(e.note for e in day_entries if e.note)
+            tr.addElement(_str_cell(notes))
 
         table.addElement(tr)
         current_date += timedelta(days=1)
