@@ -7,9 +7,10 @@ from uuid import UUID
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, UserRole
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, UserRole, TimeEntry
 from app.schemas.absence import AbsenceResponse
 from app.services import calculation_service
+from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/company-closures", tags=["company-closures"])
 
@@ -114,13 +115,27 @@ def create_closure(
     affected = 0
     for employee in employees:
         for workday in workdays:
-            # Skip if vacation already exists for this day
+            # Skip if any absence already exists for this day (not just vacation)
             existing = db.query(Absence).filter(
                 Absence.user_id == employee.id,
                 Absence.date == workday,
-                Absence.type == AbsenceType.VACATION
             ).first()
             if not existing:
+                # Delete existing time entries on this day with audit log
+                te_entries = db.query(TimeEntry).filter(
+                    TimeEntry.user_id == employee.id,
+                    TimeEntry.tenant_id == current_user.tenant_id,
+                    TimeEntry.date == workday,
+                ).all()
+                for entry in te_entries:
+                    _create_audit_log(
+                        db, entry.id, employee.id, current_user.id,
+                        action="delete", old_entry=entry,
+                        source="company_closure",
+                        tenant_id=current_user.tenant_id,
+                    )
+                    db.delete(entry)
+
                 absence = Absence(
                     user_id=employee.id,
                     tenant_id=current_user.tenant_id,
