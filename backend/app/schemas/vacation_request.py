@@ -9,6 +9,15 @@ class VacationRequestCreate(BaseModel):
     end_date: Optional[date] = None
     hours: float
     note: Optional[str] = None
+    absence_type: Optional[str] = "vacation"
+
+    @field_validator('absence_type')
+    @classmethod
+    def validate_absence_type(cls, v):
+        allowed = {"vacation", "training", "overtime", "other"}
+        if v not in allowed:
+            raise ValueError(f'absence_type muss einer von {allowed} sein')
+        return v
 
     @field_validator('end_date')
     @classmethod
@@ -30,6 +39,7 @@ class VacationRequestResponse(BaseModel):
     end_date: Optional[date] = None
     hours: float
     days: Optional[float] = None  # Number of workdays (excluding weekends/holidays)
+    absence_type: str = "vacation"
     note: Optional[str] = None
     status: str
     rejection_reason: Optional[str] = None

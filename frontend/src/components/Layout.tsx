@@ -149,7 +149,7 @@ export default function Layout() {
     { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar, badge: 0 },
     { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText, badge: 0 },
     { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle, badge: 0 },
-    { path: '/admin/vacation-approvals', label: 'Urlaubsanträge', icon: ClipboardCheck, badge: 0 },
+    { path: '/admin/vacation-approvals', label: 'Anträge', icon: ClipboardCheck, badge: 0 },
     { path: '/admin/import', label: 'Import', icon: Upload, badge: 0 },
     { path: '/admin/settings', label: 'Einstellungen', icon: Settings, badge: 0 },
   ];

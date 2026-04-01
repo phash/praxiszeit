@@ -5,12 +5,13 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from app.database import get_db
-from app.models import User, Absence, PublicHoliday, AbsenceType
+from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview
 from app.services import calculation_service
 from app.services.calculation_service import count_workdays
+from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -104,8 +105,30 @@ def review_vacation_request(
     if not target_user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
+    # Determine absence type from the request
+    absence_type_str = vr.absence_type or "vacation"
+    try:
+        absence_type = AbsenceType(absence_type_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ungültiger Abwesenheitstyp: {absence_type_str}",
+        )
+
     start_date = vr.date
     end_date = vr.end_date if vr.end_date else vr.date
+
+    # Validate against employment period
+    if target_user.first_work_day and start_date < target_user.first_work_day:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Datum liegt vor dem ersten Arbeitstag ({target_user.first_work_day.strftime('%d.%m.%Y')})",
+        )
+    if target_user.last_work_day and end_date > target_user.last_work_day:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Datum liegt nach dem letzten Arbeitstag ({target_user.last_work_day.strftime('%d.%m.%Y')})",
+        )
 
     # Collect affected years for holidays
     years = set()
@@ -130,34 +153,51 @@ def review_vacation_request(
     if not dates_to_create:
         raise HTTPException(status_code=400, detail="Keine gültigen Arbeitstage im Zeitraum")
 
-    # Check for existing vacation absences on those days
+    # Check for existing absences of the same type on those days
     for d in dates_to_create:
         existing = db.query(Absence).filter(
             Absence.user_id == target_user.id,
             Absence.date == d,
-            Absence.type == AbsenceType.VACATION,
+            Absence.type == absence_type,
         ).first()
         if existing:
             raise HTTPException(
                 status_code=400,
-                detail=f"Es existiert bereits ein Urlaubseintrag am {d.strftime('%d.%m.%Y')}",
+                detail=f"Es existiert bereits ein {absence_type_str}-Eintrag am {d.strftime('%d.%m.%Y')}",
             )
 
-    # Check vacation budget (per-day hours via calculation_service)
-    vacation_account = calculation_service.get_vacation_account(db, target_user, start_date.year)
-    total_hours_needed = sum(
-        float(calculation_service.get_daily_target_for_date(target_user, d))
-        for d in dates_to_create
-    )
-    if float(vacation_account['remaining_hours']) - total_hours_needed < 0:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Urlaubstage überschritten: Verfügbares Guthaben "
-                f"({float(vacation_account['remaining_hours']):.1f}h) reicht nicht für die "
-                f"beantragten Tage ({float(total_hours_needed):.1f}h)."
-            ),
+    # Check vacation budget only for VACATION type
+    if absence_type == AbsenceType.VACATION:
+        vacation_account = calculation_service.get_vacation_account(db, target_user, start_date.year)
+        total_hours_needed = sum(
+            float(calculation_service.get_daily_target_for_date(target_user, d))
+            for d in dates_to_create
         )
+        if float(vacation_account['remaining_hours']) - total_hours_needed < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Urlaubstage überschritten: Verfügbares Guthaben "
+                    f"({float(vacation_account['remaining_hours']):.1f}h) reicht nicht für die "
+                    f"beantragten Tage ({float(total_hours_needed):.1f}h)."
+                ),
+            )
+
+    # Delete existing time entries on the affected dates (Fall 2: overwrite)
+    # Log deletions for audit trail, then bulk-delete with tenant scope
+    existing_entries = db.query(TimeEntry).filter(
+        TimeEntry.user_id == target_user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,
+        TimeEntry.date.in_(dates_to_create),
+    ).all()
+    for entry in existing_entries:
+        _create_audit_log(
+            db, entry.id, target_user.id, current_user.id,
+            action="delete", old_entry=entry,
+            source="absence_request_approval",
+            tenant_id=current_user.tenant_id,
+        )
+        db.delete(entry)
 
     # Create absence entries
     for d in dates_to_create:
@@ -173,7 +213,7 @@ def review_vacation_request(
             tenant_id=current_user.tenant_id,
             date=d,
             end_date=vr.end_date,
-            type=AbsenceType.VACATION,
+            type=absence_type,
             hours=hours_for_day,
             note=vr.note,
         )

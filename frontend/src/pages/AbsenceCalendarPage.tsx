@@ -19,6 +19,7 @@ interface VacationRequest {
   end_date?: string;
   hours: number;
   days?: number;
+  absence_type?: string;
   note?: string;
   status: string;
   rejection_reason?: string;
@@ -170,15 +171,16 @@ export default function AbsenceCalendarPage() {
 
   const doSubmit = async (refundVacation: boolean) => {
     try {
-      // If vacation and approval required: create a vacation request instead
-      if (formData.type === 'vacation' && vacationApprovalRequired) {
+      // If approval required and not sick leave: create an absence request instead
+      if (formData.type !== 'sick' && vacationApprovalRequired) {
         await apiClient.post('/vacation-requests', {
           date: formData.date,
           end_date: isDateRange && formData.end_date ? formData.end_date : null,
           hours: formData.hours,
+          absence_type: formData.type,
           note: formData.note || null,
         });
-        toast.success('Urlaubsantrag gestellt – wartet auf Genehmigung');
+        toast.success('Antrag gestellt – wartet auf Genehmigung');
         fetchMyVacationRequests();
         setShowForm(false);
         setIsDateRange(false);
@@ -325,7 +327,7 @@ export default function AbsenceCalendarPage() {
         <div className="space-y-4">
           {myVacationRequests.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-              <EmptyState icon={Clock} title="Keine Urlaubsanträge vorhanden" />
+              <EmptyState icon={Clock} title="Keine Anträge vorhanden" />
             </div>
           ) : (
             myVacationRequests.map((vr) => {
@@ -340,6 +342,11 @@ export default function AbsenceCalendarPage() {
                           <StatusIcon size={14} className="mr-1" />
                           {cfg.label}
                         </span>
+                        {vr.absence_type && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ABSENCE_TYPE_COLORS[vr.absence_type as AbsenceType] || 'bg-gray-100 text-gray-800'}`}>
+                            {ABSENCE_TYPE_LABELS[vr.absence_type as AbsenceType] || vr.absence_type}
+                          </span>
+                        )}
                         <span className="text-xs text-gray-500">
                           Gestellt: {format(new Date(vr.created_at), 'dd.MM.yyyy HH:mm')}
                         </span>
@@ -356,7 +363,7 @@ export default function AbsenceCalendarPage() {
                         onClick={() =>
                           confirm({
                             title: 'Antrag zurückziehen',
-                            message: 'Urlaubsantrag wirklich zurückziehen?',
+                            message: 'Antrag wirklich zurückziehen?',
                             confirmLabel: 'Zurückziehen',
                             variant: 'danger',
                             onConfirm: async () => {
