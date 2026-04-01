@@ -118,6 +118,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [addingDate, setAddingDate] = useState<string | null>(null); // separate state for adding new entry
   const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0', entryType: 'work', absenceHours: '8' });
   const [saving, setSaving] = useState(false);
@@ -150,12 +151,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const isNonWorkDay = (day: JournalDay) =>
     day.type === 'weekend' || day.type === 'holiday';
 
-  function startEdit(day: JournalDay) {
-    const entry = day.time_entries[0] ?? null;
+  function startEdit(day: JournalDay, entryToEdit?: TimeEntryItem) {
+    const entry = entryToEdit ?? day.time_entries[0] ?? null;
     const absence = day.absences[0] ?? null;
     const hasTimeEntry = !!entry;
     const hasAbsence = !hasTimeEntry && !!absence;
     setEditingDate(day.date);
+    setEditingEntryId(entry?.id ?? null);
     setEditState({
       startTime: entry?.start_time ?? '',
       endTime: entry?.end_time ?? '',
@@ -179,6 +181,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
   function cancelEdit() {
     setEditingDate(null);
+    setEditingEntryId(null);
     setAddingDate(null);
     setSubmittingDate(null);
   }
@@ -225,8 +228,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       const switchingToWork = hadAbsence && editState.entryType === 'work';
 
       // Delete old entry if type changed
-      if (switchingToAbsence && day.time_entries[0]) {
-        await apiClient.delete(`/admin/time-entries/${day.time_entries[0].id}`);
+      const editedEntry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
+      if (switchingToAbsence && editedEntry) {
+        await apiClient.delete(`/admin/time-entries/${editedEntry.id}`);
       }
       if (switchingToWork && day.absences[0]) {
         await apiClient.delete(`/absences/${day.absences[0].id}`);
@@ -245,7 +249,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           end_time: end,
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
         };
-        const existing = !switchingToWork ? day.time_entries[0] : null;
+        const existing = !switchingToWork ? editedEntry : null;
         if (existing) {
           await apiClient.put(`/admin/time-entries/${existing.id}`, payload);
         } else {
@@ -277,7 +281,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   }
 
   function handleAdminDelete(day: JournalDay) {
-    const timeEntry = day.time_entries[0];
+    const timeEntry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
     const absence = day.absences[0];
     if (!timeEntry && !absence) return;
     confirm({
@@ -324,7 +328,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     }
     setSavingChangeRequest(true);
     try {
-      const existing = day.time_entries[0];
+      const existing = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
       const payload: Record<string, unknown> = {
         request_type: existing ? 'update' : 'create',
         reason: submitReason.trim(),
@@ -561,8 +565,22 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               )}
                             </div>
                           ) : !isGray && isPastDay(day.date) ? (
-                            <div className="flex items-center justify-end gap-0.5">
-                              {(day.time_entries.length > 0 || day.absences.length > 0) && (
+                            <div className="flex flex-col items-end">
+                              {day.time_entries.length > 0 ? (
+                                <div className="space-y-0.5">
+                                  {day.time_entries.map((e) => (
+                                    <div key={e.id} className="flex items-center justify-end gap-0.5">
+                                      <button
+                                        onClick={() => startEdit(day, e)}
+                                        className="p-1.5 text-gray-400 hover:text-gray-600"
+                                        title={`${e.start_time}–${e.end_time} bearbeiten`}
+                                      >
+                                        <Pencil size={13} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : day.absences.length > 0 ? (
                                 <button
                                   onClick={() => startEdit(day)}
                                   className="p-2 text-gray-400 hover:text-gray-600"
@@ -570,14 +588,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 >
                                   <Pencil size={14} />
                                 </button>
-                              )}
+                              ) : null}
                               {isAdminView && (
                                 <button
                                   onClick={() => startAdd(day)}
-                                  className="p-2 text-blue-400 hover:text-blue-600"
+                                  className="p-1.5 text-blue-400 hover:text-blue-600"
                                   title="Weiteren Eintrag hinzufügen"
                                 >
-                                  <Plus size={14} />
+                                  <Plus size={13} />
                                 </button>
                               )}
                               {!isAdminView && day.time_entries.length === 0 && day.absences.length === 0 && (
