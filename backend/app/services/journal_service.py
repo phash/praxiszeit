@@ -36,7 +36,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
         Absence.user_id == user.id,
         extract("year", Absence.date) == year,
         extract("month", Absence.date) == month,
-    ).all()
+    ).order_by(Absence.date, Absence.type).all()
 
     absences_by_date: Dict[date, List[Absence]] = {}
     for a in absences:
@@ -89,10 +89,14 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             if day_absences[0].type == AbsenceType.TRAINING:
                 actual_hours = absence_sum
                 target_hours = daily_target
+            elif day_absences[0].type == AbsenceType.SICK:
+                actual_hours = absence_sum
+                target_hours = daily_target
             elif day_absences[0].type == AbsenceType.OVERTIME:
                 actual_hours = Decimal("0")
                 target_hours = daily_target
             else:
+                # Vacation / other: balance = 0
                 actual_hours = absence_sum
                 target_hours = absence_sum
         elif day_entries and day_absences:
