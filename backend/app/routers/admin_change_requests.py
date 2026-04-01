@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, date, timedelta
 from app.database import get_db
-from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType
+from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType, Absence, AbsenceType
 from app.middleware.auth import require_admin
 from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
 from app.schemas.time_entry import TimeEntryResponse
@@ -101,96 +101,137 @@ def review_change_request(
 
     # Approve: validate preconditions BEFORE changing status
     entry = None
-    if cr.request_type == ChangeRequestType.CREATE:
-        duplicate = db.query(TimeEntry).filter(
-            TimeEntry.user_id == cr.user_id,
-            TimeEntry.date == cr.proposed_date,
-            TimeEntry.start_time == cr.proposed_start_time,
-        ).first()
-        if duplicate:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
-            )
-    elif cr.request_type == ChangeRequestType.UPDATE:
-        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
-        if not entry:
-            raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
-        # Check for unique constraint violation on date/start_time change
-        if cr.proposed_date != entry.date or cr.proposed_start_time != entry.start_time:
-            dup = db.query(TimeEntry).filter(
+    if cr.entry_kind != "absence":
+        if cr.request_type == ChangeRequestType.CREATE:
+            duplicate = db.query(TimeEntry).filter(
                 TimeEntry.user_id == cr.user_id,
                 TimeEntry.date == cr.proposed_date,
                 TimeEntry.start_time == cr.proposed_start_time,
-                TimeEntry.id != entry.id,
             ).first()
-            if dup:
+            if duplicate:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
                 )
+        elif cr.request_type == ChangeRequestType.UPDATE:
+            entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+            if not entry:
+                raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+            # Check for unique constraint violation on date/start_time change
+            if cr.proposed_date != entry.date or cr.proposed_start_time != entry.start_time:
+                dup = db.query(TimeEntry).filter(
+                    TimeEntry.user_id == cr.user_id,
+                    TimeEntry.date == cr.proposed_date,
+                    TimeEntry.start_time == cr.proposed_start_time,
+                    TimeEntry.id != entry.id,
+                ).first()
+                if dup:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
+                    )
 
-    elif cr.request_type == ChangeRequestType.DELETE:
-        entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
-        if not entry:
-            raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+        elif cr.request_type == ChangeRequestType.DELETE:
+            entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+            if not entry:
+                raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+
+    # Absence CR preconditions
+    absence = None
+    if cr.entry_kind == "absence":
+        if cr.request_type in (ChangeRequestType.UPDATE, ChangeRequestType.DELETE):
+            absence = db.query(Absence).filter(Absence.id == cr.absence_id).first()
+            if not absence:
+                raise HTTPException(status_code=404, detail="Abwesenheit nicht mehr vorhanden")
 
     # All preconditions met — now mark as approved
     cr.status = ChangeRequestStatus.APPROVED
     cr.reviewed_by = current_user.id
     cr.reviewed_at = datetime.now(timezone.utc)
 
-    if cr.request_type == ChangeRequestType.CREATE:
-        entry = TimeEntry(
-            user_id=cr.user_id,
-            tenant_id=current_user.tenant_id,
-            date=cr.proposed_date,
-            start_time=cr.proposed_start_time,
-            end_time=cr.proposed_end_time,
-            break_minutes=cr.proposed_break_minutes or 0,
-            note=cr.proposed_note,
-        )
-        db.add(entry)
-        db.flush()
-        cr.time_entry_id = entry.id
-        _create_audit_log(
-            db, entry.id, cr.user_id, current_user.id,
-            action="create", new_entry=entry,
-            source="change_request", change_request_id=cr.id,
-            tenant_id=current_user.tenant_id,
-        )
+    # TimeEntry CR actions
+    if cr.entry_kind != "absence":
+        if cr.request_type == ChangeRequestType.CREATE:
+            entry = TimeEntry(
+                user_id=cr.user_id,
+                tenant_id=current_user.tenant_id,
+                date=cr.proposed_date,
+                start_time=cr.proposed_start_time,
+                end_time=cr.proposed_end_time,
+                break_minutes=cr.proposed_break_minutes or 0,
+                note=cr.proposed_note,
+            )
+            db.add(entry)
+            db.flush()
+            cr.time_entry_id = entry.id
+            _create_audit_log(
+                db, entry.id, cr.user_id, current_user.id,
+                action="create", new_entry=entry,
+                source="change_request", change_request_id=cr.id,
+                tenant_id=current_user.tenant_id,
+            )
 
-    elif cr.request_type == ChangeRequestType.UPDATE:
-        # entry already fetched in precondition check above
-        _create_audit_log(
-            db, entry.id, cr.user_id, current_user.id,
-            action="update", old_entry=entry,
-            new_entry={
-                "date": cr.proposed_date,
-                "start_time": cr.proposed_start_time,
-                "end_time": cr.proposed_end_time,
-                "break_minutes": cr.proposed_break_minutes,
-                "note": cr.proposed_note,
-            },
-            source="change_request", change_request_id=cr.id,
-            tenant_id=current_user.tenant_id,
-        )
-        entry.date = cr.proposed_date
-        entry.start_time = cr.proposed_start_time
-        entry.end_time = cr.proposed_end_time
-        entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
-        if cr.proposed_note is not None:
-            entry.note = cr.proposed_note
+        elif cr.request_type == ChangeRequestType.UPDATE:
+            # entry already fetched in precondition check above
+            _create_audit_log(
+                db, entry.id, cr.user_id, current_user.id,
+                action="update", old_entry=entry,
+                new_entry={
+                    "date": cr.proposed_date,
+                    "start_time": cr.proposed_start_time,
+                    "end_time": cr.proposed_end_time,
+                    "break_minutes": cr.proposed_break_minutes,
+                    "note": cr.proposed_note,
+                },
+                source="change_request", change_request_id=cr.id,
+                tenant_id=current_user.tenant_id,
+            )
+            entry.date = cr.proposed_date
+            entry.start_time = cr.proposed_start_time
+            entry.end_time = cr.proposed_end_time
+            entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
+            if cr.proposed_note is not None:
+                entry.note = cr.proposed_note
 
-    elif cr.request_type == ChangeRequestType.DELETE:
-        # entry already fetched in precondition check above
-        _create_audit_log(
-            db, entry.id, cr.user_id, current_user.id,
-            action="delete", old_entry=entry,
-            source="change_request", change_request_id=cr.id,
-            tenant_id=current_user.tenant_id,
-        )
-        db.delete(entry)
+        elif cr.request_type == ChangeRequestType.DELETE:
+            # entry already fetched in precondition check above
+            _create_audit_log(
+                db, entry.id, cr.user_id, current_user.id,
+                action="delete", old_entry=entry,
+                source="change_request", change_request_id=cr.id,
+                tenant_id=current_user.tenant_id,
+            )
+            db.delete(entry)
+
+    # Absence CR actions
+    if cr.entry_kind == "absence":
+        if cr.request_type == ChangeRequestType.CREATE:
+            new_absence = Absence(
+                user_id=cr.user_id,
+                tenant_id=current_user.tenant_id,
+                date=cr.proposed_date,
+                type=AbsenceType(cr.proposed_absence_type),
+                hours=float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0,
+                start_time=cr.proposed_start_time,
+                end_time=cr.proposed_end_time,
+            )
+            db.add(new_absence)
+            db.flush()
+            cr.absence_id = new_absence.id
+
+        elif cr.request_type == ChangeRequestType.UPDATE:
+            # absence already fetched in precondition check above
+            if cr.proposed_absence_type:
+                absence.type = AbsenceType(cr.proposed_absence_type)
+            if cr.proposed_absence_hours is not None:
+                absence.hours = float(cr.proposed_absence_hours)
+            if cr.proposed_date:
+                absence.date = cr.proposed_date
+            absence.start_time = cr.proposed_start_time
+            absence.end_time = cr.proposed_end_time
+
+        elif cr.request_type == ChangeRequestType.DELETE:
+            db.delete(absence)
 
     db.commit()
     db.refresh(cr)
