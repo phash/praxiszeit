@@ -71,7 +71,7 @@ function getDateRange(range: TimeRange): { from: string; to: string } {
 }
 
 function formatDateDE(dateStr: string): string {
-  return format(new Date(dateStr + 'T00:00:00'), 'dd.MM.yyyy');
+  return format(new Date(dateStr + 'T12:00:00'), 'dd.MM.yyyy');
 }
 
 export default function AdminChangeRequests() {
@@ -89,9 +89,9 @@ export default function AdminChangeRequests() {
 
   useEffect(() => {
     apiClient.get('/admin/users').then(res => {
-      const sorted = res.data
-        .filter((u: any) => !u.hidden)
-        .sort((a: any, b: any) => a.last_name.localeCompare(b.last_name));
+      const sorted = (res.data as UserOption[])
+        .filter((u) => !(u as any).hidden)
+        .sort((a, b) => a.last_name.localeCompare(b.last_name));
       setUsers(sorted);
     }).catch(() => {});
   }, []);
