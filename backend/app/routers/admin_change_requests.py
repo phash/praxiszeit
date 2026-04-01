@@ -15,6 +15,8 @@ from app.routers.time_entries import (
     MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 from app.services.arbzg_utils import is_night_work
+from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
+from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -144,6 +146,15 @@ def review_change_request(
             if not absence:
                 raise HTTPException(status_code=404, detail="Abwesenheit nicht mehr vorhanden")
 
+        # Arbeitszeitraum-Prüfung für Absence CREATE/UPDATE
+        if cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE):
+            cr_user = db.query(User).filter(User.id == cr.user_id).first()
+            if cr_user and cr.proposed_date:
+                if cr_user.first_work_day and cr.proposed_date < cr_user.first_work_day:
+                    raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
+                if cr_user.last_work_day and cr.proposed_date > cr_user.last_work_day:
+                    raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
+
     # All preconditions met — now mark as approved
     cr.status = ChangeRequestStatus.APPROVED
     cr.reviewed_by = current_user.id
@@ -206,12 +217,25 @@ def review_change_request(
     # Absence CR actions
     if cr.entry_kind == "absence":
         if cr.request_type == ChangeRequestType.CREATE:
+            # §3 EntgFG: Bei Krankmeldung immer die vertragliche Tages-Sollzeit
+            # gutschreiben, nicht den vom Antragsteller eingetragenen Wert.
+            if cr.proposed_absence_type == "sick":
+                cr_user = db.query(User).filter(User.id == cr.user_id).first()
+                if cr_user:
+                    weekly = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
+                    daily_target = get_daily_target_for_date(cr_user, cr.proposed_date, weekly)
+                    hours = float(daily_target)
+                else:
+                    hours = float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0
+            else:
+                hours = float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0
+
             new_absence = Absence(
                 user_id=cr.user_id,
                 tenant_id=current_user.tenant_id,
                 date=cr.proposed_date,
                 type=AbsenceType(cr.proposed_absence_type),
-                hours=float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0,
+                hours=hours,
                 start_time=cr.proposed_start_time,
                 end_time=cr.proposed_end_time,
             )
@@ -219,10 +243,43 @@ def review_change_request(
             db.flush()
             cr.absence_id = new_absence.id
 
+            # Audit-Log für Absence-CR CREATE
+            audit = TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=cr.user_id,
+                changed_by=current_user.id,
+                action="create",
+                new_date=cr.proposed_date,
+                new_start_time=cr.proposed_start_time,
+                new_end_time=cr.proposed_end_time,
+                new_note=f"absence:{cr.proposed_absence_type}:{hours}h",
+                source="change_request",
+                change_request_id=cr.id,
+                tenant_id=current_user.tenant_id,
+            )
+            db.add(audit)
+
         elif cr.request_type == ChangeRequestType.UPDATE:
             # absence already fetched in precondition check above
+            # Audit-Log für Absence-CR UPDATE (alte Werte sichern)
+            audit = TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=cr.user_id,
+                changed_by=current_user.id,
+                action="update",
+                old_date=absence.date,
+                old_start_time=absence.start_time,
+                old_end_time=absence.end_time,
+                old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
+                source="change_request",
+                change_request_id=cr.id,
+                tenant_id=current_user.tenant_id,
+            )
+
             if cr.proposed_absence_type:
                 absence.type = AbsenceType(cr.proposed_absence_type)
+            # Stunden nur aktualisieren, wenn explizit angegeben.
+            # Nicht gesetzte proposed_absence_hours belassen den Originalwert.
             if cr.proposed_absence_hours is not None:
                 absence.hours = float(cr.proposed_absence_hours)
             if cr.proposed_date:
@@ -230,7 +287,29 @@ def review_change_request(
             absence.start_time = cr.proposed_start_time
             absence.end_time = cr.proposed_end_time
 
+            # Neue Werte im Audit nachtragen
+            audit.new_date = absence.date
+            audit.new_start_time = absence.start_time
+            audit.new_end_time = absence.end_time
+            audit.new_note = f"absence:{absence.type.value}:{float(absence.hours)}h"
+            db.add(audit)
+
         elif cr.request_type == ChangeRequestType.DELETE:
+            # Audit-Log für Absence-CR DELETE
+            audit = TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=cr.user_id,
+                changed_by=current_user.id,
+                action="delete",
+                old_date=absence.date,
+                old_start_time=absence.start_time,
+                old_end_time=absence.end_time,
+                old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
+                source="change_request",
+                change_request_id=cr.id,
+                tenant_id=current_user.tenant_id,
+            )
+            db.add(audit)
             db.delete(absence)
 
     db.commit()
