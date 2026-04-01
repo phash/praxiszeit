@@ -414,6 +414,28 @@ class TestJournalMultiEntry:
         assert day["target_hours"] == 8.0
         assert day["balance"] == 0.0
 
+    def test_mixed_day_work_plus_training(self, db, test_user):
+        """Gemischter Tag: Arbeitszeit + Fortbildung → type='mixed', Ist = Arbeit + Fortbildung."""
+        _make_entry(db, test_user, date(2026, 3, 10), 7, 12, break_min=0)  # 5h Arbeit
+        _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.TRAINING, 3.0)  # 3h Fortbildung
+        journal = journal_service.get_journal(db, test_user, 2026, 3)
+        day = next(d for d in journal["days"] if d["date"] == "2026-03-10")
+        assert day["type"] == "mixed"
+        assert len(day["time_entries"]) == 1
+        assert len(day["absences"]) == 1
+        assert day["actual_hours"] == 8.0  # 5h + 3h (Training zählt als Ist)
+        assert day["target_hours"] == 8.0
+
+    def test_mixed_day_work_plus_sick(self, db, test_user):
+        """Gemischter Tag: Arbeitszeit + Krank → type='mixed', Ist = Arbeit + Krank."""
+        _make_entry(db, test_user, date(2026, 3, 10), 8, 12, break_min=0)  # 4h Arbeit
+        _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.SICK, 4.0)  # 4h Krank
+        journal = journal_service.get_journal(db, test_user, 2026, 3)
+        day = next(d for d in journal["days"] if d["date"] == "2026-03-10")
+        assert day["type"] == "mixed"
+        assert day["actual_hours"] == 8.0  # 4h + 4h (Krank zählt als Ist)
+        assert day["balance"] == 0.0
+
     def test_three_entries_summed_correctly(self, db, test_user):
         """Drei Einträge werden korrekt summiert."""
         _make_entry(db, test_user, date(2026, 3, 10), 7, 9, break_min=0)    # 2h

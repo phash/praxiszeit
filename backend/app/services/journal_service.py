@@ -62,6 +62,8 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             day_type = "weekend"
         elif is_holiday_day:
             day_type = "holiday"
+        elif day_entries and day_absences:
+            day_type = "mixed"
         elif day_absences:
             day_type = _ABSENCE_TYPE_MAP.get(day_absences[0].type, "other")
         elif day_entries:
@@ -72,6 +74,12 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
         time_hours = Decimal(str(sum(e.net_hours for e in day_entries)))
         absence_sum = Decimal(str(sum(float(a.hours) for a in day_absences))) if day_absences else Decimal("0")
 
+        # Credited absence hours (TRAINING, SICK count as worked)
+        credited_sum = Decimal(str(sum(
+            float(a.hours) for a in day_absences
+            if a.type in (AbsenceType.TRAINING, AbsenceType.SICK)
+        )))
+
         if is_weekend or is_holiday_day:
             actual_hours = time_hours
             target_hours = Decimal("0")
@@ -79,17 +87,20 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
             daily_target = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
             if day_absences[0].type == AbsenceType.TRAINING:
-                # Training counts like work – credited hours, normal daily target
                 actual_hours = absence_sum
                 target_hours = daily_target
             elif day_absences[0].type == AbsenceType.OVERTIME:
-                # Überstundenausgleich: 0h Ist, volles Soll → Überstundenkonto sinkt
                 actual_hours = Decimal("0")
                 target_hours = daily_target
             else:
-                # Sick / vacation / other: absence hours in Ist, target = absence hours → balance = 0
                 actual_hours = absence_sum
                 target_hours = absence_sum
+        elif day_entries and day_absences:
+            # Mixed day: time entries + absences (e.g. half-day work + half-day sick/training)
+            weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
+            daily_target = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+            actual_hours = time_hours + credited_sum
+            target_hours = daily_target
         else:
             actual_hours = time_hours
             weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)

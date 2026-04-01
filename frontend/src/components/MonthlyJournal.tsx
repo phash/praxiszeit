@@ -29,7 +29,7 @@ interface AbsenceItem {
 interface JournalDay {
   date: string;
   weekday: string;
-  type: 'work' | 'vacation' | 'sick' | 'overtime' | 'training' | 'other' | 'holiday' | 'weekend' | 'empty';
+  type: 'work' | 'vacation' | 'sick' | 'overtime' | 'training' | 'other' | 'holiday' | 'weekend' | 'empty' | 'mixed';
   is_holiday: boolean;
   holiday_name: string | null;
   time_entries: TimeEntryItem[];
@@ -68,6 +68,7 @@ const TYPE_LABELS: Record<string, string> = {
   holiday: 'Feiertag',
   weekend: '',
   empty: '–',
+  mixed: 'Arbeitszeit',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -80,6 +81,7 @@ const TYPE_COLORS: Record<string, string> = {
   holiday: 'text-red-600',
   weekend: 'text-gray-400',
   empty: 'text-gray-400',
+  mixed: 'text-gray-900',
 };
 
 function formatHours(h: number): string {
@@ -460,7 +462,18 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <>
                               {day.is_holiday && day.holiday_name
                                 ? day.holiday_name
-                                : TYPE_LABELS[day.type] ?? day.type}
+                                : day.type === 'mixed' ? (
+                                  <div className="space-y-0.5">
+                                    {day.time_entries.map((_, i) => (
+                                      <div key={`w${i}`} className="text-gray-900">Arbeitszeit</div>
+                                    ))}
+                                    {day.absences.map((a, i) => (
+                                      <div key={`a${i}`} className={TYPE_COLORS[a.type] || 'text-gray-600'}>
+                                        {TYPE_LABELS[a.type] || a.type}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : TYPE_LABELS[day.type] ?? day.type}
                             </>
                           )}
                         </td>
@@ -494,11 +507,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 placeholder="Stunden"
                               />
                             )
-                          ) : day.time_entries.length > 0 ? (
+                          ) : day.time_entries.length > 0 || (day.type === 'mixed' && day.absences.length > 0) ? (
                             <div className="space-y-0.5">
                               {day.time_entries.map((e, i) => (
-                                <div key={i}>
+                                <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time}–${e.end_time}` : '–'}
+                                </div>
+                              ))}
+                              {day.type === 'mixed' && day.absences.map((a, i) => (
+                                <div key={`a${i}`} className="text-gray-400">
+                                  {formatHoursSimple(a.hours)}
                                 </div>
                               ))}
                             </div>
@@ -515,12 +533,15 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
                               className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right"
                             />
-                          ) : editingDate === day.date ? '' : day.time_entries.length > 0 ? (
+                          ) : editingDate === day.date ? '' : day.time_entries.length > 0 || (day.type === 'mixed' && day.absences.length > 0) ? (
                             <div className="space-y-0.5">
                               {day.time_entries.map((e, i) => (
-                                <div key={i}>
+                                <div key={`w${i}`}>
                                   {e.break_minutes > 0 ? `${e.break_minutes} min` : '–'}
                                 </div>
+                              ))}
+                              {day.type === 'mixed' && day.absences.map((_, i) => (
+                                <div key={`a${i}`}>–</div>
                               ))}
                             </div>
                           ) : '–'}
