@@ -171,14 +171,16 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     ).all()
     holiday_dates = {h.date for h in holidays}
 
-    # Exclude TRAINING and SICK from target reduction:
+    # Exclude TRAINING, SICK, and OVERTIME from target reduction:
     # - TRAINING counts as worked time (außer Haus)
     # - SICK: §3 EntgFG - employee must be credited as if they worked the planned hours
+    # - OVERTIME: Überstundenausgleich – Soll bleibt bestehen, Tag zählt als 0h Ist,
+    #   dadurch reduziert sich das Überstundenkonto um die geplanten Stunden
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         extract('year', Absence.date) == year,
         extract('month', Absence.date) == month,
-        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK])
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME])
     ).all()
     absence_dates = {a.date for a in absences}
 
@@ -339,12 +341,12 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         key = (ca.date.year, ca.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
 
-    # All absences in range (exclude TRAINING and SICK — same rule as get_monthly_target)
+    # All absences in range (exclude TRAINING, SICK, OVERTIME — same rule as get_monthly_target)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start_date,
         Absence.date <= up_to_date,
-        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK]),
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
     absence_dates: set[date] = {a.date for a in absences}
 
@@ -438,12 +440,12 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     ).all()
     holiday_dates: set = {h.date for h in holidays}
 
-    # Fetch absences in range (exclude TRAINING and SICK - same as get_monthly_target)
+    # Fetch absences in range (exclude TRAINING, SICK, OVERTIME - same as get_monthly_target)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start,
         Absence.date <= end,
-        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK]),
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
     absence_dates: set = {a.date for a in absences}
 

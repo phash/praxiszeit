@@ -76,14 +76,19 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             actual_hours = time_hours
             target_hours = Decimal("0")
         elif day_absences and not day_entries:
-            # Pure absence day: show absence hours in Ist column
-            actual_hours = absence_sum
+            weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
+            daily_target = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
             if day_absences[0].type == AbsenceType.TRAINING:
-                # Training counts like work – use normal daily target
-                weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
-                target_hours = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+                # Training counts like work – credited hours, normal daily target
+                actual_hours = absence_sum
+                target_hours = daily_target
+            elif day_absences[0].type == AbsenceType.OVERTIME:
+                # Überstundenausgleich: 0h Ist, volles Soll → Überstundenkonto sinkt
+                actual_hours = Decimal("0")
+                target_hours = daily_target
             else:
-                # Sick / vacation / overtime / other: target = absence hours → balance = 0
+                # Sick / vacation / other: absence hours in Ist, target = absence hours → balance = 0
+                actual_hours = absence_sum
                 target_hours = absence_sum
         else:
             actual_hours = time_hours
