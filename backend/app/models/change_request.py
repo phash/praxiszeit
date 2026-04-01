@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Integer, Text, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, Date, Time, Integer, String, Text, DateTime, Numeric, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -31,6 +31,18 @@ class ChangeRequest(Base):
 
     # Reference to existing time entry (nullable for CREATE requests)
     time_entry_id = Column(UUID(as_uuid=True), ForeignKey("time_entries.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Discriminator: 'time_entry' or 'absence'
+    entry_kind = Column(String(20), nullable=False, server_default='time_entry')  # 'time_entry' | 'absence'
+
+    # Reference to existing absence (for absence CRs)
+    absence_id = Column(UUID(as_uuid=True), ForeignKey("absences.id"), nullable=True, index=True)
+
+    # Absence proposed/original fields
+    proposed_absence_type = Column(String(20), nullable=True)
+    proposed_absence_hours = Column(Numeric(4, 2), nullable=True)
+    original_absence_type = Column(String(20), nullable=True)
+    original_absence_hours = Column(Numeric(4, 2), nullable=True)
 
     # Proposed values (for CREATE and UPDATE)
     proposed_date = Column(Date, nullable=True)

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint
+from sqlalchemy import Column, Date, Time, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -27,6 +27,8 @@ class Absence(Base):
     end_date = Column(Date, nullable=True, index=True)  # End date for date ranges (NULL for single day)
     type = Column(Enum(AbsenceType), nullable=False)
     hours = Column(Numeric(4, 2), nullable=False)  # Hours absent per day
+    start_time = Column(Time, nullable=True)  # NULL = ganzer Tag
+    end_time = Column(Time, nullable=True)    # NULL = ganzer Tag
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

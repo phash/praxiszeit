@@ -7,11 +7,15 @@ from uuid import UUID
 class ChangeRequestCreate(BaseModel):
     request_type: str  # "create", "update", "delete"
     time_entry_id: Optional[str] = None  # required for update/delete
+    entry_kind: str = "time_entry"  # 'time_entry' | 'absence'
+    absence_id: Optional[str] = None
     proposed_date: Optional[date] = None
     proposed_start_time: Optional[time] = None
     proposed_end_time: Optional[time] = None
     proposed_break_minutes: Optional[int] = Field(None, ge=0)
     proposed_note: Optional[str] = None
+    proposed_absence_type: Optional[str] = None
+    proposed_absence_hours: Optional[float] = None
     reason: str = Field(..., min_length=1)
 
 
@@ -26,6 +30,8 @@ class ChangeRequestResponse(BaseModel):
     request_type: str
     status: str
     time_entry_id: Optional[UUID] = None
+    entry_kind: str = "time_entry"
+    absence_id: Optional[UUID] = None
 
     proposed_date: Optional[date] = None
     proposed_start_time: Optional[time] = None
@@ -33,11 +39,16 @@ class ChangeRequestResponse(BaseModel):
     proposed_break_minutes: Optional[int] = None
     proposed_note: Optional[str] = None
 
+    proposed_absence_type: Optional[str] = None
+    proposed_absence_hours: Optional[float] = None
+
     original_date: Optional[date] = None
     original_start_time: Optional[time] = None
     original_end_time: Optional[time] = None
     original_break_minutes: Optional[int] = None
     original_note: Optional[str] = None
+    original_absence_type: Optional[str] = None
+    original_absence_hours: Optional[float] = None
 
     reason: str
     reviewed_by: Optional[UUID] = None
@@ -54,7 +65,7 @@ class ChangeRequestResponse(BaseModel):
     updated_at: datetime
     warnings: List[str] = []
 
-    @field_serializer('id', 'user_id', 'time_entry_id', 'reviewed_by')
+    @field_serializer('id', 'user_id', 'time_entry_id', 'absence_id', 'reviewed_by')
     def serialize_uuid(self, value):
         return str(value) if value else None
 
