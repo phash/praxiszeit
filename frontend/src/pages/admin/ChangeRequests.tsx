@@ -13,16 +13,22 @@ interface ChangeRequest {
   user_last_name?: string;
   request_type: string;
   status: string;
+  entry_kind?: string;
+  absence_id?: string;
   proposed_date?: string;
   proposed_start_time?: string;
   proposed_end_time?: string;
   proposed_break_minutes?: number;
   proposed_note?: string;
+  proposed_absence_type?: string;
+  proposed_absence_hours?: number;
   original_date?: string;
   original_start_time?: string;
   original_end_time?: string;
   original_break_minutes?: number;
   original_note?: string;
+  original_absence_type?: string;
+  original_absence_hours?: number;
   reason: string;
   rejection_reason?: string;
   reviewer_first_name?: string;
@@ -44,6 +50,7 @@ const statusConfig = {
 };
 
 import { CHANGE_REQUEST_TYPE_LABELS } from '../../constants/changeRequestTypes';
+import { ABSENCE_TYPE_LABELS } from '../../constants/absenceTypes';
 const typeLabels = CHANGE_REQUEST_TYPE_LABELS;
 
 type TimeRange = '1m' | '3m' | 'year' | 'prev_year' | 'custom';
@@ -284,29 +291,61 @@ export default function AdminChangeRequests() {
 
                 {/* Values comparison */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {(cr.request_type === 'update' || cr.request_type === 'delete') && cr.original_date && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
-                      <div className="text-sm space-y-1">
-                        <p>Datum: <span className="font-medium">{formatDateDE(cr.original_date)}</span></p>
-                        <p>Zeit: <span className="font-medium">{cr.original_start_time?.substring(0, 5)} – {cr.original_end_time?.substring(0, 5)}</span></p>
-                        <p>Pause: <span className="font-medium">{cr.original_break_minutes} min</span></p>
-                        {cr.original_note && <p>Notiz: {cr.original_note}</p>}
-                      </div>
-                    </div>
-                  )}
-                  {cr.request_type !== 'delete' && cr.proposed_date && (
-                    <div className="bg-amber-50 rounded-lg p-3">
-                      <h4 className="text-xs font-semibold text-amber-700 uppercase mb-2">
-                        {cr.request_type === 'create' ? 'Neuer Eintrag' : 'Gewünscht'}
-                      </h4>
-                      <div className="text-sm space-y-1">
-                        <p>Datum: <span className="font-medium">{formatDateDE(cr.proposed_date)}</span></p>
-                        <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} – {cr.proposed_end_time?.substring(0, 5)}</span></p>
-                        <p>Pause: <span className="font-medium">{cr.proposed_break_minutes} min</span></p>
-                        {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
-                      </div>
-                    </div>
+                  {cr.entry_kind === 'absence' ? (
+                    <>
+                      {(cr.request_type === 'update' || cr.request_type === 'delete') && cr.original_absence_type && (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
+                          <div className="text-sm space-y-1">
+                            <p>Typ: <span className="font-medium">{ABSENCE_TYPE_LABELS[cr.original_absence_type as keyof typeof ABSENCE_TYPE_LABELS] || cr.original_absence_type}</span></p>
+                            <p>Datum: {format(new Date(cr.original_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
+                            <p>Stunden: <span className="font-medium">{cr.original_absence_hours}h</span></p>
+                          </div>
+                        </div>
+                      )}
+                      {cr.request_type !== 'delete' && cr.proposed_absence_type && (
+                        <div className="bg-amber-50 rounded-lg p-3">
+                          <h4 className="text-xs font-semibold text-amber-700 uppercase mb-2">
+                            {cr.request_type === 'create' ? 'Neue Abwesenheit' : 'Gewünscht'}
+                          </h4>
+                          <div className="text-sm space-y-1">
+                            <p>Typ: <span className="font-medium">{ABSENCE_TYPE_LABELS[cr.proposed_absence_type as keyof typeof ABSENCE_TYPE_LABELS] || cr.proposed_absence_type}</span></p>
+                            <p>Datum: {format(new Date(cr.proposed_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
+                            <p>Stunden: <span className="font-medium">{cr.proposed_absence_hours}h</span></p>
+                            {cr.proposed_start_time && cr.proposed_end_time && (
+                              <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} – {cr.proposed_end_time?.substring(0, 5)}</span></p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {(cr.request_type === 'update' || cr.request_type === 'delete') && cr.original_date && (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
+                          <div className="text-sm space-y-1">
+                            <p>Datum: <span className="font-medium">{formatDateDE(cr.original_date)}</span></p>
+                            <p>Zeit: <span className="font-medium">{cr.original_start_time?.substring(0, 5)} – {cr.original_end_time?.substring(0, 5)}</span></p>
+                            <p>Pause: <span className="font-medium">{cr.original_break_minutes} min</span></p>
+                            {cr.original_note && <p>Notiz: {cr.original_note}</p>}
+                          </div>
+                        </div>
+                      )}
+                      {cr.request_type !== 'delete' && cr.proposed_date && (
+                        <div className="bg-amber-50 rounded-lg p-3">
+                          <h4 className="text-xs font-semibold text-amber-700 uppercase mb-2">
+                            {cr.request_type === 'create' ? 'Neuer Eintrag' : 'Gewünscht'}
+                          </h4>
+                          <div className="text-sm space-y-1">
+                            <p>Datum: <span className="font-medium">{formatDateDE(cr.proposed_date)}</span></p>
+                            <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} – {cr.proposed_end_time?.substring(0, 5)}</span></p>
+                            <p>Pause: <span className="font-medium">{cr.proposed_break_minutes} min</span></p>
+                            {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
