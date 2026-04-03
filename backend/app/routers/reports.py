@@ -33,6 +33,7 @@ def _get_active_visible_users(db: Session) -> list:
 @router.get("/monthly", response_model=List[EmployeeMonthlyReport])
 def get_monthly_report(
     month: str = Query(..., description="Month in YYYY-MM format"),
+    include_health_data: bool = Query(False, description="Krankheitsdaten einschließen (Art. 9 DSGVO)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -45,22 +46,23 @@ def get_monthly_report(
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
-    logger.info(
-        "DSGVO-Datenzugriff: Monatsreport %s-%02d aufgerufen von Admin %s",
-        year, month_num, current_user.username
-    )
-    # F-020: Audit log for sensitive health data read (Art. 9 – sick_hours in response)
-    audit = TimeEntryAuditLog(
-        time_entry_id=None,
-        user_id=current_user.id,
-        changed_by=current_user.id,
-        action="health_data_read",
-        source="dsgvo",
-        new_note=f"Monatsreport {year}-{month_num:02d} (inkl. Krankheitsstunden) gelesen von Admin: {current_user.username}",
-        tenant_id=current_user.tenant_id,
-    )
-    db.add(audit)
-    db.commit()
+    if include_health_data:
+        logger.info(
+            "DSGVO-Datenzugriff: Monatsreport %s-%02d aufgerufen von Admin %s",
+            year, month_num, current_user.username
+        )
+        # F-020: Audit log for sensitive health data read (Art. 9 – sick_hours in response)
+        audit = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_data_read",
+            source="dsgvo",
+            new_note=f"Monatsreport {year}-{month_num:02d} (inkl. Krankheitsstunden) gelesen von Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
+        )
+        db.add(audit)
+        db.commit()
 
     users = _get_active_visible_users(db)
 
@@ -103,7 +105,7 @@ def get_monthly_report(
             balance=float(balance),
             overtime_cumulative=float(overtime),
             vacation_used_hours=vacation_hours,
-            sick_hours=sick_hours
+            sick_hours=sick_hours if include_health_data else 0.0
         ))
 
     return reports
@@ -112,6 +114,7 @@ def get_monthly_report(
 @router.get("/yearly-absences", response_model=List[EmployeeYearlyAbsences])
 def get_yearly_absences(
     year: int = Query(..., description="Year (e.g., 2025)"),
+    include_health_data: bool = Query(False, description="Krankheitsdaten einschließen (Art. 9 DSGVO)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -119,22 +122,23 @@ def get_yearly_absences(
     Get yearly absence summary for all employees.
     Shows vacation, sick, training, and other days.
     """
-    logger.info(
-        "DSGVO-Datenzugriff: Jahres-Abwesenheitsübersicht %d aufgerufen von Admin %s",
-        year, current_user.username
-    )
-    # F-020: Audit log for sensitive health data read (Art. 9 – sick_days in response)
-    audit = TimeEntryAuditLog(
-        time_entry_id=None,
-        user_id=current_user.id,
-        changed_by=current_user.id,
-        action="health_data_read",
-        source="dsgvo",
-        new_note=f"Jahres-Abwesenheitsübersicht {year} (inkl. Krankheitstage) gelesen von Admin: {current_user.username}",
-        tenant_id=current_user.tenant_id,
-    )
-    db.add(audit)
-    db.commit()
+    if include_health_data:
+        logger.info(
+            "DSGVO-Datenzugriff: Jahres-Abwesenheitsübersicht %d aufgerufen von Admin %s",
+            year, current_user.username
+        )
+        # F-020: Audit log for sensitive health data read (Art. 9 – sick_days in response)
+        audit = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_data_read",
+            source="dsgvo",
+            new_note=f"Jahres-Abwesenheitsübersicht {year} (inkl. Krankheitstage) gelesen von Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
+        )
+        db.add(audit)
+        db.commit()
 
     users = _get_active_visible_users(db)
 
@@ -191,7 +195,8 @@ def get_yearly_absences(
         other_hours = sum(float(a.hours) for a in other_absences)
         other_days = other_hours / float(daily_target)
 
-        total_days = vacation_days + sick_days + training_days + overtime_comp_days + other_days
+        effective_sick_days = sick_days if include_health_data else 0.0
+        total_days = vacation_days + effective_sick_days + training_days + overtime_comp_days + other_days
 
         # Calculate remaining vacation
         vacation_account = calculation_service.get_vacation_account(db, user, year)
@@ -207,7 +212,7 @@ def get_yearly_absences(
             last_name=user.last_name,
             vacation_days=vacation_days,
             remaining_vacation_days=float(remaining_vacation_days),
-            sick_days=sick_days,
+            sick_days=effective_sick_days,
             training_days=training_days,
             overtime_comp_days=overtime_comp_days,
             other_days=other_days,

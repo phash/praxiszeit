@@ -91,4 +91,11 @@ def validate_daily_break(
             f"Gesamtpause: {total_effective_break} Minuten."
         )
 
+    # §4 Satz 2: Pausenabschnitte müssen mindestens 15 Minuten betragen
+    if break_minutes is not None and 0 < break_minutes < 15:
+        return (
+            f"Pausenabschnitte müssen mindestens 15 Minuten betragen (§4 Satz 2 ArbZG). "
+            f"Eingegebene Pause: {break_minutes} Minuten."
+        )
+
     return None
