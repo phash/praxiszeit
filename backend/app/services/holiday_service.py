@@ -129,12 +129,12 @@ def get_holidays(db: Session, year: int) -> List[PublicHoliday]:
     ).order_by(PublicHoliday.date).all()
 
 
-def is_holiday(db: Session, check_date: date) -> bool:
+def is_holiday(db: Session, check_date: date, tenant_id=None) -> bool:
     """Check if a given date is a public holiday."""
-    holiday = db.query(PublicHoliday).filter(
-        PublicHoliday.date == check_date
-    ).first()
-    return holiday is not None
+    query = db.query(PublicHoliday).filter(PublicHoliday.date == check_date)
+    if tenant_id is not None:
+        query = query.filter(PublicHoliday.tenant_id == tenant_id)
+    return query.first() is not None
 
 
 def delete_all_holidays(db: Session, tenant_id=None) -> int:

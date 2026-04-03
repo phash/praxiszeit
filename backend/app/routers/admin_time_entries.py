@@ -13,7 +13,7 @@ from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response,
 from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
-    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
+    MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 from app.services.arbzg_utils import is_night_work
 
@@ -56,6 +56,10 @@ def admin_create_time_entry(
                 status_code=422,
                 detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
             )
+
+        # §3 ArbZG: Warnung bei Überschreitung der Regelgrenze (8h)
+        if daily_hours > MAX_DAILY_HOURS_WARN:
+            admin_create_warnings.append(f"DAILY_HOURS_WARNING: Tagesarbeitszeit beträgt {daily_hours:.1f}h (>{MAX_DAILY_HOURS_WARN}h)")
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
@@ -136,6 +140,10 @@ def admin_update_time_entry(
                 status_code=422,
                 detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
             )
+
+        # §3 ArbZG: Warnung bei Überschreitung der Regelgrenze (8h)
+        if daily_hours > MAX_DAILY_HOURS_WARN:
+            admin_update_warnings.append(f"DAILY_HOURS_WARNING: Tagesarbeitszeit beträgt {daily_hours:.1f}h (>{MAX_DAILY_HOURS_WARN}h)")
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (

@@ -205,12 +205,30 @@ def clock_in(
         note=body.note,
     )
 
+    # §5 ArbZG: Ruhezeit-Warnung (11h seit letztem Arbeitsende)
+    clock_in_warnings: list[str] = []
+    if not current_user.exempt_from_arbzg:
+        last_entry = db.query(TimeEntry).filter(
+            TimeEntry.user_id == current_user.id,
+            TimeEntry.end_time.isnot(None),
+            TimeEntry.date <= now.date(),
+        ).order_by(TimeEntry.date.desc(), TimeEntry.end_time.desc()).first()
+
+        if last_entry:
+            from datetime import timedelta
+            last_end = datetime.combine(last_entry.date, last_entry.end_time)
+            current_start = datetime.combine(now.date(), entry.start_time)
+            rest_hours = (current_start - last_end).total_seconds() / 3600
+            if rest_hours < 11:
+                clock_in_warnings.append(f"REST_TIME_WARNING: Nur {rest_hours:.1f}h Ruhezeit seit letztem Arbeitsende (Minimum: 11h, §5 ArbZG)")
+
     db.add(entry)
     db.commit()
     db.refresh(entry)
 
     response = TimeEntryResponse.model_validate(entry)
     response.is_editable = True
+    response.warnings = clock_in_warnings
     return response
 
 
