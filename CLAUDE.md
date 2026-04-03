@@ -22,7 +22,7 @@ ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 ### Tests
 ```bash
 cd e2e && npx playwright test                                    # E2E (114 Tests)
-docker compose exec backend pytest tests/ -v                     # Backend Unit (335 Tests)
+docker compose exec backend pytest tests/ -v                     # Backend Unit (343 Tests)
 docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (13 Tests)
 ```
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
@@ -38,6 +38,12 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **Überstundenausgleich:** Soll bleibt, Ist=0h (NICHT Soll reduzieren!)
 - **Absence-Typ-Matrix:** Siehe `docs/BACKEND-ARCHITEKTUR.md` → Berechnungsmodell
 - **CR-Approval:** Precondition-Checks VOR Status-Änderung (Race-Condition-Fix)
+- **Absence-CRs:** MA können Abwesenheiten per Änderungsantrag beantragen (entry_kind="absence")
+- **Absences Start/End:** Absences haben optionale `start_time`/`end_time` (NULL = ganzer Tag)
+- **DSGVO Art.9:** Kalender-Endpoints maskieren `sick` → `absent` für nicht-Admins
+- **§5 ArbZG:** Echtzeit-Ruhezeitwarnung beim Einstempeln (<11h seit letztem Arbeitsende)
+- **net_hours Floor:** Kann nicht negativ werden (max(0, ...))
+- **Export Multi-Entry:** Mehrere Einträge pro Tag werden korrekt exportiert
 
 ### Multi-Tenant
 - **Jede neue Tabelle** braucht `tenant_id` FK + RLS-Policy + Eintrag in Migration
