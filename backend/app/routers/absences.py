@@ -396,6 +396,19 @@ def delete_absence(
     if absence.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
 
+    # DSGVO Art. 5 Abs. 2: Audit-Log vor Löschung
+    audit = TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=absence.user_id,
+        changed_by=current_user.id,
+        action="delete",
+        old_date=absence.date,
+        old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
+        source="manual",
+        tenant_id=current_user.tenant_id,
+    )
+    db.add(audit)
+
     db.delete(absence)
     db.commit()
 
