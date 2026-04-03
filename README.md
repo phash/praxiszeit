@@ -10,10 +10,11 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 - ✅ **Zeiterfassung** (von–bis mit Pausen)
 - ✅ **Dashboard** mit Soll/Ist-Vergleich und Überstundenkonto
 - ✅ **Urlaubsverwaltung** (stundenbasiert mit Restanzeige)
-- ✅ **Abwesenheiten** (Urlaub, Krankheit, Fortbildung, Sonstiges)
+- ✅ **Abwesenheiten** (Urlaub, Krankheit, Fortbildung, Überstundenausgleich, Sonstiges)
+- ✅ **Abwesenheiten mit Zeiten** (Start-/Endzeit oder "ganzer Tag")
 - ✅ **Zeitraum-Erfassung** (mehrere Tage auf einmal)
 - ✅ **Profilseite** (Passwort ändern, persönliche Daten)
-- ✅ **Änderungsanträge** für vergangene Tage
+- ✅ **Änderungsanträge** für vergangene Tage (Arbeitszeit + Abwesenheiten)
 
 ### Für Admins
 - ✅ **Benutzerverwaltung** mit Rollenverwaltung
@@ -34,8 +35,8 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 
 ### ArbZG-Compliance (§3–§18)
 - ⚖️ **§3**: 8h-Warnung + 10h-Hard-Stop an allen Eingabepfaden (inkl. Admin-Direkteintrag, Änderungsanträge)
-- ⚖️ **§4**: Pflichtpause-Prüfung (>6h→30min, >9h→45min) an allen Eingabepfaden
-- ⚖️ **§5**: 11h-Mindestruhezeit-Prüfung mit Admin-Report
+- ⚖️ **§4**: Pflichtpause-Prüfung (>6h→30min, >9h→45min) + Mindestdauer-Warnung (<15min, §4 Satz 2)
+- ⚖️ **§5**: 11h-Mindestruhezeit — Echtzeit-Warnung beim Einstempeln + Admin-Report
 - ⚖️ **§6**: Nachtarbeit-Erkennung (23–6 Uhr), Badge im Frontend, Admin-Report mit Nachtarbeitnehmer-Schwellwert (≥48 Tage/Jahr)
 - ⚖️ **§9/10**: Sonn-/Feiertagserkennung, Warnungen, optionales Ausnahmegrund-Feld (`sunday_exception_reason`)
 - ⚖️ **§11**: 15-freie-Sonntage-Report + Ersatzruhetag-Tracking (2/8 Wochen)
@@ -147,9 +148,9 @@ Die Stempeluhr erscheint oben auf dem Dashboard und ermöglicht schnelles Ein-/A
 - **users** - Benutzer mit Rollen, Wochenstunden, Urlaubsanspruch, Kalenderfarbe, Tagesplanung
 - **working_hours_changes** - Historie von Stundenänderungen
 - **time_entries** - Zeiteinträge (Start, Ende nullable für Stempeluhr, Pausen, `sunday_exception_reason` §10 ArbZG)
-- **absences** - Abwesenheiten mit Typ und optional Zeitraum
+- **absences** - Abwesenheiten mit Typ, optional Zeitraum und Start-/Endzeit
 - **public_holidays** - Bayerische Feiertage
-- **change_requests** - Änderungsanträge für vergangene Einträge
+- **change_requests** - Änderungsanträge für Zeiteinträge und Abwesenheiten
 - **time_entry_audit_logs** - Audit-Logs für Zeiteinträge
 - **error_logs** - Backend-Fehler mit Deduplizierung, Status und GitHub-Verlinkung
 
@@ -167,7 +168,7 @@ Neue Migration erstellen:
 docker-compose exec backend alembic revision --autogenerate -m "description"
 ```
 
-**Aktuelle Migrationen (001–020):**
+**Aktuelle Migrationen (001–030):**
 - `001` - Initial Schema (User, TimeEntry, Absence, PublicHoliday)
 - `002` - Add track_hours field
 - `003` - Add end_date to absences (Zeiträume)
@@ -186,6 +187,11 @@ docker-compose exec backend alembic revision --autogenerate -m "description"
 - `018` - Add is_night_worker to users (§6 ArbZG)
 - `019` - Add TOTP 2FA (totp_secret, totp_enabled)
 - `020` - Add deactivated_at to users (14-Tage-Grace-Period DSGVO)
+- `021–026` - Multi-Tenant RLS, Tenant-Modell, RLS-Policies
+- `027` - RLS-Policies für alle Tabellen
+- `028` - Review-Findings (ConfigDict, Type Escapes)
+- `029` - VacationRequest absence_type Erweiterung
+- `030` - Absence Start-/Endzeit + Change Request Absence-Felder
 
 ## Entwicklung
 
@@ -306,8 +312,8 @@ PraxisZeit wird regelmäßig auf Sicherheit, Datenschutz und Arbeitszeitrecht ge
 | Bereich | Ordner | Status |
 |---------|--------|--------|
 | Security (OWASP) | `docs/specs/security/` | ✓ 23 Findings behoben |
-| DSGVO | `docs/specs/dsgvo/` | ✓ 20 Findings behoben |
-| ArbZG §3–§18 | `docs/specs/arbzg/` | ✓ vollständig implementiert |
+| DSGVO | `docs/specs/dsgvo/` | ✓ Konform (Art. 5/6/9/15/17/20/25/32) |
+| ArbZG §3–§18 | `docs/specs/arbzg/` | ✓ Konform (§2–§18 geprüft, 4 Reviews) |
 
 Jeder Ordner enthält eine `HOWTO.md` mit dem Audit-Prozess, dem Claude-Prompt zur Erstellung und der Regel: **nach jedem Audit → aktualisierten Report erzeugen**.
 
