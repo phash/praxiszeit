@@ -112,6 +112,12 @@ def anonymize_user(
                 status_code=400,
                 detail=f"Sperrfrist läuft noch {remaining} Tag(e). Anonymisierung frühestens am {grace_end} möglich."
             )
+    elif user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Benutzer muss zuerst deaktiviert werden"
+        )
+    # If deactivated_at is None but user is inactive: allow anonymization (legacy user)
 
     user.first_name = "Gelöschter"
     user.last_name = "Benutzer"
