@@ -13,9 +13,9 @@ from app.models import User, TimeEntry, Absence
 from app.models.tenant import Tenant
 
 # In-memory failed login tracking (resets on restart, per-username).
-# NOTE: This dict is per-worker; in multi-worker deployments each worker
-# tracks independently, so effective lockout threshold is multiplied by
-# the number of workers.
+# NOTE: In-memory rate limiting — per-worker, not shared across gunicorn workers.
+# For single-worker deployments (current production) this is sufficient.
+# For multi-worker: consider Redis-based rate limiting via slowapi's Redis backend.
 _failed_logins: dict[str, list[datetime]] = defaultdict(list)
 _MAX_TRACKED_USERS = 10000
 _LOCKOUT_ATTEMPTS = 5

@@ -136,6 +136,11 @@ def get_working_days_in_month(db: Session, year: int, month: int) -> int:
     return working_days
 
 
+# NOTE: §3 ArbZG allows extending daily work to 10h if compensated to 8h average
+# within 6 calendar months / 24 weeks. This averaging period is not tracked
+# automatically — it requires manual monitoring by the employer.
+
+
 def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decimal:
     """
     Calculate monthly target hours.
