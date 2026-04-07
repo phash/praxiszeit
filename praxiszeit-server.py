@@ -234,6 +234,23 @@ def _escape_pg_password(password: str) -> str:
     return password.replace("'", "''")
 
 
+def _restrict_file_permissions(file_path: Path):
+    """Restrict file permissions to current user + SYSTEM (Windows) or 0600 (Unix)."""
+    if IS_WINDOWS:
+        try:
+            username = os.environ.get("USERNAME", os.environ.get("USER", ""))
+            cmds = [["icacls", str(file_path), "/inheritance:r"]]
+            if username:
+                cmds.append(["icacls", str(file_path), "/grant:r", f"{username}:(R,W)"])
+            cmds.append(["icacls", str(file_path), "/grant", "SYSTEM:(R,W)"])
+            for cmd in cmds:
+                subprocess.run(cmd, check=True, capture_output=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            logger.warning(f"Could not restrict permissions on {file_path.name}")
+    else:
+        file_path.chmod(0o600)
+
+
 def pg_setup_database(config: dict):
     """Create database and app user on first run."""
     superuser = _validate_pg_identifier(
@@ -333,20 +350,7 @@ def _save_credentials(su_password: str, app_password: str):
         f"SUPERUSER_PASSWORD={su_password}\n"
         f"APP_PASSWORD={app_password}\n"
     )
-    if IS_WINDOWS:
-        # Restrict file permissions: current user + SYSTEM (for service)
-        try:
-            username = os.environ.get("USERNAME", os.environ.get("USER", ""))
-            cmds = [["icacls", str(creds_file), "/inheritance:r"]]
-            if username:
-                cmds.append(["icacls", str(creds_file), "/grant:r", f"{username}:(R,W)"])
-            cmds.append(["icacls", str(creds_file), "/grant", "SYSTEM:(R,W)"])
-            for cmd in cmds:
-                subprocess.run(cmd, check=True, capture_output=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            logger.warning("Could not restrict .db-credentials permissions on Windows")
-    else:
-        creds_file.chmod(0o600)
+    _restrict_file_permissions(creds_file)
 
 
 def pg_load_credentials():
@@ -601,13 +605,14 @@ def cmd_start(args):
         # Load saved credentials
         su_password, app_password = pg_load_credentials()
         if su_password and app_password:
+            from urllib.parse import quote_plus
             superuser = get_config_value(config, "database", "superuser", "praxiszeit")
             app_user = get_config_value(config, "database", "app_user", "praxiszeit_app")
             os.environ["DATABASE_URL"] = (
-                f"postgresql://{app_user}:{app_password}@localhost:5432/praxiszeit"
+                f"postgresql://{app_user}:{quote_plus(app_password)}@localhost:5432/praxiszeit"
             )
             os.environ["DATABASE_URL_MIGRATIONS"] = (
-                f"postgresql://{superuser}:{su_password}@localhost:5432/praxiszeit"
+                f"postgresql://{superuser}:{quote_plus(su_password)}@localhost:5432/praxiszeit"
             )
         else:
             logger.error("Database credentials not found. Run 'praxiszeit-server init' first.")
@@ -656,20 +661,7 @@ def cmd_start(args):
             else:
                 sk = secrets.token_hex(32)
                 sk_file.write_text(sk)
-                # Restrict permissions (same as .db-credentials)
-                if IS_WINDOWS:
-                    try:
-                        username = os.environ.get("USERNAME", os.environ.get("USER", ""))
-                        cmds = [["icacls", str(sk_file), "/inheritance:r"]]
-                        if username:
-                            cmds.append(["icacls", str(sk_file), "/grant:r", f"{username}:(R,W)"])
-                        cmds.append(["icacls", str(sk_file), "/grant", "SYSTEM:(R,W)"])
-                        for cmd in cmds:
-                            subprocess.run(cmd, check=True, capture_output=True)
-                    except (subprocess.CalledProcessError, FileNotFoundError):
-                        pass
-                else:
-                    sk_file.chmod(0o600)
+                _restrict_file_permissions(sk_file)
                 logger.info("Generated and saved SECRET_KEY")
         os.environ["SECRET_KEY"] = sk
 
