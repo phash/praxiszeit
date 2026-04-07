@@ -1,0 +1,54 @@
+# PraxisZeit Konfiguration (Native Installation)
+# ================================================
+# Diese Datei wird beim ersten Start gelesen.
+# Aenderungen erfordern einen Neustart des Dienstes.
+
+[server]
+# HTTPS-Port (Standard: 443)
+port = 443
+
+# SSL-Zertifikat (leer lassen fuer kein SSL, nur im lokalen Netzwerk)
+ssl_cert = "config/ssl/cert.pem"
+ssl_key = "config/ssl/key.pem"
+
+[database]
+# PostgreSQL-Einstellungen (werden automatisch konfiguriert)
+data_dir = "data/db"
+superuser = "praxiszeit"
+app_user = "praxiszeit_app"
+
+[practice]
+# Praxis-Informationen (erscheinen in Exporten)
+name = "Praxis Dr. Muster"
+address = "Musterstrasse 1, 80000 Muenchen"
+holiday_state = "Bayern"
+
+[admin]
+# Admin-Account (wird beim Erststart angelegt)
+username = "admin"
+email = "admin@praxis.local"
+password = "BITTE_AENDERN_min12zeichen"
+first_name = "Admin"
+last_name = "Praxis"
+
+[security]
+# Wird automatisch generiert wenn leer
+# secret_key = ""
+login_rate_limit = "5/minute"
+cookie_secure = true
+
+[license]
+# Pfad zur Lizenzschluessel-Datei
+key_file = "config/license.key"
+
+[updates]
+# Automatische Update-Pruefung
+check_enabled = true
+server_url = "https://updates.praxiszeit.de"
+check_interval_hours = 12
+
+[backup]
+# Automatische taegliche Datenbank-Sicherung
+enabled = true
+schedule = "02:00"
+retention_days = 31

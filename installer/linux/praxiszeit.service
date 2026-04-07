@@ -1,0 +1,27 @@
+[Unit]
+Description=PraxisZeit Zeiterfassung
+Documentation=https://github.com/phash/praxiszeit
+After=network.target
+
+[Service]
+Type=simple
+User=praxiszeit
+Group=praxiszeit
+WorkingDirectory=/opt/praxiszeit
+ExecStart=/opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py start
+ExecStop=/opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py stop
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/praxiszeit/data /opt/praxiszeit/logs /opt/praxiszeit/config
+PrivateTmp=yes
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
