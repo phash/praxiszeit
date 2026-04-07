@@ -53,6 +53,10 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **net_hours Floor:** Kann nicht negativ werden (max(0, ...))
 - **Export Multi-Entry:** Mehrere Einträge pro Tag werden korrekt exportiert
 - **Native-Modus:** `SERVE_FRONTEND=True` → FastAPI liefert Frontend (nginx entfällt), `False` (Default) = Docker
+- **Native Windows-Fallstricke:** Siehe `docs/NATIVE-WINDOWS-PITFALLS.md` (psql -v, Glob-Expansion, SYSTEM-Permissions, cp1252, SPA-Routing)
+- **SPA-Fallback:** `/{full_path:path}` darf keine `/api/`-Pfade abfangen → 307-Redirect auf trailing slash
+- **Subprocess `*` verboten:** Python 3.13/Windows expanded `*` als Glob in subprocess-Args → explizite Werte nutzen
+- **PYTHONUTF8=1:** Immer für uvicorn-Subprozesse setzen (cp1252-Crashes bei Emojis)
 - **APP_VERSION:** Single Source of Truth in `app/core/updater.py`, nicht in `main.py` hardcoden
 - **Alembic Revision-IDs:** Max 32 Zeichen (`version_num varchar(32)` Limit)
 
