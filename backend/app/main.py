@@ -355,11 +355,6 @@ if settings.SERVE_FRONTEND:
         _frontend_dir = Path(__file__).resolve().parent.parent / settings.FRONTEND_DIR
     _frontend_dir = _frontend_dir.resolve()
 
-    # Mount hashed assets with long cache
-    _assets_dir = _frontend_dir / "assets"
-    if _assets_dir.is_dir():
-        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="static_assets")
-
     @app.get("/sw.js")
     async def service_worker():
         """Service worker must not be cached."""
@@ -386,27 +381,41 @@ if settings.SERVE_FRONTEND:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"detail": "Not found"})
 
-    @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str):
-        """
-        SPA fallback: serve static files if they exist, otherwise index.html.
-        Replaces nginx try_files $uri $uri/ /index.html.
-        """
-        # Never intercept API routes — redirect to trailing slash so FastAPI routers match
-        if full_path.startswith("api/"):
-            from starlette.responses import RedirectResponse
-            return RedirectResponse(url=f"/{full_path}/", status_code=307)
-        # Try to serve the exact file (e.g. favicon.ico, robots.txt)
-        file_path = _frontend_dir / full_path
-        if file_path.is_file() and _frontend_dir in file_path.resolve().parents:
-            return FileResponse(str(file_path))
-        # Fallback to index.html for SPA routing
-        index_path = _frontend_dir / "index.html"
-        if index_path.is_file():
-            return FileResponse(
-                str(index_path),
-                media_type="text/html",
-                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-            )
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=404, content={"detail": "Frontend not found"})
+    # SPA fallback middleware: serves frontend for non-API GET requests that don't
+    # match a static file. Replaces nginx try_files $uri $uri/ /index.html.
+    # Using middleware instead of a catch-all route avoids 405 errors for POST/PUT/DELETE
+    # to API paths (a catch-all GET route would match the path but not the method).
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import Response as _MWResponse
+
+    _index_path = _frontend_dir / "index.html"
+    _index_html = _index_path.read_bytes() if _index_path.is_file() else b""
+
+    class SPAFallbackMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+
+            # Only intercept GET requests that got 404 from FastAPI
+            if (request.method == "GET"
+                    and response.status_code == 404
+                    and not request.url.path.startswith("/api/")):
+                # Serve static file if it exists
+                rel_path = request.url.path.lstrip("/")
+                file_path = _frontend_dir / rel_path
+                if rel_path and file_path.is_file() and _frontend_dir in file_path.resolve().parents:
+                    return FileResponse(str(file_path))
+                # SPA fallback: index.html
+                if _index_html:
+                    return _MWResponse(
+                        content=_index_html,
+                        media_type="text/html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                    )
+            return response
+
+    app.add_middleware(SPAFallbackMiddleware)
+
+    # Mount hashed assets with long cache (before middleware, so they're served directly)
+    _assets_dir = _frontend_dir / "assets"
+    if _assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="static_assets")
