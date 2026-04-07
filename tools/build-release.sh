@@ -101,11 +101,14 @@ _EDB="https://get.enterprisedb.com/postgresql"
 _PGV="postgresql-${POSTGRESQL_VERSION}-${POSTGRESQL_EDB_SUFFIX}"
 
 PG_LINUX_URL="${_EDB}/${_PGV}-linux-x64-binaries.tar.gz"
-PG_WINDOWS_URL="${_EDB}/${_PGV}-windows-x64-binaries.zip"
+# Windows: EDB Installer (.exe) — muss manuell heruntergeladen werden
+# Download: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
+# Datei in build/cache/postgresql-windows-x64.exe ablegen
+PG_WINDOWS_INSTALLER="postgresql-windows-x64.exe"
 PG_MACOS_URL="${_EDB}/${_PGV}-osx-binaries.zip"
 
-# nssm (Windows Service Manager)
-NSSM_URL="https://nssm.cc/release/nssm-${NSSM_VERSION}.zip"
+# nssm (Windows Service Manager) — web archive fallback, nssm.cc is unreliable
+NSSM_URL="https://web.archive.org/web/2024/https://nssm.cc/release/nssm-${NSSM_VERSION}.zip"
 
 # pip bootstrap
 GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
@@ -198,9 +201,27 @@ fi
 
 if [ "$BUILD_WINDOWS" = true ]; then
     download "$PYTHON_WINDOWS_URL" "${CACHE_DIR}/python-windows-x64.tar.gz"
-    download "$PG_WINDOWS_URL"     "${CACHE_DIR}/postgresql-windows-x64.zip"
     download "$NSSM_URL"           "${CACHE_DIR}/nssm.zip"
     download "$GET_PIP_URL"        "${CACHE_DIR}/get-pip.py"
+
+    # PostgreSQL Windows: EDB Installer muss manuell heruntergeladen werden
+    if [ ! -f "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}" ]; then
+        # Suche in ~/Downloads
+        _found=""
+        for f in ~/Downloads/postgresql-*-windows-x64.exe; do
+            [ -f "$f" ] && _found="$f" && break
+        done
+        if [ -n "$_found" ]; then
+            info "PostgreSQL-Installer gefunden: $(basename "$_found")"
+            cp "$_found" "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
+        else
+            warn "PostgreSQL-Installer nicht gefunden!"
+            warn "Bitte herunterladen von:"
+            warn "  https://www.enterprisedb.com/downloads/postgres-postgresql-downloads"
+            warn "und ablegen als: ${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
+            warn "oder in ~/Downloads/"
+        fi
+    fi
 fi
 
 if [ "$BUILD_MACOS" = true ]; then
@@ -319,55 +340,41 @@ for pth in pth_files:
         print(f"Fixed: {pth}")
 PTHEOF
 
-    info "Entpacke PostgreSQL ${POSTGRESQL_VERSION} (Windows x64)..."
-    mkdir -p "${WIN_DIR}/bin/postgresql"
-    if command -v unzip &>/dev/null; then
-        unzip -qo "${CACHE_DIR}/postgresql-windows-x64.zip" -d "${BUILD_DIR}/tmp-pg-win"
-        cp -r "${BUILD_DIR}/tmp-pg-win/pgsql/"* "${WIN_DIR}/bin/postgresql/"
-        rm -rf "${BUILD_DIR}/tmp-pg-win"
+    # PostgreSQL: EDB Installer (.exe) mitliefern — wird von setup.bat silent installiert
+    if [ -f "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}" ]; then
+        info "Kopiere PostgreSQL-Installer ($(du -h "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}" | cut -f1))..."
+        cp "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}" "${WIN_DIR}/bin/postgresql-installer.exe"
     else
-        warn "unzip nicht verfuegbar — PostgreSQL-ZIP ins Paket kopiert"
-        cp "${CACHE_DIR}/postgresql-windows-x64.zip" "${WIN_DIR}/bin/"
+        warn "Kein PostgreSQL-Installer im Paket — Kunde muss PostgreSQL manuell installieren"
     fi
 
-    info "Entpacke nssm ${NSSM_VERSION}..."
+    info "Entpacke nssm..."
     if command -v unzip &>/dev/null; then
         unzip -qo "${CACHE_DIR}/nssm.zip" -d "${BUILD_DIR}/tmp-nssm"
-        cp "${BUILD_DIR}/tmp-nssm/nssm-${NSSM_VERSION}/win64/nssm.exe" "${WIN_DIR}/"
+        # nssm ZIP kann verschiedene Verzeichnisnamen haben
+        _nssm_exe=$(find "${BUILD_DIR}/tmp-nssm" -name "nssm.exe" -path "*/win64/*" 2>/dev/null | head -1)
+        if [ -n "$_nssm_exe" ]; then
+            cp "$_nssm_exe" "${WIN_DIR}/"
+            info "nssm.exe kopiert"
+        else
+            warn "nssm.exe nicht im ZIP gefunden"
+        fi
         rm -rf "${BUILD_DIR}/tmp-nssm"
     fi
 
-    # setup.bat: pip bootstrap + dependency install
-    cat > "${WIN_DIR}/setup.bat" << 'SETUPEOF'
-@echo off
-echo PraxisZeit Setup - Installiere Abhaengigkeiten...
-echo.
-
-SET DIR=%~dp0
-SET PYTHON=%DIR%bin\python\python.exe
-
-"%PYTHON%" "%DIR%bin\python\fix-pth.py"
-
-echo Installiere pip...
-"%PYTHON%" "%DIR%bin\python\get-pip.py" --quiet
-
-echo Installiere Python-Abhaengigkeiten (kann einige Minuten dauern)...
-"%PYTHON%" -m pip install --quiet -r "%DIR%app\backend\requirements.txt"
-
-echo.
-echo Abhaengigkeiten installiert.
-echo Starten Sie jetzt install-service.bat um den Windows-Dienst einzurichten.
-pause
-SETUPEOF
+    # Setup + Service Scripts aus dem Repo kopieren
+    cp "${REPO_DIR}/installer/windows/setup.bat" "${WIN_DIR}/"
 
     info "Erstelle ZIP..."
+    _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.zip"
     if command -v zip &>/dev/null; then
-        (cd "${WIN_DIR}" && zip -qr "../../${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.zip" .)
+        (cd "${WIN_DIR}" && zip -qr "$_win_zip" .)
     else
         tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.tar.gz" -C "${WIN_DIR}" .
         warn "zip nicht verfuegbar — Windows-Paket als .tar.gz erstellt"
+        _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.tar.gz"
     fi
-    info "Windows-Paket: $(ls -lh "${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64."* 2>/dev/null | awk '{print $5}' | head -1)"
+    info "Windows-Paket: $(du -h "$_win_zip" | cut -f1)"
 else
     step "5 — Windows: uebersprungen"
 fi
