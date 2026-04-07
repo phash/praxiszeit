@@ -1,7 +1,8 @@
 @echo off
+setlocal DisableDelayedExpansion
 REM PraxisZeit Windows Service Uninstallation
 
-SET NSSM=%~dp0nssm.exe
+SET "NSSM=%~dp0nssm.exe"
 
 echo PraxisZeit Service Uninstaller
 echo ==============================

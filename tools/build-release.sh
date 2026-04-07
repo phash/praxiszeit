@@ -338,6 +338,7 @@ if [ "$BUILD_WINDOWS" = true ]; then
 
     cp "${REPO_DIR}/installer/windows/install-service.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/uninstall-service.bat" "${WIN_DIR}/"
+    cp "${REPO_DIR}/installer/windows/uninstall.bat" "${WIN_DIR}/"
 
     info "Entpacke Python ${PYTHON_VERSION} (Windows x64)..."
     mkdir -p "${WIN_DIR}/bin/python"

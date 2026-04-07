@@ -31,11 +31,10 @@ logger = logging.getLogger(__name__)
 # Replace this with your actual public key after generating a keypair
 # with tools/license-generator.py
 _PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAPLACENTER_YOUR_PUBLIC_KEY_HERE_AFTER_GENERATING=
+MCowBQYDK2VwAyEAB5ZiJro6fDM8M5BupMCdTWjVIFkPn+hsNYHNlajzIyY=
 -----END PUBLIC KEY-----"""
 
-# Placeholder flag — set to True once a real public key is configured
-_PUBLIC_KEY_CONFIGURED = False
+_PUBLIC_KEY_CONFIGURED = True
 
 
 class LicenseError(Exception):
@@ -119,7 +118,7 @@ def validate_license(license_path: Path) -> LicenseInfo:
             public_key,
             algorithms=["EdDSA"],
             options={
-                "require": ["sub", "name", "max_employees", "iat", "exp"],
+                "require": ["sub", "name", "max_employees", "iat"],
                 "verify_exp": False,  # We handle expiry ourselves (read-only mode)
             },
         )
@@ -136,7 +135,7 @@ def validate_license(license_path: Path) -> LicenseInfo:
         max_employees=int(payload["max_employees"]),
         features=payload.get("features", ["base"]),
         issued_at=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),
-        expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+        expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc) if "exp" in payload else None,
         version=payload.get("v", 1),
     )
 
