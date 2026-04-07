@@ -1,109 +1,76 @@
 # PraxisZeit Native Installation (ohne Docker)
 
 Anleitung zur Installation von PraxisZeit als Einzelinstanz auf einem Server ohne Docker.
+Alle Pakete enthalten Python und PostgreSQL — keine Voraussetzungen noetig.
 
 ## Unterstuetzte Plattformen
 
-| Plattform | Architektur | Paket |
-|-----------|-------------|-------|
-| Linux | x86_64 | `praxiszeit-X.Y.Z-linux-x64.tar.gz` |
-| Windows | x86_64 | `praxiszeit-X.Y.Z-windows-x64.zip` |
-| macOS | Intel x86_64 | `praxiszeit-X.Y.Z-macos-x64.tar.gz` |
-| macOS | Apple Silicon arm64 | `praxiszeit-X.Y.Z-macos-arm64.tar.gz` |
+| Plattform | Architektur | Paket | Groesse |
+|-----------|-------------|-------|---------|
+| Linux | x86_64 | `praxiszeit-X.Y.Z-linux-x64.tar.gz` | ~200 MB |
+| Windows | x86_64 | `praxiszeit-X.Y.Z-windows-x64.zip` | ~400 MB |
+| macOS | Intel x86_64 | `praxiszeit-X.Y.Z-macos-x64.tar.gz` | ~360 MB |
+| macOS | Apple Silicon (M1-M4) | `praxiszeit-X.Y.Z-macos-arm64.tar.gz` | ~360 MB |
 
-## Voraussetzungen
+---
 
-- 512 MB RAM, 1 GB Festplatte
-- Produktiv-Pakete: keine Voraussetzungen (Python + PostgreSQL gebuendelt)
-- Lokal bauen: Python 3.12+, PostgreSQL 16+, Node.js 20+
-
-## Schnellinstallation (System-Pakete)
-
-Nutzt systemweit installiertes Python + PostgreSQL.
+## Linux-Installation
 
 ```bash
-# 1. Repository klonen
-git clone https://github.com/phash/praxiszeit.git
+# 1. Herunterladen + entpacken
+tar xzf praxiszeit-1.2.0-linux-x64.tar.gz
 cd praxiszeit
 
-# 2. Frontend bauen
-cd frontend && npm ci && npm run build && cd ..
-
-# 3. Installer starten
-sudo installer/linux/install-local.sh /opt/praxiszeit
-```
-
-Der Installer fragt interaktiv nach:
-- Praxis-Name
-- Admin-E-Mail + Passwort
-- HTTP-Port (Standard: 8443)
-
-Nach der Installation:
-```bash
-sudo systemctl start praxiszeit     # Starten
-sudo systemctl status praxiszeit    # Status pruefen
-sudo systemctl stop praxiszeit      # Stoppen
-journalctl -u praxiszeit -f         # Live-Logs
-```
-
-## Produktivinstallation (gebuendelte Binaries)
-
-Fuer Kunden-Server ohne vorinstalliertes Python/PostgreSQL.
-
-```bash
-# 1. Release-Paket herunterladen
-wget https://releases.praxiszeit.de/praxiszeit-1.2.0-linux-x64.tar.gz
-
-# 2. Entpacken und installieren
-tar xzf praxiszeit-1.2.0-linux-x64.tar.gz
-cd praxiszeit-1.2.0
+# 2. Installer starten (als root)
 sudo ./install.sh
 ```
 
-Das Release-Paket enthaelt Python 3.12 und PostgreSQL 16 als portable Binaries — keine System-Pakete noetig.
+Der Installer fragt interaktiv nach Praxis-Name, Admin-Zugangsdaten und Port.
 
-### Release-Paket selber bauen
-
-Das Build-Script laedt Python, PostgreSQL und nssm automatisch herunter:
-
+Nach der Installation:
 ```bash
-# Alles bauen (Linux + Windows)
-bash tools/build-release.sh
-
-# Nur Linux
-bash tools/build-release.sh --linux-only
-
-# Nur Windows
-bash tools/build-release.sh --windows-only
-
-# Bestimmte Version
-bash tools/build-release.sh --version 1.3.0
-
-# Cache nutzen (Binaries nicht erneut laden)
-bash tools/build-release.sh --skip-download
+sudo systemctl start praxiszeit      # Starten
+sudo systemctl stop praxiszeit       # Stoppen
+sudo systemctl status praxiszeit     # Status
+journalctl -u praxiszeit -f          # Live-Logs
 ```
 
-Gebuendelte Binaries (automatisch heruntergeladen):
+**Standardpfad:** `/opt/praxiszeit/`
 
-| Komponente | Linux | Windows |
-|------------|-------|---------|
-| Python 3.13 | python-build-standalone (indygreg) | python-build-standalone (indygreg) |
-| PostgreSQL 16 | EDB Binaries (.tar.gz) | EDB Binaries (.zip) |
-| nssm | — | nssm.cc (Service Manager) |
-
-Ergebnis in `dist/`:
-- `praxiszeit-X.Y.Z-linux-x64.tar.gz` (~200 MB)
-- `praxiszeit-X.Y.Z-windows-x64.zip` (~400 MB)
-- `praxiszeit-X.Y.Z-SHA256SUMS.txt`
+---
 
 ## Windows-Installation
 
 ```
-1. ZIP entpacken nach C:\PraxisZeit\
-2. setup.bat ausfuehren (installiert Python-Dependencies)
-3. install-service.bat ausfuehren (registriert Windows-Dienst)
-4. net start PraxisZeit
+1. praxiszeit-1.2.0-windows-x64.zip entpacken nach C:\PraxisZeit\
+
+2. setup.bat als Administrator ausfuehren
+   - Installiert PostgreSQL (silent, kein GUI)
+   - Installiert Python-Dependencies (braucht einmalig Internet)
+
+3. config\praxiszeit.conf.example nach config\praxiszeit.conf kopieren
+   - Praxis-Name, Admin-Email, Admin-Passwort anpassen
+
+4. install-service.bat als Administrator ausfuehren
+   - Registriert Windows-Dienst "PraxisZeit"
+   - Oeffnet Firewall-Port
+
+5. net start PraxisZeit
 ```
+
+Service-Verwaltung:
+```cmd
+net start PraxisZeit          &:: Starten
+net stop PraxisZeit           &:: Stoppen
+sc query PraxisZeit           &:: Status
+
+type C:\PraxisZeit\logs\praxiszeit.log       &:: Logs
+type C:\PraxisZeit\logs\service-stdout.log   &:: Service-Logs
+```
+
+Deinstallation: `uninstall-service.bat` ausfuehren (Datenbank wird beibehalten).
+
+---
 
 ## macOS-Installation
 
@@ -114,11 +81,14 @@ tar xzf praxiszeit-1.2.0-macos-x64.tar.gz
 # Apple Silicon (M1/M2/M3/M4):
 tar xzf praxiszeit-1.2.0-macos-arm64.tar.gz
 
-# Installer starten
-sudo ./install.sh /usr/local/praxiszeit
+# Installer starten (als root)
+sudo ./install.sh
 ```
 
-Service-Verwaltung ueber launchd:
+Der Installer fragt interaktiv nach Praxis-Name, Admin-Zugangsdaten und Port.
+PostgreSQL wird automatisch aus dem mitgelieferten DMG installiert.
+
+Service-Verwaltung (launchd):
 ```bash
 # Starten
 sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
@@ -128,58 +98,90 @@ sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
 
 # Logs
 cat /usr/local/praxiszeit/logs/stdout.log
+tail -f /usr/local/praxiszeit/logs/praxiszeit.log
 ```
 
-Beim ersten Start (alle Plattformen):
-- PostgreSQL wird automatisch initialisiert
-- Datenbank + Benutzer werden erstellt
-- Migrationen laufen automatisch
-- Admin-Account wird aus der Konfiguration angelegt
+**Standardpfad:** `/usr/local/praxiszeit/`
+
+Deinstallation:
+```bash
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo rm /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo rm -rf /usr/local/praxiszeit   # Optional: Daten loeschen
+```
+
+---
+
+## Erster Start (alle Plattformen)
+
+Beim ersten Start passiert automatisch:
+1. PostgreSQL-Datenbank wird initialisiert
+2. Datenbank-Benutzer werden erstellt (mit Row-Level-Security)
+3. Alle Migrationen werden ausgefuehrt
+4. Admin-Account wird aus der Konfiguration angelegt
+5. Feiertage werden synchronisiert
+
+Danach im Browser oeffnen: `http://localhost:<port>` (oder `https://` mit SSL).
+
+---
 
 ## Verzeichnisstruktur
 
 ```
-/opt/praxiszeit/
+/opt/praxiszeit/                  (Linux)
+C:\PraxisZeit\                    (Windows)
+/usr/local/praxiszeit/            (macOS)
+│
 ├── bin/
-│   ├── python/            # Python 3.12 (venv oder portable)
-│   └── postgresql/        # PostgreSQL-Binaries (System oder portable)
+│   ├── python/                   # Python 3.13 (gebuendelt)
+│   └── postgresql/               # PostgreSQL (gebuendelt oder installiert)
 ├── app/
-│   ├── backend/           # FastAPI-Quellcode + Alembic-Migrationen
-│   └── frontend/          # Gebautes React-Frontend (dist/)
+│   ├── backend/                  # FastAPI + Alembic-Migrationen
+│   └── frontend/                 # React-Frontend (gebautes dist/)
 ├── data/
-│   ├── db/                # PostgreSQL-Datenverzeichnis
-│   └── backups/           # Automatische taegliche Backups
+│   ├── db/                       # PostgreSQL-Datenverzeichnis
+│   └── backups/                  # Automatische taegliche Backups
 ├── config/
-│   ├── praxiszeit.conf    # Hauptkonfiguration (TOML)
-│   ├── license.key        # Lizenzschluessel (optional)
-│   └── ssl/               # SSL-Zertifikate
+│   ├── praxiszeit.conf           # Hauptkonfiguration (TOML)
+│   ├── license.key               # Lizenzschluessel (optional)
+│   └── ssl/                      # SSL-Zertifikate (optional)
 ├── logs/
-│   └── praxiszeit.log     # Anwendungslog (rotiert, max 50 MB)
-├── praxiszeit-server.py   # Process Manager
-└── start.sh               # Start-Wrapper
+│   └── praxiszeit.log            # Anwendungslog (rotiert, max 50 MB)
+└── praxiszeit-server.py          # Process Manager
 ```
+
+---
 
 ## Konfiguration
 
-Die Konfigurationsdatei `config/praxiszeit.conf` im TOML-Format:
+Die Datei `config/praxiszeit.conf` im TOML-Format:
 
 ```toml
 [server]
 port = 443
-ssl_cert = "config/ssl/cert.pem"
+ssl_cert = "config/ssl/cert.pem"    # Leer = kein SSL
 ssl_key = "config/ssl/key.pem"
 
 [practice]
 name = "Praxis Dr. Mueller"
+address = "Musterstr. 1, 80000 Muenchen"
 holiday_state = "Bayern"
 
 [admin]
 username = "admin"
 email = "admin@praxis.local"
+# Passwort nur beim Erststart verwendet, danach in DB
 
 [security]
 login_rate_limit = "5/minute"
-cookie_secure = true
+cookie_secure = true                # false fuer HTTP-only
+
+[license]
+key_file = "config/license.key"     # Optional
+
+[updates]
+check_enabled = true
+server_url = "https://updates.praxiszeit.de"
 
 [backup]
 enabled = true
@@ -187,64 +189,44 @@ schedule = "02:00"
 retention_days = 31
 ```
 
-Vollstaendiges Beispiel: `installer/praxiszeit.conf.example`
+Vollstaendiges Beispiel: `config/praxiszeit.conf.example`
 
-## Service-Verwaltung
-
-```bash
-# Service starten/stoppen
-sudo systemctl start praxiszeit
-sudo systemctl stop praxiszeit
-sudo systemctl restart praxiszeit
-
-# Status
-sudo systemctl status praxiszeit
-
-# Logs
-journalctl -u praxiszeit -f
-cat /opt/praxiszeit/logs/praxiszeit.log
-
-# Manuell starten (Debugging)
-sudo -u praxiszeit /opt/praxiszeit/start.sh start
-```
-
-## Backup & Restore
-
-Automatische Backups laufen taeglich um 02:00 (konfigurierbar).
-
-```bash
-# Manuelles Backup
-sudo -u praxiszeit /opt/praxiszeit/start.sh backup
-
-# Backups anzeigen
-ls -la /opt/praxiszeit/data/backups/
-
-# Restore
-sudo systemctl stop praxiszeit
-pg_restore -U praxiszeit -d praxiszeit /opt/praxiszeit/data/backups/praxiszeit_DATUM.sql.gz
-sudo systemctl start praxiszeit
-```
-
-Aufbewahrung: 31 Tage (ArbZG §16: Mindestens 2 Jahre).
+---
 
 ## SSL/HTTPS
 
 ```bash
-# Selbstsigniertes Zertifikat generieren
+# Selbstsigniertes Zertifikat generieren (10 Jahre)
 openssl req -x509 -newkey ed25519 \
-  -keyout /opt/praxiszeit/config/ssl/key.pem \
-  -out /opt/praxiszeit/config/ssl/cert.pem \
+  -keyout config/ssl/key.pem \
+  -out config/ssl/cert.pem \
   -days 3650 -nodes \
-  -subj "/CN=PraxisZeit" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:$(hostname -I | awk '{print $1}')"
+  -subj "/CN=PraxisZeit"
 
-# In praxiszeit.conf aktivieren
+# In praxiszeit.conf eintragen:
 # [server]
 # ssl_cert = "config/ssl/cert.pem"
 # ssl_key = "config/ssl/key.pem"
-
-sudo systemctl restart praxiszeit
+# + cookie_secure = true in [security]
 ```
+
+---
+
+## Backup & Restore
+
+Automatische Backups laufen taeglich (konfigurierbar in `[backup] schedule`).
+
+```bash
+# Manuelles Backup (Linux/macOS)
+sudo -u praxiszeit /opt/praxiszeit/praxiszeit-server.py backup
+
+# Backups anzeigen
+ls -la /opt/praxiszeit/data/backups/
+```
+
+Aufbewahrung: 31 Tage. ArbZG §16 verlangt 2 Jahre — passen Sie `retention_days` entsprechend an.
+
+---
 
 ## Lizenzierung
 
@@ -252,34 +234,83 @@ sudo systemctl restart praxiszeit
 # Lizenzschluessel einspielen
 cp license.key /opt/praxiszeit/config/license.key
 
-# In praxiszeit.conf aktivieren
+# In praxiszeit.conf:
 # [license]
 # key_file = "config/license.key"
 
-sudo systemctl restart praxiszeit
+# Service neu starten
 ```
 
-Ohne Lizenz laeuft die Anwendung uneingeschraenkt (Lizenzierung ist optional).
+Ohne Lizenz laeuft die Anwendung uneingeschraenkt.
+Bei abgelaufener Lizenz: Nur-Lese-Modus (Daten bleiben einsehbar und exportierbar).
 
-## Deinstallation
+---
+
+## Release-Pakete selber bauen
+
+Voraussetzungen zum Bauen: Linux mit Python 3.12+, Node.js 20+, curl, rsync, zip.
+PostgreSQL-Installer fuer Windows (.exe) und macOS (.dmg) muessen manuell von
+[enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads)
+heruntergeladen und in `~/Downloads/` abgelegt werden.
 
 ```bash
-sudo systemctl stop praxiszeit
-sudo systemctl disable praxiszeit
-sudo rm /etc/systemd/system/praxiszeit.service
-sudo systemctl daemon-reload
+# Alle Plattformen bauen
+bash tools/build-release.sh
 
-# Optional: Daten loeschen
-sudo rm -rf /opt/praxiszeit
-sudo userdel praxiszeit
+# Einzelne Plattformen
+bash tools/build-release.sh --linux-only
+bash tools/build-release.sh --windows-only
+bash tools/build-release.sh --macos-only
+
+# Versionsnummer setzen
+bash tools/build-release.sh --version 1.3.0
+
+# Cache nutzen (Downloads nicht wiederholen)
+bash tools/build-release.sh --skip-download
 ```
+
+Gebuendelte Komponenten:
+
+| Komponente | Linux | Windows | macOS |
+|------------|-------|---------|-------|
+| Python 3.13 | python-build-standalone | python-build-standalone | python-build-standalone |
+| PostgreSQL | System-Binaries | EDB Installer (.exe, silent) | EDB Installer (.dmg, silent) |
+| Service Manager | systemd | nssm | launchd |
+
+Ergebnis in `dist/`:
+```
+praxiszeit-X.Y.Z-linux-x64.tar.gz      ~200 MB
+praxiszeit-X.Y.Z-windows-x64.zip       ~400 MB
+praxiszeit-X.Y.Z-macos-x64.tar.gz      ~360 MB
+praxiszeit-X.Y.Z-macos-arm64.tar.gz    ~360 MB
+praxiszeit-X.Y.Z-SHA256SUMS.txt
+```
+
+---
 
 ## Fehlerbehebung
 
 | Problem | Loesung |
 |---------|---------|
-| PostgreSQL startet nicht | `cat /opt/praxiszeit/logs/postgresql-startup.log` |
-| Backend startet nicht | `journalctl -u praxiszeit -n 50` |
+| PostgreSQL startet nicht | Logs pruefen: `logs/postgresql-startup.log` |
+| Backend startet nicht | Linux: `journalctl -u praxiszeit -n 50` / Windows: `logs\service-stderr.log` / macOS: `logs/stderr.log` |
 | Port belegt | Anderen Port in `praxiszeit.conf` setzen |
-| Keine Berechtigung | `sudo chown -R praxiszeit:praxiszeit /opt/praxiszeit` |
-| Migration fehlgeschlagen | `sudo -u praxiszeit /opt/praxiszeit/start.sh start` manuell starten, Fehler lesen |
+| Keine Berechtigung | Linux: `sudo chown -R praxiszeit:praxiszeit /opt/praxiszeit` |
+| Migration fehlgeschlagen | Process Manager manuell starten, Fehlerausgabe lesen |
+| Windows: setup.bat schlaegt fehl | Als Administrator ausfuehren, Internetverbindung pruefen |
+| macOS: PostgreSQL-DMG nicht gefunden | PostgreSQL manuell installieren: [postgresapp.com](https://postgresapp.com) |
+
+---
+
+## Schnellinstallation fuer Entwickler (Linux, System-Pakete)
+
+Fuer lokale Tests ohne gebuendelte Binaries:
+
+```bash
+git clone https://github.com/phash/praxiszeit.git
+cd praxiszeit
+cd frontend && npm ci && npm run build && cd ..
+sudo installer/linux/install-local.sh /opt/praxiszeit
+```
+
+Nutzt systemweit installiertes Python + PostgreSQL statt gebundelter Binaries.
