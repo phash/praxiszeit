@@ -1,15 +1,21 @@
 # PraxisZeit Native Installation (ohne Docker)
 
-Anleitung zur Installation von PraxisZeit als Einzelinstanz auf einem Linux-Server ohne Docker.
+Anleitung zur Installation von PraxisZeit als Einzelinstanz auf einem Server ohne Docker.
+
+## Unterstuetzte Plattformen
+
+| Plattform | Architektur | Paket |
+|-----------|-------------|-------|
+| Linux | x86_64 | `praxiszeit-X.Y.Z-linux-x64.tar.gz` |
+| Windows | x86_64 | `praxiszeit-X.Y.Z-windows-x64.zip` |
+| macOS | Intel x86_64 | `praxiszeit-X.Y.Z-macos-x64.tar.gz` |
+| macOS | Apple Silicon arm64 | `praxiszeit-X.Y.Z-macos-arm64.tar.gz` |
 
 ## Voraussetzungen
 
-- Linux (Ubuntu 22.04+, Debian 12+, Arch, etc.)
-- Python 3.12+
-- PostgreSQL 16+ (wird automatisch installiert oder system-weit genutzt)
-- Node.js 20+ (nur zum Bauen des Frontends)
-- OpenSSL (fuer Zertifikat-Generierung)
 - 512 MB RAM, 1 GB Festplatte
+- Produktiv-Pakete: keine Voraussetzungen (Python + PostgreSQL gebuendelt)
+- Lokal bauen: Python 3.12+, PostgreSQL 16+, Node.js 20+
 
 ## Schnellinstallation (System-Pakete)
 
@@ -99,7 +105,32 @@ Ergebnis in `dist/`:
 4. net start PraxisZeit
 ```
 
-Beim ersten Start:
+## macOS-Installation
+
+```bash
+# Intel Mac:
+tar xzf praxiszeit-1.2.0-macos-x64.tar.gz
+
+# Apple Silicon (M1/M2/M3/M4):
+tar xzf praxiszeit-1.2.0-macos-arm64.tar.gz
+
+# Installer starten
+sudo ./install.sh /usr/local/praxiszeit
+```
+
+Service-Verwaltung ueber launchd:
+```bash
+# Starten
+sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
+
+# Stoppen
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
+
+# Logs
+cat /usr/local/praxiszeit/logs/stdout.log
+```
+
+Beim ersten Start (alle Plattformen):
 - PostgreSQL wird automatisch initialisiert
 - Datenbank + Benutzer werden erstellt
 - Migrationen laufen automatisch
