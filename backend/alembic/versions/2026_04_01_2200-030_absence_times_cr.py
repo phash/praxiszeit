@@ -1,7 +1,7 @@
 """Add start_time/end_time to absences, extend change_requests for absence support
 
 Revision ID: 030_absence_times_cr
-Revises: 029_add_vacation_request_absence_type
+Revises: 029_add_vac_req_absence_type
 Create Date: 2026-04-01
 """
 from alembic import op
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 revision = '030_absence_times_cr'
-down_revision = '029_add_vacation_request_absence_type'
+down_revision = '029_add_vac_req_absence_type'
 branch_labels = None
 depends_on = None
 

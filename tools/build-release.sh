@@ -190,7 +190,10 @@ step "3 — Binaries herunterladen"
 
 if [ "$BUILD_LINUX" = true ]; then
     download "$PYTHON_LINUX_URL"  "${CACHE_DIR}/python-linux-x64.tar.gz"
-    download "$PG_LINUX_URL"      "${CACHE_DIR}/postgresql-linux-x64.tar.gz"
+    if ! download "$PG_LINUX_URL" "${CACHE_DIR}/postgresql-linux-x64.tar.gz"; then
+        warn "EDB-Download fehlgeschlagen. Versuche System-PostgreSQL zu bundlen..."
+        _PG_FALLBACK_LINUX=true
+    fi
 fi
 
 if [ "$BUILD_WINDOWS" = true ]; then
@@ -230,10 +233,49 @@ if [ "$BUILD_LINUX" = true ]; then
         --target="${LINUX_DIR}/bin/python/lib/python${PYTHON_VERSION%.*}/site-packages" \
         -r "${LINUX_DIR}/app/backend/requirements.txt" 2>&1 | tail -3
 
-    info "Entpacke PostgreSQL ${POSTGRESQL_VERSION} (Linux x64)..."
-    mkdir -p "${LINUX_DIR}/bin/postgresql"
-    tar xzf "${CACHE_DIR}/postgresql-linux-x64.tar.gz" \
-        -C "${LINUX_DIR}/bin/postgresql" --strip-components=1
+    info "PostgreSQL (Linux x64)..."
+    mkdir -p "${LINUX_DIR}/bin/postgresql/bin" "${LINUX_DIR}/bin/postgresql/lib"
+    if [ "${_PG_FALLBACK_LINUX:-false}" = true ] || [ ! -f "${CACHE_DIR}/postgresql-linux-x64.tar.gz" ]; then
+        # Fallback: System-PostgreSQL-Binaries + Libs kopieren
+        info "Kopiere System-PostgreSQL-Binaries..."
+        PG_BINDIR="$(pg_config --bindir 2>/dev/null || echo /usr/bin)"
+        PG_LIBDIR="$(pg_config --libdir 2>/dev/null || echo /usr/lib)"
+        for bin in pg_ctl pg_isready psql initdb pg_dump pg_restore postgres pg_resetwal; do
+            [ -f "${PG_BINDIR}/${bin}" ] && cp "${PG_BINDIR}/${bin}" "${LINUX_DIR}/bin/postgresql/bin/"
+        done
+        # Shared Libraries mitkopieren
+        for bin in "${LINUX_DIR}/bin/postgresql/bin/"*; do
+            ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read lib; do
+                # Nur Nicht-Standard-Libs kopieren (nicht libc, ld-linux, etc.)
+                case "$(basename "$lib")" in
+                    libc.so*|libm.so*|libpthread*|libdl.so*|librt.so*|ld-linux*|linux-vdso*) ;;
+                    *) cp -n "$lib" "${LINUX_DIR}/bin/postgresql/lib/" 2>/dev/null || true ;;
+                esac
+            done
+        done
+        # Share-Verzeichnis (Zeitzone, locale etc.)
+        # initdb sucht unter <bindir>/../share/postgresql/, also share/postgresql/
+        PG_SHAREDIR="$(pg_config --sharedir 2>/dev/null || echo /usr/share/postgresql)"
+        if [ -d "$PG_SHAREDIR" ]; then
+            mkdir -p "${LINUX_DIR}/bin/postgresql/share/postgresql"
+            cp -r "$PG_SHAREDIR/"* "${LINUX_DIR}/bin/postgresql/share/postgresql/"
+        fi
+        # Extension-Libraries (dict_snowball etc., noetig fuer initdb)
+        PG_PKGLIBDIR="$(pg_config --pkglibdir 2>/dev/null || echo /usr/lib/postgresql)"
+        if [ -d "$PG_PKGLIBDIR" ]; then
+            cp -r "$PG_PKGLIBDIR/"*.so "${LINUX_DIR}/bin/postgresql/lib/" 2>/dev/null || true
+            # Bitcode-Verzeichnis (optional, fuer JIT)
+            [ -d "$PG_PKGLIBDIR/bitcode" ] && cp -r "$PG_PKGLIBDIR/bitcode" "${LINUX_DIR}/bin/postgresql/lib/"
+        fi
+        # Symlink: postgres sucht $libdir unter lib/postgresql/ (pkglibdir)
+        # Die .so-Dateien liegen direkt in lib/, also Symlink auf sich selbst
+        ln -sfn . "${LINUX_DIR}/bin/postgresql/lib/postgresql"
+        info "System-PostgreSQL $(pg_config --version) gebundelt"
+    else
+        tar xzf "${CACHE_DIR}/postgresql-linux-x64.tar.gz" \
+            -C "${LINUX_DIR}/bin/postgresql" --strip-components=1
+        info "EDB PostgreSQL ${POSTGRESQL_VERSION} entpackt"
+    fi
 
     info "Erstelle Tarball..."
     tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-linux-x64.tar.gz" \
