@@ -1,11 +1,12 @@
 @echo off
+setlocal DisableDelayedExpansion
 REM PraxisZeit Windows Service Installation
 REM Requires nssm.exe in the same directory or in PATH
 
-SET INSTALL_DIR=%~dp0..
-SET NSSM=%~dp0nssm.exe
-SET PYTHON=%INSTALL_DIR%\bin\python\python.exe
-SET SCRIPT=%INSTALL_DIR%\praxiszeit-server.py
+SET "INSTALL_DIR=%~dp0."
+SET "NSSM=%~dp0nssm.exe"
+SET "PYTHON=%INSTALL_DIR%\bin\python\python.exe"
+SET "SCRIPT=%INSTALL_DIR%\praxiszeit-server.py"
 
 echo PraxisZeit Windows Service Installer
 echo =====================================

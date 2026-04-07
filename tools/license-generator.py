@@ -102,15 +102,6 @@ def cmd_generate(args):
         print("Error: Private key is not Ed25519")
         sys.exit(1)
 
-    # Parse expiry date
-    try:
-        expires_dt = datetime.strptime(args.expires, "%Y-%m-%d").replace(
-            hour=23, minute=59, second=59, tzinfo=timezone.utc
-        )
-    except ValueError:
-        print(f"Error: Invalid date format '{args.expires}'. Use YYYY-MM-DD.")
-        sys.exit(1)
-
     now = datetime.now(timezone.utc)
 
     payload = {
@@ -119,9 +110,22 @@ def cmd_generate(args):
         "max_employees": args.max_employees,
         "features": args.features.split(",") if args.features else ["base"],
         "iat": int(now.timestamp()),
-        "exp": int(expires_dt.timestamp()),
         "v": 1,
     }
+
+    if args.no_expiry:
+        expires_dt = None
+    else:
+        try:
+            expires_dt = datetime.strptime(args.expires, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc
+            )
+        except ValueError:
+            print(f"Error: Invalid date format '{args.expires}'. Use YYYY-MM-DD.")
+            sys.exit(1)
+
+    if expires_dt:
+        payload["exp"] = int(expires_dt.timestamp())
 
     token = jwt.encode(payload, private_key, algorithm="EdDSA")
 
@@ -132,7 +136,7 @@ def cmd_generate(args):
     print(f"  Customer:  {args.customer_name} ({args.customer_id})")
     print(f"  Employees: max {args.max_employees}")
     print(f"  Features:  {payload['features']}")
-    print(f"  Expires:   {args.expires}")
+    print(f"  Expires:   {'NEVER' if not expires_dt else args.expires}")
     print(f"  Issued:    {now.strftime('%Y-%m-%d %H:%M UTC')}")
 
 
@@ -166,14 +170,17 @@ def cmd_verify(args):
         print(f"INVALID: Not a valid JWT: {e}")
         sys.exit(1)
 
-    expires_dt = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
-    is_expired = datetime.now(timezone.utc) > expires_dt
+    expires_dt = datetime.fromtimestamp(payload["exp"], tz=timezone.utc) if "exp" in payload else None
+    is_expired = expires_dt and datetime.now(timezone.utc) > expires_dt
 
     print("VALID: License signature verified.")
     print(f"  Customer:  {payload.get('name', '?')} ({payload.get('sub', '?')})")
     print(f"  Employees: max {payload.get('max_employees', '?')}")
     print(f"  Features:  {payload.get('features', ['base'])}")
-    print(f"  Expires:   {expires_dt.strftime('%Y-%m-%d')}" + (" [EXPIRED]" if is_expired else ""))
+    if expires_dt:
+        print(f"  Expires:   {expires_dt.strftime('%Y-%m-%d')}" + (" [EXPIRED]" if is_expired else ""))
+    else:
+        print(f"  Expires:   NEVER")
 
 
 def cmd_info(args):
@@ -235,7 +242,8 @@ def main():
     gen.add_argument("--customer-id", required=True, help="Customer identifier (e.g. praxis-mueller)")
     gen.add_argument("--customer-name", required=True, help="Customer display name")
     gen.add_argument("--max-employees", type=int, required=True, help="Maximum number of employees")
-    gen.add_argument("--expires", required=True, help="Expiry date (YYYY-MM-DD)")
+    gen.add_argument("--expires", default=None, help="Expiry date (YYYY-MM-DD)")
+    gen.add_argument("--no-expiry", action="store_true", help="License never expires")
     gen.add_argument("--features", default="base", help="Comma-separated feature list (default: base)")
     gen.add_argument("--private-key", default="private.pem", help="Private key path (default: private.pem)")
     gen.add_argument("--output", "-o", default="license.key", help="Output license file (default: license.key)")

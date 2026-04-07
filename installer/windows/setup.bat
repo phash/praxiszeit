@@ -1,4 +1,5 @@
 @echo off
+setlocal DisableDelayedExpansion
 REM ============================================================
 REM PraxisZeit Setup fuer Windows
 REM Installiert PostgreSQL (silent) + Python-Dependencies
@@ -11,11 +12,11 @@ echo   PraxisZeit Setup fuer Windows
 echo ==============================================
 echo.
 
-SET DIR=%~dp0
-SET PYTHON=%DIR%bin\python\python.exe
-SET PG_INSTALLER=%DIR%bin\postgresql-installer.exe
-SET PG_INSTALL_DIR=%DIR%bin\postgresql
-SET PG_DATA_DIR=%DIR%data\db
+SET "DIR=%~dp0"
+SET "PYTHON=%DIR%bin\python\python.exe"
+SET "PG_INSTALLER=%DIR%bin\postgresql-installer.exe"
+SET "PG_INSTALL_DIR=%DIR%bin\postgresql"
+SET "PG_DATA_DIR=%DIR%data\db"
 
 REM --- Administratorrechte pruefen ---
 net session >nul 2>&1
@@ -40,7 +41,7 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
     echo PostgreSQL bereits installiert, ueberspringe...
 ) else if exist "%PG_INSTALLER%" (
     echo.
-    echo Installiere PostgreSQL (kann einige Minuten dauern)...
+    echo Installiere PostgreSQL ^(kann einige Minuten dauern^)...
     echo.
     "%PG_INSTALLER%" ^
         --mode unattended ^
@@ -61,6 +62,15 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
         pause
         exit /b 1
     )
+
+    REM EDB erstellt einen eigenen Service und Datenverzeichnis mit User "postgres".
+    REM PraxisZeit verwaltet PostgreSQL selbst mit eigenem Superuser "praxiszeit".
+    REM Daher: EDB-Service und Datenverzeichnis entfernen.
+    echo Raeume EDB-Installer auf...
+    net stop PraxisZeit-PostgreSQL 2>nul
+    sc delete PraxisZeit-PostgreSQL 2>nul
+    if exist "%PG_DATA_DIR%\PG_VERSION" rd /s /q "%PG_DATA_DIR%"
+    if not exist "%PG_DATA_DIR%" mkdir "%PG_DATA_DIR%"
 
     echo PostgreSQL installiert.
 ) else (

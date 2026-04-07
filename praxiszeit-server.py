@@ -134,7 +134,7 @@ def pg_init(config: dict):
         "-U", superuser,
         "-E", "UTF8",
         "--locale=C",
-        "-A", "scram-sha-256",
+        "-A", "trust",
         "-c", f"dynamic_library_path={pg_lib}",
     ]
     # Add -L if share dir exists (bundled binaries)
@@ -143,15 +143,8 @@ def pg_init(config: dict):
 
     subprocess.run(init_cmd, check=True)
 
-    # Configure pg_hba.conf for local connections with password auth
-    pg_hba = PG_DATA / "pg_hba.conf"
-    pg_hba.write_text(
-        "# PraxisZeit PostgreSQL client authentication\n"
-        "# TYPE  DATABASE  USER  ADDRESS  METHOD\n"
-        "local   all       all            scram-sha-256\n"
-        "host    all       all   127.0.0.1/32  scram-sha-256\n"
-        "host    all       all   ::1/128       scram-sha-256\n"
-    )
+    # pg_hba.conf starts with trust — pg_setup_database() will set passwords
+    # and then harden to scram-sha-256 via pg_harden_auth().
 
     # Configure postgresql.conf for local-only access
     pg_conf = PG_DATA / "postgresql.conf"
@@ -313,6 +306,21 @@ def pg_setup_database(config: dict):
 
     # Save passwords to a secure file for future starts
     _save_credentials(su_password, app_password)
+
+    # Harden pg_hba.conf from trust to scram-sha-256 now that passwords are set
+    pg_hba = PG_DATA / "pg_hba.conf"
+    pg_hba.write_text(
+        "# PraxisZeit PostgreSQL client authentication\n"
+        "# TYPE  DATABASE  USER  ADDRESS  METHOD\n"
+        "local   all       all            scram-sha-256\n"
+        "host    all       all   127.0.0.1/32  scram-sha-256\n"
+        "host    all       all   ::1/128       scram-sha-256\n"
+    )
+    subprocess.run(
+        [str(pg_cmd("pg_ctl")), "-D", str(PG_DATA), "reload"],
+        capture_output=True,
+    )
+    logger.info("Authentication hardened to scram-sha-256")
 
     logger.info("Database setup complete")
     return su_password, app_password
@@ -573,15 +581,18 @@ def cmd_start(args):
     logger.info("=" * 60)
 
     # 1. Initialize PostgreSQL if needed
-    is_first_run = not PG_DATA.exists() or not any(PG_DATA.iterdir())
-    if is_first_run:
+    needs_initdb = not PG_DATA.exists() or not any(PG_DATA.iterdir())
+    creds_file = CONFIG_DIR / ".db-credentials"
+    needs_setup = needs_initdb or not creds_file.is_file()
+
+    if needs_initdb:
         pg_init(config)
 
     # 2. Start PostgreSQL
     pg_start()
 
-    # 3. Setup database on first run
-    if is_first_run:
+    # 3. Setup database if needed (first run or missing credentials)
+    if needs_setup:
         pg_setup_database(config)
     else:
         # Load saved credentials
