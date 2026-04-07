@@ -123,17 +123,25 @@ def pg_init(config: dict):
 
     superuser = get_config_value(config, "database", "superuser", "praxiszeit")
 
-    subprocess.run(
-        [
-            str(pg_cmd("initdb")),
-            "-D", str(PG_DATA),
-            "-U", superuser,
-            "-E", "UTF8",
-            "--locale=C",
-            "-A", "scram-sha-256",
-        ],
-        check=True,
-    )
+    # -L: share directory (postgres.bki etc.)
+    # -c dynamic_library_path: where to find extension .so files (dict_snowball etc.)
+    pg_lib = str(BIN_DIR / "postgresql" / "lib").replace("\\", "/")
+    pg_share = str(BIN_DIR / "postgresql" / "share" / "postgresql").replace("\\", "/")
+
+    init_cmd = [
+        str(pg_cmd("initdb")),
+        "-D", str(PG_DATA),
+        "-U", superuser,
+        "-E", "UTF8",
+        "--locale=C",
+        "-A", "scram-sha-256",
+        "-c", f"dynamic_library_path={pg_lib}",
+    ]
+    # Add -L if share dir exists (bundled binaries)
+    if Path(pg_share).is_dir():
+        init_cmd.extend(["-L", pg_share])
+
+    subprocess.run(init_cmd, check=True)
 
     # Configure pg_hba.conf for local connections with password auth
     pg_hba = PG_DATA / "pg_hba.conf"
@@ -160,6 +168,9 @@ def pg_init(config: dict):
         f.write("log_filename = 'postgresql.log'\n")
         f.write("log_rotation_age = 1d\n")
         f.write("log_rotation_size = 10MB\n")
+        # Extension libraries path (for bundled PostgreSQL)
+        pg_lib = str(BIN_DIR / "postgresql" / "lib").replace("\\", "/")
+        f.write(f"dynamic_library_path = '{pg_lib}'\n")
 
     logger.info("PostgreSQL data directory initialized")
 
