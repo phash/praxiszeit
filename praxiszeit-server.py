@@ -255,11 +255,11 @@ def pg_setup_database(config: dict):
 
     psql = str(pg_cmd("psql"))
 
-    # Set superuser password (use -v for safe parameter passing)
+    # Set superuser password
+    escaped_su_pw = _escape_pg_password(su_password)
     subprocess.run(
         [psql, "-U", superuser, "-d", "postgres",
-         "-v", f"pw={_escape_pg_password(su_password)}",
-         "-c", f"ALTER ROLE {superuser} PASSWORD :'pw'"],
+         "-c", f"ALTER ROLE {superuser} PASSWORD '{escaped_su_pw}'"],
         check=True, capture_output=True,
     )
 
@@ -287,11 +287,11 @@ def pg_setup_database(config: dict):
             check=True, capture_output=True,
         )
 
-    # Set app user password (use -v for safe parameter passing)
+    # Set app user password
+    escaped_app_pw = _escape_pg_password(app_password)
     subprocess.run(
         [psql, "-U", superuser, "-d", db_name,
-         "-v", f"pw={_escape_pg_password(app_password)}",
-         "-c", f"ALTER ROLE {app_user} PASSWORD :'pw'"],
+         "-c", f"ALTER ROLE {app_user} PASSWORD '{escaped_app_pw}'"],
         check=True, capture_output=True,
     )
 
@@ -334,15 +334,15 @@ def _save_credentials(su_password: str, app_password: str):
         f"APP_PASSWORD={app_password}\n"
     )
     if IS_WINDOWS:
-        # Restrict file to current user only via icacls
+        # Restrict file permissions: current user + SYSTEM (for service)
         try:
             username = os.environ.get("USERNAME", os.environ.get("USER", ""))
+            cmds = [["icacls", str(creds_file), "/inheritance:r"]]
             if username:
-                subprocess.run(
-                    ["icacls", str(creds_file), "/inheritance:r",
-                     "/grant:r", f"{username}:(R,W)"],
-                    check=True, capture_output=True,
-                )
+                cmds.append(["icacls", str(creds_file), "/grant:r", f"{username}:(R,W)"])
+            cmds.append(["icacls", str(creds_file), "/grant", "SYSTEM:(R,W)"])
+            for cmd in cmds:
+                subprocess.run(cmd, check=True, capture_output=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
             logger.warning("Could not restrict .db-credentials permissions on Windows")
     else:
@@ -437,7 +437,7 @@ def uvicorn_start(config: dict):
         "--host", "0.0.0.0",
         "--port", str(port),
         "--proxy-headers",
-        "--forwarded-allow-ips", "*",
+        "--forwarded-allow-ips", "127.0.0.1,::1",
     ]
 
     # Add SSL if configured
@@ -454,6 +454,9 @@ def uvicorn_start(config: dict):
     # Set SERVE_FRONTEND=true for native mode
     env = os.environ.copy()
     env["SERVE_FRONTEND"] = "true"
+    env["PYTHONUTF8"] = "1"  # Avoid cp1252 encoding errors on Windows
+    # Native install: frontend lives at app/frontend/ (no dist/ subfolder)
+    env["FRONTEND_DIR"] = str(APP_DIR / "frontend")
 
     logger.info(f"Starting uvicorn on port {port}...")
 
@@ -610,6 +613,49 @@ def cmd_start(args):
             logger.error("Database credentials not found. Run 'praxiszeit-server init' first.")
             pg_stop()
             sys.exit(1)
+
+    # 3b. Set environment variables from config for backend (Pydantic Settings)
+    _CONF_TO_ENV = {
+        ("admin", "email"): "ADMIN_EMAIL",
+        ("admin", "password"): "ADMIN_PASSWORD",
+        ("admin", "username"): "ADMIN_USERNAME",
+        ("admin", "first_name"): "ADMIN_FIRST_NAME",
+        ("admin", "last_name"): "ADMIN_LAST_NAME",
+        ("practice", "name"): "PRACTICE_NAME",
+        ("practice", "address"): "PRACTICE_ADDRESS",
+        ("practice", "holiday_state"): "HOLIDAY_STATE",
+        ("security", "login_rate_limit"): "LOGIN_RATE_LIMIT",
+        ("security", "cookie_secure"): "COOKIE_SECURE",
+        ("license", "key_file"): "LICENSE_KEY_PATH",
+        ("updates", "check_enabled"): "UPDATE_CHECK_ENABLED",
+        ("updates", "server_url"): "UPDATE_SERVER_URL",
+        ("updates", "check_interval_hours"): "UPDATE_CHECK_INTERVAL_HOURS",
+        ("backup", "enabled"): "BACKUP_ENABLED",
+        ("backup", "schedule"): "BACKUP_SCHEDULE",
+        ("backup", "retention_days"): "BACKUP_RETENTION_DAYS",
+    }
+    # Config keys whose values are file paths (resolve relative to BASE_DIR)
+    _PATH_KEYS = {"LICENSE_KEY_PATH"}
+    for (section, key), env_name in _CONF_TO_ENV.items():
+        if env_name not in os.environ:
+            val = get_config_value(config, section, key)
+            if val is not None:
+                str_val = str(val).lower() if isinstance(val, bool) else str(val)
+                if env_name in _PATH_KEYS and not Path(str_val).is_absolute():
+                    str_val = str(BASE_DIR / str_val)
+                os.environ[env_name] = str_val
+
+    # Generate SECRET_KEY if not configured
+    if "SECRET_KEY" not in os.environ:
+        sk = get_config_value(config, "security", "secret_key")
+        if sk:
+            os.environ["SECRET_KEY"] = sk
+        else:
+            import hashlib
+            # Derive a stable secret from the superuser password
+            sk = secrets.token_hex(32)
+            os.environ["SECRET_KEY"] = sk
+            logger.info("Generated SECRET_KEY")
 
     # 4. Run migrations
     run_migrations(config)
