@@ -392,6 +392,10 @@ if settings.SERVE_FRONTEND:
         SPA fallback: serve static files if they exist, otherwise index.html.
         Replaces nginx try_files $uri $uri/ /index.html.
         """
+        # Never intercept API routes — redirect to trailing slash so FastAPI routers match
+        if full_path.startswith("api/"):
+            from starlette.responses import RedirectResponse
+            return RedirectResponse(url=f"/{full_path}/", status_code=307)
         # Try to serve the exact file (e.g. favicon.ico, robots.txt)
         file_path = _frontend_dir / full_path
         if file_path.is_file() and _frontend_dir in file_path.resolve().parents:
