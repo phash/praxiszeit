@@ -1,7 +1,8 @@
 # CLAUDE.md – PraxisZeit
 
 **Repo:** https://github.com/phash/praxiszeit
-**Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16 / Docker Compose
+**Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
+**Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
 
 ---
 
@@ -13,11 +14,18 @@ docker compose up -d          # Frontend :80, API-Docs :8000/docs
 docker compose down
 ```
 
-### Prod-Deployment
+### Prod-Deployment (Docker)
 ```bash
 ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 ```
 → Details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+### Native Installer (Kundenserver, ohne Docker)
+```bash
+bash tools/build-release.sh                    # Release-Pakete bauen (Linux/Windows/macOS)
+bash tools/build-release.sh --linux-only       # Nur Linux
+```
+→ Details: [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md)
 
 ### Tests
 ```bash
@@ -44,6 +52,9 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **§5 ArbZG:** Echtzeit-Ruhezeitwarnung beim Einstempeln (<11h seit letztem Arbeitsende)
 - **net_hours Floor:** Kann nicht negativ werden (max(0, ...))
 - **Export Multi-Entry:** Mehrere Einträge pro Tag werden korrekt exportiert
+- **Native-Modus:** `SERVE_FRONTEND=True` → FastAPI liefert Frontend (nginx entfällt), `False` (Default) = Docker
+- **APP_VERSION:** Single Source of Truth in `app/core/updater.py`, nicht in `main.py` hardcoden
+- **Alembic Revision-IDs:** Max 32 Zeichen (`version_num varchar(32)` Limit)
 
 ### Multi-Tenant
 - **Jede neue Tabelle** braucht `tenant_id` FK + RLS-Policy + Eintrag in Migration
@@ -69,6 +80,8 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 | Security | [docs/SECURITY.md](docs/SECURITY.md) |
 | Admin-Handbuch | [docs/handbuch/HANDBUCH-ADMIN.md](docs/handbuch/HANDBUCH-ADMIN.md) |
 | Admin-Cheat-Sheet | [docs/handbuch/CHEATSHEET-ADMIN.md](docs/handbuch/CHEATSHEET-ADMIN.md) |
+| Native Installation | [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md) |
+| Native Installer Design | [docs/superpowers/specs/2026-04-07-native-single-instance-installer-design.md](docs/superpowers/specs/2026-04-07-native-single-instance-installer-design.md) |
 | Specs & Design-Docs | `docs/specs/` (arbzg, dsgvo, features, security) |
 
 ---
