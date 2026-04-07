@@ -54,7 +54,9 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **Export Multi-Entry:** Mehrere Einträge pro Tag werden korrekt exportiert
 - **Native-Modus:** `SERVE_FRONTEND=True` → FastAPI liefert Frontend (nginx entfällt), `False` (Default) = Docker
 - **Native Windows-Fallstricke:** Siehe `docs/NATIVE-WINDOWS-PITFALLS.md` (psql -v, Glob-Expansion, SYSTEM-Permissions, cp1252, SPA-Routing)
-- **SPA-Fallback:** `/{full_path:path}` darf keine `/api/`-Pfade abfangen → 307-Redirect auf trailing slash
+- **SPA-Fallback:** Middleware statt catch-all Route! `@app.get("/{full_path:path}")` verursacht 405 für POST/PUT/DELETE
+- **SECRET_KEY persistieren:** Muss in `config/.secret-key` gespeichert werden, sonst Session-Verlust bei Restart
+- **cookie_secure:** Muss `false` sein ohne SSL, sonst lehnt Browser das Refresh-Cookie ab
 - **Subprocess `*` verboten:** Python 3.13/Windows expanded `*` als Glob in subprocess-Args → explizite Werte nutzen
 - **PYTHONUTF8=1:** Immer für uvicorn-Subprozesse setzen (cp1252-Crashes bei Emojis)
 - **APP_VERSION:** Single Source of Truth in `app/core/updater.py`, nicht in `main.py` hardcoden

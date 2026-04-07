@@ -126,6 +126,65 @@ if env_name in _PATH_KEYS and not Path(str_val).is_absolute():
 
 ---
 
+## 8. SECRET_KEY nicht persistiert — Session-Verlust bei Restart
+
+**Problem:** `SECRET_KEY` wird bei jedem Service-Restart neu generiert.
+Alle JWTs (Access + Refresh) werden sofort ungueltig → alle User fliegen raus.
+
+**Ursache:** `secrets.token_hex(32)` wurde in-memory generiert, aber nie auf Disk
+geschrieben. Bei NSSM-Restart (neuer Prozess) geht der Key verloren.
+
+**Loesung:** Key in `config/.secret-key` persistieren, bei Folgestarts laden:
+```python
+sk_file = CONFIG_DIR / ".secret-key"
+if sk_file.is_file():
+    sk = sk_file.read_text().strip()
+else:
+    sk = secrets.token_hex(32)
+    sk_file.write_text(sk)
+```
+
+**Datei:** `praxiszeit-server.py` → `cmd_start()`, Abschnitt "SECRET_KEY"
+
+---
+
+## 9. SPA Catch-All Route verursacht 405 Method Not Allowed
+
+**Problem:** `@app.get("/{full_path:path}")` als SPA-Fallback registriert eine
+GET-Route fuer jeden Pfad. POST/PUT/DELETE auf API-Endpoints (z.B. Zeiteintrag
+erstellen/bearbeiten) bekommen 405 statt an den API-Router weitergeleitet zu werden.
+
+**Ursache:** FastAPI sieht den Pfad-Match mit dem Catch-All, aber die HTTP-Methode
+(POST/PUT/DELETE) passt nicht zu GET → 405 Method Not Allowed.
+
+**Loesung:** SPA-Fallback als Middleware statt als Route:
+```python
+class SPAFallbackMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if (request.method == "GET"
+                and response.status_code == 404
+                and not request.url.path.startswith("/api/")):
+            return Response(content=_index_html, media_type="text/html")
+        return response
+```
+
+**Datei:** `backend/app/main.py` → `SPAFallbackMiddleware`
+
+---
+
+## 10. cookie_secure=true ohne SSL
+
+**Problem:** `Set-Cookie: refresh_token; Secure` wird vom Browser bei HTTP-
+Verbindungen abgelehnt → Login schlaegt fehl (Token wird nicht gespeichert).
+
+**Loesung:** In `praxiszeit.conf`: `cookie_secure = false` wenn kein SSL.
+Sobald SSL eingerichtet ist, wieder auf `true` setzen.
+
+**Datei:** `config/praxiszeit.conf` → `[security]`
+
+---
+
 ## Checkliste fuer zukuenftige Native Windows Deployments
 
 - [ ] `praxiszeit.conf` korrekt ausgefuellt (admin, security, practice)
@@ -133,5 +192,7 @@ if env_name in _PATH_KEYS and not Path(str_val).is_absolute():
 - [ ] SSL-Zertifikate unter `config/ssl/` ablegen falls HTTPS gewuenscht
 - [ ] `license.key` unter `config/` ablegen
 - [ ] Nach `net start PraxisZeit`: Logs pruefen auf "Application startup complete"
+- [ ] Kein "Generated SECRET_KEY" bei Folgestarts (muss "Generated and saved" nur beim ersten Mal)
 - [ ] Backup-Restore: `restore-backup.bat` nutzt `pause` → fuer Automation anpassen
 - [ ] PostgreSQL-Port 5432 ist nur auf localhost gebunden (sicher)
+- [ ] API-Endpoints testen: `POST /api/time-entries` darf nicht 405 geben
