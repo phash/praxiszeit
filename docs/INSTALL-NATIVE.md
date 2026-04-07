@@ -58,25 +58,52 @@ Das Release-Paket enthaelt Python 3.12 und PostgreSQL 16 als portable Binaries â
 
 ### Release-Paket selber bauen
 
+Das Build-Script laedt Python, PostgreSQL und nssm automatisch herunter:
+
 ```bash
-# Portable Python herunterladen (python-build-standalone)
-# https://github.com/indygreg/python-build-standalone/releases
-wget https://github.com/indygreg/python-build-standalone/releases/download/20241101/cpython-3.12.7+20241101-x86_64-unknown-linux-gnu-install_only.tar.gz
-mkdir -p build/bin/python
-tar xzf cpython-3.12.7*.tar.gz -C build/bin/python --strip-components=1
+# Alles bauen (Linux + Windows)
+bash tools/build-release.sh
 
-# Portable PostgreSQL herunterladen
-# https://www.enterprisedb.com/download-postgresql-binaries
-wget https://get.enterprisedb.com/postgresql/postgresql-16.6-1-linux-x64-binaries.tar.gz
-mkdir -p build/bin/postgresql
-tar xzf postgresql-16.6*.tar.gz -C build/bin/postgresql --strip-components=1
+# Nur Linux
+bash tools/build-release.sh --linux-only
 
-# pip-Dependencies installieren
-build/bin/python/bin/pip3 install -r backend/requirements.txt
+# Nur Windows
+bash tools/build-release.sh --windows-only
 
-# Release-Paket schnueren
-bash tools/build-release.sh 1.2.0
+# Bestimmte Version
+bash tools/build-release.sh --version 1.3.0
+
+# Cache nutzen (Binaries nicht erneut laden)
+bash tools/build-release.sh --skip-download
 ```
+
+Gebuendelte Binaries (automatisch heruntergeladen):
+
+| Komponente | Linux | Windows |
+|------------|-------|---------|
+| Python 3.13 | python-build-standalone (indygreg) | python-build-standalone (indygreg) |
+| PostgreSQL 16 | EDB Binaries (.tar.gz) | EDB Binaries (.zip) |
+| nssm | â€” | nssm.cc (Service Manager) |
+
+Ergebnis in `dist/`:
+- `praxiszeit-X.Y.Z-linux-x64.tar.gz` (~200 MB)
+- `praxiszeit-X.Y.Z-windows-x64.zip` (~400 MB)
+- `praxiszeit-X.Y.Z-SHA256SUMS.txt`
+
+## Windows-Installation
+
+```
+1. ZIP entpacken nach C:\PraxisZeit\
+2. setup.bat ausfuehren (installiert Python-Dependencies)
+3. install-service.bat ausfuehren (registriert Windows-Dienst)
+4. net start PraxisZeit
+```
+
+Beim ersten Start:
+- PostgreSQL wird automatisch initialisiert
+- Datenbank + Benutzer werden erstellt
+- Migrationen laufen automatisch
+- Admin-Account wird aus der Konfiguration angelegt
 
 ## Verzeichnisstruktur
 
