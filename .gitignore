@@ -63,10 +63,15 @@ e2e/test-results/
 e2e/playwright-report/
 .pytest_cache/
 
-# Tools & local dev scripts (not tracked)
+# Local dev scripts (not tracked)
 .serena/
 import_celine.py
-tools/
+
+# License keys and credentials (NEVER commit)
+*.pem
+*.key
+!installer/praxiszeit.conf.example
+.db-credentials
 
 # Generated documentation (HTML/PDF exports)
 docs/generated/

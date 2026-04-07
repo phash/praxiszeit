@@ -1,6 +1,78 @@
+import os
 import warnings
+from pathlib import Path
+from typing import Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# --- TOML Config Loader (native installations) ---
+# If a praxiszeit.conf TOML file exists, load its values as environment
+# variables before Pydantic Settings initializes. Environment variables
+# and .env take precedence (Pydantic's default priority).
+
+_TOML_CONFIG_PATHS = [
+    Path("config/praxiszeit.conf"),        # Relative (native install layout)
+    Path("/opt/praxiszeit/config/praxiszeit.conf"),  # Linux absolute
+]
+
+# Mapping from TOML sections+keys to environment variable names
+_TOML_KEY_MAP = {
+    ("server", "port"): "SERVER_PORT",
+    ("server", "ssl_cert"): "SSL_CERT_PATH",
+    ("server", "ssl_key"): "SSL_KEY_PATH",
+    ("database", "data_dir"): "PG_DATA_DIR",
+    ("practice", "name"): "PRACTICE_NAME",
+    ("practice", "address"): "PRACTICE_ADDRESS",
+    ("practice", "holiday_state"): "HOLIDAY_STATE",
+    ("admin", "username"): "ADMIN_USERNAME",
+    ("admin", "email"): "ADMIN_EMAIL",
+    ("admin", "password"): "ADMIN_PASSWORD",
+    ("admin", "first_name"): "ADMIN_FIRST_NAME",
+    ("admin", "last_name"): "ADMIN_LAST_NAME",
+    ("security", "secret_key"): "SECRET_KEY",
+    ("security", "login_rate_limit"): "LOGIN_RATE_LIMIT",
+    ("security", "cookie_secure"): "COOKIE_SECURE",
+    ("license", "key_file"): "LICENSE_KEY_PATH",
+    ("updates", "check_enabled"): "UPDATE_CHECK_ENABLED",
+    ("updates", "server_url"): "UPDATE_SERVER_URL",
+    ("updates", "check_interval_hours"): "UPDATE_CHECK_INTERVAL_HOURS",
+    ("backup", "enabled"): "BACKUP_ENABLED",
+    ("backup", "schedule"): "BACKUP_SCHEDULE",
+    ("backup", "retention_days"): "BACKUP_RETENTION_DAYS",
+}
+
+
+def _load_toml_config():
+    """Load praxiszeit.conf (TOML) and set values as env vars if not already set."""
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib  # Python < 3.11 fallback
+        except ImportError:
+            return
+
+    for config_path in _TOML_CONFIG_PATHS:
+        if config_path.is_file():
+            with open(config_path, "rb") as f:
+                toml_data = tomllib.load(f)
+
+            for (section, key), env_name in _TOML_KEY_MAP.items():
+                if env_name in os.environ:
+                    continue  # Env vars take precedence
+                if section in toml_data and key in toml_data[section]:
+                    value = toml_data[section][key]
+                    os.environ[env_name] = str(value).lower() if isinstance(value, bool) else str(value)
+
+            # SERVE_FRONTEND is implicitly true when loaded from TOML config
+            if "SERVE_FRONTEND" not in os.environ:
+                os.environ["SERVE_FRONTEND"] = "true"
+
+            break  # Only load the first config file found
+
+
+_load_toml_config()
 
 
 class Settings(BaseSettings):
@@ -29,6 +101,17 @@ class Settings(BaseSettings):
 
     # Rate limiting (increase for E2E test environments)
     LOGIN_RATE_LIMIT: str = "5/minute"
+
+    # Native mode: serve frontend static files directly from FastAPI (no nginx)
+    SERVE_FRONTEND: bool = False
+    FRONTEND_DIR: str = "../frontend/dist"
+
+    # License key file path (native installations only)
+    LICENSE_KEY_PATH: Optional[str] = None
+
+    # Update server URL (native installations only)
+    UPDATE_SERVER_URL: Optional[str] = None
+    UPDATE_CHECK_INTERVAL_HOURS: int = 12
 
     @field_validator("SECRET_KEY")
     @classmethod

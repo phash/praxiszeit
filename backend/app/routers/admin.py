@@ -7,6 +7,7 @@ from app.routers.admin_time_entries import router as time_entries_router
 from app.routers.admin_settings import router as settings_router
 from app.routers.admin_vacations import router as vacations_router
 from app.routers.admin_carryovers import router as carryovers_router
+from app.routers.admin_updates import router as updates_router
 
 # Re-export a combined router for backward compatibility with main.py
 router = APIRouter()
@@ -16,3 +17,4 @@ router.include_router(time_entries_router)
 router.include_router(settings_router)
 router.include_router(vacations_router)
 router.include_router(carryovers_router)
+router.include_router(updates_router)

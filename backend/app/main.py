@@ -1,9 +1,14 @@
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
+from app.middleware.static_serving import SecurityHeadersMiddleware, RequestSizeLimitMiddleware
 from contextlib import asynccontextmanager
 import os
 import sys
@@ -124,12 +129,36 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # 7. License validation (native installations only)
+    if settings.LICENSE_KEY_PATH:
+        from app.core.license import (
+            validate_license, validate_license_quiet,
+            set_license_state, LicenseError, LicenseExpiredError,
+        )
+        license_path = Path(settings.LICENSE_KEY_PATH)
+        try:
+            license_info = validate_license(license_path)
+            set_license_state(license_info, read_only=False)
+            days_left = license_info.days_until_expiry
+            print(f"License: {license_info.customer_name} "
+                  f"(max {license_info.max_employees} MA, "
+                  f"{days_left} days remaining)")
+        except LicenseExpiredError as e:
+            # Expired: read-only mode (ArbZG-compliant — data still accessible)
+            license_info = validate_license_quiet(license_path)
+            set_license_state(license_info, read_only=True)
+            print(f"WARNING: {e}")
+            print("App running in READ-ONLY mode.")
+        except LicenseError as e:
+            print(f"LICENSE ERROR: {e}")
+            sys.exit(1)
+
     # Configuration sanity checks
     if settings.COOKIE_SECURE and settings.ENVIRONMENT != "production":
-        print("⚠️  COOKIE_SECURE=True but ENVIRONMENT is not 'production'. "
+        print("COOKIE_SECURE=True but ENVIRONMENT is not 'production'. "
               "The refresh-token cookie will NOT be sent over HTTP — set COOKIE_SECURE=false in .env for local development.")
 
-    print("✅ PraxisZeit backend ready!")
+    print("PraxisZeit backend ready!")
 
     yield
 
@@ -138,11 +167,12 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI app (disable docs in production)
+from app.core.updater import APP_VERSION
 _is_production = settings.ENVIRONMENT == "production"
 app = FastAPI(
     title="PraxisZeit API",
     description="Zeiterfassungssystem für Arztpraxen",
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
     docs_url=None if _is_production else "/docs",
     redoc_url=None if _is_production else "/redoc",
@@ -154,12 +184,16 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Prometheus metrics – DSGVO F-014: group_paths=True prevents UUIDs in metric labels
-Instrumentator(
+# In native mode (SERVE_FRONTEND=True), don't expose metrics endpoint (no nginx to block it)
+_instrumentator = Instrumentator(
     should_instrument_requests_inprogress=True,
     inprogress_name="http_requests_inprogress",
     inprogress_labels=True,
     should_group_untemplated=True,
-).instrument(app).expose(app)
+)
+_instrumentator.instrument(app)
+if not settings.SERVE_FRONTEND:
+    _instrumentator.expose(app)
 
 # Configure CORS
 cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
@@ -171,6 +205,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Cookie"],
 )
+
+# GZip compression (replaces nginx gzip in native mode, harmless behind nginx)
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# Native mode middleware (replaces nginx features)
+if settings.SERVE_FRONTEND:
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestSizeLimitMiddleware, max_size=2 * 1024 * 1024)  # 2MB
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)
 # DSGVO F-007: sqlalchemy.engine intentionally NOT attached (SQL queries can contain PII)
@@ -240,14 +282,17 @@ async def capture_errors_middleware(request: Request, call_next):
         raise
 
 
-@app.get("/")
-def root():
-    """Root endpoint."""
-    # DSGVO F-015: don't expose /docs URL in production
-    response = {"message": "PraxisZeit API", "version": "1.0.0"}
-    if not _is_production:
-        response["docs"] = "/docs"
-    return response
+# Root endpoint: only register when NOT serving frontend (Docker mode)
+# In native mode (SERVE_FRONTEND=True), the SPA fallback serves index.html at /
+if not settings.SERVE_FRONTEND:
+    @app.get("/")
+    def root():
+        """Root endpoint."""
+        # DSGVO F-015: don't expose /docs URL in production
+        response = {"message": "PraxisZeit API", "version": APP_VERSION}
+        if not _is_production:
+            response["docs"] = "/docs"
+        return response
 
 
 @app.get("/api/settings")
@@ -255,6 +300,7 @@ def get_public_settings():
     """Public endpoint returning runtime-configurable UI settings (no auth required)."""
     from app.models.system_setting import SystemSetting
     from app.database import set_superadmin_context as _set_sa
+    from app.core.license import get_current_license, is_read_only
     db = SessionLocal()
     try:
         _set_sa(db)  # Public endpoint needs to read global settings
@@ -264,9 +310,23 @@ def get_public_settings():
                 SystemSetting.tenant_id == uuid.UUID("00000000-0000-0000-0000-000000000001")
             ).first()
             return s.value if s else default
-        return {
-            "vacation_approval_required": _get("vacation_approval_required", "false").lower() == "true"
+
+        result = {
+            "vacation_approval_required": _get("vacation_approval_required", "false").lower() == "true",
         }
+
+        # License info (for native installations)
+        license_info = get_current_license()
+        if license_info is not None:
+            result["license"] = {
+                "customer_name": license_info.customer_name,
+                "max_employees": license_info.max_employees,
+                "days_until_expiry": license_info.days_until_expiry,
+                "is_expired": license_info.is_expired,
+                "read_only": is_read_only(),
+            }
+
+        return result
     finally:
         db.close()
 
@@ -286,3 +346,63 @@ def health_check():
         )
     finally:
         db.close()
+
+
+# --- Native mode: serve frontend static files directly from FastAPI ---
+if settings.SERVE_FRONTEND:
+    _frontend_dir = Path(settings.FRONTEND_DIR)
+    if not _frontend_dir.is_absolute():
+        _frontend_dir = Path(__file__).resolve().parent.parent / settings.FRONTEND_DIR
+    _frontend_dir = _frontend_dir.resolve()
+
+    # Mount hashed assets with long cache
+    _assets_dir = _frontend_dir / "assets"
+    if _assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="static_assets")
+
+    @app.get("/sw.js")
+    async def service_worker():
+        """Service worker must not be cached."""
+        sw_path = _frontend_dir / "sw.js"
+        if sw_path.is_file():
+            return FileResponse(
+                str(sw_path),
+                media_type="application/javascript",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+    @app.get("/manifest.webmanifest")
+    async def manifest():
+        """PWA manifest."""
+        manifest_path = _frontend_dir / "manifest.webmanifest"
+        if manifest_path.is_file():
+            return FileResponse(
+                str(manifest_path),
+                media_type="application/manifest+json",
+                headers={"Cache-Control": "no-cache"},
+            )
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        """
+        SPA fallback: serve static files if they exist, otherwise index.html.
+        Replaces nginx try_files $uri $uri/ /index.html.
+        """
+        # Try to serve the exact file (e.g. favicon.ico, robots.txt)
+        file_path = _frontend_dir / full_path
+        if file_path.is_file() and _frontend_dir in file_path.resolve().parents:
+            return FileResponse(str(file_path))
+        # Fallback to index.html for SPA routing
+        index_path = _frontend_dir / "index.html"
+        if index_path.is_file():
+            return FileResponse(
+                str(index_path),
+                media_type="text/html",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"detail": "Frontend not found"})
