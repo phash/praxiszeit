@@ -75,6 +75,10 @@ env["PYTHONUTF8"] = "1"
 
 ## 5. SPA-Fallback faengt API-Routen ab
 
+> **Hinweis:** Dieses Problem wurde zuerst mit einem 307-Redirect geloest,
+> dann aber durch die Middleware-Loesung in Pitfall #9 vollstaendig ersetzt.
+> Die aktuelle Loesung ist `SPAFallbackMiddleware` (siehe #9).
+
 **Problem:** Der Catch-all `@app.get("/{full_path:path}")` fuer das Frontend-SPA
 matcht `/api/dashboard` (ohne trailing slash) **vor** dem FastAPI-Router.
 Ergebnis: API-Requests bekommen `index.html` statt JSON → `l.reduce is not a function`.
@@ -82,13 +86,9 @@ Ergebnis: API-Requests bekommen `index.html` statt JSON → `l.reduce is not a f
 **Ursache:** FastAPI-Router verwenden standardmaessig trailing-slash Routen
 (`/api/dashboard/`). Der Catch-all matcht die Variante ohne Slash zuerst.
 
-**Loesung:** Im SPA-Fallback API-Pfade per 307-Redirect auf trailing slash weiterleiten:
-```python
-if full_path.startswith("api/"):
-    return RedirectResponse(url=f"/{full_path}/", status_code=307)
-```
+**Loesung:** ~~307-Redirect~~ → ersetzt durch Middleware (siehe Pitfall #9).
 
-**Datei:** `backend/app/main.py` → `spa_fallback()`
+**Datei:** `backend/app/main.py` → `SPAFallbackMiddleware`
 
 ---
 
@@ -114,7 +114,7 @@ der sucht relativ zum CWD (`config/praxiszeit.conf`). Da Alembic und uvicorn aus
 `app/backend/` gestartet werden, wird die Config unter `../../config/praxiszeit.conf`
 nicht gefunden → `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` fehlen.
 
-**Loesung:** In `cmd_start()` alle noeligen Config-Werte als Env-Vars setzen,
+**Loesung:** In `cmd_start()` alle noetigen Config-Werte als Env-Vars setzen,
 bevor Migrations/uvicorn gestartet werden. Pfad-Werte (z.B. `LICENSE_KEY_PATH`)
 muessen absolut aufgeloest werden:
 ```python

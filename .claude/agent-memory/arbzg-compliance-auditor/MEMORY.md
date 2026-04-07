@@ -62,6 +62,47 @@
 - `_calculate_daily_net_hours()`: summiert alle Eintraege des Tages (korrekte Multi-Entry-Behandlung)
 - XLS-Import: nur Warnings (kein Hard-Stop), exempt_from_arbzg korrekt, is_night_worker korrekt
 
+## Neue Findings (Stand 01.04.2026) - Absence-CRs + Uberstundenausgleich
+
+### KRITISCH: DSGVO Art. 9 - Sick-Typ in Team-Endpoints sichtbar
+- `GET /api/absences/calendar` und `GET /api/absences/team/upcoming` geben `type: sick` ungefiltert zurueck
+- Jeder eingeloggte Mitarbeiter sieht Kranktage aller Kollegen
+- Fix: `type`-Feld fuer SICK durch neutralen Wert (`other` oder neuer Typ `absent`) ersetzen
+- Datei: `absences.py` Zeile 60-138, Schemas: `AbsenceCalendarEntry` + `TeamAbsenceEntry`
+
+### HOCH: §3 EntgFG - Sick-CR-Approval bucht `proposed_absence_hours` statt Tages-Soll
+- `admin_change_requests.py` Zeile 214: `hours=float(cr.proposed_absence_hours)` ohne SICK-Override
+- `absences.py` Zeile 309-310 macht es korrekt: `get_daily_target_for_date()` erzwingen
+- Betrifft auch UPDATE-Pfad (Zeile 226-227)
+- Fix: Beim CR-Approval fuer SICK-Absences `calculation_service.get_daily_target_for_date()` aufrufen
+
+### HOCH: §16 ArbZG - Kein Audit-Log fuer Absence-CR-Aktionen
+- TimeEntry-CRs: `_create_audit_log()` korrekt aufgerufen (Zeile 167, 176, 198)
+- Absence-CRs: kein `_create_audit_log()` aufgerufen (Zeile 207-234)
+- Einzige Spur: ChangeRequest-Datensatz + Absence-Datensatz, keine Aenderungshistorie
+- Fix: DSGVO-Log-Pattern aus reports.py nutzen (time_entry_id=None) oder eigene AbsenceAuditLog-Tabelle
+
+### MITTEL: DSGVO - JSON-Monatsreport hat kein include_health_data-Flag
+- `GET /api/admin/reports/monthly` gibt `sick_hours` immer zurueck (kein opt-in)
+- Excel-Export hat `include_health_data`-Parameter korrekt; JSON-Endpoint nicht
+- Audit-Log beim JSON-Abruf wird immer geschrieben (korrekt), aber Daten nicht optional
+
+### MITTEL: Kein Schutz vor negativem Uberstundenkonto bei OVERTIME-Absence
+- `absences.py` und `admin_change_requests.py` pruefen Kontostand bei OVERTIME nicht
+- Vergleich: Vacation-Budget wird in `absences.py` Zeile 261-272 korrekt geprueft
+- Fix: `get_overtime_account()` aufrufen, bei Ergebnis < 0 Warnung ausgeben
+
+## Architektur: Overtime-Ausgleich (korrekt, Stand 01.04.2026)
+- OVERTIME in `notin_([TRAINING, SICK, OVERTIME])` bei Soll-Berechnung → Soll bleibt erhalten
+- OVERTIME nicht in `[TRAINING, SICK]` bei Ist-Berechnung → Ist = 0
+- Netto-Effekt: Konto -= daily_target pro OVERTIME-Tag → rechtlich korrekt
+- Konsistent in: get_monthly_target, get_monthly_actual, get_overtime_account, get_ytd_summary, journal_service.py
+
+## Architektur: Absence-CR-Pfad (Stand 01.04.2026)
+- `change_requests.py` Zeile 51: `entry_kind == "absence"` → eigener Branch → kein ArbZG-Check
+- Pause- und Hard-Stop-Validierung korrekt nur im TimeEntry-Branch
+- Absence-CR speichert Snapshot: original_absence_type, original_absence_hours, original_start_time
+
 ## Ueberholt / Korrigierte Findings
 - §2/§6 Inkonsistenz reports.py: reports.py nutzt aktuell korrekt arbzg_utils.is_night_work() - altes Finding ungueltig
 - §14 fehlt in change-request-apply: ist implementiert (admin.py Zeile 691-702) - altes Finding ungueltig
