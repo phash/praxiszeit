@@ -105,7 +105,10 @@ PG_LINUX_URL="${_EDB}/${_PGV}-linux-x64-binaries.tar.gz"
 # Download: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
 # Datei in build/cache/postgresql-windows-x64.exe ablegen
 PG_WINDOWS_INSTALLER="postgresql-windows-x64.exe"
-PG_MACOS_URL="${_EDB}/${_PGV}-osx-binaries.zip"
+# macOS: EDB Installer (.dmg) — muss manuell heruntergeladen werden
+# Download: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
+# Datei in build/cache/postgresql-macos.dmg ablegen
+PG_MACOS_INSTALLER="postgresql-macos.dmg"
 
 # nssm (Windows Service Manager) — web archive fallback, nssm.cc is unreliable
 NSSM_URL="https://web.archive.org/web/2024/https://nssm.cc/release/nssm-${NSSM_VERSION}.zip"
@@ -227,8 +230,25 @@ fi
 if [ "$BUILD_MACOS" = true ]; then
     download "$PYTHON_MACOS_X64_URL"   "${CACHE_DIR}/python-macos-x64.tar.gz"
     download "$PYTHON_MACOS_ARM64_URL" "${CACHE_DIR}/python-macos-arm64.tar.gz"
-    download "$PG_MACOS_URL"           "${CACHE_DIR}/postgresql-macos.zip"
     download "$GET_PIP_URL"            "${CACHE_DIR}/get-pip.py"
+
+    # PostgreSQL macOS: EDB DMG muss manuell heruntergeladen werden
+    if [ ! -f "${CACHE_DIR}/${PG_MACOS_INSTALLER}" ]; then
+        _found=""
+        for f in ~/Downloads/postgresql-*-osx.dmg; do
+            [ -f "$f" ] && _found="$f" && break
+        done
+        if [ -n "$_found" ]; then
+            info "PostgreSQL-DMG gefunden: $(basename "$_found")"
+            cp "$_found" "${CACHE_DIR}/${PG_MACOS_INSTALLER}"
+        else
+            warn "PostgreSQL-DMG nicht gefunden!"
+            warn "Bitte herunterladen von:"
+            warn "  https://www.enterprisedb.com/downloads/postgres-postgresql-downloads"
+            warn "und ablegen als: ${CACHE_DIR}/${PG_MACOS_INSTALLER}"
+            warn "oder in ~/Downloads/"
+        fi
+    fi
 fi
 
 # =============================================================================
@@ -386,225 +406,49 @@ fi
 if [ "$BUILD_MACOS" = true ]; then
     step "6 — macOS-Pakete (Intel + Apple Silicon)"
 
-    # macOS Installer-Script (launchd statt systemd)
+    # Gemeinsamer macOS-Installer (install.sh) — wird in beide Pakete kopiert
     _write_macos_installer() {
         local target_dir="$1"
-        cat > "${target_dir}/install.sh" << 'MACINSTEOF'
-#!/bin/bash
-# PraxisZeit Installer fuer macOS
-set -euo pipefail
-
-VERSION="@@VERSION@@"
-INSTALL_DIR="${1:-/usr/local/praxiszeit}"
-
-echo ""
-echo "=============================================="
-echo "  PraxisZeit Installer v${VERSION} (macOS)"
-echo "=============================================="
-echo ""
-
-if [ "$EUID" -ne 0 ]; then
-    echo "Bitte mit sudo ausfuehren: sudo $0 [install-dir]"
-    exit 1
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-read -rp "Praxis-Name [Testpraxis]: " PRACTICE_NAME
-PRACTICE_NAME=${PRACTICE_NAME:-Testpraxis}
-read -rp "Admin-E-Mail [admin@local.test]: " ADMIN_EMAIL
-ADMIN_EMAIL=${ADMIN_EMAIL:-admin@local.test}
-read -rp "Admin-Passwort (min. 12 Zeichen): " ADMIN_PASSWORD
-if [ ${#ADMIN_PASSWORD} -lt 12 ]; then
-    echo "Passwort zu kurz (min. 12 Zeichen)."
-    exit 1
-fi
-read -rp "Port [8443]: " PORT
-PORT=${PORT:-8443}
-
-echo ""
-echo "Installiere nach ${INSTALL_DIR}..."
-
-# Benutzer
-if ! dscl . -read /Users/_praxiszeit &>/dev/null 2>&1; then
-    # macOS: Service-User anlegen
-    LAST_UID=$(dscl . -list /Users UniqueID | awk '{print $2}' | sort -n | tail -1)
-    NEXT_UID=$((LAST_UID + 1))
-    dscl . -create /Users/_praxiszeit
-    dscl . -create /Users/_praxiszeit UniqueID "$NEXT_UID"
-    dscl . -create /Users/_praxiszeit PrimaryGroupID 20
-    dscl . -create /Users/_praxiszeit UserShell /usr/bin/false
-    dscl . -create /Users/_praxiszeit NFSHomeDirectory "${INSTALL_DIR}"
-    echo "Benutzer _praxiszeit erstellt"
-fi
-
-# Dateien kopieren
-mkdir -p "${INSTALL_DIR}"
-cp -R "${SCRIPT_DIR}/bin" "${INSTALL_DIR}/"
-cp -R "${SCRIPT_DIR}/app" "${INSTALL_DIR}/"
-cp "${SCRIPT_DIR}/praxiszeit-server.py" "${INSTALL_DIR}/"
-mkdir -p "${INSTALL_DIR}"/{data/db,data/backups,config/ssl,logs}
-
-# Konfiguration
-SECRET_KEY=$("${INSTALL_DIR}/bin/python/bin/python3" -c "import secrets; print(secrets.token_hex(64))")
-cat > "${INSTALL_DIR}/config/praxiszeit.conf" << CONFEOF
-[server]
-port = ${PORT}
-ssl_cert = ""
-ssl_key = ""
-
-[database]
-data_dir = "data/db"
-superuser = "praxiszeit"
-app_user = "praxiszeit_app"
-
-[practice]
-name = "${PRACTICE_NAME}"
-holiday_state = "Bayern"
-
-[admin]
-username = "admin"
-email = "${ADMIN_EMAIL}"
-password = "${ADMIN_PASSWORD}"
-
-[security]
-secret_key = "${SECRET_KEY}"
-login_rate_limit = "10/minute"
-cookie_secure = false
-
-[license]
-# key_file = "config/license.key"
-
-[updates]
-check_enabled = false
-
-[backup]
-enabled = true
-schedule = "02:00"
-retention_days = 31
-CONFEOF
-chmod 600 "${INSTALL_DIR}/config/praxiszeit.conf"
-
-# Berechtigungen
-chown -R _praxiszeit:staff "${INSTALL_DIR}"
-
-# launchd Plist (macOS Service)
-cat > /Library/LaunchDaemons/de.praxiszeit.server.plist << PLISTEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>de.praxiszeit.server</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${INSTALL_DIR}/bin/python/bin/python3</string>
-        <string>${INSTALL_DIR}/praxiszeit-server.py</string>
-        <string>start</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>${INSTALL_DIR}</string>
-    <key>UserName</key>
-    <string>_praxiszeit</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${INSTALL_DIR}/logs/stdout.log</string>
-    <key>StandardErrorPath</key>
-    <string>${INSTALL_DIR}/logs/stderr.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PYTHONUNBUFFERED</key>
-        <string>1</string>
-    </dict>
-</dict>
-</plist>
-PLISTEOF
-
-launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
-
-echo ""
-echo "=============================================="
-echo "  PraxisZeit installiert!"
-echo "=============================================="
-echo ""
-echo "  URL:     http://localhost:${PORT}"
-echo "  Login:   admin / (ihr Passwort)"
-echo "  Start:   sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist"
-echo "  Stop:    sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist"
-echo "  Logs:    ${INSTALL_DIR}/logs/"
-echo ""
-MACINSTEOF
-        # Version-Platzhalter ersetzen
-        sed -i'' "s/@@VERSION@@/${APP_VERSION}/g" "${target_dir}/install.sh" 2>/dev/null || \
-        sed -i "s/@@VERSION@@/${APP_VERSION}/g" "${target_dir}/install.sh"
+        cp "${REPO_DIR}/installer/macos/install.sh" "${target_dir}/install.sh"
+        sed -i "s/@@VERSION@@/${APP_VERSION}/g" "${target_dir}/install.sh" 2>/dev/null || \
+        sed -i'' "s/@@VERSION@@/${APP_VERSION}/g" "${target_dir}/install.sh"
         chmod +x "${target_dir}/install.sh"
     }
 
-    # --- macOS Intel (x64) ---
-    info "Baue macOS Intel (x64)..."
-    MAC_X64="${BUILD_DIR}/macos-x64"
-    prepare_platform_dir "${MAC_X64}"
+    # Funktion: Ein macOS-Paket bauen
+    _build_macos_arch() {
+        local arch="$1"       # x64 oder arm64
+        local python_tar="$2" # Pfad zum Python-Tarball
 
-    info "Entpacke Python ${PYTHON_VERSION} (macOS x64)..."
-    mkdir -p "${MAC_X64}/bin/python"
-    tar xzf "${CACHE_DIR}/python-macos-x64.tar.gz" \
-        -C "${MAC_X64}/bin/python" --strip-components=1
+        info "Baue macOS ${arch}..."
+        local mac_dir="${BUILD_DIR}/macos-${arch}"
+        prepare_platform_dir "${mac_dir}"
 
-    info "Installiere pip-Dependencies (macOS x64)..."
-    "${MAC_X64}/bin/python/bin/python3" -m pip install -q \
-        --target="${MAC_X64}/bin/python/lib/python${PYTHON_VERSION%.*}/site-packages" \
-        -r "${MAC_X64}/app/backend/requirements.txt" 2>&1 | tail -3 || \
-        warn "pip install fuer macOS x64 fehlgeschlagen (Cross-Platform — Dependencies werden beim Install nachinstalliert)"
+        # Python entpacken
+        info "Entpacke Python ${PYTHON_VERSION} (macOS ${arch})..."
+        mkdir -p "${mac_dir}/bin/python"
+        tar xzf "${python_tar}" -C "${mac_dir}/bin/python" --strip-components=1
 
-    info "Entpacke PostgreSQL ${POSTGRESQL_VERSION} (macOS)..."
-    mkdir -p "${MAC_X64}/bin/postgresql"
-    if command -v unzip &>/dev/null; then
-        unzip -qo "${CACHE_DIR}/postgresql-macos.zip" -d "${BUILD_DIR}/tmp-pg-mac"
-        cp -r "${BUILD_DIR}/tmp-pg-mac/pgsql/"* "${MAC_X64}/bin/postgresql/" 2>/dev/null || \
-        cp -r "${BUILD_DIR}/tmp-pg-mac/"* "${MAC_X64}/bin/postgresql/"
-        rm -rf "${BUILD_DIR}/tmp-pg-mac"
-    fi
+        # get-pip.py + requirements.txt mitliefern
+        # pip install passiert beim Kunden (Cross-Platform von Linux nicht moeglich)
+        cp "${CACHE_DIR}/get-pip.py" "${mac_dir}/bin/python/"
 
-    cp "${CACHE_DIR}/get-pip.py" "${MAC_X64}/bin/python/"
-    _write_macos_installer "${MAC_X64}"
+        # PostgreSQL: DMG-Installer mitliefern (silent install durch install.sh)
+        if [ -f "${CACHE_DIR}/${PG_MACOS_INSTALLER}" ]; then
+            info "Kopiere PostgreSQL-DMG ($(du -h "${CACHE_DIR}/${PG_MACOS_INSTALLER}" | cut -f1))..."
+            cp "${CACHE_DIR}/${PG_MACOS_INSTALLER}" "${mac_dir}/bin/postgresql-installer.dmg"
+        else
+            warn "Kein PostgreSQL-DMG — Kunde muss PostgreSQL manuell installieren"
+        fi
 
-    tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-x64.tar.gz" -C "${MAC_X64}" .
-    info "macOS x64: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-x64.tar.gz" | cut -f1)"
+        _write_macos_installer "${mac_dir}"
 
-    # --- macOS Apple Silicon (arm64) ---
-    info "Baue macOS Apple Silicon (arm64)..."
-    MAC_ARM="${BUILD_DIR}/macos-arm64"
-    prepare_platform_dir "${MAC_ARM}"
+        tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz" -C "${mac_dir}" .
+        info "macOS ${arch}: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz" | cut -f1)"
+    }
 
-    info "Entpacke Python ${PYTHON_VERSION} (macOS arm64)..."
-    mkdir -p "${MAC_ARM}/bin/python"
-    tar xzf "${CACHE_DIR}/python-macos-arm64.tar.gz" \
-        -C "${MAC_ARM}/bin/python" --strip-components=1
-
-    # pip-Dependencies: Cross-Compile von Linux fuer macOS arm64 geht nicht
-    # -> get-pip.py + requirements.txt mitliefern, install.sh macht pip install
-    cp "${CACHE_DIR}/get-pip.py" "${MAC_ARM}/bin/python/"
-    info "HINWEIS: macOS arm64 pip-Dependencies werden beim Install nachinstalliert"
-
-    # PostgreSQL: EDB liefert ein Universal-Binary fuer macOS (x64+arm64)
-    info "Kopiere PostgreSQL (macOS Universal)..."
-    mkdir -p "${MAC_ARM}/bin/postgresql"
-    if [ -d "${MAC_X64}/bin/postgresql/bin" ]; then
-        cp -r "${MAC_X64}/bin/postgresql/"* "${MAC_ARM}/bin/postgresql/"
-    elif command -v unzip &>/dev/null; then
-        unzip -qo "${CACHE_DIR}/postgresql-macos.zip" -d "${BUILD_DIR}/tmp-pg-mac2"
-        cp -r "${BUILD_DIR}/tmp-pg-mac2/pgsql/"* "${MAC_ARM}/bin/postgresql/" 2>/dev/null || \
-        cp -r "${BUILD_DIR}/tmp-pg-mac2/"* "${MAC_ARM}/bin/postgresql/"
-        rm -rf "${BUILD_DIR}/tmp-pg-mac2"
-    fi
-
-    _write_macos_installer "${MAC_ARM}"
-
-    tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-arm64.tar.gz" -C "${MAC_ARM}" .
-    info "macOS arm64: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-arm64.tar.gz" | cut -f1)"
+    _build_macos_arch "x64"   "${CACHE_DIR}/python-macos-x64.tar.gz"
+    _build_macos_arch "arm64" "${CACHE_DIR}/python-macos-arm64.tar.gz"
 else
     step "6 — macOS: uebersprungen"
 fi
