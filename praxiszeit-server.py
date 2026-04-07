@@ -645,17 +645,33 @@ def cmd_start(args):
                     str_val = str(BASE_DIR / str_val)
                 os.environ[env_name] = str_val
 
-    # Generate SECRET_KEY if not configured
+    # Generate SECRET_KEY if not configured — persist so sessions survive restarts
     if "SECRET_KEY" not in os.environ:
         sk = get_config_value(config, "security", "secret_key")
-        if sk:
-            os.environ["SECRET_KEY"] = sk
-        else:
-            import hashlib
-            # Derive a stable secret from the superuser password
-            sk = secrets.token_hex(32)
-            os.environ["SECRET_KEY"] = sk
-            logger.info("Generated SECRET_KEY")
+        if not sk:
+            # Check if previously generated key exists in credentials file
+            sk_file = CONFIG_DIR / ".secret-key"
+            if sk_file.is_file():
+                sk = sk_file.read_text().strip()
+            else:
+                sk = secrets.token_hex(32)
+                sk_file.write_text(sk)
+                # Restrict permissions (same as .db-credentials)
+                if IS_WINDOWS:
+                    try:
+                        username = os.environ.get("USERNAME", os.environ.get("USER", ""))
+                        cmds = [["icacls", str(sk_file), "/inheritance:r"]]
+                        if username:
+                            cmds.append(["icacls", str(sk_file), "/grant:r", f"{username}:(R,W)"])
+                        cmds.append(["icacls", str(sk_file), "/grant", "SYSTEM:(R,W)"])
+                        for cmd in cmds:
+                            subprocess.run(cmd, check=True, capture_output=True)
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        pass
+                else:
+                    sk_file.chmod(0o600)
+                logger.info("Generated and saved SECRET_KEY")
+        os.environ["SECRET_KEY"] = sk
 
     # 4. Run migrations
     run_migrations(config)
