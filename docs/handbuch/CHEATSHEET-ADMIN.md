@@ -99,6 +99,24 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 | Nachtarbeitnehmer | > 8h täglich | §6 |
 | Sonntagsarbeit | Warnung + Ausnahmegrund-Pflicht | §9/§10 |
 | Wochenstunden | Warnung > 48h | §14 |
+| Ruhezeitwarnung | < 11h seit letztem Arbeitsende (beim Einstempeln) | §5 |
+
+---
+
+## Überstundenausgleich
+
+**Abwesenheit → Typ „Überstundenausgleich"**
+- Soll bleibt erhalten, Ist = 0h → Konto sinkt um Tagessoll
+- Kein Budget-Check — Kontostand manuell prüfen!
+
+---
+
+## Abwesenheits-Änderungsanträge
+
+- MA können Urlaub/Fortbildung per Änderungsantrag beantragen
+- Krankmeldung per Antrag **gesperrt** (nur Admin)
+- Genehmigung → Abwesenheit wird automatisch erstellt
+- DSGVO: Kranktage im Kalender für Nicht-Admins als „abwesend" maskiert
 
 ---
 

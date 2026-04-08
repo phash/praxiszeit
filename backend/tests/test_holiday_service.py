@@ -26,19 +26,19 @@ def public_holiday(db, default_tenant):
 # --- is_holiday ---
 
 def test_is_holiday_true_for_existing(db, public_holiday):
-    """`is_holiday` → True für eingetragenen Feiertag."""
+    """Prüft dass eingetragene Feiertage erkannt werden — wichtig für korrekte Soll-Stunden-Berechnung."""
     assert holiday_service.is_holiday(db, date(2026, 1, 1)) is True
 
 
 def test_is_holiday_false_for_non_holiday(db, public_holiday):
-    """`is_holiday` → False für normalen Tag."""
+    """Prüft dass normale Arbeitstage nicht fälschlich als Feiertag erkannt werden."""
     assert holiday_service.is_holiday(db, date(2026, 1, 2)) is False
 
 
 # --- get_holiday_state ---
 
 def test_get_holiday_state_from_db(db):
-    """`get_holiday_state` liest aus DB-SystemSetting."""
+    """Prüft dass das Bundesland aus der DB-SystemSetting gelesen wird — bestimmt länderspezifische Feiertage."""
     setting = SystemSetting(key="holiday_state", value="Bayern", tenant_id=DEFAULT_TENANT_ID)
     db.add(setting)
     db.commit()
@@ -47,7 +47,7 @@ def test_get_holiday_state_from_db(db):
 
 
 def test_get_holiday_state_fallback(db):
-    """`get_holiday_state` → Fallback auf settings.HOLIDAY_STATE wenn kein DB-Eintrag."""
+    """Prüft dass ohne DB-Eintrag auf den Config-Fallback zurückgegriffen wird — verhindert Fehler bei Erstinstallation."""
     result = holiday_service.get_holiday_state(db)
     assert result == settings.HOLIDAY_STATE
 
@@ -55,7 +55,7 @@ def test_get_holiday_state_fallback(db):
 # --- delete_all_holidays ---
 
 def test_delete_all_holidays_removes_entries(db, public_holiday):
-    """`delete_all_holidays` → löscht alle Einträge, gibt Anzahl zurück."""
+    """Prüft dass alle Feiertage gelöscht werden und die Anzahl korrekt zurückgegeben wird."""
     count = holiday_service.delete_all_holidays(db)
     assert count == 1
     remaining = db.query(PublicHoliday).count()
@@ -63,7 +63,7 @@ def test_delete_all_holidays_removes_entries(db, public_holiday):
 
 
 def test_delete_all_holidays_no_commit(db, public_holiday):
-    """`delete_all_holidays` → kein db.commit(), Rollback stellt Daten wieder her."""
+    """Prüft dass delete_all_holidays kein auto-commit macht — Caller kontrolliert die Transaktion."""
     holiday_service.delete_all_holidays(db)
     db.rollback()
     remaining = db.query(PublicHoliday).count()
@@ -73,7 +73,7 @@ def test_delete_all_holidays_no_commit(db, public_holiday):
 # --- sync_holidays ---
 
 def test_sync_holidays_adds_holidays(db, default_tenant):
-    """`sync_holidays` → fügt Feiertage ein, gibt Anzahl zurück."""
+    """Prüft dass sync_holidays Feiertage für das Bundesland einfügt — Basis für korrekte Soll-Berechnung."""
     count = holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
     assert count > 0
     db.commit()
@@ -82,7 +82,7 @@ def test_sync_holidays_adds_holidays(db, default_tenant):
 
 
 def test_sync_holidays_updates_existing_name(db, default_tenant):
-    """`sync_holidays` → updated Namen existierender Einträge wenn abweichend."""
+    """Prüft dass sync_holidays falsche Feiertagsnamen korrigiert statt Duplikate zu erzeugen."""
     h = PublicHoliday(date=date(2026, 1, 1), name="WRONG_NAME", year=2026, tenant_id=DEFAULT_TENANT_ID)
     db.add(h)
     db.commit()
@@ -93,7 +93,7 @@ def test_sync_holidays_updates_existing_name(db, default_tenant):
 
 
 def test_sync_holidays_no_commit(db, default_tenant):
-    """`sync_holidays` → kein db.commit(), Rollback verwirft Feiertage."""
+    """Prüft dass sync_holidays kein auto-commit macht — ermöglicht atomares Sync+Delete in einer Transaktion."""
     holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
     db.rollback()
     total = db.query(PublicHoliday).count()
@@ -103,7 +103,7 @@ def test_sync_holidays_no_commit(db, default_tenant):
 # --- sync_current_and_next_year ---
 
 def test_sync_current_and_next_year_returns_dict(db, default_tenant):
-    """`sync_current_and_next_year` → committet, gibt dict mit korrekten Keys zurück."""
+    """Prüft dass sync_current_and_next_year beide Jahre synchronisiert und ein vollständiges Ergebnis-Dict liefert."""
     result = holiday_service.sync_current_and_next_year(db, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
     assert "current_year" in result
     assert "next_year" in result

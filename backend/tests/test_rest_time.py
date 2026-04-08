@@ -22,13 +22,13 @@ def _make_entry(db, user, d, start_h, start_m, end_h, end_m):
 
 
 def test_no_entries_no_violations(db, test_user):
-    """Keine Einträge → keine Verstöße."""
+    """Prüft dass ohne Zeiteinträge keine Ruhezeitverstöße gemeldet werden (§5 ArbZG Baseline)."""
     violations = check_rest_time_violations(db, test_user, 2026, month=3)
     assert violations == []
 
 
 def test_sufficient_rest_no_violation(db, test_user):
-    """>11h Ruhezeit → kein Verstoß."""
+    """Prüft dass bei >11h Ruhezeit kein Verstoß erkannt wird — §5 ArbZG Mindestgrenze eingehalten."""
     _make_entry(db, test_user, date(2026, 3, 10), 8, 0, 17, 0)   # Ende 17:00
     _make_entry(db, test_user, date(2026, 3, 11), 8, 0, 17, 0)   # Start 08:00 → 15h Ruhe
     violations = check_rest_time_violations(db, test_user, 2026, month=3)
@@ -36,7 +36,7 @@ def test_sufficient_rest_no_violation(db, test_user):
 
 
 def test_insufficient_rest_creates_violation(db, test_user):
-    """<11h Ruhezeit → Verstoß mit korrekten Feldern."""
+    """Prüft dass <11h Ruhezeit einen Verstoß mit allen Pflichtfeldern erzeugt — Kernlogik §5 ArbZG."""
     _make_entry(db, test_user, date(2026, 3, 10), 8, 0, 22, 0)   # Ende 22:00
     _make_entry(db, test_user, date(2026, 3, 11), 7, 0, 15, 0)   # Start 07:00 → nur 9h Ruhe
     violations = check_rest_time_violations(db, test_user, 2026, month=3)
@@ -52,7 +52,7 @@ def test_insufficient_rest_creates_violation(db, test_user):
 
 
 def test_violation_fields_are_complete(db, test_user):
-    """Violation-Dict enthält alle erwarteten Felder."""
+    """Prüft dass das Violation-Dict alle Pflichtfelder enthält, damit das Frontend vollständig warnen kann."""
     _make_entry(db, test_user, date(2026, 3, 10), 14, 0, 23, 0)
     _make_entry(db, test_user, date(2026, 3, 11), 8, 0, 16, 0)
     violations = check_rest_time_violations(db, test_user, 2026, month=3)
@@ -63,7 +63,7 @@ def test_violation_fields_are_complete(db, test_user):
 
 
 def test_split_shifts_no_false_positive(db, test_user):
-    """Split Shifts (mehrere Einträge gleicher Tag) → kein False Positive."""
+    """Prüft dass geteilte Schichten am selben Tag keinen falschen Ruhezeitverstoß auslösen (§5 ArbZG)."""
     # Tag 1: 08:00-12:00 + 14:00-18:00 (intra-day Gap soll NICHT als Verstoß zählen)
     _make_entry(db, test_user, date(2026, 3, 10), 8, 0, 12, 0)
     _make_entry(db, test_user, date(2026, 3, 10), 14, 0, 18, 0)
@@ -74,7 +74,7 @@ def test_split_shifts_no_false_positive(db, test_user):
 
 
 def test_multiple_violations_in_month(db, test_user):
-    """Mehrere Verstöße im Monat werden alle erfasst."""
+    """Prüft dass mehrere Ruhezeitverstöße im selben Monat alle einzeln erfasst werden (§5 ArbZG)."""
     _make_entry(db, test_user, date(2026, 3, 10), 8, 0, 22, 0)
     _make_entry(db, test_user, date(2026, 3, 11), 7, 0, 15, 0)
     _make_entry(db, test_user, date(2026, 3, 20), 8, 0, 22, 0)
@@ -87,7 +87,7 @@ def test_multiple_violations_in_month(db, test_user):
 
 
 def test_month_filter_excludes_other_months(db, test_user):
-    """Monatsfilter: Nur gefilterte Monate werden geprüft (kein Cross-Month)."""
+    """Prüft dass der Monatsfilter Einträge anderer Monate ausschliesst — verhindert falsche Cross-Month-Verstösse."""
     # Verstoß zwischen Feb 28 und Mar 1 – nur im März filtern
     _make_entry(db, test_user, date(2026, 2, 28), 8, 0, 22, 0)
     _make_entry(db, test_user, date(2026, 3, 1), 7, 0, 15, 0)
@@ -97,7 +97,7 @@ def test_month_filter_excludes_other_months(db, test_user):
 
 
 def test_no_month_filter_checks_full_year(db, test_user):
-    """Ohne Monatsfilter: ganzes Jahr wird geprüft (Cross-Month Verstoß sichtbar)."""
+    """Prüft dass ohne Monatsfilter das ganze Jahr geprüft wird und Cross-Month-Verstösse erkannt werden."""
     _make_entry(db, test_user, date(2026, 2, 28), 8, 0, 22, 0)
     _make_entry(db, test_user, date(2026, 3, 1), 7, 0, 15, 0)
     violations = check_rest_time_violations(db, test_user, 2026)  # kein month-Filter
@@ -105,7 +105,7 @@ def test_no_month_filter_checks_full_year(db, test_user):
 
 
 def test_custom_min_rest_hours(db, test_user):
-    """Custom min_rest_hours Parameter wird respektiert."""
+    """Prüft dass ein benutzerdefinierter min_rest_hours-Wert die Schwelle korrekt verschiebt."""
     _make_entry(db, test_user, date(2026, 3, 10), 8, 0, 17, 0)   # Ende 17:00
     _make_entry(db, test_user, date(2026, 3, 11), 8, 0, 17, 0)   # Start 08:00 → 15h Ruhe
     # Standard 11h → kein Verstoß
@@ -117,7 +117,7 @@ def test_custom_min_rest_hours(db, test_user):
 
 
 def test_single_entry_no_violation(db, test_user):
-    """Einzelner Eintrag (kein Vortag vorhanden) → kein Verstoß."""
+    """Prüft dass ein einzelner Eintrag ohne Vortag keinen Verstoß erzeugt — Edge-Case ohne Vergleichstag."""
     _make_entry(db, test_user, date(2026, 3, 15), 8, 0, 17, 0)
     violations = check_rest_time_violations(db, test_user, 2026, month=3)
     assert violations == []

@@ -7,7 +7,7 @@ class TestScrubPii:
     """Test _scrub_pii() for DSGVO F-007 compliance."""
 
     def test_uuid_is_scrubbed(self):
-        """UUIDs in text should be replaced with <uuid>."""
+        """Prüft dass UUIDs aus Fehlermeldungen entfernt werden — DSGVO Art.9, keine Personen-IDs in Logs."""
         text = "user 550e8400-e29b-41d4-a716-446655440000 failed"
         result = _scrub_pii(text)
         assert "550e8400-e29b-41d4-a716-446655440000" not in result
@@ -16,7 +16,7 @@ class TestScrubPii:
         assert "failed" in result
 
     def test_email_is_scrubbed(self):
-        """Email addresses in text should be replaced with <email>."""
+        """Prüft dass E-Mail-Adressen aus Fehlermeldungen entfernt werden — DSGVO, keine personenbezogenen Daten in Logs."""
         text = "user test@example.com failed"
         result = _scrub_pii(text)
         assert "test@example.com" not in result
@@ -24,7 +24,7 @@ class TestScrubPii:
         assert "user" in result
 
     def test_mixed_uuid_and_email(self):
-        """Both UUIDs and emails should be scrubbed in the same string."""
+        """Prüft dass UUIDs und E-Mails gleichzeitig im selben String bereinigt werden — realistisches Szenario."""
         text = "user 550e8400-e29b-41d4-a716-446655440000 with email admin@praxis.de error"
         result = _scrub_pii(text)
         assert "550e8400-e29b-41d4-a716-446655440000" not in result
@@ -33,23 +33,23 @@ class TestScrubPii:
         assert "<email>" in result
 
     def test_no_pii_unchanged(self):
-        """Strings without PII should pass through unchanged."""
+        """Prüft dass Texte ohne personenbezogene Daten unverändert bleiben — kein Over-Scrubbing."""
         text = "simple error message without PII"
         result = _scrub_pii(text)
         assert result == text
 
     def test_empty_string(self):
-        """Empty string should return empty string."""
+        """Prüft dass ein leerer String ohne Fehler verarbeitet wird — Edge-Case Robustheit."""
         result = _scrub_pii("")
         assert result == ""
 
     def test_none_returns_none(self):
-        """None input should return falsy value (None or empty)."""
+        """Prüft dass None-Input ohne Exception verarbeitet wird — Fehlermeldungen können optional sein."""
         result = _scrub_pii(None)
         assert not result
 
     def test_multiple_uuids(self):
-        """Multiple UUIDs should all be scrubbed."""
+        """Prüft dass mehrere UUIDs im selben Text alle bereinigt werden — z.B. bei Beziehungs-Fehlern."""
         text = "from 550e8400-e29b-41d4-a716-446655440000 to 12345678-1234-1234-1234-123456789abc"
         result = _scrub_pii(text)
         assert "550e8400" not in result
@@ -57,7 +57,7 @@ class TestScrubPii:
         assert result.count("<uuid>") == 2
 
     def test_complex_email_formats(self):
-        """Various email formats should be scrubbed."""
+        """Prüft dass auch komplexe E-Mail-Formate (Subdomains, Tags) zuverlässig bereinigt werden."""
         text = "emails: user.name+tag@sub.example.co.uk and test@test.de"
         result = _scrub_pii(text)
         assert "user.name+tag@sub.example.co.uk" not in result
@@ -68,44 +68,44 @@ class TestMakeFingerprint:
     """Test _make_fingerprint() for error deduplication."""
 
     def test_same_input_same_hash(self):
-        """Identical inputs must produce the same fingerprint."""
+        """Prüft dass identische Fehler denselben Fingerprint erzeugen — Basis für Deduplizierung."""
         fp1 = _make_fingerprint("error", "app.main", "connection failed", "/api/test")
         fp2 = _make_fingerprint("error", "app.main", "connection failed", "/api/test")
         assert fp1 == fp2
 
     def test_different_message_different_hash(self):
-        """Different messages must produce different fingerprints."""
+        """Prüft dass unterschiedliche Fehlermeldungen verschiedene Fingerprints erzeugen — keine Kollisionen."""
         fp1 = _make_fingerprint("error", "app.main", "connection failed", "/api/test")
         fp2 = _make_fingerprint("error", "app.main", "timeout error", "/api/test")
         assert fp1 != fp2
 
     def test_different_level_different_hash(self):
-        """Different levels must produce different fingerprints."""
+        """Prüft dass verschiedene Log-Level verschiedene Fingerprints erzeugen — error vs. warning unterscheidbar."""
         fp1 = _make_fingerprint("error", "app.main", "connection failed", "/api/test")
         fp2 = _make_fingerprint("warning", "app.main", "connection failed", "/api/test")
         assert fp1 != fp2
 
     def test_different_path_different_hash(self):
-        """Different paths must produce different fingerprints."""
+        """Prüft dass verschiedene API-Pfade verschiedene Fingerprints erzeugen — Fehler pro Endpoint trennbar."""
         fp1 = _make_fingerprint("error", "app.main", "failed", "/api/a")
         fp2 = _make_fingerprint("error", "app.main", "failed", "/api/b")
         assert fp1 != fp2
 
     def test_deterministic(self):
-        """Fingerprint must be deterministic across multiple calls."""
+        """Prüft dass der Fingerprint über mehrere Aufrufe deterministisch bleibt — keine Zufallskomponente."""
         results = set()
         for _ in range(10):
             results.add(_make_fingerprint("error", "logger", "msg", "/path"))
         assert len(results) == 1
 
     def test_returns_hex_string(self):
-        """Fingerprint should be a hex-encoded SHA256 (64 chars)."""
+        """Prüft dass der Fingerprint ein 64-Zeichen Hex-String (SHA256) ist — konsistentes Format für DB-Speicherung."""
         fp = _make_fingerprint("error", "app.main", "test", "/api")
         assert len(fp) == 64
         assert all(c in "0123456789abcdef" for c in fp)
 
     def test_none_path_handled(self):
-        """None path should be handled gracefully."""
+        """Prüft dass None als Pfad ohne Exception verarbeitet wird — Fehler ohne Request-Kontext möglich."""
         fp = _make_fingerprint("error", "app.main", "test", None)
         assert isinstance(fp, str)
         assert len(fp) == 64

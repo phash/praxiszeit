@@ -26,12 +26,12 @@ class TestGenerateMonthlyReport:
     """Test generate_monthly_report() core behavior."""
 
     def test_returns_bytesio(self, db, test_user):
-        """Report must return a BytesIO object."""
+        """Prüft dass der Report ein BytesIO-Objekt liefert — wird direkt als HTTP-Response gestreamt."""
         result = generate_monthly_report(db, 2026, 1)
         assert isinstance(result, BytesIO)
 
     def test_returns_xlsx_magic_bytes(self, db, test_user):
-        """Returned bytes must start with PK (ZIP/XLSX magic bytes)."""
+        """Prüft dass der Report gültiges XLSX-Format hat (PK Magic Bytes) — Datei muss in Excel öffenbar sein."""
         result = generate_monthly_report(db, 2026, 1)
         data = result.read()
         assert len(data) > 0
@@ -39,7 +39,7 @@ class TestGenerateMonthlyReport:
         assert data[:2] == b'PK'
 
     def test_report_with_time_entries(self, db, test_user):
-        """Report with time entries should still produce valid XLSX."""
+        """Prüft dass der Report mit Zeiteinträgen valides XLSX erzeugt — Hauptanwendungsfall für Monatsexport."""
         _make_time_entry(db, test_user, date(2026, 1, 5), 8, 17, 30)
         _make_time_entry(db, test_user, date(2026, 1, 6), 9, 16, 30)
         _make_time_entry(db, test_user, date(2026, 1, 7), 8, 12, 0)
@@ -50,15 +50,14 @@ class TestGenerateMonthlyReport:
         assert data[:2] == b'PK'
 
     def test_report_empty_month(self, db, test_user):
-        """Report for a month with no entries should still produce valid XLSX."""
+        """Prüft dass ein leerer Monat ohne Einträge trotzdem valides XLSX erzeugt — kein Crash bei neuen MA."""
         result = generate_monthly_report(db, 2026, 6)
         data = result.read()
         assert len(data) > 0
         assert data[:2] == b'PK'
 
     def test_report_no_active_users_raises(self, db, test_user):
-        """Report with no active users raises IndexError (openpyxl requires >=1 sheet).
-        Known limitation: the code removes the default sheet and creates no replacements."""
+        """Prüft dass ohne aktive User ein IndexError kommt — bekannte Limitation, openpyxl braucht mind. 1 Sheet."""
         test_user.is_active = False
         db.commit()
 
@@ -66,7 +65,7 @@ class TestGenerateMonthlyReport:
             generate_monthly_report(db, 2026, 1)
 
     def test_report_with_health_data_flag(self, db, test_user):
-        """Report with include_health_data=True should produce valid XLSX."""
+        """Prüft dass der Report mit Gesundheitsdaten-Flag valides XLSX erzeugt — DSGVO Art.9 Sonderfall."""
         _make_time_entry(db, test_user, date(2026, 1, 5), 8, 17, 30)
         result = generate_monthly_report(db, 2026, 1, include_health_data=True)
         data = result.read()
@@ -74,7 +73,7 @@ class TestGenerateMonthlyReport:
         assert data[:2] == b'PK'
 
     def test_report_size_increases_with_entries(self, db, test_user):
-        """Report with entries should be larger than an empty report."""
+        """Prüft dass der Report mit Einträgen grösser ist als ein leerer — Daten werden tatsächlich geschrieben."""
         result_empty = generate_monthly_report(db, 2026, 2)
         size_empty = len(result_empty.read())
 

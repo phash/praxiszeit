@@ -9,18 +9,18 @@ class TestTodayLocal:
     """Test today_local() function."""
 
     def test_returns_date_object(self):
-        """today_local() must return a date instance."""
+        """Prüft dass today_local() ein date-Objekt liefert — Basis für alle datumsbasierten Berechnungen."""
         result = today_local()
         assert isinstance(result, date)
 
     def test_returns_date_not_datetime(self):
-        """today_local() must return a pure date, not a datetime."""
+        """Prüft dass today_local() ein reines date und kein datetime liefert — verhindert unerwartete Zeitvergleiche."""
         result = today_local()
         # datetime is a subclass of date, so check explicitly
         assert type(result) is date
 
     def test_reasonable_date(self):
-        """Returned date should be today or very close (no timezone confusion)."""
+        """Prüft dass das Datum maximal 1 Tag von UTC abweicht — keine Zeitzonen-Verwechslung."""
         result = today_local()
         utc_today = datetime.now(ZoneInfo("UTC")).date()
         # Can differ by at most 1 day due to timezone offset
@@ -32,23 +32,23 @@ class TestNowLocal:
     """Test now_local() function."""
 
     def test_returns_datetime_object(self):
-        """now_local() must return a datetime instance."""
+        """Prüft dass now_local() ein datetime-Objekt liefert — für Stempel-Zeitstempel benötigt."""
         result = now_local()
         assert isinstance(result, datetime)
 
     def test_timezone_aware(self):
-        """now_local() must return a timezone-aware datetime."""
+        """Prüft dass now_local() timezone-aware ist — naive datetimes führen zu falschen Ruhezeitberechnungen."""
         result = now_local()
         assert result.tzinfo is not None
 
     def test_europe_berlin_timezone(self):
-        """now_local() must return datetime in Europe/Berlin timezone."""
+        """Prüft dass now_local() Europe/Berlin verwendet — deutsche Arztpraxen arbeiten in CET/CEST."""
         result = now_local()
         # The timezone key should be Europe/Berlin
         assert str(result.tzinfo) == "Europe/Berlin"
 
     def test_consistent_with_today_local(self):
-        """now_local().date() should equal today_local()."""
+        """Prüft dass now_local().date() und today_local() konsistent sind — keine divergierenden Datumsquellen."""
         # These calls happen within the same second, should match
         now = now_local()
         today = today_local()
@@ -59,9 +59,9 @@ class TestLocalTzConstant:
     """Test LOCAL_TZ constant."""
 
     def test_local_tz_is_europe_berlin(self):
-        """LOCAL_TZ must be Europe/Berlin."""
+        """Prüft dass LOCAL_TZ auf Europe/Berlin gesetzt ist — Single Source of Truth für die Zeitzone."""
         assert str(LOCAL_TZ) == "Europe/Berlin"
 
     def test_local_tz_is_zoneinfo(self):
-        """LOCAL_TZ must be a ZoneInfo instance."""
+        """Prüft dass LOCAL_TZ eine ZoneInfo-Instanz ist — kein pytz, kein String."""
         assert isinstance(LOCAL_TZ, ZoneInfo)

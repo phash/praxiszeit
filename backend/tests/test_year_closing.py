@@ -62,7 +62,7 @@ def _make_carryover(db, user, year, overtime_hours=0.0, vacation_days=0.0):
 
 
 def test_create_year_closing_creates_carryovers(db, default_tenant):
-    """Year closing creates carryover records for next year."""
+    """Prüft dass Jahresabschluss Carryover-Eintraege fuers Folgejahr erstellt."""
     user = _make_user(db, "alice")
 
     results = calculation_service.create_year_closing(db, 2025, [user])
@@ -79,7 +79,7 @@ def test_create_year_closing_creates_carryovers(db, default_tenant):
 
 
 def test_create_year_closing_multiple_users(db, default_tenant):
-    """Year closing processes all users."""
+    """Prüft dass Jahresabschluss alle uebergebenen User verarbeitet — Batch-Faehigkeit."""
     users = [_make_user(db, f"user{i}") for i in range(3)]
 
     results = calculation_service.create_year_closing(db, 2025, users)
@@ -92,7 +92,7 @@ def test_create_year_closing_multiple_users(db, default_tenant):
 
 
 def test_create_year_closing_overwrites_existing(db, default_tenant):
-    """Year closing updates existing carryover records."""
+    """Prüft dass erneuter Jahresabschluss bestehende Carryovers ueberschreibt — Korrekturmoeglichkeit."""
     user = _make_user(db, "bob")
     _make_carryover(db, user, year=2026, overtime_hours=99.0, vacation_days=99.0)
 
@@ -108,7 +108,7 @@ def test_create_year_closing_overwrites_existing(db, default_tenant):
 
 
 def test_create_year_closing_with_overtime(db, default_tenant):
-    """Year closing captures overtime balance correctly."""
+    """Prüft dass Jahresabschluss den Überstundensaldo korrekt erfasst und uebertraegt."""
     user = _make_user(db, "carol", weekly_hours=40.0)
 
     # Add some time entries in Dec 2025 to create overtime
@@ -126,7 +126,7 @@ def test_create_year_closing_with_overtime(db, default_tenant):
 
 
 def test_delete_carryovers_for_year(db, default_tenant):
-    """Deleting year closing removes all carryovers for the next year."""
+    """Prüft dass Loeschen des Jahresabschlusses alle Carryovers des Folgejahres entfernt."""
     users = [_make_user(db, f"del_user{i}") for i in range(3)]
     for user in users:
         _make_carryover(db, user, year=2026, overtime_hours=10.0, vacation_days=5.0)
@@ -145,7 +145,7 @@ def test_delete_carryovers_for_year(db, default_tenant):
 
 
 def test_delete_does_not_affect_other_years(db, default_tenant):
-    """Deleting carryovers for one year does not affect other years."""
+    """Prüft dass Loeschen eines Jahres andere Carryover-Jahre nicht beruehrt — Datenisolation."""
     user = _make_user(db, "keep_user")
     _make_carryover(db, user, year=2025, overtime_hours=5.0, vacation_days=2.0)
     _make_carryover(db, user, year=2026, overtime_hours=10.0, vacation_days=4.0)
@@ -165,14 +165,14 @@ def test_delete_does_not_affect_other_years(db, default_tenant):
 
 
 def test_delete_nonexistent_year_returns_zero(db, default_tenant):
-    """Deleting carryovers for a year with no records returns 0."""
+    """Prüft dass Loeschen eines Jahres ohne Daten 0 zurueckgibt — kein Fehler."""
     deleted = db.query(YearCarryover).filter(YearCarryover.year == 2099).delete()
     db.commit()
     assert deleted == 0
 
 
 def test_create_then_delete_roundtrip(db, default_tenant):
-    """Full roundtrip: create year closing, then delete it."""
+    """Prüft den vollstaendigen Roundtrip: Jahresabschluss erstellen und wieder loeschen."""
     users = [_make_user(db, f"rt_user{i}") for i in range(2)]
 
     # Create year closing for 2025 → carryovers for 2026
@@ -192,7 +192,7 @@ def test_create_then_delete_roundtrip(db, default_tenant):
 
 
 def test_delete_preserves_manually_added_other_years(db, default_tenant):
-    """Deleting year closing for 2025 only touches 2026 carryovers, not manual 2025 entries."""
+    """Prüft dass Loeschen nur Folgejahr-Carryovers betrifft, nicht manuelle Vorjahres-Eintraege."""
     user = _make_user(db, "manual_user")
 
     # Manual carryover for 2025 (entered by admin for that year)

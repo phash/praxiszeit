@@ -49,63 +49,67 @@ def _make_data_row(ein_dt: datetime, aus_dt: datetime, notiz: str = ""):
 # ── _calc_break_minutes ───────────────────────────────────────────────────────
 
 def test_break_under_6h_is_0():
+    """Prüft dass unter 6h Arbeitszeit keine Pflichtpause berechnet wird — §4 ArbZG."""
     assert _calc_break_minutes(time(8, 0), time(13, 59)) == 0
 
 
 def test_break_exactly_6h_is_0():
+    """Prüft dass exakt 6h Arbeitszeit noch keine Pflichtpause ausloest — §4 ArbZG Grenze."""
     assert _calc_break_minutes(time(8, 0), time(14, 0)) == 0
 
 
 def test_break_over_6h_is_30():
+    """Prüft dass ueber 6h Arbeitszeit 30min Pflichtpause berechnet wird — §4 Abs. 1 ArbZG."""
     assert _calc_break_minutes(time(8, 0), time(14, 1)) == 30
 
 
 def test_break_exactly_9h_is_30():
-    # Grenze: exakt 9h brutto → noch 30min (>9h = 45min)
+    """Prüft dass exakt 9h Arbeitszeit noch 30min Pause ergibt — §4 Abs. 1 ArbZG Grenze."""
     assert _calc_break_minutes(time(7, 0), time(16, 0)) == 30
 
 
 def test_break_over_9h_is_45():
+    """Prüft dass ueber 9h Arbeitszeit 45min Pflichtpause berechnet wird — §4 Abs. 2 ArbZG."""
     assert _calc_break_minutes(time(7, 0), time(16, 1)) == 45
 
 
 # ── _check_arbzg ─────────────────────────────────────────────────────────────
 
 def test_no_warnings_for_normal_entry():
+    """Prüft dass ein normaler Arbeitstag keine ArbZG-Warnungen erzeugt."""
     warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, None)
     assert warnings == []
 
 
 def test_warning_for_over_10h():
-    # §3 prüft auf Netto-Stunden (brutto - pause).
-    # 7:00–18:30 = 11.5h brutto, 45min Pause → 10.75h netto > 10h → §3-Warnung
+    """Prüft dass ueber 10h Netto-Arbeitszeit eine §3 ArbZG-Warnung erzeugt — Hoechstarbeitszeit."""
     warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None)
     assert any("§3" in w for w in warnings)
 
 
 def test_warning_for_night_work():
-    # 22:00–06:00 → Nachtarbeit
+    """Prüft dass Nachtarbeit (22:00-06:00) eine §6 ArbZG-Warnung erzeugt."""
     warnings = _check_arbzg(date(2026, 1, 12), time(22, 0), time(6, 0), 0, None)
     assert any("§6" in w for w in warnings)
 
 
 def test_warning_for_insufficient_rest():
+    """Prüft dass bei unter 11h Ruhezeit eine §5 ArbZG-Warnung erzeugt wird — Mindestruhezeit."""
     prev_end = datetime(2026, 1, 11, 23, 0)  # Vortag 23:00
-    # Heutiger Start 8:00 → Ruhezeit 9h < 11h → Warnung
     warnings = _check_arbzg(date(2026, 1, 12), time(8, 0), time(14, 0), 30, prev_end)
     assert any("§5" in w for w in warnings)
 
 
 def test_no_rest_warning_for_sufficient_rest():
+    """Prüft dass bei ausreichender Ruhezeit (>11h) keine §5-Warnung erzeugt wird."""
     prev_end = datetime(2026, 1, 11, 18, 0)  # Vortag 18:00
-    # Heutiger Start 7:15 → Ruhezeit 13.25h > 11h → keine Warnung
     warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, prev_end)
     assert not any("§5" in w for w in warnings)
 
 
 def test_exempt_user_gets_no_warnings():
-    # §18: exempt=True → alle Prüfungen übersprungen
-    prev_end = datetime(2026, 1, 11, 23, 0)  # nur 9h Ruhezeit
+    """Prüft dass §18 ArbZG-befreite User keine Warnungen erhalten — leitende Angestellte."""
+    prev_end = datetime(2026, 1, 11, 23, 0)
     warnings = _check_arbzg(
         date(2026, 1, 12), time(7, 0), time(18, 30), 45, prev_end,
         exempt=True,
@@ -114,21 +118,20 @@ def test_exempt_user_gets_no_warnings():
 
 
 def test_night_worker_8h_warning():
-    # §6 Abs. 2: is_night_worker=True → Warnung ab >8h netto statt >10h
-    # 7:00–16:30 = 9.5h brutto, 45min Pause → 8.75h netto → über 8h-Limit
+    """Prüft dass Nachtarbeitnehmer ab 8h Netto §6 Abs. 2 ArbZG-Warnung erhalten statt §3."""
     warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(16, 30), 45, None, is_night_worker=True)
     assert any("§6 Abs. 2" in w for w in warnings)
-    assert not any("§3" in w for w in warnings)  # §3 nicht zusätzlich
+    assert not any("§3" in w for w in warnings)
 
 
 def test_night_worker_no_warning_under_8h():
-    # 7:00–14:30 = 7.5h brutto, 30min Pause → 7h netto → unter 8h → keine §6-Abs.-2-Warnung
+    """Prüft dass Nachtarbeitnehmer unter 8h keine §6 Abs. 2-Warnung erhalten."""
     warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(14, 30), 30, None, is_night_worker=True)
     assert not any("§6 Abs. 2" in w for w in warnings)
 
 
 def test_non_night_worker_no_8h_warning():
-    # Normaler User mit 9h netto → §3-Warnung, kein §6-Abs.-2
+    """Prüft dass normale User die §3-Warnung erhalten, nicht §6 Abs. 2 — kein Nachtarbeitnehmer."""
     warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, is_night_worker=False)
     assert any("§3" in w for w in warnings)
     assert not any("§6 Abs. 2" in w for w in warnings)
@@ -137,6 +140,7 @@ def test_non_night_worker_no_8h_warning():
 # ── parse_xls ────────────────────────────────────────────────────────────────
 
 def test_parse_xls_extracts_data_rows(db, test_user):
+    """Prüft dass parse_xls Datenzeilen korrekt extrahiert und Header/Footer ignoriert."""
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
         ["W03", "", "", "", "", ""],
@@ -154,6 +158,7 @@ def test_parse_xls_extracts_data_rows(db, test_user):
 
 
 def test_parse_xls_calculates_breaks(db, test_user):
+    """Prüft dass parse_xls automatisch Pausen nach §4 ArbZG berechnet."""
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
         _make_data_row(_dt(2026, 1, 12, 7, 15), _dt(2026, 1, 12, 14, 0)),  # 6h45 > 6h → 30min
@@ -163,7 +168,7 @@ def test_parse_xls_calculates_breaks(db, test_user):
 
 
 def test_parse_xls_detects_conflict(db, test_user):
-    # Vorhandenen Eintrag in DB anlegen
+    """Prüft dass Konflikte mit bestehenden DB-Eintraegen erkannt werden — Duplikat-Schutz."""
     existing = TimeEntry(
         user_id=test_user.id,
         tenant_id=DEFAULT_TENANT_ID,
@@ -184,6 +189,7 @@ def test_parse_xls_detects_conflict(db, test_user):
 
 
 def test_parse_xls_no_conflict_for_new_entry(db, test_user):
+    """Prüft dass neue Eintraege ohne DB-Duplikat kein Konflikt-Flag erhalten."""
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
         _make_data_row(_dt(2026, 1, 12, 7, 15), _dt(2026, 1, 12, 12, 45)),
@@ -193,6 +199,7 @@ def test_parse_xls_no_conflict_for_new_entry(db, test_user):
 
 
 def test_parse_xls_wrong_sheet_raises(db, test_user):
+    """Prüft dass fehlendes Sheet 'Zeiterfassung' einen ValueError ausloest."""
     wb = xlwt.Workbook()
     wb.add_sheet("FalschesSheet")
     buf = io.BytesIO()
@@ -202,6 +209,7 @@ def test_parse_xls_wrong_sheet_raises(db, test_user):
 
 
 def test_parse_xls_empty_sheet_raises(db, test_user):
+    """Prüft dass Sheet ohne Datenzeilen einen ValueError ausloest."""
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
         ["Total:", "", "00:00", "", "", ""],
@@ -211,11 +219,13 @@ def test_parse_xls_empty_sheet_raises(db, test_user):
 
 
 def test_parse_xls_file_too_large_raises(db, test_user):
+    """Prüft dass zu grosse Dateien abgelehnt werden — DoS-Schutz."""
     with pytest.raises(ValueError, match="zu groß"):
         parse_xls(b"x" * (MAX_FILE_SIZE_BYTES + 1), test_user.id, db)
 
 
 def test_parse_xls_includes_note(db, test_user):
+    """Prüft dass Tagesnotizen aus der XLS-Datei korrekt uebernommen werden."""
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
         _make_data_row(_dt(2026, 1, 12, 7, 15), _dt(2026, 1, 12, 12, 45), "Arzttermin"),
@@ -225,6 +235,7 @@ def test_parse_xls_includes_note(db, test_user):
 
 
 def test_parse_xls_empty_note_is_none(db, test_user):
+    """Prüft dass leere Notizen als None gespeichert werden — kein Leerstring in DB."""
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
         _make_data_row(_dt(2026, 1, 12, 7, 15), _dt(2026, 1, 12, 12, 45), ""),
@@ -234,7 +245,7 @@ def test_parse_xls_empty_note_is_none(db, test_user):
 
 
 def test_parse_xls_exempt_user_no_arbzg_warnings(db, test_user):
-    # §18: exempt_from_arbzg=True → keine Warnungen, auch bei langer Arbeitszeit
+    """Prüft dass §18 ArbZG-befreite User beim Import keine Warnungen erhalten."""
     test_user.exempt_from_arbzg = True
     db.commit()
     rows = [
@@ -246,7 +257,7 @@ def test_parse_xls_exempt_user_no_arbzg_warnings(db, test_user):
 
 
 def test_parse_xls_night_worker_gets_8h_warning(db, test_user):
-    # §6 Abs. 2: is_night_worker=True → 8h-Warnung statt 10h
+    """Prüft dass Nachtarbeitnehmer beim Import die §6 Abs. 2 ArbZG 8h-Warnung erhalten."""
     test_user.is_night_worker = True
     db.commit()
     rows = [
@@ -276,6 +287,7 @@ def _make_entries(n=1) -> list[ImportedEntry]:
 
 
 def test_execute_import_creates_entries(db, test_user, test_admin):
+    """Prüft dass execute_import neue Eintraege in der DB anlegt — Basis-Importfunktion."""
     entries = _make_entries(2)
     result = execute_import(test_user.id, entries, overwrite=False, db=db,
                             changed_by_id=test_admin.id, filename="test.xls",
@@ -288,7 +300,7 @@ def test_execute_import_creates_entries(db, test_user, test_admin):
 
 
 def test_execute_import_skips_conflict_without_overwrite(db, test_user, test_admin):
-    # Vorhandener Eintrag
+    """Prüft dass Konflikte ohne overwrite=True uebersprungen werden — bestehende Daten geschuetzt."""
     existing = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, 12),
                          start_time=time(7, 15), end_time=time(12, 45), break_minutes=30)
     db.add(existing)
@@ -308,6 +320,7 @@ def test_execute_import_skips_conflict_without_overwrite(db, test_user, test_adm
 
 
 def test_execute_import_overwrites_conflict(db, test_user, test_admin):
+    """Prüft dass Konflikte mit overwrite=True ueberschrieben werden — expliziter Admin-Wunsch."""
     existing = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, 12),
                          start_time=time(7, 15), end_time=time(12, 45), break_minutes=30)
     db.add(existing)
@@ -326,6 +339,7 @@ def test_execute_import_overwrites_conflict(db, test_user, test_admin):
 
 
 def test_execute_import_writes_audit_log(db, test_user, test_admin):
+    """Prüft dass Import Audit-Logs schreibt — Nachvollziehbarkeit gemaess DSGVO Art. 5."""
     from app.models import TimeEntryAuditLog
     entries = _make_entries(1)
     execute_import(test_user.id, entries, overwrite=False, db=db,
@@ -366,6 +380,7 @@ def test_execute_import_audit_log_for_overwrite(db, test_user, test_admin):
 
 
 def test_execute_import_returns_arbzg_warnings(db, test_user, test_admin):
+    """Prüft dass ArbZG-Warnungen im Import-Ergebnis zurueckgegeben werden."""
     entries = [ImportedEntry(date=date(2026, 1, 12), start_time=time(7, 15),
                              end_time=time(12, 45), break_minutes=30, note=None,
                              has_conflict=False, arbzg_warnings=["§3 ArbZG: Test-Warnung"])]

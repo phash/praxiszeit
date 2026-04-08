@@ -37,13 +37,13 @@ def _make_absence(db, user, d, atype, hours=8.0):
 
 
 def test_journal_returns_correct_day_count(db, test_user):
-    """März 2026 hat 31 Tage → journal enthält 31 Tage."""
+    """Prüft dass das Journal exakt so viele Tage enthält wie der Monat hat — Grundlage für lückenlose Monatsansicht."""
     result = journal_service.get_journal(db, test_user, 2026, 3)
     assert len(result["days"]) == 31
 
 
 def test_journal_work_day_has_correct_type(db, test_user):
-    """Montag mit Zeiteintrag → type='work'."""
+    """Prüft dass ein Werktag mit Zeiteintrag als 'work' klassifiziert wird und die Ist-Stunden stimmen."""
     monday = date(2026, 3, 9)
     _make_entry(db, test_user, monday, 8, 17, break_min=60)
     result = journal_service.get_journal(db, test_user, 2026, 3)
@@ -53,7 +53,7 @@ def test_journal_work_day_has_correct_type(db, test_user):
 
 
 def test_journal_weekend_has_weekend_type(db, test_user):
-    """Samstag → type='weekend', keine Stunden."""
+    """Prüft dass Wochenendtage als 'weekend' mit 0h Soll markiert werden — keine Fehlberechnung am Wochenende."""
     result = journal_service.get_journal(db, test_user, 2026, 3)
     day = next(d for d in result["days"] if d["date"] == "2026-03-14")
     assert day["type"] == "weekend"
@@ -62,7 +62,7 @@ def test_journal_weekend_has_weekend_type(db, test_user):
 
 
 def test_journal_holiday_has_holiday_type(db, test_user):
-    """Feiertag → type='holiday'."""
+    """Prüft dass Feiertage als 'holiday' mit Name und 0h Soll angezeigt werden — kein Defizit an Feiertagen."""
     h = PublicHoliday(date=date(2026, 3, 11), name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID)
     db.add(h)
     db.commit()
@@ -74,7 +74,7 @@ def test_journal_holiday_has_holiday_type(db, test_user):
 
 
 def test_journal_vacation_day(db, test_user):
-    """Urlaubstag → type='vacation', target=absence_hours (→ balance=0)."""
+    """Prüft dass Urlaubstage als 'vacation' mit ausgeglichenem Saldo erscheinen — Urlaub erzeugt kein Defizit."""
     tuesday = date(2026, 3, 10)
     _make_absence(db, test_user, tuesday, AbsenceType.VACATION, hours=8.0)
     result = journal_service.get_journal(db, test_user, 2026, 3)
@@ -85,7 +85,7 @@ def test_journal_vacation_day(db, test_user):
 
 
 def test_journal_empty_work_day_is_deficit(db, test_user):
-    """Werktag ohne Eintrag → type='empty', Saldo negativ."""
+    """Prüft dass ein Werktag ohne Zeiteintrag als 'empty' mit negativem Saldo erscheint — Fehlstunden sichtbar."""
     result = journal_service.get_journal(db, test_user, 2026, 3)
     monday = next(d for d in result["days"] if d["date"] == "2026-03-09")
     assert monday["type"] == "empty"
@@ -95,7 +95,7 @@ def test_journal_empty_work_day_is_deficit(db, test_user):
 
 
 def test_journal_monthly_summary(db, test_user):
-    """monthly_summary stimmt mit calculation_service überein."""
+    """Prüft dass die Monatsübersicht konsistent mit dem calculation_service berechnet wird — keine Abweichungen."""
     from app.services import calculation_service
     result = journal_service.get_journal(db, test_user, 2026, 3)
     expected_target = float(calculation_service.get_monthly_target(db, test_user, 2026, 3))
@@ -103,13 +103,13 @@ def test_journal_monthly_summary(db, test_user):
 
 
 def test_journal_yearly_overtime_zero_without_entries(db, test_user):
-    """Kein Eintrag → yearly_overtime = 0.0."""
+    """Prüft dass ohne Zeiteinträge die Jahresüberstunden 0 sind — sauberer Ausgangszustand."""
     result = journal_service.get_journal(db, test_user, 2026, 3)
     assert result["yearly_overtime"] == 0.0
 
 
 def test_journal_user_info_included(db, test_user):
-    """Benutzerinfo im Response enthalten."""
+    """Prüft dass Benutzerinfos im Journal enthalten sind — Frontend braucht Name für die Anzeige."""
     result = journal_service.get_journal(db, test_user, 2026, 3)
     assert result["user"]["first_name"] == test_user.first_name
     assert result["user"]["last_name"] == test_user.last_name

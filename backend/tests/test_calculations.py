@@ -8,7 +8,7 @@ from tests.conftest import DEFAULT_TENANT_ID
 
 
 def test_get_daily_target(test_user):
-    """Test daily target calculation."""
+    """Prüft dass Tagessoll korrekt berechnet wird — 40h/5 Tage = 8h pro Tag."""
     # 40 hours / 5 days = 8.0 hours per day
     daily_target = calculation_service.get_daily_target(test_user)
     
@@ -16,7 +16,7 @@ def test_get_daily_target(test_user):
 
 
 def test_get_daily_target_parttime(db):
-    """Test daily target calculation for part-time employee."""
+    """Prüft Tagessoll für Teilzeit — 20h/5 Tage = 4h, wichtig für korrekte Soll-Berechnung."""
     user = User(
         username="parttime",
         email="parttime@example.com",
@@ -40,7 +40,7 @@ def test_get_daily_target_parttime(db):
 
 
 def test_get_daily_target_with_work_days(db):
-    """Test daily target calculation with different work days per week."""
+    """Prüft Tagessoll bei verschiedenen Arbeitstagen/Woche — z.B. 20h/2 Tage = 10h/Tag."""
     # Full-time: 40h / 5 days = 8h/day
     user_ft = User(
         username="fulltime",
@@ -100,7 +100,7 @@ def test_get_daily_target_with_work_days(db):
 
 
 def test_vacation_acceptance_criteria(db):
-    """Verify specification acceptance criteria."""
+    """Prüft Akzeptanzkriterien: Gleiches Stundenbudget bei verschiedenen Tage/Wochen-Kombinationen."""
     # AC1: 20h at 2 days → 12 vacation days → 120h budget
     user1 = User(
         username="ac1",
@@ -145,7 +145,7 @@ def test_vacation_acceptance_criteria(db):
 
 
 def test_get_monthly_target_basic(db, test_user):
-    """Test monthly target calculation for a simple month."""
+    """Prüft dass Monatssoll positiv und plausibel ist — Basis für Überstundenberechnung."""
     # January 2025: 31 days, 23 weekdays (Mo-Fr)
     # No holidays, no absences
     target = calculation_service.get_monthly_target(db, test_user, 2025, 1)
@@ -157,14 +157,14 @@ def test_get_monthly_target_basic(db, test_user):
 
 
 def test_get_monthly_actual_empty(db, test_user):
-    """Test monthly actual calculation with no time entries."""
+    """Prüft dass Monats-Ist ohne Einträge 0h ergibt — Ausgangszustand."""
     actual = calculation_service.get_monthly_actual(db, test_user, 2025, 1)
     
     assert actual == Decimal('0.00')
 
 
 def test_get_monthly_actual_with_entries(db, test_user):
-    """Test monthly actual calculation with time entries."""
+    """Prüft dass Ist-Stunden korrekt aus Zeiteinträgen summiert werden (abzgl. Pausen)."""
     # Add some time entries
     entry1 = TimeEntry(
         user_id=test_user.id,
@@ -197,7 +197,7 @@ def test_get_monthly_actual_with_entries(db, test_user):
 
 
 def test_get_monthly_balance(db, test_user):
-    """Test monthly balance calculation."""
+    """Prüft dass Monatssaldo = Ist minus Soll berechnet wird — negativ bei zu wenig Arbeit."""
     # Add a time entry
     entry = TimeEntry(
         user_id=test_user.id,
@@ -218,7 +218,7 @@ def test_get_monthly_balance(db, test_user):
 
 
 def test_get_vacation_account_basic(db, test_user):
-    """Test vacation account calculation."""
+    """Prüft Urlaubskonto ohne Verbrauch — 30 Tage * 8h = 240h Budget vollständig verfügbar."""
     # User has 30 vacation days configured
     vacation_account = calculation_service.get_vacation_account(db, test_user, 2025)
     
@@ -232,7 +232,7 @@ def test_get_vacation_account_basic(db, test_user):
 
 
 def test_get_vacation_account_with_usage(db, test_user):
-    """Test vacation account calculation with used vacation days."""
+    """Prüft dass genommener Urlaub korrekt vom Budget abgezogen wird — 1 Tag = 8h weniger."""
     # Add vacation absence (8 hours = 1 day)
     absence = Absence(
         user_id=test_user.id,
@@ -254,7 +254,7 @@ def test_get_vacation_account_with_usage(db, test_user):
 
 
 def test_get_overtime_account_empty(db, test_user):
-    """Test overtime account with no entries."""
+    """Prüft dass Überstundenkonto ohne Einträge nicht positiv ist — kein Phantom-Guthaben."""
     overtime = calculation_service.get_overtime_account(db, test_user, 2025, 1)
     
     # Should be negative (no work done, but target exists)
@@ -262,7 +262,7 @@ def test_get_overtime_account_empty(db, test_user):
 
 
 def test_time_entry_net_hours_calculation(db, test_user):
-    """Test that time entry net_hours hybrid property calculates correctly."""
+    """Prüft net_hours Hybrid-Property — Brutto minus Pause (9.5h - 0.75h = 8.75h)."""
     entry = TimeEntry(
         user_id=test_user.id,
         tenant_id=DEFAULT_TENANT_ID,

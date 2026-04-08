@@ -167,7 +167,7 @@ class TestF1_DirectAbsenceDeletesTimeEntries:
     """POST /absences löscht bestehende TimeEntries."""
 
     def test_training_absence_deletes_time_entry(self, db, employee, admin, admin_client):
-        """Fortbildungs-Absence löscht bestehenden TimeEntry."""
+        """Prüft dass Fortbildungs-Absence bestehende TimeEntries ersetzt — verhindert Doppelbuchung am selben Tag."""
         _create_time_entry(db, employee, date(2025, 3, 12))
 
         resp = admin_client.post("/api/absences/", json={
@@ -192,7 +192,7 @@ class TestF1_DirectAbsenceDeletesTimeEntries:
         ).count() == 1
 
     def test_vacation_absence_deletes_time_entry(self, db, employee, admin, admin_client):
-        """Urlaubs-Absence löscht bestehenden TimeEntry."""
+        """Prüft dass Urlaubs-Absence bestehende TimeEntries ersetzt — analog zu Training, für alle Absence-Typen."""
         _create_time_entry(db, employee, date(2025, 3, 12))
 
         resp = admin_client.post("/api/absences/", json={
@@ -209,7 +209,7 @@ class TestF1_DirectAbsenceDeletesTimeEntries:
         ).count() == 0
 
     def test_deletion_creates_audit_log(self, db, employee, admin, admin_client):
-        """Gelöschte TimeEntries erzeugen Audit-Log."""
+        """Prüft dass Cleanup-Löschungen mit source=absence_creation im Audit-Log landen (Nachweispflicht ArbZG)."""
         entry = _create_time_entry(db, employee, date(2025, 3, 12))
         entry_id = entry.id
 
@@ -229,7 +229,7 @@ class TestF1_DirectAbsenceDeletesTimeEntries:
         assert audit.source == "absence_creation"
 
     def test_no_time_entry_no_error(self, db, employee, admin, admin_client):
-        """Keine bestehenden TimeEntries → kein Fehler."""
+        """Prüft dass Absence-Erstellung ohne vorherige TimeEntries fehlerfrei funktioniert (Normalfall)."""
         resp = admin_client.post("/api/absences/", json={
             "user_id": str(employee.id),
             "date": "2025-03-12",
@@ -247,7 +247,7 @@ class TestF2_ClosureDeletesTimeEntries:
     """Betriebsferien löschen bestehende TimeEntries."""
 
     def test_closure_deletes_time_entries(self, db, employee, admin, admin_client):
-        """TimeEntries an Betriebsferien-Tagen werden gelöscht."""
+        """Prüft dass Betriebsferien bestehende TimeEntries löschen und VACATION-Absences erzeugen."""
         # Wednesday 2025-03-12
         _create_time_entry(db, employee, date(2025, 3, 12))
 
@@ -272,7 +272,7 @@ class TestF2_ClosureDeletesTimeEntries:
         ).count() == 1
 
     def test_closure_audit_log(self, db, employee, admin, admin_client):
-        """Closure-Löschungen erzeugen Audit-Log mit source=company_closure."""
+        """Prüft dass Betriebsferien-Löschungen mit source=company_closure protokolliert werden."""
         entry = _create_time_entry(db, employee, date(2025, 3, 12))
         entry_id = entry.id
 
@@ -295,7 +295,7 @@ class TestF3_ClosureSkipsAllAbsenceTypes:
     """Betriebsferien überspringen Tage mit beliebigen Absences."""
 
     def test_closure_skips_training_absence(self, db, employee, admin, admin_client):
-        """Tag mit Training-Absence wird bei Betriebsferien übersprungen."""
+        """Prüft dass Betriebsferien Tage mit bestehender Training-Absence nicht überschreiben (F3)."""
         # Create existing TRAINING absence
         training = Absence(
             user_id=employee.id,
@@ -324,7 +324,7 @@ class TestF3_ClosureSkipsAllAbsenceTypes:
         assert absences[0].type == AbsenceType.TRAINING
 
     def test_closure_skips_sick_absence(self, db, employee, admin, admin_client):
-        """Tag mit Sick-Absence wird bei Betriebsferien übersprungen."""
+        """Prüft dass Krankmeldungen nicht durch Betriebsferien überschrieben werden — Krankheit geht vor (BUrlG)."""
         sick = Absence(
             user_id=employee.id,
             tenant_id=DEFAULT_TENANT_ID,
