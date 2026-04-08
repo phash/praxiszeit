@@ -239,7 +239,7 @@ class TestHealthEndpoint:
     """GET /api/health"""
 
     def test_health_returns_200(self, _db_session):
-        """Health endpoint responds with 200 and expected shape."""
+        """Prüft dass der Health-Endpoint 200 mit korrekter Struktur liefert — Basis-Monitoring."""
         def _override_db():
             yield _db_session
 
@@ -264,7 +264,7 @@ class TestAuthLogin:
     """POST /api/auth/login"""
 
     def test_login_valid_credentials(self, _db_session, employee_user):
-        """Login with correct username/password returns 200 + access_token."""
+        """Prüft dass gueltige Anmeldedaten ein JWT-Token liefern — Authentifizierungs-Kernfluss."""
         def _override_db():
             yield _db_session
 
@@ -287,7 +287,7 @@ class TestAuthLogin:
         assert data["user"]["username"] == "employee"
 
     def test_login_wrong_password(self, _db_session, employee_user):
-        """Login with wrong password returns 401."""
+        """Prüft dass falsches Passwort mit 401 abgelehnt wird — Brute-Force-Schutz."""
         def _override_db():
             yield _db_session
 
@@ -305,7 +305,7 @@ class TestAuthLogin:
         assert resp.status_code == 401
 
     def test_login_nonexistent_user(self, _db_session, tenant):
-        """Login with unknown username returns 401."""
+        """Prüft dass unbekannte Benutzernamen 401 liefern — keine User-Enumeration."""
         def _override_db():
             yield _db_session
 
@@ -323,7 +323,7 @@ class TestAuthLogin:
         assert resp.status_code == 401
 
     def test_login_empty_body(self, _db_session, tenant):
-        """Login with empty body returns 422 (validation error)."""
+        """Prüft dass leerer Login-Body 422 liefert — Pydantic-Validierung greift."""
         def _override_db():
             yield _db_session
 
@@ -341,7 +341,7 @@ class TestAuthMe:
     """GET /api/auth/me"""
 
     def test_me_authenticated(self, employee_client):
-        """Authenticated user gets own profile."""
+        """Prüft dass authentifizierter User sein eigenes Profil abrufen kann."""
         resp = employee_client.get("/api/auth/me")
         assert resp.status_code == 200
         data = resp.json()
@@ -349,7 +349,7 @@ class TestAuthMe:
         assert data["role"] == "employee"
 
     def test_me_unauthenticated(self, unauthenticated_client):
-        """Request without token returns 401/403."""
+        """Prüft dass ohne Token kein Profilzugriff moeglich ist — DSGVO-Datenschutz."""
         resp = unauthenticated_client.get("/api/auth/me")
         assert resp.status_code in (401, 403)
 
@@ -358,7 +358,7 @@ class TestAuthLogout:
     """POST /api/auth/logout"""
 
     def test_logout_authenticated(self, employee_client):
-        """Authenticated logout returns 200."""
+        """Prüft dass Logout erfolgreich 200 liefert — Session-Beendigung."""
         resp = employee_client.post("/api/auth/logout")
         assert resp.status_code == 200
         data = resp.json()
@@ -374,13 +374,13 @@ class TestTimeEntryList:
     """GET /api/time-entries"""
 
     def test_list_empty(self, employee_client):
-        """Empty time-entries list returns 200 with empty array."""
+        """Prüft dass leere Zeiterfassungsliste 200 mit leerem Array liefert."""
         resp = employee_client.get("/api/time-entries/")
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_list_with_entry(self, _db_session, employee_user, employee_client):
-        """After inserting a time entry, list returns it."""
+        """Prüft dass angelegte Zeiteintraege in der Liste erscheinen — Grundfunktion Zeiterfassung."""
         entry = TimeEntry(
             user_id=employee_user.id,
             tenant_id=DEFAULT_TENANT_ID,
@@ -403,7 +403,7 @@ class TestTimeEntryCreate:
     """POST /api/time-entries"""
 
     def test_create_valid_entry(self, employee_client):
-        """Create a valid time entry for today returns 201."""
+        """Prüft dass ein gueltiger Zeiteintrag mit 201 angelegt wird — Kernfunktion."""
         today = date.today().isoformat()
         resp = employee_client.post("/api/time-entries/", json={
             "date": today,
@@ -418,7 +418,7 @@ class TestTimeEntryCreate:
         assert data["end_time"] == "12:00:00"
 
     def test_create_end_before_start(self, employee_client):
-        """End time before start time returns 422 (pydantic validation)."""
+        """Prüft dass Ende vor Start abgelehnt wird — verhindert negative Arbeitszeiten."""
         today = date.today().isoformat()
         resp = employee_client.post("/api/time-entries/", json={
             "date": today,
@@ -429,7 +429,7 @@ class TestTimeEntryCreate:
         assert resp.status_code == 422
 
     def test_create_missing_fields(self, employee_client):
-        """Missing required fields returns 422."""
+        """Prüft dass fehlende Pflichtfelder 422 liefern — Input-Validierung."""
         resp = employee_client.post("/api/time-entries/", json={
             "date": date.today().isoformat(),
         })
@@ -440,7 +440,7 @@ class TestTimeEntryDelete:
     """DELETE /api/time-entries/{entry_id}"""
 
     def test_delete_own_entry(self, _db_session, employee_user, employee_client):
-        """Employee can delete own entry from today."""
+        """Prüft dass MA eigene Eintraege loeschen kann — Korrekturrecht."""
         entry = TimeEntry(
             user_id=employee_user.id,
             tenant_id=DEFAULT_TENANT_ID,
@@ -457,7 +457,7 @@ class TestTimeEntryDelete:
         assert resp.status_code == 204
 
     def test_delete_nonexistent_entry(self, employee_client):
-        """Deleting a non-existent entry returns 404."""
+        """Prüft dass Loeschen eines nicht existierenden Eintrags 404 liefert."""
         fake_id = str(uuid.uuid4())
         resp = employee_client.delete(f"/api/time-entries/{fake_id}")
         assert resp.status_code == 404
@@ -472,7 +472,7 @@ class TestAdminUsers:
     """GET /api/admin/users"""
 
     def test_admin_list_users(self, admin_client, admin_user):
-        """Admin can list users."""
+        """Prüft dass Admin alle Benutzer auflisten kann — Verwaltungsfunktion."""
         resp = admin_client.get("/api/admin/users")
         assert resp.status_code == 200
         data = resp.json()
@@ -482,7 +482,7 @@ class TestAdminUsers:
         assert "testadmin" in usernames
 
     def test_employee_cannot_list_users(self, _db_session, employee_user):
-        """Employee gets 403 when accessing admin endpoint."""
+        """Prüft dass MA keinen Zugriff auf Admin-Endpunkte hat — Rollenbasierte Autorisierung."""
         def _override_db():
             yield _db_session
 
@@ -508,7 +508,7 @@ class TestAdminYearClosing:
     """POST / DELETE /api/admin/year-closing/{year}"""
 
     def test_create_year_closing(self, _db_session, admin_user, admin_client):
-        """Year closing for a year with no active users returns 200 with empty list."""
+        """Prüft dass Jahresabschluss 200 mit Carryover-Daten liefert — Jahreswechsel-Workflow."""
         # The admin_user has track_hours=True by default, so they will be
         # included. The service calculates carryovers. This just checks the
         # HTTP-level behavior.
@@ -520,17 +520,17 @@ class TestAdminYearClosing:
         assert "employees" in data
 
     def test_delete_year_closing_no_data(self, admin_client):
-        """Delete year closing with no carryover data returns 404."""
+        """Prüft dass Loeschen ohne vorhandene Carryover-Daten 404 liefert."""
         resp = admin_client.delete("/api/admin/year-closing/2024")
         assert resp.status_code == 404
 
     def test_year_closing_invalid_year(self, admin_client):
-        """Year outside valid range returns 400."""
+        """Prüft dass ungueltige Jahreszahl 400 liefert — Input-Validierung."""
         resp = admin_client.post("/api/admin/year-closing/1999")
         assert resp.status_code == 400
 
     def test_year_closing_as_employee_forbidden(self, _db_session, employee_user):
-        """Employee cannot trigger year closing (403)."""
+        """Prüft dass MA keinen Jahresabschluss ausloesen kann — nur Admin-Berechtigung."""
         def _override_db():
             yield _db_session
 
@@ -553,13 +553,13 @@ class TestAdminCarryovers:
     """GET /api/admin/users/{user_id}/carryovers"""
 
     def test_list_carryovers_empty(self, admin_client, employee_user):
-        """Listing carryovers for a user with none returns 200 + empty list."""
+        """Prüft dass Carryover-Liste ohne Daten 200 mit leerem Array liefert."""
         resp = admin_client.get(f"/api/admin/users/{employee_user.id}/carryovers")
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_list_carryovers_unknown_user(self, admin_client):
-        """Carryovers for non-existent user returns 404."""
+        """Prüft dass Carryover-Abfrage fuer unbekannten User 404 liefert."""
         fake_id = str(uuid.uuid4())
         resp = admin_client.get(f"/api/admin/users/{fake_id}/carryovers")
         assert resp.status_code == 404
@@ -574,14 +574,14 @@ class TestClockEndpoints:
     """POST /api/time-entries/clock-in, /clock-out, GET /clock-status"""
 
     def test_clock_status_not_clocked_in(self, employee_client):
-        """Clock status when not clocked in."""
+        """Prüft dass Stempel-Status 'nicht eingestempelt' korrekt gemeldet wird."""
         resp = employee_client.get("/api/time-entries/clock-status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["is_clocked_in"] is False
 
     def test_clock_in(self, employee_client):
-        """Clock in creates an open entry."""
+        """Prüft dass Einstempeln einen offenen Eintrag ohne Endzeit erstellt."""
         resp = employee_client.post("/api/time-entries/clock-in", json={})
         assert resp.status_code == 201
         data = resp.json()
@@ -589,13 +589,13 @@ class TestClockEndpoints:
         assert data["date"] == date.today().isoformat()
 
     def test_clock_in_twice_fails(self, employee_client):
-        """Cannot clock in when already clocked in."""
+        """Prüft dass doppeltes Einstempeln verhindert wird — keine Doppeleintraege."""
         employee_client.post("/api/time-entries/clock-in", json={})
         resp = employee_client.post("/api/time-entries/clock-in", json={})
         assert resp.status_code == 400
 
     def test_clock_out_without_clock_in(self, employee_client):
-        """Cannot clock out when not clocked in."""
+        """Prüft dass Ausstempeln ohne Einstempeln abgelehnt wird — konsistenter Zustand."""
         resp = employee_client.post("/api/time-entries/clock-out", json={
             "break_minutes": 0,
         })
@@ -611,7 +611,7 @@ class TestChangePassword:
     """POST /api/auth/change-password"""
 
     def test_change_password_wrong_current(self, employee_client):
-        """Wrong current password returns 400."""
+        """Prüft dass falsches aktuelles Passwort die Aenderung verhindert — Sicherheit."""
         resp = employee_client.post("/api/auth/change-password", json={
             "current_password": "WrongOldPassword1!",
             "new_password": "NewSecure2025!",
@@ -619,7 +619,7 @@ class TestChangePassword:
         assert resp.status_code == 400
 
     def test_change_password_success(self, employee_client):
-        """Correct current password allows change, returns new token."""
+        """Prüft dass Passwortwechsel mit korrektem altem Passwort neues Token liefert."""
         resp = employee_client.post("/api/auth/change-password", json={
             "current_password": "Employee2025!",
             "new_password": "NewSecure2025!",
@@ -629,7 +629,7 @@ class TestChangePassword:
         assert "access_token" in data
 
     def test_change_password_weak_new(self, employee_client):
-        """New password that fails complexity check returns 422."""
+        """Prüft dass zu schwaches neues Passwort 422 liefert — Passwort-Policy."""
         resp = employee_client.post("/api/auth/change-password", json={
             "current_password": "Employee2025!",
             "new_password": "short",

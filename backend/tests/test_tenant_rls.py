@@ -239,7 +239,7 @@ class TestTenantIsolation:
     """Verify that each tenant sees only its own data."""
 
     def test_tenant_a_sees_only_own_users(self, app_engine, seed_data):
-        """1. Tenant A session sees only Tenant A users."""
+        """Prüft dass RLS-Policy Tenant A nur eigene User zeigt — verhindert Datenleck zwischen Mandanten."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             rows = conn.execute(text(
@@ -259,7 +259,7 @@ class TestTenantIsolation:
             conn.close()
 
     def test_tenant_b_sees_only_own_users(self, app_engine, seed_data):
-        """2. Tenant B session sees only Tenant B users."""
+        """Prüft RLS-Isolation symmetrisch aus Sicht von Tenant B — beide Seiten müssen isoliert sein."""
         conn, trans = _tenant_session(app_engine, TENANT_B_ID)
         try:
             rows = conn.execute(text("SELECT id FROM users")).fetchall()
@@ -272,7 +272,7 @@ class TestTenantIsolation:
             conn.close()
 
     def test_tenant_a_sees_only_own_time_entries(self, app_engine, seed_data):
-        """3. Tenant A session sees only own time_entries."""
+        """Prüft RLS-Isolation für time_entries — Arbeitszeitdaten sind besonders schützenswert (DSGVO Art. 9)."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             rows = conn.execute(text("SELECT id FROM time_entries")).fetchall()
@@ -284,7 +284,7 @@ class TestTenantIsolation:
             conn.close()
 
     def test_tenant_b_sees_only_own_time_entries(self, app_engine, seed_data):
-        """4. Tenant B session sees only own time_entries."""
+        """Prüft symmetrische time_entries-Isolation für Tenant B — kein Cross-Tenant-Zugriff möglich."""
         conn, trans = _tenant_session(app_engine, TENANT_B_ID)
         try:
             rows = conn.execute(text("SELECT id FROM time_entries")).fetchall()
@@ -296,7 +296,7 @@ class TestTenantIsolation:
             conn.close()
 
     def test_tenant_a_sees_only_own_absences(self, app_engine, seed_data):
-        """5. Tenant A session sees only own absences."""
+        """Prüft RLS-Isolation für absences — Krankmeldungen dürfen nie mandantenübergreifend sichtbar sein (DSGVO)."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             rows = conn.execute(text("SELECT id FROM absences")).fetchall()
@@ -308,7 +308,7 @@ class TestTenantIsolation:
             conn.close()
 
     def test_tenant_a_sees_only_own_public_holidays(self, app_engine, seed_data):
-        """6. Tenant A session sees only own public_holidays."""
+        """Prüft RLS-Isolation für public_holidays — Feiertage sind mandantenspezifisch (Bundesland-abhängig)."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             rows = conn.execute(text("SELECT id FROM public_holidays")).fetchall()
@@ -326,11 +326,7 @@ class TestCrossTenantWriteProtection:
     """Verify that RLS WITH CHECK prevents cross-tenant writes."""
 
     def test_tenant_a_cannot_insert_user_in_tenant_b(self, app_engine, seed_data):
-        """7. Tenant A cannot INSERT a user with Tenant B's tenant_id.
-
-        The WITH CHECK clause should raise a new_row_violates_row_level_security
-        error (SQLSTATE 42501).
-        """
+        """Prüft dass RLS WITH CHECK Cross-Tenant-INSERTs blockiert — verhindert Datenmanipulation fremder Mandanten."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             with pytest.raises(Exception) as exc_info:
@@ -349,11 +345,7 @@ class TestCrossTenantWriteProtection:
             conn.close()
 
     def test_tenant_a_cannot_update_tenant_b_user(self, app_engine, seed_data):
-        """8. Tenant A cannot UPDATE a Tenant B user's data.
-
-        The UPDATE should affect 0 rows because the USING clause hides
-        Tenant B rows from Tenant A entirely.
-        """
+        """Prüft dass RLS USING-Clause Cross-Tenant-UPDATEs verhindert (0 affected rows statt Fehler)."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             result = conn.execute(text("""
@@ -375,7 +367,7 @@ class TestSuperadminBypass:
     """Verify that is_superadmin flag allows cross-tenant access."""
 
     def test_superadmin_sees_all_users(self, app_engine, seed_data):
-        """9. Session with app.is_superadmin = 'true' sees all tenants' users."""
+        """Prüft dass Superadmin-Kontext RLS umgeht und alle Mandanten sieht — nötig für globale Verwaltung."""
         conn, trans = _superadmin_session(app_engine)
         try:
             rows = conn.execute(text("SELECT id, tenant_id FROM users")).fetchall()
@@ -389,7 +381,7 @@ class TestSuperadminBypass:
             conn.close()
 
     def test_superadmin_sees_all_time_entries(self, app_engine, seed_data):
-        """10. Session with app.is_superadmin = 'true' sees all time_entries."""
+        """Prüft Superadmin-Bypass für time_entries — mandantenübergreifende Auswertungen müssen möglich sein."""
         conn, trans = _superadmin_session(app_engine)
         try:
             rows = conn.execute(text("SELECT id FROM time_entries")).fetchall()
@@ -410,7 +402,7 @@ class TestSystemSettingsIsolation:
     """
 
     def test_tenant_a_sees_own_settings_only(self, app_engine, seed_data):
-        """11. Tenant A sees only own settings (tenant_id is NOT NULL)."""
+        """Prüft RLS für system_settings mit NOT NULL tenant_id — mandantenspezifische Konfiguration isoliert."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             rows = conn.execute(text(
@@ -426,7 +418,7 @@ class TestSystemSettingsIsolation:
             conn.close()
 
     def test_tenant_a_does_not_see_tenant_b_settings(self, app_engine, seed_data):
-        """12. Tenant A does NOT see Tenant B's settings."""
+        """Prüft explizit dass COUNT=0 für fremde Settings — stellt sicher dass kein Informationsleck besteht."""
         conn, trans = _tenant_session(app_engine, TENANT_A_ID)
         try:
             row = conn.execute(text(
@@ -444,14 +436,7 @@ class TestNoContextSecurity:
     """Verify that a session without any tenant/superadmin context sees nothing."""
 
     def test_no_context_sees_no_users(self, app_engine, seed_data):
-        """13. Session WITHOUT any context set sees NO user rows.
-
-        For the users table, the policy allows tenant_id IS NULL rows too,
-        so this test checks that without context, only NULL-tenant users
-        (if any) are visible -- certainly NOT our test tenant users.
-
-        For NOT NULL tables (time_entries), no rows should be visible at all.
-        """
+        """Prüft dass ohne SET LOCAL kein Zugriff möglich ist — verhindert Datenleck bei fehlender Middleware."""
         conn, trans = _no_context_session(app_engine)
         try:
             # Users table (nullable tenant_id): check our test users are NOT visible

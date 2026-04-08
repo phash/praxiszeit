@@ -14,24 +14,24 @@ class TestGenerateTotpSecret:
     """Test generate_totp_secret() function."""
 
     def test_returns_string(self):
-        """Secret must be a string."""
+        """Prüft dass das TOTP-Secret ein String ist — nötig für QR-Code-Generierung."""
         secret = generate_totp_secret()
         assert isinstance(secret, str)
 
     def test_proper_length(self):
-        """Secret should be a base32 string of standard length (>=16 chars)."""
+        """Prüft dass das Secret mindestens 16 Zeichen lang ist — Standard für TOTP-Sicherheit."""
         secret = generate_totp_secret()
         assert len(secret) >= 16
 
     def test_valid_base32(self):
-        """Secret must be valid base32 (pyotp can use it)."""
+        """Prüft dass das Secret gültiges Base32 ist und von Authenticator-Apps gelesen werden kann."""
         secret = generate_totp_secret()
         # Should not raise
         totp = pyotp.TOTP(secret)
         assert totp.now() is not None
 
     def test_unique_secrets(self):
-        """Each call should generate a different secret."""
+        """Prüft dass jedes generierte Secret einzigartig ist — verhindert 2FA-Kollisionen."""
         secrets = {generate_totp_secret() for _ in range(10)}
         assert len(secrets) == 10
 
@@ -40,25 +40,25 @@ class TestGetTotpUri:
     """Test get_totp_uri() function."""
 
     def test_returns_otpauth_uri(self):
-        """URI must start with otpauth://totp/."""
+        """Prüft dass die URI mit otpauth://totp/ beginnt — nötig für QR-Code-Scan."""
         secret = generate_totp_secret()
         uri = get_totp_uri("testuser", secret)
         assert uri.startswith("otpauth://totp/")
 
     def test_contains_username(self):
-        """URI must contain the username."""
+        """Prüft dass der Benutzername in der URI enthalten ist — Zuordnung im Authenticator."""
         secret = generate_totp_secret()
         uri = get_totp_uri("testuser", secret)
         assert "testuser" in uri
 
     def test_contains_issuer(self):
-        """URI must contain the issuer (PraxisZeit)."""
+        """Prüft dass PraxisZeit als Issuer in der URI steht — Branding im Authenticator."""
         secret = generate_totp_secret()
         uri = get_totp_uri("testuser", secret)
         assert "PraxisZeit" in uri
 
     def test_contains_secret_param(self):
-        """URI must contain the secret parameter."""
+        """Prüft dass das Secret als Parameter in der URI enthalten ist — ohne geht kein TOTP."""
         secret = generate_totp_secret()
         uri = get_totp_uri("testuser", secret)
         assert f"secret={secret}" in uri
@@ -68,24 +68,24 @@ class TestVerifyTotp:
     """Test verify_totp() function."""
 
     def test_valid_code_returns_true(self):
-        """A freshly generated code for the same secret must verify."""
+        """Prüft dass ein aktuell gültiger TOTP-Code korrekt verifiziert wird."""
         secret = generate_totp_secret()
         totp = pyotp.TOTP(secret)
         code = totp.now()
         assert verify_totp(secret, code) is True
 
     def test_invalid_code_returns_false(self):
-        """An incorrect code must not verify."""
+        """Prüft dass ein falscher TOTP-Code abgelehnt wird — Schutz vor Brute-Force."""
         secret = generate_totp_secret()
         assert verify_totp(secret, "000000") is False
 
     def test_empty_code_returns_false(self):
-        """An empty code must not verify."""
+        """Prüft dass ein leerer Code abgelehnt wird — Edge Case bei fehlender Eingabe."""
         secret = generate_totp_secret()
         assert verify_totp(secret, "") is False
 
     def test_wrong_secret_returns_false(self):
-        """Code from a different secret must not verify."""
+        """Prüft dass ein Code von einem anderen Secret abgelehnt wird — verhindert Account-Übernahme."""
         secret1 = generate_totp_secret()
         secret2 = generate_totp_secret()
         code = pyotp.TOTP(secret1).now()
@@ -96,23 +96,23 @@ class TestHashPassword:
     """Test hash_password() function."""
 
     def test_returns_string(self):
-        """Hash must be a string."""
+        """Prüft dass der Hash ein String ist — nötig für DB-Speicherung."""
         result = hash_password("testpassword")
         assert isinstance(result, str)
 
     def test_returns_bcrypt_hash(self):
-        """Hash must start with $2b$ (bcrypt prefix)."""
+        """Prüft dass bcrypt verwendet wird ($2b$-Prefix) — sicherer Algorithmus mit Salt."""
         result = hash_password("testpassword")
         assert result.startswith("$2b$")
 
     def test_different_from_plaintext(self):
-        """Hash must not equal the plaintext password."""
+        """Prüft dass der Hash nicht dem Klartext-Passwort entspricht — Grundvoraussetzung."""
         password = "testpassword"
         result = hash_password(password)
         assert result != password
 
     def test_different_hashes_for_same_password(self):
-        """Two hashes of the same password should differ (salted)."""
+        """Prüft dass gleiches Passwort verschiedene Hashes erzeugt — Salt verhindert Rainbow-Tables."""
         h1 = hash_password("testpassword")
         h2 = hash_password("testpassword")
         assert h1 != h2
@@ -122,23 +122,23 @@ class TestVerifyPassword:
     """Test verify_password() function."""
 
     def test_correct_password_returns_true(self):
-        """Correct password must verify against its hash."""
+        """Prüft dass korrektes Passwort gegen seinen Hash verifiziert — Login-Grundlage."""
         password = "mysecurepassword"
         hashed = hash_password(password)
         assert verify_password(password, hashed) is True
 
     def test_wrong_password_returns_false(self):
-        """Wrong password must not verify."""
+        """Prüft dass falsches Passwort abgelehnt wird — Schutz vor unbefugtem Zugriff."""
         hashed = hash_password("correctpassword")
         assert verify_password("wrongpassword", hashed) is False
 
     def test_empty_password_returns_false(self):
-        """Empty password must not verify against a non-empty hash."""
+        """Prüft dass leeres Passwort abgelehnt wird — Edge Case bei fehlender Eingabe."""
         hashed = hash_password("realpassword")
         assert verify_password("", hashed) is False
 
     def test_password_with_special_chars(self):
-        """Passwords with special characters must work."""
+        """Prüft dass Sonderzeichen im Passwort korrekt gehasht werden — kein Encoding-Problem."""
         password = "P@$$w0rd!#%^&*()"
         hashed = hash_password(password)
         assert verify_password(password, hashed) is True

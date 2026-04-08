@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.0 | Stand: März 2026**
+**Version 2.1 | Stand: April 2026**
 
 ---
 
@@ -20,7 +20,9 @@
 12. [Import](#12-import)
 13. [Einstellungen](#13-einstellungen)
 14. [ArbZG-Compliance-Berichte](#14-arbzg-compliance-berichte)
-15. [Rechtliche Grundlagen](#15-rechtliche-grundlagen)
+15. [Überstundenausgleich](#15-überstundenausgleich)
+16. [Änderungsanträge für Abwesenheiten](#16-änderungsanträge-für-abwesenheiten)
+17. [Rechtliche Grundlagen](#17-rechtliche-grundlagen)
 
 ---
 
@@ -483,10 +485,54 @@ Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
 | **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag | § 9 ArbZG |
 | **Wochenhöchstgrenze** | > 48h/Woche | § 14 ArbZG |
 | **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | § 6 ArbZG |
+| **Ruhezeitwarnung** | < 11h seit letztem Arbeitsende beim Einstempeln | § 5 ArbZG |
 
 ---
 
-## 15. Rechtliche Grundlagen
+## 15. Überstundenausgleich
+
+Mitarbeiter können angesammelte Überstunden durch **Überstundenausgleich-Tage** abbauen.
+
+### Funktionsweise
+
+Wenn ein Überstundenausgleich-Tag eingetragen wird:
+- **Soll-Stunden** bleiben für den Tag erhalten (z. B. 8h)
+- **Ist-Stunden** werden auf 0h gesetzt
+- Das Überstundenkonto **sinkt** um die Tagessollzeit
+
+**Beispiel:** Ein Mitarbeiter mit 40h/Woche (8h/Tag) nimmt einen Überstundenausgleich-Tag.
+→ Konto: -8h an diesem Tag → Überstunden werden effektiv abgebaut.
+
+### Eintragen
+
+1. **Abwesenheiten** → **Abwesenheit eintragen**
+2. **Typ:** „Überstundenausgleich" auswählen
+3. Datum(e) auswählen → Speichern
+
+> **Hinweis:** Es gibt keine automatische Prüfung, ob das Überstundenkonto ausreichend gedeckt ist. Prüfen Sie den Kontostand im Admin-Dashboard.
+
+---
+
+## 16. Änderungsanträge für Abwesenheiten
+
+Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenheiten per Änderungsantrag beantragen** (z. B. Fortbildung, Urlaub).
+
+### Ablauf
+
+1. Mitarbeiter erstellt einen Änderungsantrag mit **Typ „Abwesenheit"**
+2. Der Antrag enthält: Datum, Abwesenheitstyp, optionale Start-/Endzeit, Begründung
+3. Admin prüft und genehmigt/lehnt ab
+4. Bei Genehmigung wird die Abwesenheit automatisch erstellt
+
+### Besonderheiten
+
+- **Krankmeldung per Antrag ist gesperrt** — Krankschreibungen müssen vom Admin eingetragen werden
+- **Halbe Tage:** Abwesenheiten können optionale Start-/Endzeiten haben (z. B. „Fortbildung nachmittags 13:00–17:00")
+- **DSGVO:** Im Kalender sehen Nicht-Admins fremde Kranktage nur als „abwesend" (nicht als „krank")
+
+---
+
+## 17. Rechtliche Grundlagen
 
 | Paragraph | Inhalt | Umsetzung in PraxisZeit |
 |-----------|--------|------------------------|
@@ -515,4 +561,4 @@ Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: März 2026*
+*Stand: April 2026*

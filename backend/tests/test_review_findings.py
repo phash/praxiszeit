@@ -15,7 +15,7 @@ class TestSystemSettingsMultiTenant:
     """C3: system_settings must support same key for different tenants."""
 
     def test_two_tenants_same_key(self, db, default_tenant):
-        """Two tenants can each have their own 'holiday_state' setting."""
+        """Prüft dass zwei Tenants denselben Settings-Key unabhaengig nutzen koennen — Multi-Tenant-Isolation."""
         tenant_b = Tenant(id=TENANT_B_ID, name="Tenant B", slug="tenant-b")
         db.add(tenant_b)
         db.commit()
@@ -44,7 +44,7 @@ class TestHolidayServiceTenantIsolation:
     """M1/M2: holiday_service must filter by tenant_id."""
 
     def test_sync_holidays_does_not_see_other_tenant(self, db, default_tenant):
-        """sync_holidays existing-check must filter by tenant_id."""
+        """Prüft dass sync_holidays Feiertage pro Tenant isoliert prueft — kein Cross-Tenant-Leak."""
         h = PublicHoliday(date=date(2026, 1, 1), name="Neujahr", year=2026, tenant_id=DEFAULT_TENANT_ID)
         db.add(h)
         db.commit()
@@ -67,7 +67,7 @@ class TestHolidayServiceTenantIsolation:
         db.commit()
 
     def test_delete_all_holidays_scoped_to_tenant(self, db, default_tenant):
-        """delete_all_holidays with tenant_id must only delete that tenant's holidays."""
+        """Prüft dass delete_all_holidays nur Feiertage des eigenen Tenants loescht — RLS-Sicherheit."""
         tenant_b = Tenant(id=TENANT_B_ID, name="Tenant B", slug="tenant-b")
         db.add(tenant_b)
         h1 = PublicHoliday(date=date(2026, 12, 25), name="Weihnachten", year=2026, tenant_id=DEFAULT_TENANT_ID)

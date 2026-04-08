@@ -37,23 +37,28 @@ class TestSecurityHeadersMiddleware:
         return TestClient(app)
 
     def test_x_frame_options(self, app_with_middleware):
+        """Prüft dass X-Frame-Options gesetzt ist — Clickjacking-Schutz."""
         response = app_with_middleware.get("/test")
         assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
 
     def test_x_content_type_options(self, app_with_middleware):
+        """Prüft dass X-Content-Type-Options nosniff gesetzt ist — MIME-Sniffing-Schutz."""
         response = app_with_middleware.get("/test")
         assert response.headers["X-Content-Type-Options"] == "nosniff"
 
     def test_referrer_policy(self, app_with_middleware):
+        """Prüft dass Referrer-Policy gesetzt ist — verhindert URL-Leak an Dritte."""
         response = app_with_middleware.get("/test")
         assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
     def test_hsts(self, app_with_middleware):
+        """Prüft dass HSTS-Header mit 1 Jahr max-age gesetzt ist — erzwingt HTTPS."""
         response = app_with_middleware.get("/test")
         assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
         assert "includeSubDomains" in response.headers["Strict-Transport-Security"]
 
     def test_csp(self, app_with_middleware):
+        """Prüft dass Content-Security-Policy restriktive Regeln setzt — XSS-Schutz."""
         response = app_with_middleware.get("/test")
         csp = response.headers["Content-Security-Policy"]
         assert "default-src 'self'" in csp
@@ -71,7 +76,7 @@ class TestTomlConfigLoader:
     """Test TOML config loading into environment variables."""
 
     def test_load_toml_sets_env_vars(self):
-        """TOML values should be set as env vars when not already present."""
+        """Prüft dass TOML-Werte als Umgebungsvariablen gesetzt werden — Native-Konfiguration."""
         toml_content = b"""
 [practice]
 name = "Testpraxis"
@@ -117,7 +122,7 @@ login_rate_limit = "10/minute"
                 os.environ.pop(key, None)
 
     def test_env_vars_take_precedence_over_toml(self):
-        """Existing env vars should not be overwritten by TOML."""
+        """Prüft dass bestehende Umgebungsvariablen nicht durch TOML ueberschrieben werden."""
         os.environ["PRACTICE_NAME"] = "EnvPraxis"
 
         toml_content = b"""
@@ -153,7 +158,7 @@ name = "TomlPraxis"
             os.environ.pop("PRACTICE_NAME", None)
 
     def test_boolean_values_converted_to_lowercase(self):
-        """Boolean TOML values should be lowercase strings."""
+        """Prüft dass TOML-Booleans als lowercase Strings konvertiert werden — Python-Kompatibilitaet."""
         toml_content = b"""
 [security]
 cookie_secure = false
@@ -234,7 +239,7 @@ class TestLicenseValidation:
         return payload
 
     def test_valid_license(self, keypair, tmp_path):
-        """A properly signed, non-expired license should validate successfully."""
+        """Prüft dass eine gueltig signierte, nicht abgelaufene Lizenz erfolgreich validiert wird."""
         import app.core.license as lic
 
         token = self._sign_license(keypair["private"], self._valid_payload())
@@ -253,7 +258,7 @@ class TestLicenseValidation:
         assert info.days_until_expiry > 0
 
     def test_expired_license_raises(self, keypair, tmp_path):
-        """An expired license should raise LicenseExpiredError."""
+        """Prüft dass eine abgelaufene Lizenz LicenseExpiredError ausloest — Lizenz-Enforcement."""
         import app.core.license as lic
 
         expired_payload = self._valid_payload(
@@ -269,7 +274,7 @@ class TestLicenseValidation:
                 lic.validate_license(license_file)
 
     def test_invalid_signature_raises(self, keypair, tmp_path):
-        """A license signed with a different key should fail validation."""
+        """Prüft dass eine mit fremdem Key signierte Lizenz abgelehnt wird — Ed25519-Integritaet."""
         import app.core.license as lic
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -285,14 +290,14 @@ class TestLicenseValidation:
                 lic.validate_license(license_file)
 
     def test_missing_license_file(self, tmp_path):
-        """Missing license file should raise LicenseError."""
+        """Prüft dass fehlende Lizenzdatei einen LicenseError ausloest — klare Fehlermeldung."""
         import app.core.license as lic
 
         with pytest.raises(lic.LicenseError, match="not found"):
             lic.validate_license(tmp_path / "nonexistent.key")
 
     def test_empty_license_file(self, tmp_path):
-        """Empty license file should raise LicenseError."""
+        """Prüft dass leere Lizenzdatei einen LicenseError ausloest — kein stilles Ignorieren."""
         import app.core.license as lic
 
         license_file = tmp_path / "license.key"
@@ -302,13 +307,13 @@ class TestLicenseValidation:
             lic.validate_license(license_file)
 
     def test_validate_license_quiet_returns_none_on_error(self, tmp_path):
-        """validate_license_quiet should return None on hard errors."""
+        """Prüft dass validate_license_quiet bei Fehlern None zurueckgibt statt Exception."""
         import app.core.license as lic
 
         assert lic.validate_license_quiet(tmp_path / "nonexistent.key") is None
 
     def test_validate_license_quiet_returns_expired_info(self, keypair, tmp_path):
-        """validate_license_quiet should return info even for expired licenses."""
+        """Prüft dass validate_license_quiet auch fuer abgelaufene Lizenzen Info zurueckgibt — Grace-Period."""
         import app.core.license as lic
 
         expired_payload = self._valid_payload(
@@ -327,7 +332,7 @@ class TestLicenseValidation:
         assert info.customer_id == "test-praxis"
 
     def test_license_info_days_until_expiry(self):
-        """LicenseInfo.days_until_expiry should calculate correctly."""
+        """Prüft dass days_until_expiry und is_expired korrekt berechnet werden."""
         from app.core.license import LicenseInfo
 
         future = datetime.now(timezone.utc) + timedelta(days=100)
@@ -352,7 +357,7 @@ class TestLicenseValidation:
         assert expired_info.is_expired
 
     def test_read_only_guard(self):
-        """require_writable should raise 403 when in read-only mode."""
+        """Prüft dass require_writable bei Read-Only-Modus 403 wirft — abgelaufene Lizenz."""
         import app.core.license as lic
         from fastapi import HTTPException
 
@@ -366,7 +371,7 @@ class TestLicenseValidation:
         lic.require_writable()
 
     def test_employee_limit_check(self):
-        """check_employee_limit should raise 403 when limit exceeded."""
+        """Prüft dass check_employee_limit bei Ueberschreitung des Lizenzlimits 403 wirft."""
         import app.core.license as lic
         from app.core.license import LicenseInfo
         from fastapi import HTTPException

@@ -190,7 +190,7 @@ class TestFall1_ApproveCreatesAbsence:
     """Fall 1: User hat keinen Zeiteintrag → Antrag genehmigt → Abwesenheit erstellt."""
 
     def test_approve_training_creates_training_absence(self, db, employee, admin_client):
-        """Fortbildung-Antrag genehmigt → Absence(type=TRAINING) angelegt."""
+        """Prüft dass genehmigter Fortbildungs-Antrag korrekte TRAINING-Absence erzeugt (Issue #75, Fall 1)."""
         vr = _create_pending_request(db, employee, absence_type="training",
                                       req_date=date(2025, 3, 12))
 
@@ -212,7 +212,7 @@ class TestFall1_ApproveCreatesAbsence:
         assert float(absence.hours) == 8.0
 
     def test_approve_vacation_creates_vacation_absence(self, db, employee, admin_client):
-        """Urlaubsantrag genehmigt → Absence(type=VACATION) angelegt."""
+        """Prüft dass genehmigter Urlaubsantrag VACATION-Absence erzeugt — Standardfall der Antragsgenehmigung."""
         vr = _create_pending_request(db, employee, absence_type="vacation",
                                       req_date=date(2025, 3, 12))
 
@@ -230,7 +230,7 @@ class TestFall1_ApproveCreatesAbsence:
         assert absence.type == AbsenceType.VACATION
 
     def test_approve_overtime_creates_overtime_absence(self, db, employee, admin_client):
-        """Überstundenausgleich-Antrag → Absence(type=OVERTIME)."""
+        """Prüft dass Überstundenausgleich korrekt als OVERTIME-Absence gebucht wird (Soll bleibt, Ist=0h)."""
         vr = _create_pending_request(db, employee, absence_type="overtime",
                                       req_date=date(2025, 3, 12))
 
@@ -248,7 +248,7 @@ class TestFall1_ApproveCreatesAbsence:
         assert absence.type == AbsenceType.OVERTIME
 
     def test_response_includes_absence_type(self, db, employee, admin_client):
-        """Response enthält absence_type."""
+        """Prüft dass die API-Response den absence_type enthält, damit das Frontend den Typ anzeigen kann."""
         vr = _create_pending_request(db, employee, absence_type="training")
         resp = admin_client.post(
             f"/api/admin/vacation-requests/{vr.id}/review",
@@ -266,7 +266,7 @@ class TestFall2_ApproveOverwritesTimeEntry:
     """Fall 2: Bestehender Zeiteintrag → Antrag genehmigt → Eintrag ersetzt."""
 
     def test_existing_time_entry_deleted_on_approve(self, db, employee, admin_client):
-        """Bestehender TimeEntry wird beim Genehmigen gelöscht."""
+        """Prüft dass bestehender TimeEntry bei Genehmigung gelöscht wird — verhindert Doppelbuchung (Fall 2)."""
         # Create existing time entry on the date
         entry = TimeEntry(
             user_id=employee.id,
@@ -310,7 +310,7 @@ class TestFall2_ApproveOverwritesTimeEntry:
         assert absence.type == AbsenceType.TRAINING
 
     def test_multiple_time_entries_deleted_on_approve(self, db, employee, admin_client):
-        """Mehrere TimeEntries am selben Tag werden alle gelöscht."""
+        """Prüft dass alle TimeEntries eines Tages gelöscht werden — Multi-Entry-Tage müssen komplett bereinigt werden."""
         for start_h, end_h in [(8, 12), (13, 17)]:
             entry = TimeEntry(
                 user_id=employee.id,
@@ -343,7 +343,7 @@ class TestFall2_ApproveOverwritesTimeEntry:
         ).count() == 0
 
     def test_deleted_time_entry_has_audit_log(self, db, employee, admin, admin_client):
-        """Gelöschte TimeEntries erzeugen Audit-Log-Einträge."""
+        """Prüft dass gelöschte TimeEntries revisionssicher protokolliert werden (Audit-Trail für Nachweispflicht)."""
         entry = TimeEntry(
             user_id=employee.id,
             tenant_id=DEFAULT_TENANT_ID,
@@ -382,7 +382,7 @@ class TestFall3_RejectNoChanges:
     """Fall 3: Antrag abgelehnt → keine Änderungen."""
 
     def test_reject_creates_no_absence(self, db, employee, admin_client):
-        """Abgelehnter Antrag erstellt keine Abwesenheit."""
+        """Prüft dass abgelehnte Anträge keine Absence erzeugen — nur genehmigte Anträge ändern Daten (Fall 3)."""
         vr = _create_pending_request(db, employee, absence_type="training",
                                       req_date=date(2025, 3, 10))
 
@@ -400,7 +400,7 @@ class TestFall3_RejectNoChanges:
         assert absence is None
 
     def test_reject_preserves_existing_time_entry(self, db, employee, admin_client):
-        """Ablehnung lässt bestehende Zeiteinträge unverändert."""
+        """Prüft dass Ablehnung bestehende TimeEntries nicht löscht — Arbeitszeitdaten bleiben geschützt."""
         entry = TimeEntry(
             user_id=employee.id,
             tenant_id=DEFAULT_TENANT_ID,
@@ -436,7 +436,7 @@ class TestAbsenceTypeValidation:
     """Validate absence_type field in request creation."""
 
     def test_create_request_with_training_type(self, db, employee, employee_client):
-        """Employee kann Antrag mit absence_type=training erstellen."""
+        """Prüft dass Mitarbeiter Anträge mit absence_type=training erstellen können."""
         # Enable approval required setting
         from app.models.system_setting import SystemSetting
         setting = SystemSetting(
@@ -458,7 +458,7 @@ class TestAbsenceTypeValidation:
         assert data["absence_type"] == "training"
 
     def test_create_request_defaults_to_vacation(self, db, employee, employee_client):
-        """Ohne absence_type → default 'vacation'."""
+        """Prüft dass absence_type auf 'vacation' defaulted — Abwärtskompatibilität für bestehende Clients."""
         from app.models.system_setting import SystemSetting
         setting = SystemSetting(
             key="vacation_approval_required",
@@ -476,7 +476,7 @@ class TestAbsenceTypeValidation:
         assert resp.json()["absence_type"] == "vacation"
 
     def test_create_request_rejects_sick_type(self, db, employee, employee_client):
-        """absence_type=sick wird abgelehnt (Krankmeldung braucht keinen Antrag)."""
+        """Prüft dass absence_type=sick abgelehnt wird — Krankmeldungen laufen über separaten Prozess, nicht per Antrag."""
         from app.models.system_setting import SystemSetting
         setting = SystemSetting(
             key="vacation_approval_required",
@@ -502,7 +502,7 @@ class TestVacationBudgetCheck:
     """Vacation budget nur bei type=vacation geprüft."""
 
     def test_training_skips_vacation_budget_check(self, db, employee, admin_client):
-        """Training-Antrag prüft kein Urlaubsguthaben."""
+        """Prüft dass Fortbildung kein Urlaubsguthaben verbraucht — nur vacation-Typ zählt gegen Urlaubstage."""
         # Set vacation_days to 0 so budget is exhausted
         employee.vacation_days = 0
         db.commit()
@@ -518,7 +518,7 @@ class TestVacationBudgetCheck:
         assert resp.status_code == 200
 
     def test_vacation_checks_budget(self, db, employee, admin_client):
-        """Urlaubs-Antrag prüft Urlaubsguthaben."""
+        """Prüft dass Urlaubsantrag bei 0 Resttagen abgelehnt wird — verhindert Überziehung des Urlaubskontos."""
         employee.vacation_days = 0
         db.commit()
 
@@ -541,7 +541,7 @@ class TestAdminListEndpoint:
     """Admin-Endpunkt zeigt absence_type."""
 
     def test_list_shows_absence_type(self, db, employee, admin_client):
-        """GET /admin/vacation-requests enthält absence_type."""
+        """Prüft dass Admin-Liste absence_type pro Antrag zeigt — Admin muss Antragstyp vor Genehmigung sehen."""
         _create_pending_request(db, employee, absence_type="training")
         _create_pending_request(db, employee, absence_type="vacation",
                                 req_date=date(2025, 3, 13))

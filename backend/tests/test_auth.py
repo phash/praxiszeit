@@ -4,7 +4,7 @@ from app.services import auth_service
 
 
 def test_hash_password():
-    """Test password hashing."""
+    """Prüft dass Passwort-Hashing einen vom Klartext verschiedenen, nicht-leeren Hash erzeugt."""
     password = "securepassword123"
     hashed = auth_service.hash_password(password)
     
@@ -14,7 +14,7 @@ def test_hash_password():
 
 
 def test_verify_password():
-    """Test password verification."""
+    """Prüft dass korrektes Passwort verifiziert und falsches abgelehnt wird."""
     password = "securepassword123"
     hashed = auth_service.hash_password(password)
     
@@ -26,7 +26,7 @@ def test_verify_password():
 
 
 def test_create_access_token():
-    """Test access token creation."""
+    """Prüft dass ein gültiger JWT-Access-Token mit user_id und Rolle erzeugt wird."""
     user_id = "test-user-id-123"
     role = "employee"
     
@@ -38,7 +38,7 @@ def test_create_access_token():
 
 
 def test_create_refresh_token():
-    """Test refresh token creation."""
+    """Prüft dass ein gültiger JWT-Refresh-Token für Token-Erneuerung erzeugt wird."""
     user_id = "test-user-id-123"
     
     token = auth_service.create_refresh_token(user_id)
@@ -49,7 +49,7 @@ def test_create_refresh_token():
 
 
 def test_decode_valid_access_token():
-    """Test decoding a valid access token."""
+    """Prüft dass Access-Token korrekt decodiert wird und sub, role, type enthält."""
     user_id = "test-user-id-123"
     role = "employee"
     
@@ -63,7 +63,7 @@ def test_decode_valid_access_token():
 
 
 def test_decode_valid_refresh_token():
-    """Test decoding a valid refresh token."""
+    """Prüft dass Refresh-Token korrekt decodiert wird und type=refresh enthält."""
     user_id = "test-user-id-123"
     
     token = auth_service.create_refresh_token(user_id)
@@ -75,7 +75,7 @@ def test_decode_valid_refresh_token():
 
 
 def test_decode_invalid_token():
-    """Test decoding an invalid token."""
+    """Prüft dass ein ungültiger Token None zurückgibt statt zu crashen — wichtig für Sicherheit."""
     invalid_token = "invalid.token.here"
     
     payload = auth_service.decode_token(invalid_token)
@@ -84,7 +84,7 @@ def test_decode_invalid_token():
 
 
 def test_password_truncation():
-    """Test that very long passwords are handled correctly (bcrypt 72-byte limit)."""
+    """Prüft dass überlange Passwörter korrekt behandelt werden — bcrypt schneidet bei 72 Bytes ab."""
     long_password = "a" * 100  # 100 characters
     hashed = auth_service.hash_password(long_password)
     

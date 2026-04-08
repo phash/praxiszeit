@@ -54,6 +54,7 @@ class TestAbsenceCRModel:
     """Absence-CR Model-Tests."""
 
     def test_create_absence_cr_pending(self, db, test_user):
+        """Prüft dass ein neuer Absence-CR mit Status PENDING und korrektem entry_kind='absence' erstellt wird."""
         cr = _make_absence_cr(db, test_user,
             proposed_date=date(2026, 3, 10),
             proposed_absence_type="sick",
@@ -64,6 +65,7 @@ class TestAbsenceCRModel:
         assert cr.proposed_absence_type == "sick"
 
     def test_absence_cr_with_times(self, db, test_user):
+        """Prüft dass Absence-CRs optionale Start-/Endzeiten speichern können (Halbtags-Abwesenheiten)."""
         cr = _make_absence_cr(db, test_user,
             proposed_date=date(2026, 3, 10),
             proposed_absence_type="training",
@@ -75,6 +77,7 @@ class TestAbsenceCRModel:
         assert cr.proposed_end_time == time(17, 0)
 
     def test_absence_cr_update_snapshots_original(self, db, test_user):
+        """Prüft dass Update-CRs den Originalzustand snapshotten — nötig für Diff-Anzeige und Rollback."""
         absence = _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.VACATION, 8.0)
         cr = _make_absence_cr(db, test_user,
             request_type="update",
@@ -89,6 +92,7 @@ class TestAbsenceCRModel:
         assert str(cr.absence_id) == str(absence.id)
 
     def test_entry_kind_default_is_time_entry(self, db, test_user):
+        """Prüft dass entry_kind ohne explizite Angabe auf 'time_entry' defaulted — Abwärtskompatibilität."""
         cr = ChangeRequest(
             user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
             request_type="create", status=ChangeRequestStatus.PENDING,
@@ -105,6 +109,7 @@ class TestAbsenceStartEndTime:
     """Absence mit Start-/Endzeit."""
 
     def test_absence_with_times(self, db, test_user):
+        """Prüft dass Absence mit expliziten Start-/Endzeiten korrekt persistiert wird (Halbtags-Support)."""
         absence = _make_absence(db, test_user, date(2026, 3, 10),
             AbsenceType.TRAINING, 3.0,
             start_t=time(14, 0), end_t=time(17, 0))
@@ -112,6 +117,7 @@ class TestAbsenceStartEndTime:
         assert absence.end_time == time(17, 0)
 
     def test_absence_whole_day_no_times(self, db, test_user):
+        """Prüft dass Ganztags-Absences NULL für start_time/end_time haben (Convention: NULL = ganzer Tag)."""
         absence = _make_absence(db, test_user, date(2026, 3, 10),
             AbsenceType.VACATION, 8.0)
         assert absence.start_time is None

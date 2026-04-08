@@ -8,7 +8,7 @@ ROLE = "employee"
 
 
 def test_access_token_contains_tid():
-    """Access token created with tenant_id should contain 'tid' claim."""
+    """Prüft dass Access-Tokens den tid-Claim enthalten, damit RLS den Tenant-Kontext setzen kann."""
     token = auth_service.create_access_token(USER_ID, ROLE, tenant_id=TENANT_ID)
     payload = auth_service.decode_token(token)
 
@@ -17,7 +17,7 @@ def test_access_token_contains_tid():
 
 
 def test_access_token_no_tid_for_superadmin():
-    """Access token created without tenant_id (superadmin) must NOT contain 'tid'."""
+    """Prüft dass Superadmin-Tokens keinen tid-Claim haben, damit is_superadmin statt Tenant-Kontext greift."""
     token = auth_service.create_access_token(USER_ID, ROLE)
     payload = auth_service.decode_token(token)
 
@@ -26,7 +26,7 @@ def test_access_token_no_tid_for_superadmin():
 
 
 def test_refresh_token_contains_tid():
-    """Refresh token created with tenant_id should contain 'tid' claim."""
+    """Prüft dass Refresh-Tokens den tid-Claim transportieren, damit Token-Rotation den Tenant beibehält."""
     token = auth_service.create_refresh_token(USER_ID, tenant_id=TENANT_ID)
     payload = auth_service.decode_token(token)
 
@@ -35,7 +35,7 @@ def test_refresh_token_contains_tid():
 
 
 def test_refresh_token_no_tid_for_superadmin():
-    """Refresh token created without tenant_id (superadmin) must NOT contain 'tid'."""
+    """Prüft dass Superadmin-Refresh-Tokens keinen tid-Claim haben, analog zum Access-Token."""
     token = auth_service.create_refresh_token(USER_ID)
     payload = auth_service.decode_token(token)
 
@@ -44,7 +44,7 @@ def test_refresh_token_no_tid_for_superadmin():
 
 
 def test_backward_compat_no_tenant_id_param():
-    """Calling token functions without tenant_id param works as before (no 'tid')."""
+    """Prüft Abwärtskompatibilität: Token-Erzeugung ohne tenant_id funktioniert wie vor Multi-Tenant-Migration."""
     access_token = auth_service.create_access_token(USER_ID, ROLE, 0)
     refresh_token = auth_service.create_refresh_token(USER_ID, 0)
 
