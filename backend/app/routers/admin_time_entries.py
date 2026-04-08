@@ -61,6 +61,15 @@ def admin_create_time_entry(
         if daily_hours > MAX_DAILY_HOURS_WARN:
             admin_create_warnings.append(f"DAILY_HOURS_WARNING: Tagesarbeitszeit beträgt {daily_hours:.1f}h (>{MAX_DAILY_HOURS_WARN}h)")
 
+        # §14 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
+        weekly_hours = _calculate_weekly_net_hours(
+            db=db, user_id=user.id, entry_date=entry_data.date,
+            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes,
+        )
+        if weekly_hours > MAX_WEEKLY_HOURS_WARN:
+            admin_create_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §14 ArbZG)")
+
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
             user.is_night_worker
@@ -144,6 +153,15 @@ def admin_update_time_entry(
         # §3 ArbZG: Warnung bei Überschreitung der Regelgrenze (8h)
         if daily_hours > MAX_DAILY_HOURS_WARN:
             admin_update_warnings.append(f"DAILY_HOURS_WARNING: Tagesarbeitszeit beträgt {daily_hours:.1f}h (>{MAX_DAILY_HOURS_WARN}h)")
+
+        # §14 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
+        weekly_hours = _calculate_weekly_net_hours(
+            db=db, user_id=entry.user_id, entry_date=update_date,
+            start_time=update_start_time, end_time=update_end_time,
+            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+        )
+        if weekly_hours > MAX_WEEKLY_HOURS_WARN:
+            admin_update_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §14 ArbZG)")
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (

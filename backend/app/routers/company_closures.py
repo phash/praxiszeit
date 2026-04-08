@@ -186,7 +186,8 @@ def delete_closure(
     db.query(Absence).filter(
         Absence.date.in_(workdays),
         Absence.type == AbsenceType.VACATION,
-        Absence.note == note_pattern
+        Absence.note == note_pattern,
+        Absence.tenant_id == current_user.tenant_id,
     ).delete(synchronize_session=False)
 
     db.delete(closure)
