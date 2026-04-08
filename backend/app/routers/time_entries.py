@@ -98,7 +98,7 @@ def _enrich_response(
     """Set computed fields on a TimeEntryResponse."""
     response.is_editable = _compute_is_editable(entry, current_user)
     weekday = entry.date.weekday()
-    holiday = is_holiday(db, entry.date)
+    holiday = is_holiday(db, entry.date, tenant_id=current_user.tenant_id)
     response.is_sunday_or_holiday = weekday == 6 or bool(holiday)
     response.is_night_work = (
         is_night_work(entry.start_time, entry.end_time)
@@ -239,7 +239,7 @@ def clock_out(
     current_user: User = Depends(get_current_user),
 ):
     """Clock out: set end_time=now and break_minutes on the open entry."""
-    open_entry = _get_open_entry(db, current_user.id)
+    open_entry = _get_open_entry(db, current_user.id, with_lock=True)
 
     if not open_entry:
         raise HTTPException(
@@ -313,7 +313,7 @@ def clock_out(
             clock_out_warnings.append("WEEKLY_HOURS_WARNING")
         if open_entry.date.weekday() == 6:
             clock_out_warnings.append("SUNDAY_WORK")
-        if is_holiday(db, open_entry.date):
+        if is_holiday(db, open_entry.date, tenant_id=current_user.tenant_id):
             clock_out_warnings.append("HOLIDAY_WORK")
         if (
             current_user.is_night_worker
@@ -479,7 +479,7 @@ def create_time_entry(
             warnings.append("WEEKLY_HOURS_WARNING")
         weekday = entry_data.date.weekday()
         is_sunday = weekday == 6
-        holiday = is_holiday(db, entry_data.date)
+        holiday = is_holiday(db, entry_data.date, tenant_id=current_user.tenant_id)
         if is_sunday:
             warnings.append("SUNDAY_WORK")
         if holiday:
@@ -614,7 +614,7 @@ def update_time_entry(
         entry_weekday = entry.date.weekday()
         if entry_weekday == 6:
             update_warnings.append("SUNDAY_WORK")
-        entry_is_holiday = is_holiday(db, entry.date)
+        entry_is_holiday = is_holiday(db, entry.date, tenant_id=current_user.tenant_id)
         if entry_is_holiday:
             update_warnings.append("HOLIDAY_WORK")
         if (

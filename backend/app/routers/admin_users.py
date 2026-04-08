@@ -126,7 +126,7 @@ def anonymize_user(
     user.calendar_color = "#9CA3AF"
 
     # Delete absences (no statutory retention requirement)
-    db.query(Absence).filter(Absence.user_id == user.id).delete()
+    db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete()
 
     log = TimeEntryAuditLog(
         time_entry_id=None,
@@ -195,10 +195,10 @@ def purge_user(
     db.query(VacationRequest).filter(VacationRequest.reviewed_by == user.id).update(
         {"reviewed_by": None}, synchronize_session=False
     )
-    db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id).delete()
-    db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id).delete()
-    db.query(TimeEntry).filter(TimeEntry.user_id == user.id).delete()
-    db.query(Absence).filter(Absence.user_id == user.id).delete()
+    db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id, WorkingHoursChange.tenant_id == current_user.tenant_id).delete()
+    db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id, ChangeRequest.tenant_id == current_user.tenant_id).delete()
+    db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id).delete()
+    db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete()
     db.delete(user)
     db.commit()
 

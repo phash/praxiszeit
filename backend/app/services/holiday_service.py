@@ -162,7 +162,10 @@ def sync_current_and_next_year(db: Session, state: Optional[str] = None, tenant_
     next_year = current_year + 1
 
     # Force-update names of all existing holidays to German (no intermediate commit)
-    all_holidays = db.query(PublicHoliday).all()
+    query = db.query(PublicHoliday)
+    if tenant_id is not None:
+        query = query.filter(PublicHoliday.tenant_id == tenant_id)
+    all_holidays = query.all()
     for h in all_holidays:
         german_name = _translate_name(h.name)
         if german_name != h.name:

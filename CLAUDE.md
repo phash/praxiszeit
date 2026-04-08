@@ -61,6 +61,10 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **PYTHONUTF8=1:** Immer für uvicorn-Subprozesse setzen (cp1252-Crashes bei Emojis)
 - **APP_VERSION:** Single Source of Truth in `app/core/updater.py`, nicht in `main.py` hardcoden
 - **Alembic Revision-IDs:** Max 32 Zeichen (`version_num varchar(32)` Limit)
+- **clock_out `with_for_update`:** `_get_open_entry()` in `clock_out` MUSS mit Lock aufgerufen werden (Race Condition bei Doppelklick)
+- **Bulk-Deletes tenant_id:** Alle `.delete()` Aufrufe brauchen expliziten `tenant_id`-Filter (nicht nur auf RLS verlassen)
+- **Absence Unique Constraint:** `(user_id, date)` muss eindeutig sein — DB-Constraint oder `with_for_update()` bei Duplikat-Check
+- **is_holiday() tenant_id:** Immer `tenant_id=current_user.tenant_id` übergeben (Multi-Tenant-Pflicht)
 
 ### Multi-Tenant
 - **Jede neue Tabelle** braucht `tenant_id` FK + RLS-Policy + Eintrag in Migration
