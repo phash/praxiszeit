@@ -71,7 +71,14 @@ logger.addHandler(_console_handler)
 # --- Configuration ---
 
 def load_config() -> dict:
-    """Load configuration from praxiszeit.conf (TOML)."""
+    """Load configuration from praxiszeit.conf (TOML).
+
+    Tolerant gegen UTF-8 BOM am Dateianfang: Notepad auf Windows fuegt
+    beim Speichern still ein BOM hinzu, und Python's tomllib akzeptiert
+    keinen BOM -> TOMLDecodeError "Invalid statement at line 1 col 1"
+    obwohl die Datei inhaltlich korrekt ist. Wir strippen den BOM vor
+    dem Parsen.
+    """
     try:
         import tomllib
     except ImportError:
@@ -81,10 +88,35 @@ def load_config() -> dict:
             logger.warning("TOML parser not available, using defaults")
             return {}
 
-    if CONFIG_FILE.is_file():
-        with open(CONFIG_FILE, "rb") as f:
-            return tomllib.load(f)
-    return {}
+    if not CONFIG_FILE.is_file():
+        return {}
+
+    with open(CONFIG_FILE, "rb") as f:
+        content = f.read()
+
+    # UTF-8 BOM entfernen (Notepad-Fallstrick)
+    if content.startswith(b"\xef\xbb\xbf"):
+        content = content[3:]
+        logger.warning(
+            "praxiszeit.conf enthielt UTF-8 BOM (vermutlich mit Notepad "
+            "gespeichert) - wurde beim Laden entfernt. Bitte mit einem "
+            "BOM-losen Editor neu speichern."
+        )
+
+    try:
+        return tomllib.loads(content.decode("utf-8"))
+    except UnicodeDecodeError as e:
+        logger.error(
+            f"praxiszeit.conf ist nicht valides UTF-8: {e}. "
+            f"Bitte als UTF-8 (ohne BOM) speichern."
+        )
+        raise
+    except tomllib.TOMLDecodeError as e:
+        logger.error(
+            f"praxiszeit.conf TOML-Syntax-Fehler: {e}. "
+            f"Pruefe Anfuehrungszeichen, Kommata, Sections."
+        )
+        raise
 
 
 def get_config_value(config: dict, section: str, key: str, default=None):
@@ -460,17 +492,26 @@ def uvicorn_start(config: dict):
     ]
 
     # Add SSL if configured
+    # F-053 (1.3.4): Relative paths in praxiszeit.conf like "config/ssl/cert.pem"
+    # are resolved relative to BASE_DIR (the install root), not CONFIG_DIR —
+    # otherwise "config/ssl/cert.pem" would resolve to
+    # <install>/config/config/ssl/cert.pem and never match the actual file.
+    # The default praxiszeit.conf.example uses "config/ssl/..." so BASE_DIR
+    # is the correct base.
     ssl_enabled = False
     if ssl_cert and ssl_key:
-        cert_path = CONFIG_DIR / ssl_cert if not Path(ssl_cert).is_absolute() else Path(ssl_cert)
-        key_path = CONFIG_DIR / ssl_key if not Path(ssl_key).is_absolute() else Path(ssl_key)
+        cert_path = BASE_DIR / ssl_cert if not Path(ssl_cert).is_absolute() else Path(ssl_cert)
+        key_path = BASE_DIR / ssl_key if not Path(ssl_key).is_absolute() else Path(ssl_key)
         if cert_path.is_file() and key_path.is_file():
             cmd.extend(["--ssl-certfile", str(cert_path)])
             cmd.extend(["--ssl-keyfile", str(key_path)])
             logger.info(f"SSL enabled: {cert_path}")
             ssl_enabled = True
         else:
-            logger.warning(f"SSL cert/key not found, starting without SSL")
+            logger.warning(
+                f"SSL cert/key not found ({cert_path}, {key_path}), "
+                f"starting without SSL"
+            )
 
     # F-052: Loud warning if we're binding to a public interface without TLS.
     # Logged at WARNING level so it lands in the event log + startup.log.
@@ -510,7 +551,12 @@ def uvicorn_start(config: dict):
     )
 
     # Wait for health check
-    protocol = "https" if ssl_cert and ssl_key else "http"
+    # F-054 (1.3.4): Use ssl_enabled (actual state — file exists and was passed
+    # to uvicorn) instead of the truthy check on config strings. Previously a
+    # non-empty ssl_cert config entry whose file was missing caused the health
+    # check to poll https:// against a plain-HTTP server, leading to an endless
+    # "uvicorn failed to become healthy within 30 seconds" restart loop.
+    protocol = "https" if ssl_enabled else "http"
     health_url = f"{protocol}://localhost:{port}/api/health"
 
     for i in range(30):
