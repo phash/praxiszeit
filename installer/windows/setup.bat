@@ -37,6 +37,42 @@ REM ============================================================
 REM Schritt 1: PostgreSQL installieren (silent)
 REM ============================================================
 
+REM --- System-PostgreSQL erkennen und ggf. wiederverwenden ---
+REM Wenn eine kompatible Version (>= 16) bereits auf dem System installiert
+REM ist, legen wir eine Junction auf ihr Basisverzeichnis an und ueberspringen
+REM die EDB-Installation. Bei aelteren Versionen wird der Installer zur
+REM Aktualisierung ausgefuehrt (der EDB-Installer installiert die neue Version
+REM parallel in unser Bundle-Verzeichnis).
+if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" goto :pg_detect_done
+
+call :detect_system_pg
+REM Default setzen, damit die Parse-Time-Expansion in der Block-Syntax unten
+REM keine leeren Tokens erzeugt (Syntax-Fehler bei "if  GEQ 16").
+if not defined SYSTEM_PG_MAJOR set "SYSTEM_PG_MAJOR=0"
+if defined SYSTEM_PG_BASE (
+    echo.
+    echo System-PostgreSQL gefunden: %SYSTEM_PG_BASE%
+    echo Version: PostgreSQL %SYSTEM_PG_MAJOR%
+    if %SYSTEM_PG_MAJOR% GEQ 16 (
+        echo Kompatible Version - verlinke System-PostgreSQL in das Bundle-Verzeichnis...
+        REM Eventuell vorhandenes leeres Bundle-Verzeichnis entfernen
+        if exist "%PG_INSTALL_DIR%" rd "%PG_INSTALL_DIR%" 2>nul
+        if exist "%PG_INSTALL_DIR%" rd /s /q "%PG_INSTALL_DIR%" 2>nul
+        mklink /J "%PG_INSTALL_DIR%" "%SYSTEM_PG_BASE%" >nul
+        if not errorlevel 1 (
+            echo System-PostgreSQL verlinkt, Installer uebersprungen.
+            goto :pg_detect_done
+        )
+        echo WARNUNG: Junction fehlgeschlagen, kopiere Binaries ^(dauert etwas^)...
+        xcopy "%SYSTEM_PG_BASE%" "%PG_INSTALL_DIR%" /E /I /Q /Y >nul
+        if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" goto :pg_detect_done
+        echo WARNUNG: Kopieren fehlgeschlagen, fahre mit EDB-Installer fort.
+    ) else (
+        echo Version ^(%SYSTEM_PG_MAJOR%^) nicht kompatibel - fuehre Installation aus.
+    )
+)
+:pg_detect_done
+
 if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
     echo PostgreSQL bereits installiert, ueberspringe...
 ) else if exist "%PG_INSTALLER%" (
@@ -172,3 +208,40 @@ echo   3. Service starten:        net start PraxisZeit
 echo.
 
 pause
+goto :eof
+
+REM ============================================================
+REM Subroutinen
+REM ============================================================
+
+:detect_system_pg
+REM Sucht eine systemweit installierte PostgreSQL-Version.
+REM Setzt bei Erfolg die globalen Variablen SYSTEM_PG_BASE und SYSTEM_PG_MAJOR.
+set "SYSTEM_PG_BASE="
+set "SYSTEM_PG_MAJOR="
+
+REM 1. Registry-Eintraege pruefen (EDB-Installer legt diese an)
+REM Format: "    Base Directory    REG_SZ    C:\Program Files\PostgreSQL\18"
+REM tokens=1-3,* : %%a=Base %%b=Directory %%c=REG_SZ %%d=Pfad (inkl. Spaces)
+for /f "tokens=1-3,*" %%a in ('reg query "HKLM\SOFTWARE\PostgreSQL\Installations" /s /v "Base Directory" 2^>nul ^| findstr /C:"Base Directory"') do (
+    if exist "%%d\bin\pg_ctl.exe" set "SYSTEM_PG_BASE=%%d"
+)
+
+REM 2. Fallback: haeufige Installationspfade (neueste Version zuerst)
+if not defined SYSTEM_PG_BASE if exist "%ProgramFiles%\PostgreSQL\18\bin\pg_ctl.exe" set "SYSTEM_PG_BASE=%ProgramFiles%\PostgreSQL\18"
+if not defined SYSTEM_PG_BASE if exist "%ProgramFiles%\PostgreSQL\17\bin\pg_ctl.exe" set "SYSTEM_PG_BASE=%ProgramFiles%\PostgreSQL\17"
+if not defined SYSTEM_PG_BASE if exist "%ProgramFiles%\PostgreSQL\16\bin\pg_ctl.exe" set "SYSTEM_PG_BASE=%ProgramFiles%\PostgreSQL\16"
+if not defined SYSTEM_PG_BASE if exist "%ProgramFiles%\PostgreSQL\15\bin\pg_ctl.exe" set "SYSTEM_PG_BASE=%ProgramFiles%\PostgreSQL\15"
+if not defined SYSTEM_PG_BASE if exist "%ProgramFiles%\PostgreSQL\14\bin\pg_ctl.exe" set "SYSTEM_PG_BASE=%ProgramFiles%\PostgreSQL\14"
+
+if not defined SYSTEM_PG_BASE goto :eof
+
+REM Major-Version auslesen (pg_ctl --version: "pg_ctl (PostgreSQL) 18.3")
+pushd "%SYSTEM_PG_BASE%\bin"
+for /f "tokens=3" %%v in ('pg_ctl.exe --version 2^>nul') do call :_parse_pg_major %%v
+popd
+goto :eof
+
+:_parse_pg_major
+for /f "tokens=1 delims=." %%m in ("%~1") do set "SYSTEM_PG_MAJOR=%%m"
+goto :eof

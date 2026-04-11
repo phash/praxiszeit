@@ -171,10 +171,20 @@ fi
 step "2 — App-Dateien vorbereiten"
 
 mkdir -p "${BUILD_DIR}/common/app/backend"
-rsync -a --exclude='__pycache__' --exclude='*.pyc' --exclude='tests/' \
-    "${REPO_DIR}/backend/app" "${BUILD_DIR}/common/app/backend/"
-rsync -a --exclude='__pycache__' --exclude='*.pyc' \
-    "${REPO_DIR}/backend/alembic" "${BUILD_DIR}/common/app/backend/"
+# Portable tar-based copy (replaces rsync for Git Bash/Windows compatibility)
+if command -v rsync &>/dev/null; then
+    rsync -a --exclude='__pycache__' --exclude='*.pyc' --exclude='tests/' \
+        "${REPO_DIR}/backend/app" "${BUILD_DIR}/common/app/backend/"
+    rsync -a --exclude='__pycache__' --exclude='*.pyc' \
+        "${REPO_DIR}/backend/alembic" "${BUILD_DIR}/common/app/backend/"
+else
+    (cd "${REPO_DIR}/backend" && \
+        tar cf - --exclude='__pycache__' --exclude='*.pyc' --exclude='app/tests' app) | \
+        tar xf - -C "${BUILD_DIR}/common/app/backend/"
+    (cd "${REPO_DIR}/backend" && \
+        tar cf - --exclude='__pycache__' --exclude='*.pyc' alembic) | \
+        tar xf - -C "${BUILD_DIR}/common/app/backend/"
+fi
 cp "${REPO_DIR}/backend/alembic.ini" "${BUILD_DIR}/common/app/backend/"
 cp "${REPO_DIR}/backend/init-db-user.sql" "${BUILD_DIR}/common/app/backend/"
 cp "${REPO_DIR}/backend/requirements.txt" "${BUILD_DIR}/common/app/backend/"
@@ -390,6 +400,13 @@ PTHEOF
     _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.zip"
     if command -v zip &>/dev/null; then
         (cd "${WIN_DIR}" && zip -qr "$_win_zip" .)
+    elif command -v powershell.exe &>/dev/null; then
+        # Git Bash on Windows: use PowerShell Compress-Archive as fallback
+        info "zip nicht verfuegbar — nutze PowerShell Compress-Archive"
+        _win_src_win="$(cygpath -w "${WIN_DIR}" 2>/dev/null || echo "${WIN_DIR}")"
+        _win_zip_win="$(cygpath -w "${_win_zip}" 2>/dev/null || echo "${_win_zip}")"
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+            "Compress-Archive -Path '${_win_src_win}\\*' -DestinationPath '${_win_zip_win}' -Force -CompressionLevel Optimal"
     else
         tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.tar.gz" -C "${WIN_DIR}" .
         warn "zip nicht verfuegbar — Windows-Paket als .tar.gz erstellt"
