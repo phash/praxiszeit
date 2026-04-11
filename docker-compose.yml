@@ -42,6 +42,7 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
       LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-5/minute}
+      REFRESH_RATE_LIMIT: ${REFRESH_RATE_LIMIT:-10/minute}
     depends_on:
       db:
         condition: service_healthy

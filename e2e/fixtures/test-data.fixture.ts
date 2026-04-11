@@ -87,11 +87,25 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
   employeePage: async ({ browser, testEmployeeLogin }, use) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    const { access_token, user } = testEmployeeLogin;
+    const { api, user } = testEmployeeLogin;
 
-    // Inject token before navigation — single goto instead of two
-    await page.addInitScript(({ token, user }) => {
-      localStorage.setItem('access_token', token);
+    // F-023: Reuse the refresh_token captured by testEmployeeLogin's
+    // Node-side login and seed it into this fresh BrowserContext.
+    // hydrate() then restores the in-memory access token on mount —
+    // no second login, no rate-limit issue.
+    if (!api.refreshCookie) {
+      throw new Error('testEmployeeLogin did not capture a refresh cookie');
+    }
+    await context.addCookies([
+      {
+        name: 'refresh_token',
+        value: api.refreshCookie,
+        url: 'http://localhost/api/auth/refresh',
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ]);
+    await page.addInitScript((user) => {
       localStorage.setItem(
         'auth-storage',
         JSON.stringify({
@@ -99,7 +113,7 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
           version: 0,
         })
       );
-    }, { token: access_token, user });
+    }, user);
 
     await page.goto('/');
     await page.waitForURL('/');

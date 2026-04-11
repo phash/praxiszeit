@@ -101,6 +101,9 @@ class Settings(BaseSettings):
 
     # Rate limiting (increase for E2E test environments)
     LOGIN_RATE_LIMIT: str = "5/minute"
+    # F-063: refresh rate limit — also needs to be raised for E2E where
+    # every test mount triggers one /auth/refresh call via hydrate().
+    REFRESH_RATE_LIMIT: str = "10/minute"
 
     # Native mode: serve frontend static files directly from FastAPI (no nginx)
     SERVE_FRONTEND: bool = False
