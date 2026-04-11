@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.3] - 2026-04-11
+
+**Hotfix: update-wizard.ps1 Parse-Fehler auf deutschem Windows.**
+
+### 🔴 Fix
+- **`update-wizard.ps1`**: drei em-dashes (`U+2014`) in Warn-Meldungen
+  entfernt (Zeile 373, 391, 396). PowerShell 5.1 auf de-DE Windows
+  liest PS1-Dateien ohne BOM als Windows-1252; die UTF-8-kodierten
+  em-dashes (`0xE2 0x80 0x94`) wurden als ungueltige String-Abschluesse
+  interpretiert und rissen die gesamte Funktion `Step-ACLFix` /
+  `Step-Backup` mit einer Kaskade von "missing catch / unterminated
+  string / missing closing brace"-Fehlern auseinander. Der Wizard war
+  in 1.3.2 deshalb ueberhaupt nicht lauffaehig. Jetzt durchgaengig
+  7-bit ASCII in allen Meldungsstrings; `parse-file` vor jedem Build
+  sicherstellen.
+
+### Hinweis fuer Dev
+Beim Ausliefern von PS1-Dateien via Repo: entweder strikt ASCII oder
+UTF-8 **mit BOM** — sonst ueberrascht dich PS 5.1 mit
+encoding-abhaengigen Parse-Fehlern auf Kunden-Servern.
+
+---
+
 ## [1.3.2] - 2026-04-11
 
 **Grafischer Update-Wizard fuer Windows.**

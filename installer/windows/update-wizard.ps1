@@ -370,7 +370,7 @@ function Step-ACLFix {
             Set-StepStatus 'acl' 'ok'
             return $true
         }
-        Write-Log "WARNUNG: icacls-Exit $LASTEXITCODE — $out"
+        Write-Log "WARNUNG: icacls-Exit $LASTEXITCODE - $out"
         Set-StepStatus 'acl' 'warn'
         return $true
     } catch {
@@ -388,12 +388,12 @@ function Step-Backup {
     $python = Join-Path $InstallDir 'bin\python\python.exe'
     $server = Join-Path $InstallDir 'praxiszeit-server.py'
     if (-not (Test-Path $python)) {
-        Write-Log "WARNUNG: Python nicht gefunden ($python) — Backup uebersprungen"
+        Write-Log "WARNUNG: Python nicht gefunden ($python) - Backup uebersprungen"
         Set-StepStatus 'backup' 'warn'
         return $true
     }
     if (-not (Test-Path $server)) {
-        Write-Log "WARNUNG: praxiszeit-server.py nicht gefunden — Backup uebersprungen"
+        Write-Log "WARNUNG: praxiszeit-server.py nicht gefunden - Backup uebersprungen"
         Set-StepStatus 'backup' 'warn'
         return $true
     }
