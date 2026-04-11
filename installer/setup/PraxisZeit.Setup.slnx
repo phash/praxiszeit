@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PraxisZeit.Setup.Core/PraxisZeit.Setup.Core.csproj" />
+    <Project Path="src/PraxisZeit.Setup/PraxisZeit.Setup.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PraxisZeit.Setup.Core.Tests/PraxisZeit.Setup.Core.Tests.csproj" />
+  </Folder>
+</Solution>

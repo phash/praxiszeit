@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PraxisZeit.Setup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+             x:Class="PraxisZeit.Setup.Views.WelcomePageView"
+             x:DataType="vm:WelcomePageViewModel">
+
+    <StackPanel Margin="30" Spacing="20">
+        <TextBlock Text="Willkommen bei PraxisZeit Setup"
+                   FontSize="24" FontWeight="SemiBold"/>
+
+        <TextBlock Text="{Binding ModeDescription}"
+                   TextWrapping="Wrap"
+                   FontSize="13"
+                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+        <Border CornerRadius="6"
+                Padding="20"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+            <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Plattform:" FontWeight="Medium"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding PlatformName}"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Installationspfad:" FontWeight="Medium"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DetectedInstallPath}" FontFamily="Consolas,Menlo,monospace"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Aktuelle Version:" FontWeight="Medium"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CurrentVersion}" FontFamily="Consolas,Menlo,monospace"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Neue Version:" FontWeight="Medium"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding TargetVersion}" FontFamily="Consolas,Menlo,monospace" Foreground="{DynamicResource SystemAccentColor}"/>
+            </Grid>
+        </Border>
+
+        <TextBlock Text="Klicken Sie auf den Button unten rechts um fortzufahren."
+                   FontSize="12"
+                   Foreground="{DynamicResource SystemBaseMediumLowColor}"/>
+    </StackPanel>
+
+</UserControl>

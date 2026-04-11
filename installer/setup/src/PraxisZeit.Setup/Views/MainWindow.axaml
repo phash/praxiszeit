@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PraxisZeit.Setup.ViewModels"
+        xmlns:views="using:PraxisZeit.Setup.Views"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="PraxisZeit.Setup.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="760" Height="600"
+        MinWidth="700" MinHeight="550"
+        WindowStartupLocation="CenterScreen">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="90,*,70">
+
+        <!-- Header -->
+        <Border Grid.Row="0"
+                Background="#0F4C81">
+            <StackPanel Margin="24,0" VerticalAlignment="Center" Spacing="4">
+                <TextBlock Text="PraxisZeit Setup"
+                           Foreground="White"
+                           FontSize="22"
+                           FontWeight="SemiBold"/>
+                <TextBlock Text="Zeiterfassung für Arztpraxen — Native Installation"
+                           Foreground="#CCDCE8"
+                           FontSize="12"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Body: Content-Presenter für die aktuelle Wizard-Page -->
+        <ContentControl Grid.Row="1"
+                        Content="{Binding CurrentPage}">
+            <ContentControl.DataTemplates>
+                <DataTemplate DataType="vm:WelcomePageViewModel">
+                    <views:WelcomePageView/>
+                </DataTemplate>
+                <DataTemplate DataType="vm:DonePageViewModel">
+                    <views:DonePageView/>
+                </DataTemplate>
+            </ContentControl.DataTemplates>
+        </ContentControl>
+
+        <!-- Footer: Navigation -->
+        <Border Grid.Row="2" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="24,0">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding CurrentPage.Title}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Foreground="#666"/>
+
+                <Button Grid.Column="2"
+                        Content="Zurück"
+                        Margin="0,0,12,0"
+                        MinWidth="120"
+                        Height="36"
+                        Command="{Binding GoBackCommand}"
+                        IsVisible="{Binding CanGoBack}"/>
+
+                <Button Grid.Column="3"
+                        Content="{Binding NextButtonText}"
+                        MinWidth="160"
+                        Height="36"
+                        Classes="accent"
+                        Command="{Binding GoNextCommand}"/>
+            </Grid>
+        </Border>
+    </Grid>
+
+</Window>
