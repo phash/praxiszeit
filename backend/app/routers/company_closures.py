@@ -136,13 +136,25 @@ def create_closure(
                     )
                     db.delete(entry)
 
+                # F-027: Use the authoritative weekly_hours lookup so that
+                # a closure spanning a WorkingHoursChange credits the right
+                # daily target. Passing weekly_hours explicitly is a CLAUDE.md
+                # requirement — get_daily_target_for_date must never fall
+                # back to user.weekly_hours.
+                weekly_hours = calculation_service.get_weekly_hours_for_date(
+                    db, employee, workday
+                )
                 absence = Absence(
                     user_id=employee.id,
                     tenant_id=current_user.tenant_id,
                     date=workday,
                     end_date=data.end_date,
                     type=AbsenceType.VACATION,
-                    hours=float(calculation_service.get_daily_target_for_date(employee, workday)),
+                    hours=float(
+                        calculation_service.get_daily_target_for_date(
+                            employee, workday, weekly_hours=weekly_hours
+                        )
+                    ),
                     note=f"Betriebsferien: {data.name}"
                 )
                 db.add(absence)

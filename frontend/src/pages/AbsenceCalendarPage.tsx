@@ -9,6 +9,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
+import { parseHours } from '../utils/formatters';
 import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
@@ -474,7 +475,7 @@ export default function AbsenceCalendarPage() {
                   inputMode="numeric"
                   step="0.5"
                   value={formData.hours}
-                  onChange={(e) => setFormData({ ...formData, hours: parseFloat(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, hours: parseHours(e.target.value) })}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />

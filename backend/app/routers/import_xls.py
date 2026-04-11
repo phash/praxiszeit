@@ -52,8 +52,11 @@ def preview_import(
     Einträge zurück, inklusive Konflikt- und ArbZG-Warnung-Flags.
     Führt noch KEINEN Import durch.
     """
-    # Benutzer verifizieren
-    target_user = db.query(User).filter(User.id == user_id).first()
+    # Benutzer verifizieren (F-026: explicit tenant scoping)
+    target_user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == current_admin.tenant_id,
+    ).first()
     if not target_user:
         raise HTTPException(status_code=400, detail="Benutzer nicht gefunden")
 
@@ -85,7 +88,11 @@ def confirm_import(
     Führt den Import aus. Bei overwrite=True werden Konflikte überschrieben,
     sonst übersprungen. Schreibt Audit-Log-Einträge.
     """
-    target_user = db.query(User).filter(User.id == body.user_id).first()
+    # F-026: explicit tenant scoping
+    target_user = db.query(User).filter(
+        User.id == body.user_id,
+        User.tenant_id == current_admin.tenant_id,
+    ).first()
     if not target_user:
         raise HTTPException(status_code=400, detail="Benutzer nicht gefunden")
 

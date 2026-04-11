@@ -26,14 +26,17 @@ from sqlalchemy.orm import sessionmaker
 # ---------------------------------------------------------------------------
 # Connection strings (inside Docker network, host = "db")
 # ---------------------------------------------------------------------------
-APP_DB_URL = os.environ.get(
-    "APP_DB_URL",
-    "postgresql://praxiszeit_app:praxiszeit_app@db:5432/praxiszeit",
-)
-ADMIN_DB_URL = os.environ.get(
-    "ADMIN_DB_URL",
-    "postgresql://praxiszeit:praxiszeit_dev_2026@db:5432/praxiszeit",
-)
+# F-025: Default to the backend's runtime DATABASE_URL (non-superuser app
+# connection) and derive ADMIN_DB_URL from DATABASE_URL_MIGRATIONS. These are
+# set by docker-compose.yml from .env — no hardcoded credentials in the test.
+APP_DB_URL = os.environ.get("APP_DB_URL") or os.environ.get("DATABASE_URL")
+ADMIN_DB_URL = os.environ.get("ADMIN_DB_URL") or os.environ.get("DATABASE_URL_MIGRATIONS")
+if not APP_DB_URL or not ADMIN_DB_URL:
+    raise RuntimeError(
+        "test_tenant_rls.py requires APP_DB_URL/ADMIN_DB_URL or the backend "
+        "runtime DATABASE_URL/DATABASE_URL_MIGRATIONS env vars. Run inside the "
+        "backend container with `docker compose exec backend pytest ...`."
+    )
 
 # ---------------------------------------------------------------------------
 # Deterministic UUIDs for test tenants -- will never collide with real data

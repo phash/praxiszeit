@@ -196,6 +196,39 @@ def test_get_monthly_actual_with_entries(db, test_user):
     assert actual == Decimal('16.00')
 
 
+def test_absence_type_other_reduces_target_and_ignores_actual(db, test_user):
+    """
+    F-044 (CLAUDE.md rule): AbsenceType.OTHER is UNPAID leave.
+    - Reduces monthly TARGET by one day
+    - Adds ZERO to monthly ACTUAL
+    - Net effect on balance: 0 for that day (both sides drop out)
+    """
+    from app.models import Absence, AbsenceType
+
+    # Jan 6, 2025 is a Monday — count target without any absences first
+    target_before = calculation_service.get_monthly_target(db, test_user, 2025, 1)
+
+    # Add a full-day "other" absence on that Monday
+    absence = Absence(
+        user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
+        date=date(2025, 1, 6),
+        type=AbsenceType.OTHER,
+        hours=Decimal('8.00'),
+    )
+    db.add(absence)
+    db.commit()
+
+    target_after = calculation_service.get_monthly_target(db, test_user, 2025, 1)
+    actual_after = calculation_service.get_monthly_actual(db, test_user, 2025, 1)
+
+    daily_target = calculation_service.get_daily_target(test_user)
+    # Target drops by exactly one day
+    assert target_before - target_after == daily_target
+    # OTHER is UNPAID — does NOT contribute to actual
+    assert actual_after == Decimal('0.00')
+
+
 def test_get_monthly_balance(db, test_user):
     """Prüft dass Monatssaldo = Ist minus Soll berechnet wird — negativ bei zu wenig Arbeit."""
     # Add a time entry

@@ -100,10 +100,16 @@ class TestHashPassword:
         result = hash_password("testpassword")
         assert isinstance(result, str)
 
-    def test_returns_bcrypt_hash(self):
-        """Prüft dass bcrypt verwendet wird ($2b$-Prefix) — sicherer Algorithmus mit Salt."""
+    def test_returns_bcrypt_sha256_hash(self):
+        """
+        F-041: bcrypt_sha256 prefix instead of bare bcrypt.
+        The SHA-256 pre-hash eliminates the 72-byte truncation gotcha and
+        the passlib format starts with '$bcrypt-sha256$'. Legacy $2b$
+        hashes from older installs still verify (backward-compat path
+        in CryptContext), but all NEW hashes must use the new scheme.
+        """
         result = hash_password("testpassword")
-        assert result.startswith("$2b$")
+        assert result.startswith("$bcrypt-sha256$")
 
     def test_different_from_plaintext(self):
         """Prüft dass der Hash nicht dem Klartext-Passwort entspricht — Grundvoraussetzung."""

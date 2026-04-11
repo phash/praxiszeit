@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from app.services.date_filters import date_in_year, date_in_month
 from sqlalchemy import extract
 from typing import List, Optional
 from datetime import datetime, date, time, timezone
 from app.services.timezone_service import LOCAL_TZ, now_local as _now_local, today_local as _today_local
 from app.database import get_db
-from app.models import User, TimeEntry, UserRole
+from app.models import User, TimeEntry, UserRole, TimeEntryAuditLog
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
@@ -126,13 +127,47 @@ def _get_open_entry(db: Session, user_id, with_lock: bool = False) -> Optional[T
     return query.first()
 
 
-def _close_stale_entry(db: Session, entry: TimeEntry) -> None:
-    """Close a stale open entry at 23:59 of its date."""
+def _close_stale_entry(
+    db: Session,
+    entry: TimeEntry,
+    *,
+    changed_by_id=None,
+) -> None:
+    """Close a stale open entry at 23:59 of its date.
+
+    F-043: Does NOT commit — the caller's transaction owns the commit.
+    Writes a TimeEntryAuditLog row with action=update / source=auto_close
+    so stale auto-closes can be traced and so §3 ArbZG violations on
+    previous days are not silently lost.
+    """
+    old_end_time = entry.end_time
+    old_note = entry.note
+
     entry.end_time = time(23, 59)
     entry.note = (entry.note or '') + ' [auto-closed]'
     if entry.note.startswith(' '):
         entry.note = entry.note.strip()
-    db.commit()
+
+    audit = TimeEntryAuditLog(
+        time_entry_id=entry.id,
+        user_id=entry.user_id,
+        changed_by=changed_by_id or entry.user_id,
+        action="update",
+        source="auto_close",
+        old_date=entry.date,
+        old_start_time=entry.start_time,
+        old_end_time=old_end_time,
+        old_break_minutes=entry.break_minutes,
+        old_note=old_note,
+        new_date=entry.date,
+        new_start_time=entry.start_time,
+        new_end_time=entry.end_time,
+        new_break_minutes=entry.break_minutes,
+        new_note=entry.note,
+        tenant_id=entry.tenant_id,
+    )
+    db.add(audit)
+    db.flush()
 
 
 # --- Clock endpoints (must be BEFORE /{entry_id} to avoid route conflicts) ---
@@ -150,7 +185,8 @@ def get_clock_status(
 
     # If the open entry is from a previous day, auto-close it
     if open_entry.date != _today_local():
-        _close_stale_entry(db, open_entry)
+        _close_stale_entry(db, open_entry, changed_by_id=current_user.id)
+        db.commit()  # F-043: /clock-status now owns the commit
         return ClockStatusResponse(is_clocked_in=False)
 
     # Calculate elapsed minutes in local time
@@ -179,8 +215,11 @@ def clock_in(
     open_entry = _get_open_entry(db, current_user.id, with_lock=True)
     if open_entry:
         if open_entry.date != _today_local():
-            # Stale entry from a previous day: auto-close
-            _close_stale_entry(db, open_entry)
+            # Stale entry from a previous day: auto-close in the same
+            # transaction as the new clock-in. F-043: no intermediate
+            # commit, so the row-lock held by _get_open_entry stays alive
+            # until the new entry is persisted.
+            _close_stale_entry(db, open_entry, changed_by_id=current_user.id)
         else:
             raise HTTPException(
                 status_code=400,
@@ -215,9 +254,17 @@ def clock_in(
         ).order_by(TimeEntry.date.desc(), TimeEntry.end_time.desc()).first()
 
         if last_entry:
-            from datetime import timedelta
-            last_end = datetime.combine(last_entry.date, last_entry.end_time)
-            current_start = datetime.combine(now.date(), entry.start_time)
+            # F-030: Build both datetimes as TZ-aware in Europe/Berlin so
+            # that DST transitions (spring-forward / fall-back) yield the
+            # correct wall-clock gap. Using naive combine() was numerically
+            # right in 51 weeks/year but off by 1h during the DST weekend —
+            # the §5 warning would fire or not fire incorrectly.
+            last_end = datetime.combine(
+                last_entry.date, last_entry.end_time, tzinfo=LOCAL_TZ
+            )
+            current_start = datetime.combine(
+                now.date(), entry.start_time, tzinfo=LOCAL_TZ
+            )
             rest_hours = (current_start - last_end).total_seconds() / 3600
             if rest_hours < 11:
                 clock_in_warnings.append(f"REST_TIME_WARNING: Nur {rest_hours:.1f}h Ruhezeit seit letztem Arbeitsende (Minimum: 11h, §5 ArbZG)")
@@ -360,8 +407,7 @@ def list_time_entries(
         try:
             year, month_num = map(int, month.split('-'))
             query = query.filter(
-                extract('year', TimeEntry.date) == year,
-                extract('month', TimeEntry.date) == month_num
+                date_in_month(TimeEntry.date, year, month_num)
             )
         except ValueError:
             raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")

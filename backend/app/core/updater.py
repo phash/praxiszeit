@@ -11,6 +11,7 @@ The update flow:
 4. Admin triggers install via API -> Process Manager handles restart
 """
 
+import base64
 import hashlib
 import json
 import logging
@@ -24,11 +25,92 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+from app.core.license import _PUBLIC_KEY_PEM  # reuse the same trust root
 
 logger = logging.getLogger(__name__)
 
 # Current application version
 APP_VERSION = "1.2.1"
+
+# F-036: Allowed update-server host prefixes. The download URL returned by
+# the server is refused unless its host matches one of these. Prevents a
+# compromised update server from redirecting clients to an attacker-hosted
+# tarball.
+_ALLOWED_UPDATE_HOSTS = {
+    "updates.praxiszeit.de",
+    "updates.mr-development.de",
+}
+
+
+def _load_update_public_key() -> Ed25519PublicKey:
+    """Return the Ed25519 key used to verify update manifests.
+
+    We reuse the license public key to avoid shipping two sets of trust
+    material — the license issuer and the update signer are the same
+    principal (Manuel / MR Development).
+    """
+    key = load_pem_public_key(_PUBLIC_KEY_PEM)
+    if not isinstance(key, Ed25519PublicKey):
+        raise RuntimeError("Embedded update-signing public key is not Ed25519")
+    return key
+
+
+def _verify_manifest_signature(manifest: dict) -> None:
+    """F-036: verify the Ed25519 signature over the update manifest.
+
+    Manifest format::
+
+        {
+          "latest": "1.3.0",
+          "download_url": "...",
+          "changelog": "...",
+          "size_mb": 12.3,
+          "checksum_sha256": "abc...",
+          "critical": false,
+          "signature": "<base64-ed25519-sig-over-canonical-fields>"
+        }
+
+    The signature is computed over the UTF-8 encoding of the JSON dump of
+    all fields except ``signature``, with ``sort_keys=True`` and
+    ``separators=(',',':')`` for canonicalization. Any change to the
+    manifest body invalidates the signature.
+
+    Raises ``ValueError`` on missing or invalid signature.
+    """
+    signature_b64 = manifest.get("signature")
+    if not signature_b64:
+        raise ValueError("Update manifest is not signed")
+
+    body = {k: v for k, v in manifest.items() if k != "signature"}
+    payload = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    try:
+        signature = base64.b64decode(signature_b64)
+    except Exception as exc:
+        raise ValueError(f"Invalid signature encoding: {exc}")
+
+    key = _load_update_public_key()
+    try:
+        key.verify(signature, payload)
+    except InvalidSignature as exc:
+        raise ValueError("Update manifest signature verification failed") from exc
+
+
+def _verify_download_host(download_url: str) -> None:
+    """Refuse download URLs outside the allowlist. Enforces HTTPS as well."""
+    parsed = urlparse(download_url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Update download URL must use HTTPS: {download_url}")
+    if parsed.hostname not in _ALLOWED_UPDATE_HOSTS:
+        raise ValueError(
+            f"Update download host '{parsed.hostname}' not in allowlist"
+        )
 
 
 @dataclass
@@ -92,14 +174,32 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
 
     _last_check = datetime.now(timezone.utc)
 
+    # F-036: refuse the manifest unless it carries a valid Ed25519
+    # signature from the trusted key.
+    try:
+        _verify_manifest_signature(data)
+    except ValueError as e:
+        logger.warning(f"Update manifest rejected: {e}")
+        _cached_update = None
+        return None
+
     latest = data.get("latest", APP_VERSION)
     if latest == APP_VERSION:
         _cached_update = None
         return None
 
+    download_url = data.get("download_url", "")
+    # Verify host allowlist before we ever hand this URL to download_update().
+    try:
+        _verify_download_host(download_url)
+    except ValueError as e:
+        logger.warning(f"Update rejected: {e}")
+        _cached_update = None
+        return None
+
     _cached_update = UpdateInfo(
         latest_version=latest,
-        download_url=data.get("download_url", ""),
+        download_url=download_url,
         changelog=data.get("changelog", ""),
         size_mb=data.get("size_mb", 0),
         checksum_sha256=data.get("checksum_sha256", ""),
@@ -130,6 +230,11 @@ def download_update(update: UpdateInfo, target_dir: Path) -> Path:
         urllib.error.URLError: If download fails
     """
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    # F-036: defense-in-depth — re-verify the download URL before opening it.
+    # (check_for_updates already did this when populating UpdateInfo, but the
+    # object could have been constructed by other code paths in the future.)
+    _verify_download_host(update.download_url)
 
     filename = f"praxiszeit-{update.latest_version}-{platform.system().lower()}.tar.gz"
     target_path = target_dir / filename

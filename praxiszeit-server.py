@@ -434,17 +434,23 @@ def uvicorn_start(config: dict):
     port = get_config_value(config, "server", "port", 443)
     ssl_cert = get_config_value(config, "server", "ssl_cert", "")
     ssl_key = get_config_value(config, "server", "ssl_key", "")
+    # F-052: configurable bind address so a customer operator can restrict
+    # to 127.0.0.1 if they reverse-proxy through IIS/Caddy. Default stays
+    # 0.0.0.0 for backwards compatibility with existing Windows installs
+    # that expect LAN access on port 443.
+    bind_address = get_config_value(config, "server", "bind_address", "0.0.0.0")
 
     cmd = [
         sys.executable, "-m", "uvicorn",
         "app.main:app",
-        "--host", "0.0.0.0",
+        "--host", str(bind_address),
         "--port", str(port),
         "--proxy-headers",
         "--forwarded-allow-ips", "127.0.0.1,::1",
     ]
 
     # Add SSL if configured
+    ssl_enabled = False
     if ssl_cert and ssl_key:
         cert_path = CONFIG_DIR / ssl_cert if not Path(ssl_cert).is_absolute() else Path(ssl_cert)
         key_path = CONFIG_DIR / ssl_key if not Path(ssl_key).is_absolute() else Path(ssl_key)
@@ -452,8 +458,31 @@ def uvicorn_start(config: dict):
             cmd.extend(["--ssl-certfile", str(cert_path)])
             cmd.extend(["--ssl-keyfile", str(key_path)])
             logger.info(f"SSL enabled: {cert_path}")
+            ssl_enabled = True
         else:
             logger.warning(f"SSL cert/key not found, starting without SSL")
+
+    # F-052: Loud warning if we're binding to a public interface without TLS.
+    # Logged at WARNING level so it lands in the event log + startup.log.
+    if bind_address in ("0.0.0.0", "::", "*") and not ssl_enabled:
+        logger.warning(
+            "===================================================================="
+        )
+        logger.warning(
+            " SECURITY: Server is bound to %s WITHOUT TLS.", bind_address,
+        )
+        logger.warning(
+            " Login cookies and patient-adjacent data traverse the network in"
+        )
+        logger.warning(
+            " plaintext. Configure [server] ssl_cert/ssl_key in praxiszeit.conf,"
+        )
+        logger.warning(
+            " or restrict to 127.0.0.1 via [server] bind_address = '127.0.0.1'."
+        )
+        logger.warning(
+            "===================================================================="
+        )
 
     # Set SERVE_FRONTEND=true for native mode
     env = os.environ.copy()

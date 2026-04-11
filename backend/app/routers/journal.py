@@ -27,7 +27,11 @@ def get_user_journal(
     year = year or now.year
     month = month or now.month
 
-    user = db.query(User).filter(User.id == user_id).first()
+    # F-026: explicit tenant scoping
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 

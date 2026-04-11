@@ -1,36 +1,64 @@
 from datetime import date, datetime, timedelta
 from app.services.timezone_service import today_local
+from app.services.date_filters import date_in_year, date_in_month
 from decimal import Decimal
 from calendar import monthrange
-from typing import Dict
+from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
 
 
-def get_weekly_hours_for_date(db: Session, user: User, target_date: date) -> Decimal:
+def get_weekly_hours_for_date(
+    db: Session,
+    user: User,
+    target_date: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Decimal:
     """
     Get the weekly hours that were valid for a specific date.
     Considers historical working hours changes.
 
+    This is the SINGLE authoritative lookup — other call-sites must NEVER
+    read ``user.weekly_hours`` directly (CLAUDE.md rule). Hot-path callers
+    that need many lookups per request may pass a pre-loaded ``wh_changes``
+    list to avoid one SELECT per day; the change-search is then performed
+    in memory with identical semantics.
+
     Args:
-        db: Database session
+        db: Database session (unused when wh_changes is provided)
         user: User object
         target_date: Date to get hours for
+        wh_changes: Optional pre-loaded list of WorkingHoursChange for this
+            user. When supplied, no DB query is issued. Must be filtered to
+            ``user_id == user.id`` by the caller — this function does not
+            re-filter.
 
     Returns:
         Weekly hours as Decimal
     """
-    # Find the most recent working hours change before or on target_date
-    change = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.effective_from <= target_date
-    ).order_by(WorkingHoursChange.effective_from.desc()).first()
+    if wh_changes is None:
+        # Classic path: one DB query, always correct.
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.effective_from <= target_date
+        ).order_by(WorkingHoursChange.effective_from.desc()).first()
+    else:
+        # In-memory path: scan the pre-loaded list. We mirror the SQL
+        # ``ORDER BY effective_from DESC LIMIT 1`` semantics exactly.
+        change = None
+        for c in wh_changes:
+            if c.effective_from <= target_date and (
+                change is None or c.effective_from > change.effective_from
+            ):
+                change = c
 
     if change:
         return Decimal(str(change.weekly_hours))
 
-    # No historical change found, use current user value
+    # No historical change found — fall back to the current user value.
+    # This is the ONLY place in the codebase that may read user.weekly_hours
+    # directly; everything else must route through this helper.
     return Decimal(str(user.weekly_hours))
 
 
@@ -169,10 +197,9 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     if not user.track_hours:
         return Decimal('0')
 
-    # Get holidays and absences for the month
+    # Get holidays and absences for the month (F-033: sargable date range)
     holidays = db.query(PublicHoliday).filter(
-        extract('year', PublicHoliday.date) == year,
-        extract('month', PublicHoliday.date) == month
+        date_in_month(PublicHoliday.date, year, month),
     ).all()
     holiday_dates = {h.date for h in holidays}
 
@@ -183,9 +210,8 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     #   dadurch reduziert sich das Überstundenkonto um die geplanten Stunden
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
-        extract('year', Absence.date) == year,
-        extract('month', Absence.date) == month,
-        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME])
+        date_in_month(Absence.date, year, month),
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
     absence_dates = {a.date for a in absences}
 
@@ -231,13 +257,16 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
     Returns:
         Actual hours worked as Decimal
     """
+    # F-033: sargable date range. The Python-level Decimal sum is kept
+    # because the SQL @expression for net_hours relies on Postgres's
+    # EXTRACT(EPOCH FROM time - time) semantics which do not port to
+    # SQLite used by the test suite. Fetching the rows is still faster
+    # than per-day queries thanks to the composite index from Sprint 3.1.
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
-        extract('year', TimeEntry.date) == year,
-        extract('month', TimeEntry.date) == month
+        date_in_month(TimeEntry.date, year, month),
     ).all()
-
-    total = sum(entry.net_hours for entry in entries)
+    total = sum((entry.net_hours for entry in entries), start=Decimal('0'))
 
     # Training and sick hours count as actual worked hours:
     # - TRAINING: außer Haus, credited as worked
@@ -245,8 +274,7 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
-        extract('year', Absence.date) == year,
-        extract('month', Absence.date) == month,
+        date_in_month(Absence.date, year, month),
     ).all()
     credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences), Decimal('0'))
 
@@ -362,20 +390,13 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
     ).all()
     holiday_dates: set[date] = {h.date for h in holidays}
 
-    # All working-hours changes for this user
+    # All working-hours changes for this user (pre-loaded for the hot loop).
+    # F-027: routed through get_weekly_hours_for_date() with in-memory path
+    # to satisfy the CLAUDE.md invariant "never read user.weekly_hours
+    # directly" without paying the per-day DB-query cost.
     wh_changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
     ).order_by(WorkingHoursChange.effective_from).all()
-
-    def _weekly_hours_for_date(d: date) -> Decimal:
-        """Return the weekly hours effective on date d (no DB query)."""
-        result = Decimal(str(user.weekly_hours))
-        for change in wh_changes:
-            if change.effective_from <= d:
-                result = Decimal(str(change.weekly_hours))
-            else:
-                break
-        return result
 
     # --- iterate months and compute balance in memory ---
     total_balance = initial_balance
@@ -393,7 +414,7 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
                 continue
             if d in holiday_dates or d in absence_dates:
                 continue
-            weekly_hours = _weekly_hours_for_date(d)
+            weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
             daily_target = get_daily_target_for_date(user, d, weekly_hours)
             monthly_target += daily_target
 
@@ -454,26 +475,18 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     ).all()
     absence_dates: set = {a.date for a in absences}
 
-    # Fetch working hours changes
+    # Fetch working hours changes (pre-loaded for the per-day loop).
+    # F-027: routed through get_weekly_hours_for_date() with in-memory path
     wh_changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
     ).order_by(WorkingHoursChange.effective_from).all()
-
-    def _weekly_hours_for_date(d: date) -> Decimal:
-        result = Decimal(str(user.weekly_hours))
-        for change in wh_changes:
-            if change.effective_from <= d:
-                result = Decimal(str(change.weekly_hours))
-            else:
-                break
-        return result
 
     # Sum daily targets
     total_target = Decimal('0')
     current = start
     while current <= end:
         if current.weekday() < 5 and current not in holiday_dates and current not in absence_dates:
-            weekly_hours = _weekly_hours_for_date(current)
+            weekly_hours = get_weekly_hours_for_date(db, user, current, wh_changes=wh_changes)
             daily_target = get_daily_target_for_date(user, current, weekly_hours)
             total_target += daily_target
         current += timedelta(days=1)
@@ -534,8 +547,24 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     Returns:
         Dict with vacation account details
     """
-    # Use current weekly hours for conversion
+    # F-046: a user with daily_target == 0 (track_hours=False, or
+    # work_days_per_week == 0) has no vacation account at all — there's
+    # no sensible way to convert hours↔days. Return an explicit "not
+    # applicable" shape so the router can 400 or the UI can hide the
+    # account. This prevents the silent-zero bug where an employee with
+    # track_hours=False but existing vacation entries would see
+    # "0 days used / 0 days remaining" and slip through the budget check.
     daily_target = get_daily_target(user)
+    if daily_target <= 0:
+        return {
+            "budget_hours": 0.0,
+            "budget_days": float(user.vacation_days),
+            "used_hours": 0.0,
+            "used_days": 0.0,
+            "remaining_hours": 0.0,
+            "remaining_days": float(user.vacation_days),
+            "track_hours": False,  # sentinel for callers
+        }
 
     # Calculate budget in hours, pro-rated for first/last work day
     budget_days = Decimal(str(user.vacation_days))
@@ -564,19 +593,21 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
 
     budget_hours = budget_days * daily_target
 
-    # Calculate used vacation hours
+    # Calculate used vacation hours (F-033: sargable date range)
     vacation_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.type == AbsenceType.VACATION,
-        extract('year', Absence.date) == year
+        date_in_year(Absence.date, year),
     ).all()
 
     used_hours = sum((Decimal(str(a.hours)) for a in vacation_absences), start=Decimal('0'))
-    used_days = used_hours / daily_target if daily_target > 0 else Decimal('0')
+    # daily_target guaranteed > 0 here (early return above handles the
+    # zero case). Division is therefore always safe.
+    used_days = used_hours / daily_target
 
     # Calculate remaining
     remaining_hours = budget_hours - used_hours
-    remaining_days = remaining_hours / daily_target if daily_target > 0 else Decimal('0')
+    remaining_days = remaining_hours / daily_target
 
     return {
         "budget_hours": float(budget_hours.quantize(Decimal('0.01'))),
@@ -584,7 +615,8 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         "used_hours": float(used_hours.quantize(Decimal('0.01'))),
         "used_days": float(used_days.quantize(Decimal('0.1'))),
         "remaining_hours": float(remaining_hours.quantize(Decimal('0.01'))),
-        "remaining_days": float(remaining_days.quantize(Decimal('0.1')))
+        "remaining_days": float(remaining_days.quantize(Decimal('0.1'))),
+        "track_hours": True,
     }
 
 

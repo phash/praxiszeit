@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from app.services.date_filters import date_in_year, date_in_month
 from sqlalchemy import extract
 from typing import List, Optional
 from app.database import get_db
@@ -30,7 +31,11 @@ def admin_create_time_entry(
     current_user: User = Depends(require_admin),
 ):
     """Admin creates a time entry for an employee."""
-    user = db.query(User).filter(User.id == user_id).first()
+    # F-026: explicit tenant scoping on user lookup (don't rely on RLS alone)
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -114,7 +119,18 @@ def admin_update_time_entry(
     current_user: User = Depends(require_admin),
 ):
     """Admin updates a time entry with audit logging."""
-    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).first()
+    # F-028: lock the row so two concurrent admin edits can't race between
+    # validation and apply — otherwise state-B is written while state-A was
+    # validated.
+    entry = (
+        db.query(TimeEntry)
+        .filter(
+            TimeEntry.id == entry_id,
+            TimeEntry.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 
@@ -238,12 +254,25 @@ def admin_delete_time_entry(
 def list_audit_log(
     user_id: Optional[str] = Query(None, description="Filter by affected user"),
     month: Optional[str] = Query(None, description="Filter by month (YYYY-MM)"),
+    before: Optional[str] = Query(
+        None,
+        description="Keyset cursor — ISO-8601 timestamp; return entries strictly older than this",
+    ),
     skip: int = 0,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """List audit log entries."""
+    """
+    List audit log entries.
+
+    F-054: Supports two pagination modes — cursor-based (preferred) and
+    offset-based (legacy). The audit log grows indefinitely; OFFSET N on
+    a table with 100k+ rows forces Postgres to materialise and discard N
+    rows on every page load, so the admin UI should switch to the
+    ``before`` cursor ASAP. Pass the ``created_at`` of the last row from
+    the previous page as ``before`` to fetch the next older page.
+    """
     query = db.query(TimeEntryAuditLog)
 
     if user_id:
@@ -253,11 +282,36 @@ def list_audit_log(
         try:
             year, month_num = map(int, month.split('-'))
             query = query.filter(
-                extract('year', TimeEntryAuditLog.created_at) == year,
-                extract('month', TimeEntryAuditLog.created_at) == month_num,
+                date_in_month(TimeEntryAuditLog.created_at, year, month_num),
             )
         except ValueError:
             raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
-    logs = query.order_by(TimeEntryAuditLog.created_at.desc()).offset(skip).limit(limit).all()
+    if before:
+        # Keyset pagination: skip OFFSET entirely, use a strict ``<`` on
+        # the indexed created_at column.
+        try:
+            from datetime import datetime as _dt
+            before_ts = _dt.fromisoformat(before.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Ungültiges 'before' Format (ISO-8601 erwartet)",
+            )
+        query = query.filter(TimeEntryAuditLog.created_at < before_ts)
+        logs = (
+            query.order_by(TimeEntryAuditLog.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+    else:
+        # Legacy offset-based path — kept for backward compatibility with
+        # the current frontend. Grows linearly with page index, deprecated
+        # once the UI switches to 'before'.
+        logs = (
+            query.order_by(TimeEntryAuditLog.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
     return _enrich_audit_responses(logs, db)
