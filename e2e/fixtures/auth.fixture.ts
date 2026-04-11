@@ -20,10 +20,33 @@ export const authTest = base.extend<AuthFixtures, { adminApi: ApiHelper }>({
     { scope: 'worker' },
   ],
 
-  adminPage: async ({ adminApi, page }, use) => {
-    // Inject the already-valid admin token — no extra login call needed
-    await page.addInitScript(({ token, user }) => {
-      localStorage.setItem('access_token', token);
+  adminPage: async ({ adminApi, context, page }, use) => {
+    // F-023: The frontend no longer reads the access token from
+    // localStorage — it lives in module memory only. To seed an
+    // authenticated session we piggy-back on the Node-side login that
+    // the worker-scoped `adminApi` fixture already did:
+    //
+    //   1. Copy the captured refresh_token cookie into this Playwright
+    //      BrowserContext (one real login per worker — respects the
+    //      5/minute rate limit).
+    //   2. Persist `user + isAuthenticated` in the zustand persist
+    //      slot so authStore.hydrate() thinks we were logged in.
+    //   3. On first mount hydrate() calls tryRefreshSession() — the
+    //      refresh cookie is there, backend issues a fresh access
+    //      token, the frontend pushes it into memory.
+    if (!adminApi.refreshCookie) {
+      throw new Error('adminApi.login() did not capture a refresh cookie');
+    }
+    await context.addCookies([
+      {
+        name: 'refresh_token',
+        value: adminApi.refreshCookie,
+        url: 'http://localhost/api/auth/refresh',
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ]);
+    await page.addInitScript((user) => {
       localStorage.setItem(
         'auth-storage',
         JSON.stringify({
@@ -31,7 +54,8 @@ export const authTest = base.extend<AuthFixtures, { adminApi: ApiHelper }>({
           version: 0,
         })
       );
-    }, { token: adminApi.token, user: adminApi.userData });
+    }, adminApi.userData);
+
     await page.goto('/');
     await page.waitForURL('/');
     await use(page);

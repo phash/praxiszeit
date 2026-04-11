@@ -229,7 +229,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
 
 @router.post("/refresh", response_model=RefreshResponse)
-@limiter.limit("10/minute")
+@limiter.limit(settings.REFRESH_RATE_LIMIT)
 def refresh_token(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     F-010: Refresh access token.
