@@ -7,19 +7,25 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import base64
-from collections import defaultdict
+import secrets
+from collections import OrderedDict
 from app.database import get_db, set_superadmin_context
-from app.models import User, TimeEntry, Absence
+from app.middleware.csrf import CSRF_COOKIE_NAME
+from app.models import User, TimeEntry, Absence, TimeEntryAuditLog
 from app.models.tenant import Tenant
 
-# In-memory failed login tracking (resets on restart, per-username).
-# NOTE: In-memory rate limiting — per-worker, not shared across gunicorn workers.
-# For single-worker deployments (current production) this is sufficient.
-# For multi-worker: consider Redis-based rate limiting via slowapi's Redis backend.
-_failed_logins: dict[str, list[datetime]] = defaultdict(list)
+# F-039: In-memory failed login tracking as an OrderedDict LRU so eviction
+# is O(1) instead of O(n log n). Also fixes the attacker-evicts-real-user
+# scenario: under attack the LRU drops the *oldest* attacker entries, not
+# the legitimate victim's.
+#
+# NOTE: still per-worker, not shared across gunicorn workers. For
+# multi-worker deployments consider Redis-backed slowapi instead.
+_failed_logins: "OrderedDict[str, list[datetime]]" = OrderedDict()
 _MAX_TRACKED_USERS = 10000
 _LOCKOUT_ATTEMPTS = 5
 _LOCKOUT_WINDOW = timedelta(minutes=15)
+
 from app.schemas.user import (
     LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
     ChangePasswordRequest, UpdateCalendarColorRequest,
@@ -28,6 +34,11 @@ from app.schemas.user import (
 from app.services import auth_service
 from app.middleware.auth import get_current_user
 from app.config import settings
+
+# F-040: Pre-computed bcrypt hash of a random string. Used to equalise
+# verify timing for non-existent users so login latency no longer leaks
+# user existence. Must be initialized AFTER the auth_service import.
+_DUMMY_BCRYPT_HASH = auth_service.hash_password(secrets.token_urlsafe(32))
 
 # Cookie name and path constants
 _REFRESH_COOKIE = "refresh_token"
@@ -55,17 +66,22 @@ class UpdateProfileRequest(BaseModel):
             raise ValueError(f'Ungültiges E-Mail-Format: {e}')
         return v
 
-def _evict_failed_logins_if_needed():
-    """Evict the oldest half of tracked users when the dict exceeds the size cap."""
-    if len(_failed_logins) > _MAX_TRACKED_USERS:
-        # Sort by most recent attempt timestamp, keep the newer half
-        sorted_users = sorted(
-            _failed_logins.keys(),
-            key=lambda u: max(_failed_logins[u]) if _failed_logins[u] else datetime.min.replace(tzinfo=timezone.utc),
-        )
-        to_remove = sorted_users[: len(sorted_users) // 2]
-        for u in to_remove:
-            del _failed_logins[u]
+def _record_failed_login(username_lower: str, now: datetime) -> None:
+    """F-039: Append a failed attempt and maintain LRU ordering.
+
+    The OrderedDict pops the oldest entry in O(1) once the cap is hit. The
+    move_to_end() call keeps the victim's entry "hot" so a flood of bogus
+    usernames can't evict their lockout record.
+    """
+    attempts = _failed_logins.get(username_lower)
+    if attempts is None:
+        _failed_logins[username_lower] = [now]
+    else:
+        attempts.append(now)
+        _failed_logins.move_to_end(username_lower)
+
+    while len(_failed_logins) > _MAX_TRACKED_USERS:
+        _failed_logins.popitem(last=False)  # oldest first
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -89,6 +105,32 @@ def _delete_refresh_cookie(response: Response) -> None:
     response.delete_cookie(key=_REFRESH_COOKIE, path=_REFRESH_PATH)
 
 
+def _set_csrf_cookie(response: Response) -> None:
+    """
+    F-024: Set the CSRF double-submit cookie.
+
+    Must be non-HttpOnly so that frontend JS (axios interceptor) can read it
+    and mirror it into the X-CSRF-Token header on mutating requests. The
+    secret is scoped to the whole app because CSRF protection applies to
+    every unsafe endpoint, not just /auth/*. Regenerated on every login and
+    refresh so that a stolen token has a short lifetime.
+    """
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=secrets.token_urlsafe(32),
+        httponly=False,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        path="/",
+    )
+
+
+def _delete_csrf_cookie(response: Response) -> None:
+    """Clear the CSRF cookie on logout."""
+    response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
+
+
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit(settings.LOGIN_RATE_LIMIT)
 def login(request: Request, response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
@@ -100,10 +142,16 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     # Account lockout: block after 5 failed attempts within 15 minutes
     username_lower = login_data.username.lower()
     now = datetime.now(timezone.utc)
-    attempts = _failed_logins[username_lower]
+    attempts = _failed_logins.get(username_lower, [])
     # Prune old attempts outside the window
-    _failed_logins[username_lower] = [t for t in attempts if now - t < _LOCKOUT_WINDOW]
-    if len(_failed_logins[username_lower]) >= _LOCKOUT_ATTEMPTS:
+    attempts = [t for t in attempts if now - t < _LOCKOUT_WINDOW]
+    if attempts:
+        _failed_logins[username_lower] = attempts
+        _failed_logins.move_to_end(username_lower)
+    elif username_lower in _failed_logins:
+        del _failed_logins[username_lower]
+
+    if len(attempts) >= _LOCKOUT_ATTEMPTS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Konto vorübergehend gesperrt. Bitte in 15 Minuten erneut versuchen."
@@ -114,20 +162,30 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
 
     if not user or not user.is_active:
-        _failed_logins[username_lower].append(now)
-        _evict_failed_logins_if_needed()
+        # F-040: Run a dummy bcrypt verify so the response time does not
+        # reveal whether the user exists. The dummy hash is generated at
+        # module load time from a random string (see _DUMMY_BCRYPT_HASH).
+        auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
+        _record_failed_login(username_lower, now)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
         )
 
     if not auth_service.verify_password(login_data.password, user.password_hash):
-        _failed_logins[username_lower].append(now)
-        _evict_failed_logins_if_needed()
+        _record_failed_login(username_lower, now)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
         )
+
+    # F-041: opportunistic re-hash of legacy bcrypt (72-byte truncated) to
+    # bcrypt_sha256. Runs only on successful login, so users migrate
+    # silently without being forced to reset their password. Don't bump
+    # token_version — the password didn't actually change.
+    if auth_service.needs_rehash(user.password_hash):
+        user.password_hash = auth_service.hash_password(login_data.password)
+        db.commit()
 
     # Check tenant is active before issuing tokens
     if user.tenant_id:
@@ -161,6 +219,8 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     # F-010: deliver refresh token via HttpOnly cookie, not in JSON
     _set_refresh_cookie(response, refresh_token)
+    # F-024: issue a fresh CSRF double-submit token
+    _set_csrf_cookie(response)
 
     return LoginResponse(
         access_token=access_token,
@@ -169,8 +229,8 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
 
 @router.post("/refresh", response_model=RefreshResponse)
-@limiter.limit("10/minute")
-def refresh_token(request: Request, db: Session = Depends(get_db)):
+@limiter.limit(settings.REFRESH_RATE_LIMIT)
+def refresh_token(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     F-010: Refresh access token.
     The refresh token is read from the HttpOnly cookie – no request body needed.
@@ -223,6 +283,9 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
 
     tenant_id_str = str(user.tenant_id) if user.tenant_id else None
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)
+    # F-024: rotate the CSRF token on every refresh so that a stolen cookie
+    # has a short lifetime bounded by the access-token refresh cadence.
+    _set_csrf_cookie(response)
     return RefreshResponse(access_token=access_token)
 
 
@@ -238,6 +301,7 @@ def logout(
     current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
     _delete_refresh_cookie(response)
+    _delete_csrf_cookie(response)
     return {"message": "Erfolgreich abgemeldet"}
 
 
@@ -303,13 +367,40 @@ def update_profile(
 ):
     """
     DSGVO Art. 16 – Berichtigungsrecht: update own name and email.
+
+    F-060: E-Mail changes are audit-logged. If a password-reset-by-email
+    flow is added in a future release, an attacker with a short-lived XSS
+    foothold could silently swap the address and then trigger a reset.
+    The audit log gives admins a forensic trail to detect that.
     """
+    old_email = current_user.email
+    email_changed = False
+
     if profile_data.first_name is not None:
         current_user.first_name = profile_data.first_name
     if profile_data.last_name is not None:
         current_user.last_name = profile_data.last_name
     if profile_data.email is not None:
-        current_user.email = profile_data.email if profile_data.email.strip() else None
+        new_email = profile_data.email if profile_data.email.strip() else None
+        if new_email != old_email:
+            current_user.email = new_email
+            email_changed = True
+
+    if email_changed:
+        # Write a standalone audit row (action="profile_update") so the
+        # change is visible even though update_profile touches the user
+        # table, not the time_entries table.
+        audit = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="profile_update",
+            source="self_service",
+            old_note=f"E-Mail geändert: {old_email or '(leer)'} → {current_user.email or '(leer)'}",
+            tenant_id=current_user.tenant_id,
+        )
+        db.add(audit)
+
     db.commit()
     db.refresh(current_user)
     return UserResponse.model_validate(current_user)

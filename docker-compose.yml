@@ -10,9 +10,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # F-025: passed to init-db-user.sh so it can ALTER ROLE praxiszeit_app
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/init-db-user.sql:/docker-entrypoint-initdb.d/init-db-user.sql
+      # 01_ prefix ensures the SQL runs before the shell script
+      - ./backend/init-db-user.sql:/docker-entrypoint-initdb.d/01_init-db-user.sql
+      - ./backend/init-db-user.sh:/docker-entrypoint-initdb.d/02_init-db-user.sh
     restart: unless-stopped
     networks:
       - praxiszeit-network
@@ -38,6 +42,7 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
       LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-5/minute}
+      REFRESH_RATE_LIMIT: ${REFRESH_RATE_LIMIT:-10/minute}
     depends_on:
       db:
         condition: service_healthy
@@ -65,7 +70,9 @@ services:
       - praxiszeit-network
 
   prometheus:
-    image: prom/prometheus:latest
+    # F-037: pinned to a specific minor version for reproducible builds.
+    # Bump deliberately via Dependabot/Renovate, not via `docker pull`.
+    image: prom/prometheus:v2.54.1
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -76,7 +83,8 @@ services:
       - praxiszeit-network
 
   grafana:
-    image: grafana/grafana:latest
+    # F-037: pinned
+    image: grafana/grafana:11.2.0
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
       GF_AUTH_ANONYMOUS_ENABLED: "false"

@@ -80,16 +80,24 @@ elif [ -f "$PG_DMG" ]; then
         fi
 
         if [ -f "$PG_INSTALLER" ]; then
+            # F-025: Generate a random one-shot password for the EDB installer.
+            # The EDB PostgreSQL service+data is replaced later by praxiszeit-server.py
+            # which runs initdb with its own secrets.token_hex(32) credentials
+            # persisted in .db-credentials. The one-shot password only has to
+            # live long enough for the installer itself to run.
+            EDB_SU_PW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
             "$PG_INSTALLER" \
                 --mode unattended \
                 --unattendedmodeui none \
                 --prefix "${PG_INSTALL_DIR}" \
                 --datadir "${INSTALL_DIR}/data/db" \
-                --superpassword "PraxisZeit2025!" \
+                --superpassword "${EDB_SU_PW}" \
                 --serverport 5432 \
                 --disable-components stackbuilder,pgAdmin \
                 --install_runtimes 0 \
                 2>/dev/null || true
+            # Drop the one-shot password from memory immediately
+            unset EDB_SU_PW
             info "PostgreSQL installiert"
         else
             warn "Kann PostgreSQL-Installer im DMG nicht finden"

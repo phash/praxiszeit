@@ -118,6 +118,11 @@ export default function Dashboard() {
   const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
+    // F-047: cancellation flag prevents setState-after-unmount React
+    // warnings when the user navigates away before the 8-parallel fetch
+    // resolves. Also avoids stale toast spam on failed async paths.
+    let cancelled = false;
+
     const fetchData = async () => {
       try {
         const currentYear = new Date().getFullYear();
@@ -131,6 +136,8 @@ export default function Dashboard() {
           apiClient.get('/dashboard/ytd-overtime'),
         ]);
 
+        if (cancelled) return;
+
         setDashboardData(dashboardRes.data);
         setOvertimeAccount(overtimeRes.data);
         setVacationAccount(vacationRes.data);
@@ -141,12 +148,16 @@ export default function Dashboard() {
         // Fetch missing bookings
         try {
           const missingRes = await apiClient.get('/dashboard/missing-bookings');
+          if (cancelled) return;
           setMissingBookings(missingRes.data.entries || []);
           if (user?.role === 'admin') {
             const teamMissingRes = await apiClient.get('/dashboard/missing-bookings/team');
+            if (cancelled) return;
             setTeamMissingBookings(teamMissingRes.data || []);
           }
-        } catch { /* non-critical */ }
+        } catch (err) {
+          if (!cancelled) console.warn('missing-bookings fetch failed', err);
+        }
 
         // Fetch recent entries + clock status for mobile
         try {
@@ -155,9 +166,12 @@ export default function Dashboard() {
             apiClient.get(`/time-entries?month=${currentMonth}`),
             trackHours ? apiClient.get('/time-entries/clock-status') : Promise.resolve({ data: null }),
           ]);
+          if (cancelled) return;
           setRecentEntries(entriesRes.data.slice(-5).reverse());
           if (clockRes.data) setClockStatus(clockRes.data);
-        } catch { /* non-critical */ }
+        } catch (err) {
+          if (!cancelled) console.warn('recent entries fetch failed', err);
+        }
 
         // Calculate yearly absence summary
         const absences: AbsenceEntry[] = absencesRes.data;
@@ -179,20 +193,33 @@ export default function Dashboard() {
           total_days: vacation_days + sick_days + training_days + overtime_days + other_days,
         };
 
-        setYearlyAbsences(summary);
+        if (!cancelled) setYearlyAbsences(summary);
       } catch (error) {
-        toast.error('Fehler beim Laden des Dashboards');
+        if (!cancelled) {
+          console.error('Dashboard load failed', error);
+          toast.error('Fehler beim Laden des Dashboards');
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchData();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+    // F-047: re-run when the user identity changes (e.g. after a profile
+    // update). toast and trackHours are stable refs / derived values so
+    // they don't need to be in the deps list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Refresh balances and clock status after stamp actions (clock-in/out)
   useEffect(() => {
     if (stampVersion === 0 || !trackHours) return;
+
+    let cancelled = false;
     const currentMonth = format(new Date(), 'yyyy-MM');
     Promise.all([
       apiClient.get('/time-entries/clock-status'),
@@ -201,13 +228,20 @@ export default function Dashboard() {
       apiClient.get('/dashboard/ytd-overtime'),
       apiClient.get(`/time-entries?month=${currentMonth}`),
     ]).then(([clockRes, dashRes, overtimeRes, ytdRes, entriesRes]) => {
+      if (cancelled) return;
       setClockStatus(clockRes.data);
       setDashboardData(dashRes.data);
       setOvertimeAccount(overtimeRes.data);
       setYtdOvertime(ytdRes.data);
       setRecentEntries(entriesRes.data.slice(-5).reverse());
-    }).catch(() => {});
-  }, [stampVersion]);
+    }).catch((err) => {
+      if (!cancelled) console.warn('stamp-refresh failed', err);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stampVersion, trackHours]);
 
   if (loading) {
     return (

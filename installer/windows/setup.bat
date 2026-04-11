@@ -43,18 +43,30 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
     echo.
     echo Installiere PostgreSQL ^(kann einige Minuten dauern^)...
     echo.
-    "%PG_INSTALLER%" ^
-        --mode unattended ^
-        --unattendedmodeui none ^
-        --prefix "%PG_INSTALL_DIR%" ^
-        --datadir "%PG_DATA_DIR%" ^
-        --superpassword "PraxisZeit2025!" ^
-        --serverport 5432 ^
-        --disable-components stackbuilder,pgAdmin ^
-        --servicename "PraxisZeit-PostgreSQL" ^
-        --install_runtimes 0
+    REM F-025: Generate a random one-shot password for the EDB installer.
+    REM The EDB-installed PostgreSQL service + data directory are removed
+    REM immediately below; praxiszeit-server.py later runs initdb with its
+    REM own secrets.token_hex(32)-generated credentials in .db-credentials.
+    REM This password only has to live as long as the EDB installer itself.
+    REM PowerShell is used because DisableDelayedExpansion forbids the usual
+    REM setlocal-EnableDelayedExpansion pattern; the for-loop scope keeps the
+    REM value out of the environment after the installer call.
+    set "PG_INSTALL_RESULT=1"
+    for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "-join ((48..57)+(65..90)+(97..122)|Get-Random -Count 32|ForEach-Object {[char]$_})"`) do (
+        "%PG_INSTALLER%" ^
+            --mode unattended ^
+            --unattendedmodeui none ^
+            --prefix "%PG_INSTALL_DIR%" ^
+            --datadir "%PG_DATA_DIR%" ^
+            --superpassword "%%P" ^
+            --serverport 5432 ^
+            --disable-components stackbuilder,pgAdmin ^
+            --servicename "PraxisZeit-PostgreSQL" ^
+            --install_runtimes 0
+        if not errorlevel 1 set "PG_INSTALL_RESULT=0"
+    )
 
-    if %errorlevel% neq 0 (
+    if not "%PG_INSTALL_RESULT%"=="0" (
         echo.
         echo FEHLER: PostgreSQL-Installation fehlgeschlagen!
         echo Bitte installieren Sie PostgreSQL manuell von:

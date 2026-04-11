@@ -11,7 +11,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // F-058: prompt-mode instead of autoUpdate. autoUpdate + controllerchange
+      // reloads the page silently on deploy — users who are mid-form lose
+      // their unsaved input. The SW still downloads the new assets in the
+      // background; the UI shows a toast and lets the user opt in.
+      registerType: 'prompt',
       includeAssets: ['vite.svg'],
       manifest: {
         name: 'PraxisZeit - Zeiterfassung',

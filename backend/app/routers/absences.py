@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from app.services.date_filters import date_in_year, date_in_month
 from sqlalchemy import extract
 from typing import List, Optional
 from datetime import timedelta, date
@@ -51,7 +52,7 @@ def list_absences(
 
     # Filter by year if provided
     if year:
-        query = query.filter(extract('year', Absence.date) == year)
+        query = query.filter(date_in_year(Absence.date, year))
 
     absences = query.order_by(Absence.date.desc()).all()
     return absences
@@ -76,8 +77,7 @@ def get_absence_calendar(
     rows = db.query(Absence, User.first_name, User.last_name).join(User).filter(
         User.is_active == True,
         User.is_hidden == False,
-        extract('year', Absence.date) == year,
-        extract('month', Absence.date) == month_num
+        date_in_month(Absence.date, year, month_num)
     ).order_by(Absence.date).all()
 
     # Convert to calendar entries (no extra queries needed)
@@ -203,7 +203,11 @@ def create_absence(
     if absence_data.user_id:
         if current_user.role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Zugriff verweigert")
-        target_user = db.query(User).filter(User.id == absence_data.user_id).first()
+        # F-026: explicit tenant scoping on admin cross-user absence creation
+        target_user = db.query(User).filter(
+            User.id == absence_data.user_id,
+            User.tenant_id == current_user.tenant_id,
+        ).first()
         if not target_user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -261,21 +265,31 @@ def create_absence(
             detail="Keine gültigen Arbeitstage im angegebenen Zeitraum"
         )
 
-    # Check for existing absences (any type — no double-booking allowed)
+    # Check for existing absences (any type — no double-booking allowed).
+    # F-028: with_for_update() on the existence probe closes the race window
+    # between this check and the INSERT below. The DB-level unique constraint
+    # is (tenant_id, user_id, date, type) — different types on the same day
+    # would slip through without the row lock, causing double-booking.
     skip_dates = []
-    for date in dates_to_create:
-        existing = db.query(Absence).filter(
-            Absence.user_id == target_user.id,
-            Absence.date == date,
-        ).first()
+    for d in dates_to_create:
+        existing = (
+            db.query(Absence)
+            .filter(
+                Absence.user_id == target_user.id,
+                Absence.tenant_id == target_user.tenant_id,
+                Absence.date == d,
+            )
+            .with_for_update()
+            .first()
+        )
 
         if existing:
             if existing.type == absence_data.type:
-                skip_dates.append(date)  # Skip duplicate of same type (idempotent)
+                skip_dates.append(d)  # Skip duplicate of same type (idempotent)
             else:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Am {date.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})"
+                    detail=f"Am {d.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})"
                 )
     dates_to_create = [d for d in dates_to_create if d not in skip_dates]
 

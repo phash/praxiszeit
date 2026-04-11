@@ -83,7 +83,20 @@ def review_change_request(
     current_user: User = Depends(require_admin),
 ):
     """Approve or reject a change request."""
-    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id).first()
+    # F-028: Lock the CR row for the duration of this transaction so that
+    # two concurrent approval requests cannot both pass the status check
+    # and mutate state. Without with_for_update(), a double-click on "Approve"
+    # for a DELETE CR would execute db.delete(entry) twice and raise 500;
+    # for an UPDATE CR it would write the same audit log twice.
+    cr = (
+        db.query(ChangeRequest)
+        .filter(
+            ChangeRequest.id == request_id,
+            ChangeRequest.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.status != ChangeRequestStatus.PENDING:

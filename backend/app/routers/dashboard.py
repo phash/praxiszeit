@@ -16,9 +16,16 @@ from sqlalchemy import extract, and_
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
-def _get_missing_bookings_for_user(db: Session, user: User) -> List[MissingBookingEntry]:
-    """Find open entries (end_time NULL) and workdays without any entry/absence."""
+def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> List[MissingBookingEntry]:
+    """Find open entries (end_time NULL) and workdays without any entry/absence.
+
+    tenant_id is the explicit tenant context for the caller. It is forwarded
+    to is_holiday() — CLAUDE.md mandates passing tenant_id on every
+    holiday lookup (multi-tenant correctness).
+    """
     today = today_local()
+    if tenant_id is None:
+        tenant_id = user.tenant_id
     entries: List[MissingBookingEntry] = []
 
     # 1) Open entries: end_time is NULL, date < today
@@ -75,7 +82,7 @@ def _get_missing_bookings_for_user(db: Session, user: User) -> List[MissingBooki
         daily_target = float(get_daily_target_for_date(user, d, weekly_hours))
         is_workday = daily_target > 0
         if is_workday and d not in entry_dates and d not in absence_dates:
-            if not is_holiday(db, d):
+            if not is_holiday(db, d, tenant_id=tenant_id):
                 entries.append(MissingBookingEntry(date=d, type="missing"))
         d += timedelta(days=1)
 
@@ -215,7 +222,11 @@ def get_vacation_account(
         if current_user.role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Zugriff verweigert")
 
-        target_user = db.query(User).filter(User.id == user_id).first()
+        # F-026: explicit tenant scoping
+        target_user = db.query(User).filter(
+            User.id == user_id,
+            User.tenant_id == current_user.tenant_id,
+        ).first()
         if not target_user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -256,7 +267,7 @@ def get_missing_bookings(
             last_name=current_user.last_name,
             entries=[]
         )
-    missing = _get_missing_bookings_for_user(db, current_user)
+    missing = _get_missing_bookings_for_user(db, current_user, tenant_id=current_user.tenant_id)
     return MissingBookings(
         user_id=str(current_user.id),
         first_name=current_user.first_name,
@@ -278,11 +289,12 @@ def get_team_missing_bookings(
         User.is_active == True,
         User.track_hours == True,
         User.is_hidden == False,
+        User.tenant_id == current_user.tenant_id,  # F-026: explicit tenant scoping
     ).order_by(User.last_name).all()
 
     results = []
     for user in users:
-        missing = _get_missing_bookings_for_user(db, user)
+        missing = _get_missing_bookings_for_user(db, user, tenant_id=current_user.tenant_id)
         if missing:
             results.append(MissingBookings(
                 user_id=str(user.id),

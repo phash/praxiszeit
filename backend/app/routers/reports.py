@@ -15,6 +15,7 @@ from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
 from app.services.arbzg_utils import is_night_work
+from app.services.date_filters import date_in_year, date_in_month
 from app.core.limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -74,20 +75,18 @@ def get_monthly_report(
         balance = calculation_service.get_monthly_balance(db, user, year, month_num)
         overtime = calculation_service.get_overtime_account(db, user, year, month_num)
 
-        # Get vacation and sick hours for the month
+        # Get vacation and sick hours for the month (F-033: sargable)
         vacation_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.VACATION,
-            extract('year', Absence.date) == year,
-            extract('month', Absence.date) == month_num
+            date_in_month(Absence.date, year, month_num),
         ).all()
         vacation_hours = sum(float(a.hours) for a in vacation_absences)
 
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.SICK,
-            extract('year', Absence.date) == year,
-            extract('month', Absence.date) == month_num
+            date_in_month(Absence.date, year, month_num),
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
 
@@ -154,45 +153,30 @@ def get_yearly_absences(
         if daily_target == 0:
             daily_target = Decimal('8.0')  # Use default 8h for calculation
 
-        # Get all absences for the year
-        vacation_absences = db.query(Absence).filter(
+        # F-033 + Sprint 3.4: fetch all absences for this user+year in ONE
+        # query, group by type in Python. Previous code issued 5 separate
+        # queries per user (one per type).
+        all_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
-            Absence.type == AbsenceType.VACATION,
-            extract('year', Absence.date) == year
+            date_in_year(Absence.date, year),
         ).all()
-        vacation_hours = sum(float(a.hours) for a in vacation_absences)
+        hours_by_type: dict = {}
+        for a in all_absences:
+            hours_by_type[a.type] = hours_by_type.get(a.type, 0.0) + float(a.hours)
+
+        vacation_hours = hours_by_type.get(AbsenceType.VACATION, 0.0)
         vacation_days = vacation_hours / float(daily_target)
 
-        sick_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.SICK,
-            extract('year', Absence.date) == year
-        ).all()
-        sick_hours = sum(float(a.hours) for a in sick_absences)
+        sick_hours = hours_by_type.get(AbsenceType.SICK, 0.0)
         sick_days = sick_hours / float(daily_target)
 
-        training_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.TRAINING,
-            extract('year', Absence.date) == year
-        ).all()
-        training_hours = sum(float(a.hours) for a in training_absences)
+        training_hours = hours_by_type.get(AbsenceType.TRAINING, 0.0)
         training_days = training_hours / float(daily_target)
 
-        overtime_comp_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.OVERTIME,
-            extract('year', Absence.date) == year
-        ).all()
-        overtime_comp_hours = sum(float(a.hours) for a in overtime_comp_absences)
+        overtime_comp_hours = hours_by_type.get(AbsenceType.OVERTIME, 0.0)
         overtime_comp_days = overtime_comp_hours / float(daily_target)
 
-        other_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.OTHER,
-            extract('year', Absence.date) == year
-        ).all()
-        other_hours = sum(float(a.hours) for a in other_absences)
+        other_hours = hours_by_type.get(AbsenceType.OTHER, 0.0)
         other_days = other_hours / float(daily_target)
 
         effective_sick_days = sick_days if include_health_data else 0.0
@@ -258,6 +242,12 @@ def export_monthly_report(
     # Generate Excel file
     excel_file = export_service.generate_monthly_report(db, year, month_num, include_health_data)
 
+    # F-053: release the DB connection before streaming. The workbook is
+    # already fully materialised in the BytesIO, so holding a connection
+    # during the client download is wasted pool capacity. Concurrent admin
+    # exports would otherwise starve the default pool_size=5.
+    db.close()
+
     # Create filename
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.xlsx"
 
@@ -300,6 +290,7 @@ def export_yearly_report(
         db.commit()
 
     excel_file = export_service.generate_yearly_report(db, year, include_health_data)
+    db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_{year}.xlsx"
     return StreamingResponse(
         excel_file,
@@ -336,6 +327,7 @@ def export_yearly_report_classic(
         db.commit()
 
     excel_file = export_service.generate_yearly_report_classic(db, year, include_health_data)
+    db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_Classic_{year}.xlsx"
     return StreamingResponse(
         excel_file,
@@ -377,6 +369,7 @@ def export_monthly_report_ods(
         db.commit()
 
     ods_file = ods_export_service.generate_monthly_report(db, year, month_num, include_health_data)
+    db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.ods"
     return StreamingResponse(
         ods_file,
@@ -414,6 +407,7 @@ def export_monthly_report_pdf(
         db.commit()
 
     pdf_file = export_service.generate_monthly_report_pdf(db, year, month_num, include_health_data)
+    db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.pdf"
     return StreamingResponse(
         pdf_file,
@@ -432,6 +426,7 @@ def export_yearly_report_ods(
 ):
     """Export yearly detailed report as ODS file."""
     ods_file = ods_export_service.generate_yearly_report(db, year)
+    db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_{year}.ods"
     return StreamingResponse(
         ods_file,
@@ -450,6 +445,7 @@ def export_yearly_report_classic_ods(
 ):
     """Export yearly classic report as ODS file."""
     ods_file = ods_export_service.generate_yearly_report_classic(db, year)
+    db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_Classic_{year}.ods"
     return StreamingResponse(
         ods_file,
@@ -514,7 +510,7 @@ def get_sunday_summary(
             db.query(TimeEntry)
             .filter(
                 TimeEntry.user_id == user.id,
-                extract("year", TimeEntry.date) == year,
+                date_in_year(TimeEntry.date, year),
             )
             .all()
         )
@@ -563,7 +559,7 @@ def get_night_work_summary(
             db.query(TimeEntry)
             .filter(
                 TimeEntry.user_id == user.id,
-                extract("year", TimeEntry.date) == year,
+                date_in_year(TimeEntry.date, year),
                 TimeEntry.end_time.isnot(None),
             )
             .order_by(TimeEntry.date)
@@ -621,7 +617,7 @@ def get_compensatory_rest(
             db.query(TimeEntry)
             .filter(
                 TimeEntry.user_id == user.id,
-                extract("year", TimeEntry.date) == year,
+                date_in_year(TimeEntry.date, year),
                 TimeEntry.end_time.isnot(None),
             )
             .all()
@@ -636,7 +632,8 @@ def get_compensatory_rest(
         for e in entries:
             weekday = e.date.weekday()
             is_sun = weekday == 6
-            is_hol = _is_holiday(db, e.date)
+            # F-026: is_holiday requires tenant_id per CLAUDE.md multi-tenant rules
+            is_hol = _is_holiday(db, e.date, tenant_id=current_user.tenant_id)
             if is_sun or is_hol:
                 sunday_holidays_worked.append({
                     "date": e.date,

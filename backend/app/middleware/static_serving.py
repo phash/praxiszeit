@@ -2,6 +2,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, PlainTextResponse
 
+from app.config import settings
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
@@ -26,9 +28,21 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "base-uri 'self'; "
             "form-action 'self';"
         )
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
+        # F-050: HSTS only on HTTPS. Setting HSTS over HTTP is useless in
+        # Chrome/Firefox (they ignore it) but Safari historically accepted
+        # it, which can brick a native-Windows install that was accessed
+        # via HTTP:// first. Gate on COOKIE_SECURE (operator explicitly
+        # enabled HTTPS) OR the current request scheme actually being
+        # https — whichever we can observe.
+        is_https = (
+            settings.COOKIE_SECURE
+            or request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto") == "https"
         )
+        if is_https:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
         return response
 
 

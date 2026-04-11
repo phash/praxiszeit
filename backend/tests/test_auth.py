@@ -83,13 +83,23 @@ def test_decode_invalid_token():
     assert payload is None
 
 
-def test_password_truncation():
-    """Prüft dass überlange Passwörter korrekt behandelt werden — bcrypt schneidet bei 72 Bytes ab."""
+def test_long_password_not_truncated():
+    """
+    F-041: bcrypt_sha256 hashes the full password with SHA-256 first, so
+    passwords >72 bytes are NOT silently truncated anymore. Two different
+    long passwords that share only their first 72 bytes must now produce
+    DIFFERENT verification results.
+    """
     long_password = "a" * 100  # 100 characters
     hashed = auth_service.hash_password(long_password)
-    
-    # Should successfully hash and verify
+
+    # Same full password verifies
     assert auth_service.verify_password(long_password, hashed) is True
-    
-    # First 72 chars should also verify (bcrypt limitation)
-    assert auth_service.verify_password("a" * 72, hashed) is True
+
+    # F-041: only the first 72 chars must NOT verify — this used to be
+    # a bcrypt truncation foot-gun that made "password123" + 100 random
+    # chars equivalent to "password123" + any other 100 chars.
+    assert auth_service.verify_password("a" * 72, hashed) is False
+
+    # And obviously a different full-length password fails
+    assert auth_service.verify_password("b" * 100, hashed) is False
