@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.3.3"
+APP_VERSION="1.3.4"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -32,6 +32,7 @@ BUILD_LINUX=true
 BUILD_WINDOWS=true
 BUILD_MACOS=true
 SKIP_DOWNLOAD=false
+SKIP_FRONTEND=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -39,6 +40,7 @@ while [[ $# -gt 0 ]]; do
         --windows-only)  BUILD_LINUX=false; BUILD_MACOS=false; shift ;;
         --macos-only)    BUILD_LINUX=false; BUILD_WINDOWS=false; shift ;;
         --skip-download) SKIP_DOWNLOAD=true; shift ;;
+        --skip-frontend) SKIP_FRONTEND=true; shift ;;
         --version)       APP_VERSION="$2"; shift 2 ;;
         *)               APP_VERSION="$1"; shift ;;
     esac
@@ -157,11 +159,21 @@ step "1 — Cleanup + Frontend bauen"
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}" "${DIST_DIR}" "${CACHE_DIR}"
 
-if [ -d "${REPO_DIR}/frontend/dist" ]; then
-    info "Frontend-Build vorhanden, ueberspringe npm build"
+# F-055 (1.3.4): Frontend IMMER neu bauen. Die alte "skip if dist/ exists"-
+# Logik hat in der Session 2026-04-11 alle 1.3.x-ZIPs mit einem pre-1.3.0-
+# Frontend ausgeliefert (ohne CSRF-Interceptor), weil eine alte dist/ im
+# Repo lag. Ergebnis: Backend 1.3.x + Frontend pre-1.3.0 -> jede mutating
+# Operation vom Browser haengt am CSRF-Check. Kosten: 5-10 Sek fuer einen
+# vite build. Wer's wirklich ueberspringen will: --skip-frontend.
+if [ "${SKIP_FRONTEND:-false}" = true ]; then
+    info "Frontend-Build uebersprungen (SKIP_FRONTEND=true)"
+    if [ ! -d "${REPO_DIR}/frontend/dist" ]; then
+        error "SKIP_FRONTEND gesetzt, aber keine frontend/dist/ vorhanden"
+        exit 1
+    fi
 else
-    info "Baue Frontend..."
-    (cd "${REPO_DIR}/frontend" && npm ci && npm run build)
+    info "Baue Frontend (vite build)..."
+    (cd "${REPO_DIR}/frontend" && npm ci --silent && npm run build)
 fi
 
 # =============================================================================

@@ -263,8 +263,9 @@ function Show-ProgressPage {
         @{ Id='backup'; Text='2. Datenbank-Backup erstellen' },
         @{ Id='stop';   Text='3. PraxisZeit-Service stoppen' },
         @{ Id='copy';   Text='4. Dateien aktualisieren' },
-        @{ Id='start';  Text='5. Service starten' },
-        @{ Id='task';   Text='6. Scheduled Task registrieren' }
+        @{ Id='pip';    Text='5. Python-Dependencies pruefen' },
+        @{ Id='start';  Text='6. Service starten' },
+        @{ Id='task';   Text='7. Scheduled Task registrieren' }
     )
     $script:stepLabels = @{}
     $y = 50
@@ -399,14 +400,18 @@ function Step-Backup {
     }
     try {
         $env:PYTHONUTF8 = '1'
+        # PowerShell 5.1 / .NET Framework hat KEIN ProcessStartInfo.ArgumentList
+        # (kam erst mit .NET Core 2.1). Wir bauen den Argument-String selbst und
+        # quoten den server-Pfad, falls er Spaces enthaelt.
+        $quotedServer = if ($server -match '\s') { "`"$server`"" } else { $server }
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $python
-        $psi.ArgumentList.Add($server) | Out-Null
-        $psi.ArgumentList.Add('backup') | Out-Null
+        $psi.Arguments = "$quotedServer backup"
         $psi.WorkingDirectory = $InstallDir
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
         $proc = [System.Diagnostics.Process]::Start($psi)
         $stdout = $proc.StandardOutput.ReadToEnd()
         $stderr = $proc.StandardError.ReadToEnd()
@@ -430,6 +435,57 @@ function Step-Backup {
         Write-Log "FEHLER beim Backup: $_"
         Set-StepStatus 'backup' 'warn'
         return $true
+    }
+}
+
+function Step-PipInstall {
+    Set-StepStatus 'pip' 'running'
+    Write-Log 'Installiere/aktualisiere Python-Dependencies (idempotent)...'
+    if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'pip' 'ok'; return $true }
+
+    $python = Join-Path $InstallDir 'bin\python\python.exe'
+    $req = Join-Path $InstallDir 'app\backend\requirements.txt'
+    if (-not (Test-Path $python)) {
+        Write-Log "WARNUNG: Python nicht gefunden - pip install uebersprungen"
+        Set-StepStatus 'pip' 'warn'
+        return $true
+    }
+    if (-not (Test-Path $req)) {
+        Write-Log "WARNUNG: requirements.txt nicht gefunden - pip install uebersprungen"
+        Set-StepStatus 'pip' 'warn'
+        return $true
+    }
+    try {
+        $env:PYTHONUTF8 = '1'
+        $quotedReq = if ($req -match '\s') { "`"$req`"" } else { $req }
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $python
+        $psi.Arguments = "-m pip install --quiet -r $quotedReq"
+        $psi.WorkingDirectory = $InstallDir
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $stdout = $proc.StandardOutput.ReadToEnd()
+        $stderr = $proc.StandardError.ReadToEnd()
+        $proc.WaitForExit()
+        $rc = $proc.ExitCode
+        if ($rc -eq 0) {
+            Write-Log 'Python-Dependencies aktuell'
+            Set-StepStatus 'pip' 'ok'
+            return $true
+        }
+        Write-Log "FEHLER: pip install exit=$rc"
+        foreach ($line in ($stderr -split "`r?`n")) {
+            if ($line.Trim()) { Write-Log "  $line" }
+        }
+        Set-StepStatus 'pip' 'fail'
+        return $false
+    } catch {
+        Write-Log "FEHLER bei pip install: $_"
+        Set-StepStatus 'pip' 'fail'
+        return $false
     }
 }
 
@@ -553,21 +609,29 @@ function Invoke-Update {
     Write-Log "Quelle:  $WizardDirResolved"
     Write-Log ''
 
-    $ok1 = Step-ACLFix;       Update-Progress 10
-    $ok2 = Step-Backup;       Update-Progress 30
-    $ok3 = Step-StopService;  Update-Progress 45
+    $ok1 = Step-ACLFix;        Update-Progress 8
+    $ok2 = Step-Backup;        Update-Progress 25
+    $ok3 = Step-StopService;   Update-Progress 40
     if (-not $ok3) { return $false }
-    $ok4 = Step-CopyFiles;    Update-Progress 75
+    $ok4 = Step-CopyFiles;     Update-Progress 60
     if (-not $ok4) {
         Write-Log ''
         Write-Log 'Versuche Service trotzdem wieder zu starten...'
         Step-StartService | Out-Null
         return $false
     }
-    $ok5 = Step-StartService; Update-Progress 92
-    $ok6 = Step-ScheduledTask; Update-Progress 100
+    $ok5 = Step-PipInstall;    Update-Progress 78
+    if (-not $ok5) {
+        Write-Log ''
+        Write-Log 'pip install fehlgeschlagen - Service wird nicht starten koennen.'
+        Write-Log 'Manuell nachholen mit:'
+        Write-Log "  $InstallDir\bin\python\python.exe -m pip install -r $InstallDir\app\backend\requirements.txt"
+        return $false
+    }
+    $ok6 = Step-StartService;  Update-Progress 92
+    $ok7 = Step-ScheduledTask; Update-Progress 100
 
-    return ($ok5 -and $ok6)
+    return ($ok6 -and $ok7)
 }
 
 function Show-Done([bool]$success) {

@@ -1,5 +1,95 @@
 # Changelog
 
+## [1.3.4] - 2026-04-11
+
+**Massives Cleanup-Release nach einer Live-Debugging-Session auf einem
+Kunden-Windows-Server.** Alle 1.3.x-ZIPs davor (1.3.0 bis 1.3.3) hatten
+einen kritischen Auslieferungs-Bug: das **Frontend-Bundle** war ein
+uralter vor-Sprint-1.3.0-Build (ohne CSRF-Interceptor), weil
+`tools/build-release.sh` bei existierender `frontend/dist/` den
+vite-Build uebersprang. Kombiniert mit dem neuen CSRF-Middleware-Check
+im Backend hat das jede mutating Operation aus dem Browser zum 403
+gemacht. Der gesamte Tag war im Wesentlichen eine Kaskade aus diesem
+einen Auslieferungsfehler + Follow-up-Bugs.
+
+### 🔴 Auslieferungs-Bug (hoch kritisch)
+- **F-055: `tools/build-release.sh`** baut das Frontend jetzt **immer**
+  neu (vite build, 5-10 Sek). Die alte "skip if dist/ exists"-
+  Optimierung wird nur noch greifen wenn explizit `--skip-frontend`
+  uebergeben wird, und selbst dann prueft sie dass dist/ wirklich da
+  ist. Ohne diesen Fix haben alle 1.3.0-1.3.3-ZIPs stale Frontend
+  mitausgeliefert. Der Symptom ist jede mutating Operation -> 403
+  CSRF, obwohl Backend+Middleware korrekt waren.
+
+### 🔴 Process Manager Fixes
+- **F-053: `praxiszeit-server.py` ssl_cert Pfad-Resolution** —
+  relative Pfade in `praxiszeit.conf` (z.B. `"config/ssl/cert.pem"`)
+  werden jetzt relativ zu `BASE_DIR` (Install-Root) aufgeloest, nicht
+  mehr relativ zu `CONFIG_DIR`. Der alte Code hat aus
+  `config/ssl/cert.pem` -> `<install>/config/config/ssl/cert.pem`
+  gemacht und die Datei nie gefunden. Resultat: `SSL cert/key not
+  found` trotz vorhandener Dateien, Startup ohne TLS.
+- **F-054: `praxiszeit-server.py` Health-Check Protocol** — die
+  Health-Check-URL wird jetzt an `ssl_enabled` (tatsaechlicher State)
+  gekoppelt, nicht an die Truthiness der Config-Strings `ssl_cert` /
+  `ssl_key`. Wenn die Config auf Cert-Dateien zeigte die nicht
+  existierten, pollte der alte Code `https://localhost:443/api/health`
+  gegen einen Plain-HTTP-Server -> TLS-Handshake-Fehler -> 30 Sek
+  Timeout -> `uvicorn failed to become healthy` -> NSSM-Restart-Loop.
+- **`load_config()` BOM-Toleranz** — `praxiszeit.conf` die mit Notepad
+  editiert wurde hat ein UTF-8 BOM am Anfang, `tomllib` knallt dann
+  mit `TOMLDecodeError: Invalid statement (at line 1, column 1)` und
+  der Service crasht sofort nach dem Start. `load_config` strippt den
+  BOM jetzt automatisch mit einer WARN-Meldung und faengt ungueltiges
+  UTF-8 / TOML-Syntax-Fehler mit lesbarer Fehlermeldung ab.
+
+### 🔴 Update-Wizard Fixes
+- **`update-wizard.ps1` Step-Backup** nutzte
+  `$psi.ArgumentList.Add(...)` — das ist eine **.NET 5+ API**, die auf
+  Windows-built-in PowerShell 5.1 (.NET Framework 4.x) nicht
+  existiert. `$psi.ArgumentList` ist dort `$null`, `.Add()` crasht mit
+  "Es ist nicht moeglich, eine Methode fuer einen Ausdruck
+  aufzurufen, der den Wert NULL hat". Fix: `$psi.Arguments` als String
+  (mit Quoting fuer Pfade mit Spaces).
+- **Neue `Step-PipInstall`** — laeuft idempotent nach dem Robocopy
+  Dateien-Update und vor dem Service-Start. Fuehrt
+  `python -m pip install --quiet -r requirements.txt` aus. Ohne diesen
+  Schritt hatten Updates zwischen Releases mit neuen Python-
+  Dependencies keine Chance zu funktionieren, weil der Wizard die
+  Files kopiert hat aber das site-packages nie aktualisiert wurde.
+- **em-dashes entfernt** aus den Script-Strings (war die 1.3.3
+  Hotfix-Ursache, dokumentiert hier fuer den Kontext).
+
+### 🟡 Neues Tool
+- **`tools/generate-self-signed-cert.py`** — offizielles CLI-Tool zum
+  Generieren von self-signed SSL-Certs via `cryptography`. Parameter:
+  `<ip> [<practice_name>] [<out_dir>]`. Setzt Subject CN=IP, SAN mit
+  `localhost` + `127.0.0.1` + IP, 10 Jahre gueltig, RSA 2048 +
+  SHA-256. Auf Unix zusaetzlich `chmod 0600` auf `key.pem`. Ersetzt
+  die Linux-install.sh-openssl-Generation cross-platform und wird in
+  der kommenden 1.4.0 `praxiszeit.exe` als optionaler Installer-Step
+  eingebaut.
+- `datetime.utcnow()` -> `datetime.now(timezone.utc)` im Tool (die
+  inline-Variante aus der Live-Debugging-Session hatte
+  DeprecationWarnings in Python 3.13).
+
+### 🟡 Build
+- `tools/build-release.sh` hat jetzt `--skip-frontend` als Flag (als
+  Escape-Hatch, nicht als Default). Default-Version auf `1.3.4`.
+
+### 📝 Bekannte Baustellen fuer 1.4.0
+- **Service-Worker + self-signed Cert**: Chrome weigert sich, einen SW
+  ueber HTTPS mit untrusted Cert zu registrieren. Fuer Offline-/PWA-
+  Features muss das Cert als Trusted Root auf jedem Client installiert
+  werden. Workaround fuer die Praxis: SW-Registrierung defensiv
+  abschalten wenn das Cert nicht trusted ist.
+- **`praxiszeit.exe` als Single-File-Installer** (Inno Setup) — war
+  schon im Native-Installer-Design (Spec §6) vorgesehen, ersetzt dann
+  `setup.bat` + `install-service.bat` + `update-wizard.*` durch einen
+  echten Windows-Installer mit Wizard-Pages. Baustelle fuer 1.4.0.
+
+---
+
 ## [1.3.3] - 2026-04-11
 
 **Hotfix: update-wizard.ps1 Parse-Fehler auf deutschem Windows.**
