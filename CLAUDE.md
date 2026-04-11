@@ -24,7 +24,10 @@ ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 ```bash
 bash tools/build-release.sh                    # Release-Pakete bauen (Linux/Windows/macOS)
 bash tools/build-release.sh --linux-only       # Nur Linux
+bash tools/build-release.sh --windows-only --skip-download   # Rebuild mit Cache
 ```
+Git Bash on Windows: `rsync`/`zip` fehlen → Script hat `tar`/PowerShell-`Compress-Archive`-Fallbacks.
+PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe` (kein Webformular).
 → Details: [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md)
 
 ### Tests
@@ -54,6 +57,8 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **Export Multi-Entry:** Mehrere Einträge pro Tag werden korrekt exportiert
 - **Native-Modus:** `SERVE_FRONTEND=True` → FastAPI liefert Frontend (nginx entfällt), `False` (Default) = Docker
 - **Native Windows-Fallstricke:** Siehe `docs/NATIVE-WINDOWS-PITFALLS.md` (psql -v, Glob-Expansion, SYSTEM-Permissions, cp1252, SPA-Routing)
+- **setup.bat `DisableDelayedExpansion`:** Absicht (PowerShell-Passwort mit `!`). `%VAR%` in `(...)`-Blöcken wird beim Block-Parse substituiert → leere Vars erzeugen Syntax-Fehler (`if  GEQ 16`). Defaults vor dem Block setzen.
+- **setup.bat PG-Reuse:** Existierende PG-Installation (Registry `HKLM\SOFTWARE\PostgreSQL\Installations` + `%ProgramFiles%\PostgreSQL\{14..18}`) wird bei Major ≥ 16 per `mklink /J` verlinkt statt neu installiert. `rd /s /q` folgt Junctions nicht → `uninstall.bat` bleibt sicher.
 - **SPA-Fallback:** Middleware statt catch-all Route! `@app.get("/{full_path:path}")` verursacht 405 für POST/PUT/DELETE
 - **SECRET_KEY persistieren:** Muss in `config/.secret-key` gespeichert werden, sonst Session-Verlust bei Restart
 - **cookie_secure:** Muss `false` sein ohne SSL, sonst lehnt Browser das Refresh-Cookie ab
