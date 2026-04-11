@@ -16,6 +16,27 @@ from app.services import auth_service
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
+def _get_user_in_tenant(db: Session, user_id: str, current_user: User) -> User:
+    """
+    F-026: Look up a user by id, guaranteeing they belong to the caller's
+    tenant. Raises 404 on not-found or cross-tenant access (indistinguishable
+    from the outside so we don't leak tenant membership).
+
+    Every admin endpoint that accepts a ``user_id`` path parameter must use
+    this helper instead of a raw ``db.query(User).filter(User.id == …)``.
+    RLS catches cross-tenant access already, but CLAUDE.md explicitly
+    requires belt-and-suspenders tenant scoping on bulk ops and lookups.
+    """
+    user = (
+        db.query(User)
+        .filter(User.id == user_id, User.tenant_id == current_user.tenant_id)
+        .first()
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    return user
+
+
 # ── User Management ──────────────────────────────────────────────────────
 
 @router.get("/users", response_model=List[UserListResponse])
@@ -42,18 +63,36 @@ def get_deletion_candidates(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """DSGVO Art. 17: List inactive users with anonymization/purge eligibility."""
-    inactive_users = db.query(User).filter(User.is_active == False).order_by(User.last_name, User.first_name).all()
+    """DSGVO Art. 17: List inactive users with anonymization/purge eligibility.
+
+    F-055: Bulk-fetch the last entry date for all inactive users in a
+    single GROUP BY instead of N+1 per-user lookups.
+    """
+    inactive_users = db.query(User).filter(
+        User.is_active == False,
+        User.tenant_id == current_user.tenant_id,  # F-026: explicit scope
+    ).order_by(User.last_name, User.first_name).all()
+
+    if not inactive_users:
+        return []
+
+    user_ids = [u.id for u in inactive_users]
+    # One GROUP BY query — Postgres uses the (tenant_id, user_id, date)
+    # composite index from migration 031 to answer this in O(log n).
+    last_entry_rows = db.query(
+        TimeEntry.user_id,
+        func.max(TimeEntry.date).label("last_date"),
+    ).filter(
+        TimeEntry.tenant_id == current_user.tenant_id,
+        TimeEntry.user_id.in_(user_ids),
+    ).group_by(TimeEntry.user_id).all()
+    last_entry_by_user = {row.user_id: row.last_date for row in last_entry_rows}
 
     today = today_local()
     result = []
 
     for user in inactive_users:
-        last_entry = db.query(TimeEntry).filter(
-            TimeEntry.user_id == user.id
-        ).order_by(TimeEntry.date.desc()).first()
-
-        last_entry_date = last_entry.date if last_entry else None
+        last_entry_date = last_entry_by_user.get(user.id)
         days_since = (today - last_entry_date).days if last_entry_date else None
         is_anonymized = user.username.startswith("deleted_")
 
@@ -94,7 +133,7 @@ def anonymize_user(
     current_user: User = Depends(require_admin),
 ):
     """DSGVO Art. 17: Anonymize an inactive user in-place. Keeps time entries (ArbZG SS16 -- 2-year retention), deletes absences."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     if user.is_active:
@@ -150,7 +189,7 @@ def purge_user(
     current_user: User = Depends(require_admin),
 ):
     """DSGVO Art. 17: Permanently delete a user and all data. Only allowed after ArbZG SS16 retention period (730 days)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     if user.is_active:
@@ -170,11 +209,17 @@ def purge_user(
 
     # Remove FK dependencies before deleting user.
     # For changed_by references: SET NULL to preserve other users' audit trails.
+    # F-026: explicit tenant_id filter on every bulk op (CLAUDE.md rule —
+    # RLS is belt-and-suspenders but the filter must be present in the query).
     db.query(TimeEntryAuditLog).filter(
-        TimeEntryAuditLog.changed_by == user.id
+        TimeEntryAuditLog.changed_by == user.id,
+        TimeEntryAuditLog.tenant_id == current_user.tenant_id,
     ).update({TimeEntryAuditLog.changed_by: None}, synchronize_session=False)
     # Delete the purged user's own audit log entries.
-    db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.user_id == user.id).delete()
+    db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.user_id == user.id,
+        TimeEntryAuditLog.tenant_id == current_user.tenant_id,
+    ).delete(synchronize_session=False)
 
     # Audit after cleaning up the user's logs (use admin's own ID since target will be deleted)
     log = TimeEntryAuditLog(
@@ -188,13 +233,17 @@ def purge_user(
     )
     db.add(log)
     db.flush()
-    # Clean up vacation requests
+    # Clean up vacation requests (F-026: explicit tenant scoping)
     from app.models.vacation_request import VacationRequest
-    db.query(VacationRequest).filter(VacationRequest.user_id == user.id).delete(synchronize_session=False)
+    db.query(VacationRequest).filter(
+        VacationRequest.user_id == user.id,
+        VacationRequest.tenant_id == current_user.tenant_id,
+    ).delete(synchronize_session=False)
     # Nullify reviewed_by references
-    db.query(VacationRequest).filter(VacationRequest.reviewed_by == user.id).update(
-        {"reviewed_by": None}, synchronize_session=False
-    )
+    db.query(VacationRequest).filter(
+        VacationRequest.reviewed_by == user.id,
+        VacationRequest.tenant_id == current_user.tenant_id,
+    ).update({"reviewed_by": None}, synchronize_session=False)
     db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id, WorkingHoursChange.tenant_id == current_user.tenant_id).delete()
     db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id, ChangeRequest.tenant_id == current_user.tenant_id).delete()
     db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id).delete()
@@ -208,7 +257,7 @@ def purge_user(
 @router.get("/users/{user_id}", response_model=UserResponse)
 def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Get a specific user by ID (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     return user
@@ -264,7 +313,7 @@ def update_user(
     current_user: User = Depends(require_admin)
 ):
     """Update user data (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -298,7 +347,7 @@ def set_password(
     current_user: User = Depends(require_admin),
 ):
     """Set a new password for a user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -315,7 +364,7 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     if str(current_user.id) == user_id:
         raise HTTPException(status_code=400, detail="Sie können sich nicht selbst deaktivieren")
 
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -329,7 +378,7 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
 @router.post("/users/{user_id}/reactivate", response_model=UserResponse)
 def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Reactivate a previously deactivated user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -343,7 +392,7 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
 @router.post("/users/{user_id}/toggle-hidden", response_model=UserResponse)
 def toggle_hidden_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Toggle the is_hidden flag for a user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -362,7 +411,7 @@ def list_working_hours_changes(
     current_user: User = Depends(require_admin)
 ):
     """Get working hours change history for a user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -380,7 +429,7 @@ def create_working_hours_change(
     current_user: User = Depends(require_admin)
 ):
     """Create a new working hours change for a user (admin only)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -433,7 +482,7 @@ def delete_working_hours_change(
     if not change:
         raise HTTPException(status_code=404, detail="Stundenänderung nicht gefunden")
 
-    user = db.query(User).filter(User.id == user_id).first()
+    user = _get_user_in_tenant(db, user_id, current_user)
     db.delete(change)
     db.commit()
 

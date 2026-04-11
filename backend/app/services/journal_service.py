@@ -4,10 +4,10 @@ from calendar import monthrange
 from decimal import Decimal
 from typing import Dict, List, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import extract
 
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service
+from app.services.date_filters import date_in_month
 
 
 _ABSENCE_TYPE_MAP = {
@@ -24,8 +24,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
 
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
-        extract("year", TimeEntry.date) == year,
-        extract("month", TimeEntry.date) == month,
+        date_in_month(TimeEntry.date, year, month),
     ).order_by(TimeEntry.date, TimeEntry.start_time).all()
 
     entries_by_date: Dict[date, List[TimeEntry]] = {}
@@ -34,8 +33,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
 
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
-        extract("year", Absence.date) == year,
-        extract("month", Absence.date) == month,
+        date_in_month(Absence.date, year, month),
     ).order_by(Absence.date, Absence.type).all()
 
     absences_by_date: Dict[date, List[Absence]] = {}
@@ -43,8 +41,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
         absences_by_date.setdefault(a.date, []).append(a)
 
     holidays = db.query(PublicHoliday).filter(
-        extract("year", PublicHoliday.date) == year,
-        extract("month", PublicHoliday.date) == month,
+        date_in_month(PublicHoliday.date, year, month),
     ).all()
     holiday_map: Dict[date, str] = {h.date: h.name for h in holidays}
 

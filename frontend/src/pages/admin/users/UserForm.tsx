@@ -5,6 +5,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { parseHours } from '../../../utils/formatters';
 
 interface User {
   id: string;
@@ -218,7 +219,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               type="number"
               step="0.5"
               value={formData.weekly_hours}
-              onChange={(e) => setFormData({ ...formData, weekly_hours: parseFloat(e.target.value) })}
+              onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
               required
               min="0"
               max="60"

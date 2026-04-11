@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from app.services.date_filters import date_in_year, date_in_month
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta, date
 
@@ -49,6 +50,11 @@ def create_vacation_request(
     """
     Create a vacation approval request.
     Only available when vacation_approval_required=true.
+
+    F-045: validation parity with create_absence — reject invalid ranges,
+    past dates, first/last_work_day violations and duplicate-pending
+    requests up front so they don't reach the admin review queue as
+    garbage.
     """
     if get_setting(db, "vacation_approval_required", current_user.tenant_id, "false").lower() != "true":
         raise HTTPException(
@@ -56,13 +62,78 @@ def create_vacation_request(
             detail="Urlaubsanträge sind nicht aktiviert. Urlaub direkt über Abwesenheiten buchen.",
         )
 
+    # 1. date range sanity
+    start_date = data.date
+    end_date = data.end_date if data.end_date else data.date
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Enddatum muss nach dem Startdatum liegen",
+        )
+
+    # 2. first_work_day / last_work_day (parity with create_absence)
+    if current_user.first_work_day and start_date < current_user.first_work_day:
+        raise HTTPException(
+            status_code=400,
+            detail="Datum liegt vor dem ersten Arbeitstag",
+        )
+    if current_user.last_work_day and end_date > current_user.last_work_day:
+        raise HTTPException(
+            status_code=400,
+            detail="Datum liegt nach dem letzten Arbeitstag",
+        )
+
+    # 3. reject duplicate PENDING requests that overlap this range for
+    # the same user (prevents double-submission from impatient users)
+    existing_pending = db.query(VacationRequest).filter(
+        VacationRequest.user_id == current_user.id,
+        VacationRequest.tenant_id == current_user.tenant_id,
+        VacationRequest.status == VacationRequestStatus.PENDING.value,
+        VacationRequest.date <= end_date,
+        # range overlap: existing.end_date >= new.start_date
+        # end_date is NULL-safe via COALESCE to date
+    ).all()
+    for e in existing_pending:
+        e_end = e.end_date if e.end_date else e.date
+        if e_end >= start_date:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Offener Urlaubsantrag für Zeitraum {e.date}–{e_end} existiert bereits",
+            )
+
+    # 4. vacation budget check — only for the default 'vacation' type
+    absence_type = data.absence_type or "vacation"
+    if absence_type == "vacation":
+        from app.services import calculation_service
+        dates_by_year: dict[int, list] = {}
+        d = start_date
+        while d <= end_date:
+            if d.weekday() < 5:  # workdays only
+                dates_by_year.setdefault(d.year, []).append(d)
+            d += timedelta(days=1)
+
+        for check_year, year_dates in dates_by_year.items():
+            account = calculation_service.get_vacation_account(db, current_user, check_year)
+            year_hours_needed = sum(
+                float(calculation_service.get_daily_target_for_date(
+                    current_user, d,
+                    weekly_hours=calculation_service.get_weekly_hours_for_date(db, current_user, d),
+                ))
+                for d in year_dates
+            )
+            if float(account['remaining_hours']) - year_hours_needed < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Nicht genügend Urlaubstage für {check_year} ({account['remaining_days']:.1f} Tage verfügbar)",
+                )
+
     vr = VacationRequest(
         user_id=current_user.id,
         tenant_id=current_user.tenant_id,
         date=data.date,
         end_date=data.end_date,
         hours=data.hours,
-        absence_type=data.absence_type or "vacation",
+        absence_type=absence_type,
         note=data.note,
         status=VacationRequestStatus.PENDING.value,
     )
@@ -83,7 +154,7 @@ def list_my_vacation_requests(
     query = db.query(VacationRequest).filter(VacationRequest.user_id == current_user.id)
     if year:
         from sqlalchemy import extract
-        query = query.filter(extract('year', VacationRequest.date) == year)
+        query = query.filter(date_in_year(VacationRequest.date, year))
     if status:
         query = query.filter(VacationRequest.status == status)
     requests = query.order_by(VacationRequest.created_at.desc()).all()

@@ -1,12 +1,16 @@
 apiVersion: 1
 
+# F-051: Provisioned dashboards are version-controlled in
+# grafana/dashboards/ — any edits via the UI would be lost on the next
+# restart anyway. Lock them to read-only so operators can't accidentally
+# nuke observability history with the admin credentials.
 providers:
   - name: 'PraxisZeit'
     orgId: 1
     folder: ''
     type: file
-    disableDeletion: false
-    editable: true
+    disableDeletion: true
+    editable: false
     options:
       path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: false

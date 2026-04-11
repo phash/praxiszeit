@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Integer, Text, DateTime, Numeric, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Date, Time, Integer, Text, DateTime, Numeric, ForeignKey, UniqueConstraint, case
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -50,6 +50,29 @@ class TimeEntry(Base):
         net = duration_hours - break_hours
 
         return Decimal(str(max(round(net, 2), 0)))
+
+    @net_hours.expression
+    def net_hours(cls):
+        """
+        F-032: SQL-level expression for net_hours so callers can push
+        aggregation into Postgres via ``func.sum(TimeEntry.net_hours)`` and
+        avoid loading every row into Python. The Python path above stays
+        authoritative for single-row access (preserves Decimal rounding);
+        this expression mirrors it closely enough for aggregate queries.
+
+        NULL-safe: returns 0 when end_time is NULL (open entries).
+        Dialect-portable: uses CASE for the max(..., 0) floor instead of
+        Postgres-only GREATEST(), so the test suite on SQLite still works.
+        """
+        duration = (
+            func.extract("epoch", cls.end_time - cls.start_time) / 3600.0
+            - cls.break_minutes / 60.0
+        )
+        return case(
+            (cls.end_time.is_(None), 0),
+            (duration < 0, 0),
+            else_=duration,
+        )
 
     def __repr__(self):
         return f"<TimeEntry(id={self.id}, user_id={self.user_id}, date={self.date}, net_hours={self.net_hours})>"

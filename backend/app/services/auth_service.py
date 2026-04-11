@@ -6,25 +6,53 @@ from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from app.config import settings
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# F-041: Password hashing context.
+# - New hashes use bcrypt_sha256, which pre-hashes the password with SHA-256
+#   and then feeds the 43-char base64 output into bcrypt. This eliminates
+#   the bcrypt 72-byte truncation that silently made >72-char passphrases
+#   interchangeable.
+# - ``deprecated=["bcrypt"]`` marks existing bcrypt hashes as legacy but
+#   still verifiable; passlib's ``needs_update()`` can be used to migrate
+#   them opportunistically on the next successful login.
+pwd_context = CryptContext(
+    schemes=["bcrypt_sha256", "bcrypt"],
+    default="bcrypt_sha256",
+    deprecated=["bcrypt"],
+)
 
 # JWT settings
 ALGORITHM = "HS256"
 
 
 def hash_password(password: str) -> str:
-    """Hash a plain password using bcrypt."""
-    # Truncate to 72 bytes (bcrypt limitation)
-    password = password[:72]
+    """Hash a plain password. Uses bcrypt_sha256 (no 72-byte truncation)."""
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against a hashed password."""
-    # Truncate to 72 bytes (bcrypt limitation)
-    plain_password = plain_password[:72]
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a plain password against a stored hash.
+
+    Accepts both legacy bcrypt hashes and new bcrypt_sha256 hashes
+    transparently via passlib's CryptContext.
+    """
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except ValueError:
+        # Malformed hash (shouldn't happen with our own hashes, but be
+        # defensive so a corrupted user row can't crash the login path).
+        return False
+
+
+def needs_rehash(hashed_password: str) -> bool:
+    """Return True if the stored hash uses a deprecated scheme.
+
+    Callers can use this on a successful login to opportunistically
+    upgrade legacy bcrypt hashes to bcrypt_sha256.
+    """
+    try:
+        return pwd_context.needs_update(hashed_password)
+    except ValueError:
+        return False
 
 
 def create_access_token(user_id: str, role: str, token_version: int = 0, tenant_id: str = None) -> str:

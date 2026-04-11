@@ -212,7 +212,55 @@ def execute_import(
     """
     Führt den Import durch. Bei overwrite=True werden Konflikte überschrieben,
     sonst übersprungen. Schreibt Audit-Log-Einträge.
+
+    F-042: Fully wrapped in try/except. On any failure the whole batch
+    rolls back (so the DB can't end up with half-imported rows) and a
+    separate audit-log transaction is written to record the failure.
     """
+    try:
+        return _execute_import_inner(
+            user_id=user_id,
+            entries=entries,
+            overwrite=overwrite,
+            db=db,
+            changed_by_id=changed_by_id,
+            filename=filename,
+            tenant_id=tenant_id,
+        )
+    except Exception as exc:
+        db.rollback()
+        # Write a standalone failure audit log in a fresh transaction.
+        try:
+            failure_log = TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=user_id,
+                changed_by=changed_by_id,
+                action="import",
+                source="import",
+                new_note=(
+                    f"XLS-Import FEHLGESCHLAGEN | Benutzer: {user_id} "
+                    f"| Datei: {filename} | Fehler: {type(exc).__name__}: {exc}"[:1000]
+                ),
+                tenant_id=tenant_id,
+            )
+            db.add(failure_log)
+            db.commit()
+        except Exception:
+            db.rollback()
+        # Re-raise as ValueError so the router translates to HTTP 400 cleanly
+        raise ValueError(f"Import fehlgeschlagen: {exc}") from exc
+
+
+def _execute_import_inner(
+    user_id: uuid.UUID,
+    entries: list[ImportedEntry],
+    overwrite: bool,
+    db: Session,
+    changed_by_id: uuid.UUID,
+    filename: str,
+    tenant_id: uuid.UUID | None = None,
+) -> ImportResult:
+    """Actual import body. Callers should use execute_import() which wraps it."""
     imported = 0
     skipped = 0
     overwritten = 0

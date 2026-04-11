@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
@@ -22,6 +23,21 @@ import Privacy from './pages/Privacy';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 
+/**
+ * F-057: Router-aware error boundary wrapper.
+ *
+ * Without this, a single component crash pins the whole SPA on the
+ * "Etwas ist schiefgelaufen" screen until the user manually reloads,
+ * because the class-based ErrorBoundary has no way to clear its own
+ * state on route change. Passing a pathname-derived `key` forces React
+ * to unmount and remount the boundary whenever the route changes,
+ * resetting `hasError` for free.
+ */
+function RouterAwareErrorBoundary({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>;
+}
+
 // Protected Route Component
 function ProtectedRoute({
   children,
@@ -30,7 +46,8 @@ function ProtectedRoute({
   children: React.ReactNode;
   requiredRole?: 'admin' | 'employee';
 }) {
-  const { isAuthenticated, user } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -44,10 +61,32 @@ function ProtectedRoute({
 }
 
 function App() {
+  // F-023: silently try to restore the session from the HttpOnly refresh
+  // cookie on first mount. Until hydrate() resolves, render a minimal
+  // loading state so ProtectedRoute doesn't bounce to /login prematurely.
+  const hydrate = useAuthStore((s) => s.hydrate);
+  const isHydrating = useAuthStore((s) => s.isHydrating);
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
+
+  if (isHydrating) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex items-center justify-center min-h-screen bg-gray-50 text-gray-500"
+      >
+        Lade Sitzung…
+      </div>
+    );
+  }
+
   return (
     <ToastProvider>
       <BrowserRouter>
-        <ErrorBoundary>
+        <RouterAwareErrorBoundary>
           <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
@@ -96,7 +135,7 @@ function App() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </ErrorBoundary>
+        </RouterAwareErrorBoundary>
     </BrowserRouter>
     </ToastProvider>
   );

@@ -152,23 +152,20 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     entries_by_date: dict = {}
     for e in db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
-        extract("year", TimeEntry.date) == year,
-        extract("month", TimeEntry.date) == month,
+        date_in_month(TimeEntry.date, year, month),
     ).order_by(TimeEntry.start_time).all():
         entries_by_date.setdefault(e.date, []).append(e)
     absences_by_date = {
         a.date: a
         for a in db.query(Absence).filter(
             Absence.user_id == user.id,
-            extract("year", Absence.date) == year,
-            extract("month", Absence.date) == month,
+            date_in_month(Absence.date, year, month),
         ).all()
     }
     holidays_by_date = {
         h.date: h
         for h in db.query(PublicHoliday).filter(
-            extract("year", PublicHoliday.date) == year,
-            extract("month", PublicHoliday.date) == month,
+            date_in_month(PublicHoliday.date, year, month),
         ).all()
     }
 
@@ -358,7 +355,7 @@ def _yearly_overview_sheet(doc, db, users, year, bold):
             for a in db.query(Absence).filter(
                 Absence.user_id == user.id,
                 Absence.type == AbsenceType.VACATION,
-                extract("year", Absence.date) == year,
+                date_in_year(Absence.date, year),
             ).all()
         )
         sick_h = sum(
@@ -366,7 +363,7 @@ def _yearly_overview_sheet(doc, db, users, year, bold):
             for a in db.query(Absence).filter(
                 Absence.user_id == user.id,
                 Absence.type == AbsenceType.SICK,
-                extract("year", Absence.date) == year,
+                date_in_year(Absence.date, year),
             ).all()
         )
 
@@ -404,7 +401,7 @@ def _absences_overview_sheet(doc, db, users, year, bold):
                 for a in db.query(Absence).filter(
                     Absence.user_id == user.id,
                     Absence.type == atype,
-                    extract("year", Absence.date) == year,
+                    date_in_year(Absence.date, year),
                 ).all()
             ) / dt
 
@@ -453,20 +450,20 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
     entries_by_date: dict = {}
     for e in db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
-        extract("year", TimeEntry.date) == year,
+        date_in_year(TimeEntry.date, year),
     ).order_by(TimeEntry.start_time).all():
         entries_by_date.setdefault(e.date, []).append(e)
     absences_by_date = {
         a.date: a
         for a in db.query(Absence).filter(
             Absence.user_id == user.id,
-            extract("year", Absence.date) == year,
+            date_in_year(Absence.date, year),
         ).all()
     }
     holidays_by_date = {
         h.date: h
         for h in db.query(PublicHoliday).filter(
-            extract("year", PublicHoliday.date) == year,
+            date_in_year(PublicHoliday.date, year),
         ).all()
     }
 
@@ -627,8 +624,7 @@ def _classic_sheet(doc, db, user, year, bold):
                 for a in db.query(Absence).filter(
                     Absence.user_id == user.id,
                     Absence.type == atype,
-                    extract("year", Absence.date) == year,
-                    extract("month", Absence.date) == m,
+                    date_in_month(Absence.date, year, m),
                 ).all()
             )
 
@@ -647,8 +643,7 @@ def _classic_sheet(doc, db, user, year, bold):
         # Night work days for this month (§6 ArbZG)
         month_entries = db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
-            extract("year", TimeEntry.date) == year,
-            extract("month", TimeEntry.date) == m,
+            date_in_month(TimeEntry.date, year, m),
             TimeEntry.end_time.isnot(None),
         ).all()
         night_days = len({e.date for e in month_entries if is_night_work(e.start_time, e.end_time)})
@@ -669,7 +664,7 @@ def _classic_sheet(doc, db, user, year, bold):
     total_night = len({
         e.date for e in db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
-            extract("year", TimeEntry.date) == year,
+            date_in_year(TimeEntry.date, year),
             TimeEntry.end_time.isnot(None),
         ).all()
         if is_night_work(e.start_time, e.end_time)

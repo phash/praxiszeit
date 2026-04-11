@@ -6,6 +6,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../hooks/useConfirm';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { parseHours } from '../../../utils/formatters';
 
 interface WorkingHoursChange {
   id: string;
@@ -153,7 +154,7 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                       type="number"
                       step="0.5"
                       value={formData.weekly_hours}
-                      onChange={(e) => setFormData({ ...formData, weekly_hours: parseFloat(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
                       required
                       min="0"
                       max="60"

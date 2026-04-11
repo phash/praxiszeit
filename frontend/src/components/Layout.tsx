@@ -120,18 +120,31 @@ export default function Layout() {
   }, [isStampSheetOpen]);
 
   const handleLogout = async () => {
-    try {
-      // F-010: call backend to increment token_version and clear the HttpOnly cookie
-      await apiClient.post('/auth/logout');
-    } catch {
-      // Even if the backend call fails, clear local state
-    }
-    logout();
+    // authStore.logout() now handles the backend /auth/logout call, clears
+    // the in-memory access token, drops persist storage and wipes caches.
+    await logout();
     navigate('/login');
   };
 
   const isActive = (path: string) => {
-    return location.pathname === path;
+    // F-059: Highlight the nav entry on sub-routes as well.
+    // Example: /admin/users/:userId/journal should still light up the
+    // "Benutzerverwaltung" item.
+    //
+    // Two items keep exact-match semantics because they are nav roots
+    // with children below them — otherwise they would swallow every
+    // child route:
+    //   /      (Dashboard — parent of /time-tracking, /absences, …)
+    //   /admin (Admin-Dashboard — parent of /admin/users, /admin/reports, …)
+    if (path === '/' || path === '/admin') {
+      return location.pathname === path;
+    }
+    // Exact match OR a proper segment-prefix (so '/admin' doesn't
+    // incorrectly match '/admin-foo').
+    return (
+      location.pathname === path ||
+      location.pathname.startsWith(path + '/')
+    );
   };
 
   const navItems = [
