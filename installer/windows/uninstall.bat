@@ -96,6 +96,9 @@ echo Stoppe Services...
 net stop PraxisZeit 2>nul
 net stop PraxisZeit-PostgreSQL 2>nul
 
+echo Entferne Scheduled Backup Task...
+schtasks /delete /tn "PraxisZeit-Backup" /f 2>nul
+
 echo Entferne PraxisZeit Service...
 if exist "%NSSM%" (
     "%NSSM%" remove PraxisZeit confirm 2>nul

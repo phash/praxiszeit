@@ -11,6 +11,10 @@ REM Stop service
 echo Stopping PraxisZeit service...
 net stop PraxisZeit 2>nul
 
+REM Remove scheduled backup task (if present)
+echo Removing scheduled backup task...
+schtasks /delete /tn "PraxisZeit-Backup" /f 2>nul
+
 REM Remove service
 echo Removing service...
 "%NSSM%" remove PraxisZeit confirm

@@ -49,4 +49,26 @@ echo Adding firewall rule...
 netsh advfirewall firewall add rule name="PraxisZeit" dir=in action=allow protocol=TCP localport=443
 echo Firewall rule added for port 443.
 
+REM ============================================================
+REM Scheduled Task: taegliches DB-Backup um 03:00 (laeuft als SYSTEM,
+REM damit es config\.db-credentials lesen kann).
+REM ============================================================
+echo.
+echo Registriere Scheduled Task fuer taegliches Backup (03:00)...
+SET "BACKUP_BAT=%INSTALL_DIR%\backup.bat"
+if not exist "%BACKUP_BAT%" (
+    echo WARNUNG: backup.bat nicht gefunden unter %BACKUP_BAT% - Task nicht angelegt.
+    goto :task_done
+)
+
+REM Einzeiler weil caret-Continuation im if-Block unreliable ist
+schtasks /create /tn "PraxisZeit-Backup" /tr "\"%BACKUP_BAT%\"" /sc daily /st 03:00 /ru SYSTEM /f
+if errorlevel 1 (
+    echo WARNUNG: Scheduled Task konnte nicht angelegt werden.
+) else (
+    echo Scheduled Task "PraxisZeit-Backup" aktiv.
+)
+
+:task_done
+
 pause

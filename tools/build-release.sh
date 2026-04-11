@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.3.0"
+APP_VERSION="1.3.1"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -349,6 +349,7 @@ if [ "$BUILD_WINDOWS" = true ]; then
     cp "${REPO_DIR}/installer/windows/install-service.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/uninstall-service.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/uninstall.bat" "${WIN_DIR}/"
+    cp "${REPO_DIR}/installer/windows/backup.bat" "${WIN_DIR}/"
 
     info "Entpacke Python ${PYTHON_VERSION} (Windows x64)..."
     mkdir -p "${WIN_DIR}/bin/python"
