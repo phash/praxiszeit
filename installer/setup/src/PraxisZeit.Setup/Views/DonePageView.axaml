@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PraxisZeit.Setup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+             x:Class="PraxisZeit.Setup.Views.DonePageView"
+             x:DataType="vm:DonePageViewModel">
+
+    <StackPanel Margin="40" Spacing="20" VerticalAlignment="Center">
+        <TextBlock Text="Fertig!"
+                   FontSize="32" FontWeight="SemiBold"
+                   HorizontalAlignment="Center"/>
+
+        <TextBlock Text="{Binding Summary}"
+                   TextWrapping="Wrap"
+                   FontSize="14"
+                   HorizontalAlignment="Center"
+                   TextAlignment="Center"/>
+
+        <Border CornerRadius="6"
+                Padding="20"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                HorizontalAlignment="Center">
+            <StackPanel Spacing="8">
+                <TextBlock Text="PraxisZeit ist erreichbar unter:" FontSize="12" HorizontalAlignment="Center"/>
+                <TextBlock Text="{Binding BrowserUrl}"
+                           FontFamily="Consolas,Menlo,monospace"
+                           FontSize="16"
+                           Foreground="{DynamicResource SystemAccentColor}"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+
+</UserControl>

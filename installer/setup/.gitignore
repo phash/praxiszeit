@@ -1,0 +1,25 @@
+## .NET build artifacts
+bin/
+obj/
+
+## User-specific
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+
+## Test results
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## Rider
+.idea/
+*.DotSettings.user
