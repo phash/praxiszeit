@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.3.2] - 2026-04-11
+
+**Grafischer Update-Wizard fuer Windows.**
+
+### 🟢 Neue Features
+- **`installer/windows/update-wizard.bat` + `update-wizard.ps1`** —
+  WinForms-GUI-Wizard, der eine bestehende Installation auf die
+  gebuendelte Version aktualisiert. Erkennt Install-Verzeichnis
+  automatisch (Fallback: Folder-Browser), zeigt alte/neue Version im
+  Welcome-Screen, walkt durch sechs Schritte mit Live-Log und
+  Progress-Bar:
+  1. **ACL-Fix** auf `.db-credentials` (F-037, idempotent — greift auch
+     bei bestehenden 1.3.0-Installs)
+  2. **DB-Backup** via `praxiszeit-server.py backup` (Service laeuft
+     noch → pg_dump funktioniert)
+  3. **Service stoppen**
+  4. **`robocopy`** mit Excludes fuer `data/`, `logs/`, `ssl/`,
+     `praxiszeit.conf`, `.db-credentials`, `.secret-key`, `license.key`
+     → User-Daten bleiben unangetastet
+  5. **Service starten** (Alembic-Migrationen laufen beim Start)
+  6. **Scheduled Task `PraxisZeit-Backup`** registrieren/aktualisieren
+  Der Wizard refust, aus dem Installationsverzeichnis selbst gestartet
+  zu werden (verhindert Self-Overwrite-Korruption). Launcher erzwingt
+  Admin-Rechte via `net session`-Check und UAC-Prompt.
+
+### 🟡 Build
+- **`tools/build-release.sh`** kopiert `update-wizard.bat` und
+  `update-wizard.ps1` ins Windows-Paket. Default-Version auf 1.3.2
+  gebumpt. End-of-build-Summary unterscheidet jetzt Erstinstallation
+  und Update-Flow.
+
+---
+
 ## [1.3.1] - 2026-04-11
 
 **Windows Native: Automatisches DB-Backup + ACL-Fix.**

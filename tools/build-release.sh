@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.3.1"
+APP_VERSION="1.3.2"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -350,6 +350,8 @@ if [ "$BUILD_WINDOWS" = true ]; then
     cp "${REPO_DIR}/installer/windows/uninstall-service.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/uninstall.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/backup.bat" "${WIN_DIR}/"
+    cp "${REPO_DIR}/installer/windows/update-wizard.bat" "${WIN_DIR}/"
+    cp "${REPO_DIR}/installer/windows/update-wizard.ps1" "${WIN_DIR}/"
 
     info "Entpacke Python ${PYTHON_VERSION} (Windows x64)..."
     mkdir -p "${WIN_DIR}/bin/python"
@@ -505,11 +507,16 @@ $BUILD_LINUX && cat << EOF
 EOF
 
 $BUILD_WINDOWS && cat << EOF
-  Windows-Installation:
+  Windows-Erstinstallation:
     1. ZIP entpacken nach C:\\PraxisZeit\\
-    2. setup.bat ausfuehren (installiert Python-Dependencies)
-    3. install-service.bat ausfuehren (registriert Windows-Dienst)
+    2. setup.bat (als Administrator) ausfuehren
+    3. install-service.bat ausfuehren (Dienst + Firewall + Backup-Task)
     4. net start PraxisZeit
+
+  Windows-Update einer bestehenden Installation:
+    1. ZIP in einen TEMP-Ordner entpacken (NICHT ueber die Installation!)
+    2. update-wizard.bat (als Administrator) ausfuehren
+       -> GUI-Wizard: ACL-Fix, Backup, Stop, Copy, Start, Backup-Task
 
 EOF
 
