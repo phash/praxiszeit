@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.3.1] - 2026-04-11
+
+**Windows Native: Automatisches DB-Backup + ACL-Fix.**
+
+### 🟢 Neue Features
+- **`installer/windows/backup.bat`** — dünner Wrapper um
+  `praxiszeit-server.py backup`, loggt nach `logs/backup.log`, erzwingt
+  `PYTHONUTF8=1`. Manuell aufrufbar oder via Scheduled Task.
+- **`install-service.bat`** legt jetzt neben dem NSSM-Service und der
+  Firewall-Regel eine Scheduled Task `PraxisZeit-Backup` an (täglich
+  03:00, läuft als `SYSTEM`, damit `.db-credentials` gelesen werden
+  kann). Retention (31 Tage default, konfigurierbar via
+  `[backup] retention_days`) war bereits in 1.3.0 in `create_backup()`.
+- **`uninstall-service.bat` + `uninstall.bat`** entfernen die Scheduled
+  Task sauber mit `schtasks /delete`.
+
+### 🔴 Security / Fixes
+- **F-037: `_restrict_file_permissions()`** gewährt jetzt zusätzlich
+  `BUILTIN\Administrators:(R)` auf `.db-credentials` (via SID
+  `*S-1-5-32-544`, locale-unabhängig). Vorher konnte ein manueller
+  Admin-Aufruf von `praxiszeit-server.py backup` mit
+  `PermissionError: [Errno 13] '.db-credentials'` abbrechen, wenn der
+  Service die Datei zuvor als `SYSTEM`+`MACHINE$` geschrieben hatte.
+  Die scheduled task lief vorher schon korrekt (als `SYSTEM`), der Fix
+  betrifft ausschließlich den interaktiven CLI-Workflow.
+
+### 🟡 Build
+- **`tools/build-release.sh`** kopiert `backup.bat` ins Windows-Paket.
+  Default-Version auf `1.3.1` gebumpt.
+
+### 📝 Bekannte Lücken (nicht geschlossen)
+- **`core/updater.py`** hat noch keinen `apply`-Flow — die Admin-API
+  bietet nur `/status` + `/check`, kein `/download` + `/apply`. Das
+  pre-update-Backup (Spec §5) ist deshalb leer-konstruiert und wird
+  erst mit der Umsetzung der Apply-Route relevant.
+
+---
+
 ## [1.3.0] - 2026-04-11
 
 **Großer Security-, Stability-, Performance- und UX-Review — 41 gezielte Fixes.**

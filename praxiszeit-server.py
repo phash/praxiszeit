@@ -235,7 +235,15 @@ def _escape_pg_password(password: str) -> str:
 
 
 def _restrict_file_permissions(file_path: Path):
-    """Restrict file permissions to current user + SYSTEM (Windows) or 0600 (Unix)."""
+    """Restrict file permissions to current user + SYSTEM + local Administrators
+    (Windows) or 0600 (Unix).
+
+    F-037 (1.3.1): BUILTIN\\Administrators is granted read access so that a
+    human admin can run CLI commands like ``praxiszeit-server.py backup``
+    manually without tripping PermissionError on ``.db-credentials``. The
+    SID ``*S-1-5-32-544`` is used instead of the localized group name so
+    this works on German / English / other Windows locales identically.
+    """
     if IS_WINDOWS:
         try:
             username = os.environ.get("USERNAME", os.environ.get("USER", ""))
@@ -243,6 +251,8 @@ def _restrict_file_permissions(file_path: Path):
             if username:
                 cmds.append(["icacls", str(file_path), "/grant:r", f"{username}:(R,W)"])
             cmds.append(["icacls", str(file_path), "/grant", "SYSTEM:(R,W)"])
+            # F-037: local Administrators group (SID, locale-independent)
+            cmds.append(["icacls", str(file_path), "/grant", "*S-1-5-32-544:(R)"])
             for cmd in cmds:
                 subprocess.run(cmd, check=True, capture_output=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
