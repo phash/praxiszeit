@@ -49,8 +49,16 @@ if exist "%CREDS_FILE%" (
     )
 )
 
-REM Falls keine Credentials: EDB-Passwort versuchen
-if not defined PGPASSWORD SET "PGPASSWORD=PraxisZeit2025!"
+REM F-025: no fallback to a hardcoded password. If the credentials file is
+REM missing the DB is either uninitialized or corrupted — abort the backup
+REM step and let the user decide.
+if not defined PGPASSWORD (
+    echo WARNUNG: %CREDS_FILE% fehlt oder enthaelt kein SUPERUSER_PASSWORD.
+    echo Ohne Credentials kann kein Backup erstellt werden.
+    set /p CONT="Trotzdem OHNE Backup deinstallieren? (j/n): "
+    if /i not "%CONT%"=="j" goto :cancelled
+    goto :remove_services
+)
 
 REM Pruefen ob PostgreSQL laeuft, ggf. starten
 "%PG_CTL%" -D "%PG_DATA%" status >nul 2>&1

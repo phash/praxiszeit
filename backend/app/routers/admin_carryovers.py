@@ -1,6 +1,8 @@
 """Admin sub-router: Year Carryovers + Year Closing."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -19,7 +21,11 @@ def list_carryovers(
     current_user: User = Depends(require_admin),
 ):
     """List all year carryovers for a user."""
-    user = db.query(User).filter(User.id == user_id).first()
+    # F-026: explicit tenant scoping
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -39,7 +45,11 @@ def upsert_carryover(
     current_user: User = Depends(require_admin),
 ):
     """Create or update year carryover (overtime hours & vacation days from previous year)."""
-    user = db.query(User).filter(User.id == user_id).first()
+    # F-026: explicit tenant scoping
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
@@ -82,9 +92,50 @@ def create_year_closing(
     if year < 2000 or year > 2100:
         raise HTTPException(status_code=400, detail="Ungültiges Jahr")
 
+    # F-029: Serialize year-closing per (tenant, year). Two admins clicking
+    # simultaneously would otherwise race on the upsert of YearCarryover and
+    # also compute against a moving snapshot of time entries. pg_advisory_xact_lock
+    # uses a namespaced 64-bit key (namespace=42, payload=hash(tenant,year))
+    # and releases at transaction end regardless of commit/rollback.
+    # SQLite ignores pg_advisory_xact_lock — only Postgres enforces this.
+    from sqlalchemy import text
+    try:
+        lock_key = hash((str(current_user.tenant_id), year)) & 0x7FFFFFFFFFFFFFFF
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:ns, :key)"),
+            {"ns": 42, "key": lock_key},
+        )
+    except Exception:
+        # Non-Postgres backends (tests on SQLite) don't have this function;
+        # accept the loss of serialization since tests run single-threaded.
+        pass
+
+    # F-029: refuse the operation if any change request for the closing
+    # year is still pending — approving it later would retroactively move
+    # the balance we just froze.
+    from app.models.change_request import ChangeRequest, ChangeRequestStatus
+    start_of_year = date(year, 1, 1)
+    end_of_year = date(year, 12, 31)
+    pending_cr_count = db.query(func.count(ChangeRequest.id)).filter(
+        ChangeRequest.tenant_id == current_user.tenant_id,
+        ChangeRequest.status == ChangeRequestStatus.PENDING,
+        ChangeRequest.proposed_date >= start_of_year,
+        ChangeRequest.proposed_date <= end_of_year,
+    ).scalar() or 0
+    if pending_cr_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Jahresabschluss {year} abgelehnt: es gibt noch "
+                f"{pending_cr_count} offene Änderungsanträge für dieses Jahr. "
+                f"Bitte erst bearbeiten, dann erneut versuchen."
+            ),
+        )
+
     users = db.query(User).filter(
         User.is_active == True,
         User.track_hours == True,
+        User.tenant_id == current_user.tenant_id,
     ).all()
 
     results = calculation_service.create_year_closing(db, year, users)

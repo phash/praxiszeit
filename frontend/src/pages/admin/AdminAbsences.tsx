@@ -9,6 +9,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 import MonthSelector from '../../components/MonthSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { parseHours } from '../../utils/formatters';
 
 interface CompanyClosure {
   id: string;
@@ -463,7 +464,7 @@ export default function AdminAbsences() {
                   type="number"
                   step="0.5"
                   value={formData.hours}
-                  onChange={e => setFormData(p => ({ ...p, hours: parseFloat(e.target.value) }))}
+                  onChange={e => setFormData(p => ({ ...p, hours: parseHours(e.target.value) }))}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />

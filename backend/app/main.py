@@ -9,6 +9,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 from app.middleware.static_serving import SecurityHeadersMiddleware, RequestSizeLimitMiddleware
+from app.middleware.csrf import CSRFMiddleware
 from contextlib import asynccontextmanager
 import os
 import sys
@@ -198,13 +199,23 @@ if not settings.SERVE_FRONTEND:
 # Configure CORS
 cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
 _cors_is_wildcard = cors_origins == ["*"]
+# F-024 audit: ``Cookie`` is a forbidden header name in browsers (JS cannot
+# set it), so listing it in allow_headers is both pointless and misleading.
+# ``X-CSRF-Token`` is the double-submit header the frontend mirrors the
+# csrf_token cookie into — it must be allowlisted for cross-origin use.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=not _cors_is_wildcard,  # Disable credentials with wildcard origins
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Cookie"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+    expose_headers=["X-Requires-TOTP"],
 )
+
+# F-024: CSRF double-submit cookie enforcement on unsafe methods.
+# Must be added AFTER CORSMiddleware so that preflight requests handled by
+# CORS are still processed (OPTIONS is not an unsafe method anyway).
+app.add_middleware(CSRFMiddleware)
 
 # GZip compression (replaces nginx gzip in native mode, harmless behind nginx)
 app.add_middleware(GZipMiddleware, minimum_size=1024)

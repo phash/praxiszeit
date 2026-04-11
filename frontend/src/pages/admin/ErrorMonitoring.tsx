@@ -27,6 +27,25 @@ const LEVEL_COLORS: Record<string, string> = {
   warning: 'bg-yellow-100 text-yellow-800 border-yellow-300',
 };
 
+/**
+ * F-049: Only allow https://github.com/ URLs as anchor href. Without this,
+ * a malicious admin (or an attacker who compromised the backend store)
+ * could set github_issue_url to `javascript:fetch('/api/users/...')` and
+ * turn the Admin Monitoring page into a stored-XSS vector. React escapes
+ * attribute values but does NOT strip javascript: URLs.
+ */
+function sanitizeGithubUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return null;
+    if (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 const STATUS_TABS = [
   { value: '', label: 'Alle' },
   { value: 'open', label: 'Offen' },
@@ -207,9 +226,9 @@ export default function ErrorMonitoring() {
                         {err.status === 'ignored' ? 'Ignoriert' : 'Behoben'}
                       </span>
                     )}
-                    {err.github_issue_url && (
+                    {sanitizeGithubUrl(err.github_issue_url) && (
                       <a
-                        href={err.github_issue_url}
+                        href={sanitizeGithubUrl(err.github_issue_url)!}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-blue-600 hover:underline flex items-center gap-1"
@@ -287,15 +306,15 @@ export default function ErrorMonitoring() {
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">
                       ⚠ DSGVO-Hinweis (Art. 28): Fehlermeldungen können personenbezogene Daten enthalten. Prüfen Sie vor der GitHub-Übertragung, ob der Traceback sensible Informationen enthält. GitHub Inc. (USA) ist als Auftragsverarbeiter einzustufen.
                     </p>
-                    {err.github_issue_url ? (
+                    {sanitizeGithubUrl(err.github_issue_url) ? (
                       <div className="flex items-center gap-2">
                         <a
-                          href={err.github_issue_url}
+                          href={sanitizeGithubUrl(err.github_issue_url)!}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm text-blue-600 hover:underline flex items-center gap-1"
                         >
-                          <Github size={14} /> {err.github_issue_url}
+                          <Github size={14} /> {sanitizeGithubUrl(err.github_issue_url)}
                         </a>
                         <button
                           onClick={() => {

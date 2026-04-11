@@ -200,25 +200,42 @@ export default function TimeTracking() {
     setSearchParams(tab === 'eintraege' ? {} : { tab });
   };
 
+  // F-047: refactored to take a cancellation flag so both useEffects
+  // can share the same loader without racing against unmount.
+  const fetchEntriesWithCancel = async (cancelRef: { cancelled: boolean }) => {
+    try {
+      const response = await apiClient.get(`/time-entries?month=${currentMonth}`);
+      if (cancelRef.cancelled) return;
+      setEntries(response.data);
+    } catch (error) {
+      if (!cancelRef.cancelled) {
+        console.error('fetchEntries failed', error);
+        toast.error('Fehler beim Laden der Zeiteinträge');
+      }
+    } finally {
+      if (!cancelRef.cancelled) setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchEntries();
+    const cancelRef = { cancelled: false };
+    fetchEntriesWithCancel(cancelRef);
+    return () => { cancelRef.cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMonth]);
 
   // Refresh entries after FAB clock-in/out
   useEffect(() => {
     if (stampVersion === 0) return;
-    fetchEntries();
+    const cancelRef = { cancelled: false };
+    fetchEntriesWithCancel(cancelRef);
+    return () => { cancelRef.cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stampVersion]);
 
   const fetchEntries = async () => {
-    try {
-      const response = await apiClient.get(`/time-entries?month=${currentMonth}`);
-      setEntries(response.data);
-    } catch (error) {
-      toast.error('Fehler beim Laden der Zeiteinträge');
-    } finally {
-      setLoading(false);
-    }
+    // Legacy sync wrapper retained for existing callers (form submit, etc.)
+    await fetchEntriesWithCancel({ cancelled: false });
   };
 
   const validateTimeEntry = (): boolean => {

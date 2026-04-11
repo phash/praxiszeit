@@ -10,6 +10,7 @@ from openpyxl.utils import get_column_letter
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service
 from app.services.arbzg_utils import is_night_work
+from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
 from app.config import settings
 from sqlalchemy import extract
 
@@ -97,8 +98,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # Get all time entries for the month (list-based: multiple entries per day)
     time_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
-        extract('year', TimeEntry.date) == year,
-        extract('month', TimeEntry.date) == month
+        date_in_month(TimeEntry.date, year, month)
     ).order_by(TimeEntry.start_time).all()
     entries_by_date: dict = {}
     for entry in time_entries:
@@ -107,15 +107,13 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # Get all absences for the month
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
-        extract('year', Absence.date) == year,
-        extract('month', Absence.date) == month
+        date_in_month(Absence.date, year, month)
     ).all()
     absences_by_date = {absence.date: absence for absence in absences}
 
     # Get public holidays
     holidays = db.query(PublicHoliday).filter(
-        extract('year', PublicHoliday.date) == year,
-        extract('month', PublicHoliday.date) == month
+        date_in_month(PublicHoliday.date, year, month)
     ).all()
     holidays_by_date = {holiday.date: holiday for holiday in holidays}
 
@@ -412,7 +410,7 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.SICK,
-            extract('year', Absence.date) == year
+            date_in_year(Absence.date, year)
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
         sick_days = sick_hours / float(daily_target)
@@ -493,7 +491,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         vacation_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.VACATION,
-            extract('year', Absence.date) == year
+            date_in_year(Absence.date, year)
         ).all()
         vacation_hours = sum(float(a.hours) for a in vacation_absences)
         vacation_days = vacation_hours / float(daily_target)
@@ -501,7 +499,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.SICK,
-            extract('year', Absence.date) == year
+            date_in_year(Absence.date, year)
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
         sick_days = sick_hours / float(daily_target)
@@ -509,7 +507,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         training_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.TRAINING,
-            extract('year', Absence.date) == year
+            date_in_year(Absence.date, year)
         ).all()
         training_hours = sum(float(a.hours) for a in training_absences)
         training_days = training_hours / float(daily_target)
@@ -517,7 +515,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         overtime_comp_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.OVERTIME,
-            extract('year', Absence.date) == year
+            date_in_year(Absence.date, year)
         ).all()
         overtime_comp_hours = sum(float(a.hours) for a in overtime_comp_absences)
         overtime_comp_days = overtime_comp_hours / float(daily_target)
@@ -525,7 +523,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         other_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.OTHER,
-            extract('year', Absence.date) == year
+            date_in_year(Absence.date, year)
         ).all()
         other_hours = sum(float(a.hours) for a in other_absences)
         other_days = other_hours / float(daily_target)
@@ -594,7 +592,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # Get all time entries for the year (list-based: multiple entries per day)
     time_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
-        extract('year', TimeEntry.date) == year
+        date_in_year(TimeEntry.date, year)
     ).order_by(TimeEntry.start_time).all()
     entries_by_date: dict = {}
     for entry in time_entries:
@@ -603,7 +601,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # Get all absences for the year
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
-        extract('year', Absence.date) == year
+        date_in_year(Absence.date, year)
     ).all()
     absences_by_date = {absence.date: absence for absence in absences}
 
@@ -952,8 +950,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.SICK,
-            extract('year', Absence.date) == year,
-            extract('month', Absence.date) == month
+            date_in_month(Absence.date, year, month)
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
         if include_health_data:
@@ -968,8 +965,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         vacation_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
             Absence.type == AbsenceType.VACATION,
-            extract('year', Absence.date) == year,
-            extract('month', Absence.date) == month
+            date_in_month(Absence.date, year, month)
         ).all()
         vacation_hours = sum(float(a.hours) for a in vacation_absences)
         sheet.cell(row=9, column=col).value = vacation_hours
@@ -1020,8 +1016,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
             float(a.hours) for a in db.query(Absence).filter(
                 Absence.user_id == user.id,
                 Absence.type == AbsenceType.VACATION,
-                extract('year', Absence.date) == year,
-                extract('month', Absence.date) <= month
+                date_in_year_up_to_month(Absence.date, year, month),
             ).all()
         )
         vacation_remaining = float(vacation_account['budget_hours']) - vacation_used_ytd
@@ -1032,8 +1027,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         # Row 16: Night work days per month (§6 ArbZG)
         month_entries = db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
-            extract('year', TimeEntry.date) == year,
-            extract('month', TimeEntry.date) == month,
+            date_in_month(TimeEntry.date, year, month),
             TimeEntry.end_time.isnot(None),
         ).all()
         night_days = len({e.date for e in month_entries if is_night_work(e.start_time, e.end_time)})
@@ -1146,8 +1140,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
         time_entries = db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
-            extract('year', TimeEntry.date) == year,
-            extract('month', TimeEntry.date) == month,
+            date_in_month(TimeEntry.date, year, month),
         ).order_by(TimeEntry.start_time).all()
         entries_by_date: dict = {}
         for te in time_entries:
@@ -1155,14 +1148,12 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
         absences = db.query(Absence).filter(
             Absence.user_id == user.id,
-            extract('year', Absence.date) == year,
-            extract('month', Absence.date) == month,
+            date_in_month(Absence.date, year, month),
         ).all()
         absences_by_date = {a.date: a for a in absences}
 
         holidays = db.query(PublicHoliday).filter(
-            extract('year', PublicHoliday.date) == year,
-            extract('month', PublicHoliday.date) == month,
+            date_in_month(PublicHoliday.date, year, month),
         ).all()
         holidays_by_date = {h.date: h for h in holidays}
 

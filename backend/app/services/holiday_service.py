@@ -118,6 +118,9 @@ def sync_holidays(db: Session, year: int, state: Optional[str] = None, tenant_id
         elif existing.name != german_name:
             existing.name = german_name
 
+    # F-034: writes invalidate the cache for this (tenant, year)
+    invalidate_holiday_cache(tenant_id=tenant_id, year=year)
+
     # No commit – let the caller manage the transaction
     return count
 
@@ -130,11 +133,57 @@ def get_holidays(db: Session, year: int) -> List[PublicHoliday]:
 
 
 def is_holiday(db: Session, check_date: date, tenant_id=None) -> bool:
-    """Check if a given date is a public holiday."""
-    query = db.query(PublicHoliday).filter(PublicHoliday.date == check_date)
+    """
+    Check if a given date is a public holiday.
+
+    F-034: caching. Holidays change only once a year at sync-time, but
+    hot loops (reports, list_time_entries enrichment, dashboard team view)
+    may call this per entry. We cache the set of holiday dates per
+    (tenant_id, year) in process memory; the cache is explicitly
+    invalidated in sync_holidays / sync_current_and_next_year /
+    delete_all_holidays below.
+    """
+    holiday_dates = _get_holiday_dates(db, check_date.year, tenant_id=tenant_id)
+    return check_date in holiday_dates
+
+
+# ── F-034: per-(tenant, year) holiday cache ──────────────────────────────
+# Key:   (tenant_id, year)      value: frozenset[date]
+# Scope: process-local; invalidated on any holiday write.
+_HOLIDAY_CACHE: dict = {}
+
+
+def _get_holiday_dates(db: Session, year: int, tenant_id=None) -> frozenset:
+    """Return the cached set of holiday dates for the given (tenant, year).
+
+    On first access, loads via a single SELECT. Thread-safety: a torn cache
+    read between two workers is harmless — at worst two workers run the
+    same SELECT once; subsequent reads are both O(1).
+    """
+    key = (tenant_id, year)
+    cached = _HOLIDAY_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    query = db.query(PublicHoliday.date).filter(PublicHoliday.year == year)
     if tenant_id is not None:
         query = query.filter(PublicHoliday.tenant_id == tenant_id)
-    return query.first() is not None
+    dates = frozenset(row[0] for row in query.all())
+    _HOLIDAY_CACHE[key] = dates
+    return dates
+
+
+def invalidate_holiday_cache(tenant_id=None, year: Optional[int] = None) -> None:
+    """Drop cached holiday sets. Called after any holiday-table write."""
+    if tenant_id is None and year is None:
+        _HOLIDAY_CACHE.clear()
+        return
+    for key in list(_HOLIDAY_CACHE.keys()):
+        k_tenant, k_year = key
+        if (tenant_id is None or k_tenant == tenant_id) and (
+            year is None or k_year == year
+        ):
+            _HOLIDAY_CACHE.pop(key, None)
 
 
 def delete_all_holidays(db: Session, tenant_id=None) -> int:
@@ -145,6 +194,8 @@ def delete_all_holidays(db: Session, tenant_id=None) -> int:
         query = query.filter(PublicHoliday.tenant_id == tenant_id)
     count = query.count()
     query.delete()
+    # F-034: invalidate the cache after bulk-delete
+    invalidate_holiday_cache(tenant_id=tenant_id)
     # No commit – let the caller manage the transaction
     return count
 

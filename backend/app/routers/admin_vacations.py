@@ -84,7 +84,18 @@ def review_vacation_request(
     """
     from decimal import Decimal
 
-    vr = db.query(VacationRequest).filter(VacationRequest.id == request_id).first()
+    # F-028: lock the VR row to prevent concurrent-click races where two
+    # admin requests both pass the PENDING check and both try to create
+    # absence entries. Also scope to the admin's tenant.
+    vr = (
+        db.query(VacationRequest)
+        .filter(
+            VacationRequest.id == request_id,
+            VacationRequest.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
     if not vr:
         raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
     if vr.status != VacationRequestStatus.PENDING.value:
@@ -101,7 +112,11 @@ def review_vacation_request(
         return _enrich_vr_response(vr, db)
 
     # Approve: create absence entries (same logic as create_absence in absences.py)
-    target_user = db.query(User).filter(User.id == vr.user_id).first()
+    # F-026: explicit tenant scoping
+    target_user = db.query(User).filter(
+        User.id == vr.user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 

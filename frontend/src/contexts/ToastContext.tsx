@@ -3,6 +3,28 @@ import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
+/**
+ * F-056: Generate a unique, collision-free toast ID.
+ *
+ * Previous `Math.random().toString(36).substring(7)` returned 0–6 base-36
+ * characters — collisions are routine once toasts fire in bursts (e.g. a
+ * failed refresh-interceptor retry triggering multiple catch blocks in the
+ * same tick). Collisions show up as duplicate React `key` warnings and
+ * toasts that can't be dismissed individually.
+ *
+ * `crypto.randomUUID()` is available in all evergreen browsers served by
+ * the app (Vite targets ES2022+). A monotonic counter is used as a
+ * fallback for environments that expose neither (e.g. legacy test stubs).
+ */
+let _fallbackToastCounter = 0;
+function generateToastId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  _fallbackToastCounter += 1;
+  return `toast-${Date.now()}-${_fallbackToastCounter}`;
+}
+
 interface Toast {
   id: string;
   type: ToastType;
@@ -41,7 +63,7 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
 
   const showToast = useCallback(
     (type: ToastType, message: string, duration = 5000) => {
-      const id = Math.random().toString(36).substring(7);
+      const id = generateToastId();
       const newToast: Toast = { id, type, message, duration };
 
       setToasts((prev) => [...prev, newToast]);

@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { Download, Calendar, FileText, Clock, AlertTriangle, ChevronDown, ChevronUp, Sun } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
+import { parseHours } from '../../utils/formatters';
 
 interface RestViolation {
   day1_date: string;
@@ -564,7 +565,7 @@ export default function Reports() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Mindestruhezeit (h)</label>
-            <input type="number" value={minRestHours} onChange={e => setMinRestHours(parseFloat(e.target.value))}
+            <input type="number" value={minRestHours} onChange={e => setMinRestHours(parseHours(e.target.value))}
               step="0.5" min="1" max="24" className="px-3 py-2 border border-gray-300 rounded-lg w-24" />
           </div>
           <button onClick={checkRestViolations} disabled={restLoading}
