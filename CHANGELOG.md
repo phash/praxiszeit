@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.3.6] - 2026-04-17
+
+**Hotfix-Release direkt im Anschluss an 1.3.5.** Behebt zwei Fehler
+die beim Live-Update eines Kundenservers sofort aufgefallen sind:
+Footer-Versionsanzeige und kaputter `Step-PipInstall` im Update-
+Wizard.
+
+### 🔴 Frontend-Footer zeigte falsche Version
+- **`frontend/package.json` von 1.3.0 auf 1.3.6** gebumpt. Das Feld
+  wird in `vite.config.ts` als `__APP_VERSION__`-Define eingebettet
+  und in `Layout.tsx:345` als `v{__APP_VERSION__}` im Footer
+  gerendert. Seit Release 1.3.0 hat niemand es mehr hochgezogen —
+  alle 1.3.1/1.3.2/1.3.3/1.3.4/1.3.5-Pakete haben Backend-Version
+  korrekt aber Footer falsch ("v1.3.0") angezeigt. Backend
+  (`/api/health`) war immer korrekt, nur die UI hat gelogen.
+- **`tools/build-release.sh` Version-Drift-Check** — vor dem Frontend-
+  Build wird jetzt `frontend/package.json` gegen `APP_VERSION`
+  validiert und der Build bricht mit klarer Fehlermeldung ab wenn
+  die zwei divergieren. Verhindert den Rueckfall.
+
+### 🔴 Update-Wizard pip-Install crashte auf Kundenserver
+- **F-056: `installer/windows/update-wizard.ps1 Step-PipInstall`** —
+  fuehrt jetzt `get-pip.py --force-reinstall` **vor** dem
+  `pip install -r requirements.txt` aus. Ursache war: `Step-CopyFiles`
+  nutzt Robocopy mit Excludes fuer `data/`, `config/`, `logs/`, aber
+  nicht fuer `bin/python/Lib/site-packages/`. Robocopy merged Files,
+  loescht aber keine stale Dateien. Beim 1.3.3 -> 1.3.5 Update ist
+  dadurch `pip._vendor.resolvelib/` in einem inkonsistenten Mix aus
+  alten + neuen Files gelandet und `pip install` hat mit
+  `ImportError: cannot import name 'RequirementInformation' from
+  pip._vendor.resolvelib.structs` gecrasht. `get-pip.py
+  --force-reinstall` baut pip + vendored deps sauber neu, macht den
+  Schritt idempotent.
+
 ## [1.3.5] - 2026-04-17
 
 **Audit-Response-Release.** Adressiert die Findings aus einem kritischen

@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.3.5"
+APP_VERSION="1.3.6"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -82,6 +82,32 @@ echo "  PostgreSQL: ${POSTGRESQL_VERSION}"
 echo "  Plattformen:${PLATFORMS}"
 echo "=============================================="
 echo ""
+
+# =============================================================================
+# Version-Konsistenz-Check (F-055-Followup, 1.3.6)
+# =============================================================================
+# Backend-APP_VERSION (updater.py) ist Single Source of Truth. frontend/
+# package.json hat eine eigene "version"-Eigenschaft die ins Bundle als
+# __APP_VERSION__ eingebettet wird (Layout.tsx Footer). Wenn die beiden
+# drueberlaufen, zeigt der Footer eine andere Version als /api/health —
+# exakt was in 1.3.0..1.3.5 passiert ist. Build haerten: vor dem Frontend-
+# Build abbrechen wenn frontend/package.json != APP_VERSION.
+
+SCRIPT_DIR_PRE="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR_PRE="$(cd "${SCRIPT_DIR_PRE}/.." && pwd)"
+_fe_ver=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "${REPO_DIR_PRE}/frontend/package.json" | head -1)
+if [ -z "$_fe_ver" ]; then
+    echo -e "${RED}[ERROR]${NC} Konnte frontend/package.json version nicht lesen" >&2
+    exit 1
+fi
+if [ "$_fe_ver" != "$APP_VERSION" ]; then
+    echo -e "${RED}[ERROR]${NC} Version-Drift erkannt:" >&2
+    echo -e "${RED}[ERROR]${NC}   APP_VERSION (build-release.sh) = ${APP_VERSION}" >&2
+    echo -e "${RED}[ERROR]${NC}   frontend/package.json version  = ${_fe_ver}" >&2
+    echo -e "${RED}[ERROR]${NC} Fix: frontend/package.json + package-lock.json auf ${APP_VERSION} bumpen" >&2
+    echo -e "${RED}[ERROR]${NC}      (cd frontend && npm version ${APP_VERSION} --no-git-tag-version)" >&2
+    exit 1
+fi
 
 # =============================================================================
 # Download-URLs
