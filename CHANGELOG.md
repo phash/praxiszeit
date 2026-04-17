@@ -10,8 +10,19 @@ Admin-Change-Request-UI, sowie ein Frontend-Util das ArbZG-Warnungen
 einheitlich anzeigt. Reiner Additiv-Release, keine Breaking Changes
 ggue. 1.3.4.
 
+### 🔴 Security — Dependency-CVEs gepatcht
+- **`axios` 1.13.5 -> 1.15.0** (GHSA-3p68-rc4w-qgx5, GHSA-fvcv-3m26-pcqx)
+  — NO_PROXY Hostname Normalization Bypass + Cloud Metadata
+  Exfiltration via Header Injection Chain (beide SSRF-Eskalations-
+  Vektoren, beide fixed in 1.15.0).
+- **`follow-redirects` 1.15.11 -> 1.16.0** (GHSA-r4q5-vmmm-2653) —
+  leaks Custom Authentication Headers to Cross-Domain Redirect
+  Targets. Ueber `overrides` in `frontend/package.json` forciert, da
+  transitive Dep via axios.
+- **`pytest` 8.x -> >=9.0.3** (GHSA-6w46-j5rx-g56g) — vulnerable
+  tmpdir handling.
+
 ### 🔴 Security
-- **TOTP-Replay-Schutz** — neue Migration `032_totp_replay` fuegt dem
   `users`-Table ein `last_totp_counter` (bzw. Replay-Tracking) hinzu.
   Verhindert, dass ein bereits akzeptierter 6-stelliger TOTP-Code im
   selben 30-Sek-Fenster ein zweites Mal akzeptiert wird.

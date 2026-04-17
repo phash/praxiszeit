@@ -22,7 +22,7 @@ python-dotenv==1.0.*
 slowapi==0.1.*
 prometheus-fastapi-instrumentator==7.*
 pyotp>=2.9.0
-pytest==8.*
+pytest>=9.0.3,<10
 pytest-asyncio==0.*
 httpx==0.*
 xlrd==1.2.0
