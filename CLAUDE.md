@@ -28,6 +28,8 @@ bash tools/build-release.sh --windows-only --skip-download   # Rebuild mit Cache
 ```
 Git Bash on Windows: `rsync`/`zip` fehlen → Script hat `tar`/PowerShell-`Compress-Archive`-Fallbacks.
 PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe` (kein Webformular).
+**Version-Bump:** 3 Stellen + Lock — `backend/app/core/updater.py`, `tools/build-release.sh` Default, `frontend/package.json` (+ `cd frontend && npm install` für Lock). Build-Script validiert Consistency und bricht sonst ab. `frontend/package.json.version` landet als `__APP_VERSION__` im Footer (`Layout.tsx:345`) — ohne Bump zeigt die UI die alte Version (war 1.3.0 → 1.3.5 lang gedriftet).
+**Build-Exit-Code 1 am Ende ist kosmetisch** (letztes `$BUILD_LINUX && cat <<EOF` liefert 1 bei `false`). Erfolg = `dist/praxiszeit-X.Y.Z-windows-x64.zip` existiert.
 → Details: [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md)
 
 ### Tests
@@ -40,6 +42,7 @@ cd frontend && npm test                                          # Vitest Utils-
 ```
 All-in-one: `bash scripts/local-ci.sh` (backend pytest split SQLite/Postgres, vitest, tsc, eslint, vite build, e2e).
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
+**Version-Smoke-Test:** `/api/health` liefert nur `{status, database}` — **keine Version**. Version steht in `/openapi.json`, im Frontend-Footer (nach Hard-Refresh), oder unter `/` (nur wenn `SERVE_FRONTEND=False`).
 
 ### Dev-Workflow Fallstricke
 - **Backend-Container ist gebaut**, kein Host-Volume: Nach Edits `docker compose cp <host-file> backend:/app/<path>` VOR `pytest`, sonst sieht der Container den alten Code. Für Prod-Änderungen: `docker compose build backend && docker compose up -d backend`.
@@ -72,12 +75,14 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **Native Windows-Fallstricke:** Siehe `docs/NATIVE-WINDOWS-PITFALLS.md` (psql -v, Glob-Expansion, SYSTEM-Permissions, cp1252, SPA-Routing)
 - **setup.bat `DisableDelayedExpansion`:** Absicht (PowerShell-Passwort mit `!`). `%VAR%` in `(...)`-Blöcken wird beim Block-Parse substituiert → leere Vars erzeugen Syntax-Fehler (`if  GEQ 16`). Defaults vor dem Block setzen.
 - **setup.bat PG-Reuse:** Existierende PG-Installation (Registry `HKLM\SOFTWARE\PostgreSQL\Installations` + `%ProgramFiles%\PostgreSQL\{14..18}`) wird bei Major ≥ 16 per `mklink /J` verlinkt statt neu installiert. `rd /s /q` folgt Junctions nicht → `uninstall.bat` bleibt sicher.
+- **Robocopy im Update-Wizard merged ohne Purge:** stale Files in `bin/python/Lib/site-packages/` kumulieren über Updates hinweg. `Step-PipInstall` bootstrappt pip deshalb via `get-pip.py --force-reinstall` VOR `pip install -r requirements.txt` (F-056). Gleiches Pattern wenn weitere `bin/`-Subdirs im Wizard behandelt werden.
+- **Nach Native-Update:** im Browser Hard-Refresh (`Ctrl+F5`) oder Service-Worker unregister, sonst bleibt das alte Frontend-Bundle im Cache.
 - **SPA-Fallback:** Middleware statt catch-all Route! `@app.get("/{full_path:path}")` verursacht 405 für POST/PUT/DELETE
 - **SECRET_KEY persistieren:** Muss in `config/.secret-key` gespeichert werden, sonst Session-Verlust bei Restart
 - **cookie_secure:** Muss `false` sein ohne SSL, sonst lehnt Browser das Refresh-Cookie ab
 - **Subprocess `*` verboten:** Python 3.13/Windows expanded `*` als Glob in subprocess-Args → explizite Werte nutzen
 - **PYTHONUTF8=1:** Immer für uvicorn-Subprozesse setzen (cp1252-Crashes bei Emojis)
-- **APP_VERSION:** Single Source of Truth in `app/core/updater.py`, nicht in `main.py` hardcoden
+- **APP_VERSION:** Backend-SoT in `app/core/updater.py`; Frontend-Footer liest `__APP_VERSION__` aus `frontend/package.json.version` (via vite `define`). Beide + `tools/build-release.sh` Default müssen synchron bleiben — Build-Script enforced das.
 - **Alembic Revision-IDs:** Max 32 Zeichen (`version_num varchar(32)` Limit)
 - **clock_out `with_for_update`:** `_get_open_entry()` in `clock_out` MUSS mit Lock aufgerufen werden (Race Condition bei Doppelklick)
 - **Bulk-Deletes tenant_id:** Alle `.delete()` Aufrufe brauchen expliziten `tenant_id`-Filter (nicht nur auf RLS verlassen)
