@@ -19,6 +19,7 @@ from odf.table import Table, TableColumn, TableRow, TableCell
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service
 from app.services.arbzg_utils import is_night_work
+from app.services.date_filters import date_in_month, date_in_year
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +166,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     holidays_by_date = {
         h.date: h
         for h in db.query(PublicHoliday).filter(
+            PublicHoliday.tenant_id == user.tenant_id,
             date_in_month(PublicHoliday.date, year, month),
         ).all()
     }
@@ -463,6 +465,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
     holidays_by_date = {
         h.date: h
         for h in db.query(PublicHoliday).filter(
+            PublicHoliday.tenant_id == user.tenant_id,
             date_in_year(PublicHoliday.date, year),
         ).all()
     }

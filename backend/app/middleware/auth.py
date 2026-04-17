@@ -115,3 +115,18 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
         )
 
     return current_user
+
+
+def require_superadmin(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Dependency to require superadmin role (user with no tenant_id).
+
+    Superadmins manage tenants across the deployment; they can access
+    deactivated tenants for §16 ArbZG mandatory export / audit purposes.
+    """
+    if current_user.tenant_id is not None or current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Zugriff verweigert: Superadmin-Rechte erforderlich",
+        )
+    return current_user

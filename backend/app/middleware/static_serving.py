@@ -46,21 +46,72 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+class RequestSizeLimitMiddleware:
     """
-    Limits request body size (replaces nginx client_max_body_size in native mode).
-    Default: 2MB (matching nginx.conf).
+    Limits request body size — pure ASGI so it enforces the cap even when the
+    client uses ``Transfer-Encoding: chunked`` (no Content-Length header). The
+    previous BaseHTTPMiddleware variant only checked the Content-Length
+    header, which a malicious client could simply omit by switching to chunked
+    encoding and stream an arbitrarily large body.
+
+    Strategy: wrap the ASGI ``receive`` so we count bytes across every
+    ``http.request`` message and abort the request the moment cumulative size
+    exceeds ``max_size``.
+
+    Default: 2MB (matching nginx.conf's client_max_body_size).
     """
 
     def __init__(self, app, max_size: int = 2 * 1024 * 1024):
-        super().__init__(app)
+        self.app = app
         self.max_size = max_size
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > self.max_size:
-            return PlainTextResponse(
-                "Request body too large",
-                status_code=413,
-            )
-        return await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        # Fast-path: if the client sent a Content-Length we can reject before
+        # reading any body at all.
+        for name, value in scope.get("headers", []):
+            if name == b"content-length":
+                try:
+                    if int(value) > self.max_size:
+                        return await self._send_413(send)
+                except ValueError:
+                    # malformed Content-Length — force-reject
+                    return await self._send_413(send)
+                break
+
+        received_bytes = 0
+
+        async def wrapped_receive():
+            nonlocal received_bytes
+            message = await receive()
+            if message["type"] == "http.request":
+                body = message.get("body", b"") or b""
+                received_bytes += len(body)
+                if received_bytes > self.max_size:
+                    # Signal end-of-stream so downstream cleanup runs, then
+                    # raise so the app sees the aborted request.
+                    raise _RequestTooLargeError()
+            return message
+
+        try:
+            await self.app(scope, wrapped_receive, send)
+        except _RequestTooLargeError:
+            await self._send_413(send)
+
+    async def _send_413(self, send):
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [(b"content-type", b"text/plain; charset=utf-8")],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": b"Request body too large",
+        })
+
+
+class _RequestTooLargeError(Exception):
+    """Internal signal used by RequestSizeLimitMiddleware to abort reads."""
+    pass

@@ -30,6 +30,9 @@ services:
     build: ./backend
     environment:
       TZ: Europe/Berlin
+      # Must be explicitly set in .env — no default. `production` disables Swagger/ReDoc
+      # and enforces the weak-admin-password check as hard failure (see backend/app/main.py).
+      ENVIRONMENT: ${ENVIRONMENT:?Set ENVIRONMENT in .env (development or production)}
       DATABASE_URL: postgresql://${APP_DB_USER:-praxiszeit_app}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@db:5432/${POSTGRES_DB}
       DATABASE_URL_MIGRATIONS: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       SECRET_KEY: ${SECRET_KEY}

@@ -10,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 from app.middleware.static_serving import SecurityHeadersMiddleware, RequestSizeLimitMiddleware
 from app.middleware.csrf import CSRFMiddleware
+from app.middleware.license import LicenseReadOnlyMiddleware
 from contextlib import asynccontextmanager
 import os
 import sys
@@ -23,7 +24,7 @@ from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin
 
 
 @asynccontextmanager
@@ -217,13 +218,20 @@ app.add_middleware(
 # CORS are still processed (OPTIONS is not an unsafe method anyway).
 app.add_middleware(CSRFMiddleware)
 
+# License read-only enforcement for native installs (no-op when no license
+# is loaded). Auth endpoints stay writable so admins can still sign in and
+# export §16-required records from an expired-license install.
+app.add_middleware(LicenseReadOnlyMiddleware)
+
 # GZip compression (replaces nginx gzip in native mode, harmless behind nginx)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
-# Native mode middleware (replaces nginx features)
+# Native mode middleware (replaces nginx features). Request-size guard is
+# attached unconditionally — defence-in-depth against a missing/misconfigured
+# nginx `client_max_body_size` when running behind a reverse proxy.
+app.add_middleware(RequestSizeLimitMiddleware, max_size=2 * 1024 * 1024)  # 2MB
 if settings.SERVE_FRONTEND:
     app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(RequestSizeLimitMiddleware, max_size=2 * 1024 * 1024)  # 2MB
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)
 # DSGVO F-007: sqlalchemy.engine intentionally NOT attached (SQL queries can contain PII)
@@ -246,6 +254,7 @@ app.include_router(error_logs.router)
 app.include_router(vacation_requests.router)
 app.include_router(journal.router)
 app.include_router(import_xls.router)
+app.include_router(superadmin.router)
 
 
 @app.middleware("http")

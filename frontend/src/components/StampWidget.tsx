@@ -4,6 +4,7 @@ import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuthStore } from '../stores/authStore';
 import { getErrorMessage } from '../utils/errorMessage';
+import { showArbzgWarnings } from '../utils/arbzgWarnings';
 
 interface ClockStatus {
   is_clocked_in: boolean;
@@ -67,8 +68,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   const handleClockIn = async () => {
     setActing(true);
     try {
-      await apiClient.post('/time-entries/clock-in', {});
+      const res = await apiClient.post('/time-entries/clock-in', {});
       toast.success('Erfolgreich eingestempelt');
+      showArbzgWarnings(toast, res.data?.warnings);
       await fetchStatus();
       if (variant === 'sheet') {
         setShowSuccess(true);
@@ -91,8 +93,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     }
     setActing(true);
     try {
-      await apiClient.post('/time-entries/clock-out', { break_minutes: breakMinutes });
+      const res = await apiClient.post('/time-entries/clock-out', { break_minutes: breakMinutes });
       toast.success('Erfolgreich ausgestempelt');
+      showArbzgWarnings(toast, res.data?.warnings);
       setShowBreakInput(false);
       setBreakMinutes(0);
       await fetchStatus();
