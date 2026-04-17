@@ -7,7 +7,13 @@ from datetime import datetime, timezone, date, timedelta
 from app.database import get_db
 from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType, Absence, AbsenceType
 from app.middleware.auth import require_admin
-from app.schemas.change_request import ChangeRequestResponse, ChangeRequestReview
+from app.schemas.change_request import (
+    ChangeRequestResponse,
+    ChangeRequestReview,
+    ChangeRequestBulkReview,
+    ChangeRequestBulkReviewItemResult,
+    ChangeRequestBulkReviewResult,
+)
 from app.schemas.time_entry import TimeEntryResponse
 from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response, _enrich_cr_responses
 from app.routers.time_entries import (
@@ -379,3 +385,56 @@ def review_change_request(
                 )
 
     return cr_response
+
+
+@router.post("/change-requests/bulk-review", response_model=ChangeRequestBulkReviewResult)
+def bulk_review_change_requests(
+    body: ChangeRequestBulkReview,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Approve or reject many change requests in one call. Each item runs through
+    the same precondition checks as the single-review endpoint; failures for
+    individual items (stale state, conflicts, non-pending status) are reported
+    per-item but do not abort the remaining items.
+    """
+    if body.action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="Ungültige Aktion (approve/reject)")
+
+    items: list[ChangeRequestBulkReviewItemResult] = []
+    succeeded = 0
+    failed = 0
+
+    single_body = ChangeRequestReview(action=body.action, rejection_reason=body.rejection_reason)
+
+    for request_id in body.request_ids:
+        try:
+            review_change_request(
+                request_id=str(request_id),
+                review=single_body,
+                db=db,
+                current_user=current_user,
+            )
+            items.append(ChangeRequestBulkReviewItemResult(
+                request_id=request_id,
+                status="approved" if body.action == "approve" else "rejected",
+            ))
+            succeeded += 1
+        except HTTPException as exc:
+            # review_change_request already rolled back its transaction on
+            # raising; continue with the next item so the admin doesn't have
+            # to retry a 50-item batch after one stale row.
+            db.rollback()
+            items.append(ChangeRequestBulkReviewItemResult(
+                request_id=request_id,
+                status="failed",
+                error=str(exc.detail),
+            ))
+            failed += 1
+
+    return ChangeRequestBulkReviewResult(
+        succeeded=succeeded,
+        failed=failed,
+        items=items,
+    )

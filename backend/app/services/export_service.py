@@ -111,9 +111,11 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     ).all()
     absences_by_date = {absence.date: absence for absence in absences}
 
-    # Get public holidays
+    # Get public holidays (tenant-scoped: each tenant may run a different
+    # state-holiday set, so a global query would leak or miss holidays).
     holidays = db.query(PublicHoliday).filter(
-        date_in_month(PublicHoliday.date, year, month)
+        PublicHoliday.tenant_id == user.tenant_id,
+        date_in_month(PublicHoliday.date, year, month),
     ).all()
     holidays_by_date = {holiday.date: holiday for holiday in holidays}
 
@@ -605,9 +607,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     ).all()
     absences_by_date = {absence.date: absence for absence in absences}
 
-    # Get public holidays for the year
+    # Get public holidays for the year (tenant-scoped; see generate_monthly_report).
     holidays = db.query(PublicHoliday).filter(
-        PublicHoliday.year == year
+        PublicHoliday.tenant_id == user.tenant_id,
+        PublicHoliday.year == year,
     ).all()
     holidays_by_date = {holiday.date: holiday for holiday in holidays}
 
@@ -1153,6 +1156,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         absences_by_date = {a.date: a for a in absences}
 
         holidays = db.query(PublicHoliday).filter(
+            PublicHoliday.tenant_id == user.tenant_id,
             date_in_month(PublicHoliday.date, year, month),
         ).all()
         holidays_by_date = {h.date: h for h in holidays}

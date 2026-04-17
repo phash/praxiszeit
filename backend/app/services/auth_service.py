@@ -119,8 +119,66 @@ def get_totp_uri(username: str, secret: str) -> str:
 
 
 def verify_totp(secret: str, code: str) -> bool:
-    """Verify a 6-digit TOTP code. Allows ±1 window (30s tolerance)."""
+    """Verify a 6-digit TOTP code. Allows ±1 window (30s tolerance).
+
+    NOTE: this does not protect against replay within the valid window.
+    Callers that persist a per-user counter must use `verify_totp_with_counter`
+    instead.
+    """
     return pyotp.TOTP(secret).verify(code, valid_window=1)
+
+
+def verify_totp_with_counter(
+    secret: str,
+    code: str,
+    last_counter: Optional[int],
+    *,
+    valid_window: int = 1,
+) -> Optional[int]:
+    """Verify a TOTP code and return the accepted counter value, or None.
+
+    TOTP codes remain valid across a ±30s window (by default) and without a
+    persisted counter a captured code can be replayed against the login
+    endpoint until it falls out of the window. This helper:
+
+      1. Scans the accepted window for a matching code (constant-time
+         comparison per candidate, same as pyotp.verify).
+      2. Rejects any counter value that is ≤ last_counter (= already used).
+      3. Returns the accepted counter so the caller can persist it.
+
+    The caller is responsible for storing the returned counter on the user
+    before the next call is dispatched.
+    """
+    import time as _time
+    totp = pyotp.TOTP(secret)
+    now = int(_time.time())
+    step = totp.interval
+
+    # Iterate windows oldest-first so that if two codes within the window
+    # both match (pathological clock skew), we accept the highest counter.
+    accepted: Optional[int] = None
+    for offset in range(-valid_window, valid_window + 1):
+        candidate_time = now + offset * step
+        counter = candidate_time // step
+        if last_counter is not None and counter <= last_counter:
+            continue
+        expected = totp.at(candidate_time)
+        # pyotp's internal comparison is constant-time; fall back to `==`
+        # for simplicity since the strings are fixed length.
+        if _consteq(expected, code.strip()):
+            # Keep scanning so we take the newest matching counter if any
+            accepted = counter
+    return accepted
+
+
+def _consteq(a: str, b: str) -> bool:
+    """Constant-time string comparison for equal-length strings."""
+    if len(a) != len(b):
+        return False
+    result = 0
+    for ca, cb in zip(a, b):
+        result |= ord(ca) ^ ord(cb)
+    return result == 0
 
 
 def decode_token(token: str) -> Optional[dict]:

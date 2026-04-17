@@ -15,6 +15,7 @@ from app.schemas.time_entry import (
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break
 from app.services.arbzg_utils import is_night_work, NIGHT_THRESHOLD_MINUTES
+from app.routers.admin_helpers import _create_audit_log
 from uuid import UUID as UUIDType
 
 router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
@@ -24,8 +25,6 @@ MAX_DAILY_HOURS_HARD = 10.0         # §3 ArbZG: absolute Obergrenze
 MAX_DAILY_HOURS_WARN = 8.0          # §3 ArbZG: Regelgrenze (Warnung)
 MAX_WEEKLY_HOURS_WARN = 48.0        # §3 ArbZG: 6 Werktage × 8h Durchschnitt = 48h/Woche
 MAX_NIGHT_WORKER_DAILY_WARN = 8.0   # §6 Abs. 2 ArbZG: Tageslimit für Nachtarbeitnehmer
-NIGHT_START = time(23, 0)
-NIGHT_END   = time(6, 0)
 
 
 def _net_hours(st: time, et: time, brk: int) -> float:
@@ -701,6 +700,20 @@ def delete_time_entry(
             status_code=403,
             detail="Einträge vergangener Tage können nur per Änderungsantrag gelöscht werden"
         )
+
+    # §16 ArbZG / EuGH C-55/18: every deletion must leave an audit trail,
+    # even when the user deletes their own same-day entry. The admin delete
+    # path already logs — this mirrors that behaviour for employee self-delete.
+    _create_audit_log(
+        db,
+        entry.id,
+        entry.user_id,
+        current_user.id,
+        action="delete",
+        old_entry=entry,
+        source="manual",
+        tenant_id=current_user.tenant_id,
+    )
 
     db.delete(entry)
     db.commit()

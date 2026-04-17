@@ -12,6 +12,7 @@ from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
 from app.services import auth_service
+from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -269,6 +270,18 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
     existing_user = db.query(User).filter(func.lower(User.username) == user_data.username.lower()).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
+
+    # License: block creation when active-user count would exceed max_employees.
+    # No-op when no license is loaded (SaaS / dev mode).
+    active_count = (
+        db.query(User)
+        .filter(
+            User.tenant_id == current_user.tenant_id,
+            User.is_active == True,  # noqa: E712
+        )
+        .count()
+    )
+    check_employee_limit(active_count)
 
     new_user = User(
         username=user_data.username.lower(),

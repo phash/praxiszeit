@@ -93,6 +93,11 @@ export default function AdminChangeRequests() {
   const [timeRange, setTimeRange] = useState<TimeRange>('3m');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  // Bulk-Approval: Set of selected pending request IDs
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRejectMode, setBulkRejectMode] = useState(false);
+  const [bulkRejectionReason, setBulkRejectionReason] = useState('');
+  const [bulkProcessing, setBulkProcessing] = useState(false);
 
   useEffect(() => {
     apiClient.get('/admin/users').then(res => {
@@ -105,6 +110,9 @@ export default function AdminChangeRequests() {
 
   useEffect(() => {
     fetchRequests();
+    // clear bulk selection when the listing changes (filter/user/time)
+    setSelectedIds(new Set());
+    setBulkRejectMode(false);
   }, [filter, selectedUser, timeRange, customFrom, customTo]);
 
   const fetchRequests = async () => {
@@ -161,6 +169,52 @@ export default function AdminChangeRequests() {
   };
 
   const pendingCount = requests.filter(r => r.status === 'pending').length;
+  const pendingIds = requests.filter(r => r.status === 'pending').map(r => r.id);
+  const allPendingSelected = pendingIds.length > 0 && pendingIds.every(id => selectedIds.has(id));
+
+  const toggleOne = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllPending = () => {
+    if (allPendingSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendingIds));
+    }
+  };
+
+  const runBulkReview = async (action: 'approve' | 'reject', reason?: string) => {
+    if (selectedIds.size === 0) return;
+    setBulkProcessing(true);
+    try {
+      const response = await apiClient.post('/admin/change-requests/bulk-review', {
+        request_ids: Array.from(selectedIds),
+        action,
+        rejection_reason: reason || undefined,
+      });
+      const { succeeded, failed } = response.data as { succeeded: number; failed: number };
+      if (failed === 0) {
+        toast.success(`${succeeded} Anträge ${action === 'approve' ? 'genehmigt' : 'abgelehnt'}`);
+      } else if (succeeded === 0) {
+        toast.error(`Alle ${failed} Anträge konnten nicht bearbeitet werden`);
+      } else {
+        toast.warning(`${succeeded} bearbeitet, ${failed} fehlgeschlagen`);
+      }
+      setSelectedIds(new Set());
+      setBulkRejectMode(false);
+      setBulkRejectionReason('');
+      fetchRequests();
+    } catch (error: any) {
+      toast.error(getErrorMessage(error, 'Fehler bei der Sammelbearbeitung'));
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
 
   return (
     <div>
@@ -252,6 +306,73 @@ export default function AdminChangeRequests() {
         )}
       </div>
 
+      {/* Bulk-Action bar: only when pending filter active */}
+      {filter === 'pending' && pendingIds.length > 0 && (
+        <div className="mb-4 bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allPendingSelected}
+                onChange={toggleAllPending}
+                className="w-4 h-4 text-primary rounded"
+              />
+              <span>
+                {selectedIds.size > 0
+                  ? `${selectedIds.size} ausgewählt`
+                  : `Alle ${pendingIds.length} auswählen`}
+              </span>
+            </label>
+
+            {selectedIds.size > 0 && !bulkRejectMode && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => runBulkReview('approve')}
+                  disabled={bulkProcessing}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
+                >
+                  <Check size={16} /> {selectedIds.size} genehmigen
+                </button>
+                <button
+                  onClick={() => setBulkRejectMode(true)}
+                  disabled={bulkProcessing}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 disabled:opacity-50 text-red-700 text-sm rounded-lg transition"
+                >
+                  <X size={16} /> {selectedIds.size} ablehnen
+                </button>
+              </div>
+            )}
+          </div>
+          {bulkRejectMode && (
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={bulkRejectionReason}
+                onChange={(e) => setBulkRejectionReason(e.target.value)}
+                placeholder="Ablehnungsgrund (für alle ausgewählten Anträge, optional)"
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => runBulkReview('reject', bulkRejectionReason)}
+                  disabled={bulkProcessing}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
+                >
+                  {selectedIds.size} ablehnen
+                </button>
+                <button
+                  onClick={() => { setBulkRejectMode(false); setBulkRejectionReason(''); }}
+                  disabled={bulkProcessing}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm rounded-lg transition"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Requests */}
       <div className="space-y-4">
         {loading ? (
@@ -274,6 +395,15 @@ export default function AdminChangeRequests() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <div className="flex items-center space-x-3 mb-1">
+                      {cr.status === 'pending' && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(cr.id)}
+                          onChange={() => toggleOne(cr.id)}
+                          className="w-4 h-4 text-primary rounded"
+                          aria-label={`Antrag von ${cr.user_first_name} ${cr.user_last_name} auswählen`}
+                        />
+                      )}
                       <span className="font-semibold text-gray-900">
                         {cr.user_last_name}, {cr.user_first_name}
                       </span>

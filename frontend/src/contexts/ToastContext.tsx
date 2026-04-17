@@ -61,15 +61,26 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
+  // Duration defaults tuned to severity: success is ack-only (short so it
+  // doesn't clutter), errors/warnings demand reading time. Callers can still
+  // override by passing an explicit duration.
+  const DEFAULT_DURATIONS: Record<ToastType, number> = {
+    success: 3000,
+    info: 5000,
+    warning: 6000,
+    error: 8000,
+  };
+
   const showToast = useCallback(
-    (type: ToastType, message: string, duration = 5000) => {
+    (type: ToastType, message: string, duration?: number) => {
       const id = generateToastId();
-      const newToast: Toast = { id, type, message, duration };
+      const resolvedDuration = duration ?? DEFAULT_DURATIONS[type];
+      const newToast: Toast = { id, type, message, duration: resolvedDuration };
 
       setToasts((prev) => [...prev, newToast]);
 
-      if (duration > 0) {
-        setTimeout(() => removeToast(id), duration);
+      if (resolvedDuration > 0) {
+        setTimeout(() => removeToast(id), resolvedDuration);
       }
     },
     [removeToast]

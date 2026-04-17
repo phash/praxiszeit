@@ -34,6 +34,20 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 
+# This script uses the SSL overlay → production deploy. Refuse to run with
+# ENVIRONMENT != production so that /docs, /redoc and /openapi.json stay
+# disabled and the weak-admin-password check hard-fails on boot.
+if [ -f .env ]; then
+    ENV_VALUE=$(grep -E '^ENVIRONMENT=' .env | head -n 1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')
+else
+    ENV_VALUE=""
+fi
+if [ "${ENV_VALUE}" != "production" ]; then
+    log "ERROR: .env must contain ENVIRONMENT=production for this deploy."
+    log "       Current value: '${ENV_VALUE:-<unset>}'"
+    exit 1
+fi
+
 # Record the currently-deployed commit BEFORE pulling.
 PREVIOUS_COMMIT=$(git rev-parse HEAD)
 log "Current deployed commit: ${PREVIOUS_COMMIT}"
