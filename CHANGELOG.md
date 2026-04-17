@@ -1,5 +1,89 @@
 # Changelog
 
+## [1.3.5] - 2026-04-17
+
+**Audit-Response-Release.** Adressiert die Findings aus einem kritischen
+Security-/ArbZG-/UX-/Test-Audit (PR #89). Kern: zwei neue Middleware-
+Ebenen (License-Readonly, Request-Size-Limit), neuer Superadmin-Router
+fuer §16-Notfall-Export, TOTP-Replay-Schutz per DB-Migration, neue
+Admin-Change-Request-UI, sowie ein Frontend-Util das ArbZG-Warnungen
+einheitlich anzeigt. Reiner Additiv-Release, keine Breaking Changes
+ggue. 1.3.4.
+
+### 🔴 Security
+- **TOTP-Replay-Schutz** — neue Migration `032_totp_replay` fuegt dem
+  `users`-Table ein `last_totp_counter` (bzw. Replay-Tracking) hinzu.
+  Verhindert, dass ein bereits akzeptierter 6-stelliger TOTP-Code im
+  selben 30-Sek-Fenster ein zweites Mal akzeptiert wird.
+  Test: `tests/test_totp_replay.py`.
+- **LicenseReadOnlyMiddleware** (`app/middleware/license.py`) — blockt
+  alle schreibenden HTTP-Methoden (POST/PUT/PATCH/DELETE) bei
+  abgelaufener Lizenz mit `403` und liefert nur noch Read-Only-API.
+  Registriert global in `main.py`, deckt damit neue Writer-Endpoints
+  automatisch ab (keine Per-Route-Dependency noetig).
+- **Request-Size-Limit** — Middleware-Enforcement fuer Body-Groesse
+  plus Regressions-Test `tests/test_request_size_limit.py`.
+- **Cross-Tenant-API-Tests** (`tests/test_cross_tenant_api.py`,
+  224 LOC) — systematische Negativ-Tests gegen alle Tenant-ueberquerende
+  Angriffsvektoren (Read/Write/Delete auf fremde `tenant_id`).
+- **Concurrency-Tests** (`tests/test_concurrency.py`, 170 LOC) —
+  Postgres-only Race-Tests fuer `clock_out` / Absence-Unique-Constraint
+  / Change-Request-Approval.
+
+### 🟡 Superadmin / DSGVO-Art.20
+- **Neuer Superadmin-Router** `/api/superadmin/*`
+  (`app/routers/superadmin.py`, 205 LOC). Erfordert User **ohne**
+  `tenant_id` (`require_superadmin`-Dependency). Zweck: §16-Notfall-
+  Export deaktivierter Tenants. Setzt `set_superadmin_context(db)` um
+  RLS zu umgehen und kann tenant-uebergreifend lesen/exportieren.
+
+### 🟡 Change-Request-Workflow
+- **Admin-Change-Requests-UI** (`pages/admin/ChangeRequests.tsx`,
+  130 LOC) — endlich ein Admin-Frontend fuer die CR-Approval. Davor
+  war das nur ueber die API ansteuerbar.
+- **Precondition-Checks vor Status-Aenderung** in
+  `admin_change_requests.py` (Race-Condition-Fix) +
+  `change_request.py` Schema erweitert.
+
+### 🟡 ArbZG-Warnings (Frontend)
+- **Neues Util `utils/arbzgWarnings.ts`** + Tests
+  (`arbzgWarnings.test.ts`). Alle ArbZG-Warnungen aus API-Responses
+  werden ab jetzt zentral ueber `showArbzgWarnings(toast, warnings)`
+  angezeigt. `StampWidget` und `TimeTracking` wurden umgestellt —
+  statt duplizierten `if warnings.includes(...)`-Bloecken pro Seite.
+- **ToastContext**: severity-basierte Default-Dauern (success 3s,
+  error 8s, warning 6s, info 5s) damit Ruhezeitwarnungen lang genug
+  stehen. Aufrufer muessen die Dauer **nicht** mehr pro Call setzen.
+
+### 🟡 Exporte
+- **ODS-Export** (`ods_export_service.py`) — Review-Fixes + neuer Test
+  `tests/test_ods_export_service.py` (125 LOC).
+- **reports.py** um ~80 LOC erweitert (Multi-Entry-Export + Report-
+  Fixes, deckt die Mehrfachbuchung pro Tag korrekt ab).
+
+### 🟡 Middleware / Infrastruktur
+- **`middleware/static_serving.py`** — SPA-Fallback-Middleware (+75
+  LOC): saubere Trennung zwischen API-Pfaden und SPA-Routes fuer den
+  Native-Modus (`SERVE_FRONTEND=True`).
+- **`middleware/auth.py`** — kleinere Haerteanpassungen (+15 LOC).
+- **`auth_service.py`** +60 LOC, **`auth.py` Router** angepasst fuer
+  TOTP-Replay + Login-Haertung.
+
+### 🟡 Build / CI
+- **`scripts/local-ci.sh`** gruendlich ueberarbeitet — split nach
+  SQLite-Unit vs Postgres-Integration (RLS + Concurrency),
+  vitest/tsc/eslint/vite build/e2e in einem Wrapper.
+- **`frontend/vite.config.ts` + `tsconfig.json`** — Test-Pfade
+  integriert, neue Frontend-Utils (`errorMessage.test.ts`,
+  `formatters.test.ts`) laufen jetzt in der CI.
+- **`deploy.sh`** um Smoke-Test-Steps erweitert (+14 LOC).
+
+### 📝 Vorbereitung fuer 1.4.0
+- **Avalonia-UI-Installer-Scaffolding** unter `installer/setup/`
+  (C# / Avalonia, `1.4.0-alpha.1`). Noch **nicht** Teil des
+  ausgelieferten Pakets — wird ab 1.4.0 als `praxiszeit-setup.exe`
+  den NSSM/setup.bat-Stack bei Neuinstallationen ersetzen.
+
 ## [1.3.4] - 2026-04-11
 
 **Massives Cleanup-Release nach einer Live-Debugging-Session auf einem
