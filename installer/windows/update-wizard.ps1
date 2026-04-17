@@ -457,6 +457,40 @@ function Step-PipInstall {
     }
     try {
         $env:PYTHONUTF8 = '1'
+
+        # F-056 (1.3.6): pip selbst vorher bootstrappen. Robocopy merged
+        # bin/python/Lib/site-packages/ ohne Purge — Resultat beim Kunden
+        # war ein Mix aus alten + neuen pip._vendor.resolvelib-Files, der
+        # mit `ImportError: cannot import name 'RequirementInformation'
+        # from pip._vendor.resolvelib.structs` gecrasht ist. get-pip.py
+        # --force-reinstall baut pip sauber neu, damit das egal ist.
+        $getPip = Join-Path $InstallDir 'bin\python\get-pip.py'
+        if (Test-Path $getPip) {
+            Write-Log 'Bootstrap pip (get-pip.py --force-reinstall)...'
+            $quotedGetPip = if ($getPip -match '\s') { "`"$getPip`"" } else { $getPip }
+            $psiBoot = New-Object System.Diagnostics.ProcessStartInfo
+            $psiBoot.FileName = $python
+            $psiBoot.Arguments = "$quotedGetPip --force-reinstall --no-warn-script-location --quiet"
+            $psiBoot.WorkingDirectory = $InstallDir
+            $psiBoot.UseShellExecute = $false
+            $psiBoot.RedirectStandardOutput = $true
+            $psiBoot.RedirectStandardError = $true
+            $psiBoot.CreateNoWindow = $true
+            $procBoot = [System.Diagnostics.Process]::Start($psiBoot)
+            $bootStderr = $procBoot.StandardError.ReadToEnd()
+            $procBoot.WaitForExit()
+            if ($procBoot.ExitCode -ne 0) {
+                Write-Log "WARNUNG: pip-Bootstrap exit=$($procBoot.ExitCode)"
+                foreach ($line in ($bootStderr -split "`r?`n")) {
+                    if ($line.Trim()) { Write-Log "  $line" }
+                }
+            } else {
+                Write-Log 'pip neu installiert'
+            }
+        } else {
+            Write-Log 'WARNUNG: get-pip.py nicht gefunden - pip-Bootstrap uebersprungen'
+        }
+
         $quotedReq = if ($req -match '\s') { "`"$req`"" } else { $req }
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $python
