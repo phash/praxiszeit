@@ -24,6 +24,28 @@ class ChangeRequestReview(BaseModel):
     rejection_reason: Optional[str] = None
 
 
+class ChangeRequestBulkReview(BaseModel):
+    request_ids: List[UUID] = Field(..., min_length=1, max_length=200)
+    action: str  # "approve" or "reject"
+    rejection_reason: Optional[str] = None
+
+
+class ChangeRequestBulkReviewItemResult(BaseModel):
+    request_id: UUID
+    status: str  # "approved" | "rejected" | "failed"
+    error: Optional[str] = None
+
+    @field_serializer('request_id')
+    def serialize_request_id(self, value):
+        return str(value)
+
+
+class ChangeRequestBulkReviewResult(BaseModel):
+    succeeded: int
+    failed: int
+    items: List[ChangeRequestBulkReviewItemResult]
+
+
 class ChangeRequestResponse(BaseModel):
     id: UUID
     user_id: UUID

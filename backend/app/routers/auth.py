@@ -196,7 +196,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 detail="Tenant deaktiviert"
             )
 
-    # F-019: TOTP check
+    # F-019: TOTP check with replay protection (per-user counter)
     if user.totp_enabled:
         if not login_data.totp_code:
             raise HTTPException(
@@ -204,11 +204,17 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 detail="TOTP-Code erforderlich",
                 headers={"X-Requires-TOTP": "true"},
             )
-        if not auth_service.verify_totp(user.totp_secret, login_data.totp_code):
+        accepted_counter = auth_service.verify_totp_with_counter(
+            user.totp_secret, login_data.totp_code, user.last_totp_counter
+        )
+        if accepted_counter is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Ungültiger TOTP-Code",
             )
+        user.last_totp_counter = accepted_counter
+        db.add(user)
+        db.commit()
 
     # Clear failed login counter on success
     _failed_logins.pop(username_lower, None)

@@ -17,6 +17,7 @@ import MonthSelector from '../components/MonthSelector';
 import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
 import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
+import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { useUIStore } from '../stores/uiStore';
 
 interface TimeEntry {
@@ -333,18 +334,7 @@ export default function TimeTracking() {
         toast.success('Zeiteintrag erfolgreich erstellt');
       }
       const saved: TimeEntry = response.data;
-      if (saved.warnings?.includes('DAILY_HOURS_WARNING')) {
-        toast.warning('Tagesarbeitszeit über 8 Stunden');
-      }
-      if (saved.warnings?.includes('WEEKLY_HOURS_WARNING')) {
-        toast.warning('Wochenarbeitszeit über 48 Stunden');
-      }
-      if (saved.warnings?.includes('SUNDAY_WORK')) {
-        toast.warning('Sonntagsarbeit eingetragen – bitte Ausnahmegrund angeben');
-      }
-      if (saved.warnings?.includes('HOLIDAY_WORK')) {
-        toast.warning('Feiertagsarbeit eingetragen – bitte Ausnahmegrund angeben');
-      }
+      showArbzgWarnings(toast, saved.warnings);
       fetchEntries();
       resetForm();
     } catch (error: any) {

@@ -686,3 +686,83 @@ def get_compensatory_rest(
         "total_violations": sum(r["violation_count"] for r in result),
         "non_compliant_count": sum(1 for r in result if not r["compliant"]),
     }
+
+
+@router.get("/24-week-average")
+def get_24_week_averaging_period(
+    end_date: date = Query(None, description="End of the 24-week window (default: today)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    §3 ArbZG: Daily hours may be extended to 10h only if the 8h daily average
+    is maintained over 6 calendar months / 24 weeks.
+
+    For each active employee, sums all net working hours in the preceding 168
+    days and compares to the allowed budget (8h × scheduled work days).
+    `scheduled_work_days = 24 × user.work_days_per_week`.
+
+    An employee flagged as non-compliant has systematically exceeded the 10h
+    exception allowance and the ArbZG averaging clause no longer covers them.
+    """
+    from datetime import timedelta
+
+    if end_date is None:
+        end_date = date.today()
+    start_date = end_date - timedelta(weeks=24)
+
+    users = _get_active_visible_users(db)
+    result = []
+
+    for user in users:
+        if user.exempt_from_arbzg:
+            continue
+
+        entries = (
+            db.query(TimeEntry)
+            .filter(
+                TimeEntry.user_id == user.id,
+                TimeEntry.date >= start_date,
+                TimeEntry.date <= end_date,
+                TimeEntry.end_time.isnot(None),
+            )
+            .all()
+        )
+        total_hours = sum(float(e.net_hours or 0) for e in entries)
+
+        work_days_per_week = user.work_days_per_week or 5
+        scheduled_days = 24 * work_days_per_week
+        max_budget = 8.0 * scheduled_days
+        average = (total_hours / scheduled_days) if scheduled_days else 0.0
+
+        # Count days where the employee exceeded 8h — these are the days
+        # that actually consume the averaging budget.
+        over_8h_count = 0
+        by_date: dict = {}
+        for e in entries:
+            by_date.setdefault(e.date, 0.0)
+            by_date[e.date] += float(e.net_hours or 0)
+        for total in by_date.values():
+            if total > 8.0:
+                over_8h_count += 1
+
+        result.append({
+            "user_id": str(user.id),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "window_start": start_date.isoformat(),
+            "window_end": end_date.isoformat(),
+            "total_hours": round(total_hours, 2),
+            "scheduled_work_days": scheduled_days,
+            "max_budget_hours": round(max_budget, 2),
+            "average_daily_hours": round(average, 2),
+            "days_over_8h": over_8h_count,
+            "compliant": average <= 8.0,
+        })
+
+    return {
+        "window_start": start_date.isoformat(),
+        "window_end": end_date.isoformat(),
+        "employees": result,
+        "non_compliant_count": sum(1 for r in result if not r["compliant"]),
+    }
