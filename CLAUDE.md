@@ -33,10 +33,18 @@ PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql
 ### Tests
 ```bash
 cd e2e && npx playwright test                                    # E2E (114 Tests)
-docker compose exec backend pytest tests/ -v                     # Backend Unit (343 Tests)
+docker compose exec backend pytest tests/ -v                     # Backend Unit (343+ Tests)
 docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (13 Tests)
+docker compose exec backend pytest tests/test_concurrency.py     # Postgres-only Race-Tests
+cd frontend && npm test                                          # Vitest Utils-Tests
 ```
+All-in-one: `bash scripts/local-ci.sh` (backend pytest split SQLite/Postgres, vitest, tsc, eslint, vite build, e2e).
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
+
+### Dev-Workflow Fallstricke
+- **Backend-Container ist gebaut**, kein Host-Volume: Nach Edits `docker compose cp <host-file> backend:/app/<path>` VOR `pytest`, sonst sieht der Container den alten Code. Für Prod-Änderungen: `docker compose build backend && docker compose up -d backend`.
+- **Frontend `node_modules` ist root-owned** (im Image-Build erzeugt). Host-`npm install` failt mit EACCES. Pattern: `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install --silent && ..."`.
+- **Test-Stratifizierung:** Unit-Tests laufen gegen SQLite (conftest.py). RLS + echte `SELECT FOR UPDATE`-Races brauchen Postgres → `test_tenant_rls.py` + `test_concurrency.py` aus normalem pytest ausschließen (`--ignore=`).
 
 ### Kritische Regeln
 - `get_weekly_hours_for_date()` **immer** pro Tag – nie `user.weekly_hours` direkt
@@ -44,6 +52,11 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - Pydantic Response-Schemas: `float` statt `Decimal`
 - nginx SPA vs. Static-Dir: `location = /route` VOR `location /` einfügen
 - Stunden-Anzeige: `formatHoursHM()` aus `utils/errorMessage.ts` (H:MM, Overflow-safe)
+- **ArbZG-Warnungen aus API-Responses:** immer über `showArbzgWarnings(toast, response.warnings)` aus `utils/arbzgWarnings.ts` (nicht einzelne `if includes(...)` Blöcke duplizieren)
+- **Toast-Dauer:** Nicht hardcoden — `ToastContext` setzt severity-basierte Defaults (success 3s, error 8s, warning 6s, info 5s)
+- **Tenant-Scope bei PublicHoliday:** Alle Queries mit `PublicHoliday.tenant_id == <tid>` filtern; User/Entry-Queries bereits durch RLS geschützt, Holidays werden aber oft standalone geladen
+- **License-Enforcement ist Middleware:** `LicenseReadOnlyMiddleware` in `main.py` blockiert Schreib-Methoden bei abgelaufener Lizenz, plus `check_employee_limit()` in `create_user` (neue Writer-Endpoints automatisch mit abgedeckt — keine Per-Route-Dependency nötig)
+- **Superadmin-Router:** `/api/superadmin/*` via `require_superadmin` (User ohne `tenant_id`) für §16-Notfall-Export deaktivierter Tenants
 - Cross-Page Refresh nach Stempeln: `uiStore.notifyStampChange()` → `stampVersion` Effect
 - Bulk-Deletes: `synchronize_session=False` + expliziter `tenant_id`-Filter
 - **Überstundenausgleich:** Soll bleibt, Ist=0h (NICHT Soll reduzieren!)
