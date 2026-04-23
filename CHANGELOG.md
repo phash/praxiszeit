@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.7] - 2026-04-23
+
 ### ✨ Feature — Urlaub / Anträge stornieren (Issue #90)
 - **`DELETE /api/vacation-requests/{id}`** erlaubt zusätzlich zur
   bisherigen PENDING-Zurücknahme jetzt auch das Stornieren eines
