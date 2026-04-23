@@ -11,7 +11,9 @@ from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview
 from app.services import calculation_service
 from app.services.calculation_service import count_workdays
+from app.services.timezone_service import today_local
 from app.routers.admin_helpers import _create_audit_log
+from app.routers.vacation_requests import cancel_approved_vacation_request
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -242,3 +244,51 @@ def review_vacation_request(
     db.commit()
     db.refresh(vr)
     return _enrich_vr_response(vr, db)
+
+
+@router.delete("/vacation-requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_vacation_request_as_admin(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin cancellation of a vacation request on behalf of the user.
+
+    Mirrors the employee-side withdraw semantics:
+    - PENDING → delete the request row.
+    - APPROVED with start date strictly in the future → delete associated
+      absences + flip to WITHDRAWN.
+
+    Tenant-scoped: admin cannot reach into foreign tenants.
+    """
+    vr = (
+        db.query(VacationRequest)
+        .filter(
+            VacationRequest.id == request_id,
+            VacationRequest.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if not vr:
+        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
+
+    if vr.status == VacationRequestStatus.PENDING.value:
+        db.delete(vr)
+        db.commit()
+        return None
+
+    if vr.status == VacationRequestStatus.APPROVED.value:
+        if vr.date <= today_local():
+            raise HTTPException(
+                status_code=400,
+                detail="Genehmigte Anträge können nur storniert werden, wenn der Zeitraum noch nicht begonnen hat",
+            )
+        cancel_approved_vacation_request(db, vr, current_user)
+        db.commit()
+        return None
+
+    raise HTTPException(
+        status_code=400,
+        detail="Nur offene oder genehmigte zukünftige Anträge können storniert werden",
+    )

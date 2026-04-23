@@ -30,7 +30,26 @@ Git Bash on Windows: `rsync`/`zip` fehlen → Script hat `tar`/PowerShell-`Compr
 PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe` (kein Webformular).
 **Version-Bump:** 3 Stellen + Lock — `backend/app/core/updater.py`, `tools/build-release.sh` Default, `frontend/package.json` (+ `cd frontend && npm install` für Lock). Build-Script validiert Consistency und bricht sonst ab. `frontend/package.json.version` landet als `__APP_VERSION__` im Footer (`Layout.tsx:345`) — ohne Bump zeigt die UI die alte Version (war 1.3.0 → 1.3.5 lang gedriftet).
 **Build-Exit-Code 1 am Ende ist kosmetisch** (letztes `$BUILD_LINUX && cat <<EOF` liefert 1 bei `false`). Erfolg = `dist/praxiszeit-X.Y.Z-windows-x64.zip` existiert.
+**Self-signed SSL-Cert generieren** (für lokale HTTPS-Tests): `python tools/generate-self-signed-cert.py` — Chrome ServiceWorker-Registrierung scheitert damit trotzdem (Issue #84).
 → Details: [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md)
+
+#### Cross-Platform Installer (1.4.0+, Avalonia/.NET 10)
+Ab 1.4.0-alpha.1 (`7f10a4a`) gibt es zusätzlich einen GUI-Installer unter `installer/setup/`:
+```bash
+cd installer/setup
+dotnet test                                    # 20 Tests (xunit + FluentAssertions)
+dotnet build                                   # baut alle 3 Projekte (.NET 10)
+dotnet publish src/PraxisZeit.Setup \
+    -c Release -r win-x64 --self-contained \
+    -p:PublishSingleFile=true                  # Single-File-Exe für eine Plattform
+```
+**Build-Dependency:** .NET 10 SDK (`dotnet --version` muss `10.x` zeigen).
+**Solution-Struktur:**
+- `src/PraxisZeit.Setup/` — Avalonia UI (WinExe, CommunityToolkit.Mvvm, Fluent-Theme)
+- `src/PraxisZeit.Setup.Core/` — Plattform-Services (Orchestrator, Pip, Alembic, Config, Backup, DB)
+- `tests/PraxisZeit.Setup.Core.Tests/` — Core-Unit-Tests
+**Tracking-Issues:** [#79](https://github.com/phash/praxiszeit/issues/79) (Wizard-Pages) · [#80](https://github.com/phash/praxiszeit/issues/80) (Core Services) · [#81](https://github.com/phash/praxiszeit/issues/81) (Build Pipeline) · [#88](https://github.com/phash/praxiszeit/issues/88) (Meta)
+**Config-Datei `C:\praxiszeit\config\praxiszeit.conf` NIEMALS mit Notepad editieren** — schreibt UTF-8 BOM, Python liest die erste Zeile als `﻿KEY=...` und bricht ab (F-053). VS Code oder `notepad++` mit UTF-8-ohne-BOM verwenden.
 
 ### Tests
 ```bash

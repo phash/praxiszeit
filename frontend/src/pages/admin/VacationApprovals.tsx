@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../../api/client';
-import { Clock, CheckCircle, XCircle, AlertCircle, Check, X } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Check, X, Trash2 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
@@ -35,6 +37,7 @@ const statusConfig = {
 
 export default function VacationApprovals() {
   const toast = useToast();
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [requests, setRequests] = useState<VacationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pending');
@@ -113,10 +116,39 @@ export default function VacationApprovals() {
     }
   };
 
+  const handleCancelApproved = (vr: VacationRequest) => {
+    confirm({
+      title: 'Urlaub stornieren',
+      message:
+        'Genehmigten Urlaub wirklich stornieren? Die zugehörigen Abwesenheitstage werden für diesen Mitarbeiter gelöscht.',
+      confirmLabel: 'Stornieren',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/admin/vacation-requests/${vr.id}`);
+          toast.success('Urlaub storniert');
+          fetchRequests();
+        } catch (error: any) {
+          toast.error(getErrorMessage(error, 'Fehler beim Stornieren'));
+        }
+      },
+    });
+  };
+
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
 
   return (
     <div>
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Abwesenheitsanträge</h1>
@@ -254,6 +286,19 @@ export default function VacationApprovals() {
                   <div className="text-xs text-gray-500 mb-4">
                     Bearbeitet von {vr.reviewer_first_name} {vr.reviewer_last_name} am{' '}
                     {format(new Date(vr.reviewed_at), 'dd.MM.yyyy HH:mm')}
+                  </div>
+                )}
+
+                {/* Cancel approved-future request */}
+                {vr.status === 'approved' && vr.date > todayStr && (
+                  <div className="border-t border-gray-200 pt-4">
+                    <button
+                      onClick={() => handleCancelApproved(vr)}
+                      className="flex items-center space-x-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm rounded-lg transition"
+                    >
+                      <Trash2 size={16} />
+                      <span>Urlaub stornieren</span>
+                    </button>
                   </div>
                 )}
 

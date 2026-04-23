@@ -359,31 +359,52 @@ export default function AbsenceCalendarPage() {
                       </p>
                       {vr.note && <p className="text-sm text-gray-500 mt-0.5">{vr.note}</p>}
                     </div>
-                    {vr.status === 'pending' && (
-                      <button
-                        onClick={() =>
-                          confirm({
+                    {(() => {
+                      const todayStr = format(new Date(), 'yyyy-MM-dd');
+                      const isPending = vr.status === 'pending';
+                      const isApprovedFuture = vr.status === 'approved' && vr.date > todayStr;
+                      if (!isPending && !isApprovedFuture) return null;
+                      const dialog = isApprovedFuture
+                        ? {
+                            title: 'Urlaub stornieren',
+                            message: 'Genehmigten Urlaub wirklich stornieren? Die zugehörigen Abwesenheitstage werden gelöscht.',
+                            confirmLabel: 'Stornieren',
+                            successMsg: 'Urlaub storniert',
+                            buttonTitle: 'Urlaub stornieren',
+                          }
+                        : {
                             title: 'Antrag zurückziehen',
                             message: 'Antrag wirklich zurückziehen?',
                             confirmLabel: 'Zurückziehen',
-                            variant: 'danger',
-                            onConfirm: async () => {
-                              try {
-                                await apiClient.delete(`/vacation-requests/${vr.id}`);
-                                toast.success('Antrag zurückgezogen');
-                                fetchMyVacationRequests();
-                              } catch {
-                                toast.error('Fehler beim Zurückziehen');
-                              }
-                            },
-                          })
-                        }
-                        className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
-                        title="Antrag zurückziehen"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
+                            successMsg: 'Antrag zurückgezogen',
+                            buttonTitle: 'Antrag zurückziehen',
+                          };
+                      return (
+                        <button
+                          onClick={() =>
+                            confirm({
+                              title: dialog.title,
+                              message: dialog.message,
+                              confirmLabel: dialog.confirmLabel,
+                              variant: 'danger',
+                              onConfirm: async () => {
+                                try {
+                                  await apiClient.delete(`/vacation-requests/${vr.id}`);
+                                  toast.success(dialog.successMsg);
+                                  fetchMyVacationRequests();
+                                } catch (error) {
+                                  toast.error(getErrorMessage(error, 'Fehler beim Zurückziehen'));
+                                }
+                              },
+                            })
+                          }
+                          className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title={dialog.buttonTitle}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      );
+                    })()}
                   </div>
                   {vr.status === 'rejected' && vr.rejection_reason && (
                     <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
