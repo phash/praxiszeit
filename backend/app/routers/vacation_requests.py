@@ -5,12 +5,13 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta, date
 
 from app.database import get_db
-from app.models import User, UserRole, PublicHoliday
+from app.models import User, UserRole, PublicHoliday, Absence, AbsenceType, TimeEntryAuditLog
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import get_current_user
 from app.schemas.vacation_request import VacationRequestCreate, VacationRequestResponse
 from app.services.calculation_service import count_workdays
+from app.services.timezone_service import today_local
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
@@ -161,20 +162,86 @@ def list_my_vacation_requests(
     return [_enrich(vr, db) for vr in requests]
 
 
+def cancel_approved_vacation_request(
+    db: Session,
+    vr: VacationRequest,
+    cancelled_by: User,
+) -> int:
+    """Delete absences created by an APPROVED vacation request and mark it WITHDRAWN.
+
+    Precondition (caller-enforced): vr.status == APPROVED and the entire
+    vacation range lies in the future (vr.date > today). Returns the number
+    of absences deleted. Uses an audit log row per deleted absence (DSGVO
+    Art. 5 Abs. 2).
+    """
+    end_date = vr.end_date if vr.end_date else vr.date
+    try:
+        absence_type_enum = AbsenceType(vr.absence_type or "vacation")
+    except ValueError:
+        absence_type_enum = AbsenceType.VACATION
+
+    absences_to_remove = db.query(Absence).filter(
+        Absence.tenant_id == vr.tenant_id,
+        Absence.user_id == vr.user_id,
+        Absence.date >= vr.date,
+        Absence.date <= end_date,
+        Absence.type == absence_type_enum,
+    ).all()
+
+    for absence in absences_to_remove:
+        audit = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=absence.user_id,
+            changed_by=cancelled_by.id,
+            action="delete",
+            old_date=absence.date,
+            old_note=f"absence:{absence.type.value}:{float(absence.hours)}h (cancelled vacation_request {vr.id})",
+            source="vacation_request_cancel",
+            tenant_id=vr.tenant_id,
+        )
+        db.add(audit)
+        db.delete(absence)
+
+    vr.status = VacationRequestStatus.WITHDRAWN.value
+    return len(absences_to_remove)
+
+
 @router.delete("/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
 def withdraw_vacation_request(
     request_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Withdraw (delete) a pending vacation request. Only own pending requests."""
+    """Withdraw / cancel a vacation request (own only).
+
+    - PENDING → delete the request row.
+    - APPROVED with start date strictly in the future → delete the
+      associated Absence rows and flip the request to WITHDRAWN. Past /
+      started vacations cannot be cancelled because the work day has
+      already happened (or is happening).
+    """
     vr = db.query(VacationRequest).filter(VacationRequest.id == request_id).first()
     if not vr:
         raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
     if str(vr.user_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Zugriff verweigert")
-    if vr.status != VacationRequestStatus.PENDING.value:
-        raise HTTPException(status_code=400, detail="Nur offene Anträge können zurückgezogen werden")
-    db.delete(vr)
-    db.commit()
-    return None
+
+    if vr.status == VacationRequestStatus.PENDING.value:
+        db.delete(vr)
+        db.commit()
+        return None
+
+    if vr.status == VacationRequestStatus.APPROVED.value:
+        if vr.date <= today_local():
+            raise HTTPException(
+                status_code=400,
+                detail="Genehmigte Anträge können nur storniert werden, wenn der Zeitraum noch nicht begonnen hat",
+            )
+        cancel_approved_vacation_request(db, vr, current_user)
+        db.commit()
+        return None
+
+    raise HTTPException(
+        status_code=400,
+        detail="Nur offene oder genehmigte zukünftige Anträge können storniert werden",
+    )

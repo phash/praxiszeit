@@ -1,5 +1,54 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ Feature — Urlaub / Anträge stornieren (Issue #90)
+- **`DELETE /api/vacation-requests/{id}`** erlaubt zusätzlich zur
+  bisherigen PENDING-Zurücknahme jetzt auch das Stornieren eines
+  bereits **genehmigten** Antrags, solange der Zeitraum noch
+  **in der Zukunft** liegt (`vr.date > heute`). Beim Storno werden
+  die zugehörigen `Absence`-Tage (matched auf `user_id`, Datumsbereich
+  der VR, gleicher `absence_type`) gelöscht, ein Audit-Log-Eintrag pro
+  Tag geschrieben (`source=vacation_request_cancel`), und die VR auf
+  `withdrawn` geflipt. Angefangene/abgelaufene Urlaube sind bewusst
+  nicht stornierbar (Arbeitstag ist bereits ausgefallen).
+- **Neuer Admin-Endpoint `DELETE /api/admin/vacation-requests/{id}`**
+  mit identischer Semantik für Admin-on-behalf-Storno; tenant-scoped
+  und per `with_for_update()` gegen Race-Conditions beim gleichzeitigen
+  Approve/Cancel-Click abgesichert.
+- **Frontend**: "Stornieren"-Button jetzt auch bei genehmigten
+  zukünftigen Urlauben sichtbar — im Mitarbeiter-Kalender
+  (`AbsenceCalendarPage`) und auf der Admin-Seite
+  (`VacationApprovals`). Bestätigungsdialog erklärt, dass die
+  Abwesenheitstage mitgelöscht werden.
+- **Tests:** Neues `tests/test_vacation_request_cancel.py` (11 Cases)
+  deckt alle 4 VR-Status × {future, today, past} × {employee, admin,
+  cross-user} Kombinationen ab.
+
+### 🟡 Security — Dependency-Patches (Issue #85)
+- **`python-dotenv` 1.0.* -> >=1.2.2** (GHSA-mf9w-mj56-hr94) —
+  Symlink-following in `set_key()` erlaubte Arbitrary-File-Overwrite
+  via Cross-Device-Rename-Fallback. Nur indirekt durch
+  pydantic-settings `.env`-Loading genutzt; Pin hebt Floor auf das
+  gepatchte Release.
+- **`Tmds.DBus.Protocol` 0.90.3 -> 0.92.0** (GHSA-xrw6-gwf8-vvr9,
+  HIGH) — malicious D-Bus peers konnten Signals spoofen und FDs
+  erschoepfen. Transitive Dep von Avalonia 12.0.0 im neuen
+  `installer/setup/` Projekt; expliziter `PackageReference`-Pin
+  in `PraxisZeit.Setup.csproj` bis Avalonia selbst bumped. Macht
+  den `dotnet build` NU1903-Warn-Free.
+
+### 🧹 Cleanup
+- Template-Stub `installer/setup/src/PraxisZeit.Setup.Core/Class1.cs`
+  aus `dotnet new classlib`-Scaffolding entfernt (Issue #87).
+
+### 📝 Docs
+- `CLAUDE.md` "Native Installer" erweitert um Abschnitt zum
+  Avalonia-Installer unter `installer/setup/` inkl. Build-Commands,
+  .NET 10 Abhaengigkeit und Solution-Struktur; Hinweis auf
+  `tools/generate-self-signed-cert.py` und auf die BOM-Falle in
+  `praxiszeit.conf` (Issue #86).
+
 ## [1.3.6] - 2026-04-17
 
 **Hotfix-Release direkt im Anschluss an 1.3.5.** Behebt zwei Fehler
