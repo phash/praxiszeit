@@ -203,3 +203,17 @@ def export_tenant_arbzg_data(
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/cron/trial-check")
+def cron_trial_check(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),
+):
+    """Suspend tenants whose trial has expired AND who have no Stripe
+    subscription. Called by an external cron; exposed under superadmin
+    so only an authenticated operator can trigger it manually. The
+    Stripe-webhook in Phase 4 will be the self-healing inverse (reactivate)."""
+    from app.services.signup_service import suspend_expired_trials
+    count = suspend_expired_trials(db)
+    return {"suspended": count}
