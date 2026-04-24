@@ -81,7 +81,7 @@ export default function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
         style={{ animation: 'slideInRight 0.2s ease-out' }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
           <div className="flex items-center space-x-2">
             <HelpCircle size={18} className="text-primary" />
             <h2 className="font-semibold text-gray-900">{entry.title}</h2>
@@ -102,7 +102,7 @@ export default function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-200 flex-shrink-0">
+        <div className="px-5 py-4 border-t border-gray-200 shrink-0">
           <Link
             to="/help"
             onClick={onClose}

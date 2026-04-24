@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.1 | Stand: April 2026**
+**Version 2.2 | Stand: April 2026**
 
 ---
 
@@ -12,7 +12,7 @@
 4. [Benutzerverwaltung](#4-benutzerverwaltung)
 5. [Abwesenheitskalender](#5-abwesenheitskalender)
 6. [Berichte und Exporte](#6-berichte-und-exporte)
-7. [Urlaubsanträge genehmigen](#7-urlaubsanträge-genehmigen)
+7. [Abwesenheitsanträge genehmigen](#7-abwesenheitsanträge-genehmigen)
 8. [Korrekturanträge prüfen](#8-korrekturanträge-prüfen)
 9. [Änderungsprotokoll (Audit-Log)](#9-änderungsprotokoll-audit-log)
 10. [Fehler-Monitoring](#10-fehler-monitoring)
@@ -32,7 +32,7 @@ Dieses Handbuch richtet sich an **Administratoren** von PraxisZeit. Als Admin ha
 
 **Navigation:** In der linken Seitenleiste finden Sie zwei Bereiche:
 - **Mitarbeiter-Bereich**: Dashboard, Zeiterfassung, Abwesenheiten, Profil (Ihre eigene Zeiterfassung)
-- **Administration**: Admin-Dashboard, Benutzerverwaltung, Änderungsanträge, Berichte, Abwesenheiten, Änderungsprotokoll, Fehler-Monitoring, Urlaubsanträge, Import, Einstellungen
+- **Administration**: Admin-Dashboard, Benutzerverwaltung, Änderungsanträge, Berichte, Abwesenheiten, Änderungsprotokoll, Fehler-Monitoring, Anträge, Import, Einstellungen
 
 **Rechtliche Verantwortung:** Als Admin sind Sie für die gesetzeskonforme Dokumentation der Arbeitszeiten gemäß dem **Arbeitszeitgesetz (ArbZG)** verantwortlich. PraxisZeit unterstützt Sie mit automatischen Prüfungen und Berichten.
 
@@ -249,13 +249,13 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 ---
 
-## 7. Urlaubsanträge genehmigen
+## 7. Abwesenheitsanträge genehmigen
 
 Wenn die Genehmigungspflicht aktiviert ist, landen Urlaubsanträge von Mitarbeitern zur Prüfung beim Admin.
 
 ### Genehmigungspflicht konfigurieren
 
-**Admin-Navigation → Urlaubsanträge**
+**Admin-Navigation → Anträge** (Seitentitel: „Abwesenheitsanträge")
 
 Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspflichtig"**:
 

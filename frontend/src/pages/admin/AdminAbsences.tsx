@@ -256,7 +256,7 @@ export default function AdminAbsences() {
         <button
           onClick={() => setActiveTab('absences')}
           className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-            activeTab === 'absences' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+            activeTab === 'absences' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Mitarbeiter-Abwesenheiten
@@ -264,7 +264,7 @@ export default function AdminAbsences() {
         <button
           onClick={() => setActiveTab('closures')}
           className={`px-4 py-2 rounded-md text-sm font-medium transition flex items-center space-x-1.5 ${
-            activeTab === 'closures' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+            activeTab === 'closures' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           <Building2 size={14} />
@@ -276,7 +276,7 @@ export default function AdminAbsences() {
       {activeTab === 'closures' && (
         <>
           {showClosureForm && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
               <h3 className="text-lg font-semibold mb-4">Betriebsferien erstellen</h3>
               <p className="text-sm text-gray-500 mb-4">
                 Für alle aktiven Mitarbeiter werden automatisch Urlaubseinträge für die Arbeitstage im gewählten Zeitraum erstellt.
@@ -323,7 +323,7 @@ export default function AdminAbsences() {
             </div>
           )}
 
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="font-semibold">Betriebsferien</h3>
               <p className="text-sm text-gray-500 mt-0.5">Betriebsweite Schließungszeiten – zählen als Urlaub für alle Mitarbeiter</p>
@@ -355,7 +355,7 @@ export default function AdminAbsences() {
                       <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => handleDeleteClosure(closure)}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition"
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-sm transition"
                           aria-label="Betriebsferien löschen"
                         >
                           <Trash2 size={16} />
@@ -374,7 +374,7 @@ export default function AdminAbsences() {
       {activeTab === 'absences' && <>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 mb-6">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex-1 min-w-48">
             <label className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
@@ -400,7 +400,7 @@ export default function AdminAbsences() {
 
       {/* Form for selected employee */}
       {showForm && selectedEmployee && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
           <h3 className="text-lg font-semibold mb-4">
             Abwesenheit eintragen für{' '}
             {employees.find(e => e.id === selectedEmployee)?.first_name}{' '}
@@ -413,7 +413,7 @@ export default function AdminAbsences() {
                 id="isDateRange"
                 checked={isDateRange}
                 onChange={e => { setIsDateRange(e.target.checked); if (!e.target.checked) setFormData(p => ({ ...p, end_date: '' })); }}
-                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
               />
               <label htmlFor="isDateRange" className="text-sm font-medium text-gray-700 cursor-pointer">
                 Zeitraum (mehrere Tage)
@@ -494,7 +494,7 @@ export default function AdminAbsences() {
 
       {/* Single employee view */}
       {selectedEmployee ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
             <h3 className="font-semibold">
               Abwesenheiten von {employees.find(e => e.id === selectedEmployee)?.first_name}{' '}
@@ -523,7 +523,7 @@ export default function AdminAbsences() {
                         : format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy, EEEE', { locale: de })}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <span className={`px-2 py-1 rounded text-xs ${typeColors[absence.type]}`}>
+                      <span className={`px-2 py-1 rounded-sm text-xs ${typeColors[absence.type]}`}>
                         {typeLabels[absence.type]}
                       </span>
                     </td>
@@ -532,7 +532,7 @@ export default function AdminAbsences() {
                     <td className="px-6 py-4 text-right">
                       <button
                         onClick={() => handleDelete(absence.id, selectedEmployee)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded transition"
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded-sm transition"
                         aria-label="Löschen"
                       >
                         <Trash2 size={16} />
@@ -551,7 +551,7 @@ export default function AdminAbsences() {
             const empAbsences = allAbsences[emp.id] || [];
             const isExpanded = expandedEmployees[emp.id];
             return (
-              <div key={emp.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div key={emp.id} className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
                 <button
                   onClick={() => toggleEmployee(emp.id)}
                   className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition"
@@ -576,7 +576,7 @@ export default function AdminAbsences() {
                         setSelectedEmployee(emp.id);
                         setShowForm(true);
                       }}
-                      className="text-xs bg-primary text-white px-2 py-1 rounded hover:bg-primary-dark transition"
+                      className="text-xs bg-primary text-white px-2 py-1 rounded-sm hover:bg-primary-dark transition"
                     >
                       + Eintragen
                     </button>
@@ -604,7 +604,7 @@ export default function AdminAbsences() {
                                 : format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy')}
                             </td>
                             <td className="px-6 py-3 text-sm">
-                              <span className={`px-2 py-0.5 rounded text-xs ${typeColors[absence.type]}`}>
+                              <span className={`px-2 py-0.5 rounded-sm text-xs ${typeColors[absence.type]}`}>
                                 {typeLabels[absence.type]}
                               </span>
                             </td>
@@ -612,7 +612,7 @@ export default function AdminAbsences() {
                             <td className="px-6 py-3 text-right">
                               <button
                                 onClick={() => handleDelete(absence.id, emp.id)}
-                                className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                                className="p-1 text-red-600 hover:bg-red-50 rounded-sm transition"
                                 aria-label="Löschen"
                               >
                                 <Trash2 size={14} />

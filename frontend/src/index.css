@@ -1,6 +1,47 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: DM Sans, system-ui, -apple-system, sans-serif;
+
+  --color-primary: #4a90b8;
+  --color-primary-dark: #3a7196;
+  --color-primary-light: #e8f4f8;
+
+  --color-background: #fafbfc;
+  --color-surface: #ffffff;
+  --color-muted: #f0f4f7;
+  --color-border: rgba(26, 43, 61, 0.06);
+  --color-success: #5cb88a;
+  --color-danger: #e07070;
+
+  --color-text-primary: #1a2b3d;
+  --color-text-secondary: #6b7f8e;
+
+  --shadow-soft: 0 2px 8px rgba(26, 43, 61, 0.06);
+  --shadow-card: 0 4px 16px rgba(26, 43, 61, 0.08);
+  --shadow-elevated: 0 8px 32px rgba(26, 43, 61, 0.12);
+
+  --radius-2xl: 16px;
+  --radius-xl: 12px;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 /* DM Sans Variable - self-hosted for PWA offline support */
 @font-face {

@@ -95,7 +95,7 @@ export default function Settings() {
       <h1 className="text-2xl font-bold text-gray-900">Einstellungen</h1>
 
       {/* Feiertage */}
-      <div className="bg-white rounded-xl shadow p-6">
+      <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Feiertage</h2>
         <p className="text-sm text-gray-500 mb-4">
           Wählen Sie das Bundesland aus, dessen gesetzliche Feiertage verwendet werden sollen.
@@ -131,7 +131,7 @@ export default function Settings() {
       </div>
 
       {/* Urlaubsgenehmigung */}
-      <div className="bg-white rounded-xl shadow p-6">
+      <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Urlaubsgenehmigung</h2>
         <p className="text-sm text-gray-500 mb-4">
           Wenn aktiviert, müssen Urlaubsanträge von einem Admin genehmigt werden, bevor sie wirksam

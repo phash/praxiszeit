@@ -159,7 +159,7 @@ export default function VacationApprovals() {
       </div>
 
       {/* Setting Toggle */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6 flex items-center justify-between">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-5 mb-6 flex items-center justify-between">
         <div>
           <p className="font-medium text-gray-900">Abwesenheitsanträge genehmigungspflichtig</p>
           <p className="text-sm text-gray-500 mt-0.5">
@@ -171,7 +171,7 @@ export default function VacationApprovals() {
         <button
           onClick={toggleApprovalRequired}
           disabled={settingLoading || approvalRequired === null}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
             approvalRequired ? 'bg-primary' : 'bg-gray-200'
           } disabled:opacity-50`}
           role="switch"
@@ -210,11 +210,11 @@ export default function VacationApprovals() {
       {/* Request Cards */}
       <div className="space-y-4">
         {loading ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 flex justify-center">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 flex justify-center">
             <LoadingSpinner text="Lade Anträge..." />
           </div>
         ) : requests.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 text-center text-gray-500">
             <AlertCircle className="mx-auto mb-2 text-gray-400" size={32} />
             <p>Keine Anträge vorhanden</p>
           </div>
@@ -225,7 +225,7 @@ export default function VacationApprovals() {
             const StatusIcon = config.icon;
 
             return (
-              <div key={vr.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div key={vr.id} className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div>

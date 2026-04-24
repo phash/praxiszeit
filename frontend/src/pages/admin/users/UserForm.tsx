@@ -131,7 +131,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+    <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
       <h3 className="text-lg font-semibold mb-4">
         {editUser ? 'Benutzer bearbeiten' : 'Neue:n Benutzer:in anlegen'}
       </h3>
@@ -255,7 +255,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
             {suggestedVacation !== null && formData.vacation_days !== suggestedVacation && (
-              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-sm text-xs">
                 💡 <strong>Empfehlung:</strong> {suggestedVacation} Tage
                 (basierend auf {formData.work_days_per_week} Arbeitstagen/Woche)
                 <button
@@ -274,7 +274,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               id="track_hours"
               checked={formData.track_hours}
               onChange={(e) => setFormData({ ...formData, track_hours: e.target.checked })}
-              className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+              className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
             />
             <label htmlFor="track_hours" className="text-sm font-medium text-gray-700 cursor-pointer">
               Stundenzählung aktiv (Soll-Stunden werden berechnet)
@@ -287,7 +287,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               id="exempt_from_arbzg"
               checked={formData.exempt_from_arbzg}
               onChange={(e) => setFormData({ ...formData, exempt_from_arbzg: e.target.checked })}
-              className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+              className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
             />
             <label htmlFor="exempt_from_arbzg" className="text-sm font-medium text-gray-700 cursor-pointer">
               ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)
@@ -300,7 +300,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               id="is_night_worker"
               checked={formData.is_night_worker ?? false}
               onChange={(e) => setFormData({ ...formData, is_night_worker: e.target.checked })}
-              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded-sm focus:ring-blue-500"
             />
             <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
@@ -336,7 +336,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                   id="use_daily_schedule"
                   checked={formData.use_daily_schedule}
                   onChange={(e) => setFormData({ ...formData, use_daily_schedule: e.target.checked })}
-                  className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                  className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
                 />
                 <label htmlFor="use_daily_schedule" className="text-sm font-medium text-gray-700 cursor-pointer">
                   Individuelle Tagesstunden (statt einheitlich {(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)
@@ -359,7 +359,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                           value={formData[key]}
                           onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
                           aria-label={`Stunden ${day}`}
-                          className="w-full px-2 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-primary text-sm"
+                          className="w-full px-2 py-1 text-center border border-gray-300 rounded-sm focus:ring-2 focus:ring-primary text-sm"
                         />
                       </div>
                     );
