@@ -286,6 +286,14 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
     )
     check_employee_limit(active_count)
 
+    # SaaS: plan-based seat limit. Onprem Default-Tenant has plan=enterprise
+    # → unlimited, so this is effectively a no-op for on-prem installs.
+    from app.models.tenant import Tenant
+    from app.services.plan_enforcement import check_seat_limit
+    tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
+    if tenant is not None:
+        check_seat_limit(db, tenant)
+
     new_user = User(
         username=user_data.username.lower(),
         email=user_data.email or None,
@@ -397,6 +405,13 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     user = _get_user_in_tenant(db, user_id, current_user)
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # Seat-limit enforcement: a reactivation is logically a seat add.
+    from app.models.tenant import Tenant
+    from app.services.plan_enforcement import check_seat_limit
+    tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
+    if tenant is not None:
+        check_seat_limit(db, tenant)
 
     user.is_active = True
     user.deactivated_at = None

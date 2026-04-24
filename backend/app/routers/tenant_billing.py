@@ -24,6 +24,26 @@ from app.schemas.tenant import (
 router = APIRouter(prefix="/api/tenant", tags=["tenant-billing"])
 
 
+@router.get("/usage")
+def get_usage(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Return seat usage + plan features for the banner / billing UI."""
+    from app.services.plan_enforcement import (
+        active_seat_count, get_plan_features, seat_limit_for,
+    )
+    tenant = _get_own_tenant(db, current_user)
+    return {
+        "plan": tenant.plan,
+        "subscription_status": tenant.subscription_status,
+        "used_seats": active_seat_count(db, tenant.id),
+        "seat_limit": seat_limit_for(tenant),  # None = unlimited
+        "features": sorted(get_plan_features(tenant.plan)),
+        "trial_ends_at": tenant.trial_ends_at.isoformat() if tenant.trial_ends_at else None,
+    }
+
+
 def _get_own_tenant(db: Session, current_user: User) -> Tenant:
     """Fetch the caller's tenant. Explicit filter belt-and-suspenders:
     RLS would already scope this, but matching Phase 0 Issue #91 pattern."""
