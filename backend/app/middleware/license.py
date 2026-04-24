@@ -23,6 +23,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from app.core import license as license_module
+from app.core.deployment import is_onprem
 
 
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -47,8 +48,11 @@ class LicenseReadOnlyMiddleware(BaseHTTPMiddleware):
         self._exempt = tuple(exempt_prefixes)
 
     async def dispatch(self, request: Request, call_next):
+        # SaaS mode: per-tenant suspend is handled by Phase 4/6 logic,
+        # not by the on-prem license file.
         if (
-            request.method in _WRITE_METHODS
+            is_onprem()
+            and request.method in _WRITE_METHODS
             and license_module.is_read_only()
             and not request.url.path.startswith(self._exempt)
         ):
