@@ -56,6 +56,8 @@ ABSENCE_A_ID = uuid.UUID("aa200000-0000-0000-0000-000000000001")
 ABSENCE_B_ID = uuid.UUID("bb200000-0000-0000-0000-000000000001")
 HOLIDAY_A_ID = uuid.UUID("aa300000-0000-0000-0000-000000000001")
 HOLIDAY_B_ID = uuid.UUID("bb300000-0000-0000-0000-000000000001")
+INVOICE_A_ID = uuid.UUID("aa400000-0000-0000-0000-000000000001")
+INVOICE_B_ID = uuid.UUID("bb400000-0000-0000-0000-000000000001")
 
 
 # ===== Fixtures =============================================================
@@ -91,6 +93,7 @@ def seed_data(admin_engine):
     conn.execute(text("DELETE FROM time_entries WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM absences WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM public_holidays WHERE tenant_id IN (:a, :b)"), _test_tids)
+    conn.execute(text("DELETE FROM tenant_invoices WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM users WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM tenants WHERE id IN (:a, :b)"), _test_tids)
 
@@ -190,10 +193,28 @@ def seed_data(admin_engine):
         "val": "value_b", "desc": "RLS test setting for Tenant B",
     })
 
+    # ---- Create tenant_invoices (Phase 2, Issue #93) ----
+    _insert_inv = text("""
+        INSERT INTO tenant_invoices
+            (id, tenant_id, stripe_invoice_id, amount_cents, currency, status)
+        VALUES (:id, :tid, :sid, :cents, 'eur', 'paid')
+    """)
+    conn.execute(_insert_inv, {
+        "id": str(INVOICE_A_ID), "tid": str(TENANT_A_ID),
+        "sid": "in_rls_test_a", "cents": 1900,
+    })
+    conn.execute(_insert_inv, {
+        "id": str(INVOICE_B_ID), "tid": str(TENANT_B_ID),
+        "sid": "in_rls_test_b", "cents": 3900,
+    })
+
     yield  # ---- run tests ----
 
     # ---- Teardown: delete everything in reverse dependency order ----
     conn.execute(text("DELETE FROM system_settings WHERE key LIKE 'rls_test_%'"))
+    conn.execute(text(
+        "DELETE FROM tenant_invoices WHERE tenant_id IN (:a, :b)"
+    ), {"a": str(TENANT_A_ID), "b": str(TENANT_B_ID)})
     conn.execute(text(
         "DELETE FROM time_entries WHERE tenant_id IN (:a, :b)"
     ), {"a": str(TENANT_A_ID), "b": str(TENANT_B_ID)})
@@ -434,6 +455,63 @@ class TestSystemSettingsIsolation:
 
 
 # ===== Tests: No context = no data ==========================================
+
+class TestTenantInvoicesIsolation:
+    """tenant_invoices (Phase 2, Issue #93) is a NEW table — re-verify RLS."""
+
+    def test_tenant_a_sees_only_own_invoices(self, app_engine, seed_data):
+        conn, trans = _tenant_session(app_engine, TENANT_A_ID)
+        try:
+            rows = conn.execute(text("SELECT stripe_invoice_id FROM tenant_invoices")).fetchall()
+            ids = {r[0] for r in rows}
+            assert "in_rls_test_a" in ids
+            assert "in_rls_test_b" not in ids
+        finally:
+            trans.rollback()
+            conn.close()
+
+    def test_tenant_b_sees_only_own_invoices(self, app_engine, seed_data):
+        conn, trans = _tenant_session(app_engine, TENANT_B_ID)
+        try:
+            rows = conn.execute(text("SELECT stripe_invoice_id FROM tenant_invoices")).fetchall()
+            ids = {r[0] for r in rows}
+            assert "in_rls_test_b" in ids
+            assert "in_rls_test_a" not in ids
+        finally:
+            trans.rollback()
+            conn.close()
+
+    def test_tenant_a_cannot_insert_invoice_for_tenant_b(self, app_engine, seed_data):
+        """WITH CHECK policy must reject cross-tenant writes."""
+        conn, trans = _tenant_session(app_engine, TENANT_A_ID)
+        try:
+            from sqlalchemy.exc import ProgrammingError, IntegrityError
+            try:
+                conn.execute(text("""
+                    INSERT INTO tenant_invoices
+                        (id, tenant_id, stripe_invoice_id, amount_cents, currency, status)
+                    VALUES (gen_random_uuid(), :tid, 'in_attack', 9900, 'eur', 'paid')
+                """), {"tid": str(TENANT_B_ID)})
+                assert False, "RLS should have blocked the cross-tenant insert"
+            except (ProgrammingError, IntegrityError):
+                pass  # expected
+        finally:
+            trans.rollback()
+            conn.close()
+
+    def test_superadmin_sees_all_invoices(self, app_engine, seed_data):
+        conn, trans = _superadmin_session(app_engine)
+        try:
+            rows = conn.execute(text(
+                "SELECT stripe_invoice_id FROM tenant_invoices WHERE stripe_invoice_id LIKE 'in_rls_test_%'"
+            )).fetchall()
+            ids = {r[0] for r in rows}
+            assert "in_rls_test_a" in ids
+            assert "in_rls_test_b" in ids
+        finally:
+            trans.rollback()
+            conn.close()
+
 
 class TestNoContextSecurity:
     """Verify that a session without any tenant/superadmin context sees nothing."""

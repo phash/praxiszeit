@@ -48,6 +48,7 @@ def _create_test_app() -> FastAPI:
         vacation_requests,
         journal,
         import_xls,
+        tenant_billing,
     )
 
     app = FastAPI(title="PraxisZeit Test")
@@ -75,6 +76,7 @@ def _create_test_app() -> FastAPI:
     app.include_router(vacation_requests.router)
     app.include_router(journal.router)
     app.include_router(import_xls.router)
+    app.include_router(tenant_billing.router)
 
     # Health endpoint (duplicated from main.py since it is defined there directly)
     @app.get("/api/health")
