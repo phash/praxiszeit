@@ -26,6 +26,12 @@ from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
 from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin
 
+# Used by the startup bootstrap to warn/abort when the initial admin still
+# uses a throwaway password. Kept at module level so git diffs that re-indent
+# the bootstrap block (e.g. adding a deployment-mode guard) don't re-flag
+# these strings as "newly introduced secrets" in GitGuardian.
+_WEAK_ADMIN_PASSWORDS = frozenset({"Admin2025!", "admin123", "password", "admin"})  # noqa: S105 (not a real secret; used to DETECT weak ones)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -106,8 +112,7 @@ async def lifespan(app: FastAPI):
             if settings.ADMIN_USERNAME == "admin" and auth_service.verify_password(
                 settings.ADMIN_PASSWORD, admin.password_hash
             ):
-                weak_passwords = ["Admin2025!", "admin123", "password", "admin"]
-                if settings.ADMIN_PASSWORD in weak_passwords or len(settings.ADMIN_PASSWORD) < 12:
+                if settings.ADMIN_PASSWORD in _WEAK_ADMIN_PASSWORDS or len(settings.ADMIN_PASSWORD) < 12:
                     msg = "SECURITY: Admin account uses a weak/default password! Set a strong ADMIN_PASSWORD in .env."
                     if settings.ENVIRONMENT == "production":
                         raise RuntimeError(msg)
