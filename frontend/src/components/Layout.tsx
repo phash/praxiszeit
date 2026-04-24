@@ -24,6 +24,7 @@ import {
   Shield,
   ClipboardCheck,
   Upload,
+  CreditCard,
   Play,
   Timer,
 } from 'lucide-react';
@@ -168,6 +169,10 @@ export default function Layout() {
     { path: '/admin/vacation-approvals', label: 'Anträge', icon: ClipboardCheck, badge: 0 },
     { path: '/admin/import', label: 'Import', icon: Upload, badge: 0 },
     { path: '/admin/settings', label: 'Einstellungen', icon: Settings, badge: 0 },
+    // Billing is SaaS-only — on-prem installs hide this entry via the filter below.
+    ...(deploymentMode === 'saas'
+      ? [{ path: '/admin/billing', label: 'Abrechnung', icon: CreditCard, badge: 0 }]
+      : []),
   ];
 
   return (
