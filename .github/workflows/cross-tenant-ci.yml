@@ -1,0 +1,64 @@
+name: Cross-Tenant + Unit Tests
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/cross-tenant-ci.yml"
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+
+jobs:
+  backend-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: praxiszeit
+          POSTGRES_PASSWORD: test_password_ci_only
+          POSTGRES_DB: praxiszeit
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U praxiszeit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://praxiszeit:test_password_ci_only@localhost:5432/praxiszeit
+      DATABASE_URL_MIGRATIONS: postgresql://praxiszeit:test_password_ci_only@localhost:5432/praxiszeit
+      APP_DB_URL: postgresql://praxiszeit:test_password_ci_only@localhost:5432/praxiszeit
+      ADMIN_DB_URL: postgresql://praxiszeit:test_password_ci_only@localhost:5432/praxiszeit
+      SECRET_KEY: "ci-secret-key-this-is-only-used-for-tests-not-production-64-hex-chars"
+      ADMIN_EMAIL: "admin@praxis.test"
+      ADMIN_PASSWORD: "S3cureAdminPasswordForTests!"
+      ENVIRONMENT: "development"
+      DEPLOYMENT_MODE: "onprem"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+      - name: Install deps
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Unit + cross-tenant suite (SQLite)
+        working-directory: backend
+        run: |
+          pytest tests/ -p no:asyncio \
+            --ignore=tests/test_tenant_rls.py \
+            --ignore=tests/test_concurrency.py \
+            -q
+      - name: Cross-tenant RLS tests (real Postgres)
+        working-directory: backend
+        run: |
+          psql "$DATABASE_URL_MIGRATIONS" -f init-db-user.sql
+          alembic upgrade head
+          pytest tests/test_tenant_rls.py -p no:asyncio -v
