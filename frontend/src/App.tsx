@@ -20,6 +20,7 @@ import ErrorMonitoring from './pages/admin/ErrorMonitoring';
 import VacationApprovals from './pages/admin/VacationApprovals';
 import ImportXls from './pages/admin/ImportXls';
 import AdminSettings from './pages/admin/Settings';
+import AdminBilling from './pages/admin/Billing';
 import UserJournal from './pages/admin/UserJournal';
 import Help from './pages/Help';
 import Privacy from './pages/Privacy';
@@ -137,6 +138,7 @@ function App() {
           <Route path="vacation-approvals" element={<VacationApprovals />} />
           <Route path="import" element={<ImportXls />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="billing" element={<AdminBilling />} />
         </Route>
 
         {/* Fallback */}

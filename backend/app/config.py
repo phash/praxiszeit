@@ -135,6 +135,20 @@ class Settings(BaseSettings):
     MAIL_FROM: Optional[str] = None
     MAIL_STARTTLS: bool = True
 
+    # Stripe — used by /api/billing/* and /api/webhooks/stripe (Phase 4).
+    # All optional; when STRIPE_SECRET_KEY is unset the billing router
+    # returns 503 ("Zahlungsabwicklung nicht konfiguriert") so an admin
+    # can still see their plan via /api/tenant/billing while Stripe setup
+    # is pending.
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    STRIPE_PRICE_STARTER_MONTHLY: Optional[str] = None
+    STRIPE_PRICE_STARTER_YEARLY: Optional[str] = None
+    STRIPE_PRICE_PRO_MONTHLY: Optional[str] = None
+    STRIPE_PRICE_PRO_YEARLY: Optional[str] = None
+    # Grace period before a canceled subscription flips to 'suspended'.
+    STRIPE_CANCEL_GRACE_DAYS: int = 30
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:

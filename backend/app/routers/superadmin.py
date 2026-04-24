@@ -215,5 +215,7 @@ def cron_trial_check(
     so only an authenticated operator can trigger it manually. The
     Stripe-webhook in Phase 4 will be the self-healing inverse (reactivate)."""
     from app.services.signup_service import suspend_expired_trials
-    count = suspend_expired_trials(db)
-    return {"suspended": count}
+    from app.services.stripe_service import suspend_canceled_after_grace
+    trials = suspend_expired_trials(db)
+    canceled = suspend_canceled_after_grace(db)
+    return {"suspended_trials": trials, "suspended_canceled": canceled}
