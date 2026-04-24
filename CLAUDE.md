@@ -115,6 +115,9 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **DB-User:** App = `praxiszeit_app` (RLS enforced), Migrations = `praxiszeit` (Superuser)
 - **JWT:** `tid` Claim enthält tenant_id, Middleware validiert gegen DB
 - Default-Tenant UUID: `00000000-0000-0000-0000-000000000001`
+- **SaaS vs. On-Prem:** `DEPLOYMENT_MODE=onprem|saas` (Default `onprem`). `app/core/deployment.py` → `is_saas()/is_onprem()`. Startup-Bootstrap (Default-Tenant, Admin, Holidays) läuft nur im `onprem`-Modus; im `saas`-Modus werden Tenants via Phase-3-Signup erzeugt.
+- **JSONB-Spalten:** Model-seitig `JSON().with_variant(JSONB(), "postgresql")` (z. B. `tenants.billing_address`), sonst crasht SQLite-Test-Suite mit `can't render element of type JSONB`.
+- **Billing-Felder:** `tenants` hat `plan | subscription_status | trial_ends_at | seat_limit | stripe_customer_id | stripe_subscription_id | billing_email | company_name | vat_id | country | billing_address`. PATCH `/api/tenant/billing` erlaubt nur die Adresse-Sub­menge — `plan`/`stripe_*`/`seat_limit` sind webhook/superadmin-owned.
 
 ### Standard-Benutzer (Dev)
 - Admin: `admin` / `Admin2025!`
