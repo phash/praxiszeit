@@ -6,9 +6,12 @@ subscription_status / stripe_* are off-limits — those are driven by the
 Stripe webhook (Phase 4) and the superadmin.
 """
 
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -149,3 +152,112 @@ def list_invoices(
         )
         for r in rows
     ]
+
+
+# ─── Lifecycle endpoints (Phase 6, Issue #97) ──────────────────────────
+
+class TransferOwnershipRequest(BaseModel):
+    new_owner_id: str
+
+
+@router.post("/suspend")
+def self_suspend(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin schedules self-suspension 7 days from now (grace window so
+    the UI can reverse it before the cron applies it)."""
+    from app.services import lifecycle_service
+    tenant = _get_own_tenant(db, current_user)
+    when = lifecycle_service.request_suspend(db, tenant, current_user)
+    return {"scheduled_suspend_at": when.isoformat()}
+
+
+@router.post("/cancel-suspend")
+def cancel_self_suspend(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    from app.services import lifecycle_service
+    tenant = _get_own_tenant(db, current_user)
+    lifecycle_service.cancel_suspend(db, tenant)
+    return {"ok": True}
+
+
+@router.post("/request-deletion")
+def request_deletion(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin requests tenant deletion. Cron anonymizes after 30d grace.
+    The response includes the deadline so the UI can show a countdown."""
+    from app.services import lifecycle_service
+    tenant = _get_own_tenant(db, current_user)
+    deadline = lifecycle_service.request_deletion(db, tenant, current_user)
+    return {"anonymize_after": deadline.isoformat()}
+
+
+@router.post("/cancel-deletion")
+def cancel_deletion(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    from app.services import lifecycle_service
+    tenant = _get_own_tenant(db, current_user)
+    lifecycle_service.cancel_deletion(db, tenant)
+    return {"ok": True}
+
+
+@router.post("/transfer-ownership")
+def transfer_ownership(
+    body: TransferOwnershipRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    from app.services import lifecycle_service
+    import uuid as _uuid
+    try:
+        new_owner_uuid = _uuid.UUID(body.new_owner_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültige new_owner_id")
+    new_owner = lifecycle_service.transfer_ownership(db, current_user, new_owner_uuid)
+    return {"ok": True, "new_owner_id": str(new_owner.id), "new_owner_email": new_owner.email}
+
+
+@router.get("/export")
+def export(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin self-service full data export (JSON). Mirrors the superadmin
+    ArbZG export but scoped to the caller's own tenant."""
+    from app.services import lifecycle_service
+    tenant = _get_own_tenant(db, current_user)
+    payload = lifecycle_service.build_tenant_export_payload(db, tenant, requester=current_user)
+    blob = lifecycle_service.export_as_json_bytes(payload)
+    filename = (
+        f"PraxisZeit_Export_{tenant.slug}_"
+        f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
+    )
+    return StreamingResponse(
+        iter([blob]),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/avv")
+def download_avv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Personalised AVV draft PDF. DRAFT — legal review required."""
+    from app.services.avv_generator import generate_avv_pdf
+    tenant = _get_own_tenant(db, current_user)
+    pdf = generate_avv_pdf(tenant)
+    filename = f"PraxisZeit_AVV_{tenant.slug}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

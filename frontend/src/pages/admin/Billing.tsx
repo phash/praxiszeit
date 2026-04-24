@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CreditCard, ArrowUpCircle, AlertTriangle } from 'lucide-react';
+import { CreditCard, ArrowUpCircle, AlertTriangle, Download, FileText, Pause, Trash2, UserCheck } from 'lucide-react';
 import apiClient from '../../api/client';
 import { getErrorMessage } from '../../utils/errorMessage';
 
@@ -14,6 +14,7 @@ interface BillingInfo {
   vat_id: string | null;
   country: string | null;
 }
+
 
 interface UsageInfo {
   plan: string;
@@ -201,7 +202,68 @@ export default function Billing() {
       )}
 
       <section className="bg-white rounded-xl shadow-card p-6">
-        <h2 className="text-lg font-medium mb-4">Rechnungen</h2>
+        <h2 className="text-lg font-medium mb-4">Dokumente &amp; Export</h2>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => window.open('/api/tenant/export', '_blank')}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm"
+          >
+            <Download size={16} /> Daten-Export (JSON)
+          </button>
+          <button
+            onClick={() => window.open('/api/tenant/avv', '_blank')}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm"
+          >
+            <FileText size={16} /> AVV (Entwurf, PDF)
+          </button>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-card p-6 border border-red-200">
+        <h2 className="text-lg font-medium mb-2 text-red-700 flex items-center gap-2">
+          <AlertTriangle size={18} /> Gefahrenzone
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Schreibzugriffe werden nach Pause gesperrt. Nach Löschantrag werden die
+          personenbezogenen Daten nach 30 Tagen anonymisiert. Arbeitszeitdaten bleiben
+          für 2 Jahre gemäß §16 ArbZG aufbewahrt.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={async () => {
+              if (!confirm('Account nach 7 Tagen pausieren?')) return;
+              try {
+                await apiClient.post('/tenant/suspend');
+                await refresh();
+              } catch (err: any) {
+                setError(getErrorMessage(err, 'Pausieren fehlgeschlagen'));
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-2 border border-amber-300 text-amber-800 hover:bg-amber-50 rounded-lg text-sm"
+          >
+            <Pause size={16} /> Account pausieren
+          </button>
+          <button
+            onClick={async () => {
+              if (!confirm('Account nach 30 Tagen löschen? Die Daten werden anonymisiert.')) return;
+              try {
+                await apiClient.post('/tenant/request-deletion');
+                await refresh();
+              } catch (err: any) {
+                setError(getErrorMessage(err, 'Löschantrag fehlgeschlagen'));
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-2 border border-red-300 text-red-700 hover:bg-red-50 rounded-lg text-sm"
+          >
+            <Trash2 size={16} /> Account löschen
+          </button>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-card p-6">
+        <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+          <UserCheck size={18} /> Rechnungen
+        </h2>
         {invoices.length === 0 ? (
           <p className="text-sm text-gray-500">Noch keine Rechnungen.</p>
         ) : (
