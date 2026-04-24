@@ -4,6 +4,8 @@ import { useAuthStore } from './stores/authStore';
 import { useSystemStore } from './stores/systemStore';
 import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Verify from './pages/Verify';
 import Dashboard from './pages/Dashboard';
 import TimeTracking from './pages/TimeTracking';
 import AbsenceCalendarPage from './pages/AbsenceCalendarPage';
@@ -93,6 +95,8 @@ function App() {
           <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/verify" element={<Verify />} />
           <Route path="/privacy" element={<Privacy />} />
 
         {/* Protected Employee Routes */}
