@@ -56,6 +56,7 @@ dotnet publish src/PraxisZeit.Setup \
 cd e2e && npx playwright test                                    # E2E (114 Tests)
 docker compose exec backend pytest tests/ -v                     # Backend Unit (343+ Tests)
 docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (13 Tests)
+docker compose exec backend pytest tests/test_cross_tenant_api.py -v  # App-Layer Tenant-Filter (F-026)
 docker compose exec backend pytest tests/test_concurrency.py     # Postgres-only Race-Tests
 cd frontend && npm test                                          # Vitest Utils-Tests
 ```
@@ -64,6 +65,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 **Version-Smoke-Test:** `/api/health` liefert nur `{status, database}` — **keine Version**. Version steht in `/openapi.json`, im Frontend-Footer (nach Hard-Refresh), oder unter `/` (nur wenn `SERVE_FRONTEND=False`).
 
 ### Dev-Workflow Fallstricke
+- **`.env`-Drift:** Nach RLS-Umbau (Migration 027) braucht `.env` zusätzlich `APP_DB_USER`, `APP_DB_PASSWORD`, `ENVIRONMENT`, `CORS_ORIGINS` (siehe `.env.example`). Alte lokale `.env` ohne diese Vars → `docker compose up` failed mit `required variable APP_DB_PASSWORD is missing`.
 - **Backend-Container ist gebaut**, kein Host-Volume: Nach Edits `docker compose cp <host-file> backend:/app/<path>` VOR `pytest`, sonst sieht der Container den alten Code. Für Prod-Änderungen: `docker compose build backend && docker compose up -d backend`.
 - **Frontend `node_modules` ist root-owned** (im Image-Build erzeugt). Host-`npm install` failt mit EACCES. Pattern: `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install --silent && ..."`.
 - **Test-Stratifizierung:** Unit-Tests laufen gegen SQLite (conftest.py). RLS + echte `SELECT FOR UPDATE`-Races brauchen Postgres → `test_tenant_rls.py` + `test_concurrency.py` aus normalem pytest ausschließen (`--ignore=`).
@@ -104,11 +106,12 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **APP_VERSION:** Backend-SoT in `app/core/updater.py`; Frontend-Footer liest `__APP_VERSION__` aus `frontend/package.json.version` (via vite `define`). Beide + `tools/build-release.sh` Default müssen synchron bleiben — Build-Script enforced das.
 - **Alembic Revision-IDs:** Max 32 Zeichen (`version_num varchar(32)` Limit)
 - **clock_out `with_for_update`:** `_get_open_entry()` in `clock_out` MUSS mit Lock aufgerufen werden (Race Condition bei Doppelklick)
-- **Bulk-Deletes tenant_id:** Alle `.delete()` Aufrufe brauchen expliziten `tenant_id`-Filter (nicht nur auf RLS verlassen)
+- **F-026 Tenant-Filter (belt-and-suspenders):** ALLE `db.query(Model).filter(...)` auf tenant-scoped Tabellen brauchen expliziten `Model.tenant_id == current_user.tenant_id` zusätzlich zu RLS — gilt für list, lookup-by-id UND `.delete()`. Helper für User-Lookup: `_get_user_in_tenant()` in `admin_users.py`. Tests in `test_cross_tenant_api.py`.
 - **Absence Unique Constraint:** `(user_id, date)` muss eindeutig sein — DB-Constraint oder `with_for_update()` bei Duplikat-Check
 - **is_holiday() tenant_id:** Immer `tenant_id=current_user.tenant_id` übergeben (Multi-Tenant-Pflicht)
 
 ### Multi-Tenant
+- **SaaS-Roadmap:** Meta-Issue [#100](https://github.com/phash/praxiszeit/issues/100) trackt 8-Phasen-Umbau (Phase 0 fertig in PR #91). On-Prem bleibt single-tenant via geplantem `DEPLOYMENT_MODE`-Schalter (Issue #92).
 - **Jede neue Tabelle** braucht `tenant_id` FK + RLS-Policy + Eintrag in Migration
 - **Neue Endpoints:** `set_tenant_context(db, tid)` oder `set_superadmin_context(db)` aufrufen
 - **Neue Sessions** (`SessionLocal()` direkt): RLS-Kontext setzen, sonst 0 Rows!
