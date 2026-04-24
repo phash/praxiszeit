@@ -385,6 +385,44 @@ def get_public_settings():
         db.close()
 
 
+@app.get("/api/status")
+def public_status():
+    """Public service-status aggregator used by the external status-page
+    (Phase 8, Issue #99). Minimal surface — only reveals boolean health
+    of each dependency so we don't leak operational details."""
+    db_ok = False
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            db_ok = True
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001
+        db_ok = False
+
+    try:
+        from app.services.stripe_service import is_configured as stripe_ok_configured
+        stripe_ok = stripe_ok_configured()
+    except Exception:  # noqa: BLE001
+        stripe_ok = False
+
+    try:
+        from app.services.mail_service import is_configured as mail_ok_configured
+        mail_ok = mail_ok_configured()
+    except Exception:  # noqa: BLE001
+        mail_ok = False
+
+    components = {
+        "api": True,  # we're answering, so the API is up
+        "database": db_ok,
+        "stripe_configured": stripe_ok,
+        "mail_configured": mail_ok,
+    }
+    healthy = all(v for k, v in components.items() if k in {"api", "database"})
+    return {"status": "ok" if healthy else "degraded", "components": components}
+
+
 @app.get("/api/system/info")
 def system_info():
     """Public system info — lets the frontend branch on deployment mode
