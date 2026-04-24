@@ -24,7 +24,7 @@ from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing
 
 # Used by the startup bootstrap to warn/abort when the initial admin still
 # uses a throwaway password. Kept at module level so git diffs that re-indent
@@ -269,6 +269,8 @@ app.include_router(import_xls.router)
 app.include_router(superadmin.router)
 app.include_router(tenant_billing.router)
 app.include_router(public_signup.router)
+app.include_router(billing.router)
+app.include_router(billing.webhook_router)
 
 
 @app.middleware("http")
