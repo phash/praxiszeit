@@ -133,20 +133,20 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
       {children}
 
       {/* Toast Container */}
-      <div className="fixed top-4 right-4 z-[9999] space-y-2 max-w-md">
+      <div className="fixed top-4 right-4 z-9999 space-y-2 max-w-md">
         {toasts.map((toast) => (
           <div
             key={toast.id}
             className={`flex items-start space-x-3 p-4 rounded-lg border shadow-lg animate-in slide-in-from-right ${getStyles(toast.type)}`}
             role="alert"
           >
-            <div className="flex-shrink-0 mt-0.5">
+            <div className="shrink-0 mt-0.5">
               {getIcon(toast.type)}
             </div>
             <p className="flex-1 text-sm font-medium">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
-              className="flex-shrink-0 text-current hover:opacity-70 transition"
+              className="shrink-0 text-current hover:opacity-70 transition"
               aria-label="Benachrichtigung schließen"
             >
               <X size={18} />

@@ -152,7 +152,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Passwort bestätigen</li>
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
           </ol>
-          <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded p-2 text-blue-700">
+          <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded-sm p-2 text-blue-700">
             Anforderungen: mind. 10 Zeichen, Groß- + Kleinbuchstabe, mindestens eine Ziffer.
           </div>
         </section>
@@ -215,7 +215,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Mitarbeiter deaktivieren</h3>
-          <div className="text-sm bg-amber-50 border border-amber-200 rounded p-2 text-amber-800">
+          <div className="text-sm bg-amber-50 border border-amber-200 rounded-sm p-2 text-amber-800">
             ⚠️ Niemals löschen! Nur Status auf „Inaktiv" setzen. Daten müssen 2 Jahre aufbewahrt werden (§16 ArbZG).
           </div>
         </section>
@@ -249,7 +249,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Aufbewahrung</h3>
-          <div className="text-sm bg-blue-50 border border-blue-200 rounded p-2 text-blue-700">
+          <div className="text-sm bg-blue-50 border border-blue-200 rounded-sm p-2 text-blue-700">
             §16 ArbZG: Exportierte Berichte mind. 2 Jahre aufbewahren.
           </div>
         </section>
@@ -301,7 +301,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Rechtliche Bedeutung</h3>
-          <div className="text-sm bg-blue-50 border border-blue-200 rounded p-2 text-blue-700">
+          <div className="text-sm bg-blue-50 border border-blue-200 rounded-sm p-2 text-blue-700">
             Das Audit-Log dient als Nachweis für Änderungen gemäß §16 ArbZG. Einträge können nicht gelöscht werden.
           </div>
         </section>

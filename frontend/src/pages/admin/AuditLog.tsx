@@ -118,7 +118,7 @@ export default function AuditLog() {
       </div>
 
       {/* Audit Log */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         {/* Desktop Table */}
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full">
@@ -157,7 +157,7 @@ export default function AuditLog() {
                       {entry.changed_by_last_name}, {entry.changed_by_first_name}
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${actionColors[entry.action] || ''}`}>
+                      <span className={`px-2 py-1 rounded-sm text-xs font-medium ${actionColors[entry.action] || ''}`}>
                         {actionLabels[entry.action] || entry.action}
                       </span>
                     </td>
@@ -209,7 +209,7 @@ export default function AuditLog() {
                     <span className="text-sm font-medium text-gray-900">
                       {entry.user_last_name}, {entry.user_first_name}
                     </span>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${actionColors[entry.action] || ''}`}>
+                    <span className={`px-2 py-1 rounded-sm text-xs font-medium ${actionColors[entry.action] || ''}`}>
                       {actionLabels[entry.action] || entry.action}
                     </span>
                   </div>
@@ -218,13 +218,13 @@ export default function AuditLog() {
                   </div>
                   <div className="flex items-center space-x-2 text-xs">
                     {entry.old_date && (
-                      <span className="bg-gray-100 px-2 py-1 rounded">
+                      <span className="bg-gray-100 px-2 py-1 rounded-sm">
                         {entry.old_date} {entry.old_start_time?.substring(0, 5)}-{entry.old_end_time?.substring(0, 5)}
                       </span>
                     )}
                     {entry.old_date && entry.new_date && <ArrowRight size={12} className="text-gray-400" />}
                     {entry.new_date && (
-                      <span className="bg-amber-100 px-2 py-1 rounded">
+                      <span className="bg-amber-100 px-2 py-1 rounded-sm">
                         {entry.new_date} {entry.new_start_time?.substring(0, 5)}-{entry.new_end_time?.substring(0, 5)}
                       </span>
                     )}

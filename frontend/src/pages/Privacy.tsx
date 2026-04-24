@@ -22,7 +22,7 @@ export default function Privacy() {
           <p className="text-sm text-gray-500 mt-1">Stand: Februar 2026</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 space-y-8 text-gray-800">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 space-y-8 text-gray-800">
 
           {/* 1. Verantwortlicher */}
           <section>

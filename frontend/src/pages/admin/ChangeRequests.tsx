@@ -291,14 +291,14 @@ export default function AdminChangeRequests() {
                   type="date"
                   value={customFrom}
                   onChange={(e) => setCustomFrom(e.target.value)}
-                  className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+                  className="px-2 py-1.5 border border-gray-300 rounded-sm text-sm"
                 />
                 <span className="text-gray-400">–</span>
                 <input
                   type="date"
                   value={customTo}
                   onChange={(e) => setCustomTo(e.target.value)}
-                  className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+                  className="px-2 py-1.5 border border-gray-300 rounded-sm text-sm"
                 />
               </div>
             )}
@@ -308,14 +308,14 @@ export default function AdminChangeRequests() {
 
       {/* Bulk-Action bar: only when pending filter active */}
       {filter === 'pending' && pendingIds.length > 0 && (
-        <div className="mb-4 bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+        <div className="mb-4 bg-white rounded-xl shadow-xs border border-gray-200 p-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
                 checked={allPendingSelected}
                 onChange={toggleAllPending}
-                className="w-4 h-4 text-primary rounded"
+                className="w-4 h-4 text-primary rounded-sm"
               />
               <span>
                 {selectedIds.size > 0
@@ -376,11 +376,11 @@ export default function AdminChangeRequests() {
       {/* Requests */}
       <div className="space-y-4">
         {loading ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 flex justify-center">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 flex justify-center">
             <LoadingSpinner text="Lade Anträge..." />
           </div>
         ) : requests.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center text-gray-500">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 text-center text-gray-500">
             <AlertCircle className="mx-auto mb-2 text-gray-400" size={32} />
             <p>Keine Anträge vorhanden</p>
           </div>
@@ -390,7 +390,7 @@ export default function AdminChangeRequests() {
             const StatusIcon = config.icon;
 
             return (
-              <div key={cr.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div key={cr.id} className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div>
@@ -400,7 +400,7 @@ export default function AdminChangeRequests() {
                           type="checkbox"
                           checked={selectedIds.has(cr.id)}
                           onChange={() => toggleOne(cr.id)}
-                          className="w-4 h-4 text-primary rounded"
+                          className="w-4 h-4 text-primary rounded-sm"
                           aria-label={`Antrag von ${cr.user_first_name} ${cr.user_last_name} auswählen`}
                         />
                       )}

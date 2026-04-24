@@ -116,10 +116,10 @@ export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }:
         `}
       >
         {/* Mobile drag handle */}
-        <div className="md:hidden w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
+        <div className="md:hidden w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1 shrink-0" />
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
           <span className="font-semibold text-gray-800 text-sm">📖 {title}</span>
           <div className="flex items-center gap-2">
             <a

@@ -1,58 +1,147 @@
+import base64
+import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import bcrypt
 import jwt
 import pyotp
 from jwt.exceptions import PyJWTError
-from passlib.context import CryptContext
+
 from app.config import settings
 
-# F-041: Password hashing context.
-# - New hashes use bcrypt_sha256, which pre-hashes the password with SHA-256
-#   and then feeds the 43-char base64 output into bcrypt. This eliminates
-#   the bcrypt 72-byte truncation that silently made >72-char passphrases
-#   interchangeable.
-# - ``deprecated=["bcrypt"]`` marks existing bcrypt hashes as legacy but
-#   still verifiable; passlib's ``needs_update()`` can be used to migrate
-#   them opportunistically on the next successful login.
-pwd_context = CryptContext(
-    schemes=["bcrypt_sha256", "bcrypt"],
-    default="bcrypt_sha256",
-    deprecated=["bcrypt"],
-)
+# F-041 / VULN-014 follow-up: passlib 1.7.4 is unmaintained and incompatible with
+# bcrypt >= 5.0 (bcrypt removed the ``__about__`` attribute that passlib's backend
+# detection reads). We implement the bcrypt_sha256 scheme directly against the
+# ``bcrypt`` PyCA library. The wire format is identical to passlib's v=2 protocol
+# so existing DB hashes continue to verify without migration.
+#
+# Wire format:
+#   $bcrypt-sha256$v=2,t=2b,r=<rounds>$<22-char salt>$<31-char hash>
+#
+# v=2 protocol (passlib 1.7.3+):
+#   key = base64(HMAC-SHA256(key=salt.ascii, msg=password.utf8))
+#   hash = bcrypt(key, salt, rounds)
+#
+# Keying HMAC with the salt defeats precomputed "password → SHA-256" tables
+# that v=1 was vulnerable to. The base64-encoded HMAC digest is 44 bytes,
+# always well under bcrypt's 72-byte silent-truncation boundary.
+
+_BCRYPT_SHA256_PREFIX = "$bcrypt-sha256$"
+_BCRYPT_SHA256_ROUNDS = 12
 
 # JWT settings
 ALGORITHM = "HS256"
 
 
+def _v2_key(password: str, salt_22: str) -> bytes:
+    """v=2 key fed to bcrypt: base64(HMAC-SHA256(salt, password))."""
+    digest = hmac.new(
+        salt_22.encode("ascii"),
+        password.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    # Standard base64 WITH "=" padding (matches passlib v=2).
+    return base64.b64encode(digest)
+
+
 def hash_password(password: str) -> str:
-    """Hash a plain password. Uses bcrypt_sha256 (no 72-byte truncation)."""
-    return pwd_context.hash(password)
+    """Hash a plain password using bcrypt_sha256 (wire-compatible with passlib)."""
+    salt_raw = bcrypt.gensalt(rounds=_BCRYPT_SHA256_ROUNDS, prefix=b"2b").decode("ascii")
+    salt_22 = salt_raw.split("$", 3)[3]
+    key = _v2_key(password, salt_22)
+    result = bcrypt.hashpw(key, salt_raw.encode("ascii")).decode("ascii")
+    payload = result.split("$", 3)[3]  # "<22-salt><31-hash>"
+    return (
+        f"{_BCRYPT_SHA256_PREFIX}v=2,t=2b,r={_BCRYPT_SHA256_ROUNDS}$"
+        f"{payload[:22]}${payload[22:]}"
+    )
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plain password against a stored hash.
 
-    Accepts both legacy bcrypt hashes and new bcrypt_sha256 hashes
-    transparently via passlib's CryptContext.
+    Handles both bcrypt_sha256 (new) and bare bcrypt (legacy pre-F-041) hashes.
+    Never raises — corrupted or unknown hashes return False.
     """
-    try:
-        return pwd_context.verify(plain_password, hashed_password)
-    except ValueError:
-        # Malformed hash (shouldn't happen with our own hashes, but be
-        # defensive so a corrupted user row can't crash the login path).
+    if not hashed_password:
         return False
+    try:
+        if hashed_password.startswith(_BCRYPT_SHA256_PREFIX):
+            return _verify_bcrypt_sha256(plain_password, hashed_password)
+        if hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
+            return _verify_legacy_bcrypt(plain_password, hashed_password)
+    except (ValueError, TypeError):
+        return False
+    return False
+
+
+def _verify_bcrypt_sha256(password: str, hashed: str) -> bool:
+    parts = hashed.split("$")
+    # Expected: ['', 'bcrypt-sha256', 'v=2,t=2b,r=12', '<salt>', '<hash>']
+    if len(parts) != 5 or parts[1] != "bcrypt-sha256":
+        return False
+    param_map: dict[str, str] = {}
+    for kv in parts[2].split(","):
+        if "=" in kv:
+            k, v = kv.split("=", 1)
+            param_map[k] = v
+    # Currently only the v=2 / t=2b variant is produced; reject anything else
+    # loudly rather than silently mis-verifying. ``r=`` must be present too —
+    # real passlib hashes always include it, and falling back to a default
+    # cost would mask corruption as a successful verify against wrong work
+    # factor.
+    if (
+        param_map.get("v") != "2"
+        or param_map.get("t") != "2b"
+        or "r" not in param_map
+    ):
+        return False
+    try:
+        rounds = int(param_map["r"])
+    except ValueError:
+        return False
+    salt, hash_part = parts[3], parts[4]
+    if len(salt) != 22 or len(hash_part) != 31:
+        return False
+    key = _v2_key(password, salt)
+    bcrypt_fmt = f"$2b${rounds:02d}${salt}{hash_part}".encode("ascii")
+    return bcrypt.checkpw(key, bcrypt_fmt)
+
+
+def _verify_legacy_bcrypt(password: str, hashed: str) -> bool:
+    pwd_bytes = password.encode("utf-8")
+    # bcrypt 5 raises ValueError on > 72 bytes; bcrypt 4.x / OpenBSD silently
+    # truncated. Preserve legacy verify semantics so pre-F-041 DB rows still
+    # log in; F-041 rehash on successful login migrates them to bcrypt_sha256.
+    if len(pwd_bytes) > 72:
+        pwd_bytes = pwd_bytes[:72]
+    return bcrypt.checkpw(pwd_bytes, hashed.encode("ascii"))
 
 
 def needs_rehash(hashed_password: str) -> bool:
     """Return True if the stored hash uses a deprecated scheme.
 
-    Callers can use this on a successful login to opportunistically
-    upgrade legacy bcrypt hashes to bcrypt_sha256.
+    Callers use this on a successful login to opportunistically upgrade legacy
+    bare-bcrypt hashes to bcrypt_sha256. We also flag bcrypt_sha256 hashes
+    whose cost factor is below the current target.
     """
-    try:
-        return pwd_context.needs_update(hashed_password)
-    except ValueError:
+    if not hashed_password:
         return False
+    if not hashed_password.startswith(_BCRYPT_SHA256_PREFIX):
+        return True
+    # bcrypt_sha256 — flag for rehash if rounds < target
+    parts = hashed_password.split("$")
+    if len(parts) != 5:
+        return True
+    for kv in parts[2].split(","):
+        if kv.startswith("r="):
+            try:
+                return int(kv[2:]) < _BCRYPT_SHA256_ROUNDS
+            except ValueError:
+                return True
+    return True
 
 
 def create_access_token(user_id: str, role: str, token_version: int = 0, tenant_id: str = None) -> str:

@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.0 | Stand: März 2026**
+**Version 2.2 | Stand: April 2026**
 
 ---
 
@@ -12,7 +12,7 @@
 4. [Benutzerverwaltung](#4-benutzerverwaltung)
 5. [Abwesenheitskalender](#5-abwesenheitskalender)
 6. [Berichte und Exporte](#6-berichte-und-exporte)
-7. [Urlaubsanträge genehmigen](#7-urlaubsanträge-genehmigen)
+7. [Abwesenheitsanträge genehmigen](#7-abwesenheitsanträge-genehmigen)
 8. [Korrekturanträge prüfen](#8-korrekturanträge-prüfen)
 9. [Änderungsprotokoll (Audit-Log)](#9-änderungsprotokoll-audit-log)
 10. [Fehler-Monitoring](#10-fehler-monitoring)
@@ -20,7 +20,9 @@
 12. [Import](#12-import)
 13. [Einstellungen](#13-einstellungen)
 14. [ArbZG-Compliance-Berichte](#14-arbzg-compliance-berichte)
-15. [Rechtliche Grundlagen](#15-rechtliche-grundlagen)
+15. [Überstundenausgleich](#15-überstundenausgleich)
+16. [Änderungsanträge für Abwesenheiten](#16-änderungsanträge-für-abwesenheiten)
+17. [Rechtliche Grundlagen](#17-rechtliche-grundlagen)
 
 ---
 
@@ -30,7 +32,7 @@ Dieses Handbuch richtet sich an **Administratoren** von PraxisZeit. Als Admin ha
 
 **Navigation:** In der linken Seitenleiste finden Sie zwei Bereiche:
 - **Mitarbeiter-Bereich**: Dashboard, Zeiterfassung, Abwesenheiten, Profil (Ihre eigene Zeiterfassung)
-- **Administration**: Admin-Dashboard, Benutzerverwaltung, Änderungsanträge, Berichte, Abwesenheiten, Änderungsprotokoll, Fehler-Monitoring, Urlaubsanträge, Import, Einstellungen
+- **Administration**: Admin-Dashboard, Benutzerverwaltung, Änderungsanträge, Berichte, Abwesenheiten, Änderungsprotokoll, Fehler-Monitoring, Anträge, Import, Einstellungen
 
 **Rechtliche Verantwortung:** Als Admin sind Sie für die gesetzeskonforme Dokumentation der Arbeitszeiten gemäß dem **Arbeitszeitgesetz (ArbZG)** verantwortlich. PraxisZeit unterstützt Sie mit automatischen Prüfungen und Berichten.
 
@@ -83,6 +85,34 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 **Detailansicht:** Klicken Sie auf den Pfeil am Ende einer Zeile, um die Detailansicht des Mitarbeiters zu öffnen.
 
 > **Tipp:** Der Ampelindikator beim Urlaub zeigt auf einen Blick, wer dringend Urlaub nehmen sollte.
+
+### Jahresabschluss
+
+Unterhalb der Monatsübersicht finden Sie die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeiter. Hier können Sie den Jahresabschluss durchführen.
+
+#### Jahresabschluss erstellen
+
+1. Wählen Sie das gewünschte **Jahr** im Zahlenfeld aus
+2. Klicken Sie auf den orangefarbenen Button **Jahresabschluss**
+3. Im Bestätigungsdialog werden Sie informiert, dass Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter berechnet und als Übernahme ins Folgejahr gespeichert werden
+4. Bestätigen Sie mit **Jahresabschluss erstellen**
+
+Der Jahresabschluss berechnet für jeden aktiven Mitarbeiter:
+- **Überstunden-Saldo** zum 31.12. des gewählten Jahres
+- **Resturlaub** (nicht genommene Urlaubstage)
+
+Diese Werte werden als Vorjahresübernahme für das Folgejahr gespeichert und fließen dort in die Stunden- und Urlaubsberechnung ein.
+
+#### Jahresabschluss löschen
+
+Falls ein Jahresabschluss versehentlich erstellt wurde, können Sie ihn wieder löschen:
+
+1. Wählen Sie das Jahr, dessen Abschluss Sie löschen möchten
+2. Klicken Sie auf den roten Button **Abschluss löschen**
+3. Lesen Sie den Bestätigungsdialog sorgfältig — die Löschung ist **unwiderruflich**
+4. Bestätigen Sie mit **Jahresabschluss löschen**
+
+> **Wichtig:** Das Löschen entfernt **alle** Übernahmen für das Folgejahr — auch manuell eingetragene Vorjahresübernahmen einzelner Mitarbeiter. Prüfen Sie daher vor dem Löschen, ob manuelle Übernahmen existieren, die Sie anschließend neu eintragen müssen.
 
 ---
 
@@ -219,13 +249,13 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 ---
 
-## 7. Urlaubsanträge genehmigen
+## 7. Abwesenheitsanträge genehmigen
 
 Wenn die Genehmigungspflicht aktiviert ist, landen Urlaubsanträge von Mitarbeitern zur Prüfung beim Admin.
 
 ### Genehmigungspflicht konfigurieren
 
-**Admin-Navigation → Urlaubsanträge**
+**Admin-Navigation → Anträge** (Seitentitel: „Abwesenheitsanträge")
 
 Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspflichtig"**:
 
@@ -455,10 +485,54 @@ Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
 | **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag | § 9 ArbZG |
 | **Wochenhöchstgrenze** | > 48h/Woche | § 14 ArbZG |
 | **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | § 6 ArbZG |
+| **Ruhezeitwarnung** | < 11h seit letztem Arbeitsende beim Einstempeln | § 5 ArbZG |
 
 ---
 
-## 15. Rechtliche Grundlagen
+## 15. Überstundenausgleich
+
+Mitarbeiter können angesammelte Überstunden durch **Überstundenausgleich-Tage** abbauen.
+
+### Funktionsweise
+
+Wenn ein Überstundenausgleich-Tag eingetragen wird:
+- **Soll-Stunden** bleiben für den Tag erhalten (z. B. 8h)
+- **Ist-Stunden** werden auf 0h gesetzt
+- Das Überstundenkonto **sinkt** um die Tagessollzeit
+
+**Beispiel:** Ein Mitarbeiter mit 40h/Woche (8h/Tag) nimmt einen Überstundenausgleich-Tag.
+→ Konto: -8h an diesem Tag → Überstunden werden effektiv abgebaut.
+
+### Eintragen
+
+1. **Abwesenheiten** → **Abwesenheit eintragen**
+2. **Typ:** „Überstundenausgleich" auswählen
+3. Datum(e) auswählen → Speichern
+
+> **Hinweis:** Es gibt keine automatische Prüfung, ob das Überstundenkonto ausreichend gedeckt ist. Prüfen Sie den Kontostand im Admin-Dashboard.
+
+---
+
+## 16. Änderungsanträge für Abwesenheiten
+
+Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenheiten per Änderungsantrag beantragen** (z. B. Fortbildung, Urlaub).
+
+### Ablauf
+
+1. Mitarbeiter erstellt einen Änderungsantrag mit **Typ „Abwesenheit"**
+2. Der Antrag enthält: Datum, Abwesenheitstyp, optionale Start-/Endzeit, Begründung
+3. Admin prüft und genehmigt/lehnt ab
+4. Bei Genehmigung wird die Abwesenheit automatisch erstellt
+
+### Besonderheiten
+
+- **Krankmeldung per Antrag ist gesperrt** — Krankschreibungen müssen vom Admin eingetragen werden
+- **Halbe Tage:** Abwesenheiten können optionale Start-/Endzeiten haben (z. B. „Fortbildung nachmittags 13:00–17:00")
+- **DSGVO:** Im Kalender sehen Nicht-Admins fremde Kranktage nur als „abwesend" (nicht als „krank")
+
+---
+
+## 17. Rechtliche Grundlagen
 
 | Paragraph | Inhalt | Umsetzung in PraxisZeit |
 |-----------|--------|------------------------|
@@ -487,4 +561,4 @@ Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: März 2026*
+*Stand: April 2026*

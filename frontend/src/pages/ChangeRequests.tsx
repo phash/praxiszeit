@@ -129,11 +129,11 @@ export default function ChangeRequests() {
       {/* Requests List */}
       <div className="space-y-4">
         {loading ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 flex justify-center">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 flex justify-center">
             <LoadingSpinner text="Lade Anträge..." />
           </div>
         ) : requests.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200">
             <EmptyState icon={FileEdit} title="Keine Änderungsanträge" description="Neue Anträge stellst du über den 'Antrag'-Button in der Zeiterfassung." />
           </div>
         ) : (
@@ -142,7 +142,7 @@ export default function ChangeRequests() {
             const StatusIcon = config.icon;
 
             return (
-              <div key={cr.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div key={cr.id} className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${config.color}`}>

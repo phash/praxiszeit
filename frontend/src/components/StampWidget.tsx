@@ -211,7 +211,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
           <button
             onClick={handleClockIn}
             disabled={acting}
-            className="w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-primary-dark text-white font-semibold text-lg flex items-center justify-center gap-2 active:scale-[0.97] transition-all disabled:opacity-50"
+            className="w-full h-14 rounded-2xl bg-linear-to-r from-primary to-primary-dark text-white font-semibold text-lg flex items-center justify-center gap-2 active:scale-[0.97] transition-all disabled:opacity-50"
           >
             <Play size={20} />
             Einstempeln

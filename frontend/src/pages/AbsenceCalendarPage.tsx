@@ -327,7 +327,7 @@ export default function AbsenceCalendarPage() {
       {activeTab === 'requests' && (
         <div className="space-y-4">
           {myVacationRequests.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200">
               <EmptyState icon={Clock} title="Keine Anträge vorhanden" />
             </div>
           ) : (
@@ -335,7 +335,7 @@ export default function AbsenceCalendarPage() {
               const cfg = vrStatusConfig[vr.status as keyof typeof vrStatusConfig] || vrStatusConfig.pending;
               const StatusIcon = cfg.icon;
               return (
-                <div key={vr.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <div key={vr.id} className="bg-white rounded-xl shadow-xs border border-gray-200 p-5">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center space-x-3 mb-1">
@@ -424,7 +424,7 @@ export default function AbsenceCalendarPage() {
 
       {/* Absence Form */}
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
           <h3 className="text-lg font-semibold mb-4">Abwesenheit eintragen</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Zeitraum-Checkbox */}
@@ -439,7 +439,7 @@ export default function AbsenceCalendarPage() {
                     setFormData({ ...formData, end_date: '' });
                   }
                 }}
-                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
               />
               <label htmlFor="isDateRange" className="text-sm font-medium text-gray-700 cursor-pointer">
                 Zeitraum (mehrere Tage)
@@ -598,7 +598,7 @@ export default function AbsenceCalendarPage() {
 
       {/* Calendar */}
       {viewMode === 'month' ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 mb-6">
           {/* Desktop Calendar Grid */}
           <div className="hidden sm:block p-6">
             <div className="grid grid-cols-7 gap-2">
@@ -629,7 +629,7 @@ export default function AbsenceCalendarPage() {
                       setShowForm(true);
                       setIsDateRange(false);
                     }}
-                    className={`min-h-24 border rounded-lg p-2 cursor-pointer transition hover:border-primary hover:shadow-sm ${
+                    className={`min-h-24 border rounded-lg p-2 cursor-pointer transition hover:border-primary hover:shadow-xs ${
                       isWeekend || dayHoliday ? 'bg-gray-50' : 'bg-white'
                     }`}
                     title="Klicken um Abwesenheit einzutragen"
@@ -640,7 +640,7 @@ export default function AbsenceCalendarPage() {
                     <div className="space-y-1">
                       {/* Holiday Badge */}
                       {dayHoliday && (
-                        <div className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 border border-gray-300 font-medium">
+                        <div className="text-xs px-2 py-1 rounded-sm bg-gray-200 text-gray-700 border border-gray-300 font-medium">
                           {dayHoliday.name}
                         </div>
                       )}
@@ -648,7 +648,7 @@ export default function AbsenceCalendarPage() {
                       {dayEntries.map((entry, idx) => (
                         <div
                           key={idx}
-                          className={`text-xs px-2 py-1 rounded border ${typeColors[entry.type]}`}
+                          className={`text-xs px-2 py-1 rounded-sm border ${typeColors[entry.type]}`}
                         >
                           {entry.user_first_name} {entry.user_last_name?.[0]}.
                         </div>
@@ -726,7 +726,7 @@ export default function AbsenceCalendarPage() {
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[0,1,2,3,4,5,6,7,8,9,10,11].map(monthIndex => {
               const monthDate = new Date(currentYear, monthIndex, 1);
@@ -802,12 +802,12 @@ export default function AbsenceCalendarPage() {
       )}
 
       {/* Legend */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6" key="legend">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6" key="legend">
         <h3 className="font-semibold mb-3">Legende</h3>
         <div className="flex flex-wrap gap-4">
           {Object.entries(typeLabels).map(([key, label]) => (
             <div key={key} className="flex items-center space-x-2">
-              <div className={`w-4 h-4 rounded border ${typeColors[key as AbsenceType]}`}></div>
+              <div className={`w-4 h-4 rounded-sm border ${typeColors[key as AbsenceType]}`}></div>
               <span className="text-sm">{label}</span>
             </div>
           ))}
@@ -815,7 +815,7 @@ export default function AbsenceCalendarPage() {
       </div>
 
       {/* My Absences */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="font-semibold">Meine Abwesenheiten ({viewMode === 'month' ? currentMonth.split('-')[0] : currentYear})</h3>
         </div>
@@ -852,7 +852,7 @@ export default function AbsenceCalendarPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <span className={`px-2 py-1 rounded text-xs ${typeColors[absence.type]}`}>
+                      <span className={`px-2 py-1 rounded-sm text-xs ${typeColors[absence.type]}`}>
                         {typeLabels[absence.type]}
                       </span>
                     </td>

@@ -475,7 +475,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <select
                               value={editState.entryType}
                               onChange={(e) => setEditState(s => ({ ...s, entryType: e.target.value as EditState['entryType'] }))}
-                              className="border border-gray-300 rounded px-1 py-0.5 text-sm"
+                              className="border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                             >
                               <option value="work">Arbeit</option>
                               <option value="sick">Krank</option>
@@ -510,14 +510,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                   type="time"
                                   value={editState.startTime}
                                   onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))}
-                                  className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                                  className="w-22 border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                                 />
                                 <span className="text-gray-400">–</span>
                                 <input
                                   type="time"
                                   value={editState.endTime}
                                   onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))}
-                                  className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm"
+                                  className="w-22 border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                                 />
                               </div>
                             ) : (
@@ -528,7 +528,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 max={24}
                                 value={editState.absenceHours}
                                 onChange={(e) => setEditState(s => ({ ...s, absenceHours: e.target.value }))}
-                                className="w-20 border border-gray-300 rounded px-1 py-0.5 text-sm"
+                                className="w-20 border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                                 placeholder="Stunden"
                               />
                             )
@@ -568,7 +568,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               max={480}
                               value={editState.breakMinutes}
                               onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
-                              className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right"
+                              className="w-16 border border-gray-300 rounded-sm px-1 py-0.5 text-sm text-right"
                             />
                           ) : editingDate === day.date ? '' : day.time_entries.length > 0 || (day.type === 'mixed' && day.absences.length > 0) ? (
                             <div className="space-y-0.5">
@@ -681,7 +681,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <select
                               value={editState.entryType}
                               onChange={(e) => setEditState(s => ({ ...s, entryType: e.target.value as EditState['entryType'] }))}
-                              className="border border-gray-300 rounded px-1 py-0.5 text-sm"
+                              className="border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                             >
                               <option value="work">Arbeit</option>
                               <option value="sick">Krank</option>
@@ -693,17 +693,17 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           <td className="px-3 py-2 hidden md:table-cell">
                             {editState.entryType === 'work' ? (
                               <div className="flex items-center gap-1">
-                                <input type="time" value={editState.startTime} onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))} className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm" />
+                                <input type="time" value={editState.startTime} onChange={(e) => setEditState(s => ({ ...s, startTime: e.target.value }))} className="w-22 border border-gray-300 rounded-sm px-1 py-0.5 text-sm" />
                                 <span className="text-gray-400">–</span>
-                                <input type="time" value={editState.endTime} onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))} className="w-[5.5rem] border border-gray-300 rounded px-1 py-0.5 text-sm" />
+                                <input type="time" value={editState.endTime} onChange={(e) => setEditState(s => ({ ...s, endTime: e.target.value }))} className="w-22 border border-gray-300 rounded-sm px-1 py-0.5 text-sm" />
                               </div>
                             ) : (
-                              <input type="number" step="0.5" min={0} max={24} value={editState.absenceHours} onChange={(e) => setEditState(s => ({ ...s, absenceHours: e.target.value }))} className="w-20 border border-gray-300 rounded px-1 py-0.5 text-sm" placeholder="Stunden" />
+                              <input type="number" step="0.5" min={0} max={24} value={editState.absenceHours} onChange={(e) => setEditState(s => ({ ...s, absenceHours: e.target.value }))} className="w-20 border border-gray-300 rounded-sm px-1 py-0.5 text-sm" placeholder="Stunden" />
                             )}
                           </td>
                           <td className="px-3 py-2 hidden md:table-cell text-right">
                             {editState.entryType === 'work' && (
-                              <input type="number" min={0} max={480} value={editState.breakMinutes} onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))} className="w-16 border border-gray-300 rounded px-1 py-0.5 text-sm text-right" />
+                              <input type="number" min={0} max={480} value={editState.breakMinutes} onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))} className="w-16 border border-gray-300 rounded-sm px-1 py-0.5 text-sm text-right" />
                             )}
                           </td>
                           <td colSpan={3}></td>

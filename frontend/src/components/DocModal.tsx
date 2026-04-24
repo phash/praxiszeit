@@ -97,7 +97,7 @@ export function DocModal({ open, onClose, initialTab = 'cheatsheet' }: DocModalP
         className="relative z-10 bg-white rounded-xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
           <span className="font-semibold text-gray-800 text-sm">📖 Mitarbeiter-Handbuch</span>
           <div className="flex items-center gap-2">
             <a

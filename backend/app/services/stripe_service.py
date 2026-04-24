@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -31,6 +31,23 @@ from app.models.tenant import Tenant
 
 
 logger = logging.getLogger(__name__)
+
+
+def _g(obj: Any, key: str, default: Any = None) -> Any:
+    """Read a field from a Stripe object or a dict, returning ``default`` when missing.
+
+    Stripe Python SDK v15 dropped dict inheritance from ``StripeObject`` — ``.get()``
+    / ``.keys()`` / ``.items()`` / iteration all raise ``AttributeError`` now, while
+    ``obj["key"]`` subscripting still works. Our webhook tests still synthesize
+    events as plain dicts (simpler than instantiating real ``StripeObject``s), so
+    the service code must handle both shapes. This helper bridges them without
+    leaking the choice into every call site.
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
 
 def _require_stripe():
@@ -160,11 +177,11 @@ def _tenant_from_event(db: Session, event) -> Optional[Tenant]:
     """Pull the tenant_id out of metadata (preferred) or match by
     stripe_customer_id as a fallback."""
     obj = event["data"]["object"]
-    meta = obj.get("metadata") or {}
-    tid = meta.get("tenant_id")
+    meta = _g(obj, "metadata") or {}
+    tid = _g(meta, "tenant_id")
     if tid:
         return db.query(Tenant).filter(Tenant.id == tid).first()
-    customer_id = obj.get("customer")
+    customer_id = _g(obj, "customer")
     if customer_id:
         return db.query(Tenant).filter(Tenant.stripe_customer_id == customer_id).first()
     return None
@@ -177,7 +194,7 @@ def _record_event(db: Session, event, tenant: Optional[Tenant]) -> bool:
         event_id=event["id"],
         event_type=event["type"],
         tenant_id=tenant.id if tenant else None,
-        payload_excerpt=str(event.get("data"))[:4000],
+        payload_excerpt=str(_g(event, "data"))[:4000],
     )
     try:
         db.add(record)
@@ -215,8 +232,8 @@ def handle_event(db: Session, event) -> dict:
 
     if etype == "checkout.session.completed":
         # Mode=subscription → the session contains a subscription id.
-        plan = (obj.get("metadata") or {}).get("plan")
-        tenant.stripe_subscription_id = obj.get("subscription") or tenant.stripe_subscription_id
+        plan = _g(_g(obj, "metadata") or {}, "plan")
+        tenant.stripe_subscription_id = _g(obj, "subscription") or tenant.stripe_subscription_id
         tenant.subscription_status = "active"
         if plan:
             tenant.plan = plan
@@ -228,13 +245,14 @@ def handle_event(db: Session, event) -> dict:
         action = "subscription_activated"
 
     elif etype == "customer.subscription.updated":
-        items = (obj.get("items") or {}).get("data") or []
+        items_container = _g(obj, "items") or {}
+        items = _g(items_container, "data") or []
         if items:
-            price = (items[0].get("price") or {}).get("id")
+            price = _g(_g(items[0], "price"), "id")
             plan = _plan_from_price_id(price)
             if plan:
                 tenant.plan = plan
-        status_ = obj.get("status")  # active | past_due | canceled | …
+        status_ = _g(obj, "status")  # active | past_due | canceled | …
         if status_ == "active":
             tenant.subscription_status = "active"
         elif status_ == "past_due":
@@ -264,7 +282,7 @@ def handle_event(db: Session, event) -> dict:
 
 
 def _upsert_invoice(db: Session, tenant: Tenant, obj, *, status_: str) -> None:
-    inv_id = obj.get("id")
+    inv_id = _g(obj, "id")
     if not inv_id:
         return
     existing: Optional[TenantInvoice] = (
@@ -276,23 +294,26 @@ def _upsert_invoice(db: Session, tenant: Tenant, obj, *, status_: str) -> None:
     def _ts(v):
         return datetime.fromtimestamp(v, tz=timezone.utc) if v else None
 
+    transitions = _g(obj, "status_transitions") or {}
+    paid_at = _ts(_g(transitions, "paid_at"))
+
     if existing is None:
         db.add(TenantInvoice(
             tenant_id=tenant.id,
             stripe_invoice_id=inv_id,
-            amount_cents=obj.get("amount_paid") or obj.get("amount_due") or 0,
-            currency=(obj.get("currency") or "eur").lower(),
+            amount_cents=_g(obj, "amount_paid") or _g(obj, "amount_due") or 0,
+            currency=(_g(obj, "currency") or "eur").lower(),
             status=status_,
-            paid_at=_ts(obj.get("status_transitions", {}).get("paid_at")),
-            period_start=_ts(obj.get("period_start")),
-            period_end=_ts(obj.get("period_end")),
-            hosted_invoice_url=obj.get("hosted_invoice_url"),
+            paid_at=paid_at,
+            period_start=_ts(_g(obj, "period_start")),
+            period_end=_ts(_g(obj, "period_end")),
+            hosted_invoice_url=_g(obj, "hosted_invoice_url"),
         ))
     else:
         existing.status = status_
-        existing.amount_cents = obj.get("amount_paid") or obj.get("amount_due") or existing.amount_cents
-        existing.paid_at = _ts(obj.get("status_transitions", {}).get("paid_at")) or existing.paid_at
-        existing.hosted_invoice_url = obj.get("hosted_invoice_url") or existing.hosted_invoice_url
+        existing.amount_cents = _g(obj, "amount_paid") or _g(obj, "amount_due") or existing.amount_cents
+        existing.paid_at = paid_at or existing.paid_at
+        existing.hosted_invoice_url = _g(obj, "hosted_invoice_url") or existing.hosted_invoice_url
 
 
 # ───────────────── Cron: canceled → suspended after grace ────────────

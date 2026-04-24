@@ -289,7 +289,7 @@ export default function Users() {
               type="checkbox"
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
-              className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+              className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
             />
             Inaktive anzeigen
           </label>
@@ -298,7 +298,7 @@ export default function Users() {
               type="checkbox"
               checked={showHidden}
               onChange={(e) => setShowHidden(e.target.checked)}
-              className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+              className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
             />
             Ausgeblendete anzeigen
           </label>
@@ -328,9 +328,9 @@ export default function Users() {
       )}
 
       {/* Filter Input */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 mb-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="text"
             placeholder="Suche nach Name oder Benutzername..."
@@ -342,7 +342,7 @@ export default function Users() {
       </div>
 
       {/* Users Table/Cards */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         {/* Desktop Table */}
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full">
@@ -584,7 +584,7 @@ export default function Users() {
                         const remaining = graceRemainingDays(user);
                         return remaining > 0 ? (
                           <span
-                            className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-default"
+                            className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-1.5 py-0.5 cursor-default"
                             title={`Sperrfrist: Anonymisierung erst in ${remaining} Tag(en) möglich`}
                           >
                             🔒 {remaining}d

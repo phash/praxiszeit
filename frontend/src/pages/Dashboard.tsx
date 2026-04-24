@@ -394,7 +394,7 @@ export default function Dashboard() {
                   aria-label={`Heutige Arbeitszeit: ${progressPct}%`}
                 >
                   <div
-                    className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-all duration-1000`}
+                    className={`h-full bg-linear-to-r ${barColor} rounded-full transition-all duration-1000`}
                     style={{ width: `${Math.min(progressPct, 100)}%` }}
                   />
                 </div>
@@ -829,7 +829,7 @@ export default function Dashboard() {
                                   {dayAbsences.map((absence, idx) => (
                                     <div
                                       key={idx}
-                                      className="text-xs px-1 py-0.5 rounded text-white"
+                                      className="text-xs px-1 py-0.5 rounded-sm text-white"
                                       style={{ backgroundColor: absence.user_color }}
                                       title={`${absence.user_first_name} ${absence.user_last_name} - ${typeLabels[absence.type]}${absence.note ? ': ' + absence.note : ''}`}
                                     >
@@ -873,7 +873,7 @@ export default function Dashboard() {
                                       className="flex items-center text-sm"
                                     >
                                       <span
-                                        className="w-3 h-3 rounded-full mr-2 flex-shrink-0"
+                                        className="w-3 h-3 rounded-full mr-2 shrink-0"
                                         style={{ backgroundColor: absence.user_color }}
                                       ></span>
                                       <span className="font-medium text-gray-900">

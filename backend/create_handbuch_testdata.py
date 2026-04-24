@@ -10,7 +10,7 @@ import random
 
 sys.path.insert(0, '/app')
 
-from app.database import SessionLocal
+from app.database import SessionLocal, set_superadmin_context
 from app.models import (
     User, TimeEntry, Absence, PublicHoliday, AbsenceType,
     WorkingHoursChange, ChangeRequest
@@ -20,6 +20,9 @@ from app.models.user import UserRole
 from app.services import auth_service
 
 random.seed(42)  # Reproduzierbar
+
+# Default tenant UUID (on-prem single-tenant bootstrap).
+TENANT_ID = "00000000-0000-0000-0000-000000000001"
 
 # ── Mitarbeiter-Definitionen ──────────────────────────────────────────────────
 EMPLOYEES = [
@@ -113,6 +116,7 @@ def create_employees(db) -> list:
             continue
 
         u = User(
+            tenant_id=TENANT_ID,
             username=emp["username"],
             email=emp["email"],
             first_name=emp["first_name"],
@@ -175,6 +179,7 @@ def make_time_entry(user: User, d: date, target_hours: float,
     end_dt = start_dt + timedelta(minutes=total_min)
 
     return TimeEntry(
+        tenant_id=TENANT_ID,
         user_id=user.id,
         date=d,
         start_time=start,
@@ -215,6 +220,7 @@ def create_absences_for_user(db, user: User, holiday_dates: set):
 
     def add_absence(d, end_d, absence_type, note_text):
         absence_entries.append(Absence(
+            tenant_id=TENANT_ID,
             user_id=user.id, date=d, end_date=end_d,
             type=absence_type, hours=daily_h, note=note_text,
         ))
@@ -276,17 +282,17 @@ def _insert_change_request(db, user_id, time_entry_id, req_type, status,
     cursor = raw_conn.cursor()
     cursor.execute(f"""
         INSERT INTO change_requests (
-            id, user_id, request_type, status, time_entry_id,
+            id, tenant_id, user_id, request_type, status, time_entry_id,
             original_start_time, original_end_time, original_break_minutes,
             proposed_start_time, proposed_end_time, proposed_break_minutes,
             reason, rejection_reason
         ) VALUES (
-            gen_random_uuid(), %s,
+            gen_random_uuid(), %s, %s,
             %s::changerequesttype, %s::changerequeststatus,
             %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
     """, (
-        str(user_id), req_type, status, str(time_entry_id),
+        TENANT_ID, str(user_id), req_type, status, str(time_entry_id),
         str(orig_start), str(orig_end), orig_break,
         str(prop_start), str(prop_end), prop_break,
         reason, rejection_reason,
@@ -354,6 +360,10 @@ def main():
     print("=" * 60)
 
     db = SessionLocal()
+    # Multi-tenant: script seeds the default tenant. Bypass RLS with the
+    # superadmin context so INSERTs into tenant-scoped tables are permitted
+    # regardless of the (None) tenant_id that the legacy model rows carry.
+    set_superadmin_context(db)
     try:
         # 1. Admin-Daten aktualisieren
         print("\n1. Admin aktualisieren...")
