@@ -312,9 +312,12 @@ class TestAuthLogin:
         test_app.dependency_overrides.clear()
 
         assert resp.status_code == 401
+        assert "detail" in resp.json(), "401 without a detail message is a UX bug"
 
     def test_login_nonexistent_user(self, _db_session, tenant):
-        """Prüft dass unbekannte Benutzernamen 401 liefern — keine User-Enumeration."""
+        """Prüft dass unbekannte Benutzernamen 401 liefern — Status-Code only
+        genügt nicht für die Enumeration-Garantie; siehe
+        ``test_login_nonexistent_vs_wrong_password_indistinguishable``."""
         def _override_db():
             yield _db_session
 
@@ -330,6 +333,41 @@ class TestAuthLogin:
         test_app.dependency_overrides.clear()
 
         assert resp.status_code == 401
+
+    def test_login_nonexistent_vs_wrong_password_indistinguishable(
+        self, _db_session, employee_user,
+    ):
+        """Prüft dass existierender User + falsches Passwort UND
+        nicht-existierender User IDENTISCHE Responses liefern — sonst kann
+        ein Angreifer an der Antwort ablesen, ob ein Username existiert
+        (Enumeration-Leak).
+
+        Status-Code UND Body werden verglichen. Timing wird NICHT geprüft
+        (F-040 setzt dafür einen Dummy-bcrypt-Hash, aber Timing-Unit-Tests
+        sind zu flaky für diese Suite)."""
+        def _override_db():
+            yield _db_session
+
+        test_app.dependency_overrides[get_db] = _override_db
+
+        with patch("app.routers.auth.set_superadmin_context"):
+            with TestClient(test_app) as client:
+                existing = client.post("/api/auth/login", json={
+                    "username": "employee",
+                    "password": "DefinitelyWrong!1",
+                })
+                nonexistent = client.post("/api/auth/login", json={
+                    "username": "no-such-user",
+                    "password": "DefinitelyWrong!1",
+                })
+
+        test_app.dependency_overrides.clear()
+
+        assert existing.status_code == nonexistent.status_code == 401
+        assert existing.json() == nonexistent.json(), (
+            f"response bodies differ — enumeration leak: existing={existing.json()!r} "
+            f"nonexistent={nonexistent.json()!r}"
+        )
 
     def test_login_empty_body(self, _db_session, tenant):
         """Prüft dass leerer Login-Body 422 liefert — Pydantic-Validierung greift."""
@@ -389,7 +427,10 @@ class TestTimeEntryList:
         assert resp.json() == []
 
     def test_list_with_entry(self, _db_session, employee_user, employee_client):
-        """Prüft dass angelegte Zeiteintraege in der Liste erscheinen — Grundfunktion Zeiterfassung."""
+        """Prüft dass angelegte Zeiteintraege in der Liste erscheinen — Grundfunktion
+        Zeiterfassung. ``==`` statt ``>=`` ist hier bewusst: wenn die Liste
+        mehr als einen Eintrag enthält, ist entweder der Tenant-Filter kaputt
+        oder Test-Isolation weg, beides wollen wir laut sehen."""
         entry = TimeEntry(
             user_id=employee_user.id,
             tenant_id=DEFAULT_TENANT_ID,
@@ -404,7 +445,7 @@ class TestTimeEntryList:
         resp = employee_client.get("/api/time-entries/")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) >= 1
+        assert len(data) == 1, f"expected exactly one entry, got {len(data)}: {data!r}"
         assert data[0]["start_time"] == "08:00:00"
 
 
