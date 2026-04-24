@@ -156,7 +156,7 @@ export default function Billing() {
               </span>
             </div>
             {usage.seat_limit !== null && (
-              <div className="mt-1 h-2 bg-gray-100 rounded overflow-hidden">
+              <div className="mt-1 h-2 bg-gray-100 rounded-sm overflow-hidden">
                 <div
                   className={`h-full ${
                     usage.used_seats >= usage.seat_limit ? 'bg-red-500' :

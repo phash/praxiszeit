@@ -90,7 +90,7 @@ function TimeBar({ startTime, endTime }: { startTime: string; endTime: string | 
     <div className="my-3">
       <div className="relative h-2 bg-muted rounded-full">
         <div
-          className="absolute h-full bg-gradient-to-r from-primary to-primary-dark rounded-full"
+          className="absolute h-full bg-linear-to-r from-primary to-primary-dark rounded-full"
           style={{ left: `${left}%`, width: `${width}%` }}
         />
       </div>
@@ -504,7 +504,7 @@ export default function TimeTracking() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="entry-form-title"
-            className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-sm md:border md:p-6 md:mb-6"
+            className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-xs md:border md:p-6 md:mb-6"
             style={{ animation: 'slideUpSheet 0.25s ease-out' }}
           >
             {/* Mobile handle bar */}
@@ -679,7 +679,7 @@ export default function TimeTracking() {
       />
 
       {/* Entries Table/Cards */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         {/* Desktop Table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full">
@@ -719,12 +719,12 @@ export default function TimeTracking() {
                           <span>{format(entryDate, 'dd.MM.yyyy')}</span>
                           <div className="flex gap-1 flex-wrap">
                             {entry.is_sunday_or_holiday && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800" title="Sonn- oder Feiertagsarbeit">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-orange-100 text-orange-800" title="Sonn- oder Feiertagsarbeit">
                                 So/FT
                               </span>
                             )}
                             {entry.is_night_work && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800" title="Nachtarbeit (23–6 Uhr)">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-indigo-100 text-indigo-800" title="Nachtarbeit (23–6 Uhr)">
                                 Nacht
                               </span>
                             )}

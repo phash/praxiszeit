@@ -222,7 +222,7 @@ export default function ImportXls() {
             Benutzer <span className="text-red-500">*</span>
           </label>
           <select
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value)}
             onFocus={loadUsers}
@@ -381,7 +381,7 @@ export default function ImportXls() {
               type="checkbox"
               checked={overwrite}
               onChange={(e) => setOverwrite(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+              className="w-4 h-4 rounded-sm border-gray-300 text-primary focus:ring-primary"
             />
             <span className="text-gray-700">
               Konflikte überschreiben ({preview.conflicts} Einträge)

@@ -203,14 +203,14 @@ export default function ErrorMonitoring() {
           {errors.map(err => (
             <div
               key={err.id}
-              className={`bg-white rounded-xl border shadow-sm overflow-hidden
+              className={`bg-white rounded-xl border shadow-xs overflow-hidden
                 ${err.status === 'resolved' ? 'opacity-60' : ''}`}
             >
               {/* Header */}
               <div className="p-4 flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className={`text-xs font-semibold uppercase px-2 py-0.5 rounded border ${LEVEL_COLORS[err.level] || 'bg-gray-100 text-gray-700 border-gray-300'}`}>
+                    <span className={`text-xs font-semibold uppercase px-2 py-0.5 rounded-sm border ${LEVEL_COLORS[err.level] || 'bg-gray-100 text-gray-700 border-gray-300'}`}>
                       {err.level}
                     </span>
                     {err.count > 1 && (
@@ -244,7 +244,7 @@ export default function ErrorMonitoring() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   {err.status !== 'resolved' && (
                     <button
                       onClick={() => updateStatus(err.id, 'resolved')}
@@ -294,7 +294,7 @@ export default function ErrorMonitoring() {
                   {err.traceback && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 mb-1 uppercase">Stack Trace</p>
-                      <pre className="text-xs bg-gray-900 text-green-300 p-3 rounded overflow-x-auto max-h-64 whitespace-pre-wrap break-all">
+                      <pre className="text-xs bg-gray-900 text-green-300 p-3 rounded-sm overflow-x-auto max-h-64 whitespace-pre-wrap break-all">
                         {err.traceback}
                       </pre>
                     </div>
@@ -303,7 +303,7 @@ export default function ErrorMonitoring() {
                   {/* GitHub Issue Link */}
                   <div>
                     <p className="text-xs font-semibold text-gray-500 mb-1 uppercase">GitHub Issue</p>
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 mb-2">
                       ⚠ DSGVO-Hinweis (Art. 28): Fehlermeldungen können personenbezogene Daten enthalten. Prüfen Sie vor der GitHub-Übertragung, ob der Traceback sensible Informationen enthält. GitHub Inc. (USA) ist als Auftragsverarbeiter einzustufen.
                     </p>
                     {sanitizeGithubUrl(err.github_issue_url) ? (

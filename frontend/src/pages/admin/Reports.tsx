@@ -319,7 +319,7 @@ export default function Reports() {
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Berichte & Export</h1>
 
       {/* Monthly Export Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-8">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 mb-8">
         <div className="flex items-center space-x-3 mb-4">
           <Calendar className="text-primary" size={24} />
           <h2 className="text-xl font-semibold">Monatsreport exportieren</h2>
@@ -376,7 +376,7 @@ export default function Reports() {
                 type="checkbox"
                 checked={includeHealthData}
                 onChange={(e) => setIncludeHealthData(e.target.checked)}
-                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary cursor-pointer"
+                className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary cursor-pointer"
               />
               <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
                 Krankheitsdaten einschließen (Art. 9 DSGVO)
@@ -384,7 +384,7 @@ export default function Reports() {
             </label>
             {includeHealthData && (
               <div className="mt-3 p-4 bg-amber-50 border border-amber-300 rounded-lg flex items-start space-x-3">
-                <AlertTriangle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
                 <p className="text-sm text-amber-800">
                   <strong>Hinweis (Art. 9 DSGVO):</strong> Krankheitsdaten sind besondere Kategorien
                   personenbezogener Daten. Dieser Export wird im Audit-Log verzeichnet.
@@ -408,7 +408,7 @@ export default function Reports() {
       </div>
 
       {/* Yearly Export Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-8">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 mb-8">
         <div className="flex items-center space-x-3 mb-4">
           <FileText className="text-primary" size={24} />
           <h2 className="text-xl font-semibold">Jahresreport exportieren</h2>
@@ -441,7 +441,7 @@ export default function Reports() {
                 type="checkbox"
                 checked={includeHealthData}
                 onChange={(e) => setIncludeHealthData(e.target.checked)}
-                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary cursor-pointer"
+                className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary cursor-pointer"
               />
               <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
                 Krankheitsdaten einschließen
@@ -449,7 +449,7 @@ export default function Reports() {
             </label>
             {includeHealthData && (
               <div className="mt-3 p-4 bg-amber-50 border border-amber-300 rounded-lg flex items-start space-x-3">
-                <AlertTriangle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
                 <p className="text-sm text-amber-800">
                   <strong>Hinweis (Art. 9 DSGVO):</strong> Krankheitsdaten sind besondere Kategorien
                   personenbezogener Daten. Dieser Export wird im Audit-Log verzeichnet.
@@ -537,7 +537,7 @@ export default function Reports() {
       </div>
 
       {/* Rest Time Violations */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
         <div className="flex items-center space-x-3 mb-4">
           <Clock className="text-orange-500" size={24} />
           <h2 className="text-xl font-semibold">Ruhezeitprüfung</h2>
@@ -632,7 +632,7 @@ export default function Reports() {
       </div>
 
       {/* Sunday Summary §11 ArbZG */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
         <div className="flex items-center space-x-3 mb-2">
           <Sun className="text-yellow-500" size={24} />
           <h2 className="text-xl font-semibold">Sonntagsarbeit §11 ArbZG</h2>
@@ -686,8 +686,8 @@ export default function Reports() {
                     </td>
                     <td className="px-4 py-2 text-center">
                       {emp.compliant
-                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
-                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                        : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>
                       }
                     </td>
                   </tr>
@@ -699,7 +699,7 @@ export default function Reports() {
       </div>
 
       {/* Night Work Summary §6 ArbZG */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
         <div className="flex items-center space-x-3 mb-2">
           <Clock className="text-indigo-500" size={24} />
           <h2 className="text-xl font-semibold">Nachtarbeit §6 ArbZG</h2>
@@ -766,8 +766,8 @@ export default function Reports() {
                     <td className="px-4 py-2 text-right text-gray-700">{emp.night_work_days}</td>
                     <td className="px-4 py-2 text-center">
                       {emp.is_nachtarbeitnehmer
-                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">⚠ Nachtarbeitnehmer</span>
-                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">✓ Unter Schwellwert</span>
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800">⚠ Nachtarbeitnehmer</span>
+                        : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Unter Schwellwert</span>
                       }
                     </td>
                   </tr>
@@ -779,7 +779,7 @@ export default function Reports() {
       </div>
 
       {/* Compensatory Rest §11 ArbZG */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
         <div className="flex items-center space-x-3 mb-2">
           <AlertTriangle className="text-orange-500" size={24} />
           <h2 className="text-xl font-semibold">Ersatzruhetage §11 ArbZG</h2>
@@ -830,8 +830,8 @@ export default function Reports() {
                     </td>
                     <td className="px-4 py-2 text-center">
                       {emp.compliant
-                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
-                        : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                        : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>
                       }
                     </td>
                   </tr>

@@ -382,7 +382,7 @@ export default function AdminDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-gray-600">Mitarbeitende</h3>
             <Users className="text-primary" size={24} />
@@ -390,7 +390,7 @@ export default function AdminDashboard() {
           <p className="text-3xl font-bold text-gray-900">{totalEmployees}</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-gray-600">Ø Saldo (Monat)</h3>
             <TrendingUp
@@ -404,7 +404,7 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-gray-600">Monat</h3>
             <Clock className="text-primary" size={24} />
@@ -423,9 +423,9 @@ export default function AdminDashboard() {
       />
 
       {/* Filter Input */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 mb-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} aria-hidden="true" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} aria-hidden="true" />
           <label htmlFor="employee-search" className="sr-only">Mitarbeitende suchen</label>
           <input
             id="employee-search"
@@ -439,7 +439,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Employee Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold">Monatsübersicht</h2>
         </div>
@@ -537,7 +537,7 @@ export default function AdminDashboard() {
                 filteredAndSortedReport.map((emp) => (
                   <tr
                     key={emp.user_id}
-                    className="hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-blue-50"
+                    className="hover:bg-gray-50 cursor-pointer focus:outline-hidden focus:bg-blue-50"
                     onClick={() => fetchEmployeeDetails(emp)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fetchEmployeeDetails(emp); } }}
                     tabIndex={0}
@@ -589,7 +589,7 @@ export default function AdminDashboard() {
               {filteredAndSortedReport.map((emp) => (
                 <div
                   key={emp.user_id}
-                  className="p-4 hover:bg-gray-50 cursor-pointer transition focus:outline-none focus:bg-blue-50"
+                  className="p-4 hover:bg-gray-50 cursor-pointer transition focus:outline-hidden focus:bg-blue-50"
                   onClick={() => fetchEmployeeDetails(emp)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fetchEmployeeDetails(emp); } }}
                   tabIndex={0}
@@ -719,7 +719,7 @@ export default function AdminDashboard() {
           ) : null;
         })()}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
           {/* Desktop Table */}
           <div className="hidden lg:block overflow-x-auto">
             <table className="w-full">
@@ -938,7 +938,7 @@ export default function AdminDashboard() {
       {/* Employee Detail Modal */}
       {selectedEmployee && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
           onClick={closeDetail}
         >
           <FocusTrap
@@ -968,7 +968,7 @@ export default function AdminDashboard() {
                 <button
                   ref={closeButtonRef}
                   onClick={closeDetail}
-                  className="hover:bg-white hover:bg-opacity-20 rounded-lg p-2 transition"
+                  className="hover:bg-white/20 rounded-lg p-2 transition"
                   aria-label={`Details für ${selectedEmployee.first_name} ${selectedEmployee.last_name} schließen`}
                 >
                   <X size={24} />
@@ -1103,7 +1103,7 @@ export default function AdminDashboard() {
                               value={entryForm.entry_type}
                               onChange={(e) => setEntryForm({ ...entryForm, entry_type: e.target.value as any })}
                               aria-label="Eintragstyp"
-                              className="px-2 py-1 border border-gray-300 rounded text-sm col-span-2 md:col-span-1"
+                              className="px-2 py-1 border border-gray-300 rounded-sm text-sm col-span-2 md:col-span-1"
                             >
                               <option value="work">Arbeit</option>
                               <option value="sick">Krank</option>
@@ -1117,7 +1117,7 @@ export default function AdminDashboard() {
                             value={entryForm.date}
                             onChange={(e) => setEntryForm({ ...entryForm, date: e.target.value })}
                             aria-label="Datum"
-                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                            className="px-2 py-1 border border-gray-300 rounded-sm text-sm"
                           />
                           {(entryForm.entry_type === 'work' || editingEntryId) ? (
                             <>
@@ -1126,14 +1126,14 @@ export default function AdminDashboard() {
                                 value={entryForm.start_time}
                                 onChange={(e) => setEntryForm({ ...entryForm, start_time: e.target.value })}
                                 aria-label="Von (Uhrzeit)"
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                className="px-2 py-1 border border-gray-300 rounded-sm text-sm"
                               />
                               <input
                                 type="time"
                                 value={entryForm.end_time}
                                 onChange={(e) => setEntryForm({ ...entryForm, end_time: e.target.value })}
                                 aria-label="Bis (Uhrzeit)"
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                className="px-2 py-1 border border-gray-300 rounded-sm text-sm"
                               />
                               <input
                                 type="number"
@@ -1142,7 +1142,7 @@ export default function AdminDashboard() {
                                 onChange={(e) => setEntryForm({ ...entryForm, break_minutes: parseInt(e.target.value) || 0 })}
                                 placeholder="Pause (Min.)"
                                 aria-label="Pause in Minuten"
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                className="px-2 py-1 border border-gray-300 rounded-sm text-sm"
                               />
                             </>
                           ) : (
@@ -1155,7 +1155,7 @@ export default function AdminDashboard() {
                               onChange={(e) => setEntryForm({ ...entryForm, absence_hours: parseFloat(e.target.value) || 0 })}
                               placeholder="Stunden"
                               aria-label="Stunden"
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              className="px-2 py-1 border border-gray-300 rounded-sm text-sm"
                             />
                           )}
                           <input
@@ -1164,20 +1164,20 @@ export default function AdminDashboard() {
                             onChange={(e) => setEntryForm({ ...entryForm, note: e.target.value })}
                             placeholder="Notiz"
                             aria-label="Notiz"
-                            className="px-2 py-1 border border-gray-300 rounded text-sm"
+                            className="px-2 py-1 border border-gray-300 rounded-sm text-sm"
                           />
                         </div>
                         <div className="flex space-x-2 mt-2">
                           <button
                             onClick={handleAdminSaveEntry}
-                            className="text-sm bg-primary hover:bg-primary-dark text-white px-3 py-1 rounded flex items-center space-x-1"
+                            className="text-sm bg-primary hover:bg-primary-dark text-white px-3 py-1 rounded-sm flex items-center space-x-1"
                           >
                             <Save size={14} />
                             <span>Speichern</span>
                           </button>
                           <button
                             onClick={() => { setEditingEntryId(null); setShowNewEntryForm(false); }}
-                            className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded"
+                            className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded-sm"
                           >
                             Abbrechen
                           </button>
@@ -1211,14 +1211,14 @@ export default function AdminDashboard() {
                                 <td className="px-4 py-2 text-right text-sm space-x-1">
                                   <button
                                     onClick={() => handleAdminEditEntry(entry)}
-                                    className="text-primary hover:text-primary-dark p-1 rounded"
+                                    className="text-primary hover:text-primary-dark p-1 rounded-sm"
                                     aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} bearbeiten`}
                                   >
                                     <Edit2 size={14} aria-hidden="true" />
                                   </button>
                                   <button
                                     onClick={() => handleAdminDeleteEntry(entry.id)}
-                                    className="text-red-600 hover:text-red-800 p-1 rounded"
+                                    className="text-red-600 hover:text-red-800 p-1 rounded-sm"
                                     aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} löschen`}
                                   >
                                     <Trash2 size={14} aria-hidden="true" />

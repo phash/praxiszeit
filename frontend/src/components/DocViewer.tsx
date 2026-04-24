@@ -22,8 +22,8 @@ export function Accordion({ items }: { items: AccordionItem[] }) {
           >
             <span className="font-medium text-gray-800 text-sm">{item.title}</span>
             {open === i
-              ? <ChevronDown size={16} className="text-gray-500 flex-shrink-0" />
-              : <ChevronRight size={16} className="text-gray-500 flex-shrink-0" />}
+              ? <ChevronDown size={16} className="text-gray-500 shrink-0" />
+              : <ChevronRight size={16} className="text-gray-500 shrink-0" />}
           </button>
           {open === i && (
             <div className="px-4 py-3 text-sm text-gray-600 bg-gray-50 border-t border-gray-200">
@@ -184,7 +184,7 @@ export function CheatsheetAdmin() {
             <p className="text-sm font-medium text-gray-700 mb-1">Stundenänderung</p>
             <p className="text-sm text-gray-600">Benutzer bearbeiten → neue Wochenstunden + Wirkungsdatum → historische Salden bleiben korrekt.</p>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded p-2">
+          <div className="bg-amber-50 border border-amber-200 rounded-sm p-2">
             <p className="text-sm text-amber-800">⚠️ Niemals löschen! Status auf „Inaktiv" setzen. 2 Jahre Aufbewahrung (§16 ArbZG).</p>
           </div>
         </div>
@@ -398,7 +398,7 @@ export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChan
   return (
     <div className="flex flex-col h-full">
       {/* Tab bar */}
-      <div className="border-b border-gray-200 px-4 flex gap-6 flex-shrink-0">
+      <div className="border-b border-gray-200 px-4 flex gap-6 shrink-0">
         {(['cheatsheet', 'handbuch'] as const).map((tab) => (
           <button
             key={tab}

@@ -91,7 +91,7 @@ export default function Signup() {
           <input
             type="text" required value={practiceName}
             onChange={(e) => setPracticeName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary"
           />
         </div>
 
@@ -101,7 +101,7 @@ export default function Signup() {
             <input
               type="text" required value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary"
             />
           </div>
           <div>
@@ -109,7 +109,7 @@ export default function Signup() {
             <input
               type="text" required value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary"
             />
           </div>
         </div>
@@ -119,7 +119,7 @@ export default function Signup() {
           <input
             type="email" required value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary"
           />
         </div>
 
@@ -130,7 +130,7 @@ export default function Signup() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary"
           />
           <p className="text-xs text-gray-500 mt-1">Mindestens 8 Zeichen.</p>
         </div>
@@ -140,7 +140,7 @@ export default function Signup() {
           <select
             value={country}
             onChange={(e) => setCountry(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary"
           >
             <option value="DE">Deutschland</option>
             <option value="AT">Österreich</option>

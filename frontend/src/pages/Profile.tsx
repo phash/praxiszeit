@@ -249,7 +249,7 @@ export default function Profile() {
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Profil</h1>
 
       {/* User Info */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center space-x-4">
             <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
@@ -370,7 +370,7 @@ export default function Profile() {
       </div>
 
       {/* Password Change */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold flex items-center space-x-2">
             <Lock size={20} />
@@ -471,7 +471,7 @@ export default function Profile() {
       </div>
 
       {/* Weitere Einstellungen */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden mt-6">
         <button
           onClick={() => setShowExtendedSettings(s => !s)}
           className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
@@ -555,7 +555,7 @@ export default function Profile() {
                     Schritt 1: Scannen Sie den QR-Code mit Ihrer Authenticator-App
                   </p>
                   <div className="flex justify-center">
-                    <div className="bg-white p-3 rounded-lg shadow-sm inline-block">
+                    <div className="bg-white p-3 rounded-lg shadow-xs inline-block">
                       <QRCodeSVG value={totpSetupData.otpauth_uri} size={180} />
                     </div>
                   </div>
@@ -564,13 +564,13 @@ export default function Profile() {
                       Oder tragen Sie den Schlüssel manuell ein:
                     </p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 text-xs bg-white border border-blue-200 rounded px-3 py-2 font-mono tracking-wider break-all">
+                      <code className="flex-1 text-xs bg-white border border-blue-200 rounded-sm px-3 py-2 font-mono tracking-wider break-all">
                         {totpSetupData.secret}
                       </code>
                       <button
                         type="button"
                         onClick={handleCopySecret}
-                        className="flex-shrink-0 p-2 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition"
+                        className="shrink-0 p-2 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition"
                         title="Kopieren"
                       >
                         {secretCopied ? <CheckCircle size={16} className="text-green-600" /> : <Copy size={16} className="text-blue-600" />}

@@ -7,7 +7,7 @@
 
 **Mitarbeiter-Bereich:** Dashboard · Zeiterfassung · Abwesenheiten · Profil
 
-**Administration:** Admin-Dashboard · Benutzerverwaltung · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Urlaubsanträge · Import · Einstellungen
+**Administration:** Admin-Dashboard · Benutzerverwaltung · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Anträge · Import · Einstellungen
 
 ---
 
@@ -58,9 +58,9 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 ---
 
-## Urlaubsanträge genehmigen
+## Abwesenheitsanträge genehmigen
 
-**Urlaubsanträge** (Admin-Navigation)
+**Anträge** (Admin-Navigation, Seite: „Abwesenheitsanträge")
 
 **Toggle oben:** Genehmigungspflicht ein-/ausschalten
 - **Aus** (Standard): Mitarbeiter buchen Urlaub direkt

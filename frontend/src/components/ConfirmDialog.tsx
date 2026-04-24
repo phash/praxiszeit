@@ -42,7 +42,7 @@ export default function ConfirmDialog({
   const styles = variantStyles[variant];
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center">
+    <div className="fixed inset-0 z-10000 flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 transition-opacity"
@@ -67,7 +67,7 @@ export default function ConfirmDialog({
         >
           <div className="flex items-start space-x-4">
             <div
-              className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${styles.icon}`}
+              className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${styles.icon}`}
               aria-hidden="true"
             >
               <AlertTriangle size={20} />
@@ -86,13 +86,13 @@ export default function ConfirmDialog({
             <button
               onClick={onCancel}
               autoFocus
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 transition"
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-hidden focus:ring-2 focus:ring-gray-300 transition"
             >
               {cancelLabel}
             </button>
             <button
               onClick={onConfirm}
-              className={`px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition ${styles.button}`}
+              className={`px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-hidden focus:ring-2 focus:ring-offset-2 transition ${styles.button}`}
             >
               {confirmLabel}
             </button>

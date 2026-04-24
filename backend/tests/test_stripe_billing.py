@@ -284,3 +284,96 @@ def test_event_with_unknown_tenant_is_stored_but_noops(_db_session):
     result = stripe_service.handle_event(_db_session, event)
     assert result.get("action") == "no_tenant_match"
     assert _db_session.query(StripeEvent).filter(StripeEvent.event_id == event["id"]).count() == 1
+
+
+# ───────── Real StripeObject (v15 attribute access, no dict inheritance) ─────────
+
+def _real_stripe_event(payload):
+    """Helper: construct a real StripeObject hierarchy from a dict spec."""
+    from stripe import StripeObject
+    return StripeObject.construct_from(payload, "fake_key")
+
+
+def test_handle_event_accepts_real_stripe_object(_db_session, tenant):
+    """Regression: stripe SDK v15 StripeObject no longer inherits from dict —
+    ``.get()`` / ``.keys()`` raise AttributeError. Our service code must work
+    with BOTH the dict-shaped events our tests synthesize AND the real
+    ``StripeObject`` instances Stripe's webhook parser produces in production.
+    This test feeds an actual ``StripeObject`` through ``handle_event`` to
+    prove the dual-shape access helper covers the v15 wire path.
+    """
+    event_obj = _real_stripe_event({
+        "id": "evt_real_stripe_object",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_real_object",
+                "subscription": "sub_real_001",
+                "customer": "cus_real",
+                "metadata": {"tenant_id": str(TENANT_ID), "plan": "starter"},
+            }
+        },
+    })
+    result = stripe_service.handle_event(_db_session, event_obj)
+    assert result["action"] == "subscription_activated"
+    _db_session.refresh(tenant)
+    assert tenant.plan == "starter"
+    assert tenant.stripe_subscription_id == "sub_real_001"
+
+
+def test_subscription_updated_real_stripe_object_nested_items(_db_session, tenant, monkeypatch):
+    """The deepest StripeObject nesting the service walks: items → data[0] →
+    price.id. In v15 each of those is itself a StripeObject, so attribute
+    access must chain correctly through the nested _g() calls in
+    stripe_service.py handle_event('customer.subscription.updated').
+    """
+    monkeypatch.setattr(stripe_service, "_PLAN_PRICE_MAP", {"pro": ["price_pro_monthly_real", None]})
+    event_obj = _real_stripe_event({
+        "id": "evt_real_sub_updated",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_abc",
+                "status": "active",
+                "customer": "cus_real",
+                "metadata": {"tenant_id": str(TENANT_ID)},
+                "items": {
+                    "data": [
+                        {"price": {"id": "price_pro_monthly_real"}},
+                    ]
+                },
+            }
+        },
+    })
+    stripe_service.handle_event(_db_session, event_obj)
+    _db_session.refresh(tenant)
+    assert tenant.plan == "pro"
+    assert tenant.subscription_status == "active"
+
+
+def test_invoice_payment_succeeded_real_stripe_object_status_transitions(_db_session, tenant):
+    """status_transitions is a StripeObject in v15 — we dereference .paid_at via
+    _g(). Feed a real object through to verify the nested attribute path for
+    invoice caching works end-to-end.
+    """
+    event_obj = _real_stripe_event({
+        "id": "evt_real_invoice_paid",
+        "type": "invoice.payment_succeeded",
+        "data": {
+            "object": {
+                "id": "in_real_001",
+                "amount_paid": 3900,
+                "currency": "eur",
+                "customer": "cus_real",
+                "metadata": {"tenant_id": str(TENANT_ID)},
+                "status_transitions": {"paid_at": 1735689600},
+                "hosted_invoice_url": "https://pay.stripe.com/real",
+            }
+        },
+    })
+    stripe_service.handle_event(_db_session, event_obj)
+    inv = _db_session.query(TenantInvoice).filter(TenantInvoice.stripe_invoice_id == "in_real_001").first()
+    assert inv is not None
+    assert inv.amount_cents == 3900
+    assert inv.paid_at is not None
+    assert inv.hosted_invoice_url == "https://pay.stripe.com/real"

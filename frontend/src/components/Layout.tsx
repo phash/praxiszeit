@@ -180,7 +180,7 @@ export default function Layout() {
       {/* Skip to Content Link for Accessibility */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-primary text-white px-4 py-2 rounded-lg z-[100] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-primary text-white px-4 py-2 rounded-lg z-100 focus:outline-hidden focus:ring-2 focus:ring-primary focus:ring-offset-2"
       >
         Zum Inhalt springen
       </a>
@@ -210,7 +210,7 @@ export default function Layout() {
         className={`
           w-64 bg-surface border-r border-border flex flex-col
           fixed lg:relative inset-y-0 left-0 z-50
-          transform transition-transform duration-300 ease-in-out
+          transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
@@ -353,7 +353,7 @@ export default function Layout() {
           <p className="text-center text-xs text-gray-300 mt-1">
             v{__APP_VERSION__}
             {deploymentMode === 'onprem' && (
-              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-sm bg-gray-100 text-gray-500">
                 Lokale Installation
               </span>
             )}
@@ -377,10 +377,10 @@ export default function Layout() {
             <button
               ref={fabRef}
               onClick={openStampSheet}
-              className={`absolute left-1/2 -translate-x-1/2 -top-3 z-[31] w-14 h-14 rounded-full shadow-elevated flex items-center justify-center transition-all duration-300 active:scale-90 ${
+              className={`absolute left-1/2 -translate-x-1/2 -top-3 z-31 w-14 h-14 rounded-full shadow-elevated flex items-center justify-center transition-all duration-300 active:scale-90 ${
                 isClockedIn
-                  ? 'bg-gradient-to-br from-success to-[#4AA87A] fab-pulse'
-                  : 'bg-gradient-to-br from-primary to-primary-dark'
+                  ? 'bg-linear-to-br from-success to-[#4AA87A] fab-pulse'
+                  : 'bg-linear-to-br from-primary to-primary-dark'
               }`}
               aria-label={isClockedIn ? 'Eingestempelt – Stempeluhr öffnen' : 'Stempeluhr öffnen'}
             >
@@ -389,7 +389,7 @@ export default function Layout() {
           )}
 
           {/* Nav Bar */}
-          <div className="bg-white/[0.85] supports-[backdrop-filter]:backdrop-blur-xl border-t border-border rounded-t-3xl">
+          <div className="bg-white/85 supports-backdrop-filter:backdrop-blur-xl border-t border-border rounded-t-3xl">
             <div className="flex items-center h-16">
               {[
                 { to: '/', icon: LayoutDashboard, label: 'Home', exact: true },
@@ -440,7 +440,7 @@ export default function Layout() {
             aria-modal="true"
             aria-labelledby="stamp-sheet-title"
             tabIndex={-1}
-            className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-surface rounded-t-3xl shadow-elevated focus:outline-none"
+            className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-surface rounded-t-3xl shadow-elevated focus:outline-hidden"
             style={{
               animation: sheetClosing ? undefined : 'slideUp 300ms ease-out',
               transform: sheetClosing ? 'translateY(100%)' : 'translateY(0)',
