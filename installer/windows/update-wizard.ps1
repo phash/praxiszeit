@@ -109,7 +109,11 @@ $NewVersion = Get-AppVersion $WizardDirResolved
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'PraxisZeit Update-Wizard'
-$form.Size = New-Object System.Drawing.Size(720, 560)
+# ClientSize statt Size: legt die nutzbare Innenflaeche fest,
+# damit die Button-Koordinaten unten nicht von Rahmen/DPI abhaengen
+# (F-058: Buttons wurden rechts abgeschnitten, weil Size die
+# Aussenmasse inkl. Rahmen beschreibt).
+$form.ClientSize = New-Object System.Drawing.Size(720, 560)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
@@ -146,19 +150,23 @@ $footer.Height = 50
 $footer.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
 $form.Controls.Add($footer)
 
-$btnCancel = New-Object System.Windows.Forms.Button
-$btnCancel.Text = 'Abbrechen'
-$btnCancel.Size = New-Object System.Drawing.Size(110, 32)
-$btnCancel.Location = New-Object System.Drawing.Point(480, 9)
-$btnCancel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$footer.Controls.Add($btnCancel)
-
 $btnNext = New-Object System.Windows.Forms.Button
 $btnNext.Text = 'Update starten'
 $btnNext.Size = New-Object System.Drawing.Size(140, 32)
-$btnNext.Location = New-Object System.Drawing.Point(595, 9)
+# Rechts-buendig zum Footer: Footer-Width - Button-Width - Rand(15)
+$btnNext.Location = New-Object System.Drawing.Point(($form.ClientSize.Width - 140 - 15), 9)
+$btnNext.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
 $btnNext.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
 $footer.Controls.Add($btnNext)
+
+$btnCancel = New-Object System.Windows.Forms.Button
+$btnCancel.Text = 'Abbrechen'
+$btnCancel.Size = New-Object System.Drawing.Size(110, 32)
+# Links neben btnNext: Next.X - Cancel.Width - Abstand(10)
+$btnCancel.Location = New-Object System.Drawing.Point(($btnNext.Location.X - 110 - 10), 9)
+$btnCancel.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+$btnCancel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$footer.Controls.Add($btnCancel)
 
 # Body (wird von Show-*-Page gefuellt)
 $body = New-Object System.Windows.Forms.Panel
