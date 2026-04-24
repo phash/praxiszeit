@@ -50,7 +50,10 @@ def list_users(
     current_user: User = Depends(require_admin)
 ):
     """List users (admin only). By default only active, visible users."""
-    query = db.query(User)
+    # F-026: belt-and-suspenders — RLS already scopes by tenant, but every
+    # list endpoint must add the explicit filter so a missing GUC cannot
+    # leak cross-tenant rows.
+    query = db.query(User).filter(User.tenant_id == current_user.tenant_id)
     if not include_inactive:
         query = query.filter(User.is_active == True)
     if not include_hidden:
