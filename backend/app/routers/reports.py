@@ -23,11 +23,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/reports", tags=["admin-reports"], dependencies=[Depends(require_admin)])
 
 
-def _get_active_visible_users(db: Session) -> list:
-    """Return all active, non-hidden users ordered by name."""
+def _get_active_visible_users(db: Session, tenant_id) -> list:
+    """Return all active, non-hidden users for the given tenant, ordered by name.
+
+    F-026: explicit tenant filter (RLS is the second line of defense).
+    """
     return db.query(User).filter(
+        User.tenant_id == tenant_id,
         User.is_active == True,
-        User.is_hidden == False
+        User.is_hidden == False,
     ).order_by(User.last_name, User.first_name).all()
 
 
@@ -65,7 +69,7 @@ def get_monthly_report(
         db.add(audit)
         db.commit()
 
-    users = _get_active_visible_users(db)
+    users = _get_active_visible_users(db, current_user.tenant_id)
 
     reports = []
 
@@ -139,7 +143,7 @@ def get_yearly_absences(
         db.add(audit)
         db.commit()
 
-    users = _get_active_visible_users(db)
+    users = _get_active_visible_users(db, current_user.tenant_id)
 
     results = []
 
@@ -501,7 +505,7 @@ def get_sunday_summary(
     )
     min_free_sundays = 15
 
-    users = _get_active_visible_users(db)
+    users = _get_active_visible_users(db, current_user.tenant_id)
     result = []
 
     for user in users:
@@ -550,7 +554,7 @@ def get_night_work_summary(
     Night hours: 23:00–06:00. Reports how many days each employee
     performed night work and whether they qualify as Nachtarbeitnehmer (>=48 days/year).
     """
-    users = _get_active_visible_users(db)
+    users = _get_active_visible_users(db, current_user.tenant_id)
     result = []
     threshold = 48  # §6 ArbZG: Nachtarbeitnehmer if >= 48 days/year
 
@@ -609,7 +613,7 @@ def get_compensatory_rest(
     """
     from datetime import timedelta
 
-    users = _get_active_visible_users(db)
+    users = _get_active_visible_users(db, current_user.tenant_id)
     result = []
 
     for user in users:
@@ -711,7 +715,7 @@ def get_24_week_averaging_period(
         end_date = date.today()
     start_date = end_date - timedelta(weeks=24)
 
-    users = _get_active_visible_users(db)
+    users = _get_active_visible_users(db, current_user.tenant_id)
     result = []
 
     for user in users:
