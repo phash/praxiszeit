@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
+import { useSystemStore } from './stores/systemStore';
 import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -66,10 +67,12 @@ function App() {
   // loading state so ProtectedRoute doesn't bounce to /login prematurely.
   const hydrate = useAuthStore((s) => s.hydrate);
   const isHydrating = useAuthStore((s) => s.isHydrating);
+  const fetchSystem = useSystemStore((s) => s.fetch);
 
   useEffect(() => {
     void hydrate();
-  }, [hydrate]);
+    void fetchSystem();
+  }, [hydrate, fetchSystem]);
 
   if (isHydrating) {
     return (
