@@ -1,0 +1,86 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "title": "Active Tenants",
+      "type": "stat",
+      "targets": [{"expr": "praxiszeit_active_tenants", "refId": "A"}]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "title": "Trial Tenants",
+      "type": "stat",
+      "targets": [{"expr": "praxiszeit_trial_tenants", "refId": "A"}]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {"unit": "eur", "decimals": 2}
+      },
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "title": "MRR (Monthly Recurring Revenue)",
+      "type": "stat",
+      "targets": [
+        {"expr": "praxiszeit_mrr_cents / 100", "refId": "A"}
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 6},
+      "id": 4,
+      "title": "Active Employees per Tenant",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "praxiszeit_tenant_employees", "refId": "A", "legendFormat": "{{tenant_id}}"}
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 16},
+      "id": 5,
+      "title": "Daily Active Users per Tenant",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "praxiszeit_tenant_dau", "refId": "A", "legendFormat": "{{tenant_id}}"}
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 26},
+      "id": 6,
+      "title": "API Requests per Tenant (5m rate)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (tenant_id) (rate(praxiszeit_tenant_api_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{tenant_id}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["praxiszeit", "saas", "tenants"],
+  "templating": {"list": []},
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "PraxisZeit – Tenants Overview",
+  "uid": "praxiszeit-tenants",
+  "version": 1,
+  "weekStart": ""
+}

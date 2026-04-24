@@ -74,6 +74,11 @@ def request_deletion(db: Session, tenant: Tenant, by_user: User) -> datetime:
     tenant.deletion_requested_at = now
     tenant.deletion_requested_by = by_user.id
     db.commit()
+    try:
+        from app.services.alerting import alert_deletion_requested
+        alert_deletion_requested(tenant.name)
+    except Exception:  # noqa: BLE001
+        pass
     return now + timedelta(days=DELETE_GRACE_DAYS)
 
 

@@ -274,6 +274,24 @@ app.include_router(billing.webhook_router)
 
 
 @app.middleware("http")
+async def tenant_metrics_middleware(request: Request, call_next):
+    """Increment per-tenant HTTP counter before handing off to the route.
+    Only adds a label lookup per request — cheap enough for the hot path."""
+    tid = None
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        try:
+            from app.services.auth_service import decode_token
+            payload = decode_token(auth.split(" ", 1)[1]) or {}
+            tid = payload.get("tid")
+        except Exception:  # noqa: BLE001
+            tid = None
+    from app.services.tenant_metrics import record_request
+    record_request(tid, request.method)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def capture_errors_middleware(request: Request, call_next):
     """Capture 5xx errors and log them to the error_logs table."""
     try:
