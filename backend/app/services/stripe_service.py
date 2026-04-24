@@ -220,6 +220,11 @@ def handle_event(db: Session, event) -> dict:
         tenant.subscription_status = "active"
         if plan:
             tenant.plan = plan
+            try:
+                from app.services.alerting import alert_plan_upgrade
+                alert_plan_upgrade(tenant.name, plan)
+            except Exception:  # noqa: BLE001
+                pass
         action = "subscription_activated"
 
     elif etype == "customer.subscription.updated":

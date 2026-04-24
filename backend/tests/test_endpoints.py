@@ -51,6 +51,7 @@ def _create_test_app() -> FastAPI:
         tenant_billing,
         public_signup,
         billing,
+        superadmin,
     )
 
     app = FastAPI(title="PraxisZeit Test")
@@ -82,6 +83,7 @@ def _create_test_app() -> FastAPI:
     app.include_router(public_signup.router)
     app.include_router(billing.router)
     app.include_router(billing.webhook_router)
+    app.include_router(superadmin.router)
 
     # Health endpoint (duplicated from main.py since it is defined there directly)
     @app.get("/api/health")
