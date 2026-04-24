@@ -125,6 +125,16 @@ class Settings(BaseSettings):
     UPDATE_SERVER_URL: Optional[str] = None
     UPDATE_CHECK_INTERVAL_HOURS: int = 12
 
+    # SMTP — used by the self-service signup flow (Phase 3). If MAIL_HOST is
+    # unset, mail_service.send() logs the email body and returns True; in
+    # production (DEPLOYMENT_MODE=saas) these MUST be configured.
+    MAIL_HOST: Optional[str] = None
+    MAIL_PORT: int = 587
+    MAIL_USER: Optional[str] = None
+    MAIL_PASS: Optional[str] = None
+    MAIL_FROM: Optional[str] = None
+    MAIL_STARTTLS: bool = True
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:

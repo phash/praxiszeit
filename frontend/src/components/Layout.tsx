@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import { useSystemStore } from '../stores/systemStore';
+import TrialBanner from './TrialBanner';
 import apiClient from '../api/client';
 import {
   LayoutDashboard,
@@ -357,6 +358,7 @@ export default function Layout() {
 
       {/* Main Content */}
       <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-20 lg:pb-0 bg-background" tabIndex={-1}>
+        <TrialBanner />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <Outlet />
         </div>

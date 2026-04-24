@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { useSystemStore } from '../stores/systemStore';
 import { LogIn, FileText, Shield, Smartphone } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
@@ -17,6 +18,7 @@ export default function Login() {
   const [modalTab, setModalTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
 
   const { login } = useAuthStore();
+  const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
@@ -133,6 +135,13 @@ export default function Login() {
             )}
           </button>
         </form>
+
+        {deploymentMode === 'saas' && (
+          <div className="mt-6 text-center text-sm">
+            <span className="text-gray-600">Noch keinen Account? </span>
+            <Link to="/signup" className="text-primary hover:underline">Jetzt Praxis registrieren</Link>
+          </div>
+        )}
 
         <div className="mt-6 text-center text-sm text-gray-500">
           <p>Bei Problemen wenden Sie sich an Ihren Administrator</p>
