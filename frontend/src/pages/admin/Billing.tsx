@@ -15,6 +15,13 @@ interface BillingInfo {
   country: string | null;
 }
 
+interface UsageInfo {
+  plan: string;
+  used_seats: number;
+  seat_limit: number | null;
+  features: string[];
+}
+
 interface Invoice {
   id: string;
   stripe_invoice_id: string;
@@ -28,6 +35,7 @@ interface Invoice {
 
 export default function Billing() {
   const [info, setInfo] = useState<BillingInfo | null>(null);
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,11 +47,13 @@ export default function Billing() {
   async function refresh() {
     setLoading(true);
     try {
-      const [b, i] = await Promise.all([
+      const [b, u, i] = await Promise.all([
         apiClient.get<BillingInfo>('/tenant/billing'),
+        apiClient.get<UsageInfo>('/tenant/usage'),
         apiClient.get<Invoice[]>('/tenant/invoices'),
       ]);
       setInfo(b.data);
+      setUsage(u.data);
       setInvoices(i.data);
     } catch (err: any) {
       setError(getErrorMessage(err, 'Fehler beim Laden der Abrechnung'));
@@ -133,6 +143,31 @@ export default function Billing() {
             </button>
           )}
         </div>
+
+        {usage && (
+          <div className="pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Sitze</span>
+              <span className="font-medium">
+                {usage.used_seats}
+                {usage.seat_limit !== null && <span className="text-gray-500"> / {usage.seat_limit}</span>}
+                {usage.seat_limit === null && <span className="text-gray-500"> / ∞</span>}
+              </span>
+            </div>
+            {usage.seat_limit !== null && (
+              <div className="mt-1 h-2 bg-gray-100 rounded overflow-hidden">
+                <div
+                  className={`h-full ${
+                    usage.used_seats >= usage.seat_limit ? 'bg-red-500' :
+                    usage.used_seats >= usage.seat_limit * 0.8 ? 'bg-amber-500' :
+                    'bg-primary'
+                  }`}
+                  style={{ width: `${Math.min(100, (usage.used_seats / usage.seat_limit) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {(info.plan === 'trial' || info.plan === 'starter') && (
