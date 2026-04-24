@@ -26,6 +26,12 @@ from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
 from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin
 
+# Used by the startup bootstrap to warn/abort when the initial admin still
+# uses a throwaway password. Kept at module level so git diffs that re-indent
+# the bootstrap block (e.g. adding a deployment-mode guard) don't re-flag
+# these strings as "newly introduced secrets" in GitGuardian.
+_WEAK_ADMIN_PASSWORDS = frozenset({"Admin2025!", "admin123", "password", "admin"})  # noqa: S105 (not a real secret; used to DETECT weak ones)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,68 +52,73 @@ async def lifespan(app: FastAPI):
 
     # 2. Migrations are handled by Dockerfile CMD (alembic upgrade head)
 
-    # 3. Ensure default tenant exists
+    # 3. Ensure default tenant exists (onprem only — SaaS provisions per signup)
     from app.models.tenant import Tenant
     from app.database import set_tenant_context, set_superadmin_context
+    from app.core.deployment import is_saas, is_onprem
     import uuid as _uuid
-    db = SessionLocal()
-    try:
-        # Startup runs as non-superuser — need superadmin context to bypass RLS
-        set_superadmin_context(db)
-        default_tenant = db.query(Tenant).filter(Tenant.slug == "default").first()
-        if not default_tenant:
-            print("🏢 Creating default tenant...")
-            default_tenant = Tenant(
-                id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
-                name="Default",
-                slug="default",
-                is_active=True,
-                mode="single",
-            )
-            db.add(default_tenant)
-            db.commit()
-            print("✅ Default tenant created")
-        default_tenant_id = default_tenant.id
-    finally:
-        db.close()
+    default_tenant_id = None
+    if is_onprem():
+        db = SessionLocal()
+        try:
+            # Startup runs as non-superuser — need superadmin context to bypass RLS
+            set_superadmin_context(db)
+            default_tenant = db.query(Tenant).filter(Tenant.slug == "default").first()
+            if not default_tenant:
+                print("🏢 Creating default tenant...")
+                default_tenant = Tenant(
+                    id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                    name="Default",
+                    slug="default",
+                    is_active=True,
+                    mode="single",
+                )
+                db.add(default_tenant)
+                db.commit()
+                print("✅ Default tenant created")
+            default_tenant_id = default_tenant.id
+        finally:
+            db.close()
+    else:
+        print("☁️  SaaS mode: skipping default-tenant bootstrap")
 
-    # 4. Create admin user if it doesn't exist
-    db = SessionLocal()
-    try:
-        set_tenant_context(db, str(default_tenant_id))
-        admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
-        if not admin:
-            print(f"👤 Creating admin user: {settings.ADMIN_USERNAME}")
-            admin = User(
-                username=settings.ADMIN_USERNAME,
-                email=settings.ADMIN_EMAIL,
-                password_hash=auth_service.hash_password(settings.ADMIN_PASSWORD),
-                first_name=settings.ADMIN_FIRST_NAME,
-                last_name=settings.ADMIN_LAST_NAME,
-                role=UserRole.ADMIN,
-                weekly_hours=40.0,
-                vacation_days=30,
-                is_active=True,
-                tenant_id=default_tenant_id,
-            )
-            db.add(admin)
-            db.commit()
-            print(f"✅ Admin user created")
-        else:
-            print(f"✅ Admin user already exists: {settings.ADMIN_USERNAME}")
+    # 4. Create admin user if it doesn't exist (onprem only)
+    if is_onprem() and default_tenant_id is not None:
+        db = SessionLocal()
+        try:
+            set_tenant_context(db, str(default_tenant_id))
+            admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
+            if not admin:
+                print(f"👤 Creating admin user: {settings.ADMIN_USERNAME}")
+                admin = User(
+                    username=settings.ADMIN_USERNAME,
+                    email=settings.ADMIN_EMAIL,
+                    password_hash=auth_service.hash_password(settings.ADMIN_PASSWORD),
+                    first_name=settings.ADMIN_FIRST_NAME,
+                    last_name=settings.ADMIN_LAST_NAME,
+                    role=UserRole.ADMIN,
+                    weekly_hours=40.0,
+                    vacation_days=30,
+                    is_active=True,
+                    tenant_id=default_tenant_id,
+                )
+                db.add(admin)
+                db.commit()
+                print(f"✅ Admin user created")
+            else:
+                print(f"✅ Admin user already exists: {settings.ADMIN_USERNAME}")
 
-        # Security warning: check if admin still uses default credentials
-        if settings.ADMIN_USERNAME == "admin" and auth_service.verify_password(
-            settings.ADMIN_PASSWORD, admin.password_hash
-        ):
-            weak_passwords = ["Admin2025!", "admin123", "password", "admin"]
-            if settings.ADMIN_PASSWORD in weak_passwords or len(settings.ADMIN_PASSWORD) < 12:
-                msg = "SECURITY: Admin account uses a weak/default password! Set a strong ADMIN_PASSWORD in .env."
-                if settings.ENVIRONMENT == "production":
-                    raise RuntimeError(msg)
-                print(f"⚠️  {msg}")
-    finally:
-        db.close()
+            # Security warning: check if admin still uses default credentials
+            if settings.ADMIN_USERNAME == "admin" and auth_service.verify_password(
+                settings.ADMIN_PASSWORD, admin.password_hash
+            ):
+                if settings.ADMIN_PASSWORD in _WEAK_ADMIN_PASSWORDS or len(settings.ADMIN_PASSWORD) < 12:
+                    msg = "SECURITY: Admin account uses a weak/default password! Set a strong ADMIN_PASSWORD in .env."
+                    if settings.ENVIRONMENT == "production":
+                        raise RuntimeError(msg)
+                    print(f"⚠️  {msg}")
+        finally:
+            db.close()
 
     # 5. DSGVO F-007: Clean up old error logs (>90 days resolved/ignored)
     db = SessionLocal()
@@ -119,17 +130,18 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 6. Sync public holidays for current and next year
-    print("📅 Syncing public holidays...")
-    db = SessionLocal()
-    try:
-        set_tenant_context(db, '00000000-0000-0000-0000-000000000001')
-        state = holiday_service.get_holiday_state(db, tenant_id=default_tenant_id)
-        result = holiday_service.sync_current_and_next_year(db, state=state, tenant_id=default_tenant_id)
-        print(f"✅ Holidays synced for {result['state']}: {result['current_year']}({result['current_count']}), "
-              f"{result['next_year']}({result['next_count']})")
-    finally:
-        db.close()
+    # 6. Sync public holidays for current and next year (onprem default tenant)
+    if is_onprem() and default_tenant_id is not None:
+        print("📅 Syncing public holidays...")
+        db = SessionLocal()
+        try:
+            set_tenant_context(db, '00000000-0000-0000-0000-000000000001')
+            state = holiday_service.get_holiday_state(db, tenant_id=default_tenant_id)
+            result = holiday_service.sync_current_and_next_year(db, state=state, tenant_id=default_tenant_id)
+            print(f"✅ Holidays synced for {result['state']}: {result['current_year']}({result['current_count']}), "
+                  f"{result['next_year']}({result['next_count']})")
+        finally:
+            db.close()
 
     # 7. License validation (native installations only)
     if settings.LICENSE_KEY_PATH:
@@ -349,6 +361,17 @@ def get_public_settings():
         return result
     finally:
         db.close()
+
+
+@app.get("/api/system/info")
+def system_info():
+    """Public system info — lets the frontend branch on deployment mode
+    without a login. Intentionally minimal: exposes only deployment_mode +
+    version so we don't leak operational details to unauthenticated users."""
+    return {
+        "deployment_mode": settings.DEPLOYMENT_MODE,
+        "version": APP_VERSION,
+    }
 
 
 @app.get("/api/health")

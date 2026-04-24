@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
+import { useSystemStore } from '../stores/systemStore';
 import apiClient from '../api/client';
 import {
   LayoutDashboard,
@@ -32,6 +33,7 @@ import { DocDrawer } from './DocDrawer';
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const { isStampSheetOpen, openStampSheet, closeStampSheet, notifyStampChange } = useUIStore();
+  const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -342,7 +344,14 @@ export default function Layout() {
               <span>Abmelden</span>
             </button>
           </div>
-          <p className="text-center text-xs text-gray-300 mt-1">v{__APP_VERSION__}</p>
+          <p className="text-center text-xs text-gray-300 mt-1">
+            v{__APP_VERSION__}
+            {deploymentMode === 'onprem' && (
+              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                Lokale Installation
+              </span>
+            )}
+          </p>
         </div>
       </aside>
 

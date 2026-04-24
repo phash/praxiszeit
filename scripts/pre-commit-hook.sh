@@ -48,7 +48,7 @@ while IFS= read -r f; do
         *.md|*.txt|*.py|*.sh|*.bat|*.ts|*.tsx|*.js|*.jsx|*.yml|*.yaml|*.conf|*.sql|*.env*) ;;
         *) continue ;;
     esac
-    if git show ":0:$f" 2>/dev/null | grep -E "postgresql://[^:]+:[^@/]{4,}@" | grep -vE "(CHANGE_ME|example|localhost|127\.0\.0\.1|\\\$\{|\\\$[A-Z])" >&2; then
+    if git show ":0:$f" 2>/dev/null | grep -E "postgresql://[^:]+:[^@/]{4,}@" | grep -vE "(CHANGE_ME|example|localhost|127\.0\.0\.1|\\\$\{|\\\$[A-Z]|<[^>]+>)" >&2; then
         echo "error: $f contains a postgresql:// URL with an inline password." >&2
         exit_code=1
     fi

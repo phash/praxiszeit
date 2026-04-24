@@ -1,0 +1,40 @@
+import { create } from 'zustand';
+import apiClient from '../api/client';
+
+export type DeploymentMode = 'saas' | 'onprem';
+
+interface SystemInfo {
+  deployment_mode: DeploymentMode;
+  version: string;
+}
+
+interface SystemState {
+  info: SystemInfo | null;
+  isLoaded: boolean;
+  fetch: () => Promise<void>;
+  isSaas: () => boolean;
+  isOnprem: () => boolean;
+}
+
+// Conservative default: treat as on-prem until the /api/system/info response
+// lands. This prevents SaaS-only UI (public signup, billing links) from
+// flickering in on single-tenant installs while hydrate is in flight.
+export const useSystemStore = create<SystemState>((set, get) => ({
+  info: null,
+  isLoaded: false,
+
+  fetch: async () => {
+    try {
+      const { data } = await apiClient.get<SystemInfo>('/system/info');
+      set({ info: data, isLoaded: true });
+    } catch {
+      set({
+        info: { deployment_mode: 'onprem', version: '' },
+        isLoaded: true,
+      });
+    }
+  },
+
+  isSaas: () => get().info?.deployment_mode === 'saas',
+  isOnprem: () => get().info?.deployment_mode !== 'saas',
+}));

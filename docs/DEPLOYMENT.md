@@ -1,5 +1,23 @@
 # Deployment – PraxisZeit
 
+## Deployment-Modi (`DEPLOYMENT_MODE`)
+
+PraxisZeit liefert **eine Codebasis in zwei Varianten**, gesteuert über die Env-Variable `DEPLOYMENT_MODE`:
+
+| Modus | Default | Verwendung | Merkmale |
+|-------|---------|-----------|---------|
+| `onprem` | ✅ | Docker-Server, Native-Installer (Kundenserver) | Single-Tenant, License-Middleware aktiv, Public-Signup deaktiviert, Default-Tenant + Default-Admin werden beim Start angelegt |
+| `saas` | — | Hosted-Cloud (praxiszeit.de) | Multi-Tenant, Self-Service-Signup, Stripe-Billing, KEINE automatische Tenant-/Admin-Erzeugung, License-Middleware pausiert (Suspend erfolgt per Tenant-Status) |
+
+**Default = `onprem`**: Bestandsinstallationen werden beim Upgrade nicht gebrochen — sie benötigen keine Env-Änderung.
+
+**Runtime-Check**:
+- Public `GET /api/system/info` liefert `{deployment_mode, version}` (ohne Auth)
+- Backend-Helper: `from app.core.deployment import is_saas, is_onprem`
+- Frontend: `useSystemInfo()` / SPA versteckt SaaS-UI (Billing, Signup, Trial-Banner) im `onprem`-Modus
+
+**SaaS-spezifische Env-Variablen** (nur wenn `DEPLOYMENT_MODE=saas`): siehe Phase 3–4 Dokumentation (Signup, Stripe).
+
 ## Prod-Server
 
 - **Host:** 192.168.178.44

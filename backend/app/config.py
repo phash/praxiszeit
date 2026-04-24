@@ -1,7 +1,7 @@
 import os
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -80,6 +80,15 @@ class Settings(BaseSettings):
 
     # Environment
     ENVIRONMENT: str = "development"  # "development" or "production"
+
+    # Deployment mode — steers which features are enabled at runtime:
+    # - onprem (default, safe for existing installations): Single-tenant,
+    #   license middleware active, self-service signup disabled, no billing UI.
+    # - saas: Multi-tenant, public signup, Stripe billing, license middleware
+    #   repurposed for per-tenant suspend.
+    # Default = onprem so existing Docker + native installs upgrade without
+    # any env changes.
+    DEPLOYMENT_MODE: Literal["saas", "onprem"] = "onprem"
 
     # Database
     DATABASE_URL: str
