@@ -43,6 +43,13 @@ class Tenant(Base):
     country = Column(String(2), nullable=True)  # ISO-3166-1 alpha-2
     billing_address = Column(_JsonType, nullable=True)
 
+    # Lifecycle (Phase 6, Issue #97)
+    scheduled_suspend_at = Column(DateTime(timezone=True), nullable=True)
+    scheduled_suspend_by = Column(UUID(as_uuid=True), nullable=True)
+    deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
+    deletion_requested_by = Column(UUID(as_uuid=True), nullable=True)
+    anonymized_at = Column(DateTime(timezone=True), nullable=True)
+
     def __repr__(self):
         return f"<Tenant(id={self.id}, name={self.name}, slug={self.slug})>"
 
