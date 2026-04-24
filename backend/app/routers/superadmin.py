@@ -205,6 +205,84 @@ def export_tenant_arbzg_data(
     )
 
 
+@router.get("/tenants-overview")
+def tenants_overview(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=200),
+    status_filter: str | None = Query(None, pattern="^(active|trial|past_due|suspended|canceled)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),
+):
+    """Paginated tenant listing for the Superadmin Dashboard (Phase 7).
+
+    Returns plan, status, trial-days-remaining, active-seats, MRR-contribution.
+    """
+    from app.services.metrics_refresh import _PLAN_MONTHLY_CENTS
+    set_superadmin_context(db)
+    q = db.query(Tenant)
+    if status_filter == "trial":
+        q = q.filter(Tenant.plan == "trial")
+    elif status_filter in {"active", "past_due", "suspended", "canceled"}:
+        q = q.filter(Tenant.subscription_status == status_filter)
+
+    total = q.count()
+    rows = q.order_by(Tenant.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+
+    now = datetime.now(timezone.utc)
+    out = []
+    for t in rows:
+        seats = (
+            db.query(User)
+            .filter(User.tenant_id == t.id, User.is_active == True)  # noqa: E712
+            .count()
+        )
+        trial_days_left = None
+        if t.plan == "trial" and t.trial_ends_at:
+            ends = t.trial_ends_at if t.trial_ends_at.tzinfo else t.trial_ends_at.replace(tzinfo=timezone.utc)
+            trial_days_left = max(0, (ends - now).days)
+        mrr_contrib = 0
+        if t.plan in _PLAN_MONTHLY_CENTS and t.subscription_status == "active":
+            mrr_contrib = _PLAN_MONTHLY_CENTS[t.plan] * max(1, seats)
+        out.append({
+            "id": str(t.id),
+            "name": t.name,
+            "slug": t.slug,
+            "plan": t.plan,
+            "subscription_status": t.subscription_status,
+            "seats": seats,
+            "seat_limit": t.seat_limit,
+            "trial_ends_at": t.trial_ends_at.isoformat() if t.trial_ends_at else None,
+            "trial_days_left": trial_days_left,
+            "mrr_cents": mrr_contrib,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "deletion_requested_at": t.deletion_requested_at.isoformat() if t.deletion_requested_at else None,
+            "anonymized_at": t.anonymized_at.isoformat() if t.anonymized_at else None,
+        })
+    return {"total": total, "page": page, "per_page": per_page, "tenants": out}
+
+
+@router.get("/metrics/mrr")
+def mrr_details(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),
+):
+    """Detailed MRR breakdown for dashboard KPIs."""
+    from app.services.metrics_refresh import compute_mrr_details
+    set_superadmin_context(db)
+    return compute_mrr_details(db)
+
+
+@router.post("/cron/metrics-refresh")
+def cron_metrics_refresh(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin),
+):
+    """Recompute per-tenant Prometheus gauges + billing KPIs."""
+    from app.services.metrics_refresh import refresh_all
+    set_superadmin_context(db)
+    return refresh_all(db)
+
+
 @router.post("/cron/trial-check")
 def cron_trial_check(
     db: Session = Depends(get_db),

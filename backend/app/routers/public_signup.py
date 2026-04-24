@@ -83,6 +83,11 @@ def signup(
         verification_url=verify_url,
         practice_name=body.practice_name,
     )
+    try:
+        from app.services.alerting import alert_new_signup
+        alert_new_signup(body.practice_name, body.admin_email)
+    except Exception:  # noqa: BLE001 — alerts never block signup
+        pass
     return SignupResponse(tenant_id=str(result.tenant_id))
 
 

@@ -149,6 +149,9 @@ class Settings(BaseSettings):
     # Grace period before a canceled subscription flips to 'suspended'.
     STRIPE_CANCEL_GRACE_DAYS: int = 30
 
+    # Optional — operator alerts (Phase 7). Unset → alerts are logged only.
+    SLACK_WEBHOOK_URL: Optional[str] = None
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
