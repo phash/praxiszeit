@@ -125,11 +125,16 @@ def sync_holidays(db: Session, year: int, state: Optional[str] = None, tenant_id
     return count
 
 
-def get_holidays(db: Session, year: int) -> List[PublicHoliday]:
-    """Get all public holidays for a given year."""
-    return db.query(PublicHoliday).filter(
-        PublicHoliday.year == year
-    ).order_by(PublicHoliday.date).all()
+def get_holidays(db: Session, year: int, tenant_id=None) -> List[PublicHoliday]:
+    """Get all public holidays for a given year, scoped to the tenant.
+
+    F-026: explicit tenant filter — RLS already scopes, but holiday rows
+    are global-looking and easy to leak if the GUC is unset for any reason.
+    """
+    query = db.query(PublicHoliday).filter(PublicHoliday.year == year)
+    if tenant_id is not None:
+        query = query.filter(PublicHoliday.tenant_id == tenant_id)
+    return query.order_by(PublicHoliday.date).all()
 
 
 def is_holiday(db: Session, check_date: date, tenant_id=None) -> bool:

@@ -24,7 +24,7 @@ def list_holidays(
     """
     year = year or today_local().year
 
-    holidays = holiday_service.get_holidays(db, year)
+    holidays = holiday_service.get_holidays(db, year, tenant_id=current_user.tenant_id)
 
     return holidays
 

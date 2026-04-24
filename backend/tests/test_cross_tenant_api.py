@@ -192,6 +192,128 @@ def test_admin_a_cannot_approve_tenant_b_change_request(_db_session, client_as_a
     assert stored.status == ChangeRequestStatus.PENDING
 
 
+@pytest.fixture(scope="function")
+def employee_a(_db_session, two_tenants):
+    return _make_user(_db_session, TENANT_A_ID, role=UserRole.EMPLOYEE, username="employee_a")
+
+
+@pytest.fixture(scope="function")
+def client_as_employee_a(_db_session, employee_a):
+    """Authenticated as a regular employee of Tenant A (non-admin endpoints)."""
+    def _override_db():
+        yield _db_session
+
+    def _current():
+        return employee_a
+
+    test_app.dependency_overrides[get_db] = _override_db
+    test_app.dependency_overrides[get_current_user] = _current
+
+    with TestClient(test_app) as client:
+        yield client
+
+    test_app.dependency_overrides.clear()
+
+
+# ─── Phase 0: belt-and-suspenders filter coverage for the 6 endpoints fixed
+#     in feat/phase0-tenant-isolation. Each test creates data in BOTH tenants
+#     and verifies that the response only ever contains Tenant A data.
+
+def test_admin_users_list_excludes_tenant_b(_db_session, client_as_admin_a, admin_a, employee_b):
+    """GET /admin/users — must not include Tenant B users."""
+    resp = client_as_admin_a.get("/api/admin/users")
+    assert resp.status_code == 200, resp.text
+    ids = {u["id"] for u in resp.json()}
+    assert str(admin_a.id) in ids
+    assert str(employee_b.id) not in ids
+
+
+def _make_pending_cr(db, user, tenant_id):
+    cr = ChangeRequest(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        tenant_id=tenant_id,
+        request_type=ChangeRequestType.CREATE,
+        status=ChangeRequestStatus.PENDING,
+        proposed_date=date.today(),
+        proposed_start_time=time(8, 0),
+        proposed_end_time=time(16, 0),
+        proposed_break_minutes=30,
+        reason="phase0",
+        entry_kind="time_entry",
+    )
+    db.add(cr)
+    db.commit()
+    return cr
+
+
+def test_admin_change_requests_list_excludes_tenant_b(
+    _db_session, client_as_admin_a, admin_a, employee_b
+):
+    """GET /admin/change-requests — must not include Tenant B CRs."""
+    cr_a = _make_pending_cr(_db_session, admin_a, TENANT_A_ID)
+    cr_b = _make_pending_cr(_db_session, employee_b, TENANT_B_ID)
+
+    resp = client_as_admin_a.get("/api/admin/change-requests")
+    assert resp.status_code == 200, resp.text
+    ids = {c["id"] for c in resp.json()}
+    assert str(cr_a.id) in ids
+    assert str(cr_b.id) not in ids
+
+
+def test_admin_change_requests_pending_count_only_own_tenant(
+    _db_session, client_as_admin_a, admin_a, employee_b
+):
+    """GET /admin/change-requests/pending-count — must count only Tenant A."""
+    _make_pending_cr(_db_session, admin_a, TENANT_A_ID)
+    _make_pending_cr(_db_session, employee_b, TENANT_B_ID)
+    _make_pending_cr(_db_session, employee_b, TENANT_B_ID)
+
+    resp = client_as_admin_a.get("/api/admin/change-requests/pending-count")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"count": 1}
+
+
+def test_admin_change_requests_get_by_id_404_for_tenant_b(
+    _db_session, client_as_admin_a, employee_b
+):
+    """GET /admin/change-requests/{id} — Tenant B CR must 404 for Tenant A admin."""
+    cr_b = _make_pending_cr(_db_session, employee_b, TENANT_B_ID)
+
+    resp = client_as_admin_a.get(f"/api/admin/change-requests/{cr_b.id}")
+    assert resp.status_code == 404, resp.text
+
+
+def test_admin_monthly_report_excludes_tenant_b_users(
+    _db_session, client_as_admin_a, admin_a, employee_b
+):
+    """GET /admin/reports/monthly — must list only Tenant A users."""
+    today = date.today()
+    resp = client_as_admin_a.get(
+        "/api/admin/reports/monthly",
+        params={"month": f"{today.year}-{today.month:02d}"},
+    )
+    assert resp.status_code == 200, resp.text
+    user_ids = {row["user_id"] for row in resp.json()}
+    assert str(employee_b.id) not in user_ids
+
+
+def test_holidays_list_excludes_tenant_b(_db_session, client_as_employee_a, two_tenants):
+    """GET /api/holidays/?year=YYYY — must not return Tenant B's holidays."""
+    from app.models.public_holiday import PublicHoliday
+    year = date.today().year
+    h_a = PublicHoliday(date=date(year, 1, 1), name="Tenant-A-Feiertag", year=year, tenant_id=TENANT_A_ID)
+    h_b = PublicHoliday(date=date(year, 5, 1), name="Tenant-B-Feiertag", year=year, tenant_id=TENANT_B_ID)
+    _db_session.add_all([h_a, h_b])
+    _db_session.commit()
+
+    resp = client_as_employee_a.get(f"/api/holidays/?year={year}")
+    assert resp.status_code == 200, resp.text
+    names = {h["name"] for h in resp.json()}
+    assert "Tenant-A-Feiertag" in names
+    assert "Tenant-B-Feiertag" not in names
+
+
 def test_admin_a_bulk_approve_ignores_tenant_b_crs(_db_session, client_as_admin_a, employee_b):
     """Bulk approve: every item for Tenant B must be reported as failed, nothing mutated."""
     cr_b = ChangeRequest(

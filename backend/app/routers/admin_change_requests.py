@@ -33,8 +33,10 @@ def get_pending_change_request_count(
     current_user: User = Depends(require_admin),
 ):
     """Return count of pending change requests for admin badge."""
+    # F-026: explicit tenant filter (RLS is the second line of defense).
     count = db.query(ChangeRequest).filter(
-        ChangeRequest.status == ChangeRequestStatus.PENDING
+        ChangeRequest.status == ChangeRequestStatus.PENDING,
+        ChangeRequest.tenant_id == current_user.tenant_id,
     ).count()
     return {"count": count}
 
@@ -51,7 +53,10 @@ def list_all_change_requests(
     current_user: User = Depends(require_admin),
 ):
     """List all change requests (admin view)."""
-    query = db.query(ChangeRequest)
+    # F-026: explicit tenant scope before any optional filter.
+    query = db.query(ChangeRequest).filter(
+        ChangeRequest.tenant_id == current_user.tenant_id,
+    )
     if request_status:
         try:
             status_enum = ChangeRequestStatus(request_status)
@@ -75,7 +80,16 @@ def get_change_request_admin(
     current_user: User = Depends(require_admin),
 ):
     """Get a specific change request (admin view)."""
-    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id).first()
+    # F-026: scope by tenant so a guessed UUID from another tenant 404s
+    # instead of leaking via RLS-bypass paths.
+    cr = (
+        db.query(ChangeRequest)
+        .filter(
+            ChangeRequest.id == request_id,
+            ChangeRequest.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     return _enrich_cr_response(cr, db)
