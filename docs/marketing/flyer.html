@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>PraxisZeit — Zeiterfassung, die in den Praxisalltag passt</title>
+  <style>
+    /* ─────── Reset / page setup ─────── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #1a2e3a;
+      background: #fff;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    @page { size: A4; margin: 0; }
+    .page {
+      width: 210mm;
+      height: 297mm;
+      padding: 14mm 14mm;
+      page-break-after: always;
+      page-break-inside: avoid;
+      position: relative;
+      overflow: hidden;
+    }
+    .page:last-of-type { padding-top: 12mm; page-break-after: auto; }
+
+    /* ─────── Brand ─────── */
+    :root {
+      --primary: #4A90B8;
+      --primary-dark: #2D6F94;
+      --primary-soft: #E8F1F7;
+      --accent: #FFB84D;
+      --ink: #1a2e3a;
+      --ink-soft: #5a6c7a;
+      --line: #DCE6ED;
+    }
+
+    .brand {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: 6mm; border-bottom: 1px solid var(--line);
+    }
+    .brand-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 22px; color: var(--ink);
+    }
+    .brand-logo .dot {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      display: inline-flex; align-items: center; justify-content: center;
+      color: white; font-size: 16px; font-weight: 800;
+    }
+    .brand-logo small { font-weight: 400; color: var(--ink-soft); font-size: 12px; }
+    .brand-meta { font-size: 11px; color: var(--ink-soft); text-align: right; }
+
+    /* ─────── Hero ─────── */
+    .hero {
+      display: grid; grid-template-columns: 1.05fr 1fr; gap: 14mm;
+      padding-top: 9mm; padding-bottom: 9mm; align-items: center;
+    }
+    .hero h1 {
+      font-size: 38px; line-height: 1.1; font-weight: 800;
+      letter-spacing: -0.5px; margin-bottom: 4mm; color: var(--ink);
+    }
+    .hero h1 em {
+      font-style: normal; color: var(--primary-dark);
+      background: linear-gradient(180deg, transparent 60%, #FFE9C2 60%);
+      padding: 0 4px;
+    }
+    .hero p.lead {
+      font-size: 15px; color: var(--ink-soft); margin-bottom: 6mm; max-width: 92%;
+    }
+    .hero-stats { display: flex; gap: 6mm; }
+    .hero-stat {
+      flex: 1; padding: 4mm; border-radius: 10px;
+      background: var(--primary-soft); border: 1px solid var(--line);
+    }
+    .hero-stat .num {
+      font-size: 22px; font-weight: 800; color: var(--primary-dark);
+      line-height: 1; margin-bottom: 4px;
+    }
+    .hero-stat .lbl {
+      font-size: 11px; color: var(--ink-soft); line-height: 1.3;
+    }
+
+    /* ─────── Hero illustration (SVG) ─────── */
+    .hero-svg {
+      width: 100%; max-height: 110mm; aspect-ratio: 1;
+      background: radial-gradient(ellipse at center, var(--primary-soft) 0%, transparent 70%);
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    .hero-svg svg { width: 86%; height: auto; }
+    .hero-badge {
+      position: absolute; right: 2mm; top: 8mm;
+      background: white; border-radius: 999px; padding: 6px 12px;
+      box-shadow: 0 6px 20px rgba(74, 144, 184, 0.18);
+      font-size: 11px; font-weight: 600; color: var(--primary-dark);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .hero-badge::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%;
+      background: #29C46F;
+    }
+
+    /* ─────── Why-strip ─────── */
+    .why-strip {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+      border: 1px solid var(--line); border-radius: 12px;
+      overflow: hidden; margin: 8mm 0 6mm;
+    }
+    .why-cell {
+      padding: 5mm 4mm; border-right: 1px solid var(--line);
+      text-align: center;
+    }
+    .why-cell:last-child { border-right: 0; }
+    .why-cell .icon { font-size: 24px; margin-bottom: 4px; display: block; }
+    .why-cell .ttl { font-weight: 700; font-size: 13px; margin-bottom: 2px; color: var(--ink); }
+    .why-cell .sub { font-size: 11px; color: var(--ink-soft); }
+
+    /* ─────── Quote ─────── */
+    .quote {
+      margin-top: 6mm; padding: 6mm 7mm; background: #FAFCFE;
+      border-left: 4px solid var(--primary); border-radius: 0 10px 10px 0;
+      display: flex; gap: 6mm; align-items: center;
+    }
+    .quote-avatar {
+      width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, #FFD9A8, #FFB672);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .quote-text {
+      font-size: 13px; color: var(--ink); font-style: italic; line-height: 1.55;
+    }
+    .quote-author {
+      display: block; margin-top: 4px; font-style: normal;
+      font-size: 11px; color: var(--ink-soft);
+    }
+
+    /* ─────── Footer (page 1) ─────── */
+    .page-footer {
+      position: absolute; left: 14mm; right: 14mm; bottom: 12mm;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: var(--ink-soft);
+      border-top: 1px solid var(--line); padding-top: 4mm;
+    }
+    .page-footer strong { color: var(--ink); }
+
+    /* ─────── PAGE 2: Workflows ─────── */
+    .section-title {
+      font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--primary); margin-bottom: 3mm;
+    }
+    h2 {
+      font-size: 22px; font-weight: 800; letter-spacing: -0.3px;
+      color: var(--ink); margin-bottom: 4mm;
+    }
+    .workflows {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6mm;
+      margin-top: 3mm;
+    }
+    .wf {
+      border: 1px solid var(--line); border-radius: 12px; padding: 4mm 4.5mm;
+      background: white;
+    }
+    .wf.admin { background: linear-gradient(180deg, #fff, var(--primary-soft)); }
+    .wf-head {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 3mm;
+    }
+    .wf-head .role-dot {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 700; font-size: 14px;
+    }
+    .wf-head .role-dot.ma { background: linear-gradient(135deg, #FFB672, #F59E0B); }
+    .wf-head .role-dot.adm { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); }
+    .wf-head h3 { font-size: 18px; font-weight: 800; color: var(--ink); margin: 0; }
+    .wf-head .who { font-size: 11px; color: var(--ink-soft); margin: 0; }
+    .wf-steps { list-style: none; counter-reset: step; }
+    .wf-steps li {
+      counter-increment: step; padding: 2mm 0 2mm 10mm;
+      position: relative; border-bottom: 1px dashed var(--line);
+      font-size: 11px; color: var(--ink); line-height: 1.35;
+    }
+    .wf-steps li:last-child { border-bottom: 0; padding-bottom: 0; }
+    .wf-steps li:first-child { padding-top: 0; }
+    .wf-steps li:first-child::before { top: 0; }
+    .wf-steps li::before {
+      content: counter(step); position: absolute; left: 0; top: 2mm;
+      width: 6.5mm; height: 6.5mm; border-radius: 50%;
+      background: var(--primary-soft); color: var(--primary-dark);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 10px;
+    }
+    .wf.admin .wf-steps li::before {
+      background: white; border: 1px solid var(--primary);
+    }
+    .wf-steps strong { color: var(--ink); display: block; font-size: 11.5px; line-height: 1.3; }
+    .wf-steps span { color: var(--ink-soft); font-size: 10px; line-height: 1.3; }
+
+    /* Screenshot row */
+    .shots {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6mm;
+      margin: 6mm 0 0; align-items: end;
+    }
+    .shot {
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 8px 24px rgba(74, 144, 184, 0.12);
+      border: 1px solid var(--line); position: relative;
+      height: 32mm;
+    }
+    .shot img {
+      display: block; width: 100%; height: 100%;
+      object-fit: cover; object-position: top center;
+    }
+    .shot-caption {
+      position: absolute; left: 4mm; bottom: 4mm;
+      background: rgba(255,255,255,0.92); backdrop-filter: blur(4px);
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 10px; font-weight: 700; color: var(--primary-dark);
+    }
+
+    /* Features-Box */
+    .features {
+      margin-top: 4mm; padding: 4mm 5mm; border-radius: 12px;
+      background: var(--ink); color: white;
+    }
+    .features h3 {
+      font-size: 14px; font-weight: 800; margin-bottom: 3mm; color: white;
+    }
+    .features ul {
+      list-style: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2mm 5mm;
+    }
+    .features li {
+      font-size: 11px; color: #C8D5DD; padding-left: 16px; position: relative;
+    }
+    .features li::before {
+      content: '✓'; position: absolute; left: 0; top: 0;
+      color: var(--accent); font-weight: 800;
+    }
+
+    /* Contact band */
+    .contact {
+      margin-top: 4mm; display: grid; grid-template-columns: 2fr 1fr; gap: 6mm;
+      align-items: center;
+    }
+    .contact h3 {
+      font-size: 18px; font-weight: 800; line-height: 1.2;
+      color: var(--ink); margin-bottom: 2mm;
+    }
+    .contact p { font-size: 11px; color: var(--ink-soft); margin-bottom: 3mm; line-height: 1.4; }
+    .contact .cta {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 18px; background: var(--primary);
+      color: white; border-radius: 999px;
+      font-weight: 700; font-size: 13px; text-decoration: none;
+    }
+    .contact-side {
+      padding: 4mm 5mm; border: 1px solid var(--line); border-radius: 12px;
+      font-size: 11px; color: var(--ink);
+    }
+    .contact-side div { margin-bottom: 2.5mm; }
+    .contact-side div:last-child { margin-bottom: 0; }
+    .contact-side strong { display: block; color: var(--primary-dark); font-size: 11px; margin-bottom: 1px; }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════ SEITE 1 ════════════════ -->
+<section class="page">
+
+  <header class="brand">
+    <div class="brand-logo">
+      <span class="dot">PZ</span>
+      <span>PraxisZeit <small>· Zeiterfassung für die Arztpraxis</small></span>
+    </div>
+    <div class="brand-meta">
+      ArbZG-konform · DSGVO-ready<br>
+      Cloud &amp; On-Premise
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <h1>Zeiterfassung,<br>die in den <em>Praxisalltag</em> passt.</h1>
+      <p class="lead">Stempeln auf einen Klick. Pausen, Urlaub und Korrekturen direkt im Browser. Keine Excel-Listen, keine Zettelwirtschaft — und alles, was das ArbZG verlangt, läuft im Hintergrund.</p>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="num">5 Min.</div>
+          <div class="lbl">pro Mitarbeiter:in pro Tag</div>
+        </div>
+        <div class="hero-stat">
+          <div class="num">100%</div>
+          <div class="lbl">ArbZG-Auto­prüfung</div>
+        </div>
+        <div class="hero-stat">
+          <div class="num">2 J.</div>
+          <div class="lbl">Aufbewahrung gemäß §16</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-svg">
+      <!-- Stilisierte MFA mit Tablet — keine externen Assets, druckfest -->
+      <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" aria-label="MFA mit Tablet">
+        <!-- Hintergrund-Kreis -->
+        <circle cx="200" cy="200" r="170" fill="#fff" stroke="#DCE6ED" stroke-width="2"/>
+        <!-- Schulter / weißer Kittel -->
+        <path d="M 90 360 Q 120 250 200 250 Q 280 250 310 360 Z" fill="#fff" stroke="#DCE6ED" stroke-width="2"/>
+        <!-- Kittelausschnitt -->
+        <path d="M 175 252 L 200 285 L 225 252 Z" fill="#E8F1F7"/>
+        <!-- Stethoskop -->
+        <path d="M 175 252 Q 165 290 180 320 Q 195 340 215 320 Q 230 290 220 270" fill="none" stroke="#4A90B8" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="220" cy="268" r="7" fill="#4A90B8"/>
+        <!-- Hals -->
+        <rect x="187" y="220" width="26" height="40" rx="6" fill="#FFD3AE"/>
+        <!-- Gesicht -->
+        <ellipse cx="200" cy="180" rx="62" ry="68" fill="#FFD9B8"/>
+        <!-- Haare -->
+        <path d="M 142 165 Q 145 110 200 105 Q 255 110 258 165 Q 250 140 220 138 Q 200 145 180 138 Q 150 140 142 165 Z" fill="#5C3A1F"/>
+        <!-- Augen -->
+        <ellipse cx="178" cy="178" rx="3.2" ry="4.5" fill="#1a2e3a"/>
+        <ellipse cx="222" cy="178" rx="3.2" ry="4.5" fill="#1a2e3a"/>
+        <!-- Wangen -->
+        <circle cx="166" cy="195" r="6" fill="#FFB3A7" opacity="0.55"/>
+        <circle cx="234" cy="195" r="6" fill="#FFB3A7" opacity="0.55"/>
+        <!-- Lächeln -->
+        <path d="M 178 205 Q 200 222 222 205" fill="none" stroke="#5C3A1F" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- Tablet in der Hand -->
+        <g transform="rotate(-10 305 295)">
+          <rect x="265" y="270" width="80" height="56" rx="6" fill="#1a2e3a"/>
+          <rect x="269" y="274" width="72" height="48" rx="2" fill="#fff"/>
+          <!-- Mini-Dashboard im Tablet -->
+          <rect x="273" y="278" width="20" height="3" rx="1" fill="#4A90B8"/>
+          <rect x="273" y="284" width="32" height="2" rx="1" fill="#DCE6ED"/>
+          <rect x="273" y="289" width="28" height="2" rx="1" fill="#DCE6ED"/>
+          <circle cx="333" cy="285" r="6" fill="#29C46F"/>
+          <path d="M 330 285 L 333 288 L 337 282" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="273" y="296" width="64" height="22" rx="3" fill="#E8F1F7"/>
+          <rect x="277" y="300" width="14" height="14" rx="2" fill="#4A90B8"/>
+          <rect x="294" y="302" width="22" height="2.5" fill="#1a2e3a"/>
+          <rect x="294" y="307" width="36" height="2" fill="#DCE6ED"/>
+          <rect x="294" y="311" width="30" height="2" fill="#DCE6ED"/>
+        </g>
+        <!-- Daumen am Tablet -->
+        <ellipse cx="265" cy="312" rx="12" ry="8" fill="#FFD3AE" transform="rotate(-15 265 312)"/>
+      </svg>
+      <div class="hero-badge">Eingestempelt seit 08:14</div>
+    </div>
+  </section>
+
+  <section class="why-strip">
+    <div class="why-cell">
+      <span class="icon">⏱</span>
+      <div class="ttl">Ein-Klick-Stempeln</div>
+      <div class="sub">Kommt-/Geht-Zeiten in 2 Sekunden</div>
+    </div>
+    <div class="why-cell">
+      <span class="icon">⚖️</span>
+      <div class="ttl">ArbZG live geprüft</div>
+      <div class="sub">§3 · §4 · §5 · §11 automatisch</div>
+    </div>
+    <div class="why-cell">
+      <span class="icon">📅</span>
+      <div class="ttl">Urlaub im Browser</div>
+      <div class="sub">Beantragen · Genehmigen · Übersicht</div>
+    </div>
+    <div class="why-cell">
+      <span class="icon">📊</span>
+      <div class="ttl">Reports auf Knopfdruck</div>
+      <div class="sub">Excel · CSV · Lohnbuchhaltung</div>
+    </div>
+  </section>
+
+  <blockquote class="quote">
+    <div class="quote-avatar">😊</div>
+    <div>
+      <span class="quote-text">„Vorher hatten wir einen Stundenzettel, der einmal im Monat halb ausgefüllt zurückkam. Mit PraxisZeit weiß ich am Monatsende exakt, was los war — und meine MFA stempeln tatsächlich. Es kostet sie 30 Sekunden."</span>
+      <span class="quote-author">— Praxisleitung, Hausärztliche Gemeinschaftspraxis (4 MFA, 2 Ärzte)</span>
+    </div>
+  </blockquote>
+
+  <div class="page-footer">
+    <span>PraxisZeit · <strong>v1.3.7</strong> · Made for German medical practices</span>
+    <span>👉 Workflow-Details auf der Rückseite</span>
+  </div>
+</section>
+
+<!-- ════════════════ SEITE 2 ════════════════ -->
+<section class="page">
+
+  <header class="brand">
+    <div class="brand-logo">
+      <span class="dot">PZ</span>
+      <span>So sieht der Alltag mit PraxisZeit aus</span>
+    </div>
+    <div class="brand-meta">
+      Zwei Workflows ·<br>Zwei Rollen
+    </div>
+  </header>
+
+  <div style="margin-top: 5mm;">
+    <div class="section-title">Praxisalltag in 5 Schritten — pro Rolle</div>
+    <h2>Mitarbeiter:in &amp; Admin: jede:r macht nur, was sie:er muss.</h2>
+  </div>
+
+  <div class="workflows">
+
+    <!-- ─── MA-Workflow ─── -->
+    <article class="wf">
+      <div class="wf-head">
+        <div class="role-dot ma">MA</div>
+        <div>
+          <h3>Mitarbeiter:in</h3>
+          <p class="who">Medizinische Fachangestellte · Auszubildende · Springer:in</p>
+        </div>
+      </div>
+      <ol class="wf-steps">
+        <li>
+          <strong>Ankommen → Einstempeln.</strong>
+          <span>Großer Button im Browser oder per Smartphone-Web-App. Eine Zeile, ein Klick.</span>
+        </li>
+        <li>
+          <strong>Pause beim Ausstempeln eintragen.</strong>
+          <span>System schlägt §4-konforme 30 oder 45 Min. vor — annehmen oder anpassen.</span>
+        </li>
+        <li>
+          <strong>Saldo + Urlaubstage immer im Blick.</strong>
+          <span>Dashboard zeigt Ist/Soll, Überstundenkonto und Resturlaub mit Ampel.</span>
+        </li>
+        <li>
+          <strong>Urlaub und Fortbildung beantragen.</strong>
+          <span>Datum wählen, absenden — der/die Admin entscheidet, alle sehen den Status.</span>
+        </li>
+        <li>
+          <strong>Ältere Einträge per Korrekturantrag.</strong>
+          <span>Eintrag älter als 7 Tage? Begründung dazu, Admin prüft, alles im Audit-Log.</span>
+        </li>
+      </ol>
+    </article>
+
+    <!-- ─── Admin-Workflow ─── -->
+    <article class="wf admin">
+      <div class="wf-head">
+        <div class="role-dot adm">A</div>
+        <div>
+          <h3>Admin / Praxisleitung</h3>
+          <p class="who">Ärztin:Arzt · Praxismanager:in · Inhaber:in</p>
+        </div>
+      </div>
+      <ol class="wf-steps">
+        <li>
+          <strong>Übersicht aller MA in einer Ansicht.</strong>
+          <span>Soll/Ist, Saldo, Urlaubsstand, Krankheit — Ampel-System für Auffälligkeiten.</span>
+        </li>
+        <li>
+          <strong>Anträge prüfen — meist 1 Klick.</strong>
+          <span>Korrekturanträge und Urlaub stapelweise genehmigen oder ablehnen, mit Begründung.</span>
+        </li>
+        <li>
+          <strong>Berichte an die Lohnbuchhaltung.</strong>
+          <span>Monats- &amp; Jahresreport als Excel oder CSV. Format passt für DATEV-Schnittstelle.</span>
+        </li>
+        <li>
+          <strong>ArbZG-Compliance auf Knopfdruck.</strong>
+          <span>§5-Ruhezeitverstöße, §6-Nachtarbeit, §11-Ersatzruhetage — fertig für die Aufsicht.</span>
+        </li>
+        <li>
+          <strong>Jahresabschluss in 2 Klicks.</strong>
+          <span>Resturlaub und Überstunden ins Folgejahr übernehmen — alle MA gleichzeitig.</span>
+        </li>
+      </ol>
+    </article>
+
+  </div>
+
+  <div class="shots">
+    <figure class="shot">
+      <img src="../handbuch/screenshots/02-ma-dashboard.png" alt="Mitarbeiter-Dashboard mit Stempel-Status, Saldo und Urlaubskonto">
+      <figcaption class="shot-caption">Mitarbeiter-Dashboard</figcaption>
+    </figure>
+    <figure class="shot">
+      <img src="../handbuch/screenshots/14-admin-dashboard.png" alt="Admin-Dashboard mit Teamübersicht und ArbZG-Ampeln">
+      <figcaption class="shot-caption">Admin-Übersicht</figcaption>
+    </figure>
+  </div>
+
+  <section class="features">
+    <h3>Warum Praxen sich für PraxisZeit entscheiden</h3>
+    <ul>
+      <li><strong>ArbZG-Live-Prüfung</strong> §3·4·5·6·9·11</li>
+      <li><strong>Genehmigungspflicht</strong> optional pro Praxis</li>
+      <li><strong>Cloud oder On-Premise</strong></li>
+      <li><strong>DSGVO Art. 9</strong> — Krank-Tage maskiert</li>
+      <li><strong>2-Faktor-Auth</strong> für Admin-Accounts</li>
+      <li><strong>Audit-Log</strong> betriebsprüfungsfest</li>
+      <li><strong>Excel-Import</strong> bestehender Stundenlisten</li>
+      <li><strong>In-App-Hilfe</strong> für MA und Admin</li>
+      <li><strong>Mobil</strong> per Smartphone-Web-App</li>
+    </ul>
+  </section>
+
+  <div class="contact">
+    <div>
+      <h3>Lust auf eine Demo?</h3>
+      <p>14 Tage kostenlos testen, oder direkt im Live-Termin Fragen klären.<br>Migration aus Excel-Listen unterstützen wir — keine Zettelwirtschaft mehr.</p>
+      <a class="cta" href="https://praxiszeit.de">praxiszeit.de · Demo anfordern →</a>
+    </div>
+    <aside class="contact-side">
+      <div>
+        <strong>KONTAKT</strong>
+        info@praxiszeit.de
+      </div>
+      <div>
+        <strong>RECHTLICH</strong>
+        ArbZG · DSGVO · §17 ArbSchG
+      </div>
+      <div>
+        <strong>HOSTING</strong>
+        Frankfurt · ISO 27001
+      </div>
+    </aside>
+  </div>
+
+</section>
+
+</body>
+</html>
