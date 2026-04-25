@@ -1,0 +1,146 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PraxisZeit.Setup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
+             x:Class="PraxisZeit.Setup.Views.ConfigPageView"
+             x:DataType="vm:ConfigPageViewModel">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+        <StackPanel Margin="40,28,40,28" Spacing="20">
+
+            <!-- Header -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="Konfiguration"
+                           FontSize="14"
+                           FontWeight="Medium"
+                           Foreground="{StaticResource BrandPrimaryBrush}"
+                           LetterSpacing="0.6"/>
+                <TextBlock Text="Praxis-Stammdaten und Admin-Account"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="Diese Werte landen in config\praxiszeit.conf und werden beim ersten Service-Start fuer den Admin-Account verwendet."
+                           FontSize="13"
+                           LineHeight="20"
+                           TextWrapping="Wrap"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+
+            <!-- Praxis-Karte -->
+            <Border Classes="card">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="Praxis"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               LetterSpacing="0.4"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Praxisname *" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBox Text="{Binding PracticeName, Mode=TwoWay}" PlaceholderText="Praxis Dr. Mustermann"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Adresse" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBox Text="{Binding PracticeAddress, Mode=TwoWay}" PlaceholderText="Hauptstrasse 1, 12345 Musterstadt"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Bundesland (Feiertage)" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <ComboBox ItemsSource="{Binding HolidayStates}"
+                                  SelectedItem="{Binding HolidayState, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Admin-Karte -->
+            <Border Classes="card">
+                <StackPanel Spacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="Admin-Account"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   LetterSpacing="0.4"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   VerticalAlignment="Center"/>
+                        <Border Background="#0A13B981"
+                                BorderBrush="#3313B981"
+                                BorderThickness="1"
+                                CornerRadius="999"
+                                Padding="8,2"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="wird beim ersten Start angelegt"
+                                       FontSize="10"
+                                       FontWeight="Medium"
+                                       Foreground="{StaticResource BrandAccentDarkBrush}"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" RowSpacing="14" ColumnSpacing="14">
+                        <StackPanel Grid.Column="0" Grid.Row="0" Spacing="4">
+                            <TextBlock Text="Benutzername *" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBox Text="{Binding AdminUsername, Mode=TwoWay}" PlaceholderText="admin"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Grid.Row="0" Spacing="4">
+                            <TextBlock Text="Email *" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBox Text="{Binding AdminEmail, Mode=TwoWay}" PlaceholderText="admin@praxis.de"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="0" Grid.Row="1" Spacing="4">
+                            <TextBlock Text="Vorname" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBox Text="{Binding AdminFirstName, Mode=TwoWay}" PlaceholderText="Admin"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Grid.Row="1" Spacing="4">
+                            <TextBlock Text="Nachname *" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBox Text="{Binding AdminLastName, Mode=TwoWay}" PlaceholderText="Praxis"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Text="Passwort * (min. 12 Zeichen)" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBox Text="{Binding AdminPassword, Mode=TwoWay}" PasswordChar="•" FontFamily="Consolas,Menlo,monospace"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="Passwort wiederholen *" FontSize="12" FontWeight="Medium" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBox Text="{Binding AdminPasswordRepeat, Mode=TwoWay}" PasswordChar="•" FontFamily="Consolas,Menlo,monospace"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Validierungs-Hinweis -->
+            <Border IsVisible="{Binding HasValidationMessage}"
+                    Background="#0FDC2626"
+                    BorderBrush="#33DC2626"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="14,10">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="22" Height="22"
+                            CornerRadius="11"
+                            Background="#DC2626"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="!"
+                                   FontSize="12"
+                                   FontWeight="Bold"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="{Binding ValidationMessage}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               LineHeight="18"
+                               Foreground="#7F1D1D"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

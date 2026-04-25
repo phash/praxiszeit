@@ -79,6 +79,9 @@
                 <DataTemplate DataType="vm:WelcomePageViewModel">
                     <views:WelcomePageView/>
                 </DataTemplate>
+                <DataTemplate DataType="vm:ConfigPageViewModel">
+                    <views:ConfigPageView/>
+                </DataTemplate>
                 <DataTemplate DataType="vm:ProgressPageViewModel">
                     <views:ProgressPageView/>
                 </DataTemplate>
@@ -95,14 +98,25 @@
                 BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="32,0">
 
-                <!-- Step Indicator: 3 Dots (Welcome / Progress / Done) -->
+                <!-- Step Indicator: 1 Dot pro Page (3 fuer Update, 4 fuer Fresh) -->
                 <StackPanel Grid.Column="0"
                             Orientation="Horizontal"
                             Spacing="8"
                             VerticalAlignment="Center">
-                    <Ellipse Classes.active="{Binding StepDotActive0}" Classes.done="{Binding StepDotDone0}" Classes="step"/>
-                    <Ellipse Classes.active="{Binding StepDotActive1}" Classes.done="{Binding StepDotDone1}" Classes="step"/>
-                    <Ellipse Classes.active="{Binding StepDotActive2}" Classes.done="{Binding StepDotDone2}" Classes="step"/>
+                    <ItemsControl ItemsSource="{Binding StepDots}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:MainWindowViewModel+StepDot">
+                                <Ellipse Classes="step"
+                                         Classes.active="{Binding IsActive}"
+                                         Classes.done="{Binding IsDone}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                     <TextBlock Text="{Binding CurrentPage.Title}"
                                VerticalAlignment="Center"
                                Margin="6,0,0,0"
