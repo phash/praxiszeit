@@ -254,10 +254,12 @@ def cancel_vacation_request_as_admin(
 ):
     """Admin cancellation of a vacation request on behalf of the user.
 
-    Mirrors the employee-side withdraw semantics:
+    Mirrors the employee-side withdraw semantics + lets admins prune dead rows:
     - PENDING → delete the request row.
     - APPROVED with start date strictly in the future → delete associated
-      absences + flip to WITHDRAWN.
+      absences + flip to WITHDRAWN (keeps the row for audit trail).
+    - REJECTED → delete the request row (no side effects: a rejected request
+      never produced absences, the rejection itself stays in the audit log).
 
     Tenant-scoped: admin cannot reach into foreign tenants.
     """
@@ -278,6 +280,14 @@ def cancel_vacation_request_as_admin(
         db.commit()
         return None
 
+    if vr.status == VacationRequestStatus.REJECTED.value:
+        # No side effects (no absences were ever created), so a plain row
+        # delete is safe. The original rejection event is preserved in the
+        # admin audit log via the review endpoint.
+        db.delete(vr)
+        db.commit()
+        return None
+
     if vr.status == VacationRequestStatus.APPROVED.value:
         if vr.date <= today_local():
             raise HTTPException(
@@ -290,5 +300,5 @@ def cancel_vacation_request_as_admin(
 
     raise HTTPException(
         status_code=400,
-        detail="Nur offene oder genehmigte zukünftige Anträge können storniert werden",
+        detail="Nur offene, abgelehnte oder genehmigte zukünftige Anträge können storniert werden",
     )

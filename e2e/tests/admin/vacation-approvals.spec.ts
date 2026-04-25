@@ -96,8 +96,7 @@ test.describe('Admin Vacation Approvals', () => {
   test('approve vacation request', async ({
     adminPage,
     adminApi,
-    employeeApi,
-    testEmployee,
+    createVacationRequest,
   }) => {
     // Enable approval requirement
     try {
@@ -107,15 +106,15 @@ test.describe('Admin Vacation Approvals', () => {
       return;
     }
 
-    // Create a vacation request as employee. Tag with a unique note marker
-    // so we can pick THIS request out of any leftover pending requests
-    // sharing the same employee last_name (parallel workers, prior runs).
-    // weekdayFromNow ensures the date is Mon-Fri so the approve path doesn't
-    // bail out with "Keine gültigen Arbeitstage im Zeitraum".
+    // Create the request via the fixture so the teardown deletes the row
+    // (or withdraws it if the test runs the approve step). Unique note marker
+    // disambiguates THIS request from any leftover pending entries that
+    // share the employee's last_name. weekdayFromNow ensures Mon-Fri so the
+    // approve path doesn't bail out with "Keine gültigen Arbeitstage im Zeitraum".
     const futureDate = weekdayFromNow(35);
     const uniqueNote = `E2E approve ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      await employeeApi.post('/vacation-requests', {
+      await createVacationRequest({
         date: futureDate,
         hours: 8,
         note: uniqueNote,
@@ -140,15 +139,14 @@ test.describe('Admin Vacation Approvals', () => {
       adminPage.locator('[role="alert"]').filter({ hasText: /genehmigt/ })
     ).toBeVisible({ timeout: 10000 });
 
-    // Cleanup
+    // Cleanup setting; the request itself is teardown-handled by the fixture.
     try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
   });
 
   test('reject vacation request with reason', async ({
     adminPage,
     adminApi,
-    employeeApi,
-    testEmployee,
+    createVacationRequest,
   }) => {
     // Enable approval requirement
     try {
@@ -158,13 +156,12 @@ test.describe('Admin Vacation Approvals', () => {
       return;
     }
 
-    // Create a vacation request via /vacation-requests so it lands in the
-    // admin VacationRequests view; tag with a unique note marker so we can
-    // disambiguate from other pending requests of users with the same name.
+    // Create via fixture so teardown deletes the rejected request row.
+    // Unique note marker for disambiguation; weekdayFromNow for valid workdays.
     const futureDate = weekdayFromNow(40);
     const uniqueNote = `E2E reject ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      await employeeApi.post('/vacation-requests', {
+      await createVacationRequest({
         date: futureDate,
         hours: 8,
         note: uniqueNote,
@@ -196,7 +193,7 @@ test.describe('Admin Vacation Approvals', () => {
       adminPage.locator('[role="alert"]').filter({ hasText: /abgelehnt/ })
     ).toBeVisible({ timeout: 10000 });
 
-    // Cleanup
+    // Cleanup setting; the request row is teardown-handled by the fixture.
     try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
   });
 });
