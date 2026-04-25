@@ -14,7 +14,7 @@ test.describe('Employee Journal', () => {
     await employeePage.goto('/journal');
     await expect(employeePage.getByRole('heading', { name: 'Mein Journal' })).toBeVisible({ timeout: 10000 });
 
-    const rows = employeePage.locator('table tbody tr');
+    const rows = employeePage.locator('main table tbody tr');
     const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
     await expect(rows).toHaveCount(daysInMonth, { timeout: 15000 });
   });
@@ -24,7 +24,7 @@ test.describe('Employee Journal', () => {
     await expect(employeePage.getByRole('heading', { name: 'Mein Journal' })).toBeVisible({ timeout: 10000 });
 
     // Wait for data to load
-    await expect(employeePage.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+    await expect(employeePage.locator('main table tbody tr').first()).toBeVisible({ timeout: 15000 });
 
     await expect(employeePage.getByText('Ist (Monat)')).toBeVisible();
     await expect(employeePage.getByText('Soll (Monat)')).toBeVisible();
@@ -37,7 +37,7 @@ test.describe('Employee Journal', () => {
     await expect(employeePage.getByRole('heading', { name: 'Mein Journal' })).toBeVisible({ timeout: 10000 });
 
     // Wait for initial data load
-    await expect(employeePage.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+    await expect(employeePage.locator('main table tbody tr').first()).toBeVisible({ timeout: 15000 });
 
     // Get current month display text
     const monthDisplay = employeePage.locator('.min-w-\\[180px\\]');
@@ -50,7 +50,7 @@ test.describe('Employee Journal', () => {
     await expect(monthDisplay).not.toHaveText(initialText!, { timeout: 5000 });
 
     // Table should still show rows for the previous month
-    await expect(employeePage.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+    await expect(employeePage.locator('main table tbody tr').first()).toBeVisible({ timeout: 15000 });
   });
 
   test('Direkter Aufruf von /journal funktioniert', async ({ employeePage }) => {

@@ -12,11 +12,12 @@ test.describe('Admin Audit Log', () => {
     // Wait for data to load
     await adminPage.waitForLoadState('networkidle');
 
-    // Should show either entries or "Keine Einträge"
-    const table = adminPage.locator('table').first();
-    const noEntries = adminPage.getByText('Keine Einträge');
-
-    await expect(table.or(noEntries)).toBeVisible({ timeout: 10000 });
+    // Strict-mode-safe check: pick the audit-log content area (always
+    // rendered, even when empty) and assert it's visible. Avoid the
+    // `table.or(noEntries)` pattern — both can briefly resolve during the
+    // empty→loading→loaded handoff, which trips strict mode.
+    const main = adminPage.locator('main');
+    await expect(main.locator('table').first().or(main.getByText('Keine Einträge')).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('month navigation works', async ({ adminPage }) => {

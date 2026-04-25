@@ -32,8 +32,13 @@ test.describe('Password Change', () => {
 
     // On success, the form collapses and the "Ändern" button reappears
     await expect(employeePage.getByRole('button', { name: 'Ändern' })).toBeVisible({ timeout: 10000 });
-    // The hint text reappears when form is collapsed
-    await expect(employeePage.getByText('Mind. 10 Zeichen')).toBeVisible();
+    // The hint text reappears when form is collapsed. There are two hint
+    // strings on the page that both start with "Mind. 10 Zeichen" (the
+    // employee profile hint and the strength-tooltip), so target the one
+    // that appears outside the change-password form.
+    await expect(
+      employeePage.getByText(/Mind\. 10 Zeichen, Groß- \+ Kleinbuchstabe \+ Ziffer/),
+    ).toBeVisible();
 
     // Reset password via admin for cleanup
     await adminApi.post(`/admin/users/${testEmployee.id}/set-password`, {
