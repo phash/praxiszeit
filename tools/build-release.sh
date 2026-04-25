@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.3.7"
+APP_VERSION="1.4.0"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -391,6 +391,35 @@ if [ "$BUILD_WINDOWS" = true ]; then
     cp "${REPO_DIR}/installer/windows/update-wizard.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/update-wizard.ps1" "${WIN_DIR}/"
 
+    # ========================================================================
+    # Avalonia GUI-Installer (PraxisZeit.Setup.exe) — single-file self-contained
+    # Erzeugt eine doppelklickbare setup.exe; ein bestehendes praxiszeit.conf
+    # wird vom UpdateDetector erkannt → automatischer Update-Modus.
+    # Benoetigt .NET 10 SDK auf der Build-Maschine.
+    # ========================================================================
+    if command -v dotnet &>/dev/null; then
+        info "Baue PraxisZeit.Setup.exe (Avalonia, win-x64, single-file)..."
+        _setup_proj="${REPO_DIR}/installer/setup/src/PraxisZeit.Setup/PraxisZeit.Setup.csproj"
+        _setup_publish="${BUILD_DIR}/tmp-setup-publish"
+        rm -rf "${_setup_publish}"
+        if dotnet publish "${_setup_proj}" \
+            -c Release -r win-x64 \
+            -p:PublishSingleFile=true \
+            --self-contained true \
+            -p:Version="${APP_VERSION}" \
+            -o "${_setup_publish}" \
+            > "${BUILD_DIR}/tmp-setup-publish.log" 2>&1; then
+            cp "${_setup_publish}/PraxisZeit.Setup.exe" "${WIN_DIR}/setup.exe"
+            info "setup.exe: $(du -h "${WIN_DIR}/setup.exe" | cut -f1)"
+            rm -rf "${_setup_publish}" "${BUILD_DIR}/tmp-setup-publish.log"
+        else
+            warn "dotnet publish setup.exe FEHLGESCHLAGEN — Log: ${BUILD_DIR}/tmp-setup-publish.log"
+            warn "Paket wird ohne setup.exe gebaut (.bat-Fallback bleibt funktional)"
+        fi
+    else
+        warn "dotnet SDK nicht gefunden — setup.exe wird nicht gebaut (.bat-Fallback bleibt funktional)"
+    fi
+
     info "Entpacke Python ${PYTHON_VERSION} (Windows x64)..."
     mkdir -p "${WIN_DIR}/bin/python"
     tar xzf "${CACHE_DIR}/python-windows-x64.tar.gz" \
@@ -545,13 +574,18 @@ $BUILD_LINUX && cat << EOF
 EOF
 
 $BUILD_WINDOWS && cat << EOF
-  Windows-Erstinstallation:
+  Windows-Installation/Update (empfohlen, ab 1.4.0):
+    1. ZIP entpacken
+    2. setup.exe (als Administrator) doppelklicken
+       -> erkennt automatisch Erstinstallation, Update oder Reparatur
+
+  Windows-Erstinstallation (.bat-Fallback):
     1. ZIP entpacken nach C:\\PraxisZeit\\
     2. setup.bat (als Administrator) ausfuehren
     3. install-service.bat ausfuehren (Dienst + Firewall + Backup-Task)
     4. net start PraxisZeit
 
-  Windows-Update einer bestehenden Installation:
+  Windows-Update einer bestehenden Installation (.bat-Fallback):
     1. ZIP in einen TEMP-Ordner entpacken (NICHT ueber die Installation!)
     2. update-wizard.bat (als Administrator) ausfuehren
        -> GUI-Wizard: ACL-Fix, Backup, Stop, Copy, Start, Backup-Task

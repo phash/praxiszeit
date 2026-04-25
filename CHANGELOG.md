@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-25
+
+### 🚀 Feature — Doppelklickbare `setup.exe` (Avalonia GUI-Installer)
+- Der Avalonia-Installer unter `installer/setup/` wird jetzt als
+  **single-file self-contained `setup.exe`** (~48 MB, win-x64) gebaut
+  und liegt im Windows-Release-ZIP. Kein .NET-Runtime auf dem Zielserver
+  mehr nötig — Doppelklick reicht. Der `UpdateDetector` erkennt eine
+  bestehende `praxiszeit.conf` und schaltet automatisch in den Update-
+  oder Reparatur-Modus.
+- `tools/build-release.sh` baut die EXE jetzt automatisch in der
+  Windows-Phase (Phase 5) via `dotnet publish -r win-x64
+  -p:PublishSingleFile=true --self-contained`. Fehlt das .NET-10-SDK
+  oder schlägt der Publish fehl, wird mit einer Warnung weitergebaut
+  und der `.bat`-Fallback (`setup.bat` / `update-wizard.bat`) bleibt
+  funktional.
+- `PraxisZeit.Setup.csproj`: neue Conditional-PropertyGroup setzt
+  Single-File / Compression / NativeLibrariesForSelfExtract als
+  Defaults, plus Product/Company/Description/Copyright-Metadaten →
+  EXE zeigt korrekte Version (`1.4.0.0`) und Hersteller im
+  Windows-Eigenschaften-Dialog.
+
+### 🎨 UI — Installer-Redesign
+- Neue zentrale Markenpalette in `App.axaml` (Primary `#0E5BA8`,
+  Accent `#13B981`) plus globale Button-Klassen (`primary`, `success`,
+  `ghost`) und Card-/Pill-Styles. Damit lassen sich künftige
+  Wizard-Pages (Issue #79) konsistent designen.
+- `MainWindow.axaml`: Gradient-Header mit stilisiertem Uhren-Logomark,
+  Versions-Pill rechts, Step-Indikator-Punkte im Footer. Fenster auf
+  820 × 640 vergrößert, hellgraue Surface-Background-Farbe.
+- `WelcomePageView.axaml`: Card-Layout mit Icon-Tiles (Plattform,
+  Pfad, aktuelle Version, neue Version), klare Typo-Hierarchie
+  (Eyebrow / H1 / Body), monospace nur für Pfade und Versionen.
+- `DonePageView.axaml`: animierter grüner Erfolgs-Checkmark im
+  Gradient-Kreis, Soft-Shadow, klar abgesetzte URL-Karte.
+
+### 🔢 Version-Bump
+- `backend/app/core/updater.py`, `frontend/package.json` (+ Lockfile)
+  und `tools/build-release.sh` von **1.3.7 → 1.4.0**. Der
+  Build-Konsistenz-Check (F-055-Followup) hält die drei Stellen
+  weiterhin synchron.
+
 ## [1.3.7] - 2026-04-23
 
 ### ✨ Feature — Urlaub / Anträge stornieren (Issue #90)

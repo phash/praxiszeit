@@ -10,6 +10,19 @@
     <AssemblyName>PraxisZeit.Setup</AssemblyName>
     <RootNamespace>PraxisZeit.Setup</RootNamespace>
     <Version>1.4.0</Version>
+    <Product>PraxisZeit Setup</Product>
+    <Company>PraxisZeit</Company>
+    <Description>PraxisZeit Setup-Wizard — Installation, Update und Reparatur</Description>
+    <Copyright>Copyright (c) 2026 PraxisZeit</Copyright>
+  </PropertyGroup>
+
+  <!-- Defaults fuer `dotnet publish` -> single-file self-contained exe -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true' or '$(SelfContained)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
