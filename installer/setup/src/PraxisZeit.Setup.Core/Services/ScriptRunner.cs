@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
-using System.Text.RegularExpressions;
 
 namespace PraxisZeit.Setup.Core.Services;
 
@@ -38,22 +37,8 @@ public sealed record RunnerDoneEvent(bool Success) : RunnerEvent;
 /// </para>
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed partial class ScriptRunner
+public sealed class ScriptRunner
 {
-    [GeneratedRegex(@"^\[STEP\]\s+(\S+)\s+(\S+)\s*$")]
-    private static partial Regex StepMarkerRegex();
-
-    [GeneratedRegex(@"^\[LOG\]\s?(.*)$")]
-    private static partial Regex LogMarkerRegex();
-
-    [GeneratedRegex(@"^\[PROGRESS\]\s+(\d+)\s*$")]
-    private static partial Regex ProgressMarkerRegex();
-
-    [GeneratedRegex(@"^\[DONE\]\s+(success|fail)\s*$")]
-    private static partial Regex DoneMarkerRegex();
-
-    [GeneratedRegex(@"^\[ERROR\]\s?(.*)$")]
-    private static partial Regex ErrorMarkerRegex();
 
     /// <summary>
     /// Update-Pfad: spawnt <c>powershell.exe -Headless -InstallDir &lt;existing&gt;
@@ -237,52 +222,17 @@ public sealed partial class ScriptRunner
         ref bool anyDoneMarker,
         ref bool doneSuccess)
     {
-        var stepMatch = StepMarkerRegex().Match(line);
-        if (stepMatch.Success)
-        {
-            var status = stepMatch.Groups[2].Value.ToLowerInvariant() switch
-            {
-                "running" => RunnerStepStatus.Running,
-                "ok" => RunnerStepStatus.Ok,
-                "warn" => RunnerStepStatus.Warn,
-                "fail" => RunnerStepStatus.Fail,
-                _ => RunnerStepStatus.Pending,
-            };
-            sink.Report(new RunnerStepEvent(stepMatch.Groups[1].Value, status));
-            return;
-        }
-
-        var progMatch = ProgressMarkerRegex().Match(line);
-        if (progMatch.Success && int.TryParse(progMatch.Groups[1].Value, out var pct))
-        {
-            sink.Report(new RunnerProgressEvent(pct));
-            return;
-        }
-
-        var doneMatch = DoneMarkerRegex().Match(line);
-        if (doneMatch.Success)
+        var (evt, isDone, doneOk) = ScriptMarkerParser.ParseMarkerLine(line);
+        if (isDone)
         {
             anyDoneMarker = true;
-            doneSuccess = doneMatch.Groups[1].Value.Equals("success", StringComparison.OrdinalIgnoreCase);
+            doneSuccess = doneOk;
             return;
         }
-
-        var logMatch = LogMarkerRegex().Match(line);
-        if (logMatch.Success)
+        if (evt is not null)
         {
-            sink.Report(new RunnerLogEvent(logMatch.Groups[1].Value));
-            return;
+            sink.Report(evt);
         }
-
-        var errMatch = ErrorMarkerRegex().Match(line);
-        if (errMatch.Success)
-        {
-            sink.Report(new RunnerLogEvent($"FEHLER: {errMatch.Groups[1].Value}"));
-            return;
-        }
-
-        // Kein Marker — Raw-Output (von Subprozessen wie pip, robocopy)
-        sink.Report(new RunnerLogEvent(line));
     }
 
     private static async Task<int> RunBatchScriptAsync(
