@@ -283,3 +283,19 @@ class TestAdminCancel:
     def test_admin_404_for_unknown_id(self, admin_client):
         resp = admin_client.delete("/api/admin/vacation-requests/00000000-0000-0000-0000-000000000000")
         assert resp.status_code == 404
+
+    def test_admin_can_delete_rejected_request(self, db, employee, admin_client):
+        """Abgelehnte Anträge dürfen vom Admin geprundet werden — keine Side-Effects
+        (es gibt keine Absences zu einem rejected request), die Ablehnung selbst
+        bleibt im Audit-Log erhalten. Vorher gab der Endpoint 400 zurück, was
+        u.a. die E2E-Cleanup-Fixture brach (rejected leftovers akkumulierten)."""
+        vr = _vr(
+            db, employee, VacationRequestStatus.REJECTED.value,
+            date.today() + timedelta(days=10),
+        )
+        vr.rejection_reason = "E2E reject"
+        db.commit()
+
+        resp = admin_client.delete(f"/api/admin/vacation-requests/{vr.id}")
+        assert resp.status_code == 204
+        assert db.query(VacationRequest).filter(VacationRequest.id == vr.id).first() is None
