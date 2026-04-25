@@ -27,6 +27,13 @@ public sealed partial class WelcomePageViewModel : WizardPageBase
     [ObservableProperty]
     public partial string ModeDescription { get; set; } = string.Empty;
 
+    /// <summary>
+    /// True nur im Update-Modus — die Welcome-Page zeigt dann einen
+    /// expliziten DB-Backup-Hinweis ("Bevor Dateien ersetzt werden, wird
+    /// ein vollstaendiges Backup nach data\backups erstellt").
+    /// </summary>
+    public bool ShowBackupCallout => Mode == InstallMode.Update;
+
     public override string NextButtonText => Mode switch
     {
         InstallMode.FreshInstall => "Installation starten",
@@ -40,10 +47,11 @@ public sealed partial class WelcomePageViewModel : WizardPageBase
         ModeDescription = value switch
         {
             InstallMode.FreshInstall => "Es wird eine neue PraxisZeit-Installation eingerichtet. PostgreSQL, Python-Dependencies, Service und Firewall-Regeln werden konfiguriert.",
-            InstallMode.Update => $"Bestehende Installation ({CurrentVersion}) wird auf {TargetVersion} aktualisiert. Datenbank, Config und Secrets bleiben unangetastet; ein Backup wird automatisch vor dem Update erstellt.",
+            InstallMode.Update => $"Bestehende Installation ({CurrentVersion}) wird auf {TargetVersion} aktualisiert. Datenbank, Config und Secrets bleiben unangetastet.",
             InstallMode.Repair => "Bestehende Installation wird repariert. Binaries werden neu kopiert, Config bleibt.",
             _ => string.Empty,
         };
         OnPropertyChanged(nameof(NextButtonText));
+        OnPropertyChanged(nameof(ShowBackupCallout));
     }
 }

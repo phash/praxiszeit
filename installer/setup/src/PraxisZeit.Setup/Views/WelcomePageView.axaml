@@ -133,6 +133,39 @@
                 </Grid>
             </Border>
 
+            <!-- DB-Backup-Hinweis (nur im Update-Modus) -->
+            <Border IsVisible="{Binding ShowBackupCallout}"
+                    BorderBrush="#3313B981"
+                    BorderThickness="1"
+                    Background="#0A13B981"
+                    CornerRadius="10"
+                    Padding="16,14">
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                    <Border Width="32" Height="32"
+                            CornerRadius="16"
+                            Background="{StaticResource AccentGradientBrush}"
+                            VerticalAlignment="Top">
+                        <TextBlock Text="DB"
+                                   FontSize="11"
+                                   FontWeight="Bold"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="Datenbank wird vor dem Update gesichert"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Text="Vor dem Datei-Update wird ein vollstaendiger pg_dump nach data\backups\ geschrieben — auch wenn das Update fehlschlaegt, bleiben Ihre Daten unversehrt."
+                                   FontSize="12"
+                                   LineHeight="18"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- Footer-Hinweis -->
             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
                 <Border Width="20" Height="20"

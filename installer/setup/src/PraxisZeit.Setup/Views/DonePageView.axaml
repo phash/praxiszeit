@@ -9,9 +9,10 @@
 
     <StackPanel Margin="40" Spacing="24" VerticalAlignment="Center">
 
-        <!-- Erfolgs-Checkmark -->
+        <!-- Erfolgs-Checkmark (success) ODER X-Kreis (fail) -->
         <Border Width="92" Height="92"
                 CornerRadius="46"
+                IsVisible="{Binding Success}"
                 Background="{StaticResource AccentGradientBrush}"
                 HorizontalAlignment="Center"
                 BoxShadow="0 8 24 0 #2613B981">
@@ -24,8 +25,22 @@
                   VerticalAlignment="Center"/>
         </Border>
 
+        <Border Width="92" Height="92"
+                CornerRadius="46"
+                IsVisible="{Binding ShowErrorCard}"
+                Background="#DC2626"
+                HorizontalAlignment="Center"
+                BoxShadow="0 8 24 0 #26DC2626">
+            <Canvas Width="92" Height="92">
+                <Line StartPoint="30,30" EndPoint="62,62"
+                      Stroke="White" StrokeThickness="6" StrokeLineCap="Round"/>
+                <Line StartPoint="62,30" EndPoint="30,62"
+                      Stroke="White" StrokeThickness="6" StrokeLineCap="Round"/>
+            </Canvas>
+        </Border>
+
         <StackPanel Spacing="8" HorizontalAlignment="Center">
-            <TextBlock Text="Fertig!"
+            <TextBlock Text="{Binding Headline}"
                        FontSize="34"
                        FontWeight="SemiBold"
                        Foreground="{StaticResource TextPrimaryBrush}"
@@ -35,30 +50,39 @@
                        TextWrapping="Wrap"
                        FontSize="14"
                        LineHeight="22"
-                       MaxWidth="520"
+                       MaxWidth="560"
                        Foreground="{StaticResource TextSecondaryBrush}"
                        HorizontalAlignment="Center"
                        TextAlignment="Center"/>
         </StackPanel>
 
-        <!-- URL-Karte -->
-        <Border Classes="card"
+        <!-- URL-Karte + Browser-Button (success) -->
+        <Border IsVisible="{Binding ShowBrowserCard}"
+                Classes="card"
                 HorizontalAlignment="Center"
                 MaxWidth="520"
                 Padding="24,18">
-            <StackPanel Spacing="6" HorizontalAlignment="Center">
-                <TextBlock Text="PraxisZeit ist erreichbar unter"
-                           FontSize="11"
-                           FontWeight="Medium"
-                           LetterSpacing="0.6"
-                           Foreground="{StaticResource TextMutedBrush}"
-                           HorizontalAlignment="Center"/>
-                <TextBlock Text="{Binding BrowserUrl}"
-                           FontFamily="Consolas,Menlo,monospace"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Foreground="{StaticResource BrandPrimaryBrush}"
-                           HorizontalAlignment="Center"/>
+            <StackPanel Spacing="14" HorizontalAlignment="Center">
+                <StackPanel Spacing="6" HorizontalAlignment="Center">
+                    <TextBlock Text="PraxisZeit ist erreichbar unter"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               LetterSpacing="0.6"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding BrowserUrl}"
+                               FontFamily="Consolas,Menlo,monospace"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource BrandPrimaryBrush}"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+                <Button Classes="success"
+                        Content="Im Browser oeffnen"
+                        MinWidth="200"
+                        Height="38"
+                        HorizontalAlignment="Center"
+                        Command="{Binding OpenBrowserCommand}"/>
             </StackPanel>
         </Border>
 
