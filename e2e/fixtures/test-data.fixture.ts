@@ -39,6 +39,12 @@ export type TestDataFixtures = {
     user_id?: string;
   }) => Promise<any>;
   createChangeRequest: (data: Record<string, unknown>) => Promise<any>;
+  createVacationRequest: (data: {
+    date: string;
+    end_date?: string;
+    hours: number;
+    note?: string;
+  }) => Promise<any>;
 };
 
 export const testDataTest = authTest.extend<TestDataFixtures>({
@@ -170,6 +176,30 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
       try {
         await adminApi.delete(`/admin/change-requests/${id}`);
       } catch { /* already resolved or deleted */ }
+    }
+  },
+
+  // VacationRequests don't share /absences cleanup; the admin endpoint
+  // ``DELETE /admin/vacation-requests/{id}`` deletes pending rows and
+  // withdraws still-future approved ones, so it's a safe one-shot teardown
+  // even after a test has approved or rejected the request mid-run.
+  createVacationRequest: async ({ employeeApi, adminApi }, use) => {
+    const createdIds: string[] = [];
+    const factory = async (data: {
+      date: string;
+      end_date?: string;
+      hours: number;
+      note?: string;
+    }) => {
+      const result = await employeeApi.post('/vacation-requests', data);
+      if (result?.id) createdIds.push(result.id);
+      return result;
+    };
+    await use(factory);
+    for (const id of createdIds) {
+      try {
+        await adminApi.delete(`/admin/vacation-requests/${id}`);
+      } catch { /* already withdrawn / not found */ }
     }
   },
 });
