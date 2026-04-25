@@ -511,6 +511,9 @@ class TestTimeEntryDelete:
         fake_id = str(uuid.uuid4())
         resp = employee_client.delete(f"/api/time-entries/{fake_id}")
         assert resp.status_code == 404
+        # 404 ohne detail wäre eine UX-Lücke — der Client kann nicht
+        # unterscheiden zwischen "Eintrag weg" und "Endpoint kaputt".
+        assert "detail" in resp.json()
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +555,19 @@ class TestAdminUsers:
         test_app.dependency_overrides.clear()
 
         assert resp.status_code == 403
+        body = resp.json()
+        # Body must contain a detail message but MUST NOT leak the user's
+        # role, email or any user-row data — defense-in-depth against
+        # accidental enumeration via 403 responses.
+        assert "detail" in body
+        leak_terms = (
+            employee_user.username,
+            employee_user.email,
+            "employee",  # role string
+        )
+        body_blob = str(body).lower()
+        for term in leak_terms:
+            assert term.lower() not in body_blob, f"403 leaks {term!r}: {body!r}"
 
 
 class TestAdminYearClosing:
@@ -573,11 +589,21 @@ class TestAdminYearClosing:
         """Prüft dass Loeschen ohne vorhandene Carryover-Daten 404 liefert."""
         resp = admin_client.delete("/api/admin/year-closing/2024")
         assert resp.status_code == 404
+        assert "detail" in resp.json()
 
     def test_year_closing_invalid_year(self, admin_client):
         """Prüft dass ungueltige Jahreszahl 400 liefert — Input-Validierung."""
         resp = admin_client.post("/api/admin/year-closing/1999")
         assert resp.status_code == 400
+        # Validation error must explain why the year is rejected, otherwise
+        # a frontend can only show a generic "ungültig" message.
+        body = resp.json()
+        assert "detail" in body
+        # The boundary (year ≥ 2000 or similar) should appear in the message
+        # so the API doc and the client know why 1999 was rejected.
+        assert any(c.isdigit() for c in str(body["detail"])), (
+            f"400 detail for invalid year should mention a year/range: {body!r}"
+        )
 
     def test_year_closing_as_employee_forbidden(self, _db_session, employee_user):
         """Prüft dass MA keinen Jahresabschluss ausloesen kann — nur Admin-Berechtigung."""
@@ -597,6 +623,7 @@ class TestAdminYearClosing:
         test_app.dependency_overrides.clear()
 
         assert resp.status_code == 403
+        assert "detail" in resp.json()
 
 
 class TestAdminCarryovers:
@@ -613,6 +640,12 @@ class TestAdminCarryovers:
         fake_id = str(uuid.uuid4())
         resp = admin_client.get(f"/api/admin/users/{fake_id}/carryovers")
         assert resp.status_code == 404
+        body = resp.json()
+        assert "detail" in body
+        # Must not echo the requested ID back — that would let an attacker
+        # confirm they're hitting the right endpoint with timing-stable
+        # responses regardless of input.
+        assert fake_id not in str(body["detail"])
 
 
 # ---------------------------------------------------------------------------
