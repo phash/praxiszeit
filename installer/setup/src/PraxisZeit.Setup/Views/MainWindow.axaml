@@ -79,6 +79,9 @@
                 <DataTemplate DataType="vm:WelcomePageViewModel">
                     <views:WelcomePageView/>
                 </DataTemplate>
+                <DataTemplate DataType="vm:ProgressPageViewModel">
+                    <views:ProgressPageView/>
+                </DataTemplate>
                 <DataTemplate DataType="vm:DonePageViewModel">
                     <views:DonePageView/>
                 </DataTemplate>
@@ -92,13 +95,14 @@
                 BorderThickness="0,1,0,0">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="32,0">
 
-                <!-- Step Indicator -->
+                <!-- Step Indicator: 3 Dots (Welcome / Progress / Done) -->
                 <StackPanel Grid.Column="0"
                             Orientation="Horizontal"
                             Spacing="8"
                             VerticalAlignment="Center">
-                    <Ellipse Classes="step active"/>
-                    <Ellipse Classes="step"/>
+                    <Ellipse Classes.active="{Binding StepDotActive0}" Classes.done="{Binding StepDotDone0}" Classes="step"/>
+                    <Ellipse Classes.active="{Binding StepDotActive1}" Classes.done="{Binding StepDotDone1}" Classes="step"/>
+                    <Ellipse Classes.active="{Binding StepDotActive2}" Classes.done="{Binding StepDotDone2}" Classes="step"/>
                     <TextBlock Text="{Binding CurrentPage.Title}"
                                VerticalAlignment="Center"
                                Margin="6,0,0,0"

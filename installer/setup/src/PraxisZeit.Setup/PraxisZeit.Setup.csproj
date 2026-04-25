@@ -30,6 +30,24 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
+  <!--
+    Eingebettetes Payload-ZIP (Python, PostgreSQL-Installer, Backend, Frontend,
+    .bat/.ps1-Scripts, nssm). Der Build-Pipeline-Step (tools/build-release.sh)
+    setzt $(PayloadZipPath) auf das gebaute praxiszeit-X.Y.Z-windows-x64.zip;
+    dotnet publish bettet es dann als manifest resource mit dem stabilen
+    LogicalName praxiszeit_payload.zip ein. EmbeddedPayloadExtractor liest
+    es zur Laufzeit raus und extrahiert nach %TEMP%.
+
+    Dev-Builds ohne $(PayloadZipPath) bauen ohne eingebettetes Payload —
+    EmbeddedPayloadExtractor.HasEmbeddedPayload gibt false zurueck und der
+    Wizard nutzt das App-Verzeichnis als Fallback (siehe MainWindowViewModel).
+  -->
+  <ItemGroup Condition="'$(PayloadZipPath)' != '' AND Exists('$(PayloadZipPath)')">
+    <EmbeddedResource Include="$(PayloadZipPath)" Visible="false">
+      <LogicalName>praxiszeit_payload.zip</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.0" />
     <PackageReference Include="Avalonia.Desktop" Version="12.0.0" />

@@ -391,35 +391,6 @@ if [ "$BUILD_WINDOWS" = true ]; then
     cp "${REPO_DIR}/installer/windows/update-wizard.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/update-wizard.ps1" "${WIN_DIR}/"
 
-    # ========================================================================
-    # Avalonia GUI-Installer (PraxisZeit.Setup.exe) — single-file self-contained
-    # Erzeugt eine doppelklickbare setup.exe; ein bestehendes praxiszeit.conf
-    # wird vom UpdateDetector erkannt → automatischer Update-Modus.
-    # Benoetigt .NET 10 SDK auf der Build-Maschine.
-    # ========================================================================
-    if command -v dotnet &>/dev/null; then
-        info "Baue PraxisZeit.Setup.exe (Avalonia, win-x64, single-file)..."
-        _setup_proj="${REPO_DIR}/installer/setup/src/PraxisZeit.Setup/PraxisZeit.Setup.csproj"
-        _setup_publish="${BUILD_DIR}/tmp-setup-publish"
-        rm -rf "${_setup_publish}"
-        if dotnet publish "${_setup_proj}" \
-            -c Release -r win-x64 \
-            -p:PublishSingleFile=true \
-            --self-contained true \
-            -p:Version="${APP_VERSION}" \
-            -o "${_setup_publish}" \
-            > "${BUILD_DIR}/tmp-setup-publish.log" 2>&1; then
-            cp "${_setup_publish}/PraxisZeit.Setup.exe" "${WIN_DIR}/setup.exe"
-            info "setup.exe: $(du -h "${WIN_DIR}/setup.exe" | cut -f1)"
-            rm -rf "${_setup_publish}" "${BUILD_DIR}/tmp-setup-publish.log"
-        else
-            warn "dotnet publish setup.exe FEHLGESCHLAGEN — Log: ${BUILD_DIR}/tmp-setup-publish.log"
-            warn "Paket wird ohne setup.exe gebaut (.bat-Fallback bleibt funktional)"
-        fi
-    else
-        warn "dotnet SDK nicht gefunden — setup.exe wird nicht gebaut (.bat-Fallback bleibt funktional)"
-    fi
-
     info "Entpacke Python ${PYTHON_VERSION} (Windows x64)..."
     mkdir -p "${WIN_DIR}/bin/python"
     tar xzf "${CACHE_DIR}/python-windows-x64.tar.gz" \
@@ -466,6 +437,63 @@ PTHEOF
     # Setup + Service Scripts aus dem Repo kopieren
     cp "${REPO_DIR}/installer/windows/setup.bat" "${WIN_DIR}/"
 
+    # ========================================================================
+    # Phase 5b: Avalonia GUI-Installer (setup.exe) mit eingebettetem Payload
+    # ------------------------------------------------------------------------
+    # Reihenfolge ist wichtig: erst das komplette Windows-Tree zusammenbauen,
+    # dann als payload.zip packen, dann dotnet publish mit -p:PayloadZipPath
+    # aufrufen — die EmbeddedResource im csproj zieht das ZIP rein, raus
+    # kommt eine ~400 MB single-file setup.exe die zur Laufzeit nach %TEMP%
+    # entpackt und setup.bat / update-wizard.ps1 -Headless aufruft.
+    # ========================================================================
+    _setup_exe_dist=""
+    if command -v dotnet &>/dev/null; then
+        info "Erzeuge Payload-ZIP fuer Embedding..."
+        _payload_zip="${BUILD_DIR}/payload-${APP_VERSION}-windows-x64.zip"
+        rm -f "${_payload_zip}"
+        if command -v zip &>/dev/null; then
+            (cd "${WIN_DIR}" && zip -qr "$_payload_zip" .)
+        elif command -v powershell.exe &>/dev/null; then
+            _payload_src_win="$(cygpath -w "${WIN_DIR}" 2>/dev/null || echo "${WIN_DIR}")"
+            _payload_zip_win="$(cygpath -w "${_payload_zip}" 2>/dev/null || echo "${_payload_zip}")"
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+                "Compress-Archive -Path '${_payload_src_win}\\*' -DestinationPath '${_payload_zip_win}' -Force -CompressionLevel Optimal"
+        fi
+
+        if [ -f "${_payload_zip}" ]; then
+            info "Payload-ZIP: $(du -h "${_payload_zip}" | cut -f1) — baue setup.exe..."
+            _setup_proj="${REPO_DIR}/installer/setup/src/PraxisZeit.Setup/PraxisZeit.Setup.csproj"
+            _setup_publish="${BUILD_DIR}/tmp-setup-publish"
+            rm -rf "${_setup_publish}"
+            # Windows-Pfad fuer MSBuild-Property (sonst missparst Git-Bash den Pfad)
+            _payload_zip_win="$(cygpath -w "${_payload_zip}" 2>/dev/null || echo "${_payload_zip}")"
+            if dotnet publish "${_setup_proj}" \
+                -c Release -r win-x64 \
+                -p:PublishSingleFile=true \
+                --self-contained true \
+                -p:Version="${APP_VERSION}" \
+                -p:PayloadZipPath="${_payload_zip_win}" \
+                -o "${_setup_publish}" \
+                > "${BUILD_DIR}/tmp-setup-publish.log" 2>&1; then
+                # Naming-Pattern: praxiszeit-${VERSION}-* damit der sha256sum-Glob
+                # in Phase 7 die EXE mit aufnimmt.
+                _setup_exe_dist="${DIST_DIR}/praxiszeit-${APP_VERSION}-setup-windows-x64.exe"
+                cp "${_setup_publish}/PraxisZeit.Setup.exe" "${_setup_exe_dist}"
+                cp "${_setup_publish}/PraxisZeit.Setup.exe" "${WIN_DIR}/setup.exe"
+                info "setup.exe: $(du -h "${_setup_exe_dist}" | cut -f1)"
+                rm -rf "${_setup_publish}" "${BUILD_DIR}/tmp-setup-publish.log" "${_payload_zip}"
+            else
+                warn "dotnet publish setup.exe FEHLGESCHLAGEN — Log: ${BUILD_DIR}/tmp-setup-publish.log"
+                warn "Paket wird ohne setup.exe gebaut (.bat-Fallback bleibt funktional)"
+                rm -f "${_payload_zip}"
+            fi
+        else
+            warn "Payload-ZIP konnte nicht erzeugt werden — setup.exe wird nicht gebaut"
+        fi
+    else
+        warn "dotnet SDK nicht gefunden — setup.exe wird nicht gebaut (.bat-Fallback bleibt funktional)"
+    fi
+
     info "Erstelle ZIP..."
     _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.zip"
     if command -v zip &>/dev/null; then
@@ -483,6 +511,9 @@ PTHEOF
         _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.tar.gz"
     fi
     info "Windows-Paket: $(du -h "$_win_zip" | cut -f1)"
+    if [ -n "${_setup_exe_dist}" ] && [ -f "${_setup_exe_dist}" ]; then
+        info "setup.exe (Standalone): $(du -h "${_setup_exe_dist}" | cut -f1)"
+    fi
 else
     step "5 — Windows: uebersprungen"
 fi

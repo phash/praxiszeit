@@ -23,7 +23,7 @@ net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo FEHLER: Bitte als Administrator ausfuehren!
     echo Rechtsklick auf setup.bat ^> "Als Administrator ausfuehren"
-    pause
+    if not defined PRAXISZEIT_NONINTERACTIVE pause
     exit /b 1
 )
 
@@ -107,7 +107,7 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
         echo FEHLER: PostgreSQL-Installation fehlgeschlagen!
         echo Bitte installieren Sie PostgreSQL manuell von:
         echo   https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
-        pause
+        if not defined PRAXISZEIT_NONINTERACTIVE pause
         exit /b 1
     )
 
@@ -132,7 +132,7 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
     echo   %PG_INSTALL_DIR%\bin\pg_ctl.exe
     echo erreichbar sein.
     echo.
-    pause
+    if not defined PRAXISZEIT_NONINTERACTIVE pause
 )
 
 REM ============================================================
@@ -141,7 +141,7 @@ REM ============================================================
 
 if not exist "%PYTHON%" (
     echo FEHLER: Python nicht gefunden: %PYTHON%
-    pause
+    if not defined PRAXISZEIT_NONINTERACTIVE pause
     exit /b 1
 )
 
@@ -165,7 +165,7 @@ if %errorlevel% neq 0 (
     echo.
     echo FEHLER: Python-Abhaengigkeiten konnten nicht installiert werden.
     echo Stellen Sie sicher, dass eine Internetverbindung besteht.
-    pause
+    if not defined PRAXISZEIT_NONINTERACTIVE pause
     exit /b 1
 )
 
@@ -207,7 +207,7 @@ echo   2. Service installieren:   install-service.bat
 echo   3. Service starten:        net start PraxisZeit
 echo.
 
-pause
+if not defined PRAXISZEIT_NONINTERACTIVE pause
 goto :eof
 
 REM ============================================================

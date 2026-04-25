@@ -15,14 +15,14 @@ REM Check if nssm exists
 if not exist "%NSSM%" (
     echo ERROR: nssm.exe not found at %NSSM%
     echo Download from https://nssm.cc/download
-    pause
+    if not defined PRAXISZEIT_NONINTERACTIVE pause
     exit /b 1
 )
 
 REM Check if Python exists
 if not exist "%PYTHON%" (
     echo ERROR: Python not found at %PYTHON%
-    pause
+    if not defined PRAXISZEIT_NONINTERACTIVE pause
     exit /b 1
 )
 
@@ -71,4 +71,4 @@ if errorlevel 1 (
 
 :task_done
 
-pause
+if not defined PRAXISZEIT_NONINTERACTIVE pause

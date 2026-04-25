@@ -4,44 +4,93 @@
 
 ## [1.4.0] - 2026-04-25
 
-### 🚀 Feature — Doppelklickbare `setup.exe` (Avalonia GUI-Installer)
-- Der Avalonia-Installer unter `installer/setup/` wird jetzt als
-  **single-file self-contained `setup.exe`** (~48 MB, win-x64) gebaut
-  und liegt im Windows-Release-ZIP. Kein .NET-Runtime auf dem Zielserver
-  mehr nötig — Doppelklick reicht. Der `UpdateDetector` erkennt eine
-  bestehende `praxiszeit.conf` und schaltet automatisch in den Update-
-  oder Reparatur-Modus.
-- `tools/build-release.sh` baut die EXE jetzt automatisch in der
-  Windows-Phase (Phase 5) via `dotnet publish -r win-x64
-  -p:PublishSingleFile=true --self-contained`. Fehlt das .NET-10-SDK
-  oder schlägt der Publish fehl, wird mit einer Warnung weitergebaut
-  und der `.bat`-Fallback (`setup.bat` / `update-wizard.bat`) bleibt
-  funktional.
-- `PraxisZeit.Setup.csproj`: neue Conditional-PropertyGroup setzt
-  Single-File / Compression / NativeLibrariesForSelfExtract als
-  Defaults, plus Product/Company/Description/Copyright-Metadaten →
-  EXE zeigt korrekte Version (`1.4.0.0`) und Hersteller im
-  Windows-Eigenschaften-Dialog.
+### 🚀 Feature — Single-File `setup.exe` mit eingebettetem Payload
+- **Eine Datei, ein Doppelklick**: `praxiszeit-1.4.0-setup-windows-x64.exe`
+  (~445 MB) enthält jetzt das **komplette Payload** (Python-Embeddable,
+  PostgreSQL-Installer, Backend, Frontend, nssm, alle .bat/.ps1-Scripts)
+  als embedded resource. Beim Doppelklick (UAC → Admin) extrahiert die
+  EXE den Payload nach `%TEMP%\praxiszeit-setup-<guid>` und ruft die
+  bestehenden Install-Scripts auf — kein vorheriges ZIP-Entpacken,
+  kein .NET-Runtime auf dem Zielserver. Cleanup nach Abschluss.
+- **DB-Backup vor Update ist Pflicht** und wird in der Welcome-Page
+  explizit beworben. Update-Pfad ruft `update-wizard.ps1 -Headless`
+  auf, dessen Schritt 2 ein vollstaendiges `pg_dump` nach
+  `data\backups\` schreibt — auch bei spaeterem Fehler bleiben alle
+  Daten unversehrt.
+- **Architektur-Entscheid**: Wir reimplementieren die 1436+ Zeilen
+  bewaehrter `.bat`/`.ps1`-Logik (cp1252-Edge-Cases, Junctions,
+  EDB-Aufraeumung, RLS-Kontext, robocopy-Excludes, F-037 ACL-Fix)
+  bewusst NICHT in C#. Die EXE ist eine GUI-Huelle, die die getesteten
+  Scripts unveraendert ausfuehrt → ZERO Regressionsrisiko fuer die
+  Install-Logik beim Kunden.
+- `update-wizard.ps1` neuer `-Headless`-Switch: ueberspringt die
+  WinForms-GUI komplett und emittiert maschinenlesbare Marker
+  (`[STEP] <id> <status>`, `[LOG] <text>`, `[PROGRESS] <0..100>`,
+  `[DONE] <success|fail>`) auf stdout. Avalonia-Wizard parst die
+  Marker und rendert daraus Step-Liste, Live-Log und Progress-Bar.
+  Default-Verhalten (ohne `-Headless`) unveraendert — der bestehende
+  WinForms-Wizard ist 1:1 funktional als Fallback verfuegbar.
+- `setup.bat` und `install-service.bat` honorieren ab sofort
+  `PRAXISZEIT_NONINTERACTIVE=1` und ueberspringen alle `pause`-Aufrufe
+  → der Avalonia-Wizard kann beide unattended ausfuehren ohne
+  Subprocess-Hang. Default-Verhalten (manuelles Aufrufen) unveraendert.
+
+### 🛠️ Setup-Wizard — neue Pages, Orchestrator, Live-Progress
+- **Progress-Page** (`ProgressPageView.axaml`): zwei-spaltiges Layout
+  mit checklistartiger Step-Liste (Status-Punkte: Pending grau →
+  Running blau → Ok gruen / Warn gelb / Fail rot) links und
+  Konsolen-Log rechts (Consolas, 1000-Line-Cap), oben dezenter
+  Progress-Bar in Brand-Primary. Refektiert pro Modus die genauen
+  Schritte: Update zeigt 7 Schritte (ACL/Backup/Stop/Copy/Pip/Start/
+  Task), Fresh-Install 4 (Copy/Setup/Service/Start).
+- **MainWindowViewModel**: orchestriert Welcome → Progress → Done.
+  Auf Welcome-"Weiter" extrahiert `EmbeddedPayloadExtractor` das
+  ZIP, der `ScriptRunner` startet den passenden Subprocess, Marker
+  fliessen via `IProgress<RunnerEvent>` als typed events
+  (`RunnerStepEvent`/`RunnerLogEvent`/`RunnerProgressEvent`/
+  `RunnerDoneEvent`) in die ViewModel-Layer. UI marshaling via
+  `Progress<T>`-SyncContext-Capture, kein `Dispatcher.Post`-Boilerplate.
+- **DonePage**: differenziert Erfolg (gruener Checkmark + URL-Karte +
+  "Im Browser oeffnen"-Button) vs. Fehler (roter X-Kreis + Hinweis
+  auf das automatische DB-Backup unter `data\backups`).
+- **Welcome-Page**: zeigt im Update-Modus einen prominenten
+  Backup-Callout ("Datenbank wird vor dem Update gesichert"), damit
+  dem Anwender klar ist, dass `pg_dump` automatisch laeuft.
+- **app.manifest**: `requireAdministrator` + `dpiAwareness=PerMonitorV2`
+  → automatischer UAC-Prompt beim Doppelklick, scharfes Rendering
+  auf High-DPI-Displays.
+- **Step-Indicator** im Footer: 3 Dots (Welcome / Installation /
+  Fertig) zeigen Fortschritt durch die Wizard-Stages, aktiver Step
+  in Brand-Primary, abgeschlossene Steps in Accent-Green.
 
 ### 🎨 UI — Installer-Redesign
 - Neue zentrale Markenpalette in `App.axaml` (Primary `#0E5BA8`,
   Accent `#13B981`) plus globale Button-Klassen (`primary`, `success`,
-  `ghost`) und Card-/Pill-Styles. Damit lassen sich künftige
-  Wizard-Pages (Issue #79) konsistent designen.
+  `ghost`) und Card-/Pill-Styles.
 - `MainWindow.axaml`: Gradient-Header mit stilisiertem Uhren-Logomark,
   Versions-Pill rechts, Step-Indikator-Punkte im Footer. Fenster auf
   820 × 640 vergrößert, hellgraue Surface-Background-Farbe.
 - `WelcomePageView.axaml`: Card-Layout mit Icon-Tiles (Plattform,
-  Pfad, aktuelle Version, neue Version), klare Typo-Hierarchie
-  (Eyebrow / H1 / Body), monospace nur für Pfade und Versionen.
-- `DonePageView.axaml`: animierter grüner Erfolgs-Checkmark im
-  Gradient-Kreis, Soft-Shadow, klar abgesetzte URL-Karte.
+  Pfad, aktuelle Version, neue Version), klare Typo-Hierarchie.
+- `DonePageView.axaml`: gruener Erfolgs-Checkmark im Gradient-Kreis
+  mit Soft-Shadow, "Im Browser oeffnen"-Action-Button, separater
+  Fehler-Path mit rotem X-Kreis.
 
 ### 🔢 Version-Bump
 - `backend/app/core/updater.py`, `frontend/package.json` (+ Lockfile)
   und `tools/build-release.sh` von **1.3.7 → 1.4.0**. Der
-  Build-Konsistenz-Check (F-055-Followup) hält die drei Stellen
-  weiterhin synchron.
+  Build-Konsistenz-Check (F-055-Followup) haelt die Stellen synchron.
+
+### 📦 Build-Pipeline
+- `tools/build-release.sh` Phase 5: erst Windows-Tree zusammenbauen,
+  dann **Payload-ZIP als Build-Artefakt** unter
+  `build/payload-X.Y.Z-windows-x64.zip`, dann `dotnet publish` mit
+  `-p:PayloadZipPath=...` → EXE bekommt das ZIP als Manifest-Resource
+  mit stabilem `LogicalName=praxiszeit_payload.zip`. Output-Naming:
+  `praxiszeit-${VERSION}-setup-windows-x64.exe` damit der
+  Phase-7-`sha256sum`-Glob die EXE mit aufnimmt. Fallbacks fuer
+  fehlendes `.NET-SDK` und fehlendes `zip` (PowerShell
+  `Compress-Archive`) sind erhalten.
 
 ## [1.3.7] - 2026-04-23
 

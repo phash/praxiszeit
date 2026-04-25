@@ -16,12 +16,23 @@
 [CmdletBinding()]
 param(
     [string]$InstallDir = "",
-    [switch]$DryRun
+    [switch]$DryRun,
+    # -Headless: skipt die WinForms-GUI komplett und schreibt stattdessen
+    # maschinenlesbare Marker auf stdout, die der Avalonia-Setup-Wizard
+    # parst:
+    #   [STEP] <id> <running|ok|fail|warn>
+    #   [LOG]  <text>
+    #   [PROGRESS] <0..100>
+    #   [DONE] <success|fail>
+    # Exit-Code 0 = success, 1 = failure.
+    [switch]$Headless
 )
 
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[System.Windows.Forms.Application]::EnableVisualStyles()
+if (-not $Headless) {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+}
 
 $ErrorActionPreference = 'Stop'
 $WizardDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -63,6 +74,10 @@ function Get-AppVersion([string]$dir) {
 }
 
 function Show-Error([string]$msg) {
+    if ($Headless) {
+        Write-Host "[ERROR] $msg"
+        return
+    }
     [System.Windows.Forms.MessageBox]::Show(
         $msg,
         'PraxisZeit Update-Wizard',
@@ -80,6 +95,10 @@ if (-not $InstallDir) {
 }
 
 if (-not $InstallDir -or -not (Test-Path (Join-Path $InstallDir 'praxiszeit-server.py'))) {
+    if ($Headless) {
+        Show-Error "InstallDir nicht angegeben oder ungueltig (erwartet: praxiszeit-server.py im Verzeichnis)."
+        exit 1
+    }
     $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
     $fbd.Description = 'PraxisZeit Installationsverzeichnis auswaehlen (muss praxiszeit-server.py enthalten)'
     $fbd.ShowNewFolderButton = $false
@@ -104,8 +123,10 @@ $CurrentVersion = Get-AppVersion $InstallDir
 $NewVersion = Get-AppVersion $WizardDirResolved
 
 # ------------------------------------------------------------
-# Form
+# Form (nur im GUI-Modus)
 # ------------------------------------------------------------
+
+if (-not $Headless) {
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'PraxisZeit Update-Wizard'
@@ -321,7 +342,19 @@ function Show-ProgressPage {
     $btnCancel.Enabled = $false
 }
 
+}  # end if (-not $Headless) — Form-Block
+
+# ------------------------------------------------------------
+# Write-Log / Set-StepStatus / Update-Progress
+# ------------------------------------------------------------
+# Im Headless-Modus emittieren diese maschinenlesbare Marker auf stdout,
+# im GUI-Modus aktualisieren sie die WinForms-Widgets.
+
 function Write-Log([string]$msg) {
+    if ($Headless) {
+        Write-Host "[LOG] $msg"
+        return
+    }
     if ($script:logBox) {
         $line = '[{0}] {1}{2}' -f (Get-Date -Format 'HH:mm:ss'), $msg, "`r`n"
         $script:logBox.AppendText($line)
@@ -330,6 +363,10 @@ function Write-Log([string]$msg) {
 }
 
 function Set-StepStatus([string]$id, [string]$status) {
+    if ($Headless) {
+        Write-Host "[STEP] $id $status"
+        return
+    }
     $lbl = $script:stepLabels[$id]
     if (-not $lbl) { return }
     $txt = $lbl.Text.Substring(7)
@@ -353,6 +390,10 @@ function Set-StepStatus([string]$id, [string]$status) {
 }
 
 function Update-Progress([int]$percent) {
+    if ($Headless) {
+        Write-Host "[PROGRESS] $percent"
+        return
+    }
     $script:progressBar.Value = [Math]::Min(100, [Math]::Max(0, $percent))
     [System.Windows.Forms.Application]::DoEvents()
 }
@@ -677,7 +718,6 @@ function Invoke-Update {
 }
 
 function Show-Done([bool]$success) {
-    $script:currentPage = 'done'
     Write-Log ''
     Write-Log '=================================================='
     if ($success) {
@@ -688,14 +728,29 @@ function Show-Done([bool]$success) {
     }
     Write-Log '=================================================='
 
+    if ($Headless) {
+        Write-Host "[DONE] $(if ($success) { 'success' } else { 'fail' })"
+        return
+    }
+
+    $script:currentPage = 'done'
     $btnNext.Text = 'Schliessen'
     $btnNext.Enabled = $true
     $btnCancel.Enabled = $false
 }
 
 # ------------------------------------------------------------
-# Buttons
+# Entry Point — entweder Headless-Run oder GUI-Wizard
 # ------------------------------------------------------------
+
+if ($Headless) {
+    Write-Host "[LOG] Headless-Update: $CurrentVersion -> $NewVersion"
+    Write-Host "[LOG] Install: $InstallDir"
+    Write-Host "[LOG] Quelle:  $WizardDirResolved"
+    $success = Invoke-Update
+    Show-Done $success
+    if ($success) { exit 0 } else { exit 1 }
+}
 
 $btnCancel.Add_Click({
     if ($script:currentPage -eq 'welcome') {
