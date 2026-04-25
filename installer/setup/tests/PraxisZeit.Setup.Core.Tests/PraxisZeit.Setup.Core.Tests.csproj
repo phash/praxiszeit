@@ -23,4 +23,15 @@
     <ProjectReference Include="..\..\src\PraxisZeit.Setup.Core\PraxisZeit.Setup.Core.csproj" />
   </ItemGroup>
 
+  <!-- Fixture-Payload: ein winziges ZIP mit zwei Test-Files, eingebettet
+       als `praxiszeit_payload.zip` (gleicher LogicalName wie im Production-
+       Build). Die Tests laden `Assembly.GetExecutingAssembly()` in den
+       Extractor und verifizieren end-to-end, dass die Resource gefunden
+       und korrekt entpackt wird. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Fixtures\praxiszeit_payload.zip">
+      <LogicalName>praxiszeit_payload.zip</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>
