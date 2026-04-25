@@ -21,6 +21,20 @@ export function daysFromNow(n: number): string {
   return formatDate(d);
 }
 
+/**
+ * Like daysFromNow but lands on a weekday. Useful for tests that submit a
+ * single-day vacation request — landing on Sat/Sun makes the approve path
+ * reject the request with "Keine gültigen Arbeitstage im Zeitraum".
+ */
+export function weekdayFromNow(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return formatDate(d);
+}
+
 export function nextWeekday(): string {
   const d = new Date();
   do {

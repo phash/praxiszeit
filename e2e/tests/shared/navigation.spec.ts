@@ -6,15 +6,22 @@ test.describe('Navigation & Access Control', () => {
     await employeePage.goto('/');
     await employeePage.waitForLoadState('networkidle');
 
+    // Scope queries to <nav> so the test is robust against in-page banners
+    // like "Buchung fehlt — Zur Zeiterfassung →" on the dashboard, which
+    // duplicate the substring "Zeiterfassung" outside the sidebar.
+    const sidebar = employeePage.locator('nav').first();
+
     // Verify employee nav items are visible
-    await expect(employeePage.getByRole('link', { name: 'Dashboard' })).toBeVisible();
-    await expect(employeePage.getByRole('link', { name: 'Zeiterfassung' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Zeiterfassung', exact: true })).toBeVisible();
 
     // Verify admin-only items are NOT visible
-    await expect(employeePage.getByRole('link', { name: 'Benutzerverwaltung' })).not.toBeVisible();
-    await expect(employeePage.getByRole('link', { name: 'Berichte' })).not.toBeVisible();
-    // The "Administration" section heading should not exist for employees
-    await expect(employeePage.getByText('Administration')).not.toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Benutzerverwaltung', exact: true })).not.toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Berichte', exact: true })).not.toBeVisible();
+    // The "Administration" section heading should not exist for employees.
+    // Use a strict heading-name check inside the sidebar so we don't
+    // accidentally match the word "Administration" in dashboard content.
+    await expect(sidebar.getByText('Administration', { exact: true })).not.toBeVisible();
   });
 
   test('admin pages redirect employee', async ({ employeePage }) => {
@@ -30,11 +37,13 @@ test.describe('Navigation & Access Control', () => {
     await adminPage.goto('/');
     await adminPage.waitForLoadState('networkidle');
 
+    const sidebar = adminPage.locator('nav').first();
+
     // Admin should see the Administration section and admin nav items
-    await expect(adminPage.getByText('Administration')).toBeVisible();
-    await expect(adminPage.getByRole('link', { name: 'Benutzerverwaltung' })).toBeVisible();
-    await expect(adminPage.getByRole('link', { name: 'Berichte' })).toBeVisible();
-    await expect(adminPage.getByRole('link', { name: 'Fehler-Monitoring' })).toBeVisible();
+    await expect(sidebar.getByText('Administration', { exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Benutzerverwaltung', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Berichte', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Fehler-Monitoring', exact: true })).toBeVisible();
   });
 
   test('mobile hamburger menu', async ({ employeePage }) => {
@@ -46,7 +55,6 @@ test.describe('Navigation & Access Control', () => {
     // On mobile, the sidebar is hidden (translated off-screen)
     // The nav links inside the sidebar should not be visible initially
     // (sidebar has -translate-x-full on mobile when closed)
-    const dashboardLink = employeePage.getByRole('link', { name: 'Dashboard' });
 
     // The hamburger button has aria-label="Menü öffnen"
     const hamburgerButton = employeePage.getByRole('button', { name: 'Menü öffnen' });
@@ -55,9 +63,12 @@ test.describe('Navigation & Access Control', () => {
     // Click hamburger to open sidebar
     await hamburgerButton.click();
 
-    // After clicking, navigation links should become visible
-    await expect(dashboardLink).toBeVisible();
-    await expect(employeePage.getByRole('link', { name: 'Zeiterfassung' })).toBeVisible();
+    // After clicking, navigation links should become visible. Scope to <nav>
+    // so the dashboard "Buchung fehlt — Zur Zeiterfassung →" banner doesn't
+    // produce a strict-mode locator collision.
+    const sidebar = employeePage.locator('nav').first();
+    await expect(sidebar.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Zeiterfassung', exact: true })).toBeVisible();
     // Hilfe is a button (opens panel), not a link – check Abmelden button instead
     await expect(employeePage.getByRole('button', { name: 'Abmelden' })).toBeVisible();
 

@@ -1,51 +1,62 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
 test.describe('Employee Dashboard', () => {
+  // Most card-content text appears once on the dashboard but a second time
+  // in the Hilfe-Sidebar (Cheat-Sheet). All assertions therefore scope to
+  // <main> to avoid strict-mode violations when the sidebar's open.
   test('shows monthly balance card', async ({ employeePage }) => {
-    await expect(employeePage.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-    await expect(employeePage.getByText('Monatssaldo')).toBeVisible();
-    await expect(employeePage.getByText('Soll:')).toBeVisible();
-    await expect(employeePage.getByText('Ist:')).toBeVisible();
+    const main = employeePage.locator('main');
+    await expect(main.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(main.getByText('Monatssaldo')).toBeVisible();
+    await expect(main.getByText('Soll:')).toBeVisible();
+    await expect(main.getByText('Ist:')).toBeVisible();
   });
 
   test('shows overtime account card', async ({ employeePage }) => {
-    await expect(employeePage.getByText('Überstundenkonto')).toBeVisible();
-    await expect(employeePage.getByText('Kumulierter Saldo')).toBeVisible();
+    const main = employeePage.locator('main');
+    await expect(main.getByText('Überstundenkonto')).toBeVisible();
+    await expect(main.getByText('Kumulierter Saldo')).toBeVisible();
   });
 
   test('shows vacation account card', async ({ employeePage }) => {
-    await expect(employeePage.getByText('Urlaubskonto')).toBeVisible();
-    await expect(employeePage.getByText('Budget:')).toBeVisible();
-    await expect(employeePage.getByText('Genommen:')).toBeVisible();
+    const main = employeePage.locator('main');
+    await expect(main.getByText('Urlaubskonto')).toBeVisible();
+    await expect(main.getByText('Budget:')).toBeVisible();
+    await expect(main.getByText('Genommen:')).toBeVisible();
   });
 
   test('stamp widget: clock in and out', async ({ employeePage }) => {
-    // Should start as "Nicht eingestempelt"
-    await expect(employeePage.getByText('Nicht eingestempelt', { exact: true })).toBeVisible();
+    const main = employeePage.locator('main');
+    // "Nicht eingestempelt" appears twice on the dashboard: once as <p> in
+    // the StampWidget, once as <span> in the today-progress status pill.
+    // Both are inside <main>, so scope to the StampWidget's <p> tag
+    // explicitly via element + text.
+    const stampStatus = main.locator('p').filter({ hasText: /^Nicht eingestempelt$/ });
+    await expect(stampStatus).toBeVisible();
 
     // Clock in
-    await employeePage.getByRole('button', { name: 'Einstempeln' }).click();
+    await main.getByRole('button', { name: 'Einstempeln' }).click();
 
     // Wait for success toast
     await expect(employeePage.locator('[role="alert"]').filter({ hasText: 'eingestempelt' })).toBeVisible({ timeout: 10000 });
 
     // Check clocked-in state (fetchStatus() is called after toast, needs extra time)
-    await expect(employeePage.getByText(/Eingestempelt seit/)).toBeVisible({ timeout: 10000 });
+    await expect(main.getByText(/Eingestempelt seit/)).toBeVisible({ timeout: 10000 });
 
     // Click clock out to reveal break input
-    await employeePage.getByRole('button', { name: 'Ausstempeln' }).click();
+    await main.getByRole('button', { name: 'Ausstempeln' }).click();
 
     // Break input should appear
-    await expect(employeePage.getByText('Pause (Min.):')).toBeVisible();
+    await expect(main.getByText('Pause (Min.):')).toBeVisible();
 
     // Click "Jetzt ausstempeln"
-    await employeePage.getByRole('button', { name: 'Jetzt ausstempeln' }).click();
+    await main.getByRole('button', { name: 'Jetzt ausstempeln' }).click();
 
     // Wait for clock-out success toast
     await expect(employeePage.locator('[role="alert"]').filter({ hasText: 'ausgestempelt' })).toBeVisible({ timeout: 10000 });
 
-    // Should be back to not clocked in
-    await expect(employeePage.getByText('Nicht eingestempelt', { exact: true })).toBeVisible();
+    // Should be back to not clocked in — stamp widget renders the <p>
+    await expect(main.locator('p').filter({ hasText: /^Nicht eingestempelt$/ })).toBeVisible();
   });
 
   test('monthly overview table visible', async ({ employeePage, testEmployee, createTimeEntry }) => {

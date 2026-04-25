@@ -1,10 +1,10 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { nextWeekday, daysFromNow } from '../../helpers/date.helper';
+import { nextWeekday, daysFromNow, weekdayFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin Vacation Approvals', () => {
   test('page loads with toggle and filter tabs', async ({ adminPage }) => {
     await adminPage.goto('/admin/vacation-approvals');
-    await expect(adminPage.getByRole('heading', { name: 'Urlaubsanträge' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
 
     // Check that the toggle switch exists
     const toggle = adminPage.getByRole('switch');
@@ -19,7 +19,7 @@ test.describe('Admin Vacation Approvals', () => {
 
   test('toggle approval requirement', async ({ adminPage }) => {
     await adminPage.goto('/admin/vacation-approvals');
-    await expect(adminPage.getByRole('heading', { name: 'Urlaubsanträge' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
     await adminPage.waitForLoadState('networkidle');
 
     const toggle = adminPage.getByRole('switch');
@@ -72,7 +72,7 @@ test.describe('Admin Vacation Approvals', () => {
 
     // Navigate to admin vacation approvals
     await adminPage.goto('/admin/vacation-approvals');
-    await expect(adminPage.getByRole('heading', { name: 'Urlaubsanträge' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
 
     // Make sure we're on "Offen" tab
     await adminPage.getByRole('button', { name: 'Offen' }).click();
@@ -107,14 +107,18 @@ test.describe('Admin Vacation Approvals', () => {
       return;
     }
 
-    // Create a vacation request as employee (via /vacation-requests, not /absences,
-    // so it appears in the admin vacation approvals page as a VacationRequest)
-    const futureDate = daysFromNow(35);
+    // Create a vacation request as employee. Tag with a unique note marker
+    // so we can pick THIS request out of any leftover pending requests
+    // sharing the same employee last_name (parallel workers, prior runs).
+    // weekdayFromNow ensures the date is Mon-Fri so the approve path doesn't
+    // bail out with "Keine gültigen Arbeitstage im Zeitraum".
+    const futureDate = weekdayFromNow(35);
+    const uniqueNote = `E2E approve ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       await employeeApi.post('/vacation-requests', {
         date: futureDate,
         hours: 8,
-        note: 'E2E approve test',
+        note: uniqueNote,
       });
     } catch {
       try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
@@ -123,27 +127,18 @@ test.describe('Admin Vacation Approvals', () => {
     }
 
     await adminPage.goto('/admin/vacation-approvals');
-    await expect(adminPage.getByRole('heading', { name: 'Urlaubsanträge' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
 
     await adminPage.getByRole('button', { name: 'Offen' }).click();
     await adminPage.waitForLoadState('networkidle');
 
-    // Find the specific card for THIS test employee (other employees' pending requests
-    // may also be visible — clicking the wrong card can trigger an already-processed request)
-    const employeeCard = adminPage.locator('.rounded-xl.bg-white, div.bg-white.rounded-xl').filter({
-      hasText: testEmployee.last_name,
-    }).filter({
-      has: adminPage.getByRole('button', { name: 'Genehmigen' }),
-    }).first();
-
-    const hasApprove = await employeeCard.isVisible({ timeout: 5000 }).catch(() => false);
-
-    if (hasApprove) {
-      await employeeCard.getByRole('button', { name: 'Genehmigen' }).click();
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: /genehmigt/ })
-      ).toBeVisible({ timeout: 10000 });
-    }
+    // Locate THIS test's card by the unique note marker
+    const card = adminPage.locator('div.bg-white').filter({ hasText: uniqueNote }).first();
+    await expect(card).toBeVisible({ timeout: 5000 });
+    await card.getByRole('button', { name: 'Genehmigen' }).click();
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: /genehmigt/ })
+    ).toBeVisible({ timeout: 10000 });
 
     // Cleanup
     try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
@@ -163,14 +158,16 @@ test.describe('Admin Vacation Approvals', () => {
       return;
     }
 
-    // Create a vacation request as employee
-    const futureDate = daysFromNow(40);
+    // Create a vacation request via /vacation-requests so it lands in the
+    // admin VacationRequests view; tag with a unique note marker so we can
+    // disambiguate from other pending requests of users with the same name.
+    const futureDate = weekdayFromNow(40);
+    const uniqueNote = `E2E reject ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      await employeeApi.post('/absences', {
+      await employeeApi.post('/vacation-requests', {
         date: futureDate,
-        type: 'vacation',
         hours: 8,
-        note: 'E2E reject test',
+        note: uniqueNote,
       });
     } catch {
       try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
@@ -179,30 +176,25 @@ test.describe('Admin Vacation Approvals', () => {
     }
 
     await adminPage.goto('/admin/vacation-approvals');
-    await expect(adminPage.getByRole('heading', { name: 'Urlaubsanträge' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
 
     await adminPage.getByRole('button', { name: 'Offen' }).click();
     await adminPage.waitForLoadState('networkidle');
 
-    // Find reject button
-    const rejectButton = adminPage.getByRole('button', { name: 'Ablehnen' }).first();
-    const hasReject = await rejectButton.isVisible({ timeout: 5000 }).catch(() => false);
+    // Locate THIS test's card via the unique note marker
+    const card = adminPage.locator('div.bg-white').filter({ hasText: uniqueNote }).first();
+    await expect(card).toBeVisible({ timeout: 5000 });
+    await card.getByRole('button', { name: 'Ablehnen' }).click();
 
-    if (hasReject) {
-      await rejectButton.click();
+    // Reject form opens inline; fill reason and confirm
+    const textarea = card.locator('textarea').first();
+    await expect(textarea).toBeVisible({ timeout: 5000 });
+    await textarea.fill('E2E Test: Zeitraum nicht möglich');
+    await card.getByRole('button', { name: 'Ablehnen' }).click();
 
-      // Fill rejection reason
-      const textarea = adminPage.locator('textarea').first();
-      await expect(textarea).toBeVisible({ timeout: 5000 });
-      await textarea.fill('E2E Test: Zeitraum nicht möglich');
-
-      // Click the final "Ablehnen" button
-      await adminPage.getByRole('button', { name: 'Ablehnen' }).first().click();
-
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: /abgelehnt/ })
-      ).toBeVisible({ timeout: 10000 });
-    }
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: /abgelehnt/ })
+    ).toBeVisible({ timeout: 10000 });
 
     // Cleanup
     try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}

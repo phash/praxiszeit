@@ -173,8 +173,10 @@ test.describe('Employee Time Tracking', () => {
     // Trigger validation by attempting to save
     await employeePage.getByRole('button', { name: 'Speichern' }).click();
 
-    // Should show break warning (client-side validation) about 30 Min
-    await expect(employeePage.getByText(/30 Min/)).toBeVisible({ timeout: 5000 });
+    // Should show break warning (client-side validation) about 30 Min.
+    // Scope to <main> so the Hilfe-Sidebar's "30 Min." mention in the
+    // §4-ArbZG cheatsheet doesn't cause a strict-mode violation.
+    await expect(employeePage.locator('main').getByText(/30 Min/)).toBeVisible({ timeout: 5000 });
   });
 
   test('locked entries show change request buttons', async ({
@@ -250,8 +252,9 @@ test.describe('Employee Time Tracking', () => {
     // detach/reattach as React finishes its render cycle after month navigation.
     await changeRequestBtn.first().click({ force: true });
 
-    // The modal should appear with "Begründung" field
-    await expect(employeePage.getByText('Begründung')).toBeVisible({ timeout: 5000 });
+    // The modal should appear with "Begründung" field. Match the form label
+    // exactly to avoid the Hilfe-Sidebar's plain-text "Begründung" mention.
+    await expect(employeePage.getByText('Begründung *')).toBeVisible({ timeout: 5000 });
     await expect(employeePage.getByRole('button', { name: 'Antrag stellen' })).toBeVisible();
   });
 });

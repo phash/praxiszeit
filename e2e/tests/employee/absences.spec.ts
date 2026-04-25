@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { nextWeekday, daysFromNow } from '../../helpers/date.helper';
+import { nextWeekday, daysFromNow, weekdayFromNow } from '../../helpers/date.helper';
 
 test.describe('Employee Absences', () => {
   test.beforeEach(async ({ employeePage }) => {
@@ -34,9 +34,11 @@ test.describe('Employee Absences', () => {
     // Check the "Zeitraum (mehrere Tage)" checkbox
     await employeePage.locator('#isDateRange').check();
 
-    // Fill Von (start date) - use daysFromNow to get future dates
-    const startDate = daysFromNow(10);
-    const endDate = daysFromNow(12);
+    // Fill Von (start date) - weekdayFromNow ensures the range starts on a
+    // weekday so the server's "Keine gültigen Arbeitstage" guard doesn't
+    // reject it when "today + 10" lands on Sat/Sun.
+    const startDate = weekdayFromNow(10);
+    const endDate = weekdayFromNow(12);
 
     const dateInputs = employeePage.locator('input[type="date"]');
     await dateInputs.first().fill(startDate);
@@ -146,12 +148,10 @@ test.describe('Employee Absences', () => {
     await typeSelect.selectOption('overtime');
     await expect(typeSelect).toHaveValue('overtime');
 
-    // Datum setzen (zukünftiger Werktag)
-    const future = new Date();
-    future.setDate(future.getDate() + 14);
-    if (future.getDay() === 6) future.setDate(future.getDate() + 2);
-    if (future.getDay() === 0) future.setDate(future.getDate() + 1);
-    const dateStr = future.toISOString().split('T')[0];
+    // Datum setzen (zukünftiger Werktag). weekdayFromNow handles the weekday
+    // shift in the same timezone as Date.now() so toISOString-style off-by-one
+    // bugs (UTC vs Europe/Berlin midnight rollover) can't affect us.
+    const dateStr = weekdayFromNow(14);
 
     const dateInput = employeePage.locator('input[type="date"]').first();
     await dateInput.fill(dateStr);
@@ -179,12 +179,9 @@ test.describe('Employee Absences', () => {
   });
 
   test('Überstundenausgleich erscheint in der Abwesenheitsliste', async ({ employeePage, createAbsence }) => {
-    // Abwesenheit per API erstellen
-    const future = new Date();
-    future.setDate(future.getDate() + 21);
-    if (future.getDay() === 6) future.setDate(future.getDate() + 2);
-    if (future.getDay() === 0) future.setDate(future.getDate() + 1);
-    const dateStr = future.toISOString().split('T')[0];
+    // Abwesenheit per API erstellen. weekdayFromNow vermeidet UTC-Rollover-
+    // Probleme bei Date.toISOString().
+    const dateStr = weekdayFromNow(21);
 
     await createAbsence({
       date: dateStr,
