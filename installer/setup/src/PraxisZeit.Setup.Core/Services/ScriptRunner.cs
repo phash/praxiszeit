@@ -90,11 +90,23 @@ public sealed class ScriptRunner
     /// <c>install-service.bat</c> und <c>net start PraxisZeit</c> der Reihe
     /// nach auf. Beide .bat erkennen <c>PRAXISZEIT_NONINTERACTIVE=1</c> und
     /// ueberspringen ihre <c>pause</c>-Aufrufe.
+    ///
+    /// <para>
+    /// Optional kann ein <see cref="PraxisZeitConfigValues"/>-Objekt
+    /// uebergeben werden — dann wird zwischen Copy und setup.bat eine
+    /// fertige <c>config\praxiszeit.conf</c> mit den User-Werten
+    /// geschrieben. setup.bat sieht dann das File schon und ueberspringt
+    /// das Kopieren der <c>conf.example</c> mit Platzhaltern. Das
+    /// Backend-Bootstrap legt beim ersten Service-Start den Admin-User
+    /// mit den User-gewaehlten Credentials an, kein
+    /// "BITTE_AENDERN"-Crash.
+    /// </para>
     /// </summary>
     public async Task<bool> RunFreshInstallAsync(
         string installDir,
         string payloadDir,
         IProgress<RunnerEvent> sink,
+        PraxisZeitConfigValues? configValues = null,
         CancellationToken ct = default)
     {
         // ---- Schritt 1: Payload kopieren ----
@@ -122,6 +134,24 @@ public sealed class ScriptRunner
             sink.Report(new RunnerLogEvent($"FEHLER beim Kopieren: {ex.Message}"));
             sink.Report(new RunnerDoneEvent(false));
             return false;
+        }
+
+        // ---- Schritt 1b: User-Config schreiben (wenn ConfigPage Werte geliefert hat) ----
+        if (configValues is not null)
+        {
+            try
+            {
+                var confPath = Path.Combine(installDir, "config", "praxiszeit.conf");
+                await PraxisZeitConfigWriter.WriteAsync(confPath, configValues, ct).ConfigureAwait(false);
+                sink.Report(new RunnerLogEvent($"Konfiguration geschrieben: {confPath}"));
+            }
+            catch (Exception ex)
+            {
+                sink.Report(new RunnerStepEvent("copy", RunnerStepStatus.Fail));
+                sink.Report(new RunnerLogEvent($"FEHLER beim Schreiben der praxiszeit.conf: {ex.Message}"));
+                sink.Report(new RunnerDoneEvent(false));
+                return false;
+            }
         }
 
         // ---- Schritt 2: setup.bat (PostgreSQL-Install + pip + Config) ----

@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### 🚀 Feature — ConfigPage im Setup-Wizard (Erst-Admin-Setup)
+- Neue Wizard-Page **"Konfiguration"** zwischen Welcome und Progress,
+  nur im Fresh-Install / Repair-Modus aktiv. Fragt Praxis-Stammdaten
+  (Name, Adresse, Bundesland-Dropdown mit allen 16 Bundeslaendern fuer
+  Feiertags-Sync) und den Admin-Account (Username, Email, Vor-/Nachname,
+  Passwort + Wiederholung) ab. Live-Validation matched 1:1 die
+  Backend-Bootstrap-Regeln (`backend/app/main.py:_WEAK_ADMIN_PASSWORDS`,
+  Min-Length 12) — der Wizard kann nichts durchwinken, was das Backend
+  beim Start ablehnen wuerde.
+- **PraxisZeitConfigWriter** (Core) generiert daraus eine vollstaendige
+  TOML-`praxiszeit.conf` mit korrekt-escaped Strings (Backslash, Quotes,
+  Steuerzeichen via `\uXXXX`). Schreibt UTF-8 **ohne BOM** (sonst bricht
+  der Backend-TOML-Parser, F-053). Default-Sektionen ([server],
+  [database], [security], [backup] etc.) bleiben bei sicheren Werten.
+- **ScriptRunner** akzeptiert optional `PraxisZeitConfigValues`: nach
+  dem File-Copy aber **vor** `setup.bat` wird die User-Config nach
+  `<installDir>\config\praxiszeit.conf` geschrieben. setup.bat sieht
+  das File schon und ueberspringt die `conf.example`-Vorlage —
+  Backend-Bootstrap legt beim ersten Service-Start den User-gewaehlten
+  Admin an, kein "BITTE_AENDERN"-Crash mehr.
+- **Update-Pfad bleibt unangetastet**: ConfigPage wird nur fuer
+  Fresh/Repair gebaut, im Update behaelt der Wizard die existierende
+  praxiszeit.conf (User-Anpassungen wuerden sonst ueberschrieben).
+- Step-Indicator im Footer wird **dynamisch** aus der Page-Anzahl
+  generiert (3 Dots fuer Update, 4 Dots fuer Fresh). Welcome,
+  ConfigPage und Done bekommen Animation/Brand-Colors fuer aktiven
+  und abgeschlossenen Status.
+- Done-Page zeigt jetzt eine konkrete Login-Anweisung ("Sie koennen
+  sich jetzt mit dem Admin-Account `<username>` anmelden") statt der
+  alten Formulierung "muss config\\praxiszeit.conf einmalig angepasst
+  werden". Customer-Onboarding-Flow ist damit komplett unattended.
+- 30 neue Unit-Tests fuer `PraxisZeitConfigWriter` (TOML-Escaping,
+  Validation matched Backend-Regeln, UTF-8-ohne-BOM-Roundtrip).
+  Gesamt-Testanzahl im Setup-Projekt: **73 / 73 grün**.
+
 ## [1.4.0] - 2026-04-25
 
 ### 🚀 Feature — Single-File `setup.exe` mit eingebettetem Payload

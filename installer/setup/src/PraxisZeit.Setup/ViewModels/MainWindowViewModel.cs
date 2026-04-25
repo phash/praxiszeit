@@ -26,6 +26,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly ScriptRunner _scriptRunner;
 
     private readonly WelcomePageViewModel _welcome;
+    private readonly ConfigPageViewModel? _config;
     private readonly ProgressPageViewModel _progress;
     private readonly DonePageViewModel _done;
 
@@ -78,35 +79,67 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _done = new DonePageViewModel();
 
+        // ConfigPage nur im Fresh-Install / Repair-Modus — Update behaelt
+        // die existierende praxiszeit.conf (Backend-Bootstrap erkennt den
+        // Admin schon in der DB, neue Werte wuerden im Update-Pfad ignoriert
+        // bzw. wuerden bestehende User-Anpassungen ueberschreiben).
+        _config = mode is InstallMode.FreshInstall or InstallMode.Repair
+            ? new ConfigPageViewModel { AdminEmail = "admin@praxis.local" }
+            : null;
+
         Pages.Add(_welcome);
+        if (_config is not null)
+        {
+            Pages.Add(_config);
+        }
         Pages.Add(_progress);
         Pages.Add(_done);
         CurrentPage = _welcome;
         CurrentStepIndex = 0;
+        RebuildStepDots();
 
         WindowTitle = $"PraxisZeit Setup {targetVersion}";
+    }
+
+    /// <summary>
+    /// Footer-Dot: true/false-State fuer den View-Trigger.
+    /// </summary>
+    public sealed partial class StepDot : ObservableObject
+    {
+        [ObservableProperty]
+        public partial bool IsActive { get; set; }
+
+        [ObservableProperty]
+        public partial bool IsDone { get; set; }
     }
 
     public bool CanGoBack => CurrentPage?.CanGoBack == true && CurrentStepIndex > 0;
     public bool CanGoNext => CurrentPage?.CanGoNext == true;
     public string NextButtonText => CurrentPage?.NextButtonText ?? "Weiter";
 
-    // Step-Indicator-Dots im Footer: aktiv = aktueller Step, done = bereits erledigt.
-    public bool StepDotActive0 => CurrentStepIndex == 0;
-    public bool StepDotActive1 => CurrentStepIndex == 1;
-    public bool StepDotActive2 => CurrentStepIndex == 2;
-    public bool StepDotDone0 => CurrentStepIndex > 0;
-    public bool StepDotDone1 => CurrentStepIndex > 1;
-    public bool StepDotDone2 => false;
+    /// <summary>
+    /// Step-Indicator-Dots im Footer: aktiv = aktueller Step, done =
+    /// bereits erledigt. Anzahl haengt vom Modus ab — Update hat 3
+    /// Pages (Welcome/Progress/Done), Fresh/Repair 4 (mit ConfigPage).
+    /// </summary>
+    public ObservableCollection<StepDot> StepDots { get; } = [];
+
+    private void RebuildStepDots()
+    {
+        StepDots.Clear();
+        for (int i = 0; i < Pages.Count; i++)
+        {
+            StepDots.Add(new StepDot
+            {
+                IsActive = i == CurrentStepIndex,
+                IsDone = i < CurrentStepIndex,
+            });
+        }
+    }
 
     partial void OnCurrentStepIndexChanged(int value)
     {
-        OnPropertyChanged(nameof(StepDotActive0));
-        OnPropertyChanged(nameof(StepDotActive1));
-        OnPropertyChanged(nameof(StepDotActive2));
-        OnPropertyChanged(nameof(StepDotDone0));
-        OnPropertyChanged(nameof(StepDotDone1));
-        OnPropertyChanged(nameof(StepDotDone2));
+        RebuildStepDots();
     }
 
     partial void OnCurrentPageChanged(WizardPageBase? value)
@@ -157,8 +190,22 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        // Welcome → Progress: Installation/Update kicken
+        // Welcome →  ConfigPage (Fresh/Repair) oder direkt Progress (Update)
         if (CurrentPage is WelcomePageViewModel)
+        {
+            if (_config is not null)
+            {
+                CurrentStepIndex = Pages.IndexOf(_config);
+                CurrentPage = _config;
+                RaiseShellChanged();
+                return;
+            }
+            await TransitionToProgressAndRunAsync().ConfigureAwait(true);
+            return;
+        }
+
+        // ConfigPage → Progress: Installation kicken
+        if (CurrentPage is ConfigPageViewModel)
         {
             await TransitionToProgressAndRunAsync().ConfigureAwait(true);
             return;
@@ -225,7 +272,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 success = _welcome.Mode == InstallMode.Update
                     ? await RunUpdateOnWindowsAsync(_welcome.DetectedInstallPath, _extractedPayloadDir, sink)
                         .ConfigureAwait(true)
-                    : await RunFreshOnWindowsAsync(_welcome.DetectedInstallPath, _extractedPayloadDir, sink)
+                    : await RunFreshOnWindowsAsync(_welcome.DetectedInstallPath, _extractedPayloadDir, sink, _config?.ToConfigValues())
                         .ConfigureAwait(true);
             }
         }
@@ -242,7 +289,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _done.Summary = success
             ? (_welcome.Mode == InstallMode.Update
                 ? $"PraxisZeit wurde erfolgreich auf Version {_welcome.TargetVersion} aktualisiert. Eine Datenbank-Sicherung liegt unter data\\backups."
-                : "PraxisZeit wurde eingerichtet, der Service laeuft. Bevor Sie sich anmelden koennen, muss config\\praxiszeit.conf einmalig angepasst werden (Praxisname, Admin-E-Mail, Admin-Passwort).")
+                : (_config is not null
+                    ? $"PraxisZeit ist eingerichtet, der Service laeuft. Sie koennen sich jetzt mit dem Admin-Account ({_config.AdminUsername}) anmelden."
+                    : "PraxisZeit wurde eingerichtet, der Service laeuft. Bevor Sie sich anmelden koennen, muss config\\praxiszeit.conf einmalig angepasst werden (Praxisname, Admin-E-Mail, Admin-Passwort)."))
             : "Bitte pruefen Sie das Protokoll der Progress-Page und logs\\service-stderr.log im Installationsverzeichnis. Ein automatisches Datenbank-Backup wurde unter data\\backups abgelegt.";
         _done.BrowserUrl = "https://localhost/";
 
@@ -258,8 +307,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _scriptRunner.RunUpdateAsync(installDir, payloadDir, sink);
 
     [SupportedOSPlatform("windows")]
-    private Task<bool> RunFreshOnWindowsAsync(string installDir, string payloadDir, IProgress<RunnerEvent> sink) =>
-        _scriptRunner.RunFreshInstallAsync(installDir, payloadDir, sink);
+    private Task<bool> RunFreshOnWindowsAsync(string installDir, string payloadDir, IProgress<RunnerEvent> sink, PraxisZeitConfigValues? configValues) =>
+        _scriptRunner.RunFreshInstallAsync(installDir, payloadDir, sink, configValues);
 
     private void CleanupTempPayload()
     {
