@@ -6,21 +6,17 @@ test.describe('Admin Absences', () => {
     await adminPage.goto('/admin/absences');
     await expect(adminPage.getByRole('heading', { name: 'Abwesenheiten verwalten' })).toBeVisible();
 
-    // Select the test employee from dropdown
+    // Wait for the employees fetch to populate the dropdown — without this
+    // the option list can be empty when we synchronously read it, which
+    // makes the test flaky on slower runs. Use ``toBeAttached`` (not
+    // ``toBeVisible``) because <option>s inside a closed <select> count
+    // as non-visible in Playwright's CSS-visibility model.
     const employeeSelect = adminPage.locator('select').first();
-    // Get all options and find the one containing the employee name
-    const options = employeeSelect.locator('option');
-    const count = await options.count();
-    let targetValue = '';
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text && text.includes(testEmployee.last_name)) {
-        targetValue = await options.nth(i).getAttribute('value') || '';
-        break;
-      }
-    }
-    expect(targetValue).not.toBe('');
-    await employeeSelect.selectOption(targetValue);
+    const targetOption = employeeSelect.locator('option', { hasText: testEmployee.last_name });
+    await expect(targetOption.first()).toBeAttached({ timeout: 10000 });
+    const targetValue = await targetOption.first().getAttribute('value');
+    expect(targetValue).toBeTruthy();
+    await employeeSelect.selectOption(targetValue!);
 
     // Click "Abwesenheit eintragen"
     await adminPage.getByRole('button', { name: 'Abwesenheit eintragen' }).click();

@@ -33,8 +33,10 @@ test.describe('Employee Change Requests', () => {
     const changeRequestBtn = employeePage.locator('button[aria-label*="Änderungsantrag"]').first();
     await changeRequestBtn.click({ force: true });
 
-    // The modal should appear - fill in the reason field
-    await expect(employeePage.getByText('Begründung')).toBeVisible({ timeout: 5000 });
+    // The modal should appear - fill in the reason field. The plain text
+    // "Begründung" also appears in the Hilfe-Sidebar list, so we target the
+    // form label "Begründung *" explicitly.
+    await expect(employeePage.getByText('Begründung *')).toBeVisible({ timeout: 5000 });
 
     const reasonField = employeePage.locator('textarea');
     await reasonField.fill('E2E Test: Korrektur der Arbeitszeit');
@@ -79,8 +81,9 @@ test.describe('Employee Change Requests', () => {
     const deleteRequestBtn = employeePage.locator('button[aria-label*="Löschantrag"]').first();
     await deleteRequestBtn.click({ force: true });
 
-    // The modal should appear with the reason field
-    await expect(employeePage.getByText('Begründung')).toBeVisible({ timeout: 5000 });
+    // The modal should appear with the reason field. Same Hilfe-Sidebar
+    // collision as above — match the form label exactly.
+    await expect(employeePage.getByText('Begründung *')).toBeVisible({ timeout: 5000 });
 
     const reasonField = employeePage.locator('textarea');
     await reasonField.fill('E2E Test: Eintrag wurde fälschlich erstellt');

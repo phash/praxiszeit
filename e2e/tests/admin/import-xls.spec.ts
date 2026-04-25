@@ -3,8 +3,12 @@ import * as path from 'path';
 import { test, expect } from '../../fixtures/base.fixture';
 
 const API_BASE = 'http://localhost/api';
-const XLS_JAN = 'E:/claude/zeiterfassung/import/timerec_20260101_20260131_e11_p03.xls';
-const XLS_FEB = 'E:/claude/zeiterfassung/import/timerec_20260201_20260228_e11_p03.xls';
+// Test fixtures live in e2e/test-data/ (regenerable via the
+// backend test_xls_import_service helpers; see /tmp/jan.xls inside the
+// backend container or e2e/test-data/README.md).
+const TEST_DATA_DIR = path.resolve(__dirname, '../../test-data');
+const XLS_JAN = path.join(TEST_DATA_DIR, 'timerec_20260101_20260131_e11_p03.xls');
+const XLS_FEB = path.join(TEST_DATA_DIR, 'timerec_20260201_20260228_e11_p03.xls');
 
 async function previewImport(token: string, userId: string, xlsPath: string) {
   const formData = new FormData();
@@ -131,10 +135,11 @@ test.describe('Admin XLS Import', () => {
 
     await adminPage.getByRole('button', { name: /Datei analysieren/ }).click();
 
-    // Step 2: Vorschau
+    // Step 2: Vorschau. Scope to <main> + first() so the Hilfe-Sidebar's
+    // ArbZG/Berichte tables don't trip strict-mode.
     await expect(adminPage.getByRole('heading', { name: 'Vorschau' })).toBeVisible({ timeout: 20000 });
     await expect(adminPage.getByText('Einträge gefunden')).toBeVisible();
-    await expect(adminPage.locator('table')).toBeVisible();
+    await expect(adminPage.locator('main table').first()).toBeVisible();
 
     await adminPage.getByRole('button', { name: /Import bestätigen/ }).click();
 

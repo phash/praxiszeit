@@ -24,8 +24,9 @@ test.describe('Admin User Journal', () => {
     await adminPage.goto(`/admin/users/${testEmployee.id}/journal`);
     await expect(adminPage.getByRole('heading', { name: 'Monatsjournal' })).toBeVisible({ timeout: 10000 });
 
-    // Wait for data to load (spinner disappears, table appears)
-    const rows = adminPage.locator('table tbody tr');
+    // Scope to <main> so the Hilfe-Sidebar's ArbZG-table doesn't pollute
+    // the row count.
+    const rows = adminPage.locator('main table tbody tr');
     const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
     await expect(rows).toHaveCount(daysInMonth, { timeout: 15000 });
   });
@@ -34,8 +35,9 @@ test.describe('Admin User Journal', () => {
     await adminPage.goto(`/admin/users/${testEmployee.id}/journal`);
     await expect(adminPage.getByRole('heading', { name: 'Monatsjournal' })).toBeVisible({ timeout: 10000 });
 
-    // Wait for initial data load
-    await expect(adminPage.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+    // Wait for initial data load. Scope to <main> so the Hilfe sidebar's
+    // ArbZG-limit table isn't picked up.
+    await expect(adminPage.locator('main table tbody tr').first()).toBeVisible({ timeout: 15000 });
 
     // Get current month display text
     const monthDisplay = adminPage.locator('.min-w-\\[180px\\]');
@@ -48,15 +50,16 @@ test.describe('Admin User Journal', () => {
     await expect(monthDisplay).not.toHaveText(initialText!, { timeout: 5000 });
 
     // Table should still show rows
-    await expect(adminPage.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+    await expect(adminPage.locator('main table tbody tr').first()).toBeVisible({ timeout: 15000 });
   });
 
   test('Aggregate-Kacheln sind sichtbar', async ({ adminPage, testEmployee }) => {
     await adminPage.goto(`/admin/users/${testEmployee.id}/journal`);
     await expect(adminPage.getByRole('heading', { name: 'Monatsjournal' })).toBeVisible({ timeout: 10000 });
 
-    // Wait for data to load
-    await expect(adminPage.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+    // Wait for data to load (scope to <main> so the Hilfe-Sidebar table
+    // doesn't get matched).
+    await expect(adminPage.locator('main table tbody tr').first()).toBeVisible({ timeout: 15000 });
 
     await expect(adminPage.getByText('Ist (Monat)')).toBeVisible();
     await expect(adminPage.getByText('Soll (Monat)')).toBeVisible();
