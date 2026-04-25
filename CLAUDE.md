@@ -64,6 +64,19 @@ All-in-one: `bash scripts/local-ci.sh` (backend pytest split SQLite/Postgres, vi
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
 **Version-Smoke-Test:** `/api/health` liefert nur `{status, database}` — **keine Version**. Version steht in `/openapi.json`, im Frontend-Footer (nach Hard-Refresh), oder unter `/` (nur wenn `SERVE_FRONTEND=False`).
 
+### E2E-Patterns (Playwright)
+- **Locators in `<main>` scopen:** Hilfe-Sidebar dupliziert Handbuch-Tabellen + -Texte → strict-mode-Violations bei page-weiten Selektoren. `page.locator('main').getByText(...)`.
+- **Werktag-Datum:** `weekdayFromNow(n)` aus `helpers/date.helper.ts` statt `daysFromNow(n)` für Absence/Vacation-Tests — `toISOString()` UTC-Rollover verschiebt sonst aufs Wochenende → "Keine gültigen Arbeitstage" 400.
+- **`<select>`-Optionen:** `toBeAttached({ timeout: 10000 })` statt `toBeVisible()` — `<option>` in geschlossenem Select ist immer not-visible, der Wait greift sonst nie auf das fetch-populated-DOM.
+- **DB-State-Tests (Vacation/Absence):** Unique-Note-Marker pro Test (`E2E-${Date.now()}-${random}`) im POST + `filter({ hasText: uniqueNote })` im Locator — sonst trifft `.first()` einen Leftover-Antrag bei seriellen Runs.
+- **Cleanup-Fixtures:** `createTimeEntry`, `createAbsence`, `createChangeRequest`, `createVacationRequest` in `e2e/fixtures/test-data.fixture.ts` — alle tracken IDs + teardown-DELETE. NEUE state-erzeugende Tests sollen die Fixtures nutzen, nicht `employeeApi.post(...)` direkt.
+- **XLS-Test-Fixtures:** `e2e/test-data/timerec_*.xls` (Januar + Februar 2026) wird im Repo committet, regenerierbar via xlwt im Backend-Container.
+
+### Frontend-Component-Tests (Vitest + RTL)
+- `vite.config.ts` test-block: `environment: 'jsdom'` + `setupFiles: ['./src/test/setup.ts']`.
+- `src/test/setup.ts`: jest-dom matchers, afterEach-cleanup, **focus-trap-react Mock** (jsdom liefert 0×0 aus `getBoundingClientRect()` → `tabbable` rejected alle Nodes).
+- Fake-Timer-Tests + click: `fireEvent.click()` statt `userEvent.click()` (userEvent's pointer-event-Delays racen mit `vi.advanceTimersByTime`).
+
 ### Dev-Workflow Fallstricke
 - **`.env`-Drift:** Nach RLS-Umbau (Migration 027) braucht `.env` zusätzlich `APP_DB_USER`, `APP_DB_PASSWORD`, `ENVIRONMENT`, `CORS_ORIGINS` (siehe `.env.example`). Alte lokale `.env` ohne diese Vars → `docker compose up` failed mit `required variable APP_DB_PASSWORD is missing`.
 - **Backend-Container ist gebaut**, kein Host-Volume: Nach Edits `docker compose cp <host-file> backend:/app/<path>` VOR `pytest`, sonst sieht der Container den alten Code. Für Prod-Änderungen: `docker compose build backend && docker compose up -d backend`.
@@ -109,6 +122,9 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **F-026 Tenant-Filter (belt-and-suspenders):** ALLE `db.query(Model).filter(...)` auf tenant-scoped Tabellen brauchen expliziten `Model.tenant_id == current_user.tenant_id` zusätzlich zu RLS — gilt für list, lookup-by-id UND `.delete()`. Helper für User-Lookup: `_get_user_in_tenant()` in `admin_users.py`. Tests in `test_cross_tenant_api.py`.
 - **Absence Unique Constraint:** `(user_id, date)` muss eindeutig sein — DB-Constraint oder `with_for_update()` bei Duplikat-Check
 - **is_holiday() tenant_id:** Immer `tenant_id=current_user.tenant_id` übergeben (Multi-Tenant-Pflicht)
+- **`time_entry_audit_logs.source` ist `varchar(40)`** (Migration 037). Neue Source-Marker müssen <40 Zeichen sein, sonst 500 beim INSERT (`StringDataRightTruncation`). Bestehende Werte: `manual`, `import`, `change_request`, `vacation_request_cancel`.
+- **`backend/create_handbuch_testdata.py`** ist multi-tenant-aware: ruft `set_superadmin_context(db)` auf + setzt `tenant_id=TENANT_ID` an User/TimeEntry/Absence/ChangeRequest. Wer das Script forkt für andere Seed-Daten muss beides mitnehmen, sonst RLS-Violation beim INSERT.
+- **Container-File-Updates aus fremdem cwd:** `docker compose cp` resolved Host-Pfade **relativ zum cwd**. Aus `e2e/` heraus → `lstat e2e/backend/...: no such file`. Lösung: `docker cp <host-abs-path> praxiszeit-backend-1:/app/<path>`.
 
 ### Multi-Tenant
 - **SaaS-Roadmap:** Meta-Issue [#100](https://github.com/phash/praxiszeit/issues/100) trackt 8-Phasen-Umbau (Phase 0 fertig in PR #91). On-Prem bleibt single-tenant via geplantem `DEPLOYMENT_MODE`-Schalter (Issue #92).
@@ -125,6 +141,10 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 ### Standard-Benutzer (Dev)
 - Admin: `admin` / `Admin2025!`
 - Mitarbeiter: `manuel@example.de`
+
+### Claude-Code-Bash-Gotchas
+- Das `cd` in einem Bash-Aufruf **persistiert** zwischen Tool-Calls. Nach `cd .claude/worktrees/...` ist `git status` ohne erneutes `cd` immer noch im Worktree. Bei git-Operationen lieber `git -C <pfad>` nutzen oder cwd explizit zurücksetzen.
+- `docker compose cp <host-file> <svc>:<container-path>` resolved den Host-Pfad **relativ zum cwd**, nicht zum Repo-Root. Aus fremdem cwd → `docker cp` mit absoluten Pfaden + Container-Name (`praxiszeit-backend-1`).
 
 ## Weiterführende Docs
 
