@@ -8,33 +8,73 @@
         x:Class="PraxisZeit.Setup.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
-        Width="760" Height="600"
-        MinWidth="700" MinHeight="550"
+        Width="820" Height="640"
+        MinWidth="760" MinHeight="600"
+        Background="{StaticResource SurfaceAltBrush}"
         WindowStartupLocation="CenterScreen">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="90,*,70">
+    <Grid RowDefinitions="120,*,72">
 
-        <!-- Header -->
-        <Border Grid.Row="0"
-                Background="#0F4C81">
-            <StackPanel Margin="24,0" VerticalAlignment="Center" Spacing="4">
-                <TextBlock Text="PraxisZeit Setup"
-                           Foreground="White"
-                           FontSize="22"
-                           FontWeight="SemiBold"/>
-                <TextBlock Text="Zeiterfassung für Arztpraxen — Native Installation"
-                           Foreground="#CCDCE8"
-                           FontSize="12"/>
-            </StackPanel>
+        <!-- ============== Header ============== -->
+        <Border Grid.Row="0" Background="{StaticResource HeaderBackgroundBrush}">
+            <Grid Margin="32,0" ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+
+                <!-- Logo-Mark: stilisiertes Uhren-Symbol -->
+                <Border Grid.Column="0"
+                        Width="56" Height="56"
+                        CornerRadius="14"
+                        Background="#26FFFFFF"
+                        BorderBrush="#3FFFFFFF"
+                        BorderThickness="1"
+                        VerticalAlignment="Center"
+                        Margin="0,0,18,0">
+                    <Canvas Width="32" Height="32">
+                        <!-- Uhrenring -->
+                        <Ellipse Canvas.Left="3" Canvas.Top="3"
+                                 Width="26" Height="26"
+                                 Stroke="White" StrokeThickness="2.2"/>
+                        <!-- Stundenzeiger -->
+                        <Line StartPoint="16,16" EndPoint="16,9"
+                              Stroke="White" StrokeThickness="2.2" StrokeLineCap="Round"/>
+                        <!-- Minutenzeiger -->
+                        <Line StartPoint="16,16" EndPoint="22,16"
+                              Stroke="White" StrokeThickness="2.2" StrokeLineCap="Round"/>
+                        <!-- Mittelpunkt -->
+                        <Ellipse Canvas.Left="14.5" Canvas.Top="14.5"
+                                 Width="3" Height="3" Fill="White"/>
+                    </Canvas>
+                </Border>
+
+                <!-- Wordmark + Tagline -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="PraxisZeit Setup"
+                               Foreground="White"
+                               FontSize="26"
+                               FontWeight="SemiBold"
+                               LetterSpacing="0.3"/>
+                    <TextBlock Text="Zeiterfassung für Arztpraxen — Native Installation"
+                               Foreground="#D8E5F2"
+                               FontSize="13"/>
+                </StackPanel>
+
+                <!-- Versions-Badge -->
+                <Border Grid.Column="2" Classes="pill" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding WindowTitle}"
+                               Foreground="White"
+                               FontSize="12"
+                               FontWeight="Medium"/>
+                </Border>
+            </Grid>
         </Border>
 
-        <!-- Body: Content-Presenter für die aktuelle Wizard-Page -->
+        <!-- ============== Body ============== -->
         <ContentControl Grid.Row="1"
-                        Content="{Binding CurrentPage}">
+                        Content="{Binding CurrentPage}"
+                        Padding="0">
             <ContentControl.DataTemplates>
                 <DataTemplate DataType="vm:WelcomePageViewModel">
                     <views:WelcomePageView/>
@@ -45,28 +85,42 @@
             </ContentControl.DataTemplates>
         </ContentControl>
 
-        <!-- Footer: Navigation -->
-        <Border Grid.Row="2" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="24,0">
-                <TextBlock Grid.Column="0"
-                           Text="{Binding CurrentPage.Title}"
-                           VerticalAlignment="Center"
-                           FontSize="12"
-                           Foreground="#666"/>
+        <!-- ============== Footer ============== -->
+        <Border Grid.Row="2"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="32,0">
+
+                <!-- Step Indicator -->
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <Ellipse Classes="step active"/>
+                    <Ellipse Classes="step"/>
+                    <TextBlock Text="{Binding CurrentPage.Title}"
+                               VerticalAlignment="Center"
+                               Margin="6,0,0,0"
+                               FontSize="12"
+                               FontWeight="Medium"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                </StackPanel>
 
                 <Button Grid.Column="2"
+                        Classes="ghost"
                         Content="Zurück"
                         Margin="0,0,12,0"
                         MinWidth="120"
-                        Height="36"
+                        Height="38"
                         Command="{Binding GoBackCommand}"
                         IsVisible="{Binding CanGoBack}"/>
 
                 <Button Grid.Column="3"
+                        Classes="primary"
                         Content="{Binding NextButtonText}"
-                        MinWidth="160"
-                        Height="36"
-                        Classes="accent"
+                        MinWidth="170"
+                        Height="38"
                         Command="{Binding GoNextCommand}"/>
             </Grid>
         </Border>

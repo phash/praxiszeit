@@ -3,42 +3,156 @@
              xmlns:vm="using:PraxisZeit.Setup.ViewModels"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
              x:Class="PraxisZeit.Setup.Views.WelcomePageView"
              x:DataType="vm:WelcomePageViewModel">
 
-    <StackPanel Margin="30" Spacing="20">
-        <TextBlock Text="Willkommen bei PraxisZeit Setup"
-                   FontSize="24" FontWeight="SemiBold"/>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="40,32" Spacing="20">
 
-        <TextBlock Text="{Binding ModeDescription}"
-                   TextWrapping="Wrap"
-                   FontSize="13"
-                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            <!-- Greeting -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="Willkommen"
+                           FontSize="14"
+                           FontWeight="Medium"
+                           Foreground="{StaticResource BrandPrimaryBrush}"
+                           LetterSpacing="0.6"/>
+                <TextBlock Text="Bereit zur Installation"
+                           FontSize="28"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="{Binding ModeDescription}"
+                           TextWrapping="Wrap"
+                           FontSize="14"
+                           LineHeight="22"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           MaxWidth="660"
+                           HorizontalAlignment="Left"/>
+            </StackPanel>
 
-        <Border CornerRadius="6"
-                Padding="20"
-                BorderThickness="1"
-                BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
-            <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Plattform:" FontWeight="Medium"/>
-                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding PlatformName}"/>
+            <!-- Status-Karte -->
+            <Border Classes="card">
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="14">
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Installationspfad:" FontWeight="Medium"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DetectedInstallPath}" FontFamily="Consolas,Menlo,monospace"/>
+                    <!-- Plattform -->
+                    <Border Grid.Row="0" Grid.Column="0"
+                            Width="36" Height="36"
+                            CornerRadius="8"
+                            Background="{StaticResource SurfaceMutedBrush}"
+                            VerticalAlignment="Center"
+                            Margin="0,0,14,0">
+                        <TextBlock Text="🖥"
+                                   FontSize="16"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Plattform"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   LetterSpacing="0.4"/>
+                        <TextBlock Text="{Binding PlatformName}"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Aktuelle Version:" FontWeight="Medium"/>
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CurrentVersion}" FontFamily="Consolas,Menlo,monospace"/>
+                    <!-- Installationspfad -->
+                    <Border Grid.Row="1" Grid.Column="0"
+                            Width="36" Height="36"
+                            CornerRadius="8"
+                            Background="{StaticResource SurfaceMutedBrush}"
+                            VerticalAlignment="Center"
+                            Margin="0,0,14,0">
+                        <TextBlock Text="📁"
+                                   FontSize="15"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Row="1" Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Installationspfad"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   LetterSpacing="0.4"/>
+                        <TextBlock Text="{Binding DetectedInstallPath}"
+                                   FontFamily="Consolas,Menlo,monospace"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Neue Version:" FontWeight="Medium"/>
-                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding TargetVersion}" FontFamily="Consolas,Menlo,monospace" Foreground="{DynamicResource SystemAccentColor}"/>
-            </Grid>
-        </Border>
+                    <!-- Aktuelle Version -->
+                    <Border Grid.Row="2" Grid.Column="0"
+                            Width="36" Height="36"
+                            CornerRadius="8"
+                            Background="{StaticResource SurfaceMutedBrush}"
+                            VerticalAlignment="Center"
+                            Margin="0,0,14,0">
+                        <TextBlock Text="📦"
+                                   FontSize="15"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Row="2" Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Aktuelle Version"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   LetterSpacing="0.4"/>
+                        <TextBlock Text="{Binding CurrentVersion}"
+                                   FontFamily="Consolas,Menlo,monospace"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
 
-        <TextBlock Text="Klicken Sie auf den Button unten rechts um fortzufahren."
-                   FontSize="12"
-                   Foreground="{DynamicResource SystemBaseMediumLowColor}"/>
-    </StackPanel>
+                    <!-- Neue Version -->
+                    <Border Grid.Row="3" Grid.Column="0"
+                            Width="36" Height="36"
+                            CornerRadius="8"
+                            Background="#1413B981"
+                            VerticalAlignment="Center"
+                            Margin="0,0,14,0">
+                        <TextBlock Text="✨"
+                                   FontSize="15"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Row="3" Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Neue Version"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   LetterSpacing="0.4"/>
+                        <TextBlock Text="{Binding TargetVersion}"
+                                   FontFamily="Consolas,Menlo,monospace"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource BrandAccentDarkBrush}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Footer-Hinweis -->
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
+                <Border Width="20" Height="20"
+                        CornerRadius="10"
+                        Background="{StaticResource SurfaceMutedBrush}"
+                        VerticalAlignment="Center">
+                    <TextBlock Text="i"
+                               FontSize="11"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock Text="Klicken Sie auf den Button unten rechts, um fortzufahren."
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{StaticResource TextMutedBrush}"/>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
 
 </UserControl>
