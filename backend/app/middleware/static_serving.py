@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, PlainTextResponse
@@ -115,3 +118,117 @@ class RequestSizeLimitMiddleware:
 class _RequestTooLargeError(Exception):
     """Internal signal used by RequestSizeLimitMiddleware to abort reads."""
     pass
+
+
+# Headers we propagate from the inner middleware chain onto SPA-fallback
+# responses. SPAFallbackMiddleware sits OUTSIDE SecurityHeadersMiddleware in
+# the stack (added later in main.py → wraps it), so a Response constructed
+# inside dispatch() bypasses SecurityHeadersMiddleware unless we copy the
+# headers it set on the inner 404 response.
+_PROPAGATED_SECURITY_HEADERS = (
+    "X-Frame-Options",
+    "X-Content-Type-Options",
+    "Referrer-Policy",
+    "Content-Security-Policy",
+    "Strict-Transport-Security",
+)
+
+
+class SPAFallbackMiddleware(BaseHTTPMiddleware):
+    """
+    Serves the SPA shell (index.html) for unknown GET routes so React Router
+    can resolve client-side routes after a hard reload, plus serves arbitrary
+    static files that live in the frontend dist root (favicons, manifests,
+    fonts) without an explicit mount. Replaces nginx
+    ``try_files $uri $uri/ /index.html``.
+
+    Asset vs. navigation
+    --------------------
+    Requests whose last path segment contains a ``.`` are treated as static
+    asset requests *unless* the client explicitly asks for HTML
+    (``Accept: text/html``). Asset requests that hit a 404 do NOT fall
+    through to ``index.html`` — they return a real 404. This prevents a
+    classic post-update breakage: a stale Service Worker (left over from a
+    previous app version) requests an old hashed CSS bundle that no longer
+    exists on disk; without this guard the middleware would happily reply
+    with ``index.html`` and ``Content-Type: text/html``, which the browser
+    refuses to apply as a stylesheet — leading to an unstyled page on every
+    navigation until the user manually unregisters the SW.
+    """
+
+    def __init__(self, app, frontend_dir: Path, index_html: bytes):
+        super().__init__(app)
+        self._frontend_dir = Path(frontend_dir).resolve()
+        self._index_html = index_html
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+
+        if (request.method != "GET"
+                or response.status_code != 404
+                or request.url.path.startswith("/api/")):
+            return response
+
+        path = request.url.path
+        rel_path = path.lstrip("/")
+        if rel_path:
+            file_path = self._frontend_dir / rel_path
+            try:
+                resolved = file_path.resolve()
+            except (OSError, ValueError):
+                resolved = None
+            if (resolved is not None
+                    and self._frontend_dir in resolved.parents
+                    and file_path.is_file()):
+                file_response = FileResponse(str(file_path))
+                _propagate_security_headers(response, file_response)
+                return file_response
+
+        if _looks_like_asset_request(path, request.headers.get("accept", "")):
+            return response
+
+        if not self._index_html:
+            return response
+
+        spa_headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+        for name in _PROPAGATED_SECURITY_HEADERS:
+            value = response.headers.get(name)
+            if value is not None:
+                spa_headers[name] = value
+        return Response(
+            content=self._index_html,
+            media_type="text/html",
+            headers=spa_headers,
+        )
+
+
+def _looks_like_asset_request(path: str, accept_header: str) -> bool:
+    """A request looks like a static asset if its last path segment has an
+    extension AND the client did not explicitly ask for HTML navigation.
+
+    Browsers requesting CSS/JS/images send ``Accept: text/css,*/*;q=0.1``,
+    ``image/png,*/*`` etc. — never ``text/html``. Top-level navigations send
+    ``Accept: text/html,...``. This makes the rule safe even for SPA routes
+    that happen to contain a dot (``/users/john.doe``)."""
+    last_segment = path.rsplit("/", 1)[-1]
+    if "." not in last_segment:
+        return False
+    if path.startswith("/assets/"):
+        # /assets/* is reserved for hashed bundles. Clients should never
+        # navigate to those URLs — short-circuit independent of Accept.
+        return True
+    if "text/html" in accept_header.lower():
+        return False
+    return True
+
+
+def _propagate_security_headers(source: Response, target: Response) -> None:
+    """Copy security headers from source to target (only if not already set
+    on target). Used to keep CSP/HSTS/etc. on responses that the SPA fallback
+    constructs after the inner SecurityHeadersMiddleware ran."""
+    for name in _PROPAGATED_SECURITY_HEADERS:
+        if name in target.headers:
+            continue
+        value = source.headers.get(name)
+        if value is not None:
+            target.headers[name] = value

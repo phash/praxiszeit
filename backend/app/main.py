@@ -8,7 +8,11 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
-from app.middleware.static_serving import SecurityHeadersMiddleware, RequestSizeLimitMiddleware
+from app.middleware.static_serving import (
+    SecurityHeadersMiddleware,
+    RequestSizeLimitMiddleware,
+    SPAFallbackMiddleware,
+)
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.license import LicenseReadOnlyMiddleware
 from contextlib import asynccontextmanager
@@ -484,39 +488,17 @@ if settings.SERVE_FRONTEND:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"detail": "Not found"})
 
-    # SPA fallback middleware: serves frontend for non-API GET requests that don't
-    # match a static file. Replaces nginx try_files $uri $uri/ /index.html.
-    # Using middleware instead of a catch-all route avoids 405 errors for POST/PUT/DELETE
-    # to API paths (a catch-all GET route would match the path but not the method).
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import Response as _MWResponse
-
+    # SPA fallback middleware: serves frontend for non-API GET requests that
+    # don't match a static file. Replaces nginx try_files $uri $uri/ /index.html.
+    # Using middleware instead of a catch-all route avoids 405 errors for
+    # POST/PUT/DELETE to API paths.
     _index_path = _frontend_dir / "index.html"
     _index_html = _index_path.read_bytes() if _index_path.is_file() else b""
-
-    class SPAFallbackMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request, call_next):
-            response = await call_next(request)
-
-            # Only intercept GET requests that got 404 from FastAPI
-            if (request.method == "GET"
-                    and response.status_code == 404
-                    and not request.url.path.startswith("/api/")):
-                # Serve static file if it exists
-                rel_path = request.url.path.lstrip("/")
-                file_path = _frontend_dir / rel_path
-                if rel_path and file_path.is_file() and _frontend_dir in file_path.resolve().parents:
-                    return FileResponse(str(file_path))
-                # SPA fallback: index.html
-                if _index_html:
-                    return _MWResponse(
-                        content=_index_html,
-                        media_type="text/html",
-                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-                    )
-            return response
-
-    app.add_middleware(SPAFallbackMiddleware)
+    app.add_middleware(
+        SPAFallbackMiddleware,
+        frontend_dir=_frontend_dir,
+        index_html=_index_html,
+    )
 
     # Mount hashed assets with long cache (before middleware, so they're served directly)
     _assets_dir = _frontend_dir / "assets"
