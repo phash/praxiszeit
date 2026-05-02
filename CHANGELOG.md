@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-05-03
+
+### 🐞 Bugfix — CSS-Bruch nach Update bei stale Service-Worker
+- **Symptom**: Nach Update auf 1.4.0 lieferte ein Native-Install dem Browser
+  fuer alte hashed CSS-URLs (`/assets/index-OLDHASH.css`) die `index.html`
+  zurueck — `200 OK` mit `Content-Type: text/html`. Browser verwirft das
+  als Stylesheet, Seite landet komplett ungestyled, bis der User den
+  Service Worker manuell unregistert. Erstmals durch Tailwind v3 → v4 in 1.4.0
+  ausgeloest, weil sich saemtliche Asset-Hashes aenderten.
+- **Root Cause**: `SPAFallbackMiddleware` in `backend/app/main.py` lieferte
+  bei *jedem* GET-404 ausserhalb `/api/` die `index.html` aus — auch fuer
+  Asset-Pfade. Stale-SW-Klienten bekamen so HTML als CSS und cachten den
+  kaputten Zustand.
+- **Fix**: Asset-foermige Requests (letztes Pfad-Segment hat eine Endung,
+  kein `Accept: text/html`) bekommen jetzt einen echten 404. `/assets/*`
+  short-circuit-t unabhaengig vom Accept-Header. SPA-Navigationen
+  (`Accept: text/html`) erhalten weiterhin `index.html`. Damit erholt
+  sich jeder Browser beim naechsten Refresh selber.
+- **Bonus**: Die SPA-Fallback-Response umging bisher die `SecurityHeaders`-
+  Middleware — `/login` & Co. lieferten *keine* CSP/HSTS/X-Frame-Options.
+  Die Fallback-Response uebernimmt diese Header jetzt aus der inneren
+  Middleware-Kette (Defence-in-Depth-Parity mit Docker-Mode + nginx).
+- **Refactor**: `SPAFallbackMiddleware` aus dem `if SERVE_FRONTEND:`-Block
+  in `backend/app/main.py` nach `app/middleware/static_serving.py`
+  ausgelagert (importierbar, testbar). 10 Unit-Tests in
+  `backend/tests/test_spa_fallback.py` decken Asset-404, Navigation-mit-
+  index.html, Header-Propagation und SPA-Routes-mit-Punkt ab.
+
 ### 🚀 Feature — ConfigPage im Setup-Wizard (Erst-Admin-Setup)
 - Neue Wizard-Page **"Konfiguration"** zwischen Welcome und Progress,
   nur im Fresh-Install / Repair-Modus aktiv. Fragt Praxis-Stammdaten
