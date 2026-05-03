@@ -8,8 +8,8 @@
         x:Class="PraxisZeit.Setup.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
-        Width="820" Height="640"
-        MinWidth="760" MinHeight="600"
+        Width="900" Height="720"
+        MinWidth="780" MinHeight="620"
         Background="{StaticResource SurfaceAltBrush}"
         WindowStartupLocation="CenterScreen">
 

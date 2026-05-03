@@ -18,7 +18,15 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
     public override string Key => "progress";
     public override string Title => "Installation";
     public override bool CanGoBack => false;
-    public override string NextButtonText => "Bitte warten...";
+
+    /// <summary>
+    /// Live-state-aware: solange der Runner laeuft "Bitte warten...",
+    /// danach "Weiter". Wird via OnIsRunningChanged neu emittiert, damit
+    /// der Footer-Button sich beim Ende der Installation aktualisiert
+    /// (frueher blieb "Bitte warten..." dauerhaft stehen, obwohl
+    /// CanGoNext schon true war).
+    /// </summary>
+    public override string NextButtonText => IsRunning ? "Bitte warten..." : "Weiter";
 
     public ObservableCollection<StepItem> Steps { get; } = [];
 
@@ -30,6 +38,11 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
 
     [ObservableProperty]
     public partial bool IsRunning { get; set; } = true;
+
+    partial void OnIsRunningChanged(bool value)
+    {
+        OnPropertyChanged(nameof(NextButtonText));
+    }
 
     [ObservableProperty]
     public partial string Headline { get; set; } = "Installation laeuft";
@@ -90,13 +103,12 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
                 Percent = prog.Percent;
                 break;
             case RunnerDoneEvent done:
-                IsRunning = false;
+                IsRunning = false; // OnIsRunningChanged emittiert NextButtonText
                 CanGoNext = true;
                 Headline = done.Success ? "Installation abgeschlossen" : "Installation mit Fehlern beendet";
                 SubHeadline = done.Success
                     ? "Alle Schritte erfolgreich. Klicken Sie auf 'Weiter' fuer den letzten Schritt."
                     : "Bitte pruefen Sie das Protokoll. Ein Backup der Datenbank liegt unter data\\backups.";
-                OnPropertyChanged(nameof(NextButtonText));
                 break;
         }
     }

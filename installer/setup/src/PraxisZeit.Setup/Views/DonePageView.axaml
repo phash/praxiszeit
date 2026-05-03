@@ -7,6 +7,7 @@
              x:Class="PraxisZeit.Setup.Views.DonePageView"
              x:DataType="vm:DonePageViewModel">
 
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="40" Spacing="24" VerticalAlignment="Center">
 
         <!-- Erfolgs-Checkmark (success) ODER X-Kreis (fail) -->
@@ -87,5 +88,6 @@
         </Border>
 
     </StackPanel>
+    </ScrollViewer>
 
 </UserControl>
