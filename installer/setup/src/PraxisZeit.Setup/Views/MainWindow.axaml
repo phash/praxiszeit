@@ -79,6 +79,15 @@
                 <DataTemplate DataType="vm:WelcomePageViewModel">
                     <views:WelcomePageView/>
                 </DataTemplate>
+                <DataTemplate DataType="vm:InstallLocationPageViewModel">
+                    <views:InstallLocationPageView/>
+                </DataTemplate>
+                <DataTemplate DataType="vm:PortsPageViewModel">
+                    <views:PortsPageView/>
+                </DataTemplate>
+                <DataTemplate DataType="vm:LicensePageViewModel">
+                    <views:LicensePageView/>
+                </DataTemplate>
                 <DataTemplate DataType="vm:ConfigPageViewModel">
                     <views:ConfigPageView/>
                 </DataTemplate>

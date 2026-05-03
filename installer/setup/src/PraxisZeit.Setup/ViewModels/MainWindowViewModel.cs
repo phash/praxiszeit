@@ -26,7 +26,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly ScriptRunner _scriptRunner;
 
     private readonly WelcomePageViewModel _welcome;
-    private readonly ConfigPageViewModel? _config;
+    private readonly InstallLocationPageViewModel _location;
+    private readonly PortsPageViewModel _ports;
+    private readonly LicensePageViewModel _license;
+    private readonly ConfigPageViewModel _config;
     private readonly ProgressPageViewModel _progress;
     private readonly DonePageViewModel _done;
 
@@ -79,26 +82,66 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _done = new DonePageViewModel();
 
-        // ConfigPage nur im Fresh-Install / Repair-Modus — Update behaelt
-        // die existierende praxiszeit.conf (Backend-Bootstrap erkennt den
-        // Admin schon in der DB, neue Werte wuerden im Update-Pfad ignoriert
-        // bzw. wuerden bestehende User-Anpassungen ueberschreiben).
-        _config = mode is InstallMode.FreshInstall or InstallMode.Repair
-            ? new ConfigPageViewModel { AdminEmail = "admin@praxis.local" }
-            : null;
+        _location = new InstallLocationPageViewModel(_updateDetector, targetVersion, installPath, mode);
+        _location.PropertyChanged += OnLocationModeChanged;
 
-        Pages.Add(_welcome);
-        if (_config is not null)
-        {
-            Pages.Add(_config);
-        }
-        Pages.Add(_progress);
-        Pages.Add(_done);
+        _ports = new PortsPageViewModel();
+        _license = new LicensePageViewModel();
+
+        // ConfigPage existiert immer (im Update-Flow wird sie spaeter
+        // uebersprungen — siehe RebuildPagesForMode). Das vermeidet eine
+        // teure Re-Instanziierung wenn der User in der Location-Page
+        // doch noch von Fresh auf Update umschaltet.
+        _config = new ConfigPageViewModel { AdminEmail = "admin@praxis.local" };
+
+        RebuildPagesForMode(mode);
         CurrentPage = _welcome;
         CurrentStepIndex = 0;
         RebuildStepDots();
 
         WindowTitle = $"PraxisZeit Setup {targetVersion}";
+    }
+
+    /// <summary>
+    /// Reagiert auf User-Klick "Auf Update umschalten" in der Location-
+    /// Page (oder beliebigen IntentMode-Wechsel). Die ConfigPage wird
+    /// im Update-Flow uebersprungen, also muss die Page-Liste neu gebaut
+    /// werden. Welcome-Mode-Property fuer den Backup-Hinweis aktualisieren
+    /// wir mit.
+    /// </summary>
+    private void OnLocationModeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(InstallLocationPageViewModel.IntentMode)) return;
+        var newMode = _location.IntentMode;
+        _welcome.Mode = newMode;
+        _progress.InitializeSteps(newMode);
+        RebuildPagesForMode(newMode);
+        RebuildStepDots();
+        RaiseShellChanged();
+    }
+
+    /// <summary>
+    /// Setzt die <see cref="Pages"/>-Reihenfolge je nach Modus. ConfigPage
+    /// laeuft nur im Fresh-Install / Repair (Update behaelt die existierende
+    /// praxiszeit.conf — neue Werte wuerden bestehende User-Anpassungen
+    /// stillschweigend ueberschreiben).
+    /// </summary>
+    private void RebuildPagesForMode(InstallMode mode)
+    {
+        Pages.Clear();
+        Pages.Add(_welcome);
+        Pages.Add(_location);
+        if (mode is InstallMode.FreshInstall or InstallMode.Repair)
+        {
+            Pages.Add(_ports);
+        }
+        Pages.Add(_license);
+        if (mode is InstallMode.FreshInstall or InstallMode.Repair)
+        {
+            Pages.Add(_config);
+        }
+        Pages.Add(_progress);
+        Pages.Add(_done);
     }
 
     /// <summary>
@@ -190,29 +233,28 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        // Welcome →  ConfigPage (Fresh/Repair) oder direkt Progress (Update)
-        if (CurrentPage is WelcomePageViewModel)
+        // Done → Close
+        if (CurrentPage is DonePageViewModel)
         {
-            if (_config is not null)
-            {
-                CurrentStepIndex = Pages.IndexOf(_config);
-                CurrentPage = _config;
-                RaiseShellChanged();
-                return;
-            }
-            await TransitionToProgressAndRunAsync().ConfigureAwait(true);
+            CleanupTempPayload();
+            CloseRequested?.Invoke();
             return;
         }
 
-        // ConfigPage → Progress: Installation kicken
-        if (CurrentPage is ConfigPageViewModel)
+        // Naechste Page in der Liste finden
+        var idx = Pages.IndexOf(CurrentPage);
+        var next = idx + 1 < Pages.Count ? Pages[idx + 1] : null;
+
+        // Wenn die naechste Page Progress ist, kicken wir die Installation
+        // — Pages-Liste enthaelt Progress immer als zweitletzten Eintrag.
+        if (next is ProgressPageViewModel)
         {
             await TransitionToProgressAndRunAsync().ConfigureAwait(true);
             return;
         }
 
         // Progress → Done: nur wenn der Runner fertig ist (CanGoNext = true)
-        if (CurrentPage is ProgressPageViewModel progress)
+        if (CurrentPage is ProgressPageViewModel)
         {
             CurrentStepIndex = Pages.IndexOf(_done);
             CurrentPage = _done;
@@ -220,12 +262,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        // Done → Close
-        if (CurrentPage is DonePageViewModel)
+        if (next is null)
         {
-            CleanupTempPayload();
-            CloseRequested?.Invoke();
+            return;
         }
+
+        CurrentStepIndex = Pages.IndexOf(next);
+        CurrentPage = next;
+        RaiseShellChanged();
     }
 
     private async Task TransitionToProgressAndRunAsync()
@@ -269,11 +313,39 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             }
             else
             {
-                success = _welcome.Mode == InstallMode.Update
-                    ? await RunUpdateOnWindowsAsync(_welcome.DetectedInstallPath, _extractedPayloadDir, sink)
-                        .ConfigureAwait(true)
-                    : await RunFreshOnWindowsAsync(_welcome.DetectedInstallPath, _extractedPayloadDir, sink, _config?.ToConfigValues())
+                var installDir = _location.InstallPath;
+                if (_welcome.Mode == InstallMode.Update)
+                {
+                    success = await RunUpdateOnWindowsAsync(installDir, _extractedPayloadDir, sink)
                         .ConfigureAwait(true);
+                    // Update-Pfad: License-Page kann eine NEUE Lizenz
+                    // einspielen (Erneuerung). Wir schreiben nur die Datei,
+                    // praxiszeit.conf bleibt unangetastet.
+                    if (success && _license.SelectedMode == "license"
+                        && !string.IsNullOrWhiteSpace(_license.LicenseToken))
+                    {
+                        var configDir = Path.Combine(installDir, "config");
+                        await PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, _license.LicenseToken).ConfigureAwait(true);
+                        sink.OnReportFallback(new RunnerLogEvent("Lizenz-Datei aktualisiert."));
+                    }
+                }
+                else
+                {
+                    var configValues = BuildConfigValues();
+                    success = await RunFreshOnWindowsAsync(installDir, _extractedPayloadDir, sink, configValues)
+                        .ConfigureAwait(true);
+                    // Fresh-Install: License-File schreiben falls eine
+                    // echte Lizenz vorliegt. Demo schreibt KEINE license.key
+                    // — der ConfigWriter hat das demo_expires_at-Feld
+                    // bereits in praxiszeit.conf gesetzt.
+                    if (success && _license.SelectedMode == "license"
+                        && !string.IsNullOrWhiteSpace(_license.LicenseToken))
+                    {
+                        var configDir = Path.Combine(installDir, "config");
+                        await PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, _license.LicenseToken).ConfigureAwait(true);
+                        sink.OnReportFallback(new RunnerLogEvent("Lizenz-Datei eingespielt."));
+                    }
+                }
             }
         }
         catch (Exception ex)
@@ -309,6 +381,24 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [SupportedOSPlatform("windows")]
     private Task<bool> RunFreshOnWindowsAsync(string installDir, string payloadDir, IProgress<RunnerEvent> sink, PraxisZeitConfigValues? configValues) =>
         _scriptRunner.RunFreshInstallAsync(installDir, payloadDir, sink, configValues);
+
+    /// <summary>
+    /// Merged die Werte aus den drei User-Eingabe-Pages (Ports, Lizenz,
+    /// Config) zu einem ConfigValues-Snapshot, den der ConfigWriter in
+    /// die TOML-Datei serialisiert. Lizenz-File wird separat geschrieben
+    /// (siehe TransitionToProgressAndRunAsync).
+    /// </summary>
+    private PraxisZeitConfigValues BuildConfigValues()
+    {
+        var baseValues = _config.ToConfigValues();
+        return baseValues with
+        {
+            HttpsPort = _ports.HttpsPort,
+            HttpRedirectPort = _ports.EffectiveHttpRedirectPort,
+            LicenseToken = _license.SelectedMode == "license" ? _license.LicenseToken : null,
+            DemoDays = _license.SelectedMode == "demo" ? LicensePageViewModel.DemoDurationDays : null,
+        };
+    }
 
     private void CleanupTempPayload()
     {

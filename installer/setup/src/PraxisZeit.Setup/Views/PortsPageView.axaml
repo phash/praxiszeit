@@ -1,0 +1,147 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PraxisZeit.Setup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
+             x:Class="PraxisZeit.Setup.Views.PortsPageView"
+             x:DataType="vm:PortsPageViewModel">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+        <StackPanel Margin="40,28,40,28" Spacing="20">
+
+            <!-- Header -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="Netzwerk-Ports"
+                           FontSize="14"
+                           FontWeight="Medium"
+                           Foreground="{StaticResource BrandPrimaryBrush}"
+                           LetterSpacing="0.6"/>
+                <TextBlock Text="Auf welchen Ports soll PraxisZeit lauschen?"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="Standard ist 443 (HTTPS) plus optional 80 fuer einen Redirect von http:// auf https://. Aendern Sie die Werte nur, wenn andere Dienste die Ports schon belegen."
+                           FontSize="13"
+                           LineHeight="20"
+                           TextWrapping="Wrap"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+
+            <!-- HTTPS-Port -->
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="HTTPS-Port"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               LetterSpacing="0.4"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <Grid ColumnDefinitions="200,*" ColumnSpacing="14">
+                        <NumericUpDown Grid.Column="0"
+                                       Value="{Binding HttpsPort, Mode=TwoWay}"
+                                       Minimum="1" Maximum="65535"
+                                       Increment="1"
+                                       FormatString="0"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="Hauptport — die Anwendung wird unter https://&lt;Hostname&gt;:&lt;Port&gt;/ erreichbar sein."
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- HTTP-Redirect -->
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="HTTP-Redirect-Port"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   LetterSpacing="0.4"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextMutedBrush}"/>
+                        <CheckBox Grid.Column="1"
+                                  IsChecked="{Binding EnableHttpRedirect, Mode=TwoWay}"
+                                  Content="aktiv"
+                                  FontSize="12"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="200,*" ColumnSpacing="14">
+                        <NumericUpDown Grid.Column="0"
+                                       Value="{Binding HttpRedirectPort, Mode=TwoWay}"
+                                       Minimum="1" Maximum="65535"
+                                       Increment="1"
+                                       FormatString="0"
+                                       IsEnabled="{Binding EnableHttpRedirect}"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="Ein zweiter Listener auf diesem Port liefert nur 301-Redirects auf den HTTPS-Port. Auf 0 oder ausgeschaltet = kein Redirect."
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Port-Konflikt-Warnung -->
+            <Border IsVisible="{Binding HasPortConflictWarning}"
+                    Background="#0FF59E0B"
+                    BorderBrush="#33F59E0B"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="14,10">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="22" Height="22"
+                            CornerRadius="11"
+                            Background="{StaticResource BrandWarnBrush}"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="!"
+                                   FontSize="12"
+                                   FontWeight="Bold"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="{Binding PortConflictWarning}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               LineHeight="18"
+                               Foreground="#92400E"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Validierung -->
+            <Border IsVisible="{Binding HasValidationMessage}"
+                    Background="#0FDC2626"
+                    BorderBrush="#33DC2626"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="14,10">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="22" Height="22"
+                            CornerRadius="11"
+                            Background="#DC2626"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="!"
+                                   FontSize="12"
+                                   FontWeight="Bold"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="{Binding ValidationMessage}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               LineHeight="18"
+                               Foreground="#7F1D1D"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

@@ -22,6 +22,23 @@ public sealed record PraxisZeitConfigValues
     public string AdminFirstName { get; init; } = "Admin";
     public string AdminLastName { get; init; } = "Praxis";
     public required string AdminPassword { get; init; }
+
+    /// <summary>HTTPS-Port den uvicorn-Backend bedient. Default 443.</summary>
+    public int HttpsPort { get; init; } = 443;
+
+    /// <summary>HTTP-Port der nur ein 301-Redirect auf <see cref="HttpsPort"/>
+    /// liefert. Default 80, kann auf 0 gesetzt werden um den Redirect ganz
+    /// abzuschalten (manche Kunden wollen keine Port-80-Bindung).</summary>
+    public int HttpRedirectPort { get; init; } = 80;
+
+    /// <summary>JWT-Text der Lizenz (komplette EdDSA-signierte Token-Zeile).
+    /// Null = Demo-Modus aktiv (siehe <see cref="DemoDays"/>).</summary>
+    public string? LicenseToken { get; init; }
+
+    /// <summary>Demo-Laufzeit in Tagen ab Install-Datum. Wird nur ausgewertet
+    /// wenn <see cref="LicenseToken"/> null ist. Default null = kein Demo,
+    /// Backend bricht ohne Lizenz beim Start ab (legacy).</summary>
+    public int? DemoDays { get; init; }
 }
 
 /// <summary>
@@ -85,6 +102,18 @@ public static class PraxisZeitConfigWriter
         {
             return "Admin-Passwort ist auf der Liste bekannter Default-Passwoerter — bitte ein anderes waehlen.";
         }
+        if (values.HttpsPort is < 1 or > 65535)
+        {
+            return $"HTTPS-Port muss zwischen 1 und 65535 liegen (aktuell: {values.HttpsPort}).";
+        }
+        if (values.HttpRedirectPort is < 0 or > 65535)
+        {
+            return $"HTTP-Redirect-Port muss zwischen 0 und 65535 liegen (aktuell: {values.HttpRedirectPort}).";
+        }
+        if (values.HttpRedirectPort > 0 && values.HttpRedirectPort == values.HttpsPort)
+        {
+            return "HTTP-Redirect-Port und HTTPS-Port duerfen nicht identisch sein.";
+        }
         return null;
     }
 
@@ -101,7 +130,11 @@ public static class PraxisZeitConfigWriter
         sb.AppendLine();
 
         sb.AppendLine("[server]");
-        sb.AppendLine("port = 443");
+        sb.AppendLine($"port = {values.HttpsPort}");
+        if (values.HttpRedirectPort > 0)
+        {
+            sb.AppendLine($"http_redirect_port = {values.HttpRedirectPort}");
+        }
         sb.AppendLine("ssl_cert = \"config/ssl/cert.pem\"");
         sb.AppendLine("ssl_key = \"config/ssl/key.pem\"");
         sb.AppendLine();
@@ -133,6 +166,14 @@ public static class PraxisZeitConfigWriter
 
         sb.AppendLine("[license]");
         sb.AppendLine("key_file = \"config/license.key\"");
+        if (values.LicenseToken is null && values.DemoDays is { } demoDays && demoDays > 0)
+        {
+            // Demo-Modus: keine echte license.key, aber demo_expires_at
+            // setzt eine Hard-Deadline. Backend liest den Wert in
+            // app/main.py:lifespan und schaltet ab Ueberlauf in Read-Only.
+            var demoUntil = DateTime.UtcNow.Date.AddDays(demoDays).ToString("yyyy-MM-dd");
+            sb.AppendLine($"demo_expires_at = \"{demoUntil}\"");
+        }
         sb.AppendLine();
 
         sb.AppendLine("[updates]");
@@ -172,6 +213,25 @@ public static class PraxisZeitConfigWriter
         // schreibt MIT BOM, deshalb explizit `new UTF8Encoding(false)`.
         var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         await File.WriteAllTextAsync(targetPath, Serialize(values), encoding, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Schreibt ein Lizenz-Token nach <c>{configDir}/license.key</c>.
+    /// Wird im Fresh-Install nach <see cref="WriteAsync"/> gerufen — ist
+    /// bewusst eine separate Methode, weil der Token auch beim Update
+    /// neu eingespielt werden kann (License-Page erscheint in beiden
+    /// Modi).
+    /// </summary>
+    public static async Task WriteLicenseFileAsync(string configDir, string token, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new ArgumentException("Lizenz-Token darf nicht leer sein.", nameof(token));
+        }
+        Directory.CreateDirectory(configDir);
+        var licensePath = Path.Combine(configDir, "license.key");
+        var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        await File.WriteAllTextAsync(licensePath, token.Trim(), encoding, ct).ConfigureAwait(false);
     }
 
     /// <summary>

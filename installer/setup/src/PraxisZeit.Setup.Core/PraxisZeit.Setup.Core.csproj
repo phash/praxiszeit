@@ -11,6 +11,10 @@
 
   <ItemGroup>
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.5" />
+    <!-- Ed25519 license-key verification: .NET 10 has no native Ed25519
+         (MLDsa is post-quantum, not Ed25519). BouncyCastle ships a
+         well-tested Ed25519 verifier and PEM SubjectPublicKeyInfo parser. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.5.1" />
   </ItemGroup>
 
 </Project>
