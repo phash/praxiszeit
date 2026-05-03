@@ -209,4 +209,138 @@ public sealed class PraxisZeitConfigWriterTests : IDisposable
         var expected = PraxisZeitConfigWriter.Serialize(ValidValues());
         written.Should().Be(expected);
     }
+
+    // --------------------- Ports ---------------------
+
+    [Fact]
+    public void ValidateValues_accepts_default_ports()
+    {
+        // Default ist 443 / 80 — beide muessen ohne expliziten Wert gueltig sein.
+        PraxisZeitConfigWriter.ValidateValues(ValidValues()).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(65536)]
+    [InlineData(99999)]
+    public void ValidateValues_rejects_https_port_out_of_range(int port)
+    {
+        var values = ValidValues() with { HttpsPort = port };
+        PraxisZeitConfigWriter.ValidateValues(values).Should().Contain("HTTPS-Port");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(65536)]
+    public void ValidateValues_rejects_http_redirect_port_out_of_range(int port)
+    {
+        var values = ValidValues() with { HttpRedirectPort = port };
+        PraxisZeitConfigWriter.ValidateValues(values).Should().Contain("HTTP-Redirect-Port");
+    }
+
+    [Fact]
+    public void ValidateValues_accepts_http_redirect_port_zero_to_disable()
+    {
+        // Port 0 = User hat HTTP-Redirect ausgeschaltet (kein Listener).
+        // Muss explizit erlaubt sein, ist KEIN Fehler.
+        var values = ValidValues() with { HttpRedirectPort = 0 };
+        PraxisZeitConfigWriter.ValidateValues(values).Should().BeNull();
+    }
+
+    [Fact]
+    public void ValidateValues_rejects_identical_ports()
+    {
+        var values = ValidValues() with { HttpsPort = 8443, HttpRedirectPort = 8443 };
+        PraxisZeitConfigWriter.ValidateValues(values).Should().Contain("identisch");
+    }
+
+    [Fact]
+    public void Serialize_writes_custom_ports_in_server_section()
+    {
+        var values = ValidValues() with { HttpsPort = 8443, HttpRedirectPort = 8080 };
+        var output = PraxisZeitConfigWriter.Serialize(values);
+        output.Should().Contain("[server]");
+        output.Should().Contain("port = 8443");
+        output.Should().Contain("http_redirect_port = 8080");
+    }
+
+    [Fact]
+    public void Serialize_omits_http_redirect_when_zero()
+    {
+        var values = ValidValues() with { HttpRedirectPort = 0 };
+        var output = PraxisZeitConfigWriter.Serialize(values);
+        output.Should().NotContain("http_redirect_port");
+    }
+
+    // --------------------- Lizenz / Demo ---------------------
+
+    [Fact]
+    public void Serialize_writes_license_key_file_path_in_license_section()
+    {
+        var output = PraxisZeitConfigWriter.Serialize(ValidValues());
+        output.Should().Contain("[license]");
+        output.Should().Contain("key_file = \"config/license.key\"");
+    }
+
+    [Fact]
+    public void Serialize_writes_demo_expires_at_when_demo_days_set()
+    {
+        var values = ValidValues() with { LicenseToken = null, DemoDays = 30 };
+        var output = PraxisZeitConfigWriter.Serialize(values);
+        output.Should().Contain("demo_expires_at");
+        // Format: ISO-Date, 30 Tage in der Zukunft, naeherungsweise pruefen
+        var expectedDate = DateTime.UtcNow.Date.AddDays(30).ToString("yyyy-MM-dd");
+        output.Should().Contain($"demo_expires_at = \"{expectedDate}\"");
+    }
+
+    [Fact]
+    public void Serialize_omits_demo_expires_at_when_real_license_present()
+    {
+        var values = ValidValues() with { LicenseToken = "fake.jwt.token", DemoDays = 30 };
+        var output = PraxisZeitConfigWriter.Serialize(values);
+        output.Should().NotContain("demo_expires_at");
+    }
+
+    [Fact]
+    public void Serialize_omits_demo_expires_at_when_demo_days_null()
+    {
+        var values = ValidValues() with { LicenseToken = null, DemoDays = null };
+        var output = PraxisZeitConfigWriter.Serialize(values);
+        output.Should().NotContain("demo_expires_at");
+    }
+
+    [Fact]
+    public async Task WriteLicenseFileAsync_writes_token_as_utf8_no_bom()
+    {
+        var configDir = Path.Combine(_tempDir, "config");
+        const string token = "eyJhbGciOiJFZERTQSJ9.payload.signature";
+        await PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, token);
+
+        var licensePath = Path.Combine(configDir, "license.key");
+        File.Exists(licensePath).Should().BeTrue();
+        var bytes = await File.ReadAllBytesAsync(licensePath);
+        // BOM (EF BB BF) darf nicht am Anfang stehen
+        bytes[..3].Should().NotEqual([0xEF, 0xBB, 0xBF]);
+        var content = Encoding.UTF8.GetString(bytes);
+        content.Should().Be(token);
+    }
+
+    [Fact]
+    public async Task WriteLicenseFileAsync_trims_whitespace()
+    {
+        var configDir = Path.Combine(_tempDir, "config");
+        await PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, "\n  token-mit-whitespace  \n");
+
+        var content = await File.ReadAllTextAsync(Path.Combine(configDir, "license.key"));
+        content.Should().Be("token-mit-whitespace");
+    }
+
+    [Fact]
+    public async Task WriteLicenseFileAsync_rejects_empty_token()
+    {
+        var configDir = Path.Combine(_tempDir, "config");
+        var act = () => PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, "");
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
 }

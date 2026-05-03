@@ -64,3 +64,64 @@ public sealed class StepStatusToTitleBrushConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>
+/// Sammel-Helper fuer XAML-Bindings die einen statischen Konverter brauchen.
+/// Avalonia kann keine generischen IValueConverter-Instanzen ueber XAML
+/// referenzieren, deswegen die Singleton-Instances als
+/// <c>{x:Static StepStatusConverters.NameOfConverter}</c>.
+/// </summary>
+public static class StepStatusConverters
+{
+    /// <summary>
+    /// TwoWay-faehiger String-Equality-Konverter fuer RadioButtons:
+    /// IsChecked = true wenn Bound-String == ConverterParameter, und
+    /// gibt bei IsChecked->true den Parameter als String zurueck.
+    /// </summary>
+    public static readonly IValueConverter StringEqualityConverter = new StringEqualityConverterImpl();
+
+    /// <summary>
+    /// Mappt null/leer auf false, sonst auf true — fuer IsVisible-Bindings.
+    /// </summary>
+    public static readonly IValueConverter NotNullVisibilityConverter = new NotNullVisibilityConverterImpl();
+
+    private sealed class StringEqualityConverterImpl : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            var s = value as string;
+            var p = parameter as string;
+            return string.Equals(s, p, StringComparison.Ordinal);
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            // RadioButton-Click: IsChecked wird true → wir muessen den
+            // ConverterParameter als neuen String ans Source-ViewModel
+            // zurueckgeben. Wenn IsChecked auf false geht (anderer Button
+            // wird aktiv), ignorieren wir das — der andere Convert-Aufruf
+            // setzt den korrekten Wert.
+            if (value is true && parameter is string p)
+            {
+                return p;
+            }
+            return Avalonia.Data.BindingOperations.DoNothing;
+        }
+    }
+
+    private sealed class NotNullVisibilityConverterImpl : IValueConverter
+    {
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            return value switch
+            {
+                null => false,
+                string s => !string.IsNullOrEmpty(s),
+                _ => true,
+            };
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+            throw new NotSupportedException();
+    }
+}

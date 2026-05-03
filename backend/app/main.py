@@ -147,8 +147,11 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
 
-    # 7. License validation (native installations only)
-    if settings.LICENSE_KEY_PATH:
+    # 7. License validation (native installations only). Drei Modi:
+    #    a) LICENSE_KEY_PATH gesetzt + Datei existiert → echte Lizenz validieren
+    #    b) LICENSE_DEMO_EXPIRES_AT gesetzt (vom Setup-Wizard) → Demo-Mode bis dahin
+    #    c) keins von beiden → klassisch ohne Lizenz (Docker-Dev / SaaS)
+    if settings.LICENSE_KEY_PATH and Path(settings.LICENSE_KEY_PATH).is_file():
         from app.core.license import (
             validate_license, validate_license_quiet,
             set_license_state, LicenseError, LicenseExpiredError,
@@ -170,6 +173,30 @@ async def lifespan(app: FastAPI):
         except LicenseError as e:
             print(f"LICENSE ERROR: {e}")
             sys.exit(1)
+    elif settings.LICENSE_DEMO_EXPIRES_AT:
+        # Demo-Mode (vom Setup-Wizard gesetzt). Volle Funktion bis zum Datum,
+        # danach Read-Only. Wir exportieren KEINE LicenseInfo (es gibt
+        # keine Kundenangaben), aber die License-Middleware respektiert
+        # den read_only-Flag.
+        from app.core.license import set_license_state
+        try:
+            from datetime import date as _date
+            demo_until = _date.fromisoformat(settings.LICENSE_DEMO_EXPIRES_AT.strip())
+        except ValueError:
+            print(f"LICENSE ERROR: ungueltiges LICENSE_DEMO_EXPIRES_AT "
+                  f"'{settings.LICENSE_DEMO_EXPIRES_AT}' (erwartet YYYY-MM-DD)")
+            sys.exit(1)
+        from datetime import date
+        today = date.today()
+        if today > demo_until:
+            print(f"WARNING: Demo-Lizenz abgelaufen am {demo_until.isoformat()}.")
+            print("App running in READ-ONLY mode.")
+            set_license_state(None, read_only=True)
+        else:
+            days_left = (demo_until - today).days
+            print(f"License: 30-Tage-Demo (laeuft am {demo_until.isoformat()} "
+                  f"ab, noch {days_left} Tage)")
+            set_license_state(None, read_only=False)
 
     # Configuration sanity checks
     if settings.COOKIE_SECURE and settings.ENVIRONMENT != "production":

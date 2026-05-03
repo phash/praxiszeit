@@ -34,6 +34,9 @@ _TOML_KEY_MAP = {
     ("security", "login_rate_limit"): "LOGIN_RATE_LIMIT",
     ("security", "cookie_secure"): "COOKIE_SECURE",
     ("license", "key_file"): "LICENSE_KEY_PATH",
+    ("license", "demo_expires_at"): "LICENSE_DEMO_EXPIRES_AT",
+    ("server", "port"): "SERVER_PORT",
+    ("server", "http_redirect_port"): "SERVER_HTTP_REDIRECT_PORT",
     ("updates", "check_enabled"): "UPDATE_CHECK_ENABLED",
     ("updates", "server_url"): "UPDATE_SERVER_URL",
     ("updates", "check_interval_hours"): "UPDATE_CHECK_INTERVAL_HOURS",
@@ -120,6 +123,20 @@ class Settings(BaseSettings):
 
     # License key file path (native installations only)
     LICENSE_KEY_PATH: Optional[str] = None
+
+    # Demo-Mode (Native): wenn keine LICENSE_KEY_PATH und LICENSE_DEMO_EXPIRES_AT
+    # gesetzt ist, laeuft die App bis zum genannten Datum mit voller
+    # Funktionalitaet, danach Read-Only. Format ISO-Date YYYY-MM-DD.
+    # Wird vom Setup-Wizard auf Install-Datum + 30 Tage gesetzt; im
+    # Production-Install bleibt es leer und der Lizenz-Pfad ist gesetzt.
+    LICENSE_DEMO_EXPIRES_AT: Optional[str] = None
+
+    # Native-mode: HTTP / HTTPS-Listener-Ports (vom Wizard konfigurierbar).
+    # Default 443 / 80 — Backend rendert sie auch in keinen externen
+    # URLs ausser im Update-Banner; primaer fuer den Service-Wrapper, der
+    # uvicorn mit --port startet.
+    SERVER_PORT: int = 443
+    SERVER_HTTP_REDIRECT_PORT: int = 80
 
     # Update server URL (native installations only)
     UPDATE_SERVER_URL: Optional[str] = None
