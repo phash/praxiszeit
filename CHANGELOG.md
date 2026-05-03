@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-05-03
+
+### 🚀 Wizard — drei neue Pages: Installationsort, Ports, Lizenz
+- **Install-Location-Page** zwischen Welcome und Konfiguration. User kann
+  den Pfad explizit waehlen (Default `C:\PraxisZeit`), Update-Mode
+  blockt das Feld auf den existierenden Pfad. Wenn der User Fresh-Install
+  ausgewaehlt hat, der Pfad aber bereits eine Installation enthaelt,
+  blendet sich eine rote Warnung ein mit zwei CTAs: "Auf Update
+  umschalten" oder "Anderen Pfad waehlen". Continue ist gesperrt bis
+  der Konflikt aufgeloest ist — verhindert versehentliches
+  Daten-Clobbern.
+- **Ports-Page** im Fresh/Repair-Flow. HTTPS-Port (Default 443) und
+  HTTP-Redirect-Port (Default 80, abschaltbar). Live-Validation auf
+  Range 1..65535 + Identitaets-Konflikt; zusaetzlich nicht-blockierende
+  Warnung wenn ein Port laut `IPGlobalProperties.GetActiveTcpListeners`
+  bereits belegt ist (z.B. anderer Webserver auf dem Setup-Server).
+  Neuer Conf-Key `[server].http_redirect_port`, vom Backend in
+  `config.py:_TOML_KEY_MAP` aufgenommen.
+- **License-Page** im Fresh- *und* Update-Flow (im Update-Pfad fuer
+  Lizenz-Erneuerung). User kann entweder einen Lizenz-Token einfuegen /
+  per File-Picker eine `.key` waehlen ODER 30 Tage Demo starten.
+  Live-Validierung gegen den gleichen Ed25519-Public-Key wie das Backend
+  via BouncyCastle (.NET 10 hat keine native Ed25519-Unterstuetzung).
+  Bei erfolgreicher Validierung zeigt der Wizard Kunde, Mitarbeiter-
+  Limit und Ablaufdatum an. Bei Demo-Mode wird `demo_expires_at` in
+  `praxiszeit.conf` geschrieben; Backend erkennt das in `main.py`
+  Lifespan und schaltet ab dem Datum in Read-Only.
+
+### 🐞 Wizard-UX-Fixes (aus Customer-Feedback)
+- "Bitte warten..."-Button blieb stehen, obwohl die Installation
+  fertig war: `NextButtonText` auf `ProgressPageViewModel` ist jetzt
+  state-aware (`IsRunning ? "Bitte warten..." : "Weiter"`) und wird
+  via `OnIsRunningChanged` neu emittiert.
+- Button-Beschriftungen waren links-aligned trotz fixer MinWidth —
+  `HorizontalContentAlignment="Center"` auf `.primary`, `.ghost`,
+  `.success` ergaenzt.
+- DonePageView ohne aeusseren ScrollViewer; bei DPI ≥ 125 % wurde
+  der "Schliessen"-Button abgeschnitten. Wrap im ScrollViewer.
+- Default-Window von 820x640 auf 900x720 (Min 780x620) — die jetzt
+  vorhandenen 6 Pages und der Step-Indicator brauchten mehr Platz.
+
+### Backend — Demo-Mode + Server-Port-Settings
+- `LICENSE_DEMO_EXPIRES_AT` (TOML `[license].demo_expires_at`) und
+  `SERVER_PORT` / `SERVER_HTTP_REDIRECT_PORT` (TOML `[server].port` /
+  `http_redirect_port`) als neue Settings in `app/config.py`.
+- `app/main.py` Lifespan: ohne `LICENSE_KEY_PATH` aber mit
+  `LICENSE_DEMO_EXPIRES_AT` → Demo-Mode bis zum Datum, danach
+  Read-Only (`set_license_state(None, read_only=True)`). Mit echter
+  Lizenz unveraendert.
+
+### Tests
+- 31 neue Tests (Total 104 / 104 grün) in
+  `installer/setup/tests/PraxisZeit.Setup.Core.Tests`:
+  Port-Range/Konflikt-Validation, Conf-Roundtrip mit Custom-Ports,
+  `demo_expires_at`-Serialisierung, License-Validator
+  Negative-Paths (leerer Token, falsches Segment-Count, Non-EdDSA-
+  Algorithm, Random-Signatur). License-Positive-Path-Tests laufen im
+  Backend (`test_native_mode.py`) gegen denselben Public-Key.
+
 ## [1.4.2] - 2026-05-03
 
 ### 🐞 Bugfix — Tailwind v4 Spacing-Regression (alle `p-*`/`m-*`/`space-*`)

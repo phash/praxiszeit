@@ -1,0 +1,216 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PraxisZeit.Setup.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
+             x:Class="PraxisZeit.Setup.Views.LicensePageView"
+             x:DataType="vm:LicensePageViewModel">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+        <StackPanel Margin="40,28,40,28" Spacing="20">
+
+            <!-- Header -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="Lizenz"
+                           FontSize="14"
+                           FontWeight="Medium"
+                           Foreground="{StaticResource BrandPrimaryBrush}"
+                           LetterSpacing="0.6"/>
+                <TextBlock Text="Lizenz-Schluessel oder 30-Tage-Demo"
+                           FontSize="22"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="PraxisZeit prueft die Lizenz beim Service-Start. Geben Sie Ihren Schluessel ein oder starten Sie eine 30-Tage-Demo."
+                           FontSize="13"
+                           LineHeight="20"
+                           TextWrapping="Wrap"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+
+            <!-- Modus-Auswahl -->
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <RadioButton Content="Lizenz-Schluessel eingeben"
+                             GroupName="LicenseMode"
+                             IsChecked="{Binding SelectedMode, Mode=TwoWay,
+                                         Converter={x:Static vm:StepStatusConverters.StringEqualityConverter},
+                                         ConverterParameter=license}"/>
+                <RadioButton Content="30 Tage Demo (ohne Lizenz)"
+                             GroupName="LicenseMode"
+                             IsChecked="{Binding SelectedMode, Mode=TwoWay,
+                                         Converter={x:Static vm:StepStatusConverters.StringEqualityConverter},
+                                         ConverterParameter=demo}"/>
+            </StackPanel>
+
+            <!-- Lizenz-Eingabe (nur sichtbar wenn Modus = license) -->
+            <Border Classes="card"
+                    IsVisible="{Binding SelectedMode,
+                                Converter={x:Static vm:StepStatusConverters.StringEqualityConverter},
+                                ConverterParameter=license}">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="Lizenz-Token"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               LetterSpacing="0.4"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <TextBox Text="{Binding LicenseToken, Mode=TwoWay}"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MinHeight="120"
+                             FontFamily="Consolas,Menlo,monospace"
+                             FontSize="11"
+                             PlaceholderText="eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9...."/>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Classes="ghost"
+                                Content="Datei waehlen…"
+                                MinWidth="160"
+                                Height="34"
+                                Click="OnLoadLicenseFileClicked"/>
+                        <TextBlock Text="{Binding LoadedFromPath, StringFormat='geladen aus: {0}'}"
+                                   IsVisible="{Binding LoadedFromPath, Converter={x:Static vm:StepStatusConverters.NotNullVisibilityConverter}}"
+                                   VerticalAlignment="Center"
+                                   FontSize="11"
+                                   FontFamily="Consolas,Menlo,monospace"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Lizenz-Validierung-Erfolg -->
+            <Border Classes="card"
+                    IsVisible="{Binding HasValidatedInfo}"
+                    Background="#0A13B981"
+                    BorderBrush="#3313B981">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Border Width="22" Height="22"
+                                CornerRadius="11"
+                                Background="{StaticResource BrandAccentDarkBrush}"
+                                VerticalAlignment="Center">
+                            <Path Data="M 6 12 L 10 16 L 16 8"
+                                  Stroke="White"
+                                  StrokeThickness="2"
+                                  StrokeJoin="Round"
+                                  StrokeLineCap="Round"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="Lizenz erkannt"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Grid ColumnDefinitions="160,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Kunde"
+                                   FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ValidatedInfo.CustomerName}"
+                                   FontSize="13" FontWeight="Medium"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Mitarbeiter-Limit"
+                                   FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1"
+                                   Text="{Binding ValidatedInfo.MaxEmployees, StringFormat='{}{0} Mitarbeiter'}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Gueltigkeit"
+                                   FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ExpiryDisplay}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </Grid>
+
+                    <!-- Hinweis bei abgelaufener Lizenz -->
+                    <Border IsVisible="{Binding IsExpiredButOtherwiseValid}"
+                            Background="#0FF59E0B"
+                            BorderBrush="#33F59E0B"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12,8">
+                        <TextBlock Text="Diese Lizenz ist abgelaufen. Der Service startet im Nur-Lese-Modus — Daten bleiben einsehbar und exportierbar, aber neue Eintraege koennen nicht angelegt werden."
+                                   FontSize="11"
+                                   LineHeight="16"
+                                   TextWrapping="Wrap"
+                                   Foreground="#92400E"/>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Validierungs-Fehler -->
+            <Border IsVisible="{Binding HasValidationError}"
+                    Background="#0FDC2626"
+                    BorderBrush="#33DC2626"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="14,10">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="22" Height="22"
+                            CornerRadius="11"
+                            Background="#DC2626"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="!"
+                                   FontSize="12"
+                                   FontWeight="Bold"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="{Binding ValidationError}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               LineHeight="18"
+                               Foreground="#7F1D1D"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Demo-Karte -->
+            <Border Classes="card"
+                    IsVisible="{Binding SelectedMode,
+                                Converter={x:Static vm:StepStatusConverters.StringEqualityConverter},
+                                ConverterParameter=demo}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Demo-Modus"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               LetterSpacing="0.4"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <TextBlock Text="{Binding DemoEndDisplay, StringFormat='Volle Funktionalitaet bis zum {0}.'}"
+                               FontSize="14"
+                               FontWeight="Medium"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="Nach Ablauf der 30 Tage wechselt PraxisZeit in den Nur-Lese-Modus, bis Sie eine Lizenz einspielen. Daten bleiben jederzeit einsehbar und exportierbar."
+                               FontSize="12"
+                               LineHeight="18"
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Bezugsquelle -->
+            <Border BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="14,12">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Lizenz erwerben oder erneuern"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               LetterSpacing="0.4"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <TextBlock FontSize="13" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextSecondaryBrush}">
+                        Schreiben Sie an
+                        <Run FontFamily="Consolas,Menlo,monospace"
+                             Foreground="{StaticResource BrandPrimaryBrush}"
+                             Text="projekt@phash.de"/>
+                        — Sie bekommen eine signierte license.key zurueck, die Sie hier oben einspielen.
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>
