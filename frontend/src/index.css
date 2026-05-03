@@ -61,22 +61,33 @@
   unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+@layer base {
+  /*
+    Element-default reset. MUST live inside @layer base — unlayered CSS beats
+    layered Tailwind utilities (which are in @layer utilities), and Tailwind
+    v4 wraps utilities in :where() for zero specificity. An unlayered
+    `* { padding: 0; margin: 0 }` therefore silently overrides every p-*,
+    m-*, space-x-* etc., leaving cards/sidebar with collapsed spacing.
+    Tailwind Preflight already handles box-sizing on *, but the margin/
+    padding zeroing is intentional (we want a clean baseline beyond
+    Preflight).
+  */
+  * {
+    margin: 0;
+    padding: 0;
+  }
 
-body {
-  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #FAFBFC;
-  color: #1A2B3D;
-}
+  body {
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #FAFBFC;
+    color: #1A2B3D;
+  }
 
-#root {
-  min-height: 100vh;
+  #root {
+    min-height: 100vh;
+  }
 }
 
 /* Animations */
