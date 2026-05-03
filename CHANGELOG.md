@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-05-03
+
+### 🐞 Bugfix — Tailwind v4 Spacing-Regression (alle `p-*`/`m-*`/`space-*`)
+- **Symptom**: Karten ohne Innen-Padding, Sidebar-Items ohne `px-4 py-3`,
+  `Budget`/`Genommen` ohne Spacing — die Oberflaeche sah komplett "kaputt"
+  aus, obwohl Hintergruende, Schatten, Rahmen und runde Ecken alle korrekt
+  rendeten. Nur die Spacing-Utilities waren stillgelegt.
+- **Root Cause**: `frontend/src/index.css` hatte einen globalen
+  `* { margin: 0; padding: 0; box-sizing: border-box; }`-Reset *ausserhalb*
+  jedes `@layer`. Tailwind v4 wickelt jede Utility in `:where(...)` ein,
+  damit User sie mit einfachen Selektoren ueberschreiben koennen — d.h.
+  `:where(.p-6)` hat Specificity 0,0,0. Der unlayered `*`-Selektor hat
+  ebenfalls 0,0,0, gewinnt aber trotzdem, weil **unlayered Regeln in der
+  Cascade ueber layered Regeln stehen**. Ergebnis: jede `p-*`, `m-*`,
+  `px-*`, `space-x-*`, `space-y-*` wurde stillschweigend von dem Reset
+  ueberschrieben.
+- **Fix**: Reset in `@layer base` packen. `@layer base` steht in der
+  Tailwind-v4-Reihenfolge unter `@layer utilities`, also gewinnt
+  `:where(.p-6)` wieder ueber das `*`. `box-sizing` ist im Reset entfallen,
+  weil Tailwind-v4-Preflight das schon auf `*, ::before, ::after` setzt.
+- Verifiziert end-to-end im Browser (Playwright gegen lokalen Docker-
+  Stack): Card-Padding `0px → 24px`, Nav-Item-Padding `0px → 12px 16px`.
+  Sidebar, Karten und Layout sind wieder so, wie sie vor 1.4.0 aussahen.
+
 ## [1.4.1] - 2026-05-03
 
 ### 🐞 Bugfix — CSS-Bruch nach Update bei stale Service-Worker
