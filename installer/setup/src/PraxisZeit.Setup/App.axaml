@@ -63,6 +63,9 @@
         <FluentTheme />
 
         <!-- ====== Buttons ====== -->
+        <!-- Avalonia FluentTheme defaults Button.HorizontalContentAlignment to
+             Left; expliziter zentrieren, damit Footer-Buttons mit MinWidth>>
+             Content (z.B. "Zurueck" 120px) ihre Beschriftung mittig haben. -->
         <Style Selector="Button.primary">
             <Setter Property="Background" Value="{StaticResource BrandPrimaryBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextInverseBrush}"/>
@@ -72,6 +75,8 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{StaticResource BrandPrimaryDarkBrush}"/>
@@ -95,6 +100,8 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.success:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{StaticResource BrandAccentDarkBrush}"/>
@@ -111,6 +118,8 @@
             <Setter Property="FontWeight" Value="Medium"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.ghost:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{StaticResource SurfaceMutedBrush}"/>
