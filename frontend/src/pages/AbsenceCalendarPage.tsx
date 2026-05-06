@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
-import { Plus, X, Trash2, Clock, CheckCircle, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, X, Trash2, Clock, CheckCircle, XCircle, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -13,6 +13,7 @@ import { parseHours } from '../utils/formatters';
 import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
+import VacationRequestEditModal from '../components/VacationRequestEditModal';
 
 interface VacationRequest {
   id: string;
@@ -100,6 +101,7 @@ export default function AbsenceCalendarPage() {
     note: '',
   });
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+  const [editingRequest, setEditingRequest] = useState<VacationRequest | null>(null);
 
   useEffect(() => {
     apiClient.get('/settings').then((res) => {
@@ -270,6 +272,17 @@ export default function AbsenceCalendarPage() {
 
   return (
     <div>
+      {editingRequest && (
+        <VacationRequestEditModal
+          request={editingRequest}
+          mode="self"
+          onClose={() => setEditingRequest(null)}
+          onSaved={() => {
+            setEditingRequest(null);
+            fetchMyVacationRequests();
+          }}
+        />
+      )}
       <ConfirmDialog
         isOpen={confirmState.isOpen}
         title={confirmState.title}
@@ -380,29 +393,40 @@ export default function AbsenceCalendarPage() {
                             buttonTitle: 'Antrag zurückziehen',
                           };
                       return (
-                        <button
-                          onClick={() =>
-                            confirm({
-                              title: dialog.title,
-                              message: dialog.message,
-                              confirmLabel: dialog.confirmLabel,
-                              variant: 'danger',
-                              onConfirm: async () => {
-                                try {
-                                  await apiClient.delete(`/vacation-requests/${vr.id}`);
-                                  toast.success(dialog.successMsg);
-                                  fetchMyVacationRequests();
-                                } catch (error) {
-                                  toast.error(getErrorMessage(error, 'Fehler beim Zurückziehen'));
-                                }
-                              },
-                            })
-                          }
-                          className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
-                          title={dialog.buttonTitle}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex items-center space-x-1">
+                          {isPending && (
+                            <button
+                              onClick={() => setEditingRequest(vr)}
+                              className="p-3 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                              title="Antrag bearbeiten"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() =>
+                              confirm({
+                                title: dialog.title,
+                                message: dialog.message,
+                                confirmLabel: dialog.confirmLabel,
+                                variant: 'danger',
+                                onConfirm: async () => {
+                                  try {
+                                    await apiClient.delete(`/vacation-requests/${vr.id}`);
+                                    toast.success(dialog.successMsg);
+                                    fetchMyVacationRequests();
+                                  } catch (error) {
+                                    toast.error(getErrorMessage(error, 'Fehler beim Zurückziehen'));
+                                  }
+                                },
+                              })
+                            }
+                            className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
+                            title={dialog.buttonTitle}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       );
                     })()}
                   </div>
