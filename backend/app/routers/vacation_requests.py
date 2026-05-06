@@ -42,6 +42,25 @@ def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
     return resp
 
 
+def _format_vacation_request_audit_text(vr: VacationRequest) -> str:
+    """Compact one-line representation of a vacation request for audit logs.
+
+    Used as `old_note` / `new_note` payload on edit/cancel events. Note is
+    truncated to 200 chars to keep audit-log queries cheap.
+    """
+    end = vr.end_date if vr.end_date else vr.date
+    note = (vr.note or "").replace("\n", " ").strip()[:200]
+    text = (
+        f"vacation_request {vr.id} | "
+        f"{vr.date}..{end} | "
+        f"{vr.absence_type or 'vacation'} | "
+        f"{float(vr.hours):.2f}h"
+    )
+    if note:
+        text += f" | {note}"
+    return text
+
+
 @router.post("/", response_model=VacationRequestResponse, status_code=status.HTTP_201_CREATED)
 def create_vacation_request(
     data: VacationRequestCreate,
