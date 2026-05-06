@@ -263,12 +263,16 @@ def update_vacation_request(
     old_audit_text = _format_vacation_request_audit_text(vr)
     old_date = vr.date
 
-    # Apply patch (merge provided fields)
-    new_date = data.date if data.date is not None else vr.date
-    new_end_date = data.end_date if data.end_date is not None else vr.end_date
-    new_hours = data.hours if data.hours is not None else float(vr.hours)
-    new_note = data.note if data.note is not None else vr.note
-    new_absence_type = data.absence_type if data.absence_type is not None else vr.absence_type
+    # Apply patch (merge provided fields). model_fields_set distinguishes
+    # "field absent from request" (keep DB value) from "field sent as null"
+    # (clear the field). Without this, sending end_date=null would be
+    # silently ignored when collapsing a multi-day range to a single day.
+    fields_set = data.model_fields_set
+    new_date = data.date if "date" in fields_set and data.date is not None else vr.date
+    new_end_date = data.end_date if "end_date" in fields_set else vr.end_date
+    new_hours = data.hours if "hours" in fields_set and data.hours is not None else float(vr.hours)
+    new_note = data.note if "note" in fields_set else vr.note
+    new_absence_type = data.absence_type if "absence_type" in fields_set and data.absence_type is not None else vr.absence_type
 
     # No-op detection: skip everything if nothing actually changes.
     no_change = (
