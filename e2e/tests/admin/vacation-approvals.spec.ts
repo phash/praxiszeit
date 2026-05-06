@@ -196,4 +196,64 @@ test.describe('Admin Vacation Approvals', () => {
     // Cleanup setting; the request row is teardown-handled by the fixture.
     try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
   });
+
+  test('admin edits pending vacation request — note + date', async ({
+    adminPage,
+    adminApi,
+    createVacationRequest,
+  }) => {
+    try {
+      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
+    } catch {
+      test.skip();
+      return;
+    }
+
+    const startDate = weekdayFromNow(45);
+    const newDate = weekdayFromNow(50);
+    const uniqueNote = `E2E admin-edit ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const newNote = `${uniqueNote} edited`;
+    try {
+      await createVacationRequest({
+        date: startDate,
+        hours: 8,
+        note: uniqueNote,
+      });
+    } catch {
+      try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
+      test.skip();
+      return;
+    }
+
+    await adminPage.goto('/admin/vacation-approvals');
+    await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
+    await adminPage.getByRole('button', { name: 'Offen' }).click();
+    await adminPage.waitForLoadState('networkidle');
+
+    const card = adminPage.locator('div.bg-white').filter({ hasText: uniqueNote }).first();
+    await expect(card).toBeVisible({ timeout: 5000 });
+    await card.getByRole('button', { name: 'Bearbeiten' }).click();
+
+    // Modal opens
+    const dialog = adminPage.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+
+    // Change date + note
+    await dialog.locator('input[type="date"]').first().fill(newDate);
+    const noteInput = dialog.locator('input[type="text"]').first();
+    await noteInput.fill(newNote);
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+
+    // Toast confirms
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: /aktualisiert/ })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Card should reflect the new note
+    await adminPage.waitForLoadState('networkidle');
+    const updated = adminPage.locator('div.bg-white').filter({ hasText: 'edited' }).first();
+    await expect(updated).toBeVisible({ timeout: 5000 });
+
+    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
+  });
 });
