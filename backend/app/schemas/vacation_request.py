@@ -1,4 +1,5 @@
 from pydantic import BaseModel, ConfigDict, field_validator
+import datetime as _dt
 from datetime import date, datetime
 from typing import Optional, Literal
 import uuid
@@ -35,8 +36,8 @@ class VacationRequestUpdate(BaseModel):
     work-day window, overlap with other pending) after merging.
     """
 
-    date: Optional[date] = None
-    end_date: Optional[date] = None
+    date: Optional[_dt.date] = None
+    end_date: Optional[_dt.date] = None
     hours: Optional[float] = None
     note: Optional[str] = None
     absence_type: Optional[str] = None
