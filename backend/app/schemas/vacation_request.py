@@ -27,6 +27,31 @@ class VacationRequestCreate(BaseModel):
         return v
 
 
+class VacationRequestUpdate(BaseModel):
+    """Partial update for a PENDING vacation request.
+
+    All fields optional — caller may patch any subset. The router
+    re-validates the full effective state (start <= end, budget,
+    work-day window, overlap with other pending) after merging.
+    """
+
+    date: Optional[date] = None
+    end_date: Optional[date] = None
+    hours: Optional[float] = None
+    note: Optional[str] = None
+    absence_type: Optional[str] = None
+
+    @field_validator('absence_type')
+    @classmethod
+    def validate_absence_type(cls, v):
+        if v is None:
+            return v
+        allowed = {"vacation", "training", "overtime", "other"}
+        if v not in allowed:
+            raise ValueError(f'absence_type muss einer von {allowed} sein')
+        return v
+
+
 class VacationRequestReview(BaseModel):
     action: Literal["approve", "reject"]
     rejection_reason: Optional[str] = None
