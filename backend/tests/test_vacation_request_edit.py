@@ -142,9 +142,10 @@ class TestEmployeeEdit:
 
     def test_edit_writes_audit_row(self, db, employee, employee_client):
         vr = _vr(db, employee, note="alt")
-        employee_client.patch(
+        resp = employee_client.patch(
             f"/api/vacation-requests/{vr.id}", json={"note": "neu"}
         )
+        assert resp.status_code == 200, resp.text
         audits = db.query(TimeEntryAuditLog).filter(
             TimeEntryAuditLog.source == "vacation_request_edit"
         ).all()
@@ -163,6 +164,7 @@ class TestEmployeeEdit:
             f"/api/vacation-requests/{vr.id}", json={"note": "same"}
         )
         assert resp.status_code == 200
+        assert resp.json()["note"] == "same"
         audits = db.query(TimeEntryAuditLog).filter(
             TimeEntryAuditLog.source == "vacation_request_edit"
         ).count()
@@ -186,6 +188,13 @@ class TestEmployeeEdit:
 
     def test_edit_rejected_rejected(self, db, employee, employee_client):
         vr = _vr(db, employee, status_val=VacationRequestStatus.REJECTED.value)
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}", json={"note": "x"}
+        )
+        assert resp.status_code == 400
+
+    def test_edit_withdrawn_rejected(self, db, employee, employee_client):
+        vr = _vr(db, employee, status_val=VacationRequestStatus.WITHDRAWN.value)
         resp = employee_client.patch(
             f"/api/vacation-requests/{vr.id}", json={"note": "x"}
         )
@@ -268,6 +277,7 @@ class TestAdminEdit:
             f"/api/admin/vacation-requests/{vr.id}", json={"note": "admin-edit"}
         )
         assert resp.status_code == 200, resp.text
+        assert resp.json()["note"] == "admin-edit"
 
         audits = db.query(TimeEntryAuditLog).filter(
             TimeEntryAuditLog.source == "vacation_request_edit"
