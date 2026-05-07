@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import date, datetime
+from datetime import date as _date_type
 from typing import Optional, Literal
 import uuid
 
@@ -24,6 +25,31 @@ class VacationRequestCreate(BaseModel):
     def end_date_after_start(cls, v, info):
         if v is not None and 'date' in info.data and v < info.data['date']:
             raise ValueError('end_date muss nach date liegen')
+        return v
+
+
+class VacationRequestUpdate(BaseModel):
+    """Partial update for a PENDING vacation request.
+
+    All fields optional — caller may patch any subset. The router
+    re-validates the full effective state (start <= end, budget,
+    work-day window, overlap with other pending) after merging.
+    """
+
+    date: Optional[_date_type] = None
+    end_date: Optional[_date_type] = None
+    hours: Optional[float] = None
+    note: Optional[str] = None
+    absence_type: Optional[str] = None
+
+    @field_validator('absence_type')
+    @classmethod
+    def validate_absence_type(cls, v):
+        if v is None:
+            return v
+        allowed = {"vacation", "training", "overtime", "other"}
+        if v not in allowed:
+            raise ValueError(f'absence_type muss einer von {allowed} sein')
         return v
 
 

@@ -197,4 +197,75 @@ test.describe('Employee Absences', () => {
     const table = employeePage.locator('table');
     await expect(table.getByText('Überstundenausgleich')).toBeVisible({ timeout: 10000 });
   });
+
+  test('employee edits own pending vacation request — hours', async ({
+    employeePage,
+    adminApi,
+    createVacationRequest,
+  }) => {
+    // Enable approval requirement (admin-side)
+    try {
+      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
+    } catch {
+      test.skip();
+      return;
+    }
+
+    const startDate = weekdayFromNow(48);
+    const uniqueNote = `E2E self-edit ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      await createVacationRequest({
+        date: startDate,
+        hours: 8,
+        note: uniqueNote,
+      });
+    } catch {
+      try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
+      test.skip();
+      return;
+    }
+
+    // Reload so the page picks up the newly-enabled approval setting
+    // (the "Meine Anträge" tab is only rendered when vacation_approval_required=true).
+    await employeePage.goto('/absences');
+    await employeePage.waitForLoadState('networkidle');
+
+    // Switch to "Meine Anträge".
+    await employeePage.getByRole('button', { name: /Meine Anträge/ }).click();
+    await employeePage.waitForLoadState('networkidle');
+
+    const card = employeePage.locator('div.bg-white').filter({ hasText: uniqueNote }).first();
+    await expect(card).toBeVisible({ timeout: 5000 });
+
+    // Pencil button is icon-only with title="Antrag bearbeiten"
+    await card.getByRole('button', { name: 'Antrag bearbeiten' }).click();
+
+    const dialog = employeePage.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+
+    // Change hours to 6
+    const hoursInput = dialog.locator('input[type="number"]').first();
+    await hoursInput.fill('6');
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+
+    // Toast confirms
+    await expect(
+      employeePage.locator('[role="alert"]').filter({ hasText: /aktualisiert/ })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Re-open the modal and verify the hours value persisted as 6.
+    await employeePage.waitForLoadState('networkidle');
+    const cardAfter = employeePage.locator('div.bg-white').filter({ hasText: uniqueNote }).first();
+    await expect(cardAfter).toBeVisible({ timeout: 5000 });
+    await cardAfter.getByRole('button', { name: 'Antrag bearbeiten' }).click();
+
+    const dialogAfter = employeePage.getByRole('dialog');
+    await expect(dialogAfter).toBeVisible({ timeout: 5000 });
+    const hoursAfter = dialogAfter.locator('input[type="number"]').first();
+    await expect(hoursAfter).toHaveValue('6');
+    await dialogAfter.getByRole('button', { name: 'Abbrechen' }).click();
+
+    // Cleanup approval setting (request itself is teardown-handled by fixture)
+    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
+  });
 });

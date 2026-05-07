@@ -5,15 +5,15 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from app.database import get_db
-from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry
+from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
-from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview
+from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview, VacationRequestUpdate
 from app.services import calculation_service
 from app.services.calculation_service import count_workdays
 from app.services.timezone_service import today_local
 from app.routers.admin_helpers import _create_audit_log
-from app.routers.vacation_requests import cancel_approved_vacation_request
+from app.routers.vacation_requests import cancel_approved_vacation_request, _format_vacation_request_audit_text
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -241,6 +241,138 @@ def review_vacation_request(
         db.add(absence)
 
     vr.status = VacationRequestStatus.APPROVED.value
+    db.commit()
+    db.refresh(vr)
+    return _enrich_vr_response(vr, db)
+
+
+@router.patch("/vacation-requests/{request_id}", response_model=VacationRequestResponse)
+def update_vacation_request_as_admin(
+    request_id: str,
+    data: VacationRequestUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Edit a PENDING vacation request on behalf of the requesting employee.
+
+    Tenant-scoped: returns 404 (not 403) if the row belongs to another
+    tenant — don't leak existence. Mirrors the employee-side validation,
+    but the target user is the original requester (not the admin), so
+    work-day window and vacation budget are evaluated against them.
+    """
+    vr = (
+        db.query(VacationRequest)
+        .filter(
+            VacationRequest.id == request_id,
+            VacationRequest.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if not vr:
+        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
+    if vr.status != VacationRequestStatus.PENDING.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Nur offene Anträge können bearbeitet werden",
+        )
+
+    target_user = db.query(User).filter(
+        User.id == vr.user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    old_audit_text = _format_vacation_request_audit_text(vr)
+    old_date = vr.date
+
+    # Apply patch (merge provided fields). model_fields_set distinguishes
+    # "field absent from request" (keep DB value) from "field sent as null"
+    # (clear nullable fields end_date / note).
+    fields_set = data.model_fields_set
+    new_date = data.date if "date" in fields_set and data.date is not None else vr.date
+    new_end_date = data.end_date if "end_date" in fields_set else vr.end_date
+    new_hours = data.hours if "hours" in fields_set and data.hours is not None else float(vr.hours)
+    new_note = data.note if "note" in fields_set else vr.note
+    new_absence_type = data.absence_type if "absence_type" in fields_set and data.absence_type is not None else vr.absence_type
+
+    no_change = (
+        new_date == vr.date
+        and new_end_date == vr.end_date
+        and float(new_hours) == float(vr.hours)
+        and new_note == vr.note
+        and new_absence_type == vr.absence_type
+    )
+    if no_change:
+        return _enrich_vr_response(vr, db)
+
+    # Re-validation against TARGET USER, not admin
+    effective_end = new_end_date if new_end_date else new_date
+    if effective_end < new_date:
+        raise HTTPException(status_code=400, detail="Enddatum muss nach dem Startdatum liegen")
+    if target_user.first_work_day and new_date < target_user.first_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
+    if target_user.last_work_day and effective_end > target_user.last_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
+
+    other_pending = db.query(VacationRequest).filter(
+        VacationRequest.id != vr.id,
+        VacationRequest.user_id == target_user.id,
+        VacationRequest.tenant_id == current_user.tenant_id,
+        VacationRequest.status == VacationRequestStatus.PENDING.value,
+        VacationRequest.date <= effective_end,
+    ).all()
+    for e in other_pending:
+        e_end = e.end_date if e.end_date else e.date
+        if e_end >= new_date:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Offener Urlaubsantrag für Zeitraum {e.date}–{e_end} existiert bereits",
+            )
+
+    if new_absence_type == "vacation":
+        dates_by_year: dict[int, list] = {}
+        d = new_date
+        while d <= effective_end:
+            if d.weekday() < 5:
+                dates_by_year.setdefault(d.year, []).append(d)
+            d += timedelta(days=1)
+        for check_year, year_dates in dates_by_year.items():
+            account = calculation_service.get_vacation_account(db, target_user, check_year)
+            year_hours_needed = sum(
+                float(calculation_service.get_daily_target_for_date(
+                    target_user, dd,
+                    weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, dd),
+                ))
+                for dd in year_dates
+            )
+            if float(account['remaining_hours']) - year_hours_needed < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Nicht genügend Urlaubstage für {check_year} ({account['remaining_days']:.1f} Tage verfügbar)",
+                )
+
+    vr.date = new_date
+    vr.end_date = new_end_date
+    vr.hours = new_hours
+    vr.note = new_note
+    vr.absence_type = new_absence_type
+
+    new_audit_text = _format_vacation_request_audit_text(vr)
+    audit = TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=vr.user_id,
+        changed_by=current_user.id,
+        action="update",
+        old_date=old_date,
+        new_date=vr.date,
+        old_note=old_audit_text,
+        new_note=new_audit_text,
+        source="vacation_request_edit",
+        tenant_id=vr.tenant_id,
+    )
+    db.add(audit)
     db.commit()
     db.refresh(vr)
     return _enrich_vr_response(vr, db)

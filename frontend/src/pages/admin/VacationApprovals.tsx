@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../../api/client';
-import { Clock, CheckCircle, XCircle, AlertCircle, Check, X, Trash2 } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Check, X, Trash2, Pencil } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
+import VacationRequestEditModal from '../../components/VacationRequestEditModal';
 
 interface VacationRequest {
   id: string;
@@ -45,6 +46,7 @@ export default function VacationApprovals() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null);
   const [settingLoading, setSettingLoading] = useState(false);
+  const [editingRequest, setEditingRequest] = useState<VacationRequest | null>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -140,6 +142,17 @@ export default function VacationApprovals() {
 
   return (
     <div>
+      {editingRequest && (
+        <VacationRequestEditModal
+          request={editingRequest}
+          mode="admin"
+          onClose={() => setEditingRequest(null)}
+          onSaved={() => {
+            setEditingRequest(null);
+            fetchRequests();
+          }}
+        />
+      )}
       <ConfirmDialog
         isOpen={confirmState.isOpen}
         title={confirmState.title}
@@ -340,6 +353,13 @@ export default function VacationApprovals() {
                         >
                           <Check size={16} />
                           <span>Genehmigen</span>
+                        </button>
+                        <button
+                          onClick={() => setEditingRequest(vr)}
+                          className="flex items-center space-x-2 px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm rounded-lg transition"
+                        >
+                          <Pencil size={16} />
+                          <span>Bearbeiten</span>
                         </button>
                         <button
                           onClick={() => setRejectingId(vr.id)}
