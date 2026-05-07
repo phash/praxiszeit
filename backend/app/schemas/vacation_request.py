@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 from datetime import date as _date_type
 from typing import Optional, Literal
@@ -34,11 +34,17 @@ class VacationRequestUpdate(BaseModel):
     All fields optional — caller may patch any subset. The router
     re-validates the full effective state (start <= end, budget,
     work-day window, overlap with other pending) after merging.
+
+    `extra="forbid"` rejects unknown fields so a future refactor that
+    blindly assigns `data.model_dump(exclude_unset=True)` cannot become
+    a mass-assignment vector (e.g. status, reviewed_by, user_id).
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     date: Optional[_date_type] = None
     end_date: Optional[_date_type] = None
-    hours: Optional[float] = None
+    hours: Optional[float] = Field(None, ge=0, le=24)
     note: Optional[str] = None
     absence_type: Optional[str] = None
 
@@ -73,6 +79,13 @@ class VacationRequestResponse(BaseModel):
     reviewed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+
+    # Last-edit tracking (Issue: DSGVO transparency) — drives the
+    # "Bearbeitet von Admin XY am ..." badge on the MA's view.
+    last_modified_by: Optional[uuid.UUID] = None
+    last_modified_at: Optional[datetime] = None
+    last_modifier_first_name: Optional[str] = None
+    last_modifier_last_name: Optional[str] = None
 
     # Enriched fields (populated by router)
     user_first_name: Optional[str] = None

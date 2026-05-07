@@ -48,6 +48,17 @@ from app.models.tenant import Tenant
 SUSPEND_GRACE_DAYS = 7
 DELETE_GRACE_DAYS = 30
 
+# DSGVO Art. 5(1)(e) Speicherbegrenzung — vacation-request edit/cancel audit
+# rows reference an approval workflow, not the ArbZG-mandatory time-record
+# itself. We purge them after 730 days (gleichlauf mit ArbZG §16-Frist) so
+# the request-level history doesn't accumulate forever. Time-entry audits
+# (sources: manual / import / change_request) are NOT touched here.
+VACATION_AUDIT_RETENTION_DAYS = 730
+VACATION_AUDIT_SOURCES = (
+    "vacation_request_edit",
+    "vacation_request_cancel",
+)
+
 
 # ───────────────── Suspend / Deletion lifecycle ──────────────────────
 
@@ -134,6 +145,30 @@ def apply_scheduled_suspends(db: Session) -> int:
     if n:
         db.commit()
     return n
+
+
+def purge_expired_vacation_audit_logs(db: Session) -> int:
+    """Delete vacation-request edit/cancel audit rows older than the
+    retention window (DSGVO Art. 5 Abs. 1 lit. e).
+
+    Returns number of deleted rows. Tenant-scoped via WHERE on the model;
+    safe to run in a superadmin RLS context (the query carries no user
+    context). Time-entry audits (manual / import / change_request) are
+    intentionally excluded — those are bound to the ArbZG §16
+    record-retention obligation and must outlive this purge.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=VACATION_AUDIT_RETENTION_DAYS)
+    deleted = (
+        db.query(TimeEntryAuditLog)
+        .filter(
+            TimeEntryAuditLog.source.in_(VACATION_AUDIT_SOURCES),
+            TimeEntryAuditLog.created_at < cutoff,
+        )
+        .delete(synchronize_session=False)
+    )
+    if deleted:
+        db.commit()
+    return int(deleted or 0)
 
 
 def apply_scheduled_deletions(db: Session) -> int:

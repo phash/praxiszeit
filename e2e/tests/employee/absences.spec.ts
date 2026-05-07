@@ -268,4 +268,54 @@ test.describe('Employee Absences', () => {
     // Cleanup approval setting (request itself is teardown-handled by fixture)
     try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
   });
+
+  test('edit modal shows initial values from the existing request', async ({
+    employeePage,
+    adminApi,
+    createVacationRequest,
+  }) => {
+    // Spec section 5: "Modal zeigt Initialwerte"
+    try {
+      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
+    } catch {
+      test.skip();
+      return;
+    }
+
+    const startDate = weekdayFromNow(54);
+    const uniqueNote = `E2E prefill ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      await createVacationRequest({
+        date: startDate,
+        hours: 7,
+        absence_type: 'training',
+        note: uniqueNote,
+      });
+    } catch {
+      try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
+      test.skip();
+      return;
+    }
+
+    await employeePage.goto('/absences');
+    await employeePage.waitForLoadState('networkidle');
+    await employeePage.getByRole('button', { name: /Meine Anträge/ }).click();
+    await employeePage.waitForLoadState('networkidle');
+
+    const card = employeePage.locator('div.bg-white').filter({ hasText: uniqueNote }).first();
+    await expect(card).toBeVisible({ timeout: 5000 });
+    await card.getByRole('button', { name: 'Antrag bearbeiten' }).click();
+
+    const dialog = employeePage.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+
+    // All four user-facing fields must reflect the existing request.
+    await expect(dialog.locator('input[type="date"]').first()).toHaveValue(startDate);
+    await expect(dialog.locator('input[type="number"]').first()).toHaveValue('7');
+    await expect(dialog.locator('select').first()).toHaveValue('training');
+    await expect(dialog.locator('input[type="text"]').first()).toHaveValue(uniqueNote);
+
+    await dialog.getByRole('button', { name: 'Abbrechen' }).click();
+    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
+  });
 });

@@ -513,6 +513,121 @@ class TestTenantInvoicesIsolation:
             conn.close()
 
 
+class TestVacationRequestEditAuditIsolation:
+    """Verify vacation_request_edit audit rows are tenant-isolated under
+    real RLS (not just the app-layer F-026 filter).
+
+    The internal review claimed the audit row's tenant_id is set from
+    vr.tenant_id and the lookup query carries an explicit tenant filter.
+    This test closes the loop: even in the absence of the app-layer
+    filter, the Postgres RLS policy on time_entry_audit_logs blocks
+    cross-tenant reads. Spec test #12 closure.
+    """
+
+    def _seed_audit_rows(self, admin_engine):
+        """Insert one vacation_request_edit audit row per tenant."""
+        conn = admin_engine.connect()
+        try:
+            conn.execute(text(
+                "DELETE FROM time_entry_audit_logs "
+                "WHERE source = 'vacation_request_edit' "
+                "  AND new_note LIKE 'rls_audit_test_%'"
+            ))
+            for tid, uid, marker in [
+                (TENANT_A_ID, USER_A1_ID, "rls_audit_test_a"),
+                (TENANT_B_ID, USER_B1_ID, "rls_audit_test_b"),
+            ]:
+                conn.execute(text(
+                    """
+                    INSERT INTO time_entry_audit_logs
+                        (id, tenant_id, user_id, changed_by, action,
+                         source, new_note)
+                    VALUES (gen_random_uuid(), :tid, :uid, :uid,
+                            'update', 'vacation_request_edit', :note)
+                    """
+                ), {"tid": str(tid), "uid": str(uid), "note": marker})
+        finally:
+            conn.close()
+
+    def _cleanup_audit_rows(self, admin_engine):
+        conn = admin_engine.connect()
+        try:
+            conn.execute(text(
+                "DELETE FROM time_entry_audit_logs "
+                "WHERE new_note LIKE 'rls_audit_test_%'"
+            ))
+        finally:
+            conn.close()
+
+    def test_tenant_a_cannot_see_tenant_b_edit_audit(
+        self, app_engine, admin_engine, seed_data
+    ):
+        self._seed_audit_rows(admin_engine)
+        try:
+            conn, trans = _tenant_session(app_engine, TENANT_A_ID)
+            try:
+                rows = conn.execute(text(
+                    "SELECT new_note FROM time_entry_audit_logs "
+                    "WHERE source = 'vacation_request_edit' "
+                    "  AND new_note LIKE 'rls_audit_test_%'"
+                )).fetchall()
+                visible = {r[0] for r in rows}
+                assert "rls_audit_test_a" in visible
+                assert "rls_audit_test_b" not in visible, (
+                    "RLS leak: tenant A can read tenant B's vacation-edit audit row"
+                )
+            finally:
+                trans.rollback()
+                conn.close()
+        finally:
+            self._cleanup_audit_rows(admin_engine)
+
+    def test_tenant_b_cannot_see_tenant_a_edit_audit(
+        self, app_engine, admin_engine, seed_data
+    ):
+        self._seed_audit_rows(admin_engine)
+        try:
+            conn, trans = _tenant_session(app_engine, TENANT_B_ID)
+            try:
+                rows = conn.execute(text(
+                    "SELECT new_note FROM time_entry_audit_logs "
+                    "WHERE source = 'vacation_request_edit' "
+                    "  AND new_note LIKE 'rls_audit_test_%'"
+                )).fetchall()
+                visible = {r[0] for r in rows}
+                assert "rls_audit_test_b" in visible
+                assert "rls_audit_test_a" not in visible
+            finally:
+                trans.rollback()
+                conn.close()
+        finally:
+            self._cleanup_audit_rows(admin_engine)
+
+    def test_no_context_sees_no_edit_audit(
+        self, app_engine, admin_engine, seed_data
+    ):
+        """Even without tenant context, the audit row stays hidden — the
+        RLS policy fails-closed when app.tenant_id is unset."""
+        self._seed_audit_rows(admin_engine)
+        try:
+            conn, trans = _no_context_session(app_engine)
+            try:
+                count = conn.execute(text(
+                    "SELECT COUNT(*) FROM time_entry_audit_logs "
+                    "WHERE source = 'vacation_request_edit' "
+                    "  AND new_note LIKE 'rls_audit_test_%'"
+                )).scalar()
+                assert count == 0, (
+                    f"RLS leak: audit row visible without tenant context "
+                    f"(count={count})"
+                )
+            finally:
+                trans.rollback()
+                conn.close()
+        finally:
+            self._cleanup_audit_rows(admin_engine)
+
+
 class TestNoContextSecurity:
     """Verify that a session without any tenant/superadmin context sees nothing."""
 
