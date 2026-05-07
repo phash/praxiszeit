@@ -117,7 +117,7 @@ else
     if docker run --rm \
            -v "$(pwd)/e2e":/app -w /app \
            --network host \
-           mcr.microsoft.com/playwright:v1.50.0-jammy \
+           mcr.microsoft.com/playwright:v1.58.2-jammy \
            sh -c "npm install --silent && npx playwright test --reporter=line" 2>&1 | tail -15; then
         ok "E2E tests passed"
     else
