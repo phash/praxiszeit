@@ -265,6 +265,112 @@ class TestEmployeeEdit:
         db.refresh(vr)
         assert vr.end_date is None
 
+    def test_edit_within_budget_does_not_self_count(
+        self, db, employee, employee_client
+    ):
+        """Spec #9 regression: editing a pending request must NOT
+        double-count its own hours against the vacation budget.
+
+        Setup: tight budget = 2 vacation days. Pending request consumes
+        the full budget. PATCH shifts the date range to a different week
+        but keeps the same length. If the impl wrongly summed the
+        existing pending hours into `account['remaining_hours']`, this
+        edit would fail with 400 (budget). Pending requests must NOT
+        consume budget — only Absences do.
+        """
+        employee.vacation_days = 2
+        db.commit()
+        # Mon + Tue in Q3 — deterministic weekdays, future-dated
+        start = date(2026, 9, 7)        # Monday
+        end = date(2026, 9, 8)          # Tuesday
+        vr = _vr(db, employee, start=start, end=end, hours=8.0)
+        # Shift to following week, same length
+        new_start = date(2026, 9, 14)   # Monday
+        new_end = date(2026, 9, 15)     # Tuesday
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}",
+            json={
+                "date": new_start.isoformat(),
+                "end_date": new_end.isoformat(),
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        db.refresh(vr)
+        assert vr.date == new_start
+        assert vr.end_date == new_end
+
+    def test_edit_exceeds_budget_rejected(
+        self, db, employee, employee_client
+    ):
+        """Counterpart to self-exclude test: actual budget overflow
+        must still be rejected. Sanity-check that the budget guard is
+        intact and we didn't dilute it while fixing the double-count."""
+        employee.vacation_days = 2
+        db.commit()
+        start = date(2026, 9, 7)        # Monday
+        vr = _vr(db, employee, start=start, end=start + timedelta(days=1),
+                 hours=8.0)
+        # Try to extend to Mon-Fri = 5 weekdays, budget = 2 days
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}",
+            json={"end_date": (start + timedelta(days=4)).isoformat()},
+        )
+        assert resp.status_code == 400
+
+    def test_edit_unknown_field_rejected(self, db, employee, employee_client):
+        """Mass-assignment guard: extra="forbid" rejects unknown fields
+        like `status` / `reviewed_by` so a future refactor that blindly
+        applies model_dump cannot bypass the approval workflow."""
+        vr = _vr(db, employee)
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}",
+            json={"status": "approved", "note": "trying to self-approve"},
+        )
+        assert resp.status_code == 422
+
+    def test_edit_negative_hours_rejected(self, db, employee, employee_client):
+        """Field bounds: negative or absurd hours must be rejected at
+        the schema layer before any DB write."""
+        vr = _vr(db, employee)
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}", json={"hours": -1.0}
+        )
+        assert resp.status_code == 422
+
+    def test_edit_excessive_hours_rejected(self, db, employee, employee_client):
+        """Field bounds: hours > 24 (one calendar day) must be rejected."""
+        vr = _vr(db, employee)
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}", json={"hours": 9999.0}
+        )
+        assert resp.status_code == 422
+
+    def test_edit_note_pipe_escaped_in_audit(
+        self, db, employee, employee_client
+    ):
+        """Log-injection guard: `|` is the audit-text separator and must
+        be neutralized in user-supplied notes so attackers cannot forge
+        fake audit-row shapes (CWE-117)."""
+        vr = _vr(db, employee, note="alt")
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}",
+            json={"note": "fake | 2099-01-01..2099-12-31 | vacation | 999h"},
+        )
+        assert resp.status_code == 200, resp.text
+        audits = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.source == "vacation_request_edit"
+        ).all()
+        assert len(audits) == 1
+        # The literal injected `|` must not appear in the new-note slice
+        # past the legitimate format prefix.
+        new_note = audits[0].new_note or ""
+        # Split on the helper's separator: prefix has 4 segments before
+        # the user-supplied note (`vacation_request <id> | <range> | <type>
+        # | <hours> | <note>`). Anything more = injection succeeded.
+        assert new_note.count("|") == 4, (
+            f"User-supplied `|` not escaped: {new_note!r}"
+        )
+
 
 # ===========================================================================
 # Admin edit any pending in tenant
@@ -307,3 +413,53 @@ class TestAdminEdit:
             f"/api/admin/vacation-requests/{vr.id}", json={"note": "x"}
         )
         assert resp.status_code == 400
+
+    def test_admin_edit_sets_last_modified_by(
+        self, db, employee, admin, admin_client
+    ):
+        """DSGVO transparency: when an admin edits a MA's request, the
+        MA must be able to see WHO modified it. last_modified_by is the
+        single source of truth — drives the 'Bearbeitet von Admin XY'
+        badge on the MA's view."""
+        vr = _vr(db, employee, note="alt")
+        resp = admin_client.patch(
+            f"/api/admin/vacation-requests/{vr.id}",
+            json={"note": "admin änderung"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["last_modified_by"] == str(admin.id)
+        assert body["last_modified_at"] is not None
+        assert body["last_modifier_first_name"] == admin.first_name
+
+
+class TestLastModifiedTracking:
+    def test_self_edit_sets_self_as_modifier(
+        self, db, employee, employee_client
+    ):
+        """A self-edit also bumps last_modified_by — the badge can then
+        compare last_modified_by == user_id to decide whether to render
+        as 'self-edited' (no badge) or 'admin-edited' (badge)."""
+        vr = _vr(db, employee, note="alt")
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}", json={"note": "neu"}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["last_modified_by"] == str(employee.id)
+        assert body["last_modified_at"] is not None
+
+    def test_noop_edit_does_not_bump_last_modified(
+        self, db, employee, employee_client
+    ):
+        """No-op edits must NOT touch last_modified_by — otherwise a
+        spurious 'Bearbeitet von ...' badge would appear after a
+        no-change PATCH."""
+        vr = _vr(db, employee, note="same")
+        resp = employee_client.patch(
+            f"/api/vacation-requests/{vr.id}", json={"note": "same"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["last_modified_by"] is None
+        assert body["last_modified_at"] is None

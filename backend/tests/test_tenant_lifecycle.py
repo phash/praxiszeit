@@ -117,6 +117,60 @@ def test_cron_respects_future_suspend(_db_session, tenant):
     assert count == 0
 
 
+# ─── Vacation-audit retention purge (DSGVO Art. 5(1)(e)) ────────────
+
+def _mk_audit(db, tenant_id, user_id, source, age_days):
+    from app.models import TimeEntryAuditLog
+    log = TimeEntryAuditLog(
+        time_entry_id=None, user_id=user_id, changed_by=user_id,
+        action="update", source=source, tenant_id=tenant_id,
+        new_note="x",
+    )
+    db.add(log)
+    db.flush()
+    log.created_at = datetime.now(timezone.utc) - timedelta(days=age_days)
+    db.commit()
+    return log
+
+
+def test_purge_old_vacation_edit_audits(_db_session, tenant):
+    user = _mk_user(_db_session, TID, "purger")
+    old_id = _mk_audit(_db_session, TID, user.id, "vacation_request_edit", age_days=800).id
+    young_id = _mk_audit(_db_session, TID, user.id, "vacation_request_edit", age_days=10).id
+    deleted = lifecycle_service.purge_expired_vacation_audit_logs(_db_session)
+    assert deleted == 1
+    from app.models import TimeEntryAuditLog
+    remaining = {a.id for a in _db_session.query(TimeEntryAuditLog).all()}
+    assert old_id not in remaining
+    assert young_id in remaining
+
+
+def test_purge_does_not_touch_arbzg_relevant_audits(_db_session, tenant):
+    """ArbZG §16 audit sources (manual / import / change_request /
+    dsgvo) must outlive the purge — they belong to time-entry retention."""
+    user = _mk_user(_db_session, TID, "keeper")
+    keep_sources = ("manual", "import", "change_request", "dsgvo")
+    keep_ids = [
+        _mk_audit(_db_session, TID, user.id, src, age_days=900).id
+        for src in keep_sources
+    ]
+    deleted = lifecycle_service.purge_expired_vacation_audit_logs(_db_session)
+    assert deleted == 0
+    from app.models import TimeEntryAuditLog
+    remaining = {a.id for a in _db_session.query(TimeEntryAuditLog).all()}
+    for kid in keep_ids:
+        assert kid in remaining
+
+
+def test_purge_handles_vacation_request_cancel_source(_db_session, tenant):
+    user = _mk_user(_db_session, TID, "canceller")
+    old_id = _mk_audit(_db_session, TID, user.id, "vacation_request_cancel", age_days=800).id
+    deleted = lifecycle_service.purge_expired_vacation_audit_logs(_db_session)
+    assert deleted == 1
+    from app.models import TimeEntryAuditLog
+    assert _db_session.query(TimeEntryAuditLog).filter_by(id=old_id).first() is None
+
+
 # ─── Deletion request + anonymization ──────────────────────────────
 
 def test_request_deletion_sets_timestamp(_db_session, admin_client):

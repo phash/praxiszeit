@@ -4,6 +4,11 @@ import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseHours } from '../utils/formatters';
+import { ABSENCE_TYPE_LABELS, type AbsenceType } from '../constants/absenceTypes';
+
+const EDITABLE_ABSENCE_TYPES: ReadonlyArray<Exclude<AbsenceType, 'sick'>> = [
+  'vacation', 'training', 'overtime', 'other',
+];
 
 interface VacationRequest {
   id: string;
@@ -54,13 +59,28 @@ export default function VacationRequestEditModal({
     e.preventDefault();
     setSubmitting(true);
     try {
-      await apiClient.patch(endpoint, {
-        date,
-        end_date: isDateRange && endDate ? endDate : null,
-        hours,
-        absence_type: type,
-        note: note || null,
-      });
+      // Send only fields that actually changed. The backend's
+      // model_fields_set distinguishes "absent" from "null", so a PATCH
+      // that omits unchanged fields keeps the audit-row diff clean and
+      // avoids spurious updates when the user clears+retypes the same
+      // value.
+      const body: Record<string, unknown> = {};
+      if (date !== request.date) body.date = date;
+      const newEndDate = isDateRange && endDate ? endDate : null;
+      if (newEndDate !== (request.end_date ?? null)) body.end_date = newEndDate;
+      if (hours !== Number(request.hours)) body.hours = hours;
+      if (type !== (request.absence_type ?? 'vacation')) body.absence_type = type;
+      const newNote = note || null;
+      if (newNote !== (request.note ?? null)) body.note = newNote;
+
+      if (Object.keys(body).length === 0) {
+        // Nothing changed — just close the modal with a neutral message.
+        toast.success('Keine Änderungen');
+        onSaved();
+        return;
+      }
+
+      await apiClient.patch(endpoint, body);
       toast.success('Antrag aktualisiert');
       onSaved();
     } catch (err) {
@@ -71,7 +91,7 @@ export default function VacationRequestEditModal({
   };
 
   return (
-    <div className="fixed inset-0 z-10000 flex items-center justify-center">
+    <div className="fixed inset-0 z-modal flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/50"
         onClick={onClose}
@@ -120,6 +140,7 @@ export default function VacationRequestEditModal({
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                   required
+                  autoFocus
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
               </div>
@@ -146,10 +167,9 @@ export default function VacationRequestEditModal({
                   onChange={(e) => setType(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 >
-                  <option value="vacation">Urlaub</option>
-                  <option value="training">Fortbildung (außer Haus)</option>
-                  <option value="overtime">Überstundenausgleich</option>
-                  <option value="other">Sonstiges</option>
+                  {EDITABLE_ABSENCE_TYPES.map((t) => (
+                    <option key={t} value={t}>{ABSENCE_TYPE_LABELS[t]}</option>
+                  ))}
                 </select>
               </div>
               <div>

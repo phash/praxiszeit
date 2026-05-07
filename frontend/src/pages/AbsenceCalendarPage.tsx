@@ -17,6 +17,7 @@ import VacationRequestEditModal from '../components/VacationRequestEditModal';
 
 interface VacationRequest {
   id: string;
+  user_id?: string;
   date: string;
   end_date?: string;
   hours: number;
@@ -26,6 +27,10 @@ interface VacationRequest {
   status: string;
   rejection_reason?: string;
   created_at: string;
+  last_modified_by?: string;
+  last_modified_at?: string;
+  last_modifier_first_name?: string;
+  last_modifier_last_name?: string;
 }
 
 const vrStatusConfig = {
@@ -371,6 +376,14 @@ export default function AbsenceCalendarPage() {
                         {' · '}{vr.days != null ? `${vr.days} Tag${vr.days !== 1 ? 'e' : ''}` : `${vr.hours} h/Tag`}
                       </p>
                       {vr.note && <p className="text-sm text-gray-500 mt-0.5">{vr.note}</p>}
+                      {vr.last_modified_by && vr.user_id && vr.last_modified_by !== vr.user_id && vr.last_modified_at && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2 inline-block">
+                          Bearbeitet von {vr.last_modifier_first_name ?? 'Admin'}
+                          {vr.last_modifier_last_name ? ` ${vr.last_modifier_last_name}` : ''}
+                          {' am '}
+                          {format(new Date(vr.last_modified_at), 'dd.MM.yyyy HH:mm')}
+                        </p>
+                      )}
                     </div>
                     {(() => {
                       const todayStr = format(new Date(), 'yyyy-MM-dd');
