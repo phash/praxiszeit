@@ -23,6 +23,12 @@
 
   --radius-2xl: 16px;
   --radius-xl: 12px;
+
+  /* Stacking context tokens — keep modals above ad-hoc dropdowns/tooltips
+     used elsewhere in the app. The numeric value is unchanged from the
+     ad-hoc `z-10000` literal that was inlined in VacationRequestEditModal
+     before this token was formalised. */
+  --z-modal: 10000;
 }
 
 /*

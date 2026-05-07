@@ -30,6 +30,12 @@ class VacationRequest(Base):
     rejection_reason = Column(Text, nullable=True)
     reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    # Tracks the most recent CONTENT-altering edit (range / hours / type /
+    # note). Distinct from reviewed_by, which records approve/reject.
+    # NULL = never edited since creation. Drives the MA-side "Bearbeitet
+    # von Admin XY" badge (transparency, § 26 BDSG).
+    last_modified_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    last_modified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
