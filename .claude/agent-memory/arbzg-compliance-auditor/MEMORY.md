@@ -1,90 +1,84 @@
 # ArbZG-Compliance-Auditor Memory
 
-## Letzter Audit: 07.04.2026 (Vollaudit nach Native-Modus-Fixes)
+## Letzter Audit: 23.05.2026 (Vollaudit nach vacation-request-edit Feature + 70 Commits seit 08.04.)
 
-## Implementierungsstand
+## Implementierungsstand (verifiziert 23.05.2026)
 
 ### Kernchecks und Dateien
-- **§3 Hard-Stop (10h)**: `time_entries.py` create/update/clock_out + `admin.py` admin_create/admin_update + `change_requests.py` create
-- **§3 Warnung (8h)**: Employee-Pfade ja; Admin-Pfade DAILY_HOURS_WARNING jetzt implementiert; WEEKLY_HOURS_WARNING fehlt weiterhin in admin_create/admin_update (NIEDRIG)
-- **§4 Pausenpflicht (Gesamtdauer)**: `break_validation_service.py` validate_daily_break() - alle 6 Pfade korrekt
-- **§4 Satz 2**: 15min-Gap-Mindestdauer JETZT geprueft (break_validation_service.py Zeile 69: gap >= 15); deklarierte Pause < 15min ebenfalls abgelehnt (Zeile 95-99) -- BEHOBEN
-- **§5 Ruhezeit**: Echtzeit-Warnung beim Einstempeln implementiert (time_entries.py clock_in() Zeilen 208-223) -- BEHOBEN
-- **§6 is_night_work**: `arbzg_utils.is_night_work()` importiert in ALLEN Reports/Routern korrekt (altes Finding "vereinfachte Logik in reports.py" ist überholt - reports.py nutzt arbzg_utils seit aktuellem Stand)
+- **§3 Hard-Stop (10h)**: `time_entries.py` create/update/clock_out + `admin_time_entries.py` admin_create/admin_update + `change_requests.py` create — ALLE PFADE KONFORM
+- **§3 Warnung (8h)**: Alle 6 Pfade korrekt (DAILY_HOURS_WARNING)
+- **§3 Ausgleichszeitraum**: `reports.py` `/24-week-average`-Endpoint — NEU seit letztem Audit, korrekt implementiert
+- **§4 Pausenpflicht**: `break_validation_service.py` validate_daily_break() — alle 6 Pfade korrekt, 15min-Mindestpause korrekt
+- **§5 Ruhezeit**: Echtzeit-Warnung clock_in() `time_entries.py` Zeilen 247-269 (TZ-aware, DST-korrekt) + `rest_time_service.py` retrospektiv — KONFORM
+- **§6 is_night_work**: 23:00-06:00 (NICHT 22:00!), `arbzg_utils.py` — kanonisch korrekt per §2 Abs.4 ArbZG Normalfenster
 - **§6 Nachtarbeiter-Warn**: alle 6 Pfade korrekt inkl. change-request-apply
-- **§9/10**: weekday==6 korrekt, SUNDAY_WORK/HOLIDAY_WORK, sunday_exception_reason
-- **§14 WEEKLY_HOURS_WARNING**: in allen 6 Pfaden korrekt (inkl. change-request-apply in admin.py Zeile 691-702)
-- **§16**: Excel/ODS/PDF-Export, 730-Tage-Purge-Schutz, DSGVO-Anonymisierung behaelt Zeiteintraege
+- **§6 Nachtarbeit-Report**: `reports.py` `/night-work-summary` — korrekt, nutzt arbzg_utils.is_night_work
+- **§9/10**: weekday==6 korrekt, SUNDAY_WORK/HOLIDAY_WORK mit tenant_id in time_entries.py allen Pfaden — KONFORM
+- **§11**: `/sunday-summary` + `/compensatory-rest` — korrekt mit tenant_id
+- **§14 WEEKLY_HOURS_WARNING**: in allen 6 Pfaden korrekt — KONFORM (altes Finding war bereits behoben)
+- **§16**: Excel/ODS/PDF-Export, 730-Tage-Purge-Schutz, Audit-Log mit allen Source-Markern <40 Zeichen
 - **§18**: exempt_from_arbzg bool auf User, alle Pfade korrekt
 
-## Offene Findings (Stand 07.04.2026)
+### RLS-Architektur (wichtig für Compliance-Bewertung)
+- users, public_holidays, time_entries etc. haben RLS-Policies (Migration 027)
+- `set_tenant_context(db, tenant_id)` wird in auth.py Middleware IMMER gesetzt
+- Daher: `rest_time_service.check_all_users_violations()` OHNE expliziten tenant_id-Filter ist durch RLS geschuetzt
+- `calculation_service.py` PublicHoliday-Queries OHNE tenant_id-Filter sind durch RLS geschuetzt
+- Beide sind trotzdem MITTEL-Findings wegen Verteidigungstiefe (fehlt belt-and-suspenders-Filter)
 
-### NIEDRIG: §14 - WEEKLY_HOURS_WARNING fehlt in admin_create/admin_update
-- `admin_time_entries.py`: DAILY_HOURS_WARNING implementiert (Zeilen 60-62, 144-146)
-- `_calculate_weekly_net_hours` importiert aber NICHT aufgerufen in diesen Pfaden
-- Hard-Stop 10h und DAILY_HOURS_WARNING funktionieren; nur WEEKLY_HOURS_WARNING (48h) fehlt
+## Offene Findings (Stand 23.05.2026)
 
-### MITTEL: §9 - is_holiday() ohne tenant_id in time_entries.py
-- Alle Aufrufe von `is_holiday(db, date)` ohne tenant_id-Parameter (time_entries.py Zeilen 101, 316, 482, 617)
-- Im Single-Tenant-Betrieb kein Problem; bei Multi-Tenant koennte Feiertagscheck falsche Tenant-Daten nutzen
+### MITTEL: §9 Multi-Tenant - PublicHoliday ohne tenant_id in 4 Dateien
+1. `absences.py` Zeile 250-252: `db.query(PublicHoliday).filter(PublicHoliday.year == year)` OHNE tenant_id
+2. `admin_vacations.py` Zeile 159: `db.query(PublicHoliday).filter(PublicHoliday.year == year)` OHNE tenant_id
+3. `calculation_service.py` Zeilen 201-203, 387-390, 463-465: PublicHoliday ohne tenant_id-Filter
+4. `calculation_service.py` Zeile 633: `count_workdays()` ohne tenant_id-Filter
+- Im Single-Tenant (on-prem) kein Problem (RLS schuetzt); vor Phase 4 SaaS zwingend beheben
 
-### MITTEL (systemisch): Feiertagskalender-Bug sync_current_and_next_year()
-- `holiday_service.py` Zeile 165: `db.query(PublicHoliday).all()` – kein tenant_id-Filter beim h.name-Update
-- Aktualisiert Feiertagsnamen fuer ALLE Tenants, nicht nur den aufgerufenen
+### MITTEL: §5 Rest-Time-Service ohne expliziten Tenant-Filter
+- `rest_time_service.py` Zeile 116: `db.query(User).filter(User.is_active == True)` OHNE tenant_id
+- Durch RLS geschuetzt; mangelt aber an belt-and-suspenders
 
-### MITTEL (systemisch): §16 - Tenant-Deaktivierung sperrt Zeitdaten-Zugriff
-- tenant.is_active == False → HTTP 403 fuer ALLE User; Purge/Export unerreichbar
-- Kein Notfall-Zugang fuer deaktivierte Tenants
+### MITTEL (systemisch): Feiertagskalender sync_current_and_next_year()
+- `holiday_service.py` Zeile 221-225: `db.query(PublicHoliday)` ohne tenant_id beim Name-Update
+- Tenant_id wird ab Zeile 215 als Parameter mitgegeben und ab Zeile 222 gefiltert — BEHOBEN (Zeile 222 hat den Filter)
+- AKTION: Verifiziert — `sync_current_and_next_year` filtert korrekt per tenant_id (Zeile 222-225)
 
-## Report-Endpunkte (ArbZG)
-- `GET /api/admin/reports/rest-time-violations` - §5 retrospektiv, konfigurierbar min_rest_hours
+### NIEDRIG: §16 Audit-Log Luecke bei Vacation-Request-Create
+- `vacation_requests.py`: Kein Audit-Log bei ERSTELLEN eines Urlaubsantrags (nur bei Cancel und Edit)
+- Gesetzlich ist die Erstellung eines Antrags (nicht nur die Genehmigung) dokumentationswuerdig
+
+### NIEDRIG: Change-Request-Formular zeigt keine ArbZG-Warnings aus API
+- `ChangeRequestForm.tsx` Zeile 46-62: API-Response wird nach `await` komplett ignoriert
+- Backend gibt warnings in Response zurueck (z.B. §6 Nachtarbeiter), Frontend zeigt sie nicht an
+- `showArbzgWarnings(toast, response.data.warnings)` fehlt
+
+### NIEDRIG: Admin-Pfade geben kein SUNDAY_WORK/HOLIDAY_WORK zurueck
+- `admin_time_entries.py`: admin_create/admin_update senden keine SUNDAY/HOLIDAY-Warnungen
+- Akzeptabel (Admins kennen Kalender), aber dokumentationswuerdig
+
+## Behoben seit 08.04.2026 (via vacation-request-edit Feature)
+
+### BEHOBEN: §16 Audit-Log fuer Vacation-Request-Edit
+- `vacation_requests.py` Zeilen 349-361: source="vacation_request_edit" — korrekt
+- `admin_vacations.py` Zeile 372: source="vacation_request_edit" — korrekt
+- `vacation_requests.py` Zeile 218: source="vacation_request_cancel" — korrekt
+
+### BEHOBEN: §16 - sync_current_and_next_year tenant_id
+- `holiday_service.py` Zeile 220-225: query hat tenant_id-Filter — KONFORM (altes Finding war irrtuemllich)
+
+## Report-Endpunkte (ArbZG) — vollstaendig
+- `GET /api/admin/reports/rest-time-violations` - §5 retrospektiv
 - `GET /api/admin/reports/sunday-summary` - §11 15-freie-Sonntage
-- `GET /api/admin/reports/night-work-summary` - §6 (nutzt arbzg_utils.is_night_work korrekt)
+- `GET /api/admin/reports/night-work-summary` - §6 Nachtarbeit
 - `GET /api/admin/reports/compensatory-rest` - §11 Ersatzruhetag
+- `GET /api/admin/reports/24-week-average` - §3 Ausgleichszeitraum NEU seit letztem Audit
+- `GET /api/admin/reports/monthly` - §16 Monatsreport (DSGVO-konform)
+- `GET /api/admin/reports/export*` - §16 Excel/ODS/PDF Export (DSGVO-konform)
 
 ## Architektur-Details
-- `break_minutes`: Single Integer je TimeEntry (kein Pause-Start/Ende) - systemisch keine Timing-Pruefung möglich
-- `arbzg_utils.is_night_work()`: einziger kanonischer Einstiegspunkt, von allen Routern importiert
-- `_calculate_daily_net_hours()`: summiert alle Eintraege des Tages (korrekte Multi-Entry-Behandlung)
-- XLS-Import: nur Warnings (kein Hard-Stop), exempt_from_arbzg korrekt, is_night_worker korrekt
-
-## Neue Findings (Stand 01.04.2026) - Absence-CRs + Uberstundenausgleich
-
-## Behobene Findings (Stand 07.04.2026)
-
-### BEHOBEN: DSGVO Art. 9 - Sick-Typ in Team-Endpoints
-- `absences.py` Zeilen 84-101 und 133-145: Maskierung sick→absent fuer Nicht-Admins korrekt
-
-### BEHOBEN: §3 EntgFG - Sick-CR-Approval
-- `admin_change_requests.py` Zeilen 225-232: SICK-Override mit get_daily_target_for_date() korrekt
-
-### BEHOBEN: §16 - Kein Audit-Log fuer Absence-CR-Aktionen
-- `admin_change_requests.py`: alle drei Aktionen (CREATE 249-263, UPDATE 267-298, DELETE 300-316) haben TimeEntryAuditLog-Eintraege
-
-### BEHOBEN: DSGVO JSON-Monatsreport
-- `reports.py` Zeile 36: include_health_data-Flag vorhanden; sick_hours conditional (Zeile 108)
-
-### NOCH OFFEN: Negativer Uberstundenkonto-Schutz bei OVERTIME-Absence (MITTEL)
-- `absences.py` und `admin_change_requests.py` pruefen Kontostand bei OVERTIME nicht
-- Vergleich: Vacation-Budget in `absences.py` Zeile 289-301 korrekt geprueft
-
-## Architektur: Overtime-Ausgleich (korrekt, Stand 01.04.2026)
-- OVERTIME in `notin_([TRAINING, SICK, OVERTIME])` bei Soll-Berechnung → Soll bleibt erhalten
-- OVERTIME nicht in `[TRAINING, SICK]` bei Ist-Berechnung → Ist = 0
-- Netto-Effekt: Konto -= daily_target pro OVERTIME-Tag → rechtlich korrekt
-- Konsistent in: get_monthly_target, get_monthly_actual, get_overtime_account, get_ytd_summary, journal_service.py
-
-## Architektur: Absence-CR-Pfad (Stand 01.04.2026)
-- `change_requests.py` Zeile 51: `entry_kind == "absence"` → eigener Branch → kein ArbZG-Check
-- Pause- und Hard-Stop-Validierung korrekt nur im TimeEntry-Branch
-- Absence-CR speichert Snapshot: original_absence_type, original_absence_hours, original_start_time
-
-## Ueberholt / Korrigierte Findings
-- §2/§6 Inkonsistenz reports.py: reports.py nutzt aktuell korrekt arbzg_utils.is_night_work() - altes Finding ungueltig
-- §14 fehlt in change-request-apply: ist implementiert (admin_change_requests.py Zeilen 354-366) - altes Finding ungueltig
-- §4 Satz 2 15min-Gap: behoben in break_validation_service.py (Audit 07.04.2026)
-- §5 Echtzeit-Ruhezeit: behoben in time_entries.py clock_in() (Audit 07.04.2026)
-- DSGVO Art.9 Team-Endpoints: behoben in absences.py (Audit 07.04.2026)
-- §3 EntgFG Sick-CR: behoben in admin_change_requests.py (Audit 07.04.2026)
-- §16 Absence-CR Audit-Log: behoben in admin_change_requests.py (Audit 07.04.2026)
-- DSGVO JSON-Monatsreport include_health_data: behoben in reports.py (Audit 07.04.2026)
+- `break_minutes`: Single Integer je TimeEntry — systemisch keine Pause-Timing-Pruefung moeglich
+- `arbzg_utils.is_night_work()`: 23:00-06:00 (korrekt per §2 Abs.4 ArbZG Normalfenster)
+- `_calculate_daily_net_hours()`: summiert alle Eintraege des Tages korrekt
+- RLS via PostgreSQL-POLICY schuetzt alle Tabellen — auth.py Middleware setzt immer Kontext
+- Source-Marker alle < 40 Zeichen (varchar(40) Limit Migration 037): laengster = "absence_request_approval" (24 Zeichen)
