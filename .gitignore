@@ -61,6 +61,9 @@ ssl/*.pem
 # Testing
 e2e/test-results/
 e2e/playwright-report/
+# Root-level Playwright artifacts (wenn pytest/playwright aus dem Repo-Root laeuft)
+/test-results/
+/playwright-report/
 .pytest_cache/
 
 # Local dev scripts (not tracked)
