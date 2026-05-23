@@ -42,6 +42,31 @@ while [[ $# -gt 0 ]]; do
         --skip-download) SKIP_DOWNLOAD=true; shift ;;
         --skip-frontend) SKIP_FRONTEND=true; shift ;;
         --version)       APP_VERSION="$2"; shift 2 ;;
+        -h|--help)
+            cat <<'USAGE'
+Usage: build-release.sh [options] [VERSION]
+
+Options:
+  --linux-only       Build nur die Linux-Plattform
+  --windows-only     Build nur die Windows-Plattform
+  --macos-only       Build nur die macOS-Plattform
+  --skip-download    Cache nutzen (PG/Python-Downloads nicht wiederholen)
+  --skip-frontend    Frontend-Build überspringen (Dist muss schon existieren)
+  --version VERSION  Explizit Versionsnummer setzen
+  -h, --help         Diese Hilfe anzeigen
+
+Wird VERSION ohne --version übergeben, wird sie als APP_VERSION genutzt.
+Default ist die im Script-Header gesetzte APP_VERSION.
+
+Ergebnis liegt in dist/.
+USAGE
+            exit 0
+            ;;
+        --*)
+            echo "Unbekannte Option: $1" >&2
+            echo "Hilfe: $0 --help" >&2
+            exit 1
+            ;;
         *)               APP_VERSION="$1"; shift ;;
     esac
 done
