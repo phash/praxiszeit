@@ -25,7 +25,7 @@ CSS = r"""
   size: A4;
   margin: 18mm 16mm 22mm 16mm;
   @bottom-center {
-    content: "PraxisZeit __DOCTITLE__ · v1.4.3 · Seite " counter(page) " / " counter(pages);
+    content: "PraxisZeit __DOCTITLE__ · v1.4.4 · Seite " counter(page) " / " counter(pages);
     font-size: 8pt; color: #777;
   }
 }
@@ -359,7 +359,7 @@ def build_titlepage() -> str:
 <section class="titlepage">
   <h1>PraxisZeit</h1>
   <div class="subtitle">Voll-Audit &middot; Security &amp; ArbZG-Compliance</div>
-  <div class="version">Version 1.4.3</div>
+  <div class="version">Version 1.4.4</div>
   <div class="meta">
     Branch master &middot; HEAD 5e03cdf<br>
     Auditdatum: 23. Mai 2026<br><br>
@@ -371,7 +371,7 @@ def build_titlepage() -> str:
 <section class="titlepage">
   <h1>PraxisZeit</h1>
   <div class="subtitle">Installations- &amp; Setup-Anleitung<br>für Linux und Windows</div>
-  <div class="version">Version 1.4.3</div>
+  <div class="version">Version 1.4.4</div>
   <div class="meta">
     Native Installation (ohne Docker) &middot; Docker-Deployment<br>
     Stand: 23. Mai 2026<br><br>
@@ -395,7 +395,7 @@ def main() -> int:
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<title>PraxisZeit {doc_title} v1.4.3</title>
+<title>PraxisZeit {doc_title} v1.4.4</title>
 <style>{page_css}</style>
 </head>
 <body>

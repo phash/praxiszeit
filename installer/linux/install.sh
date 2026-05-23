@@ -3,7 +3,7 @@
 # Installs PraxisZeit as a systemd service with embedded Python + PostgreSQL
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="@@VERSION@@"
 INSTALL_DIR="/opt/praxiszeit"
 SERVICE_USER="praxiszeit"
 SERVICE_NAME="praxiszeit"
