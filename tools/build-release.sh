@@ -335,6 +335,8 @@ if [ "$BUILD_LINUX" = true ]; then
     prepare_platform_dir "${LINUX_DIR}"
 
     cp "${REPO_DIR}/installer/linux/install.sh" "${LINUX_DIR}/"
+    sed -i "s/@@VERSION@@/${APP_VERSION}/g" "${LINUX_DIR}/install.sh" 2>/dev/null || \
+    sed -i'' "s/@@VERSION@@/${APP_VERSION}/g" "${LINUX_DIR}/install.sh"
     chmod +x "${LINUX_DIR}/install.sh"
 
     info "Entpacke Python ${PYTHON_VERSION} (Linux x64)..."
