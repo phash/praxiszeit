@@ -197,6 +197,99 @@ class TestHappyPath:
         assert "sunday_exception_reason" in te
         assert "created_at" in te
 
+    def test_art15_meta_block_present(self, db, alice, alice_client):
+        # DSGVO Art. 15 (1)(a-h): Pflichtangaben zur Verarbeitung muessen
+        # zusaetzlich zur Datenkopie (Abs. 3) geliefert werden.
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        meta = body["art15_meta"]
+        for key in ("a_zwecke", "b_datenkategorien", "c_empfaenger",
+                    "d_speicherdauer", "e_rechte", "f_beschwerderecht",
+                    "g_quelle", "h_automatisierte_entscheidung"):
+            assert key in meta, f"art15_meta fehlt {key}"
+        # Datenkategorien als Liste
+        assert isinstance(meta["b_datenkategorien"], list)
+        assert len(meta["b_datenkategorien"]) >= 5
+        # Rechte als Dict mit den Pflicht-Eintraegen
+        for r in ("berichtigung", "loeschung", "einschraenkung",
+                  "widerspruch", "datenportabilitaet"):
+            assert r in meta["e_rechte"], f"art15_meta.e_rechte fehlt {r}"
+
+    def test_subject_includes_arbzg_status_fields(self, db, alice, alice_client):
+        # § 6 ArbZG (Nachtarbeiter) und § 18 ArbZG (leitende Angestellte)
+        # sind Pflichtbestandteile der Auskunft, plus profile_picture (Foto).
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        s = body["subject"]
+        for f in ("is_night_worker", "exempt_from_arbzg", "profile_picture",
+                  "vacation_days", "work_days_per_week", "calendar_color",
+                  "created_at", "totp_enabled"):
+            assert f in s, f"subject fehlt {f}"
+        # Sicherheits-relevante Felder MUESSEN ausgeschlossen sein
+        assert "password_hash" not in s
+        assert "totp_secret" not in s
+        assert "last_totp_counter" not in s
+
+    def test_change_request_export_has_substance(self, db, alice, alice_client):
+        # DSGVO Art. 15: Begruendung des MA + vorgeschlagene + originale Werte
+        # gehoeren in den Export, nicht nur id/status.
+        from datetime import time as dt_time
+        cr = ChangeRequest(
+            tenant_id=alice.tenant_id, user_id=alice.id,
+            request_type="update", entry_kind="time_entry",
+            reason="Ich hatte vergessen einzustempeln",
+            proposed_date=date.today(), proposed_start_time=dt_time(8, 0),
+            proposed_end_time=dt_time(16, 30), proposed_break_minutes=30,
+            proposed_note="nachgetragen",
+            original_date=date.today(), original_start_time=dt_time(9, 0),
+            original_end_time=dt_time(16, 30), original_break_minutes=30,
+            original_note="alt",
+            status="pending",
+        )
+        db.add(cr)
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        assert len(body["change_requests"]) == 1
+        c = body["change_requests"][0]
+        # MA-Eigentext muss da sein
+        assert c["reason"] == "Ich hatte vergessen einzustempeln"
+        # Vorgeschlagene Werte
+        assert c["proposed_start_time"] == "08:00:00"
+        assert c["proposed_note"] == "nachgetragen"
+        # Original-Werte
+        assert c["original_start_time"] == "09:00:00"
+        assert c["original_note"] == "alt"
+
+    def test_audit_log_export_has_old_new_substance(self, db, alice, alice_client):
+        # DSGVO Art. 15: Aenderungshistorie muss inhaltlich nachvollziehbar sein.
+        # Ohne old_*/new_* sieht der MA nur "es gab eine Aenderung" — Substanz fehlt.
+        from datetime import time as dt_time
+        db.add(TimeEntryAuditLog(
+            tenant_id=alice.tenant_id, user_id=alice.id, changed_by=alice.id,
+            action="update", source="manual",
+            old_date=date.today(), old_start_time=dt_time(8, 0),
+            old_end_time=dt_time(16, 0), old_break_minutes=30, old_note="vorher",
+            new_date=date.today(), new_start_time=dt_time(8, 30),
+            new_end_time=dt_time(16, 30), new_break_minutes=45, new_note="nachher",
+        ))
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        # Mind. 1 mit substantiellen old/new-Werten
+        substantial = [a for a in body["audit_logs"]
+                       if a.get("old_start_time") and a.get("new_start_time")]
+        assert len(substantial) >= 1
+        log = substantial[0]
+        assert log["old_start_time"] == "08:00:00"
+        assert log["new_start_time"] == "08:30:00"
+        assert log["old_note"] == "vorher"
+        assert log["new_note"] == "nachher"
+        assert log["old_break_minutes"] == 30
+        assert log["new_break_minutes"] == 45
+
     def test_empty_user_returns_empty_lists(self, db, alice, alice_client):
         resp = alice_client.get("/api/me/data-export")
         assert resp.status_code == 200
