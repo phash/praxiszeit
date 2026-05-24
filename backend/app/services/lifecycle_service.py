@@ -311,6 +311,11 @@ def _time_entry_dict(te: TimeEntry) -> dict[str, Any]:
         "start_time": str(te.start_time) if te.start_time else None,
         "end_time": str(te.end_time) if te.end_time else None,
         "break_minutes": te.break_minutes,
+        "note": te.note,
+        # §10 ArbZG: Begruendung fuer Sonn-/Feiertagsarbeit — Pflichtbestandteil
+        # der Arbeitszeitaufzeichnung, gehoert in jeden Auskunfts-Export
+        "sunday_exception_reason": getattr(te, "sunday_exception_reason", None),
+        "created_at": te.created_at.isoformat() if te.created_at else None,
     }
 
 

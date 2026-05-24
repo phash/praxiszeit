@@ -185,6 +185,18 @@ class TestHappyPath:
         assert len(body["absences"]) == 2
         assert len(body["vacation_requests"]) == 1
 
+    def test_time_entry_includes_arbzg_fields(self, db, alice, alice_client):
+        # §10 ArbZG: sunday_exception_reason muss im Auskunfts-Export sein
+        # (Pflichtbestandteil der Aufzeichnung). DSGVO Art. 15: note + created_at
+        # gehoeren ebenfalls zur "Kopie der personenbezogenen Daten".
+        _make_data(db, alice, entries=1, absences=0, vacations=0)
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        te = body["time_entries"][0]
+        assert "note" in te
+        assert "sunday_exception_reason" in te
+        assert "created_at" in te
+
     def test_empty_user_returns_empty_lists(self, db, alice, alice_client):
         resp = alice_client.get("/api/me/data-export")
         assert resp.status_code == 200
