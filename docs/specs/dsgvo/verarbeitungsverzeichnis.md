@@ -138,7 +138,8 @@
 | **Privacy by Default** | Gesundheitsdaten (Krank + Nachtarbeit) in Exporten deaktiviert; opt-in mit Audit-Log |
 | **Pseudonymisierung** | Anonymisierungsfunktion für ausgeschiedene Mitarbeitende (POST /anonymize, DELETE /purge) |
 | **Betroffenenrechte (Art. 16)** | PUT /api/auth/profile: Stammdaten selbst korrigierbar |
-| **Datenportabilität (Art. 20)** | GET /api/auth/me/export: vollständiger JSON-Self-Service-Export |
+| **Datenportabilität (Art. 20)** | GET /api/auth/me/export: maschinenlesbarer JSON-Export (Stammdaten + Zeit + Abwesenheiten) |
+| **Auskunftsrecht (Art. 15)** | GET /api/me/data-export: vollständiger JSON-Export inkl. Vacation/Change-Requests + Audit-Logs; rate-limited 5/Tag; jeder Aufruf schreibt self_data_export-Audit-Log (Issue #119) |
 
 ---
 
@@ -148,7 +149,7 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 
 | Recht | Grundlage | Umsetzung |
 |-------|-----------|-----------|
-| Auskunft | Art. 15 DSGVO | Einsicht über Profilseite; Self-Service-Export unter GET /api/auth/me/export |
+| Auskunft | Art. 15 DSGVO | GET /api/me/data-export (vollständig: Stammdaten, Zeit, Abwesenheiten, Urlaubs- und Änderungsanträge, Audit-Logs); Profile-Button "Meine Daten exportieren". Self-Export wird selbst als Audit-Eintrag (source=self_data_export) festgehalten. |
 | Berichtigung | Art. 16 DSGVO | PUT /api/auth/profile: Name und E-Mail direkt änderbar; Änderungsantrag für Zeiteinträge |
 | Löschung | Art. 17 DSGVO | Anonymisierung + Purge-Prozess (s. Abschnitt 5); POST /anonymize, DELETE /purge |
 | Einschränkung | Art. 18 DSGVO | Deaktivierung des Kontos auf Anfrage (is_active = False) |

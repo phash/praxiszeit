@@ -156,15 +156,21 @@ export default function Profile() {
   };
 
   const handleDataExport = async () => {
+    // Issue #119: nutzt den vollstaendigen Art.-15-Endpoint (inkl. Vacation/
+    // Change-Requests + Audit-Logs), der den frueheren Art.-20-Endpoint
+    // /auth/me/export ergaenzt. Backend schreibt zusaetzlich einen
+    // self_data_export-Audit-Log fuer Nachvollziehbarkeit.
     try {
-      const response = await apiClient.get('/auth/me/export', { responseType: 'blob' });
+      const response = await apiClient.get('/me/data-export', { responseType: 'blob' });
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/json' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `PraxisZeit_Datenauszug_${user?.username}.json`);
+      link.setAttribute('download', `PraxisZeit_MeineDaten_${user?.username}_${ts}.json`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      toast.success('Auskunfts-Export heruntergeladen');
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Datenexport'));
     }
@@ -703,7 +709,7 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* DSGVO: Datenauszug (Art. 20) */}
+            {/* DSGVO: Datenauszug (Art. 15 + 20) */}
             <div className="p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -712,7 +718,7 @@ export default function Profile() {
                     <span>Meine Daten exportieren</span>
                   </h3>
                   <p className="text-sm text-gray-600 mt-1">
-                    Laden Sie alle zu Ihrer Person gespeicherten Daten herunter (Art. 20 DSGVO – Datenportabilität).
+                    Laden Sie alle zu Ihrer Person gespeicherten Daten herunter — Stammdaten, Zeiteintr&auml;ge, Abwesenheiten, Urlaubs- und &Auml;nderungsantr&auml;ge sowie Audit-Protokolle (Art. 15 + 20 DSGVO).
                   </p>
                 </div>
                 <button
