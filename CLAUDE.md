@@ -3,6 +3,8 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
+**Aktuelle Version:** 1.5.0 (Stand 2026-05-24)
+**Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
 
@@ -25,7 +27,9 @@ ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 bash tools/build-release.sh                    # Release-Pakete bauen (Linux/Windows/macOS)
 bash tools/build-release.sh --linux-only       # Nur Linux
 bash tools/build-release.sh --windows-only --skip-download   # Rebuild mit Cache
+bash tools/validate-release.sh                 # Docker-Smoke-Test der Tarballs gegen 4 Distros
 ```
+**PostgreSQL-Quelle (ab 1.5.0):** `theseus-rs/postgresql-binaries` 16.13.0. Manylinux-Build, forward-kompatibel bis **glibc 2.34** (Ubuntu 22.04+, Debian 12+, RHEL/Rocky/Alma 9+, Fedora 35+). EDB-Tarbälle sind seit 2026-05 nicht mehr verfügbar (HTTP 403), System-PG-Fallback wurde entfernt (#125). Build bricht hart ab, wenn die Quelle nicht erreichbar ist oder glibc-Symbole > 2.34 verlangt werden. `tools/validate-release.sh` muss vor jedem Release grün sein.
 Git Bash on Windows: `rsync`/`zip` fehlen → Script hat `tar`/PowerShell-`Compress-Archive`-Fallbacks.
 PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe` (kein Webformular).
 **Version-Bump:** 3 Stellen + Lock — `backend/app/core/updater.py`, `tools/build-release.sh` Default, `frontend/package.json` (+ `cd frontend && npm install` für Lock). Build-Script validiert Consistency und bricht sonst ab. `frontend/package.json.version` landet als `__APP_VERSION__` im Footer (`Layout.tsx:345`) — ohne Bump zeigt die UI die alte Version (war 1.3.0 → 1.3.5 lang gedriftet).
@@ -118,6 +122,11 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **Subprocess `*` verboten:** Python 3.13/Windows expanded `*` als Glob in subprocess-Args → explizite Werte nutzen
 - **PYTHONUTF8=1:** Immer für uvicorn-Subprozesse setzen (cp1252-Crashes bei Emojis)
 - **APP_VERSION:** Backend-SoT in `app/core/updater.py`; Frontend-Footer liest `__APP_VERSION__` aus `frontend/package.json.version` (via vite `define`). Beide + `tools/build-release.sh` Default müssen synchron bleiben — Build-Script enforced das.
+- **Lizenz-Public-Key niemals rotieren** — der Ed25519 `_PUBLIC_KEY_PEM` in `backend/app/core/license.py` ist mit dem privaten Key im pzweb-Repo gepaart. Eine Rotation entwertet alle bisher ausgestellten Kundenlizenzen. Privater Key liegt verschlüsselt offline bei Manuel.
+- **`_ALLOWED_UPDATE_HOSTS` in `backend/app/core/updater.py`** enthält ab 1.5.0 sowohl `updates.mr-development.de` als auch `praxiszeit.mr-development.de`. Vor dem Entfernen eines Hosts MUSS mindestens eine Version durchgelaufen sein, die die ersetzende Domain bereits kennt (Henne-Ei). `updates.praxiszeit.de` ist Platzhalter, falls die eigene Domain irgendwann live geht.
+- **Native-Build verlangt `pg_env()`-Helper** in `praxiszeit-server.py` — alle 7 PG-Subprocess-Aufrufe (initdb, postgres, pg_ctl, psql, pg_dump) bekommen `env=pg_env()`, das `LD_LIBRARY_PATH=$BIN_DIR/postgresql/lib` (Linux/macOS) bzw. `PATH`-Prepend (Windows) setzt. Plus `PGHOST` auf `DATA_DIR/run/`, damit psql den umgezogenen Socket findet.
+- **`unix_socket_directories` in `pg_init()`** muss auf `DATA_DIR/run/` zeigen (nicht `/var/run/postgresql`), weil systemd `ProtectSystem=strict` das default Verzeichnis read-only macht. Detail-Postmortem in #125.
+- **`installer/linux/install.sh` installiert Runtime-Libs automatisch** (`libxml2 libssl3 libgssapi-krb5-2 libzstd1 liblz4-1 libreadline8 libbrotli1` via apt-get/dnf/zypper). Auf Ubuntu-Minimal-Images sind die nicht alle da, theseus' postgres-Binary linkt aber dagegen.
 - **Alembic Revision-IDs:** Max 32 Zeichen (`version_num varchar(32)` Limit)
 - **clock_out `with_for_update`:** `_get_open_entry()` in `clock_out` MUSS mit Lock aufgerufen werden (Race Condition bei Doppelklick)
 - **F-026 Tenant-Filter (belt-and-suspenders):** ALLE `db.query(Model).filter(...)` auf tenant-scoped Tabellen brauchen expliziten `Model.tenant_id == current_user.tenant_id` zusätzlich zu RLS — gilt für list, lookup-by-id UND `.delete()`. Helper für User-Lookup: `_get_user_in_tenant()` in `admin_users.py`. Tests in `test_cross_tenant_api.py`.
@@ -126,6 +135,25 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **`time_entry_audit_logs.source` ist `varchar(40)`** (Migration 037). Neue Source-Marker müssen <40 Zeichen sein, sonst 500 beim INSERT (`StringDataRightTruncation`). Bestehende Werte: `manual`, `import`, `change_request`, `vacation_request_cancel`.
 - **`backend/create_handbuch_testdata.py`** ist multi-tenant-aware: ruft `set_superadmin_context(db)` auf + setzt `tenant_id=TENANT_ID` an User/TimeEntry/Absence/ChangeRequest. Wer das Script forkt für andere Seed-Daten muss beides mitnehmen, sonst RLS-Violation beim INSERT.
 - **Container-File-Updates aus fremdem cwd:** `docker compose cp` resolved Host-Pfade **relativ zum cwd**. Aus `e2e/` heraus → `lstat e2e/backend/...: no such file`. Lösung: `docker cp <host-abs-path> praxiszeit-backend-1:/app/<path>`.
+
+### pzweb-Integration (ab 1.5.0)
+
+Lizenzen und Updates werden zentral über [pzweb](https://github.com/phash/pzweb) verkauft und ausgeliefert (`praxiszeit.mr-development.de` + `updates.mr-development.de`).
+
+**Release-Workflow** (Detail-Checkliste in praxiszeit#124):
+1. Version-Bump in `backend/app/core/updater.py`, `frontend/package.json`, `tools/build-release.sh` — alle drei synchron, Build-Script enforced das.
+2. `bash tools/build-release.sh` — vier OS-Tarbälle in `dist/`.
+3. `bash tools/validate-release.sh` — Docker-Smoke gegen Ubuntu 22.04/24.04, Debian 12, Rocky 9. Failt eine Distro = Tarball nicht freigabefähig.
+4. Im pzweb-Admin (`https://praxiszeit.mr-development.de/admin/releases/neu`): Release anlegen, vier Artefakte hochladen, veröffentlichen.
+5. Smoke: `curl 'https://updates.mr-development.de/v1/check?version=1.4.4&os=linux'` muss signed manifest mit `latest=<neue Version>` liefern.
+
+**Filename-Pattern (strict regex im pzweb-Backend):**
+`praxiszeit-<version>-(linux-x64|macos-x64|macos-arm64|windows-x64).(tar.gz|zip)` — Tippfehler ⇒ 422 beim Upload.
+
+**Manifest-Signatur** (im Code in `app/core/updater.py:_verify_manifest_signature`):
+JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 signiert, base64-encoded ins `signature`-Feld. Veränderung beliebigen Feldes invalidiert die Signatur.
+
+**Verwandte Issues:** #124 (Release-Prozess), #125 (Build-Bug postmortem, geschlossen), #84 (PWA-SW + self-signed cert).
 
 ### Multi-Tenant
 - **SaaS-Roadmap:** Meta-Issue [#100](https://github.com/phash/praxiszeit/issues/100) trackt 8-Phasen-Umbau (Phase 0 fertig in PR #91). On-Prem bleibt single-tenant via geplantem `DEPLOYMENT_MODE`-Schalter (Issue #92).
