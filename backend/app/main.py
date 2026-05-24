@@ -203,12 +203,18 @@ async def lifespan(app: FastAPI):
         print("COOKIE_SECURE=True but ENVIRONMENT is not 'production'. "
               "The refresh-token cookie will NOT be sent over HTTP — set COOKIE_SECURE=false in .env for local development.")
 
+    # 8. Issue #126: Start in-process scheduler for autonomous daily jobs
+    #    (vacation-audit purge + tenant lifecycle). No-op in pytest mode.
+    from app.services.scheduler_service import start_scheduler, stop_scheduler
+    start_scheduler(app)
+
     print("PraxisZeit backend ready!")
 
     yield
 
     # Shutdown
     print("👋 Shutting down PraxisZeit backend...")
+    stop_scheduler()
 
 
 # Create FastAPI app (disable docs in production)
