@@ -41,6 +41,7 @@ from app.models import (
     TimeEntryAuditLog,
     User,
     UserRole,
+    VacationRequest,
 )
 from app.models.tenant import Tenant
 
@@ -325,3 +326,110 @@ def _absence_dict(a: Absence) -> dict[str, Any]:
 
 def export_as_json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+# ───────────────── Self-Service Export (DSGVO Art. 15, Issue #119) ─────
+
+def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
+    """Build a DSGVO Art. 15 self-service data export for a single employee.
+
+    Returns ONLY the requester's own data. Tenant-scoped via RLS plus
+    explicit F-026 belt-and-suspenders filters on every query.
+
+    Includes audit rows where the user appears either as data subject
+    (``user_id``) or as actor (``changed_by``) — covers both "what the
+    system stored about me" and "what I myself did".
+    """
+    tid = user.tenant_id
+
+    own_entries = (
+        db.query(TimeEntry)
+        .filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == tid)
+        .order_by(TimeEntry.date.asc())
+        .all()
+    )
+    own_absences = (
+        db.query(Absence)
+        .filter(Absence.user_id == user.id, Absence.tenant_id == tid)
+        .order_by(Absence.date.asc())
+        .all()
+    )
+    own_vacation_requests = (
+        db.query(VacationRequest)
+        .filter(VacationRequest.user_id == user.id, VacationRequest.tenant_id == tid)
+        .order_by(VacationRequest.date.asc())
+        .all()
+    )
+    own_change_requests = (
+        db.query(ChangeRequest)
+        .filter(ChangeRequest.user_id == user.id, ChangeRequest.tenant_id == tid)
+        .order_by(ChangeRequest.created_at.asc())
+        .all()
+    )
+    own_audit_logs = (
+        db.query(TimeEntryAuditLog)
+        .filter(
+            TimeEntryAuditLog.tenant_id == tid,
+            (TimeEntryAuditLog.user_id == user.id)
+            | (TimeEntryAuditLog.changed_by == user.id),
+        )
+        .order_by(TimeEntryAuditLog.created_at.desc())
+        .all()
+    )
+
+    return {
+        "export_generated_at": datetime.now(timezone.utc).isoformat(),
+        "export_type": "self_service_dsgvo_art15",
+        "subject": _user_dict(user),
+        "time_entries": [_time_entry_dict(t) for t in own_entries],
+        "absences": [_absence_dict(a) for a in own_absences],
+        "vacation_requests": [_vacation_request_dict(v) for v in own_vacation_requests],
+        "change_requests": [_change_request_dict(c) for c in own_change_requests],
+        "audit_logs": [_audit_log_dict(a) for a in own_audit_logs],
+        "counts": {
+            "time_entries": len(own_entries),
+            "absences": len(own_absences),
+            "vacation_requests": len(own_vacation_requests),
+            "change_requests": len(own_change_requests),
+            "audit_logs": len(own_audit_logs),
+        },
+    }
+
+
+def _vacation_request_dict(v: VacationRequest) -> dict[str, Any]:
+    # last_modified_by ist erst nach Migration vorhanden — getattr defensiv,
+    # damit aeltere Bestandsinstanzen ohne diese Spalte den Export noch fahren.
+    last_mod = getattr(v, "last_modified_by", None)
+    return {
+        "id": str(v.id),
+        "date": v.date.isoformat() if v.date else None,
+        "end_date": v.end_date.isoformat() if v.end_date else None,
+        "hours": float(v.hours) if v.hours is not None else None,
+        "absence_type": v.absence_type,
+        "note": v.note,
+        "status": v.status,
+        "rejection_reason": v.rejection_reason,
+        "reviewed_by": str(v.reviewed_by) if v.reviewed_by else None,
+        "reviewed_at": v.reviewed_at.isoformat() if v.reviewed_at else None,
+        "last_modified_by": str(last_mod) if last_mod else None,
+    }
+
+
+def _change_request_dict(c: ChangeRequest) -> dict[str, Any]:
+    return {
+        "id": str(c.id),
+        "status": str(c.status),
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
+
+
+def _audit_log_dict(a: TimeEntryAuditLog) -> dict[str, Any]:
+    return {
+        "id": str(a.id),
+        "action": a.action,
+        "source": a.source,
+        "user_id": str(a.user_id) if a.user_id else None,
+        "changed_by": str(a.changed_by) if a.changed_by else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "new_note": a.new_note,
+    }
