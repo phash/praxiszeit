@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import User
 from app.middleware.auth import require_admin
 from app.services import error_log_service
+from app.core.deployment import is_saas
 
 router = APIRouter(prefix="/api/admin/errors", tags=["admin-errors"], dependencies=[Depends(require_admin)])
 
@@ -71,8 +72,13 @@ def list_errors(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """List all error log entries (admin only)."""
-    errors = error_log_service.get_errors(db, status=status, limit=limit)
+    """List all error log entries (admin only).
+
+    Issue #127: in SaaS mode each tenant-admin must only see errors of their
+    own tenant. In onprem mode the (single-tenant) full set is returned.
+    """
+    tid = current_user.tenant_id if is_saas() else None
+    errors = error_log_service.get_errors(db, status=status, limit=limit, tenant_id=tid)
     return [ErrorLogResponse.from_orm_custom(e) for e in errors]
 
 
@@ -122,8 +128,10 @@ def get_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Get error summary counts by status."""
-    from sqlalchemy import func
-    from app.models import ErrorLog
-    counts = db.query(ErrorLog.status, func.count(ErrorLog.id)).group_by(ErrorLog.status).all()
-    return {status: count for status, count in counts}
+    """Get error summary counts by status.
+
+    Issue #127: in SaaS mode counts are scoped to the caller's tenant.
+    In onprem mode the (single-tenant) full aggregate is returned.
+    """
+    tid = current_user.tenant_id if is_saas() else None
+    return error_log_service.get_error_summary(db, tenant_id=tid)

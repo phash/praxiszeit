@@ -6,8 +6,10 @@ import hashlib
 import logging
 import re
 import traceback
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.error_log import ErrorLog
 from app.database import set_superadmin_context
@@ -93,12 +95,41 @@ def log_error(
     return entry
 
 
-def get_errors(db: Session, status: Optional[str] = None, limit: int = 100):
-    """List errors, ordered by last_seen desc."""
+def get_errors(
+    db: Session,
+    status: Optional[str] = None,
+    limit: int = 100,
+    tenant_id: Optional[uuid.UUID] = None,
+):
+    """List errors, ordered by last_seen desc.
+
+    F-026 (belt-and-suspenders): when ``tenant_id`` is provided (SaaS mode),
+    rows are explicitly filtered to that tenant on top of RLS. In onprem mode
+    callers pass ``tenant_id=None`` and the (single-tenant) full set is
+    returned — matching legacy behaviour.
+    """
     query = db.query(ErrorLog)
+    if tenant_id is not None:
+        query = query.filter(ErrorLog.tenant_id == tenant_id)
     if status:
         query = query.filter(ErrorLog.status == status)
     return query.order_by(ErrorLog.last_seen.desc()).limit(limit).all()
+
+
+def get_error_summary(
+    db: Session,
+    tenant_id: Optional[uuid.UUID] = None,
+) -> dict[str, int]:
+    """Return counts of error logs grouped by status.
+
+    F-026: filters explicitly on ``tenant_id`` when set (SaaS); returns the
+    untouched aggregate for ``None`` (onprem).
+    """
+    query = db.query(ErrorLog.status, func.count(ErrorLog.id))
+    if tenant_id is not None:
+        query = query.filter(ErrorLog.tenant_id == tenant_id)
+    counts = query.group_by(ErrorLog.status).all()
+    return {status: count for status, count in counts}
 
 
 def update_status(db: Session, error_id: str, new_status: str, admin_user_id: Optional[str] = None) -> Optional[ErrorLog]:
