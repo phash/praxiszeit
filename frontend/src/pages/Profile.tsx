@@ -55,7 +55,10 @@ export default function Profile() {
   const [totpError, setTotpError] = useState('');
   const [secretCopied, setSecretCopied] = useState(false);
 
-  const [showExtendedSettings, setShowExtendedSettings] = useState(false);
+  // DSGVO-Audit D-05: Akkordeon by-default offen — Self-Service-Export
+  // muss nach Art. 12 Abs. 1 "leicht zugaenglich" sein, nicht hinter einem
+  // eingeklappten Akkordeon versteckt.
+  const [showExtendedSettings, setShowExtendedSettings] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 

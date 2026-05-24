@@ -2,7 +2,7 @@
 
 **System:** PraxisZeit – Elektronisches Zeiterfassungssystem
 **Verantwortlicher:** [Name der Praxis / des Unternehmens]
-**Stand:** 2026-02-28 (aktualisiert: technische Maßnahmen vollständig umgesetzt)
+**Stand:** 2026-05-24 (aktualisiert: Self-Service-Art-15-Export #119 ergänzt)
 **Status:** Technisch abgeschlossen – durch Verantwortlichen zu prüfen und zu unterzeichnen
 
 ---
@@ -125,7 +125,8 @@ Die verbleibenden Risiken nach Implementierung der Maßnahmen werden als **akzep
 | Privacy by Default (Krankheitsdaten) | ✓ | Standardmäßig ausgeblendet |
 | Anonymisierungsfunktion | ✓ | DSGVO Art. 17 |
 | Löschfristenkonzept | ✓ | 2 Jahre (§16 ArbZG) |
-| Datenportabilität (Art. 20) | ✓ | GET /api/auth/me/export |
+| Datenportabilität (Art. 20) | ✓ | GET /api/auth/me/export (Legacy, kompakt) |
+| Auskunftsrecht (Art. 15) | ✓ | GET /api/me/data-export (vollständig, inkl. Vacation/Change-Requests, Audit-Logs mit old/new, art15_meta-Block mit Pflichtangaben 1(a-h)); Profile-Button "Meine Daten exportieren" |
 | Berichtigungsrecht (Art. 16) | ✓ | PUT /api/auth/profile |
 | Datenschutzerklärung (Art. 13) | ✓ | /privacy-Seite |
 | HTTPS | ⚠ | docker-compose.ssl.yml vorhanden; Pflicht in Produktion |

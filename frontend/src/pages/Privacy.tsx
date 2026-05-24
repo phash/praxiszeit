@@ -167,7 +167,7 @@ export default function Privacy() {
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Ihre Rechte als betroffene Person</h2>
             <p className="text-gray-600 mb-4">
-              Gemäß DSGVO stehen Ihnen folgende Rechte zu. Bitte wenden Sie sich dazu an Ihren Arbeitgeber:
+              Gemäß DSGVO stehen Ihnen folgende Rechte zu. Den <strong>Auskunfts- und Datenportabilitäts-Export</strong> können Sie selbst über <em>Profil → Weitere Einstellungen → „Meine Daten exportieren"</em> herunterladen. Für die übrigen Rechte wenden Sie sich bitte an Ihren Arbeitgeber:
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
