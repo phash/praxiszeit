@@ -132,12 +132,33 @@ def pg_cmd(cmd: str) -> Path:
     return PG_BIN / f"{cmd}{suffix}"
 
 
+def pg_env() -> dict:
+    """Environment for PG subprocesses with bundled libs on the loader path.
+
+    The bundled binaries link against transitive libraries (libpq, libicu,
+    libssl, ...) shipped under bin/postgresql/lib/. On a target system whose
+    distribution provides incompatible major versions of those libs (or none
+    at all), the dynamic loader needs to look in our bundled lib dir first.
+    """
+    env = os.environ.copy()
+    pg_lib = str(BIN_DIR / "postgresql" / "lib")
+    if IS_WINDOWS:
+        env["PATH"] = f"{pg_lib};{env.get('PATH', '')}"
+    else:
+        existing = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = f"{pg_lib}:{existing}" if existing else pg_lib
+        # psql findet sonst den Unix-Socket im falschen Default-Pfad
+        # (/var/run/postgresql) — wir verwenden unser eigenes Datenverzeichnis.
+        env.setdefault("PGHOST", str(DATA_DIR / "run"))
+    return env
+
+
 def pg_is_running() -> bool:
     """Check if PostgreSQL is running."""
     try:
         result = subprocess.run(
             [str(pg_cmd("pg_isready")), "-h", "localhost", "-p", "5432"],
-            capture_output=True, timeout=5,
+            capture_output=True, timeout=5, env=pg_env(),
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -173,7 +194,7 @@ def pg_init(config: dict):
     if Path(pg_share).is_dir():
         init_cmd.extend(["-L", pg_share])
 
-    subprocess.run(init_cmd, check=True)
+    subprocess.run(init_cmd, check=True, env=pg_env())
 
     # pg_hba.conf starts with trust — pg_setup_database() will set passwords
     # and then harden to scram-sha-256 via pg_harden_auth().
@@ -196,6 +217,12 @@ def pg_init(config: dict):
         # Extension libraries path (for bundled PostgreSQL)
         pg_lib = str(BIN_DIR / "postgresql" / "lib").replace("\\", "/")
         f.write(f"dynamic_library_path = '{pg_lib}'\n")
+        # systemd ProtectSystem=strict blockt das default /var/run/postgresql.
+        # Wir legen den Unix-Socket in unser eigenes Datenverzeichnis.
+        if not IS_WINDOWS:
+            pg_run = DATA_DIR / "run"
+            pg_run.mkdir(parents=True, exist_ok=True)
+            f.write(f"unix_socket_directories = '{pg_run}'\n")
 
     logger.info("PostgreSQL data directory initialized")
 
@@ -217,7 +244,7 @@ def pg_start():
             "-l", str(log_file),
             "start",
         ],
-        check=True,
+        check=True, env=pg_env(),
     )
 
     # Wait for PostgreSQL to be ready
@@ -248,7 +275,7 @@ def pg_stop():
             "-m", "fast",
             "stop",
         ],
-        check=True,
+        check=True, env=pg_env(),
     )
     logger.info("PostgreSQL stopped")
 
@@ -319,14 +346,14 @@ def pg_setup_database(config: dict):
     subprocess.run(
         [psql, "-U", superuser, "-d", "postgres",
          "-c", f"ALTER ROLE {superuser} PASSWORD '{escaped_su_pw}'"],
-        check=True, capture_output=True,
+        check=True, capture_output=True, env=pg_env(),
     )
 
     # Check if database exists
     result = subprocess.run(
         [psql, "-U", superuser, "-d", "postgres", "-tAc",
          "SELECT 1 FROM pg_database WHERE datname = 'praxiszeit'"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=pg_env(),
     )
 
     if "1" not in result.stdout:
@@ -334,7 +361,7 @@ def pg_setup_database(config: dict):
         subprocess.run(
             [psql, "-U", superuser, "-d", "postgres", "-c",
              f"CREATE DATABASE {db_name} OWNER {superuser} ENCODING 'UTF8'"],
-            check=True, capture_output=True,
+            check=True, capture_output=True, env=pg_env(),
         )
 
     # Run init-db-user.sql to create app user with RLS permissions
@@ -343,7 +370,7 @@ def pg_setup_database(config: dict):
         logger.info("Setting up application database user (RLS)...")
         subprocess.run(
             [psql, "-U", superuser, "-d", db_name, "-f", str(init_sql)],
-            check=True, capture_output=True,
+            check=True, capture_output=True, env=pg_env(),
         )
 
     # Set app user password
@@ -351,7 +378,7 @@ def pg_setup_database(config: dict):
     subprocess.run(
         [psql, "-U", superuser, "-d", db_name,
          "-c", f"ALTER ROLE {app_user} PASSWORD '{escaped_app_pw}'"],
-        check=True, capture_output=True,
+        check=True, capture_output=True, env=pg_env(),
     )
 
     # Store connection strings as environment variables for the backend
@@ -377,7 +404,7 @@ def pg_setup_database(config: dict):
     )
     subprocess.run(
         [str(pg_cmd("pg_ctl")), "-D", str(PG_DATA), "reload"],
-        capture_output=True,
+        capture_output=True, env=pg_env(),
     )
     logger.info("Authentication hardened to scram-sha-256")
 
@@ -620,7 +647,7 @@ def create_backup(config: dict):
     pg_dump = subprocess.Popen(
         [str(pg_cmd("pg_dump")), "-U", superuser, "-d", "praxiszeit", "-Fc"],
         stdout=subprocess.PIPE,
-        env={**os.environ, "PGPASSWORD": su_password} if su_password else os.environ,
+        env={**pg_env(), "PGPASSWORD": su_password} if su_password else pg_env(),
     )
 
     with open(backup_file, "wb") as f:
@@ -839,7 +866,7 @@ def cmd_status(args):
                 [str(pg_cmd("psql")), "-U", superuser, "-d", "praxiszeit",
                  "-tAc", "SELECT count(*) FROM users WHERE is_active = true"],
                 capture_output=True, text=True,
-                env={**os.environ, "PGPASSWORD": su_password},
+                env={**pg_env(), "PGPASSWORD": su_password},
             )
             if result.returncode == 0:
                 print(f"Active users: {result.stdout.strip()}")

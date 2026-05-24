@@ -363,8 +363,13 @@ if [ "$BUILD_LINUX" = true ]; then
         for bin in "${LINUX_DIR}/bin/postgresql/bin/"*; do
             ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read lib; do
                 # Nur Nicht-Standard-Libs kopieren (nicht libc, ld-linux, etc.)
+                # glibc-eigene Libs NICHT bundlen — sie sind ABI-gekoppelt
+                # an die libc.so.6 des Build-Hosts. Wenn das Ziel eine ältere
+                # glibc hat, schlägt der Loader mit "version GLIBC_X.Y not found"
+                # fehl (libresolv 2.41 → Ubuntu-24-glibc-2.39 mismatch).
                 case "$(basename "$lib")" in
                     libc.so*|libm.so*|libpthread*|libdl.so*|librt.so*|ld-linux*|linux-vdso*) ;;
+                    libresolv.so*|libnsl.so*|libutil.so*|libcrypt.so*|libanl.so*|libthread_db.so*) ;;
                     *) cp -n "$lib" "${LINUX_DIR}/bin/postgresql/lib/" 2>/dev/null || true ;;
                 esac
             done
