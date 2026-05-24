@@ -1,7 +1,7 @@
 # Verarbeitungsverzeichnis nach Art. 30 DSGVO
 
 **Verantwortlicher:** [Name der Praxis / des Unternehmens]
-**Stand:** 2026-02-28
+**Stand:** 2026-05-24
 **Erstellt mit:** PraxisZeit-Zeiterfassungssystem
 
 ---
@@ -149,7 +149,7 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 
 | Recht | Grundlage | Umsetzung |
 |-------|-----------|-----------|
-| Auskunft | Art. 15 DSGVO | GET /api/me/data-export (vollständig: Stammdaten, Zeit, Abwesenheiten, Urlaubs- und Änderungsanträge, Audit-Logs); Profile-Button "Meine Daten exportieren". Self-Export wird selbst als Audit-Eintrag (source=self_data_export) festgehalten. |
+| Auskunft | Art. 15 DSGVO | GET /api/me/data-export (vollständig: Stammdaten inkl. ArbZG-Status, Zeit + §10-Begründung, Abwesenheiten, Urlaubs- und Änderungsanträge inkl. Begründung + proposed/original, Audit-Logs mit old/new-Werten); zusätzlich `art15_meta`-Block mit Pflichtangaben Art. 15 (1)(a-h). Profile-Button "Meine Daten exportieren". Self-Export wird selbst als Audit-Eintrag (source=self_data_export) festgehalten. Diese Audit-Rows bleiben auch nach Anonymisierung erhalten (Rechenschaftspflicht Art. 5 Abs. 2). |
 | Berichtigung | Art. 16 DSGVO | PUT /api/auth/profile: Name und E-Mail direkt änderbar; Änderungsantrag für Zeiteinträge |
 | Löschung | Art. 17 DSGVO | Anonymisierung + Purge-Prozess (s. Abschnitt 5); POST /anonymize, DELETE /purge |
 | Einschränkung | Art. 18 DSGVO | Deaktivierung des Kontos auf Anfrage (is_active = False) |
@@ -172,6 +172,7 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 |-------|---------|----------|------------|
 | 2026-02-28 | 1.0 | Erstversion | [Name] |
 | 2026-02-28 | 1.1 | TOTP-2FA-Felder, is_night_worker (Art. 9), GitHub als Empfänger, TOM aktualisiert, Betroffenenrechte vervollständigt | Claude Sonnet 4.6 |
+| 2026-05-24 | 1.2 | Self-Service-Art-15-Export `/api/me/data-export` (Issue #119); Vacation-Audit-Purge nach 730 Tagen dokumentiert; Self-Export-Audit-Rows bleiben nach Anonymisierung erhalten (Art. 5 Abs. 2 Rechenschaftspflicht) | Claude Opus 4.7 |
 
 ---
 
