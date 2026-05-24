@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Replace this with your actual public key after generating a keypair
 # with tools/license-generator.py
 _PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAB5ZiJro6fDM8M5BupMCdTWjVIFkPn+hsNYHNlajzIyY=
+MCowBQYDK2VwAyEAt8zaDoRf4KldrPMxmX0uKhoaOrIAyU4wtgtn489WxdI=
 -----END PUBLIC KEY-----"""
 
 _PUBLIC_KEY_CONFIGURED = True
