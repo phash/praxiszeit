@@ -93,6 +93,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **Toast-Dauer:** Nicht hardcoden — `ToastContext` setzt severity-basierte Defaults (success 3s, error 8s, warning 6s, info 5s)
 - **Tenant-Scope bei PublicHoliday:** Alle Queries mit `PublicHoliday.tenant_id == <tid>` filtern; User/Entry-Queries bereits durch RLS geschützt, Holidays werden aber oft standalone geladen
 - **License-Enforcement ist Middleware:** `LicenseReadOnlyMiddleware` in `main.py` blockiert Schreib-Methoden bei abgelaufener Lizenz, plus `check_employee_limit()` in `create_user` (neue Writer-Endpoints automatisch mit abgedeckt — keine Per-Route-Dependency nötig)
+- **Daily-Scheduler:** APScheduler in `main.py` startet täglich 03:00 die Lifecycle-Jobs (Vacation-Audit-Purge 730 Tage, Tenant-Suspend, Tenant-Deletion). Disabled im pytest-Mode via `PYTEST_CURRENT_TEST`.
 - **Superadmin-Router:** `/api/superadmin/*` via `require_superadmin` (User ohne `tenant_id`) für §16-Notfall-Export deaktivierter Tenants
 - Cross-Page Refresh nach Stempeln: `uiStore.notifyStampChange()` → `stampVersion` Effect
 - Bulk-Deletes: `synchronize_session=False` + expliziter `tenant_id`-Filter
