@@ -291,6 +291,10 @@ def build_tenant_export_payload(db: Session, tenant: Tenant, *, requester: User)
 
 
 def _user_dict(u: User) -> dict[str, Any]:
+    # DSGVO Art. 15: vollstaendige Auskunft. Whitelist (statt Blacklist) — neue
+    # Felder im User-Model erscheinen nicht automatisch im Export, das ist Absicht
+    # (verhindert versehentliches Leaken von z.B. password_hash, totp_secret,
+    # last_totp_counter).
     return {
         "id": str(u.id),
         "username": u.username,
@@ -299,7 +303,35 @@ def _user_dict(u: User) -> dict[str, Any]:
         "last_name": u.last_name,
         "role": u.role.value if hasattr(u.role, "value") else str(u.role),
         "weekly_hours": float(u.weekly_hours) if u.weekly_hours is not None else None,
+        "vacation_days": u.vacation_days,
+        "work_days_per_week": u.work_days_per_week,
+        "track_hours": u.track_hours,
+        "calendar_color": u.calendar_color,
+        "vacation_carryover_deadline": (
+            u.vacation_carryover_deadline.isoformat() if u.vacation_carryover_deadline else None
+        ),
+        "use_daily_schedule": u.use_daily_schedule,
+        "hours_monday": float(u.hours_monday) if u.hours_monday is not None else None,
+        "hours_tuesday": float(u.hours_tuesday) if u.hours_tuesday is not None else None,
+        "hours_wednesday": float(u.hours_wednesday) if u.hours_wednesday is not None else None,
+        "hours_thursday": float(u.hours_thursday) if u.hours_thursday is not None else None,
+        "hours_friday": float(u.hours_friday) if u.hours_friday is not None else None,
         "is_active": u.is_active,
+        "is_hidden": u.is_hidden,
+        # Art-9-analog (Nachtarbeiter-Status loest § 6 ArbZG-Sonderregeln aus)
+        "is_night_worker": u.is_night_worker,
+        # § 18 ArbZG-Status — Pflichtbestandteil der Aufzeichnung
+        "exempt_from_arbzg": u.exempt_from_arbzg,
+        "first_work_day": u.first_work_day.isoformat() if u.first_work_day else None,
+        "last_work_day": u.last_work_day.isoformat() if u.last_work_day else None,
+        # Lichtbild = personenbezogenes Datum (Art. 4 Nr. 1)
+        "profile_picture": u.profile_picture,
+        # Sicherheits-Status (TOTP-Aktivierung ist eine Tatsache ueber den Nutzer,
+        # totp_secret + last_totp_counter natuerlich NICHT)
+        "totp_enabled": u.totp_enabled,
+        "deactivated_at": u.deactivated_at.isoformat() if u.deactivated_at else None,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "updated_at": u.updated_at.isoformat() if u.updated_at else None,
     }
 
 
@@ -324,8 +356,13 @@ def _absence_dict(a: Absence) -> dict[str, Any]:
         "id": str(a.id),
         "user_id": str(a.user_id),
         "date": a.date.isoformat() if a.date else None,
+        "end_date": a.end_date.isoformat() if getattr(a, "end_date", None) else None,
         "type": a.type.value if hasattr(a.type, "value") else str(a.type),
         "hours": float(a.hours) if a.hours is not None else None,
+        "start_time": str(a.start_time) if getattr(a, "start_time", None) else None,
+        "end_time": str(a.end_time) if getattr(a, "end_time", None) else None,
+        "note": getattr(a, "note", None),
+        "created_at": a.created_at.isoformat() if getattr(a, "created_at", None) else None,
     }
 
 
@@ -385,6 +422,10 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
     return {
         "export_generated_at": datetime.now(timezone.utc).isoformat(),
         "export_type": "self_service_dsgvo_art15",
+        # DSGVO Art. 15 Abs. 1 lit. a-h Pflichtangaben — werden zusaetzlich
+        # zur Datenkopie (Abs. 3) geliefert. Texte basieren auf dem VVT
+        # (docs/specs/dsgvo/verarbeitungsverzeichnis.md).
+        "art15_meta": _build_art15_meta(),
         "subject": _user_dict(user),
         "time_entries": [_time_entry_dict(t) for t in own_entries],
         "absences": [_absence_dict(a) for a in own_absences],
@@ -398,6 +439,77 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
             "change_requests": len(own_change_requests),
             "audit_logs": len(own_audit_logs),
         },
+    }
+
+
+def _build_art15_meta() -> dict[str, Any]:
+    """DSGVO Art. 15 Abs. 1 (a-h) Pflichtangaben zur Verarbeitung."""
+    return {
+        "a_zwecke": (
+            "Arbeitszeiterfassung nach ArbZG §16, Urlaubs- und Abwesenheits-"
+            "verwaltung, Lohnabrechnung-Vorbereitung, gesetzlich vorgeschriebene "
+            "Reports (Nachtarbeit §6, Ruhezeit §5, Sonntagsruhe §9-11)."
+        ),
+        "b_datenkategorien": [
+            "Stammdaten (Name, E-Mail, Rolle)",
+            "Vertragsdaten (Wochenstunden, Urlaubsanspruch, Arbeitstage)",
+            "Zeiteintraege (Datum, Beginn, Ende, Pausen, Notiz)",
+            "Abwesenheiten (Urlaub, Krank, Sonderurlaub, Ueberstunden)",
+            "Aenderungs- und Urlaubsantraege inkl. Begruendungen",
+            "Audit-Log (Wer hat wann was geaendert)",
+            "Authentifizierung (Passwort-Hash, ggf. TOTP-Status)",
+        ],
+        "c_empfaenger": (
+            "Praxis-Administrator (zur Genehmigung/Korrektur), ggf. Lohnbuchhaltung "
+            "(Excel-/PDF-Export), ggf. Steuerberater (AVV oder Berufsgeheimnis). "
+            "Bei deutscher On-Prem-Installation keine Drittlandsuebermittlung. "
+            "Bei SaaS-Hosting: Auftragsverarbeiter gemaess AVV."
+        ),
+        "d_speicherdauer": (
+            "Arbeitszeitaufzeichnungen: 2 Jahre (§ 16 Abs. 2 ArbZG). "
+            "Lohn-/Steuer-relevante Daten: 6-10 Jahre (AO § 147, HGB § 257). "
+            "Aenderungs-/Urlaubs-Antrags-Audit-Spuren: 730 Tage (Art. 5 (1)(e) "
+            "DSGVO). Nach Beschaeftigungsende: Anonymisierung der PII unter "
+            "Erhaltung der pseudonymisierten Arbeitszeit-Historie."
+        ),
+        "e_rechte": {
+            "berichtigung": (
+                "Art. 16 DSGVO — Stammdaten ueber Profil-Seite, Zeiteintraege "
+                "ueber Aenderungsantrag (Admin-Genehmigung erforderlich)."
+            ),
+            "loeschung": (
+                "Art. 17 DSGVO — auf Anfrage beim Praxis-Admin. Pseudonymisierung "
+                "ist Standard, da ArbZG-Aufbewahrung dem Recht auf Loeschung "
+                "vorgeht (Art. 17 Abs. 3 lit. b)."
+            ),
+            "einschraenkung": "Art. 18 DSGVO — auf Anfrage, Account-Deaktivierung.",
+            "widerspruch": "Art. 21 DSGVO — an Praxis-Admin zu richten.",
+            "datenportabilitaet": (
+                "Art. 20 DSGVO — dieser Export ist maschinenlesbar (JSON) und "
+                "uebertragbar."
+            ),
+        },
+        "f_beschwerderecht": (
+            "Sie haben das Recht, sich bei einer Datenschutz-Aufsichtsbehoerde zu "
+            "beschweren — i.d.R. die Landes-Datenschutzbeauftragten des Bundeslands, "
+            "in dem die Praxis ihren Sitz hat. Eine Liste aller Behoerden findet "
+            "sich auf https://www.bfdi.bund.de/DE/Service/Anschriften/Laender/Laender-node.html"
+        ),
+        "g_quelle": (
+            "Alle Daten wurden direkt bei Ihnen oder im Rahmen Ihrer Beschaeftigung "
+            "erhoben (Stempelungen, Antraege, Stammdaten-Eingabe durch Sie oder "
+            "den Admin). Keine externe Datenquelle."
+        ),
+        "h_automatisierte_entscheidung": (
+            "Es findet KEINE automatisierte Entscheidung im Sinne von Art. 22 "
+            "DSGVO statt. Genehmigungen von Antraegen erfolgen ausschliesslich "
+            "durch einen menschlichen Admin."
+        ),
+        "hinweis_audit_log": (
+            "Dieser Auskunfts-Export wird selbst im Audit-Log festgehalten "
+            "(source='self_data_export'). Der Eintrag erscheint erst im naechsten "
+            "Export, da er nach dem Build dieses Payloads geschrieben wird."
+        ),
     }
 
 
@@ -421,20 +533,74 @@ def _vacation_request_dict(v: VacationRequest) -> dict[str, Any]:
 
 
 def _change_request_dict(c: ChangeRequest) -> dict[str, Any]:
+    # DSGVO Art. 15: vollstaendige Auskunft, inkl. Begruendung des MA selbst
+    # und der vorgeschlagenen + originalen Werte. Vorher war der Export
+    # praktisch inhaltsleer (nur id/status/created_at).
     return {
         "id": str(c.id),
-        "status": str(c.status),
+        "request_type": (
+            c.request_type.value if hasattr(c.request_type, "value") else str(c.request_type)
+        ),
+        "status": (
+            c.status.value if hasattr(c.status, "value") else str(c.status)
+        ),
+        "entry_kind": c.entry_kind,
+        "change_type": getattr(c, "change_type", None),
+        "time_entry_id": str(c.time_entry_id) if c.time_entry_id else None,
+        "absence_id": str(c.absence_id) if c.absence_id else None,
+        # Vorgeschlagene Werte (Zeiteintrag)
+        "proposed_date": c.proposed_date.isoformat() if c.proposed_date else None,
+        "proposed_start_time": str(c.proposed_start_time) if c.proposed_start_time else None,
+        "proposed_end_time": str(c.proposed_end_time) if c.proposed_end_time else None,
+        "proposed_break_minutes": c.proposed_break_minutes,
+        "proposed_note": c.proposed_note,
+        # Vorgeschlagene Werte (Abwesenheit)
+        "proposed_absence_type": c.proposed_absence_type,
+        "proposed_absence_hours": (
+            float(c.proposed_absence_hours) if c.proposed_absence_hours is not None else None
+        ),
+        # Original-Werte (Zeiteintrag)
+        "original_date": c.original_date.isoformat() if c.original_date else None,
+        "original_start_time": str(c.original_start_time) if c.original_start_time else None,
+        "original_end_time": str(c.original_end_time) if c.original_end_time else None,
+        "original_break_minutes": c.original_break_minutes,
+        "original_note": c.original_note,
+        # Original-Werte (Abwesenheit)
+        "original_absence_type": c.original_absence_type,
+        "original_absence_hours": (
+            float(c.original_absence_hours) if c.original_absence_hours is not None else None
+        ),
+        # Begruendung des MA — Art. 15 absolut zwingend, das ist Eigentext des MA
+        "reason": c.reason,
+        "reviewed_by": str(c.reviewed_by) if c.reviewed_by else None,
+        "reviewed_at": c.reviewed_at.isoformat() if getattr(c, "reviewed_at", None) else None,
+        "rejection_reason": getattr(c, "rejection_reason", None),
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
 
 def _audit_log_dict(a: TimeEntryAuditLog) -> dict[str, Any]:
+    # DSGVO Art. 15: vollstaendige Auskunft umfasst Aenderungshistorie. Ohne
+    # old_*/new_* sieht der MA nur "es gab eine Aenderung" aber nicht WAS
+    # geaendert wurde — das ist die Substanz des Audit-Logs.
     return {
         "id": str(a.id),
         "action": a.action,
         "source": a.source,
         "user_id": str(a.user_id) if a.user_id else None,
         "changed_by": str(a.changed_by) if a.changed_by else None,
+        "time_entry_id": str(a.time_entry_id) if a.time_entry_id else None,
         "created_at": a.created_at.isoformat() if a.created_at else None,
+        # Vorher-Zustand
+        "old_date": a.old_date.isoformat() if a.old_date else None,
+        "old_start_time": str(a.old_start_time) if a.old_start_time else None,
+        "old_end_time": str(a.old_end_time) if a.old_end_time else None,
+        "old_break_minutes": a.old_break_minutes,
+        "old_note": a.old_note,
+        # Nachher-Zustand
+        "new_date": a.new_date.isoformat() if a.new_date else None,
+        "new_start_time": str(a.new_start_time) if a.new_start_time else None,
+        "new_end_time": str(a.new_end_time) if a.new_end_time else None,
+        "new_break_minutes": a.new_break_minutes,
         "new_note": a.new_note,
     }
