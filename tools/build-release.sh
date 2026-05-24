@@ -632,6 +632,7 @@ if [ "$BUILD_MACOS" = true ]; then
     _build_macos_arch() {
         local arch="$1"       # x64 oder arm64
         local python_tar="$2" # Pfad zum Python-Tarball
+        local pg_tar="$3"     # Pfad zum theseus PG-Tarball
 
         info "Baue macOS ${arch}..."
         local mac_dir="${BUILD_DIR}/macos-${arch}"
@@ -646,13 +647,15 @@ if [ "$BUILD_MACOS" = true ]; then
         # pip install passiert beim Kunden (Cross-Platform von Linux nicht moeglich)
         cp "${CACHE_DIR}/get-pip.py" "${mac_dir}/bin/python/"
 
-        # PostgreSQL: DMG-Installer mitliefern (silent install durch install.sh)
-        if [ -f "${CACHE_DIR}/${PG_MACOS_INSTALLER}" ]; then
-            info "Kopiere PostgreSQL-DMG ($(du -h "${CACHE_DIR}/${PG_MACOS_INSTALLER}" | cut -f1))..."
-            cp "${CACHE_DIR}/${PG_MACOS_INSTALLER}" "${mac_dir}/bin/postgresql-installer.dmg"
-        else
-            warn "Kein PostgreSQL-DMG — Kunde muss PostgreSQL manuell installieren"
-        fi
+        info "PostgreSQL (macOS ${arch}) — theseus-rs ${POSTGRESQL_VERSION}..."
+        mkdir -p "${mac_dir}/bin/postgresql"
+        tar xzf "${pg_tar}" -C "${mac_dir}/bin/postgresql" --strip-components=1
+        for f in bin/postgres bin/initdb bin/psql; do
+            if [ ! -e "${mac_dir}/bin/postgresql/${f}" ]; then
+                error "Theseus macOS-${arch}-Tarball unvollstaendig: ${f} fehlt"
+                exit 1
+            fi
+        done
 
         _write_macos_installer "${mac_dir}"
 
@@ -660,8 +663,8 @@ if [ "$BUILD_MACOS" = true ]; then
         info "macOS ${arch}: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz" | cut -f1)"
     }
 
-    _build_macos_arch "x64"   "${CACHE_DIR}/python-macos-x64.tar.gz"
-    _build_macos_arch "arm64" "${CACHE_DIR}/python-macos-arm64.tar.gz"
+    _build_macos_arch "x64"   "${CACHE_DIR}/python-macos-x64.tar.gz"   "${CACHE_DIR}/postgresql-macos-x64.tar.gz"
+    _build_macos_arch "arm64" "${CACHE_DIR}/python-macos-arm64.tar.gz" "${CACHE_DIR}/postgresql-macos-arm64.tar.gz"
 else
     step "6 — macOS: uebersprungen"
 fi
