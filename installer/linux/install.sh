@@ -30,6 +30,63 @@ if ! command -v systemctl &>/dev/null; then
     exit 1
 fi
 
+# --- glibc version check ---
+# Bundled PostgreSQL binary verlangt glibc >= 2.34 (manylinux-Build).
+GLIBC_VER=$(ldd --version 2>&1 | head -1 | awk '{print $NF}')
+GLIBC_MAJOR=${GLIBC_VER%%.*}
+GLIBC_MINOR=${GLIBC_VER#*.}
+GLIBC_MINOR=${GLIBC_MINOR%%.*}
+if [ "$GLIBC_MAJOR" -lt 2 ] || { [ "$GLIBC_MAJOR" -eq 2 ] && [ "$GLIBC_MINOR" -lt 34 ]; }; then
+    error "glibc ${GLIBC_VER} ist zu alt. Erforderlich: glibc 2.34 oder neuer."
+    error "Unterstuetzte Distributionen:"
+    error "  - Ubuntu 22.04 LTS und neuer"
+    error "  - Debian 12 (Bookworm) und neuer"
+    error "  - RHEL / Rocky / Alma Linux 9 und neuer"
+    error "  - Fedora 35 und neuer"
+    exit 1
+fi
+
+# --- Install required runtime libraries ---
+# Theseus' postgres binary linkt gegen Standard-Distro-Libs (libxml2, libssl,
+# libgssapi-krb5, libldap, libreadline, libzstd, liblz4, libbrotli). Wir
+# installieren die fehlenden Pakete jetzt, damit der PG-Start nicht an
+# "shared library not found" scheitert.
+install_runtime_deps() {
+    local missing=()
+    for lib in libxml2.so.2 libssl.so.3 libgssapi_krb5.so.2 libzstd.so.1 liblz4.so.1 libreadline.so.8 libbrotlidec.so.1; do
+        if ! ldconfig -p 2>/dev/null | grep -q "^[[:space:]]*${lib}\b"; then
+            missing+=("$lib")
+        fi
+    done
+    if [ "${#missing[@]}" -eq 0 ]; then
+        info "Alle erforderlichen Runtime-Bibliotheken sind vorhanden."
+        return 0
+    fi
+
+    info "Installiere fehlende Runtime-Bibliotheken: ${missing[*]}"
+    if command -v apt-get &>/dev/null; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq \
+            libxml2 libssl3 libgssapi-krb5-2 libzstd1 liblz4-1 libreadline8 libbrotli1 \
+            || { error "apt-get install fehlgeschlagen"; exit 1; }
+    elif command -v dnf &>/dev/null; then
+        dnf install -y -q \
+            libxml2 openssl-libs krb5-libs libzstd lz4-libs readline libbrotli \
+            || { error "dnf install fehlgeschlagen"; exit 1; }
+    elif command -v zypper &>/dev/null; then
+        zypper -n install \
+            libxml2-2 libopenssl3 krb5 libzstd1 liblz4-1 libreadline8 libbrotli1 \
+            || { error "zypper install fehlgeschlagen"; exit 1; }
+    else
+        error "Kein bekannter Paketmanager (apt-get, dnf, zypper) gefunden."
+        error "Bitte installiere manuell: ${missing[*]}"
+        exit 1
+    fi
+}
+
+install_runtime_deps
+
 echo ""
 echo "=============================================="
 echo "  PraxisZeit Installer v${VERSION}"
