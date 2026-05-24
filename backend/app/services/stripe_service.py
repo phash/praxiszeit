@@ -17,6 +17,7 @@ Design notes
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -31,6 +32,12 @@ from app.models.tenant import Tenant
 
 
 logger = logging.getLogger(__name__)
+
+
+# Hard cap for stored payload excerpts. The schema column is TEXT, but we
+# truncate as a safety net so a future Stripe payload bloat can't blow up the
+# stripe_events table.
+_PAYLOAD_EXCERPT_MAX_LEN = 4000
 
 
 def _g(obj: Any, key: str, default: Any = None) -> Any:
@@ -48,6 +55,75 @@ def _g(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(key, default)
     return getattr(obj, key, default)
+
+
+def _build_safe_payload_excerpt(event_data: Any) -> str:
+    """Build a PII-free excerpt of a Stripe event for audit storage.
+
+    Whitelist-only. Drops every field NOT in the allow-list — in particular
+    ``customer_email``, ``customer_details`` (name + phone + address),
+    ``billing_address``, ``shipping``, ``receipt_email`` etc., which Stripe
+    routinely populates on ``checkout.session.completed`` and
+    ``invoice.payment_succeeded`` events.
+
+    Rationale (Issue #129): the previous implementation stored
+    ``str(event.data)[:4000]`` which leaked real customer PII into the
+    ``stripe_events`` table in cleartext. For debugging webhook problems we
+    rely on the Stripe dashboard which holds the full payload anyway, so the
+    only thing the DB needs to keep is enough metadata to correlate events
+    (object id, status, amount, currency, customer/subscription pseudonyms).
+
+    NOTE on ``metadata``: we include it because our own integration sets
+    ``{"tenant_id": ..., "plan": ...}`` there and that's the only way to
+    correlate events back to a tenant. Stripe normally only carries our own
+    keys here, but a misconfigured Stripe product could theoretically push
+    customer-controlled values into metadata — keep an eye on this if you
+    ever store customer-entered data in Stripe metadata fields.
+    """
+    obj = _g(event_data, "object") if event_data is not None else None
+    if obj is None:
+        obj = {}
+
+    safe: dict[str, Any] = {
+        "object_id": _g(obj, "id"),
+        "object_status": _g(obj, "status"),
+        "amount": (
+            _g(obj, "amount")
+            or _g(obj, "amount_total")
+            or _g(obj, "amount_paid")
+            or _g(obj, "amount_due")
+        ),
+        "currency": _g(obj, "currency"),
+        "customer": _g(obj, "customer"),
+        "subscription": _g(obj, "subscription"),
+    }
+
+    # ``metadata`` may be a StripeObject; normalize to a plain dict for JSON.
+    raw_meta = _g(obj, "metadata")
+    if raw_meta is not None:
+        if isinstance(raw_meta, dict):
+            safe["metadata"] = dict(raw_meta)
+        else:
+            # StripeObject — .items() raises AttributeError on v15. We only
+            # ever set tenant_id + plan, so a conservative best-effort copy
+            # is sufficient and avoids leaking unexpected attributes.
+            try:
+                safe["metadata"] = {
+                    k: _g(raw_meta, k)
+                    for k in ("tenant_id", "plan")
+                    if _g(raw_meta, k) is not None
+                }
+            except Exception:  # noqa: BLE001
+                safe["metadata"] = None
+
+    try:
+        rendered = json.dumps(safe, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        # Defensive: never let excerpt-building break webhook persistence.
+        rendered = json.dumps(
+            {"object_id": str(safe.get("object_id"))}, ensure_ascii=False
+        )
+    return rendered[:_PAYLOAD_EXCERPT_MAX_LEN]
 
 
 def _require_stripe():
@@ -194,7 +270,9 @@ def _record_event(db: Session, event, tenant: Optional[Tenant]) -> bool:
         event_id=event["id"],
         event_type=event["type"],
         tenant_id=tenant.id if tenant else None,
-        payload_excerpt=str(_g(event, "data"))[:4000],
+        # Issue #129: whitelist-only excerpt — no customer_email,
+        # customer_details.name, billing_address etc. ever lands in our DB.
+        payload_excerpt=_build_safe_payload_excerpt(_g(event, "data")),
     )
     try:
         db.add(record)
