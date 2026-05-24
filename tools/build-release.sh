@@ -19,8 +19,11 @@ APP_VERSION="1.5.0"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
-POSTGRESQL_VERSION="16.8"
-# EDB-spezifisches Versions-Suffix
+# theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
+# (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
+#   https://github.com/theseus-rs/postgresql-binaries/releases
+POSTGRESQL_VERSION="16.13.0"
+# EDB-Format (für Legacy-Fallback, falls jemals wieder verfügbar)
 POSTGRESQL_EDB_SUFFIX="1"
 NSSM_VERSION="2.24"
 
@@ -148,12 +151,24 @@ PYTHON_WINDOWS_URL="${_PBS}/${_CPY}-x86_64-pc-windows-msvc-install_only.tar.gz"
 PYTHON_MACOS_X64_URL="${_PBS}/${_CPY}-x86_64-apple-darwin-install_only.tar.gz"
 PYTHON_MACOS_ARM64_URL="${_PBS}/${_CPY}-aarch64-apple-darwin-install_only.tar.gz"
 
-# EnterpriseDB PostgreSQL Binaries
-# Download-Seite: https://www.enterprisedb.com/download-postgresql-binaries
-_EDB="https://get.enterprisedb.com/postgresql"
-_PGV="postgresql-${POSTGRESQL_VERSION}-${POSTGRESQL_EDB_SUFFIX}"
+# PostgreSQL Binaries — theseus-rs/postgresql-binaries (manylinux-Builds)
+# Primärquelle. Forward-kompatibel bis glibc 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+).
+# Tarball-Layout: postgresql-<ver>-<triple>/{bin,lib,share,include}/
+# SHA256 wird vom Repo mit .sha256-Suffix bereitgestellt.
+_THESEUS="https://github.com/theseus-rs/postgresql-binaries/releases/download/${POSTGRESQL_VERSION}"
 
-PG_LINUX_URL="${_EDB}/${_PGV}-linux-x64-binaries.tar.gz"
+PG_LINUX_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+PG_LINUX_SHA_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-x86_64-unknown-linux-gnu.tar.gz.sha256"
+PG_LINUX_ARM64_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+PG_LINUX_ARM64_SHA_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-aarch64-unknown-linux-gnu.tar.gz.sha256"
+PG_MACOS_X64_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-x86_64-apple-darwin.tar.gz"
+PG_MACOS_X64_SHA_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-x86_64-apple-darwin.tar.gz.sha256"
+PG_MACOS_ARM64_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-aarch64-apple-darwin.tar.gz"
+PG_MACOS_ARM64_SHA_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-aarch64-apple-darwin.tar.gz.sha256"
+# EDB-Legacy URL (nur noch als Last-Resort-Fallback dokumentiert; aktuell HTTP 403)
+_EDB="https://get.enterprisedb.com/postgresql"
+_PGV_EDB="postgresql-${POSTGRESQL_VERSION%.*}-${POSTGRESQL_EDB_SUFFIX}"
+PG_LINUX_EDB_URL="${_EDB}/${_PGV_EDB}-linux-x64-binaries.tar.gz"
 # Windows: EDB Installer (.exe) — muss manuell heruntergeladen werden
 # Download: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
 # Datei in build/cache/postgresql-windows-x64.exe ablegen
@@ -191,6 +206,73 @@ download() {
         return 1
     fi
     info "OK: ${name} ($(du -h "$target" | cut -f1))"
+}
+
+# Download + SHA256-Verify. Wenn die .sha256-Datei verfügbar ist, wird der
+# heruntergeladene Tarball gegen sie geprüft. Cache wird invalidiert wenn
+# der Hash nicht stimmt.
+download_with_sha() {
+    local url="$1"
+    local sha_url="$2"
+    local target="$3"
+    local name="$(basename "$target")"
+
+    download "$url" "$target" || return 1
+
+    if [ -n "$sha_url" ]; then
+        local sha_target="${target}.sha256"
+        if curl -fsSL -o "${sha_target}" "$sha_url" 2>/dev/null; then
+            local expected
+            expected=$(awk '{print $1}' "${sha_target}")
+            local actual
+            actual=$(sha256sum "$target" | awk '{print $1}')
+            if [ "$expected" != "$actual" ]; then
+                error "SHA256 mismatch fuer ${name}:"
+                error "  expected: ${expected}"
+                error "  actual:   ${actual}"
+                rm -f "$target" "$sha_target"
+                return 1
+            fi
+            info "SHA256 verifiziert: ${name}"
+        else
+            warn "Keine .sha256-Datei fuer ${name} (Quelle: ${sha_url})"
+        fi
+    fi
+}
+
+# Glibc-Symbol-Check: verifiziert dass kein Binary Symbole verlangt, die
+# über GLIBC_MAX_VERSION hinausgehen. Vorhanden in objdump-Output als
+# Versioned Symbols (z.B. GLIBC_2.43).
+GLIBC_MAX_VERSION="2.34"
+check_glibc_compat() {
+    local binary="$1"
+    if ! command -v objdump &>/dev/null; then
+        warn "objdump nicht gefunden — glibc-Compat-Check uebersprungen"
+        return 0
+    fi
+    local max_needed
+    max_needed=$(objdump -T "$binary" 2>/dev/null \
+        | grep -oE 'GLIBC_[0-9]+\.[0-9]+' \
+        | sort -V -u \
+        | tail -1)
+    if [ -z "$max_needed" ]; then
+        return 0
+    fi
+    local needed_ver="${max_needed#GLIBC_}"
+    # Vergleich per sort -V
+    local higher
+    higher=$(printf '%s\n%s\n' "$needed_ver" "$GLIBC_MAX_VERSION" | sort -V | tail -1)
+    if [ "$higher" != "$GLIBC_MAX_VERSION" ]; then
+        error "Glibc-Forward-Compat verletzt:"
+        error "  Binary: $binary"
+        error "  Verlangt: GLIBC_${needed_ver}"
+        error "  Erlaubt:  GLIBC_${GLIBC_MAX_VERSION}"
+        error "  Auswirkung: Binary laeuft nicht auf Ubuntu 22.04 / RHEL 9 / Debian 12."
+        error "  Aktion: PostgreSQL aus einer manylinux-portablen Quelle beziehen"
+        error "          (theseus-rs/postgresql-binaries) statt System-Build."
+        return 1
+    fi
+    return 0
 }
 
 # Gemeinsame Funktion: Plattform-Verzeichnis mit App-Dateien + leeren Runtime-Dirs vorbereiten
@@ -269,9 +351,20 @@ step "3 — Binaries herunterladen"
 
 if [ "$BUILD_LINUX" = true ]; then
     download "$PYTHON_LINUX_URL"  "${CACHE_DIR}/python-linux-x64.tar.gz"
-    if ! download "$PG_LINUX_URL" "${CACHE_DIR}/postgresql-linux-x64.tar.gz"; then
-        warn "EDB-Download fehlgeschlagen. Versuche System-PostgreSQL zu bundlen..."
-        _PG_FALLBACK_LINUX=true
+    if ! download_with_sha "$PG_LINUX_URL" "$PG_LINUX_SHA_URL" \
+                           "${CACHE_DIR}/postgresql-linux-x64.tar.gz"; then
+        error "PostgreSQL-Tarball konnte nicht heruntergeladen werden."
+        error "Primärquelle (theseus-rs): $PG_LINUX_URL"
+        error ""
+        error "Optionen:"
+        error "  1) Internet-Verbindung pruefen"
+        error "  2) Cache wiederverwenden: --skip-download"
+        error "     (wenn vorheriger Build erfolgreich war)"
+        error "  3) Andere PG-Version setzen via POSTGRESQL_VERSION im Script"
+        error ""
+        error "Kein System-PG-Fallback mehr — die produzieren ABI-incompatible"
+        error "Binaries (Issue #125). Build bricht ab."
+        exit 1
     fi
 fi
 
@@ -349,54 +442,23 @@ if [ "$BUILD_LINUX" = true ]; then
         --target="${LINUX_DIR}/bin/python/lib/python${PYTHON_VERSION%.*}/site-packages" \
         -r "${LINUX_DIR}/app/backend/requirements.txt" 2>&1 | tail -3
 
-    info "PostgreSQL (Linux x64)..."
-    mkdir -p "${LINUX_DIR}/bin/postgresql/bin" "${LINUX_DIR}/bin/postgresql/lib"
-    if [ "${_PG_FALLBACK_LINUX:-false}" = true ] || [ ! -f "${CACHE_DIR}/postgresql-linux-x64.tar.gz" ]; then
-        # Fallback: System-PostgreSQL-Binaries + Libs kopieren
-        info "Kopiere System-PostgreSQL-Binaries..."
-        PG_BINDIR="$(pg_config --bindir 2>/dev/null || echo /usr/bin)"
-        PG_LIBDIR="$(pg_config --libdir 2>/dev/null || echo /usr/lib)"
-        for bin in pg_ctl pg_isready psql initdb pg_dump pg_restore postgres pg_resetwal; do
-            [ -f "${PG_BINDIR}/${bin}" ] && cp "${PG_BINDIR}/${bin}" "${LINUX_DIR}/bin/postgresql/bin/"
-        done
-        # Shared Libraries mitkopieren
-        for bin in "${LINUX_DIR}/bin/postgresql/bin/"*; do
-            ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read lib; do
-                # Nur Nicht-Standard-Libs kopieren (nicht libc, ld-linux, etc.)
-                # glibc-eigene Libs NICHT bundlen — sie sind ABI-gekoppelt
-                # an die libc.so.6 des Build-Hosts. Wenn das Ziel eine ältere
-                # glibc hat, schlägt der Loader mit "version GLIBC_X.Y not found"
-                # fehl (libresolv 2.41 → Ubuntu-24-glibc-2.39 mismatch).
-                case "$(basename "$lib")" in
-                    libc.so*|libm.so*|libpthread*|libdl.so*|librt.so*|ld-linux*|linux-vdso*) ;;
-                    libresolv.so*|libnsl.so*|libutil.so*|libcrypt.so*|libanl.so*|libthread_db.so*) ;;
-                    *) cp -n "$lib" "${LINUX_DIR}/bin/postgresql/lib/" 2>/dev/null || true ;;
-                esac
-            done
-        done
-        # Share-Verzeichnis (Zeitzone, locale etc.)
-        # initdb sucht unter <bindir>/../share/postgresql/, also share/postgresql/
-        PG_SHAREDIR="$(pg_config --sharedir 2>/dev/null || echo /usr/share/postgresql)"
-        if [ -d "$PG_SHAREDIR" ]; then
-            mkdir -p "${LINUX_DIR}/bin/postgresql/share/postgresql"
-            cp -r "$PG_SHAREDIR/"* "${LINUX_DIR}/bin/postgresql/share/postgresql/"
+    info "PostgreSQL (Linux x64) — theseus-rs ${POSTGRESQL_VERSION}..."
+    mkdir -p "${LINUX_DIR}/bin/postgresql"
+    # theseus-Tarball-Layout: top-level postgresql-<ver>-<triple>/{bin,lib,share,include}
+    tar xzf "${CACHE_DIR}/postgresql-linux-x64.tar.gz" \
+        -C "${LINUX_DIR}/bin/postgresql" --strip-components=1
+    # Sanity: erwartete Pfade existieren
+    for f in bin/postgres bin/initdb bin/psql lib/libpq.so.5 share/postgres.bki; do
+        if [ ! -e "${LINUX_DIR}/bin/postgresql/${f}" ]; then
+            error "Theseus-Tarball unvollstaendig: ${f} fehlt"
+            exit 1
         fi
-        # Extension-Libraries (dict_snowball etc., noetig fuer initdb)
-        PG_PKGLIBDIR="$(pg_config --pkglibdir 2>/dev/null || echo /usr/lib/postgresql)"
-        if [ -d "$PG_PKGLIBDIR" ]; then
-            cp -r "$PG_PKGLIBDIR/"*.so "${LINUX_DIR}/bin/postgresql/lib/" 2>/dev/null || true
-            # Bitcode-Verzeichnis (optional, fuer JIT)
-            [ -d "$PG_PKGLIBDIR/bitcode" ] && cp -r "$PG_PKGLIBDIR/bitcode" "${LINUX_DIR}/bin/postgresql/lib/"
-        fi
-        # Symlink: postgres sucht $libdir unter lib/postgresql/ (pkglibdir)
-        # Die .so-Dateien liegen direkt in lib/, also Symlink auf sich selbst
-        ln -sfn . "${LINUX_DIR}/bin/postgresql/lib/postgresql"
-        info "System-PostgreSQL $(pg_config --version) gebundelt"
-    else
-        tar xzf "${CACHE_DIR}/postgresql-linux-x64.tar.gz" \
-            -C "${LINUX_DIR}/bin/postgresql" --strip-components=1
-        info "EDB PostgreSQL ${POSTGRESQL_VERSION} entpackt"
+    done
+    # Glibc-Compat-Check auf das postgres-Binary
+    if ! check_glibc_compat "${LINUX_DIR}/bin/postgresql/bin/postgres"; then
+        exit 1
     fi
+    info "PostgreSQL ${POSTGRESQL_VERSION} entpackt (glibc-2.34-portabel)"
 
     info "Erstelle Tarball..."
     tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-linux-x64.tar.gz" \
