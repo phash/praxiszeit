@@ -26,6 +26,23 @@ const updateSW = registerSW({
   onOfflineReady() {
     // Optional: could show a "ready for offline use" hint.
   },
+  // Issue #84: Bei self-signed Cert (typisch in Native-LAN-Deployments) verweigert
+  // Chrome die SW-Registrierung mit SecurityError. Ohne Handler ist das eine
+  // unhandled rejection + roter Console-Eintrag bei jedem Page-Load. Wir
+  // schlucken sie bewusst — die App funktioniert auch ohne SW, nur PWA-Features
+  // (Offline, Installierbarkeit, Background-Update-Download) sind aus.
+  onRegisterError(error) {
+    const msg = String(error?.message ?? error);
+    if (msg.includes('SSL') || msg.includes('SecurityError') || msg.includes('certificate')) {
+      console.info(
+        '[PWA] ServiceWorker-Registrierung ausgesetzt — vermutlich self-signed Cert. ' +
+        'App funktioniert normal weiter; PWA-Features (Offline, Installation) bleiben aus. ' +
+        'Um sie zu aktivieren: Cert system-weit als Trusted Root importieren.'
+      );
+    } else {
+      console.warn('[PWA] ServiceWorker-Registrierung fehlgeschlagen:', error);
+    }
+  },
 });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
