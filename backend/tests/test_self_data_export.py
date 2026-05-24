@@ -417,3 +417,146 @@ class TestAuditLogInclusion:
             # Bobs Eintrag mit user_id=bob darf nicht enthalten sein.
             assert a["user_id"] == str(alice.id) or a["changed_by"] == str(alice.id)
             assert a["user_id"] != str(bob.id)
+
+
+# =============================================================================
+# user_directory: Reviewer-UUIDs -> Klartext-Namen (Issue #128)
+# =============================================================================
+
+class TestUserDirectory:
+    """DSGVO Art. 12 Abs. 1 'in verstaendlicher Form' + Art. 15 (1)(c):
+    Reviewer-/Editor-UUIDs muessen mit Klartext-Namen aufloesbar sein."""
+
+    def test_user_directory_present_when_empty(self, db, alice, alice_client):
+        # Auch ohne Reviewer-Daten muss der Schluessel existieren (stabiles Schema).
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        assert "user_directory" in body
+        assert isinstance(body["user_directory"], dict)
+        assert body["user_directory"] == {}
+
+    def test_vacation_request_reviewer_resolved(self, db, alice, alice_client):
+        # Admin im gleichen Tenant approved Alices Urlaub.
+        # WICHTIG: Lokale Variablen vor _user() merken — _user() committed,
+        # dadurch expired alice.tenant_id und SQLAlchemy versucht reload.
+        alice_id = alice.id
+        alice_tid = alice.tenant_id
+        admin = _user(db, "admin", role=UserRole.ADMIN)
+        admin_id = admin.id
+        from datetime import datetime as dt, timezone as tz
+        vr = VacationRequest(
+            tenant_id=alice_tid, user_id=alice_id,
+            date=date.today() + timedelta(days=7), hours=8.0,
+            absence_type="vacation", status=VacationRequestStatus.APPROVED.value,
+            reviewed_by=admin_id, reviewed_at=dt.now(tz.utc),
+        )
+        db.add(vr)
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        assert body["vacation_requests"][0]["reviewed_by"] == str(admin_id)
+        assert str(admin_id) in body["user_directory"]
+        assert body["user_directory"][str(admin_id)] == "Admin Test"
+
+    def test_vacation_request_last_modified_by_resolved(self, db, alice, alice_client):
+        alice_id = alice.id
+        alice_tid = alice.tenant_id
+        editor = _user(db, "editor", role=UserRole.ADMIN)
+        editor_id = editor.id
+        vr = VacationRequest(
+            tenant_id=alice_tid, user_id=alice_id,
+            date=date.today() + timedelta(days=10), hours=8.0,
+            absence_type="vacation", status=VacationRequestStatus.PENDING.value,
+            last_modified_by=editor_id,
+        )
+        db.add(vr)
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        assert body["vacation_requests"][0]["last_modified_by"] == str(editor_id)
+        assert body["user_directory"][str(editor_id)] == "Editor Test"
+
+    def test_change_request_reviewer_resolved(self, db, alice, alice_client):
+        alice_id = alice.id
+        alice_tid = alice.tenant_id
+        reviewer = _user(db, "reviewer", role=UserRole.ADMIN)
+        reviewer_id = reviewer.id
+        from datetime import datetime as dt, timezone as tz
+        cr = ChangeRequest(
+            tenant_id=alice_tid, user_id=alice_id,
+            request_type="update", entry_kind="time_entry",
+            reason="Korrektur noetig",
+            proposed_date=date.today(), status="approved",
+            reviewed_by=reviewer_id, reviewed_at=dt.now(tz.utc),
+        )
+        db.add(cr)
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        assert body["change_requests"][0]["reviewed_by"] == str(reviewer_id)
+        assert body["user_directory"][str(reviewer_id)] == "Reviewer Test"
+
+    def test_audit_log_changed_by_resolved(self, db, alice, alice_client):
+        alice_id = alice.id
+        alice_tid = alice.tenant_id
+        auditor = _user(db, "auditor", role=UserRole.ADMIN)
+        auditor_id = auditor.id
+        db.add(TimeEntryAuditLog(
+            tenant_id=alice_tid, user_id=alice_id, changed_by=auditor_id,
+            action="update", source="manual", new_note="Admin hat fuer MA korrigiert",
+        ))
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        assert any(a["changed_by"] == str(auditor_id) for a in body["audit_logs"])
+        assert body["user_directory"][str(auditor_id)] == "Auditor Test"
+
+    def test_cross_tenant_reviewer_not_resolved(
+        self, db, alice, carol_other_tenant, alice_client
+    ):
+        # F-026: Reviewer-UUID aus FREMDEM Tenant darf nicht aufgeloest werden.
+        # carol_other_tenant lebt in SECOND_TENANT_ID; ihre UUID darf zwar in
+        # Alices Daten auftauchen (durch was auch immer), aber das directory
+        # darf sie NICHT aufloesen — Cross-Tenant-Schutz.
+        alice_id = alice.id
+        alice_tid = alice.tenant_id
+        carol_id = carol_other_tenant.id
+        db.add(TimeEntryAuditLog(
+            tenant_id=alice_tid, user_id=alice_id, changed_by=carol_id,
+            action="manual", source="manual", new_note="cross-tenant test",
+        ))
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        assert any(a["changed_by"] == str(carol_id) for a in body["audit_logs"])
+        assert str(carol_id) not in body["user_directory"]
+
+    def test_multiple_reviewers_all_resolved_one_query(self, db, alice, alice_client):
+        # Performance: max. 1 Extra-Query, egal wieviele Reviewer.
+        # Wir verifizieren das funktionale Ergebnis (alle Namen aufgeloest).
+        alice_id = alice.id
+        alice_tid = alice.tenant_id
+        rev_ids = []
+        for name in ("rev1", "rev2", "rev3"):
+            r = _user(db, name, role=UserRole.ADMIN)
+            rev_ids.append((r.id, name.title()))
+        from datetime import datetime as dt, timezone as tz
+        for i, (rid, _) in enumerate(rev_ids):
+            db.add(VacationRequest(
+                tenant_id=alice_tid, user_id=alice_id,
+                date=date.today() + timedelta(days=20 + i), hours=8.0,
+                absence_type="vacation", status=VacationRequestStatus.APPROVED.value,
+                reviewed_by=rid, reviewed_at=dt.now(tz.utc),
+            ))
+        db.commit()
+
+        resp = alice_client.get("/api/me/data-export")
+        body = json.loads(resp.content)
+        for rid, name in rev_ids:
+            assert str(rid) in body["user_directory"]
+            assert body["user_directory"][str(rid)] == f"{name} Test"

@@ -419,6 +419,44 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         .all()
     )
 
+    # DSGVO Art. 12 Abs. 1 "in verstaendlicher Form" + Art. 15 (1)(c)
+    # (Empfaenger-Information): UUIDs in reviewed_by / last_modified_by /
+    # changed_by sind fuer den MA nutzlos. Wir reichern den Export deshalb
+    # um ein 'user_directory' an, das alle vorkommenden Reviewer-/Editor-
+    # UUIDs auf Klartext-Namen abbildet. Bewusste Design-Entscheidung:
+    # ein zentrales Verzeichnis (statt _by_name-Felder pro Helper), weil
+    #   1) weniger Diff (Helper-Signaturen unveraendert),
+    #   2) Konsumenten genau EIN Lookup-Schema bedienen,
+    #   3) max. 1 Extra-Query pro Export — unabhaengig von der Reviewer-Zahl.
+    # F-026 Tenant-Filter: Reviewer aus FREMDEM Tenant werden bewusst NICHT
+    # aufgeloest (Cross-Tenant-Schutz), die UUID bleibt dann opaque.
+    reviewer_ids: set[uuid.UUID] = set()
+    for vr in own_vacation_requests:
+        if vr.reviewed_by:
+            reviewer_ids.add(vr.reviewed_by)
+        last_mod = getattr(vr, "last_modified_by", None)
+        if last_mod:
+            reviewer_ids.add(last_mod)
+    for cr in own_change_requests:
+        if cr.reviewed_by:
+            reviewer_ids.add(cr.reviewed_by)
+    for al in own_audit_logs:
+        if al.changed_by:
+            reviewer_ids.add(al.changed_by)
+
+    if reviewer_ids:
+        reviewers = (
+            db.query(User)
+            .filter(User.id.in_(reviewer_ids), User.tenant_id == tid)
+            .all()
+        )
+    else:
+        reviewers = []
+    user_directory = {
+        str(u.id): f"{u.first_name or ''} {u.last_name or ''}".strip() or (u.username or str(u.id))
+        for u in reviewers
+    }
+
     return {
         "export_generated_at": datetime.now(timezone.utc).isoformat(),
         "export_type": "self_service_dsgvo_art15",
@@ -432,6 +470,9 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         "vacation_requests": [_vacation_request_dict(v) for v in own_vacation_requests],
         "change_requests": [_change_request_dict(c) for c in own_change_requests],
         "audit_logs": [_audit_log_dict(a) for a in own_audit_logs],
+        # Klartext-Aufloesung fuer reviewed_by / last_modified_by / changed_by
+        # (siehe Kommentar oben). Schluessel = UUID-String, Wert = "First Last".
+        "user_directory": user_directory,
         "counts": {
             "time_entries": len(own_entries),
             "absences": len(own_absences),
