@@ -64,7 +64,7 @@ public sealed partial class LicensePageViewModel : WizardPageBase
         {
             if (ValidatedInfo?.ExpiresAt is not { } exp)
             {
-                return "Unbefristet gueltig";
+                return "Unbefristet gültig";
             }
             var formatted = exp.ToLocalTime().ToString("dd.MM.yyyy", CultureInfo.GetCultureInfo("de-DE"));
             if (ValidatedInfo.IsExpired)

@@ -17,11 +17,11 @@
                            FontWeight="Medium"
                            Foreground="{StaticResource BrandPrimaryBrush}"
                            LetterSpacing="0.6"/>
-                <TextBlock Text="Lizenz-Schluessel oder 30-Tage-Demo"
+                <TextBlock Text="Lizenz-Schlüssel oder 30-Tage-Demo"
                            FontSize="22"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource TextPrimaryBrush}"/>
-                <TextBlock Text="PraxisZeit prueft die Lizenz beim Service-Start. Geben Sie Ihren Schluessel ein oder starten Sie eine 30-Tage-Demo."
+                <TextBlock Text="PraxisZeit prüft die Lizenz beim Service-Start. Geben Sie Ihren Schlüssel ein oder starten Sie eine 30-Tage-Demo."
                            FontSize="13"
                            LineHeight="20"
                            TextWrapping="Wrap"
@@ -30,7 +30,7 @@
 
             <!-- Modus-Auswahl -->
             <StackPanel Orientation="Horizontal" Spacing="10">
-                <RadioButton Content="Lizenz-Schluessel eingeben"
+                <RadioButton Content="Lizenz-Schlüssel eingeben"
                              GroupName="LicenseMode"
                              IsChecked="{Binding SelectedMode, Mode=TwoWay,
                                          Converter={x:Static vm:StepStatusConverters.StringEqualityConverter},
@@ -62,7 +62,7 @@
                              PlaceholderText="eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9...."/>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <Button Classes="ghost"
-                                Content="Datei waehlen…"
+                                Content="Datei wählen…"
                                 MinWidth="160"
                                 Height="34"
                                 Click="OnLoadLicenseFileClicked"/>
@@ -114,7 +114,7 @@
                                    Text="{Binding ValidatedInfo.MaxEmployees, StringFormat='{}{0} Mitarbeiter'}"
                                    FontSize="13"
                                    Foreground="{StaticResource TextPrimaryBrush}"/>
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Gueltigkeit"
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Gültigkeit"
                                    FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ExpiryDisplay}"
                                    FontSize="13"
@@ -128,7 +128,7 @@
                             BorderThickness="1"
                             CornerRadius="6"
                             Padding="12,8">
-                        <TextBlock Text="Diese Lizenz ist abgelaufen. Der Service startet im Nur-Lese-Modus — Daten bleiben einsehbar und exportierbar, aber neue Eintraege koennen nicht angelegt werden."
+                        <TextBlock Text="Diese Lizenz ist abgelaufen. Der Service startet im Nur-Lese-Modus — Daten bleiben einsehbar und exportierbar, aber neue Einträge können nicht angelegt werden."
                                    FontSize="11"
                                    LineHeight="16"
                                    TextWrapping="Wrap"
@@ -176,7 +176,7 @@
                                FontWeight="Medium"
                                LetterSpacing="0.4"
                                Foreground="{StaticResource TextMutedBrush}"/>
-                    <TextBlock Text="{Binding DemoEndDisplay, StringFormat='Volle Funktionalitaet bis zum {0}.'}"
+                    <TextBlock Text="{Binding DemoEndDisplay, StringFormat='Volle Funktionalität bis zum {0}.'}"
                                FontSize="14"
                                FontWeight="Medium"
                                Foreground="{StaticResource TextPrimaryBrush}"/>
@@ -205,7 +205,7 @@
                         <Run FontFamily="Consolas,Menlo,monospace"
                              Foreground="{StaticResource BrandPrimaryBrush}"
                              Text="projekt@phash.de"/>
-                        — Sie bekommen eine signierte license.key zurueck, die Sie hier oben einspielen.
+                        — Sie bekommen eine signierte license.key zurück, die Sie hier oben einspielen.
                     </TextBlock>
                 </StackPanel>
             </Border>

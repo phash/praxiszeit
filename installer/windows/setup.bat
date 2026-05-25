@@ -153,6 +153,15 @@ if exist "%DIR%bin\python\fix-pth.py" (
     "%PYTHON%" "%DIR%bin\python\fix-pth.py"
 )
 
+REM PYTHONNOUSERSITE: das gebuendelte Python (Version-passend zu einem evtl.
+REM auf dem Rechner installierten System-Python) wuerde sonst dessen
+REM User-Site (%APPDATA%\Python\PythonXY\site-packages) sehen. pip wertet dort
+REM bereits vorhandene Pakete als "erfuellt" und installiert NICHTS ins Bundle
+REM -> der als LocalSystem laufende Dienst (ohne dieses User-Site) findet die
+REM Dependencies dann nicht. Mit PYTHONNOUSERSITE=1 installiert pip garantiert
+REM ins gebuendelte site-packages.
+set "PYTHONNOUSERSITE=1"
+
 echo Installiere pip...
 if exist "%DIR%bin\python\get-pip.py" (
     "%PYTHON%" "%DIR%bin\python\get-pip.py" --quiet 2>nul
@@ -165,6 +174,19 @@ if %errorlevel% neq 0 (
     echo.
     echo FEHLER: Python-Abhaengigkeiten konnten nicht installiert werden.
     echo Stellen Sie sicher, dass eine Internetverbindung besteht.
+    if not defined PRAXISZEIT_NONINTERACTIVE pause
+    exit /b 1
+)
+
+REM Verifizieren, dass die Kern-Module wirklich importierbar sind. Die Deps sind
+REM im Release bereits vorgebuendelt (build-release.sh); dieser Check faengt einen
+REM kaputten Zustand sichtbar ab, BEVOR der Dienst startet (statt spaeter still an
+REM der Migration zu scheitern -> ERR_CONNECTION_REFUSED). -s = User-Site ignorieren.
+"%PYTHON%" -s -c "import alembic, uvicorn, fastapi, sqlalchemy, psycopg2" 2>nul
+if %errorlevel% neq 0 (
+    echo.
+    echo FEHLER: Python-Abhaengigkeiten fehlen im Bundle ^(Import-Check fehlgeschlagen^).
+    echo Internetverbindung pruefen und Setup erneut ausfuehren.
     if not defined PRAXISZEIT_NONINTERACTIVE pause
     exit /b 1
 )
