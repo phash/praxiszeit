@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-05-26
+
+### 🐞 Lizenz-Fehler legt den Dienst nicht mehr lahm
+- **Read-Only statt Absturz:** Ein ungültiger/nicht verifizierbarer `license.key`
+  (z.B. nach einer Key-Rotation, oder abgelaufen) führte bisher zu `sys.exit(1)`
+  → das Backend startete nicht → **niemand konnte sich mehr einloggen**. Jetzt
+  geht der Server in den **Read-Only-Modus**: Anmeldung und Daten-Export
+  funktionieren, nur Schreibvorgänge (Stempeln, Anträge stellen/genehmigen) sind
+  gesperrt.
+- **Ehrliche Fehlermeldungen:** „License signature is invalid — corrupted or
+  tampered" war irreführend. Neu: „Signatur passt nicht zum hinterlegten
+  Schlüssel — vermutlich für eine ältere/andere Schlüsselversion ausgestellt;
+  bitte aktuelle Lizenz im Shop holen."
+
+### 🐞 Native Windows: PostgreSQL startet nach Update zuverlässig
+- **Logs-ACL-Fix:** Nach einem Update konnte der PostgreSQL-Dienst (NetworkService)
+  `logs/postgresql.log` nicht mehr öffnen (`Permission denied`) → PG startete
+  nicht → Login unmöglich. `pg_start` grantet dem Dienstkonto jetzt vor jedem
+  Start Schreibrecht auf `data\db` **und** `logs\`.
+- **PG-Start-Timeout 30s → 60s** (langsamer Start durch AV/ASLR-„could not
+  reserve shared memory"-Retries auf manchen Maschinen).
+
 ## [1.5.1] - 2026-05-25
 
 ### 🐞 Native Windows-Installation: Startup-Deadlock behoben (ERR_CONNECTION_REFUSED)

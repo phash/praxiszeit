@@ -98,11 +98,11 @@ def validate_license(license_path: Path) -> LicenseInfo:
         LicenseExpiredError: If the license has expired
     """
     if not license_path.is_file():
-        raise LicenseError(f"License file not found: {license_path}")
+        raise LicenseError(f"Lizenzdatei nicht gefunden: {license_path}")
 
     license_token = license_path.read_text().strip()
     if not license_token:
-        raise LicenseError("License file is empty")
+        raise LicenseError("Lizenzdatei ist leer")
 
     if not _PUBLIC_KEY_CONFIGURED:
         raise LicenseError(
@@ -123,11 +123,21 @@ def validate_license(license_path: Path) -> LicenseInfo:
             },
         )
     except jwt.InvalidSignatureError:
-        raise LicenseError("License signature is invalid — file may be corrupted or tampered with")
+        # Haeufigster Fall: die Lizenz wurde mit einem ANDEREN/AELTEREN Schluessel
+        # signiert als dem hier hinterlegten Public Key (z.B. nach einer Key-
+        # Rotation). NICHT "korrupt/manipuliert" behaupten — das ist irrefuehrend.
+        raise LicenseError(
+            "Lizenz-Signatur passt nicht zum hinterlegten Schluessel. "
+            "Die Lizenz wurde vermutlich fuer eine aeltere oder andere "
+            "Schluesselversion ausgestellt. Bitte eine aktuelle Lizenz im Shop "
+            "(praxiszeit.mr-development.de) holen und config/license.key ersetzen."
+        )
     except jwt.DecodeError as e:
-        raise LicenseError(f"License file is not a valid token: {e}")
+        raise LicenseError(
+            f"Lizenzdatei ist kein gueltiges Token (Format/Inhalt beschaedigt): {e}"
+        )
     except jwt.MissingRequiredClaimError as e:
-        raise LicenseError(f"License is missing required field: {e}")
+        raise LicenseError(f"Lizenz fehlt ein Pflichtfeld: {e}")
 
     info = LicenseInfo(
         customer_id=payload["sub"],

@@ -3,7 +3,7 @@
 ---
 
 ## Login & Navigation
-**URL:** `http://[Server-Adresse]/login`
+**URL:** `https://[Server-Adresse]/login` (beim ersten Aufruf Zertifikat-Warnung „Erweitert → Weiter zu …" bestätigen)
 
 **Mitarbeiter-Bereich:** Dashboard · Zeiterfassung · Abwesenheiten · Profil
 
@@ -130,6 +130,14 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 | **§6 Nachtarbeit** | MA mit ≥ 48 Nachtarbeitstagen/Jahr | Arbeitsmed. Untersuchung anbieten |
 | **§11 Sonntagsarbeit** | Sonntage pro MA (Ziel: max. 37/Jahr) | Dienstplanung anpassen |
 | **§11 Ersatzruhetag** | Offene Ersatzruhetag-Pflichten | Ausgleich: Sonntag 2 Wo / Feiertag 8 Wo |
+
+---
+
+## Lizenz
+
+- Liegt in `config/license.key` (aus dem Shop **praxiszeit.mr-development.de**).
+- **Abgelaufen/ungültig → Read-Only-Modus:** Anmeldung und Daten-**Export** funktionieren weiter, aber **Stempeln** und **Anträge stellen/genehmigen** sind gesperrt. Der Dienst stürzt NICHT ab.
+- **Lösung:** aktuelle Lizenz aus dem Shop holen, `config/license.key` ersetzen, Dienst neu starten (`net stop PraxisZeit` / `net start PraxisZeit`).
 
 ---
 
