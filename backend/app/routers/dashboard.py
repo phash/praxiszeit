@@ -23,6 +23,13 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
     to is_holiday() — CLAUDE.md mandates passing tenant_id on every
     holiday lookup (multi-tenant correctness).
     """
+    # Nutzer ohne Soll/Ist-Zeiterfassung (z.B. das technische Bootstrap-Admin-
+    # Konto, track_hours=False) werden nicht zur Buchung erwartet -> keine
+    # "Buchung fehlt"-Warnungen. Das Team-Widget filtert track_hours bereits in
+    # der Query; dieser Guard deckt das eigene Dashboard + /missing-bookings ab.
+    if not user.track_hours:
+        return []
+
     today = today_local()
     if tenant_id is None:
         tenant_id = user.tenant_id
