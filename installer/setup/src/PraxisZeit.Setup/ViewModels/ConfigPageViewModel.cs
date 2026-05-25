@@ -114,7 +114,7 @@ public sealed partial class ConfigPageViewModel : WizardPageBase
         // Dann zusaetzliche UI-only Checks (Passwort-Wiederholung)
         if (AdminPassword != AdminPasswordRepeat)
         {
-            ValidationMessage = "Passwoerter stimmen nicht ueberein.";
+            ValidationMessage = "Passwörter stimmen nicht überein.";
             CanGoNext = false;
             OnPropertyChanged(nameof(HasValidationMessage));
             return;

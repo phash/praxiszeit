@@ -21,7 +21,7 @@
                            FontSize="22"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource TextPrimaryBrush}"/>
-                <TextBlock Text="Diese Werte landen in config\praxiszeit.conf und werden beim ersten Service-Start fuer den Admin-Account verwendet."
+                <TextBlock Text="Diese Werte landen in config\praxiszeit.conf und werden beim ersten Service-Start für den Admin-Account verwendet."
                            FontSize="13"
                            LineHeight="20"
                            TextWrapping="Wrap"

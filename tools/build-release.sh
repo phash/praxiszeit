@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.5.0"
+APP_VERSION="1.5.1"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -491,7 +491,24 @@ if [ "$BUILD_WINDOWS" = true ]; then
         -C "${WIN_DIR}/bin/python" --strip-components=1
 
     cp "${CACHE_DIR}/get-pip.py" "${WIN_DIR}/bin/python/"
-    info "HINWEIS: Windows pip-Dependencies werden beim Install nachinstalliert"
+
+    # pip-Dependencies VORAB ins Windows-Bundle installieren (wie beim Linux-Paket).
+    # Frueher wurden sie erst beim Kunden-Install via setup.bat nachgeladen — das
+    # ist netz-/timing-abhaengig und schlug fehl (Dienst fand alembic/uvicorn nicht
+    # -> ERR_CONNECTION_REFUSED). Jetzt sind die cp313-win_amd64-Wheels bereits im
+    # Paket -> der Install braucht KEINEN PyPI-Download mehr.
+    # PYTHONNOUSERSITE: das gebuendelte Python nicht das User-Site eines evtl. auf
+    # der Build-Maschine installierten System-Python 3.13 sehen lassen.
+    info "Installiere pip-Dependencies ins Windows-Bundle (vorab, kein Kunden-Download)..."
+    PYTHONNOUSERSITE=1 PYTHONUTF8=1 "${WIN_DIR}/bin/python/python.exe" -m pip install -q \
+        --no-warn-script-location \
+        -r "${WIN_DIR}/app/backend/requirements.txt" 2>&1 | tail -3
+    if ! PYTHONNOUSERSITE=1 "${WIN_DIR}/bin/python/python.exe" -s -c \
+        "import alembic, uvicorn, fastapi, sqlalchemy, psycopg2, cryptography" 2>/dev/null; then
+        error "Windows-Bundle: pip-Dependencies fehlen nach der Installation (Import-Check fehlgeschlagen)"
+        exit 1
+    fi
+    info "Windows pip-Dependencies ins Bundle installiert + verifiziert"
 
     # ._pth Fix-Script
     cat > "${WIN_DIR}/bin/python/fix-pth.py" << 'PTHEOF'

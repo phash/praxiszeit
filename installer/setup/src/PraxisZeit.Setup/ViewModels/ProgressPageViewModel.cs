@@ -45,7 +45,7 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
     }
 
     [ObservableProperty]
-    public partial string Headline { get; set; } = "Installation laeuft";
+    public partial string Headline { get; set; } = "Installation läuft";
 
     [ObservableProperty]
     public partial string SubHeadline { get; set; } = "Bitte warten Sie, bis alle Schritte abgeschlossen sind.";
@@ -75,11 +75,11 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
         }
         else // Update
         {
-            Steps.Add(new StepItem { Id = "acl",    Title = "1. ACL-Fix fuer .db-credentials" });
+            Steps.Add(new StepItem { Id = "acl",    Title = "1. ACL-Fix für .db-credentials" });
             Steps.Add(new StepItem { Id = "backup", Title = "2. Datenbank-Backup erstellen" });
             Steps.Add(new StepItem { Id = "stop",   Title = "3. PraxisZeit-Service stoppen" });
             Steps.Add(new StepItem { Id = "copy",   Title = "4. Dateien aktualisieren" });
-            Steps.Add(new StepItem { Id = "pip",    Title = "5. Python-Dependencies pruefen" });
+            Steps.Add(new StepItem { Id = "pip",    Title = "5. Python-Dependencies prüfen" });
             Steps.Add(new StepItem { Id = "start",  Title = "6. Service starten" });
             Steps.Add(new StepItem { Id = "task",   Title = "7. Backup-Task registrieren" });
         }
@@ -107,8 +107,8 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
                 CanGoNext = true;
                 Headline = done.Success ? "Installation abgeschlossen" : "Installation mit Fehlern beendet";
                 SubHeadline = done.Success
-                    ? "Alle Schritte erfolgreich. Klicken Sie auf 'Weiter' fuer den letzten Schritt."
-                    : "Bitte pruefen Sie das Protokoll. Ein Backup der Datenbank liegt unter data\\backups.";
+                    ? "Alle Schritte erfolgreich. Klicken Sie auf 'Weiter' für den letzten Schritt."
+                    : "Bitte prüfen Sie das Protokoll. Ein Backup der Datenbank liegt unter data\\backups.";
                 break;
         }
     }

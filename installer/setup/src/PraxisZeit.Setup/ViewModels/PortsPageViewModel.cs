@@ -113,8 +113,8 @@ public sealed partial class PortsPageViewModel : WizardPageBase
             PortConflictWarning = conflicts.Count == 0
                 ? null
                 : $"Achtung: {string.Join(" und ", conflicts)} ist bereits belegt. "
-                  + "Beim Service-Start kann es zu Bind-Fehlern kommen — pruefen Sie laufende "
-                  + "Webserver (IIS, nginx, Apache) oder waehlen Sie andere Ports.";
+                  + "Beim Service-Start kann es zu Bind-Fehlern kommen — prüfen Sie laufende "
+                  + "Webserver (IIS, nginx, Apache) oder wählen Sie andere Ports.";
         }
         catch
         {

@@ -20,12 +20,14 @@ SET "PG_DATA=%DIR%\data\db"
 SET "NSSM=%DIR%\nssm.exe"
 SET "BACKUP_DIR=%USERPROFILE%\Desktop"
 
-REM --- Administratorrechte pruefen ---
+REM --- Administratorrechte: bei Bedarf selbst elevieren ---
+REM Apps & Features startet die UninstallString u.U. OHNE Elevation; wir starten
+REM uns dann per UAC-Prompt neu, damit Dienste/Registry/Dateien entfernt werden koennen.
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo FEHLER: Bitte als Administrator ausfuehren!
-    pause
-    exit /b 1
+    echo Fordere Administrator-Rechte an...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
 )
 
 echo WARNUNG: Dies entfernt PraxisZeit vollstaendig!
@@ -121,6 +123,14 @@ REM ============================================================
 
 echo Entferne Firewall-Regel...
 netsh advfirewall firewall delete rule name="PraxisZeit" 2>nul
+
+REM ============================================================
+REM Schritt 4b: Apps-und-Features-Eintrag + Verknuepfungen entfernen
+REM ============================================================
+echo Entferne Apps-und-Features-Eintrag + Verknuepfungen...
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PraxisZeit" /f 2>nul
+del "%PUBLIC%\Desktop\PraxisZeit.url" 2>nul
+del "%ProgramData%\Microsoft\Windows\Start Menu\Programs\PraxisZeit.url" 2>nul
 
 REM ============================================================
 REM Schritt 5: Installationsverzeichnis entfernen

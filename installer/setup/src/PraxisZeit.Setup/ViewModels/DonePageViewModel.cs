@@ -9,7 +9,7 @@ public sealed partial class DonePageViewModel : WizardPageBase
     public override string Key => "done";
     public override string Title => "Fertig";
     public override bool CanGoBack => false;
-    public override string NextButtonText => "Schliessen";
+    public override string NextButtonText => "Schließen";
 
     [ObservableProperty]
     public partial bool Success { get; set; } = true;

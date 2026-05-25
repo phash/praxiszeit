@@ -447,6 +447,15 @@ function Step-Backup {
         Set-StepStatus 'backup' 'warn'
         return $true
     }
+    # Ohne .db-credentials ist die DB nie initialisiert worden -> ein Backup
+    # wuerde an der Passwort-Abfrage haengen (pg_dump ohne Passwort gegen scram).
+    # Dann gibt es ohnehin nichts zu sichern -> Schritt ueberspringen.
+    $credsFile = Join-Path $InstallDir 'config\.db-credentials'
+    if (-not (Test-Path $credsFile)) {
+        Write-Log 'WARNUNG: .db-credentials nicht vorhanden (DB nie initialisiert) - Backup uebersprungen.'
+        Set-StepStatus 'backup' 'warn'
+        return $true
+    }
     try {
         $env:PYTHONUTF8 = '1'
         # PowerShell 5.1 / .NET Framework hat KEIN ProcessStartInfo.ArgumentList
