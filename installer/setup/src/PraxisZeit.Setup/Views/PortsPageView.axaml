@@ -21,7 +21,7 @@
                            FontSize="22"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource TextPrimaryBrush}"/>
-                <TextBlock Text="Standard ist 443 (HTTPS) plus optional 80 fuer einen Redirect von http:// auf https://. Aendern Sie die Werte nur, wenn andere Dienste die Ports schon belegen."
+                <TextBlock Text="Standard ist 443 (HTTPS) plus optional 80 für einen Redirect von http:// auf https://. Ändern Sie die Werte nur, wenn andere Dienste die Ports schon belegen."
                            FontSize="13"
                            LineHeight="20"
                            TextWrapping="Wrap"
