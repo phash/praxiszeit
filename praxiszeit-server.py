@@ -374,16 +374,25 @@ def pg_start():
     logger.info("Starting PostgreSQL...")
 
     if IS_WINDOWS:
+        # Das PG-Dienstkonto (NetworkService) muss ins Datenverzeichnis UND nach
+        # LOG_DIR schreiben koennen (postgresql.log via logging_collector). Ein
+        # Update kann diese ACLs zuruecksetzen -> "could not open log file ...
+        # Permission denied" -> der PG-Dienst startet nicht. Vor jedem Start
+        # idempotent sicherstellen (genau dieser Fall hat eine Produktion lahmgelegt).
+        _win_grant_networkservice(LOG_DIR)
+        _win_grant_networkservice(PG_DATA)
         if _win_service_exists(PG_SERVICE_NAME):
             subprocess.run(["net", "start", PG_SERVICE_NAME], capture_output=True, text=True)
         else:
             _win_pg_register_and_start()
-        for i in range(30):
+        # 60s statt 30s: auf manchen Windows-Maschinen ist der PG-Start langsam
+        # (AV/ASLR, "could not reserve shared memory region"-Retries).
+        for i in range(60):
             if pg_is_running():
                 logger.info("PostgreSQL started successfully (Windows service)")
                 return
             time.sleep(1)
-        logger.error("PostgreSQL service failed to start within 30 seconds")
+        logger.error("PostgreSQL service failed to start within 60 seconds")
         _dump_pg_startup_log()
         sys.exit(1)
 
