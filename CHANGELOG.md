@@ -2,6 +2,69 @@
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-05-25
+
+### 🐞 Native Windows-Installation: Startup-Deadlock behoben (ERR_CONNECTION_REFUSED)
+Nach einer Windows-Installation lief der Dienst zwar, aber der Server band keinen
+Port — der Browser meldete `ERR_CONNECTION_REFUSED`. Mehrere ineinandergreifende
+Ursachen (Details: `docs/specs/native-windows-pg-service-2026-05-25.md`):
+
+- **PostgreSQL läuft jetzt als eigener NetworkService-Dienst.** `postgres.exe`
+  verweigert den Start unter dem LocalSystem-Token des PraxisZeit-Dienstes.
+  `pg_start()` registriert PostgreSQL auf Windows daher via `pg_ctl register`
+  als eigenen Dienst (`NT AUTHORITY\NetworkService`, `icacls`-Grant auf das
+  Datenverzeichnis) statt es als Kindprozess zu starten. Unix bleibt bei
+  `pg_ctl start`.
+- **Self-Healing gegen EDB-Leftover-Cluster.** Ein vom EDB-Installer
+  hinterlassenes scram-Datenverzeichnis (Superuser `postgres`) ohne
+  `.db-credentials` kollidierte mit der trust-Annahme des Servers. Ein
+  Cluster-Marker (`.praxiszeit-cluster`) unterscheidet eigene von fremden
+  Clustern; fremde werden **zur Seite verschoben (nie gelöscht)** und sauber neu
+  initialisiert. Bestehende, credentialed Cluster bekommen den Marker per
+  Migration nachgetragen.
+- **`psql -w` in allen Setup-Aufrufen** — kein Hängen mehr an einer interaktiven
+  Passwort-Abfrage (die im Dienst-Kontext nie beantwortet werden kann), sondern
+  klares Fail-fast.
+- **Update/Backup hängt nicht mehr bei uninitialisierter DB.** `create_backup`
+  nutzt `pg_dump -w` und bricht bei fehlenden `.db-credentials` sauber ab statt
+  am Passwort-Prompt zu blockieren; der Update-Wizard überspringt den
+  Backup-Schritt, wenn die Datenbank nie initialisiert wurde.
+- **Self-Signed-Zertifikat-Fallback.** Ist SSL konfiguriert (`cookie_secure=true`),
+  aber `config/ssl/cert.pem`/`key.pem` fehlen, erzeugt der Server jetzt selbst ein
+  Self-Signed-Zert → HTTPS funktioniert, Login-Cookie wird nicht abgelehnt.
+- **`PYTHONUNBUFFERED=1`** für den NSSM-Dienst — Startup-Fehler landen sofort in
+  `service-stderr.log` statt erst beim Prozess-Ende (oder nie).
+- **`.db-credentials` bleibt für SYSTEM lesbar.** `_restrict_file_permissions`
+  ist jetzt robust: jeder `icacls`-Schritt läuft unabhängig, SYSTEM (S-1-5-18)
+  bekommt das Leserecht zuerst, `/inheritance:r` läuft zuletzt. Vorher konnte ein
+  fehlschlagender Grant (Machine-Account) die Datei ohne jede ACE zurücklassen →
+  `PermissionError` beim Service-Start.
+- **Migrationen robuster:** Alembic wird programmatisch (`alembic.config.main`)
+  statt via `python -m alembic` aufgerufen (umgeht das "No module named
+  alembic.\_\_main\_\_" direkt nach der Installation, während das Paket noch
+  indiziert wird) + bis zu 3 Retries.
+- **Dependencies landen im gebündelten Python.** `setup.bat` setzt
+  `PYTHONNOUSERSITE=1` für `pip install` (+ der Dienst läuft mit diesem Flag).
+  Sonst sah das gebündelte Python ein evtl. vorhandenes versionsgleiches
+  System-Python-User-Site, pip wertete die Pakete als „erfüllt" und installierte
+  nichts ins Bundle → der LocalSystem-Dienst fand alembic/uvicorn nicht.
+
+### ✨ Installer-Politur
+- Korrekte deutsche Umlaute in allen user-sichtbaren Wizard-Texten
+  (Seiten-Beschreibungen, Validierungsmeldungen, Headlines, Buttons, Done-Seite).
+- **Desktop-Verknüpfung & Startmenü-Eintrag** optional (Checkboxen auf der
+  Installationsort-Seite, beide Default an). Erzeugt `.url`-Verknüpfungen, die
+  den Browser auf `https://localhost` öffnen.
+- **Eintrag in „Apps & Features".** Der Installer registriert PraxisZeit unter
+  `HKLM\…\Uninstall\PraxisZeit` (DisplayName, Version, Publisher,
+  UninstallString → `uninstall.bat`) → in Windows „Apps" sichtbar und von dort
+  deinstallierbar. `uninstall.bat` eleviert sich bei Bedarf selbst und entfernt
+  Registry-Eintrag + Verknüpfungen wieder.
+
+### 🔗 Verwandt
+- Linux-Impact analysiert (frische Installs nicht betroffen; latentes Defizit
+  cross-platform behoben) → Tracking-Issue #130.
+
 ## [1.4.3] - 2026-05-03
 
 ### 🚀 Wizard — drei neue Pages: Installationsort, Ports, Lizenz

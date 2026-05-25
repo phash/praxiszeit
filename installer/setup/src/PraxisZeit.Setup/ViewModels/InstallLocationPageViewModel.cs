@@ -55,6 +55,15 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
 
     public bool HasValidationMessage => !string.IsNullOrEmpty(ValidationMessage);
 
+    /// <summary>Systemintegration: Desktop-Verknüpfung anlegen (öffnet den
+    /// Browser auf die lokale Instanz). Default an.</summary>
+    [ObservableProperty]
+    public partial bool CreateDesktopShortcut { get; set; } = true;
+
+    /// <summary>Systemintegration: Startmenü-Eintrag anlegen. Default an.</summary>
+    [ObservableProperty]
+    public partial bool CreateStartMenuEntry { get; set; } = true;
+
     /// <summary>
     /// True, wenn User-Intent Fresh ist, Pfad aber existierende
     /// Installation hat. Blendet die Warning-Card ein.
@@ -72,8 +81,8 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
     };
 
     public string ConflictDescription =>
-        "Eine Neuinstallation in diesem Verzeichnis wuerde die bestehende Installation und alle Daten "
-        + "(Datenbank, Konfiguration, Lizenz) ueberschreiben. Empfohlene Alternative: auf Update "
+        "Eine Neuinstallation in diesem Verzeichnis würde die bestehende Installation und alle Daten "
+        + "(Datenbank, Konfiguration, Lizenz) überschreiben. Empfohlene Alternative: auf Update "
         + "umschalten — dann wird die Datenbank gesichert, nur Binaries werden ersetzt.";
 
     public bool CanSwitchToUpdate => IsConflict && DetectedMode == InstallMode.Update;
@@ -116,7 +125,7 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
     {
         if (string.IsNullOrWhiteSpace(InstallPath))
         {
-            ValidationMessage = "Bitte einen Installationspfad waehlen.";
+            ValidationMessage = "Bitte einen Installationspfad wählen.";
             CanGoNext = false;
             DetectedMode = InstallMode.FreshInstall;
             DetectedVersion = null;
@@ -135,8 +144,8 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
         if (IntentMode == InstallMode.Update && DetectedMode == InstallMode.FreshInstall)
         {
             ValidationMessage =
-                "Im gewaehlten Pfad wurde keine bestehende PraxisZeit-Installation gefunden. "
-                + "Update ist in diesem Pfad nicht moeglich.";
+                "Im gewählten Pfad wurde keine bestehende PraxisZeit-Installation gefunden. "
+                + "Update ist in diesem Pfad nicht möglich.";
             CanGoNext = false;
         }
         else if (IsConflict)

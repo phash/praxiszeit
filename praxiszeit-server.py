@@ -40,6 +40,19 @@ PG_BIN = BIN_DIR / "postgresql" / "bin"
 PG_DATA = DATA_DIR / "db"
 BACKUP_DIR = DATA_DIR / "backups"
 
+# Name of the dedicated PostgreSQL Windows service. On Windows postgres.exe
+# refuses to run under the LocalSystem/admin token of the PraxisZeit service,
+# so the cluster runs as its own NetworkService service instead of a child
+# process (see pg_start). Reused as the service name when (re-)registering.
+PG_SERVICE_NAME = "PraxisZeit-PostgreSQL"
+
+# Marker file written into PG_DATA after *our* initdb. Its presence means the
+# cluster was initialized by PraxisZeit (trust-bootstrapped, superuser
+# "praxiszeit"). A data directory that exists WITHOUT this marker is foreign
+# (e.g. an EDB-installer leftover with scram auth + "postgres" superuser) and
+# must not be trusted — see cmd_start's self-healing reinit.
+PG_CLUSTER_MARKER = ".praxiszeit-cluster"
+
 BACKEND_DIR = APP_DIR / "backend"
 CONFIG_FILE = CONFIG_DIR / "praxiszeit.conf"
 
@@ -224,16 +237,155 @@ def pg_init(config: dict):
             pg_run.mkdir(parents=True, exist_ok=True)
             f.write(f"unix_socket_directories = '{pg_run}'\n")
 
+    # Mark this cluster as PraxisZeit-managed so a later start can tell our own
+    # trust-bootstrapped cluster apart from a foreign (EDB) leftover.
+    (PG_DATA / PG_CLUSTER_MARKER).write_text("praxiszeit-managed\n", encoding="utf-8")
+
+    # initdb restricts the data dir to the creating account (LocalSystem here).
+    # The cluster is served by a NetworkService Windows service (see pg_start),
+    # so grant that account access now — regardless of which start path
+    # (register vs. start-existing-service) runs afterwards.
+    if IS_WINDOWS:
+        _win_grant_networkservice(PG_DATA)
+
     logger.info("PostgreSQL data directory initialized")
 
 
+def _pg_data_is_ours() -> bool:
+    """True if PG_DATA was initialized by PraxisZeit (cluster marker present)."""
+    return (PG_DATA / PG_CLUSTER_MARKER).is_file()
+
+
+def _quarantine_pg_data() -> Path:
+    """Move the existing data directory aside (never delete) and recreate an
+    empty one, so a clean cluster can be initialized without risking data loss.
+
+    We deliberately rename instead of deleting: if the directory turned out to
+    hold a real (but un-credentialed) cluster rather than an EDB leftover, the
+    operator can still recover it from the returned backup path. Returns the
+    backup location.
+    """
+    backup = PG_DATA.parent / f"db.foreign-{time.strftime('%Y%m%d-%H%M%S')}"
+    if PG_DATA.exists():
+        PG_DATA.rename(backup)
+    PG_DATA.mkdir(parents=True, exist_ok=True)
+    return backup
+
+
+# --- Windows service helpers (PostgreSQL runs as its own service) ---
+
+def _win_service_exists(name: str) -> bool:
+    """True if a Windows service with the given name is registered."""
+    result = subprocess.run(["sc", "query", name], capture_output=True, text=True)
+    # sc query returns 1060 (ERROR_SERVICE_DOES_NOT_EXIST) -> non-zero rc
+    return result.returncode == 0
+
+
+def _win_grant_networkservice(path: Path):
+    """Grant NT AUTHORITY\\NetworkService full control on the data directory.
+
+    initdb (run under the LocalSystem PraxisZeit service) restricts the data
+    dir to the creating account; the NetworkService-owned postgres service
+    could not otherwise read it. S-1-5-20 is the locale-independent SID for
+    NT AUTHORITY\\NetworkService.
+    """
+    subprocess.run(
+        ["icacls", str(path), "/grant", "*S-1-5-20:(OI)(CI)F", "/T", "/Q"],
+        capture_output=True, text=True,
+    )
+
+
+def _win_pg_unregister():
+    """Stop and unregister the PostgreSQL Windows service, waiting until gone.
+
+    Windows defers service deletion while a handle is open, which is exactly
+    what made setup.bat's EDB cleanup unreliable. We stop, unregister, then
+    poll until the service is really gone (or time out) so a subsequent
+    register does not fail with "service already exists".
+    """
+    subprocess.run(["net", "stop", PG_SERVICE_NAME], capture_output=True, text=True)
+    subprocess.run(
+        [str(pg_cmd("pg_ctl")), "unregister", "-N", PG_SERVICE_NAME],
+        capture_output=True, text=True, env=pg_env(),
+    )
+    for _ in range(15):
+        if not _win_service_exists(PG_SERVICE_NAME):
+            return
+        time.sleep(1)
+    logger.warning(
+        f"Service {PG_SERVICE_NAME} still present after unregister; "
+        "a reboot may be required if the next register fails."
+    )
+
+
+def _win_pg_register_and_start():
+    """Register PostgreSQL as a NetworkService Windows service and start it.
+
+    Note: pg_ctl's ``register`` subcommand only accepts -N/-D/-U/-P/-S/-e/-W/-t/-s/-o
+    (no -l, no lowercase -w). Server logging is handled by logging_collector in
+    postgresql.conf (see pg_init), so no log-file flag is needed here.
+    """
+    _win_grant_networkservice(PG_DATA)
+    result = subprocess.run(
+        [str(pg_cmd("pg_ctl")), "register",
+         "-N", PG_SERVICE_NAME,
+         "-D", str(PG_DATA),
+         "-U", "NT AUTHORITY\\NetworkService",
+         "-S", "auto"],
+        capture_output=True, text=True, env=pg_env(),
+    )
+    if result.returncode != 0:
+        logger.error(
+            "pg_ctl register failed (rc=%s):\n%s\n%s",
+            result.returncode, result.stdout, result.stderr,
+        )
+        sys.exit(1)
+    subprocess.run(["net", "start", PG_SERVICE_NAME], capture_output=True, text=True)
+
+
+def _dump_pg_startup_log():
+    """Log the tail of the PostgreSQL log(s) for debugging.
+
+    Unix writes a startup log via ``pg_ctl start -l``; the Windows service path
+    has no such file, so we also fall back to the logging_collector output
+    (logs/postgresql.log) configured in pg_init.
+    """
+    for name in ("postgresql-startup.log", "postgresql.log"):
+        log_file = LOG_DIR / name
+        if log_file.exists() and log_file.stat().st_size > 0:
+            logger.error(f"PostgreSQL log ({name}):\n{log_file.read_text(errors='replace')[-2000:]}")
+            return
+
+
 def pg_start():
-    """Start PostgreSQL."""
+    """Start PostgreSQL.
+
+    Windows: postgres.exe refuses to run under the LocalSystem/admin token of
+    the PraxisZeit service, so the cluster is run as its own NetworkService
+    Windows service (registered on first start) rather than a child process.
+
+    Unix: started directly via ``pg_ctl start`` (the systemd unit already runs
+    PraxisZeit under an unprivileged account, so the child process is fine).
+    """
     if pg_is_running():
         logger.info("PostgreSQL is already running")
         return
 
     logger.info("Starting PostgreSQL...")
+
+    if IS_WINDOWS:
+        if _win_service_exists(PG_SERVICE_NAME):
+            subprocess.run(["net", "start", PG_SERVICE_NAME], capture_output=True, text=True)
+        else:
+            _win_pg_register_and_start()
+        for i in range(30):
+            if pg_is_running():
+                logger.info("PostgreSQL started successfully (Windows service)")
+                return
+            time.sleep(1)
+        logger.error("PostgreSQL service failed to start within 30 seconds")
+        _dump_pg_startup_log()
+        sys.exit(1)
 
     log_file = LOG_DIR / "postgresql-startup.log"
 
@@ -255,9 +407,7 @@ def pg_start():
         time.sleep(1)
 
     logger.error("PostgreSQL failed to start within 30 seconds")
-    # Print log for debugging
-    if log_file.exists():
-        logger.error(f"Startup log:\n{log_file.read_text()[-2000:]}")
+    _dump_pg_startup_log()
     sys.exit(1)
 
 
@@ -268,6 +418,12 @@ def pg_stop():
         return
 
     logger.info("Stopping PostgreSQL...")
+    if IS_WINDOWS:
+        # Cluster runs as its own service (see pg_start) — stop it via SCM.
+        subprocess.run(["net", "stop", PG_SERVICE_NAME], capture_output=True, text=True)
+        logger.info("PostgreSQL stopped (Windows service)")
+        return
+
     subprocess.run(
         [
             str(pg_cmd("pg_ctl")),
@@ -303,21 +459,37 @@ def _restrict_file_permissions(file_path: Path):
     SID ``*S-1-5-32-544`` is used instead of the localized group name so
     this works on German / English / other Windows locales identically.
     """
-    if IS_WINDOWS:
-        try:
-            username = os.environ.get("USERNAME", os.environ.get("USER", ""))
-            cmds = [["icacls", str(file_path), "/inheritance:r"]]
-            if username:
-                cmds.append(["icacls", str(file_path), "/grant:r", f"{username}:(R,W)"])
-            cmds.append(["icacls", str(file_path), "/grant", "SYSTEM:(R,W)"])
-            # F-037: local Administrators group (SID, locale-independent)
-            cmds.append(["icacls", str(file_path), "/grant", "*S-1-5-32-544:(R)"])
-            for cmd in cmds:
-                subprocess.run(cmd, check=True, capture_output=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            logger.warning(f"Could not restrict permissions on {file_path.name}")
-    else:
+    if not IS_WINDOWS:
         file_path.chmod(0o600)
+        return
+
+    # SYSTEM (S-1-5-18) MUST retain read access: the service runs as LocalSystem
+    # and reads .db-credentials on every start. Administrators (S-1-5-32-544) is
+    # granted so a human admin can run CLI commands manually (F-037). SIDs are
+    # used instead of localized names for locale independence.
+    #
+    # Each icacls step is best-effort and INDEPENDENT: if one fails (e.g. the
+    # "<HOST>$" machine account a LocalSystem service reports as USERNAME), it
+    # must not abort the rest — otherwise "/inheritance:r" could strip every ACE
+    # and leave the file unreadable even for SYSTEM (observed PermissionError on
+    # the next start). Explicit grants run BEFORE "/inheritance:r" so they
+    # survive it.
+    username = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    cmds = [
+        ["icacls", str(file_path), "/grant", "*S-1-5-18:(R,W)"],     # SYSTEM
+        ["icacls", str(file_path), "/grant", "*S-1-5-32-544:(R)"],   # Administrators
+    ]
+    # Only a real interactive user — never the machine account ("<HOST>$").
+    if username and not username.endswith("$"):
+        cmds.append(["icacls", str(file_path), "/grant", f"{username}:(R,W)"])
+    cmds.append(["icacls", str(file_path), "/inheritance:r"])  # last: keeps explicit grants
+    for cmd in cmds:
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            logger.warning(
+                f"icacls step failed on {file_path.name} ({' '.join(cmd[2:])}): {exc}"
+            )
 
 
 def pg_setup_database(config: dict):
@@ -340,18 +512,21 @@ def pg_setup_database(config: dict):
         app_password = secrets.token_hex(32)
 
     psql = str(pg_cmd("psql"))
-
-    # Set superuser password
-    escaped_su_pw = _escape_pg_password(su_password)
+    # "-w" = never prompt for a password. These calls run against a freshly
+    # trust-bootstrapped cluster (initdb -A trust), so no password is needed.
+    # Without -w, a cluster that unexpectedly requires scram auth (e.g. a
+    # foreign data dir) makes psql block forever on an interactive prompt that
+    # can never be answered inside a Windows service — the original F-0xx hang.
+    # With -w it fails fast and check=True surfaces a clear error instead.
     subprocess.run(
-        [psql, "-U", superuser, "-d", "postgres",
-         "-c", f"ALTER ROLE {superuser} PASSWORD '{escaped_su_pw}'"],
-        check=True, capture_output=True, env=pg_env(),
+        [psql, "-w", "-U", superuser, "-d", "postgres",
+         "-c", f"ALTER ROLE {superuser} PASSWORD '{_escape_pg_password(su_password)}'"],
+        check=True, capture_output=True, text=True, env=pg_env(),
     )
 
     # Check if database exists
     result = subprocess.run(
-        [psql, "-U", superuser, "-d", "postgres", "-tAc",
+        [psql, "-w", "-U", superuser, "-d", "postgres", "-tAc",
          "SELECT 1 FROM pg_database WHERE datname = 'praxiszeit'"],
         capture_output=True, text=True, env=pg_env(),
     )
@@ -359,9 +534,9 @@ def pg_setup_database(config: dict):
     if "1" not in result.stdout:
         logger.info(f"Creating database '{db_name}'...")
         subprocess.run(
-            [psql, "-U", superuser, "-d", "postgres", "-c",
+            [psql, "-w", "-U", superuser, "-d", "postgres", "-c",
              f"CREATE DATABASE {db_name} OWNER {superuser} ENCODING 'UTF8'"],
-            check=True, capture_output=True, env=pg_env(),
+            check=True, capture_output=True, text=True, env=pg_env(),
         )
 
     # Run init-db-user.sql to create app user with RLS permissions
@@ -369,16 +544,16 @@ def pg_setup_database(config: dict):
     if init_sql.is_file():
         logger.info("Setting up application database user (RLS)...")
         subprocess.run(
-            [psql, "-U", superuser, "-d", db_name, "-f", str(init_sql)],
-            check=True, capture_output=True, env=pg_env(),
+            [psql, "-w", "-U", superuser, "-d", db_name, "-f", str(init_sql)],
+            check=True, capture_output=True, text=True, env=pg_env(),
         )
 
     # Set app user password
     escaped_app_pw = _escape_pg_password(app_password)
     subprocess.run(
-        [psql, "-U", superuser, "-d", db_name,
+        [psql, "-w", "-U", superuser, "-d", db_name,
          "-c", f"ALTER ROLE {app_user} PASSWORD '{escaped_app_pw}'"],
-        check=True, capture_output=True, env=pg_env(),
+        check=True, capture_output=True, text=True, env=pg_env(),
     )
 
     # Store connection strings as environment variables for the backend
@@ -447,19 +622,33 @@ def run_migrations(config: dict):
     # DATABASE_URL_MIGRATIONS should already be set
 
     python = sys.executable
-    result = subprocess.run(
-        [python, "-m", "alembic", "upgrade", "head"],
-        cwd=str(BACKEND_DIR),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    # Invoke Alembic's CLI programmatically instead of `python -m alembic`:
+    # `-m alembic` needs alembic/__main__.py to be resolvable, which can fail
+    # transiently right after install while the OS/AV indexes the freshly
+    # pip-installed package ("No module named alembic.__main__"). Importing
+    # alembic.config is robust against that. A few retries cover the race.
+    cmd = [
+        python, "-c",
+        "import sys; from alembic.config import main; main(sys.argv[1:])",
+        "upgrade", "head",
+    ]
+    last_err = ""
+    for attempt in range(1, 4):
+        result = subprocess.run(
+            cmd, cwd=str(BACKEND_DIR), env=env, capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            logger.info("Migrations complete")
+            return
+        last_err = result.stderr
+        logger.warning(
+            f"Migration attempt {attempt}/3 failed (rc={result.returncode}); "
+            f"retrying in 3s...\n{result.stderr}"
+        )
+        time.sleep(3)
 
-    if result.returncode != 0:
-        logger.error(f"Migration failed:\n{result.stderr}")
-        sys.exit(1)
-
-    logger.info("Migrations complete")
+    logger.error(f"Migration failed after 3 attempts:\n{last_err}")
+    sys.exit(1)
 
 
 # --- PID File ---
@@ -496,6 +685,92 @@ def _remove_pid():
 _uvicorn_process = None
 
 
+def _detect_primary_ipv4():
+    """Best-effort LAN IPv4 of this host (for the cert SubjectAltName)."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return None
+
+
+def _ensure_self_signed_cert(cert_path: Path, key_path: Path, practice_name: str) -> bool:
+    """Generate a self-signed cert/key pair at the given paths if missing.
+
+    Native installs ship a config that points at config/ssl/cert.pem + key.pem
+    and sets cookie_secure=true, but the installer does not currently place a
+    cert there. Without this, uvicorn binds plain HTTP on the HTTPS port and the
+    browser rejects the Secure refresh cookie -> broken login. Generating a
+    self-signed cert here guarantees the configured SSL precondition holds.
+    Operators can overwrite cert.pem/key.pem with a CA-signed pair at any time.
+
+    Returns True if both files exist afterwards.
+    """
+    if cert_path.is_file() and key_path.is_file():
+        return True
+    try:
+        import ipaddress
+        from datetime import datetime, timedelta, timezone
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+    except ImportError:
+        logger.warning(
+            "SSL configured but cert/key missing and 'cryptography' is "
+            "unavailable to generate one — starting without SSL."
+        )
+        return False
+
+    logger.info("SSL cert/key missing — generating a self-signed certificate...")
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, practice_name or "PraxisZeit"),
+    ])
+    sans = [x509.DNSName("localhost"), x509.IPAddress(ipaddress.IPv4Address("127.0.0.1"))]
+    primary = _detect_primary_ipv4()
+    if primary and primary != "127.0.0.1":
+        try:
+            sans.append(x509.IPAddress(ipaddress.IPv4Address(primary)))
+        except ipaddress.AddressValueError:
+            pass
+
+    now = datetime.now(timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=3650))
+        .add_extension(x509.SubjectAlternativeName(sans), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    ))
+    if not IS_WINDOWS:
+        try:
+            key_path.chmod(0o600)
+        except OSError:
+            pass
+    logger.info(f"Self-signed certificate written to {cert_path}")
+    return True
+
+
 def uvicorn_start(config: dict):
     """Start uvicorn with the FastAPI app."""
     global _uvicorn_process
@@ -529,6 +804,14 @@ def uvicorn_start(config: dict):
     if ssl_cert and ssl_key:
         cert_path = BASE_DIR / ssl_cert if not Path(ssl_cert).is_absolute() else Path(ssl_cert)
         key_path = BASE_DIR / ssl_key if not Path(ssl_key).is_absolute() else Path(ssl_key)
+        # Auto-generate a self-signed cert if the configured files are missing,
+        # so a native install that requested SSL (cookie_secure=true) actually
+        # serves HTTPS instead of silently degrading to plaintext + broken login.
+        if not (cert_path.is_file() and key_path.is_file()):
+            _ensure_self_signed_cert(
+                cert_path, key_path,
+                get_config_value(config, "practice", "name", "PraxisZeit"),
+            )
         if cert_path.is_file() and key_path.is_file():
             cmd.extend(["--ssl-certfile", str(cert_path)])
             cmd.extend(["--ssl-keyfile", str(key_path)])
@@ -639,15 +922,27 @@ def create_backup(config: dict):
     superuser = get_config_value(config, "database", "superuser", "praxiszeit")
     su_password, _ = pg_load_credentials()
 
+    # Without credentials we cannot authenticate to the (scram) cluster. Bail
+    # out instead of running pg_dump with no password — otherwise pg_dump blocks
+    # forever on an interactive password prompt that can never be answered in a
+    # service / headless-updater context (the backup-step hang on update).
+    if not su_password:
+        logger.error(
+            "No database credentials found (.db-credentials missing) — "
+            "skipping backup. The database is not initialized yet."
+        )
+        return None
+
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     backup_file = BACKUP_DIR / f"praxiszeit_{timestamp}.sql.gz"
 
     logger.info(f"Creating backup: {backup_file}")
 
+    # "-w": never prompt for a password (fail fast instead of hanging).
     pg_dump = subprocess.Popen(
-        [str(pg_cmd("pg_dump")), "-U", superuser, "-d", "praxiszeit", "-Fc"],
+        [str(pg_cmd("pg_dump")), "-w", "-U", superuser, "-d", "praxiszeit", "-Fc"],
         stdout=subprocess.PIPE,
-        env={**pg_env(), "PGPASSWORD": su_password} if su_password else pg_env(),
+        env={**pg_env(), "PGPASSWORD": su_password},
     )
 
     with open(backup_file, "wb") as f:
@@ -703,6 +998,38 @@ def cmd_start(args):
     needs_initdb = not PG_DATA.exists() or not any(PG_DATA.iterdir())
     creds_file = CONFIG_DIR / ".db-credentials"
     needs_setup = needs_initdb or not creds_file.is_file()
+
+    # Migration: a data directory from a pre-marker version (< 1.5.1) that still
+    # has its credentials file is a healthy PraxisZeit cluster — backfill the
+    # marker so a future credentials loss is never mistaken for a foreign
+    # cluster and quarantined. (No-op once the marker exists.)
+    if not needs_initdb and creds_file.is_file() and not _pg_data_is_ours():
+        try:
+            (PG_DATA / PG_CLUSTER_MARKER).write_text("praxiszeit-managed\n", encoding="utf-8")
+            logger.info("Backfilled PraxisZeit cluster marker on existing data directory.")
+        except OSError as exc:
+            logger.warning(f"Could not write cluster marker: {exc}")
+
+    # Self-healing: a data directory that exists but was NOT initialized by us
+    # (no cluster marker) and has no credentials file is a foreign / stale
+    # cluster — typically an EDB-installer leftover with scram auth and the
+    # "postgres" superuser. Trusting it would make pg_setup_database's
+    # trust-based psql calls fail (or, before -w, hang) because the roles and
+    # auth method do not match what we expect. Drop it and re-initialize a
+    # clean, trust-bootstrapped cluster owned by superuser "praxiszeit".
+    if not needs_initdb and needs_setup and not _pg_data_is_ours():
+        logger.warning(
+            "PostgreSQL data directory exists but is not PraxisZeit-managed and "
+            "no credentials file was found — moving it aside and reinitializing "
+            "a clean cluster. The old directory is preserved (not deleted)."
+        )
+        if IS_WINDOWS and _win_service_exists(PG_SERVICE_NAME):
+            _win_pg_unregister()
+        elif pg_is_running():
+            pg_stop()
+        backup = _quarantine_pg_data()
+        logger.warning(f"Previous data directory preserved at: {backup}")
+        needs_initdb = True
 
     if needs_initdb:
         pg_init(config)
@@ -863,7 +1190,7 @@ def cmd_status(args):
         if su_password:
             superuser = get_config_value(config, "database", "superuser", "praxiszeit")
             result = subprocess.run(
-                [str(pg_cmd("psql")), "-U", superuser, "-d", "praxiszeit",
+                [str(pg_cmd("psql")), "-w", "-U", superuser, "-d", "praxiszeit",
                  "-tAc", "SELECT count(*) FROM users WHERE is_active = true"],
                 capture_output=True, text=True,
                 env={**pg_env(), "PGPASSWORD": su_password},

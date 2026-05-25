@@ -308,7 +308,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             if (!OperatingSystem.IsWindows())
             {
                 sink.OnReportFallback(new RunnerLogEvent(
-                    "Diese Setup-Variante laeuft nur unter Windows. Linux/macOS: bitte install.sh aus dem .tar.gz nutzen."));
+                    "Diese Setup-Variante läuft nur unter Windows. Linux/macOS: bitte install.sh aus dem .tar.gz nutzen."));
                 success = false;
             }
             else
@@ -362,10 +362,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             ? (_welcome.Mode == InstallMode.Update
                 ? $"PraxisZeit wurde erfolgreich auf Version {_welcome.TargetVersion} aktualisiert. Eine Datenbank-Sicherung liegt unter data\\backups."
                 : (_config is not null
-                    ? $"PraxisZeit ist eingerichtet, der Service laeuft. Sie koennen sich jetzt mit dem Admin-Account ({_config.AdminUsername}) anmelden."
-                    : "PraxisZeit wurde eingerichtet, der Service laeuft. Bevor Sie sich anmelden koennen, muss config\\praxiszeit.conf einmalig angepasst werden (Praxisname, Admin-E-Mail, Admin-Passwort)."))
-            : "Bitte pruefen Sie das Protokoll der Progress-Page und logs\\service-stderr.log im Installationsverzeichnis. Ein automatisches Datenbank-Backup wurde unter data\\backups abgelegt.";
-        _done.BrowserUrl = "https://localhost/";
+                    ? $"PraxisZeit ist eingerichtet, der Service läuft. Sie können sich jetzt mit dem Admin-Account ({_config.AdminUsername}) anmelden."
+                    : "PraxisZeit wurde eingerichtet, der Service läuft. Bevor Sie sich anmelden können, muss config\\praxiszeit.conf einmalig angepasst werden (Praxisname, Admin-E-Mail, Admin-Passwort)."))
+            : "Bitte prüfen Sie das Protokoll der Progress-Page und logs\\service-stderr.log im Installationsverzeichnis. Ein automatisches Datenbank-Backup wurde unter data\\backups abgelegt.";
+        var browserUrl = _ports.HttpsPort == 443
+            ? "https://localhost/"
+            : $"https://localhost:{_ports.HttpsPort}/";
+        _done.BrowserUrl = browserUrl;
+
+        // Nach erfolgreichem Install: optionale Verknüpfungen + Apps-&-Features-Eintrag.
+        if (success && OperatingSystem.IsWindows())
+        {
+            CreateShortcutsIfRequested(browserUrl);
+            RegisterInAppsAndFeatures();
+        }
 
         // CanGoNext freigeben damit der Footer-Button "Weiter" -> "Schliessen"
         // klickbar wird (siehe Progress.OnDoneEvent).
@@ -381,6 +391,43 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [SupportedOSPlatform("windows")]
     private Task<bool> RunFreshOnWindowsAsync(string installDir, string payloadDir, IProgress<RunnerEvent> sink, PraxisZeitConfigValues? configValues) =>
         _scriptRunner.RunFreshInstallAsync(installDir, payloadDir, sink, configValues);
+
+    /// <summary>
+    /// Legt optional eine Desktop-Verknüpfung und/oder einen Startmenü-Eintrag
+    /// an, die den Browser auf die lokale PraxisZeit-Instanz öffnen. Best-effort:
+    /// schlägt das fehl (z.B. Rechte), bricht die Installation NICHT ab.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private void CreateShortcutsIfRequested(string url)
+    {
+        try
+        {
+            if (_location.CreateDesktopShortcut) { ShortcutCreator.CreateDesktopShortcut(url); }
+            if (_location.CreateStartMenuEntry) { ShortcutCreator.CreateStartMenuShortcut(url); }
+        }
+        catch
+        {
+            // Verknüpfungen sind optional — Fehler hier dürfen den Install nicht stoppen.
+        }
+    }
+
+    /// <summary>
+    /// Registriert PraxisZeit in „Apps &amp; Features", sodass es dort sichtbar
+    /// ist und über die gebündelte uninstall.bat deinstalliert werden kann.
+    /// Best-effort.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private void RegisterInAppsAndFeatures()
+    {
+        try
+        {
+            UninstallRegistrar.Register(_location.InstallPath, _welcome.TargetVersion);
+        }
+        catch
+        {
+            // Registry-Eintrag ist optional — Fehler darf den Install nicht stoppen.
+        }
+    }
 
     /// <summary>
     /// Merged die Werte aus den drei User-Eingabe-Pages (Ports, Lizenz,

@@ -37,6 +37,10 @@ echo Installing PraxisZeit service...
 "%NSSM%" set PraxisZeit AppStderr "%INSTALL_DIR%\logs\service-stderr.log"
 "%NSSM%" set PraxisZeit AppRotateFiles 1
 "%NSSM%" set PraxisZeit AppRotateBytes 10485760
+REM PYTHONUNBUFFERED: ohne das puffert Python stdout/stderr, und Startup-Fehler
+REM (z.B. ein haengendes DB-Setup) landen erst beim Prozess-Ende - oder nie - in
+REM service-stdout/stderr.log. PYTHONUTF8: cp1252-Crashes bei Umlauten/Emojis vermeiden.
+"%NSSM%" set PraxisZeit AppEnvironmentExtra PYTHONUNBUFFERED=1 PYTHONUTF8=1 PYTHONNOUSERSITE=1
 
 echo.
 echo Service installed successfully.
