@@ -110,6 +110,7 @@ class UserResponse(UserBase):
     totp_enabled: bool = False  # F-019: 2FA status
     profile_picture: Optional[str] = None
     deactivated_at: Optional[datetime] = None  # Grace-Period-Start
+    onboarding_completed_at: Optional[datetime] = None  # NULL = Onboarding noch nicht gesehen
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None

@@ -17,6 +17,7 @@ interface User {
   is_active: boolean;
   totp_enabled: boolean;
   profile_picture?: string | null;
+  onboarding_completed_at?: string | null;  // NULL = Onboarding noch nicht gesehen
   created_at: string;
   use_daily_schedule: boolean;
   hours_monday: number | null;

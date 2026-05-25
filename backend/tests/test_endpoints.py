@@ -401,6 +401,29 @@ class TestAuthMe:
         assert resp.status_code in (401, 403)
 
 
+class TestOnboardingComplete:
+    """POST /api/auth/onboarding/complete — Erst-Login-Onboarding als gesehen markieren."""
+
+    def test_complete_sets_timestamp(self, employee_client):
+        """Markiert das Onboarding als gesehen; /me spiegelt den Zeitstempel."""
+        resp = employee_client.post("/api/auth/onboarding/complete")
+        assert resp.status_code == 200
+        assert resp.json()["onboarding_completed_at"] is not None
+        me = employee_client.get("/api/auth/me").json()
+        assert me["onboarding_completed_at"] is not None
+
+    def test_complete_is_idempotent(self, employee_client):
+        """Mehrfaches Aufrufen aendert den ersten Zeitstempel nicht."""
+        first = employee_client.post("/api/auth/onboarding/complete").json()["onboarding_completed_at"]
+        second = employee_client.post("/api/auth/onboarding/complete").json()["onboarding_completed_at"]
+        assert first is not None and second == first
+
+    def test_complete_requires_auth(self, unauthenticated_client):
+        """Ohne Token kein Zugriff."""
+        resp = unauthenticated_client.post("/api/auth/onboarding/complete")
+        assert resp.status_code in (401, 403)
+
+
 class TestAuthLogout:
     """POST /api/auth/logout"""
 
