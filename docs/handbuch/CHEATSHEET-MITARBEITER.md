@@ -3,7 +3,8 @@
 ---
 
 ## Anmelden
-**URL:** `http://[Server-Adresse]/login`
+**URL:** `https://[Server-Adresse]/login`
+Beim ersten Aufruf evtl. Zertifikat-Warnung → „Erweitert" → „Weiter zu …".
 Benutzernamen + Passwort eingeben → **Anmelden**
 
 ---
@@ -17,6 +18,10 @@ Benutzernamen + Passwort eingeben → **Anmelden**
 ---
 
 ## Zeiterfassung (tägliche Aufgabe)
+
+### Schnell ein-/ausstempeln
+**Dashboard → Einstempeln** startet die Zeit live; später **Ausstempeln** beendet
+sie und speichert den Eintrag automatisch. Alternativ Zeiten manuell erfassen:
 
 ### Neuen Zeiteintrag erstellen
 **Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag**

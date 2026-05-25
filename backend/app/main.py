@@ -176,8 +176,18 @@ async def lifespan(app: FastAPI):
             print(f"WARNING: {e}")
             print("App running in READ-ONLY mode.")
         except LicenseError as e:
-            print(f"LICENSE ERROR: {e}")
-            sys.exit(1)
+            # Eine ungueltige/nicht verifizierbare Lizenz darf den Dienst NICHT
+            # abschiessen (frueher: sys.exit(1) -> Totalausfall, niemand kommt
+            # rein). Stattdessen Read-Only-Modus: Login, Ansicht und Export
+            # bleiben moeglich; nur Schreibvorgaenge (Stempeln, Antraege stellen/
+            # genehmigen) sind gesperrt (LicenseReadOnlyMiddleware).
+            print(f"LIZENZ-PROBLEM: {e}")
+            print("-> PraxisZeit laeuft im READ-ONLY-Modus: Anmeldung und "
+                  "Daten-Export funktionieren, Stempeln und Antraege sind "
+                  "gesperrt. Bitte eine gueltige Lizenz im Shop "
+                  "(praxiszeit.mr-development.de) holen und unter "
+                  "config\\license.key ablegen.")
+            set_license_state(None, read_only=True)
     elif settings.LICENSE_DEMO_EXPIRES_AT:
         # Demo-Mode (vom Setup-Wizard gesetzt). Volle Funktion bis zum Datum,
         # danach Read-Only. Wir exportieren KEINE LicenseInfo (es gibt
