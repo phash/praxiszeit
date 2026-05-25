@@ -104,6 +104,11 @@ async def lifespan(app: FastAPI):
                     weekly_hours=40.0,
                     vacation_days=30,
                     is_active=True,
+                    # Bootstrap-Admin ist ein technisches Konto, kein zeiterfasster
+                    # Mitarbeiter -> aus der Zeitzaehlung nehmen (keine "Buchung
+                    # fehlt"-Warnungen, nicht im Team-Fehlbuchungs-Widget).
+                    # Per Benutzerverwaltung jederzeit umstellbar.
+                    track_hours=False,
                     tenant_id=default_tenant_id,
                 )
                 db.add(admin)
