@@ -31,6 +31,7 @@ import {
 import HelpPanel from './HelpPanel';
 import StampWidget from './StampWidget';
 import { DocDrawer } from './DocDrawer';
+import OnboardingModal from './OnboardingModal';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
@@ -475,6 +476,8 @@ export default function Layout() {
         isAdmin={user?.role === 'admin'}
         initialTab={drawerTab}
       />
+
+      <OnboardingModal />
     </div>
   );
 }

@@ -49,6 +49,7 @@ class User(Base):
     last_work_day = Column(Date, nullable=True)   # Letzter Arbeitstag
     profile_picture = Column(Text, nullable=True)  # Base64 data URI
     deactivated_at = Column(DateTime(timezone=True), nullable=True)  # Grace-Period-Start bei Deaktivierung
+    onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)  # NULL = Onboarding (Erst-Login-Tour) noch nicht gesehen
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

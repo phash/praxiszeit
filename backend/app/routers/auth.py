@@ -365,6 +365,25 @@ def update_calendar_color(
     return UserResponse.model_validate(current_user)
 
 
+@router.post("/onboarding/complete", response_model=UserResponse)
+def complete_onboarding(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Markiert die Erst-Login-Onboarding-Tour als gesehen (idempotent).
+
+    NULL onboarding_completed_at = noch nicht gesehen -> Frontend zeigt das
+    rollenspezifische Welcome-Modal. Nach Bestaetigung ruft das Frontend diesen
+    Endpoint, sodass es bei kuenftigen Logins (auch auf anderen Geraeten) nicht
+    erneut erscheint.
+    """
+    if current_user.onboarding_completed_at is None:
+        current_user.onboarding_completed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
 @router.put("/profile", response_model=UserResponse)
 def update_profile(
     profile_data: UpdateProfileRequest,
