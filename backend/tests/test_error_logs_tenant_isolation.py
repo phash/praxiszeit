@@ -451,3 +451,319 @@ def test_capture_middleware_falls_back_to_jwt_when_state_unset(
         headers={"authorization": f"Bearer {token}"},
     )
     assert _tenant_from_request(fake_req) == str(TENANT_A_ID)
+
+
+# ─── M1: Write-path tenant isolation (PATCH/DELETE/GH-URL) ──────────────
+
+
+class TestWriteIsolation:
+    """End-to-end write-path tenant scoping for the admin error_logs API.
+
+    M1 follow-up to Issue #127: the H1 fix only constrained the GET path —
+    PATCH/DELETE/POST-set-gh-url still resolved rows by ``id`` alone. In
+    SaaS mode that left a (RLS-shielded) cross-tenant mutation path open.
+    These tests pin the belt-and-suspenders app-layer filter on top of RLS.
+    """
+
+    def test_saas_admin_patches_own_tenant_error(
+        self, saas_client_admin_a, errors_two_tenants
+    ):
+        """Own-tenant PATCH succeeds and reflects the new status."""
+        own = errors_two_tenants[TENANT_A_ID][0]  # A-err-1, open
+        resp = saas_client_admin_a.patch(
+            f"/api/admin/errors/{own.id}/status",
+            json={"status": "resolved"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "resolved"
+
+    def test_saas_admin_cannot_patch_foreign_tenant_error(
+        self, saas_client_admin_a, errors_two_tenants, _db_session
+    ):
+        """Cross-tenant PATCH must 404; the foreign row stays untouched."""
+        foreign = errors_two_tenants[TENANT_B_ID][0]  # B-err-1
+        resp = saas_client_admin_a.patch(
+            f"/api/admin/errors/{foreign.id}/status",
+            json={"status": "resolved"},
+        )
+        assert resp.status_code == 404, resp.text
+
+        # Verify the foreign row is untouched.
+        _db_session.expire_all()
+        refetched = (
+            _db_session.query(ErrorLog).filter(ErrorLog.id == foreign.id).first()
+        )
+        assert refetched is not None
+        assert refetched.status == "open"  # original seed status
+
+    def test_saas_admin_deletes_own_tenant_error(
+        self, saas_client_admin_a, errors_two_tenants, _db_session
+    ):
+        """Own-tenant DELETE removes the row."""
+        own = errors_two_tenants[TENANT_A_ID][1]  # A-err-2
+        own_id = own.id
+        resp = saas_client_admin_a.delete(f"/api/admin/errors/{own_id}")
+        assert resp.status_code == 204, resp.text
+
+        _db_session.expire_all()
+        assert (
+            _db_session.query(ErrorLog).filter(ErrorLog.id == own_id).first()
+            is None
+        )
+
+    def test_saas_admin_cannot_delete_foreign_tenant_error(
+        self, saas_client_admin_a, errors_two_tenants, _db_session
+    ):
+        """Cross-tenant DELETE must 404; the foreign row survives."""
+        foreign = errors_two_tenants[TENANT_B_ID][1]  # B-err-2
+        foreign_id = foreign.id
+        resp = saas_client_admin_a.delete(f"/api/admin/errors/{foreign_id}")
+        assert resp.status_code == 404, resp.text
+
+        _db_session.expire_all()
+        survivor = (
+            _db_session.query(ErrorLog).filter(ErrorLog.id == foreign_id).first()
+        )
+        assert survivor is not None
+        assert survivor.message == "B-err-2"
+
+    def test_saas_admin_sets_github_url_on_own_tenant_error(
+        self, saas_client_admin_a, errors_two_tenants
+    ):
+        """Annotating an own-tenant error with a GH URL succeeds."""
+        own = errors_two_tenants[TENANT_A_ID][0]
+        gh_url = "https://github.com/phash/praxiszeit/issues/127"
+        resp = saas_client_admin_a.patch(
+            f"/api/admin/errors/{own.id}/github-url",
+            json={"github_issue_url": gh_url},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["github_issue_url"] == gh_url
+
+    def test_saas_admin_cannot_set_github_url_on_foreign_tenant_error(
+        self, saas_client_admin_a, errors_two_tenants, _db_session
+    ):
+        """Cross-tenant GH-URL annotation must 404 and not mutate the row."""
+        foreign = errors_two_tenants[TENANT_B_ID][0]
+        gh_url = "https://github.com/phash/praxiszeit/issues/127"
+        resp = saas_client_admin_a.patch(
+            f"/api/admin/errors/{foreign.id}/github-url",
+            json={"github_issue_url": gh_url},
+        )
+        assert resp.status_code == 404, resp.text
+
+        _db_session.expire_all()
+        refetched = (
+            _db_session.query(ErrorLog).filter(ErrorLog.id == foreign.id).first()
+        )
+        assert refetched is not None
+        assert refetched.github_issue_url is None
+
+    def test_saas_admin_cannot_patch_null_tenant_infra_error(
+        self, _db_session, saas_client_admin_a
+    ):
+        """NULL-tenant infra rows are read-only for tenant-admins.
+
+        Design call (see ``_scope_write_to_tenant`` docstring): tenant-admins
+        can *see* infra rows for awareness but cannot mutate them — that
+        would let one tenant suppress evidence of a system-level issue
+        affecting all tenants.
+        """
+        infra = _make_error(_db_session, None, "INFRA-write-block", status="open")
+        resp = saas_client_admin_a.patch(
+            f"/api/admin/errors/{infra.id}/status",
+            json={"status": "resolved"},
+        )
+        assert resp.status_code == 404, resp.text
+
+        _db_session.expire_all()
+        refetched = (
+            _db_session.query(ErrorLog).filter(ErrorLog.id == infra.id).first()
+        )
+        assert refetched is not None
+        assert refetched.status == "open"
+
+    def test_saas_admin_cannot_delete_null_tenant_infra_error(
+        self, _db_session, saas_client_admin_a
+    ):
+        """NULL-tenant infra rows are not deletable by tenant-admins."""
+        infra = _make_error(_db_session, None, "INFRA-delete-block", status="open")
+        resp = saas_client_admin_a.delete(f"/api/admin/errors/{infra.id}")
+        assert resp.status_code == 404, resp.text
+
+        _db_session.expire_all()
+        assert (
+            _db_session.query(ErrorLog).filter(ErrorLog.id == infra.id).first()
+            is not None
+        )
+
+    def test_onprem_admin_can_patch_any_tenant_error(
+        self, onprem_client_admin_a, errors_two_tenants
+    ):
+        """Onprem mode: legacy unscoped write — any row is mutable."""
+        # Pick a row that nominally "belongs to" Tenant B; in onprem there
+        # is only one tenant and the data was just seeded for test isolation.
+        foreign = errors_two_tenants[TENANT_B_ID][0]
+        resp = onprem_client_admin_a.patch(
+            f"/api/admin/errors/{foreign.id}/status",
+            json={"status": "resolved"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "resolved"
+
+    def test_onprem_admin_can_delete_any_tenant_error(
+        self, onprem_client_admin_a, errors_two_tenants, _db_session
+    ):
+        """Onprem mode: legacy unscoped delete — any row is removable."""
+        foreign = errors_two_tenants[TENANT_B_ID][1]
+        foreign_id = foreign.id
+        resp = onprem_client_admin_a.delete(f"/api/admin/errors/{foreign_id}")
+        assert resp.status_code == 204, resp.text
+
+        _db_session.expire_all()
+        assert (
+            _db_session.query(ErrorLog).filter(ErrorLog.id == foreign_id).first()
+            is None
+        )
+
+
+# ─── M1: Service-level direct calls for the write functions ─────────────
+
+
+def test_service_update_status_scopes_to_tenant_when_set(
+    _db_session, errors_two_tenants
+):
+    """Direct ``update_status(..., tenant_id=A)`` ignores Tenant B rows."""
+    from app.services import error_log_service
+
+    foreign = errors_two_tenants[TENANT_B_ID][0]
+    result = error_log_service.update_status(
+        _db_session,
+        str(foreign.id),
+        "resolved",
+        admin_user_id=None,
+        tenant_id=TENANT_A_ID,
+    )
+    assert result is None
+
+    own = errors_two_tenants[TENANT_A_ID][0]
+    result_own = error_log_service.update_status(
+        _db_session,
+        str(own.id),
+        "resolved",
+        admin_user_id=None,
+        tenant_id=TENANT_A_ID,
+    )
+    assert result_own is not None
+    assert result_own.status == "resolved"
+
+
+def test_service_delete_error_scopes_to_tenant_when_set(
+    _db_session, errors_two_tenants
+):
+    """Direct ``delete_error(..., tenant_id=A)`` refuses to drop Tenant B rows."""
+    from app.services import error_log_service
+
+    foreign = errors_two_tenants[TENANT_B_ID][1]
+    assert (
+        error_log_service.delete_error(
+            _db_session, str(foreign.id), tenant_id=TENANT_A_ID
+        )
+        is False
+    )
+    _db_session.expire_all()
+    assert (
+        _db_session.query(ErrorLog).filter(ErrorLog.id == foreign.id).first()
+        is not None
+    )
+
+    own = errors_two_tenants[TENANT_A_ID][1]
+    own_id = own.id
+    assert (
+        error_log_service.delete_error(
+            _db_session, str(own_id), tenant_id=TENANT_A_ID
+        )
+        is True
+    )
+    _db_session.expire_all()
+    assert (
+        _db_session.query(ErrorLog).filter(ErrorLog.id == own_id).first() is None
+    )
+
+
+def test_service_set_github_url_scopes_to_tenant_when_set(
+    _db_session, errors_two_tenants
+):
+    """Direct ``set_github_url(..., tenant_id=A)`` ignores Tenant B rows."""
+    from app.services import error_log_service
+
+    gh = "https://github.com/phash/praxiszeit/issues/1"
+    foreign = errors_two_tenants[TENANT_B_ID][0]
+    assert (
+        error_log_service.set_github_url(
+            _db_session, str(foreign.id), gh, tenant_id=TENANT_A_ID
+        )
+        is None
+    )
+
+    own = errors_two_tenants[TENANT_A_ID][0]
+    result_own = error_log_service.set_github_url(
+        _db_session, str(own.id), gh, tenant_id=TENANT_A_ID
+    )
+    assert result_own is not None
+    assert result_own.github_issue_url == gh
+
+
+def test_service_write_functions_skip_null_tenant_when_scoped(
+    _db_session, two_tenants
+):
+    """NULL-tenant rows are unreachable when a ``tenant_id`` filter is active.
+
+    Mirrors the SaaS-write contract: only equality match, no NULL-OR branch.
+    """
+    from app.services import error_log_service
+
+    infra = _make_error(_db_session, None, "svc-infra-null", status="open")
+    assert (
+        error_log_service.update_status(
+            _db_session, str(infra.id), "resolved", tenant_id=TENANT_A_ID
+        )
+        is None
+    )
+    assert (
+        error_log_service.delete_error(
+            _db_session, str(infra.id), tenant_id=TENANT_A_ID
+        )
+        is False
+    )
+    assert (
+        error_log_service.set_github_url(
+            _db_session,
+            str(infra.id),
+            "https://github.com/phash/praxiszeit/issues/1",
+            tenant_id=TENANT_A_ID,
+        )
+        is None
+    )
+
+    _db_session.expire_all()
+    survivor = (
+        _db_session.query(ErrorLog).filter(ErrorLog.id == infra.id).first()
+    )
+    assert survivor is not None
+    assert survivor.status == "open"
+    assert survivor.github_issue_url is None
+
+
+def test_service_write_functions_unfiltered_when_tenant_none(
+    _db_session, errors_two_tenants
+):
+    """Onprem path: ``tenant_id=None`` mutates any row matching ``error_id``."""
+    from app.services import error_log_service
+
+    foreign = errors_two_tenants[TENANT_B_ID][0]
+    result = error_log_service.update_status(
+        _db_session, str(foreign.id), "resolved", tenant_id=None
+    )
+    assert result is not None
+    assert result.status == "resolved"
