@@ -299,6 +299,150 @@ praxiszeit-X.Y.Z-SHA256SUMS.txt
 | Migration fehlgeschlagen | Process Manager manuell starten, Fehlerausgabe lesen |
 | Windows: setup.bat schlaegt fehl | Als Administrator ausfuehren, Internetverbindung pruefen |
 | macOS: PostgreSQL-DMG nicht gefunden | PostgreSQL manuell installieren: [postgresapp.com](https://postgresapp.com) |
+| `.db-credentials` fehlt, Dienst startet nicht | Siehe Abschnitt "Disaster Recovery" unten |
+
+---
+
+## Disaster Recovery: verlorene `.db-credentials`
+
+**Problem.** Die Datei `config/.db-credentials` haelt die Passwoerter fuer die
+Datenbank-Benutzer `praxiszeit` (Superuser) und `praxiszeit_app` (Anwendung).
+Wenn sie geloescht, ueberschrieben oder beschaedigt wird, das Datenverzeichnis
+`data/db/` aber noch existiert (mit dem Marker `.praxiszeit-cluster` darin),
+kann der Process Manager den Cluster nicht mehr ansprechen — der Cluster ist
+seit dem ersten Start scram-gehaertet, und ohne Passwort akzeptiert er weder
+`psql` noch `ALTER ROLE`.
+
+**Symptom.** Der Dienst startet nicht. Im Log (`logs/praxiszeit.log` bzw.
+`logs/service-stderr.log` auf Windows) steht ab Version 1.5.x eine eindeutige
+Fehlermeldung:
+
+```
+[ERROR] .db-credentials is missing, but the data directory is already
+initialized (PraxisZeit cluster marker present). The cluster is scram-hardened
+and cannot be re-bootstrapped without its existing credentials. Recovery
+options are documented in docs/INSTALL-NATIVE.md (section 'Disaster Recovery:
+verlorene .db-credentials').
+```
+
+Bei aelteren Versionen (vor dem Fail-Fast-Branch) hing der Dienststart still
+an einem `psql`-Aufruf — auch dort ist die Diagnose dieselbe: Datenverzeichnis
+gehoert uns, aber die Credentials fehlen.
+
+**Wann tritt das auf?**
+
+- Aufraeum-Aktion am Server (Backup-Skript loescht `config/` mit)
+- Festplatten-Image-Restore, der `config/` aus einem Stand vor dem ersten
+  Start zurueckspielt
+- Falsch konfigurierter Robocopy-/rsync-Job, der `.dotfiles` nicht mitnimmt
+- Manuelles "ich raeume mal auf" — die Datei sieht harmlos aus
+
+### Recovery-Pfad A: Restore aus Backup (bevorzugt)
+
+Wenn ein Backup von `config/.db-credentials` existiert (z.B. aus dem
+naechtlichen `data/backups/`-Verzeichnis oder einem externen Backup):
+
+```bash
+# Linux/macOS
+cp /pfad/zum/backup/.db-credentials /opt/praxiszeit/config/.db-credentials
+chmod 600 /opt/praxiszeit/config/.db-credentials
+chown praxiszeit:praxiszeit /opt/praxiszeit/config/.db-credentials
+sudo systemctl start praxiszeit
+```
+
+```cmd
+:: Windows (als Administrator)
+copy /Y \pfad\zum\backup\.db-credentials C:\PraxisZeit\config\.db-credentials
+icacls C:\PraxisZeit\config\.db-credentials /inheritance:r /grant:r "SYSTEM:F" "Administrators:F"
+net start PraxisZeit
+```
+
+Der Dienst startet, der vorhandene Cluster wird wiederverwendet, alle Daten
+bleiben erhalten.
+
+### Recovery-Pfad B: Cluster neu initialisieren (Daten retten via pg_dumpall)
+
+Wenn KEIN Backup der `.db-credentials` existiert, aber die Datenbank inhaltlich
+intakt ist und noch erreichbar (z.B. weil der alte Dienst noch laeuft oder
+sich `psql` lokal noch peer-authentifizieren kann):
+
+```bash
+# 1. Backup ziehen, solange der Cluster noch antwortet
+cd /opt/praxiszeit
+bin/postgresql/bin/pg_dumpall -U praxiszeit -h localhost > /root/praxiszeit-rescue.sql
+
+# 2. Dienst stoppen
+sudo systemctl stop praxiszeit
+
+# 3. Datenverzeichnis komplett entfernen (Marker geht damit auch weg)
+sudo rm -rf data/db
+
+# 4. Dienst starten — initdb laeuft neu, frischer Cluster mit neuen Credentials
+sudo systemctl start praxiszeit
+
+# 5. Daten zurueckspielen (nach erfolgreichem Start)
+bin/postgresql/bin/psql -U praxiszeit -h localhost -f /root/praxiszeit-rescue.sql
+```
+
+Windows-Aequivalent:
+```cmd
+cd C:\PraxisZeit
+bin\postgresql\bin\pg_dumpall.exe -U praxiszeit -h localhost > C:\praxiszeit-rescue.sql
+net stop PraxisZeit
+rd /s /q data\db
+net start PraxisZeit
+bin\postgresql\bin\psql.exe -U praxiszeit -h localhost -f C:\praxiszeit-rescue.sql
+```
+
+### Recovery-Pfad C: Quarantaene (kein Dump moeglich)
+
+Wenn `pg_dumpall` nicht mehr funktioniert (kein Passwort, keine peer-Auth),
+das alte Datenverzeichnis aber zur spaeteren forensischen Wiederherstellung
+erhalten bleiben soll:
+
+```bash
+# 1. Dienst stoppen
+sudo systemctl stop praxiszeit
+
+# 2. Marker entfernen — dann sieht der Process Manager das Verzeichnis als
+#    "fremd" an und greift die bestehende Quarantaene-Logik
+sudo rm /opt/praxiszeit/data/db/.praxiszeit-cluster
+
+# 3. Dienst starten — das alte Datenverzeichnis wird automatisch nach
+#    data/db.foreign-<timestamp> verschoben (NICHT geloescht), und ein
+#    frischer Cluster mit neuen Credentials wird initialisiert
+sudo systemctl start praxiszeit
+```
+
+Das alte Verzeichnis bleibt als `data/db.foreign-YYYYMMDD-HHMMSS/` erhalten
+und kann spaeter manuell ausgewertet werden (z.B. mit einem gepatchten
+`pg_hba.conf` auf `trust`, um Daten herauszuziehen).
+
+Windows-Aequivalent:
+```cmd
+net stop PraxisZeit
+del C:\PraxisZeit\data\db\.praxiszeit-cluster
+net start PraxisZeit
+```
+
+### Wann ist ein voller Re-Install noetig?
+
+Nur wenn **alle drei Pfade** scheitern: kein Backup der Credentials, kein
+funktionierender `pg_dumpall`, und der Quarantaene-Pfad scheitert ebenfalls
+(z.B. weil das Datenverzeichnis korrupt ist). In dem Fall:
+
+1. `data/db/` und `config/.db-credentials` loeschen
+2. `setup.bat` / `install.sh` erneut ausfuehren
+3. Letztes verfuegbares Backup aus `data/backups/` in den frischen Cluster
+   einspielen (siehe Abschnitt "Backup & Restore")
+
+### Praevention
+
+- Backup-Job einrichten, der `config/.db-credentials` **mit-sichert** (nicht
+  nur `data/db/`)
+- Datei-Permissions nicht aendern: `chmod 600` + Eigentuemer `praxiszeit`
+- Vor Aufraeum-Aktionen am Server: `config/` ist nicht "Cache", sondern
+  Single-Source-of-Truth fuer die DB-Anmeldedaten
 
 ---
 
