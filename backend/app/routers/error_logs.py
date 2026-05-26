@@ -89,10 +89,18 @@ def update_error_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Update status of an error (open/ignored/resolved)."""
+    """Update status of an error (open/ignored/resolved).
+
+    Issue #127 / M1: in SaaS mode tenant-admins can only mutate rows of
+    their own tenant. NULL-tenant infra rows are read-only for tenant-admins
+    (superadmin-only write path, separate issue).
+    """
     if body.status not in ('open', 'ignored', 'resolved'):
         raise HTTPException(status_code=400, detail="Ungültiger Status")
-    entry = error_log_service.update_status(db, error_id, body.status, str(current_user.id))
+    tid = current_user.tenant_id if is_saas() else None
+    entry = error_log_service.update_status(
+        db, error_id, body.status, str(current_user.id), tenant_id=tid
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Fehler nicht gefunden")
     return ErrorLogResponse.from_orm_custom(entry)
@@ -104,8 +112,13 @@ def delete_error(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Permanently delete an error log entry."""
-    if not error_log_service.delete_error(db, error_id):
+    """Permanently delete an error log entry.
+
+    Issue #127 / M1: in SaaS mode the row must belong to the caller's
+    tenant. NULL-tenant infra rows are not deletable via this endpoint.
+    """
+    tid = current_user.tenant_id if is_saas() else None
+    if not error_log_service.delete_error(db, error_id, tenant_id=tid):
         raise HTTPException(status_code=404, detail="Fehler nicht gefunden")
 
 
@@ -116,8 +129,15 @@ def set_github_url(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Associate a GitHub issue URL with an error."""
-    entry = error_log_service.set_github_url(db, error_id, body.github_issue_url)
+    """Associate a GitHub issue URL with an error.
+
+    Issue #127 / M1: in SaaS mode the row must belong to the caller's
+    tenant. NULL-tenant infra rows cannot be annotated via this endpoint.
+    """
+    tid = current_user.tenant_id if is_saas() else None
+    entry = error_log_service.set_github_url(
+        db, error_id, body.github_issue_url, tenant_id=tid
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Fehler nicht gefunden")
     return ErrorLogResponse.from_orm_custom(entry)

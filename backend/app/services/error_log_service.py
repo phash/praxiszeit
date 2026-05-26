@@ -159,9 +159,47 @@ def get_error_summary(
     return {status: count for status, count in counts}
 
 
-def update_status(db: Session, error_id: str, new_status: str, admin_user_id: Optional[str] = None) -> Optional[ErrorLog]:
-    """Set status to 'open', 'ignored', or 'resolved'."""
-    entry = db.query(ErrorLog).filter(ErrorLog.id == error_id).first()
+def _scope_write_to_tenant(query, tenant_id: Optional[uuid.UUID]):
+    """Apply the SaaS *write*-scope filter to an ``ErrorLog`` query.
+
+    Design (Issue #127 / M1 follow-up — write-path belt-and-suspenders):
+
+    * SaaS mode (``tenant_id`` is set): equality match **only** on
+      ``ErrorLog.tenant_id == tenant_id``. Unlike the *read*-scope filter
+      (:func:`_scope_to_tenant`) the NULL-tenant branch is intentionally
+      omitted: tenant-admins must not be able to mutate or delete
+      infrastructure errors that belong to no tenant — those rows are
+      visible to all tenant-admins for operational awareness, but writing
+      them would either (a) silently drop an infra-wide alert for *all*
+      tenants, or (b) let any tenant suppress evidence of a system-level
+      problem. Editing NULL-tenant rows is therefore reserved for the
+      superadmin (separate endpoint, out of scope for this fix).
+
+    * On-prem mode (``tenant_id is None``): no filter — legacy
+      (single-tenant) behaviour, all rows are writable by any admin.
+    """
+    if tenant_id is None:
+        return query
+    return query.filter(ErrorLog.tenant_id == tenant_id)
+
+
+def update_status(
+    db: Session,
+    error_id: str,
+    new_status: str,
+    admin_user_id: Optional[str] = None,
+    tenant_id: Optional[uuid.UUID] = None,
+) -> Optional[ErrorLog]:
+    """Set status to 'open', 'ignored', or 'resolved'.
+
+    F-026 (belt-and-suspenders): when ``tenant_id`` is provided (SaaS mode),
+    the row must belong to that tenant — NULL-tenant infra rows are *not*
+    writable via this code path (see :func:`_scope_write_to_tenant`).
+    In onprem mode callers pass ``tenant_id=None`` and any row matching
+    ``error_id`` is mutated.
+    """
+    query = _scope_write_to_tenant(db.query(ErrorLog), tenant_id)
+    entry = query.filter(ErrorLog.id == error_id).first()
     if not entry:
         return None
     entry.status = new_status
@@ -173,9 +211,19 @@ def update_status(db: Session, error_id: str, new_status: str, admin_user_id: Op
     return entry
 
 
-def delete_error(db: Session, error_id: str) -> bool:
-    """Permanently delete an error log entry."""
-    entry = db.query(ErrorLog).filter(ErrorLog.id == error_id).first()
+def delete_error(
+    db: Session,
+    error_id: str,
+    tenant_id: Optional[uuid.UUID] = None,
+) -> bool:
+    """Permanently delete an error log entry.
+
+    F-026: when ``tenant_id`` is set (SaaS), only rows belonging to that
+    tenant can be deleted. NULL-tenant infra rows are *not* deletable via
+    this code path (see :func:`_scope_write_to_tenant`).
+    """
+    query = _scope_write_to_tenant(db.query(ErrorLog), tenant_id)
+    entry = query.filter(ErrorLog.id == error_id).first()
     if not entry:
         return False
     db.delete(entry)
@@ -198,9 +246,20 @@ def cleanup_old_errors(db: Session, max_age_days: int = 90) -> int:
     return deleted
 
 
-def set_github_url(db: Session, error_id: str, url: str) -> Optional[ErrorLog]:
-    """Store a GitHub issue URL for an error."""
-    entry = db.query(ErrorLog).filter(ErrorLog.id == error_id).first()
+def set_github_url(
+    db: Session,
+    error_id: str,
+    url: str,
+    tenant_id: Optional[uuid.UUID] = None,
+) -> Optional[ErrorLog]:
+    """Store a GitHub issue URL for an error.
+
+    F-026: when ``tenant_id`` is set (SaaS), only rows belonging to that
+    tenant are addressable. NULL-tenant infra rows are *not* annotatable via
+    this code path (see :func:`_scope_write_to_tenant`).
+    """
+    query = _scope_write_to_tenant(db.query(ErrorLog), tenant_id)
+    entry = query.filter(ErrorLog.id == error_id).first()
     if not entry:
         return None
     entry.github_issue_url = url
