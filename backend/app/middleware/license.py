@@ -11,11 +11,21 @@ zero routes.
 
 Auth endpoints stay writable so admins can still log in, refresh their
 session, and log out of an expired-license deployment.
+
+DSGVO-Betroffenenrechte muessen unabhaengig vom Lizenzstatus funktionieren
+(Art. 12 Abs. 2: "Erleichterung der Wahrnehmung der Rechte"; Art. 16
+Berichtigung; Art. 17 Loeschung). Aufsicht bewertet kommerzielle
+Druckmittel gegen diese Rechte als Verstoss. GET-Endpoints (Art. 15
+Auskunft, Art. 20 Portabilitaet) sind ohnehin nicht von der Middleware
+betroffen (nur POST/PUT/PATCH/DELETE werden geprueft). Schreibende
+Betroffenenrechts-Endpoints werden ueber die Method+Pattern-Allowlist
+_DSGVO_EXEMPT_PATTERNS durchgelassen.
 """
 
 from __future__ import annotations
 
-from typing import Iterable
+import re
+from typing import Iterable, Pattern
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -39,6 +49,33 @@ _EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/api/auth/password-reset",
 )
 
+# DSGVO-Betroffenenrechte: muessen IMMER durchgelassen werden, auch bei
+# Read-Only-Lizenz. Prefix-Match waere zu grob (wuerde z.B. /api/admin/users
+# fuer ALLE Methoden oeffnen). Daher Method+Pattern-Allowlist.
+#
+# Begruendung pro Endpoint:
+# - POST /api/admin/users/{id}/anonymize    -> Art. 17 (Loeschung/Anonymisierung)
+# - DELETE /api/admin/users/{id}/purge      -> Art. 17 (endgueltige Loeschung)
+# - POST /api/tenant/request-deletion       -> Art. 17 (Tenant-Level)
+# - POST /api/tenant/cancel-deletion        -> Gegenstueck, muss erreichbar bleiben
+# - PUT  /api/auth/profile                  -> Art. 16 (Berichtigung)
+_DSGVO_EXEMPT_PATTERNS: tuple[tuple[str, Pattern[str]], ...] = (
+    ("POST",   re.compile(r"^/api/admin/users/[^/]+/anonymize$")),
+    ("DELETE", re.compile(r"^/api/admin/users/[^/]+/purge$")),
+    ("POST",   re.compile(r"^/api/tenant/request-deletion$")),
+    ("POST",   re.compile(r"^/api/tenant/cancel-deletion$")),
+    ("PUT",    re.compile(r"^/api/auth/profile$")),
+)
+
+
+def _is_dsgvo_exempt(method: str, path: str) -> bool:
+    """Return True if (method, path) is a DSGVO-Betroffenenrechts-Endpoint
+    that must not be blocked by the read-only license guard."""
+    for exempt_method, pattern in _DSGVO_EXEMPT_PATTERNS:
+        if method == exempt_method and pattern.match(path):
+            return True
+    return False
+
 
 class LicenseReadOnlyMiddleware(BaseHTTPMiddleware):
     """Reject write requests when the license is in read-only mode."""
@@ -48,12 +85,16 @@ class LicenseReadOnlyMiddleware(BaseHTTPMiddleware):
         self._exempt = tuple(exempt_prefixes)
 
     async def dispatch(self, request: Request, call_next):
+        method = request.method
+        path = request.url.path
+
         # On-prem: license file gates writes.
         if (
             is_onprem()
-            and request.method in _WRITE_METHODS
+            and method in _WRITE_METHODS
             and license_module.is_read_only()
-            and not request.url.path.startswith(self._exempt)
+            and not path.startswith(self._exempt)
+            and not _is_dsgvo_exempt(method, path)
         ):
             return JSONResponse(
                 status_code=403,
@@ -71,9 +112,10 @@ class LicenseReadOnlyMiddleware(BaseHTTPMiddleware):
         # short-circuit because they have no tenant to check against.
         if (
             not is_onprem()
-            and request.method in _WRITE_METHODS
-            and not request.url.path.startswith(self._exempt)
-            and not request.url.path.startswith("/api/webhooks/")  # Stripe webhook must write
+            and method in _WRITE_METHODS
+            and not path.startswith(self._exempt)
+            and not path.startswith("/api/webhooks/")  # Stripe webhook must write
+            and not _is_dsgvo_exempt(method, path)
         ):
             suspended_msg = _check_saas_suspend(request)
             if suspended_msg is not None:
