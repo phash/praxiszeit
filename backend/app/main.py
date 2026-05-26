@@ -38,6 +38,115 @@ from app.routers import auth, admin, time_entries, absences, dashboard, holidays
 _WEAK_ADMIN_PASSWORDS = frozenset({"Admin2025!", "admin123", "password", "admin"})  # noqa: S105 (not a real secret; used to DETECT weak ones)
 
 
+# M6: License-Read-Only-Audit-Marker. 16 Zeichen, klar unter dem 40-Char-Limit
+# aus Migration 037 (time_entry_audit_logs.source = varchar(40)).
+LICENSE_AUDIT_SOURCE = "license_startup"
+assert len(LICENSE_AUDIT_SOURCE) < 40, (
+    f"LICENSE_AUDIT_SOURCE '{LICENSE_AUDIT_SOURCE}' "
+    f"({len(LICENSE_AUDIT_SOURCE)} chars) sprengt das 40-Char-Limit "
+    "von time_entry_audit_logs.source (Migration 037)."
+)
+
+
+def audit_license_readonly_event(
+    reason: str,
+    default_tenant_id=None,
+):
+    """Persist einen strukturierten Audit-Log-Eintrag, wenn der License-Check
+    beim Startup in den Read-Only-Modus geht.
+
+    Hintergrund (M6 / DSGVO Art. 32 / ArbZG §16):
+    Bisher wurde nur ``print("LIZENZ-PROBLEM: ...")`` aufgerufen. Ohne
+    strukturierte Persistenz gibt es kein durchsuchbares Event fuer
+    Compliance-Audits. Diese Funktion schreibt analog zu Health-Data-Reads
+    + vacation_request_edit eine Zeile in ``time_entry_audit_logs``.
+
+    Verhalten:
+    - On-Prem ohne Default-Tenant oder ohne Admin-User: Skip mit Print-Hinweis
+      (kein Crash).
+    - SaaS-Modus (default_tenant_id=None): Skip — der License-Check ist im
+      SaaS-Kontext global und nicht tenant-gebunden, ein Audit-Eintrag in
+      einem beliebigen Tenant waere irrefuehrend.
+    - DB-Fehler (z.B. Migration nicht durch, RLS-Glitch): try/except, der
+      Startup darf NICHT durch einen Audit-Write blockiert werden.
+
+    Idempotenz: bewusst Option A — jeder Restart erzeugt einen Eintrag.
+    Audit-Logs sollen vollstaendig sein, Restart-Haeufigkeit ist informativ.
+
+    Args:
+        reason: Kurze, persistierbare Begruendung
+            (z.B. "Lizenz abgelaufen", "Ungueltige Signatur",
+            "Demo-Frist ueberschritten").
+        default_tenant_id: tenant_id fuer den Eintrag. None -> Skip
+            (SaaS-Modus oder Default-Tenant existiert noch nicht).
+    """
+    if default_tenant_id is None:
+        print("AUDIT: License-Read-Only-Event ohne default_tenant_id "
+              "uebersprungen (SaaS-Modus oder Default-Tenant fehlt).")
+        return
+
+    from app.database import set_superadmin_context as _set_sa
+    from app.models import User, UserRole, TimeEntryAuditLog
+
+    db = SessionLocal()
+    try:
+        # Audit braucht Superadmin-Context: RLS-Policy auf time_entry_audit_logs
+        # blockt sonst INSERTs ohne aktiven Tenant.
+        _set_sa(db)
+
+        # NOT-NULL-Constraint auf user_id + changed_by -> wir muessen einen
+        # bestehenden User referenzieren. Den (Bootstrap-)Admin nehmen, der
+        # in Schritt 4 garantiert angelegt wurde (License-Check ist nach
+        # Schritt 6 → Admin existiert).
+        admin = (
+            db.query(User)
+            .filter(
+                User.tenant_id == default_tenant_id,
+                User.role == UserRole.ADMIN,
+                User.is_active.is_(True),
+            )
+            .order_by(User.created_at.asc())
+            .first()
+        )
+        if admin is None:
+            # Kein Admin -> Audit-Write nicht moeglich (FK-Violation).
+            # Print-Hinweis statt Crash: License-State ist bereits korrekt
+            # gesetzt, der Audit-Log ist „nur" zusaetzliche Compliance-Spur.
+            print(f"AUDIT: License-Read-Only-Event ('{reason}') konnte nicht "
+                  "persistiert werden — kein aktiver Admin im Default-Tenant.")
+            return
+
+        # Hinweis-Note unter 255-Char-Limit (Text-Spalte hat technisch kein
+        # Limit, aber die Note ist UI-sichtbar und soll lesbar bleiben).
+        note = f"READ-ONLY: {reason}"
+
+        db.add(
+            TimeEntryAuditLog(
+                tenant_id=default_tenant_id,
+                user_id=admin.id,
+                changed_by=admin.id,
+                action="license_readonly_mode_entered",
+                source=LICENSE_AUDIT_SOURCE,
+                new_note=note,
+            )
+        )
+        db.commit()
+        print(f"AUDIT: License-Read-Only-Event persistiert "
+              f"(source={LICENSE_AUDIT_SOURCE}, reason='{reason}').")
+    except Exception as exc:  # noqa: BLE001
+        # Startup darf NICHT scheitern, wenn der Audit-Write hakt
+        # (z.B. Migration noch nicht durch, DB-Lock). Read-Only-State
+        # ist bereits gesetzt, sysadmin sieht den Print-Hinweis.
+        print(f"AUDIT WARN: License-Read-Only-Event ('{reason}') konnte "
+              f"nicht in time_entry_audit_logs geschrieben werden: {exc}")
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -176,6 +285,11 @@ async def lifespan(app: FastAPI):
             set_license_state(license_info, read_only=True)
             print(f"WARNING: {e}")
             print("App running in READ-ONLY mode.")
+            # M6: structured audit-log fuer DSGVO Art. 32 / ArbZG §16
+            audit_license_readonly_event(
+                reason="Lizenz abgelaufen",
+                default_tenant_id=default_tenant_id,
+            )
         except LicenseError as e:
             # Eine ungueltige/nicht verifizierbare Lizenz darf den Dienst NICHT
             # abschiessen (frueher: sys.exit(1) -> Totalausfall, niemand kommt
@@ -189,6 +303,11 @@ async def lifespan(app: FastAPI):
                   "(praxiszeit.mr-development.de) holen und unter "
                   "config\\license.key ablegen.")
             set_license_state(None, read_only=True)
+            # M6: structured audit-log fuer DSGVO Art. 32 / ArbZG §16
+            audit_license_readonly_event(
+                reason="Ungueltige Signatur",
+                default_tenant_id=default_tenant_id,
+            )
     elif settings.LICENSE_DEMO_EXPIRES_AT:
         # Demo-Mode (vom Setup-Wizard gesetzt). Volle Funktion bis zum Datum,
         # danach Read-Only. Wir exportieren KEINE LicenseInfo (es gibt
@@ -208,6 +327,11 @@ async def lifespan(app: FastAPI):
             print(f"WARNING: Demo-Lizenz abgelaufen am {demo_until.isoformat()}.")
             print("App running in READ-ONLY mode.")
             set_license_state(None, read_only=True)
+            # M6: structured audit-log fuer DSGVO Art. 32 / ArbZG §16
+            audit_license_readonly_event(
+                reason="Demo-Frist ueberschritten",
+                default_tenant_id=default_tenant_id,
+            )
         else:
             days_left = (demo_until - today).days
             print(f"License: 30-Tage-Demo (laeuft am {demo_until.isoformat()} "
