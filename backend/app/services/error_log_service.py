@@ -95,6 +95,33 @@ def log_error(
     return entry
 
 
+def _scope_to_tenant(query, tenant_id: Optional[uuid.UUID]):
+    """Apply the SaaS tenant-scope filter to an ``ErrorLog`` query.
+
+    Design (Issue #127 follow-up — H1 regression fix):
+
+    * SaaS mode (``tenant_id`` is set): the caller must see
+        - rows belonging to *their* tenant, **and**
+        - rows with ``tenant_id IS NULL`` — i.e. infrastructure errors
+          captured outside any request context (``DBErrorHandler.emit``,
+          startup failures, request-validation 5xx that aborted before the
+          auth dependency could populate ``request.state.tenant_id``).
+
+      Hiding NULL-tenant rows from tenant-admins would silently swallow
+      operationally relevant errors. Cross-tenant contamination is impossible
+      because foreign rows still carry a non-matching tenant_id and are
+      excluded by the equality branch.
+
+    * On-prem mode (``tenant_id is None``): no filter — the legacy
+      (single-tenant) full aggregate is returned.
+    """
+    if tenant_id is None:
+        return query
+    return query.filter(
+        (ErrorLog.tenant_id == tenant_id) | (ErrorLog.tenant_id.is_(None))
+    )
+
+
 def get_errors(
     db: Session,
     status: Optional[str] = None,
@@ -104,13 +131,12 @@ def get_errors(
     """List errors, ordered by last_seen desc.
 
     F-026 (belt-and-suspenders): when ``tenant_id`` is provided (SaaS mode),
-    rows are explicitly filtered to that tenant on top of RLS. In onprem mode
+    rows are explicitly filtered to that tenant (plus NULL-tenant infra
+    errors, see :func:`_scope_to_tenant`) on top of RLS. In onprem mode
     callers pass ``tenant_id=None`` and the (single-tenant) full set is
     returned — matching legacy behaviour.
     """
-    query = db.query(ErrorLog)
-    if tenant_id is not None:
-        query = query.filter(ErrorLog.tenant_id == tenant_id)
+    query = _scope_to_tenant(db.query(ErrorLog), tenant_id)
     if status:
         query = query.filter(ErrorLog.status == status)
     return query.order_by(ErrorLog.last_seen.desc()).limit(limit).all()
@@ -122,12 +148,13 @@ def get_error_summary(
 ) -> dict[str, int]:
     """Return counts of error logs grouped by status.
 
-    F-026: filters explicitly on ``tenant_id`` when set (SaaS); returns the
+    F-026: filters explicitly on ``tenant_id`` when set (SaaS — plus
+    NULL-tenant infra errors, see :func:`_scope_to_tenant`); returns the
     untouched aggregate for ``None`` (onprem).
     """
-    query = db.query(ErrorLog.status, func.count(ErrorLog.id))
-    if tenant_id is not None:
-        query = query.filter(ErrorLog.tenant_id == tenant_id)
+    query = _scope_to_tenant(
+        db.query(ErrorLog.status, func.count(ErrorLog.id)), tenant_id
+    )
     counts = query.group_by(ErrorLog.status).all()
     return {status: count for status, count in counts}
 
