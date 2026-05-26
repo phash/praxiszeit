@@ -156,6 +156,24 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 | Datenübertragbarkeit | Art. 20 DSGVO | GET /api/auth/me/export: maschinenlesbarer JSON-Export aller eigenen Daten |
 | Widerspruch | Art. 21 DSGVO | An Verantwortlichen zu richten |
 
+**Wahrnehmung unabhängig vom Lizenzstatus (Art. 12 Abs. 2 DSGVO):** Der
+Lizenz-Read-Only-Modus (`LicenseReadOnlyMiddleware`, aktiv bei abgelaufener
+On-Prem-Lizenz oder SaaS-`suspended`) blockiert **keine** schreibenden
+DSGVO-Betroffenenrechts-Endpoints. Konkret durchgelassen werden via
+Method+Pattern-Allowlist:
+
+- `POST /api/admin/users/{id}/anonymize` (Art. 17 Anonymisierung)
+- `DELETE /api/admin/users/{id}/purge` (Art. 17 endgültige Löschung)
+- `POST /api/tenant/request-deletion` (Art. 17 Tenant-Level-Löschung)
+- `POST /api/tenant/cancel-deletion` (Reversibilität von request-deletion)
+- `PUT /api/auth/profile` (Art. 16 Berichtigung)
+
+Lesende Endpoints (Art. 15 Auskunft, Art. 20 Portabilität) sind ohnehin
+nicht von der Middleware erfasst, da nur Schreibmethoden geprüft werden.
+Begründung: Aufsichtsbehörden bewerten kommerzielle Druckmittel gegen
+Betroffenenrechte als Verstoß gegen Art. 12 Abs. 2 ("Erleichterung der
+Wahrnehmung der Rechte").
+
 ---
 
 ## 9. Gemeinsame Verantwortlichkeit / Auftragsverarbeitung
@@ -173,6 +191,7 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 | 2026-02-28 | 1.0 | Erstversion | [Name] |
 | 2026-02-28 | 1.1 | TOTP-2FA-Felder, is_night_worker (Art. 9), GitHub als Empfänger, TOM aktualisiert, Betroffenenrechte vervollständigt | Claude Sonnet 4.6 |
 | 2026-05-24 | 1.2 | Self-Service-Art-15-Export `/api/me/data-export` (Issue #119); Vacation-Audit-Purge nach 730 Tagen dokumentiert; Self-Export-Audit-Rows bleiben nach Anonymisierung erhalten (Art. 5 Abs. 2 Rechenschaftspflicht) | Claude Opus 4.7 |
+| 2026-05-26 | 1.3 | H2-Fix: `LicenseReadOnlyMiddleware` exempted DSGVO-Betroffenenrechts-Endpoints (Art. 16 PUT /api/auth/profile; Art. 17 anonymize/purge/request-deletion/cancel-deletion) via Method+Pattern-Allowlist — Lizenz ist kein Druckmittel gegen Art. 12 Abs. 2 mehr | Claude Opus 4.7 |
 
 ---
 
