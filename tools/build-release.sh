@@ -275,6 +275,48 @@ check_glibc_compat() {
     return 0
 }
 
+# macOS-Binary-Sanity-Check: stellt sicher dass das entpackte postgres-Binary
+# tatsaechlich ein Mach-O ist (nicht z.B. ein Shell-Skript oder leeres File aus
+# einem kaputten Tarball — Hintergrund: 1.5.0-Bug, wo nur das EDB-DMG mit kam
+# und Binary-Files unter bin/ fehlten). otool-Check ist optional: er laeuft nur
+# wenn wir auf macOS bauen; auf Linux-Build-Hosts wird er als Skip behandelt.
+check_macos_binary_sanity() {
+    local binary="$1"
+    if [ ! -e "$binary" ]; then
+        error "macOS-Binary fehlt: $binary"
+        return 1
+    fi
+    if ! command -v file &>/dev/null; then
+        warn "file(1) nicht gefunden — macOS-Binary-Sanity-Check uebersprungen"
+        return 0
+    fi
+    local ftype
+    ftype=$(file -b "$binary")
+    case "$ftype" in
+        *Mach-O*executable*|*Mach-O*universal*)
+            info "Binary OK ($(basename "$binary")): ${ftype%%,*}"
+            ;;
+        *)
+            error "macOS-Binary ist kein Mach-O:"
+            error "  Pfad:  $binary"
+            error "  Typ:   $ftype"
+            error "  Auswirkung: Tarball ist kaputt oder unvollstaendig entpackt."
+            return 1
+            ;;
+    esac
+    # otool nur auf macOS-Build-Hosts verfuegbar — auf Linux nicht-fatal skippen
+    if command -v otool &>/dev/null; then
+        local missing
+        missing=$(otool -L "$binary" 2>/dev/null | awk '/not found/ {print}')
+        if [ -n "$missing" ]; then
+            error "otool zeigt fehlende Dylibs fuer $binary:"
+            error "$missing"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 # Gemeinsame Funktion: Plattform-Verzeichnis mit App-Dateien + leeren Runtime-Dirs vorbereiten
 prepare_platform_dir() {
     local dir="$1"
@@ -384,11 +426,19 @@ if [ "$BUILD_WINDOWS" = true ]; then
             info "PostgreSQL-Installer gefunden: $(basename "$_found")"
             cp "$_found" "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
         else
-            warn "PostgreSQL-Installer nicht gefunden!"
-            warn "Bitte herunterladen von:"
-            warn "  https://www.enterprisedb.com/downloads/postgres-postgresql-downloads"
-            warn "und ablegen als: ${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
-            warn "oder in ~/Downloads/"
+            # Frueher: nur warn() — silent-fail produzierte unbenutzbare ZIPs
+            # ohne PG-Installer (Kunde bekam beim setup.bat sofort einen Fehler).
+            # Jetzt: hart abbrechen, analog zur Linux-Logik fuer fehlende PG-Tarballs.
+            error "PostgreSQL Windows-Installer FEHLT!"
+            error "  Erwartet: ${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
+            error "  (oder in ~/Downloads/postgresql-*-windows-x64.exe)"
+            error ""
+            error "Download via direkter EDB-Link (kein Webformular noetig):"
+            error "  https://get.enterprisedb.com/postgresql/postgresql-${POSTGRESQL_VERSION%.*}-${POSTGRESQL_EDB_SUFFIX}-windows-x64.exe"
+            error ""
+            error "Datei nach ${CACHE_DIR}/${PG_WINDOWS_INSTALLER} kopieren und Build wiederholen."
+            error "Ohne Installer waere das Windows-ZIP unbrauchbar (setup.bat schlaegt fehl)."
+            exit 1
         fi
     fi
 fi
@@ -398,22 +448,28 @@ if [ "$BUILD_MACOS" = true ]; then
     download "$PYTHON_MACOS_ARM64_URL" "${CACHE_DIR}/python-macos-arm64.tar.gz"
     download "$GET_PIP_URL"            "${CACHE_DIR}/get-pip.py"
 
-    # PostgreSQL macOS: EDB DMG muss manuell heruntergeladen werden
+    # PG Tarballs (theseus-rs) — analog zum Linux-Pfad mit SHA256-Verify.
+    # Frueher: einfaches download(), Hash wurde nicht geprueft → ein gescheiterter
+    # Download oder ein MITM haetten kommentarlos ein kaputtes Archiv in den
+    # Build geschoben (1.5.0-Bug-Kontext). Jetzt: SHA256 enforced.
+    if ! download_with_sha "$PG_MACOS_X64_URL" "$PG_MACOS_X64_SHA_URL" \
+                           "${CACHE_DIR}/postgresql-macos-x64.tar.gz"; then
+        error "PostgreSQL-Tarball (macOS x64) konnte nicht heruntergeladen werden."
+        error "Quelle (theseus-rs): $PG_MACOS_X64_URL"
+        exit 1
+    fi
+    if ! download_with_sha "$PG_MACOS_ARM64_URL" "$PG_MACOS_ARM64_SHA_URL" \
+                           "${CACHE_DIR}/postgresql-macos-arm64.tar.gz"; then
+        error "PostgreSQL-Tarball (macOS arm64) konnte nicht heruntergeladen werden."
+        error "Quelle (theseus-rs): $PG_MACOS_ARM64_URL"
+        exit 1
+    fi
+
+    # Legacy EDB-DMG: nur noch Cache-Lookup, KEIN Fallback in den Build —
+    # die DMG wird in Phase 6 nicht mehr ins Paket kopiert (1.5.0-Bug).
+    # Wenn jemand sie trotzdem im Cache hat, ignorieren wir das stillschweigend.
     if [ ! -f "${CACHE_DIR}/${PG_MACOS_INSTALLER}" ]; then
-        _found=""
-        for f in ~/Downloads/postgresql-*-osx.dmg; do
-            [ -f "$f" ] && _found="$f" && break
-        done
-        if [ -n "$_found" ]; then
-            info "PostgreSQL-DMG gefunden: $(basename "$_found")"
-            cp "$_found" "${CACHE_DIR}/${PG_MACOS_INSTALLER}"
-        else
-            warn "PostgreSQL-DMG nicht gefunden!"
-            warn "Bitte herunterladen von:"
-            warn "  https://www.enterprisedb.com/downloads/postgres-postgresql-downloads"
-            warn "und ablegen als: ${CACHE_DIR}/${PG_MACOS_INSTALLER}"
-            warn "oder in ~/Downloads/"
-        fi
+        info "(EDB macOS-DMG nicht benoetigt — Build nutzt theseus-rs Tarballs)"
     fi
 fi
 
@@ -673,6 +729,16 @@ if [ "$BUILD_MACOS" = true ]; then
                 exit 1
             fi
         done
+
+        # Mach-O-Sanity (file-basiert, ohne otool-Pflicht — laeuft auch auf Linux-
+        # Build-Hosts). Schuetzt vor dem 1.5.0-Pattern, wo nur ein DMG ohne
+        # Binaries im Paket landete und der Build trotzdem "erfolgreich" war.
+        if ! check_macos_binary_sanity "${mac_dir}/bin/postgresql/bin/postgres"; then
+            exit 1
+        fi
+        if ! check_macos_binary_sanity "${mac_dir}/bin/postgresql/bin/initdb"; then
+            exit 1
+        fi
 
         _write_macos_installer "${mac_dir}"
 
