@@ -256,6 +256,65 @@ def _pg_data_is_ours() -> bool:
     return (PG_DATA / PG_CLUSTER_MARKER).is_file()
 
 
+# Decision constants for :func:`_decide_pg_init_action`. Kept as bare strings
+# so the function stays trivially serialisable / loggable.
+PG_ACTION_INIT = "init"
+PG_ACTION_BACKFILL_MARKER = "backfill_marker"
+PG_ACTION_QUARANTINE_AND_INIT = "quarantine_and_init"
+PG_ACTION_START_EXISTING = "start_existing"
+PG_ACTION_FAIL_NO_CREDS = "fail_no_credentials"
+
+
+def _decide_pg_init_action(
+    pg_data_populated: bool,
+    has_marker: bool,
+    has_credentials: bool,
+) -> str:
+    """Decide how :func:`cmd_start` should treat the on-disk PG_DATA.
+
+    Pure function: takes only three booleans, returns one of the
+    ``PG_ACTION_*`` constants. The whole point is to make the self-healing
+    branch in ``cmd_start`` (PR #131 hotfix) trivially unit-testable.
+
+    The matrix is:
+
+    +-----------+--------+-------+-----------------------+--------------------------+
+    | populated | marker | creds | action                | rationale                |
+    +===========+========+=======+=======================+==========================+
+    | False     | *      | *     | init                  | first run / empty PGDATA |
+    +-----------+--------+-------+-----------------------+--------------------------+
+    | True      | True   | True  | start_existing        | healthy PraxisZeit       |
+    +-----------+--------+-------+-----------------------+--------------------------+
+    | True      | True   | False | fail_no_credentials   | scram-hardened cluster,  |
+    |           |        |       |                       | password unknown; caller |
+    |           |        |       |                       | must surface recovery    |
+    |           |        |       |                       | instructions             |
+    +-----------+--------+-------+-----------------------+--------------------------+
+    | True      | False  | True  | backfill_marker       | pre-marker (< 1.5.1)     |
+    |           |        |       |                       | upgrade — adopt cluster, |
+    |           |        |       |                       | then start_existing      |
+    +-----------+--------+-------+-----------------------+--------------------------+
+    | True      | False  | False | quarantine_and_init   | foreign / EDB leftover   |
+    +-----------+--------+-------+-----------------------+--------------------------+
+
+    Note the "marker + no creds" case: we deliberately do NOT quarantine
+    here. The marker proves the cluster is ours; wiping the data would
+    destroy real customer data. ``cmd_start`` exits with a recovery
+    message instead — restore ``config/.db-credentials`` from backup, or
+    remove the cluster marker to opt into a quarantine + reinit.
+    """
+    if not pg_data_populated:
+        return PG_ACTION_INIT
+    if has_marker:
+        if has_credentials:
+            return PG_ACTION_START_EXISTING
+        return PG_ACTION_FAIL_NO_CREDS
+    # No marker.
+    if has_credentials:
+        return PG_ACTION_BACKFILL_MARKER
+    return PG_ACTION_QUARANTINE_AND_INIT
+
+
 def _quarantine_pg_data() -> Path:
     """Move the existing data directory aside (never delete) and recreate an
     empty one, so a clean cluster can be initialized without risking data loss.
@@ -281,16 +340,45 @@ def _win_service_exists(name: str) -> bool:
     return result.returncode == 0
 
 
-def _win_grant_networkservice(path: Path):
-    """Grant NT AUTHORITY\\NetworkService full control on the data directory.
+def _build_icacls_grant_args(path: Path, perms: str = "F") -> list[str]:
+    """Build the icacls argv that grants NetworkService ``perms`` on ``path``.
+
+    Pure / side-effect free so it can be unit-tested without invoking icacls.
+
+    ``perms`` follows icacls' permission syntax. The two values we use:
+
+    * ``"F"`` — Full Control. Required for PG_DATA: PostgreSQL creates/deletes
+      tablespace files and rewrites configuration there.
+    * ``"M"`` — Modify (read/write/append/delete OWN entries, NOT change ACL or
+      take ownership). Right-sized for LOG_DIR: ``logging_collector`` only
+      needs to create/append log files; we deliberately do NOT grant ``F`` so
+      another NetworkService process can't tamper with permissions on the
+      audit trail (anti-forensics hardening, M3).
+
+    S-1-5-20 is the locale-independent SID for NT AUTHORITY\\NetworkService.
+    ``(OI)(CI)`` propagates the ACE to existing and new child files/dirs;
+    ``/T`` applies recursively to existing items; ``/Q`` suppresses per-file
+    output.
+    """
+    return [
+        "icacls", str(path), "/grant", f"*S-1-5-20:(OI)(CI){perms}", "/T", "/Q",
+    ]
+
+
+def _win_grant_networkservice(path: Path, perms: str = "F"):
+    """Grant NT AUTHORITY\\NetworkService ``perms`` on ``path`` (default Full).
 
     initdb (run under the LocalSystem PraxisZeit service) restricts the data
     dir to the creating account; the NetworkService-owned postgres service
-    could not otherwise read it. S-1-5-20 is the locale-independent SID for
-    NT AUTHORITY\\NetworkService.
+    could not otherwise read it.
+
+    ``perms`` defaults to ``"F"`` for backward compatibility with older
+    callers. Prefer the explicit form (``perms="M"``) for log directories so
+    a compromised NetworkService process can't rewrite ACLs on the audit
+    trail. See :func:`_build_icacls_grant_args` for the rationale.
     """
     subprocess.run(
-        ["icacls", str(path), "/grant", "*S-1-5-20:(OI)(CI)F", "/T", "/Q"],
+        _build_icacls_grant_args(path, perms),
         capture_output=True, text=True,
     )
 
@@ -379,8 +467,14 @@ def pg_start():
         # Update kann diese ACLs zuruecksetzen -> "could not open log file ...
         # Permission denied" -> der PG-Dienst startet nicht. Vor jedem Start
         # idempotent sicherstellen (genau dieser Fall hat eine Produktion lahmgelegt).
-        _win_grant_networkservice(LOG_DIR)
-        _win_grant_networkservice(PG_DATA)
+        #
+        # LOG_DIR bekommt nur "Modify" (M3): logging_collector braucht
+        # create+append+rotate, aber kein Recht ACLs umzuschreiben oder Owner
+        # zu uebernehmen. Damit kann ein kompromittierter NetworkService-Prozess
+        # die Audit-Logs nicht still manipulieren. PG_DATA bleibt Full Control,
+        # weil PostgreSQL Tablespace-Dateien dort selbst verwaltet.
+        _win_grant_networkservice(LOG_DIR, perms="M")
+        _win_grant_networkservice(PG_DATA, perms="F")
         if _win_service_exists(PG_SERVICE_NAME):
             subprocess.run(["net", "start", PG_SERVICE_NAME], capture_output=True, text=True)
         else:
@@ -1004,29 +1098,60 @@ def cmd_start(args):
     logger.info("=" * 60)
 
     # 1. Initialize PostgreSQL if needed
-    needs_initdb = not PG_DATA.exists() or not any(PG_DATA.iterdir())
     creds_file = CONFIG_DIR / ".db-credentials"
-    needs_setup = needs_initdb or not creds_file.is_file()
+    pg_data_populated = PG_DATA.exists() and any(PG_DATA.iterdir())
+    action = _decide_pg_init_action(
+        pg_data_populated=pg_data_populated,
+        has_marker=_pg_data_is_ours(),
+        has_credentials=creds_file.is_file(),
+    )
 
-    # Migration: a data directory from a pre-marker version (< 1.5.1) that still
-    # has its credentials file is a healthy PraxisZeit cluster — backfill the
-    # marker so a future credentials loss is never mistaken for a foreign
-    # cluster and quarantined. (No-op once the marker exists.)
-    if not needs_initdb and creds_file.is_file() and not _pg_data_is_ours():
+    # Map the pure decision onto the actual side effects. ``needs_setup``
+    # mirrors the previous semantics: "do we need to (re)bootstrap roles +
+    # passwords?" — true on init, false when we're starting an existing
+    # cluster with credentials.
+    needs_initdb = action in (PG_ACTION_INIT, PG_ACTION_QUARANTINE_AND_INIT)
+    needs_setup = needs_initdb
+
+    if action == PG_ACTION_BACKFILL_MARKER:
+        # Pre-marker upgrade (< 1.5.1): a healthy PraxisZeit cluster with
+        # credentials but no marker file. Adopt it so a future credentials
+        # loss is never mistaken for a foreign cluster and quarantined.
         try:
             (PG_DATA / PG_CLUSTER_MARKER).write_text("praxiszeit-managed\n", encoding="utf-8")
             logger.info("Backfilled PraxisZeit cluster marker on existing data directory.")
         except OSError as exc:
             logger.warning(f"Could not write cluster marker: {exc}")
+        # After backfill we proceed as start_existing — no reinit, no setup.
 
-    # Self-healing: a data directory that exists but was NOT initialized by us
-    # (no cluster marker) and has no credentials file is a foreign / stale
-    # cluster — typically an EDB-installer leftover with scram auth and the
-    # "postgres" superuser. Trusting it would make pg_setup_database's
-    # trust-based psql calls fail (or, before -w, hang) because the roles and
-    # auth method do not match what we expect. Drop it and re-initialize a
-    # clean, trust-bootstrapped cluster owned by superuser "praxiszeit".
-    if not needs_initdb and needs_setup and not _pg_data_is_ours():
+    elif action == PG_ACTION_FAIL_NO_CREDS:
+        # Marker says the cluster is ours (scram-hardened), but the
+        # credentials file is gone — pg_setup_database would issue
+        # ALTER ROLE / psql against a cluster whose password we no longer
+        # know and either hang or report an opaque scram error. Tell the
+        # operator exactly what to do instead of spinning. Recovery options
+        # are documented in docs/INSTALL-NATIVE.md ("Disaster Recovery").
+        logger.error(
+            ".db-credentials is missing, but the data directory is already "
+            "initialized (PraxisZeit cluster marker present). The cluster is "
+            "scram-hardened and cannot be re-bootstrapped without its existing "
+            "credentials. Recovery options are documented in "
+            "docs/INSTALL-NATIVE.md (section 'Disaster Recovery: verlorene "
+            ".db-credentials'). Short version: either restore "
+            "config/.db-credentials from backup, or remove the cluster marker "
+            "%s/.praxiszeit-cluster (the data dir will then be moved aside to "
+            "data/db.foreign-<timestamp> and a fresh cluster will be created)."
+            % str(PG_DATA)
+        )
+        sys.exit(1)
+
+    elif action == PG_ACTION_QUARANTINE_AND_INIT:
+        # Self-healing: PG_DATA exists but was NOT initialized by us
+        # (no marker) and has no credentials file — typically an
+        # EDB-installer leftover with scram auth and the "postgres"
+        # superuser. Trusting it would make pg_setup_database's trust-based
+        # psql calls fail (or, before -w, hang). Move it aside and
+        # re-initialize a clean, trust-bootstrapped cluster.
         logger.warning(
             "PostgreSQL data directory exists but is not PraxisZeit-managed and "
             "no credentials file was found — moving it aside and reinitializing "
@@ -1038,7 +1163,6 @@ def cmd_start(args):
             pg_stop()
         backup = _quarantine_pg_data()
         logger.warning(f"Previous data directory preserved at: {backup}")
-        needs_initdb = True
 
     if needs_initdb:
         pg_init(config)
