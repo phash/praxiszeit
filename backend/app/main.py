@@ -21,6 +21,7 @@ import sys
 import logging
 import uuid
 import traceback
+from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from app.database import engine, SessionLocal, set_tenant_context
@@ -344,6 +345,33 @@ async def tenant_metrics_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+def _tenant_from_request(request: Request) -> Optional[str]:
+    """Best-effort extraction of the caller's tenant_id for error attribution.
+
+    Priority:
+      1. ``request.state.tenant_id`` — set by ``get_current_user`` after a
+         successful auth dependency. Always preferred (DB-truth).
+      2. JWT ``tid`` claim from the bearer token — used as a fallback when
+         the auth dependency itself raised (e.g. revoked token producing a
+         500 in some downstream hook) so we still record a tenant.
+      3. ``None`` — anonymous endpoints, missing/malformed bearer token, or
+         infrastructure failures unrelated to a tenant. See
+         ``error_log_service._scope_to_tenant`` for how NULL rows surface.
+    """
+    tid = getattr(request.state, "tenant_id", None)
+    if tid:
+        return tid
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        try:
+            from app.services.auth_service import decode_token
+            payload = decode_token(auth.split(" ", 1)[1]) or {}
+            return payload.get("tid")
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
 @app.middleware("http")
 async def capture_errors_middleware(request: Request, call_next):
     """Capture 5xx errors and log them to the error_logs table."""
@@ -363,6 +391,7 @@ async def capture_errors_middleware(request: Request, call_next):
                     path=request.url.path,
                     method=request.method,
                     status_code=response.status_code,
+                    tenant_id=_tenant_from_request(request),
                 )
             finally:
                 db.close()
@@ -383,6 +412,7 @@ async def capture_errors_middleware(request: Request, call_next):
                 path=request.url.path,
                 method=request.method,
                 status_code=500,
+                tenant_id=_tenant_from_request(request),
             )
         finally:
             db.close()

@@ -308,3 +308,146 @@ def test_service_get_errors_no_tenant_returns_all(
         "B-err-1",
         "B-err-2",
     }
+
+
+# ─── H1 regression: capture-path attribution + NULL-tenant visibility ────
+
+
+def test_service_log_error_persists_tenant_id(_db_session, two_tenants):
+    """``log_error(tenant_id=...)`` must write the tenant onto the row.
+
+    Regression guard for the H1 issue where capture paths dropped the
+    tenant_id, causing all freshly-captured rows to be NULL and thus filtered
+    out by the SaaS GET filter in PR #127.
+    """
+    from app.services import error_log_service
+
+    entry = error_log_service.log_error(
+        _db_session,
+        level="error",
+        logger_name="tests.h1",
+        message="explicit tenant write",
+        path="/api/foo",
+        method="GET",
+        status_code=500,
+        tenant_id=TENANT_A_ID,
+    )
+    assert entry.tenant_id == TENANT_A_ID
+
+    refetched = (
+        _db_session.query(ErrorLog).filter(ErrorLog.id == entry.id).first()
+    )
+    assert refetched is not None
+    assert refetched.tenant_id == TENANT_A_ID
+
+
+def test_service_log_error_without_tenant_leaves_null(_db_session, two_tenants):
+    """``log_error`` without tenant_id (DBErrorHandler / infra) stays NULL."""
+    from app.services import error_log_service
+
+    entry = error_log_service.log_error(
+        _db_session,
+        level="critical",
+        logger_name="tests.h1.infra",
+        message="db connection blew up",
+    )
+    assert entry.tenant_id is None
+
+
+def test_saas_admin_sees_null_tenant_infra_errors(
+    _db_session, saas_client_admin_a, errors_two_tenants
+):
+    """SaaS tenant-admins must also see NULL-tenant infrastructure errors.
+
+    Design call (see ``_scope_to_tenant`` docstring): hiding NULL rows would
+    silently swallow DB-connection failures, startup issues, and any error
+    captured before ``get_current_user`` populated ``request.state.tenant_id``.
+    """
+    # Seed an infrastructure error with tenant_id=NULL (DBErrorHandler path).
+    _make_error(_db_session, None, "INFRA-null-1", status="open")
+
+    resp = saas_client_admin_a.get("/api/admin/errors/")
+    assert resp.status_code == 200, resp.text
+
+    messages = {e["message"] for e in resp.json()}
+    # Own tenant rows + NULL-tenant infra row, no Tenant B leakage.
+    assert "A-err-1" in messages
+    assert "A-err-2" in messages
+    assert "INFRA-null-1" in messages
+    assert "B-err-1" not in messages
+    assert "B-err-2" not in messages
+
+
+def test_saas_summary_includes_null_tenant_infra(
+    _db_session, saas_client_admin_a, errors_two_tenants
+):
+    """Summary counts include NULL-tenant infra errors for the SaaS admin."""
+    _make_error(_db_session, None, "INFRA-null-2", status="open")
+
+    resp = saas_client_admin_a.get("/api/admin/errors/summary")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Tenant A seed: open=1, resolved=1; +1 NULL open → open=2, resolved=1.
+    assert body.get("open") == 2
+    assert body.get("resolved") == 1
+    assert "ignored" not in body  # belongs to Tenant B
+
+
+def test_saas_admin_b_does_not_see_tenant_a_via_null_loophole(
+    _db_session, saas_client_admin_b, errors_two_tenants
+):
+    """Sanity: the NULL-tenant exception must not leak Tenant A rows."""
+    _make_error(_db_session, None, "INFRA-null-3", status="open")
+
+    resp = saas_client_admin_b.get("/api/admin/errors/")
+    assert resp.status_code == 200, resp.text
+    messages = {e["message"] for e in resp.json()}
+    assert messages == {"B-err-1", "B-err-2", "INFRA-null-3"}
+
+
+# ─── Capture-middleware end-to-end attribution ──────────────────────────
+
+
+def test_capture_middleware_attributes_tenant_from_request_state(
+    _db_session, admin_a, monkeypatch
+):
+    """A 5xx captured by ``capture_errors_middleware`` must carry the caller's tenant_id.
+
+    We can't easily exercise the real middleware in the SQLite test app
+    (the test_app overrides auth via dependency_overrides and never invokes
+    the production auth dep that writes ``request.state.tenant_id``), so we
+    drive the helper directly with a synthetic request to lock the contract.
+    """
+    from types import SimpleNamespace
+    from app.main import _tenant_from_request
+
+    fake_req = SimpleNamespace(
+        state=SimpleNamespace(tenant_id=str(TENANT_A_ID)),
+        headers={},
+    )
+    assert _tenant_from_request(fake_req) == str(TENANT_A_ID)
+
+    # Falls back to None when neither state nor bearer token are present.
+    fake_anon = SimpleNamespace(state=SimpleNamespace(), headers={})
+    assert _tenant_from_request(fake_anon) is None
+
+
+def test_capture_middleware_falls_back_to_jwt_when_state_unset(
+    _db_session, admin_a, monkeypatch
+):
+    """When ``request.state.tenant_id`` is unset, decode the bearer JWT."""
+    from types import SimpleNamespace
+    from app.main import _tenant_from_request
+    from app.services import auth_service
+
+    token = auth_service.create_access_token(
+        user_id=str(admin_a.id),
+        role=admin_a.role.value,
+        token_version=admin_a.token_version,
+        tenant_id=str(TENANT_A_ID),
+    )
+    fake_req = SimpleNamespace(
+        state=SimpleNamespace(),
+        headers={"authorization": f"Bearer {token}"},
+    )
+    assert _tenant_from_request(fake_req) == str(TENANT_A_ID)
