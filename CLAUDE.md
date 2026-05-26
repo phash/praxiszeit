@@ -27,9 +27,11 @@ ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 bash tools/build-release.sh                    # Release-Pakete bauen (Linux/Windows/macOS)
 bash tools/build-release.sh --linux-only       # Nur Linux
 bash tools/build-release.sh --windows-only --skip-download   # Rebuild mit Cache
-bash tools/validate-release.sh                 # Docker-Smoke-Test der Tarballs gegen 4 Distros
+bash tools/validate-release.sh                 # Linux-Tarball: Docker-Smoke gegen 4 Distros
+# macOS-Validierung läuft als GitHub-Actions-Workflow (validate-macos.yml)
+# auf macos-15-intel + macos-14 — manuell triggerbar via gh workflow run.
 ```
-**PostgreSQL-Quelle (ab 1.5.0):** `theseus-rs/postgresql-binaries` 16.13.0. Manylinux-Build, forward-kompatibel bis **glibc 2.34** (Ubuntu 22.04+, Debian 12+, RHEL/Rocky/Alma 9+, Fedora 35+). EDB-Tarbälle sind seit 2026-05 nicht mehr verfügbar (HTTP 403), System-PG-Fallback wurde entfernt (#125). Build bricht hart ab, wenn die Quelle nicht erreichbar ist oder glibc-Symbole > 2.34 verlangt werden. `tools/validate-release.sh` muss vor jedem Release grün sein.
+**PostgreSQL-Quelle (ab 1.5.0):** `theseus-rs/postgresql-binaries` 16.13.0. Manylinux-Build, forward-kompatibel bis **glibc 2.34** (Ubuntu 22.04+, Debian 12+, RHEL/Rocky/Alma 9+, Fedora 35+). EDB-Tarbälle sind seit 2026-05 nicht mehr verfügbar (HTTP 403), System-PG-Fallback wurde entfernt (#125). Build bricht hart ab, wenn die Quelle nicht erreichbar ist oder glibc-Symbole > 2.34 verlangt werden. Linux- UND macOS-PG-Downloads sind SHA256-verifiziert (`download_with_sha`); macOS-Binaries werden nach dem `tar xzf` per `file(1)` als Mach-O verifiziert (1.5.2 Härtung — verhindert das 1.5.0-Pattern, bei dem nur das EDB-DMG ohne Binaries im Paket landete und der Build trotzdem "erfolgreich" war). `tools/validate-release.sh` (Linux) + `.github/workflows/validate-macos.yml` (macOS) müssen vor jedem Release grün sein.
 Git Bash on Windows: `rsync`/`zip` fehlen → Script hat `tar`/PowerShell-`Compress-Archive`-Fallbacks.
 PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe` (kein Webformular).
 **Windows-Deps werden beim BUILD ins Bundle vorinstalliert** (1.5.1, `build-release.sh` Phase 5, analog Linux): `bin/python/Lib/site-packages` enthält die cp313-win_amd64-Wheels schon im Paket → Kunden-Install braucht KEINEN PyPI-Download. Früher install-zeitlich via `setup.bat`-pip — unzuverlässig (Netz/Timing) und sah auf Maschinen mit System-Python 3.13 deren User-Site → pip „bereits erfüllt" → NICHTS ins Bundle → Dienst (LocalSystem) findet alembic/uvicorn nicht → `ERR_CONNECTION_REFUSED`. Daher `PYTHONNOUSERSITE=1` beim pip + Import-Verify (Build & setup.bat).
@@ -153,6 +155,7 @@ Lizenzen und Updates werden zentral über [pzweb](https://github.com/phash/pzweb
 1. Version-Bump in `backend/app/core/updater.py`, `frontend/package.json`, `tools/build-release.sh` — alle drei synchron, Build-Script enforced das.
 2. `bash tools/build-release.sh` — vier OS-Tarbälle in `dist/`.
 3. `bash tools/validate-release.sh` — Docker-Smoke gegen Ubuntu 22.04/24.04, Debian 12, Rocky 9. Failt eine Distro = Tarball nicht freigabefähig.
+3b. macOS-Validierung: `gh workflow run validate-macos.yml` (oder Push triggert automatisch bei `dist/praxiszeit-*-macos-*.tar.gz`-Änderung). Läuft auf `macos-15-intel` + `macos-14`, prüft Mach-O-Sanity (`file`/`otool`) + initdb-Smoketest. Beides muss grün sein vor Customer-Release.
 4. Im pzweb-Admin (`https://praxiszeit.mr-development.de/admin/releases/neu`): Release anlegen, vier Artefakte hochladen, veröffentlichen.
 5. Smoke: `curl 'https://updates.mr-development.de/v1/check?version=1.4.4&os=linux'` muss signed manifest mit `latest=<neue Version>` liefern.
 

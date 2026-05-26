@@ -1,0 +1,226 @@
+name: validate-macos-release
+
+# Validiert ein gebautes praxiszeit-X.Y.Z-macos-{x64|arm64}.tar.gz auf den
+# offiziellen GitHub-macOS-Runnern. Schuetzt vor dem 1.5.0-Pattern, bei dem
+# das Bundle nur das EDB-DMG enthielt (statt entpackter Mach-O-Binaries) und
+# der Build auf Linux nicht auffallen konnte.
+#
+# Triggert auf:
+#   - Push auf master, der ein dist/ macOS-Tarball oder das Build-Script
+#     veraendert (typischer Release-Commit).
+#   - Manueller Run via workflow_dispatch, optional mit URL zu einem
+#     extern gehosteten Tarball (z.B. GitHub-Release-Asset).
+#
+# Security-Note: alle workflow_dispatch-Inputs werden ausschliesslich via
+# env: in run:-Bloecke gereicht (kein direktes ${{ inputs.* }}-Splicing in
+# Shell-Strings) — siehe https://github.blog/security/vulnerability-research/
+# how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+on:
+  push:
+    paths:
+      - "dist/praxiszeit-*-macos-*.tar.gz"
+      - "tools/build-release.sh"
+      - ".github/workflows/validate-macos.yml"
+  workflow_dispatch:
+    inputs:
+      tarball_url_x64:
+        description: "URL zu praxiszeit-X.Y.Z-macos-x64.tar.gz (optional)"
+        required: false
+        type: string
+      tarball_url_arm64:
+        description: "URL zu praxiszeit-X.Y.Z-macos-arm64.tar.gz (optional)"
+        required: false
+        type: string
+
+jobs:
+  validate-macos-x64:
+    name: macOS 15 (Intel x86_64)
+    # macos-13 ist deprecated (Stand 2026); macos-15-intel ist der aktuelle
+    # Intel-Runner. Falls jemand explizit gegen aelteres macOS testen will,
+    # auf macos-13 oder macos-14-large zurueckschalten.
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tarball
+        id: resolve
+        env:
+          TARBALL_URL: ${{ inputs.tarball_url_x64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${TARBALL_URL:-}" ]; then
+            echo "Downloading tarball from URL..."
+            curl -fSL --retry 3 --retry-delay 5 -o /tmp/pz-mac-x64.tar.gz "$TARBALL_URL"
+            TARBALL=/tmp/pz-mac-x64.tar.gz
+          else
+            # shellcheck disable=SC2012  # filenames sind kontrolliert (build-release.sh)
+            TARBALL=$(ls -t dist/praxiszeit-*-macos-x64.tar.gz 2>/dev/null | head -1 || true)
+            if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+              echo "::error::Kein dist/praxiszeit-*-macos-x64.tar.gz gefunden und keine URL angegeben."
+              echo "::error::Entweder erst tools/build-release.sh --macos-only laufen lassen,"
+              echo "::error::oder workflow_dispatch mit tarball_url_x64 triggern."
+              exit 1
+            fi
+          fi
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "Found: $TARBALL"
+
+      - name: Extract tarball
+        env:
+          TARBALL: ${{ steps.resolve.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/pz-extract
+          mkdir -p /tmp/pz-extract
+          tar xzf "$TARBALL" -C /tmp/pz-extract
+          echo "Layout:"
+          # shellcheck disable=SC2012  # Diagnose-Print, kein Filename-Edge-Case
+          ls -la /tmp/pz-extract/bin/postgresql/bin/ | head -10
+
+      - name: file(1) sanity on binaries
+        run: |
+          set -euo pipefail
+          for bin in postgres initdb psql; do
+            f=/tmp/pz-extract/bin/postgresql/bin/$bin
+            if [ ! -e "$f" ]; then
+              echo "::error::Binary fehlt: $f"
+              exit 1
+            fi
+            type=$(file -b "$f")
+            echo "$bin: $type"
+            case "$type" in
+              *Mach-O*executable*|*Mach-O*universal*) ;;
+              *)
+                echo "::error::$f ist kein Mach-O executable!"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: otool dynamic-link sanity
+        run: |
+          set -euo pipefail
+          missing=$(otool -L /tmp/pz-extract/bin/postgresql/bin/postgres | awk '/not found/ {print}')
+          if [ -n "$missing" ]; then
+            echo "::error::otool zeigt fehlende Dylibs:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "OK: alle Dylibs aufloesbar"
+
+      - name: postgres + initdb --version
+        run: |
+          set -euo pipefail
+          /tmp/pz-extract/bin/postgresql/bin/postgres --version
+          /tmp/pz-extract/bin/postgresql/bin/initdb --version
+          /tmp/pz-extract/bin/postgresql/bin/psql --version
+
+      - name: initdb smoke test
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/pgdata-test
+          /tmp/pz-extract/bin/postgresql/bin/initdb \
+            -D /tmp/pgdata-test \
+            -A trust \
+            -U pgtest \
+            -E UTF8 \
+            --locale=C
+          echo "OK: postgres + initdb laufen auf macos-15-intel (Intel x86_64)"
+
+  validate-macos-arm64:
+    name: macOS 14 (Apple Silicon arm64)
+    # macos-14 ist der aelteste noch verfuegbare arm64-Runner und gibt uns
+    # breite SDK-Kompatibilitaet. Hoehere Versionen (macos-15/26) als Bonus.
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tarball
+        id: resolve
+        env:
+          TARBALL_URL: ${{ inputs.tarball_url_arm64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${TARBALL_URL:-}" ]; then
+            echo "Downloading tarball from URL..."
+            curl -fSL --retry 3 --retry-delay 5 -o /tmp/pz-mac-arm64.tar.gz "$TARBALL_URL"
+            TARBALL=/tmp/pz-mac-arm64.tar.gz
+          else
+            # shellcheck disable=SC2012  # filenames sind kontrolliert (build-release.sh)
+            TARBALL=$(ls -t dist/praxiszeit-*-macos-arm64.tar.gz 2>/dev/null | head -1 || true)
+            if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+              echo "::error::Kein dist/praxiszeit-*-macos-arm64.tar.gz gefunden und keine URL angegeben."
+              echo "::error::Entweder erst tools/build-release.sh --macos-only laufen lassen,"
+              echo "::error::oder workflow_dispatch mit tarball_url_arm64 triggern."
+              exit 1
+            fi
+          fi
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "Found: $TARBALL"
+
+      - name: Extract tarball
+        env:
+          TARBALL: ${{ steps.resolve.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/pz-extract
+          mkdir -p /tmp/pz-extract
+          tar xzf "$TARBALL" -C /tmp/pz-extract
+          echo "Layout:"
+          # shellcheck disable=SC2012  # Diagnose-Print, kein Filename-Edge-Case
+          ls -la /tmp/pz-extract/bin/postgresql/bin/ | head -10
+
+      - name: file(1) sanity on binaries
+        run: |
+          set -euo pipefail
+          for bin in postgres initdb psql; do
+            f=/tmp/pz-extract/bin/postgresql/bin/$bin
+            if [ ! -e "$f" ]; then
+              echo "::error::Binary fehlt: $f"
+              exit 1
+            fi
+            type=$(file -b "$f")
+            echo "$bin: $type"
+            case "$type" in
+              *Mach-O*executable*|*Mach-O*universal*) ;;
+              *)
+                echo "::error::$f ist kein Mach-O executable!"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: otool dynamic-link sanity
+        run: |
+          set -euo pipefail
+          missing=$(otool -L /tmp/pz-extract/bin/postgresql/bin/postgres | awk '/not found/ {print}')
+          if [ -n "$missing" ]; then
+            echo "::error::otool zeigt fehlende Dylibs:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "OK: alle Dylibs aufloesbar"
+
+      - name: postgres + initdb --version
+        run: |
+          set -euo pipefail
+          /tmp/pz-extract/bin/postgresql/bin/postgres --version
+          /tmp/pz-extract/bin/postgresql/bin/initdb --version
+          /tmp/pz-extract/bin/postgresql/bin/psql --version
+
+      - name: initdb smoke test
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/pgdata-test
+          /tmp/pz-extract/bin/postgresql/bin/initdb \
+            -D /tmp/pgdata-test \
+            -A trust \
+            -U pgtest \
+            -E UTF8 \
+            --locale=C
+          echo "OK: postgres + initdb laufen auf macos-14 (Apple Silicon arm64)"
