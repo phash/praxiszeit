@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.5.3"
+APP_VERSION="1.5.4"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -183,6 +183,13 @@ NSSM_URL="https://web.archive.org/web/2024/https://nssm.cc/release/nssm-${NSSM_V
 
 # pip bootstrap
 GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
+
+# Microsoft Visual C++ Redistributable (x64). Die EDB-PG-18-Binaries sind
+# MSVC-gebaut und linken vcruntime140*.dll. Wird ins Windows-Paket gebuendelt,
+# damit der Update-Pfad (update-wizard.ps1 -> Step-VcRedist) die Runtime
+# idempotent sicherstellen kann — der EDB-Installer (--install_runtimes 1) deckt
+# nur die Erstinstallation ab, nicht das In-Place-Update (1.5.4, Pitfall #11).
+VC_REDIST_URL="https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
 # =============================================================================
 # Hilfsfunktionen
@@ -414,6 +421,7 @@ if [ "$BUILD_WINDOWS" = true ]; then
     download "$PYTHON_WINDOWS_URL" "${CACHE_DIR}/python-windows-x64.tar.gz"
     download "$NSSM_URL"           "${CACHE_DIR}/nssm.zip"
     download "$GET_PIP_URL"        "${CACHE_DIR}/get-pip.py"
+    download "$VC_REDIST_URL"      "${CACHE_DIR}/vc_redist.x64.exe"
 
     # PostgreSQL Windows: EDB Installer muss manuell heruntergeladen werden
     if [ ! -f "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}" ]; then
@@ -585,6 +593,15 @@ PTHEOF
         cp "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}" "${WIN_DIR}/bin/postgresql-installer.exe"
     else
         warn "Kein PostgreSQL-Installer im Paket — Kunde muss PostgreSQL manuell installieren"
+    fi
+
+    # VC++ Redistributable buendeln — update-wizard.ps1 (Step-VcRedist) fuehrt es
+    # idempotent aus, damit auch ein In-Place-Update die Runtime sicherstellt.
+    if [ -f "${CACHE_DIR}/vc_redist.x64.exe" ]; then
+        info "Kopiere VC++ Redistributable ($(du -h "${CACHE_DIR}/vc_redist.x64.exe" | cut -f1))..."
+        cp "${CACHE_DIR}/vc_redist.x64.exe" "${WIN_DIR}/bin/vc_redist.x64.exe"
+    else
+        warn "Kein vc_redist.x64.exe im Cache — Update-Pfad kann die VC++-Runtime nicht sicherstellen"
     fi
 
     info "Entpacke nssm..."
