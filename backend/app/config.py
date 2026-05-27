@@ -142,6 +142,11 @@ class Settings(BaseSettings):
     UPDATE_SERVER_URL: Optional[str] = None
     UPDATE_CHECK_INTERVAL_HOURS: int = 12
 
+    # Feedback / Bug-Reporting: base URL of the pzweb bug-tracker the in-app
+    # report endpoint proxies to (POST {url}/v1/bugs). Host must be in
+    # updater._ALLOWED_UPDATE_HOSTS. See routers/feedback.py.
+    FEEDBACK_SERVER_URL: str = "https://praxiszeit.mr-development.de"
+
     # SMTP — used by the self-service signup flow (Phase 3). If MAIL_HOST is
     # unset, mail_service.send() logs the email body and returns True; in
     # production (DEPLOYMENT_MODE=saas) these MUST be configured.
