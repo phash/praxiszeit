@@ -370,6 +370,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             : $"https://localhost:{_ports.HttpsPort}/";
         _done.BrowserUrl = browserUrl;
 
+        // Der Dienst meldet sich bei SCM als "running", bevor uvicorn den Web-Port
+        // wirklich bedient (PG-Start + Migrationen laufen noch). Wir pollen den Port
+        // und geben "Im Browser öffnen" erst frei, wenn der Server antwortet — sonst
+        // landet ein sofortiger Klick auf "nicht erreichbar". Fire-and-forget, der
+        // Poller aktualisiert IsServerReady auf dem UI-Kontext (ConfigureAwait(true)).
+        if (success)
+        {
+            _ = _done.WaitForServerAsync();
+        }
+
         // Nach erfolgreichem Install: optionale Verknüpfungen + Apps-&-Features-Eintrag.
         if (success && OperatingSystem.IsWindows())
         {

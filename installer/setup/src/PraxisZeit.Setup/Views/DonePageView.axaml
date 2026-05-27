@@ -11,20 +11,31 @@
     <StackPanel Margin="40" Spacing="24" VerticalAlignment="Center">
 
         <!-- Erfolgs-Checkmark (success) ODER X-Kreis (fail) -->
-        <Border Width="92" Height="92"
-                CornerRadius="46"
-                IsVisible="{Binding Success}"
-                Background="{StaticResource AccentGradientBrush}"
-                HorizontalAlignment="Center"
-                BoxShadow="0 8 24 0 #2613B981">
-            <Path Data="M 22 48 L 40 66 L 70 30"
-                  Stroke="White"
-                  StrokeThickness="6"
-                  StrokeJoin="Round"
-                  StrokeLineCap="Round"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"/>
-        </Border>
+        <Panel HorizontalAlignment="Center" IsVisible="{Binding Success}">
+            <!-- Zweistufiger, weicher Halo-Ring fuer Tiefe -->
+            <Ellipse Width="124" Height="124" Fill="#1213B981"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Ellipse Width="104" Height="104" Fill="#2013B981"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <!-- Hauptkreis mit Verlauf + Glow -->
+            <Border Width="88" Height="88"
+                    CornerRadius="44"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{StaticResource AccentGradientBrush}"
+                    BoxShadow="0 12 30 0 #3313B981">
+                <!-- Viewbox: Haken bleibt sauber zentriert und skaliert scharf -->
+                <Viewbox Width="46" Height="46"
+                         HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Canvas Width="64" Height="64">
+                        <Path Data="M 13 33 L 27 47 L 51 18"
+                              Stroke="White"
+                              StrokeThickness="7"
+                              StrokeJoin="Round"
+                              StrokeLineCap="Round"/>
+                    </Canvas>
+                </Viewbox>
+            </Border>
+        </Panel>
 
         <Border Width="92" Height="92"
                 CornerRadius="46"
@@ -78,8 +89,23 @@
                                Foreground="{StaticResource BrandPrimaryBrush}"
                                HorizontalAlignment="Center"/>
                 </StackPanel>
+                <!-- "Server startet…"-Hinweis solange der Web-Port noch nicht antwortet -->
+                <StackPanel Orientation="Horizontal"
+                            Spacing="10"
+                            HorizontalAlignment="Center"
+                            IsVisible="{Binding IsWaitingForServer}">
+                    <ProgressBar IsIndeterminate="True"
+                                 Width="130" Height="4"
+                                 VerticalAlignment="Center"/>
+                    <TextBlock Text="Server startet …"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                </StackPanel>
+                <!-- Button erst aktiv, wenn der Server auf dem Web-Port antwortet
+                     (Text wechselt von "Startet…" auf "Im Browser öffnen"). -->
                 <Button Classes="success"
-                        Content="Im Browser oeffnen"
+                        Content="{Binding BrowserButtonText}"
                         MinWidth="200"
                         Height="38"
                         HorizontalAlignment="Center"

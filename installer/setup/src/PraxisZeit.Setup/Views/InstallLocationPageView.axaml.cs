@@ -36,7 +36,7 @@ public partial class InstallLocationPageView : UserControl
 
         var folders = await top.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Zielverzeichnis fuer PraxisZeit waehlen",
+            Title = "Zielverzeichnis für PraxisZeit wählen",
             AllowMultiple = false,
             SuggestedStartLocation = startFolder,
         });
