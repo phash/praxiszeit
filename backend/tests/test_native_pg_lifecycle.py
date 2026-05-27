@@ -101,6 +101,53 @@ def test_pg_service_name_matches_installer(srv):
     assert srv.PG_SERVICE_NAME == "PraxisZeit-PostgreSQL"
 
 
+# --- VC++ runtime diagnostic (Windows DLL-load failure) ----------------------
+
+class TestVcRuntimeDiagnostic:
+    """Field report 2026-05-26: on a fresh Windows the bundled PostgreSQL
+    binaries could not be loaded because the Microsoft Visual C++ Redistributable
+    was missing (setup.bat ran the EDB installer with ``--install_runtimes 0``).
+    ``initdb.exe`` exited with 3221225781 = 0xC0000135 (STATUS_DLL_NOT_FOUND)
+    and the NSSM service looped forever on an opaque ``CalledProcessError``.
+    ``_check_pg_launchable`` turns that exit code into a clear, actionable error
+    so the service log says *what to install* instead of dumping a stack trace.
+    """
+
+    def test_dll_not_found_raises_actionable_error(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        with pytest.raises(srv.PgRuntimeMissingError) as exc:
+            srv._check_pg_launchable(3221225781, "initdb.exe")
+        msg = str(exc.value)
+        assert "initdb.exe" in msg                 # names the failing binary
+        assert srv.VC_REDIST_URL in msg            # points at the actual fix
+
+    def test_signed_int_variant_also_detected(self, srv, monkeypatch):
+        # Some Python/Windows combos surface the NTSTATUS as its signed twin.
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        with pytest.raises(srv.PgRuntimeMissingError):
+            srv._check_pg_launchable(-1073741515, "postgres.exe")
+
+    def test_dll_init_failed_also_detected(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        with pytest.raises(srv.PgRuntimeMissingError):
+            srv._check_pg_launchable(0xC0000142, "initdb.exe")
+
+    def test_success_is_noop(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        srv._check_pg_launchable(0, "initdb.exe")  # must not raise
+
+    def test_ordinary_failure_is_noop(self, srv, monkeypatch):
+        # A normal initdb failure (e.g. "directory not empty", rc=1) must fall
+        # through to CalledProcessError, NOT be mis-reported as a missing runtime.
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        srv._check_pg_launchable(1, "initdb.exe")  # must not raise
+
+    def test_non_windows_is_noop(self, srv, monkeypatch):
+        # The same magic number on Linux means something else entirely.
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        srv._check_pg_launchable(3221225781, "initdb")  # must not raise
+
+
 # --- cmd_start: lost-credentials recovery ------------------------------------
 
 class TestLostCredentialsFailFast:
