@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-27
+
+### ✨ Fehler/Feedback direkt aus der App melden
+- Neuer Dialog **„Fehler melden / Feedback"** (über das Hilfe-Panel erreichbar):
+  Titel, Beschreibung und Schweregrad eingeben und absenden. Die Meldung geht an
+  das PraxisZeit-Team. App-Version und Betriebssystem werden automatisch
+  mitgesendet; es werden keine personenbezogenen Daten automatisch angehängt.
+- Technisch: authentifizierter Backend-Proxy (`POST /api/feedback/report`), der
+  die Meldung an den zentralen Bug-Tracker weiterleitet (Lizenz-gebunden,
+  rate-limitiert). Bei abgelaufener Lizenz oder Netzwerkproblemen erscheint eine
+  verständliche Meldung statt eines Fehlers.
+
+## [1.5.5] - 2026-05-27
+
+### 💅 Setup-Assistent (Windows): Feinschliff auf der Abschluss-Seite
+- Umlaute korrigiert („Im Browser **öffnen**"), grüner Haken neu gestaltet.
+- **Warten auf Server-Start:** „Im Browser öffnen" wird erst aktiv, wenn der
+  Webserver wirklich antwortet (vorher „Server startet …") — kein „nicht
+  erreichbar" mehr bei zu frühem Klick.
+
+## [1.5.4] - 2026-05-27
+
+### 🐞 Windows-Update stellt die VC++-Runtime sicher
+- In-Place-Updates bündeln jetzt `vc_redist.x64.exe` und installieren die
+  Microsoft Visual C++ Runtime idempotent mit — schließt die Lücke, dass nur die
+  Erstinstallation (setup.bat) die Runtime installierte.
+
+## [1.5.3] - 2026-05-27
+
+### 🐞 Frische Windows-Installation startet wieder (VC++-Runtime)
+- Der gebündelte PostgreSQL-Installer installiert jetzt die Microsoft Visual C++
+  Runtime (`--install_runtimes 1`). Auf frischem Windows ohne vorhandene Runtime
+  scheiterte `initdb.exe` zuvor mit `0xC0000135` und der Dienst startete nie.
+  Sofort-Workaround für Bestands-Installs: `vc_redist.x64.exe` von
+  `https://aka.ms/vs/17/release/vc_redist.x64.exe` installieren.
+
 ## [1.5.2] - 2026-05-26
 
 ### 🐞 Lizenz-Fehler legt den Dienst nicht mehr lahm
