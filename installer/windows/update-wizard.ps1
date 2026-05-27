@@ -222,8 +222,9 @@ function Show-WelcomePage {
         "   2. Datenbank-Backup (Service laeuft noch)`r`n" +
         "   3. PraxisZeit-Service stoppen`r`n" +
         "   4. Neue Dateien ueber die bestehenden kopieren`r`n" +
-        "   5. PraxisZeit-Service starten`r`n" +
-        "   6. Taegliche Backup-Task registrieren / aktualisieren"
+        "   5. VC++ Runtime sicherstellen`r`n" +
+        "   6. PraxisZeit-Service starten`r`n" +
+        "   7. Taegliche Backup-Task registrieren / aktualisieren"
     $lbl2.Font = New-Object System.Drawing.Font('Segoe UI', 10)
     $lbl2.Location = New-Object System.Drawing.Point(20, 55)
     $lbl2.Size = New-Object System.Drawing.Size(660, 170)
@@ -288,13 +289,14 @@ function Show-ProgressPage {
     $body.Controls.Add($lbl1)
 
     $steps = @(
-        @{ Id='acl';    Text='1. ACL-Fix fuer .db-credentials' },
-        @{ Id='backup'; Text='2. Datenbank-Backup erstellen' },
-        @{ Id='stop';   Text='3. PraxisZeit-Service stoppen' },
-        @{ Id='copy';   Text='4. Dateien aktualisieren' },
-        @{ Id='pip';    Text='5. Python-Dependencies pruefen' },
-        @{ Id='start';  Text='6. Service starten' },
-        @{ Id='task';   Text='7. Scheduled Task registrieren' }
+        @{ Id='acl';      Text='1. ACL-Fix fuer .db-credentials' },
+        @{ Id='backup';   Text='2. Datenbank-Backup erstellen' },
+        @{ Id='stop';     Text='3. PraxisZeit-Service stoppen' },
+        @{ Id='copy';     Text='4. Dateien aktualisieren' },
+        @{ Id='vcredist'; Text='5. VC++ Runtime sicherstellen' },
+        @{ Id='pip';      Text='6. Python-Dependencies pruefen' },
+        @{ Id='start';    Text='7. Service starten' },
+        @{ Id='task';     Text='8. Scheduled Task registrieren' }
     )
     $script:stepLabels = @{}
     $y = 50
@@ -642,6 +644,49 @@ function Step-CopyFiles {
     }
 }
 
+function Step-VcRedist {
+    Set-StepStatus 'vcredist' 'running'
+    Write-Log 'Stelle Microsoft Visual C++ Runtime sicher (idempotent)...'
+    if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'vcredist' 'ok'; return $true }
+
+    # Die gebuendelten PostgreSQL-Binaries sind MSVC-gebaut und brauchen die
+    # VC++-Runtime (vcruntime140*.dll). Bei der Erstinstallation installiert der
+    # EDB-Installer sie (setup.bat --install_runtimes 1); der Update-Pfad kopiert
+    # aber nur Dateien -> auf einer Maschine ohne Runtime startet PG sonst nicht
+    # (initdb/postgres Exit 0xC0000135). Best-effort + idempotent (Pitfall #11).
+    $redist = Join-Path $WizardDirResolved 'bin\vc_redist.x64.exe'
+    if (-not (Test-Path $redist)) {
+        # Aelteres Update-Paket ohne gebuendelten Redist -> nicht-kritisch.
+        Write-Log 'WARNUNG: vc_redist.x64.exe nicht im Update-Paket - Schritt uebersprungen.'
+        Set-StepStatus 'vcredist' 'warn'
+        return $true
+    }
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $redist
+        $psi.Arguments = '/install /quiet /norestart'
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $proc.WaitForExit()
+        $rc = $proc.ExitCode
+        # 0 = installiert, 1638/3010/1641 = bereits (neuere) Version bzw. Reboot
+        # noetig -> alle als Erfolg werten (Runtime ist danach vorhanden).
+        if ($rc -eq 0 -or $rc -eq 1638 -or $rc -eq 3010 -or $rc -eq 1641) {
+            Write-Log "VC++ Runtime sichergestellt (exit=$rc)"
+            Set-StepStatus 'vcredist' 'ok'
+            return $true
+        }
+        Write-Log "WARNUNG: vc_redist exit=$rc (nicht-kritisch; ein fehlender Runtime zeigt sich beim Service-Start als Klartext-Fehler)"
+        Set-StepStatus 'vcredist' 'warn'
+        return $true
+    } catch {
+        Write-Log "WARNUNG: vc_redist konnte nicht ausgefuehrt werden: $_"
+        Set-StepStatus 'vcredist' 'warn'
+        return $true
+    }
+}
+
 function Step-StartService {
     Set-StepStatus 'start' 'running'
     Write-Log 'Starte PraxisZeit-Service...'
@@ -702,17 +747,20 @@ function Invoke-Update {
     Write-Log ''
 
     $ok1 = Step-ACLFix;        Update-Progress 8
-    $ok2 = Step-Backup;        Update-Progress 25
-    $ok3 = Step-StopService;   Update-Progress 40
+    $ok2 = Step-Backup;        Update-Progress 22
+    $ok3 = Step-StopService;   Update-Progress 36
     if (-not $ok3) { return $false }
-    $ok4 = Step-CopyFiles;     Update-Progress 60
+    $ok4 = Step-CopyFiles;     Update-Progress 55
     if (-not $ok4) {
         Write-Log ''
         Write-Log 'Versuche Service trotzdem wieder zu starten...'
         Step-StartService | Out-Null
         return $false
     }
-    $ok5 = Step-PipInstall;    Update-Progress 78
+    # Best-effort, nicht-fatal: stellt die VC++-Runtime fuer die PG-Binaries
+    # sicher (Erstinstall deckt setup.bat ab, das Update bisher gar nicht).
+    $null = Step-VcRedist;     Update-Progress 66
+    $ok5 = Step-PipInstall;    Update-Progress 80
     if (-not $ok5) {
         Write-Log ''
         Write-Log 'pip install fehlgeschlagen - Service wird nicht starten koennen.'
