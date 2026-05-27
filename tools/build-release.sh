@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.5.4"
+APP_VERSION="1.5.5"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"

@@ -30,7 +30,7 @@ public partial class LicensePageView : UserControl
 
         var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Lizenz-Datei waehlen",
+            Title = "Lizenz-Datei wählen",
             AllowMultiple = false,
             FileTypeFilter =
             [
