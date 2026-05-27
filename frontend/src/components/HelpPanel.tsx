@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { X, HelpCircle, ExternalLink } from 'lucide-react';
+import { X, HelpCircle, ExternalLink, Bug } from 'lucide-react';
 import { helpContent, getFallbackHelp } from '../constants/helpContent';
+import FeedbackDialog from './FeedbackDialog';
 
 interface HelpPanelProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ export default function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
   const location = useLocation();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const entry = helpContent[location.pathname] ?? getFallbackHelp();
 
@@ -102,7 +104,14 @@ export default function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-200 shrink-0">
+        <div className="px-5 py-4 border-t border-gray-200 shrink-0 space-y-3">
+          <button
+            onClick={() => setShowFeedback(true)}
+            className="flex items-center space-x-2 text-sm text-gray-700 hover:text-primary font-medium transition-colors"
+          >
+            <Bug size={14} />
+            <span>Fehler melden / Feedback</span>
+          </button>
           <Link
             to="/help"
             onClick={onClose}
@@ -113,6 +122,8 @@ export default function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
           </Link>
         </div>
       </aside>
+
+      {showFeedback && <FeedbackDialog onClose={() => setShowFeedback(false)} />}
 
       <style>{`
         @keyframes slideInRight {
