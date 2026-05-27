@@ -2,6 +2,7 @@ import os
 import warnings
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import urlparse
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -201,6 +202,21 @@ class Settings(BaseSettings):
                 stacklevel=2,
             )
         return v
+
+    @field_validator("FEEDBACK_SERVER_URL")
+    @classmethod
+    def _validate_feedback_server_url(cls, v: str) -> str:
+        """#136 hardening: the feedback target must be a bare https origin (no
+        path/query/fragment) so routers/feedback.py can safely append
+        '/v1/bugs' — prevents path-injection on misconfiguration."""
+        parsed = urlparse(v)
+        if parsed.scheme != "https":
+            raise ValueError("FEEDBACK_SERVER_URL must use https://")
+        if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+            raise ValueError(
+                "FEEDBACK_SERVER_URL must be a bare host (no path/query/fragment)"
+            )
+        return v.rstrip("/")
 
     # Organisation / DSGVO F-016: configurable practice info for Excel exports
     PRACTICE_NAME: str = "Praxis"

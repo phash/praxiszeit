@@ -149,3 +149,12 @@ def test_invalid_severity_returns_422(client, mock_license, monkeypatch):
     _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
     resp = client.post("/api/feedback/report", json={**VALID, "severity": "urgent"})
     assert resp.status_code == 422
+
+
+def test_description_too_long_returns_422(client, mock_license, monkeypatch):
+    # Security review F1: description must have an upper bound so a single
+    # authenticated user can't push multi-MB payloads through the proxy.
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    resp = client.post("/api/feedback/report", json={**VALID, "description": "x" * 4001})
+    assert resp.status_code == 422
+    assert rec.calls == []  # rejected before any outbound call
