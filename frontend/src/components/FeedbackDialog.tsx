@@ -115,10 +115,12 @@ export default function FeedbackDialog({ onClose }: FeedbackDialogProps) {
               id="fb-desc"
               value={description}
               rows={5}
+              maxLength={4000}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Was ist passiert? Welche Schritte führen dazu?"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary resize-y"
             />
+            <p className="text-xs text-gray-400 mt-1 text-right">{description.length}/4000</p>
           </div>
 
           <div className="mb-4">

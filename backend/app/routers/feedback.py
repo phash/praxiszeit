@@ -43,7 +43,7 @@ _PZWEB_TIMEOUT_SECONDS = 15.0
 class FeedbackReportIn(BaseModel):
     """Vom Frontend gesendeter Body. license_id/app_version/os ergaenzt der Server."""
     title: str = Field(min_length=1, max_length=200)
-    description: str = Field(min_length=1)
+    description: str = Field(min_length=1, max_length=4000)
     severity: Literal["low", "medium", "high", "critical"] = "medium"
 
 
