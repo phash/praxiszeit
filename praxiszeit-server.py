@@ -58,6 +58,20 @@ CONFIG_FILE = CONFIG_DIR / "praxiszeit.conf"
 
 IS_WINDOWS = platform.system() == "Windows"
 
+# Windows NTSTATUS exit codes meaning the OS loader could not start a PG binary
+# at all — it exited before running any of its own code, so there is no PG log
+# to read. On Windows this is almost always a missing Microsoft Visual C++
+# Redistributable: the EDB-built PostgreSQL binaries link vcruntime140*.dll.
+# Field report 2026-05-26: a fresh-Windows install looped forever because
+# initdb.exe exited with 3221225781 (0xC0000135) and the service kept retrying.
+WIN_STATUS_DLL_NOT_FOUND = 0xC0000135    # 3221225781
+WIN_STATUS_DLL_INIT_FAILED = 0xC0000142  # 3221225794
+_WIN_DLL_LOAD_FAILURE_CODES = {
+    WIN_STATUS_DLL_NOT_FOUND: "0xC0000135 STATUS_DLL_NOT_FOUND",
+    WIN_STATUS_DLL_INIT_FAILED: "0xC0000142 STATUS_DLL_INIT_FAILED",
+}
+VC_REDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
 # --- Logging ---
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -166,6 +180,47 @@ def pg_env() -> dict:
     return env
 
 
+class PgRuntimeMissingError(RuntimeError):
+    """A bundled PostgreSQL binary could not be launched by the OS loader.
+
+    On Windows this is almost always the missing Microsoft Visual C++
+    Redistributable: the EDB-built PG binaries link vcruntime140*.dll and exit
+    with an NTSTATUS DLL-load code (e.g. 0xC0000135) BEFORE running any of
+    their own code, so there is no PostgreSQL log to read. Surfacing a clear,
+    actionable error beats an opaque CalledProcessError that the service
+    manager then retries forever (field report 2026-05-26).
+    """
+
+
+def _vc_runtime_hint(exe: str, status_label: str | None = None) -> str:
+    """Actionable message for a Windows PG binary the OS loader cannot start."""
+    detail = f" ({status_label})" if status_label else ""
+    return (
+        f"{exe} konnte nicht gestartet werden{detail}. Auf diesem Windows fehlt "
+        "die Microsoft Visual C++ Runtime, gegen die die gebuendelten "
+        "PostgreSQL-Binaries gelinkt sind. Bitte als Administrator installieren: "
+        f"{VC_REDIST_URL} — danach 'net start PraxisZeit' erneut ausfuehren."
+    )
+
+
+def _check_pg_launchable(returncode: int, exe: str) -> None:
+    """Raise :class:`PgRuntimeMissingError` on a Windows DLL-load failure.
+
+    No-op on non-Windows and on any non-DLL-load exit code, so it is safe to
+    call right after every PG subprocess that launches a bundled binary.
+    """
+    if not IS_WINDOWS:
+        return
+    # Python may surface the NTSTATUS as the unsigned DWORD (3221225781) or its
+    # signed-int twin (-1073741515); normalise to unsigned before the lookup.
+    label = _WIN_DLL_LOAD_FAILURE_CODES.get(returncode & 0xFFFFFFFF)
+    if label is None:
+        return
+    msg = _vc_runtime_hint(exe, label)
+    logger.error(msg)
+    raise PgRuntimeMissingError(msg)
+
+
 def pg_is_running() -> bool:
     """Check if PostgreSQL is running."""
     try:
@@ -207,7 +262,11 @@ def pg_init(config: dict):
     if Path(pg_share).is_dir():
         init_cmd.extend(["-L", pg_share])
 
-    subprocess.run(init_cmd, check=True, env=pg_env())
+    result = subprocess.run(init_cmd, env=pg_env())
+    # A Windows DLL-load failure (missing VC++ runtime) gets a clear, actionable
+    # error here; every other failure keeps its existing CalledProcessError.
+    _check_pg_launchable(result.returncode, "initdb.exe")
+    result.check_returncode()
 
     # pg_hba.conf starts with trust — pg_setup_database() will set passwords
     # and then harden to scram-sha-256 via pg_harden_auth().
@@ -431,18 +490,23 @@ def _win_pg_register_and_start():
     subprocess.run(["net", "start", PG_SERVICE_NAME], capture_output=True, text=True)
 
 
-def _dump_pg_startup_log():
+def _dump_pg_startup_log() -> bool:
     """Log the tail of the PostgreSQL log(s) for debugging.
 
     Unix writes a startup log via ``pg_ctl start -l``; the Windows service path
     has no such file, so we also fall back to the logging_collector output
     (logs/postgresql.log) configured in pg_init.
+
+    Returns ``True`` if a non-empty log was found and dumped. An empty result
+    on Windows is itself a signal: postgres.exe never wrote a line, so it likely
+    never executed (see the VC++-runtime hint in :func:`pg_start`).
     """
     for name in ("postgresql-startup.log", "postgresql.log"):
         log_file = LOG_DIR / name
         if log_file.exists() and log_file.stat().st_size > 0:
             logger.error(f"PostgreSQL log ({name}):\n{log_file.read_text(errors='replace')[-2000:]}")
-            return
+            return True
+    return False
 
 
 def pg_start():
@@ -487,7 +551,13 @@ def pg_start():
                 return
             time.sleep(1)
         logger.error("PostgreSQL service failed to start within 60 seconds")
-        _dump_pg_startup_log()
+        if not _dump_pg_startup_log():
+            # No server log at all => postgres.exe almost certainly never ran
+            # (the service start failed before any logging). On a fresh Windows
+            # that is overwhelmingly the missing VC++ runtime — same root cause
+            # as the initdb.exe 0xC0000135 case, just on the re-start path where
+            # PG runs as a service and we can't read its exit code directly.
+            logger.error(_vc_runtime_hint("postgres.exe"))
         sys.exit(1)
 
     log_file = LOG_DIR / "postgresql-startup.log"
@@ -1366,7 +1436,13 @@ def main():
     subparsers.add_parser("backup", help="Create database backup").set_defaults(func=cmd_backup)
 
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except PgRuntimeMissingError:
+        # The actionable message + remediation URL were already logged at the
+        # failure site. Exit cleanly (no traceback) so the service log shows the
+        # fix to apply, not a confusing Python stack trace on every restart.
+        sys.exit(1)
 
 
 if __name__ == "__main__":

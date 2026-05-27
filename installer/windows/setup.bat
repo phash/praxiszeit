@@ -88,6 +88,14 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
     REM setlocal-EnableDelayedExpansion pattern; the for-loop scope keeps the
     REM value out of the environment after the installer call.
     set "PG_INSTALL_RESULT=1"
+    REM --install_runtimes 1: der EDB-Installer installiert die Microsoft Visual
+    REM C++ Runtime vcruntime140*.dll, gegen die die PG-18-Binaries gelinkt sind.
+    REM Frueher stand hier 0 -> auf frischem Windows OHNE vorhandenen VC++-Redist
+    REM schlug initdb.exe sofort mit Exit 3221225781 = 0xC0000135 STATUS_DLL_NOT_FOUND
+    REM fehl und der Dienst loopte endlos. Feldreport 2026-05-26. Der Redist-Install
+    REM ist idempotent und systemweit.
+    REM Hinweis: keine Klammern in diesen REM-Zeilen - unbalancierte Klammern in
+    REM einem ()-Block beenden den Block vorzeitig.
     for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "-join ((48..57)+(65..90)+(97..122)|Get-Random -Count 32|ForEach-Object {[char]$_})"`) do (
         "%PG_INSTALLER%" ^
             --mode unattended ^
@@ -98,7 +106,7 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
             --serverport 5432 ^
             --disable-components stackbuilder,pgAdmin ^
             --servicename "PraxisZeit-PostgreSQL" ^
-            --install_runtimes 0
+            --install_runtimes 1
         if not errorlevel 1 set "PG_INSTALL_RESULT=0"
     )
 

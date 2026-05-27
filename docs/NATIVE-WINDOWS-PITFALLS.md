@@ -185,6 +185,44 @@ Sobald SSL eingerichtet ist, wieder auf `true` setzen.
 
 ---
 
+## 11. VC++ Runtime fehlt auf frischem Windows → initdb.exe Exit 0xC0000135
+
+**Problem:** Auf einem frisch aufgesetzten Windows schlaegt der allererste Start
+fehl, der Dienst loopt endlos mit wachsendem Backoff. Im Log
+(`logs\service-stderr.log`):
+```
+subprocess.CalledProcessError: Command '[... initdb.exe ...]' returned non-zero exit status 3221225781.
+```
+`3221225781` = `0xC0000135` = `STATUS_DLL_NOT_FOUND`: der OS-Loader kann
+`initdb.exe` gar nicht erst starten, weil eine importierte DLL fehlt (kein
+initdb-Output, nur der Python-Wrapper-Traceback).
+
+**Ursache:** Die EDB-PostgreSQL-18-Binaries sind MSVC-gebaut und brauchen die
+Microsoft Visual C++ Runtime (`vcruntime140*.dll` / `vcruntime140_1.dll` /
+`msvcp140.dll`). `setup.bat` rief den EDB-Installer frueher mit
+`--install_runtimes 0` auf → der Redist wurde NICHT installiert. Auf Dev- und
+Bestandsmaschinen faellt das nie auf, weil dort fast immer schon ein
+VC++-Redist von anderer Software liegt; ein blankes Windows hat ihn nicht.
+
+**Loesung:**
+1. `setup.bat`: `--install_runtimes 1` (= Default des EDB-Installers; idempotent,
+   systemweit). Der Installer installiert den passenden vcredist intern.
+2. `praxiszeit-server.py`: `_check_pg_launchable()` uebersetzt die NTSTATUS-Codes
+   `0xC0000135`/`0xC0000142` in eine klare, umsetzbare Fehlermeldung
+   (`PgRuntimeMissingError`) statt einer opaken CalledProcessError-Endlosschleife.
+   Eingehaengt in `pg_init` (initdb) und den Windows-`pg_start`-Timeout-Pfad.
+
+**Sofort-Workaround (Bestandsinstallation, ohne neues Paket):**
+`https://aka.ms/vs/17/release/vc_redist.x64.exe` als Administrator installieren,
+dann `net start PraxisZeit`.
+
+**Dateien:** `installer/windows/setup.bat`,
+`praxiszeit-server.py` → `pg_init()` / `_check_pg_launchable()`.
+Regressionstest: `backend/tests/test_native_pg_lifecycle.py::TestVcRuntimeDiagnostic`.
+**Feldreport:** 2026-05-26 (Kunden-Erstinstallation), behoben in 1.5.3.
+
+---
+
 ## Checkliste fuer zukuenftige Native Windows Deployments
 
 - [ ] `praxiszeit.conf` korrekt ausgefuellt (admin, security, practice)
@@ -196,3 +234,4 @@ Sobald SSL eingerichtet ist, wieder auf `true` setzen.
 - [ ] Backup-Restore: `restore-backup.bat` nutzt `pause` → fuer Automation anpassen
 - [ ] PostgreSQL-Port 5432 ist nur auf localhost gebunden (sicher)
 - [ ] API-Endpoints testen: `POST /api/time-entries` darf nicht 405 geben
+- [ ] VC++ Runtime vorhanden (`setup.bat --install_runtimes 1` erledigt das automatisch; sonst `initdb.exe` Exit `0xC0000135`, siehe #11)
