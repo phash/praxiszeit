@@ -4,6 +4,8 @@ import { Save, Plus, Trash2, Pencil, X, Check } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface StatesResponse {
   states: string[];
@@ -32,6 +34,7 @@ function formatGermanDate(iso: string): string {
 
 export default function Settings() {
   const toast = useToast();
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -59,6 +62,9 @@ export default function Settings() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editDate, setEditDate] = useState('');
+  // Busy flag for custom-holiday edit/delete — separate from the Bundesland
+  // `saving` so the three sections don't cross-disable each other.
+  const [mutating, setMutating] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -178,7 +184,7 @@ export default function Settings() {
       toast.error('Bitte Name und Datum angeben.');
       return;
     }
-    setSaving(true);
+    setMutating(true);
     try {
       await apiClient.put(`/holidays/${id}`, { name: editName.trim(), date: editDate });
       toast.success('Feiertag aktualisiert.');
@@ -192,24 +198,29 @@ export default function Settings() {
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
-      setSaving(false);
+      setMutating(false);
     }
   };
 
-  const deleteHoliday = async (h: Holiday) => {
-    if (!window.confirm(`Feiertag "${h.name}" (${formatGermanDate(h.date)}) wirklich löschen?`)) {
-      return;
-    }
-    setSaving(true);
-    try {
-      await apiClient.delete(`/holidays/${h.id}`);
-      toast.success('Feiertag gelöscht.');
-      await loadHolidays(holidayYear);
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    } finally {
-      setSaving(false);
-    }
+  const deleteHoliday = (h: Holiday) => {
+    confirm({
+      title: 'Feiertag löschen',
+      message: `Feiertag "${h.name}" (${formatGermanDate(h.date)}) wirklich löschen?`,
+      confirmLabel: 'Löschen',
+      variant: 'danger',
+      onConfirm: async () => {
+        setMutating(true);
+        try {
+          await apiClient.delete(`/holidays/${h.id}`);
+          toast.success('Feiertag gelöscht.');
+          await loadHolidays(holidayYear);
+        } catch (err) {
+          toast.error(getErrorMessage(err));
+        } finally {
+          setMutating(false);
+        }
+      },
+    });
   };
 
   if (loading) {
@@ -220,6 +231,15 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <h1 className="text-2xl font-bold text-gray-900">Einstellungen</h1>
 
       {/* Feiertage */}
@@ -388,7 +408,7 @@ export default function Settings() {
                             <div className="inline-flex gap-2">
                               <button
                                 onClick={() => saveEdit(h.id)}
-                                disabled={saving}
+                                disabled={mutating}
                                 title="Speichern"
                                 className="p-1.5 text-green-600 hover:bg-green-50 rounded disabled:opacity-50"
                               >
@@ -396,7 +416,7 @@ export default function Settings() {
                               </button>
                               <button
                                 onClick={cancelEdit}
-                                disabled={saving}
+                                disabled={mutating}
                                 title="Abbrechen"
                                 className="p-1.5 text-gray-500 hover:bg-gray-100 rounded disabled:opacity-50"
                               >
@@ -414,7 +434,7 @@ export default function Settings() {
                               </button>
                               <button
                                 onClick={() => deleteHoliday(h)}
-                                disabled={saving}
+                                disabled={mutating}
                                 title="Löschen"
                                 className="p-1.5 text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
                               >
