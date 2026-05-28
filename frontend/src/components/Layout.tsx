@@ -46,6 +46,7 @@ export default function Layout() {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [sheetClosing, setSheetClosing] = useState(false);
   const [pendingCRCount, setPendingCRCount] = useState(0);
+  const [pendingVRCount, setPendingVRCount] = useState(0);
   const fabRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +57,20 @@ export default function Layout() {
       try {
         const res = await apiClient.get('/admin/change-requests/pending-count');
         setPendingCRCount(res.data.count);
+      } catch { /* ignore */ }
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 60000);
+    return () => clearInterval(interval);
+  }, [user?.role]);
+
+  // Pending vacation request count for admin badge
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    const fetchCount = async () => {
+      try {
+        const res = await apiClient.get('/admin/vacation-requests/pending-count');
+        setPendingVRCount(res.data.count);
       } catch { /* ignore */ }
     };
     fetchCount();
@@ -167,7 +182,7 @@ export default function Layout() {
     { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar, badge: 0 },
     { path: '/admin/audit-log', label: 'Änderungsprotokoll', icon: ScrollText, badge: 0 },
     { path: '/admin/errors', label: 'Fehler-Monitoring', icon: AlertTriangle, badge: 0 },
-    { path: '/admin/vacation-approvals', label: 'Anträge', icon: ClipboardCheck, badge: 0 },
+    { path: '/admin/vacation-approvals', label: 'Anträge', icon: ClipboardCheck, badge: pendingVRCount },
     { path: '/admin/import', label: 'Import', icon: Upload, badge: 0 },
     { path: '/admin/settings', label: 'Einstellungen', icon: Settings, badge: 0 },
     // Billing is SaaS-only — on-prem installs hide this entry via the filter below.
