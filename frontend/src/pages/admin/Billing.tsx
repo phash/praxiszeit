@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { CreditCard, ArrowUpCircle, AlertTriangle, Download, FileText, Pause, Trash2, UserCheck } from 'lucide-react';
 import apiClient from '../../api/client';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface BillingInfo {
   id: string;
@@ -40,10 +42,29 @@ export default function Billing() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   useEffect(() => {
     void refresh();
   }, []);
+
+  async function suspendAccount() {
+    try {
+      await apiClient.post('/tenant/suspend');
+      await refresh();
+    } catch (err: any) {
+      setError(getErrorMessage(err, 'Pausieren fehlgeschlagen'));
+    }
+  }
+
+  async function requestDeletion() {
+    try {
+      await apiClient.post('/tenant/request-deletion');
+      await refresh();
+    } catch (err: any) {
+      setError(getErrorMessage(err, 'Löschantrag fehlgeschlagen'));
+    }
+  }
 
   async function refresh() {
     setLoading(true);
@@ -93,6 +114,15 @@ export default function Billing() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <div className="flex items-center gap-3">
         <CreditCard className="text-primary" />
         <h1 className="text-2xl font-semibold">Abrechnung</h1>
@@ -230,29 +260,29 @@ export default function Billing() {
         </p>
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={async () => {
-              if (!confirm('Account nach 7 Tagen pausieren?')) return;
-              try {
-                await apiClient.post('/tenant/suspend');
-                await refresh();
-              } catch (err: any) {
-                setError(getErrorMessage(err, 'Pausieren fehlgeschlagen'));
-              }
-            }}
+            onClick={() =>
+              confirm({
+                title: 'Account pausieren',
+                message: 'Account nach 7 Tagen pausieren? Schreibzugriffe werden anschließend gesperrt.',
+                confirmLabel: 'Sperren',
+                variant: 'danger',
+                onConfirm: suspendAccount,
+              })
+            }
             className="flex items-center gap-2 px-3 py-2 border border-amber-300 text-amber-800 hover:bg-amber-50 rounded-lg text-sm"
           >
             <Pause size={16} /> Account pausieren
           </button>
           <button
-            onClick={async () => {
-              if (!confirm('Account nach 30 Tagen löschen? Die Daten werden anonymisiert.')) return;
-              try {
-                await apiClient.post('/tenant/request-deletion');
-                await refresh();
-              } catch (err: any) {
-                setError(getErrorMessage(err, 'Löschantrag fehlgeschlagen'));
-              }
-            }}
+            onClick={() =>
+              confirm({
+                title: 'Account löschen',
+                message: 'Account nach 30 Tagen löschen? Die personenbezogenen Daten werden anonymisiert.',
+                confirmLabel: 'Löschen & anonymisieren',
+                variant: 'danger',
+                onConfirm: requestDeletion,
+              })
+            }
             className="flex items-center gap-2 px-3 py-2 border border-red-300 text-red-700 hover:bg-red-50 rounded-lg text-sm"
           >
             <Trash2 size={16} /> Account löschen
