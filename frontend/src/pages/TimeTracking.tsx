@@ -270,13 +270,11 @@ export default function TimeTracking() {
     // every write path, so the client must mirror that.
     // Also count gaps between other entries on same day (skip open entries)
     // §4 Satz 2: only gaps >= 15 min count as valid break segments.
-    const existingBlocks = sameDay
-      .filter((e) => e.end_time)
-      .map((e) => ({
-        start: parseInt(e.start_time.substring(0, 2)) * 60 + parseInt(e.start_time.substring(3, 5)),
-        end: parseInt(e.end_time!.substring(0, 2)) * 60 + parseInt(e.end_time!.substring(3, 5)),
-        brk: e.break_minutes,
-      }));
+    const existingBlocks = sameDay.map((e) => ({
+      start: parseInt(e.start_time.substring(0, 2)) * 60 + parseInt(e.start_time.substring(3, 5)),
+      end: parseInt(e.end_time!.substring(0, 2)) * 60 + parseInt(e.end_time!.substring(3, 5)),
+      brk: e.break_minutes,
+    }));
     const breakError = computeBreakError(
       existingBlocks,
       formData.start_time,
