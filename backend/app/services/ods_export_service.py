@@ -388,7 +388,7 @@ def _absences_overview_sheet(doc, db, users, year, bold):
     headers = [
         "Mitarbeiter",
         "Urlaub (Tage)", "Krank (Tage)", "Fortbildung (Tage)",
-        "ÜStd.-Ausgleich (Tage)", "Sonstiges (Tage)",
+        "ÜStd.-Ausgleich (Tage)", "Sonstiges (Tage)", "Bez. Freistellung (Tage)",
         "Gesamt (Tage)", "Resturlaub (Tage)",
     ]
     table.addElement(_header_row(headers, bold))
@@ -412,6 +412,7 @@ def _absences_overview_sheet(doc, db, users, year, bold):
         train = days(AbsenceType.TRAINING)
         overtime_comp = days(AbsenceType.OVERTIME)
         other = days(AbsenceType.OTHER)
+        paid_leave = days(AbsenceType.PAID_LEAVE)
 
         vac_acc = calculation_service.get_vacation_account(db, user, year)
         remaining = float(vac_acc["remaining_days"])
@@ -423,7 +424,8 @@ def _absences_overview_sheet(doc, db, users, year, bold):
         tr.addElement(_float_cell(train))
         tr.addElement(_float_cell(overtime_comp))
         tr.addElement(_float_cell(other))
-        tr.addElement(_float_cell(vac + sick + train + overtime_comp + other))
+        tr.addElement(_float_cell(paid_leave))
+        tr.addElement(_float_cell(vac + sick + train + overtime_comp + other + paid_leave))
         tr.addElement(_float_cell(remaining))
         table.addElement(tr)
 
@@ -606,7 +608,7 @@ def _classic_sheet(doc, db, user, year, bold):
 
     headers = [
         "Monat", "Soll (Std)", "Ist (Std)", "Saldo (Std)",
-        "Urlaub (Std)", "Krank (Std)", "Fortbildung (Std)", "Sonstiges (Std)", "Nachtarbeit-Tage (§6)",
+        "Urlaub (Std)", "Krank (Std)", "Fortbildung (Std)", "Sonstiges (Std)", "Bez. Freistellung (Std)", "Nachtarbeit-Tage (§6)",
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -616,6 +618,7 @@ def _classic_sheet(doc, db, user, year, bold):
     total_sick = 0.0
     total_train = 0.0
     total_other = 0.0
+    total_paid_leave = 0.0
 
     for m in range(1, 13):
         target = float(calculation_service.get_monthly_target(db, user, year, m))
@@ -635,6 +638,7 @@ def _classic_sheet(doc, db, user, year, bold):
         sick = month_absence_hours(AbsenceType.SICK)
         train = month_absence_hours(AbsenceType.TRAINING)
         other = month_absence_hours(AbsenceType.OTHER)
+        paid_leave = month_absence_hours(AbsenceType.PAID_LEAVE)
 
         total_target += target
         total_actual += actual
@@ -642,6 +646,7 @@ def _classic_sheet(doc, db, user, year, bold):
         total_sick += sick
         total_train += train
         total_other += other
+        total_paid_leave += paid_leave
 
         # Night work days for this month (§6 ArbZG)
         month_entries = db.query(TimeEntry).filter(
@@ -660,6 +665,7 @@ def _classic_sheet(doc, db, user, year, bold):
         tr.addElement(_float_cell(sick))
         tr.addElement(_float_cell(train))
         tr.addElement(_float_cell(other))
+        tr.addElement(_float_cell(paid_leave))
         tr.addElement(_int_cell(night_days))
         table.addElement(tr)
 
@@ -681,6 +687,7 @@ def _classic_sheet(doc, db, user, year, bold):
     tr.addElement(_float_cell(total_sick))
     tr.addElement(_float_cell(total_train))
     tr.addElement(_float_cell(total_other))
+    tr.addElement(_float_cell(total_paid_leave))
     tr.addElement(_int_cell(total_night))
     table.addElement(tr)
 

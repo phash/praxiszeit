@@ -470,10 +470,10 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
     # Title
     sheet.cell(row=1, column=1).value = f"Abwesenheiten {year}"
     sheet.cell(row=1, column=1).font = Font(bold=True, size=14)
-    sheet.merge_cells('A1:G1')
+    sheet.merge_cells('A1:H1')
 
     # Headers
-    headers = ["Name", "Urlaub (Tage)", "Krank (Tage)", "Fortbildung (Tage)", "ÜStd.-Ausgleich (Tage)", "Sonstiges (Tage)", "Gesamt (Tage)"]
+    headers = ["Name", "Urlaub (Tage)", "Krank (Tage)", "Fortbildung (Tage)", "ÜStd.-Ausgleich (Tage)", "Sonstiges (Tage)", "Bez. Freistellung (Tage)", "Gesamt (Tage)"]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=3, column=col_num)
         cell.value = header
@@ -530,7 +530,15 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         other_hours = sum(float(a.hours) for a in other_absences)
         other_days = other_hours / float(daily_target)
 
-        total_days = vacation_days + (sick_days if include_health_data else 0) + training_days + overtime_comp_days + other_days
+        paid_leave_absences = db.query(Absence).filter(
+            Absence.user_id == user.id,
+            Absence.type == AbsenceType.PAID_LEAVE,
+            date_in_year(Absence.date, year)
+        ).all()
+        paid_leave_hours = sum(float(a.hours) for a in paid_leave_absences)
+        paid_leave_days = paid_leave_hours / float(daily_target)
+
+        total_days = vacation_days + (sick_days if include_health_data else 0) + training_days + overtime_comp_days + other_days + paid_leave_days
 
         # Write data
         sheet.cell(row=row, column=1).value = f"{user.last_name}, {user.first_name}"
@@ -547,9 +555,11 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         sheet.cell(row=row, column=5).number_format = '0.0'
         sheet.cell(row=row, column=6).value = other_days
         sheet.cell(row=row, column=6).number_format = '0.0'
-        sheet.cell(row=row, column=7).value = total_days
+        sheet.cell(row=row, column=7).value = paid_leave_days
         sheet.cell(row=row, column=7).number_format = '0.0'
-        sheet.cell(row=row, column=7).font = Font(bold=True)
+        sheet.cell(row=row, column=8).value = total_days
+        sheet.cell(row=row, column=8).number_format = '0.0'
+        sheet.cell(row=row, column=8).font = Font(bold=True)
 
         row += 1
 
@@ -557,7 +567,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         sheet.cell(row=3, column=3).value = "Krank (Tage) (geschützt)"
 
     # Adjust column widths
-    for col in range(1, 8):
+    for col in range(1, 9):
         sheet.column_dimensions[get_column_letter(col)].width = 16
 
 
