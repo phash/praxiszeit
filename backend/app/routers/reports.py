@@ -183,8 +183,11 @@ def get_yearly_absences(
         other_hours = hours_by_type.get(AbsenceType.OTHER, 0.0)
         other_days = other_hours / float(daily_target)
 
+        paid_leave_hours = hours_by_type.get(AbsenceType.PAID_LEAVE, 0.0)
+        paid_leave_days = paid_leave_hours / float(daily_target)
+
         effective_sick_days = sick_days if include_health_data else 0.0
-        total_days = vacation_days + effective_sick_days + training_days + overtime_comp_days + other_days
+        total_days = vacation_days + effective_sick_days + training_days + overtime_comp_days + other_days + paid_leave_days
 
         # Calculate remaining vacation
         vacation_account = calculation_service.get_vacation_account(db, user, year)
@@ -204,6 +207,7 @@ def get_yearly_absences(
             training_days=training_days,
             overtime_comp_days=overtime_comp_days,
             other_days=other_days,
+            paid_leave_days=paid_leave_days,
             overtime_year=float(overtime_year),
             total_days=total_days
         ))

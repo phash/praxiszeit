@@ -99,5 +99,6 @@ class EmployeeYearlyAbsences(BaseModel):
     training_days: float
     overtime_comp_days: float = 0.0
     other_days: float
+    paid_leave_days: float = 0.0
     overtime_year: float
     total_days: float
