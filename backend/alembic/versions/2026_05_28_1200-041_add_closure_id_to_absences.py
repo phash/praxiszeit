@@ -15,8 +15,8 @@ Backfill: bestehende VACATION-Absences mit note LIKE 'Betriebsferien: %'
 werden dem passenden CompanyClosure zugeordnet — gleicher tenant_id,
 Note-Suffix == closure.name, und das Absence-Datum liegt im Closure-Zeitraum.
 
-Revision ID: 040_absence_closure_id
-Revises: 039_user_onboarding
+Revision ID: 041_absence_closure_id
+Revises: 040_custom_holiday_fields
 Create Date: 2026-05-28
 """
 from alembic import op
@@ -24,8 +24,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 
-revision = '040_absence_closure_id'
-down_revision = '039_user_onboarding'
+revision = '041_absence_closure_id'
+down_revision = '040_custom_holiday_fields'
 branch_labels = None
 depends_on = None
 
