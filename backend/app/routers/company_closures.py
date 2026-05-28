@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import date, timedelta
@@ -153,6 +153,8 @@ def _create_closure_absences(
 
 @router.get("/", response_model=List[CompanyClosureResponse])
 def list_closures(
+    skip: int = 0,
+    limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -160,7 +162,7 @@ def list_closures(
     # F-026: tenant-scoped query (belt-and-suspenders on top of RLS).
     closures = db.query(CompanyClosure).filter(
         CompanyClosure.tenant_id == current_user.tenant_id,
-    ).order_by(CompanyClosure.start_date.desc()).all()
+    ).order_by(CompanyClosure.start_date.desc()).offset(skip).limit(limit).all()
     result = []
     for c in closures:
         # Count affected (employees with vacation created for this closure)
