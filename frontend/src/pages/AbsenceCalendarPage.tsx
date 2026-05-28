@@ -107,6 +107,8 @@ export default function AbsenceCalendarPage() {
   });
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingRequest, setEditingRequest] = useState<VacationRequest | null>(null);
+  // Guards against double-submit (fast double-click would create duplicate absences/requests).
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     apiClient.get('/settings').then((res) => {
@@ -178,6 +180,8 @@ export default function AbsenceCalendarPage() {
   };
 
   const doSubmit = async (refundVacation: boolean) => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       // If approval required and not sick leave: create an absence request instead
       if (formData.type !== 'sick' && vacationApprovalRequired) {
@@ -216,6 +220,8 @@ export default function AbsenceCalendarPage() {
       setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '' });
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -552,7 +558,8 @@ export default function AbsenceCalendarPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
                   <button
                     type="submit"
-                    className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition"
+                    disabled={submitting}
+                    className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Speichern
                   </button>
@@ -576,7 +583,8 @@ export default function AbsenceCalendarPage() {
               <div>
                 <button
                   type="submit"
-                  className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition"
+                  disabled={submitting}
+                  className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Speichern
                 </button>

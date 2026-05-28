@@ -29,6 +29,8 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
+  // Guards against double-submit (fast double-click would add duplicate hours changes).
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     effective_from: new Date().toISOString().split('T')[0],
     weekly_hours: currentWeeklyHours,
@@ -50,6 +52,8 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
 
   const handleAddHoursChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     try {
       await apiClient.post(`/admin/users/${userId}/working-hours-changes`, formData);
       await fetchHoursChanges();
@@ -62,6 +66,8 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
       toast.success('Stundenänderung erfolgreich hinzugefügt');
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Hinzufügen'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -176,7 +182,8 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                   <div className="md:col-span-3">
                     <button
                       type="submit"
-                      className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
+                      disabled={submitting}
+                      className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Plus size={18} />
                       <span>Hinzufügen</span>

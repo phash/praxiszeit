@@ -44,6 +44,8 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
   const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
+  // Guards against double-submit (fast double-click would create duplicate users).
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -103,6 +105,8 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     try {
       // Convert empty date strings to null for the API
       const payload = {
@@ -127,6 +131,8 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
       onSaved();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -380,7 +386,8 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
           <div className="md:col-span-2">
             <button
               type="submit"
-              className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
+              disabled={submitting}
+              className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save size={18} />
               <span>Speichern</span>

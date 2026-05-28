@@ -43,6 +43,9 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [colorMessage, setColorMessage] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
+  // Guards against double-submit on the password and profile forms.
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [profileSubmitting, setProfileSubmitting] = useState(false);
 
   // F-019: TOTP 2FA state
   const [totpEnabled, setTotpEnabled] = useState(user?.totp_enabled ?? false);
@@ -123,6 +126,8 @@ export default function Profile() {
       return;
     }
 
+    if (passwordSubmitting) return;
+    setPasswordSubmitting(true);
     try {
       const response = await apiClient.post('/auth/change-password', {
         current_password: passwordData.current_password,
@@ -137,12 +142,16 @@ export default function Profile() {
       setShowPasswordForm(false);
     } catch (err: any) {
       setError(getErrorMessage(err, 'Fehler beim Ändern des Passworts'));
+    } finally {
+      setPasswordSubmitting(false);
     }
   };
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileMessage('');
+    if (profileSubmitting) return;
+    setProfileSubmitting(true);
     try {
       const response = await apiClient.put('/auth/profile', {
         first_name: profileData.first_name || undefined,
@@ -155,6 +164,8 @@ export default function Profile() {
       setTimeout(() => setProfileMessage(''), 4000);
     } catch (err: any) {
       setProfileMessage(getErrorMessage(err, 'Fehler beim Speichern'));
+    } finally {
+      setProfileSubmitting(false);
     }
   };
 
@@ -342,7 +353,8 @@ export default function Profile() {
             </div>
             <button
               type="submit"
-              className="flex items-center space-x-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm"
+              disabled={profileSubmitting}
+              className="flex items-center space-x-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save size={16} />
               <span>Speichern</span>
@@ -452,7 +464,8 @@ export default function Profile() {
             <div className="flex space-x-3">
               <button
                 type="submit"
-                className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition"
+                disabled={passwordSubmitting}
+                className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save size={18} />
                 <span>Speichern</span>
