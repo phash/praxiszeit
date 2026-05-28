@@ -31,6 +31,8 @@ def get_daily_target_for_date_endpoint(
 def list_absences(
     year: Optional[int] = Query(None, description="Filter by year"),
     user_id: Optional[str] = Query(None, description="Filter by user ID (admin only)"),
+    skip: int = 0,
+    limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -54,7 +56,7 @@ def list_absences(
     if year:
         query = query.filter(date_in_year(Absence.date, year))
 
-    absences = query.order_by(Absence.date.desc()).all()
+    absences = query.order_by(Absence.date.desc()).offset(skip).limit(limit).all()
     return absences
 
 
@@ -215,11 +217,11 @@ def create_absence(
     start_date = absence_data.date
     end_date = absence_data.end_date if absence_data.end_date else absence_data.date
 
-    # Validate date range
+    # Validate date range (equal start/end is a valid single-day absence)
     if end_date < start_date:
         raise HTTPException(
             status_code=400,
-            detail="Enddatum muss nach dem Startdatum liegen"
+            detail="Enddatum darf nicht vor dem Startdatum liegen"
         )
 
     # Arbeitszeitraum-Prüfung (I2)
@@ -247,8 +249,10 @@ def create_absence(
 
     holidays = set()
     for year in years:
+        # F-026: explicit tenant scope on the standalone holiday lookup.
         year_holidays = db.query(PublicHoliday).filter(
-            PublicHoliday.year == year
+            PublicHoliday.year == year,
+            PublicHoliday.tenant_id == target_user.tenant_id,
         ).all()
         holidays.update([h.date for h in year_holidays])
 

@@ -7,6 +7,7 @@ Native-Installer flavour doesn't have a multi-tenant landing page.
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.deployment import is_saas
 from app.core.limiter import limiter
 from app.database import SessionLocal, set_superadmin_context
@@ -38,6 +39,17 @@ def _public_db():
         yield db
     finally:
         db.close()
+
+
+def _verify_url(token: str) -> str:
+    """Build the verification link from the configured canonical base URL.
+
+    S-M01: never derive the host from the request Origin header — an attacker
+    could inject an arbitrary host into the verification email. SAAS_APP_URL is
+    operator-controlled; if it's left empty we fall back to a path-only link.
+    """
+    base = (settings.SAAS_APP_URL or "").rstrip("/")
+    return f"{base}/verify?token={token}"
 
 
 def _client_meta(request: Request) -> tuple[str | None, str | None]:
@@ -74,10 +86,9 @@ def signup(
         accepted_terms=body.accept_terms,
         accepted_privacy=body.accept_privacy,
     )
-    # Build verification URL from the origin header; fall back to the
-    # path-only form if the request came in without Origin (e.g. curl).
-    origin = request.headers.get("origin") or ""
-    verify_url = f"{origin.rstrip('/')}/verify?token={result.verification_token}"
+    # S-M01: build the verification URL from the canonical SAAS_APP_URL, not
+    # from the attacker-controllable Origin/Host header.
+    verify_url = _verify_url(result.verification_token)
     send_verification_email(
         to=body.admin_email,
         verification_url=verify_url,
@@ -120,8 +131,7 @@ def resend_verification(
     ip, ua = _client_meta(request)
     result = signup_service.resend(db, email=body.email, ip_address=ip, user_agent=ua)
     if result is not None:
-        origin = request.headers.get("origin") or ""
-        verify_url = f"{origin.rstrip('/')}/verify?token={result.verification_token}"
+        verify_url = _verify_url(result.verification_token)
         send_verification_email(
             to=body.email,
             verification_url=verify_url,

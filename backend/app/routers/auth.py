@@ -605,6 +605,10 @@ def totp_disable(
 
     current_user.totp_secret = None
     current_user.totp_enabled = False
+    # S-L03: invalidate other sessions on a security-relevant change, mirroring
+    # deactivate / set-password / role-change. Disabling 2FA must not leave
+    # stale sessions authenticated.
+    current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
     db.refresh(current_user)
     return UserResponse.model_validate(current_user)
