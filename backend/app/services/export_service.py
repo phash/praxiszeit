@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
-from app.services import calculation_service
+from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
 from app.config import settings
@@ -119,6 +119,12 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     ).all()
     holidays_by_date = {holiday.date: holiday for holiday in holidays}
 
+    # #146: configurable 24./31.12. handling — load once, apply per working day
+    # so the exported Soll column matches get_monthly_target() (half_day → ×0.5,
+    # free → ×0). N-1: previously the export showed the full daily target on a
+    # configured half/free day, diverging from the calculated monthly Soll.
+    special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
+
     # German weekday names
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
@@ -186,6 +192,11 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # Per-day target using historical weekly hours
         weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        # #146: apply the special-day factor (only the working-day branch below
+        # consumes daily_target; the weekend/holiday/absence branches hardcode 0).
+        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
+        if _sd_factor is not None:
+            daily_target = daily_target * _sd_factor
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if is_weekend:
@@ -226,7 +237,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                     "sick": "Krank",
                     "training": "Fortbildung",
                     "overtime": "Überstundenausgleich",
-                    "other": "Sonstiges"
+                    "other": "Sonstiges",
+                    "paid_leave": "Bez. Freistellung"
                 }
                 type_name = absence_type_map.get(absence.type.value, absence.type.value)
                 if absence.note:
@@ -624,6 +636,9 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     ).all()
     holidays_by_date = {holiday.date: holiday for holiday in holidays}
 
+    # #146: configurable 24./31.12. handling (see _create_employee_sheet). N-1.
+    special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
+
     # German weekday names
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
@@ -706,6 +721,9 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
         weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
+        if _sd_factor is not None:
+            daily_target = daily_target * _sd_factor
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if is_weekend:
@@ -744,7 +762,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                     "sick": "Krank",
                     "training": "Fortbildung",
                     "overtime": "Überstundenausgleich",
-                    "other": "Sonstiges"
+                    "other": "Sonstiges",
+                    "paid_leave": "Bez. Freistellung"
                 }
                 type_name = absence_type_map.get(absence.type.value, absence.type.value)
                 if absence.note:
@@ -1125,7 +1144,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     # Landscape A4: 297mm − 30mm margins = 267mm usable
     col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 16*mm, 14*mm, 16*mm, 74*mm, 74*mm]
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-    absence_type_map = {"vacation": "Urlaub", "sick": "Krank", "training": "Fortbildung", "overtime": "Überstundenausgleich", "other": "Sonstiges"}
+    absence_type_map = {"vacation": "Urlaub", "sick": "Krank", "training": "Fortbildung", "overtime": "Überstundenausgleich", "other": "Sonstiges", "paid_leave": "Bez. Freistellung"}
 
     story = []
 
@@ -1170,6 +1189,9 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             date_in_month(PublicHoliday.date, year, month),
         ).all()
         holidays_by_date = {h.date: h for h in holidays}
+
+        # #146: configurable 24./31.12. handling (see _create_employee_sheet). N-1.
+        special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
         # ── Build table ──
         headers = ['Datum', 'WT', 'Von', 'Bis', 'Pause\n(Min)', 'Netto\n(Std)', 'Soll\n(Std)', 'Diff.', 'Abwesenheit', 'Bemerkung']
@@ -1222,6 +1244,9 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             # Per-day target using historical weekly hours
             weekly_h = calculation_service.get_weekly_hours_for_date(db, user, cur)
             daily_target = calculation_service.get_daily_target_for_date(user, cur, weekly_hours=weekly_h)
+            _sd_factor = special_days_service.special_day_target_factor(cur, special_day_config)
+            if _sd_factor is not None:
+                daily_target = daily_target * _sd_factor
 
             if is_weekend:
                 target = Decimal('0.00')

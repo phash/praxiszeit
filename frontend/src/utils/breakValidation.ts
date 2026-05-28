@@ -48,23 +48,24 @@ export function computeBreakError(
 
   const start = toMinutes(startTime);
   const end = toMinutes(endTime);
-  const grossMinutes = end - start;
-  const netMinutes = grossMinutes - breakMinutes;
 
-  if (netMinutes <= 360) return null;
-
-  // Combine the new entry with the other closed entries on the same day.
+  // Combine the new entry with the other closed entries on the same day, then
+  // decide everything on the AGGREGATE — never on the single new entry alone.
+  // (NF-2: a single <6h entry can still push an already-worked day over 6h.)
   const allBlocks: BreakBlock[] = [
     ...existingBlocks,
     { start, end, brk: breakMinutes },
   ];
   allBlocks.sort((a, b) => a.start - b.start);
 
-  const totalDeclared = allBlocks.reduce((s, b) => s + b.brk, 0);
+  // §4 Satz 2: only break SEGMENTS of at least 15 min count toward the
+  // mandatory break — applies to declared breaks (NF-1, mirrors backend A-M2)
+  // and to gaps between entries alike.
+  const totalDeclared = allBlocks.reduce((s, b) => s + (b.brk >= 15 ? b.brk : 0), 0);
   let totalGap = 0;
   for (let i = 1; i < allBlocks.length; i++) {
     const gap = allBlocks[i].start - allBlocks[i - 1].end;
-    if (gap >= 15) totalGap += gap; // §4 Satz 2: mind. 15 Min pro Abschnitt
+    if (gap >= 15) totalGap += gap;
   }
   const totalGross = allBlocks.reduce((s, b) => s + (b.end - b.start), 0);
   const totalNet = totalGross - totalDeclared;
@@ -75,6 +76,12 @@ export function computeBreakError(
   }
   if (totalNet > 360 && totalEffBreak < 30) {
     return 'Bei >6h Arbeitszeit sind mind. 30 Min. Pause erforderlich (ArbZG §4)';
+  }
+  // §4 Satz 2: a declared break of 1–14 min is itself an invalid segment. The
+  // backend returns a (waiver-able) error here even on short days, so surface
+  // it client-side too, so the break-waiver UI gate stays in sync.
+  if (breakMinutes > 0 && breakMinutes < 15) {
+    return 'Pausenabschnitte müssen mind. 15 Min. betragen (ArbZG §4 Satz 2)';
   }
   return null;
 }

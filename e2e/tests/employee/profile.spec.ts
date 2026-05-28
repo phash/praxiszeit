@@ -48,8 +48,12 @@ test.describe('Employee Profile', () => {
   });
 
   test('change calendar color', async ({ employeePage }) => {
-    // Expand "Weitere Einstellungen" to reveal Kalenderfarbe section
-    await employeePage.getByRole('button', { name: 'Weitere Einstellungen' }).click();
+    // The "Weitere Einstellungen" accordion is open by default (DSGVO-Audit
+    // D-05 — Art. 12 Abs. 1 "leicht zugänglich"). Only toggle it open if it is
+    // currently collapsed, so clicking never accidentally collapses it.
+    if (!(await employeePage.getByText('Kalenderfarbe').isVisible().catch(() => false))) {
+      await employeePage.getByRole('button', { name: 'Weitere Einstellungen' }).click();
+    }
 
     // Check that "Kalenderfarbe" section is visible
     await expect(employeePage.getByText('Kalenderfarbe')).toBeVisible();
@@ -64,20 +68,24 @@ test.describe('Employee Profile', () => {
   });
 
   test('DSGVO data export', async ({ employeePage }) => {
-    // Expand "Weitere Einstellungen" to reveal DSGVO section
-    await employeePage.getByRole('button', { name: 'Weitere Einstellungen' }).click();
+    // Accordion is open by default (DSGVO-Audit D-05); only expand if collapsed.
+    const downloadButton = employeePage.getByRole('button', { name: 'JSON herunterladen' });
+    if (!(await downloadButton.isVisible().catch(() => false))) {
+      await employeePage.getByRole('button', { name: 'Weitere Einstellungen' }).click();
+    }
 
     // Check that the download button exists
-    const downloadButton = employeePage.getByRole('button', { name: 'JSON herunterladen' });
     await expect(downloadButton).toBeVisible();
 
     // Set up download event listener
     const downloadPromise = employeePage.waitForEvent('download', { timeout: 15000 });
     await downloadButton.click();
 
-    // Verify download started
+    // Verify download started. #119 self-service export names the file
+    // PraxisZeit_MeineDaten_<username>_<timestamp>.json (frontend-generated for
+    // the blob download); the old "Datenauszug" name no longer applies.
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toContain('PraxisZeit_Datenauszug');
+    expect(download.suggestedFilename()).toContain('PraxisZeit_MeineDaten');
   });
 
   test('Profilbild: Upload gültiges JPEG zeigt Erfolgsmeldung', async ({ employeePage }) => {

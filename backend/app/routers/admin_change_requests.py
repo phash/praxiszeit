@@ -160,7 +160,12 @@ def review_change_request(
                     detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
                 )
         elif cr.request_type == ChangeRequestType.UPDATE:
-            entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+            # N-3: lock the target entry for the duration of the approval txn,
+            # matching the update_time_entry path — prevents a concurrent admin
+            # edit from racing the re-validation/materialisation below.
+            entry = db.query(TimeEntry).filter(
+                TimeEntry.id == cr.time_entry_id
+            ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
             # Check for unique constraint violation on date/start_time change
@@ -178,7 +183,12 @@ def review_change_request(
                     )
 
         elif cr.request_type == ChangeRequestType.DELETE:
-            entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
+            # N-3: lock the target entry for the duration of the approval txn,
+            # matching the update_time_entry path — prevents a concurrent admin
+            # edit from racing the re-validation/materialisation below.
+            entry = db.query(TimeEntry).filter(
+                TimeEntry.id == cr.time_entry_id
+            ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
 
@@ -510,9 +520,11 @@ def bulk_review_change_requests(
             ))
             succeeded += 1
         except HTTPException as exc:
-            # review_change_request already rolled back its transaction on
-            # raising; continue with the next item so the admin doesn't have
-            # to retry a 50-item batch after one stale row.
+            # N-4: each successful review_change_request commits before
+            # returning, so this rollback only discards the FAILED item's
+            # partial (un-committed) flush — earlier successes are already
+            # persisted. Continue so the admin doesn't have to retry a 50-item
+            # batch after one stale row.
             db.rollback()
             items.append(ChangeRequestBulkReviewItemResult(
                 request_id=request_id,

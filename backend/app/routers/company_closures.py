@@ -195,7 +195,7 @@ def create_closure(
     Automatically creates vacation absences for all active employees.
     """
     if data.end_date < data.start_date:
-        raise HTTPException(status_code=400, detail="Enddatum muss nach dem Startdatum liegen")
+        raise HTTPException(status_code=400, detail="Enddatum darf nicht vor dem Startdatum liegen")
 
     # Create closure record
     closure = CompanyClosure(
@@ -264,7 +264,7 @@ def update_closure(
       absences is updated to match the new flag (#145).
     """
     if data.end_date < data.start_date:
-        raise HTTPException(status_code=400, detail="Enddatum muss nach dem Startdatum liegen")
+        raise HTTPException(status_code=400, detail="Enddatum darf nicht vor dem Startdatum liegen")
 
     # F-026: tenant-scoped lookup.
     closure = db.query(CompanyClosure).filter(
