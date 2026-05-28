@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-28
+
+### 🧮 Korrekte Soll-Stunden in den Berichten an Sondertagen
+- Sind der 24.12. oder 31.12. als **halber Tag** oder **frei** konfiguriert,
+  zeigen jetzt **alle** Berichte (Monats-/Jahres-Excel, PDF, ODS) in der
+  Soll-Spalte den reduzierten Wert — vorher stand dort der volle Tag, wodurch
+  die Soll-Summe im Export von der berechneten Monats-Soll abwich (§16-relevant).
+- **Bezahlte Freistellung** wird in den Tageszeilen der Exporte jetzt mit
+  Klartext-Label „Bez. Freistellung" ausgewiesen.
+
+### ⏱️ Pflicht-Pause (§4 ArbZG): Eingabe und Server urteilen identisch
+- Die clientseitige Pausenprüfung spiegelt jetzt die Server-Logik exakt
+  (nur Pausenabschnitte ab 15 Min zählen, Bewertung über den ganzen Tag) —
+  zuvor ließ die Eingabemaske manche §4-Verstöße durch und der Begründungs-
+  Dialog (Pflicht-Pause-Ausnahme) erschien dadurch nicht.
+
+### 🔒 Sicherheit / Wartung
+- Abhängigkeiten der internen Handbuch-/Screenshot-Werkzeuge auf sichere
+  Versionen aktualisiert (behebt alle gemeldeten Schwachstellen; betrifft nur
+  das Build-Tooling, nicht die ausgelieferte Anwendung).
+- Härtung des Änderungsantrag-Genehmigungspfads (Sperre gegen gleichzeitige
+  Bearbeitung) und kleinere Korrektheits-/Wortlaut-Fixes aus dem Review.
+
 ## [1.6.0] - 2026-05-27
 
 ### ✨ Fehler/Feedback direkt aus der App melden
