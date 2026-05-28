@@ -111,19 +111,19 @@ ALTER TABLE company_closures ADD COLUMN counts_as_vacation BOOLEAN NOT NULL DEFA
 - [ ] **T-4**: Create/Update-Logik wählt Absence-Typ nach Flag.
 
 ### Backend — #146
-- [ ] **T-5**: Sondertags-Settings (dec24/dec31: mode + vacation) in `admin_settings.py`.
-- [ ] **T-6**: Sollzeit-/Absence-Anwendung der Sondertags-Regeln (inkl. half_day = halbe Sollzeit).
+- [x] **T-5**: Sondertags-Settings (dec24/dec31: mode + vacation) in `admin_settings.py` (+ neuer `services/special_days_service.py`, GET `/admin/settings/special-days`, Validierung Modi/Bools).
+- [x] **T-6**: Sollzeit-Anwendung der Sondertags-Regeln in allen drei Tages-Schleifen (`get_monthly_target`, `get_overtime_account`, `get_ytd_summary`) — `half_day` = halbe Sollzeit, `free` = 0. `free`+`counts_as_vacation` zieht zusätzlich nicht-invasiv in `get_vacation_account` einen Urlaubstag ab (kein generierter Absence-Datensatz; keine Migration).
 
 ### Frontend
-- [ ] **T-7**: Urlaub/Freistellung-Auswahl bei Betriebsferien (`AdminAbsences.tsx`).
-- [ ] **T-8**: 24./31.12.-Konfiguration in Settings.
-- [ ] **T-9**: `PAID_LEAVE`-Darstellung in Kalender/Reports/Urlaubskonto.
+- [ ] **T-7**: Urlaub/Freistellung-Auswahl bei Betriebsferien (`AdminAbsences.tsx`) — #145.
+- [x] **T-8**: 24./31.12.-Konfiguration in Settings (`Settings.tsx`: Dropdown Arbeitstag/Halbtag/Frei + bei „Frei" Urlaub vs. bezahlte Freistellung).
+- [ ] **T-9**: `PAID_LEAVE`-Darstellung in Kalender/Reports/Urlaubskonto — #145.
 
 ### Tests & Qualität
-- [ ] **T-10**: Backend: `counts_as_vacation=false` → Urlaubsbudget unverändert, Soll der Tage = 0.
-- [ ] **T-11**: Backend: dec24 `half_day` → Soll = halbe Tagessollzeit; `free`+Urlaub vs. `free`+Freistellung korrekt.
+- [ ] **T-10**: Backend: `counts_as_vacation=false` → Urlaubsbudget unverändert, Soll der Tage = 0 (#145).
+- [x] **T-11**: Backend: dec24 `half_day` → Soll = halbe Tagessollzeit; `free`+Urlaub vs. `free`+Freistellung korrekt (`tests/test_special_days.py`, 19 Tests, SQLite grün).
 - [ ] **T-12**: E2E: Betriebsferien als Freistellung anlegen; 24.12. auf Halbtag stellen → Sollzeit stimmt.
-- [ ] **T-13**: Builds/Tests grün (inkl. SQLite-Enum-Kompatibilität).
+- [x] **T-13**: SQLite-Tests grün (special_days 19 + Kalkulations-/Closure-Regression 120).
 
 ### Abschluss
 - [ ] **T-14**: Spec aktualisieren, Commit & Push.
@@ -132,7 +132,7 @@ ALTER TABLE company_closures ADD COLUMN counts_as_vacation BOOLEAN NOT NULL DEFA
 
 ## Offene Fragen
 
-1. Endgültige Modellierung der Sondertage (Closure-Wiederverwendung vs. eigene Sonderregel) — im Implementierungs-Setup festzurren; Empfehlung: Closure-Wiederverwendung für `free`.
+1. ~~Endgültige Modellierung der Sondertage (Closure-Wiederverwendung vs. eigene Sonderregel)~~ **ENTSCHIEDEN (#146-Build):** Sollzeit-Sonderregel statt Closure-Wiederverwendung. Begründung: keine neue Migration nötig (`system_setting`-Store), keine pro-Jahr generierten Absence-Datensätze, abwärtskompatibler Default `working_day`, und `half_day` lässt sich nicht über eine ganztägige Closure abbilden. Die `free`+`counts_as_vacation`-Urlaubsanrechnung erfolgt nicht-invasiv in `get_vacation_account` (Tagessoll des Sondertags fließt in den Jahresverbrauch). Alternative für die Zukunft, falls Sondertage auch in Kalender/Reports als eigene Einträge sichtbar sein sollen: jährlicher Job, der für 24./31.12. VACATION/PAID_LEAVE-Absences generiert (analog Betriebsferien) — bewusst out-of-scope gehalten.
 2. Sollen vergangene/laufende Betriebsferien beim Umstellen des Flags rückwirkend umgebucht werden? → Vorschlag: nur zukünftige; bestehende bleiben, manuell über Edit (#142) änderbar.
 3. Enum-Erweiterung vs. separates Feld: `PAID_LEAVE` als Enum-Wert (empfohlen, konsistent zur Typ-Matrix) vs. zusätzliches `is_paid`-Flag — Enum bevorzugt.
 
