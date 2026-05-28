@@ -14,6 +14,7 @@ interface User {
   vacation_days: number;
   calendar_color: string;
   track_hours: boolean;
+  exempt_from_arbzg: boolean;  // §18 ArbZG: leitende Angestellte
   is_active: boolean;
   totp_enabled: boolean;
   profile_picture?: string | null;
