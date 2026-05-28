@@ -17,7 +17,8 @@ class ChangeRequestCreate(BaseModel):
     proposed_absence_type: Optional[str] = None
     proposed_absence_hours: Optional[float] = None
     reason: str = Field(..., min_length=1)
-    break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
+    # SEC-D: cap length to prevent storage DoS via unbounded free text.
+    break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG
 
 
 class ChangeRequestReview(BaseModel):

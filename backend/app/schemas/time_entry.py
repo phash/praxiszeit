@@ -16,7 +16,8 @@ class TimeEntryBase(BaseModel):
     # #144 §4 ArbZG: justification when a mandatory break was not possible.
     # Submitted by the client to waive the break-validation block for
     # non-exempt users. Backend enforces non-empty when actually used.
-    break_waiver_reason: Optional[str] = None
+    # SEC-D: cap length to prevent storage DoS via unbounded free text.
+    break_waiver_reason: Optional[str] = Field(None, max_length=2000)
 
     @field_validator('end_time')
     @classmethod
@@ -44,7 +45,7 @@ class TimeEntryUpdate(BaseModel):
     break_minutes: Optional[int] = Field(None, ge=0)
     note: Optional[str] = None
     sunday_exception_reason: Optional[str] = None  # §10 ArbZG
-    break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
+    break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG (SEC-D: bounded)
 
     @field_validator('end_time')
     @classmethod
