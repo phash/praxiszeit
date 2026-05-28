@@ -597,6 +597,10 @@ export default function TimeTracking() {
                   Pflicht-Pause war nicht möglich
                 </span>
               </label>
+              <p className="text-xs text-amber-700 mt-1">
+                Hinweis: Die Pausenpflicht nach §4 ArbZG bleibt bestehen — diese Angabe dokumentiert
+                die Ausnahme nachvollziehbar, sie hebt die Pflicht nicht auf.
+              </p>
               {breakWaiverChecked && (
                 <div className="mt-3">
                   <label htmlFor="break-waiver-reason" className="block text-sm font-medium text-amber-900 mb-1">
