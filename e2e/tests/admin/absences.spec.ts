@@ -60,8 +60,14 @@ test.describe('Admin Absences', () => {
     await adminPage.goto('/admin/absences');
     await expect(adminPage.getByRole('heading', { name: 'Abwesenheiten verwalten' })).toBeVisible();
 
-    // Select the test employee
+    // Select the test employee. The <select> is populated by an async fetch —
+    // wait for the employee's option to attach before reading, else the loop
+    // races the fetch and finds nothing (CLAUDE.md <select> pattern → flake at
+    // `expect(targetValue).not.toBe('')`).
     const employeeSelect = adminPage.locator('select').first();
+    await expect(
+      employeeSelect.locator('option', { hasText: testEmployee.last_name }).first()
+    ).toBeAttached({ timeout: 10000 });
     const options = employeeSelect.locator('option');
     const count = await options.count();
     let targetValue = '';

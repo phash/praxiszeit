@@ -20,7 +20,19 @@ from unittest.mock import patch
 import pytest
 
 # --- Load the hyphenated orchestrator script as a module ----------------------
+# Resolves to <repo>/praxiszeit-server.py on the host (backend/tests/ → repo
+# root). The docker backend image only copies the backend/ build context to
+# /app, so the orchestrator script is NOT present there — skip the whole module
+# rather than erroring 44× when it is unreachable (e.g. `docker compose exec
+# backend pytest`, which local-ci uses). These tests run on the host / native
+# build env, mirroring how test_tenant_rls/test_concurrency are env-scoped.
 _SERVER_PATH = Path(__file__).resolve().parents[2] / "praxiszeit-server.py"
+
+pytestmark = pytest.mark.skipif(
+    not _SERVER_PATH.exists(),
+    reason=f"praxiszeit-server.py not reachable at {_SERVER_PATH} "
+    "(native orchestrator not present, e.g. inside the docker backend container)",
+)
 
 
 @pytest.fixture(scope="module")

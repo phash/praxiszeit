@@ -249,6 +249,48 @@ def test_vacation_deduction_dates_excludes_weekend_and_holiday(db, test_user):
 
 
 # ---------------------------------------------------------------------------
+# N-1: the configured factor must reach the §16 export Soll column (xlsx/ods),
+# not just get_monthly_target — otherwise the export documentation diverges
+# from the calculated monthly target on a configured 24./31.12.
+# ---------------------------------------------------------------------------
+
+def _xlsx_soll_for_december_day(wb, sheet_name: str, day: int):
+    """Return the 'Soll (Std)' cell (column 7) for the given Dec-2025 day."""
+    ws = wb[sheet_name[:31]]
+    for row in ws.iter_rows(min_row=5):
+        c0 = row[0].value
+        if hasattr(c0, "month") and c0.year == 2025 and c0.month == 12 and c0.day == day:
+            return row[6].value
+    return None
+
+
+def test_monthly_xlsx_export_soll_reflects_half_day(db, test_user):
+    from openpyxl import load_workbook
+    from app.services.export_service import generate_monthly_report
+
+    _set_special_day(db, "special_day_dec24", "half_day")
+    wb = load_workbook(generate_monthly_report(db, 2025, 12))
+    sheet = f"{test_user.last_name} {test_user.first_name}"
+
+    # 24.12. (half_day, Wed) → 4.0; 17.12. (ordinary Wed) → 8.0 (sanity).
+    assert _xlsx_soll_for_december_day(wb, sheet, 24) == 4.0
+    assert _xlsx_soll_for_december_day(wb, sheet, 17) == 8.0
+
+
+def test_monthly_xlsx_export_soll_reflects_free(db, test_user):
+    from openpyxl import load_workbook
+    from app.services.export_service import generate_monthly_report
+
+    _set_special_day(db, "special_day_dec31", "free", counts_as_vacation=False)
+    wb = load_workbook(generate_monthly_report(db, 2025, 12))
+    sheet = f"{test_user.last_name} {test_user.first_name}"
+
+    # 31.12. (free, Wed) → 0.0; 30.12. (ordinary Tue) → 8.0 (sanity).
+    assert _xlsx_soll_for_december_day(wb, sheet, 31) == 0.0
+    assert _xlsx_soll_for_december_day(wb, sheet, 30) == 8.0
+
+
+# ---------------------------------------------------------------------------
 # Admin router: GET /settings/special-days + PUT validation
 # ---------------------------------------------------------------------------
 

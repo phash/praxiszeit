@@ -56,4 +56,36 @@ describe('computeBreakError', () => {
     const error = computeBreakError(existing, '10:10', '17:30', 0, true);
     expect(error).toBeNull();
   });
+
+  // NF-1: a declared break < 15 min must NOT count toward the mandatory break
+  // (§4 Satz 2), mirroring the backend A-M2 fix. Single-entry net using the raw
+  // break would be 358 ≤ 360 and slip through; aggregate net (ignoring the
+  // sub-15 break) is 372 > 360 → 30-min error.
+  it('ignores a sub-15-min declared break when computing net time (§4 Satz 2)', () => {
+    // 08:00–14:12 = 372 min gross, 14 min "break" → backend net 372 > 6h.
+    const error = computeBreakError([], '08:00', '14:12', 14, false);
+    expect(error).toMatch(/30 Min/);
+  });
+
+  // NF-2: the over-threshold decision must be made on the AGGREGATE of all
+  // same-day blocks, not just the single new entry. Each block here is <6h net
+  // but the day in aggregate is >6h with a <15-min (ignored) gap.
+  it('checks the aggregate day even when the new entry alone is under 6h', () => {
+    // existing 08:00–12:00 (4h) + new 12:05–15:10 (3h05) → gross 7h05, 5-min
+    // gap ignored, net 7h05 > 6h, no break → 30-min error.
+    const existing = [{ start: 8 * 60, end: 12 * 60, brk: 0 }];
+    const error = computeBreakError(existing, '12:05', '15:10', 0, false);
+    expect(error).toMatch(/30 Min/);
+  });
+
+  // The new entry's own declared break, if 0 < x < 15, is itself a §4 Satz 2
+  // violation regardless of net time — the backend returns a (waiver-able)
+  // error here, so the client must surface it too (consistency with the
+  // break-waiver UI gate).
+  it('flags a sub-15-min break segment on a short day (§4 Satz 2)', () => {
+    // 08:00–10:00 = 2h, 10-min break → under 6h, but the 10-min segment is
+    // itself invalid.
+    const error = computeBreakError([], '08:00', '10:00', 10, false);
+    expect(error).toMatch(/15 Min/);
+  });
 });

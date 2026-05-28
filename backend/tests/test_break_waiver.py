@@ -319,6 +319,85 @@ class TestBreakWaiverWithApproval:
         assert entry.break_minutes == 0
         assert str(cr.time_entry_id) == str(entry.id)
 
+    def test_admin_cannot_approve_own_break_waiver_cr(self, db, admin, admin_client):
+        """SEC-E (regression): the 4-eyes guard forbids an admin approving their
+        OWN documented break-exception. Previously only the cross-user happy
+        path was covered."""
+        cr = ChangeRequest(
+            user_id=admin.id,  # the approving admin is also the requester
+            tenant_id=DEFAULT_TENANT_ID,
+            request_type=ChangeRequestType.CREATE,
+            entry_kind="time_entry",
+            status=ChangeRequestStatus.PENDING,
+            proposed_date=date.today(),
+            proposed_start_time=time(8, 0),
+            proposed_end_time=time(15, 30),
+            proposed_break_minutes=0,
+            break_waiver_reason="Selbst dokumentiert",
+            reason="Selbst dokumentiert",
+        )
+        db.add(cr)
+        db.commit()
+        db.refresh(cr)
+
+        resp = admin_client.post(
+            f"/api/admin/change-requests/{cr.id}/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "selbst genehmigt" in resp.json()["detail"].lower()
+
+        # CR stays pending, no entry materialised.
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.PENDING
+        assert db.query(TimeEntry).filter(TimeEntry.user_id == admin.id).count() == 0
+
+    def test_approval_revalidates_section3_against_current_db(self, db, employee, admin, admin_client):
+        """C-1 (regression, TOCTOU): a CREATE CR that was valid in isolation must
+        be rejected at approval when other same-day entries have since pushed the
+        day over the §3 10h hard cap. The §3 ceiling is absolute and unwaivable."""
+        # An entry already exists on the day: 08:00–16:00, 30 min break → 7.5h net.
+        existing = TimeEntry(
+            user_id=employee.id,
+            tenant_id=DEFAULT_TENANT_ID,
+            date=date.today(),
+            start_time=time(8, 0),
+            end_time=time(16, 0),
+            break_minutes=30,
+        )
+        db.add(existing)
+        db.commit()
+
+        # Pending CREATE CR proposing a SECOND entry 16:30–22:00 (5.5h, no break).
+        # In isolation it is fine; combined with the existing 7.5h the day is 13h > 10h.
+        cr = ChangeRequest(
+            user_id=employee.id,
+            tenant_id=DEFAULT_TENANT_ID,
+            request_type=ChangeRequestType.CREATE,
+            entry_kind="time_entry",
+            status=ChangeRequestStatus.PENDING,
+            proposed_date=date.today(),
+            proposed_start_time=time(16, 30),
+            proposed_end_time=time(22, 0),
+            proposed_break_minutes=0,
+            reason="Zweiter Block",
+        )
+        db.add(cr)
+        db.commit()
+        db.refresh(cr)
+
+        resp = admin_client.post(
+            f"/api/admin/change-requests/{cr.id}/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 422, resp.text
+        assert "§3" in resp.json()["detail"]
+
+        # CR stays pending; the proposed entry was NOT materialised.
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.PENDING
+        assert db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).count() == 1
+
 
 def _make_today_entry(db, user, break_minutes=45):
     """A compliant >6h entry for today (employees may only edit today's entries)."""
