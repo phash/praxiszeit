@@ -20,7 +20,14 @@ def _get_setting(db: Session, key: str, default: str = "", tenant_id=None) -> st
     return s.value if s else default
 
 
-_ALLOWED_SETTINGS = {"vacation_approval_required", "holiday_state"}
+_ALLOWED_SETTINGS = {
+    "vacation_approval_required",
+    "holiday_state",
+    "break_exception_requires_approval",  # #144 §4 ArbZG: Pflicht-Pause-Ausnahme
+}
+
+# Settings whose value must be a boolean ("true"/"false").
+_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval"}
 
 
 @router.get("/settings")
@@ -51,6 +58,13 @@ def update_setting(
     if key == "holiday_state":
         if value not in holiday_service.SUPPORTED_STATES:
             raise HTTPException(status_code=400, detail=f"Ungültiges Bundesland: {value}")
+
+    # Normalise boolean settings to canonical "true"/"false" so callers can
+    # rely on a single comparison (parity with vacation_approval_required).
+    if key in _BOOL_SETTINGS:
+        if str(value).lower() not in ("true", "false"):
+            raise HTTPException(status_code=400, detail=f"Ungültiger Wert für {key}: true/false erwartet")
+        value = str(value).lower()
 
     s = db.query(SystemSetting).filter(
         SystemSetting.key == key,

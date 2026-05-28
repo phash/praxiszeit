@@ -207,6 +207,9 @@ def review_change_request(
                 end_time=cr.proposed_end_time,
                 break_minutes=cr.proposed_break_minutes or 0,
                 note=cr.proposed_note,
+                # #144 §4 ArbZG: materialise the documented break-exception on
+                # the entry so the deviation stays auditable after approval.
+                break_waiver_reason=cr.break_waiver_reason,
             )
             db.add(entry)
             db.flush()
@@ -239,6 +242,9 @@ def review_change_request(
             entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
             if cr.proposed_note is not None:
                 entry.note = cr.proposed_note
+            # #144 §4 ArbZG: carry the documented break-exception onto the entry.
+            if cr.break_waiver_reason is not None:
+                entry.break_waiver_reason = cr.break_waiver_reason
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # entry already fetched in precondition check above

@@ -45,6 +45,25 @@ export function showArbzgWarnings(
           WARNING_DURATION_MS,
         );
         break;
+      case 'BREAK_WAIVER':
+        // #144: entry saved with a documented "Pflicht-Pause nicht möglich"
+        // exception — surface the §4 deviation so it stays visible.
+        toast.warning(
+          detail
+            ? `Pflicht-Pause-Ausnahme dokumentiert: ${detail}`
+            : 'Pflicht-Pause-Ausnahme dokumentiert (§4 ArbZG).',
+          WARNING_DURATION_MS,
+        );
+        break;
+      case 'BREAK_WAIVER_PENDING':
+        // #144: entry submitted for approval instead of being written.
+        toast.warning(
+          detail
+            ? `Zur Genehmigung eingereicht: ${detail}`
+            : 'Pflicht-Pause-Ausnahme zur Genehmigung eingereicht (§4 ArbZG).',
+          WARNING_DURATION_MS,
+        );
+        break;
       case 'DAILY_HOURS_WARNING':
         toast.warning('Tagesarbeitszeit über 8 Stunden (§3 ArbZG).', WARNING_DURATION_MS);
         break;

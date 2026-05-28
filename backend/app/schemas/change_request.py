@@ -17,6 +17,7 @@ class ChangeRequestCreate(BaseModel):
     proposed_absence_type: Optional[str] = None
     proposed_absence_hours: Optional[float] = None
     reason: str = Field(..., min_length=1)
+    break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
 
 
 class ChangeRequestReview(BaseModel):
@@ -73,6 +74,7 @@ class ChangeRequestResponse(BaseModel):
     original_absence_hours: Optional[float] = None
 
     reason: str
+    break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
     reviewed_by: Optional[UUID] = None
     reviewed_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None

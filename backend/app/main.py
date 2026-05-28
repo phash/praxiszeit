@@ -575,6 +575,8 @@ def get_public_settings():
 
         result = {
             "vacation_approval_required": _get("vacation_approval_required", "false").lower() == "true",
+            # #144 §4 ArbZG: whether a documented break-exception needs admin approval.
+            "break_exception_requires_approval": _get("break_exception_requires_approval", "false").lower() == "true",
         }
 
         # License info (for native installations)
