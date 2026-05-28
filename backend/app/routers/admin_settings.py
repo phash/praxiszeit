@@ -64,8 +64,12 @@ def update_setting(
 
     if key == "holiday_state":
         # Atomarer Delete + Sync: alles in einer Transaktion (C2, I5)
+        # #143: nur workalendar-Feiertage neu generieren; admin-gepflegte
+        # Custom-Feiertage (source='admin') überstehen den Bundesland-Resync.
         try:
-            holiday_service.delete_all_holidays(db, tenant_id=current_user.tenant_id)   # kein commit
+            holiday_service.delete_all_holidays(
+                db, tenant_id=current_user.tenant_id, source="workalendar"
+            )   # kein commit
             holiday_service.sync_current_and_next_year(db, state=str(value), tenant_id=current_user.tenant_id)  # commitet am Ende
         except Exception as e:
             db.rollback()
