@@ -15,16 +15,16 @@ bekommt. Beide Spalten sind nullable — Bestandsdaten brauchen keinen Backfill.
 Außerdem wird der Setting-Default `break_exception_requires_approval` = 'false'
 für den Default-Tenant gesetzt (das Setting ist pro Praxis konfigurierbar).
 
-Revision ID: 042_break_waiver
-Revises: 041_absence_closure_id
+Revision ID: 043_break_waiver
+Revises: 042_paid_leave_closure_flag
 Create Date: 2026-05-28
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = '042_break_waiver'
-down_revision = '041_absence_closure_id'
+revision = '043_break_waiver'
+down_revision = '042_paid_leave_closure_flag'
 branch_labels = None
 depends_on = None
 
