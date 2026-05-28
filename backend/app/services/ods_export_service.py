@@ -17,7 +17,7 @@ from odf.text import P
 from odf.table import Table, TableColumn, TableRow, TableCell
 
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
-from app.services import calculation_service
+from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_month, date_in_year
 
@@ -37,6 +37,7 @@ ABSENCE_LABELS = {
     "training": "Fortbildung",
     "overtime": "Überstundenausgleich",
     "other": "Sonstiges",
+    "paid_leave": "Bez. Freistellung",
 }
 
 
@@ -171,6 +172,9 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         ).all()
     }
 
+    # #146: configurable 24./31.12. handling (see export_service N-1).
+    special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
+
     total_net = Decimal("0.00")
     total_target = Decimal("0.00")
     night_work_count = 0
@@ -217,6 +221,9 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         # Per-day target using historical weekly hours
         weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
+        if _sd_factor is not None:
+            daily_target = daily_target * _sd_factor
 
         # Soll + Abwesenheit + Bemerkung
         if is_weekend:
@@ -472,6 +479,9 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
         ).all()
     }
 
+    # #146: configurable 24./31.12. handling (see export_service N-1).
+    special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
+
     current_date = date(year, 1, 1)
     end_date = date(year, 12, 31)
     night_work_count = 0
@@ -485,6 +495,9 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
         day_entries = entries_by_date.get(current_date, [])
         weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
+        if _sd_factor is not None:
+            daily_target = daily_target * _sd_factor
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = any(

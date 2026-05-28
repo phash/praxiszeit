@@ -41,11 +41,19 @@ test.describe('Admin Einstellungen', () => {
   });
 
   test('Urlaubsgenehmigung-Toggle speichert Einstellung', async ({ adminPage, adminApi }) => {
-    const toggle = adminPage.locator('button[role="switch"]');
+    // #144 added a second role="switch" (Pflicht-Pause-Ausnahme) and a second
+    // "Speichern" button, so the page-wide `button[role="switch"]` and
+    // `Speichern.last()` locators became ambiguous (strict-mode violation /
+    // wrong button — the .last() Speichern is now the break-approval one).
+    // Target the unique toggle id and scope the save button to this section.
+    const section = adminPage.locator('div.bg-white').filter({
+      has: adminPage.getByRole('heading', { name: 'Urlaubsgenehmigung', exact: true }),
+    });
+    const toggle = adminPage.locator('#approval-toggle');
     await expect(toggle).toBeVisible();
     const isChecked = await toggle.getAttribute('aria-checked');
     await toggle.click();
-    const saveApprovalBtn = adminPage.locator('button', { hasText: 'Speichern' }).last();
+    const saveApprovalBtn = section.getByRole('button', { name: 'Speichern' });
     await expect(saveApprovalBtn).toBeEnabled();
     await saveApprovalBtn.click();
     await expect(

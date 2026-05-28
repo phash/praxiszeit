@@ -15,6 +15,11 @@ export const authTest = base.extend<AuthFixtures, { adminApi: ApiHelper }>({
     async ({}, use) => {
       const api = new ApiHelper();
       await api.login(ADMIN_USER, ADMIN_PASS);
+      // #132: ensure the onboarding modal (full-screen overlay) never blocks
+      // admin interactions on a fresh DB where the bootstrap admin still has
+      // onboarding_completed_at == null. Idempotent; best-effort.
+      await api.post('/auth/onboarding/complete').catch(() => {});
+      if (api.userData) api.userData.onboarding_completed_at = new Date().toISOString();
       await use(api);
     },
     { scope: 'worker' },

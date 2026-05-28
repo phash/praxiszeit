@@ -87,6 +87,14 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
   testEmployeeLogin: async ({ testEmployee }, use) => {
     const api = new ApiHelper();
     const loginData = await api.login(testEmployee.username, testEmployee.password);
+    // #132: the role-specific onboarding modal renders a full-screen overlay
+    // (bg-black/40, z-50) for users with onboarding_completed_at == null and
+    // intercepts ALL pointer events (logout button, forms, …). Fresh E2E users
+    // always hit it, which made every post-login interaction time out. Mark it
+    // complete server-side (idempotent — same call the modal's close button
+    // makes) and reflect it in the seeded user so the modal never renders.
+    await api.post('/auth/onboarding/complete').catch(() => {});
+    if (loginData.user) loginData.user.onboarding_completed_at = new Date().toISOString();
     await use({ api, access_token: loginData.access_token, user: loginData.user });
   },
 
