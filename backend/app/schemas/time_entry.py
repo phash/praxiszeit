@@ -13,6 +13,10 @@ class TimeEntryBase(BaseModel):
     break_minutes: int = Field(default=0, ge=0)
     note: Optional[str] = None
     sunday_exception_reason: Optional[str] = None  # §10 ArbZG
+    # #144 §4 ArbZG: justification when a mandatory break was not possible.
+    # Submitted by the client to waive the break-validation block for
+    # non-exempt users. Backend enforces non-empty when actually used.
+    break_waiver_reason: Optional[str] = None
 
     @field_validator('end_time')
     @classmethod
@@ -40,6 +44,7 @@ class TimeEntryUpdate(BaseModel):
     break_minutes: Optional[int] = Field(None, ge=0)
     note: Optional[str] = None
     sunday_exception_reason: Optional[str] = None  # §10 ArbZG
+    break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
 
     @field_validator('end_time')
     @classmethod
@@ -64,6 +69,7 @@ class TimeEntryResponse(BaseModel):
     is_sunday_or_holiday: bool = False
     is_night_work: bool = False
     sunday_exception_reason: Optional[str] = None  # §10 ArbZG
+    break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
     created_at: datetime
 
     @field_serializer('id', 'user_id')
