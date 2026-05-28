@@ -54,7 +54,7 @@ def upsert_carryover(
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     if year < 2000 or year > 2100:
-        raise HTTPException(status_code=400, detail="Ungültiges Jahr")
+        raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
 
     carryover = db.query(YearCarryover).filter(
         YearCarryover.user_id == user_id,
@@ -90,7 +90,7 @@ def create_year_closing(
     for all active users at Dec 31 and creates carryover records for year+1.
     """
     if year < 2000 or year > 2100:
-        raise HTTPException(status_code=400, detail="Ungültiges Jahr")
+        raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
 
     # F-029: Serialize year-closing per (tenant, year). Two admins clicking
     # simultaneously would otherwise race on the upsert of YearCarryover and
@@ -158,7 +158,7 @@ def delete_year_closing(
     that were created by the year closing.
     """
     if year < 2000 or year > 2100:
-        raise HTTPException(status_code=400, detail="Ungültiges Jahr")
+        raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
 
     next_year = year + 1
     deleted = db.query(YearCarryover).filter(
