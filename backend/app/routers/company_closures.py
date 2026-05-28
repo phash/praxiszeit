@@ -153,6 +153,7 @@ def list_closures(
         employees = db.query(User).filter(
             User.is_active == True,
             User.role != UserRole.ADMIN,
+            User.tenant_id == current_user.tenant_id,
         ).all()
         affected = len(employees)  # all active employees are affected
         result.append(CompanyClosureResponse(
@@ -199,10 +200,11 @@ def create_closure(
     if not workdays:
         raise HTTPException(status_code=400, detail="Keine Arbeitstage im angegebenen Zeitraum")
 
-    # Get all active employees (non-admin)
+    # Get all active employees (non-admin) of this tenant (F-026)
     employees = db.query(User).filter(
         User.is_active == True,
         User.role != UserRole.ADMIN,
+        User.tenant_id == current_user.tenant_id,
     ).all()
 
     _create_closure_absences(db, closure, workdays, employees, current_user)
@@ -291,6 +293,7 @@ def update_closure(
     employees = db.query(User).filter(
         User.is_active == True,
         User.role != UserRole.ADMIN,
+        User.tenant_id == current_user.tenant_id,
     ).all()
     _create_closure_absences(db, closure, workdays, employees, current_user)
 
