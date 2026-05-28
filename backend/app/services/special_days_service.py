@@ -70,9 +70,14 @@ def _get_raw_setting(db: Session, key: str, tenant_id, default: str) -> str:
 
     Mirrors ``holiday_service.get_holiday_state`` / ``admin_settings._get_setting``.
     """
-    q = db.query(SystemSetting).filter(SystemSetting.key == key)
-    if tenant_id is not None:
-        q = q.filter(SystemSetting.tenant_id == tenant_id)
+    # SEC-F: always scope by tenant_id. All callers pass a real tenant_id, and
+    # leaving the filter conditional risked leaking another tenant's setting if
+    # a None ever slipped through. Mirrors the unconditional filter in
+    # get_special_day_state below.
+    q = db.query(SystemSetting).filter(
+        SystemSetting.key == key,
+        SystemSetting.tenant_id == tenant_id,
+    )
     s = q.first()
     return s.value if s else default
 
