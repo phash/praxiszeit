@@ -75,7 +75,7 @@ def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse
                 resp.last_modifier_last_name = modifier.last_name
         # Compute workdays
         end = vr.end_date if vr.end_date else vr.date
-        resp.days = count_workdays(db, vr.date, end)
+        resp.days = count_workdays(db, vr.date, end, tenant_id=vr.tenant_id)
         results.append(resp)
     return results
 

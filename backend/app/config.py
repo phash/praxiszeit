@@ -175,6 +175,13 @@ class Settings(BaseSettings):
     # Optional — operator alerts (Phase 7). Unset → alerts are logged only.
     SLACK_WEBHOOK_URL: Optional[str] = None
 
+    # S-M01: canonical public base URL of the SaaS app, used to build
+    # signup verification / resend links. Building these from the request
+    # Origin header lets an attacker inject an arbitrary host into the
+    # verification email. Default to the known prod app URL; an empty value
+    # falls back to the path-only link form.
+    SAAS_APP_URL: str = "https://praxiszeit.mr-development.de"
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:

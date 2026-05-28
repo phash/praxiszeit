@@ -201,6 +201,7 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     # Get holidays and absences for the month (F-033: sargable date range)
     holidays = db.query(PublicHoliday).filter(
         date_in_month(PublicHoliday.date, year, month),
+        PublicHoliday.tenant_id == user.tenant_id,
     ).all()
     holiday_dates = {h.date for h in holidays}
 
@@ -408,6 +409,7 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
     holidays = db.query(PublicHoliday).filter(
         PublicHoliday.date >= start_date,
         PublicHoliday.date <= up_to_date,
+        PublicHoliday.tenant_id == user.tenant_id,
     ).all()
     holiday_dates: set[date] = {h.date for h in holidays}
 
@@ -500,6 +502,7 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     holidays = db.query(PublicHoliday).filter(
         PublicHoliday.date >= start,
         PublicHoliday.date <= end,
+        PublicHoliday.tenant_id == user.tenant_id,
     ).all()
     holiday_dates: set = {h.date for h in holidays}
 
@@ -699,8 +702,12 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     }
 
 
-def count_workdays(db: Session, start: date, end: date) -> int:
-    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive)."""
+def count_workdays(db: Session, start: date, end: date, tenant_id=None) -> int:
+    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive).
+
+    F-026: pass ``tenant_id`` to scope the holiday lookup explicitly (belt-and-
+    suspenders on top of RLS). When omitted the query relies on RLS alone.
+    """
     years: set = set()
     cur = start
     while cur <= end:
@@ -709,7 +716,10 @@ def count_workdays(db: Session, start: date, end: date) -> int:
 
     holidays: set = set()
     for year in years:
-        year_holidays = db.query(PublicHoliday).filter(PublicHoliday.year == year).all()
+        q = db.query(PublicHoliday).filter(PublicHoliday.year == year)
+        if tenant_id is not None:
+            q = q.filter(PublicHoliday.tenant_id == tenant_id)
+        year_holidays = q.all()
         holidays.update(h.date for h in year_holidays)
 
     count = 0
