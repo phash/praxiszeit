@@ -707,6 +707,34 @@ class TestClockEndpoints:
         })
         assert resp.status_code == 400
 
+    def test_clock_out_stale_entry_gets_closed(self, employee_client, _db_session, employee_user):
+        """B-H1: ein offener Eintrag von einem früheren Tag wird beim Ausstempeln
+        automatisch geschlossen UND committed (nicht durch das 400-Raise verworfen),
+        sonst bliebe der Eintrag für immer offen."""
+        from datetime import timedelta
+        yesterday = date.today() - timedelta(days=1)
+        stale = TimeEntry(
+            user_id=employee_user.id,
+            tenant_id=DEFAULT_TENANT_ID,
+            date=yesterday,
+            start_time=time(9, 0),
+            end_time=None,  # open!
+            break_minutes=0,
+        )
+        _db_session.add(stale)
+        _db_session.commit()
+        stale_id = stale.id
+
+        resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
+        assert resp.status_code == 400
+        assert "früheren Tag" in resp.json()["detail"]
+
+        # The stale entry must now be closed (auto-close committed), not open.
+        _db_session.expire_all()
+        closed = _db_session.query(TimeEntry).filter(TimeEntry.id == stale_id).one()
+        assert closed.end_time is not None
+        assert closed.end_time == time(23, 59)
+
 
 # ---------------------------------------------------------------------------
 # Auth: change password

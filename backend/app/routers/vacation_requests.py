@@ -44,7 +44,7 @@ def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
             resp.last_modifier_last_name = modifier.last_name
     # Compute workdays
     end = vr.end_date if vr.end_date else vr.date
-    resp.days = count_workdays(db, vr.date, end)
+    resp.days = count_workdays(db, vr.date, end, tenant_id=vr.tenant_id)
     return resp
 
 
@@ -315,6 +315,8 @@ def create_vacation_request(
 def list_my_vacation_requests(
     year: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
+    skip: int = 0,
+    limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -325,7 +327,7 @@ def list_my_vacation_requests(
         query = query.filter(date_in_year(VacationRequest.date, year))
     if status:
         query = query.filter(VacationRequest.status == status)
-    requests = query.order_by(VacationRequest.created_at.desc()).all()
+    requests = query.order_by(VacationRequest.created_at.desc()).offset(skip).limit(limit).all()
     return [_enrich(vr, db) for vr in requests]
 
 

@@ -314,7 +314,11 @@ def clock_out(
 
     # If stale entry from a previous day, auto-close and error
     if open_entry.date != _today_local():
-        _close_stale_entry(db, open_entry)
+        _close_stale_entry(db, open_entry, changed_by_id=current_user.id)
+        # B-H1: commit the auto-close BEFORE raising. get_db only commits on a
+        # successful return — raising here would otherwise roll back the
+        # end_time + audit row, leaving the stale entry open forever.
+        db.commit()
         raise HTTPException(
             status_code=400,
             detail="Offener Eintrag von einem früheren Tag wurde automatisch geschlossen. Bitte neu einstempeln.",
@@ -401,6 +405,8 @@ def clock_out(
 def list_time_entries(
     month: Optional[str] = Query(None, description="Filter by month (YYYY-MM)"),
     user_id: Optional[str] = Query(None, description="Filter by user ID (admin only)"),
+    skip: int = 0,
+    limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -430,7 +436,9 @@ def list_time_entries(
         except ValueError:
             raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
-    entries = query.order_by(TimeEntry.date.desc(), TimeEntry.start_time.desc()).all()
+    entries = query.order_by(
+        TimeEntry.date.desc(), TimeEntry.start_time.desc()
+    ).offset(skip).limit(limit).all()
 
     results = []
     for entry in entries:
@@ -491,8 +499,10 @@ def create_time_entry(
     ).first()
 
     if existing:
+        # B-L4: duplicate entry is a conflict, not a bad request — align with
+        # the 409 used by the CR-approval and absence duplicate paths.
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum"
         )
 
