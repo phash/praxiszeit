@@ -7,6 +7,7 @@ from app.models import User
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
 from app.routers.admin_helpers import SettingUpdate
+from app.services import special_days_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -20,7 +21,10 @@ def _get_setting(db: Session, key: str, default: str = "", tenant_id=None) -> st
     return s.value if s else default
 
 
-_ALLOWED_SETTINGS = {"vacation_approval_required", "holiday_state"}
+# #146: the four special-day keys (24./31.12. mode + counts_as_vacation) are
+# managed through this router too. They are added to the whitelist so the
+# generic PUT accepts them; mode keys are validated against the allowed modes.
+_ALLOWED_SETTINGS = {"vacation_approval_required", "holiday_state"} | special_days_service.SETTING_KEYS
 
 
 @router.get("/settings")
@@ -31,6 +35,20 @@ def list_settings(
     """List all system settings."""
     rows = db.query(SystemSetting).filter(SystemSetting.tenant_id == current_user.tenant_id).all()
     return [{"key": r.key, "value": r.value, "description": r.description, "updated_at": r.updated_at} for r in rows]
+
+
+@router.get("/settings/special-days")
+def get_special_days(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Return the resolved special-day configuration (24./31.12.) for the tenant.
+
+    Always returns all four keys with their effective value (defaults applied
+    when no row exists), so the UI has the complete state without having to
+    know the per-key defaults itself.
+    """
+    return special_days_service.get_special_day_settings(db, current_user.tenant_id)
 
 
 @router.put("/settings/{key}")
@@ -51,6 +69,25 @@ def update_setting(
     if key == "holiday_state":
         if value not in holiday_service.SUPPORTED_STATES:
             raise HTTPException(status_code=400, detail=f"Ungültiges Bundesland: {value}")
+
+    # #146: validate the special-day settings.
+    if key in special_days_service.MODE_KEYS:
+        if value not in special_days_service.VALID_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Ungültiger Modus: {value}. "
+                    f"Erlaubt: {', '.join(sorted(special_days_service.VALID_MODES))}"
+                ),
+            )
+    if key in special_days_service.VACATION_FLAG_KEYS:
+        # Normalise to a canonical "true"/"false" string.
+        if str(value).strip().lower() not in {"true", "false"}:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ungültiger Wert (true/false erwartet): {value}",
+            )
+        value = "true" if str(value).strip().lower() == "true" else "false"
 
     s = db.query(SystemSetting).filter(
         SystemSetting.key == key,

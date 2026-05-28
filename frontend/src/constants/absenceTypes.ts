@@ -1,4 +1,4 @@
-export type AbsenceType = 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
+export type AbsenceType = 'vacation' | 'sick' | 'training' | 'overtime' | 'other' | 'paid_leave';
 
 export const ABSENCE_TYPE_LABELS: Record<AbsenceType, string> = {
   vacation: 'Urlaub',
@@ -6,6 +6,7 @@ export const ABSENCE_TYPE_LABELS: Record<AbsenceType, string> = {
   training: 'Fortbildung (außer Haus)',
   overtime: 'Überstundenausgleich',
   other: 'Sonstiges',
+  paid_leave: 'Bezahlte Freistellung',
 };
 
 export const ABSENCE_TYPE_COLORS: Record<AbsenceType, string> = {
@@ -14,6 +15,7 @@ export const ABSENCE_TYPE_COLORS: Record<AbsenceType, string> = {
   training: 'bg-orange-100 text-orange-800 border-orange-300',
   overtime: 'bg-purple-100 text-purple-800 border-purple-300',
   other: 'bg-gray-100 text-gray-800 border-gray-300',
+  paid_leave: 'bg-teal-100 text-teal-800 border-teal-300',
 };
 
 export const ABSENCE_TYPE_BADGE_COLORS: Record<AbsenceType, string> = {
@@ -22,6 +24,7 @@ export const ABSENCE_TYPE_BADGE_COLORS: Record<AbsenceType, string> = {
   training: 'bg-orange-100 text-orange-800',
   overtime: 'bg-purple-100 text-purple-800',
   other: 'bg-gray-100 text-gray-800',
+  paid_leave: 'bg-teal-100 text-teal-800',
 };
 
 export const ABSENCE_TYPE_DOT_COLORS: Record<AbsenceType, string> = {
@@ -30,4 +33,5 @@ export const ABSENCE_TYPE_DOT_COLORS: Record<AbsenceType, string> = {
   training: 'bg-orange-500',
   overtime: 'bg-purple-500',
   other: 'bg-gray-500',
+  paid_leave: 'bg-teal-500',
 };

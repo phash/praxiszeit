@@ -19,12 +19,17 @@ class CompanyClosureCreate(BaseModel):
     name: str
     start_date: date
     end_date: date
+    # #145: True (default) -> generated absences are VACATION (deduct the
+    # vacation budget, legacy behaviour). False -> PAID_LEAVE (paid leave,
+    # like a holiday: reduces target, no vacation deduction, balance-neutral).
+    counts_as_vacation: bool = True
 
 
 class CompanyClosureUpdate(BaseModel):
     name: str
     start_date: date
     end_date: date
+    counts_as_vacation: bool = True
 
 
 class CompanyClosureResponse(BaseModel):
@@ -35,6 +40,7 @@ class CompanyClosureResponse(BaseModel):
     start_date: date
     end_date: date
     created_by: str
+    counts_as_vacation: bool = True
     affected_employees: int = 0
 
 
@@ -70,7 +76,12 @@ def _create_closure_absences(
     employees: List[User],
     current_user: User,
 ) -> int:
-    """Create VACATION absences linked to ``closure`` for the given workdays.
+    """Create the closure absences linked to ``closure`` for the given workdays.
+
+    The absence ``type`` follows the closure's ``counts_as_vacation`` flag
+    (#145): VACATION when the days should deduct the vacation budget (legacy
+    default), PAID_LEAVE when they are paid leave like a holiday (no vacation
+    deduction, balance-neutral, target reduced to 0).
 
     Mirrors the create-time logic: skips any day where the employee already
     has an absence (Fremd-Absence wird nicht überschrieben), deletes existing
@@ -80,6 +91,9 @@ def _create_closure_absences(
     Returns the number of distinct employees that received at least one new
     absence.
     """
+    absence_type = (
+        AbsenceType.VACATION if closure.counts_as_vacation else AbsenceType.PAID_LEAVE
+    )
     affected = 0
     for employee in employees:
         created_for_employee = False
@@ -121,7 +135,7 @@ def _create_closure_absences(
                 tenant_id=current_user.tenant_id,
                 date=workday,
                 end_date=closure.end_date,
-                type=AbsenceType.VACATION,
+                type=absence_type,
                 hours=float(
                     calculation_service.get_daily_target_for_date(
                         employee, workday, weekly_hours=weekly_hours
@@ -162,6 +176,7 @@ def list_closures(
             start_date=c.start_date,
             end_date=c.end_date,
             created_by=str(c.created_by),
+            counts_as_vacation=c.counts_as_vacation,
             affected_employees=affected
         ))
     return result
@@ -185,6 +200,7 @@ def create_closure(
         name=data.name,
         start_date=data.start_date,
         end_date=data.end_date,
+        counts_as_vacation=data.counts_as_vacation,
         created_by=current_user.id,
         tenant_id=current_user.tenant_id,
     )
@@ -218,6 +234,7 @@ def create_closure(
         start_date=closure.start_date,
         end_date=closure.end_date,
         created_by=str(closure.created_by),
+        counts_as_vacation=closure.counts_as_vacation,
         # All active employees are considered affected by the closure
         # (kept consistent with list_closures' naive count).
         affected_employees=len(employees),
@@ -235,11 +252,14 @@ def update_closure(
     Update a company closure (name + date range) and re-synchronise the
     generated absences.
 
-    - Newly covered workdays get fresh VACATION absences (with the same
-      skip-logic that never overwrites a foreign absence).
+    - Newly covered workdays get fresh absences (VACATION or PAID_LEAVE per
+      ``counts_as_vacation``, with the same skip-logic that never overwrites
+      a foreign absence).
     - Absences for days no longer in range are removed (matched via
       ``closure_id`` FK, not the note string).
     - On rename, the ``note`` of all still-linked absences is updated.
+    - On a Urlaub<->Freistellung switch, the ``type`` of all still-linked
+      absences is updated to match the new flag (#145).
     """
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail="Enddatum muss nach dem Startdatum liegen")
@@ -253,12 +273,19 @@ def update_closure(
         raise HTTPException(status_code=404, detail="Betriebsferien nicht gefunden")
 
     name_changed = closure.name != data.name
+    type_changed = closure.counts_as_vacation != data.counts_as_vacation
 
     # Apply the new attributes on the closure first so generated notes /
-    # end_date use the updated values.
+    # end_date / absence type use the updated values.
     closure.name = data.name
     closure.start_date = data.start_date
     closure.end_date = data.end_date
+    closure.counts_as_vacation = data.counts_as_vacation
+
+    # #145: the type the still-linked absences should carry after this PUT.
+    new_absence_type = (
+        AbsenceType.VACATION if data.counts_as_vacation else AbsenceType.PAID_LEAVE
+    )
 
     # Target workdays of the (new) range.
     holidays = _get_holidays_for_range(
@@ -278,7 +305,11 @@ def update_closure(
     ).all()
 
     # Remove absences for days that are no longer covered by the closure;
-    # keep the rest in sync (note on rename, end_date on range change).
+    # keep the rest in sync (note on rename, end_date on range change,
+    # type on Urlaub<->Freistellung switch, #145). Each covered day holds at
+    # most one closure-absence (the create helper skips days with an existing
+    # absence), so flipping its type can never collide with the
+    # (tenant_id, user_id, date, type) unique constraint.
     for absence in linked:
         if absence.date not in workday_set:
             db.delete(absence)
@@ -286,6 +317,8 @@ def update_closure(
             if name_changed:
                 absence.note = f"Betriebsferien: {data.name}"
             absence.end_date = data.end_date
+            if type_changed:
+                absence.type = new_absence_type
 
     # Add absences for newly covered workdays. Reuse the create-time helper,
     # which already skips days where the employee has ANY existing absence
@@ -306,6 +339,7 @@ def update_closure(
         start_date=closure.start_date,
         end_date=closure.end_date,
         created_by=str(closure.created_by),
+        counts_as_vacation=closure.counts_as_vacation,
         affected_employees=len(employees),
     )
 
