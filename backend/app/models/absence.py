@@ -48,6 +48,16 @@ class Absence(Base):
     start_time = Column(Time, nullable=True)  # NULL = ganzer Tag
     end_time = Column(Time, nullable=True)    # NULL = ganzer Tag
     note = Column(Text, nullable=True)
+    # Link to the CompanyClosure (Betriebsferien) that generated this absence.
+    # NULL for manually created absences. ON DELETE SET NULL — the closure
+    # router deletes linked absences explicitly (tenant-scoped); this guards
+    # against orphaned FK references if a closure is removed by other means.
+    closure_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("company_closures.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (

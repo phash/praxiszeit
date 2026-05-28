@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { Plus, X, Trash2, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
+import { Plus, X, Trash2, Pencil, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
@@ -62,6 +62,7 @@ export default function AdminAbsences() {
   // Betriebsferien state
   const [closures, setClosures] = useState<CompanyClosure[]>([]);
   const [showClosureForm, setShowClosureForm] = useState(false);
+  const [editingClosureId, setEditingClosureId] = useState<string | null>(null);
   const [closureForm, setClosureForm] = useState({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
 
   useEffect(() => {
@@ -95,13 +96,29 @@ export default function AdminAbsences() {
     }
   };
 
-  const handleCreateClosure = async (e: React.FormEvent) => {
+  const resetClosureForm = () => {
+    setEditingClosureId(null);
+    setClosureForm({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
+  };
+
+  const handleEditClosure = (closure: CompanyClosure) => {
+    setEditingClosureId(closure.id);
+    setClosureForm({ name: closure.name, start_date: closure.start_date, end_date: closure.end_date });
+    setShowClosureForm(true);
+  };
+
+  const handleSubmitClosure = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await apiClient.post('/company-closures', closureForm);
-      toast.success('Betriebsferien eingetragen und Urlaub für alle Mitarbeiter erstellt');
+      if (editingClosureId) {
+        await apiClient.put(`/company-closures/${editingClosureId}`, closureForm);
+        toast.success('Betriebsferien aktualisiert – betroffene Abwesenheiten wurden angepasst');
+      } else {
+        await apiClient.post('/company-closures', closureForm);
+        toast.success('Betriebsferien eingetragen und Urlaub für alle Mitarbeiter erstellt');
+      }
       setShowClosureForm(false);
-      setClosureForm({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
+      resetClosureForm();
       loadClosures();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
@@ -242,7 +259,15 @@ export default function AdminAbsences() {
         )}
         {activeTab === 'closures' && (
           <button
-            onClick={() => setShowClosureForm(!showClosureForm)}
+            onClick={() => {
+              if (showClosureForm) {
+                setShowClosureForm(false);
+                resetClosureForm();
+              } else {
+                resetClosureForm();
+                setShowClosureForm(true);
+              }
+            }}
             className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition"
           >
             {showClosureForm ? <X size={20} /> : <Building2 size={20} />}
@@ -277,11 +302,15 @@ export default function AdminAbsences() {
         <>
           {showClosureForm && (
             <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
-              <h3 className="text-lg font-semibold mb-4">Betriebsferien erstellen</h3>
+              <h3 className="text-lg font-semibold mb-4">
+                {editingClosureId ? 'Betriebsferien bearbeiten' : 'Betriebsferien erstellen'}
+              </h3>
               <p className="text-sm text-gray-500 mb-4">
-                Für alle aktiven Mitarbeiter werden automatisch Urlaubseinträge für die Arbeitstage im gewählten Zeitraum erstellt.
+                {editingClosureId
+                  ? 'Bei Änderung des Zeitraums werden die betroffenen Abwesenheiten automatisch angepasst (neu hinzukommende Arbeitstage erhalten Urlaub, entfallene werden entfernt). Abweichende Einträge einzelner Mitarbeiter bleiben unberührt.'
+                  : 'Für alle aktiven Mitarbeiter werden automatisch Urlaubseinträge für die Arbeitstage im gewählten Zeitraum erstellt.'}
               </p>
-              <form onSubmit={handleCreateClosure} className="space-y-4">
+              <form onSubmit={handleSubmitClosure} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Bezeichnung</label>
                   <input
@@ -317,7 +346,7 @@ export default function AdminAbsences() {
                   </div>
                 </div>
                 <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition">
-                  Betriebsferien erstellen & Urlaub eintragen
+                  {editingClosureId ? 'Änderungen speichern' : 'Betriebsferien erstellen & Urlaub eintragen'}
                 </button>
               </form>
             </div>
@@ -353,13 +382,22 @@ export default function AdminAbsences() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{closure.affected_employees} Mitarbeiter</td>
                       <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleDeleteClosure(closure)}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-sm transition"
-                          aria-label="Betriebsferien löschen"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex items-center justify-end space-x-1">
+                          <button
+                            onClick={() => handleEditClosure(closure)}
+                            className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-sm transition"
+                            aria-label="Betriebsferien bearbeiten"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClosure(closure)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-sm transition"
+                            aria-label="Betriebsferien löschen"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
