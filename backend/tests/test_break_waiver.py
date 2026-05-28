@@ -16,7 +16,7 @@ Abgedeckt:
 
 import uuid
 import pytest
-from datetime import date, time
+from datetime import date, time, timedelta
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -498,3 +498,79 @@ class TestBreakWaiverSelfApprovalForbidden:
 
         cr = db.query(ChangeRequest).filter(ChangeRequest.id == uuid.UUID(cr_id)).one()
         assert cr.status == ChangeRequestStatus.APPROVED
+
+
+class TestCrApprovalRevalidatesDailyHardCap:
+    """C-1: a CREATE/UPDATE ChangeRequest is re-validated against the CURRENT DB
+    state on approval. A CR that was valid (≤10h) at creation time but would,
+    together with same-day entries added since, push the day over the §3 10h
+    ceiling MUST be rejected with 422 — the entry is NOT written and the CR
+    stays PENDING."""
+
+    def test_approve_create_cr_pushing_day_over_10h_is_rejected(
+        self, db, employee, admin
+    ):
+        past_day = date.today() - timedelta(days=3)
+        # Move past_day to a weekday so day-of-week edge cases don't matter
+        # (irrelevant for §3, but keeps the scenario realistic).
+        while past_day.weekday() >= 5:
+            past_day -= timedelta(days=1)
+
+        # A pending CREATE CR: 07:00–14:00, 0 break → 7.0h net, valid on its own
+        # (under §3, and §4 30-min rule is excused via break_waiver_reason so the
+        # CR could legitimately exist; we only test the §3 re-check here).
+        cr = ChangeRequest(
+            user_id=employee.id,
+            tenant_id=DEFAULT_TENANT_ID,
+            request_type=ChangeRequestType.CREATE,
+            entry_kind="time_entry",
+            status=ChangeRequestStatus.PENDING,
+            proposed_date=past_day,
+            proposed_start_time=time(7, 0),
+            proposed_end_time=time(14, 0),  # 7.0h net
+            proposed_break_minutes=0,
+            reason="Nachtrag",
+            break_waiver_reason="Pause entfiel",  # excuses §4, not §3
+        )
+        db.add(cr)
+
+        # Meanwhile, a same-day entry was added that already accounts for 5h.
+        # Approving the CR would make the day 7 + 5 = 12h → over the 10h cap.
+        existing = TimeEntry(
+            user_id=employee.id,
+            tenant_id=DEFAULT_TENANT_ID,
+            date=past_day,
+            start_time=time(15, 0),
+            end_time=time(20, 0),  # 5.0h net
+            break_minutes=0,
+        )
+        db.add(existing)
+        db.commit()
+        db.refresh(cr)
+        cr_id = cr.id
+
+        def override_db():
+            yield db
+
+        _app.dependency_overrides[get_db] = override_db
+        _app.dependency_overrides[get_current_user] = lambda: admin
+        _app.dependency_overrides[require_admin] = lambda: admin
+        client = TestClient(_app)
+        try:
+            review = client.post(
+                f"/api/admin/change-requests/{cr_id}/review",
+                json={"action": "approve"},
+            )
+            assert review.status_code == 422, review.text
+            assert "§3" in review.json()["detail"]
+        finally:
+            _app.dependency_overrides.clear()
+
+        # CR must still be PENDING and NO new entry written (only the seeded one)
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.PENDING
+        assert cr.reviewed_by is None
+        entries = db.query(TimeEntry).filter(
+            TimeEntry.user_id == employee.id, TimeEntry.date == past_day
+        ).all()
+        assert len(entries) == 1  # only the pre-existing same-day entry

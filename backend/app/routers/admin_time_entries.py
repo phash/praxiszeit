@@ -73,7 +73,7 @@ def admin_create_time_entry(
             break_minutes=entry_data.break_minutes,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
-            admin_create_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §14 ArbZG)")
+            admin_create_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
@@ -177,7 +177,7 @@ def admin_update_time_entry(
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
-            admin_update_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §14 ArbZG)")
+            admin_update_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
@@ -233,7 +233,18 @@ def admin_delete_time_entry(
     current_user: User = Depends(require_admin),
 ):
     """Admin deletes a time entry with audit logging."""
-    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).first()
+    # F-026: explicit tenant scope so a guessed UUID from another tenant 404s.
+    # F-028/S-M04: lock the row so a concurrent edit/delete can't race between
+    # the lookup and the db.delete() below. Mirrors admin_update_time_entry.
+    entry = (
+        db.query(TimeEntry)
+        .filter(
+            TimeEntry.id == entry_id,
+            TimeEntry.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 

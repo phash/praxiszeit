@@ -18,9 +18,10 @@ from app.schemas.time_entry import TimeEntryResponse
 from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response, _enrich_cr_responses
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
-    MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
+    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
     BREAK_WAIVER_SOURCE,
 )
+from app.services.break_validation_service import validate_daily_break
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
 from app.models.time_entry_audit_log import TimeEntryAuditLog
@@ -180,6 +181,56 @@ def review_change_request(
             entry = db.query(TimeEntry).filter(TimeEntry.id == cr.time_entry_id).first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+
+        # C-1: Re-validate §3 (daily hard cap) and §4 (breaks) against the
+        # CURRENT DB state before materialising a CREATE/UPDATE. The CR was
+        # validated at creation time, but other same-day entries may have been
+        # added in the meantime — without this re-check an approval could push
+        # the day over the legal limits. A break-waiver (cr.break_waiver_reason)
+        # excuses §4 only; the §3 10h ceiling is absolute and is NOT waivable.
+        if (
+            cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE)
+            and cr.proposed_start_time
+            and cr.proposed_end_time
+        ):
+            cr_user = db.query(User).filter(
+                User.id == cr.user_id,
+                User.tenant_id == cr.tenant_id,
+            ).first()
+            if cr_user and not cr_user.exempt_from_arbzg:
+                # On UPDATE the proposed values replace the existing entry, so
+                # exclude it from the daily picture (mirrors update_time_entry).
+                exclude_id = entry.id if cr.request_type == ChangeRequestType.UPDATE and entry else None
+
+                daily_hours_revalidate = _calculate_daily_net_hours(
+                    db=db,
+                    user_id=cr.user_id,
+                    entry_date=cr.proposed_date,
+                    start_time=cr.proposed_start_time,
+                    end_time=cr.proposed_end_time,
+                    break_minutes=cr.proposed_break_minutes or 0,
+                    exclude_entry_id=exclude_id,
+                )
+                if daily_hours_revalidate > MAX_DAILY_HOURS_HARD:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Tagesarbeitszeit würde {daily_hours_revalidate:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
+                    )
+
+                # §4 break validation — skipped only when a documented waiver
+                # is attached (waiver excuses §4, never §3).
+                if cr.break_waiver_reason is None:
+                    break_error = validate_daily_break(
+                        db=db,
+                        user_id=cr.user_id,
+                        entry_date=cr.proposed_date,
+                        start_time=cr.proposed_start_time,
+                        end_time=cr.proposed_end_time,
+                        break_minutes=cr.proposed_break_minutes or 0,
+                        exclude_entry_id=exclude_id,
+                    )
+                    if break_error:
+                        raise HTTPException(status_code=422, detail=break_error)
 
     # Absence CR preconditions
     absence = None
@@ -418,7 +469,7 @@ def review_change_request(
             )
             if weekly > MAX_WEEKLY_HOURS_WARN:
                 cr_response.warnings.append(
-                    f"§14 ArbZG: Wochenarbeitszeit {weekly:.1f}h überschreitet 48h-Grenze."
+                    f"§3 ArbZG: Wochenarbeitszeit {weekly:.1f}h überschreitet 48h-Grenze."
                 )
 
     return cr_response

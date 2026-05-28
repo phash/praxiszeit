@@ -178,3 +178,35 @@ def test_two_15min_gaps_valid_break(db, test_user):
     # New entry: 13:30-14:31 → total net = 6h31m, two 15-min gaps = 30min
     result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(13, 30), time(14, 31), break_minutes=0)
     assert result is None
+
+
+def test_preexisting_short_declared_break_not_counted(db, test_user):
+    """A-M2 / §4 Satz 2: ein VORHANDENER Eintrag mit einer deklarierten Pause
+    < 15 Min darf nicht als gültiger Pausenabschnitt zählen — dieselbe Regel
+    wie für Lücken gilt auch für pre-existing declared breaks."""
+    # Pre-existing entry: 08:00-14:31 (6h31m gross) with a 10-min declared break
+    # (back-to-back with the new entry, so there is NO gap that could count).
+    # If the 10-min break wrongly counted, total break = 10 → still < 30, so to
+    # make the bug observable we add a second pre-existing 10-min break too:
+    # 2×10min = 20min would (incorrectly) be summed, but neither segment is
+    # >= 15min, so the correct effective break is 0 and §4 must fire.
+    _make_entry(db, test_user, 8, 0, 11, 15, break_min=10)   # 3h15m, 10min break
+    _make_entry(db, test_user, 11, 15, 14, 31, break_min=10)  # 3h16m, 10min break
+    # New tiny entry back-to-back, no gaps anywhere; total net ~6h12m (>6h)
+    result = validate_daily_break(
+        db, test_user.id, date(2026, 3, 10), time(14, 31), time(14, 50), break_minutes=0
+    )
+    assert result is not None
+    assert "30 Minuten" in result
+
+
+def test_preexisting_15min_declared_break_counts(db, test_user):
+    """Gegenprobe zu A-M2: ein vorhandener Eintrag mit deklarierter Pause
+    >= 15 Min zählt weiterhin als gültiger Pausenabschnitt."""
+    # Pre-existing entry 08:00-14:31 (6h31m gross) with a 30-min declared break
+    # → 6h01m net, 30min valid break. New back-to-back tiny entry keeps it >6h.
+    _make_entry(db, test_user, 8, 0, 14, 31, break_min=30)
+    result = validate_daily_break(
+        db, test_user.id, date(2026, 3, 10), time(14, 31), time(14, 50), break_minutes=0
+    )
+    assert result is None
