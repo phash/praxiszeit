@@ -112,9 +112,16 @@ def sync_holidays(db: Session, year: int, state: Optional[str] = None, tenant_id
                 name=german_name,
                 year=year,
                 tenant_id=tenant_id,
+                is_custom=False,
+                source="workalendar",
             )
             db.add(holiday)
             count += 1
+        elif existing.source == "admin":
+            # #143: an admin custom holiday already covers this date — never
+            # overwrite its name with the workalendar name. The date is already
+            # a holiday for Sollzeit purposes, so no workalendar row is needed.
+            continue
         elif existing.name != german_name:
             existing.name = german_name
 
@@ -191,12 +198,21 @@ def invalidate_holiday_cache(tenant_id=None, year: Optional[int] = None) -> None
             _HOLIDAY_CACHE.pop(key, None)
 
 
-def delete_all_holidays(db: Session, tenant_id=None) -> int:
+def delete_all_holidays(db: Session, tenant_id=None, source: Optional[str] = None) -> int:
     """Delete holidays from the database. If tenant_id given, only for that tenant.
+
+    ``source`` (#143): when given (e.g. ``'workalendar'``), only rows with that
+    provenance are deleted. The Bundesland-change resync passes
+    ``source='workalendar'`` so admin-created custom holidays
+    (``source='admin'``) survive the resync (REQ-3). Omitting ``source`` keeps
+    the original "purge everything" behaviour.
+
     Caller is responsible for committing."""
     query = db.query(PublicHoliday)
     if tenant_id is not None:
         query = query.filter(PublicHoliday.tenant_id == tenant_id)
+    if source is not None:
+        query = query.filter(PublicHoliday.source == source)
     count = query.count()
     query.delete()
     # F-034: invalidate the cache after bulk-delete
@@ -217,8 +233,10 @@ def sync_current_and_next_year(db: Session, state: Optional[str] = None, tenant_
     current_year = today_local().year
     next_year = current_year + 1
 
-    # Force-update names of all existing holidays to German (no intermediate commit)
-    query = db.query(PublicHoliday)
+    # Force-update names of all existing workalendar holidays to German
+    # (no intermediate commit). #143: skip admin custom holidays — their names
+    # are user-chosen and must not be run through the translation table.
+    query = db.query(PublicHoliday).filter(PublicHoliday.source == "workalendar")
     if tenant_id is not None:
         query = query.filter(PublicHoliday.tenant_id == tenant_id)
     all_holidays = query.all()
