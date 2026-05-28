@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
 from sqlalchemy import extract
@@ -6,7 +7,11 @@ from typing import List, Optional
 from datetime import datetime, date, time, timezone
 from app.services.timezone_service import LOCAL_TZ, now_local as _now_local, today_local as _today_local
 from app.database import get_db
-from app.models import User, TimeEntry, UserRole, TimeEntryAuditLog
+from app.models import (
+    User, TimeEntry, UserRole, TimeEntryAuditLog,
+    ChangeRequest, ChangeRequestType, ChangeRequestStatus,
+)
+from app.models.system_setting import SystemSetting
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
@@ -19,6 +24,20 @@ from app.routers.admin_helpers import _create_audit_log
 from uuid import UUID as UUIDType
 
 router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
+
+
+# #144 §4 ArbZG: audit-log source marker for a documented break waiver.
+# Must stay < 40 chars (time_entry_audit_logs.source is varchar(40)).
+BREAK_WAIVER_SOURCE = "break_waiver"  # 12 chars
+
+
+def _break_exception_requires_approval(db: Session, tenant_id) -> bool:
+    """Read the per-practice toggle whether break-waivers need admin approval."""
+    s = db.query(SystemSetting).filter(
+        SystemSetting.key == "break_exception_requires_approval",
+        SystemSetting.tenant_id == tenant_id,
+    ).first()
+    return (s.value if s else "false").lower() == "true"
 
 
 MAX_DAILY_HOURS_HARD = 10.0         # §3 ArbZG: absolute Obergrenze
@@ -479,6 +498,11 @@ def create_time_entry(
 
     exempt = current_user.exempt_from_arbzg
 
+    # #144 §4 ArbZG: a documented exception when the mandatory break was not
+    # possible. Only for non-exempt users (exempt skip §4 entirely, #141).
+    waiver_reason = (entry_data.break_waiver_reason or "").strip()
+    break_waiver_active = False  # set True once a valid waiver overrides §4
+
     # Break validation (ArbZG §4) – skipped for exempt users
     if not exempt:
         break_error = validate_daily_break(
@@ -490,7 +514,47 @@ def create_time_entry(
             break_minutes=entry_data.break_minutes,
         )
         if break_error:
-            raise HTTPException(status_code=400, detail=break_error)
+            if not waiver_reason:
+                # No documented exception → the §4 block stands (unchanged).
+                raise HTTPException(status_code=400, detail=break_error)
+
+            # A valid waiver was supplied. If the practice requires approval,
+            # do NOT write the entry — file a ChangeRequest (request_type=CREATE)
+            # that materialises the entry (with break_waiver_reason) on approval.
+            if _break_exception_requires_approval(db, current_user.tenant_id):
+                cr = ChangeRequest(
+                    user_id=current_user.id,
+                    tenant_id=current_user.tenant_id,
+                    request_type=ChangeRequestType.CREATE,
+                    entry_kind="time_entry",
+                    status=ChangeRequestStatus.PENDING,
+                    proposed_date=entry_data.date,
+                    proposed_start_time=entry_data.start_time,
+                    proposed_end_time=entry_data.end_time,
+                    proposed_break_minutes=entry_data.break_minutes,
+                    proposed_note=entry_data.note,
+                    reason=waiver_reason,
+                    break_waiver_reason=waiver_reason,
+                )
+                db.add(cr)
+                db.commit()
+                db.refresh(cr)
+                return JSONResponse(
+                    status_code=status.HTTP_202_ACCEPTED,
+                    content={
+                        "status": "pending_approval",
+                        "change_request_id": str(cr.id),
+                        "detail": (
+                            "Pflicht-Pause-Ausnahme zur Genehmigung eingereicht. "
+                            "Der Eintrag wird nach Admin-Freigabe wirksam."
+                        ),
+                        "warnings": [f"BREAK_WAIVER_PENDING: {break_error}"],
+                    },
+                )
+
+            # No approval required → persist the entry with the waiver reason
+            # and surface the §4 deviation as a warning.
+            break_waiver_active = True
 
     # §3 ArbZG: daily hours check – skipped for exempt users
     daily_hours = _calculate_daily_net_hours(
@@ -509,6 +573,17 @@ def create_time_entry(
 
     # Collect warnings (also skipped for exempt users)
     warnings: list[str] = []
+    if break_waiver_active:
+        # Re-run validation to surface the concrete §4 detail in the warning.
+        waiver_detail = validate_daily_break(
+            db=db,
+            user_id=current_user.id,
+            entry_date=entry_data.date,
+            start_time=entry_data.start_time,
+            end_time=entry_data.end_time,
+            break_minutes=entry_data.break_minutes,
+        )
+        warnings.append(f"BREAK_WAIVER: {waiver_detail}")
     if not exempt:
         if daily_hours > MAX_DAILY_HOURS_WARN:
             warnings.append("DAILY_HOURS_WARNING")
@@ -549,9 +624,26 @@ def create_time_entry(
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
         sunday_exception_reason=entry_data.sunday_exception_reason,
+        break_waiver_reason=waiver_reason if break_waiver_active else None,
     )
 
     db.add(entry)
+
+    # #144 §4 ArbZG: leave an audit trail for the documented break waiver so the
+    # deviation is traceable (source marker 'break_waiver', < 40 chars).
+    if break_waiver_active:
+        db.flush()
+        _create_audit_log(
+            db,
+            entry.id,
+            entry.user_id,
+            current_user.id,
+            action="create",
+            new_entry=entry,
+            source=BREAK_WAIVER_SOURCE,
+            tenant_id=current_user.tenant_id,
+        )
+
     db.commit()
     db.refresh(entry)
 
@@ -584,6 +676,17 @@ def update_time_entry(
             detail="Einträge vergangener Tage können nur per Änderungsantrag geändert werden"
         )
 
+    # #144: snapshot the persisted values BEFORE mutating in-memory, so an
+    # approval-required waiver can file an UPDATE ChangeRequest against the
+    # unchanged entry without first committing the edit.
+    orig_snapshot = {
+        "date": entry.date,
+        "start_time": entry.start_time,
+        "end_time": entry.end_time,
+        "break_minutes": entry.break_minutes,
+        "note": entry.note,
+    }
+
     # Update fields
     update_data = entry_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -594,6 +697,10 @@ def update_time_entry(
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
     exempt = current_user.exempt_from_arbzg
+
+    # #144 §4 ArbZG: documented break-exception (only non-exempt users).
+    waiver_reason = (entry_data.break_waiver_reason or "").strip()
+    break_waiver_active = False
 
     # Break validation (ArbZG §4) – skipped for exempt users
     if not exempt and entry.end_time is not None:
@@ -607,7 +714,51 @@ def update_time_entry(
             exclude_entry_id=entry.id,
         )
         if break_error:
-            raise HTTPException(status_code=400, detail=break_error)
+            if not waiver_reason:
+                raise HTTPException(status_code=400, detail=break_error)
+
+            if _break_exception_requires_approval(db, current_user.tenant_id):
+                # Do not persist the edit — file an UPDATE ChangeRequest with
+                # the proposed values and revert the in-memory mutation.
+                cr = ChangeRequest(
+                    user_id=entry.user_id,
+                    tenant_id=current_user.tenant_id,
+                    request_type=ChangeRequestType.UPDATE,
+                    entry_kind="time_entry",
+                    status=ChangeRequestStatus.PENDING,
+                    time_entry_id=entry.id,
+                    proposed_date=entry.date,
+                    proposed_start_time=entry.start_time,
+                    proposed_end_time=entry.end_time,
+                    proposed_break_minutes=entry.break_minutes,
+                    proposed_note=entry.note,
+                    original_date=orig_snapshot["date"],
+                    original_start_time=orig_snapshot["start_time"],
+                    original_end_time=orig_snapshot["end_time"],
+                    original_break_minutes=orig_snapshot["break_minutes"],
+                    original_note=orig_snapshot["note"],
+                    reason=waiver_reason,
+                    break_waiver_reason=waiver_reason,
+                )
+                db.rollback()  # discard the in-memory edit on `entry`
+                db.add(cr)
+                db.commit()
+                db.refresh(cr)
+                return JSONResponse(
+                    status_code=status.HTTP_202_ACCEPTED,
+                    content={
+                        "status": "pending_approval",
+                        "change_request_id": str(cr.id),
+                        "detail": (
+                            "Pflicht-Pause-Ausnahme zur Genehmigung eingereicht. "
+                            "Die Änderung wird nach Admin-Freigabe wirksam."
+                        ),
+                        "warnings": [f"BREAK_WAIVER_PENDING: {break_error}"],
+                    },
+                )
+
+            break_waiver_active = True
+            entry.break_waiver_reason = waiver_reason
 
     # §3 ArbZG: daily hours check – skipped for exempt users
     if not exempt and entry.end_time is not None:
@@ -626,10 +777,35 @@ def update_time_entry(
                 detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
             )
 
+    # #144 §4 ArbZG: audit trail for a documented break waiver on update.
+    if break_waiver_active:
+        _create_audit_log(
+            db,
+            entry.id,
+            entry.user_id,
+            current_user.id,
+            action="update",
+            old_entry=orig_snapshot,
+            new_entry=entry,
+            source=BREAK_WAIVER_SOURCE,
+            tenant_id=current_user.tenant_id,
+        )
+
     db.commit()
     db.refresh(entry)
 
     update_warnings: list[str] = []
+    if break_waiver_active:
+        waiver_detail = validate_daily_break(
+            db=db,
+            user_id=entry.user_id,
+            entry_date=entry.date,
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+            break_minutes=entry.break_minutes,
+            exclude_entry_id=entry.id,
+        )
+        update_warnings.append(f"BREAK_WAIVER: {waiver_detail}")
     saved_hours = 0.0  # defined here so the night-worker check below can always reference it
     if not exempt and entry.end_time is not None:
         saved_hours = _calculate_daily_net_hours(

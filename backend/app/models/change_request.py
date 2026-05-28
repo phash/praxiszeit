@@ -61,6 +61,12 @@ class ChangeRequest(Base):
     # Employee reason
     reason = Column(Text, nullable=False)
 
+    # #144 §4 ArbZG: when this CR documents a "Pflicht-Pause war nicht möglich"
+    # waiver, this holds the waiver reason. On approval it is copied to the
+    # materialised time_entry's break_waiver_reason so the §4 deviation stays
+    # auditable. NULL for all non-waiver CRs.
+    break_waiver_reason = Column(Text, nullable=True)
+
     # Admin review
     reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

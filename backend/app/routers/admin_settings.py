@@ -24,7 +24,15 @@ def _get_setting(db: Session, key: str, default: str = "", tenant_id=None) -> st
 # #146: the four special-day keys (24./31.12. mode + counts_as_vacation) are
 # managed through this router too. They are added to the whitelist so the
 # generic PUT accepts them; mode keys are validated against the allowed modes.
-_ALLOWED_SETTINGS = {"vacation_approval_required", "holiday_state"} | special_days_service.SETTING_KEYS
+# #144: break_exception_requires_approval steuert die Pflicht-Pause-Ausnahme.
+_ALLOWED_SETTINGS = {
+    "vacation_approval_required",
+    "holiday_state",
+    "break_exception_requires_approval",  # #144 §4 ArbZG: Pflicht-Pause-Ausnahme
+} | special_days_service.SETTING_KEYS
+
+# Settings whose value must be a boolean ("true"/"false").
+_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval"}
 
 
 @router.get("/settings")
@@ -88,6 +96,13 @@ def update_setting(
                 detail=f"Ungültiger Wert (true/false erwartet): {value}",
             )
         value = "true" if str(value).strip().lower() == "true" else "false"
+
+    # #144: normalise boolean settings (vacation_approval_required,
+    # break_exception_requires_approval) to canonical "true"/"false".
+    if key in _BOOL_SETTINGS:
+        if str(value).lower() not in ("true", "false"):
+            raise HTTPException(status_code=400, detail=f"Ungültiger Wert für {key}: true/false erwartet")
+        value = str(value).lower()
 
     s = db.query(SystemSetting).filter(
         SystemSetting.key == key,

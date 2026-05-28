@@ -34,6 +34,7 @@ interface TimeEntry {
   is_sunday_or_holiday: boolean;
   is_night_work: boolean;
   sunday_exception_reason?: string | null;
+  break_waiver_reason?: string | null;
 }
 
 interface DailyScheduleUser {
@@ -185,9 +186,16 @@ export default function TimeTracking() {
     end_time?: string;
     overlap?: string;
     break_time?: string;
+    break_waiver_reason?: string;
   }>({});
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [weekOffset, setWeekOffset] = useState(0);
+
+  // #144 §4 ArbZG: "Pflicht-Pause war nicht möglich" exception.
+  const [breakWaiverChecked, setBreakWaiverChecked] = useState(false);
+  const [breakWaiverReason, setBreakWaiverReason] = useState('');
+  // Whether the practice requires admin approval for such exceptions (public setting).
+  const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
 
   // Change request modal
   const [crModalOpen, setCrModalOpen] = useState(false);
@@ -225,6 +233,18 @@ export default function TimeTracking() {
     return () => { cancelRef.cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMonth]);
+
+  // #144: read the public setting to decide whether to hint at the approval flow.
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get('/settings')
+      .then((res) => {
+        if (!cancelled) setBreakApprovalRequired(!!res.data?.break_exception_requires_approval);
+      })
+      .catch(() => { /* non-fatal: hint just won't show */ });
+    return () => { cancelled = true; };
+  }, []);
 
   // Refresh entries after FAB clock-in/out
   useEffect(() => {
@@ -283,7 +303,17 @@ export default function TimeTracking() {
       !!user?.exempt_from_arbzg
     );
     if (breakError) {
-      newErrors.break_time = breakError;
+      if (breakWaiverChecked) {
+        // #144: the user opted to document an exception → the §4 block is
+        // lifted, but the reason is mandatory (backend enforces this too).
+        if (!breakWaiverReason.trim()) {
+          newErrors.break_waiver_reason = 'Bitte begründen Sie, warum die Pflicht-Pause nicht möglich war.';
+        }
+      } else {
+        // Still show the §4 hint, but don't treat it as a hard block on its
+        // own — surface it so the user sees the "Pause nicht möglich" option.
+        newErrors.break_time = breakError;
+      }
     }
 
     setErrors(newErrors);
@@ -298,7 +328,7 @@ export default function TimeTracking() {
     }
 
     // Smart break default: auto-set 30 min when creating entry >6h with no break
-    let submitData = { ...formData };
+    let submitData: typeof formData & { break_waiver_reason?: string } = { ...formData };
     if (!editingId && submitData.break_minutes === 0) {
       const [sh, sm] = submitData.start_time.split(':').map(Number);
       const [eh, em] = submitData.end_time.split(':').map(Number);
@@ -308,15 +338,32 @@ export default function TimeTracking() {
       }
     }
 
+    // #144: attach the documented break-exception reason when the user opted in.
+    if (breakWaiverChecked && breakWaiverReason.trim()) {
+      submitData = { ...submitData, break_waiver_reason: breakWaiverReason.trim() };
+    }
+
     try {
       let response;
       if (editingId) {
         response = await apiClient.put(`/time-entries/${editingId}`, submitData);
-        toast.success('Zeiteintrag erfolgreich aktualisiert');
       } else {
         response = await apiClient.post('/time-entries', submitData);
-        toast.success('Zeiteintrag erfolgreich erstellt');
       }
+
+      // #144: 202 = exception was submitted for admin approval (not written yet).
+      if (response.status === 202) {
+        showArbzgWarnings(toast, response.data?.warnings);
+        toast.info(
+          response.data?.detail ??
+            'Pflicht-Pause-Ausnahme zur Genehmigung eingereicht.',
+        );
+        fetchEntries();
+        resetForm();
+        return;
+      }
+
+      toast.success(editingId ? 'Zeiteintrag erfolgreich aktualisiert' : 'Zeiteintrag erfolgreich erstellt');
       const saved: TimeEntry = response.data;
       showArbzgWarnings(toast, saved.warnings);
       fetchEntries();
@@ -337,6 +384,9 @@ export default function TimeTracking() {
       sunday_exception_reason: entry.sunday_exception_reason || '',
     });
     setErrors({});
+    // #144: pre-fill the waiver from an existing entry so re-saving keeps it.
+    setBreakWaiverChecked(!!entry.break_waiver_reason);
+    setBreakWaiverReason(entry.break_waiver_reason || '');
     setShowForm(true);
   };
 
@@ -385,6 +435,8 @@ export default function TimeTracking() {
       sunday_exception_reason: '',
     });
     setErrors({});
+    setBreakWaiverChecked(false);
+    setBreakWaiverReason('');
   };
 
   const totalNet = entries.reduce((sum, entry) => sum + entry.net_hours, 0);
@@ -516,6 +568,59 @@ export default function TimeTracking() {
           {errors.break_time && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" role="alert">
               <p className="text-sm text-amber-800 font-medium">{errors.break_time}</p>
+            </div>
+          )}
+
+          {/* #144 §4 ArbZG: documented exception when the mandatory break was
+              not possible. Only offered to non-exempt users (exempt skip §4). */}
+          {!user?.exempt_from_arbzg && (errors.break_time || breakWaiverChecked) && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={breakWaiverChecked}
+                  onChange={(e) => {
+                    setBreakWaiverChecked(e.target.checked);
+                    setErrors((prev) => ({ ...prev, break_time: undefined, break_waiver_reason: undefined }));
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-400"
+                />
+                <span className="text-sm text-amber-900 font-medium">
+                  Pflicht-Pause war nicht möglich
+                </span>
+              </label>
+              {breakWaiverChecked && (
+                <div className="mt-3">
+                  <label htmlFor="break-waiver-reason" className="block text-sm font-medium text-amber-900 mb-1">
+                    Begründung <span className="text-amber-700">(erforderlich)</span>
+                  </label>
+                  <textarea
+                    id="break-waiver-reason"
+                    value={breakWaiverReason}
+                    onChange={(e) => {
+                      setBreakWaiverReason(e.target.value);
+                      if (e.target.value.trim()) {
+                        setErrors((prev) => ({ ...prev, break_waiver_reason: undefined }));
+                      }
+                    }}
+                    rows={2}
+                    placeholder="z. B. akuter Notfall, durchgehende Patientenversorgung ohne Vertretung"
+                    aria-invalid={errors.break_waiver_reason ? 'true' : 'false'}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-400 bg-white ${
+                      errors.break_waiver_reason ? 'border-red-500' : 'border-amber-300'
+                    }`}
+                  />
+                  {errors.break_waiver_reason && (
+                    <p className="text-sm text-red-600 mt-1" role="alert">{errors.break_waiver_reason}</p>
+                  )}
+                  {breakApprovalRequired && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      Hinweis: Dieser Eintrag wird zur Genehmigung durch einen Admin eingereicht und
+                      erst nach Freigabe wirksam.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
