@@ -52,8 +52,16 @@ class TestSecurityHeadersMiddleware:
         assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
     def test_hsts(self, app_with_middleware):
-        """Prüft dass HSTS-Header mit 1 Jahr max-age gesetzt ist — erzwingt HTTPS."""
-        response = app_with_middleware.get("/test")
+        """Prüft dass HSTS-Header mit 1 Jahr max-age über HTTPS gesetzt ist — erzwingt HTTPS.
+
+        F-050: HSTS wird bewusst NUR über HTTPS gesetzt (oder wenn COOKIE_SECURE
+        aktiv ist), damit ein per HTTP:// erreichter Native-Windows-Install nicht
+        gebrickt wird. Der TestClient spricht http://, daher signalisieren wir
+        HTTPS explizit über X-Forwarded-Proto — sonst hängt das Testergebnis an
+        der COOKIE_SECURE-Env (in-container false → kein Header)."""
+        response = app_with_middleware.get(
+            "/test", headers={"X-Forwarded-Proto": "https"}
+        )
         assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
         assert "includeSubDomains" in response.headers["Strict-Transport-Security"]
 
@@ -286,14 +294,17 @@ class TestLicenseValidation:
 
         with patch.object(lic, "_PUBLIC_KEY_PEM", keypair["public_pem"]), \
              patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
-            with pytest.raises(lic.LicenseError, match="signature"):
+            # license.py raises the German message ("Signatur") — the code is
+            # intentionally German-facing; assert against the real string.
+            with pytest.raises(lic.LicenseError, match="Signatur"):
                 lic.validate_license(license_file)
 
     def test_missing_license_file(self, tmp_path):
         """Prüft dass fehlende Lizenzdatei einen LicenseError ausloest — klare Fehlermeldung."""
         import app.core.license as lic
 
-        with pytest.raises(lic.LicenseError, match="not found"):
+        # license.py raises the German message ("nicht gefunden").
+        with pytest.raises(lic.LicenseError, match="nicht gefunden"):
             lic.validate_license(tmp_path / "nonexistent.key")
 
     def test_empty_license_file(self, tmp_path):
@@ -303,7 +314,8 @@ class TestLicenseValidation:
         license_file = tmp_path / "license.key"
         license_file.write_text("")
 
-        with pytest.raises(lic.LicenseError, match="empty"):
+        # license.py raises the German message ("Lizenzdatei ist leer").
+        with pytest.raises(lic.LicenseError, match="leer"):
             lic.validate_license(license_file)
 
     def test_validate_license_quiet_returns_none_on_error(self, tmp_path):
