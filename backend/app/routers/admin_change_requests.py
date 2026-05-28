@@ -19,6 +19,7 @@ from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response, _e
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
+    BREAK_WAIVER_SOURCE,
 )
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
@@ -134,6 +135,15 @@ def review_change_request(
         db.refresh(cr)
         return _enrich_cr_response(cr, db)
 
+    # SEC-E: 4-eyes principle for the break-waiver workflow. An admin must not
+    # approve their OWN documented break-exception (#144 §4 ArbZG) — the whole
+    # point of the approval mode is independent oversight.
+    if cr.break_waiver_reason is not None and cr.user_id == current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden.",
+        )
+
     # Approve: validate preconditions BEFORE changing status
     entry = None
     if cr.entry_kind != "absence":
@@ -214,15 +224,21 @@ def review_change_request(
             db.add(entry)
             db.flush()
             cr.time_entry_id = entry.id
+            # #144 §4 ArbZG: if this CR materialises a break-waiver, mark the
+            # audit source as 'break_waiver' so the waiver origin is traceable
+            # consistently with the direct (non-approval) path.
             _create_audit_log(
                 db, entry.id, cr.user_id, current_user.id,
                 action="create", new_entry=entry,
-                source="change_request", change_request_id=cr.id,
+                source=BREAK_WAIVER_SOURCE if cr.break_waiver_reason is not None else "change_request",
+                change_request_id=cr.id,
                 tenant_id=cr_tenant_id,
             )
 
         elif cr.request_type == ChangeRequestType.UPDATE:
             # entry already fetched in precondition check above
+            # #144 §4 ArbZG: mark the audit source as 'break_waiver' when this
+            # CR carries a documented break-exception, mirroring the direct path.
             _create_audit_log(
                 db, entry.id, cr.user_id, current_user.id,
                 action="update", old_entry=entry,
@@ -233,7 +249,8 @@ def review_change_request(
                     "break_minutes": cr.proposed_break_minutes,
                     "note": cr.proposed_note,
                 },
-                source="change_request", change_request_id=cr.id,
+                source=BREAK_WAIVER_SOURCE if cr.break_waiver_reason is not None else "change_request",
+                change_request_id=cr.id,
                 tenant_id=cr_tenant_id,
             )
             entry.date = cr.proposed_date

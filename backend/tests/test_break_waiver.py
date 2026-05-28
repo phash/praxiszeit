@@ -389,3 +389,112 @@ class TestBreakWaiverUpdate:
         assert cr.break_waiver_reason == "Notfall"
         assert cr.proposed_break_minutes == 0
         assert cr.original_break_minutes == 45
+
+
+class TestDailyHardCapBeatsWaiver:
+    """H1: §3 ArbZG 10h-Höchstgrenze gilt absolut — auch wenn ein Pausen-Waiver
+    aktiv ist UND der Genehmigungsworkflow eingeschaltet ist. Ein >10h-Tag darf
+    NIE als pending-CR (202) durchgehen, sondern muss abgelehnt werden."""
+
+    def test_create_over_10h_with_waiver_and_approval_is_rejected(
+        self, db, employee, employee_client
+    ):
+        """>10h + Begründung + requires_approval=true → abgelehnt (kein 202),
+        KEIN ChangeRequest. Der §3-Hardcap schlägt vor der CR-Erzeugung zu."""
+        _set_break_setting(db, "true")
+        resp = employee_client.post(
+            "/api/time-entries/",
+            json={**_LONG_DAY, "break_minutes": 0, "break_waiver_reason": "Dauer-Notfall"},
+        )
+        # Rejected as a client error (not 202 pending_approval, not 201 created)
+        assert resp.status_code != 202, resp.text
+        assert resp.status_code == 422, resp.text
+        assert "§3" in resp.json()["detail"]
+        # Weder Eintrag noch CR dürfen entstanden sein
+        assert db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).count() == 0
+        assert db.query(ChangeRequest).count() == 0
+
+    def test_create_over_10h_with_waiver_no_approval_is_rejected(
+        self, db, employee, employee_client
+    ):
+        """Gegenprobe: auch im Nicht-Genehmigungsmodus wird >10h trotz Waiver
+        abgelehnt (Regression-Schutz für den direkten Pfad)."""
+        _set_break_setting(db, "false")
+        resp = employee_client.post(
+            "/api/time-entries/",
+            json={**_LONG_DAY, "break_minutes": 0, "break_waiver_reason": "Dauer-Notfall"},
+        )
+        assert resp.status_code == 422, resp.text
+        assert "§3" in resp.json()["detail"]
+        assert db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).count() == 0
+
+
+class TestBreakWaiverSelfApprovalForbidden:
+    """SEC-E: 4-Augen-Prinzip — ein Admin darf seine EIGENE Pflicht-Pause-
+    Ausnahme nicht selbst genehmigen."""
+
+    def test_admin_cannot_self_approve_own_waiver_cr(self, db, admin):
+        """Admin reicht selbst einen Waiver-CR ein und versucht, ihn selbst zu
+        genehmigen → 403. Der CR bleibt pending."""
+        _set_break_setting(db, "true")
+
+        def override_db():
+            yield db
+
+        _app.dependency_overrides[get_db] = override_db
+        # Admin agiert als Antragsteller UND Genehmiger (= dieselbe Person)
+        _app.dependency_overrides[get_current_user] = lambda: admin
+        _app.dependency_overrides[require_admin] = lambda: admin
+        client = TestClient(_app)
+        try:
+            resp = client.post(
+                "/api/time-entries/",
+                json={**_OVER_6H, "break_minutes": 0, "break_waiver_reason": "Eigener Notfall"},
+            )
+            assert resp.status_code == 202, resp.text
+            cr_id = resp.json()["change_request_id"]
+
+            review = client.post(
+                f"/api/admin/change-requests/{cr_id}/review",
+                json={"action": "approve"},
+            )
+            assert review.status_code == 403, review.text
+            assert "selbst genehmigt" in review.json()["detail"]
+        finally:
+            _app.dependency_overrides.clear()
+
+        cr = db.query(ChangeRequest).filter(ChangeRequest.id == uuid.UUID(cr_id)).one()
+        assert cr.status == ChangeRequestStatus.PENDING
+        assert cr.reviewed_by is None
+
+    def test_admin_can_approve_other_users_waiver_cr(self, db, employee, admin):
+        """Gegenprobe: ein FREMDER Waiver-CR (vom MA) darf vom Admin genehmigt
+        werden — das 4-Augen-Prinzip blockiert nur Selbstgenehmigung."""
+        _set_break_setting(db, "true")
+
+        def override_db():
+            yield db
+
+        _app.dependency_overrides[get_db] = override_db
+        _app.dependency_overrides[get_current_user] = lambda: employee
+        _app.dependency_overrides[require_admin] = lambda: admin
+        client = TestClient(_app)
+        try:
+            resp = client.post(
+                "/api/time-entries/",
+                json={**_OVER_6H, "break_minutes": 0, "break_waiver_reason": "MA-Notfall"},
+            )
+            assert resp.status_code == 202, resp.text
+            cr_id = resp.json()["change_request_id"]
+
+            _app.dependency_overrides[get_current_user] = lambda: admin
+            review = client.post(
+                f"/api/admin/change-requests/{cr_id}/review",
+                json={"action": "approve"},
+            )
+            assert review.status_code == 200, review.text
+        finally:
+            _app.dependency_overrides.clear()
+
+        cr = db.query(ChangeRequest).filter(ChangeRequest.id == uuid.UUID(cr_id)).one()
+        assert cr.status == ChangeRequestStatus.APPROVED
