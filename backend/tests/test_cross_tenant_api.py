@@ -274,6 +274,39 @@ def test_admin_change_requests_pending_count_only_own_tenant(
     assert resp.json() == {"count": 1}
 
 
+def _make_pending_vr(db, user, tenant_id, status_val="pending"):
+    from app.models.vacation_request import VacationRequest
+
+    vr = VacationRequest(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        tenant_id=tenant_id,
+        date=date.today(),
+        hours=8.0,
+        absence_type="vacation",
+        status=status_val,
+    )
+    db.add(vr)
+    db.commit()
+    return vr
+
+
+def test_admin_vacation_requests_pending_count_only_own_tenant(
+    _db_session, client_as_admin_a, admin_a, employee_b
+):
+    """GET /admin/vacation-requests/pending-count — counts only Tenant A pending VRs."""
+    # Tenant A: one pending (counts) + one approved (must NOT count).
+    _make_pending_vr(_db_session, admin_a, TENANT_A_ID)
+    _make_pending_vr(_db_session, admin_a, TENANT_A_ID, status_val="approved")
+    # Tenant B: two pending — must be excluded by the tenant filter.
+    _make_pending_vr(_db_session, employee_b, TENANT_B_ID)
+    _make_pending_vr(_db_session, employee_b, TENANT_B_ID)
+
+    resp = client_as_admin_a.get("/api/admin/vacation-requests/pending-count")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"count": 1}
+
+
 def test_admin_change_requests_get_by_id_404_for_tenant_b(
     _db_session, client_as_admin_a, employee_b
 ):

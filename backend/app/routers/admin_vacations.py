@@ -22,6 +22,20 @@ from app.routers.vacation_requests import (
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
+@router.get("/vacation-requests/pending-count")
+def get_pending_vacation_request_count(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Return count of pending vacation requests for admin badge."""
+    # F-026: explicit tenant filter (RLS is the second line of defense).
+    count = db.query(VacationRequest).filter(
+        VacationRequest.status == VacationRequestStatus.PENDING.value,
+        VacationRequest.tenant_id == current_user.tenant_id,
+    ).count()
+    return {"count": count}
+
+
 def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResponse:
     """Add user names to the vacation request response (single item)."""
     return _enrich_vr_responses([vr], db)[0]
