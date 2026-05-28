@@ -41,6 +41,8 @@ export default function AdminAbsences() {
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const [activeTab, setActiveTab] = useState<'absences' | 'closures'>('absences');
+  // Guards against double-submit on both the absence and the closure form.
+  const [submitting, setSubmitting] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('');
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -115,6 +117,8 @@ export default function AdminAbsences() {
 
   const handleSubmitClosure = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     try {
       if (editingClosureId) {
         await apiClient.put(`/company-closures/${editingClosureId}`, closureForm);
@@ -128,6 +132,8 @@ export default function AdminAbsences() {
       loadClosures();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -191,6 +197,8 @@ export default function AdminAbsences() {
       toast.error('Bitte wählen Sie einen Mitarbeiter aus');
       return;
     }
+    if (submitting) return;
+    setSubmitting(true);
     try {
       await apiClient.post('/absences', {
         user_id: targetId,
@@ -207,6 +215,8 @@ export default function AdminAbsences() {
       loadAbsences(targetId);
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -383,7 +393,7 @@ export default function AdminAbsences() {
                     </label>
                   </div>
                 </div>
-                <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition">
+                <button type="submit" disabled={submitting} className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
                   {editingClosureId ? 'Änderungen speichern' : 'Betriebsferien erstellen & Urlaub eintragen'}
                 </button>
               </form>
@@ -566,7 +576,8 @@ export default function AdminAbsences() {
 
             <button
               type="submit"
-              className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition"
+              disabled={submitting}
+              className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Speichern
             </button>
