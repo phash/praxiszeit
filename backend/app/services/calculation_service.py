@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
+from app.services import special_days_service
 
 
 def get_weekly_hours_for_date(
@@ -208,12 +209,23 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     # - SICK: §3 EntgFG - employee must be credited as if they worked the planned hours
     # - OVERTIME: Überstundenausgleich – Soll bleibt bestehen, Tag zählt als 0h Ist,
     #   dadurch reduziert sich das Überstundenkonto um die geplanten Stunden
+    # VACATION, OTHER and PAID_LEAVE (#145) are NOT excluded -> they all
+    # reduce the target (the employee doesn't have to work those days). For
+    # PAID_LEAVE the rechen-mechanik is identical to OTHER; the difference is
+    # only that PAID_LEAVE is paid and doesn't touch the vacation budget
+    # (see get_vacation_account, which sums only VACATION).
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         date_in_month(Absence.date, year, month),
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
     absence_dates = {a.date for a in absences}
+
+    # #146: configurable handling of 24./31.12. (working_day | half_day | free).
+    # Loaded once per call; applied per day below.
+    special_day_config = special_days_service.get_special_day_config(
+        db, user.tenant_id, year
+    )
 
     # Calculate target by iterating through each day
     _, last_day = monthrange(year, month)
@@ -233,6 +245,12 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
         # Get weekly hours valid for this specific date
         weekly_hours = get_weekly_hours_for_date(db, user, d)
         daily_target = get_daily_target_for_date(user, d, weekly_hours)
+
+        # #146: apply the special-day rule (after weekend/holiday/absence so we
+        # never double-handle a 24./31.12. that already is a weekend or holiday).
+        factor = special_days_service.special_day_target_factor(d, special_day_config)
+        if factor is not None:
+            daily_target = (daily_target * factor)
 
         monthly_target += daily_target
 
@@ -374,7 +392,10 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         key = (ca.date.year, ca.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
 
-    # All absences in range (exclude TRAINING, SICK, OVERTIME — same rule as get_monthly_target)
+    # All absences in range (exclude TRAINING, SICK, OVERTIME — same rule as
+    # get_monthly_target). VACATION/OTHER/PAID_LEAVE reduce the target and are
+    # therefore balance-neutral (target drops, actual unaffected). PAID_LEAVE
+    # (#145) is intentionally treated exactly like OTHER here.
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start_date,
@@ -398,6 +419,17 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         WorkingHoursChange.user_id == user.id,
     ).order_by(WorkingHoursChange.effective_from).all()
 
+    # #146: special-day configs are per-year; cache them across the month loop
+    # so a multi-year overtime calculation issues one settings query per year.
+    special_day_configs: Dict[int, dict] = {}
+
+    def _special_day_config(yr: int) -> dict:
+        cfg = special_day_configs.get(yr)
+        if cfg is None:
+            cfg = special_days_service.get_special_day_config(db, user.tenant_id, yr)
+            special_day_configs[yr] = cfg
+        return cfg
+
     # --- iterate months and compute balance in memory ---
     total_balance = initial_balance
     current_year, current_month = start_year, start_month
@@ -407,6 +439,7 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
 
         # Monthly target (mirrors get_monthly_target logic)
         _, last_day = monthrange(current_year, current_month)
+        cfg = _special_day_config(current_year)
         monthly_target = Decimal('0')
         for day in range(1, last_day + 1):
             d = date(current_year, current_month, day)
@@ -416,6 +449,10 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
                 continue
             weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
             daily_target = get_daily_target_for_date(user, d, weekly_hours)
+            # #146: apply special-day rule (half_day → ×0.5, free → ×0).
+            factor = special_days_service.special_day_target_factor(d, cfg)
+            if factor is not None:
+                daily_target = (daily_target * factor)
             monthly_target += daily_target
 
         monthly_actual = actual_by_month.get(key, Decimal('0'))
@@ -466,7 +503,9 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     ).all()
     holiday_dates: set = {h.date for h in holidays}
 
-    # Fetch absences in range (exclude TRAINING, SICK, OVERTIME - same as get_monthly_target)
+    # Fetch absences in range (exclude TRAINING, SICK, OVERTIME - same as
+    # get_monthly_target). PAID_LEAVE (#145) is treated like OTHER and falls
+    # through this filter, so it reduces the target like a normal absence day.
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start,
@@ -481,6 +520,12 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
         WorkingHoursChange.user_id == user.id,
     ).order_by(WorkingHoursChange.effective_from).all()
 
+    # #146: special-day config for the YTD year (24./31.12. always fall in
+    # the same `year`, so a single lookup suffices).
+    special_day_config = special_days_service.get_special_day_config(
+        db, user.tenant_id, year
+    )
+
     # Sum daily targets
     total_target = Decimal('0')
     current = start
@@ -488,6 +533,10 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
         if current.weekday() < 5 and current not in holiday_dates and current not in absence_dates:
             weekly_hours = get_weekly_hours_for_date(db, user, current, wh_changes=wh_changes)
             daily_target = get_daily_target_for_date(user, current, weekly_hours)
+            # #146: apply special-day rule (half_day → ×0.5, free → ×0).
+            factor = special_days_service.special_day_target_factor(current, special_day_config)
+            if factor is not None:
+                daily_target = (daily_target * factor)
             total_target += daily_target
         current += timedelta(days=1)
 
@@ -593,7 +642,10 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
 
     budget_hours = budget_days * daily_target
 
-    # Calculate used vacation hours (F-033: sargable date range)
+    # Calculate used vacation hours (F-033: sargable date range).
+    # Only VACATION deducts the budget. PAID_LEAVE (#145) is paid leave like a
+    # holiday and is intentionally NOT counted here, so a Betriebsferien booked
+    # as bezahlte Freistellung leaves the vacation budget untouched.
     vacation_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.type == AbsenceType.VACATION,
@@ -601,6 +653,33 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     ).all()
 
     used_hours = sum((Decimal(str(a.hours)) for a in vacation_absences), start=Decimal('0'))
+
+    # #146: a special day (24./31.12.) configured as `free` + counts_as_vacation
+    # consumes one vacation day too. We account for it non-invasively here
+    # (no generated Absence rows): add the per-day target of each such date to
+    # the used vacation, unless the employee already has a real VACATION
+    # absence on that day (which is already summed above — avoid double count)
+    # or the day falls outside their employment window. Weekends / existing
+    # holidays are excluded inside vacation_deduction_dates_for_year.
+    holiday_dates_year = {
+        h.date for h in db.query(PublicHoliday).filter(
+            date_in_year(PublicHoliday.date, year),
+            PublicHoliday.tenant_id == user.tenant_id,
+        ).all()
+    }
+    deduction_dates = special_days_service.vacation_deduction_dates_for_year(
+        db, user.tenant_id, year, holiday_dates_year
+    )
+    existing_vacation_dates = {a.date for a in vacation_absences}
+    for d in deduction_dates:
+        if d in existing_vacation_dates:
+            continue  # already counted via a real VACATION absence
+        if user.first_work_day and d < user.first_work_day:
+            continue
+        if user.last_work_day and d > user.last_work_day:
+            continue
+        weekly_hours = get_weekly_hours_for_date(db, user, d)
+        used_hours += get_daily_target_for_date(user, d, weekly_hours)
     # daily_target guaranteed > 0 here (early return above handles the
     # zero case). Division is therefore always safe.
     used_days = used_hours / daily_target

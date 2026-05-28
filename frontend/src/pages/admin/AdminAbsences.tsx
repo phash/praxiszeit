@@ -16,6 +16,7 @@ interface CompanyClosure {
   name: string;
   start_date: string;
   end_date: string;
+  counts_as_vacation: boolean;
   affected_employees: number;
 }
 
@@ -63,7 +64,7 @@ export default function AdminAbsences() {
   const [closures, setClosures] = useState<CompanyClosure[]>([]);
   const [showClosureForm, setShowClosureForm] = useState(false);
   const [editingClosureId, setEditingClosureId] = useState<string | null>(null);
-  const [closureForm, setClosureForm] = useState({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
+  const [closureForm, setClosureForm] = useState({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '', counts_as_vacation: true });
 
   useEffect(() => {
     loadEmployees();
@@ -98,12 +99,17 @@ export default function AdminAbsences() {
 
   const resetClosureForm = () => {
     setEditingClosureId(null);
-    setClosureForm({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '' });
+    setClosureForm({ name: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '', counts_as_vacation: true });
   };
 
   const handleEditClosure = (closure: CompanyClosure) => {
     setEditingClosureId(closure.id);
-    setClosureForm({ name: closure.name, start_date: closure.start_date, end_date: closure.end_date });
+    setClosureForm({
+      name: closure.name,
+      start_date: closure.start_date,
+      end_date: closure.end_date,
+      counts_as_vacation: closure.counts_as_vacation,
+    });
     setShowClosureForm(true);
   };
 
@@ -307,8 +313,8 @@ export default function AdminAbsences() {
               </h3>
               <p className="text-sm text-gray-500 mb-4">
                 {editingClosureId
-                  ? 'Bei Änderung des Zeitraums werden die betroffenen Abwesenheiten automatisch angepasst (neu hinzukommende Arbeitstage erhalten Urlaub, entfallene werden entfernt). Abweichende Einträge einzelner Mitarbeiter bleiben unberührt.'
-                  : 'Für alle aktiven Mitarbeiter werden automatisch Urlaubseinträge für die Arbeitstage im gewählten Zeitraum erstellt.'}
+                  ? 'Bei Änderung des Zeitraums werden die betroffenen Abwesenheiten automatisch angepasst (neu hinzukommende Arbeitstage erhalten einen Eintrag, entfallene werden entfernt). Wird die Verrechnung umgestellt, ändert sich der Typ der zugehörigen Einträge. Abweichende Einträge einzelner Mitarbeiter bleiben unberührt.'
+                  : 'Für alle aktiven Mitarbeiter werden automatisch Abwesenheitseinträge für die Arbeitstage im gewählten Zeitraum erstellt.'}
               </p>
               <form onSubmit={handleSubmitClosure} className="space-y-4">
                 <div>
@@ -345,6 +351,38 @@ export default function AdminAbsences() {
                     />
                   </div>
                 </div>
+                {/* #145: Urlaub vs. bezahlte Freistellung */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Verrechnung</label>
+                  <div className="space-y-2">
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="counts_as_vacation"
+                        checked={closureForm.counts_as_vacation}
+                        onChange={() => setClosureForm(p => ({ ...p, counts_as_vacation: true }))}
+                        className="mt-1 w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <span className="font-medium">Als Urlaub werten</span>
+                        <span className="block text-gray-500">Die freien Tage werden vom Urlaubskonto der Mitarbeiter abgezogen.</span>
+                      </span>
+                    </label>
+                    <label className="flex items-start space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="counts_as_vacation"
+                        checked={!closureForm.counts_as_vacation}
+                        onChange={() => setClosureForm(p => ({ ...p, counts_as_vacation: false }))}
+                        className="mt-1 w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <span className="font-medium">Bezahlte Freistellung</span>
+                        <span className="block text-gray-500">Wie ein Feiertag: kein Urlaubsabzug, keine Auswirkung aufs Überstundenkonto.</span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
                 <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition">
                   {editingClosureId ? 'Änderungen speichern' : 'Betriebsferien erstellen & Urlaub eintragen'}
                 </button>
@@ -355,7 +393,7 @@ export default function AdminAbsences() {
           <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="font-semibold">Betriebsferien</h3>
-              <p className="text-sm text-gray-500 mt-0.5">Betriebsweite Schließungszeiten – zählen als Urlaub für alle Mitarbeiter</p>
+              <p className="text-sm text-gray-500 mt-0.5">Betriebsweite Schließungszeiten – wahlweise als Urlaub oder bezahlte Freistellung für alle Mitarbeiter</p>
             </div>
             {closures.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
@@ -368,6 +406,7 @@ export default function AdminAbsences() {
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bezeichnung</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Zeitraum</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Verrechnung</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Betroffene MA</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
                   </tr>
@@ -379,6 +418,11 @@ export default function AdminAbsences() {
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {format(new Date(closure.start_date + 'T00:00:00'), 'dd.MM.yyyy')} –{' '}
                         {format(new Date(closure.end_date + 'T00:00:00'), 'dd.MM.yyyy')}
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        <span className={`px-2 py-1 rounded-sm text-xs ${closure.counts_as_vacation ? typeColors.vacation : typeColors.paid_leave}`}>
+                          {closure.counts_as_vacation ? 'Urlaub' : 'Bezahlte Freistellung'}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{closure.affected_employees} Mitarbeiter</td>
                       <td className="px-6 py-4 text-right">

@@ -25,6 +25,22 @@ interface Holiday {
   is_custom: boolean;
 }
 
+// #146: configurable handling of 24./31.12.
+type SpecialDayMode = 'working_day' | 'half_day' | 'free';
+
+interface SpecialDaysConfig {
+  special_day_dec24_mode: SpecialDayMode;
+  special_day_dec24_counts_as_vacation: boolean;
+  special_day_dec31_mode: SpecialDayMode;
+  special_day_dec31_counts_as_vacation: boolean;
+}
+
+const SPECIAL_DAY_MODE_LABELS: Record<SpecialDayMode, string> = {
+  working_day: 'Arbeitstag',
+  half_day: 'Halbtag',
+  free: 'Frei',
+};
+
 function formatGermanDate(iso: string): string {
   // iso is YYYY-MM-DD; render as DD.MM.YYYY without timezone surprises.
   const [y, m, d] = iso.split('-');
@@ -46,6 +62,11 @@ export default function Settings() {
   // Vacation approval
   const [approvalRequired, setApprovalRequired] = useState(false);
   const [originalApproval, setOriginalApproval] = useState(false);
+
+  // #146: special days (24./31.12.)
+  const [specialDays, setSpecialDays] = useState<SpecialDaysConfig | null>(null);
+  const [originalSpecialDays, setOriginalSpecialDays] = useState<SpecialDaysConfig | null>(null);
+  const [savingSpecialDays, setSavingSpecialDays] = useState(false);
 
   // Custom holidays
   const currentYear = new Date().getFullYear();
@@ -78,9 +99,10 @@ export default function Settings() {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      const [statesRes, settingsRes] = await Promise.all([
+      const [statesRes, settingsRes, specialDaysRes] = await Promise.all([
         apiClient.get<StatesResponse>('/holidays/states'),
         apiClient.get<SettingRow[]>('/admin/settings'),
+        apiClient.get<SpecialDaysConfig>('/admin/settings/special-days'),
       ]);
 
       // Holiday states
@@ -93,6 +115,10 @@ export default function Settings() {
       const val = approvalSetting?.value?.toLowerCase() === 'true';
       setApprovalRequired(val);
       setOriginalApproval(val);
+
+      // #146: special days (24./31.12.)
+      setSpecialDays(specialDaysRes.data);
+      setOriginalSpecialDays(specialDaysRes.data);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -139,6 +165,32 @@ export default function Settings() {
       toast.error(getErrorMessage(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveSpecialDays = async () => {
+    if (!specialDays) return;
+    setSavingSpecialDays(true);
+    try {
+      // Persist all four keys; backend validates mode + bool.
+      await apiClient.put('/admin/settings/special_day_dec24_mode', {
+        value: specialDays.special_day_dec24_mode,
+      });
+      await apiClient.put('/admin/settings/special_day_dec24_counts_as_vacation', {
+        value: String(specialDays.special_day_dec24_counts_as_vacation),
+      });
+      await apiClient.put('/admin/settings/special_day_dec31_mode', {
+        value: specialDays.special_day_dec31_mode,
+      });
+      await apiClient.put('/admin/settings/special_day_dec31_counts_as_vacation', {
+        value: String(specialDays.special_day_dec31_counts_as_vacation),
+      });
+      setOriginalSpecialDays(specialDays);
+      toast.success('Sondertage (24./31.12.) gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingSpecialDays(false);
     }
   };
 
@@ -451,6 +503,99 @@ export default function Settings() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* Sondertage 24./31.12. (#146) */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Sondertage (24./31.12.)</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Legen Sie pro Tag fest, ob der 24.12. (Heiligabend) und der 31.12. (Silvester) ein
+          ganzer Arbeitstag, ein Halbtag (halbe Sollzeit) oder frei sind. Bei „Frei" wählen Sie
+          zusätzlich, ob der Tag als Urlaub (vom Urlaubskonto abgezogen) oder als bezahlte
+          Freistellung (kein Abzug, wie ein Feiertag) gilt. Standard: Arbeitstag.
+        </p>
+        {specialDays && (
+          <div className="space-y-4">
+            {([
+              { key: 'dec24' as const, label: '24.12. (Heiligabend)' },
+              { key: 'dec31' as const, label: '31.12. (Silvester)' },
+            ]).map(({ key, label }) => {
+              const modeField = `special_day_${key}_mode` as keyof SpecialDaysConfig;
+              const vacField = `special_day_${key}_counts_as_vacation` as keyof SpecialDaysConfig;
+              const mode = specialDays[modeField] as SpecialDayMode;
+              const countsAsVacation = specialDays[vacField] as boolean;
+              return (
+                <div key={key} className="flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="min-w-[12rem]">
+                    <span className="block text-sm font-medium text-gray-700 mb-1">{label}</span>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor={`special-${key}-mode`}
+                      className="block text-sm font-medium text-gray-700 mb-1"
+                    >
+                      Modus
+                    </label>
+                    <select
+                      id={`special-${key}-mode`}
+                      value={mode}
+                      onChange={(e) =>
+                        setSpecialDays({
+                          ...specialDays,
+                          [modeField]: e.target.value as SpecialDayMode,
+                        })
+                      }
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    >
+                      {(Object.keys(SPECIAL_DAY_MODE_LABELS) as SpecialDayMode[]).map((m) => (
+                        <option key={m} value={m}>
+                          {SPECIAL_DAY_MODE_LABELS[m]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {mode === 'free' && (
+                    <div>
+                      <label
+                        htmlFor={`special-${key}-vacation`}
+                        className="block text-sm font-medium text-gray-700 mb-1"
+                      >
+                        Anrechnung
+                      </label>
+                      <select
+                        id={`special-${key}-vacation`}
+                        value={countsAsVacation ? 'vacation' : 'paid_leave'}
+                        onChange={(e) =>
+                          setSpecialDays({
+                            ...specialDays,
+                            [vacField]: e.target.value === 'vacation',
+                          })
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                      >
+                        <option value="vacation">Urlaub</option>
+                        <option value="paid_leave">Bezahlte Freistellung</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div>
+              <button
+                onClick={saveSpecialDays}
+                disabled={
+                  savingSpecialDays ||
+                  JSON.stringify(specialDays) === JSON.stringify(originalSpecialDays)
+                }
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Save size={16} />
+                Speichern
+              </button>
+            </div>
           </div>
         )}
       </div>
