@@ -498,6 +498,25 @@ def create_time_entry(
 
     exempt = current_user.exempt_from_arbzg
 
+    # §3 ArbZG: daily hours hard cap – skipped for exempt users.
+    # MUST run BEFORE the §4 break-waiver / approval branch below: a >10h day is
+    # an absolute legal ceiling that no break waiver (and no approval workflow)
+    # can lift. Computing + raising here ensures the entry is rejected regardless
+    # of whether the practice requires approval for break exceptions (#144 fix).
+    daily_hours = _calculate_daily_net_hours(
+        db=db,
+        user_id=current_user.id,
+        entry_date=entry_data.date,
+        start_time=entry_data.start_time,
+        end_time=entry_data.end_time,
+        break_minutes=entry_data.break_minutes,
+    )
+    if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
+        )
+
     # #144 §4 ArbZG: a documented exception when the mandatory break was not
     # possible. Only for non-exempt users (exempt skip §4 entirely, #141).
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
@@ -555,21 +574,6 @@ def create_time_entry(
             # No approval required → persist the entry with the waiver reason
             # and surface the §4 deviation as a warning.
             break_waiver_active = True
-
-    # §3 ArbZG: daily hours check – skipped for exempt users
-    daily_hours = _calculate_daily_net_hours(
-        db=db,
-        user_id=current_user.id,
-        entry_date=entry_data.date,
-        start_time=entry_data.start_time,
-        end_time=entry_data.end_time,
-        break_minutes=entry_data.break_minutes,
-    )
-    if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
-        )
 
     # Collect warnings (also skipped for exempt users)
     warnings: list[str] = []
@@ -698,6 +702,27 @@ def update_time_entry(
 
     exempt = current_user.exempt_from_arbzg
 
+    # §3 ArbZG: daily hours hard cap – skipped for exempt users.
+    # MUST run BEFORE the §4 break-waiver / approval branch below: a >10h day is
+    # an absolute legal ceiling that no break waiver (and no approval workflow)
+    # can lift. Computing + raising here ensures the edit is rejected regardless
+    # of whether the practice requires approval for break exceptions (#144 fix).
+    if not exempt and entry.end_time is not None:
+        daily_hours = _calculate_daily_net_hours(
+            db=db,
+            user_id=entry.user_id,
+            entry_date=entry.date,
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+            break_minutes=entry.break_minutes,
+            exclude_entry_id=entry.id,
+        )
+        if daily_hours > MAX_DAILY_HOURS_HARD:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
+            )
+
     # #144 §4 ArbZG: documented break-exception (only non-exempt users).
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
@@ -759,23 +784,6 @@ def update_time_entry(
 
             break_waiver_active = True
             entry.break_waiver_reason = waiver_reason
-
-    # §3 ArbZG: daily hours check – skipped for exempt users
-    if not exempt and entry.end_time is not None:
-        daily_hours = _calculate_daily_net_hours(
-            db=db,
-            user_id=entry.user_id,
-            entry_date=entry.date,
-            start_time=entry.start_time,
-            end_time=entry.end_time,
-            break_minutes=entry.break_minutes,
-            exclude_entry_id=entry.id,
-        )
-        if daily_hours > MAX_DAILY_HOURS_HARD:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
-            )
 
     # #144 §4 ArbZG: audit trail for a documented break waiver on update.
     if break_waiver_active:
