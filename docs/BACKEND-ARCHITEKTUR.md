@@ -48,13 +48,16 @@ Der Admin-Router wurde aus einer 1244-Zeilen God-File in 7 Sub-Router aufgeteilt
 
 ### Absence-Typ-Matrix
 
-| Absence-Typ | Reduziert Soll? | Zählt als Ist? | Zweck |
-|---|---|---|---|
-| **VACATION** | Ja | Nein | Urlaub |
-| **SICK** | Nein | Ja | Krankheit (§3 EntgFG) |
-| **TRAINING** | Nein | Ja | Fortbildung (außer Haus) |
-| **OVERTIME** | Nein | Nein | Überstundenausgleich |
-| **OTHER** | Ja | Nein | Sonstiges |
+| Absence-Typ | Reduziert Soll? | Zählt als Ist? | Urlaubsabzug? | Zweck |
+|---|---|---|---|---|
+| **VACATION** | Ja | Nein | Ja | Urlaub |
+| **SICK** | Nein | Ja | Nein | Krankheit (§3 EntgFG) |
+| **TRAINING** | Nein | Ja | Nein | Fortbildung (außer Haus) |
+| **OVERTIME** | Nein | Nein | Nein | Überstundenausgleich |
+| **OTHER** | Ja | Nein | Nein | Sonstiges (UNbezahlt) |
+| **PAID_LEAVE** | Ja | Nein | Nein | Bezahlte Freistellung (#145, z.B. Betriebsferien wie Feiertag) |
+
+> **PAID_LEAVE vs. OTHER:** rechen-mechanisch identisch (Soll↓, Ist=0, bilanzneutral, kein Urlaubsabzug). Unterschied ist nur die Reporting-Kategorie — PAID_LEAVE ist *bezahlt*, OTHER ist *unbezahlt*. Beide fallen durch den `notin_([TRAINING, SICK, OVERTIME])`-Filter im `calculation_service`; `get_vacation_account` summiert ausschließlich VACATION, daher bleibt das Urlaubskonto bei PAID_LEAVE unberührt.
 
 **Überstundenausgleich-Logik:** An einem Ausgleichstag bleibt das Soll bestehen (z.B. 8h), die Ist-Stunden sind 0h. Dadurch sinkt das kumulative Überstundenkonto um das Tagessoll. Beispiel: 10 Arbeitstage à 9h mit 1 Tag Ausgleich → Soll 80h, Ist 81h, Bilanz +1h.
 
@@ -63,7 +66,7 @@ Der Admin-Router wurde aus einer 1244-Zeilen God-File in 7 Sub-Router aufgeteilt
 Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 - `day_type = "mixed"`
 - `actual_hours = time_hours + credited_sum` (TRAINING/SICK werden gutgeschrieben)
-- `target_hours = daily_target - target_reducing_sum` (VACATION/OTHER/OVERTIME reduzieren Soll)
+- `target_hours = daily_target - target_reducing_sum` (VACATION/OTHER/PAID_LEAVE reduzieren Soll; OVERTIME lässt Soll bestehen)
 
 ### Jahresabschluss (create_year_closing)
 
@@ -83,7 +86,7 @@ Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 
 - Budget = `user.vacation_days` + Übertrag (YearCarryover)
 - Pro-Rata bei Eintritt/Austritt im laufenden Jahr
-- Verbrauch = Summe aller VACATION-Absences im Jahr
+- Verbrauch = Summe aller VACATION-Absences im Jahr (PAID_LEAVE wird NICHT mitgezählt, #145)
 - Konvertierung Tage ↔ Stunden via aktuellem `daily_target`
 
 ## Wichtige Patterns

@@ -208,6 +208,11 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     # - SICK: §3 EntgFG - employee must be credited as if they worked the planned hours
     # - OVERTIME: Überstundenausgleich – Soll bleibt bestehen, Tag zählt als 0h Ist,
     #   dadurch reduziert sich das Überstundenkonto um die geplanten Stunden
+    # VACATION, OTHER and PAID_LEAVE (#145) are NOT excluded -> they all
+    # reduce the target (the employee doesn't have to work those days). For
+    # PAID_LEAVE the rechen-mechanik is identical to OTHER; the difference is
+    # only that PAID_LEAVE is paid and doesn't touch the vacation budget
+    # (see get_vacation_account, which sums only VACATION).
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         date_in_month(Absence.date, year, month),
@@ -374,7 +379,10 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         key = (ca.date.year, ca.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
 
-    # All absences in range (exclude TRAINING, SICK, OVERTIME — same rule as get_monthly_target)
+    # All absences in range (exclude TRAINING, SICK, OVERTIME — same rule as
+    # get_monthly_target). VACATION/OTHER/PAID_LEAVE reduce the target and are
+    # therefore balance-neutral (target drops, actual unaffected). PAID_LEAVE
+    # (#145) is intentionally treated exactly like OTHER here.
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start_date,
@@ -466,7 +474,9 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     ).all()
     holiday_dates: set = {h.date for h in holidays}
 
-    # Fetch absences in range (exclude TRAINING, SICK, OVERTIME - same as get_monthly_target)
+    # Fetch absences in range (exclude TRAINING, SICK, OVERTIME - same as
+    # get_monthly_target). PAID_LEAVE (#145) is treated like OTHER and falls
+    # through this filter, so it reduces the target like a normal absence day.
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start,
@@ -593,7 +603,10 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
 
     budget_hours = budget_days * daily_target
 
-    # Calculate used vacation hours (F-033: sargable date range)
+    # Calculate used vacation hours (F-033: sargable date range).
+    # Only VACATION deducts the budget. PAID_LEAVE (#145) is paid leave like a
+    # holiday and is intentionally NOT counted here, so a Betriebsferien booked
+    # as bezahlte Freistellung leaves the vacation budget untouched.
     vacation_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.type == AbsenceType.VACATION,

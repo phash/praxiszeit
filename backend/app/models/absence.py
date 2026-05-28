@@ -25,12 +25,24 @@ class AbsenceType(str, enum.Enum):
                  out of both sides). Explicitly NOT paid leave. If you
                  need paid "Sonderurlaub", use VACATION and track the
                  reason in the note field.
+    - PAID_LEAVE: PAID Freistellung (e.g. Betriebsferien als bezahlte
+                 Freistellung statt Urlaub, #145). Rechen-mechanik is
+                 IDENTICAL to OTHER — reduces TARGET, adds 0 to ACTUAL,
+                 balance-neutral, and crucially does NOT deduct the
+                 vacation budget (get_vacation_account sums only VACATION).
+                 The difference to OTHER is purely the reporting category:
+                 PAID_LEAVE is a PAID, own-category leave, whereas OTHER is
+                 explicitly UNPAID. Both fall through the
+                 ``notin_([TRAINING, SICK, OVERTIME])`` filter in
+                 calculation_service, so PAID_LEAVE is handled the same way
+                 as OTHER without an explicit branch.
     """
     VACATION = "vacation"
     SICK = "sick"
     TRAINING = "training"
     OVERTIME = "overtime"
     OTHER = "other"
+    PAID_LEAVE = "paid_leave"
 
 
 class Absence(Base):
