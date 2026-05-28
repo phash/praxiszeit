@@ -115,5 +115,6 @@ ALTER TABLE time_entries ADD COLUMN break_waiver_reason TEXT NULL;
 
 ## Notizen
 
+- **Rechtsnatur des Waivers (A-M1):** Die §4-ArbZG-Pausenpflicht ist vom Arbeitnehmer **nicht** abdingbar. Der Break-Waiver ist daher **keine rechtliche Erlaubnis**, sondern die auditierte Dokumentation eines §4-Verstoßes (Beweis-/Nachvollziehbarkeitszweck) — die Pflicht bleibt bestehen. UI-Text in `TimeTracking.tsx` stellt dies klar.
 - Abgrenzung zu #141: Dieses Feature betrifft **nicht-exempte** MA; exempte MA durchlaufen die Prüfung gar nicht.
 - CR-Approval-Precondition-Checks vor Status-Änderung beachten (Race-Condition-Fix, CLAUDE.md).
