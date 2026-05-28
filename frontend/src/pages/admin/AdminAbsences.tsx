@@ -31,7 +31,7 @@ interface Absence {
   id: string;
   date: string;
   end_date?: string;
-  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
+  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other' | 'paid_leave';
   hours: number;
   note?: string;
 }
