@@ -47,6 +47,10 @@ export default function Settings() {
   const [approvalRequired, setApprovalRequired] = useState(false);
   const [originalApproval, setOriginalApproval] = useState(false);
 
+  // #144 Break-exception approval (Pflicht-Pause war nicht möglich)
+  const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
+  const [originalBreakApproval, setOriginalBreakApproval] = useState(false);
+
   // Custom holidays
   const currentYear = new Date().getFullYear();
   const [holidayYear, setHolidayYear] = useState(currentYear);
@@ -93,6 +97,12 @@ export default function Settings() {
       const val = approvalSetting?.value?.toLowerCase() === 'true';
       setApprovalRequired(val);
       setOriginalApproval(val);
+
+      // #144 Break-exception approval
+      const breakSetting = settingsRes.data.find((s) => s.key === 'break_exception_requires_approval');
+      const breakVal = breakSetting?.value?.toLowerCase() === 'true';
+      setBreakApprovalRequired(breakVal);
+      setOriginalBreakApproval(breakVal);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -135,6 +145,21 @@ export default function Settings() {
       });
       setOriginalApproval(approvalRequired);
       toast.success('Urlaubsgenehmigung-Einstellung gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveBreakApproval = async () => {
+    setSaving(true);
+    try {
+      await apiClient.put('/admin/settings/break_exception_requires_approval', {
+        value: String(breakApprovalRequired),
+      });
+      setOriginalBreakApproval(breakApprovalRequired);
+      toast.success('Pflicht-Pause-Ausnahme-Einstellung gespeichert.');
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -486,6 +511,48 @@ export default function Settings() {
           <button
             onClick={saveApproval}
             disabled={saving || approvalRequired === originalApproval}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save size={16} />
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      {/* Pflicht-Pause-Ausnahme (#144) */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Pflicht-Pause-Ausnahme</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Konnte eine gesetzlich vorgeschriebene Pause (§4 ArbZG) nicht eingelegt werden, können
+          Mitarbeiter den Eintrag mit einer Pflicht-Begründung trotzdem erfassen. Wenn diese Option
+          aktiviert ist, wird ein solcher Eintrag erst nach Admin-Genehmigung wirksam (4-Augen-Prinzip);
+          andernfalls wird er sofort gespeichert und die Abweichung als Warnung sowie im Änderungsprotokoll
+          dokumentiert.
+        </p>
+        <div className="flex items-center justify-between max-w-sm">
+          <label htmlFor="break-approval-toggle" className="text-sm font-medium text-gray-700">
+            Genehmigung erforderlich
+          </label>
+          <button
+            id="break-approval-toggle"
+            role="switch"
+            aria-checked={breakApprovalRequired}
+            onClick={() => setBreakApprovalRequired(!breakApprovalRequired)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              breakApprovalRequired ? 'bg-primary' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                breakApprovalRequired ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={saveBreakApproval}
+            disabled={saving || breakApprovalRequired === originalBreakApproval}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />
