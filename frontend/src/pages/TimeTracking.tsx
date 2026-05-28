@@ -194,6 +194,9 @@ export default function TimeTracking() {
   // #144 §4 ArbZG: "Pflicht-Pause war nicht möglich" exception.
   const [breakWaiverChecked, setBreakWaiverChecked] = useState(false);
   const [breakWaiverReason, setBreakWaiverReason] = useState('');
+  // Guards against double-submit (esp. the approval path, which would otherwise
+  // create two pending change requests on a fast double-click).
+  const [submitting, setSubmitting] = useState(false);
   // Whether the practice requires admin approval for such exceptions (public setting).
   const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
 
@@ -327,6 +330,9 @@ export default function TimeTracking() {
       return;
     }
 
+    if (submitting) return;
+    setSubmitting(true);
+
     // Smart break default: auto-set 30 min when creating entry >6h with no break
     let submitData: typeof formData & { break_waiver_reason?: string } = { ...formData };
     if (!editingId && submitData.break_minutes === 0) {
@@ -370,6 +376,8 @@ export default function TimeTracking() {
       resetForm();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -708,7 +716,7 @@ export default function TimeTracking() {
             </div>
             <div className="hidden md:block">
               <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
-              <Button type="submit" variant="primary" size="md" icon={Save} fullWidth>
+              <Button type="submit" variant="primary" size="md" icon={Save} fullWidth disabled={submitting}>
                 Speichern
               </Button>
             </div>
