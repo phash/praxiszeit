@@ -57,9 +57,19 @@ def validate_daily_break(
     # Sort by start time
     blocks.sort(key=lambda b: b["start"])
 
-    # Calculate total gross work time and total declared breaks
+    # Calculate total gross work time.
     total_gross_minutes = sum(b["end"] - b["start"] for b in blocks)
-    total_declared_breaks = sum(b["break_minutes"] for b in blocks)
+
+    # Declared breaks: §4 Satz 2 ArbZG requires each break SEGMENT to be at
+    # least 15 minutes to count toward the mandatory break. The gap calculation
+    # below already enforces this (≥15) — apply the same rule to every block's
+    # declared break, including pre-existing same-day entries, so a 10-min
+    # declared break never counts as a valid break segment regardless of which
+    # entry contributed it. (A-M2: previously only the new entry's short break
+    # was caught by the late <15 check; pre-existing short breaks slipped in.)
+    total_declared_breaks = sum(
+        b["break_minutes"] for b in blocks if b["break_minutes"] >= 15
+    )
 
     # Calculate gaps between consecutive blocks (these count as breaks too)
     # §4 Satz 2 ArbZG: Pausenabschnitte müssen mindestens 15 Minuten betragen
