@@ -18,6 +18,7 @@ import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
 import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
+import { computeBreakError } from '../utils/breakValidation';
 import { useUIStore } from '../stores/uiStore';
 
 interface TimeEntry {
@@ -264,42 +265,27 @@ export default function TimeTracking() {
       }
     }
 
-    // Client-side break validation (ArbZG §4)
-    const startParts = formData.start_time.split(':').map(Number);
-    const endParts = formData.end_time.split(':').map(Number);
-    const grossMinutes = (endParts[0] * 60 + endParts[1]) - (startParts[0] * 60 + startParts[1]);
-    const netMinutes = grossMinutes - formData.break_minutes;
-
-    if (netMinutes > 360) {
-      // Also count gaps between other entries on same day (skip open entries)
-      // §4 Satz 2: only gaps >= 15 min count as valid break segments
-      const allBlocks = sameDay.filter(e => e.end_time).map(e => ({
+    // Client-side break validation (ArbZG §4). §18 ArbZG: leitende Angestellte
+    // (exempt_from_arbzg) are skipped — the backend honours the exemption on
+    // every write path, so the client must mirror that.
+    // Also count gaps between other entries on same day (skip open entries)
+    // §4 Satz 2: only gaps >= 15 min count as valid break segments.
+    const existingBlocks = sameDay
+      .filter((e) => e.end_time)
+      .map((e) => ({
         start: parseInt(e.start_time.substring(0, 2)) * 60 + parseInt(e.start_time.substring(3, 5)),
         end: parseInt(e.end_time!.substring(0, 2)) * 60 + parseInt(e.end_time!.substring(3, 5)),
         brk: e.break_minutes,
       }));
-      allBlocks.push({
-        start: startParts[0] * 60 + startParts[1],
-        end: endParts[0] * 60 + endParts[1],
-        brk: formData.break_minutes,
-      });
-      allBlocks.sort((a, b) => a.start - b.start);
-
-      let totalDeclared = allBlocks.reduce((s, b) => s + b.brk, 0);
-      let totalGap = 0;
-      for (let i = 1; i < allBlocks.length; i++) {
-        const gap = allBlocks[i].start - allBlocks[i - 1].end;
-        if (gap >= 15) totalGap += gap;  // §4 Satz 2: mind. 15 Min pro Abschnitt
-      }
-      const totalGross = allBlocks.reduce((s, b) => s + (b.end - b.start), 0);
-      const totalNet = totalGross - totalDeclared;
-      const totalEffBreak = totalDeclared + totalGap;
-
-      if (totalNet > 540 && totalEffBreak < 45) {
-        newErrors.break_time = 'Bei >9h Arbeitszeit sind mind. 45 Min. Pause erforderlich (ArbZG §4)';
-      } else if (totalNet > 360 && totalEffBreak < 30) {
-        newErrors.break_time = 'Bei >6h Arbeitszeit sind mind. 30 Min. Pause erforderlich (ArbZG §4)';
-      }
+    const breakError = computeBreakError(
+      existingBlocks,
+      formData.start_time,
+      formData.end_time,
+      formData.break_minutes,
+      !!user?.exempt_from_arbzg
+    );
+    if (breakError) {
+      newErrors.break_time = breakError;
     }
 
     setErrors(newErrors);
