@@ -15,6 +15,23 @@ from app.config import settings
 from sqlalchemy import extract
 
 
+# M-SEC1: spreadsheet formula / CSV injection guard. A cell whose text starts
+# with one of these characters is prefixed with an apostrophe so Excel /
+# LibreOffice treat it as literal text and never evaluate it as a formula.
+# Employee free-text (note, sunday_exception_reason) and user names flow into
+# the §16 export which an admin then opens — without this, a note like
+# ``=HYPERLINK(...)`` or a DDE payload would execute on their workstation.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def neutralize_spreadsheet_formula(value):
+    """Return ``value`` with a leading apostrophe if it could be parsed as a
+    spreadsheet formula. Non-strings and safe strings are returned unchanged."""
+    if isinstance(value, str) and value and value[0] in _FORMULA_PREFIXES:
+        return "'" + value
+    return value
+
+
 def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
     """
     Generate Excel report for all employees for a given month.
@@ -68,7 +85,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # Row 1–2: ArbZG-relevante Mitarbeiter-Metadaten (§16 ArbZG Aufzeichnungspflicht)
     sheet.cell(row=1, column=1).value = "Mitarbeiter:"
     sheet.cell(row=1, column=1).font = Font(bold=True)
-    sheet.cell(row=1, column=2).value = f"{user.first_name} {user.last_name}"
+    sheet.cell(row=1, column=2).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name}")
     sheet.cell(row=1, column=4).value = "Wochenstunden:"
     sheet.cell(row=1, column=4).font = Font(bold=True)
     sheet.cell(row=1, column=5).value = float(user.weekly_hours)
@@ -181,7 +198,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 if e.note:
                     bemerkung_parts.append(e.note)
             if bemerkung_parts:
-                sheet.cell(row=row, column=10).value = " | ".join(bemerkung_parts)
+                sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(" | ".join(bemerkung_parts))
             net = total_day_net
             total_net += net
         else:
@@ -242,7 +259,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 }
                 type_name = absence_type_map.get(absence.type.value, absence.type.value)
                 if absence.note:
-                    sheet.cell(row=row, column=10).value = absence.note
+                    sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(absence.note)
             sheet.cell(row=row, column=9).value = f"{type_name} ({float(absence.hours)}h)"
         else:
             # Regulärer Arbeitstag
@@ -430,7 +447,7 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         sick_days = sick_hours / float(daily_target)
 
         # Write data
-        sheet.cell(row=row, column=1).value = f"{user.last_name}, {user.first_name}"
+        sheet.cell(row=row, column=1).value = neutralize_spreadsheet_formula(f"{user.last_name}, {user.first_name}")
         sheet.cell(row=row, column=2).value = float(user.weekly_hours)
         sheet.cell(row=row, column=3).value = float(yearly_target)
         sheet.cell(row=row, column=3).number_format = '0.00'
@@ -553,7 +570,7 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
         total_days = vacation_days + (sick_days if include_health_data else 0) + training_days + overtime_comp_days + other_days + paid_leave_days
 
         # Write data
-        sheet.cell(row=row, column=1).value = f"{user.last_name}, {user.first_name}"
+        sheet.cell(row=row, column=1).value = neutralize_spreadsheet_formula(f"{user.last_name}, {user.first_name}")
         sheet.cell(row=row, column=2).value = vacation_days
         sheet.cell(row=row, column=2).number_format = '0.0'
         if include_health_data:
@@ -591,7 +608,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet = wb.create_sheet(title=f"{user.last_name[:20]}")
 
     # Title
-    sheet.cell(row=1, column=1).value = f"{user.first_name} {user.last_name} - Jahresreport {year}"
+    sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name} - Jahresreport {year}")
     sheet.cell(row=1, column=1).font = Font(bold=True, size=14)
     sheet.merge_cells('A1:J1')
 
@@ -711,7 +728,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 if e.note:
                     bemerkung_parts.append(e.note)
             if bemerkung_parts:
-                sheet.cell(row=row, column=10).value = " | ".join(bemerkung_parts)
+                sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(" | ".join(bemerkung_parts))
             net = total_day_net
             total_net += net
         else:
@@ -767,7 +784,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 }
                 type_name = absence_type_map.get(absence.type.value, absence.type.value)
                 if absence.note:
-                    sheet.cell(row=row, column=10).value = absence.note
+                    sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(absence.note)
             sheet.cell(row=row, column=9).value = f"{type_name} ({float(absence.hours)}h)"
         else:
             target = daily_target
@@ -915,7 +932,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     # Row 2: Employee name
     sheet.cell(row=2, column=1).value = "Mitarbeiterin"
     sheet.cell(row=2, column=1).font = bold_font
-    sheet.cell(row=2, column=2).value = f"{user.first_name} {user.last_name}"
+    sheet.cell(row=2, column=2).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name}")
 
     # Row 3: Year title + ArbZG-Flags
     sheet.cell(row=3, column=1).value = "Jahresarbeitszeiten"

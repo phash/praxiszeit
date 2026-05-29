@@ -410,3 +410,19 @@ class TestLicenseValidation:
 
         # Cleanup
         lic.set_license_state(None)
+
+
+class TestSecurityHeadersAlwaysAttached:
+    """Review 2026-05-29 (M-SEC2): SecurityHeadersMiddleware must be attached
+    even in Docker/prod mode (SERVE_FRONTEND=False) as defense-in-depth — a
+    missing/misconfigured/replaced reverse proxy must never leave API responses
+    without CSP / anti-clickjacking headers."""
+
+    def test_attached_regardless_of_serve_frontend(self):
+        import app.main as m
+        from app.config import settings
+        # Guard: this test is only meaningful when frontend-serving is OFF
+        # (the Docker/prod default), which is the env the suite runs in.
+        assert settings.SERVE_FRONTEND is False
+        classes = [mw.cls for mw in m.app.user_middleware]
+        assert SecurityHeadersMiddleware in classes

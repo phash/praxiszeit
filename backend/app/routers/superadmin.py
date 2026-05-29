@@ -194,7 +194,15 @@ def export_tenant_arbzg_data(
         tenant_id=tenant_id,
     )
     db.add(marker)
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        # The audit marker is a compliance nice-to-have; it must never abort
+        # the legally-mandated §16 export itself. Roll back the failed marker
+        # and still deliver the records.
+        db.rollback()
+        print(f"AUDIT WARN: Superadmin-ArbZG-Export-Marker konnte nicht "
+              f"persistiert werden (tenant={tenant_id}): {exc}")
 
     buffer = BytesIO(json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
     filename = f"PraxisZeit_ArbZG-Export_{tenant.slug}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"

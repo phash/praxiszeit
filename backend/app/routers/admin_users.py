@@ -270,7 +270,13 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = D
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Create a new user (admin only)."""
-    existing_user = db.query(User).filter(func.lower(User.username) == user_data.username.lower()).first()
+    # F-026: usernames are unique per (tenant_id, username) — scope the
+    # uniqueness probe to the caller's tenant so the same username can exist in
+    # different tenants, and so the check does not silently depend on RLS.
+    existing_user = db.query(User).filter(
+        func.lower(User.username) == user_data.username.lower(),
+        User.tenant_id == current_user.tenant_id,
+    ).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 

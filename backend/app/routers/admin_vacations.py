@@ -53,7 +53,15 @@ def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse
         if vr.last_modified_by:
             user_ids.add(vr.last_modified_by)
     user_ids.discard(None)
-    users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+    # F-026: scope referenced users to the tenants of the requests they belong to.
+    tenant_ids = {vr.tenant_id for vr in vrs}
+    users = (
+        db.query(User)
+        .filter(User.id.in_(user_ids), User.tenant_id.in_(tenant_ids))
+        .all()
+        if user_ids
+        else []
+    )
     user_map = {u.id: u for u in users}
 
     results = []
@@ -90,7 +98,10 @@ def list_all_vacation_requests(
     current_user: User = Depends(require_admin),
 ):
     """List all vacation requests (admin view)."""
-    query = db.query(VacationRequest)
+    # F-026: explicit tenant scoping on top of RLS.
+    query = db.query(VacationRequest).filter(
+        VacationRequest.tenant_id == current_user.tenant_id
+    )
     if request_status:
         query = query.filter(VacationRequest.status == request_status)
     if user_id:
@@ -181,7 +192,13 @@ def review_vacation_request(
 
     holidays = set()
     for year in years:
-        for h in db.query(PublicHoliday).filter(PublicHoliday.year == year).all():
+        # F-026 + CLAUDE.md PublicHoliday rule: standalone holiday queries must
+        # be tenant-scoped explicitly (RLS does not always cover them).
+        rows = db.query(PublicHoliday).filter(
+            PublicHoliday.year == year,
+            PublicHoliday.tenant_id == current_user.tenant_id,
+        ).all()
+        for h in rows:
             holidays.add(h.date)
 
     # Determine working days

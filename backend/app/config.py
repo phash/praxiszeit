@@ -122,6 +122,14 @@ class Settings(BaseSettings):
     SERVE_FRONTEND: bool = False
     FRONTEND_DIR: str = "../frontend/dist"
 
+    # H2: whether to trust client-supplied X-Real-IP / X-Forwarded-For for
+    # rate-limiting. Only safe when a reverse proxy WE control (nginx/Caddy)
+    # sets these from the real socket. When the app is directly exposed
+    # (native mode) a client can spoof them to rotate rate-limit buckets and
+    # defeat the login limit. None = auto: trust only when NOT serving the
+    # frontend ourselves (i.e. behind a proxy). Override explicitly if needed.
+    TRUST_PROXY_HEADERS: Optional[bool] = None
+
     # License key file path (native installations only)
     LICENSE_KEY_PATH: Optional[str] = None
 
@@ -244,6 +252,16 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore"
     )
+
+    @property
+    def trust_proxy_headers(self) -> bool:
+        """H2: resolve whether client X-Real-IP / X-Forwarded-For may be trusted
+        for rate-limiting. Auto-default: trust only when a reverse proxy fronts
+        the app (i.e. we are NOT serving the frontend ourselves). Native mode
+        (SERVE_FRONTEND=True) is directly exposed → never trust client headers."""
+        if self.TRUST_PROXY_HEADERS is not None:
+            return self.TRUST_PROXY_HEADERS
+        return not self.SERVE_FRONTEND
 
 
 settings = Settings()

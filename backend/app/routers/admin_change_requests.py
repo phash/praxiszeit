@@ -439,7 +439,7 @@ def review_change_request(
 
     # NOTE: ArbZG warnings are informational and calculated post-commit.
     # Hard limits (§3 daily max, §4 breaks) are enforced at CR creation time.
-    # SS6 Abs. 2 / SS14 ArbZG: Warnungen bei CREATE/UPDATE-Genehmigung
+    # §6 Abs. 2 / §3 ArbZG: Warnungen bei CREATE/UPDATE-Genehmigung
     if (
         review.action == "approve"
         and cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE)
@@ -468,7 +468,7 @@ def review_change_request(
                     "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
                 )
 
-            # SS14 ArbZG: Wochenarbeitszeit-Warnung (48h)
+            # §3 ArbZG: Wochenarbeitszeit-Warnung (48h)
             weekly = _calculate_weekly_net_hours(
                 db=db,
                 user_id=cr.user_id,

@@ -17,8 +17,10 @@ from app.schemas.signup import (
     SignupResponse,
     VerifyResponse,
 )
+import uuid
+
 from app.services import signup_service
-from app.services.mail_service import send_verification_email
+from app.services.mail_service import send_account_exists_email, send_verification_email
 
 
 router = APIRouter(prefix="/api/public", tags=["public-signup"])
@@ -86,6 +88,15 @@ def signup(
         accepted_terms=body.accept_terms,
         accepted_privacy=body.accept_privacy,
     )
+    if result.already_registered:
+        # M-API5: enumeration-safe. The response must be indistinguishable from
+        # a fresh signup (same 201 + same body shape). Notify the real owner
+        # out-of-band; return a non-identifying placeholder tenant_id.
+        try:
+            send_account_exists_email(to=body.admin_email)
+        except Exception:  # noqa: BLE001 — never block, never leak via exception/timing
+            pass
+        return SignupResponse(tenant_id=str(uuid.uuid4()))
     # S-M01: build the verification URL from the canonical SAAS_APP_URL, not
     # from the attacker-controllable Origin/Host header.
     verify_url = _verify_url(result.verification_token)
@@ -96,7 +107,7 @@ def signup(
     )
     try:
         from app.services.alerting import alert_new_signup
-        alert_new_signup(body.practice_name, body.admin_email)
+        alert_new_signup(body.practice_name)  # M-DSG2: no admin email to Slack
     except Exception:  # noqa: BLE001 — alerts never block signup
         pass
     return SignupResponse(tenant_id=str(result.tenant_id))

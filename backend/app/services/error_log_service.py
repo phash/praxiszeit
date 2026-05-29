@@ -17,7 +17,6 @@ from app.database import set_superadmin_context
 # DSGVO F-007: Regex patterns for PII scrubbing
 _UUID_RE = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I)
 _EMAIL_RE = re.compile(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b')
-_NAME_IN_PATH_RE = re.compile(r'(?<=/users/)[0-9a-f-]{36}')
 
 def _scrub_pii(text: str) -> str:
     """Replace UUIDs and email addresses in log messages with placeholders."""
@@ -26,6 +25,19 @@ def _scrub_pii(text: str) -> str:
     text = _UUID_RE.sub('<uuid>', text)
     text = _EMAIL_RE.sub('<email>', text)
     return text
+
+
+def _scrub_path(path: Optional[str]) -> Optional[str]:
+    """M-DSG4: strip resource UUIDs from request paths before they are stored.
+
+    Many paths embed a user/resource UUID (``/api/admin/users/<uuid>/journal``,
+    ``/api/absences/<uuid>``) — the pseudonymous identifier the scrubber removes
+    from message/traceback would otherwise persist verbatim in the ``path``
+    column. Replacing every UUID with ``<id>`` also improves dedup (the same
+    error on different ids aggregates to one fingerprint)."""
+    if not path:
+        return path
+    return _UUID_RE.sub('<id>', path)
 
 
 def _make_fingerprint(level: str, logger: str, message: str, path: Optional[str]) -> str:
@@ -51,6 +63,8 @@ def log_error(
     """
     # DSGVO F-007: scrub PII before storing
     message = _scrub_pii(message)
+    # M-DSG4: scrub UUIDs out of the path before it is stored AND fingerprinted.
+    path = _scrub_path(path)
     if traceback_str:
         traceback_str = _scrub_pii(traceback_str)
         # VULN-012: store only first 2000 chars to avoid leaking full stack frames

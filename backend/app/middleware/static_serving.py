@@ -20,6 +20,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # M-SEC3: style-src keeps 'unsafe-inline' deliberately — the React UI
+        # uses dynamic inline styles (style={{...}} for colours/widths) and two
+        # inline <style> keyframe blocks. Dropping it would break rendering;
+        # removing it requires migrating those to external CSS / nonces (tracked
+        # follow-up). The high-value directive script-src stays 'self'.
+        # Keep this policy byte-identical to frontend/nginx.conf.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self'; "

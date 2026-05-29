@@ -20,6 +20,7 @@ from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_month, date_in_year
+from app.services.export_service import neutralize_spreadsheet_formula
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,11 @@ def _doc_with_styles() -> tuple:
 
 def _str_cell(value: str, style=None) -> TableCell:
     cell = TableCell(valuetype="string", stylename=style)
-    cell.addElement(P(text=str(value) if value is not None else ""))
+    # M-SEC1: single choke-point for all string cells — neutralize formula /
+    # CSV injection so employee free-text can't execute when the export is
+    # opened in LibreOffice/Excel.
+    text = str(value) if value is not None else ""
+    cell.addElement(P(text=neutralize_spreadsheet_formula(text)))
     return cell
 
 

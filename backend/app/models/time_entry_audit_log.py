@@ -16,7 +16,10 @@ class TimeEntryAuditLog(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)  # affected employee
     changed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)  # admin who made change
 
-    action = Column(String(20), nullable=False)  # "create", "update", "delete"
+    # Originally 20 chars (create/update/delete); widened to 40 in migration 044
+    # because arbzg_superadmin_export (23) and license_readonly_mode_entered (29)
+    # overflowed varchar(20) → StringDataRightTruncation → 500 on Postgres.
+    action = Column(String(40), nullable=False)  # "create", "update", "delete"
 
     # Old values (null for create)
     old_date = Column(Date, nullable=True)

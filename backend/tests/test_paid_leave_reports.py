@@ -158,3 +158,42 @@ def test_ods_classic_yearly_export_has_paid_leave_monthly_header(db, test_user):
 
     # Per-employee monthly-rows sheet header
     assert "Bez. Freistellung (Std)" in content, "ODS monthly sheet missing paid-leave column"
+
+
+# ---------------------------------------------------------------------------
+# §3 24-week-average (M-ARB2, Review 2026-05-29): scheduled_work_days must be
+# computed per actual working day (honouring holidays + absences + contract
+# history), not a flat 24 × work_days_per_week.
+# ---------------------------------------------------------------------------
+
+def test_24_week_average_excludes_holidays_and_absences(db, test_user, test_admin):
+    from app.models.public_holiday import PublicHoliday
+
+    end = date(2026, 3, 31)
+
+    def override_db():
+        yield db
+
+    _app.dependency_overrides[get_db] = override_db
+    _app.dependency_overrides[get_current_user] = lambda: test_admin
+    _app.dependency_overrides[require_admin] = lambda: test_admin
+    try:
+        client = TestClient(_app)
+        base = client.get(f"/api/admin/reports/24-week-average?end_date={end.isoformat()}")
+        assert base.status_code == 200, base.text
+        base_row = next(r for r in base.json()["employees"] if r["user_id"] == str(test_user.id))
+        base_days = base_row["scheduled_work_days"]
+        assert base_days > 0
+
+        # One public holiday + one full-day VACATION, both on distinct weekdays
+        # inside the window (2026-02-03 Tue, 2026-02-04 Wed).
+        db.add(PublicHoliday(date=date(2026, 2, 3), name="Testtag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+        _mk_absence(db, test_user, date(2026, 2, 4), AbsenceType.VACATION, 8.0)
+        db.commit()
+
+        after = client.get(f"/api/admin/reports/24-week-average?end_date={end.isoformat()}")
+        after_row = next(r for r in after.json()["employees"] if r["user_id"] == str(test_user.id))
+        # Holiday + vacation must each remove one scheduled working day.
+        assert after_row["scheduled_work_days"] == base_days - 2
+    finally:
+        _app.dependency_overrides.clear()

@@ -15,6 +15,7 @@ from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
+    BREAK_WAIVER_SOURCE,
 )
 from app.services.arbzg_utils import is_night_work
 
@@ -40,15 +41,24 @@ def admin_create_time_entry(
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     admin_create_warnings: list[str] = []
+    waiver_reason = (entry_data.break_waiver_reason or "").strip()
+    break_waiver_active = False
     if not user.exempt_from_arbzg:
-        # Break validation (SS4 ArbZG)
+        # Break validation (§4 ArbZG)
         break_error = validate_daily_break(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=entry_data.start_time, end_time=entry_data.end_time,
             break_minutes=entry_data.break_minutes,
         )
         if break_error:
-            raise HTTPException(status_code=400, detail=break_error)
+            # M-ARB3: parity with the employee path (#144) — a documented break
+            # waiver lets the admin record the §4 deviation instead of being
+            # hard-blocked. §3 (10h hard cap, below) is checked afterwards and
+            # is NOT waivable.
+            if not waiver_reason:
+                raise HTTPException(status_code=400, detail=break_error)
+            break_waiver_active = True
+            admin_create_warnings.append(f"BREAK_WAIVER: {break_error}")
 
         # SS3 ArbZG: daily hours hard limit
         daily_hours = _calculate_daily_net_hours(
@@ -66,7 +76,7 @@ def admin_create_time_entry(
         if daily_hours > MAX_DAILY_HOURS_WARN:
             admin_create_warnings.append(f"DAILY_HOURS_WARNING: Tagesarbeitszeit beträgt {daily_hours:.1f}h (>{MAX_DAILY_HOURS_WARN}h)")
 
-        # §14 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
+        # §3 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
         weekly_hours = _calculate_weekly_net_hours(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=entry_data.start_time, end_time=entry_data.end_time,
@@ -94,13 +104,15 @@ def admin_create_time_entry(
         end_time=entry_data.end_time,
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
+        break_waiver_reason=waiver_reason if break_waiver_active else None,
     )
     db.add(entry)
     db.flush()
 
     _create_audit_log(
         db, entry.id, user.id, current_user.id,
-        action="create", new_entry=entry, source="manual",
+        action="create", new_entry=entry,
+        source=BREAK_WAIVER_SOURCE if break_waiver_active else "manual",
         tenant_id=current_user.tenant_id,
     )
 
@@ -144,15 +156,23 @@ def admin_update_time_entry(
     update_break_minutes = entry_data.break_minutes if entry_data.break_minutes is not None else entry.break_minutes
 
     admin_update_warnings: list[str] = []
+    waiver_reason = (entry_data.break_waiver_reason or "").strip()
+    break_waiver_active = False
     if not affected_user or not affected_user.exempt_from_arbzg:
-        # Break validation (SS4 ArbZG)
+        # Break validation (§4 ArbZG)
         break_error = validate_daily_break(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=update_start_time, end_time=update_end_time,
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
         )
         if break_error:
-            raise HTTPException(status_code=400, detail=break_error)
+            # M-ARB3: parity with the employee path (#144) — documented waiver
+            # records the §4 deviation instead of a hard 400. §3 (below) stays
+            # a hard cap.
+            if not waiver_reason:
+                raise HTTPException(status_code=400, detail=break_error)
+            break_waiver_active = True
+            admin_update_warnings.append(f"BREAK_WAIVER: {break_error}")
 
         # SS3 ArbZG: daily hours hard limit
         daily_hours = _calculate_daily_net_hours(
@@ -170,7 +190,7 @@ def admin_update_time_entry(
         if daily_hours > MAX_DAILY_HOURS_WARN:
             admin_update_warnings.append(f"DAILY_HOURS_WARNING: Tagesarbeitszeit beträgt {daily_hours:.1f}h (>{MAX_DAILY_HOURS_WARN}h)")
 
-        # §14 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
+        # §3 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
         weekly_hours = _calculate_weekly_net_hours(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=update_start_time, end_time=update_end_time,
@@ -202,7 +222,7 @@ def admin_update_time_entry(
             "break_minutes": update_break_minutes,
             "note": entry_data.note if entry_data.note is not None else entry.note,
         },
-        source="manual",
+        source=BREAK_WAIVER_SOURCE if break_waiver_active else "manual",
         tenant_id=current_user.tenant_id,
     )
 
@@ -217,6 +237,9 @@ def admin_update_time_entry(
         entry.break_minutes = entry_data.break_minutes
     if entry_data.note is not None:
         entry.note = entry_data.note
+    # M-ARB3: persist the documented §4 break waiver when one was supplied.
+    if break_waiver_active:
+        entry.break_waiver_reason = waiver_reason
 
     db.commit()
     db.refresh(entry)
@@ -284,7 +307,11 @@ def list_audit_log(
     ``before`` cursor ASAP. Pass the ``created_at`` of the last row from
     the previous page as ``before`` to fetch the next older page.
     """
-    query = db.query(TimeEntryAuditLog)
+    # F-026: explicit tenant scoping on top of RLS — the audit log carries the
+    # most sensitive cross-tenant data (old/new note text, user ids).
+    query = db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.tenant_id == current_user.tenant_id
+    )
 
     if user_id:
         query = query.filter(TimeEntryAuditLog.user_id == user_id)

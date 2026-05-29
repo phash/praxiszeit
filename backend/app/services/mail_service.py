@@ -102,3 +102,33 @@ def send_verification_email(to: str, verification_url: str, practice_name: str) 
         f"<p>Viele Grüße<br>Dein PraxisZeit-Team</p>"
     )
     return MailService().send(to=to, subject=subject, body_text=body_text, body_html=body_html)
+
+
+def send_account_exists_email(to: str) -> bool:
+    """Sent when someone tries to register an email that already has an account.
+
+    Keeps signup enumeration-safe (M-API5): the public API response is identical
+    whether or not the email exists, while the legitimate owner is still told
+    out-of-band that a registration was attempted. No verification link — just a
+    pointer to login / password reset.
+    """
+    subject = "Registrierungsversuch – du hast bereits ein PraxisZeit-Konto"
+    body_text = (
+        "Hallo,\n\n"
+        "für diese E-Mail-Adresse besteht bereits ein PraxisZeit-Konto. "
+        "Warst du das? Dann kannst du dich direkt einloggen oder dein Passwort "
+        "zurücksetzen.\n\n"
+        "Wenn du diesen Registrierungsversuch nicht selbst ausgelöst hast, "
+        "kannst du diese E-Mail ignorieren.\n\n"
+        "Viele Grüße\nDein PraxisZeit-Team"
+    )
+    body_html = (
+        "<p>Hallo,</p>"
+        "<p>für diese E-Mail-Adresse besteht bereits ein PraxisZeit-Konto. "
+        "Warst du das? Dann kannst du dich direkt einloggen oder dein Passwort "
+        "zurücksetzen.</p>"
+        "<p>Wenn du diesen Registrierungsversuch nicht selbst ausgelöst hast, "
+        "kannst du diese E-Mail ignorieren.</p>"
+        "<p>Viele Grüße<br>Dein PraxisZeit-Team</p>"
+    )
+    return MailService().send(to=to, subject=subject, body_text=body_text, body_html=body_html)
