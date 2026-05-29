@@ -11,6 +11,12 @@ interface AbsenceBadgeProps {
   title?: string;
   /** Diameter in px. */
   size?: number;
+  /**
+   * When the surrounding row already renders the name + type as text (e.g. the
+   * mobile list), set this so the badge is hidden from screen readers and not
+   * announced twice. The `title` tooltip stays available for mouse users.
+   */
+  decorative?: boolean;
 }
 
 /**
@@ -19,7 +25,7 @@ interface AbsenceBadgeProps {
  * - centre = absence-type colour (admin-configurable; neutral grey for masked "absent")
  * - initials in white with a thin dark contour so they stay legible on any centre colour.
  */
-export default function AbsenceBadge({ type, userColor, initials, title, size = 26 }: AbsenceBadgeProps) {
+export default function AbsenceBadge({ type, userColor, initials, title, size = 26, decorative = false }: AbsenceBadgeProps) {
   const colors = useTypeColorsStore((s) => s.colors);
   const centre = (colors as Record<string, string>)[type] ?? '#6B7280';
   const ring = Math.max(2, Math.round(size * 0.1)); // 10 % of diameter = 20 % of radius
@@ -31,7 +37,8 @@ export default function AbsenceBadge({ type, userColor, initials, title, size = 
   return (
     <span
       title={title}
-      aria-label={title}
+      aria-label={decorative ? undefined : title}
+      aria-hidden={decorative || undefined}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

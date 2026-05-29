@@ -28,6 +28,18 @@ class VacationRequestCreate(BaseModel):
             raise ValueError('end_date muss nach date liegen')
         return v
 
+    @field_validator('half_day')
+    @classmethod
+    def half_day_single_day(cls, v, info):
+        # Halbe Tage sind ein Einzeltag-Konzept — ein Zeitraum mit half_day=True
+        # würde jeden Tag des Bereichs halbieren (überraschend, inkonsistent zur UI).
+        if v:
+            start = info.data.get('date')
+            end = info.data.get('end_date')
+            if end is not None and start is not None and end != start:
+                raise ValueError('Halbe Tage sind nur für Einzeltage möglich')
+        return v
+
 
 class VacationRequestUpdate(BaseModel):
     """Partial update for a PENDING vacation request.

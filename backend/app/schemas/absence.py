@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from typing import Optional
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -21,6 +21,17 @@ class AbsenceCreate(AbsenceBase):
     refund_vacation: bool = False  # If sick: refund overlapping vacation days
     keep_time_entries: bool = False  # Don't delete existing time entries (mixed days)
     half_day: bool = False  # #167: half vacation day (0.5 × Tagessoll, diskriminierungsfrei)
+
+    @field_validator('half_day')
+    @classmethod
+    def half_day_single_day(cls, v, info):
+        # Halbe Tage nur für Einzeltage — ein Zeitraum würde jeden Tag halbieren.
+        if v:
+            start = info.data.get('date')
+            end = info.data.get('end_date')
+            if end is not None and start is not None and end != start:
+                raise ValueError('Halbe Tage sind nur für Einzeltage möglich')
+        return v
 
 
 class AbsenceResponse(AbsenceBase):

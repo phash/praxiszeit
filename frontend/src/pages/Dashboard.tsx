@@ -835,7 +835,7 @@ export default function Dashboard() {
                                 <div className="space-y-0.5">
                                   {dayAbsences.map((absence, idx) => (
                                     <div
-                                      key={idx}
+                                      key={`${absence.user_first_name ?? ''}-${absence.user_last_name ?? ''}-${absence.type}-${idx}`}
                                       className="text-xs px-1 py-0.5 rounded-sm"
                                       style={{
                                         backgroundColor: absColors[absence.type] ?? '#6B7280',
@@ -879,7 +879,7 @@ export default function Dashboard() {
                                 <div className="space-y-1">
                                   {dayAbsences.map((absence, idx) => (
                                     <div
-                                      key={idx}
+                                      key={`${absence.user_first_name ?? ''}-${absence.user_last_name ?? ''}-${absence.type}-${idx}`}
                                       className="flex items-center text-sm"
                                     >
                                       <span

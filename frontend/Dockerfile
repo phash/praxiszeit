@@ -1,5 +1,7 @@
 # Build stage
-FROM node:20-alpine AS build
+# node:22-alpine — Node 20 ist seit 2026-04-30 EOL (keine Security-Patches mehr);
+# 22 ist Active LTS. Nur Build-Stage (Runtime-Image ist nginx:alpine).
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
