@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.7.0"
+APP_VERSION="1.8.0"
 PYTHON_VERSION="3.13.3"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 PYTHON_STANDALONE_TAG="20250529"
@@ -34,14 +34,16 @@ NSSM_VERSION="2.24"
 BUILD_LINUX=true
 BUILD_WINDOWS=true
 BUILD_MACOS=true
+BUILD_DOCKER=true
 SKIP_DOWNLOAD=false
 SKIP_FRONTEND=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --linux-only)    BUILD_WINDOWS=false; BUILD_MACOS=false; shift ;;
-        --windows-only)  BUILD_LINUX=false; BUILD_MACOS=false; shift ;;
-        --macos-only)    BUILD_LINUX=false; BUILD_WINDOWS=false; shift ;;
+        --linux-only)    BUILD_WINDOWS=false; BUILD_MACOS=false; BUILD_DOCKER=false; shift ;;
+        --windows-only)  BUILD_LINUX=false; BUILD_MACOS=false; BUILD_DOCKER=false; shift ;;
+        --macos-only)    BUILD_LINUX=false; BUILD_WINDOWS=false; BUILD_DOCKER=false; shift ;;
+        --docker-only)   BUILD_LINUX=false; BUILD_WINDOWS=false; BUILD_MACOS=false; shift ;;
         --skip-download) SKIP_DOWNLOAD=true; shift ;;
         --skip-frontend) SKIP_FRONTEND=true; shift ;;
         --version)       APP_VERSION="$2"; shift 2 ;;
@@ -53,6 +55,7 @@ Options:
   --linux-only       Build nur die Linux-Plattform
   --windows-only     Build nur die Windows-Plattform
   --macos-only       Build nur die macOS-Plattform
+  --docker-only      Build nur das Docker-Bundle (compose + Build-Kontext)
   --skip-download    Cache nutzen (PG/Python-Downloads nicht wiederholen)
   --skip-frontend    Frontend-Build überspringen (Dist muss schon existieren)
   --version VERSION  Explizit Versionsnummer setzen
@@ -770,6 +773,67 @@ else
 fi
 
 # =============================================================================
+# Phase 6b: Docker-Bundle (self-contained: compose + Quellcode-Build-Kontext)
+# -----------------------------------------------------------------------------
+# Feedback Braumann (2026-05): Wer Docker bevorzugt, fand kein docker-compose.yml
+# im Download. Dieses Bundle enthaelt compose-Dateien, .env.example, einen
+# Secrets-Generator und den kompletten Build-Kontext (backend/ + frontend/ +
+# ssl/ + prometheus/ + grafana/), sodass `docker compose up -d --build` direkt
+# laeuft. Top-Level-Ordner praxiszeit-<version>/ -> `tar xzf … && cd …` klappt.
+# =============================================================================
+
+if [ "$BUILD_DOCKER" = true ]; then
+    step "6b — Docker-Bundle"
+
+    DOCKER_STAGE="${BUILD_DIR}/docker/praxiszeit-${APP_VERSION}"
+    rm -rf "${BUILD_DIR}/docker"
+    mkdir -p "${DOCKER_STAGE}"
+
+    cp "${REPO_DIR}/docker-compose.yml"               "${DOCKER_STAGE}/"
+    cp "${REPO_DIR}/docker-compose.ssl.yml"           "${DOCKER_STAGE}/"
+    cp "${REPO_DIR}/.env.example"                     "${DOCKER_STAGE}/"
+    cp "${REPO_DIR}/tools/docker/generate-secrets.sh" "${DOCKER_STAGE}/generate-secrets.sh"
+    chmod +x "${DOCKER_STAGE}/generate-secrets.sh"
+
+    # Build-Kontext kopieren (ohne Ballast / ohne evtl. lokale Secrets+Certs).
+    # cd ins REPO_DIR -> Pfade in den tar-Excludes sind relativ ("backend/...").
+    _copy_tree() {  # $1 = Unterverzeichnis, $2.. = zusaetzliche tar-Excludes
+        local sub="$1"; shift
+        (cd "${REPO_DIR}" && tar cf - "$@" "${sub}") | tar xf - -C "${DOCKER_STAGE}/"
+    }
+    _copy_tree backend \
+        --exclude='backend/__pycache__' --exclude='*.pyc' --exclude='backend/tests' \
+        --exclude='backend/.pytest_cache' --exclude='backend/htmlcov' \
+        --exclude='backend/test.db' --exclude='backend/.venv'
+    _copy_tree frontend \
+        --exclude='frontend/node_modules' --exclude='frontend/dist'
+    # ssl/: Skript + nginx-Config, aber NIE einen evtl. lokal erzeugten Key/Cert
+    _copy_tree ssl --exclude='ssl/cert.pem' --exclude='ssl/key.pem'
+    _copy_tree prometheus
+    _copy_tree grafana
+
+    cat > "${DOCKER_STAGE}/DOCKER-README.md" << DOCKEREOF
+# PraxisZeit ${APP_VERSION} — Docker
+
+1. Secrets erzeugen:        bash generate-secrets.sh
+2. (HTTPS) Zertifikat:      bash ssl/generate-cert.sh
+3. Starten (HTTPS):         docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+   ODER (nur intern, HTTP): in .env ENVIRONMENT=development + COOKIE_SECURE=false setzen, dann
+                            docker compose up -d --build
+
+Volle Anleitung: https://github.com/phash/praxiszeit/blob/master/docs/INSTALL-DOCKER.md
+DOCKEREOF
+
+    tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-docker.tar.gz" \
+        -C "${BUILD_DIR}/docker" "praxiszeit-${APP_VERSION}"
+    info "Docker-Bundle: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-docker.tar.gz" | cut -f1)"
+    warn "Docker-Bundle gehoert an ein GitHub-Release — der '-docker'-Name passt"
+    warn "NICHT in das strikte pzweb-Upload-Regex (nur linux/macos/windows)."
+else
+    step "6b — Docker: uebersprungen"
+fi
+
+# =============================================================================
 # Phase 7: Checksums + Zusammenfassung
 # =============================================================================
 
@@ -824,5 +888,14 @@ $BUILD_MACOS && cat << EOF
   macOS-Installation (Intel ODER Apple Silicon):
     tar xzf praxiszeit-${APP_VERSION}-macos-{x64|arm64}.tar.gz
     sudo ./install.sh
+
+EOF
+
+$BUILD_DOCKER && cat << EOF
+  Docker-Installation (Bundle -> GitHub-Release, NICHT pzweb):
+    tar xzf praxiszeit-${APP_VERSION}-docker.tar.gz
+    cd praxiszeit-${APP_VERSION}
+    bash generate-secrets.sh && bash ssl/generate-cert.sh
+    docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 
 EOF

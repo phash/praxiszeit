@@ -160,6 +160,10 @@ read -rp "Lizenzschluessel-Datei (Pfad, oder leer fuer spaeter): " LICENSE_FILE
 echo ""
 read -rp "HTTPS-Port [443]: " PORT
 PORT=${PORT:-443}
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+    error "Ungueltiger Port '${PORT}'. Erlaubt: 1-65535."
+    exit 1
+fi
 
 read -rp "Selbstsigniertes SSL-Zertifikat generieren? [J/n]: " GEN_SSL
 GEN_SSL=${GEN_SSL:-J}
@@ -288,6 +292,20 @@ chmod 600 "${INSTALL_DIR}/config/ssl/"*.pem 2>/dev/null || true
 
 # --- Install systemd service ---
 
+# Der Dienst laeuft als non-root (User=${SERVICE_USER}). Ein Bind auf einen
+# privilegierten Port (<1024, z.B. 443) scheitert dann mit "permission denied"
+# (Feldreport Debian-13-Cloud). CAP_NET_BIND_SERVICE erlaubt genau diesen Bind,
+# ohne dem Dienst root-Rechte zu geben. Bei Ports >= 1024 wird keine Capability
+# vergeben (least privilege).
+if [ "${PORT}" -lt 1024 ]; then
+    CAP_AMBIENT="AmbientCapabilities=CAP_NET_BIND_SERVICE"
+    CAP_BOUNDING="CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
+    info "Port ${PORT} < 1024 -> CAP_NET_BIND_SERVICE wird dem Dienst gewaehrt."
+else
+    CAP_AMBIENT="# Port ${PORT} >= 1024: keine Capabilities erforderlich"
+    CAP_BOUNDING="CapabilityBoundingSet="
+fi
+
 info "Installiere systemd Service..."
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SVCEOF
 [Unit]
@@ -305,11 +323,29 @@ ExecStop=${INSTALL_DIR}/bin/python/bin/python3 ${INSTALL_DIR}/praxiszeit-server.
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
+
+# Privilegierte Ports (<1024) als non-root binden
+${CAP_AMBIENT}
+${CAP_BOUNDING}
+
+# Security-Hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=${INSTALL_DIR}/data ${INSTALL_DIR}/logs ${INSTALL_DIR}/config
 PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
@@ -318,11 +354,49 @@ SVCEOF
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 
-# --- Setup backup cron ---
+# --- Setup daily backup (systemd-Timer, kein cron noetig) ---
+# Frueher via crontab — cron ist auf Minimal-/Cloud-Images (z.B. Debian-13-Cloud)
+# nicht installiert ("crontab: command not found", Feldreport). Ein systemd-Timer
+# braucht keine zusaetzlichen Pakete und holt verpasste Laeufe nach (Persistent).
+info "Richte taegliches Backup ein (systemd-Timer, 02:00)..."
+cat > "/etc/systemd/system/${SERVICE_NAME}-backup.service" << BKSVCEOF
+[Unit]
+Description=PraxisZeit taegliches Backup
 
-info "Richte taegliches Backup ein (02:00)..."
-CRON_CMD="${INSTALL_DIR}/bin/python/bin/python3 ${INSTALL_DIR}/praxiszeit-server.py backup"
-(crontab -u "${SERVICE_USER}" -l 2>/dev/null || true; echo "0 2 * * * ${CRON_CMD}") | crontab -u "${SERVICE_USER}" -
+[Service]
+Type=oneshot
+User=${SERVICE_USER}
+Group=${SERVICE_USER}
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/bin/python/bin/python3 ${INSTALL_DIR}/praxiszeit-server.py backup
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=${INSTALL_DIR}/data ${INSTALL_DIR}/logs
+PrivateTmp=yes
+BKSVCEOF
+
+cat > "/etc/systemd/system/${SERVICE_NAME}-backup.timer" << BKTMREOF
+[Unit]
+Description=PraxisZeit taegliches Backup (02:00)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+BKTMREOF
+
+# Best-effort: einen alten cron-Eintrag frueherer Versionen entfernen (nur wenn
+# cron ueberhaupt vorhanden ist) — sonst liefen Backup-Timer und cron doppelt.
+if command -v crontab &>/dev/null; then
+    ( crontab -u "${SERVICE_USER}" -l 2>/dev/null | grep -v "praxiszeit-server.py backup" || true ) \
+        | crontab -u "${SERVICE_USER}" - 2>/dev/null || true
+fi
+
+systemctl daemon-reload
+systemctl enable --now "${SERVICE_NAME}-backup.timer"
 
 # --- Start service ---
 

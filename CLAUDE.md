@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.7.0 (Stand 2026-05-28)
+**Aktuelle Version:** 1.8.0 (Stand 2026-05-29)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
@@ -27,6 +27,7 @@ ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 bash tools/build-release.sh                    # Release-Pakete bauen (Linux/Windows/macOS)
 bash tools/build-release.sh --linux-only       # Nur Linux
 bash tools/build-release.sh --windows-only --skip-download   # Rebuild mit Cache
+bash tools/build-release.sh --docker-only      # Nur Docker-Bundle (compose + Build-Kontext)
 bash tools/validate-release.sh                 # Linux-Tarball: Docker-Smoke gegen 4 Distros
 # macOS-Validierung läuft als GitHub-Actions-Workflow (validate-macos.yml)
 # auf macos-15-intel + macos-14 — manuell triggerbar via gh workflow run.
@@ -144,7 +145,8 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **Native-Build verlangt `pg_env()`-Helper** in `praxiszeit-server.py` — alle 7 PG-Subprocess-Aufrufe (initdb, postgres, pg_ctl, psql, pg_dump) bekommen `env=pg_env()`, das `LD_LIBRARY_PATH=$BIN_DIR/postgresql/lib` (Linux/macOS) bzw. `PATH`-Prepend (Windows) setzt. Plus `PGHOST` auf `DATA_DIR/run/`, damit psql den umgezogenen Socket findet.
 - **`unix_socket_directories` in `pg_init()`** muss auf `DATA_DIR/run/` zeigen (nicht `/var/run/postgresql`), weil systemd `ProtectSystem=strict` das default Verzeichnis read-only macht. Detail-Postmortem in #125.
 - **`installer/linux/install.sh` installiert Runtime-Libs automatisch** (`libxml2 libssl3 libgssapi-krb5-2 libzstd1 liblz4-1 libreadline8 libbrotli1` via apt-get/dnf/zypper). Auf Ubuntu-Minimal-Images sind die nicht alle da, theseus' postgres-Binary linkt aber dagegen.
-- **`install.sh` / systemd-Unit (Debian-Cloud-Stolpersteine, Feedback 2026-05-29):** Native-Service läuft als **non-root** (`User=<svc>`, `NoNewPrivileges=yes`) → privilegierte Ports (<1024, z. B. 443) brauchen `AmbientCapabilities=CAP_NET_BIND_SERVICE` in der Unit, sonst `bind … permission denied`. Tägliches Backup wird per `crontab` eingerichtet → cron fehlt auf Minimal-Images (Debian-13-Cloud: `crontab: command not found`) → nachinstallieren oder systemd-Timer. Linux-Tarball entpackt **flach** (`build-release.sh`: `tar -czf … -C "$LINUX_DIR" .`, kein Top-Level-Ordner) → das `cd praxiszeit` in `INSTALL-NATIVE.md` schlägt fehl.
+- **`install.sh` / systemd-Unit (Debian-Cloud-Härtung, ab 1.8.0):** Native-Service läuft als **non-root** (`User=<svc>`, `NoNewPrivileges=yes`). Privilegierte Ports (<1024, z. B. 443) → `install.sh` vergibt für `PORT < 1024` automatisch `AmbientCapabilities=CAP_NET_BIND_SERVICE` + `CapabilityBoundingSet=…` (sonst `bind … permission denied`, Feldreport). Tägliches Backup läuft jetzt über einen **systemd-Timer** (`praxiszeit-backup.timer/.service`) statt `crontab` — cron fehlt auf Minimal-Images (Debian-13-Cloud: `crontab: command not found`). Zusätzliche Hardening-Direktiven in der Unit (`ProtectKernel*`, `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces` …) — `RestrictAddressFamilies` muss `AF_UNIX` enthalten (PG-Socket in `DATA_DIR/run/`). Linux-/macOS-Tarball entpackt **flach** (`build-release.sh`: `tar -czf … -C "$DIR" .`, kein Top-Level-Ordner) → `INSTALL-NATIVE.md` extrahiert deshalb mit `-C <ordner>`. ⚠️ `validate-release.sh` + `validate-macos.yml` setzen das flache Layout voraus (`cd /opt/pz && tar xzf …`) — Tarball-Struktur NICHT auf Top-Level-Ordner umstellen, ohne beide Validatoren anzupassen.
+- **Docker-Bundle (ab 1.8.0):** `build-release.sh --docker-only` baut `praxiszeit-<version>-docker.tar.gz` (Top-Level-Ordner!) mit compose-Dateien + `.env.example` + `generate-secrets.sh` + Build-Kontext (`backend/ frontend/ ssl/ prometheus/ grafana/`). Native-Tarbälle enthalten KEIN compose (Braumann-Feedback). ⚠️ Der `-docker`-Name passt NICHT ins strikte pzweb-Upload-Regex (`linux-x64|macos-x64|macos-arm64|windows-x64`) → gehört an ein **GitHub-Release**, nicht in den pzweb-Shop. Doku: [docs/INSTALL-DOCKER.md](docs/INSTALL-DOCKER.md). `ssl/`-Copy im Build excludet `cert.pem`/`key.pem` (kein Build-Host-Key im Bundle).
 - **Alembic Revision-IDs:** Max 32 Zeichen (`version_num varchar(32)` Limit)
 - **clock_out `with_for_update`:** `_get_open_entry()` in `clock_out` MUSS mit Lock aufgerufen werden (Race Condition bei Doppelklick)
 - **F-026 Tenant-Filter (belt-and-suspenders):** ALLE `db.query(Model).filter(...)` auf tenant-scoped Tabellen brauchen expliziten `Model.tenant_id == current_user.tenant_id` zusätzlich zu RLS — gilt für list, lookup-by-id UND `.delete()`. Helper für User-Lookup: `_get_user_in_tenant()` in `admin_users.py`. Tests in `test_cross_tenant_api.py`.
@@ -210,6 +212,7 @@ JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 
 | Admin-Handbuch | [docs/handbuch/HANDBUCH-ADMIN.md](docs/handbuch/HANDBUCH-ADMIN.md) |
 | Admin-Cheat-Sheet | [docs/handbuch/CHEATSHEET-ADMIN.md](docs/handbuch/CHEATSHEET-ADMIN.md) |
 | Native Installation | [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md) |
+| Docker-Installation | [docs/INSTALL-DOCKER.md](docs/INSTALL-DOCKER.md) |
 | Native Installer Design | [docs/superpowers/specs/2026-04-07-native-single-instance-installer-design.md](docs/superpowers/specs/2026-04-07-native-single-instance-installer-design.md) |
 | Specs & Design-Docs | `docs/specs/` (arbzg, dsgvo, features, security) |
 
