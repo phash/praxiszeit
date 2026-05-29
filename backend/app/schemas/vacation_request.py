@@ -11,6 +11,7 @@ class VacationRequestCreate(BaseModel):
     hours: float
     note: Optional[str] = None
     absence_type: Optional[str] = "vacation"
+    half_day: bool = False  # #167: halber Urlaubstag
 
     @field_validator('absence_type')
     @classmethod
@@ -72,6 +73,7 @@ class VacationRequestResponse(BaseModel):
     hours: float
     days: Optional[float] = None  # Number of workdays (excluding weekends/holidays)
     absence_type: str = "vacation"
+    half_day: bool = False  # #167
     note: Optional[str] = None
     status: str
     rejection_reason: Optional[str] = None

@@ -114,6 +114,7 @@ export default function AbsenceCalendarPage() {
     type: 'vacation' as 'vacation' | 'sick' | 'training' | 'overtime' | 'other',
     hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8,
     note: '',
+    half_day: false,
   });
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingRequest, setEditingRequest] = useState<VacationRequest | null>(null);
@@ -201,12 +202,13 @@ export default function AbsenceCalendarPage() {
           hours: formData.hours,
           absence_type: formData.type,
           note: formData.note || null,
+          half_day: !isDateRange && formData.half_day,
         });
         toast.success('Antrag gestellt – wartet auf Genehmigung');
         fetchMyVacationRequests();
         setShowForm(false);
         setIsDateRange(false);
-        setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '' });
+        setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '', half_day: false });
         setActiveTab('requests');
         return;
       }
@@ -218,6 +220,7 @@ export default function AbsenceCalendarPage() {
         hours: formData.hours,
         note: formData.note || null,
         refund_vacation: refundVacation,
+        half_day: !isDateRange && formData.half_day,
       };
       await apiClient.post('/absences', submitData);
       const msg = refundVacation
@@ -227,7 +230,7 @@ export default function AbsenceCalendarPage() {
       fetchData();
       setShowForm(false);
       setIsDateRange(false);
-      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '' });
+      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '', half_day: false });
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     } finally {
@@ -509,6 +512,22 @@ export default function AbsenceCalendarPage() {
                 Zeitraum (mehrere Tage)
               </label>
             </div>
+
+            {/* #167: halber Tag (nur Einzeltag, nicht für Überstunden/Krank) */}
+            {!isDateRange && formData.type !== 'overtime' && formData.type !== 'sick' && (
+              <div className="flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="halfDay"
+                  checked={formData.half_day}
+                  onChange={(e) => setFormData({ ...formData, half_day: e.target.checked })}
+                  className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
+                />
+                <label htmlFor="halfDay" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  Halber Tag (zählt als 0,5 Tag)
+                </label>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>

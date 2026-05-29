@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Numeric, Text, DateTime, String, ForeignKey
+from sqlalchemy import Column, Date, Numeric, Text, DateTime, String, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -25,6 +25,7 @@ class VacationRequest(Base):
     end_date = Column(Date, nullable=True)
     hours = Column(Numeric(5, 2), nullable=False)
     absence_type = Column(String(20), nullable=False, default="vacation")
+    half_day = Column(Boolean, nullable=False, default=False, server_default='false')  # #167
     note = Column(Text, nullable=True)
     status = Column(String(20), nullable=False, default=VacationRequestStatus.PENDING.value, index=True)
     rejection_reason = Column(Text, nullable=True)
