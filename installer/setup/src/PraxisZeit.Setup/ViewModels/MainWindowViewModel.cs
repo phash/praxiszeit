@@ -28,7 +28,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly WelcomePageViewModel _welcome;
     private readonly InstallLocationPageViewModel _location;
     private readonly PortsPageViewModel _ports;
-    private readonly LicensePageViewModel _license;
     private readonly ConfigPageViewModel _config;
     private readonly ProgressPageViewModel _progress;
     private readonly DonePageViewModel _done;
@@ -86,7 +85,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _location.PropertyChanged += OnLocationModeChanged;
 
         _ports = new PortsPageViewModel();
-        _license = new LicensePageViewModel();
 
         // ConfigPage existiert immer (im Update-Flow wird sie spaeter
         // uebersprungen — siehe RebuildPagesForMode). Das vermeidet eine
@@ -135,7 +133,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             Pages.Add(_ports);
         }
-        Pages.Add(_license);
         if (mode is InstallMode.FreshInstall or InstallMode.Repair)
         {
             Pages.Add(_config);
@@ -162,8 +159,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Step-Indicator-Dots im Footer: aktiv = aktueller Step, done =
-    /// bereits erledigt. Anzahl haengt vom Modus ab — Update hat 3
-    /// Pages (Welcome/Progress/Done), Fresh/Repair 4 (mit ConfigPage).
+    /// bereits erledigt. Anzahl haengt vom Modus ab — Update:
+    /// Welcome/Location/Progress/Done, Fresh/Repair zusaetzlich Ports +
+    /// Config.
     /// </summary>
     public ObservableCollection<StepDot> StepDots { get; } = [];
 
@@ -318,33 +316,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 {
                     success = await RunUpdateOnWindowsAsync(installDir, _extractedPayloadDir, sink)
                         .ConfigureAwait(true);
-                    // Update-Pfad: License-Page kann eine NEUE Lizenz
-                    // einspielen (Erneuerung). Wir schreiben nur die Datei,
-                    // praxiszeit.conf bleibt unangetastet.
-                    if (success && _license.SelectedMode == "license"
-                        && !string.IsNullOrWhiteSpace(_license.LicenseToken))
-                    {
-                        var configDir = Path.Combine(installDir, "config");
-                        await PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, _license.LicenseToken).ConfigureAwait(true);
-                        sink.OnReportFallback(new RunnerLogEvent("Lizenz-Datei aktualisiert."));
-                    }
                 }
                 else
                 {
                     var configValues = BuildConfigValues();
                     success = await RunFreshOnWindowsAsync(installDir, _extractedPayloadDir, sink, configValues)
                         .ConfigureAwait(true);
-                    // Fresh-Install: License-File schreiben falls eine
-                    // echte Lizenz vorliegt. Demo schreibt KEINE license.key
-                    // — der ConfigWriter hat das demo_expires_at-Feld
-                    // bereits in praxiszeit.conf gesetzt.
-                    if (success && _license.SelectedMode == "license"
-                        && !string.IsNullOrWhiteSpace(_license.LicenseToken))
-                    {
-                        var configDir = Path.Combine(installDir, "config");
-                        await PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, _license.LicenseToken).ConfigureAwait(true);
-                        sink.OnReportFallback(new RunnerLogEvent("Lizenz-Datei eingespielt."));
-                    }
                 }
             }
         }
@@ -440,10 +417,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Merged die Werte aus den drei User-Eingabe-Pages (Ports, Lizenz,
-    /// Config) zu einem ConfigValues-Snapshot, den der ConfigWriter in
-    /// die TOML-Datei serialisiert. Lizenz-File wird separat geschrieben
-    /// (siehe TransitionToProgressAndRunAsync).
+    /// Merged die Werte aus den User-Eingabe-Pages (Ports, Config) zu einem
+    /// ConfigValues-Snapshot, den der ConfigWriter in die TOML-Datei
+    /// serialisiert. Lizenz-Felder bleiben ungesetzt: Die Lizenzpruefung ist
+    /// im Backend ueber BETA_MODE deaktiviert, der Wizard fragt nicht mehr
+    /// nach einer Lizenz.
     /// </summary>
     private PraxisZeitConfigValues BuildConfigValues()
     {
@@ -452,8 +430,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             HttpsPort = _ports.HttpsPort,
             HttpRedirectPort = _ports.EffectiveHttpRedirectPort,
-            LicenseToken = _license.SelectedMode == "license" ? _license.LicenseToken : null,
-            DemoDays = _license.SelectedMode == "demo" ? LicensePageViewModel.DemoDurationDays : null,
         };
     }
 
