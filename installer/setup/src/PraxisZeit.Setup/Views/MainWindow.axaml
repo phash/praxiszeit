@@ -85,9 +85,6 @@
                 <DataTemplate DataType="vm:PortsPageViewModel">
                     <views:PortsPageView/>
                 </DataTemplate>
-                <DataTemplate DataType="vm:LicensePageViewModel">
-                    <views:LicensePageView/>
-                </DataTemplate>
                 <DataTemplate DataType="vm:ConfigPageViewModel">
                     <views:ConfigPageView/>
                 </DataTemplate>
