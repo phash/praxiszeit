@@ -73,8 +73,8 @@ public sealed partial class LicensePageViewModel : WizardPageBase
             }
             var days = ValidatedInfo.DaysUntilExpiry ?? 0;
             return days <= 30
-                ? $"Gueltig bis {formatted} (nur noch {days} Tage)"
-                : $"Gueltig bis {formatted}";
+                ? $"Gültig bis {formatted} (nur noch {days} Tage)"
+                : $"Gültig bis {formatted}";
         }
     }
 

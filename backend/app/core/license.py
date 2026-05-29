@@ -26,15 +26,34 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 logger = logging.getLogger(__name__)
 
-# Ed25519 public key for license verification.
-# The corresponding private key is kept secure by the license issuer.
-# Replace this with your actual public key after generating a keypair
-# with tools/license-generator.py
-_PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
+# Ed25519 public keys for license verification.
+# The corresponding private keys are kept secure by the license issuer.
+#
+# WICHTIG: Es werden MEHRERE Schlüssel akzeptiert. In 1.5.x wurde der Public Key
+# einmal rotiert (B5ZiJro… -> t8zaDoRf…). Dabei wurden alle vorher ausgestellten
+# Kundenlizenzen ungültig und ein Produktiv-Server fiel in den Read-Only-Modus.
+# Deshalb akzeptieren wir hier sowohl den aktuellen (NEU) als auch den alten
+# (ALT) Schlüssel: eine mit einem der beiden privaten Schlüssel signierte Lizenz
+# bleibt gültig. Neue Schlüssel IMMER vorne anhängen, alte NIE einfach entfernen
+# (sonst werden Bestandslizenzen wieder ungültig). Muss byte-für-byte mit der
+# Liste in installer/setup/.../LicenseValidator.cs synchron bleiben.
+_PUBLIC_KEYS_PEM = [
+    # NEU — aktuelle Shop-Ausstellung (gepaart mit dem privaten Key im pzweb-Repo)
+    b"""-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAt8zaDoRf4KldrPMxmX0uKhoaOrIAyU4wtgtn489WxdI=
------END PUBLIC KEY-----"""
+-----END PUBLIC KEY-----""",
+    # ALT — Bestandslizenzen, die vor der 1.5.x-Rotation ausgestellt wurden
+    b"""-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAB5ZiJro6fDM8M5BupMCdTWjVIFkPn+hsNYHNlajzIyY=
+-----END PUBLIC KEY-----""",
+]
 
 _PUBLIC_KEY_CONFIGURED = True
+
+# Backward-compat: updater.py nutzt diesen Namen als Trust-Root für die
+# Update-Manifest-Signatur. Manifeste werden live vom Update-Server mit dem
+# AKTUELLEN privaten Schlüssel signiert → der erste (neueste) Key ist korrekt.
+_PUBLIC_KEY_PEM = _PUBLIC_KEYS_PEM[0]
 
 
 class LicenseError(Exception):
@@ -72,15 +91,41 @@ class LicenseInfo:
         return max(0, delta.days)
 
 
-def _get_public_key() -> Ed25519PublicKey:
-    """Load the embedded Ed25519 public key."""
-    try:
-        key = load_pem_public_key(_PUBLIC_KEY_PEM)
+def _get_public_keys() -> List[Ed25519PublicKey]:
+    """Load all embedded Ed25519 public keys (current + legacy)."""
+    keys: List[Ed25519PublicKey] = []
+    for pem in _PUBLIC_KEYS_PEM:
+        try:
+            key = load_pem_public_key(pem)
+        except Exception as e:
+            raise LicenseError(f"Failed to load license public key: {e}")
         if not isinstance(key, Ed25519PublicKey):
             raise LicenseError("Embedded public key is not Ed25519")
-        return key
-    except Exception as e:
-        raise LicenseError(f"Failed to load license public key: {e}")
+        keys.append(key)
+    if not keys:
+        raise LicenseError("Kein Lizenz-Public-Key konfiguriert")
+    return keys
+
+
+def _decode_with_any_key(license_token: str, *, require: Optional[List[str]] = None) -> dict:
+    """Decode/verify the JWT against EACH accepted public key.
+
+    Returns the payload on the first key whose signature verifies. Only a
+    signature mismatch is retried across keys — a malformed token (DecodeError)
+    or a missing required claim is the same for every key and propagates
+    immediately. Raises jwt.InvalidSignatureError if NO key matches.
+    """
+    options = {"verify_exp": False}
+    if require is not None:
+        options["require"] = require
+    last_sig_error: Optional[Exception] = None
+    for key in _get_public_keys():
+        try:
+            return jwt.decode(license_token, key, algorithms=["EdDSA"], options=options)
+        except jwt.InvalidSignatureError as e:
+            last_sig_error = e
+            continue
+    raise last_sig_error or jwt.InvalidSignatureError("Signature verification failed")
 
 
 def validate_license(license_path: Path) -> LicenseInfo:
@@ -100,7 +145,10 @@ def validate_license(license_path: Path) -> LicenseInfo:
     if not license_path.is_file():
         raise LicenseError(f"Lizenzdatei nicht gefunden: {license_path}")
 
-    license_token = license_path.read_text().strip()
+    # utf-8-sig: entfernt ein evtl. vorhandenes UTF-8-BOM (z.B. wenn die Datei
+    # einmal mit Notepad gespeichert wurde) — sonst würde das BOM den JWT-Header
+    # zerstören und die Lizenz fälschlich als „beschädigt" gelten.
+    license_token = license_path.read_text(encoding="utf-8-sig").strip()
     if not license_token:
         raise LicenseError("Lizenzdatei ist leer")
 
@@ -110,31 +158,24 @@ def validate_license(license_path: Path) -> LicenseInfo:
             "Generate a keypair with: python tools/license-generator.py generate-keypair"
         )
 
-    public_key = _get_public_key()
-
     try:
-        payload = jwt.decode(
+        payload = _decode_with_any_key(
             license_token,
-            public_key,
-            algorithms=["EdDSA"],
-            options={
-                "require": ["sub", "name", "max_employees", "iat"],
-                "verify_exp": False,  # We handle expiry ourselves (read-only mode)
-            },
+            require=["sub", "name", "max_employees", "iat"],
         )
     except jwt.InvalidSignatureError:
-        # Haeufigster Fall: die Lizenz wurde mit einem ANDEREN/AELTEREN Schluessel
-        # signiert als dem hier hinterlegten Public Key (z.B. nach einer Key-
-        # Rotation). NICHT "korrupt/manipuliert" behaupten — das ist irrefuehrend.
+        # Die Lizenz wurde mit einem Schlüssel signiert, der zu KEINEM der
+        # hinterlegten Public Keys passt (weder aktuell noch Bestand). NICHT
+        # „korrupt/manipuliert" behaupten — das ist irreführend.
         raise LicenseError(
-            "Lizenz-Signatur passt nicht zum hinterlegten Schluessel. "
-            "Die Lizenz wurde vermutlich fuer eine aeltere oder andere "
-            "Schluesselversion ausgestellt. Bitte eine aktuelle Lizenz im Shop "
+            "Lizenz-Signatur passt zu keinem hinterlegten Schlüssel. "
+            "Die Lizenz wurde vermutlich für eine andere Schlüsselversion "
+            "ausgestellt. Bitte eine aktuelle Lizenz im Shop "
             "(praxiszeit.mr-development.de) holen und config/license.key ersetzen."
         )
     except jwt.DecodeError as e:
         raise LicenseError(
-            f"Lizenzdatei ist kein gueltiges Token (Format/Inhalt beschaedigt): {e}"
+            f"Lizenzdatei ist kein gültiges Token (Format/Inhalt beschädigt): {e}"
         )
     except jwt.MissingRequiredClaimError as e:
         raise LicenseError(f"Lizenz fehlt ein Pflichtfeld: {e}")
@@ -168,20 +209,15 @@ def validate_license_quiet(license_path: Path) -> Optional[LicenseInfo]:
     if not license_path.is_file():
         return None
 
-    license_token = license_path.read_text().strip()
+    license_token = license_path.read_text(encoding="utf-8-sig").strip()
     if not license_token or not _PUBLIC_KEY_CONFIGURED:
         return None
 
-    public_key = _get_public_key()
-
     try:
-        payload = jwt.decode(
-            license_token,
-            public_key,
-            algorithms=["EdDSA"],
-            options={"verify_exp": False},
-        )
+        payload = _decode_with_any_key(license_token)
     except jwt.PyJWTError:
+        return None
+    except LicenseError:
         return None
 
     return LicenseInfo(

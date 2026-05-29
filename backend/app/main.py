@@ -297,15 +297,15 @@ async def lifespan(app: FastAPI):
             # bleiben moeglich; nur Schreibvorgaenge (Stempeln, Antraege stellen/
             # genehmigen) sind gesperrt (LicenseReadOnlyMiddleware).
             print(f"LIZENZ-PROBLEM: {e}")
-            print("-> PraxisZeit laeuft im READ-ONLY-Modus: Anmeldung und "
-                  "Daten-Export funktionieren, Stempeln und Antraege sind "
-                  "gesperrt. Bitte eine gueltige Lizenz im Shop "
+            print("-> PraxisZeit läuft im READ-ONLY-Modus: Anmeldung und "
+                  "Daten-Export funktionieren, Stempeln und Anträge sind "
+                  "gesperrt. Bitte eine gültige Lizenz im Shop "
                   "(praxiszeit.mr-development.de) holen und unter "
-                  "config\\license.key ablegen.")
+                  "config/license.key ablegen.")
             set_license_state(None, read_only=True)
             # M6: structured audit-log fuer DSGVO Art. 32 / ArbZG §16
             audit_license_readonly_event(
-                reason="Ungueltige Signatur",
+                reason="Ungültige Signatur",
                 default_tenant_id=default_tenant_id,
             )
     elif settings.LICENSE_DEMO_EXPIRES_AT:
@@ -329,7 +329,7 @@ async def lifespan(app: FastAPI):
             set_license_state(None, read_only=True)
             # M6: structured audit-log fuer DSGVO Art. 32 / ArbZG §16
             audit_license_readonly_event(
-                reason="Demo-Frist ueberschritten",
+                reason="Demo-Frist überschritten",
                 default_tenant_id=default_tenant_id,
             )
         else:
