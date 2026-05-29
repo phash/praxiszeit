@@ -142,6 +142,17 @@ if [ "$_fe_ver" != "$APP_VERSION" ]; then
     exit 1
 fi
 
+# BETA_MODE-Hinweis: solange Default True, ist die Lizenzpruefung in JEDEM
+# gebauten Paket deaktiviert (keine Lizenz noetig). Das ist in der Beta gewollt,
+# aber vor dem ersten KOSTENPFLICHTIGEN Release MUSS BETA_MODE auf False —
+# sonst laeuft jede Installation dauerhaft ohne Lizenzdurchsetzung. Laut warnen,
+# damit es beim GA-Build nicht uebersehen wird (nicht abbrechen — Beta-Builds
+# sind legitim).
+if grep -qE '^\s*BETA_MODE:\s*bool\s*=\s*True' "${REPO_DIR_PRE}/backend/app/config.py" 2>/dev/null; then
+    echo -e "${YELLOW}[WARN]${NC} BETA_MODE=True -> Lizenzpruefung in diesem Build DEAKTIVIERT (keine Lizenz noetig)." >&2
+    echo -e "${YELLOW}[WARN]${NC} Fuer ein kostenpflichtiges Release vorher backend/app/config.py BETA_MODE=False setzen." >&2
+fi
+
 # =============================================================================
 # Download-URLs
 # =============================================================================

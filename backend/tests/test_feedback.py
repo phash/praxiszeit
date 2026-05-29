@@ -132,11 +132,27 @@ def test_network_error_maps_to_502(client, mock_license, monkeypatch):
 
 
 def test_no_license_returns_400_and_does_not_call_pzweb(client, monkeypatch):
+    # Produktivpfad (BETA_MODE aus): ohne Lizenz -> 400, kein pzweb-Call.
+    from app.routers import feedback
+    monkeypatch.setattr(feedback.settings, "BETA_MODE", False)
     monkeypatch.setattr("app.core.license.get_current_license", lambda: None)
     rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
     resp = client.post("/api/feedback/report", json=VALID)
     assert resp.status_code == 400
     assert rec.calls == []  # never reach out to pzweb without a license_id
+
+
+def test_beta_no_license_forwards_with_beta_id(client, monkeypatch):
+    # In der Beta (BETA_MODE=True) darf ein Bug-Report auch OHNE Lizenz raus —
+    # mit synthetischer license_id "beta".
+    from app.routers import feedback
+    monkeypatch.setattr(feedback.settings, "BETA_MODE", True)
+    monkeypatch.setattr("app.core.license.get_current_license", lambda: None)
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "b-1"}))
+    resp = client.post("/api/feedback/report", json=VALID)
+    assert resp.status_code == 200
+    assert len(rec.calls) == 1
+    assert rec.calls[0]["kwargs"]["files"]["license_id"][1] == "beta"
 
 
 def test_title_too_long_returns_422(client, mock_license, monkeypatch):
