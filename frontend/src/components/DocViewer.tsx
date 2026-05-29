@@ -297,6 +297,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
         <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum.</p>
         <p>Für Zeiträume aktivieren Sie die Checkbox <strong>„Zeitraum"</strong> und geben ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
         <p>Wenn Urlaubsgenehmigungspflicht aktiv ist, wechselt die App nach dem Absenden automatisch zum Tab <strong>„Meine Anträge"</strong>.</p>
+        <p className="text-gray-700"><strong>So wird Urlaub berechnet:</strong> nach dem Tagesprinzip (§3 BUrlG) – <strong>ein freier Arbeitstag = genau 1 Urlaubstag</strong>, egal wie viele Stunden Sie an dem Tag arbeiten. Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage haben. Ihr Urlaubskonto zeigt die verbleibenden Tage.</p>
       </div>
     ),
   },
@@ -354,6 +355,7 @@ export const handbuchAdminSections: AccordionItem[] = [
       <div className="space-y-2">
         <p><strong>Urlaubsanträge:</strong> Toggle „Genehmigungspflicht" aktiviert den Workflow. Anträge erscheinen als „Offen" → Genehmigen (grün) oder Ablehnen (rot, optional Grund).</p>
         <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug). Beim Löschen werden alle Einträge entfernt.</p>
+        <p className="text-gray-700"><strong>Urlaubsberechnung (Tagesprinzip, §3 BUrlG):</strong> Urlaub wird nach Arbeitstagen geführt – ein freier Arbeitstag = <strong>1 Urlaubstag</strong>, unabhängig von Tagesstunden und Wochentag (auch bei individuellen Tagesstunden). Jahresanspruch anteilig: <code>30 × Arbeitstage ÷ 5</code> (überschreibbar beim Anlegen). Verbrauch wird tagebasiert gezählt, intern gespeicherte Stunden dienen nur der Soll-/Ist-Berechnung.</p>
       </div>
     ),
   },

@@ -19,7 +19,9 @@
 - Vorname / Nachname, E-Mail (optional)
 - Wochenstunden, Arbeitstage/Woche, Urlaubstage
 - Rolle: Mitarbeiter:in oder Admin
-- Optional: ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6)
+- Optional: ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6), Abteilung/Bereich, Anfangssaldo Überstunden
+
+> **Urlaub (Tagesprinzip):** 1 freier Arbeitstag = 1 Urlaubstag (unabhängig von Tagesstunden/Wochentag). Anspruch anteilig: `30 × Arbeitstage/5`. Verbrauch tagebasiert, Stunden nur intern.
 
 ### Stundenänderung (Teilzeit etc.)
 **Benutzer öffnen** → neue Wochenstunden + **Wirkungsdatum** eintragen
