@@ -7,7 +7,8 @@ from app.models import User
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
 from app.routers.admin_helpers import SettingUpdate
-from app.services import special_days_service
+from app.services import special_days_service, type_colors_service
+from typing import Dict
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -57,6 +58,30 @@ def get_special_days(
     know the per-key defaults itself.
     """
     return special_days_service.get_special_day_settings(db, current_user.tenant_id)
+
+
+# #157: Typ-Farben. MUSS vor der generischen ``PUT /settings/{key}``-Route
+# stehen, sonst fängt ``{key}`` das literal ``type-colors`` ab.
+@router.get("/settings/type-colors")
+def get_type_colors_setting(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Effektive Typ-Farben (konfiguriert über Defaults gemerged)."""
+    return type_colors_service.get_type_colors(db, current_user.tenant_id)
+
+
+@router.put("/settings/type-colors")
+def update_type_colors_setting(
+    colors: Dict[str, str],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Setzt (partiell) Typ-Farben. Body: {typ: '#RRGGBB'}."""
+    try:
+        return type_colors_service.set_type_colors(db, current_user.tenant_id, colors)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.put("/settings/{key}")

@@ -6,6 +6,18 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { useTypeColorsStore } from '../../stores/typeColorsStore';
+
+// #157: Reihenfolge + Labels der konfigurierbaren Typ-Farben.
+const COLOR_TYPE_ORDER: { key: string; label: string }[] = [
+  { key: 'work', label: 'Arbeit (Anwesenheit)' },
+  { key: 'training', label: 'Fortbildung' },
+  { key: 'vacation', label: 'Urlaub' },
+  { key: 'sick', label: 'Krank' },
+  { key: 'overtime', label: 'Überstundenausgleich' },
+  { key: 'other', label: 'Sonstiges' },
+  { key: 'paid_leave', label: 'Bezahlte Freistellung' },
+];
 
 interface StatesResponse {
   states: string[];
@@ -68,6 +80,11 @@ export default function Settings() {
   const [originalSpecialDays, setOriginalSpecialDays] = useState<SpecialDaysConfig | null>(null);
   const [savingSpecialDays, setSavingSpecialDays] = useState(false);
 
+  // #157 Typ-Farben
+  const [typeColors, setTypeColors] = useState<Record<string, string> | null>(null);
+  const [originalTypeColors, setOriginalTypeColors] = useState<Record<string, string> | null>(null);
+  const [savingColors, setSavingColors] = useState(false);
+
   // #144 Break-exception approval (Pflicht-Pause war nicht möglich)
   const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
   const [originalBreakApproval, setOriginalBreakApproval] = useState(false);
@@ -104,11 +121,16 @@ export default function Settings() {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      const [statesRes, settingsRes, specialDaysRes] = await Promise.all([
+      const [statesRes, settingsRes, specialDaysRes, colorsRes] = await Promise.all([
         apiClient.get<StatesResponse>('/holidays/states'),
         apiClient.get<SettingRow[]>('/admin/settings'),
         apiClient.get<SpecialDaysConfig>('/admin/settings/special-days'),
+        apiClient.get<Record<string, string>>('/admin/settings/type-colors'),
       ]);
+
+      // #157 type colours
+      setTypeColors(colorsRes.data);
+      setOriginalTypeColors(colorsRes.data);
 
       // Holiday states
       setStates(statesRes.data.states);
@@ -205,6 +227,26 @@ export default function Settings() {
       void loadSettings();
     } finally {
       setSavingSpecialDays(false);
+    }
+  };
+
+  const saveTypeColors = async () => {
+    if (!typeColors) return;
+    setSavingColors(true);
+    try {
+      const { data } = await apiClient.put<Record<string, string>>(
+        '/admin/settings/type-colors',
+        typeColors,
+      );
+      setTypeColors(data);
+      setOriginalTypeColors(data);
+      // Sofort app-weit übernehmen (Kalender/Übersichten/Erfassung).
+      useTypeColorsStore.getState().setColors(data);
+      toast.success('Farben gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingColors(false);
     }
   };
 
@@ -702,6 +744,47 @@ export default function Settings() {
           <button
             onClick={saveBreakApproval}
             disabled={savingBreakApproval || breakApprovalRequired === originalBreakApproval}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save size={16} />
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      {/* Typ-Farben (#157) */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Farben</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Farbe pro Anwesenheits- und Abwesenheitstyp. Die Farben werden im
+          Kalender, in den Übersichten und bei der Zeiterfassung verwendet.
+        </p>
+        {typeColors && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+            {COLOR_TYPE_ORDER.map(({ key, label }) => (
+              <div key={key} className="flex items-center justify-between gap-3">
+                <label htmlFor={`color-${key}`} className="text-sm font-medium text-gray-700">
+                  {label}
+                </label>
+                <input
+                  id={`color-${key}`}
+                  type="color"
+                  value={typeColors[key] ?? '#000000'}
+                  onChange={(e) => setTypeColors({ ...typeColors, [key]: e.target.value })}
+                  className="h-8 w-14 rounded border border-gray-300 cursor-pointer"
+                  aria-label={`Farbe ${label}`}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-4">
+          <button
+            onClick={saveTypeColors}
+            disabled={
+              savingColors ||
+              JSON.stringify(typeColors) === JSON.stringify(originalTypeColors)
+            }
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

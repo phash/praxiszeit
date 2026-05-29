@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useSystemStore } from './stores/systemStore';
+import { useTypeColorsStore } from './stores/typeColorsStore';
 import { ToastProvider } from './contexts/ToastContext';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -71,11 +72,19 @@ function App() {
   const hydrate = useAuthStore((s) => s.hydrate);
   const isHydrating = useAuthStore((s) => s.isHydrating);
   const fetchSystem = useSystemStore((s) => s.fetch);
+  // #157: per-tenant type colours need an authenticated request, so fetch them
+  // whenever a user is present (and re-fetch if the user changes).
+  const fetchTypeColors = useTypeColorsStore((s) => s.fetch);
+  const userId = useAuthStore((s) => s.user?.id);
 
   useEffect(() => {
     void hydrate();
     void fetchSystem();
   }, [hydrate, fetchSystem]);
+
+  useEffect(() => {
+    if (userId) void fetchTypeColors();
+  }, [userId, fetchTypeColors]);
 
   if (isHydrating) {
     return (

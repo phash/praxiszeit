@@ -12,6 +12,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
+import { useTypeColorsStore } from '../stores/typeColorsStore';
 
 interface DashboardData {
   year: number;
@@ -101,6 +102,9 @@ function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], da
 export default function Dashboard() {
   const toast = useToast();
   const { user } = useAuthStore();
+  // #157: Team-Kalender färbt nach Abwesenheits-TYP (konfigurierbar), nicht
+  // mehr nach Mitarbeiter-Farbe.
+  const absColors = useTypeColorsStore((s) => s.colors);
   const { openStampSheet, stampVersion } = useUIStore();
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
@@ -830,7 +834,7 @@ export default function Dashboard() {
                                     <div
                                       key={idx}
                                       className="text-xs px-1 py-0.5 rounded-sm text-white"
-                                      style={{ backgroundColor: absence.user_color }}
+                                      style={{ backgroundColor: absColors[absence.type] ?? absence.user_color }}
                                       title={`${absence.user_first_name} ${absence.user_last_name} - ${typeLabels[absence.type]}${absence.note ? ': ' + absence.note : ''}`}
                                     >
                                       {absence.user_first_name?.[0]}. {absence.user_last_name}
@@ -874,7 +878,7 @@ export default function Dashboard() {
                                     >
                                       <span
                                         className="w-3 h-3 rounded-full mr-2 shrink-0"
-                                        style={{ backgroundColor: absence.user_color }}
+                                        style={{ backgroundColor: absColors[absence.type] ?? absence.user_color }}
                                       ></span>
                                       <span className="font-medium text-gray-900">
                                         {absence.user_first_name} {absence.user_last_name}

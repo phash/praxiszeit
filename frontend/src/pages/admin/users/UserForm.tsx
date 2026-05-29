@@ -67,7 +67,11 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     hours_wednesday: 8,
     hours_thursday: 8,
     hours_friday: 8,
+    overtime_carryover: 0, // #158: Anfangssaldo Überstunden (kein User-Feld, separater Carryover-Call)
   });
+  // #158: vorhandener Vortrag zum Startjahr — wird beim Speichern erhalten.
+  const [existingVacationCarryover, setExistingVacationCarryover] = useState(0);
+  const [hadCarryover, setHadCarryover] = useState(false);
 
   useEffect(() => {
     if (editUser) {
@@ -92,8 +96,37 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         hours_wednesday: editUser.hours_wednesday ?? 8,
         hours_thursday: editUser.hours_thursday ?? 8,
         hours_friday: editUser.hours_friday ?? 8,
+        overtime_carryover: 0,
       });
     }
+  }, [editUser]);
+
+  // #158: beim Bearbeiten den Anfangssaldo (Überstunden-Carryover des Startjahres)
+  // laden, damit das Feld den aktuellen Wert zeigt und der Urlaubs-Vortrag erhalten bleibt.
+  useEffect(() => {
+    if (!editUser) {
+      setExistingVacationCarryover(0);
+      setHadCarryover(false);
+      return;
+    }
+    const startYear = editUser.first_work_day
+      ? new Date(editUser.first_work_day).getFullYear()
+      : new Date().getFullYear();
+    (async () => {
+      try {
+        const res = await apiClient.get<Array<{ year: number; overtime_hours: number; vacation_days: number }>>(
+          `/admin/users/${editUser.id}/carryovers`,
+        );
+        const row = res.data.find((c) => c.year === startYear);
+        if (row) {
+          setFormData((prev) => ({ ...prev, overtime_carryover: row.overtime_hours }));
+          setExistingVacationCarryover(row.vacation_days ?? 0);
+          setHadCarryover(true);
+        }
+      } catch {
+        /* Carryover optional — Fehler hier nicht blockierend */
+      }
+    })();
   }, [editUser]);
 
   useEffect(() => {
@@ -108,16 +141,39 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     if (submitting) return;
     setSubmitting(true);
     try {
-      // Convert empty date strings to null for the API
+      // #158: overtime_carryover is NOT a user field — it goes to the carryover
+      // endpoint separately. Keep it out of the user payload.
+      const { overtime_carryover, ...userFields } = formData;
       const payload = {
-        ...formData,
+        ...userFields,
         first_work_day: formData.first_work_day || null,
         last_work_day: formData.last_work_day || null,
       };
+      const startYear = formData.first_work_day
+        ? new Date(formData.first_work_day).getFullYear()
+        : new Date().getFullYear();
+
+      const writeCarryover = async (userId: string, vacationDays: number) => {
+        try {
+          await apiClient.put(`/admin/users/${userId}/carryovers/${startYear}`, {
+            overtime_hours: overtime_carryover,
+            vacation_days: vacationDays,
+          });
+        } catch (e: any) {
+          // Primary save succeeded — surface a softer warning, don't abort.
+          toast.error(getErrorMessage(e, 'Benutzer gespeichert, aber Anfangssaldo konnte nicht gesetzt werden'));
+        }
+      };
+
       if (editUser) {
         // When editing, send only the fields that can be updated (exclude password)
         const { password, ...updateData } = payload;
         await apiClient.put(`/admin/users/${editUser.id}`, updateData);
+        // #158: nur schreiben, wenn ein Saldo gesetzt ist oder bereits einer existierte
+        // (verhindert leere 0/0-Carryover-Zeilen für unberührte User).
+        if (overtime_carryover !== 0 || hadCarryover) {
+          await writeCarryover(editUser.id, existingVacationCarryover);
+        }
         // If the admin edited themselves, refresh the auth store so Dashboard/Layout update
         if (currentUser && editUser.id === currentUser.id) {
           const meRes = await apiClient.get('/auth/me');
@@ -125,7 +181,11 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         }
         toast.success('Benutzer erfolgreich aktualisiert');
       } else {
-        await apiClient.post('/admin/users', payload);
+        const res = await apiClient.post('/admin/users', payload);
+        const newId: string | undefined = res.data?.user?.id;
+        if (newId && overtime_carryover !== 0) {
+          await writeCarryover(newId, 0);
+        }
         toast.success('Benutzer erfolgreich erstellt');
       }
       onSaved();
@@ -274,6 +334,27 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               </div>
             )}
           </div>
+          {formData.track_hours && (
+            <div>
+              <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700 mb-1">
+                Anfangssaldo Überstunden (h)
+              </label>
+              <input
+                id="f-overtime-carryover"
+                type="number"
+                step="0.25"
+                value={formData.overtime_carryover}
+                onChange={(e) => setFormData({ ...formData, overtime_carryover: parseFloat(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Übernommener Überstundensaldo zum Startjahr
+                ({formData.first_work_day ? new Date(formData.first_work_day).getFullYear() : new Date().getFullYear()}).
+                Negativ = Minusstunden.
+              </p>
+            </div>
+          )}
+
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
             <input
               type="checkbox"
@@ -359,7 +440,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                         <input
                           id={`f-hours-${key}`}
                           type="number"
-                          step="0.5"
+                          step="0.25"
                           min="0"
                           max="24"
                           value={formData[key]}
