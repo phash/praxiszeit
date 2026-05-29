@@ -156,6 +156,10 @@ class Settings(BaseSettings):
     # Update server URL (native installations only)
     UPDATE_SERVER_URL: Optional[str] = None
     UPDATE_CHECK_INTERVAL_HOURS: int = 12
+    # Menschlich aufrufbare Downloadseite (Shop), auf die das Admin-Update-Banner
+    # verlinkt, wenn eine neue Version verfügbar ist. (Die Direkt-Artefakt-URL
+    # kommt separat aus dem signierten Update-Manifest.)
+    DOWNLOAD_PAGE_URL: str = "https://praxiszeit.mr-development.de"
 
     # Feedback / Bug-Reporting: base URL of the pzweb bug-tracker the in-app
     # report endpoint proxies to (POST {url}/v1/bugs). Host must be in
