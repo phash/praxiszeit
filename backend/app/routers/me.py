@@ -18,10 +18,20 @@ from app.core.limiter import limiter
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models import TimeEntryAuditLog, User
-from app.services import lifecycle_service
+from app.services import lifecycle_service, type_colors_service
 
 
 router = APIRouter(prefix="/api/me", tags=["self-service"])
+
+
+@router.get("/type-colors")
+def get_my_type_colors(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """#157: Effektive Typ-Farben des eigenen Tenants — für Kalender-/Dialog-
+    Rendering. Für jeden authentifizierten Nutzer (nicht nur Admin) verfügbar."""
+    return type_colors_service.get_type_colors(db, current_user.tenant_id)
 
 
 # Rate-Limit: 5/Tag pro IP. Per-User waere semantisch korrekter, dafuer

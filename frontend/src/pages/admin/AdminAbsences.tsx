@@ -54,7 +54,7 @@ export default function AdminAbsences() {
   const [formData, setFormData] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
     end_date: '',
-    type: 'vacation' as 'vacation' | 'sick' | 'training' | 'overtime' | 'other',
+    type: 'vacation' as 'vacation' | 'sick' | 'training' | 'overtime' | 'other' | 'paid_leave',
     hours: 8,
     note: '',
   });
@@ -547,8 +547,15 @@ export default function AdminAbsences() {
                   <option value="sick">Krank</option>
                   <option value="training">Fortbildung (außer Haus)</option>
                   <option value="overtime">Überstundenausgleich</option>
+                  <option value="paid_leave">Bezahlte Freistellung (kein Urlaubsabzug)</option>
                   <option value="other">Sonstiges</option>
                 </select>
+                {formData.type === 'paid_leave' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Bezahlte Freistellung reduziert das Tagessoll, wird aber <strong>nicht</strong> vom Urlaubskonto abgezogen
+                    (z.&nbsp;B. KV-/ÄK-Termine).
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Stunden{isDateRange && ' (pro Tag)'}</label>
