@@ -12,7 +12,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
-import { useTypeColorsStore } from '../stores/typeColorsStore';
+import { useTypeColorsStore, pickTextColor } from '../stores/typeColorsStore';
 
 interface DashboardData {
   year: number;
@@ -833,9 +833,12 @@ export default function Dashboard() {
                                   {dayAbsences.map((absence, idx) => (
                                     <div
                                       key={idx}
-                                      className="text-xs px-1 py-0.5 rounded-sm text-white"
-                                      style={{ backgroundColor: absColors[absence.type] ?? absence.user_color }}
-                                      title={`${absence.user_first_name} ${absence.user_last_name} - ${typeLabels[absence.type]}${absence.note ? ': ' + absence.note : ''}`}
+                                      className="text-xs px-1 py-0.5 rounded-sm"
+                                      style={{
+                                        backgroundColor: absColors[absence.type] ?? '#6B7280',
+                                        color: pickTextColor(absColors[absence.type] ?? '#6B7280'),
+                                      }}
+                                      title={`${absence.user_first_name} ${absence.user_last_name} - ${typeLabels[absence.type] ?? 'Abwesend'}${absence.note ? ': ' + absence.note : ''}`}
                                     >
                                       {absence.user_first_name?.[0]}. {absence.user_last_name}
                                     </div>
@@ -878,13 +881,13 @@ export default function Dashboard() {
                                     >
                                       <span
                                         className="w-3 h-3 rounded-full mr-2 shrink-0"
-                                        style={{ backgroundColor: absColors[absence.type] ?? absence.user_color }}
+                                        style={{ backgroundColor: absColors[absence.type] ?? '#6B7280' }}
                                       ></span>
                                       <span className="font-medium text-gray-900">
                                         {absence.user_first_name} {absence.user_last_name}
                                       </span>
                                       <span className="text-gray-500 mx-1">-</span>
-                                      <span className="text-gray-600">{typeLabels[absence.type]}</span>
+                                      <span className="text-gray-600">{typeLabels[absence.type] ?? 'Abwesend'}</span>
                                       {absence.note && (
                                         <span className="text-gray-500 text-xs ml-1">({absence.note})</span>
                                       )}
