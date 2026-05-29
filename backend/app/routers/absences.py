@@ -319,16 +319,11 @@ def create_absence(
             dates_by_year.setdefault(d.year, []).append(d)
         for check_year, year_dates in dates_by_year.items():
             vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
-            # #156: budget check must match what is actually booked — the per-day
-            # scheduled target, not the caller-supplied (default-8h) value.
-            year_hours_needed = sum(
-                float(calculation_service.get_daily_target_for_date(
-                    target_user, d,
-                    weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
-                ))
-                for d in year_dates
-            )
-            if year_hours_needed > vacation_account["remaining_hours"]:
+            # #156/T2 — Tagesprinzip: each booked full working day consumes exactly
+            # one vacation day; compare the day COUNT against the remaining DAYS,
+            # not hours (hours-based checks mis-block uneven schedules / part-time).
+            days_needed = len(year_dates)
+            if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Nicht genügend Urlaubstage für {check_year} ({vacation_account['remaining_days']:.1f} Tage verfügbar)"
