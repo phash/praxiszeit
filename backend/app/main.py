@@ -419,8 +419,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # attached unconditionally — defence-in-depth against a missing/misconfigured
 # nginx `client_max_body_size` when running behind a reverse proxy.
 app.add_middleware(RequestSizeLimitMiddleware, max_size=2 * 1024 * 1024)  # 2MB
-if settings.SERVE_FRONTEND:
-    app.add_middleware(SecurityHeadersMiddleware)
+# M-SEC2: attach unconditionally (was gated on SERVE_FRONTEND). It only *sets*
+# response headers, so it is harmless behind nginx (which sets the identical
+# CSP) and provides a baseline CSP / anti-clickjacking guarantee if the reverse
+# proxy is ever misconfigured, replaced (e.g. Caddy), or bypassed. HSTS inside
+# the middleware is still gated on HTTPS.
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)
 # DSGVO F-007: sqlalchemy.engine intentionally NOT attached (SQL queries can contain PII)

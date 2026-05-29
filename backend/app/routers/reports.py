@@ -11,6 +11,7 @@ from datetime import date
 from urllib.parse import quote
 from app.database import get_db
 from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
+from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
@@ -706,9 +707,15 @@ def get_24_week_averaging_period(
     §3 ArbZG: Daily hours may be extended to 10h only if the 8h daily average
     is maintained over 6 calendar months / 24 weeks.
 
-    For each active employee, sums all net working hours in the preceding 168
-    days and compares to the allowed budget (8h × scheduled work days).
-    `scheduled_work_days = 24 × user.work_days_per_week`.
+    For each active employee, sums all net working hours in the window and
+    compares to the allowed budget (8h × scheduled work days).
+
+    M-ARB2: ``scheduled_work_days`` is computed per actual working day in the
+    window — honouring the user's weekday schedule, historical working-hours
+    changes, public holidays and full-day absences — instead of a flat
+    ``24 × work_days_per_week``. A static denominator over- or under-states the
+    averaging budget when the contract changed mid-window or the window contains
+    holidays/absences, and could wrongly flag (or hide) a §3 violation.
 
     An employee flagged as non-compliant has systematically exceeded the 10h
     exception allowance and the ArbZG averaging clause no longer covers them.
@@ -721,6 +728,16 @@ def get_24_week_averaging_period(
 
     users = _get_active_visible_users(db, current_user.tenant_id)
     result = []
+
+    # Public holidays for the whole window, tenant-scoped (fetched once).
+    holiday_dates = {
+        h.date
+        for h in db.query(PublicHoliday).filter(
+            PublicHoliday.date >= start_date,
+            PublicHoliday.date <= end_date,
+            PublicHoliday.tenant_id == current_user.tenant_id,
+        ).all()
+    }
 
     for user in users:
         if user.exempt_from_arbzg:
@@ -738,8 +755,33 @@ def get_24_week_averaging_period(
         )
         total_hours = sum(float(e.net_hours or 0) for e in entries)
 
-        work_days_per_week = user.work_days_per_week or 5
-        scheduled_days = 24 * work_days_per_week
+        # Absences that mean the employee was NOT scheduled to work that day.
+        # Mirror get_monthly_target: TRAINING/SICK/OVERTIME keep the day
+        # scheduled (the employee was due to work); VACATION/OTHER/PAID_LEAVE
+        # remove it from the averaging denominator.
+        absence_dates = {
+            a.date
+            for a in db.query(Absence).filter(
+                Absence.user_id == user.id,
+                Absence.date >= start_date,
+                Absence.date <= end_date,
+                Absence.type.notin_([
+                    AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME,
+                ]),
+            ).all()
+        }
+
+        # Count actually-scheduled working days in the window (weekday schedule
+        # + contract history via get_*_for_date, minus holidays/absences).
+        scheduled_days = 0
+        d = start_date
+        while d <= end_date:
+            if d.weekday() < 5 and d not in holiday_dates and d not in absence_dates:
+                weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
+                if calculation_service.get_daily_target_for_date(user, d, weekly_hours) > 0:
+                    scheduled_days += 1
+            d += timedelta(days=1)
+
         max_budget = 8.0 * scheduled_days
         average = (total_hours / scheduled_days) if scheduled_days else 0.0
 

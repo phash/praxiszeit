@@ -574,12 +574,19 @@ def totp_verify(
             detail="TOTP-Setup nicht initiiert. Bitte zuerst /totp/setup aufrufen."
         )
 
-    if not auth_service.verify_totp(current_user.totp_secret, verify_data.code):
+    # M-SEC4: use the replay-safe verifier (same as /login) and persist the
+    # accepted counter, so the code that activates 2FA cannot then be replayed
+    # against /login within the ±30s window.
+    accepted_counter = auth_service.verify_totp_with_counter(
+        current_user.totp_secret, verify_data.code, current_user.last_totp_counter
+    )
+    if accepted_counter is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ungültiger TOTP-Code. Bitte prüfen Sie Ihre Authenticator-App."
         )
 
+    current_user.last_totp_counter = accepted_counter
     current_user.totp_enabled = True
     db.commit()
     db.refresh(current_user)

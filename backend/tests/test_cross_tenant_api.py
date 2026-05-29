@@ -377,3 +377,93 @@ def test_admin_a_bulk_approve_ignores_tenant_b_crs(_db_session, client_as_admin_
     _db_session.expire_all()
     stored = _db_session.query(ChangeRequest).filter(ChangeRequest.id == cr_b.id).first()
     assert stored.status == ChangeRequestStatus.PENDING
+
+
+# ─── Review 2026-05-29 (M-API1-4, M-DSG5): additional F-026 filter coverage ──
+
+
+def _make_audit_log(db, user, tenant_id, action="create"):
+    from app.models import TimeEntryAuditLog
+    log = TimeEntryAuditLog(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        changed_by=user.id,
+        action=action,
+        source="manual",
+        new_note="cross-tenant-test",
+    )
+    db.add(log)
+    db.commit()
+    return log
+
+
+def test_admin_audit_log_excludes_tenant_b(
+    _db_session, client_as_admin_a, admin_a, employee_b
+):
+    """GET /admin/time-entries/audit-log — must not include Tenant B audit rows
+    (admin_time_entries.list_audit_log had no explicit tenant filter)."""
+    log_a = _make_audit_log(_db_session, admin_a, TENANT_A_ID)
+    log_b = _make_audit_log(_db_session, employee_b, TENANT_B_ID)
+
+    resp = client_as_admin_a.get("/api/admin/audit-log")
+    assert resp.status_code == 200, resp.text
+    ids = {row["id"] for row in resp.json()}
+    assert str(log_a.id) in ids
+    assert str(log_b.id) not in ids
+
+
+def test_admin_vacation_requests_list_excludes_tenant_b(
+    _db_session, client_as_admin_a, admin_a, employee_b
+):
+    """GET /admin/vacation-requests — must not include Tenant B VRs
+    (list_all_vacation_requests had no explicit tenant filter)."""
+    vr_a = _make_pending_vr(_db_session, admin_a, TENANT_A_ID)
+    vr_b = _make_pending_vr(_db_session, employee_b, TENANT_B_ID)
+
+    resp = client_as_admin_a.get("/api/admin/vacation-requests")
+    assert resp.status_code == 200, resp.text
+    ids = {row["id"] for row in resp.json()}
+    assert str(vr_a.id) in ids
+    assert str(vr_b.id) not in ids
+
+
+def test_username_can_be_reused_across_tenants(
+    _db_session, client_as_admin_a, employee_b
+):
+    """create_user uniqueness must be per-tenant: a username taken in Tenant B
+    must still be creatable in Tenant A (usernames are unique per (tenant,name))."""
+    # employee_b already exists in Tenant B with username "employee_b".
+    resp = client_as_admin_a.post(
+        "/api/admin/users",
+        json={
+            "username": "employee_b",
+            "email": "fresh-a@test.local",
+            "password": "Test2025!Password",
+            "first_name": "Fresh",
+            "last_name": "A",
+            "role": "employee",
+            "weekly_hours": 40.0,
+            "vacation_days": 30,
+            "work_days_per_week": 5,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
+def test_journal_holidays_exclude_tenant_b(_db_session, employee_a, two_tenants):
+    """journal_service.get_journal must only see the user's own tenant holidays
+    (PublicHoliday query had no tenant filter)."""
+    from app.models.public_holiday import PublicHoliday
+    from app.services import journal_service
+
+    # June 2026: 1st = Monday (A holiday), 2nd = Tuesday (B holiday — must NOT leak).
+    h_a = PublicHoliday(date=date(2026, 6, 1), name="A-Tag", year=2026, tenant_id=TENANT_A_ID)
+    h_b = PublicHoliday(date=date(2026, 6, 2), name="B-Tag", year=2026, tenant_id=TENANT_B_ID)
+    _db_session.add_all([h_a, h_b])
+    _db_session.commit()
+
+    result = journal_service.get_journal(_db_session, employee_a, 2026, 6)
+    by_date = {d["date"]: d for d in result["days"]}
+    assert by_date["2026-06-01"]["is_holiday"] is True   # own tenant holiday
+    assert by_date["2026-06-02"]["is_holiday"] is False  # other tenant must not leak

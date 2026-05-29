@@ -123,3 +123,26 @@ class TestGenerateYearlyClassicOdsReport:
         out = generate_yearly_report_classic(db, 2026)
         data = out.read()
         assert data[:2] == ODS_PK_MAGIC
+
+
+class TestFormulaInjection:
+    """Review 2026-05-29 (M-SEC1): the _str_cell choke-point must neutralize
+    formula-leading characters so employee free-text cannot execute when the
+    admin opens the ODS export."""
+
+    def test_str_cell_neutralizes_formula_equals(self):
+        from odf.teletype import extractText
+        from app.services.ods_export_service import _str_cell
+        cell = _str_cell('=cmd|/c calc')
+        assert extractText(cell).startswith("'"), "leading = not neutralized"
+
+    def test_str_cell_neutralizes_at_and_plus_and_minus(self):
+        from odf.teletype import extractText
+        from app.services.ods_export_service import _str_cell
+        for payload in ('@SUM(A1)', '+1+1', '-2-2'):
+            assert extractText(_str_cell(payload)).startswith("'"), payload
+
+    def test_str_cell_leaves_safe_text_untouched(self):
+        from odf.teletype import extractText
+        from app.services.ods_export_service import _str_cell
+        assert extractText(_str_cell('Mitarbeiter:')) == 'Mitarbeiter:'

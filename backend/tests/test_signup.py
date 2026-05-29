@@ -142,7 +142,11 @@ def test_signup_creates_tenant_and_inactive_admin(saas_client, _db_session):
     assert audit.accepted_privacy is True
 
 
-def test_signup_rejects_duplicate_active_admin(saas_client, _db_session):
+def test_signup_duplicate_email_is_enumeration_safe(saas_client, _db_session):
+    """Review 2026-05-29 (M-API5): a duplicate email must NOT be distinguishable
+    from a fresh signup. Previously the second attempt returned 409, leaking
+    that the address has an account. Now both return an identical 201 + a
+    shape-identical body, and no second tenant is created."""
     # First signup + manually activate
     with patch("app.routers.public_signup.send_verification_email", return_value=True):
         r1 = saas_client.post("/api/public/signup", json=_PAYLOAD)
@@ -150,10 +154,22 @@ def test_signup_rejects_duplicate_active_admin(saas_client, _db_session):
     u = _db_session.query(User).filter(User.email == _PAYLOAD["admin_email"]).first()
     u.is_active = True
     _db_session.commit()
+    tenants_before = _db_session.query(Tenant).count()
 
+    # Second signup with the SAME (now active) email: must look identical.
     with patch("app.routers.public_signup.send_verification_email", return_value=True):
         r2 = saas_client.post("/api/public/signup", json=_PAYLOAD)
-    assert r2.status_code == 409
+    assert r2.status_code == 201, r2.text
+    assert "tenant_id" in r2.json()
+    # No NEW tenant must have been created for the duplicate.
+    assert _db_session.query(Tenant).count() == tenants_before
+    # And no second admin row for that email.
+    admins = (
+        _db_session.query(User)
+        .filter(User.email == _PAYLOAD["admin_email"], User.role == UserRole.ADMIN)
+        .count()
+    )
+    assert admins == 1
 
 
 def test_signup_rejects_missing_consent(saas_client, _db_session):

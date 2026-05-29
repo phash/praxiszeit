@@ -63,3 +63,71 @@ def test_accepts_next_window_code_after_previous_use(secret):
         secret, next_code, last_counter=current_counter
     )
     assert accepted == current_counter + 1
+
+
+# ─── Endpoint-level: activation code must not be replayable (M-SEC4) ─────────
+
+import uuid as _uuid
+from fastapi.testclient import TestClient
+
+from app.database import get_db
+from app.middleware.auth import get_current_user
+from app.models import User, UserRole
+from tests.conftest import engine, TestingSessionLocal, DEFAULT_TENANT_ID
+from tests.test_endpoints import test_app
+from app.database import Base as _Base
+
+
+@pytest.fixture
+def _totp_db():
+    _Base.metadata.create_all(bind=engine)
+    s = TestingSessionLocal()
+    try:
+        yield s
+    finally:
+        s.close()
+        _Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture
+def _totp_user(_totp_db):
+    from app.models.tenant import Tenant
+    _totp_db.add(Tenant(id=DEFAULT_TENANT_ID, name="D", slug="d", is_active=True, mode="single"))
+    u = User(
+        id=_uuid.uuid4(), username="totpuser", email="totp@test.local",
+        password_hash=auth_service.hash_password("Test2025!Password"),
+        first_name="T", last_name="U", role=UserRole.EMPLOYEE,
+        weekly_hours=40.0, vacation_days=30, work_days_per_week=5,
+        is_active=True, tenant_id=DEFAULT_TENANT_ID,
+        totp_secret=pyotp.random_base32(), totp_enabled=False,
+        last_totp_counter=None,
+    )
+    _totp_db.add(u)
+    _totp_db.commit()
+    _totp_db.refresh(u)
+    return u
+
+
+def test_totp_activation_persists_counter_and_blocks_replay(_totp_db, _totp_user):
+    """M-SEC4: /totp/verify must consume the code (persist last_totp_counter)
+    so the same code cannot later be replayed against /login."""
+    def _override_db():
+        yield _totp_db
+    test_app.dependency_overrides[get_db] = _override_db
+    test_app.dependency_overrides[get_current_user] = lambda: _totp_user
+    try:
+        code = pyotp.TOTP(_totp_user.totp_secret).now()
+        with TestClient(test_app) as client:
+            resp = client.post("/api/auth/totp/verify", json={"code": code})
+        assert resp.status_code == 200, resp.text
+        _totp_db.expire_all()
+        refreshed = _totp_db.query(User).filter(User.id == _totp_user.id).first()
+        assert refreshed.totp_enabled is True
+        # The activation code's counter must now be persisted …
+        assert refreshed.last_totp_counter is not None
+        # … so replaying that exact code is rejected by the counter check.
+        assert auth_service.verify_totp_with_counter(
+            refreshed.totp_secret, code, refreshed.last_totp_counter
+        ) is None
+    finally:
+        test_app.dependency_overrides.clear()

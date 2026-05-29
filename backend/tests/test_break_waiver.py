@@ -653,3 +653,107 @@ class TestCrApprovalRevalidatesDailyHardCap:
             TimeEntry.user_id == employee.id, TimeEntry.date == past_day
         ).all()
         assert len(entries) == 1  # only the pre-existing same-day entry
+
+
+class TestClockOutBreakWaiver:
+    """Review 2026-05-29 (M-ARB1): the clock-out path must accept a
+    break_waiver_reason so a §4 deviation during stamping is documented
+    (entry field + audit source='break_waiver'), not merely warned."""
+
+    def _open_entry(self, db, employee, today, start=time(8, 0)):
+        e = TimeEntry(
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID,
+            date=today, start_time=start, end_time=None, break_minutes=0,
+        )
+        db.add(e)
+        db.commit()
+        db.refresh(e)
+        return e
+
+    def _freeze(self, monkeypatch):
+        import app.routers.time_entries as te
+        from datetime import datetime
+        today = date.today()
+        fixed_now = datetime(today.year, today.month, today.day, 15, 30, tzinfo=te.LOCAL_TZ)
+        monkeypatch.setattr(te, "_now_local", lambda: fixed_now)
+        monkeypatch.setattr(te, "_today_local", lambda: today)
+        return today
+
+    def test_clock_out_records_break_waiver(self, db, employee, employee_client, monkeypatch):
+        today = self._freeze(monkeypatch)
+        self._open_entry(db, employee, today)  # 08:00 → 15:30 = 7.5h, 0 break → §4
+
+        resp = employee_client.post("/api/time-entries/clock-out", json={
+            "break_minutes": 0,
+            "break_waiver_reason": "Akuter Notfall, keine Pause möglich",
+        })
+        assert resp.status_code == 200, resp.text
+        db.expire_all()
+        entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).first()
+        assert entry.break_waiver_reason == "Akuter Notfall, keine Pause möglich"
+        audit = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.source == "break_waiver"
+        ).all()
+        assert len(audit) >= 1
+        warnings = resp.json().get("warnings", [])
+        assert any("BREAK_WAIVER" in w for w in warnings), warnings
+
+    def test_clock_out_without_reason_still_warns(self, db, employee, employee_client, monkeypatch):
+        today = self._freeze(monkeypatch)
+        self._open_entry(db, employee, today)
+
+        resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
+        assert resp.status_code == 200, resp.text
+        db.expire_all()
+        entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).first()
+        assert entry.break_waiver_reason is None
+        warnings = resp.json().get("warnings", [])
+        assert any("BREAK_WARNING" in w for w in warnings), warnings
+
+
+class TestAdminBreakWaiverParity:
+    """Review 2026-05-29 (M-ARB3): the admin direct-entry paths must offer the
+    same documented §4 break-waiver as the employee path (#144) — record the
+    reason + audit (source='break_waiver') instead of a hard 400."""
+
+    def test_admin_create_with_waiver_records_it(self, db, employee, admin_client):
+        payload = {**_OVER_6H, "break_minutes": 0, "break_waiver_reason": "Notfalleinsatz"}
+        resp = admin_client.post(f"/api/admin/users/{employee.id}/time-entries", json=payload)
+        assert resp.status_code == 201, resp.text
+        db.expire_all()
+        entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).first()
+        assert entry.break_waiver_reason == "Notfalleinsatz"
+        audit = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.source == "break_waiver"
+        ).all()
+        assert len(audit) >= 1
+        assert any("BREAK_WAIVER" in w for w in resp.json().get("warnings", []))
+
+    def test_admin_create_without_waiver_still_blocks(self, db, employee, admin_client):
+        payload = {**_OVER_6H, "break_minutes": 0}
+        resp = admin_client.post(f"/api/admin/users/{employee.id}/time-entries", json=payload)
+        assert resp.status_code == 400, resp.text
+
+    def test_admin_update_with_waiver_records_it(self, db, employee, admin_client):
+        # Pre-existing compliant entry (30min break on a 7.5h day).
+        entry = TimeEntry(
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID,
+            date=date.today(), start_time=time(8, 0), end_time=time(15, 30),
+            break_minutes=30,
+        )
+        db.add(entry)
+        db.commit()
+        db.refresh(entry)
+
+        resp = admin_client.put(
+            f"/api/admin/time-entries/{entry.id}",
+            json={"break_minutes": 0, "break_waiver_reason": "Notfalleinsatz"},
+        )
+        assert resp.status_code == 200, resp.text
+        db.expire_all()
+        refreshed = db.query(TimeEntry).filter(TimeEntry.id == entry.id).first()
+        assert refreshed.break_waiver_reason == "Notfalleinsatz"
+        audit = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.source == "break_waiver"
+        ).all()
+        assert len(audit) >= 1

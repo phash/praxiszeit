@@ -46,8 +46,11 @@ def alert(text: str, *, channel: Optional[str] = None) -> bool:
 
 # ───────────────── Convenience wrappers ─────────────────
 
-def alert_new_signup(tenant_name: str, admin_email: str) -> None:
-    alert(f":tada: Neuer Signup: *{tenant_name}* ({admin_email})")
+def alert_new_signup(tenant_name: str) -> None:
+    # M-DSG2: do NOT include the admin's email — Slack is an undisclosed
+    # sub-processor (not in the AVV/VVT/DSFA), so no data-subject PII may leave
+    # the instance. The practice name (business data) is sufficient signal.
+    alert(f":tada: Neuer Signup: *{tenant_name}*")
 
 
 def alert_plan_upgrade(tenant_name: str, new_plan: str) -> None:

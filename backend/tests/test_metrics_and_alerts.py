@@ -204,3 +204,19 @@ def test_superadmin_mrr_endpoint(superadmin_client):
     data = resp.json()
     assert data["mrr_cents"] == 9500 + 39000
     assert data["arr_cents"] == (9500 + 39000) * 12
+
+
+def test_alert_new_signup_does_not_leak_email(monkeypatch):
+    """M-DSG2: the signup Slack alert must not contain the admin's email —
+    Slack is an undisclosed sub-processor, so no data-subject PII may leave
+    the instance. Practice name (business data) is acceptable."""
+    captured = {}
+
+    def _capture(text, **kw):
+        captured["text"] = text
+        return True
+
+    monkeypatch.setattr(alerting, "alert", _capture)
+    alerting.alert_new_signup("Praxis Dr. Müller")
+    assert "@" not in captured["text"]
+    assert "Praxis Dr. Müller" in captured["text"]

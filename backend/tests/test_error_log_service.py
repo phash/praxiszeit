@@ -109,3 +109,36 @@ class TestMakeFingerprint:
         fp = _make_fingerprint("error", "app.main", "test", None)
         assert isinstance(fp, str)
         assert len(fp) == 64
+
+
+class TestScrubPath:
+    """M-DSG4 (Review 2026-05-29): request paths must not persist raw UUIDs —
+    the pseudonymous identifier the scrubber strips from message/traceback was
+    leaking via the dedicated `path` column."""
+
+    def test_uuid_in_path_is_scrubbed(self):
+        import uuid
+        from app.services.error_log_service import _scrub_path
+        uid = str(uuid.uuid4())
+        scrubbed = _scrub_path(f"/api/absences/{uid}")
+        assert uid not in scrubbed
+        assert "<id>" in scrubbed
+
+    def test_path_without_uuid_unchanged(self):
+        from app.services.error_log_service import _scrub_path
+        assert _scrub_path("/api/health") == "/api/health"
+
+    def test_none_path(self):
+        from app.services.error_log_service import _scrub_path
+        assert _scrub_path(None) is None
+
+    def test_log_error_stores_scrubbed_path(self, db):
+        import uuid
+        from app.services.error_log_service import log_error
+        uid = str(uuid.uuid4())
+        entry = log_error(
+            db, level="error", logger_name="test",
+            message="boom", path=f"/api/admin/users/{uid}/journal",
+        )
+        assert uid not in (entry.path or "")
+        assert "<id>" in entry.path

@@ -365,7 +365,28 @@ def clock_out(
             exclude_entry_id=open_entry.id,
         )
         if break_error:
-            clock_out_warnings.append(f"BREAK_WARNING: {break_error}")
+            # M-ARB1: if the employee supplied a break_waiver_reason, document the
+            # §4 deviation on the entry + audit trail (source='break_waiver'),
+            # mirroring the create/CR paths (#144). Clock-out stays non-blocking
+            # either way — without a reason it is a plain warning as before.
+            waiver_reason = (body.break_waiver_reason or "").strip()
+            if waiver_reason:
+                open_entry.break_waiver_reason = waiver_reason
+                _create_audit_log(
+                    db,
+                    open_entry.id,
+                    open_entry.user_id,
+                    current_user.id,
+                    action="update",
+                    new_entry=open_entry,
+                    source=BREAK_WAIVER_SOURCE,
+                    tenant_id=current_user.tenant_id,
+                )
+                db.commit()
+                db.refresh(open_entry)
+                clock_out_warnings.append(f"BREAK_WAIVER: {break_error}")
+            else:
+                clock_out_warnings.append(f"BREAK_WARNING: {break_error}")
     if not exempt:
         if daily_hours > MAX_DAILY_HOURS_WARN:
             clock_out_warnings.append("DAILY_HOURS_WARNING")

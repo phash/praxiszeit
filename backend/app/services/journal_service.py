@@ -40,8 +40,10 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
     for a in absences:
         absences_by_date.setdefault(a.date, []).append(a)
 
+    # F-026 + CLAUDE.md PublicHoliday rule: scope holidays to the user's tenant.
     holidays = db.query(PublicHoliday).filter(
         date_in_month(PublicHoliday.date, year, month),
+        PublicHoliday.tenant_id == user.tenant_id,
     ).all()
     holiday_map: Dict[date, str] = {h.date: h.name for h in holidays}
 
