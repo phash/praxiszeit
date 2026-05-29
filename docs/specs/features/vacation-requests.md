@@ -103,9 +103,11 @@ CREATE INDEX ix_vacation_requests_date    ON vacation_requests(date);
 **Approve-Logik** (identisch mit `create_absence()`):
 1. Werktage im Zeitraum bestimmen (Feiertage via `PublicHoliday` ausschließen)
 2. Auf doppelte vacation-Einträge prüfen
-3. Urlaubsbudget prüfen (`calculation_service.get_vacation_account()`)
-4. `use_daily_schedule`-Stunden pro Tag berücksichtigen
+3. Urlaubsbudget prüfen — **tagebasiert** (`days_needed` vs. `remaining_days`)
+4. Stunden je Tag = **individuelles Tagessoll des Tages** (`get_daily_target_for_date`), nie ein 8h-Default
 5. `Absence`-Einträge erstellen, `VacationRequest.status = approved`
+
+> **Berechnung (Tagesprinzip, § 3 BUrlG / BAG — #156):** Urlaub wird **nach Arbeitstagen** geführt. Ein freier Arbeitstag verbraucht genau **1 Urlaubstag**, unabhängig von Tagesstunden und Wochentag. `get_vacation_account` zählt den Verbrauch als `Σ (gebuchte Stunden ÷ Tagessoll des Tages)` (voller Tag = 1,0; Halbtag = 0,5), **nicht** als `Stundensumme ÷ Durchschnitts-Tagessoll`. Damit kostet ein Montag-Urlaub bei ungleichmäßigem Tagesplan genauso viel wie ein Dienstag-Urlaub. Jahresanspruch anteilig: `30 × Arbeitstage ÷ 5`. Stunden bleiben intern für Soll/Ist; der Urlaubsverbrauch ist tagebasiert.
 
 ### Frontend (React/TypeScript)
 

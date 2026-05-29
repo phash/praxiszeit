@@ -549,6 +549,9 @@ export default function Dashboard() {
                   <span className="font-medium">{vacationAccount.used_days.toFixed(1)} Tage</span>
                 </div>
               </div>
+              <p className="mt-2 text-xs text-gray-400">
+                Ein freier Arbeitstag = 1 Urlaubstag (unabhängig von den Tagesstunden).
+              </p>
               {vacationAccount.has_carryover_warning && vacationAccount.carryover_deadline && (
                 <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                   <p className="text-xs text-amber-800 font-medium">

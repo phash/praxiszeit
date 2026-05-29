@@ -144,9 +144,9 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 | **Benutzername** | Eindeutiger Login-Name (z. B. `m.hoffmann`) |
 | **Passwort** | Initiales Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer) |
 | **Rolle** | Mitarbeiter:in oder Admin |
-| **Wochenstunden** | Vertraglich vereinbarte Wochenstunden (Standard: 40) |
-| **Arbeitstage pro Woche** | Anzahl der Arbeitstage 1–7 (Standard: 5) |
-| **Urlaubstage** | Jährlicher Urlaubsanspruch (Standard: 30) |
+| **Wochenstunden** | Vertraglich vereinbarte Wochenstunden (Standard: 40). Viertelstunden (0,25/0,75) bei individuellen Tagesstunden möglich. |
+| **Arbeitstage pro Woche** | Anzahl der Arbeitstage 1–7 (Standard: 5). Bestimmt den anteiligen Urlaubsvorschlag. |
+| **Urlaubstage** | Jährlicher Urlaubsanspruch in **Tagen**. Vorschlag anteilig nach Arbeitstagen: `30 × Arbeitstage ÷ 5` (5 Tage → 30, 3 Tage → 18). Überschreibbar. |
 
 **Optionale Felder:**
 | Feld | Beschreibung |
@@ -158,8 +158,12 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 | **Nachtarbeitnehmer** | § 6 ArbZG – 8h-Tageslimit bei Nachtarbeit |
 | **Erster / Letzter Arbeitstag** | Eintrittsdatum und ggf. geplantes Austrittsdatum |
 | **Individuelle Tagesstunden** | Abweichende Stundenverteilung Mo–Fr statt einheitlich |
+| **Abteilung/Bereich** | Optionale Zuordnung (Freitext); ermöglicht Filterung im Abwesenheitskalender |
+| **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein) |
 
 > **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte können von ArbZG-Beschränkungen ausgenommen werden. Aktivieren Sie dieses Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen.
+
+> **So wird Urlaub berechnet (Tagesprinzip, § 3 BUrlG / BAG):** Der Urlaub wird **nach Arbeitstagen** geführt, nicht nach Stunden. Ein freier Arbeitstag verbraucht **genau 1 Urlaubstag**, unabhängig von der Tagesstundenzahl – ein langer Tag (z. B. 9 h) kostet so viel wie ein kurzer (z. B. 4 h): einen Tag. Auch bei **individuellen Tagesstunden** kostet jeder Arbeitstag gleich viel (Montag = Dienstag). Der Jahresanspruch wird anteilig nach Arbeitstagen vorgeschlagen. Intern speichert das System Stunden (für die Soll-/Ist-Berechnung); der **Verbrauch wird tagebasiert** gezählt und im Urlaubskonto in Tagen angezeigt.
 
 ### Mitarbeiter bearbeiten
 
