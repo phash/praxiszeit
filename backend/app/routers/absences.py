@@ -76,7 +76,9 @@ def get_absence_calendar(
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
     # Get all absences for the month, fetching User columns in the same query
-    rows = db.query(Absence, User.first_name, User.last_name).join(User).filter(
+    rows = db.query(
+        Absence, User.first_name, User.last_name, User.calendar_color, User.department
+    ).join(User).filter(
         User.is_active == True,
         User.is_hidden == False,
         date_in_month(Absence.date, year, month_num)
@@ -86,7 +88,7 @@ def get_absence_calendar(
     # DSGVO Art. 9: Krankheitsdaten sind besonders schützenswert.
     # Nicht-Admins sehen fremde Krankmeldungen nur als "absent".
     calendar_entries = []
-    for absence, first_name, last_name in rows:
+    for absence, first_name, last_name, calendar_color, department in rows:
         display_type = absence.type.value
         if (
             absence.type == AbsenceType.SICK
@@ -98,6 +100,8 @@ def get_absence_calendar(
             date=absence.date,
             user_first_name=first_name,
             user_last_name=last_name,
+            user_color=calendar_color,
+            department=department,
             type=display_type,
             hours=absence.hours
         ))

@@ -29,6 +29,7 @@ interface User {
   hours_friday: number | null;
   first_work_day: string | null;
   last_work_day: string | null;
+  department?: string | null;
   is_active: boolean;
   is_hidden: boolean;
   deactivated_at: string | null;
@@ -61,6 +62,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     is_night_worker: false,
     first_work_day: '',
     last_work_day: '',
+    department: '',
     use_daily_schedule: false,
     hours_monday: 8,
     hours_tuesday: 8,
@@ -90,6 +92,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         is_night_worker: editUser.is_night_worker ?? false,
         first_work_day: editUser.first_work_day || '',
         last_work_day: editUser.last_work_day || '',
+        department: editUser.department || '',
         use_daily_schedule: editUser.use_daily_schedule ?? false,
         hours_monday: editUser.hours_monday ?? 8,
         hours_tuesday: editUser.hours_tuesday ?? 8,
@@ -148,6 +151,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         ...userFields,
         first_work_day: formData.first_work_day || null,
         last_work_day: formData.last_work_day || null,
+        department: formData.department.trim() || null,
       };
       const startYear = formData.first_work_day
         ? new Date(formData.first_work_day).getFullYear()
@@ -411,6 +415,18 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               value={formData.last_work_day}
               onChange={(e) => setFormData({ ...formData, last_work_day: e.target.value })}
               className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label htmlFor="f-department" className="block text-sm font-medium text-gray-700 mb-1">Abteilung/Bereich (optional)</label>
+            <input
+              id="f-department"
+              type="text"
+              maxLength={100}
+              value={formData.department}
+              onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              placeholder="z. B. Praxis, Verwaltung, Reinigung"
             />
           </div>
 

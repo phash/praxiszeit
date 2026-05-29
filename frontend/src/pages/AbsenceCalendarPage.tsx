@@ -7,6 +7,8 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
+import AbsenceBadge from '../components/AbsenceBadge';
+import { useTypeColorsStore } from '../stores/typeColorsStore';
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseHours } from '../utils/formatters';
@@ -14,6 +16,10 @@ import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import VacationRequestEditModal from '../components/VacationRequestEditModal';
+
+// Label helper that tolerates the DSGVO-masked "absent" pseudo-type.
+const absenceTypeLabel = (t: string): string =>
+  t === 'absent' ? 'Abwesend' : (ABSENCE_TYPE_LABELS[t as AbsenceType] ?? t);
 
 interface VacationRequest {
   id: string;
@@ -44,7 +50,10 @@ interface CalendarEntry {
   date: string;
   user_first_name: string;
   user_last_name: string;
-  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
+  user_color: string;
+  department?: string | null;
+  // May be a masked value ("absent") for non-admins viewing others' sick days.
+  type: string;
   hours: number;
 }
 
@@ -94,6 +103,7 @@ export default function AbsenceCalendarPage() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [viewMode, setViewMode] = useState<'month' | 'year'>('month');
   const [calendarEntries, setCalendarEntries] = useState<CalendarEntry[]>([]);
+  const [departmentFilter, setDepartmentFilter] = useState<string>(''); // #162
   const [myAbsences, setMyAbsences] = useState<Absence[]>([]);
   const [holidays, setHolidays] = useState<PublicHoliday[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -270,6 +280,14 @@ export default function AbsenceCalendarPage() {
   // Use shared constants
   const typeLabels = ABSENCE_TYPE_LABELS;
   const typeColors = ABSENCE_TYPE_COLORS;
+  const absColors = useTypeColorsStore((s) => s.colors);
+  // #162: Abteilungs-Filter für den Team-Kalender.
+  const departments = Array.from(
+    new Set(calendarEntries.map((e) => e.department).filter(Boolean)),
+  ).sort() as string[];
+  const visibleEntries = departmentFilter
+    ? calendarEntries.filter((e) => e.department === departmentFilter)
+    : calendarEntries;
 
   // Generate calendar days
   const [year, month] = currentMonth.split('-').map(Number);
@@ -639,6 +657,20 @@ export default function AbsenceCalendarPage() {
             </button>
           </div>
         )}
+        {/* #162: Abteilungs-Filter */}
+        {departments.length > 0 && (
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary"
+            aria-label="Nach Abteilung filtern"
+          >
+            <option value="">Alle Abteilungen</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Calendar */}
@@ -662,7 +694,7 @@ export default function AbsenceCalendarPage() {
               {/* Calendar days */}
               {days.map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd');
-                const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
+                const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
 
@@ -689,15 +721,20 @@ export default function AbsenceCalendarPage() {
                           {dayHoliday.name}
                         </div>
                       )}
-                      {/* Absence Entries */}
-                      {dayEntries.map((entry, idx) => (
-                        <div
-                          key={idx}
-                          className={`text-xs px-2 py-1 rounded-sm border ${typeColors[entry.type]}`}
-                        >
-                          {entry.user_first_name} {entry.user_last_name?.[0]}.
+                      {/* Absence Entries — per-employee badge (ring = MA-Farbe, Mitte = Typ) */}
+                      {dayEntries.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {dayEntries.map((entry, idx) => (
+                            <AbsenceBadge
+                              key={idx}
+                              type={entry.type}
+                              userColor={entry.user_color}
+                              initials={`${entry.user_first_name?.[0] ?? ''}${entry.user_last_name?.[0] ?? ''}`.toUpperCase()}
+                              title={`${entry.user_first_name} ${entry.user_last_name} – ${absenceTypeLabel(entry.type)}`}
+                            />
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 );
@@ -711,7 +748,7 @@ export default function AbsenceCalendarPage() {
               .filter((day) => day.getDay() !== 0 && day.getDay() !== 6) // show all weekdays
               .map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd');
-                const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
+                const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
                 const hasContent = dayEntries.length > 0 || !!dayHoliday;
 
@@ -750,14 +787,22 @@ export default function AbsenceCalendarPage() {
                       {dayEntries.map((entry, idx) => (
                         <div
                           key={idx}
-                          className={`px-3 py-2 rounded-lg border ${typeColors[entry.type]}`}
+                          className="px-3 py-2 rounded-lg border border-gray-200 flex items-center gap-2"
                         >
-                          <p className="text-sm font-medium">
-                            {entry.user_first_name} {entry.user_last_name}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5">
-                            {typeLabels[entry.type]}
-                          </p>
+                          <AbsenceBadge
+                            type={entry.type}
+                            userColor={entry.user_color}
+                            initials={`${entry.user_first_name?.[0] ?? ''}${entry.user_last_name?.[0] ?? ''}`.toUpperCase()}
+                            title={`${entry.user_first_name} ${entry.user_last_name}`}
+                          />
+                          <div>
+                            <p className="text-sm font-medium">
+                              {entry.user_first_name} {entry.user_last_name}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-0.5">
+                              {absenceTypeLabel(entry.type)}
+                            </p>
+                          </div>
                         </div>
                       ))}
                       {/* Placeholder for days without content */}
@@ -780,7 +825,7 @@ export default function AbsenceCalendarPage() {
               const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
               // Get absences for this month
-              const monthAbsences = calendarEntries.filter(entry => {
+              const monthAbsences = visibleEntries.filter(entry => {
                 const entryDate = parseISO(entry.date);
                 return entryDate >= monthStart && entryDate <= monthEnd;
               });
@@ -849,10 +894,16 @@ export default function AbsenceCalendarPage() {
       {/* Legend */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6" key="legend">
         <h3 className="font-semibold mb-3">Legende</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Im Kalender: <strong>Ring</strong> = Mitarbeiterfarbe, <strong>Mitte</strong> = Art der Abwesenheit.
+        </p>
         <div className="flex flex-wrap gap-4">
           {Object.entries(typeLabels).map(([key, label]) => (
             <div key={key} className="flex items-center space-x-2">
-              <div className={`w-4 h-4 rounded-sm border ${typeColors[key as AbsenceType]}`}></div>
+              <div
+                className="w-4 h-4 rounded-full border border-gray-300"
+                style={{ backgroundColor: (absColors as Record<string, string>)[key] ?? '#6B7280' }}
+              ></div>
               <span className="text-sm">{label}</span>
             </div>
           ))}

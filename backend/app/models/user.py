@@ -42,6 +42,7 @@ class User(Base):
     token_version = Column(Integer, default=0, nullable=False, server_default='0')  # Increment to invalidate all tokens
     exempt_from_arbzg = Column(Boolean, default=False, nullable=False, server_default='false')  # §18 ArbZG: leitende Angestellte
     is_night_worker = Column(Boolean, default=False, nullable=False, server_default='false')  # §6 Abs. 2 ArbZG: reduziertes Tageslimit 8h
+    department = Column(String(100), nullable=True)  # #162: Abteilung/Bereich (Freitext, optional)
     totp_secret = Column(String(64), nullable=True)  # F-019: TOTP secret (None if 2FA not set up)
     totp_enabled = Column(Boolean, default=False, nullable=False, server_default='false')  # F-019: 2FA active
     last_totp_counter = Column(BigInteger, nullable=True)  # Highest counter value already accepted (replay guard)
