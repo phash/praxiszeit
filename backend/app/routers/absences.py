@@ -319,7 +319,15 @@ def create_absence(
             dates_by_year.setdefault(d.year, []).append(d)
         for check_year, year_dates in dates_by_year.items():
             vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
-            year_hours_needed = float(absence_data.hours) * len(year_dates)
+            # #156: budget check must match what is actually booked — the per-day
+            # scheduled target, not the caller-supplied (default-8h) value.
+            year_hours_needed = sum(
+                float(calculation_service.get_daily_target_for_date(
+                    target_user, d,
+                    weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                ))
+                for d in year_dates
+            )
             if year_hours_needed > vacation_account["remaining_hours"]:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -372,10 +380,14 @@ def create_absence(
     # Create absences for all dates
     created_absences = []
     for date in dates_to_create:
-        # §3 EntgFG: for sick leave always credit the employee's scheduled daily hours,
-        # not a caller-supplied value. For daily-schedule users, use their per-weekday
-        # target; for standard users, derive from weekly_hours / work_days_per_week.
-        if absence_data.type == AbsenceType.SICK or getattr(target_user, 'use_daily_schedule', False):
+        # #156 Sofortmaßnahme: a full-day absence is always credited with the
+        # employee's *own* scheduled daily target — never a caller-supplied value
+        # (which the booking form defaults to 8h). That guarantees one absent
+        # working day == exactly one day for everyone, regardless of contracted
+        # daily hours (Teilzeit). §3 EntgFG requires this for SICK anyway.
+        # Only OVERTIME compensation keeps its explicit hours (the amount of
+        # overtime being drawn down), unless a per-weekday schedule applies.
+        if absence_data.type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
             weekly = calculation_service.get_weekly_hours_for_date(db, target_user, date)
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, weekly_hours=weekly))
             if hours_for_day == 0:
