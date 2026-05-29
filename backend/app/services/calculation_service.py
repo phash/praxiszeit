@@ -655,15 +655,27 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         date_in_year(Absence.date, year),
     ).all()
 
-    used_hours = sum((Decimal(str(a.hours)) for a in vacation_absences), start=Decimal('0'))
+    # #156/T2 — Tagesprinzip (§3 BUrlG, BAG): der Urlaubsverbrauch wird in
+    # TAGEN gezählt, nicht als Stundensumme ÷ Durchschnitts-Tagessoll. Jeder
+    # Urlaubstag zählt als Anteil seines EIGENEN Tagessolls (voller Tag = 1,0;
+    # Halbtag = 0,5) — unabhängig vom Wochentag. Das verhindert, dass ein
+    # Montag-Urlaub (z. B. 8h) mehr kostet als ein Dienstag-Urlaub (z. B. 3h)
+    # bei ungleichmäßigem Tagesplan. Die Stundensumme bleibt nur informativ.
+    used_hours = Decimal('0')
+    used_days = Decimal('0')
+    for a in vacation_absences:
+        h = Decimal(str(a.hours))
+        used_hours += h
+        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date))
+        if dt_day > 0:
+            used_days += (h / Decimal(str(dt_day)))
 
     # #146: a special day (24./31.12.) configured as `free` + counts_as_vacation
     # consumes one vacation day too. We account for it non-invasively here
-    # (no generated Absence rows): add the per-day target of each such date to
-    # the used vacation, unless the employee already has a real VACATION
-    # absence on that day (which is already summed above — avoid double count)
-    # or the day falls outside their employment window. Weekends / existing
-    # holidays are excluded inside vacation_deduction_dates_for_year.
+    # (no generated Absence rows): each such day is one full vacation day,
+    # unless the employee already has a real VACATION absence on that day
+    # (already counted above) or it falls outside their employment window.
+    # Weekends / existing holidays are excluded inside the helper.
     holiday_dates_year = {
         h.date for h in db.query(PublicHoliday).filter(
             date_in_year(PublicHoliday.date, year),
@@ -682,14 +694,15 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         if user.last_work_day and d > user.last_work_day:
             continue
         weekly_hours = get_weekly_hours_for_date(db, user, d)
-        used_hours += get_daily_target_for_date(user, d, weekly_hours)
-    # daily_target guaranteed > 0 here (early return above handles the
-    # zero case). Division is therefore always safe.
-    used_days = used_hours / daily_target
+        dt_day = get_daily_target_for_date(user, d, weekly_hours)
+        if dt_day <= 0:
+            continue
+        used_hours += Decimal(str(dt_day))
+        used_days += Decimal('1')  # ein freier Sondertag = 1 Urlaubstag
 
-    # Calculate remaining
+    # Calculate remaining — days are authoritative (Tagesprinzip); hours informativ.
+    remaining_days = budget_days - used_days
     remaining_hours = budget_hours - used_hours
-    remaining_days = remaining_hours / daily_target
 
     return {
         "budget_hours": float(budget_hours.quantize(Decimal('0.01'))),
