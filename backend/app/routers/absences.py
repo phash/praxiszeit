@@ -96,12 +96,16 @@ def get_absence_calendar(
             and absence.user_id != current_user.id
         ):
             display_type = "absent"
+        # DSGVO-Minimierung: die Abteilung (Org-Zuordnung) wird nur Admins
+        # ausgeliefert (Filter-Use-Case). Kolleg:innen erhalten den Team-Kalender
+        # ohne Abteilungsmerkmal → kein tenant-weites Org-Chart-Broadcast.
+        entry_department = department if current_user.role == UserRole.ADMIN else None
         calendar_entries.append(AbsenceCalendarEntry(
             date=absence.date,
             user_first_name=first_name,
             user_last_name=last_name,
             user_color=calendar_color,
-            department=department,
+            department=entry_department,
             type=display_type,
             hours=absence.hours
         ))

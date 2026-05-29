@@ -252,6 +252,17 @@ export default function AdminAbsences() {
     ? absences.filter(a => a.date.startsWith(currentMonth) || (a.end_date && a.end_date >= currentMonth + '-01' && a.date <= currentMonth + '-31'))
     : [];
 
+  // #162 / Review M-C2+M-C3: department filter at component scope (so it also
+  // narrows the all-employees overview), with fallback when the selected
+  // department no longer exists.
+  const departments = Array.from(
+    new Set(employees.map(e => e.department).filter(Boolean)),
+  ).sort() as string[];
+  const effectiveDepartmentFilter = departments.includes(departmentFilter) ? departmentFilter : '';
+  const visibleEmployees = effectiveDepartmentFilter
+    ? employees.filter(e => e.department === effectiveDepartmentFilter)
+    : employees;
+
   return (
     <div>
       <ConfirmDialog
@@ -470,48 +481,36 @@ export default function AdminAbsences() {
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 mb-6">
         <div className="flex flex-wrap items-center gap-4">
-          {(() => {
-            const departments = Array.from(
-              new Set(employees.map(e => e.department).filter(Boolean)),
-            ).sort() as string[];
-            const visibleEmployees = departmentFilter
-              ? employees.filter(e => e.department === departmentFilter)
-              : employees;
-            return (
-              <>
-                {departments.length > 0 && (
-                  <div className="min-w-40">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Abteilung</label>
-                    <select
-                      value={departmentFilter}
-                      onChange={e => { setDepartmentFilter(e.target.value); setSelectedEmployee(''); setShowForm(false); }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Alle Abteilungen</option>
-                      {departments.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                <div className="flex-1 min-w-48">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
-                  <select
-                    value={selectedEmployee}
-                    onChange={e => { setSelectedEmployee(e.target.value); setShowForm(false); }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">Alle Mitarbeiter</option>
-                    {visibleEmployees.map(emp => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.first_name} {emp.last_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            );
-          })()}
+          {departments.length > 0 && (
+            <div className="min-w-40">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Abteilung</label>
+              <select
+                value={effectiveDepartmentFilter}
+                onChange={e => { setDepartmentFilter(e.target.value); setSelectedEmployee(''); setShowForm(false); }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Alle Abteilungen</option>
+                {departments.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex-1 min-w-48">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
+            <select
+              value={selectedEmployee}
+              onChange={e => { setSelectedEmployee(e.target.value); setShowForm(false); }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Alle Mitarbeiter</option>
+              {visibleEmployees.map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.first_name} {emp.last_name}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Monat</label>
             <MonthSelector value={currentMonth} onChange={setCurrentMonth} />
@@ -676,7 +675,7 @@ export default function AdminAbsences() {
       ) : (
         /* All employees overview */
         <div className="space-y-3">
-          {employees.map(emp => {
+          {visibleEmployees.map(emp => {
             const empAbsences = allAbsences[emp.id] || [];
             const isExpanded = expandedEmployees[emp.id];
             return (

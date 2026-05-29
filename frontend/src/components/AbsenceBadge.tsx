@@ -1,4 +1,4 @@
-import { useTypeColorsStore } from '../stores/typeColorsStore';
+import { useTypeColorsStore, pickTextColor } from '../stores/typeColorsStore';
 
 interface AbsenceBadgeProps {
   /** Absence type key ("vacation" … or masked "absent"). */
@@ -23,6 +23,10 @@ export default function AbsenceBadge({ type, userColor, initials, title, size = 
   const colors = useTypeColorsStore((s) => s.colors);
   const centre = (colors as Record<string, string>)[type] ?? '#6B7280';
   const ring = Math.max(2, Math.round(size * 0.1)); // 10 % of diameter = 20 % of radius
+  // Contrast-safe text + matching contour so initials stay legible on any
+  // admin-chosen centre colour (Review HIGH: no white-on-yellow).
+  const textColor = pickTextColor(centre);
+  const contour = textColor === '#FFFFFF' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.85)';
 
   return (
     <span
@@ -42,15 +46,15 @@ export default function AbsenceBadge({ type, userColor, initials, title, size = 
         fontWeight: 700,
         lineHeight: 1,
         letterSpacing: '-0.02em',
-        color: '#fff',
-        WebkitTextStroke: '0.6px rgba(0,0,0,0.7)',
+        color: textColor,
+        WebkitTextStroke: `0.6px ${contour}`,
         // Fallback contour for engines without -webkit-text-stroke.
-        textShadow: '0 0 1px rgba(0,0,0,0.55)',
+        textShadow: `0 0 1px ${contour}`,
         userSelect: 'none',
         flexShrink: 0,
       }}
     >
-      {initials}
+      {initials || '?'}
     </span>
   );
 }
