@@ -80,3 +80,6 @@ import_celine.py
 docs/generated/
 .worktrees/
 .superpowers/
+
+# Raw user feedback inputs (may contain personal data) — never commit
+feedback/

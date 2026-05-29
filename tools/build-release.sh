@@ -16,9 +16,11 @@ set -euo pipefail
 # =============================================================================
 
 APP_VERSION="1.8.0"
-PYTHON_VERSION="3.13.3"
+PYTHON_VERSION="3.13.13"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
-PYTHON_STANDALONE_TAG="20250529"
+# 20260510 buendelt CPython 3.13.13 — enthaelt die tarfile-Fixes
+# (CVE-2025-4517 u.a.) gegenueber dem alten 3.13.3 (Tag 20250529).
+PYTHON_STANDALONE_TAG="20260510"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases
@@ -801,12 +803,16 @@ if [ "$BUILD_DOCKER" = true ]; then
         local sub="$1"; shift
         (cd "${REPO_DIR}" && tar cf - "$@" "${sub}") | tar xf - -C "${DOCKER_STAGE}/"
     }
+    # Belt-and-suspenders: nie lokale Secrets/Keys ins Bundle, auch wenn jemand
+    # mal welche unter backend/ oder frontend/ ablegt.
     _copy_tree backend \
         --exclude='backend/__pycache__' --exclude='*.pyc' --exclude='backend/tests' \
         --exclude='backend/.pytest_cache' --exclude='backend/htmlcov' \
-        --exclude='backend/test.db' --exclude='backend/.venv'
+        --exclude='backend/test.db' --exclude='backend/.venv' \
+        --exclude='*.pem' --exclude='*.key' --exclude='.env'
     _copy_tree frontend \
-        --exclude='frontend/node_modules' --exclude='frontend/dist'
+        --exclude='frontend/node_modules' --exclude='frontend/dist' \
+        --exclude='*.pem' --exclude='*.key' --exclude='.env'
     # ssl/: Skript + nginx-Config, aber NIE einen evtl. lokal erzeugten Key/Cert
     _copy_tree ssl --exclude='ssl/cert.pem' --exclude='ssl/key.pem'
     _copy_tree prometheus

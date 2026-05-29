@@ -76,13 +76,18 @@ export default function AdminAbsences() {
     loadClosures();
   }, []);
 
+  // Single source of truth for the month/employee load. Guarding the
+  // all-employees branch on employees.length avoids the empty first-mount
+  // no-op AND the duplicate fetch that a second employees-keyed effect caused
+  // on every month change (Review M5).
   useEffect(() => {
     if (selectedEmployee) {
       loadAbsences(selectedEmployee);
-    } else {
+    } else if (employees.length > 0) {
       loadAllAbsences();
     }
-  }, [selectedEmployee, currentMonth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmployee, currentMonth, employees]);
 
   const loadEmployees = async () => {
     try {
@@ -186,12 +191,6 @@ export default function AdminAbsences() {
     );
     setAllAbsences(result);
   };
-
-  useEffect(() => {
-    if (!selectedEmployee && employees.length > 0) {
-      loadAllAbsences();
-    }
-  }, [employees, currentMonth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -611,8 +610,14 @@ export default function AdminAbsences() {
                   value={formData.hours}
                   onChange={e => setFormData(p => ({ ...p, hours: parseHours(e.target.value) }))}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  disabled={!isDateRange && formData.half_day}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-400"
                 />
+                {!isDateRange && formData.half_day && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Halber Tag: 0,5 × Tagessoll wird automatisch gebucht (Stundenwert wird ignoriert)
+                  </p>
+                )}
               </div>
             </div>
 
