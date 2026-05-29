@@ -255,7 +255,7 @@ class TestLicenseValidation:
         license_file.write_text(token)
 
         # Patch the public key and configured flag
-        with patch.object(lic, "_PUBLIC_KEY_PEM", keypair["public_pem"]), \
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
              patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
             info = lic.validate_license(license_file)
 
@@ -276,7 +276,7 @@ class TestLicenseValidation:
         license_file = tmp_path / "license.key"
         license_file.write_text(token)
 
-        with patch.object(lic, "_PUBLIC_KEY_PEM", keypair["public_pem"]), \
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
              patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
             with pytest.raises(lic.LicenseExpiredError):
                 lic.validate_license(license_file)
@@ -292,7 +292,7 @@ class TestLicenseValidation:
         license_file = tmp_path / "license.key"
         license_file.write_text(token)
 
-        with patch.object(lic, "_PUBLIC_KEY_PEM", keypair["public_pem"]), \
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
              patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
             # license.py raises the German message ("Signatur") — the code is
             # intentionally German-facing; assert against the real string.
@@ -335,7 +335,7 @@ class TestLicenseValidation:
         license_file = tmp_path / "license.key"
         license_file.write_text(token)
 
-        with patch.object(lic, "_PUBLIC_KEY_PEM", keypair["public_pem"]), \
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
              patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
             info = lic.validate_license_quiet(license_file)
 
