@@ -581,10 +581,13 @@ export default function AbsenceCalendarPage() {
                   value={formData.hours}
                   onChange={(e) => setFormData({ ...formData, hours: parseHours(e.target.value) })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  disabled={!isDateRange && formData.half_day}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-400"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.type === 'vacation'
+                  {!isDateRange && formData.half_day
+                    ? 'Halber Tag: 0,5 × Tagessoll wird automatisch gebucht (Stundenwert wird ignoriert)'
+                    : formData.type === 'vacation'
                     ? 'Stunden = Regelarbeitszeit pro Tag (für Urlaubsberechnung)'
                     : formData.type === 'overtime'
                     ? 'Vorausgefüllt mit Ihren Sollstunden des Tages'
@@ -748,7 +751,7 @@ export default function AbsenceCalendarPage() {
                         <div className="flex flex-wrap gap-1">
                           {dayEntries.map((entry, idx) => (
                             <AbsenceBadge
-                              key={idx}
+                              key={`${entry.date}-${entry.user_first_name}-${entry.user_last_name}-${entry.type}-${idx}`}
                               type={entry.type}
                               userColor={entry.user_color}
                               initials={`${entry.user_first_name?.[0] ?? ''}${entry.user_last_name?.[0] ?? ''}`.toUpperCase()}
@@ -808,14 +811,15 @@ export default function AbsenceCalendarPage() {
                       {/* Absence Entries */}
                       {dayEntries.map((entry, idx) => (
                         <div
-                          key={idx}
+                          key={`${entry.date}-${entry.user_first_name}-${entry.user_last_name}-${entry.type}-${idx}`}
                           className="px-3 py-2 rounded-lg border border-gray-200 flex items-center gap-2"
                         >
                           <AbsenceBadge
                             type={entry.type}
                             userColor={entry.user_color}
                             initials={`${entry.user_first_name?.[0] ?? ''}${entry.user_last_name?.[0] ?? ''}`.toUpperCase()}
-                            title={`${entry.user_first_name} ${entry.user_last_name}`}
+                            title={`${entry.user_first_name} ${entry.user_last_name} – ${absenceTypeLabel(entry.type)}`}
+                            decorative
                           />
                           <div>
                             <p className="text-sm font-medium">
@@ -903,7 +907,7 @@ export default function AbsenceCalendarPage() {
                             <div className="flex items-center space-x-0.5 mt-0.5">
                               {dayAbsences.slice(0, 3).map((a, idx) => (
                                 <div
-                                  key={idx}
+                                  key={`${a.user_first_name ?? ''}${a.user_last_name ?? ''}-${a.type}-${idx}`}
                                   className="w-1.5 h-1.5 rounded-full"
                                   style={{ backgroundColor: (absColors as Record<string, string>)[a.type] ?? '#6B7280' }}
                                 ></div>

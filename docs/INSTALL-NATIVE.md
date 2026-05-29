@@ -3,6 +3,10 @@
 Anleitung zur Installation von PraxisZeit als Einzelinstanz auf einem Server ohne Docker.
 Alle Pakete enthalten Python und PostgreSQL — keine Voraussetzungen noetig.
 
+> **Docker bevorzugt?** Wer lieber mit Docker Compose deployt, nutzt nicht diese
+> Native-Pakete, sondern das Docker-Bundle bzw. den Quellcode — siehe
+> [INSTALL-DOCKER.md](INSTALL-DOCKER.md).
+
 ## Unterstuetzte Plattformen
 
 | Plattform | Architektur | Paket | Groesse |
@@ -18,12 +22,20 @@ Alle Pakete enthalten Python und PostgreSQL — keine Voraussetzungen noetig.
 
 ```bash
 # 1. Herunterladen + entpacken
-tar xzf praxiszeit-1.2.0-linux-x64.tar.gz
-cd praxiszeit
+#    Das Tarball entpackt FLACH (kein Top-Level-Ordner) — daher zuerst einen
+#    Zielordner anlegen und mit -C dorthin entpacken:
+mkdir -p praxiszeit-1.8.0
+tar xzf praxiszeit-1.8.0-linux-x64.tar.gz -C praxiszeit-1.8.0
+cd praxiszeit-1.8.0
 
 # 2. Installer starten (als root)
 sudo ./install.sh
 ```
+
+> **Hinweis Port 443 / privilegierte Ports:** Der Dienst laeuft als
+> non-root-Benutzer. Der Installer vergibt fuer Ports < 1024 automatisch
+> `CAP_NET_BIND_SERVICE` in der systemd-Unit — ein Bind auf 443 funktioniert
+> damit ohne root. (Aeltere Versionen scheiterten hier mit `permission denied`.)
 
 Der Installer fragt interaktiv nach Praxis-Name, Admin-Zugangsdaten und Port.
 
@@ -42,7 +54,7 @@ journalctl -u praxiszeit -f          # Live-Logs
 ## Windows-Installation
 
 ```
-1. praxiszeit-1.2.0-windows-x64.zip entpacken nach C:\PraxisZeit\
+1. praxiszeit-1.8.0-windows-x64.zip entpacken nach C:\PraxisZeit\
 
 2. setup.bat als Administrator ausfuehren
    - Installiert PostgreSQL (silent, kein GUI)
@@ -75,11 +87,14 @@ Deinstallation: `uninstall-service.bat` ausfuehren (Datenbank wird beibehalten).
 ## macOS-Installation
 
 ```bash
+# Tarball entpackt flach — in einen eigenen Ordner entpacken:
+mkdir -p praxiszeit-1.8.0 && cd praxiszeit-1.8.0
+
 # Intel Mac:
-tar xzf praxiszeit-1.2.0-macos-x64.tar.gz
+tar xzf ../praxiszeit-1.8.0-macos-x64.tar.gz
 
 # Apple Silicon (M1/M2/M3/M4):
-tar xzf praxiszeit-1.2.0-macos-arm64.tar.gz
+tar xzf ../praxiszeit-1.8.0-macos-arm64.tar.gz
 
 # Installer starten (als root)
 sudo ./install.sh
@@ -214,11 +229,21 @@ openssl req -x509 -newkey ed25519 \
 
 ## Backup & Restore
 
-Automatische Backups laufen taeglich (konfigurierbar in `[backup] schedule`).
+Automatische Backups laufen taeglich um 02:00. Unter Linux geschieht das ueber
+einen **systemd-Timer** (`praxiszeit-backup.timer`) — kein `cron` noetig (das
+fehlt auf Minimal-/Cloud-Images wie dem Debian-13-Cloudimage).
 
 ```bash
-# Manuelles Backup (Linux/macOS)
-sudo -u praxiszeit /opt/praxiszeit/praxiszeit-server.py backup
+# Timer-Status / naechster Lauf (Linux)
+systemctl status praxiszeit-backup.timer
+systemctl list-timers praxiszeit-backup.timer
+
+# Backup sofort ausloesen (Linux)
+sudo systemctl start praxiszeit-backup.service
+
+# Manuelles Backup (Linux/macOS, direkt)
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
+    /opt/praxiszeit/praxiszeit-server.py backup
 
 # Backups anzeigen
 ls -la /opt/praxiszeit/data/backups/
@@ -274,7 +299,7 @@ Gebuendelte Komponenten:
 | Komponente | Linux | Windows | macOS |
 |------------|-------|---------|-------|
 | Python 3.13 | python-build-standalone | python-build-standalone | python-build-standalone |
-| PostgreSQL | System-Binaries | EDB Installer (.exe, silent) | EDB Installer (.dmg, silent) |
+| PostgreSQL | theseus-rs 16 (gebuendelt) | EDB Installer (.exe, silent) | theseus-rs 16 (gebuendelt) |
 | Service Manager | systemd | nssm | launchd |
 
 Ergebnis in `dist/`:

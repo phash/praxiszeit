@@ -29,6 +29,20 @@ describe('pickTextColor', () => {
   it('falls back to dark for malformed input', () => {
     expect(pickTextColor('nope')).toBe('#111827');
   });
+
+  it('picks dark text on mid-tone colours for WCAG-AA contrast', () => {
+    // Regression for the 0.5-threshold bug: these mid-tone defaults previously
+    // got white text below 4.5:1. The 0.179 WCAG flip-point gives dark text.
+    expect(pickTextColor('#0D9488')).toBe('#111827'); // paid_leave teal
+    expect(pickTextColor('#16A34A')).toBe('#111827'); // work green
+    expect(pickTextColor('#E5A50A')).toBe('#111827'); // amber
+  });
+
+  it('still picks white on genuinely dark colours', () => {
+    expect(pickTextColor('#15803D')).toBe('#FFFFFF'); // dark green (training)
+    expect(pickTextColor('#7C3AED')).toBe('#FFFFFF'); // purple (overtime)
+    expect(pickTextColor('#DC2626')).toBe('#FFFFFF'); // red (sick)
+  });
 });
 
 describe('colorFor', () => {

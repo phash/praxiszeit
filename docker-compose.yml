@@ -99,7 +99,7 @@ services:
     # runtime (in v13 the feature toggle to turn it off was removed; Scenes is
     # always-on). Startup performs a one-time dashboard/folder migration to
     # unified storage.
-    image: grafana/grafana:13.0.1
+    image: grafana/grafana:13.0.1-security-01
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
       GF_AUTH_ANONYMOUS_ENABLED: "false"

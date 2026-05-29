@@ -64,5 +64,8 @@ export function pickTextColor(hex: string): string {
   const g = toLin(parseInt(h.slice(2, 4), 16));
   const b = toLin(parseInt(h.slice(4, 6), 16));
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return luminance > 0.5 ? '#111827' : '#FFFFFF';
+  // WCAG-Flip-Punkt: dunkler Text gewinnt erst ab L ≈ 0.179 (= sqrt(1.05·0.05)−0.05),
+  // dem geometrischen Mittel der Kontrastformel. Mit 0.5 bekamen mittelhelle
+  // Farben (Amber, das Default-Grün/Teal) weiße Schrift unter AA 4.5:1.
+  return luminance > 0.179 ? '#111827' : '#FFFFFF';
 }

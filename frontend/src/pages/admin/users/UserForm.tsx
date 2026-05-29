@@ -328,7 +328,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               id="f-vacation"
               type="number"
               value={formData.vacation_days}
-              onChange={(e) => setFormData({ ...formData, vacation_days: parseInt(e.target.value) })}
+              onChange={(e) => setFormData({ ...formData, vacation_days: parseInt(e.target.value) || 0 })}
               required
               min="0"
               max="50"
