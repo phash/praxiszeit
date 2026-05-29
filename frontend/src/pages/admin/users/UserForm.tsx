@@ -72,7 +72,6 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     overtime_carryover: 0, // #158: Anfangssaldo Überstunden (kein User-Feld, separater Carryover-Call)
   });
   // #158: vorhandener Vortrag zum Startjahr — wird beim Speichern erhalten.
-  const [existingVacationCarryover, setExistingVacationCarryover] = useState(0);
   const [hadCarryover, setHadCarryover] = useState(false);
 
   useEffect(() => {
@@ -108,7 +107,6 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
   // laden, damit das Feld den aktuellen Wert zeigt und der Urlaubs-Vortrag erhalten bleibt.
   useEffect(() => {
     if (!editUser) {
-      setExistingVacationCarryover(0);
       setHadCarryover(false);
       return;
     }
@@ -123,7 +121,6 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         const row = res.data.find((c) => c.year === startYear);
         if (row) {
           setFormData((prev) => ({ ...prev, overtime_carryover: row.overtime_hours }));
-          setExistingVacationCarryover(row.vacation_days ?? 0);
           setHadCarryover(true);
         }
       } catch {
@@ -157,8 +154,21 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         ? new Date(formData.first_work_day).getFullYear()
         : new Date().getFullYear();
 
-      const writeCarryover = async (userId: string, vacationDays: number) => {
+      // Review M-C1: always preserve the *target year's* own vacation carryover
+      // (fetch it fresh) so editing first_work_day can never copy another year's
+      // value or clobber an existing one.
+      const writeCarryover = async (userId: string) => {
         try {
+          let vacationDays = 0;
+          try {
+            const res = await apiClient.get<Array<{ year: number; vacation_days: number }>>(
+              `/admin/users/${userId}/carryovers`,
+            );
+            const row = res.data.find((c) => c.year === startYear);
+            if (row) vacationDays = row.vacation_days ?? 0;
+          } catch {
+            /* no existing carryover for the target year — keep 0 */
+          }
           await apiClient.put(`/admin/users/${userId}/carryovers/${startYear}`, {
             overtime_hours: overtime_carryover,
             vacation_days: vacationDays,
@@ -176,7 +186,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         // #158: nur schreiben, wenn ein Saldo gesetzt ist oder bereits einer existierte
         // (verhindert leere 0/0-Carryover-Zeilen für unberührte User).
         if (overtime_carryover !== 0 || hadCarryover) {
-          await writeCarryover(editUser.id, existingVacationCarryover);
+          await writeCarryover(editUser.id);
         }
         // If the admin edited themselves, refresh the auth store so Dashboard/Layout update
         if (currentUser && editUser.id === currentUser.id) {
@@ -188,7 +198,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         const res = await apiClient.post('/admin/users', payload);
         const newId: string | undefined = res.data?.user?.id;
         if (newId && overtime_carryover !== 0) {
-          await writeCarryover(newId, 0);
+          await writeCarryover(newId);
         }
         toast.success('Benutzer erfolgreich erstellt');
       }

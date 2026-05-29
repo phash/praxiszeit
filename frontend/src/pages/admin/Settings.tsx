@@ -6,7 +6,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { useTypeColorsStore } from '../../stores/typeColorsStore';
+import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore';
 
 // #157: Reihenfolge + Labels der konfigurierbaren Typ-Farben.
 const COLOR_TYPE_ORDER: { key: string; label: string }[] = [
@@ -766,14 +766,27 @@ export default function Settings() {
                 <label htmlFor={`color-${key}`} className="text-sm font-medium text-gray-700">
                   {label}
                 </label>
-                <input
-                  id={`color-${key}`}
-                  type="color"
-                  value={typeColors[key] ?? '#000000'}
-                  onChange={(e) => setTypeColors({ ...typeColors, [key]: e.target.value })}
-                  className="h-8 w-14 rounded border border-gray-300 cursor-pointer"
-                  aria-label={`Farbe ${label}`}
-                />
+                <div className="flex items-center gap-2">
+                  {/* Lesbarkeits-Vorschau: zeigt, ob die Schrift auf der Farbe lesbar bleibt */}
+                  <span
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border border-gray-300"
+                    style={{
+                      backgroundColor: typeColors[key] ?? '#000000',
+                      color: pickTextColor(typeColors[key] ?? '#000000'),
+                    }}
+                    aria-hidden="true"
+                  >
+                    Aa
+                  </span>
+                  <input
+                    id={`color-${key}`}
+                    type="color"
+                    value={typeColors[key] ?? '#000000'}
+                    onChange={(e) => setTypeColors({ ...typeColors, [key]: e.target.value })}
+                    className="h-8 w-14 rounded border border-gray-300 cursor-pointer"
+                    aria-label={`Farbe ${label}`}
+                  />
+                </div>
               </div>
             ))}
           </div>

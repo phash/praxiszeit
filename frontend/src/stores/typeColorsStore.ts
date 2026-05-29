@@ -49,13 +49,20 @@ export const useTypeColorsStore = create<TypeColorsState>((set, get) => ({
 }));
 
 /**
- * Inline-Style für einen Typ-Chip aus einem konfigurierten Hex-Wert:
- * leichter Hintergrund + kräftige Schrift/Border in derselben Farbe.
+ * Liefert eine gut lesbare Textfarbe (#111827 dunkel oder #FFFFFF weiß) für eine
+ * gegebene Hintergrundfarbe — basierend auf WCAG-Relativhelligkeit. Verhindert
+ * weiße Schrift auf hellen (z. B. gelben) Admin-Farben (Review-Finding HIGH).
  */
-export function chipStyle(hex: string): React.CSSProperties {
-  return {
-    backgroundColor: `${hex}1A`, // ~10% Deckkraft
-    color: hex,
-    borderColor: `${hex}55`,
+export function pickTextColor(hex: string): string {
+  const h = (hex || '').replace('#', '');
+  if (h.length !== 6) return '#111827';
+  const toLin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
   };
+  const r = toLin(parseInt(h.slice(0, 2), 16));
+  const g = toLin(parseInt(h.slice(2, 4), 16));
+  const b = toLin(parseInt(h.slice(4, 6), 16));
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.5 ? '#111827' : '#FFFFFF';
 }

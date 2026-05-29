@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_TYPE_COLORS, chipStyle, useTypeColorsStore } from './typeColorsStore';
+import { DEFAULT_TYPE_COLORS, pickTextColor, useTypeColorsStore } from './typeColorsStore';
 
 describe('typeColorsStore defaults', () => {
   it('has all seven type keys', () => {
@@ -15,12 +15,19 @@ describe('typeColorsStore defaults', () => {
   });
 });
 
-describe('chipStyle', () => {
-  it('derives a tinted background, coloured text and border from a hex', () => {
-    const s = chipStyle('#2563EB');
-    expect(s.color).toBe('#2563EB');
-    expect(s.backgroundColor).toBe('#2563EB1A');
-    expect(s.borderColor).toBe('#2563EB55');
+describe('pickTextColor', () => {
+  it('returns dark text on a light background', () => {
+    expect(pickTextColor('#FFEB3B')).toBe('#111827'); // yellow → dark
+    expect(pickTextColor('#FFFFFF')).toBe('#111827');
+  });
+
+  it('returns white text on a dark background', () => {
+    expect(pickTextColor('#2563EB')).toBe('#FFFFFF'); // blue → white
+    expect(pickTextColor('#111827')).toBe('#FFFFFF');
+  });
+
+  it('falls back to dark for malformed input', () => {
+    expect(pickTextColor('nope')).toBe('#111827');
   });
 });
 

@@ -405,20 +405,29 @@ export default function AdminDashboard() {
               size={24}
             />
           </div>
-          <p className={`text-3xl font-bold ${avgBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {avgBalance >= 0 ? '+' : ''}
-            {avgBalance.toFixed(2)} h
-          </p>
+          {avgRows.length === 0 ? (
+            <p className="text-3xl font-bold text-gray-400" title="Keine Mitarbeitenden in der Berechnung">—</p>
+          ) : (
+            <p className={`text-3xl font-bold ${avgBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {avgBalance >= 0 ? '+' : ''}
+              {avgBalance.toFixed(2)} h
+            </p>
+          )}
           {exemptCount > 0 && (
-            <label className="mt-2 flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeExemptInAvg}
-                onChange={(e) => setIncludeExemptInAvg(e.target.checked)}
-                className="w-3.5 h-3.5 rounded-sm border-gray-300 text-primary focus:ring-primary"
-              />
-              Leitende MA einrechnen ({exemptCount})
-            </label>
+            <>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {includeExemptInAvg ? 'inkl. leitende MA' : 'ohne leitende MA'}
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeExemptInAvg}
+                  onChange={(e) => setIncludeExemptInAvg(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded-sm border-gray-300 text-primary focus:ring-primary"
+                />
+                Leitende MA einrechnen ({exemptCount})
+              </label>
+            </>
           )}
         </div>
 

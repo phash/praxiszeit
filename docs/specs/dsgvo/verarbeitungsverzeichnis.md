@@ -49,6 +49,9 @@
 | Kontaktdaten | E-Mail-Adresse (optional) | Art. 6 Abs. 1 lit. b DSGVO |
 | Zugangs­daten | Passwort-Hash (bcrypt), JWT-Token-Version, TOTP-Secret (verschlüsselt, optional) | Art. 6 Abs. 1 lit. b DSGVO |
 | Vertrags­daten | Wochenstunden, Arbeitstage, Urlaubstage, Kalenderfarbe | Art. 6 Abs. 1 lit. b DSGVO |
+| Organisations­daten | Abteilung/Bereich (optional, Freitext; #162) | Art. 6 Abs. 1 lit. f DSGVO (Organisation/Dienstplanung) |
+
+> **Abteilung (#162):** optionales Gruppierungsmerkmal. Im Team-Abwesenheitskalender wird die Abteilung aus Datenminimierungsgründen **nur Administrator:innen** ausgeliefert (Filter-Use-Case); Kolleg:innen erhalten die Kalenderansicht ohne Abteilungsmerkmal.
 
 ### 4.2 Zeiterfassungsdaten
 

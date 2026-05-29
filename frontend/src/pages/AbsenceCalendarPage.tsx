@@ -285,8 +285,11 @@ export default function AbsenceCalendarPage() {
   const departments = Array.from(
     new Set(calendarEntries.map((e) => e.department).filter(Boolean)),
   ).sort() as string[];
-  const visibleEntries = departmentFilter
-    ? calendarEntries.filter((e) => e.department === departmentFilter)
+  // Wenn die gewählte Abteilung im aktuellen Zeitraum nicht (mehr) vorkommt,
+  // auf "Alle" zurückfallen, statt eine leere Ansicht zu zeigen (Review M-C3).
+  const effectiveDepartmentFilter = departments.includes(departmentFilter) ? departmentFilter : '';
+  const visibleEntries = effectiveDepartmentFilter
+    ? calendarEntries.filter((e) => e.department === effectiveDepartmentFilter)
     : calendarEntries;
 
   // Generate calendar days
@@ -660,7 +663,7 @@ export default function AbsenceCalendarPage() {
         {/* #162: Abteilungs-Filter */}
         {departments.length > 0 && (
           <select
-            value={departmentFilter}
+            value={effectiveDepartmentFilter}
             onChange={(e) => setDepartmentFilter(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary"
             aria-label="Nach Abteilung filtern"
@@ -856,6 +859,10 @@ export default function AbsenceCalendarPage() {
                       const dayAbsences = monthAbsences.filter(e => e.date === dateStr);
                       const dayHoliday = holidays.find((h) => h.date === dateStr);
                       const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                      // Review M-U1: type-coloured dots + descriptive title + overflow.
+                      const dotTitle = dayAbsences
+                        .map(a => `${a.user_first_name} ${a.user_last_name?.[0] ?? ''}. – ${absenceTypeLabel(a.type)}`)
+                        .join(', ');
 
                       return (
                         <div
@@ -868,16 +875,23 @@ export default function AbsenceCalendarPage() {
                           className={`aspect-square flex flex-col items-center justify-center rounded text-xs cursor-pointer hover:ring-1 hover:ring-primary ${
                             isWeekend || dayHoliday ? 'bg-gray-100' : 'bg-white'
                           }`}
-                          title={dayHoliday ? dayHoliday.name : 'Klicken um Abwesenheit einzutragen'}
+                          title={dayHoliday ? dayHoliday.name : (dotTitle || 'Klicken um Abwesenheit einzutragen')}
                         >
                           <div className={`font-medium ${dayHoliday ? 'text-gray-500' : 'text-gray-700'}`}>
                             {format(day, 'd')}
                           </div>
                           {dayAbsences.length > 0 && (
-                            <div className="flex space-x-0.5 mt-0.5">
-                              {dayAbsences.slice(0, 3).map((_, idx) => (
-                                <div key={idx} className="w-1 h-1 rounded-full bg-blue-500"></div>
+                            <div className="flex items-center space-x-0.5 mt-0.5">
+                              {dayAbsences.slice(0, 3).map((a, idx) => (
+                                <div
+                                  key={idx}
+                                  className="w-1.5 h-1.5 rounded-full"
+                                  style={{ backgroundColor: (absColors as Record<string, string>)[a.type] ?? '#6B7280' }}
+                                ></div>
                               ))}
+                              {dayAbsences.length > 3 && (
+                                <span className="text-[9px] leading-none text-gray-500">+{dayAbsences.length - 3}</span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -898,7 +912,11 @@ export default function AbsenceCalendarPage() {
           Im Kalender: <strong>Ring</strong> = Mitarbeiterfarbe, <strong>Mitte</strong> = Art der Abwesenheit.
         </p>
         <div className="flex flex-wrap gap-4">
-          {Object.entries(typeLabels).map(([key, label]) => (
+          {([
+            ['work', 'Arbeit'],
+            ...Object.entries(typeLabels),
+            ['absent', 'Abwesend (maskiert)'],
+          ] as [string, string][]).map(([key, label]) => (
             <div key={key} className="flex items-center space-x-2">
               <div
                 className="w-4 h-4 rounded-full border border-gray-300"
