@@ -28,6 +28,7 @@ import {
   CreditCard,
   Play,
   Timer,
+  Coffee,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 import StampWidget from './StampWidget';
@@ -382,6 +383,15 @@ export default function Layout() {
               </span>
             )}
           </p>
+          <a
+            href="https://buymeacoffee.com/phash"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex items-center justify-center gap-1.5 text-xs text-gray-400 hover:text-primary transition-colors"
+          >
+            <Coffee size={13} />
+            Buy me a coffee
+          </a>
         </div>
       </aside>
 
