@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import { useSystemStore } from '../stores/systemStore';
 import TrialBanner from './TrialBanner';
+import BetaBadge from './BetaBadge';
 import apiClient from '../api/client';
 import {
   LayoutDashboard,
@@ -37,6 +38,7 @@ export default function Layout() {
   const { user, logout } = useAuthStore();
   const { isStampSheetOpen, openStampSheet, closeStampSheet, notifyStampChange } = useUIStore();
   const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
+  const isBeta = useSystemStore((s) => s.info?.beta === true);
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -203,7 +205,10 @@ export default function Layout() {
 
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border flex items-center justify-between px-4 z-30">
-        <h1 className="text-xl font-bold text-primary">PraxisZeit</h1>
+        <div className="flex items-center">
+          <h1 className="text-xl font-bold text-primary">PraxisZeit</h1>
+          {isBeta && <BetaBadge />}
+        </div>
         <button
           onClick={() => setSidebarOpen(true)}
           className="p-2 rounded-xl hover:bg-muted transition"
@@ -233,7 +238,10 @@ export default function Layout() {
         {/* Logo/Title */}
         <div className="p-6 border-b border-border flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-primary">PraxisZeit</h1>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-primary">PraxisZeit</h1>
+              {isBeta && <BetaBadge />}
+            </div>
             <p className="text-sm text-text-secondary mt-1">Zeiterfassung</p>
           </div>
           <button

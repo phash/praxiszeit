@@ -130,6 +130,12 @@ class Settings(BaseSettings):
     # frontend ourselves (i.e. behind a proxy). Override explicitly if needed.
     TRUST_PROXY_HEADERS: Optional[bool] = None
 
+    # Beta-Phase: solange True ist die Lizenzpruefung KOMPLETT deaktiviert —
+    # keine Lizenz noetig, kein Read-Only, kein Mitarbeiter-Limit. Das Frontend
+    # zeigt ein "BETA"-Badge (Flag kommt aus /api/health). Vor dem ersten
+    # kostenpflichtigen Release auf False setzen (dann greift die Lizenzlogik).
+    BETA_MODE: bool = True
+
     # License key file path (native installations only)
     LICENSE_KEY_PATH: Optional[str] = None
 

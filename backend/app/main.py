@@ -262,11 +262,18 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
 
-    # 7. License validation (native installations only). Drei Modi:
+    # 7. License validation (native installations only). Vier Modi:
+    #    0) BETA_MODE → Lizenzpruefung komplett aus (keine Lizenz noetig, kein
+    #       Read-Only, kein Limit) — die gesamte App ist waehrend der Beta frei.
     #    a) LICENSE_KEY_PATH gesetzt + Datei existiert → echte Lizenz validieren
     #    b) LICENSE_DEMO_EXPIRES_AT gesetzt (vom Setup-Wizard) → Demo-Mode bis dahin
     #    c) keins von beiden → klassisch ohne Lizenz (Docker-Dev / SaaS)
-    if settings.LICENSE_KEY_PATH and Path(settings.LICENSE_KEY_PATH).is_file():
+    if settings.BETA_MODE:
+        from app.core.license import set_license_state
+        set_license_state(None, read_only=False)
+        print("License: BETA-Modus aktiv — Lizenzpruefung deaktiviert, "
+              "volle Funktion ohne Lizenz.")
+    elif settings.LICENSE_KEY_PATH and Path(settings.LICENSE_KEY_PATH).is_file():
         from app.core.license import (
             validate_license, validate_license_quiet,
             set_license_state, LicenseError, LicenseExpiredError,
@@ -645,6 +652,8 @@ def system_info():
     return {
         "deployment_mode": settings.DEPLOYMENT_MODE,
         "version": APP_VERSION,
+        # beta: Lizenzpruefung deaktiviert; Frontend zeigt das "BETA"-Badge.
+        "beta": settings.BETA_MODE,
     }
 
 

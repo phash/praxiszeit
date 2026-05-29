@@ -78,9 +78,29 @@ install_runtime_deps() {
         zypper -n install \
             libxml2-2 libopenssl3 krb5 libzstd1 liblz4-1 libreadline8 libbrotli1 \
             || { error "zypper install fehlgeschlagen"; exit 1; }
+    elif command -v pacman &>/dev/null; then
+        # Arch/CachyOS. KEIN -Sy (Partial-Upgrade-Falle) — --needed nutzt die
+        # vorhandene Sync-DB. ACHTUNG: Rolling-Distros koennen libxml2 bereits
+        # auf einen neueren Soname (libxml2.so.16) gehoben haben; theseus' PG
+        # braucht libxml2.so.2 — dann unten der Hinweis.
+        pacman -S --needed --noconfirm \
+            libxml2 openssl krb5 zstd lz4 readline brotli \
+            || { error "pacman install fehlgeschlagen (ggf. zuerst 'pacman -Sy')"; exit 1; }
     else
-        error "Kein bekannter Paketmanager (apt-get, dnf, zypper) gefunden."
+        error "Kein bekannter Paketmanager (apt-get, dnf, zypper, pacman) gefunden."
         error "Bitte installiere manuell: ${missing[*]}"
+        exit 1
+    fi
+
+    # Rolling-Distro-Soname-Check: theseus' postgres linkt gegen libxml2.so.2.
+    # Arch/CachyOS liefern ab libxml2 2.14 nur noch libxml2.so.16 -> der
+    # PG-Start wuerde mit "libxml2.so.2: cannot open shared object file"
+    # scheitern. Frueh + klar abbrechen statt im Dienst-Crash-Loop zu landen.
+    if ! ldconfig -p 2>/dev/null | grep -qE "^[[:space:]]*libxml2\.so\.2\b"; then
+        error "libxml2.so.2 ist auf diesem System nicht verfuegbar."
+        error "Vermutlich eine Rolling-Distro (z.B. Arch/CachyOS) mit libxml2 >= 2.14"
+        error "(nur libxml2.so.16). Die mitgelieferte PostgreSQL benoetigt aber"
+        error "libxml2.so.2. Unterstuetzt: Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+."
         exit 1
     fi
 }
