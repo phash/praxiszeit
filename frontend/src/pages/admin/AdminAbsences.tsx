@@ -59,6 +59,7 @@ export default function AdminAbsences() {
     type: 'vacation' as 'vacation' | 'sick' | 'training' | 'overtime' | 'other' | 'paid_leave',
     hours: 8,
     note: '',
+    half_day: false,
   });
 
   const typeLabels = ABSENCE_TYPE_LABELS;
@@ -209,11 +210,12 @@ export default function AdminAbsences() {
         type: formData.type,
         hours: formData.hours,
         note: formData.note || null,
+        half_day: !isDateRange && formData.half_day,
       });
       toast.success('Abwesenheit erfolgreich eingetragen');
       setShowForm(false);
       setIsDateRange(false);
-      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 8, note: '' });
+      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 8, note: '', half_day: false });
       loadAbsences(targetId);
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
@@ -539,6 +541,22 @@ export default function AdminAbsences() {
                 Zeitraum (mehrere Tage)
               </label>
             </div>
+
+            {/* #167: halber Tag (nur Einzeltag, nicht für Überstunden/Krank) */}
+            {!isDateRange && formData.type !== 'overtime' && formData.type !== 'sick' && (
+              <div className="flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="admin-halfDay"
+                  checked={formData.half_day}
+                  onChange={e => setFormData(p => ({ ...p, half_day: e.target.checked }))}
+                  className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
+                />
+                <label htmlFor="admin-halfDay" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  Halber Tag (zählt als 0,5 Tag)
+                </label>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>

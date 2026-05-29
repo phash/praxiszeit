@@ -552,3 +552,19 @@ class TestAdminListEndpoint:
         types = {r["absence_type"] for r in data}
         assert "training" in types
         assert "vacation" in types
+
+
+def test_approve_half_day_vacation_deducts_half(db, employee, admin_client):
+    """#167: ein als Halbtag markierter Urlaubsantrag verbraucht bei Genehmigung
+    genau 0,5 Tage (Tagessoll ÷ 2, diskriminierungsfrei)."""
+    from app.services import calculation_service
+    vr = _create_pending_request(db, employee, absence_type="vacation",
+                                 req_date=date(2025, 3, 12), hours=8.0)
+    vr.half_day = True
+    db.commit()
+    resp = admin_client.post(
+        f"/api/admin/vacation-requests/{vr.id}/review", json={"action": "approve"}
+    )
+    assert resp.status_code == 200, resp.text
+    acc = calculation_service.get_vacation_account(db, employee, 2025)
+    assert acc["used_days"] == 0.5

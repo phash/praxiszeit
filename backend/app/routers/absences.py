@@ -319,10 +319,11 @@ def create_absence(
             dates_by_year.setdefault(d.year, []).append(d)
         for check_year, year_dates in dates_by_year.items():
             vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
-            # #156/T2 — Tagesprinzip: each booked full working day consumes exactly
-            # one vacation day; compare the day COUNT against the remaining DAYS,
-            # not hours (hours-based checks mis-block uneven schedules / part-time).
-            days_needed = len(year_dates)
+            # #156/T2 — Tagesprinzip: each booked working day consumes one vacation
+            # day (0,5 for a half day, #167); compare the day COUNT against the
+            # remaining DAYS, not hours (hours-based checks mis-block uneven
+            # schedules / part-time).
+            days_needed = len(year_dates) * (0.5 if absence_data.half_day else 1.0)
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -387,6 +388,10 @@ def create_absence(
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, weekly_hours=weekly))
             if hours_for_day == 0:
                 continue  # Skip days with 0 scheduled hours
+            # #167: halber Tag = 0,5 × Tagessoll → zählt diskriminierungsfrei als 0,5
+            # Urlaubstag (8h-Tag: 4h; 3h-Tag: 1,5h — je 0,5 Tag). Nicht für OVERTIME.
+            if absence_data.half_day:
+                hours_for_day = round(hours_for_day / 2, 2)
         else:
             hours_for_day = absence_data.hours
 

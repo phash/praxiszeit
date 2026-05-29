@@ -302,6 +302,7 @@ def create_vacation_request(
         end_date=data.end_date,
         hours=data.hours,
         absence_type=absence_type,
+        half_day=data.half_day,
         note=data.note,
         status=VacationRequestStatus.PENDING.value,
     )
