@@ -79,6 +79,17 @@
 | Änderungsanträge | Zeiteintrags-Korrekturen mit Begründung | Transparenz, Nachvollziehbarkeit |
 | Audit-Log | Benutzer, Aktion, Zeitstempel, Details | Nachvollziehbarkeit von Admin-Aktionen, DSGVO-Compliance |
 
+### 4.5 Signup-/Einwilligungs-Nachweisdaten (nur SaaS-Modus)
+
+> Gilt **ausschließlich** im SaaS-Betrieb (`DEPLOYMENT_MODE=saas`, öffentliche Selbst­registrierung). On-Prem-/Native-Installationen erfassen diese Daten nicht (Signup-Endpoints liefern dort 404).
+
+| Datenkategorie | Felder | Rechtsgrundlage | Besondere Kategorie |
+|----------------|--------|-----------------|---------------------|
+| Registrierungs-Metadaten | IP-Adresse, User-Agent, Zeitstempel | Art. 6 Abs. 1 lit. b + lit. f DSGVO (Vertragsanbahnung, Missbrauchs-/Enumeration-Schutz) | Nein |
+| Einwilligungs-Nachweis | Zustimmung AGB/Datenschutz (Bool + Zeitpunkt) | Art. 7 Abs. 1 DSGVO (Nachweis der Einwilligung) | Nein |
+
+Gespeichert in `signup_audit_logs`. IP-Adresse gilt nach Art. 4 Nr. 1 DSGVO als personenbezogenes Datum. Diese Daten werden bei der Tenant-Anonymisierung/-Löschung (`anonymize_tenant`) entfernt.
+
 ---
 
 ## 5. Aufbewahrungsfristen und Löschkonzept
@@ -92,6 +103,7 @@
 | Stammdaten (aktiver MA) | Für Dauer des Beschäftigungsverhältnisses | §26 BDSG | Deaktivierung bei Austritt |
 | Stammdaten (inaktiver MA) | Bis Ablauf aller Aufbewahrungsfristen | §16 ArbZG / §147 AO | Anonymisierung + Purge |
 | Passwort-Hashes | Bis Kontoschließung / Anonymisierung | Art. 6 Abs. 1 lit. b DSGVO | Überschreiben bei Anonymisierung |
+| Signup-/Einwilligungs-Nachweis (nur SaaS) | 3 Jahre | Art. 7 Abs. 1 DSGVO (Nachweispflicht) / Verjährung | Scrubbing in `anonymize_tenant`, Löschung nach Fristablauf |
 
 ### Löschprozess (Implementierung in PraxisZeit)
 

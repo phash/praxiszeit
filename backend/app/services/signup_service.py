@@ -38,9 +38,10 @@ TRIAL_LENGTH_DAYS = 14
 
 @dataclass
 class SignupResult:
-    tenant_id: uuid.UUID
-    user_id: uuid.UUID
-    verification_token: str  # raw token — caller mails it, we only store the hash
+    tenant_id: Optional[uuid.UUID]
+    user_id: Optional[uuid.UUID]
+    verification_token: Optional[str]  # raw token — caller mails it, we only store the hash
+    already_registered: bool = False  # M-API5: email already belongs to an active admin
 
 
 def _hash_token(token: str) -> str:
@@ -99,9 +100,15 @@ def signup(
             accepted_terms=accepted_terms, accepted_privacy=accepted_privacy,
         ))
         db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="E-Mail-Adresse bereits registriert",
+        # M-API5: do NOT raise a 409 — that lets an unauthenticated caller
+        # enumerate which emails have accounts. Return an "already registered"
+        # marker so the endpoint can emit a response identical to a fresh
+        # signup and notify the real owner out-of-band. No tenant is created.
+        return SignupResult(
+            tenant_id=None,
+            user_id=None,
+            verification_token=None,
+            already_registered=True,
         )
 
     # Collision-avoiding slug

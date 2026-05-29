@@ -89,6 +89,9 @@ class ClockInRequest(BaseModel):
 class ClockOutRequest(BaseModel):
     break_minutes: int = Field(default=0, ge=0)
     note: Optional[str] = None
+    # M-ARB1: document a §4 break deviation captured during clock-out, mirroring
+    # the create/CR paths (#144). Non-blocking — clock-out always succeeds.
+    break_waiver_reason: Optional[str] = Field(None, max_length=2000)
 
 
 class ClockStatusResponse(BaseModel):
