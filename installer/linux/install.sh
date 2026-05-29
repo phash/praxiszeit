@@ -155,7 +155,17 @@ while true; do
 done
 
 echo ""
-read -rp "Lizenzschluessel-Datei (Pfad, oder leer fuer spaeter): " LICENSE_FILE
+# Lizenz automatisch übernehmen, wenn eine license.key direkt neben dem
+# Installer liegt (z.B. aus dem entpackten Paket / einer früheren Installation).
+# Dann NICHT nachfragen — die vorhandene Datei wird sofort genutzt.
+_PKG_DIR="$(cd "$(dirname "$0")" && pwd)"
+LICENSE_FILE=""
+if [ -f "${_PKG_DIR}/license.key" ]; then
+    LICENSE_FILE="${_PKG_DIR}/license.key"
+    info "Lizenzdatei neben dem Installer gefunden (${LICENSE_FILE}) — wird automatisch übernommen."
+else
+    read -rp "Lizenzschlüssel-Datei (Pfad, oder leer für später): " LICENSE_FILE
+fi
 
 echo ""
 read -rp "HTTPS-Port [443]: " PORT
@@ -171,6 +181,15 @@ GEN_SSL=${GEN_SSL:-J}
 echo ""
 read -rp "Installationsverzeichnis [${INSTALL_DIR}]: " CUSTOM_DIR
 INSTALL_DIR=${CUSTOM_DIR:-$INSTALL_DIR}
+
+# Bestehende Lizenz aus einer früheren Installation übernehmen, wenn keine neue
+# Datei angegeben wurde (Reinstall/Upgrade in dasselbe Verzeichnis) — dann wird
+# config/license.key nicht überschrieben und bleibt aktiv.
+EXISTING_LICENSE=0
+if [ -z "${LICENSE_FILE}" ] && [ -f "${INSTALL_DIR}/config/license.key" ]; then
+    EXISTING_LICENSE=1
+    info "Vorhandene Lizenz in ${INSTALL_DIR}/config/license.key gefunden — wird beibehalten."
+fi
 
 # --- Confirmation ---
 
@@ -250,7 +269,7 @@ login_rate_limit = "5/minute"
 cookie_secure = $([ "${GEN_SSL,,}" = "j" ] && echo 'true' || echo 'false')
 
 [license]
-$([ -n "${LICENSE_FILE}" ] && echo "key_file = \"config/license.key\"" || echo '# key_file = "config/license.key"')
+$( { [ -n "${LICENSE_FILE}" ] || [ "${EXISTING_LICENSE}" = "1" ]; } && echo "key_file = \"config/license.key\"" || echo '# key_file = "config/license.key"')
 
 [updates]
 check_enabled = true
@@ -266,8 +285,13 @@ TOMLEOF
 # --- Copy license file ---
 
 if [ -n "${LICENSE_FILE}" ] && [ -f "${LICENSE_FILE}" ]; then
-    cp "${LICENSE_FILE}" "${INSTALL_DIR}/config/license.key"
-    info "Lizenzschluessel kopiert"
+    # Nicht auf sich selbst kopieren (falls die Quelle bereits config/license.key ist)
+    if [ "$(readlink -f "${LICENSE_FILE}")" != "$(readlink -f "${INSTALL_DIR}/config/license.key" 2>/dev/null)" ]; then
+        cp "${LICENSE_FILE}" "${INSTALL_DIR}/config/license.key"
+    fi
+    info "Lizenzschlüssel übernommen"
+elif [ "${EXISTING_LICENSE}" = "1" ]; then
+    info "Bestehende Lizenz beibehalten (${INSTALL_DIR}/config/license.key)"
 fi
 
 # --- Generate SSL certificate ---

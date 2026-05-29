@@ -36,8 +36,8 @@ def test_foreign_key_signature_raises_clear_error(tmp_path):
         validate_license(lic)
 
     msg = str(exc.value)
-    # Klar + handlungsleitend (Schluessel-Hinweis), NICHT das irrefuehrende
+    # Klar + handlungsleitend (Schlüssel-Hinweis), NICHT das irreführende
     # "corrupted/tampered".
-    assert "Schluessel" in msg
+    assert "Schlüssel" in msg
     assert "corrupt" not in msg.lower()
     assert "tamper" not in msg.lower()

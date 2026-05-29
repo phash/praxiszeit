@@ -61,22 +61,30 @@ public sealed record LicenseInvalid(string Reason) : LicenseResult;
 /// Ed25519).
 ///
 /// <para>
-/// <strong>Public-Key-Sync:</strong> Wenn der Backend-Public-Key in
-/// <c>backend/app/core/license.py:_PUBLIC_KEY_PEM</c> rotiert wird, MUSS
-/// der String hier auch ersetzt werden — sonst akzeptiert der Wizard
-/// Lizenzen die das Backend ablehnt (oder umgekehrt).
+/// <strong>Public-Key-Sync:</strong> Diese Liste MUSS byte-für-byte mit
+/// <c>backend/app/core/license.py:_PUBLIC_KEYS_PEM</c> synchron bleiben —
+/// sonst akzeptiert der Wizard Lizenzen, die das Backend ablehnt (oder
+/// umgekehrt). Es werden MEHRERE Schlüssel akzeptiert (aktuell + alt), damit
+/// nach einer Rotation weder neue noch Bestandslizenzen abgelehnt werden.
 /// </para>
 /// </summary>
 public static class LicenseValidator
 {
     /// <summary>
-    /// Ed25519 public key. MUSS Byte-fuer-Byte synchron mit
-    /// <c>backend/app/core/license.py:_PUBLIC_KEY_PEM</c> sein.
+    /// Akzeptierte Ed25519 Public Keys (NEU zuerst, dann ALT). MUSS synchron
+    /// mit <c>backend/app/core/license.py:_PUBLIC_KEYS_PEM</c> sein.
     /// </summary>
-    private const string PublicKeyPem =
+    private static readonly string[] PublicKeysPem =
+    {
+        // NEU — aktuelle Shop-Ausstellung
+        "-----BEGIN PUBLIC KEY-----\n" +
+        "MCowBQYDK2VwAyEAt8zaDoRf4KldrPMxmX0uKhoaOrIAyU4wtgtn489WxdI=\n" +
+        "-----END PUBLIC KEY-----",
+        // ALT — Bestandslizenzen vor der 1.5.x-Rotation
         "-----BEGIN PUBLIC KEY-----\n" +
         "MCowBQYDK2VwAyEAB5ZiJro6fDM8M5BupMCdTWjVIFkPn+hsNYHNlajzIyY=\n" +
-        "-----END PUBLIC KEY-----";
+        "-----END PUBLIC KEY-----",
+    };
 
     /// <summary>
     /// Parst und verifiziert ein Lizenz-Token (JWT-String, im Backend per
@@ -97,7 +105,7 @@ public static class LicenseValidator
         {
             return new LicenseInvalid(
                 "Lizenz hat nicht das erwartete JWT-Format (Header.Payload.Signature). "
-                + "Bitte pruefen Sie, ob die Datei vollstaendig ist.");
+                + "Bitte prüfen Sie, ob die Datei vollständig ist.");
         }
 
         var headerJson = TryDecodeBase64Url(parts[0]);
@@ -105,7 +113,7 @@ public static class LicenseValidator
         var signature = TryDecodeBase64UrlBytes(parts[2]);
         if (headerJson is null || payloadJson is null || signature is null)
         {
-            return new LicenseInvalid("Lizenz enthaelt ungueltiges Base64-URL-Encoding.");
+            return new LicenseInvalid("Lizenz enthält ungültiges Base64-URL-Encoding.");
         }
 
         // Header-Algorithm pruefen — alles ausser EdDSA ist hier nicht
@@ -125,7 +133,7 @@ public static class LicenseValidator
         }
         catch (JsonException)
         {
-            return new LicenseInvalid("Lizenz-Header ist kein gueltiges JSON.");
+            return new LicenseInvalid("Lizenz-Header ist kein gültiges JSON.");
         }
 
         // Signatur-Pruefung: signing_input = header_b64 + "." + payload_b64
@@ -135,7 +143,9 @@ public static class LicenseValidator
         if (!VerifyEd25519(signingInput, signature))
         {
             return new LicenseInvalid(
-                "Lizenz-Signatur ist ungueltig. Datei ist beschaedigt oder wurde manipuliert.");
+                "Lizenz-Signatur passt zu keinem hinterlegten Schlüssel. Die Lizenz "
+                + "wurde vermutlich für eine andere Schlüsselversion ausgestellt. "
+                + "Bitte eine aktuelle Lizenz im Shop (praxiszeit.mr-development.de) anfordern.");
         }
 
         // Payload parsen + Required Claims validieren
@@ -172,7 +182,7 @@ public static class LicenseValidator
         }
         catch (JsonException ex)
         {
-            return new LicenseInvalid($"Lizenz-Payload ist kein gueltiges JSON: {ex.Message}");
+            return new LicenseInvalid($"Lizenz-Payload ist kein gültiges JSON: {ex.Message}");
         }
     }
 
@@ -205,31 +215,39 @@ public static class LicenseValidator
 
     private static bool VerifyEd25519(byte[] message, byte[] signature)
     {
-        try
+        // Gegen JEDEN hinterlegten Schlüssel prüfen — true, sobald einer passt.
+        foreach (var pem in PublicKeysPem)
         {
-            using var reader = new StringReader(PublicKeyPem);
-            var pemReader = new PemReader(reader);
-            var keyObj = pemReader.ReadObject();
-            // BouncyCastle's PemReader returns SubjectPublicKeyInfo for the
-            // OpenSSL "PUBLIC KEY" PEM block. Convert to typed key.
-            Ed25519PublicKeyParameters publicKey = keyObj switch
+            try
             {
-                Ed25519PublicKeyParameters direct => direct,
-                Org.BouncyCastle.Asn1.X509.SubjectPublicKeyInfo spki
-                    => (Ed25519PublicKeyParameters)PublicKeyFactory.CreateKey(spki),
-                _ => (Ed25519PublicKeyParameters)PublicKeyFactory.CreateKey(
-                    Org.BouncyCastle.Asn1.X509.SubjectPublicKeyInfo.GetInstance(keyObj!)),
-            };
+                using var reader = new StringReader(pem);
+                var pemReader = new PemReader(reader);
+                var keyObj = pemReader.ReadObject();
+                // BouncyCastle's PemReader returns SubjectPublicKeyInfo for the
+                // OpenSSL "PUBLIC KEY" PEM block. Convert to typed key.
+                Ed25519PublicKeyParameters publicKey = keyObj switch
+                {
+                    Ed25519PublicKeyParameters direct => direct,
+                    Org.BouncyCastle.Asn1.X509.SubjectPublicKeyInfo spki
+                        => (Ed25519PublicKeyParameters)PublicKeyFactory.CreateKey(spki),
+                    _ => (Ed25519PublicKeyParameters)PublicKeyFactory.CreateKey(
+                        Org.BouncyCastle.Asn1.X509.SubjectPublicKeyInfo.GetInstance(keyObj!)),
+                };
 
-            var verifier = new Ed25519Signer();
-            verifier.Init(forSigning: false, publicKey);
-            verifier.BlockUpdate(message, 0, message.Length);
-            return verifier.VerifySignature(signature);
+                var verifier = new Ed25519Signer();
+                verifier.Init(forSigning: false, publicKey);
+                verifier.BlockUpdate(message, 0, message.Length);
+                if (verifier.VerifySignature(signature))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Diesen Schlüssel überspringen, nächsten versuchen.
+            }
         }
-        catch
-        {
-            return false;
-        }
+        return false;
     }
 
     private static string? TryDecodeBase64Url(string input)
