@@ -76,11 +76,18 @@ def report_feedback(
       502  -> Netzwerk-/Server-Fehler beim pzweb-Call
     """
     lic = license_module.get_current_license()
-    if lic is None or not getattr(lic, "customer_id", ""):
-        raise HTTPException(
-            status_code=400,
-            detail="Ohne hinterlegte Lizenz ist keine Bug-Meldung möglich.",
-        )
+    license_id = getattr(lic, "customer_id", "") if lic else ""
+    if not license_id:
+        if settings.BETA_MODE:
+            # In der Beta gibt es keine Lizenz — Bug-Reports sollen trotzdem
+            # möglich sein (gerade in der Beta will man Feedback). Synthetische
+            # license_id, damit pzweb die Meldung einer Beta-Quelle zuordnen kann.
+            license_id = "beta"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Ohne hinterlegte Lizenz ist keine Bug-Meldung möglich.",
+            )
 
     target = f"{settings.FEEDBACK_SERVER_URL.rstrip('/')}/v1/bugs"
     try:
@@ -94,7 +101,7 @@ def report_feedback(
 
     # multipart/form-data: jedes Feld als eigener Part (None = kein Dateiname).
     files = {
-        "license_id": (None, lic.customer_id),
+        "license_id": (None, license_id),
         "title": (None, payload.title),
         "description": (None, payload.description),
         "app_version": (None, APP_VERSION),
