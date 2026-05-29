@@ -95,6 +95,10 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 - Tab **„Meine Anträge"** zeigt Status
 - Offene Anträge können zurückgezogen werden
 
+### Urlaubsberechnung
+- **1 freier Arbeitstag = 1 Urlaubstag** (egal wie viele Stunden der Tag hat)
+- Freie Woche = Anzahl Ihrer Arbeitstage; Konto zeigt Resttage
+
 ---
 
 ## Dashboard verstehen

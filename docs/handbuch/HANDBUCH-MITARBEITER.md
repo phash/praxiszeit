@@ -284,6 +284,19 @@ In der Listenansicht Ihrer Abwesenheiten befindet sich der Button **Löschen**. 
 
 ---
 
+### 4.4 So wird Ihr Urlaub berechnet
+
+PraxisZeit führt Urlaub **nach Arbeitstagen** (Tagesprinzip nach § 3 BUrlG) – **nicht** nach Stunden:
+
+- **Ein freier Arbeitstag = genau 1 Urlaubstag**, unabhängig davon, wie viele Stunden Sie an diesem Tag arbeiten würden. Ein 9-Stunden-Tag kostet genauso viel Urlaub wie ein 4-Stunden-Tag: **einen Tag**.
+- Eine **freie Woche** kostet so viele Urlaubstage, wie Sie Arbeitstage in der Woche haben (5-Tage-Woche → 5 Tage, 3-Tage-Woche → 3 Tage).
+- Ihr **Jahresanspruch** richtet sich nach der Zahl Ihrer Arbeitstage pro Woche (z. B. 5 Tage → 30 Tage, 3 Tage → anteilig 18 Tage). Den genauen Wert legt Ihr Administrator fest.
+- Das **Urlaubskonto** auf dem Dashboard zeigt jederzeit Budget, genommene und verbleibende Tage.
+
+> Intern rechnet das System mit Stunden (für die Soll-/Ist-Berechnung), Ihr Urlaubsverbrauch wird Ihnen aber immer in **ganzen Tagen** angezeigt.
+
+---
+
 ## 5. Profil & Passwort
 
 Klicken Sie in der Navigation auf **Profil**.
