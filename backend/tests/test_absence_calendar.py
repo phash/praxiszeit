@@ -87,3 +87,13 @@ def test_masked_sick_still_carries_user_color(db, test_user, default_tenant):
     row = next(r for r in resp.json() if r["user_color"] == "#AB12CD")
     assert row["type"] == "absent"  # DSGVO masking intact
     assert row["user_color"] == "#AB12CD"
+
+
+def test_calendar_includes_department(db, test_user):
+    test_user.department = "Verwaltung"
+    db.commit()
+    _mk_absence(db, test_user, date(2026, 3, 6), AbsenceType.VACATION)
+    resp = _client(db, test_user).get("/api/absences/calendar?month=2026-03")
+    assert resp.status_code == 200, resp.text
+    row = next(r for r in resp.json() if r["user_color"] == test_user.calendar_color)
+    assert row["department"] == "Verwaltung"

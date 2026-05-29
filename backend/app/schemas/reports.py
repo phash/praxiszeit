@@ -64,6 +64,7 @@ class EmployeeMonthlyReport(BaseModel):
     overtime_cumulative: float
     vacation_used_hours: float
     sick_hours: float
+    exempt_from_arbzg: bool = False  # #159: leitende Angestellte (§18) — Filter im Dashboard-Schnitt
 
 
 class PublicHolidayResponse(BaseModel):

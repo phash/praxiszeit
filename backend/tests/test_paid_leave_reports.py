@@ -197,3 +197,40 @@ def test_24_week_average_excludes_holidays_and_absences(db, test_user, test_admi
         assert after_row["scheduled_work_days"] == base_days - 2
     finally:
         _app.dependency_overrides.clear()
+
+
+def test_monthly_report_includes_exempt_flag(db, test_user, test_admin):
+    """#159: jede Report-Zeile trägt exempt_from_arbzg, damit das Dashboard
+    leitende MA aus dem Ø-Saldo filtern kann."""
+    import uuid as _uuid
+    from app.models import User, UserRole
+    from app.services import auth_service as _auth
+
+    boss = User(
+        id=_uuid.uuid4(), username="boss", email="boss@t.local",
+        password_hash=_auth.hash_password("Test2025!Password"),
+        first_name="Boss", last_name="Chef", role=UserRole.EMPLOYEE,
+        weekly_hours=40.0, vacation_days=30, work_days_per_week=5,
+        is_active=True, tenant_id=DEFAULT_TENANT_ID, exempt_from_arbzg=True,
+    )
+    db.add(boss)
+    db.commit()
+
+    def override_db():
+        yield db
+
+    _app.dependency_overrides[get_db] = override_db
+    _app.dependency_overrides[get_current_user] = lambda: test_admin
+    _app.dependency_overrides[require_admin] = lambda: test_admin
+    try:
+        client = TestClient(_app)
+        resp = client.get(f"/api/admin/reports/monthly?month={YEAR}-03")
+        assert resp.status_code == 200, resp.text
+        rows = resp.json()
+    finally:
+        _app.dependency_overrides.clear()
+
+    boss_row = next(r for r in rows if r["user_id"] == str(boss.id))
+    assert boss_row["exempt_from_arbzg"] is True
+    non_exempt = [r for r in rows if r["user_id"] != str(boss.id)]
+    assert non_exempt and all(r["exempt_from_arbzg"] is False for r in non_exempt)

@@ -22,6 +22,7 @@ interface EmployeeReport {
   overtime_cumulative: number;
   vacation_used_hours: number;
   sick_hours: number;
+  exempt_from_arbzg?: boolean;
 }
 
 interface TimeEntry {
@@ -66,6 +67,8 @@ interface UserDetails {
 
 export default function AdminDashboard() {
   const [report, setReport] = useState<EmployeeReport[]>([]);
+  // #159: leitende MA (§18) verzerren den Schnitt — standardmäßig aus dem Ø ausschließen.
+  const [includeExemptInAvg, setIncludeExemptInAvg] = useState(false);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsences[]>([]);
   const [loading, setLoading] = useState(true);
   const [yearlyLoading, setYearlyLoading] = useState(true);
@@ -363,8 +366,12 @@ export default function AdminDashboard() {
     });
 
   const totalEmployees = report.length;
-  const avgBalance = report.length > 0
-    ? report.reduce((sum, emp) => sum + emp.balance, 0) / report.length
+  // #159: Ø Saldo wahlweise ohne leitende Angestellte (Default) — verhindert
+  // dass wenige MA mit vielen Stunden den Schnitt verzerren.
+  const exemptCount = report.filter((emp) => emp.exempt_from_arbzg).length;
+  const avgRows = includeExemptInAvg ? report : report.filter((emp) => !emp.exempt_from_arbzg);
+  const avgBalance = avgRows.length > 0
+    ? avgRows.reduce((sum, emp) => sum + emp.balance, 0) / avgRows.length
     : 0;
 
   return (
@@ -402,6 +409,17 @@ export default function AdminDashboard() {
             {avgBalance >= 0 ? '+' : ''}
             {avgBalance.toFixed(2)} h
           </p>
+          {exemptCount > 0 && (
+            <label className="mt-2 flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeExemptInAvg}
+                onChange={(e) => setIncludeExemptInAvg(e.target.checked)}
+                className="w-3.5 h-3.5 rounded-sm border-gray-300 text-primary focus:ring-primary"
+              />
+              Leitende MA einrechnen ({exemptCount})
+            </label>
+          )}
         </div>
 
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">

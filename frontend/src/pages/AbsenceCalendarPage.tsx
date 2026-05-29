@@ -9,10 +9,6 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
 import AbsenceBadge from '../components/AbsenceBadge';
 import { useTypeColorsStore } from '../stores/typeColorsStore';
-
-// Label helper that tolerates the DSGVO-masked "absent" pseudo-type.
-const absenceTypeLabel = (t: string): string =>
-  t === 'absent' ? 'Abwesend' : (ABSENCE_TYPE_LABELS[t as AbsenceType] ?? t);
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseHours } from '../utils/formatters';
@@ -20,6 +16,10 @@ import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import VacationRequestEditModal from '../components/VacationRequestEditModal';
+
+// Label helper that tolerates the DSGVO-masked "absent" pseudo-type.
+const absenceTypeLabel = (t: string): string =>
+  t === 'absent' ? 'Abwesend' : (ABSENCE_TYPE_LABELS[t as AbsenceType] ?? t);
 
 interface VacationRequest {
   id: string;
@@ -51,6 +51,7 @@ interface CalendarEntry {
   user_first_name: string;
   user_last_name: string;
   user_color: string;
+  department?: string | null;
   // May be a masked value ("absent") for non-admins viewing others' sick days.
   type: string;
   hours: number;
@@ -102,6 +103,7 @@ export default function AbsenceCalendarPage() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [viewMode, setViewMode] = useState<'month' | 'year'>('month');
   const [calendarEntries, setCalendarEntries] = useState<CalendarEntry[]>([]);
+  const [departmentFilter, setDepartmentFilter] = useState<string>(''); // #162
   const [myAbsences, setMyAbsences] = useState<Absence[]>([]);
   const [holidays, setHolidays] = useState<PublicHoliday[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -279,6 +281,13 @@ export default function AbsenceCalendarPage() {
   const typeLabels = ABSENCE_TYPE_LABELS;
   const typeColors = ABSENCE_TYPE_COLORS;
   const absColors = useTypeColorsStore((s) => s.colors);
+  // #162: Abteilungs-Filter für den Team-Kalender.
+  const departments = Array.from(
+    new Set(calendarEntries.map((e) => e.department).filter(Boolean)),
+  ).sort() as string[];
+  const visibleEntries = departmentFilter
+    ? calendarEntries.filter((e) => e.department === departmentFilter)
+    : calendarEntries;
 
   // Generate calendar days
   const [year, month] = currentMonth.split('-').map(Number);
@@ -648,6 +657,20 @@ export default function AbsenceCalendarPage() {
             </button>
           </div>
         )}
+        {/* #162: Abteilungs-Filter */}
+        {departments.length > 0 && (
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary"
+            aria-label="Nach Abteilung filtern"
+          >
+            <option value="">Alle Abteilungen</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Calendar */}
@@ -671,7 +694,7 @@ export default function AbsenceCalendarPage() {
               {/* Calendar days */}
               {days.map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd');
-                const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
+                const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
 
@@ -725,7 +748,7 @@ export default function AbsenceCalendarPage() {
               .filter((day) => day.getDay() !== 0 && day.getDay() !== 6) // show all weekdays
               .map((day) => {
                 const dateStr = format(day, 'yyyy-MM-dd');
-                const dayEntries = calendarEntries.filter((e) => e.date === dateStr);
+                const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
                 const hasContent = dayEntries.length > 0 || !!dayHoliday;
 
@@ -802,7 +825,7 @@ export default function AbsenceCalendarPage() {
               const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
               // Get absences for this month
-              const monthAbsences = calendarEntries.filter(entry => {
+              const monthAbsences = visibleEntries.filter(entry => {
                 const entryDate = parseISO(entry.date);
                 return entryDate >= monthStart && entryDate <= monthEnd;
               });

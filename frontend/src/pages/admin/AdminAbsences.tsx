@@ -25,6 +25,7 @@ interface Employee {
   first_name: string;
   last_name: string;
   is_active: boolean;
+  department?: string | null;
 }
 
 interface Absence {
@@ -45,6 +46,7 @@ export default function AdminAbsences() {
   const [submitting, setSubmitting] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('');
+  const [departmentFilter, setDepartmentFilter] = useState<string>(''); // #162
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -468,21 +470,48 @@ export default function AdminAbsences() {
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 mb-6">
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex-1 min-w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
-            <select
-              value={selectedEmployee}
-              onChange={e => { setSelectedEmployee(e.target.value); setShowForm(false); }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Alle Mitarbeiter</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {(() => {
+            const departments = Array.from(
+              new Set(employees.map(e => e.department).filter(Boolean)),
+            ).sort() as string[];
+            const visibleEmployees = departmentFilter
+              ? employees.filter(e => e.department === departmentFilter)
+              : employees;
+            return (
+              <>
+                {departments.length > 0 && (
+                  <div className="min-w-40">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Abteilung</label>
+                    <select
+                      value={departmentFilter}
+                      onChange={e => { setDepartmentFilter(e.target.value); setSelectedEmployee(''); setShowForm(false); }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Alle Abteilungen</option>
+                      {departments.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex-1 min-w-48">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
+                  <select
+                    value={selectedEmployee}
+                    onChange={e => { setSelectedEmployee(e.target.value); setShowForm(false); }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Alle Mitarbeiter</option>
+                    {visibleEmployees.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.first_name} {emp.last_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            );
+          })()}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Monat</label>
             <MonthSelector value={currentMonth} onChange={setCurrentMonth} />

@@ -109,7 +109,8 @@ def get_monthly_report(
             balance=float(balance),
             overtime_cumulative=float(overtime),
             vacation_used_hours=vacation_hours,
-            sick_hours=sick_hours if include_health_data else 0.0
+            sick_hours=sick_hours if include_health_data else 0.0,
+            exempt_from_arbzg=bool(user.exempt_from_arbzg),
         ))
 
     return reports
