@@ -174,17 +174,15 @@ while true; do
     break
 done
 
-echo ""
-# Lizenz automatisch übernehmen, wenn eine license.key direkt neben dem
-# Installer liegt (z.B. aus dem entpackten Paket / einer früheren Installation).
-# Dann NICHT nachfragen — die vorhandene Datei wird sofort genutzt.
+# Beta (1.8.0): KEINE Lizenz-Abfrage — die Lizenzprüfung ist über BETA_MODE
+# deaktiviert (keine Lizenz nötig). Eine vorhandene license.key (neben dem
+# Installer oder aus einer früheren Installation) wird STILL übernommen, damit
+# sie für eine spätere Reaktivierung erhalten bleibt; es wird aber nicht danach
+# gefragt und nichts dazu angezeigt.
 _PKG_DIR="$(cd "$(dirname "$0")" && pwd)"
 LICENSE_FILE=""
 if [ -f "${_PKG_DIR}/license.key" ]; then
     LICENSE_FILE="${_PKG_DIR}/license.key"
-    info "Lizenzdatei neben dem Installer gefunden (${LICENSE_FILE}) — wird automatisch übernommen."
-else
-    read -rp "Lizenzschlüssel-Datei (Pfad, oder leer für später): " LICENSE_FILE
 fi
 
 echo ""

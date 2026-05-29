@@ -17,7 +17,7 @@ router = APIRouter(
 @router.get("/status")
 def update_status(current_user: User = Depends(require_admin)):
     """Get current update status and version info."""
-    return get_update_status()
+    return {**get_update_status(), "download_page": settings.DOWNLOAD_PAGE_URL}
 
 
 @router.post("/check")
@@ -38,9 +38,11 @@ def trigger_update_check(current_user: User = Depends(require_admin)):
         return {
             "update_available": True,
             "update": update.to_dict(),
+            "download_page": settings.DOWNLOAD_PAGE_URL,
         }
     return {
         "update_available": False,
         "current_version": get_app_version(),
+        "download_page": settings.DOWNLOAD_PAGE_URL,
         "message": "Keine Updates verfuegbar.",
     }

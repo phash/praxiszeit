@@ -6,6 +6,7 @@ import { LogIn, FileText, Shield, Smartphone } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
 import { DocModal } from '../components/DocModal';
+import QrLinkModal from '../components/QrLinkModal';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -16,6 +17,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
+  const [qrOpen, setQrOpen] = useState(false);
 
   const { login } = useAuthStore();
   const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
@@ -136,6 +138,15 @@ export default function Login() {
           </button>
         </form>
 
+        <button
+          type="button"
+          onClick={() => setQrOpen(true)}
+          className="mt-4 w-full flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-primary transition-colors"
+        >
+          <Smartphone size={16} />
+          Auf dem Smartphone öffnen (QR-Code)
+        </button>
+
         {deploymentMode === 'saas' && (
           <div className="mt-6 text-center text-sm">
             <span className="text-gray-600">Noch keinen Account? </span>
@@ -183,6 +194,8 @@ export default function Login() {
           onClose={() => setModalOpen(false)}
           initialTab={modalTab}
         />
+
+        <QrLinkModal open={qrOpen} onClose={() => setQrOpen(false)} />
       </div>
     </div>
   );
