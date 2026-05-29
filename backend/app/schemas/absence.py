@@ -42,6 +42,8 @@ class AbsenceCalendarEntry(BaseModel):
     date: date
     user_first_name: str
     user_last_name: str
+    user_color: str  # #157: Mitarbeiterfarbe für den Badge-Ring im Kalender
+    department: Optional[str] = None  # #162: Abteilung/Bereich (für Filter)
     type: str  # str statt AbsenceType: DSGVO Art. 9 — "sick" wird ggf. zu "absent" maskiert
     hours: float
 

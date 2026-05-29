@@ -467,3 +467,18 @@ def test_journal_holidays_exclude_tenant_b(_db_session, employee_a, two_tenants)
     by_date = {d["date"]: d for d in result["days"]}
     assert by_date["2026-06-01"]["is_holiday"] is True   # own tenant holiday
     assert by_date["2026-06-02"]["is_holiday"] is False  # other tenant must not leak
+
+
+def test_create_user_persists_department(_db_session, client_as_admin_a):
+    """#162: department (Abteilung) round-trips through create_user + user list."""
+    resp = client_as_admin_a.post("/api/admin/users", json={
+        "username": "dept_user", "email": "dept@test.local",
+        "password": "Test2025!Password", "first_name": "D", "last_name": "U",
+        "role": "employee", "weekly_hours": 40.0, "vacation_days": 30,
+        "work_days_per_week": 5, "department": "Reinigung",
+    })
+    assert resp.status_code == 201, resp.text
+    lst = client_as_admin_a.get("/api/admin/users")
+    assert lst.status_code == 200, lst.text
+    u = next(x for x in lst.json() if x["username"] == "dept_user")
+    assert u["department"] == "Reinigung"

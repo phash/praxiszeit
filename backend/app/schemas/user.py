@@ -48,6 +48,7 @@ class UserBase(BaseModel):
     is_night_worker: bool = False  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer (8h-Tageslimit)
     first_work_day: Optional[date] = None  # Erster Arbeitstag
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
+    department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
 
     @model_validator(mode='after')
     def check_work_day_order(self):
@@ -91,6 +92,7 @@ class UserUpdate(BaseModel):
     is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
+    department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
 
     @model_validator(mode='after')
     def check_work_day_order(self):
@@ -147,6 +149,7 @@ class UserListResponse(BaseModel):
     is_night_worker: bool = False
     first_work_day: Optional[date] = None
     last_work_day: Optional[date] = None
+    department: Optional[str] = None  # #162: Abteilung/Bereich
     totp_enabled: bool = False
     deactivated_at: Optional[datetime] = None
     created_at: datetime
