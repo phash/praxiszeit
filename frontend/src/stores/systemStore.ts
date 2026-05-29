@@ -6,6 +6,7 @@ export type DeploymentMode = 'saas' | 'onprem';
 interface SystemInfo {
   deployment_mode: DeploymentMode;
   version: string;
+  beta?: boolean;
 }
 
 interface SystemState {
@@ -14,6 +15,7 @@ interface SystemState {
   fetch: () => Promise<void>;
   isSaas: () => boolean;
   isOnprem: () => boolean;
+  isBeta: () => boolean;
 }
 
 // Conservative default: treat as on-prem until the /api/system/info response
@@ -37,4 +39,5 @@ export const useSystemStore = create<SystemState>((set, get) => ({
 
   isSaas: () => get().info?.deployment_mode === 'saas',
   isOnprem: () => get().info?.deployment_mode !== 'saas',
+  isBeta: () => get().info?.beta === true,
 }));

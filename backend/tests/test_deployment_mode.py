@@ -68,8 +68,21 @@ class TestSystemInfoEndpoint:
         response = client.get("/api/system/info")
         assert response.status_code == 200
 
+    def test_beta_flag_present(self, client):
+        # Während der Beta liefert /api/system/info beta=true → Frontend-Badge.
+        response = client.get("/api/system/info")
+        assert response.json().get("beta") is True
+
     def test_response_does_not_leak_internal_state(self, client, onprem_mode):
         # Intentionally tight schema: no env, no ADMIN_EMAIL, no DB status.
         response = client.get("/api/system/info")
         data = response.json()
-        assert set(data.keys()) == {"deployment_mode", "version"}
+        assert set(data.keys()) == {"deployment_mode", "version", "beta"}
+
+
+class TestBetaMode:
+    """Beta-Phase: Lizenzpruefung komplett deaktiviert."""
+
+    def test_beta_mode_defaults_true(self):
+        from app.config import Settings
+        assert Settings.model_fields["BETA_MODE"].default is True
