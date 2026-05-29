@@ -89,8 +89,8 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 ### Dev-Workflow Fallstricke
 - **`.env`-Drift:** Nach RLS-Umbau (Migration 027) braucht `.env` zusätzlich `APP_DB_USER`, `APP_DB_PASSWORD`, `ENVIRONMENT`, `CORS_ORIGINS` (siehe `.env.example`). Alte lokale `.env` ohne diese Vars → `docker compose up` failed mit `required variable APP_DB_PASSWORD is missing`.
 - **Backend-Container ist gebaut**, kein Host-Volume: Nach Edits `docker compose cp <host-file> backend:/app/<path>` VOR `pytest`, sonst sieht der Container den alten Code. Für Prod-Änderungen: `docker compose build backend && docker compose up -d backend`.
-- **Frontend `node_modules` ist root-owned** (im Image-Build erzeugt). Host-`npm install` failt mit EACCES. Pattern: `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install --silent && ..."`.
-- **Test-Stratifizierung:** Unit-Tests laufen gegen SQLite (conftest.py). RLS + echte `SELECT FOR UPDATE`-Races brauchen Postgres → `test_tenant_rls.py` + `test_concurrency.py` aus normalem pytest ausschließen (`--ignore=`).
+- **Frontend `node_modules` ist root-owned** (im Image-Build erzeugt). Host-`npm install` failt mit EACCES. Pattern: `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install --silent && ..."`. `npx tsc --noEmit`, `npm run build` und `npm test -- --run` laufen damit OHNE `npm install` (Host-`node_modules` ist vorhanden); nur frische Container brauchen install.
+- **Test-Stratifizierung:** Unit-Tests laufen gegen SQLite (conftest.py). RLS + echte `SELECT FOR UPDATE`-Races brauchen Postgres → `test_tenant_rls.py` + `test_concurrency.py` aus normalem pytest ausschließen (`--ignore=`). ⚠️ Ein nacktes `pytest tests/` OHNE diese `--ignore` cascaded ~26 Failures/Errors (`OperationalError`) — die Postgres-Files vergiften die geteilte SQLite-Engine für Folgetests. Immer beide `--ignore=` setzen oder `scripts/local-ci.sh` nutzen.
 
 ### Kritische Regeln
 - `get_weekly_hours_for_date()` **immer** pro Tag – nie `user.weekly_hours` direkt
@@ -108,6 +108,8 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - Cross-Page Refresh nach Stempeln: `uiStore.notifyStampChange()` → `stampVersion` Effect
 - Bulk-Deletes: `synchronize_session=False` + expliziter `tenant_id`-Filter
 - **Überstundenausgleich:** Soll bleibt, Ist=0h (NICHT Soll reduzieren!)
+- **Urlaub tagebasiert (Tagesprinzip §3 BUrlG, #156):** 1 freier Arbeitstag = 1 Urlaubstag. `get_vacation_account` zählt `Σ(Stunden ÷ Tagessoll-des-Tages)`, NICHT Stundensumme÷Ø-Tagessoll. Voll-Tag-Abwesenheiten (`create_absence`) buchen das Tagessoll des Tages, nicht die Client-Stunden — nur `OVERTIME` behält explizite Stunden. Budget-Check tagebasiert. Anspruch anteilig `30 × Arbeitstage/5`.
+- **In-App-Hilfe/Handbuch ist hardcoded** in `frontend/src/components/DocViewer.tsx` (`handbuchMitarbeiterSections`/`handbuchAdminSections`), NICHT aus `docs/handbuch/*.md` geladen → bei nutzersichtbaren Doku-Änderungen BEIDES pflegen.
 - **Absence-Typ-Matrix:** Siehe `docs/BACKEND-ARCHITEKTUR.md` → Berechnungsmodell
 - **CR-Approval:** Precondition-Checks VOR Status-Änderung (Race-Condition-Fix)
 - **Absence-CRs:** MA können Abwesenheiten per Änderungsantrag beantragen (entry_kind="absence")
@@ -146,7 +148,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **F-026 Tenant-Filter (belt-and-suspenders):** ALLE `db.query(Model).filter(...)` auf tenant-scoped Tabellen brauchen expliziten `Model.tenant_id == current_user.tenant_id` zusätzlich zu RLS — gilt für list, lookup-by-id UND `.delete()`. Helper für User-Lookup: `_get_user_in_tenant()` in `admin_users.py`. Tests in `test_cross_tenant_api.py`.
 - **Absence Unique Constraint:** `(user_id, date)` muss eindeutig sein — DB-Constraint oder `with_for_update()` bei Duplikat-Check
 - **is_holiday() tenant_id:** Immer `tenant_id=current_user.tenant_id` übergeben (Multi-Tenant-Pflicht)
-- **`time_entry_audit_logs.source` ist `varchar(40)`** (Migration 037). Neue Source-Marker müssen <40 Zeichen sein, sonst 500 beim INSERT (`StringDataRightTruncation`). Bestehende Werte: `manual`, `import`, `change_request`, `vacation_request_cancel`.
+- **`time_entry_audit_logs.source` UND `action` sind `varchar(40)`** (Migrationen 037 bzw. 044). Neue Marker müssen <40 Zeichen sein, sonst 500 beim INSERT (`StringDataRightTruncation`) — **SQLite-Tests fangen das NICHT** (ignorieren varchar-Länge), gegen Prod-DB-Kopie / Postgres prüfen. Source-Werte u. a.: `manual`, `import`, `change_request`, `vacation_request_cancel`, `break_waiver`, `dsgvo`, `license_startup`.
 - **`backend/create_handbuch_testdata.py`** ist multi-tenant-aware: ruft `set_superadmin_context(db)` auf + setzt `tenant_id=TENANT_ID` an User/TimeEntry/Absence/ChangeRequest. Wer das Script forkt für andere Seed-Daten muss beides mitnehmen, sonst RLS-Violation beim INSERT.
 - **Container-File-Updates aus fremdem cwd:** `docker compose cp` resolved Host-Pfade **relativ zum cwd**. Aus `e2e/` heraus → `lstat e2e/backend/...: no such file`. Lösung: `docker cp <host-abs-path> praxiszeit-backend-1:/app/<path>`.
 
@@ -189,6 +191,9 @@ JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 
 ### Claude-Code-Bash-Gotchas
 - Das `cd` in einem Bash-Aufruf **persistiert** zwischen Tool-Calls. Nach `cd .claude/worktrees/...` ist `git status` ohne erneutes `cd` immer noch im Worktree. Bei git-Operationen lieber `git -C <pfad>` nutzen oder cwd explizit zurücksetzen.
 - `docker compose cp <host-file> <svc>:<container-path>` resolved den Host-Pfad **relativ zum cwd**, nicht zum Repo-Root. Aus fremdem cwd → `docker cp` mit absoluten Pfaden + Container-Name (`praxiszeit-backend-1`).
+- `docker compose cp` braucht den **Service-Namen** (`backend:`), NICHT den Container-Namen (`praxiszeit-backend-1:` → schlägt still fehl, kopiert nichts). Ganzes Verzeichnis geht: `docker compose cp backend/app backend:/app/` (→ `/app/app`).
+- **Fish-Shell:** mehrzeilige `while`/`for … end`-Schleifen scheitern im Tool-Eval (`parse error near 'end'`) — Einzeiler nutzen oder auf `Monitor`/`run_in_background` ausweichen.
+- **Commit-/PR-/Issue-Texte mit Sonderzeichen** (Klammern, `→`, Umlaute) brechen bei inline `-m`/`-c` (Shell-Splitting) → `git commit -F -` bzw. `gh pr/issue ... --body-file -` mit Heredoc (`<<'EOF'`) nutzen — Heredocs funktionieren zuverlässig.
 
 ## Weiterführende Docs
 
