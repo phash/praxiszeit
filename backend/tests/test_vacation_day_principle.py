@@ -114,3 +114,33 @@ def test_full_week_equals_number_of_workdays(db, default_tenant):
     )
     assert r.status_code == 201, r.text
     assert _used(db, u) == 5.0
+
+
+# ── #167: Halbe Urlaubstage (konsistent, diskriminierungsfrei) ──────────────
+
+def test_half_day_vacation_costs_half(db, default_tenant):
+    u = _mk(db, weekly_hours=40.0, work_days_per_week=5)  # 8h/Tag
+    r = _client(db, u).post(
+        "/api/absences", json={"date": MON, "type": "vacation", "hours": 8, "half_day": True}
+    )
+    assert r.status_code == 201, r.text
+    assert _used(db, u) == 0.5
+
+
+def test_half_day_uneven_schedule_is_consistent(db, default_tenant):
+    """Halbtag muss diskriminierungsfrei sein: Mo (8h) und Di (3h) je 0,5 Tag."""
+    sched = dict(
+        weekly_hours=20.0, work_days_per_week=5, use_daily_schedule=True,
+        hours_monday=8, hours_tuesday=3, hours_wednesday=3, hours_thursday=3, hours_friday=3,
+    )
+    u_mon = _mk(db, **sched)
+    assert _client(db, u_mon).post(
+        "/api/absences", json={"date": MON, "type": "vacation", "hours": 8, "half_day": True}
+    ).status_code == 201
+    assert _used(db, u_mon) == 0.5
+
+    u_tue = _mk(db, **sched)
+    assert _client(db, u_tue).post(
+        "/api/absences", json={"date": TUE, "type": "vacation", "hours": 3, "half_day": True}
+    ).status_code == 201
+    assert _used(db, u_tue) == 0.5

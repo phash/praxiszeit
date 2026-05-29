@@ -232,14 +232,9 @@ def review_vacation_request(
             dates_by_year.setdefault(d.year, []).append(d)
         for check_year, year_dates in dates_by_year.items():
             vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
-            year_hours_needed = sum(
-                float(calculation_service.get_daily_target_for_date(
-                    target_user, d,
-                    weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
-                ))
-                for d in year_dates
-            )
-            if float(vacation_account['remaining_hours']) - year_hours_needed < 0:
+            # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5).
+            days_needed = len(year_dates) * (0.5 if vr.half_day else 1.0)
+            if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Nicht genügend Urlaubstage für {check_year} ({vacation_account['remaining_days']:.1f} Tage verfügbar)",
@@ -263,13 +258,15 @@ def review_vacation_request(
 
     # Create absence entries
     for d in dates_to_create:
-        if getattr(target_user, 'use_daily_schedule', False):
-            weekly = calculation_service.get_weekly_hours_for_date(db, target_user, d)
-            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
-            if hours_for_day == 0:
-                continue
-        else:
-            hours_for_day = float(vr.hours)
+        # #156/T1 + #167: ein voller Urlaubstag wird immer mit dem Tagessoll des
+        # Tages gebucht (Tagesprinzip), nicht mit vr.hours (das den 8h-Default
+        # tragen kann). Halber Tag = 0,5 × Tagessoll.
+        weekly = calculation_service.get_weekly_hours_for_date(db, target_user, d)
+        hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
+        if hours_for_day == 0:
+            continue
+        if vr.half_day:
+            hours_for_day = round(hours_for_day / 2, 2)
 
         absence = Absence(
             user_id=target_user.id,
