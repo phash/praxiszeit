@@ -593,6 +593,52 @@ class TestAdminUsers:
             assert term.lower() not in body_blob, f"403 leaks {term!r}: {body!r}"
 
 
+class TestReceivesCompanyClosuresWiring:
+    """#189: receives_company_closures flag round-trips through the admin API."""
+
+    def test_create_user_persists_opt_out_flag(self, admin_client, _db_session):
+        """POST with receives_company_closures=false persists it on the row."""
+        resp = admin_client.post("/api/admin/users", json={
+            "username": "verwaltung",
+            "first_name": "Vera",
+            "last_name": "Waltung",
+            "weekly_hours": 40.0,
+            "vacation_days": 30,
+            "work_days_per_week": 5,
+            "password": "VerwaltungPass2025!",
+            "role": "admin",
+            "receives_company_closures": False,
+        })
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["user"]["receives_company_closures"] is False
+        created = _db_session.query(User).filter(User.username == "verwaltung").first()
+        assert created.receives_company_closures is False
+
+    def test_create_user_defaults_flag_true(self, admin_client):
+        """Flag weggelassen -> True (jeder nimmt standardmäßig an Betriebsferien teil)."""
+        resp = admin_client.post("/api/admin/users", json={
+            "username": "normalo",
+            "first_name": "Norm",
+            "last_name": "Alo",
+            "weekly_hours": 40.0,
+            "vacation_days": 30,
+            "work_days_per_week": 5,
+            "password": "NormaloPass2025!",
+        })
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["user"]["receives_company_closures"] is True
+
+    def test_update_user_toggles_flag(self, admin_client, employee_user, _db_session):
+        """PUT kann das Flag umschalten (persistiert über exclude_unset/setattr)."""
+        resp = admin_client.put(f"/api/admin/users/{employee_user.id}", json={
+            "receives_company_closures": False,
+        })
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["receives_company_closures"] is False
+        _db_session.refresh(employee_user)
+        assert employee_user.receives_company_closures is False
+
+
 class TestAdminYearClosing:
     """POST / DELETE /api/admin/year-closing/{year}"""
 

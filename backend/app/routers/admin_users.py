@@ -321,6 +321,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         is_active=True,
         exempt_from_arbzg=user_data.exempt_from_arbzg,
         is_night_worker=user_data.is_night_worker,
+        receives_company_closures=user_data.receives_company_closures,
         first_work_day=user_data.first_work_day,
         last_work_day=user_data.last_work_day,
         department=user_data.department,

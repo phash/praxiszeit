@@ -21,6 +21,7 @@ interface User {
   track_hours: boolean;
   exempt_from_arbzg: boolean;
   is_night_worker: boolean;
+  receives_company_closures: boolean;
   use_daily_schedule: boolean;
   hours_monday: number | null;
   hours_tuesday: number | null;
@@ -60,6 +61,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     track_hours: true,
     exempt_from_arbzg: false,
     is_night_worker: false,
+    receives_company_closures: true,
     first_work_day: '',
     last_work_day: '',
     department: '',
@@ -89,6 +91,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         track_hours: editUser.track_hours ?? true,
         exempt_from_arbzg: editUser.exempt_from_arbzg ?? false,
         is_night_worker: editUser.is_night_worker ?? false,
+        receives_company_closures: editUser.receives_company_closures ?? true,
         first_work_day: editUser.first_work_day || '',
         last_work_day: editUser.last_work_day || '',
         department: editUser.department || '',
@@ -405,6 +408,19 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
             />
             <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
+            </label>
+          </div>
+
+          <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+            <input
+              type="checkbox"
+              id="receives_company_closures"
+              checked={formData.receives_company_closures ?? true}
+              onChange={(e) => setFormData({ ...formData, receives_company_closures: e.target.checked })}
+              className="w-4 h-4 text-emerald-600 border-gray-300 rounded-sm focus:ring-emerald-500"
+            />
+            <label htmlFor="receives_company_closures" className="text-sm font-medium text-gray-700 cursor-pointer">
+              Nimmt an Betriebsferien teil (Betriebsferien werden automatisch eingetragen)
             </label>
           </div>
 

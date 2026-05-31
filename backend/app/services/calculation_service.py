@@ -599,24 +599,14 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     Returns:
         Dict with vacation account details
     """
-    # F-046: a user with daily_target == 0 (track_hours=False, or
-    # work_days_per_week == 0) has no vacation account at all — there's
-    # no sensible way to convert hours↔days. Return an explicit "not
-    # applicable" shape so the router can 400 or the UI can hide the
-    # account. This prevents the silent-zero bug where an employee with
-    # track_hours=False but existing vacation entries would see
-    # "0 days used / 0 days remaining" and slip through the budget check.
+    # daily_target == 0 means the user has no Soll/Ist tracking
+    # (track_hours=False, e.g. leitende Angestellte) or work_days_per_week == 0.
+    # Such users still get a DAY-BASED vacation account — they are NOT shortcut
+    # here. The pure day count happens further down (reine Tageszählung, hours
+    # stay 0); the day-based budget below is shared with tracked users.
+    # (Replaces the old F-046 "not applicable" zero shape, which made the
+    # tagebasierte Budget-Check ins Leere laufen — Über-Buchung war möglich.)
     daily_target = get_daily_target(user)
-    if daily_target <= 0:
-        return {
-            "budget_hours": 0.0,
-            "budget_days": float(user.vacation_days),
-            "used_hours": 0.0,
-            "used_days": 0.0,
-            "remaining_hours": 0.0,
-            "remaining_days": float(user.vacation_days),
-            "track_hours": False,  # sentinel for callers
-        }
 
     # Calculate budget in hours, pro-rated for first/last work day
     budget_days = Decimal(str(user.vacation_days))
@@ -686,6 +676,34 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         db, user.tenant_id, year, holiday_dates_year
     )
     existing_vacation_dates = {a.date for a in vacation_absences}
+
+    # #189 / leitende Angestellte: a user without hours tracking
+    # (daily_target == 0) gets a pure DAY count — each VACATION absence day is
+    # one vacation day, each 'free'+counts_as_vacation special day (24./31.12.)
+    # is one vacation day, and all hour figures stay 0. Half days are not
+    # distinguishable without hours (Absence has no half_day flag, hours=0) and
+    # therefore count as a full day. Budget (budget_days) follows the normal
+    # pro-rata + carryover logic above — "sonst wie ein normaler MA".
+    if daily_target <= 0:
+        used_days = Decimal(str(len(vacation_absences)))
+        for d in deduction_dates:
+            if d in existing_vacation_dates:
+                continue
+            if user.first_work_day and d < user.first_work_day:
+                continue
+            if user.last_work_day and d > user.last_work_day:
+                continue
+            used_days += Decimal('1')
+        return {
+            "budget_hours": 0.0,
+            "budget_days": float(budget_days),
+            "used_hours": 0.0,
+            "used_days": float(used_days.quantize(Decimal('0.1'))),
+            "remaining_hours": 0.0,
+            "remaining_days": float((budget_days - used_days).quantize(Decimal('0.1'))),
+            "track_hours": False,  # sentinel for callers (hide hours columns)
+        }
+
     for d in deduction_dates:
         if d in existing_vacation_dates:
             continue  # already counted via a real VACATION absence

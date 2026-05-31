@@ -27,6 +27,7 @@ interface User {
   track_hours: boolean;
   exempt_from_arbzg: boolean;
   is_night_worker: boolean;
+  receives_company_closures: boolean;
   use_daily_schedule: boolean;
   hours_monday: number | null;
   hours_tuesday: number | null;
