@@ -12,6 +12,7 @@ import { useTypeColorsStore } from '../stores/typeColorsStore';
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseHours } from '../utils/formatters';
+import { getSpecialDayInfo, type SpecialDaySettings } from '../utils/specialDays';
 import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
@@ -106,6 +107,7 @@ export default function AbsenceCalendarPage() {
   const [departmentFilter, setDepartmentFilter] = useState<string>(''); // #162
   const [myAbsences, setMyAbsences] = useState<Absence[]>([]);
   const [holidays, setHolidays] = useState<PublicHoliday[]>([]);
+  const [specialDays, setSpecialDays] = useState<SpecialDaySettings | null>(null); // #188: 24./31.12.
   const [showForm, setShowForm] = useState(false);
   const [isDateRange, setIsDateRange] = useState(false);
   const [formData, setFormData] = useState({
@@ -124,6 +126,7 @@ export default function AbsenceCalendarPage() {
   useEffect(() => {
     apiClient.get('/settings').then((res) => {
       setVacationApprovalRequired(res.data.vacation_approval_required === true);
+      setSpecialDays(res.data.special_days ?? null); // #188
     }).catch(() => {});
     fetchMyVacationRequests();
   }, []);
@@ -722,6 +725,7 @@ export default function AbsenceCalendarPage() {
                 const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                const special = getSpecialDayInfo(dateStr, specialDays); // #188
 
                 return (
                   <div
@@ -732,7 +736,11 @@ export default function AbsenceCalendarPage() {
                       setIsDateRange(false);
                     }}
                     className={`min-h-24 border rounded-lg p-2 cursor-pointer transition hover:border-primary hover:shadow-xs ${
-                      isWeekend || dayHoliday ? 'bg-gray-50' : 'bg-white'
+                      isWeekend || dayHoliday || special?.isFree
+                        ? 'bg-gray-50'
+                        : special?.mode === 'half_day'
+                          ? 'bg-amber-50'
+                          : 'bg-white'
                     }`}
                     title="Klicken um Abwesenheit einzutragen"
                   >
@@ -744,6 +752,12 @@ export default function AbsenceCalendarPage() {
                       {dayHoliday && (
                         <div className="text-xs px-2 py-1 rounded-sm bg-gray-200 text-gray-700 border border-gray-300 font-medium">
                           {dayHoliday.name}
+                        </div>
+                      )}
+                      {/* #188: Sondertag-Badge (24./31.12.), nur wenn nicht ohnehin Feiertag */}
+                      {special && !dayHoliday && (
+                        <div className="text-xs px-2 py-1 rounded-sm bg-gray-200 text-gray-700 border border-gray-300 font-medium">
+                          {special.label}
                         </div>
                       )}
                       {/* Absence Entries — per-employee badge (ring = MA-Farbe, Mitte = Typ) */}
@@ -775,7 +789,8 @@ export default function AbsenceCalendarPage() {
                 const dateStr = format(day, 'yyyy-MM-dd');
                 const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
-                const hasContent = dayEntries.length > 0 || !!dayHoliday;
+                const special = getSpecialDayInfo(dateStr, specialDays); // #188
+                const hasContent = dayEntries.length > 0 || !!dayHoliday || !!special;
 
                 return (
                   <div key={dateStr} className="border-b border-gray-200 p-4">
@@ -785,7 +800,7 @@ export default function AbsenceCalendarPage() {
                           {format(day, 'EEEE, dd. MMMM', { locale: de })}
                         </p>
                       </div>
-                      {!dayHoliday && (
+                      {!dayHoliday && !special?.isFree && (
                         <button
                           onClick={() => {
                             setFormData(prev => ({ ...prev, date: dateStr, hours: getHoursForDate(currentUser, dateStr) || prev.hours }));
@@ -805,6 +820,14 @@ export default function AbsenceCalendarPage() {
                         <div className="px-3 py-2 rounded-lg bg-gray-100 border border-gray-200">
                           <p className="text-sm font-medium text-gray-700">
                             🎉 {dayHoliday.name}
+                          </p>
+                        </div>
+                      )}
+                      {/* #188: Sondertag (24./31.12.) */}
+                      {special && !dayHoliday && (
+                        <div className="px-3 py-2 rounded-lg bg-gray-100 border border-gray-200">
+                          <p className="text-sm font-medium text-gray-700">
+                            🗓️ {special.label}
                           </p>
                         </div>
                       )}
@@ -882,6 +905,7 @@ export default function AbsenceCalendarPage() {
                       const dayAbsences = monthAbsences.filter(e => e.date === dateStr);
                       const dayHoliday = holidays.find((h) => h.date === dateStr);
                       const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                      const special = getSpecialDayInfo(dateStr, specialDays); // #188
                       // Review M-U1: type-coloured dots + descriptive title + overflow.
                       const dotTitle = dayAbsences
                         .map(a => `${a.user_first_name} ${a.user_last_name?.[0] ?? ''}. – ${absenceTypeLabel(a.type)}`)
@@ -896,11 +920,15 @@ export default function AbsenceCalendarPage() {
                             setIsDateRange(false);
                           }}
                           className={`aspect-square flex flex-col items-center justify-center rounded text-xs cursor-pointer hover:ring-1 hover:ring-primary ${
-                            isWeekend || dayHoliday ? 'bg-gray-100' : 'bg-white'
+                            isWeekend || dayHoliday || special?.isFree
+                              ? 'bg-gray-100'
+                              : special?.mode === 'half_day'
+                                ? 'bg-amber-50'
+                                : 'bg-white'
                           }`}
-                          title={dayHoliday ? dayHoliday.name : (dotTitle || 'Klicken um Abwesenheit einzutragen')}
+                          title={dayHoliday ? dayHoliday.name : special ? special.label : (dotTitle || 'Klicken um Abwesenheit einzutragen')}
                         >
-                          <div className={`font-medium ${dayHoliday ? 'text-gray-500' : 'text-gray-700'}`}>
+                          <div className={`font-medium ${dayHoliday || special?.isFree ? 'text-gray-500' : 'text-gray-700'}`}>
                             {format(day, 'd')}
                           </div>
                           {dayAbsences.length > 0 && (
