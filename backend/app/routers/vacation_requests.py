@@ -167,16 +167,15 @@ def apply_vacation_request_patch(
             if d.weekday() < 5 and d not in holiday_dates:
                 dates_by_year.setdefault(d.year, []).append(d)
             d += timedelta(days=1)
+        # #196: tagebasiert prüfen (konsistent mit POST-Pfad / create_absence /
+        # review_vacation_request). Der frühere remaining_hours-Check lief für
+        # track_hours=False ins Leere (remaining_hours == 0 UND year_hours_needed
+        # == 0 → nie blockiert). half_day ist im Edit nicht änderbar → vr.half_day.
+        day_factor = 0.5 if vr.half_day else 1.0
         for check_year, year_dates in dates_by_year.items():
             account = calculation_service.get_vacation_account(db, target_user, check_year)
-            year_hours_needed = sum(
-                float(calculation_service.get_daily_target_for_date(
-                    target_user, dd,
-                    weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, dd),
-                ))
-                for dd in year_dates
-            )
-            if float(account['remaining_hours']) - year_hours_needed < 0:
+            days_needed = len(year_dates) * day_factor
+            if days_needed > float(account['remaining_days']) + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Nicht genügend Urlaubstage für {check_year} ({account['remaining_days']:.1f} Tage verfügbar)",

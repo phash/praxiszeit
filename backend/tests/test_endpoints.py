@@ -593,6 +593,96 @@ class TestAdminUsers:
             assert term.lower() not in body_blob, f"403 leaks {term!r}: {body!r}"
 
 
+class TestReceivesCompanyClosuresWiring:
+    """#189: receives_company_closures flag round-trips through the admin API."""
+
+    def test_create_user_persists_opt_out_flag(self, admin_client, _db_session):
+        """POST with receives_company_closures=false persists it on the row."""
+        resp = admin_client.post("/api/admin/users", json={
+            "username": "verwaltung",
+            "first_name": "Vera",
+            "last_name": "Waltung",
+            "weekly_hours": 40.0,
+            "vacation_days": 30,
+            "work_days_per_week": 5,
+            "password": "VerwaltungPass2025!",
+            "role": "admin",
+            "receives_company_closures": False,
+        })
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["user"]["receives_company_closures"] is False
+        created = _db_session.query(User).filter(User.username == "verwaltung").first()
+        assert created.receives_company_closures is False
+
+    def test_create_user_defaults_flag_true(self, admin_client):
+        """Flag weggelassen -> True (jeder nimmt standardmäßig an Betriebsferien teil)."""
+        resp = admin_client.post("/api/admin/users", json={
+            "username": "normalo",
+            "first_name": "Norm",
+            "last_name": "Alo",
+            "weekly_hours": 40.0,
+            "vacation_days": 30,
+            "work_days_per_week": 5,
+            "password": "NormaloPass2025!",
+        })
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["user"]["receives_company_closures"] is True
+
+    def test_update_user_toggles_flag(self, admin_client, employee_user, _db_session):
+        """PUT kann das Flag umschalten (persistiert über exclude_unset/setattr)."""
+        resp = admin_client.put(f"/api/admin/users/{employee_user.id}", json={
+            "receives_company_closures": False,
+        })
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["receives_company_closures"] is False
+        _db_session.refresh(employee_user)
+        assert employee_user.receives_company_closures is False
+
+
+class TestUsersOverview:
+    """#194: GET /api/admin/users-overview — bulk vacation + YTD overtime per user."""
+
+    def test_overview_returns_vacation_and_overtime_per_user(self, admin_client, admin_user, _db_session):
+        from app.models import Absence, AbsenceType
+        _db_session.add(Absence(
+            user_id=admin_user.id, tenant_id=DEFAULT_TENANT_ID,
+            date=date(2026, 3, 10), type=AbsenceType.VACATION, hours=8.0,
+        ))
+        _db_session.commit()
+
+        resp = admin_client.get("/api/admin/users-overview", params={"year": 2026})
+        assert resp.status_code == 200, resp.text
+        row = next(r for r in resp.json() if r["user_id"] == str(admin_user.id))
+        # vacation block carries the day figures the list renders
+        assert row["vacation"]["used_days"] >= 1.0
+        assert "remaining_days" in row["vacation"]
+        # overtime block is the YTD summary
+        assert row["overtime"]["year"] == 2026
+        assert "overtime" in row["overtime"]
+
+    def test_overview_excludes_inactive_by_default_includes_with_flag(self, admin_client, _db_session, tenant):
+        inactive = User(
+            username="inact", email="i@test.de",
+            password_hash=auth_service.hash_password("Inactive2025!"),
+            first_name="In", last_name="Active", role=UserRole.EMPLOYEE,
+            weekly_hours=40.0, vacation_days=30, work_days_per_week=5,
+            is_active=False, tenant_id=DEFAULT_TENANT_ID,
+        )
+        _db_session.add(inactive)
+        _db_session.commit()
+
+        default_ids = [r["user_id"] for r in admin_client.get("/api/admin/users-overview").json()]
+        assert str(inactive.id) not in default_ids
+
+        incl_ids = [r["user_id"] for r in admin_client.get(
+            "/api/admin/users-overview", params={"include_inactive": True}).json()]
+        assert str(inactive.id) in incl_ids
+
+    # Auth (employee -> 403) is structurally enforced by the router-level
+    # dependencies=[Depends(require_admin)] and covered by
+    # TestAdminUsers.test_employee_cannot_list_users — no separate test here.
+
+
 class TestAdminYearClosing:
     """POST / DELETE /api/admin/year-closing/{year}"""
 

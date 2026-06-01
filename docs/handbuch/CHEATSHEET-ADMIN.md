@@ -19,9 +19,11 @@
 - Vorname / Nachname, E-Mail (optional)
 - Wochenstunden, Arbeitstage/Woche, Urlaubstage
 - Rolle: Mitarbeiter:in oder Admin
-- Optional: ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6), Abteilung/Bereich, Anfangssaldo Überstunden
+- Optional: Stundenzählung aus (leitende MA – Urlaub/Krank zählen trotzdem tagebasiert), ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6), **Nimmt an Betriebsferien teil** (Standard an), Erster/Letzter Arbeitstag (Soll nur in diesem Zeitraum), Abteilung/Bereich, Anfangssaldo Überstunden
 
 > **Urlaub (Tagesprinzip):** 1 freier Arbeitstag = 1 Urlaubstag (unabhängig von Tagesstunden/Wochentag). Anspruch anteilig: `30 × Arbeitstage/5`. Verbrauch tagebasiert, Stunden nur intern.
+
+> **Benutzerübersicht** zeigt je MA Urlaubskonto **und** Überstundensaldo (JTD); „—" bei deaktivierter Stundenzählung.
 
 ### Stundenänderung (Teilzeit etc.)
 **Benutzer öffnen** → neue Wochenstunden + **Wirkungsdatum** eintragen
@@ -86,7 +88,8 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 **Abwesenheiten → Tab Betriebsferien → Neue Betriebsferien**
 - Bezeichnung + Von–Bis → Speichern
-- → Alle MA erhalten automatisch Abwesenheitseinträge (keine Urlaubstage!)
+- → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Abwesenheitseinträge (keine Urlaubstage!) – rollenunabhängig (auch Admins, die MA sind)
+- Nachträglich Berechtigte: Option setzen, dann Betriebsferien **einmal erneut speichern** → Einträge werden nachgetragen
 - Löschen: Einträge werden bei allen MA automatisch entfernt
 
 ---

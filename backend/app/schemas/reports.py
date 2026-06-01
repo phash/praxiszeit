@@ -52,6 +52,20 @@ class VacationAccount(BaseModel):
     has_carryover_warning: bool = False  # True if remaining vacation at year end
 
 
+class AdminUserOverview(BaseModel):
+    """#194: per-user vacation account + YTD overtime for the admin user list.
+
+    Bulk-served by GET /api/admin/users-overview so the frontend needs a
+    single request instead of the former per-user N+1 vacation fetch.
+    """
+    user_id: str
+    first_name: str
+    last_name: str
+    track_hours: bool
+    vacation: VacationAccount
+    overtime: YtdOvertime
+
+
 class EmployeeMonthlyReport(BaseModel):
     """Monthly report for a single employee."""
     user_id: str

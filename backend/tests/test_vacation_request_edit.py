@@ -67,6 +67,23 @@ def _user(db, username, role=UserRole.EMPLOYEE, tenant_id=None):
     return u
 
 
+def _user_custom(db, username, **kw):
+    """User with overridable fields (track_hours, vacation_days, …)."""
+    from app.services import auth_service
+    defaults = dict(
+        email=f"{username}@example.com", password_hash=auth_service.hash_password("x"),
+        first_name=username.title(), last_name="Test", role=UserRole.EMPLOYEE,
+        weekly_hours=40.0, vacation_days=30, work_days_per_week=5, is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
+    )
+    defaults.update(kw)
+    u = User(username=username, **defaults)
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
 @pytest.fixture
 def employee(db, default_tenant):
     return _user(db, "emp")
@@ -120,6 +137,47 @@ def _vr(db, user, status_val=VacationRequestStatus.PENDING.value, start=None,
     db.commit()
     db.refresh(vr)
     return vr
+
+
+# ===========================================================================
+# #196: Edit-Budget-Check tagebasiert (auch track_hours=False)
+# ===========================================================================
+
+class TestEditBudgetDayBased:
+    """Der Edit-Pfad muss das Budget tagebasiert (remaining_days) prüfen — auch
+    für track_hours=False, wo remaining_hours strukturell 0 ist."""
+
+    def _patch_as(self, db, user, vr_id, body):
+        def override_db():
+            yield db
+        _app.dependency_overrides[get_db] = override_db
+        _app.dependency_overrides[get_current_user] = lambda: user
+        try:
+            return TestClient(_app).patch(f"/api/vacation-requests/{vr_id}", json=body)
+        finally:
+            _app.dependency_overrides.clear()
+
+    def test_untracked_user_overbook_rejected(self, db, default_tenant):
+        # leitende/r Angestellte/r: keine Stundenzählung, kleines Budget.
+        u = _user_custom(db, "ltd", track_hours=False, vacation_days=2)
+        vr = _vr(db, u, start=date(2026, 6, 8))  # Mo, Einzeltag
+        # Edit auf Mo–Mi = 3 Werktage > 2 Resttage → muss abgelehnt werden.
+        resp = self._patch_as(db, u, vr.id, {"end_date": date(2026, 6, 10).isoformat()})
+        assert resp.status_code == 400, resp.text
+        assert "Urlaubstage" in resp.json()["detail"]
+
+    def test_untracked_user_within_budget_ok(self, db, default_tenant):
+        u = _user_custom(db, "ltd2", track_hours=False, vacation_days=30)
+        vr = _vr(db, u, start=date(2026, 6, 8))
+        resp = self._patch_as(db, u, vr.id, {"end_date": date(2026, 6, 10).isoformat()})
+        assert resp.status_code == 200, resp.text
+
+    def test_tracked_user_overbook_still_rejected(self, db, default_tenant):
+        # Kontrolle: getrackter User bleibt wie bisher korrekt blockiert.
+        u = _user_custom(db, "trk", track_hours=True, vacation_days=2)
+        vr = _vr(db, u, start=date(2026, 6, 8))
+        resp = self._patch_as(db, u, vr.id, {"end_date": date(2026, 6, 10).isoformat()})
+        assert resp.status_code == 400, resp.text
 
 
 # ===========================================================================
