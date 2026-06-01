@@ -8,15 +8,25 @@ Konsistenz zu get_vacation_account, das bereits pro-rata rechnet.
 Reine Tages-Soll-Erwartung: 40h/5d = 8h pro Mon–Fri (kein Feiertag im Test-Tenant).
 """
 
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 
-from app.models import User, UserRole, YearCarryover
+from app.models import User, UserRole, YearCarryover, TimeEntry
 from app.services import calculation_service
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
 
 DAILY = Decimal('8.00')  # 40h / 5 Tage
+
+
+def _entry(db, user, d, start_h, end_h):
+    e = TimeEntry(
+        user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+        start_time=time(start_h, 0), end_time=time(end_h, 0), break_minutes=0,
+    )
+    db.add(e)
+    db.commit()
+    return e
 
 
 def _mk(db, username, **kw):
@@ -83,3 +93,42 @@ class TestOvertimeAccountEmploymentWindow:
         bal = calculation_service.get_overtime_account(db, u, 2026, 7)
         expected = (Decimal('0') - Decimal(_weekdays(date(2026, 7, 1), date(2026, 7, 31))) * DAILY).quantize(Decimal('0.01'))
         assert bal == expected
+
+
+class TestActualRespectsEmploymentWindow:
+    """#195: die Ist-Seite (TimeEntry + credited SICK/TRAINING) darf Tage
+    außerhalb des Beschäftigungsfensters nicht mitzählen — sonst Phantom-Überstunden."""
+
+    def test_monthly_actual_excludes_pre_employment_entry(self, db, default_tenant):
+        u = _mk(db, "act1", first_work_day=date(2026, 7, 1))
+        _entry(db, u, date(2026, 6, 10), 8, 16)  # vor Eintritt (Rehire/Import)
+        assert calculation_service.get_monthly_actual(db, u, 2026, 6) == Decimal('0.00')
+
+    def test_monthly_actual_includes_in_window_entry(self, db, default_tenant):
+        u = _mk(db, "act2", first_work_day=date(2026, 7, 1))
+        _entry(db, u, date(2026, 7, 1), 8, 16)  # im Fenster
+        assert calculation_service.get_monthly_actual(db, u, 2026, 7) == Decimal('8.00')
+
+    def test_overtime_account_excludes_pre_employment_actual(self, db, default_tenant):
+        u = _mk(db, "act3", first_work_day=date(2026, 7, 1))
+        _entry(db, u, date(2026, 6, 10), 8, 16)  # vor Eintritt → darf NICHT als Ist zählen
+        bal = calculation_service.get_overtime_account(db, u, 2026, 7)
+        july_target = Decimal(_weekdays(date(2026, 7, 1), date(2026, 7, 31))) * DAILY
+        # Nur Juli-Soll als Defizit; das Juni-Ist trägt nichts bei.
+        assert bal == (Decimal('0') - july_target).quantize(Decimal('0.01'))
+
+    def test_balance_sum_equals_overtime_account(self, db, default_tenant):
+        u = _mk(db, "act4", first_work_day=date(2026, 7, 1))
+        _entry(db, u, date(2026, 6, 10), 8, 16)  # außerhalb
+        _entry(db, u, date(2026, 7, 1), 8, 16)   # innerhalb
+        jun = calculation_service.get_monthly_balance(db, u, 2026, 6)
+        jul = calculation_service.get_monthly_balance(db, u, 2026, 7)
+        oa = calculation_service.get_overtime_account(db, u, 2026, 7)
+        assert (jun + jul) == oa  # Konsistenz Σ Monatssaldo == Überstundenkonto
+
+    def test_ytd_actual_excludes_pre_employment_entry(self, db, default_tenant):
+        # today=2026-06-01; Eintritt 01.05., Eintrag 10.04. (vor Eintritt, vor heute).
+        u = _mk(db, "act5", first_work_day=date(2026, 5, 1))
+        _entry(db, u, date(2026, 4, 10), 8, 16)
+        ytd = calculation_service.get_ytd_summary(db, u, 2026)
+        assert ytd["actual_hours"] == 0.0  # Vor-Eintritts-Ist zählt nicht

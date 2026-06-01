@@ -78,7 +78,7 @@ Die Soll-Berechnung wendet die Regel in allen drei Tages-Schleifen an (`get_mont
 
 `_within_employment_window(user, d)` schließt Tage **vor `first_work_day`** und **nach `last_work_day`** vom **Soll** aus — Guard in denselben drei Tages-Schleifen (`get_monthly_target`, `get_overtime_account`, `get_ytd_summary`), konsistent zum Pro-Rata des Urlaubsbudgets. Vor Eintritt / nach Austritt entsteht so kein Stundensoll (vorher wurde ab Jahresbeginn gerechnet → falsches Defizit, Admin- und MA-Ansicht).
 
-> ⚠️ **Offen (#195):** Die **Ist-Seite** (`TimeEntry` + gutgeschriebene SICK/TRAINING) wird noch NICHT gefenstert. Existiert ein Eintrag außerhalb des Beschäftigungszeitraums (Rehire/Import/nachträglich gesetztes Datum), entstehen Phantom-Überstunden. Sauberer Fix = gemeinsamer Per-Tag-Helper, der Soll **und** Ist mit derselben „zählt dieser Tag?"-Entscheidung filtert (löst zugleich die Dreifach-Duplikation der Tages-Schleifen).
+Die **Ist-Seite** (`TimeEntry` + gutgeschriebene SICK/TRAINING) wird **ebenfalls** gefenstert (#195): `get_monthly_actual`, `get_overtime_account` und `get_ytd_summary` zählen Stunden nur innerhalb des Beschäftigungszeitraums → ein Eintrag außerhalb (Rehire/Import/nachträglich gesetztes Datum) trägt weder Soll noch Ist bei (`Σ get_monthly_balance == get_overtime_account` bleibt konsistent). Optionaler Tech-Debt: gemeinsamer Per-Tag-Helper, der Soll **und** Ist mit derselben „zählt dieser Tag?"-Entscheidung filtert (löst zugleich die Dreifach-Duplikation der Tages-Schleifen).
 
 ### Gemischte Tage (Mixed Days)
 
@@ -107,7 +107,7 @@ Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 - Pro-Rata bei Eintritt/Austritt im laufenden Jahr
 - Verbrauch = Summe aller VACATION-Absences im Jahr (PAID_LEAVE wird NICHT mitgezählt, #145) **+** Sondertage 24./31.12. mit `free`+`counts_as_vacation` (#146, nicht-invasiv ohne Absence-Datensatz)
 - Konvertierung Tage ↔ Stunden via aktuellem `daily_target`
-- **`track_hours=False` (leitende Angestellte, #191):** `daily_target == 0`, daher **reine Tageszählung** — jede VACATION-Absence = 1 Tag, jeder `free`+`counts_as_vacation`-Sondertag = 1 Tag; alle Stunden-Felder bleiben 0, `budget_days` behält Pro-Rata + Carryover. Ersetzt die alte F-046-„nicht anwendbar"-Rückgabe (0 verbraucht / voller Rest), die den tagebasierten Budget-Check aushebelte. Halbtage sind ohne Stundenzählung nicht erkennbar → zählen als voller Tag. (Offen: Edit-Pfad-Budget-Check #196, Jahresabschluss-Carryover für untracked.)
+- **`track_hours=False` (leitende Angestellte, #191):** `daily_target == 0`, daher **reine Tageszählung** — jede VACATION-Absence = 1 Tag, jeder `free`+`counts_as_vacation`-Sondertag = 1 Tag; alle Stunden-Felder bleiben 0, `budget_days` behält Pro-Rata + Carryover. Ersetzt die alte F-046-„nicht anwendbar"-Rückgabe (0 verbraucht / voller Rest), die den tagebasierten Budget-Check aushebelte. Halbtage sind ohne Stundenzählung nicht erkennbar → zählen als voller Tag. Edit-Pfad-Budget-Check tagebasiert (#196 behoben). Offen: Jahresabschluss-Carryover für untracked (#191).
 
 ## Wichtige Patterns
 

@@ -304,7 +304,13 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
         TimeEntry.user_id == user.id,
         date_in_month(TimeEntry.date, year, month),
     ).all()
-    total = sum((entry.net_hours for entry in entries), start=Decimal('0'))
+    # #195: only count Ist within the employment window — symmetric to the Soll
+    # guard (_within_employment_window in get_monthly_target). A TimeEntry before
+    # first_work_day / after last_work_day (rehire, import, date corrected after
+    # the fact) must contribute neither Soll nor Ist, otherwise the balance shows
+    # phantom overtime.
+    total = sum((entry.net_hours for entry in entries
+                 if _within_employment_window(user, entry.date)), start=Decimal('0'))
 
     # Training and sick hours count as actual worked hours:
     # - TRAINING: außer Haus, credited as worked
@@ -314,7 +320,8 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
         date_in_month(Absence.date, year, month),
     ).all()
-    credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences), Decimal('0'))
+    credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences
+                          if _within_employment_window(user, a.date)), Decimal('0'))
 
     return (Decimal(str(total)) + credited_hours).quantize(Decimal('0.01'))
 
@@ -396,8 +403,13 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         TimeEntry.date >= start_date,
         TimeEntry.date <= up_to_date,
     ).all()
+    # #195: skip Ist outside the employment window (symmetric to the Soll guard
+    # in the month loop below) so out-of-window entries don't create phantom
+    # overtime.
     actual_by_month: Dict[tuple, Decimal] = {}
     for e in entries:
+        if not _within_employment_window(user, e.date):
+            continue
         key = (e.date.year, e.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(e.net_hours))
 
@@ -409,6 +421,8 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
     for ca in credited_absences:
+        if not _within_employment_window(user, ca.date):
+            continue
         key = (ca.date.year, ca.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
 
@@ -573,7 +587,10 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
         TimeEntry.date >= start,
         TimeEntry.date <= end,
     ).all()
-    total_actual = sum((Decimal(str(e.net_hours)) for e in entries), start=Decimal('0'))
+    # #195: count Ist only within the employment window (symmetric to the Soll
+    # loop above) — avoids phantom YTD overtime from out-of-window entries.
+    total_actual = sum((Decimal(str(e.net_hours)) for e in entries
+                        if _within_employment_window(user, e.date)), start=Decimal('0'))
 
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
@@ -581,7 +598,8 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
         Absence.date <= end,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
-    total_actual += sum((Decimal(str(a.hours)) for a in credited_absences), start=Decimal('0'))
+    total_actual += sum((Decimal(str(a.hours)) for a in credited_absences
+                         if _within_employment_window(user, a.date)), start=Decimal('0'))
 
     # Include overtime carryover for this year
     carryover = db.query(YearCarryover).filter(
