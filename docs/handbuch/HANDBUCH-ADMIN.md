@@ -153,7 +153,7 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 |------|-------------|
 | **E-Mail** | Für Kontaktzwecke (optional) |
 | **Vorname / Nachname** | Anzeigename |
-| **Stundenzählung aktiv** | Deaktivieren für Mitarbeiter ohne Zeiterfassungspflicht (z. B. leitende Angestellte). Urlaub und Krankheit werden trotzdem **tagebasiert** geführt; nur Soll/Ist-Stunden entfallen. |
+| **Stundenzählung aktiv** | Deaktivieren für Mitarbeiter ohne Zeiterfassungspflicht (keine Soll/Ist-Stunden). Urlaub und Krankheit werden trotzdem **tagebasiert** geführt. |
 | **ArbZG-Prüfungen aussetzen** | Für leitende Angestellte nach § 18 ArbZG |
 | **Nachtarbeitnehmer** | § 6 ArbZG – 8h-Tageslimit bei Nachtarbeit |
 | **Nimmt an Betriebsferien teil** | Standardmäßig aktiv. Bestimmt, ob der/die Mitarbeitende bei angelegten Betriebsferien automatisch Abwesenheitseinträge erhält – **unabhängig von der Rolle**. Für reine Verwaltungs-Accounts (Admin ohne eigene Zeiterfassung) abwählbar. |
@@ -162,7 +162,7 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 | **Abteilung/Bereich** | Optionale Zuordnung (Freitext); ermöglicht Filterung im Abwesenheitskalender |
 | **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein) |
 
-> **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte können von ArbZG-Beschränkungen ausgenommen werden. Aktivieren Sie dieses Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen. Ein leitender Angestellter wird in PraxisZeit üblicherweise mit **deaktivierter Stundenzählung** geführt (keine Soll/Ist-Erfassung), behält aber ein tagebasiertes Urlaubs-/Krankheitskonto.
+> **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte können von ArbZG-Beschränkungen ausgenommen werden. Aktivieren Sie dieses Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen. (Unabhängig davon: „Stundenzählung aktiv" deaktiviert lediglich die Soll/Ist-Erfassung – Urlaub/Krank bleiben tagebasiert.)
 
 > **Überstunden-Übersicht:** Die Benutzerübersicht zeigt pro Mitarbeiter:in zusätzlich zum Urlaubskonto den **aktuellen Überstundensaldo (Jahr bis heute)**. Bei deaktivierter Stundenzählung erscheint hier „—".
 

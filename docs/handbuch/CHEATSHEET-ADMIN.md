@@ -19,7 +19,7 @@
 - Vorname / Nachname, E-Mail (optional)
 - Wochenstunden, Arbeitstage/Woche, Urlaubstage
 - Rolle: Mitarbeiter:in oder Admin
-- Optional: Stundenzählung aus (leitende MA – Urlaub/Krank zählen trotzdem tagebasiert), ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6), **Nimmt an Betriebsferien teil** (Standard an), Erster/Letzter Arbeitstag (Soll nur in diesem Zeitraum), Abteilung/Bereich, Anfangssaldo Überstunden
+- Optional: Stundenzählung aus (MA ohne Zeiterfassung – Urlaub/Krank zählen trotzdem tagebasiert), ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6), **Nimmt an Betriebsferien teil** (Standard an), Erster/Letzter Arbeitstag (Soll nur in diesem Zeitraum), Abteilung/Bereich, Anfangssaldo Überstunden
 
 > **Urlaub (Tagesprinzip):** 1 freier Arbeitstag = 1 Urlaubstag (unabhängig von Tagesstunden/Wochentag). Anspruch anteilig: `30 × Arbeitstage/5`. Verbrauch tagebasiert, Stunden nur intern.
 
