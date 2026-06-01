@@ -219,6 +219,8 @@ Die Seite zeigt zwei Tabs:
 | Orange | Fortbildung |
 | Grau | Sonstiges |
 
+> **Sondertage 24./31.12.:** Hat Ihre Praxis Heiligabend oder Silvester als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert (grau „Heiligabend (frei)" bzw. „Silvester (½ Tag)") – ähnlich einem Feiertag.
+
 ---
 
 ### 4.1 Abwesenheit eintragen

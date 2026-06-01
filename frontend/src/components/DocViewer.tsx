@@ -181,6 +181,15 @@ export function CheatsheetAdmin() {
             </ol>
           </div>
           <div>
+            <p className="text-sm font-medium text-gray-700 mb-1">Optionen je Mitarbeiter</p>
+            <ul className="text-sm text-gray-600 list-disc list-inside space-y-0.5">
+              <li><strong>Stundenzählung aus</strong> – leitende Angestellte ohne Soll/Ist; Urlaub/Krank zählen trotzdem tagebasiert.</li>
+              <li><strong>Nimmt an Betriebsferien teil</strong> (Standard an) – rollenunabhängig; für reine Verwaltungs-Accounts abwählbar.</li>
+              <li><strong>Erster/Letzter Arbeitstag</strong> – Soll wird nur innerhalb dieses Zeitraums berechnet.</li>
+            </ul>
+            <p className="text-sm text-gray-500 mt-1">Die Übersicht zeigt je MA Urlaubskonto und Überstundensaldo (JTD).</p>
+          </div>
+          <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Stundenänderung</p>
             <p className="text-sm text-gray-600">Benutzer bearbeiten → neue Wochenstunden + Wirkungsdatum → historische Salden bleiben korrekt.</p>
           </div>
@@ -223,7 +232,7 @@ export function CheatsheetAdmin() {
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">📅 Betriebsferien</h3>
         <p className="text-sm text-gray-600">Abwesenheiten → Neue Betriebsferien → Bezeichnung + Von–Bis → Speichern</p>
-        <p className="text-sm text-gray-500 mt-1">Alle MA erhalten automatisch Einträge (keine Urlaubstage!)</p>
+        <p className="text-sm text-gray-500 mt-1">Alle MA mit „Nimmt an Betriebsferien teil" (Standard) erhalten automatisch Einträge – rollenunabhängig, keine Urlaubstage. Nachträglich Berechtigte: Option setzen, Betriebsferien einmal erneut speichern.</p>
       </section>
 
       {/* ArbZG */}
@@ -296,6 +305,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum.</p>
         <p>Für Zeiträume aktivieren Sie die Checkbox <strong>„Zeitraum"</strong> und geben ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
+        <p>Hat Ihre Praxis Heiligabend (24.12.) oder Silvester (31.12.) als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert („Heiligabend (frei)" bzw. „Silvester (½ Tag)").</p>
         <p>Wenn Urlaubsgenehmigungspflicht aktiv ist, wechselt die App nach dem Absenden automatisch zum Tab <strong>„Meine Anträge"</strong>.</p>
         <p className="text-gray-700"><strong>So wird Urlaub berechnet:</strong> nach dem Tagesprinzip (§3 BUrlG) – <strong>ein freier Arbeitstag = genau 1 Urlaubstag</strong>, egal wie viele Stunden Sie an dem Tag arbeiten. Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage haben. Ihr Urlaubskonto zeigt die verbleibenden Tage.</p>
       </div>
@@ -327,7 +337,8 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Benutzerverwaltung</strong> legen Sie Mitarbeiter an (<strong>Neuer Mitarbeiter:in</strong>), bearbeiten und deaktivieren sie. Niemals löschen – Status auf „Inaktiv" setzen (Aufbewahrungspflicht §16 ArbZG, 2 Jahre).</p>
-        <p>Für Teilzeit-Anpassungen: Benutzer öffnen → neue Wochenstunden + <strong>Wirkungsdatum</strong> eintragen. Historische Salden bleiben korrekt. Checkboxen: „ArbZG-Prüfungen aussetzen" für §18, „Nachtarbeitnehmer" für §6.</p>
+        <p>Für Teilzeit-Anpassungen: Benutzer öffnen → neue Wochenstunden + <strong>Wirkungsdatum</strong> eintragen. Historische Salden bleiben korrekt. Checkboxen: „ArbZG-Prüfungen aussetzen" für §18, „Nachtarbeitnehmer" für §6, „<strong>Nimmt an Betriebsferien teil</strong>" (Standard an, rollenunabhängig – für reine Verwaltungs-Accounts abwählbar), „Stundenzählung" aus für leitende Angestellte (Urlaub/Krank zählen trotzdem tagebasiert).</p>
+        <p><strong>Erster/Letzter Arbeitstag</strong> begrenzen die Soll-Berechnung: vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll. Die Übersicht zeigt je MA Urlaubskonto <strong>und</strong> Überstundensaldo (Jahr bis heute; „—" ohne Stundenzählung).</p>
       </div>
     ),
   },
@@ -354,7 +365,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p><strong>Urlaubsanträge:</strong> Toggle „Genehmigungspflicht" aktiviert den Workflow. Anträge erscheinen als „Offen" → Genehmigen (grün) oder Ablehnen (rot, optional Grund).</p>
-        <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug). Beim Löschen werden alle Einträge entfernt.</p>
+        <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter mit der Option „Nimmt an Betriebsferien teil" (Standard, rollenunabhängig) erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug). Nachträglich Berechtigte: Option setzen und die Betriebsferien einmal erneut speichern. Beim Löschen werden alle Einträge entfernt.</p>
         <p className="text-gray-700"><strong>Urlaubsberechnung (Tagesprinzip, §3 BUrlG):</strong> Urlaub wird nach Arbeitstagen geführt – ein freier Arbeitstag = <strong>1 Urlaubstag</strong>, unabhängig von Tagesstunden und Wochentag (auch bei individuellen Tagesstunden). Jahresanspruch anteilig: <code>30 × Arbeitstage ÷ 5</code> (überschreibbar beim Anlegen). Verbrauch wird tagebasiert gezählt, intern gespeicherte Stunden dienen nur der Soll-/Ist-Berechnung.</p>
       </div>
     ),
