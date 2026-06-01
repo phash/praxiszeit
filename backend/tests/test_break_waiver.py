@@ -186,6 +186,46 @@ _OVER_6H = {
     "end_time": "15:30",  # 7.5h gross, 0 break → §4 violation, under 10h
 }
 
+# CR-Variante (proposed_*-Keys) eines §4-verletzenden Eintrags.
+_CR_OVER_6H = {
+    "request_type": "create",
+    "proposed_date": (date.today() - timedelta(days=7)).isoformat(),  # vergangener Werktag
+    "proposed_start_time": "08:00",
+    "proposed_end_time": "15:46",  # 7h46m brutto, 0 Pause → §4-Verstoß, unter 10h
+    "proposed_break_minutes": 0,
+    "reason": "Korrektur Zeiteintrag",
+}
+
+
+class TestChangeRequestBreakWaiver:
+    """#200: Die §4-Pausen-Ausnahme muss auch im Änderungsantrag-Pfad greifen
+    (vorher: break_waiver_reason wurde ignoriert → 400 trotz korrekter Eingabe)."""
+
+    def test_cr_without_waiver_blocked(self, db, employee_client):
+        """Ohne Begründung bleibt der §4-Block (400) — Kontrolle."""
+        resp = employee_client.post("/api/change-requests/", json=_CR_OVER_6H)
+        assert resp.status_code == 400
+        assert "Pause" in resp.json()["detail"]
+
+    def test_cr_with_waiver_created(self, db, employee, employee_client):
+        """Mit Begründung wird der Antrag angelegt (201) statt abgewiesen."""
+        resp = employee_client.post(
+            "/api/change-requests/",
+            json={**_CR_OVER_6H, "break_waiver_reason": "Notfall, keine Vertretung"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["break_waiver_reason"] == "Notfall, keine Vertretung"
+        cr = db.query(ChangeRequest).filter(ChangeRequest.user_id == employee.id).one()
+        assert cr.break_waiver_reason == "Notfall, keine Vertretung"
+
+    def test_cr_waiver_still_blocks_over_10h(self, db, employee_client):
+        """§3-10h-Cap bleibt hart, auch MIT §4-Ausnahme (422, nicht 201)."""
+        resp = employee_client.post(
+            "/api/change-requests/",
+            json={**_CR_OVER_6H, "proposed_end_time": "19:00", "break_waiver_reason": "egal"},
+        )
+        assert resp.status_code == 422, resp.text
+
 
 class TestBreakWaiverNoApproval:
     """requires_approval = false (Default)."""

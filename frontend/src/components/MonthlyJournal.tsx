@@ -4,6 +4,7 @@ import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
+import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
@@ -258,14 +259,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
         };
         const existing = !switchingToWork ? editedEntry : null;
-        if (existing) {
-          await apiClient.put(`/admin/time-entries/${existing.id}`, payload);
-        } else {
-          await apiClient.post(`/admin/users/${userId}/time-entries`, {
-            date: day.date,
-            ...payload,
-          });
-        }
+        // #200: §4-Pausen-Ausnahme per Retry mit dokumentierter Begründung.
+        await submitWithBreakWaiver(async (extra) => {
+          if (existing) {
+            await apiClient.put(`/admin/time-entries/${existing.id}`, { ...payload, ...extra });
+          } else {
+            await apiClient.post(`/admin/users/${userId}/time-entries`, { date: day.date, ...payload, ...extra });
+          }
+        });
       } else {
         // Delete existing absence of different type if present, then create new
         if (hadAbsence && day.absences[0] && !switchingToWork) {

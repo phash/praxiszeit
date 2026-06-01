@@ -31,11 +31,20 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  // #200: §4-Pausen-Ausnahme. Wird eingeblendet, sobald das Backend einen
+  // §4-Pausenfehler meldet (deckt auch Aggregat-Fälle „fast zeitgleicher
+  // Eintrag" ab, die das Formular allein nicht vorab erkennen kann).
+  const [showWaiver, setShowWaiver] = useState(false);
+  const [breakWaiverReason, setBreakWaiverReason] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.reason.trim()) {
       setError('Bitte geben Sie eine Begründung an');
+      return;
+    }
+    if (showWaiver && !breakWaiverReason.trim()) {
+      setError('Bitte begründen Sie, warum die Pflicht-Pause nicht möglich war.');
       return;
     }
 
@@ -52,10 +61,18 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
         proposed_break_minutes: requestType !== 'delete' ? formData.proposed_break_minutes : null,
         proposed_note: requestType !== 'delete' ? formData.proposed_note : null,
         reason: formData.reason,
+        break_waiver_reason: showWaiver && breakWaiverReason.trim() ? breakWaiverReason.trim() : null,
       });
       onSuccess();
     } catch (err: any) {
-      setError(getErrorMessage(err, 'Fehler beim Erstellen des Antrags'));
+      const msg = getErrorMessage(err, 'Fehler beim Erstellen des Antrags');
+      // §4-Pausenfehler enthält stets „Pause" (§3-10h-Cap nicht) → Ausnahme anbieten.
+      if (!showWaiver && msg.includes('Pause')) {
+        setShowWaiver(true);
+        setError(`${msg} Wenn die Pflicht-Pause nachweislich nicht möglich war, begründen Sie dies unten und senden Sie erneut.`);
+      } else {
+        setError(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -195,6 +212,23 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
             />
           </div>
 
+          {/* #200: Pflicht-Pause-Ausnahme (§4 ArbZG) — erscheint bei §4-Verstoß */}
+          {showWaiver && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+              <label className="block text-sm font-medium text-amber-800">
+                Pflicht-Pause war nicht möglich – Begründung <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={breakWaiverReason}
+                onChange={(e) => setBreakWaiverReason(e.target.value)}
+                rows={2}
+                placeholder="z. B. Notfall, keine Vertretung verfügbar"
+                className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+              />
+              <p className="text-xs text-amber-700">Die Abweichung von §4 ArbZG wird dokumentiert.</p>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
             <button
@@ -209,7 +243,7 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
               disabled={submitting}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition disabled:opacity-50"
             >
-              {submitting ? 'Wird gesendet...' : 'Antrag stellen'}
+              {submitting ? 'Wird gesendet...' : showWaiver ? 'Mit dokumentierter Ausnahme senden' : 'Antrag stellen'}
             </button>
           </div>
         </form>
