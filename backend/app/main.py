@@ -574,13 +574,15 @@ def get_public_settings():
     from app.models.system_setting import SystemSetting
     from app.database import set_superadmin_context as _set_sa
     from app.core.license import get_current_license, is_read_only
+    from app.services import special_days_service
+    _default_tid = uuid.UUID("00000000-0000-0000-0000-000000000001")
     db = SessionLocal()
     try:
         _set_sa(db)  # Public endpoint needs to read global settings
         def _get(key, default="false"):
             s = db.query(SystemSetting).filter(
                 SystemSetting.key == key,
-                SystemSetting.tenant_id == uuid.UUID("00000000-0000-0000-0000-000000000001")
+                SystemSetting.tenant_id == _default_tid
             ).first()
             return s.value if s else default
 
@@ -588,6 +590,9 @@ def get_public_settings():
             "vacation_approval_required": _get("vacation_approval_required", "false").lower() == "true",
             # #144 §4 ArbZG: whether a documented break-exception needs admin approval.
             "break_exception_requires_approval": _get("break_exception_requires_approval", "false").lower() == "true",
+            # #188: Sondertage 24./31.12. — der Kalender (auch für MA) markiert
+            # `free`/`half_day` damit sichtbar. Single-Tenant/on-prem: Default-Tenant.
+            "special_days": special_days_service.get_special_day_settings(db, _default_tid),
         }
 
         # License info (for native installations)

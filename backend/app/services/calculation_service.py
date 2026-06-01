@@ -170,6 +170,21 @@ def get_working_days_in_month(db: Session, year: int, month: int) -> int:
 # automatically — it requires manual monitoring by the employer.
 
 
+def _within_employment_window(user: User, d: date) -> bool:
+    """#193: True if ``d`` lies within the user's employment window.
+
+    Days before ``first_work_day`` or after ``last_work_day`` contribute no
+    target — the user was not employed then. Mirrors the pro-rata logic already
+    used in get_vacation_account so Soll- and Urlaubsberechnung stay consistent.
+    Open bounds when the respective field is unset.
+    """
+    if user.first_work_day and d < user.first_work_day:
+        return False
+    if user.last_work_day and d > user.last_work_day:
+        return False
+    return True
+
+
 def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decimal:
     """
     Calculate monthly target hours.
@@ -239,6 +254,10 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
         if d.weekday() >= 5:  # Saturday or Sunday
             continue
 
+        # #193: skip days outside the employment window (before entry / after exit)
+        if not _within_employment_window(user, d):
+            continue
+
         # Skip holidays and absences
         if d in holiday_dates or d in absence_dates:
             continue
@@ -285,7 +304,13 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
         TimeEntry.user_id == user.id,
         date_in_month(TimeEntry.date, year, month),
     ).all()
-    total = sum((entry.net_hours for entry in entries), start=Decimal('0'))
+    # #195: only count Ist within the employment window — symmetric to the Soll
+    # guard (_within_employment_window in get_monthly_target). A TimeEntry before
+    # first_work_day / after last_work_day (rehire, import, date corrected after
+    # the fact) must contribute neither Soll nor Ist, otherwise the balance shows
+    # phantom overtime.
+    total = sum((entry.net_hours for entry in entries
+                 if _within_employment_window(user, entry.date)), start=Decimal('0'))
 
     # Training and sick hours count as actual worked hours:
     # - TRAINING: außer Haus, credited as worked
@@ -295,7 +320,8 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
         date_in_month(Absence.date, year, month),
     ).all()
-    credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences), Decimal('0'))
+    credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences
+                          if _within_employment_window(user, a.date)), Decimal('0'))
 
     return (Decimal(str(total)) + credited_hours).quantize(Decimal('0.01'))
 
@@ -377,8 +403,13 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         TimeEntry.date >= start_date,
         TimeEntry.date <= up_to_date,
     ).all()
+    # #195: skip Ist outside the employment window (symmetric to the Soll guard
+    # in the month loop below) so out-of-window entries don't create phantom
+    # overtime.
     actual_by_month: Dict[tuple, Decimal] = {}
     for e in entries:
+        if not _within_employment_window(user, e.date):
+            continue
         key = (e.date.year, e.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(e.net_hours))
 
@@ -390,6 +421,8 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
     for ca in credited_absences:
+        if not _within_employment_window(user, ca.date):
+            continue
         key = (ca.date.year, ca.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
 
@@ -446,6 +479,9 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
         for day in range(1, last_day + 1):
             d = date(current_year, current_month, day)
             if d.weekday() >= 5:
+                continue
+            # #193: skip days outside the employment window (before entry / after exit)
+            if not _within_employment_window(user, d):
                 continue
             if d in holiday_dates or d in absence_dates:
                 continue
@@ -533,7 +569,9 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     total_target = Decimal('0')
     current = start
     while current <= end:
-        if current.weekday() < 5 and current not in holiday_dates and current not in absence_dates:
+        if (current.weekday() < 5 and current not in holiday_dates
+                and current not in absence_dates
+                and _within_employment_window(user, current)):  # #193
             weekly_hours = get_weekly_hours_for_date(db, user, current, wh_changes=wh_changes)
             daily_target = get_daily_target_for_date(user, current, weekly_hours)
             # #146: apply special-day rule (half_day → ×0.5, free → ×0).
@@ -549,7 +587,10 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
         TimeEntry.date >= start,
         TimeEntry.date <= end,
     ).all()
-    total_actual = sum((Decimal(str(e.net_hours)) for e in entries), start=Decimal('0'))
+    # #195: count Ist only within the employment window (symmetric to the Soll
+    # loop above) — avoids phantom YTD overtime from out-of-window entries.
+    total_actual = sum((Decimal(str(e.net_hours)) for e in entries
+                        if _within_employment_window(user, e.date)), start=Decimal('0'))
 
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
@@ -557,7 +598,8 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
         Absence.date <= end,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
-    total_actual += sum((Decimal(str(a.hours)) for a in credited_absences), start=Decimal('0'))
+    total_actual += sum((Decimal(str(a.hours)) for a in credited_absences
+                         if _within_employment_window(user, a.date)), start=Decimal('0'))
 
     # Include overtime carryover for this year
     carryover = db.query(YearCarryover).filter(
@@ -599,24 +641,14 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     Returns:
         Dict with vacation account details
     """
-    # F-046: a user with daily_target == 0 (track_hours=False, or
-    # work_days_per_week == 0) has no vacation account at all — there's
-    # no sensible way to convert hours↔days. Return an explicit "not
-    # applicable" shape so the router can 400 or the UI can hide the
-    # account. This prevents the silent-zero bug where an employee with
-    # track_hours=False but existing vacation entries would see
-    # "0 days used / 0 days remaining" and slip through the budget check.
+    # daily_target == 0 means the user has no Soll/Ist tracking
+    # (track_hours=False, e.g. leitende Angestellte) or work_days_per_week == 0.
+    # Such users still get a DAY-BASED vacation account — they are NOT shortcut
+    # here. The pure day count happens further down (reine Tageszählung, hours
+    # stay 0); the day-based budget below is shared with tracked users.
+    # (Replaces the old F-046 "not applicable" zero shape, which made the
+    # tagebasierte Budget-Check ins Leere laufen — Über-Buchung war möglich.)
     daily_target = get_daily_target(user)
-    if daily_target <= 0:
-        return {
-            "budget_hours": 0.0,
-            "budget_days": float(user.vacation_days),
-            "used_hours": 0.0,
-            "used_days": 0.0,
-            "remaining_hours": 0.0,
-            "remaining_days": float(user.vacation_days),
-            "track_hours": False,  # sentinel for callers
-        }
 
     # Calculate budget in hours, pro-rated for first/last work day
     budget_days = Decimal(str(user.vacation_days))
@@ -686,6 +718,34 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         db, user.tenant_id, year, holiday_dates_year
     )
     existing_vacation_dates = {a.date for a in vacation_absences}
+
+    # #189 / leitende Angestellte: a user without hours tracking
+    # (daily_target == 0) gets a pure DAY count — each VACATION absence day is
+    # one vacation day, each 'free'+counts_as_vacation special day (24./31.12.)
+    # is one vacation day, and all hour figures stay 0. Half days are not
+    # distinguishable without hours (Absence has no half_day flag, hours=0) and
+    # therefore count as a full day. Budget (budget_days) follows the normal
+    # pro-rata + carryover logic above — "sonst wie ein normaler MA".
+    if daily_target <= 0:
+        used_days = Decimal(str(len(vacation_absences)))
+        for d in deduction_dates:
+            if d in existing_vacation_dates:
+                continue
+            if user.first_work_day and d < user.first_work_day:
+                continue
+            if user.last_work_day and d > user.last_work_day:
+                continue
+            used_days += Decimal('1')
+        return {
+            "budget_hours": 0.0,
+            "budget_days": float(budget_days),
+            "used_hours": 0.0,
+            "used_days": float(used_days.quantize(Decimal('0.1'))),
+            "remaining_hours": 0.0,
+            "remaining_days": float((budget_days - used_days).quantize(Decimal('0.1'))),
+            "track_hours": False,  # sentinel for callers (hide hours columns)
+        }
+
     for d in deduction_dates:
         if d in existing_vacation_dates:
             continue  # already counted via a real VACATION absence

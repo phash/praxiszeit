@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, UserRole, TimeEntry
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry
 from app.schemas.absence import AbsenceResponse
 from app.services import calculation_service
 from app.routers.admin_helpers import _create_audit_log
@@ -168,10 +168,10 @@ def list_closures(
         # Count affected (employees with vacation created for this closure)
         employees = db.query(User).filter(
             User.is_active == True,
-            User.role != UserRole.ADMIN,
+            User.receives_company_closures == True,
             User.tenant_id == current_user.tenant_id,
         ).all()
-        affected = len(employees)  # all active employees are affected
+        affected = len(employees)  # all active, participating employees are affected
         result.append(CompanyClosureResponse(
             id=str(c.id),
             name=c.name,
@@ -218,10 +218,13 @@ def create_closure(
     if not workdays:
         raise HTTPException(status_code=400, detail="Keine Arbeitstage im angegebenen Zeitraum")
 
-    # Get all active employees (non-admin) of this tenant (F-026)
+    # #189: all active, participating employees of this tenant (F-026).
+    # Participation is driven by the per-user receives_company_closures flag,
+    # NOT by the role — an admin who also tracks time (e.g. a leitender
+    # Angestellter with personnel-admin rights) must still get the closure.
     employees = db.query(User).filter(
         User.is_active == True,
-        User.role != UserRole.ADMIN,
+        User.receives_company_closures == True,
         User.tenant_id == current_user.tenant_id,
     ).all()
 
@@ -327,7 +330,7 @@ def update_closure(
     # (foreign absences stay untouched, and days we kept above are skipped).
     employees = db.query(User).filter(
         User.is_active == True,
-        User.role != UserRole.ADMIN,
+        User.receives_company_closures == True,
         User.tenant_id == current_user.tenant_id,
     ).all()
     _create_closure_absences(db, closure, workdays, employees, current_user)

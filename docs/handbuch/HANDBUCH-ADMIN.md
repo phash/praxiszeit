@@ -153,15 +153,18 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 |------|-------------|
 | **E-Mail** | Für Kontaktzwecke (optional) |
 | **Vorname / Nachname** | Anzeigename |
-| **Stundenzählung aktiv** | Deaktivieren für Mitarbeiter ohne Zeiterfassungspflicht |
+| **Stundenzählung aktiv** | Deaktivieren für Mitarbeiter ohne Zeiterfassungspflicht (z. B. leitende Angestellte). Urlaub und Krankheit werden trotzdem **tagebasiert** geführt; nur Soll/Ist-Stunden entfallen. |
 | **ArbZG-Prüfungen aussetzen** | Für leitende Angestellte nach § 18 ArbZG |
 | **Nachtarbeitnehmer** | § 6 ArbZG – 8h-Tageslimit bei Nachtarbeit |
-| **Erster / Letzter Arbeitstag** | Eintrittsdatum und ggf. geplantes Austrittsdatum |
+| **Nimmt an Betriebsferien teil** | Standardmäßig aktiv. Bestimmt, ob der/die Mitarbeitende bei angelegten Betriebsferien automatisch Abwesenheitseinträge erhält – **unabhängig von der Rolle**. Für reine Verwaltungs-Accounts (Admin ohne eigene Zeiterfassung) abwählbar. |
+| **Erster / Letzter Arbeitstag** | Eintrittsdatum und ggf. geplantes Austrittsdatum. Das **Soll wird nur innerhalb dieses Zeitraums** berechnet – vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll (und der Urlaubsanspruch wird anteilig berechnet). |
 | **Individuelle Tagesstunden** | Abweichende Stundenverteilung Mo–Fr statt einheitlich |
 | **Abteilung/Bereich** | Optionale Zuordnung (Freitext); ermöglicht Filterung im Abwesenheitskalender |
 | **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein) |
 
-> **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte können von ArbZG-Beschränkungen ausgenommen werden. Aktivieren Sie dieses Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen.
+> **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte können von ArbZG-Beschränkungen ausgenommen werden. Aktivieren Sie dieses Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen. Ein leitender Angestellter wird in PraxisZeit üblicherweise mit **deaktivierter Stundenzählung** geführt (keine Soll/Ist-Erfassung), behält aber ein tagebasiertes Urlaubs-/Krankheitskonto.
+
+> **Überstunden-Übersicht:** Die Benutzerübersicht zeigt pro Mitarbeiter:in zusätzlich zum Urlaubskonto den **aktuellen Überstundensaldo (Jahr bis heute)**. Bei deaktivierter Stundenzählung erscheint hier „—".
 
 > **So wird Urlaub berechnet (Tagesprinzip, § 3 BUrlG / BAG):** Der Urlaub wird **nach Arbeitstagen** geführt, nicht nach Stunden. Ein freier Arbeitstag verbraucht **genau 1 Urlaubstag**, unabhängig von der Tagesstundenzahl – ein langer Tag (z. B. 9 h) kostet so viel wie ein kurzer (z. B. 4 h): einen Tag. Auch bei **individuellen Tagesstunden** kostet jeder Arbeitstag gleich viel (Montag = Dienstag). Der Jahresanspruch wird anteilig nach Arbeitstagen vorgeschlagen. Intern speichert das System Stunden (für die Soll-/Ist-Berechnung); der **Verbrauch wird tagebasiert** gezählt und im Urlaubskonto in Tagen angezeigt.
 
@@ -379,9 +382,11 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 3. Speichern
 
 **Was passiert automatisch:**
-- Alle aktiven Mitarbeiter erhalten für jeden Werktag Abwesenheitseinträge (Typ: Sonstiges)
+- Alle aktiven Mitarbeiter **mit der Option „Nimmt an Betriebsferien teil"** (Standard) erhalten für jeden Werktag Abwesenheitseinträge – unabhängig von der Rolle, also auch Admins, die zugleich als Mitarbeiter geführt werden. Reine Verwaltungs-Accounts können die Option in der Benutzerverwaltung abwählen.
 - Urlaubstage werden **nicht** verbraucht
 - Wochenenden und gesetzliche Feiertage werden übersprungen
+
+> **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option bei einem Mitarbeiter erst nach dem Anlegen der Betriebsferien, **speichern Sie die betreffenden Betriebsferien einmal erneut** (Bearbeiten → Speichern) – die Abwesenheiten werden dann für die nun berechtigten Personen nachgetragen.
 
 ### Betriebsferien löschen
 
