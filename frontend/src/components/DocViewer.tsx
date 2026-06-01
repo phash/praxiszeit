@@ -183,7 +183,7 @@ export function CheatsheetAdmin() {
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Optionen je Mitarbeiter</p>
             <ul className="text-sm text-gray-600 list-disc list-inside space-y-0.5">
-              <li><strong>Stundenzählung aus</strong> – leitende Angestellte ohne Soll/Ist; Urlaub/Krank zählen trotzdem tagebasiert.</li>
+              <li><strong>Stundenzählung aus</strong> – Mitarbeitende ohne Soll/Ist-Erfassung; Urlaub/Krank zählen trotzdem tagebasiert.</li>
               <li><strong>Nimmt an Betriebsferien teil</strong> (Standard an) – rollenunabhängig; für reine Verwaltungs-Accounts abwählbar.</li>
               <li><strong>Erster/Letzter Arbeitstag</strong> – Soll wird nur innerhalb dieses Zeitraums berechnet.</li>
             </ul>
@@ -337,7 +337,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Benutzerverwaltung</strong> legen Sie Mitarbeiter an (<strong>Neuer Mitarbeiter:in</strong>), bearbeiten und deaktivieren sie. Niemals löschen – Status auf „Inaktiv" setzen (Aufbewahrungspflicht §16 ArbZG, 2 Jahre).</p>
-        <p>Für Teilzeit-Anpassungen: Benutzer öffnen → neue Wochenstunden + <strong>Wirkungsdatum</strong> eintragen. Historische Salden bleiben korrekt. Checkboxen: „ArbZG-Prüfungen aussetzen" für §18, „Nachtarbeitnehmer" für §6, „<strong>Nimmt an Betriebsferien teil</strong>" (Standard an, rollenunabhängig – für reine Verwaltungs-Accounts abwählbar), „Stundenzählung" aus für leitende Angestellte (Urlaub/Krank zählen trotzdem tagebasiert).</p>
+        <p>Für Teilzeit-Anpassungen: Benutzer öffnen → neue Wochenstunden + <strong>Wirkungsdatum</strong> eintragen. Historische Salden bleiben korrekt. Checkboxen: „ArbZG-Prüfungen aussetzen" für §18, „Nachtarbeitnehmer" für §6, „<strong>Nimmt an Betriebsferien teil</strong>" (Standard an, rollenunabhängig – für reine Verwaltungs-Accounts abwählbar), „Stundenzählung" aus für MA ohne Zeiterfassung (Urlaub/Krank zählen trotzdem tagebasiert).</p>
         <p><strong>Erster/Letzter Arbeitstag</strong> begrenzen die Soll-Berechnung: vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll. Die Übersicht zeigt je MA Urlaubskonto <strong>und</strong> Überstundensaldo (Jahr bis heute; „—" ohne Stundenzählung).</p>
       </div>
     ),
