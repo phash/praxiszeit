@@ -11,7 +11,8 @@ from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeReque
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
-from app.services import auth_service
+from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
+from app.services import auth_service, calculation_service
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -60,6 +61,51 @@ def list_users(
         query = query.filter(User.is_hidden == False)
     users = query.order_by(User.last_name, User.first_name).offset(skip).limit(limit).all()
     return users
+
+
+@router.get("/users-overview", response_model=List[AdminUserOverview])
+def users_overview(
+    include_inactive: bool = False,
+    include_hidden: bool = False,
+    year: int = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#194: bulk vacation account + YTD overtime per user for the admin list.
+
+    Same filtering as list_users (active + visible by default). Replaces the
+    former per-user N+1 vacation fetch in the frontend with a single request.
+    F-026: explicit tenant filter on top of RLS.
+    """
+    year = year or today_local().year
+    query = db.query(User).filter(User.tenant_id == current_user.tenant_id)
+    if not include_inactive:
+        query = query.filter(User.is_active == True)
+    if not include_hidden:
+        query = query.filter(User.is_hidden == False)
+    users = query.order_by(User.last_name, User.first_name).all()
+
+    result = []
+    for u in users:
+        vac = calculation_service.get_vacation_account(db, u, year)
+        ytd = calculation_service.get_ytd_summary(db, u, year)
+        result.append(AdminUserOverview(
+            user_id=str(u.id),
+            first_name=u.first_name,
+            last_name=u.last_name,
+            track_hours=u.track_hours,
+            vacation=VacationAccount(
+                year=year,
+                budget_hours=vac["budget_hours"],
+                budget_days=vac["budget_days"],
+                used_hours=vac["used_hours"],
+                used_days=vac["used_days"],
+                remaining_hours=vac["remaining_hours"],
+                remaining_days=vac["remaining_days"],
+            ),
+            overtime=YtdOvertime(year=year, **ytd),
+        ))
+    return result
 
 
 @router.get("/users/deletion-candidates")

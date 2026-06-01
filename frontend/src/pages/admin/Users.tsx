@@ -48,6 +48,11 @@ interface VacationInfo {
   remaining_days: number;
 }
 
+interface OvertimeInfo {
+  overtime: number;       // JTD-Saldo in Stunden (kann negativ sein)
+  track_hours: boolean;   // false = leitende MA ohne Stundenzählung
+}
+
 /** Verbleibende Grace-Period-Tage (0 = abgelaufen / kein deactivated_at). */
 function graceRemainingDays(user: User): number {
   if (!user.deactivated_at) return 0;
@@ -62,6 +67,7 @@ export default function Users() {
   const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
+  const [overtimeInfo, setOvertimeInfo] = useState<Record<string, OvertimeInfo>>({}); // #194
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -91,23 +97,27 @@ export default function Users() {
       const response = await apiClient.get('/admin/users', { params });
       setUsers(response.data);
 
-      // Fetch vacation info for each user
+      // #194: single bulk call for vacation + YTD overtime per user (replaces
+      // the former per-user N+1 vacation fetch). Same filter params as the list.
       const currentYear = new Date().getFullYear();
-      const vacationPromises = response.data.map((user: User) =>
-        apiClient.get(`/dashboard/vacation`, {
-          params: { user_id: user.id, year: currentYear }
-        }).then(res => ({ userId: user.id, data: res.data }))
-        .catch(() => ({ userId: user.id, data: null }))
-      );
-
-      const vacationResults = await Promise.all(vacationPromises);
-      const vacationMap: Record<string, VacationInfo> = {};
-      vacationResults.forEach(result => {
-        if (result.data) {
-          vacationMap[result.userId] = result.data;
-        }
-      });
-      setVacationInfo(vacationMap);
+      try {
+        const overview = await apiClient.get('/admin/users-overview', {
+          params: { ...params, year: currentYear },
+        });
+        const vMap: Record<string, VacationInfo> = {};
+        const oMap: Record<string, OvertimeInfo> = {};
+        overview.data.forEach((row: {
+          user_id: string; track_hours: boolean;
+          vacation: VacationInfo; overtime: { overtime: number };
+        }) => {
+          vMap[row.user_id] = row.vacation;
+          oMap[row.user_id] = { overtime: row.overtime.overtime, track_hours: row.track_hours };
+        });
+        setVacationInfo(vMap);
+        setOvertimeInfo(oMap);
+      } catch {
+        // overview optional — the user list still renders without it
+      }
     } catch (error) {
       toast.error('Fehler beim Laden der Benutzer');
     } finally {
@@ -395,6 +405,7 @@ export default function Users() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Arbeitstage</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Urlaubskonto</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Überstunden (JTD)</th>
                 <th
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
                   onClick={() => handleSort('track_hours')}
@@ -423,13 +434,13 @@ export default function Users() {
             <tbody className="divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
                     Lade Benutzer...
                   </td>
                 </tr>
               ) : filteredAndSortedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
                     {filterText ? 'Keine Benutzer gefunden' : 'Keine Benutzer vorhanden'}
                   </td>
                 </tr>
@@ -495,6 +506,26 @@ export default function Users() {
                             ></div>
                           </div>
                         </div>
+                      ) : (
+                        <span className="text-gray-400">Lädt...</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {/* #194: JTD-Überstundensaldo */}
+                      {overtimeInfo[user.id] ? (
+                        overtimeInfo[user.id].track_hours ? (
+                          <span className={`font-semibold ${
+                            overtimeInfo[user.id].overtime > 0
+                              ? 'text-green-600'
+                              : overtimeInfo[user.id].overtime < 0
+                              ? 'text-red-600'
+                              : 'text-gray-600'
+                          }`}>
+                            {overtimeInfo[user.id].overtime > 0 ? '+' : ''}{overtimeInfo[user.id].overtime.toFixed(1)} h
+                          </span>
+                        ) : (
+                          <span className="text-gray-400" title="Keine Stundenzählung">—</span>
+                        )
                       ) : (
                         <span className="text-gray-400">Lädt...</span>
                       )}

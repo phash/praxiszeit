@@ -170,6 +170,21 @@ def get_working_days_in_month(db: Session, year: int, month: int) -> int:
 # automatically — it requires manual monitoring by the employer.
 
 
+def _within_employment_window(user: User, d: date) -> bool:
+    """#193: True if ``d`` lies within the user's employment window.
+
+    Days before ``first_work_day`` or after ``last_work_day`` contribute no
+    target — the user was not employed then. Mirrors the pro-rata logic already
+    used in get_vacation_account so Soll- and Urlaubsberechnung stay consistent.
+    Open bounds when the respective field is unset.
+    """
+    if user.first_work_day and d < user.first_work_day:
+        return False
+    if user.last_work_day and d > user.last_work_day:
+        return False
+    return True
+
+
 def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decimal:
     """
     Calculate monthly target hours.
@@ -237,6 +252,10 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
 
         # Skip weekends
         if d.weekday() >= 5:  # Saturday or Sunday
+            continue
+
+        # #193: skip days outside the employment window (before entry / after exit)
+        if not _within_employment_window(user, d):
             continue
 
         # Skip holidays and absences
@@ -447,6 +466,9 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
             d = date(current_year, current_month, day)
             if d.weekday() >= 5:
                 continue
+            # #193: skip days outside the employment window (before entry / after exit)
+            if not _within_employment_window(user, d):
+                continue
             if d in holiday_dates or d in absence_dates:
                 continue
             weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
@@ -533,7 +555,9 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     total_target = Decimal('0')
     current = start
     while current <= end:
-        if current.weekday() < 5 and current not in holiday_dates and current not in absence_dates:
+        if (current.weekday() < 5 and current not in holiday_dates
+                and current not in absence_dates
+                and _within_employment_window(user, current)):  # #193
             weekly_hours = get_weekly_hours_for_date(db, user, current, wh_changes=wh_changes)
             daily_target = get_daily_target_for_date(user, current, weekly_hours)
             # #146: apply special-day rule (half_day → ×0.5, free → ×0).
