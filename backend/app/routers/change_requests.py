@@ -198,7 +198,11 @@ def create_change_request(
             break_minutes=data.proposed_break_minutes or 0,
             exclude_entry_id=entry.id if entry else None,
         )
-        if break_error:
+        # #200: §4-Pausen-Ausnahme — bei dokumentierter Begründung den §4-Block
+        # NICHT hart werfen, sondern den Antrag mit break_waiver_reason anlegen
+        # (admin_change_requests honoriert ihn beim Genehmigen). Der §3-10h-Cap
+        # unten bleibt unabhängig davon hart.
+        if break_error and not (data.break_waiver_reason and data.break_waiver_reason.strip()):
             raise HTTPException(status_code=400, detail=break_error)
 
         # §3 ArbZG: daily hours hard limit
@@ -247,6 +251,11 @@ def create_change_request(
         proposed_break_minutes=data.proposed_break_minutes,
         proposed_note=data.proposed_note,
         reason=data.reason,
+        break_waiver_reason=(
+            data.break_waiver_reason.strip()
+            if data.break_waiver_reason and data.break_waiver_reason.strip()
+            else None
+        ),
     )
 
     # Snapshot original values

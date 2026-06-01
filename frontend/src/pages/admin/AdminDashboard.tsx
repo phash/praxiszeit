@@ -9,6 +9,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
 
@@ -255,26 +256,22 @@ export default function AdminDashboard() {
     if (!selectedEmployee) return;
     try {
       if (entryForm.entry_type === 'work') {
-        // Normal time entry
-        if (editingEntryId) {
-          await apiClient.put(`/admin/time-entries/${editingEntryId}`, {
-            date: entryForm.date,
-            start_time: entryForm.start_time,
-            end_time: entryForm.end_time,
-            break_minutes: entryForm.break_minutes,
-            note: entryForm.note,
-          });
-          toast.success('Eintrag aktualisiert');
-        } else {
-          await apiClient.post(`/admin/users/${selectedEmployee.user_id}/time-entries`, {
-            date: entryForm.date,
-            start_time: entryForm.start_time,
-            end_time: entryForm.end_time,
-            break_minutes: entryForm.break_minutes,
-            note: entryForm.note,
-          });
-          toast.success('Eintrag erstellt');
-        }
+        // Normal time entry — #200: §4-Pausen-Ausnahme per Retry mit Begründung.
+        const base = {
+          date: entryForm.date,
+          start_time: entryForm.start_time,
+          end_time: entryForm.end_time,
+          break_minutes: entryForm.break_minutes,
+          note: entryForm.note,
+        };
+        await submitWithBreakWaiver(async (extra) => {
+          if (editingEntryId) {
+            await apiClient.put(`/admin/time-entries/${editingEntryId}`, { ...base, ...extra });
+          } else {
+            await apiClient.post(`/admin/users/${selectedEmployee.user_id}/time-entries`, { ...base, ...extra });
+          }
+        });
+        toast.success(editingEntryId ? 'Eintrag aktualisiert' : 'Eintrag erstellt');
       } else {
         // Absence entry (sick, training, overtime comp, other)
         await apiClient.post('/absences', {

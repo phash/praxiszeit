@@ -5,6 +5,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuthStore } from '../stores/authStore';
 import { getErrorMessage } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
+import { computeBreakError } from '../utils/breakValidation';
 
 interface ClockStatus {
   is_clocked_in: boolean;
@@ -39,6 +40,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   const [showBreakInput, setShowBreakInput] = useState(false);
   const [breakMinutes, setBreakMinutes] = useState(0);
   const [showSuccess, setShowSuccess] = useState(false);
+  // #199: §4-Pausenpflicht beim Ausstempeln — Warnung + Pflicht-Begründung.
+  const [breakWarn, setBreakWarn] = useState<string | null>(null);
+  const [breakWaiverReason, setBreakWaiverReason] = useState('');
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -91,13 +95,32 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       setShowBreakInput(true);
       return;
     }
+    // #199: §4-Pausenpflicht — bei >6h Netto und unzureichender Pause die Pause
+    // nacherfassen ODER eine dokumentierte Ausnahme verlangen, statt still mit
+    // Warn-Toast durchzuwinken. (Aggregat mehrerer Tagesblöcke prüft das Backend.)
+    const st = status?.current_entry?.start_time;
+    if (st && !user?.exempt_from_arbzg) {
+      const startHHMM = st.includes('T') ? st.split('T')[1].substring(0, 5) : st.substring(0, 5);
+      const now = new Date();
+      const endHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const breakErr = computeBreakError([], startHHMM, endHHMM, breakMinutes, false);
+      if (breakErr && !breakWaiverReason.trim()) {
+        setBreakWarn(breakErr);
+        return; // Eingabe (Pause erhöhen oder Begründung) erforderlich
+      }
+    }
     setActing(true);
     try {
-      const res = await apiClient.post('/time-entries/clock-out', { break_minutes: breakMinutes });
+      const res = await apiClient.post('/time-entries/clock-out', {
+        break_minutes: breakMinutes,
+        break_waiver_reason: breakWaiverReason.trim() || undefined,
+      });
       toast.success('Erfolgreich ausgestempelt');
       showArbzgWarnings(toast, res.data?.warnings);
       setShowBreakInput(false);
       setBreakMinutes(0);
+      setBreakWarn(null);
+      setBreakWaiverReason('');
       await fetchStatus();
       if (variant === 'sheet') {
         setShowSuccess(true);
@@ -116,6 +139,8 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   const cancelClockOut = () => {
     setShowBreakInput(false);
     setBreakMinutes(0);
+    setBreakWarn(null);
+    setBreakWaiverReason('');
   };
 
   const formatElapsed = (minutes: number) => {
@@ -187,10 +212,23 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
               min={0}
               max={480}
               value={breakMinutes}
-              onChange={(e) => setBreakMinutes(parseInt(e.target.value) || 0)}
+              onChange={(e) => { setBreakMinutes(parseInt(e.target.value) || 0); setBreakWarn(null); }}
               className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               autoFocus
             />
+            {breakWarn && (
+              <div className="mt-3 text-left bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p className="text-sm text-amber-800">{breakWarn}</p>
+                <p className="text-xs text-amber-700 mt-1">Pause oben nachtragen <strong>oder</strong> begründen, warum sie nicht möglich war:</p>
+                <textarea
+                  value={breakWaiverReason}
+                  onChange={(e) => setBreakWaiverReason(e.target.value)}
+                  rows={2}
+                  placeholder="z. B. Notfall, keine Vertretung"
+                  className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            )}
             <button onClick={cancelClockOut} className="text-sm text-text-secondary hover:text-text-primary mt-2 transition">
               Abbrechen
             </button>
@@ -243,25 +281,40 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
 
         {/* Break input (shown before clock-out) */}
         {showBreakInput && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="break-minutes-inline" className="text-sm text-text-secondary whitespace-nowrap">Pause (Min.):</label>
-            <input
-              id="break-minutes-inline"
-              type="number"
-              inputMode="numeric"
-              min="0"
-              max="480"
-              value={breakMinutes}
-              onChange={(e) => setBreakMinutes(parseInt(e.target.value) || 0)}
-              className="w-20 px-2 py-2 border border-gray-200 rounded-xl text-center focus:ring-2 focus:ring-primary"
-              autoFocus
-            />
-            <button
-              onClick={cancelClockOut}
-              className="text-sm text-text-secondary hover:text-text-primary px-2 py-2 transition"
-            >
-              Abbrechen
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <label htmlFor="break-minutes-inline" className="text-sm text-text-secondary whitespace-nowrap">Pause (Min.):</label>
+              <input
+                id="break-minutes-inline"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="480"
+                value={breakMinutes}
+                onChange={(e) => { setBreakMinutes(parseInt(e.target.value) || 0); setBreakWarn(null); }}
+                className="w-20 px-2 py-2 border border-gray-200 rounded-xl text-center focus:ring-2 focus:ring-primary"
+                autoFocus
+              />
+              <button
+                onClick={cancelClockOut}
+                className="text-sm text-text-secondary hover:text-text-primary px-2 py-2 transition"
+              >
+                Abbrechen
+              </button>
+            </div>
+            {breakWarn && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 max-w-md">
+                <p className="text-sm text-amber-800">{breakWarn}</p>
+                <p className="text-xs text-amber-700 mt-1">Pause nachtragen <strong>oder</strong> Ausnahme begründen:</p>
+                <textarea
+                  value={breakWaiverReason}
+                  onChange={(e) => setBreakWaiverReason(e.target.value)}
+                  rows={2}
+                  placeholder="z. B. Notfall, keine Vertretung"
+                  className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            )}
           </div>
         )}
 
