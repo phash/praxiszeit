@@ -338,6 +338,30 @@ def test_execute_import_overwrites_conflict(db, test_user, test_admin):
     assert existing.note == "updated"
 
 
+def test_execute_import_overwrite_preserves_raw_stamps(db, test_user, test_admin):
+    """Audit R3/§16: Beim Overwrite müssen die Roh-Stempel (raw_start/raw_end)
+    des Import-Eintrags auf den bestehenden Eintrag übernommen werden — sonst
+    geht der §16-Nachweis der tatsächlichen Anwesenheit beim Überschreiben
+    verloren (gekappter Wert bleibt, Rohwert verschwindet)."""
+    existing = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, 12),
+                         start_time=time(7, 15), end_time=time(12, 45), break_minutes=30,
+                         raw_start_time=None, raw_end_time=None)
+    db.add(existing)
+    db.commit()
+
+    # Import-Eintrag mit gekapptem end + bewahrtem Roh-Ende (z.B. Soll-Fenster-Kappung).
+    entries = [ImportedEntry(date=date(2026, 1, 12), start_time=time(7, 15),
+                             end_time=time(16, 0), break_minutes=30, note="ow",
+                             has_conflict=True, arbzg_warnings=[],
+                             raw_start_time=time(6, 30), raw_end_time=time(18, 0))]
+    execute_import(test_user.id, entries, overwrite=True, db=db,
+                   changed_by_id=test_admin.id, filename="test.xls",
+                   tenant_id=DEFAULT_TENANT_ID)
+    db.refresh(existing)
+    assert existing.raw_start_time == time(6, 30)
+    assert existing.raw_end_time == time(18, 0)
+
+
 def test_execute_import_writes_audit_log(db, test_user, test_admin):
     """Prüft dass Import Audit-Logs schreibt — Nachvollziehbarkeit gemaess DSGVO Art. 5."""
     from app.models import TimeEntryAuditLog
