@@ -18,6 +18,7 @@ from app.routers.time_entries import (
     BREAK_WAIVER_SOURCE,
 )
 from app.services.arbzg_utils import is_night_work
+from app.services import work_window_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -40,14 +41,21 @@ def admin_create_time_entry(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
+    # #201: Clamp start/end to the employee's soll window (grace from tenant setting).
+    # The affected employee is `user`, NOT the admin (current_user).
+    _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+        user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+    )
+
     admin_create_warnings: list[str] = []
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
     if not user.exempt_from_arbzg:
-        # Break validation (§4 ArbZG)
+        # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
             db=db, user_id=user.id, entry_date=entry_data.date,
-            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
         )
         if break_error:
@@ -60,10 +68,10 @@ def admin_create_time_entry(
             break_waiver_active = True
             admin_create_warnings.append(f"BREAK_WAIVER: {break_error}")
 
-        # SS3 ArbZG: daily hours hard limit
+        # SS3 ArbZG: daily hours hard limit — use clamped times
         daily_hours = _calculate_daily_net_hours(
             db=db, user_id=user.id, entry_date=entry_data.date,
-            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
@@ -79,7 +87,7 @@ def admin_create_time_entry(
         # §3 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
         weekly_hours = _calculate_weekly_net_hours(
             db=db, user_id=user.id, entry_date=entry_data.date,
-            start_time=entry_data.start_time, end_time=entry_data.end_time,
+            start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -88,7 +96,7 @@ def admin_create_time_entry(
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
             user.is_night_worker
-            and is_night_work(entry_data.start_time, entry_data.end_time)
+            and is_night_work(eff_start, eff_end)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             admin_create_warnings.append(
@@ -100,11 +108,13 @@ def admin_create_time_entry(
         user_id=user.id,
         tenant_id=current_user.tenant_id,
         date=entry_data.date,
-        start_time=entry_data.start_time,
-        end_time=entry_data.end_time,
+        start_time=eff_start,
+        end_time=eff_end,
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
         break_waiver_reason=waiver_reason if break_waiver_active else None,
+        raw_start_time=raw_start,
+        raw_end_time=raw_end,
     )
     db.add(entry)
     db.flush()
@@ -155,14 +165,24 @@ def admin_update_time_entry(
     update_end_time = entry_data.end_time if entry_data.end_time is not None else entry.end_time
     update_break_minutes = entry_data.break_minutes if entry_data.break_minutes is not None else entry.break_minutes
 
+    # #201: Clamp start/end to the affected employee's soll window.
+    # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
+    _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    if affected_user is not None:
+        eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+            affected_user, update_date, update_start_time, update_end_time, _grace,
+        )
+    else:
+        eff_start, eff_end, raw_start, raw_end = update_start_time, update_end_time, None, None
+
     admin_update_warnings: list[str] = []
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
     if not affected_user or not affected_user.exempt_from_arbzg:
-        # Break validation (§4 ArbZG)
+        # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
             db=db, user_id=entry.user_id, entry_date=update_date,
-            start_time=update_start_time, end_time=update_end_time,
+            start_time=eff_start, end_time=eff_end,
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
         )
         if break_error:
@@ -174,10 +194,10 @@ def admin_update_time_entry(
             break_waiver_active = True
             admin_update_warnings.append(f"BREAK_WAIVER: {break_error}")
 
-        # SS3 ArbZG: daily hours hard limit
+        # SS3 ArbZG: daily hours hard limit — use clamped times
         daily_hours = _calculate_daily_net_hours(
             db=db, user_id=entry.user_id, entry_date=update_date,
-            start_time=update_start_time, end_time=update_end_time,
+            start_time=eff_start, end_time=eff_end,
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
@@ -193,7 +213,7 @@ def admin_update_time_entry(
         # §3 ArbZG: Warnung bei Überschreitung der 48h-Wochengrenze
         weekly_hours = _calculate_weekly_net_hours(
             db=db, user_id=entry.user_id, entry_date=update_date,
-            start_time=update_start_time, end_time=update_end_time,
+            start_time=eff_start, end_time=eff_end,
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -203,7 +223,7 @@ def admin_update_time_entry(
         if (
             affected_user
             and affected_user.is_night_worker
-            and is_night_work(update_start_time, update_end_time)
+            and is_night_work(eff_start, eff_end)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             admin_update_warnings.append(
@@ -217,8 +237,8 @@ def admin_update_time_entry(
         action="update", old_entry=entry,
         new_entry={
             "date": update_date,
-            "start_time": update_start_time,
-            "end_time": update_end_time,
+            "start_time": eff_start,
+            "end_time": eff_end,
             "break_minutes": update_break_minutes,
             "note": entry_data.note if entry_data.note is not None else entry.note,
         },
@@ -226,13 +246,13 @@ def admin_update_time_entry(
         tenant_id=current_user.tenant_id,
     )
 
-    # Apply only provided updates
+    # Apply only provided updates (always write clamped effective times)
     if entry_data.date is not None:
         entry.date = entry_data.date
     if entry_data.start_time is not None:
-        entry.start_time = entry_data.start_time
+        entry.start_time = eff_start
     if entry_data.end_time is not None:
-        entry.end_time = entry_data.end_time
+        entry.end_time = eff_end
     if entry_data.break_minutes is not None:
         entry.break_minutes = entry_data.break_minutes
     if entry_data.note is not None:
@@ -240,6 +260,12 @@ def admin_update_time_entry(
     # M-ARB3: persist the documented §4 break waiver when one was supplied.
     if break_waiver_active:
         entry.break_waiver_reason = waiver_reason
+    # #201: raw_* — reset to None when not capped, set when capped.
+    # Only update raw_* when start_time or end_time was explicitly provided in the request.
+    if entry_data.start_time is not None:
+        entry.raw_start_time = raw_start
+    if entry_data.end_time is not None:
+        entry.raw_end_time = raw_end
 
     db.commit()
     db.refresh(entry)

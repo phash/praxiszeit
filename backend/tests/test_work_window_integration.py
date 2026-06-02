@@ -28,6 +28,7 @@ from tests.conftest import (
 
 def _create_test_app() -> FastAPI:
     from app.routers import time_entries as te_router
+    from app.routers import admin as admin_router
 
     app = FastAPI(title="PraxisZeit WorkWindow Test")
 
@@ -40,6 +41,7 @@ def _create_test_app() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     app.include_router(te_router.router)
+    app.include_router(admin_router.router)
     return app
 
 
@@ -97,12 +99,34 @@ def employee(db, default_tenant):
     return user
 
 
+@pytest.fixture(scope="function")
+def admin(db, default_tenant):
+    user = User(
+        username="admin_ww",
+        email="admin_ww@example.com",
+        password_hash=auth_service.hash_password("admin123"),
+        first_name="Admin",
+        last_name="WorkWindow",
+        role=UserRole.ADMIN,
+        weekly_hours=40.0,
+        vacation_days=30,
+        work_days_per_week=5,
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def _make_client(db_session, current_user):
     def override_db():
         yield db_session
 
     _app.dependency_overrides[get_db] = override_db
     _app.dependency_overrides[get_current_user] = lambda: current_user
+    _app.dependency_overrides[require_admin] = lambda: current_user
 
     client = TestClient(_app)
     yield client
@@ -113,6 +137,11 @@ def _make_client(db_session, current_user):
 @pytest.fixture
 def employee_client(db, employee):
     yield from _make_client(db, employee)
+
+
+@pytest.fixture
+def admin_client(db, admin):
+    yield from _make_client(db, admin)
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +251,38 @@ def test_manual_create_caps_both_ends(db, employee, employee_client, monkeypatch
     assert resp.status_code == 201, resp.text
 
     from app.models import TimeEntry
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert entry.start_time == dt.time(7, 45), f"Expected 07:45, got {entry.start_time}"
+    assert entry.raw_start_time == dt.time(7, 0), f"Expected raw_start 07:00, got {entry.raw_start_time}"
+    assert entry.end_time == dt.time(17, 15), f"Expected 17:15, got {entry.end_time}"
+    assert entry.raw_end_time == dt.time(18, 0), f"Expected raw_end 18:00, got {entry.raw_end_time}"
+
+
+def test_admin_create_caps_both_ends(db, employee, admin, admin_client):
+    """POST /api/admin/users/{id}/time-entries klappt Start und Ende des
+    betroffenen Mitarbeiters ins Soll-Fenster.
+
+    Soll Mo 08:00–17:00, grace=15 min → floor=07:45, ceil=17:15.
+    Eingabe: start=07:00 (< floor), end=18:00 (> ceil), break=30.
+    Erwartet: start_time=07:45, raw_start_time=07:00,
+               end_time=17:15, raw_end_time=18:00.
+    2026-06-01 ist ein Montag.
+    """
+    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.scheduled_end_monday = dt.time(17, 0)
+    db.commit()
+
+    resp = admin_client.post(
+        f"/api/admin/users/{employee.id}/time-entries",
+        json={
+            "date": "2026-06-01",
+            "start_time": "07:00",
+            "end_time": "18:00",
+            "break_minutes": 30,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
     entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
     assert entry.start_time == dt.time(7, 45), f"Expected 07:45, got {entry.start_time}"
     assert entry.raw_start_time == dt.time(7, 0), f"Expected raw_start 07:00, got {entry.raw_start_time}"
