@@ -207,12 +207,14 @@ def get_totp_uri(username: str, secret: str) -> str:
     )
 
 
-def verify_totp(secret: str, code: str) -> bool:
-    """Verify a 6-digit TOTP code. Allows ±1 window (30s tolerance).
+def _verify_totp_unsafe(secret: str, code: str) -> bool:
+    """INTERNAL/UNSAFE — verify a 6-digit TOTP code (±1 window, 30s tolerance).
 
-    NOTE: this does not protect against replay within the valid window.
-    Callers that persist a per-user counter must use `verify_totp_with_counter`
-    instead.
+    Audit R3 (A02): renamed from the former public ``verify_totp`` so it cannot
+    be picked by accident. It does NOT protect against replay within the valid
+    window. ALL production callers (login, sensitive actions) MUST use
+    ``verify_totp_with_counter`` (persists a per-user counter). Kept only for the
+    low-level TOTP-verification unit test.
     """
     return pyotp.TOTP(secret).verify(code, valid_window=1)
 

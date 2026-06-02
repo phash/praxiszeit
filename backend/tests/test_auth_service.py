@@ -4,7 +4,7 @@ import pyotp
 from app.services.auth_service import (
     generate_totp_secret,
     get_totp_uri,
-    verify_totp,
+    _verify_totp_unsafe,
     hash_password,
     verify_password,
     needs_rehash,
@@ -66,31 +66,31 @@ class TestGetTotpUri:
 
 
 class TestVerifyTotp:
-    """Test verify_totp() function."""
+    """Test _verify_totp_unsafe() function."""
 
     def test_valid_code_returns_true(self):
         """Prüft dass ein aktuell gültiger TOTP-Code korrekt verifiziert wird."""
         secret = generate_totp_secret()
         totp = pyotp.TOTP(secret)
         code = totp.now()
-        assert verify_totp(secret, code) is True
+        assert _verify_totp_unsafe(secret, code) is True
 
     def test_invalid_code_returns_false(self):
         """Prüft dass ein falscher TOTP-Code abgelehnt wird — Schutz vor Brute-Force."""
         secret = generate_totp_secret()
-        assert verify_totp(secret, "000000") is False
+        assert _verify_totp_unsafe(secret, "000000") is False
 
     def test_empty_code_returns_false(self):
         """Prüft dass ein leerer Code abgelehnt wird — Edge Case bei fehlender Eingabe."""
         secret = generate_totp_secret()
-        assert verify_totp(secret, "") is False
+        assert _verify_totp_unsafe(secret, "") is False
 
     def test_wrong_secret_returns_false(self):
         """Prüft dass ein Code von einem anderen Secret abgelehnt wird — verhindert Account-Übernahme."""
         secret1 = generate_totp_secret()
         secret2 = generate_totp_secret()
         code = pyotp.TOTP(secret1).now()
-        assert verify_totp(secret2, code) is False
+        assert _verify_totp_unsafe(secret2, code) is False
 
 
 class TestHashPassword:
