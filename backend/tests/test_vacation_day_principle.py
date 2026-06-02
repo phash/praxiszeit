@@ -144,3 +144,28 @@ def test_half_day_uneven_schedule_is_consistent(db, default_tenant):
         "/api/absences", json={"date": TUE, "type": "vacation", "hours": 3, "half_day": True}
     ).status_code == 201
     assert _used(db, u_tue) == 0.5
+
+
+# ── R1-3: Budget-Check muss 0h-Tage überspringen (Teilzeit Mon/Wed/Fri) ────
+
+def test_budget_check_skips_zero_hour_days(db, default_tenant):
+    """R1-3: Budget-Check über-zählt Tage bei use_daily_schedule=True wenn ein
+    Werktag im Bereich 0h hat (z.B. Dienstag bei Mon/Mi/Fr-Kraft).
+    Ein Mo–Mi-Bereich (2026-03-02..2026-03-04) enthält Mo(8h), Di(0h), Mi(8h).
+    Die Buchung belegt 2 Tage (Di wird übersprungen). Mit vacation_days=2 muss
+    der Request ERFOLGREICH sein (201) — mit dem Bug wurde er fälschlich mit
+    "Nicht genügend Urlaubstage" (400) abgelehnt, weil len([Mo,Di,Mi])=3 > 2."""
+    sched = dict(
+        weekly_hours=16.0, work_days_per_week=3, use_daily_schedule=True,
+        hours_monday=8, hours_tuesday=0, hours_wednesday=8,
+        hours_thursday=0, hours_friday=0,
+        vacation_days=2,
+    )
+    u = _mk(db, **sched)
+    r = _client(db, u).post(
+        "/api/absences",
+        json={"date": "2026-03-02", "end_date": "2026-03-04", "type": "vacation", "hours": 8},
+    )
+    assert r.status_code == 201, f"Expected 201, got {r.status_code}: {r.text}"
+    # Only Mon and Wed are booked (Tue skipped — 0h scheduled)
+    assert _used(db, u) == 2.0
