@@ -401,8 +401,14 @@ def create_absence(
         if absence_data.type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
             weekly = calculation_service.get_weekly_hours_for_date(db, target_user, date)
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, weekly_hours=weekly))
-            if hours_for_day == 0:
-                continue  # Skip days with 0 scheduled hours
+            # Review R3 (HIGH): only skip genuine 0h days for TRACKED users (e.g.
+            # a Mo/Mi/Fr part-timer's Tue/Thu). For track_hours=False the daily
+            # target is ALWAYS 0 — skipping here would create NO absence at all,
+            # so the day-based vacation account (#191) never sees a row to count.
+            # dates_to_create already excludes weekends/holidays, so every
+            # remaining day must be booked (hours stay 0, counted day-based).
+            if hours_for_day == 0 and target_user.track_hours:
+                continue  # tracked user: scheduled non-working day → skip
             # #167: halber Tag = 0,5 × Tagessoll → zählt diskriminierungsfrei als 0,5
             # Urlaubstag (8h-Tag: 4h; 3h-Tag: 1,5h — je 0,5 Tag). Nicht für OVERTIME.
             if absence_data.half_day:
