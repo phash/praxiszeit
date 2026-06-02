@@ -569,6 +569,52 @@ class TestPostBudgetExcludesHolidays:
         assert resp.status_code == 201, resp.text
 
 
+class TestVacationSelfApproval:
+    """Audit A01 (4-Augen-Prinzip): ein Admin darf seinen EIGENEN Urlaubsantrag
+    nur dann selbst genehmigen, wenn KEIN weiterer aktiver Admin existiert
+    (Einzel-Admin-Praxis). Mit zweitem aktivem Admin → 403."""
+
+    def test_self_approve_blocked_with_second_admin(self, db, admin, admin_client):
+        from app.models import Absence
+        _user(db, "adm2", role=UserRole.ADMIN)  # zweiter aktiver Admin
+        # Zukünftiger Montag, damit es ein gültiger Arbeitstag ist.
+        vr = _vr(db, admin, start=date(2026, 6, 8), end=None, absence_type="vacation")
+        resp = admin_client.post(
+            f"/api/admin/vacation-requests/{vr.id}/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "selbst genehmigt" in resp.json()["detail"].lower()
+        db.refresh(vr)
+        assert vr.status == VacationRequestStatus.PENDING.value
+        # Keine Abwesenheit materialisiert.
+        assert db.query(Absence).filter(Absence.user_id == admin.id).count() == 0
+
+    def test_self_approve_allowed_sole_admin(self, db, admin, admin_client):
+        from app.models import Absence
+        vr = _vr(db, admin, start=date(2026, 6, 8), end=None, absence_type="vacation")
+        resp = admin_client.post(
+            f"/api/admin/vacation-requests/{vr.id}/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 200, resp.text
+        db.refresh(vr)
+        assert vr.status == VacationRequestStatus.APPROVED.value
+        assert vr.reviewed_by == admin.id
+        assert db.query(Absence).filter(Absence.user_id == admin.id).count() == 1
+
+    def test_reject_own_request_always_allowed(self, db, admin, admin_client):
+        _user(db, "adm3", role=UserRole.ADMIN)  # zweiter aktiver Admin
+        vr = _vr(db, admin, start=date(2026, 6, 8), end=None, absence_type="vacation")
+        resp = admin_client.post(
+            f"/api/admin/vacation-requests/{vr.id}/review",
+            json={"action": "reject", "rejection_reason": "storno"},
+        )
+        assert resp.status_code == 200, resp.text
+        db.refresh(vr)
+        assert vr.status == VacationRequestStatus.REJECTED.value
+
+
 class TestApproveNoCrossTypeDoubleBooking:
     """R2-c: review_vacation_request prüfte nur auf bestehende Abwesenheiten
     GLEICHEN Typs (+ ohne tenant_id-Filter). Existierte am Tag eine Abwesenheit

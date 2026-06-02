@@ -39,6 +39,29 @@ def _get_user_in_tenant(db: Session, user_id: str, current_user: User) -> User:
     return user
 
 
+def _tenant_has_other_active_admin(db: Session, current_user: User) -> bool:
+    """Audit A01 (4-Augen-Prinzip): does the caller's tenant have ANOTHER
+    active admin besides ``current_user``?
+
+    Used to gate self-approval of one's own change/vacation requests. A medical
+    practice frequently runs with a single admin who legitimately must approve
+    their own corrections — blocking that would lock them out. So the 4-eyes
+    rule only bites when independent oversight is actually possible: a second
+    active admin exists in the SAME tenant. F-026: explicit tenant scope.
+    """
+    return (
+        db.query(User)
+        .filter(
+            User.tenant_id == current_user.tenant_id,
+            User.role == UserRole.ADMIN,
+            User.is_active == True,
+            User.id != current_user.id,
+        )
+        .first()
+        is not None
+    )
+
+
 # ── User Management ──────────────────────────────────────────────────────
 
 @router.get("/users", response_model=List[UserListResponse])
