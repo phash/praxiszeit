@@ -7,12 +7,24 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import base64
+import logging
 import secrets
 from collections import OrderedDict
 from app.database import get_db, set_superadmin_context
 from app.middleware.csrf import CSRF_COOKIE_NAME
 from app.models import User, TimeEntry, Absence, TimeEntryAuditLog
 from app.models.tenant import Tenant
+
+# Audit A09 (OWASP Security Logging Failures): security-relevant auth events
+# are emitted as structured application-log records on a dedicated logger.
+# These go to stdout → Docker logs / journald → the standard forensic/SIEM
+# sink (persists across restarts). Marker prefix "AUTH " + a stable event
+# keyword keeps the records greppable for a SIEM.
+#
+# CRITICAL: never log the password, JWT, refresh token, or TOTP secret. We log
+# the submitted *username* (attacker-supplied identifier, useful for forensics)
+# but not the email.
+security_logger = logging.getLogger("praxiszeit.security")
 
 # F-039: In-memory failed login tracking as an OrderedDict LRU so eviction
 # is O(1) instead of O(n log n). Also fixes the attacker-evicts-real-user
@@ -152,6 +164,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         del _failed_logins[username_lower]
 
     if len(attempts) >= _LOCKOUT_ATTEMPTS:
+        security_logger.warning("AUTH account_locked user=%s attempts=%d", username_lower, len(attempts))
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Konto vorübergehend gesperrt. Bitte in 15 Minuten erneut versuchen."
@@ -167,6 +180,10 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         # module load time from a random string (see _DUMMY_BCRYPT_HASH).
         auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
         _record_failed_login(username_lower, now)
+        security_logger.warning(
+            "AUTH login_failed user=%s reason=%s", username_lower,
+            "unknown_user" if not user else "inactive_user",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
@@ -174,6 +191,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     if not auth_service.verify_password(login_data.password, user.password_hash):
         _record_failed_login(username_lower, now)
+        security_logger.warning("AUTH login_failed user=%s reason=%s", username_lower, "bad_password")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
@@ -199,6 +217,9 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     # F-019: TOTP check with replay protection (per-user counter)
     if user.totp_enabled:
         if not login_data.totp_code:
+            # Not a hard failure (the client is expected to re-submit with a
+            # code), but record it so a SIEM can correlate the 2FA challenge.
+            security_logger.info("AUTH totp_required user=%s", username_lower)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="TOTP-Code erforderlich",
@@ -208,6 +229,8 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
             user.totp_secret, login_data.totp_code, user.last_totp_counter
         )
         if accepted_counter is None:
+            _record_failed_login(username_lower, now)
+            security_logger.warning("AUTH login_failed user=%s reason=%s", username_lower, "bad_totp")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Ungültiger TOTP-Code",
@@ -227,6 +250,8 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     _set_refresh_cookie(response, refresh_token)
     # F-024: issue a fresh CSRF double-submit token
     _set_csrf_cookie(response)
+
+    security_logger.info("AUTH login_success user=%s", username_lower)
 
     return LoginResponse(
         access_token=access_token,
@@ -308,6 +333,7 @@ def logout(
     db.commit()
     _delete_refresh_cookie(response)
     _delete_csrf_cookie(response)
+    security_logger.info("AUTH logout user=%s", current_user.username)
     return {"message": "Erfolgreich abgemeldet"}
 
 
@@ -333,6 +359,10 @@ def change_password(
     Requires current password verification.
     """
     if not auth_service.verify_password(password_data.current_password, current_user.password_hash):
+        security_logger.warning(
+            "AUTH password_change_failed user=%s reason=%s",
+            current_user.username, "wrong_current_password",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Aktuelles Passwort ist falsch"
@@ -343,6 +373,8 @@ def change_password(
     current_user.token_version += 1
     db.commit()
     db.refresh(current_user)
+
+    security_logger.warning("AUTH password_changed user=%s", current_user.username)
 
     # Issue a fresh token so the frontend session stays valid after the version bump
     tenant_id_str = str(current_user.tenant_id) if current_user.tenant_id else None
