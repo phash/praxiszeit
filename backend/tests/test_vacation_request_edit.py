@@ -521,3 +521,79 @@ class TestLastModifiedTracking:
         body = resp.json()
         assert body["last_modified_by"] is None
         assert body["last_modified_at"] is None
+
+
+# ===========================================================================
+# Review R2-c: POST-Budget-Check muss Feiertage ausschließen (Parität zum
+# Edit-Pfad) + Approve darf nicht typ-übergreifend doppelt buchen
+# ===========================================================================
+
+def _enable_approval(db):
+    from app.models.system_setting import SystemSetting
+    db.add(SystemSetting(
+        key="vacation_approval_required", tenant_id=DEFAULT_TENANT_ID,
+        value="true", description="Urlaubsanträge aktiv",
+    ))
+    db.commit()
+
+
+def _holiday(db, d):
+    from app.models import PublicHoliday
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=d.year, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+
+
+class TestPostBudgetExcludesHolidays:
+    """R2-c: Der POST-Budget-Check zählte ALLE Wochentage als verbraucht, ohne
+    Feiertage auszuschließen — anders als der PATCH-/Approve-Pfad. Ein Antrag
+    über einen Bereich mit Feiertag wurde dadurch fälschlich als 'nicht genügend
+    Urlaubstage' abgelehnt, obwohl die Genehmigung den Feiertag gar nicht
+    verbraucht."""
+
+    def test_request_spanning_holiday_fits_budget(self, db, default_tenant):
+        _enable_approval(db)
+        # Budget = 4 Tage (Volljahr, kein Pro-rata).
+        user = _user_custom(db, "budget4", vacation_days=4)
+        client_gen = _make_client(db, user)
+        client = next(client_gen)
+        # Mo 08.06. – Fr 12.06.2026 = 5 Wochentage, Feiertag am Mi 10.06. → 4 billable.
+        _holiday(db, date(2026, 6, 10))
+
+        resp = client.post("/api/vacation-requests/", json={
+            "date": "2026-06-08",
+            "end_date": "2026-06-12",
+            "hours": 8.0,
+            "absence_type": "vacation",
+        })
+        # Mit Feiertags-Ausschluss: 4 ≤ 4 → 201. Ohne: 5 > 4 → 400.
+        assert resp.status_code == 201, resp.text
+
+
+class TestApproveNoCrossTypeDoubleBooking:
+    """R2-c: review_vacation_request prüfte nur auf bestehende Abwesenheiten
+    GLEICHEN Typs (+ ohne tenant_id-Filter). Existierte am Tag eine Abwesenheit
+    anderen Typs (z.B. krank), rutschte die Genehmigung durch und legte eine
+    zweite Abwesenheit (Urlaub) an → Doppelbuchung am selben Tag."""
+
+    def test_approve_blocked_when_other_type_absence_exists(self, db, employee, admin, admin_client):
+        from app.models import Absence, AbsenceType
+        d = date(2026, 6, 15)  # Montag
+        # Bestehende KRANK-Abwesenheit am Tag.
+        db.add(Absence(
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID,
+            date=d, type=AbsenceType.SICK, hours=8.0,
+        ))
+        db.commit()
+        vr = _vr(db, employee, start=d, end=None, absence_type="vacation")
+
+        resp = admin_client.post(
+            f"/api/admin/vacation-requests/{vr.id}/review",
+            json={"action": "approve"},
+        )
+        # Genehmigung muss blockieren (kein Doppel-Insert).
+        assert resp.status_code in (400, 409), resp.text
+        db.expire_all()
+        n = db.query(Absence).filter(
+            Absence.user_id == employee.id, Absence.date == d,
+        ).count()
+        assert n == 1  # weiterhin nur die KRANK-Abwesenheit, keine Doppelbuchung

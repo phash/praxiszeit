@@ -286,10 +286,28 @@ def create_vacation_request(
     absence_type = data.absence_type or "vacation"
     if absence_type == "vacation":
         from app.services import calculation_service
+        # R2-c: exclude public holidays from the budget count — parity with the
+        # PATCH path (apply_vacation_request_patch) and the approve flow
+        # (admin_vacations.review_vacation_request). Without this the POST
+        # false-positives "nicht genügend Urlaubstage" for ranges that contain
+        # holidays which approval would never consume.
+        years_in_range = set()
+        d = start_date
+        while d <= end_date:
+            years_in_range.add(d.year)
+            d += timedelta(days=1)
+        holiday_dates: set = set()
+        if years_in_range:
+            for h in db.query(PublicHoliday).filter(
+                PublicHoliday.year.in_(years_in_range),
+                PublicHoliday.tenant_id == current_user.tenant_id,
+            ).all():
+                holiday_dates.add(h.date)
+
         dates_by_year: dict[int, list] = {}
         d = start_date
         while d <= end_date:
-            if d.weekday() < 5:  # workdays only
+            if d.weekday() < 5 and d not in holiday_dates:  # workdays, no holidays
                 dates_by_year.setdefault(d.year, []).append(d)
             d += timedelta(days=1)
 

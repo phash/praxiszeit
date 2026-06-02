@@ -212,17 +212,23 @@ def review_vacation_request(
     if not dates_to_create:
         raise HTTPException(status_code=400, detail="Keine gültigen Arbeitstage im Zeitraum")
 
-    # Check for existing absences of the same type on those days
+    # R2-c: block ANY pre-existing absence on those days, not just the same
+    # type. The unique constraint is (tenant_id, user_id, date, type) — a
+    # DIFFERENT type (e.g. an existing SICK absence) would slip past a
+    # same-type-only check and let approval insert a second absence on the same
+    # day (cross-type double-booking). One absence per day, period. Mirrors
+    # create_absence. F-026: explicit tenant scoping; with_for_update() closes
+    # the race between this probe and the INSERT below.
     for d in dates_to_create:
         existing = db.query(Absence).filter(
             Absence.user_id == target_user.id,
+            Absence.tenant_id == current_user.tenant_id,
             Absence.date == d,
-            Absence.type == absence_type,
-        ).first()
+        ).with_for_update().first()
         if existing:
             raise HTTPException(
-                status_code=400,
-                detail=f"Es existiert bereits ein {absence_type_str}-Eintrag am {d.strftime('%d.%m.%Y')}",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Am {d.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})",
             )
 
     # Check vacation budget only for VACATION type (per year for cross-year requests)
