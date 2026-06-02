@@ -63,6 +63,14 @@ export function showArbzgWarnings(
       case 'DAILY_HOURS_WARNING':
         toast.warning('Tagesarbeitszeit über 8 Stunden (§3 ArbZG).');
         break;
+      case 'DAILY_HOURS_HARD':
+        // Review R2-b: beim Ausstempeln wird die §3-10h-Höchstgrenze nicht
+        // mehr blockiert (sonst bliebe der Eintrag offen) — der Verstoß kommt
+        // als deutliche Warnung mit konkreter Stundenzahl zurück.
+        toast.warning(
+          detail ?? 'Tagesarbeitszeit überschreitet die gesetzliche Höchstgrenze von 10 Stunden (§3 ArbZG).',
+        );
+        break;
       case 'WEEKLY_HOURS_WARNING':
         toast.warning('Wochenarbeitszeit über 48 Stunden (§3 ArbZG).');
         break;
