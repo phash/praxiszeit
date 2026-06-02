@@ -191,3 +191,39 @@ def test_clock_out_caps_late_end(db, employee, employee_client, monkeypatch):
     entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
     assert entry.end_time == dt.time(17, 15)   # 17:00 + 15min grace
     assert entry.raw_end_time == dt.time(18, 30)
+
+
+def test_manual_create_caps_both_ends(db, employee, employee_client, monkeypatch):
+    """POST /api/time-entries klappt Start und Ende ins Soll-Fenster.
+
+    Soll Mo 08:00–17:00, grace=15 min → floor=07:45, ceil=17:15.
+    Eingabe: start=07:00 (< floor), end=18:00 (> ceil).
+    Erwartet: start_time=07:45, raw_start_time=07:00,
+               end_time=17:15, raw_end_time=18:00.
+    Netto: (17:15 - 07:45) - 30min = 9h - 30min = 8,5h → < 10h (§3 ok).
+    Monkeypatch _today_local → 2026-06-01 (Montag) damit employee (non-admin)
+    Einträge für "heute" anlegen darf.
+    """
+    import datetime as dt
+    import app.routers.time_entries as te
+
+    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.scheduled_end_monday = dt.time(17, 0)
+    db.commit()
+
+    monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
+
+    resp = employee_client.post("/api/time-entries", json={
+        "date": "2026-06-01",
+        "start_time": "07:00",
+        "end_time": "18:00",
+        "break_minutes": 30,
+    })
+    assert resp.status_code == 201, resp.text
+
+    from app.models import TimeEntry
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert entry.start_time == dt.time(7, 45), f"Expected 07:45, got {entry.start_time}"
+    assert entry.raw_start_time == dt.time(7, 0), f"Expected raw_start 07:00, got {entry.raw_start_time}"
+    assert entry.end_time == dt.time(17, 15), f"Expected 17:15, got {entry.end_time}"
+    assert entry.raw_end_time == dt.time(18, 0), f"Expected raw_end 18:00, got {entry.raw_end_time}"
