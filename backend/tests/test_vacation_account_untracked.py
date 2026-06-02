@@ -135,3 +135,61 @@ class TestUntrackedVacationAccount:
         u = _make_user(db)
         acc = calculation_service.get_vacation_account(db, u, 2026)
         assert acc["track_hours"] is False
+
+
+class TestUntrackedBookingCreatesRows:
+    """Review R3 (HIGH): Die Buchungspfade legten für track_hours=False NIE eine
+    Abwesenheit an — `get_daily_target_for_date` liefert 0, und beide Loops
+    überspringen 0h-Tage (`if hours_for_day == 0: continue`). Folge: Urlaub/Krank
+    eines leitenden Angestellten wurde 'genehmigt', aber NULL Zeilen geschrieben;
+    `get_vacation_account` (zählt len(vacation_absences)) blieb bei 0 verbraucht.
+    Die #191-Tageszählung war damit funktionslos, weil die zu zählenden Zeilen
+    nie entstanden."""
+
+    def test_create_absence_books_days_for_untracked(self, db, default_tenant):
+        from app.routers.absences import create_absence
+        from app.schemas.absence import AbsenceCreate
+        user = _make_user(db, "ltd_book")
+        # Mo 08.06. – Mi 10.06.2026 = 3 Wochentage, keine Feiertage.
+        create_absence(
+            absence_data=AbsenceCreate(
+                date=date(2026, 6, 8), end_date=date(2026, 6, 10),
+                type=AbsenceType.VACATION, hours=8.0,
+            ),
+            db=db, current_user=user,
+        )
+        rows = db.query(Absence).filter(
+            Absence.user_id == user.id, Absence.type == AbsenceType.VACATION,
+        ).all()
+        assert len(rows) == 3  # eine Zeile pro Werktag
+        assert all(float(r.hours) == 0.0 for r in rows)  # untracked → Stunden 0, tagebasiert
+        acc = calculation_service.get_vacation_account(db, user, 2026)
+        assert acc["used_days"] == 3.0
+
+    def test_review_vacation_request_books_days_for_untracked(self, db, default_tenant):
+        from app.routers.admin_vacations import review_vacation_request
+        from app.schemas.vacation_request import VacationRequestReview
+        from app.models.vacation_request import VacationRequest, VacationRequestStatus
+        emp = _make_user(db, "ltd_vr")
+        admin = _make_user(db, "ltd_admin", role=UserRole.ADMIN)
+        vr = VacationRequest(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            date=date(2026, 6, 8), end_date=date(2026, 6, 10),
+            hours=8.0, absence_type="vacation",
+            status=VacationRequestStatus.PENDING.value,
+        )
+        db.add(vr)
+        db.commit()
+        db.refresh(vr)
+
+        review_vacation_request(
+            request_id=str(vr.id),
+            review=VacationRequestReview(action="approve"),
+            db=db, current_user=admin,
+        )
+        rows = db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.type == AbsenceType.VACATION,
+        ).all()
+        assert len(rows) == 3
+        acc = calculation_service.get_vacation_account(db, emp, 2026)
+        assert acc["used_days"] == 3.0

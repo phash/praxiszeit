@@ -797,3 +797,58 @@ class TestAdminBreakWaiverParity:
             TimeEntryAuditLog.source == "break_waiver"
         ).all()
         assert len(audit) >= 1
+
+
+class TestClockOutSection3NonBlocking:
+    """Review R2-b: Ausstempeln darf NIE mit 422 blockieren, wenn der Tag die
+    §3-10h-Höchstgrenze überschreitet — die Zeit IST bereits geleistet, ein
+    422 würde den offenen Eintrag stranden lassen (get_db rollt zurück → kein
+    end_time → MA bleibt für immer eingestempelt, jeder Retry 422t). Stattdessen
+    wird der Eintrag geschlossen (wahrheitsgemäßer Datensatz, §16) und der
+    §3-Verstoß als deutliche Warnung ausgegeben (analog §4-Pausen-Pfad)."""
+
+    def _open_entry(self, db, employee, today, start):
+        e = TimeEntry(
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID,
+            date=today, start_time=start, end_time=None, break_minutes=0,
+        )
+        db.add(e)
+        db.commit()
+        db.refresh(e)
+        return e
+
+    def _freeze(self, monkeypatch, hour=15, minute=30):
+        import app.routers.time_entries as te
+        from datetime import datetime
+        today = date.today()
+        fixed_now = datetime(today.year, today.month, today.day, hour, minute, tzinfo=te.LOCAL_TZ)
+        monkeypatch.setattr(te, "_now_local", lambda: fixed_now)
+        monkeypatch.setattr(te, "_today_local", lambda: today)
+        return today
+
+    def test_clock_out_over_10h_closes_entry_not_422(self, db, employee, employee_client, monkeypatch):
+        today = self._freeze(monkeypatch, 15, 30)
+        # 04:00 → 15:30 = 11.5h brutto, 0 Pause → 11.5h netto > 10h (§3 hard)
+        entry = self._open_entry(db, employee, today, time(4, 0))
+
+        resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
+
+        # NICHT 422 — der Eintrag muss geschlossen werden, nicht stranden.
+        assert resp.status_code == 200, resp.text
+        db.expire_all()
+        refreshed = db.query(TimeEntry).filter(TimeEntry.id == entry.id).first()
+        assert refreshed.end_time is not None  # geschlossen, nicht offen
+        # §3-Verstoß als deutliche Warnung sichtbar.
+        warnings = resp.json().get("warnings", [])
+        assert any("DAILY_HOURS_HARD" in w for w in warnings), warnings
+        assert any("§3" in w for w in warnings), warnings
+
+    def test_clock_out_under_10h_still_200_no_hard_warning(self, db, employee, employee_client, monkeypatch):
+        today = self._freeze(monkeypatch, 15, 30)
+        # 08:00 → 15:30 = 7.5h, unter 10h → keine §3-Hard-Warnung
+        self._open_entry(db, employee, today, time(8, 0))
+
+        resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 30})
+        assert resp.status_code == 200, resp.text
+        warnings = resp.json().get("warnings", [])
+        assert not any("DAILY_HOURS_HARD" in w for w in warnings), warnings

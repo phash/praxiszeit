@@ -121,7 +121,9 @@ export default function Users() {
           vacation: VacationInfo; overtime: { overtime: number };
         }) => {
           vMap[row.user_id] = row.vacation;
-          oMap[row.user_id] = { overtime: row.overtime.overtime, track_hours: row.track_hours };
+          // Review R3: defensive — a missing overtime object must not throw
+          // here and wedge the whole overview into "Lädt…" forever.
+          oMap[row.user_id] = { overtime: row.overtime?.overtime ?? 0, track_hours: row.track_hours };
         });
         setVacationInfo(vMap);
         setOvertimeInfo(oMap);
@@ -511,7 +513,14 @@ export default function Users() {
                                   : 'bg-red-500'
                               }`}
                               style={{
-                                width: `${Math.max(0, (vacationInfo[user.id].remaining_days / vacationInfo[user.id].budget_days) * 100)}%`
+                                // Review R3: guard budget_days===0 (new MA / no
+                                // prorated entitlement yet) — the bare division
+                                // yields NaN%, which browsers drop, leaving the
+                                // bar at full width (looks like 100% remaining).
+                                // Clamp to [0,100] (carryover can exceed budget).
+                                width: `${vacationInfo[user.id].budget_days > 0
+                                  ? Math.min(100, Math.max(0, (vacationInfo[user.id].remaining_days / vacationInfo[user.id].budget_days) * 100))
+                                  : 0}%`
                               }}
                             ></div>
                           </div>

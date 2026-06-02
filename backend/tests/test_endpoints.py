@@ -910,3 +910,11 @@ class TestAdminSettings:
         assert ok.status_code == 200, ok.text
         bad = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "-5"})
         assert bad.status_code == 400
+
+    def test_inverted_scheduled_window_rejected(self, admin_client):
+        """#201: Invertiertes Soll-Fenster (Start >= Ende) muss 422 liefern."""
+        resp = admin_client.post("/api/admin/users", json={
+            "username": "inv", "first_name": "In", "last_name": "V", "weekly_hours": 40.0,
+            "vacation_days": 30, "work_days_per_week": 5, "password": "InvWindow2025!",
+            "scheduled_start_monday": "18:00", "scheduled_end_monday": "08:00"})
+        assert resp.status_code == 422, resp.text

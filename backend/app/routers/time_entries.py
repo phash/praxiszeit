@@ -358,11 +358,16 @@ def clock_out(
         break_minutes=body.break_minutes,
         exclude_entry_id=open_entry.id,
     )
-    if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
-        )
+    # Review R2-b: §3 ArbZG (10h-Höchstgrenze) darf das Ausstempeln NICHT mit
+    # 422 blockieren. Die Arbeitszeit IST zum Ausstempel-Zeitpunkt bereits
+    # geleistet — ein 422 ließe (über das get_db-Rollback) den offenen Eintrag
+    # ohne end_time zurück, sodass der MA dauerhaft eingestempelt bleibt und
+    # jeder Ausstempel-Versuch erneut 422t. Stattdessen wird der Eintrag
+    # wahrheitsgemäß geschlossen (§16-Nachweis) und der §3-Verstoß weiter unten
+    # als deutliche Warnung ausgegeben — analog zur nicht-blockierenden
+    # §4-Pausen-Prüfung. Die harte 422-Sperre bleibt an den Pfaden mit frei
+    # wählbaren Zeiten (manueller Eintrag, Antrag) bestehen, wo der Nutzer
+    # die Zeiten vor dem Speichern korrigieren kann.
 
     open_entry.end_time = eff_end
     open_entry.raw_end_time = raw_end
@@ -409,7 +414,15 @@ def clock_out(
             else:
                 clock_out_warnings.append(f"BREAK_WARNING: {break_error}")
     if not exempt:
-        if daily_hours > MAX_DAILY_HOURS_WARN:
+        if daily_hours > MAX_DAILY_HOURS_HARD:
+            # Review R2-b: §3-Höchstgrenze überschritten — der Eintrag wurde
+            # geschlossen (nicht blockiert), der Verstoß wird hier deutlich
+            # gemeldet, damit er sichtbar/auditierbar bleibt.
+            clock_out_warnings.append(
+                f"DAILY_HOURS_HARD: Tagesarbeitszeit beträgt {daily_hours:.1f}h und "
+                f"überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG)."
+            )
+        elif daily_hours > MAX_DAILY_HOURS_WARN:
             clock_out_warnings.append("DAILY_HOURS_WARNING")
         weekly_hours_out = _calculate_weekly_net_hours(
             db=db,

@@ -47,7 +47,12 @@ export function computeBreakError(
   if (exempt) return null;
 
   const start = toMinutes(startTime);
-  const end = toMinutes(endTime);
+  let end = toMinutes(endTime);
+  // Review R3: a shift crossing midnight (e.g. 22:00 → 06:00) has end < start as
+  // minutes-since-midnight. Without this the block duration goes negative and
+  // the whole §4 break check silently never fires (a night/on-call clock-out
+  // bypassed the gate). Treat end < start as the following day.
+  if (end < start) end += 24 * 60;
 
   // Combine the new entry with the other closed entries on the same day, then
   // decide everything on the AGGREGATE — never on the single new entry alone.

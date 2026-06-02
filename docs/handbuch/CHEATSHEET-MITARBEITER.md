@@ -23,6 +23,14 @@ Benutzernamen + Passwort eingeben → **Anmelden**
 **Dashboard → Einstempeln** startet die Zeit live; später **Ausstempeln** beendet
 sie und speichert den Eintrag automatisch. Alternativ Zeiten manuell erfassen:
 
+### Pause beim Ausstempeln
+Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
+- Bei **mehr als 6 h** verlangt das Gesetz eine Pause (§4 ArbZG).
+- Reicht die Pause nicht → gelber Hinweis. Zwei Wege:
+  1. **Pause nachtragen** (Minuten korrigieren), oder
+  2. **kurz begründen**, warum keine Pause möglich war (z. B. „Notfall, keine Vertretung") → **dokumentierte Ausnahme**
+- Erst danach ist das Ausstempeln fertig (flüchtiger Hinweis reicht nicht mehr).
+
 ### Neuen Zeiteintrag erstellen
 **Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag**
 - Datum, Startzeit (Von), Endzeit (Bis)
@@ -47,6 +55,12 @@ Aktionsspalte in der Einträge-Tabelle:
 - Warnung ab **8 Stunden** Nettoarbeitszeit
 - Gesperrt ab **10 Stunden** Nettoarbeitszeit
 
+### Soll-Arbeitszeit-Fenster
+*Nur aktiv, wenn die Praxis für Sie Soll-Zeiten hinterlegt hat – sonst zählt alles wie gewohnt.*
+- Zu früh ein- / zu spät ausgestempelt → angerechnet wird nur bis zum **Puffer** (Std. 15 Min.).
+- Hinweis z. B. *„gestempelt 07:30 · angerechnet ab 07:45"*.
+- Ihre **echte Stempelzeit bleibt gespeichert** (§16 ArbZG); fürs Stundenkonto zählt nur die angerechnete Zeit.
+
 ---
 
 ## Korrekturantrag stellen
@@ -59,6 +73,8 @@ Wenn ein Eintrag gesperrt / zu alt ist:
 3. **Antrag stellen**
 
 Für Löschung: **Löschantrag**-Button → Begründung → Bestätigen
+
+**Pflicht-Pause nicht möglich?** Erfüllen die korrigierten Zeiten die Pausenregel nicht, wird der Antrag nicht abgelehnt: Zusatzfeld **„Begründung"** ausfüllen (z. B. „Notfall, keine Vertretung") → **Mit dokumentierter Ausnahme senden**. Die Abweichung geht zur Genehmigung an den Admin.
 
 ---
 
@@ -90,6 +106,9 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 **Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol
 
+### Sondertage 24./31.12.
+Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, sind diese im Kalender markiert (z. B. „Heiligabend (frei)" / „Silvester (½ Tag)") – wie ein Feiertag.
+
 ### Bei aktiver Urlaubsgenehmigungspflicht
 - Urlaub-Speichern → **Antrag** (kein direkter Eintrag)
 - Tab **„Meine Anträge"** zeigt Status
@@ -114,6 +133,15 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 ---
 
+## Ohne Stundenzählung
+
+Für manche Mitarbeitende führt die Praxis **keine Stundenzählung**:
+- Kein Soll/Ist, keine Überstunden, kein Stempel-Button → Kacheln Tagessaldo / Monatssaldo / Überstunden fehlen.
+- **Urlaub & Krank werden trotzdem geführt** – tagebasiert (1 freier Arbeitstag = 1 Tag). Urlaubskonto bleibt sichtbar.
+- Das ist eine bewusste Einstellung Ihrer Praxis, **kein Fehler**.
+
+---
+
 ## Passwort ändern
 
 **Profil → Passwort ändern → Ändern**
@@ -127,9 +155,11 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 | Problem | Lösung |
 |---------|--------|
-| Eintrag nicht speicherbar | Pause prüfen (§4 ArbZG Pflicht!) |
+| Pause zu kurz beim Ausstempeln | Pause nachtragen **oder** kurz begründen (dokumentierte Ausnahme) |
 | Zeiteintrag zu lang | Max. 10h netto (§3 ArbZG) |
 | Eintrag lässt sich nicht bearbeiten | Zu alt → Änderungsantrag stellen |
+| „angerechnet ab HH:MM" beim Eintrag | Soll-Zeit-Fenster: nur bis Puffer angerechnet (echte Zeit bleibt) |
+| Stunden-/Überstundenkacheln fehlen | Kein Fehler – bei Ihnen ohne Stundenzählung |
 | Passwort vergessen | Administrator kontaktieren |
 
 ---

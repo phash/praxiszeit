@@ -144,3 +144,81 @@ class TestAbsenceStartEndTime:
         day = next(d for d in journal["days"] if d["date"] == "2026-03-10")
         assert day["absences"][0]["start_time"] is None
         assert day["absences"][0]["end_time"] is None
+
+
+class TestAbsenceCRApprovalDuplicate:
+    """Review R2-a: Genehmigung eines Absence-CREATE-Antrags darf NICHT mit
+    500 (IntegrityError gegen uq_tenant_user_date_type) crashen oder den Antrag
+    in einen un-genehmigbaren PENDING-Zustand wedgen, wenn am Zieltag bereits
+    eine Abwesenheit existiert. Spiegelt das Verhalten von ``create_absence``:
+    gleicher Typ = idempotent (genehmigen + kein Doppel-Insert), anderer
+    Typ = sauberer 409 statt stiller Doppelbuchung."""
+
+    def _admin(self, db):
+        return _make_user(db, username="cr_admin_dup", email="admindup@test.de",
+                          role=UserRole.ADMIN)
+
+    def test_approve_same_type_is_idempotent_no_500(self, db):
+        """Existiert bereits eine Abwesenheit GLEICHEN Typs am Tag, darf die
+        Genehmigung NICHT mit IntegrityError/500 fehlschlagen — sie soll
+        idempotent durchlaufen (kein Doppel-Insert), CR = APPROVED."""
+        from app.routers.admin_change_requests import review_change_request
+        from app.schemas.change_request import ChangeRequestReview
+
+        emp = _make_user(db, username="dup_emp1", email="dupemp1@test.de")
+        admin = self._admin(db)
+        d = date(2026, 6, 1)  # Montag, Arbeitstag
+        _make_absence(db, emp, d, AbsenceType.SICK, 8.0)
+        cr = _make_absence_cr(
+            db, emp, request_type=ChangeRequestType.CREATE,
+            proposed_date=d, proposed_absence_type="sick",
+            proposed_absence_hours=8.0,
+        )
+
+        review_change_request(
+            request_id=str(cr.id),
+            review=ChangeRequestReview(action="approve"),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.APPROVED
+        # Kein Doppel-Insert: genau EINE Abwesenheit am Tag.
+        n = db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.date == d,
+        ).count()
+        assert n == 1
+
+    def test_approve_conflicting_type_raises_409_no_double_booking(self, db):
+        """Existiert eine Abwesenheit ANDEREN Typs am Tag, soll die Genehmigung
+        einen sauberen 409 werfen (statt still doppelt zu buchen), CR bleibt
+        PENDING (Transaktion zurückgerollt)."""
+        from fastapi import HTTPException
+        from app.routers.admin_change_requests import review_change_request
+        from app.schemas.change_request import ChangeRequestReview
+
+        emp = _make_user(db, username="dup_emp2", email="dupemp2@test.de")
+        admin = self._admin(db)
+        d = date(2026, 6, 1)
+        _make_absence(db, emp, d, AbsenceType.VACATION, 8.0)
+        cr = _make_absence_cr(
+            db, emp, request_type=ChangeRequestType.CREATE,
+            proposed_date=d, proposed_absence_type="sick",
+            proposed_absence_hours=8.0,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            review_change_request(
+                request_id=str(cr.id),
+                review=ChangeRequestReview(action="approve"),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 409
+        db.rollback()
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.PENDING
+        # Keine Doppelbuchung: weiterhin nur die ursprüngliche Vacation-Absence.
+        n = db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.date == d,
+        ).count()
+        assert n == 1

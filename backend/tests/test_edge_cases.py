@@ -580,6 +580,14 @@ class TestDailyScheduleEdgeCases:
         # 6 Monate → 24 × 6/12 = 12 Tage
         assert account["budget_days"] == 12.0
 
+    def test_vacation_prorata_same_year_entry_and_exit(self, db):
+        """Prüft Pro-Rata-Urlaub wenn Eintritt UND Austritt im selben Jahr liegen — Überschneidung Mär–Okt = 8 Monate."""
+        u = _make_user(db, username="tmp", email="tmp@test.de", vacation_days=30,
+                       first_work_day=date(2026, 3, 1), last_work_day=date(2026, 10, 31))
+        account = calculation_service.get_vacation_account(db, u, 2026)
+        # Beschäftigung Mär–Okt = 8 Monate → 30 × 8/12 = 20.0 (nicht min(25,25)=25)
+        assert account["budget_days"] == 20.0
+
     def test_overtime_comp_on_zero_hour_day(self, db):
         """Prüft dass Überstundenausgleich an 0h-Tag (Teilzeit) keinen Effekt auf Soll hat."""
         user = _make_user(

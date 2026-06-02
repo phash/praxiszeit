@@ -88,7 +88,8 @@ export function CheatsheetMitarbeiter() {
             <p className="text-sm font-medium text-gray-700 mb-1">Tagesgrenze (§3 ArbZG)</p>
             <ul className="text-sm text-gray-600 space-y-0.5">
               <li>⚠️ Warnung ab 8 Stunden Nettoarbeitszeit</li>
-              <li>🚫 Gesperrt ab 10 Stunden Nettoarbeitszeit</li>
+              <li>⚠️ Über 10 Stunden: Warnung beim Live-Ausstempeln</li>
+              <li>🚫 Über 10 Stunden bei manueller Eingabe / Antrag: gesperrt</li>
             </ul>
           </div>
         </div>
@@ -246,7 +247,7 @@ export function CheatsheetAdmin() {
             </tr>
           </thead>
           <tbody>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§3</td><td className="px-3 py-2 border border-gray-200 text-gray-600">8h-Warnung, 10h-Hard-Stop</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§3</td><td className="px-3 py-2 border border-gray-200 text-gray-600">8h-Warnung; &gt;10h: Warnung beim Live-Ausstempeln, harte Sperre bei manueller Eingabe/Antrag</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§4</td><td className="px-3 py-2 border border-gray-200 text-gray-600">30/45 Min. Pausenpflicht</td></tr>
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§5</td><td className="px-3 py-2 border border-gray-200 text-gray-600">11h Mindestruhezeit</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§11</td><td className="px-3 py-2 border border-gray-200 text-gray-600">15 freie Sonntage/Jahr</td></tr>
@@ -286,33 +287,67 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Navigieren Sie zu <strong>Zeiterfassung → Tab „Einträge"</strong>. Klicken Sie auf <strong>+ Neuer Eintrag</strong>. Das Formular erscheint direkt über der Tabelle – Datum, Von, Bis und Pause ausfüllen, dann Speichern.</p>
         <p>Aktuelle entsperrte Einträge können direkt über <strong>Bearbeiten</strong> geändert werden. Ältere oder gesperrte Einträge erfordern einen Korrekturantrag.</p>
-        <p className="text-amber-700 font-medium">ArbZG: Pflichtpause ab 6h (30 Min.), ab 9h (45 Min.). Maximum 10h Nettoarbeitszeit.</p>
+        <p className="text-amber-700 font-medium">ArbZG: Pflichtpause ab 6h (30 Min.), ab 9h (45 Min.). Über 10h Nettoarbeitszeit: beim Live-Ausstempeln Warnung, bei manueller Eingabe/Antrag harte Sperre.</p>
       </div>
     ),
   },
   {
-    title: '4. Korrekturanträge stellen & verwalten',
+    title: '4. Pause beim Ausstempeln',
+    content: (
+      <div className="space-y-2">
+        <p>Beim <strong>Ausstempeln</strong> erscheint das Feld <strong>Pause (Min.)</strong>. Tragen Sie ein, wie viele Minuten Pause Sie heute gemacht haben (z. B. <code>30</code>).</p>
+        <p>Reicht die Pause für die geleistete Arbeitszeit nicht aus (mind. 30 Min. ab 6h, 45 Min. ab 9h, §4 ArbZG), erscheint ein gelber Hinweis. Sie haben zwei Möglichkeiten:</p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li><strong>Pause nachtragen</strong> – falls Sie tatsächlich länger Pause gemacht haben, Minuten korrigieren.</li>
+          <li><strong>Begründung angeben</strong> – falls keine Pause möglich war, kurz erläutern (z. B. „Notfall, keine Vertretung"). Diese <strong>dokumentierte Ausnahme</strong> wird gespeichert.</li>
+        </ul>
+        <p>Erst nach Pause-Eingabe <strong>oder</strong> Begründung ist das Ausstempeln abgeschlossen. Mit <strong>Abbrechen</strong> schließen Sie das Feld, ohne auszustempeln – die Uhr läuft weiter.</p>
+      </div>
+    ),
+  },
+  {
+    title: '5. Soll-Arbeitszeiten & Anrechnung',
+    content: (
+      <div className="space-y-2">
+        <p>Hat Ihre Praxis für einen Wochentag eine <strong>Soll-Arbeitszeit</strong> hinterlegt, wird Zeit deutlich vor dem Soll-Beginn bzw. nach dem Soll-Ende <strong>nicht angerechnet</strong>. Ein kleiner Puffer (Standard 15 Min.) ist erlaubt.</p>
+        <p>Stempeln Sie z. B. zu früh ein, sehen Sie den Hinweis: <em>„Du hast vor deinem Soll-Beginn eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt."</em> In der Eintragsliste steht dann z. B. <em>„gestempelt 07:30 · angerechnet ab 07:45"</em>.</p>
+        <p className="text-gray-700">Ihre <strong>echte Stempelzeit geht nicht verloren</strong> (gesetzlich vorgeschrieben, §16 ArbZG) – fürs Stundenkonto zählt nur die angerechnete Zeit.</p>
+      </div>
+    ),
+  },
+  {
+    title: '6. Korrekturanträge stellen & verwalten',
     content: (
       <div className="space-y-2">
         <p>Wenn ein gesperrter Eintrag korrigiert werden muss: <strong>Zeiterfassung → Tab „Einträge"</strong> → in der Aktionsspalte auf <strong>Änderungsantrag</strong> klicken → korrekte Zeiten + Begründung eingeben → Antrag stellen.</p>
         <p>Den Status aller Anträge sehen Sie unter <strong>Zeiterfassung → Tab „Anträge"</strong>. Filter: Alle / Offen / Genehmigt / Abgelehnt. Offene Anträge können mit <strong>Zurückziehen</strong> storniert werden.</p>
+        <p className="text-gray-700"><strong>Pflicht-Pause war nicht möglich?</strong> Erfüllen Ihre korrigierten Zeiten die Pausenregel nicht, wird der Antrag nicht abgelehnt – es erscheint das Feld <strong>„Pflicht-Pause war nicht möglich – Begründung"</strong>. Kurz erläutern und mit <strong>Mit dokumentierter Ausnahme senden</strong> abschicken; die Abweichung wird dokumentiert und dem Admin vorgelegt.</p>
       </div>
     ),
   },
   {
-    title: '5. Abwesenheiten eintragen',
+    title: '7. Abwesenheiten eintragen',
     content: (
       <div className="space-y-2">
         <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum.</p>
         <p>Für Zeiträume aktivieren Sie die Checkbox <strong>„Zeitraum"</strong> und geben ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
-        <p>Hat Ihre Praxis Heiligabend (24.12.) oder Silvester (31.12.) als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert („Heiligabend (frei)" bzw. „Silvester (½ Tag)").</p>
+        <p>Hat Ihre Praxis <strong>Heiligabend (24.12.)</strong> oder <strong>Silvester (31.12.)</strong> als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert: grau „Heiligabend (frei)" bzw. amber „Silvester (½ Tag)" – ähnlich einem Feiertag.</p>
         <p>Wenn Urlaubsgenehmigungspflicht aktiv ist, wechselt die App nach dem Absenden automatisch zum Tab <strong>„Meine Anträge"</strong>.</p>
         <p className="text-gray-700"><strong>So wird Urlaub berechnet:</strong> nach dem Tagesprinzip (§3 BUrlG) – <strong>ein freier Arbeitstag = genau 1 Urlaubstag</strong>, egal wie viele Stunden Sie an dem Tag arbeiten. Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage haben. Ihr Urlaubskonto zeigt die verbleibenden Tage.</p>
       </div>
     ),
   },
   {
-    title: '6. Profil & Passwort',
+    title: '8. Wenn für Sie keine Stunden gezählt werden',
+    content: (
+      <div className="space-y-2">
+        <p>Für manche Mitarbeitende führt die Praxis bewusst <strong>keine Stundenzählung</strong>. Dann fehlen die Kacheln <strong>Tagessaldo</strong>, <strong>Monatssaldo</strong> und <strong>Überstundenkonto</strong> sowie der Stempel-Button – das ist so eingestellt und kein Fehler.</p>
+        <p>Ihr <strong>Urlaubskonto</strong> wird trotzdem geführt: Urlaub und Krankheit zählen weiterhin <strong>tagebasiert</strong> (1 freier Arbeitstag = 1 Urlaubstag).</p>
+      </div>
+    ),
+  },
+  {
+    title: '9. Profil & Passwort',
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Profil</strong> sehen Sie Ihre persönlichen Daten. Über <strong>Passwort ändern → Ändern</strong> setzen Sie ein neues Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer).</p>
@@ -372,16 +407,45 @@ export const handbuchAdminSections: AccordionItem[] = [
     ),
   },
   {
-    title: '6. ArbZG-Berichte & Compliance',
+    title: '6. Sondertage 24./31.12.',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Berichte</strong> (nach unten scrollen) finden Sie: <strong>§5 Ruhezeitverstöße</strong> (&lt;11h zwischen Arbeitstagen), <strong>§6 Nachtarbeit</strong> (≥48 Nachtarbeitstage/Jahr), <strong>§11 Sonntagsarbeit</strong> (max. 37/Jahr) und <strong>§11 Ersatzruhetag</strong> (Fristen überwachen).</p>
-        <p>Das System prüft bei jeder Eingabe automatisch §3 (10h-Hard-Stop), §4 (Pausenpflicht), §6 (8h für Nachtarbeitnehmer), §9/10 (Sonntagsarbeit), §14 (48h-Wochenwarnung).</p>
+        <p>Heiligabend (24.12.) und Silvester (31.12.) sind keine gesetzlichen Feiertage. Unter <strong>Einstellungen → „Sondertage (24./31.12.)"</strong> legen Sie für <strong>jeden</strong> der beiden Tage getrennt fest, wie er behandelt wird:</p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li><strong>Normaler Arbeitstag</strong> – kein Sonderverhalten.</li>
+          <li><strong>Frei</strong> – arbeitsfrei, kein Stundensoll. Im Kalender grau, nicht buchbar.</li>
+          <li><strong>Halbtag</strong> – halbes Tagessoll. Im Kalender amber/gelb.</li>
+        </ul>
+        <p>Die Einstellung wirkt direkt auf Soll-Berechnung und Kalenderdarstellung bei allen Mitarbeitenden.</p>
       </div>
     ),
   },
   {
-    title: '7. Audit-Log & Fehler-Monitoring',
+    title: '7. Pflicht-Pause-Ausnahme (§4 ArbZG)',
+    content: (
+      <div className="space-y-2">
+        <p>Konnte eine vorgeschriebene Pause (§4 ArbZG: 30 Min. ab 6h, 45 Min. ab 9h) nicht eingelegt werden, kann ein Eintrag mit einer <strong>dokumentierten Pflicht-Begründung</strong> erfasst werden, statt blockiert zu werden. Die Begründung landet im Änderungsprotokoll (Quelle „break_waiver").</p>
+        <p>Den Schalter <strong>„Genehmigung erforderlich"</strong> stellen Sie unter <strong>Einstellungen → „Pflicht-Pause-Ausnahme"</strong> ein:</p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li><strong>Aus</strong> – die Ausnahme wird sofort wirksam.</li>
+          <li><strong>Ein</strong> – der Eintrag wird erst nach Admin-Genehmigung wirksam.</li>
+        </ul>
+        <p className="text-gray-700"><strong>4-Augen-Prinzip:</strong> Ist die Genehmigungspflicht aktiv, darf ein Admin seine <strong>eigene</strong> Pflicht-Pause-Ausnahme nicht selbst genehmigen – sie muss von einer zweiten Person geprüft werden.</p>
+      </div>
+    ),
+  },
+  {
+    title: '8. ArbZG-Berichte & Compliance',
+    content: (
+      <div className="space-y-2">
+        <p>Unter <strong>Berichte</strong> (nach unten scrollen) finden Sie: <strong>§5 Ruhezeitverstöße</strong> (&lt;11h zwischen Arbeitstagen), <strong>§6 Nachtarbeit</strong> (≥48 Nachtarbeitstage/Jahr), <strong>§11 Sonntagsarbeit</strong> (max. 37/Jahr) und <strong>§11 Ersatzruhetag</strong> (Fristen überwachen). Erfasste Pflicht-Pause-Ausnahmen samt Begründung sind ebenfalls einsehbar.</p>
+        <p>Das System prüft bei jeder Eingabe automatisch §3, §4 (Pausenpflicht), §6 (8h für Nachtarbeitnehmer), §9/10 (Sonntagsarbeit), §14 (48h-Wochenwarnung).</p>
+        <p className="text-amber-700"><strong>§3 Tageshöchstgrenze (10h):</strong> Beim <strong>Live-Ausstempeln</strong> wird ein Tag über 10h nicht blockiert (die Zeit ist bereits geleistet und §16-pflichtig zu dokumentieren) – es erscheint eine deutliche Warnung. Bei <strong>manueller Eingabe oder Antrag</strong> bleibt die 10h-Grenze eine <strong>harte Sperre</strong>.</p>
+      </div>
+    ),
+  },
+  {
+    title: '9. Audit-Log & Fehler-Monitoring',
     content: (
       <div className="space-y-2">
         <p>Das <strong>Änderungsprotokoll</strong> zeichnet alle Aktionen unveränderlich auf (Login, Zeiteinträge, Abwesenheiten, Benutzerverwaltung, Korrekturanträge). Dient als Nachweis gem. §16 ArbZG bei Betriebsprüfungen.</p>

@@ -62,11 +62,26 @@ class UserBase(BaseModel):
     scheduled_start_friday: Optional[time] = None
     scheduled_end_friday: Optional[time] = None
 
+    _SCHEDULED_WINDOW_PAIRS = [
+        ("scheduled_start_monday", "scheduled_end_monday", "Montag"),
+        ("scheduled_start_tuesday", "scheduled_end_tuesday", "Dienstag"),
+        ("scheduled_start_wednesday", "scheduled_end_wednesday", "Mittwoch"),
+        ("scheduled_start_thursday", "scheduled_end_thursday", "Donnerstag"),
+        ("scheduled_start_friday", "scheduled_end_friday", "Freitag"),
+    ]
+
     @model_validator(mode='after')
     def check_work_day_order(self):
         if self.first_work_day and self.last_work_day:
             if self.first_work_day >= self.last_work_day:
                 raise ValueError("Erster Arbeitstag muss vor dem letzten Arbeitstag liegen")
+        for start_field, end_field, label in self._SCHEDULED_WINDOW_PAIRS:
+            s = getattr(self, start_field, None)
+            e = getattr(self, end_field, None)
+            if s is not None and e is not None and s >= e:
+                raise ValueError(
+                    f"Soll-Beginn muss vor Soll-Ende liegen ({label})"
+                )
         return self
 
 
@@ -118,11 +133,26 @@ class UserUpdate(BaseModel):
     scheduled_start_friday: Optional[time] = None
     scheduled_end_friday: Optional[time] = None
 
+    _SCHEDULED_WINDOW_PAIRS = [
+        ("scheduled_start_monday", "scheduled_end_monday", "Montag"),
+        ("scheduled_start_tuesday", "scheduled_end_tuesday", "Dienstag"),
+        ("scheduled_start_wednesday", "scheduled_end_wednesday", "Mittwoch"),
+        ("scheduled_start_thursday", "scheduled_end_thursday", "Donnerstag"),
+        ("scheduled_start_friday", "scheduled_end_friday", "Freitag"),
+    ]
+
     @model_validator(mode='after')
     def check_work_day_order(self):
         if self.first_work_day and self.last_work_day:
             if self.first_work_day >= self.last_work_day:
                 raise ValueError("Erster Arbeitstag muss vor dem letzten Arbeitstag liegen")
+        for start_field, end_field, label in self._SCHEDULED_WINDOW_PAIRS:
+            s = getattr(self, start_field, None)
+            e = getattr(self, end_field, None)
+            if s is not None and e is not None and s >= e:
+                raise ValueError(
+                    f"Soll-Beginn muss vor Soll-Ende liegen ({label})"
+                )
         return self
 
 

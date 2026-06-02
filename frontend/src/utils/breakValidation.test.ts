@@ -88,4 +88,19 @@ describe('computeBreakError', () => {
     const error = computeBreakError([], '08:00', '10:00', 10, false);
     expect(error).toMatch(/15 Min/);
   });
+
+  // Review R3: a shift crossing midnight (end < start as HH:MM) must still be
+  // measured correctly — otherwise the duration goes negative and the §4 break
+  // gate silently never fires (night/on-call clock-out bypassed the gate).
+  it('measures an overnight shift correctly (end before start)', () => {
+    // 22:00 → 06:00 = 8h gross, 0 break → >6h, no break → must flag §4.
+    const error = computeBreakError([], '22:00', '06:00', 0, false);
+    expect(error).toMatch(/30 Min/);
+  });
+
+  it('flags >9h overnight shift needing 45 min break', () => {
+    // 20:00 → 06:00 = 10h gross, 30 break → 9.5h net (>9h) → must flag 45 min.
+    const error = computeBreakError([], '20:00', '06:00', 30, false);
+    expect(error).toMatch(/45 Min/);
+  });
 });
