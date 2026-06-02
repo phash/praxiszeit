@@ -163,15 +163,14 @@ def list_closures(
     closures = db.query(CompanyClosure).filter(
         CompanyClosure.tenant_id == current_user.tenant_id,
     ).order_by(CompanyClosure.start_date.desc()).offset(skip).limit(limit).all()
+    # Query is constant per request — compute once outside the loop (Fix B)
+    affected = db.query(User).filter(
+        User.is_active == True,
+        User.receives_company_closures == True,
+        User.tenant_id == current_user.tenant_id,
+    ).count()
     result = []
     for c in closures:
-        # Count affected (employees with vacation created for this closure)
-        employees = db.query(User).filter(
-            User.is_active == True,
-            User.receives_company_closures == True,
-            User.tenant_id == current_user.tenant_id,
-        ).all()
-        affected = len(employees)  # all active, participating employees are affected
         result.append(CompanyClosureResponse(
             id=str(c.id),
             name=c.name,
