@@ -283,7 +283,12 @@ def review_vacation_request(
         # tragen kann). Halber Tag = 0,5 × Tagessoll.
         weekly = calculation_service.get_weekly_hours_for_date(db, target_user, d)
         hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
-        if hours_for_day == 0:
+        # Review R3 (HIGH): only skip genuine 0h days for TRACKED users. For
+        # track_hours=False the daily target is always 0; skipping would book
+        # nothing, leaving the approved request with no absence rows and the
+        # day-based vacation account at 0 used. dates_to_create already excludes
+        # weekends/holidays → every remaining day is booked (hours stay 0).
+        if hours_for_day == 0 and target_user.track_hours:
             continue
         if vr.half_day:
             hours_for_day = round(hours_for_day / 2, 2)
