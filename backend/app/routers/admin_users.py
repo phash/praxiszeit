@@ -371,6 +371,16 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         first_work_day=user_data.first_work_day,
         last_work_day=user_data.last_work_day,
         department=user_data.department,
+        scheduled_start_monday=user_data.scheduled_start_monday,
+        scheduled_end_monday=user_data.scheduled_end_monday,
+        scheduled_start_tuesday=user_data.scheduled_start_tuesday,
+        scheduled_end_tuesday=user_data.scheduled_end_tuesday,
+        scheduled_start_wednesday=user_data.scheduled_start_wednesday,
+        scheduled_end_wednesday=user_data.scheduled_end_wednesday,
+        scheduled_start_thursday=user_data.scheduled_start_thursday,
+        scheduled_end_thursday=user_data.scheduled_end_thursday,
+        scheduled_start_friday=user_data.scheduled_start_friday,
+        scheduled_end_friday=user_data.scheduled_end_friday,
         tenant_id=current_user.tenant_id,
     )
 
