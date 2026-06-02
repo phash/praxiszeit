@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.services.arbzg_utils import is_night_work
+from app.services import work_window_service
 
 EXCEL_EPOCH = datetime(1899, 12, 30)
 MAX_DAILY_NET_HOURS = 10.0   # §3 ArbZG
@@ -26,6 +27,8 @@ class ImportedEntry(BaseModel):
     note: Optional[str]
     has_conflict: bool
     arbzg_warnings: list[str]
+    raw_start_time: Optional[time] = None
+    raw_end_time: Optional[time] = None
 
 
 class ImportResult(BaseModel):
@@ -129,6 +132,9 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
     exempt = getattr(user, "exempt_from_arbzg", False) or False
     is_night_worker = getattr(user, "is_night_worker", False) or False
 
+    # #201: Soll-Fenster-Puffer einmalig laden (Default 15 min)
+    grace = work_window_service.get_grace_minutes(db, user.tenant_id) if user else work_window_service.DEFAULT_GRACE_MINUTES
+
     ws = wb.sheet_by_name("Zeiterfassung")
     entries: list[ImportedEntry] = []
     prev_end_dt: Optional[datetime] = None
@@ -151,6 +157,15 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
         # Sekunden auf 0 setzen (XLS hat keine Sekunden)
         start_t = ein_dt.time().replace(second=0, microsecond=0)
         end_t = aus_dt.time().replace(second=0, microsecond=0)
+
+        # #201: Soll-Fenster kappen; raw_* nur gesetzt wenn gekappt
+        if user is not None:
+            start_t, end_t, raw_start_t, raw_end_t = work_window_service.clamp(
+                user, entry_date, start_t, end_t, grace
+            )
+        else:
+            raw_start_t = raw_end_t = None
+
         break_min = _calc_break_minutes(start_t, end_t)
 
         # §5-Check: Für den ersten Eintrag im Import letzten DB-Eintrag vor Import-Zeitraum holen
@@ -190,6 +205,8 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
             note=note,
             has_conflict=existing is not None,
             arbzg_warnings=arbzg_warnings,
+            raw_start_time=raw_start_t,
+            raw_end_time=raw_end_t,
         ))
 
         prev_end_dt = datetime.combine(entry_date, end_t)
@@ -321,6 +338,8 @@ def _execute_import_inner(
                 end_time=entry.end_time,
                 break_minutes=entry.break_minutes,
                 note=entry.note,
+                raw_start_time=entry.raw_start_time,
+                raw_end_time=entry.raw_end_time,
             )
             db.add(new_entry)
             db.flush()  # ID für Audit-Log

@@ -19,6 +19,8 @@ interface TimeEntryItem {
   end_time: string | null;
   break_minutes: number;
   net_hours: number;
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
 }
 
 interface AbsenceItem {
@@ -537,7 +539,17 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <div className="space-y-0.5">
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
-                                  {e.start_time && e.end_time ? `${e.start_time}–${e.end_time}` : '–'}
+                                  {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
+                                  {(e.raw_start_time || e.raw_end_time) && (
+                                    <div className="text-xs text-gray-500 space-y-0">
+                                      {e.raw_start_time && (
+                                        <div>gestempelt {e.raw_start_time.substring(0, 5)} · ab {e.start_time?.substring(0, 5)}</div>
+                                      )}
+                                      {e.raw_end_time && (
+                                        <div>gestempelt {e.raw_end_time.substring(0, 5)} · bis {e.end_time?.substring(0, 5)}</div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                               {day.type === 'mixed' && day.absences.map((a, i) => (

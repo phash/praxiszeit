@@ -72,6 +72,11 @@ export function showArbzgWarnings(
       case 'HOLIDAY_WORK':
         toast.warning('Feiertagsarbeit eingetragen – bitte Ausnahmegrund angeben (§9 ArbZG).');
         break;
+      case 'EARLY_START':
+        toast.warning(
+          detail ?? 'Du hast vor deinem Soll-Beginn eingestempelt — die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt.',
+        );
+        break;
       default:
         toast.warning(raw);
     }

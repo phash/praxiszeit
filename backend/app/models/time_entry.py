@@ -19,6 +19,10 @@ class TimeEntry(Base):
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=True)
     break_minutes = Column(Integer, default=0, nullable=False)
+    # #201: tatsächlich gestempelte/eingegebene Zeit, falls die Soll-Fenster-
+    # Kappung die jeweilige Seite verändert hat (sonst NULL = nicht gekappt).
+    raw_start_time = Column(Time, nullable=True)
+    raw_end_time = Column(Time, nullable=True)
     note = Column(Text, nullable=True)
     sunday_exception_reason = Column(Text, nullable=True)  # §10 ArbZG: reason for Sunday/holiday work
     break_waiver_reason = Column(Text, nullable=True)  # #144 §4 ArbZG: reason a mandatory break was not possible

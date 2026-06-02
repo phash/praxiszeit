@@ -252,11 +252,20 @@ def clock_in(
     if current_user.last_work_day and now.date() > current_user.last_work_day:
         raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
 
+    # #201: clamp early start to [soll_start − grace]; preserve raw stamp.
+    from app.services import work_window_service
+    grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    start_t = now.time().replace(second=0, microsecond=0)
+    eff_start, _eff_end, raw_start, _raw_end = work_window_service.clamp(
+        current_user, now.date(), start_t, None, grace,
+    )
+
     entry = TimeEntry(
         user_id=current_user.id,
         tenant_id=current_user.tenant_id,
         date=now.date(),
-        start_time=now.time().replace(second=0, microsecond=0),
+        start_time=eff_start,
+        raw_start_time=raw_start,
         end_time=None,
         break_minutes=0,
         note=body.note,
@@ -264,6 +273,10 @@ def clock_in(
 
     # §5 ArbZG: Ruhezeit-Warnung (11h seit letztem Arbeitsende)
     clock_in_warnings: list[str] = []
+    if raw_start is not None:
+        clock_in_warnings.append(
+            f"EARLY_START: Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab {eff_start.strftime('%H:%M')}."
+        )
     if not current_user.exempt_from_arbzg:
         last_entry = db.query(TimeEntry).filter(
             TimeEntry.user_id == current_user.id,
@@ -328,13 +341,20 @@ def clock_out(
     new_end_time = now.time().replace(second=0, microsecond=0)
     exempt = current_user.exempt_from_arbzg
 
+    # #201: clamp late end to [soll_end + grace]; preserve raw stamp.
+    from app.services import work_window_service
+    grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    _eff_start, eff_end, _raw_start, raw_end = work_window_service.clamp(
+        current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
+    )
+
     # §3 ArbZG: check daily hours before committing – skipped for exempt users
     daily_hours = _calculate_daily_net_hours(
         db=db,
         user_id=current_user.id,
         entry_date=open_entry.date,
         start_time=open_entry.start_time,
-        end_time=new_end_time,
+        end_time=eff_end,
         break_minutes=body.break_minutes,
         exclude_entry_id=open_entry.id,
     )
@@ -344,7 +364,8 @@ def clock_out(
             detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
         )
 
-    open_entry.end_time = new_end_time
+    open_entry.end_time = eff_end
+    open_entry.raw_end_time = raw_end
     open_entry.break_minutes = body.break_minutes
     if body.note:
         open_entry.note = body.note
@@ -360,7 +381,7 @@ def clock_out(
             user_id=current_user.id,
             entry_date=open_entry.date,
             start_time=open_entry.start_time,
-            end_time=new_end_time,
+            end_time=eff_end,
             break_minutes=body.break_minutes,
             exclude_entry_id=open_entry.id,
         )
@@ -395,7 +416,7 @@ def clock_out(
             user_id=current_user.id,
             entry_date=open_entry.date,
             start_time=open_entry.start_time,
-            end_time=new_end_time,
+            end_time=eff_end,
             break_minutes=body.break_minutes,
             exclude_entry_id=open_entry.id,
         )
@@ -407,7 +428,7 @@ def clock_out(
             clock_out_warnings.append("HOLIDAY_WORK")
         if (
             current_user.is_night_worker
-            and is_night_work(open_entry.start_time, new_end_time)
+            and is_night_work(open_entry.start_time, eff_end)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             clock_out_warnings.append(
@@ -529,6 +550,15 @@ def create_time_entry(
 
     exempt = current_user.exempt_from_arbzg
 
+    # #201: clamp start/end to [soll − grace, soll + grace] BEFORE all §4/§3
+    # checks so that compliance is assessed on the credited (angerechnete) time,
+    # not on the raw input. raw_* store the original stamp when clamping occurs.
+    from app.services import work_window_service
+    _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+        current_user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+    )
+
     # §3 ArbZG: daily hours hard cap – skipped for exempt users.
     # MUST run BEFORE the §4 break-waiver / approval branch below: a >10h day is
     # an absolute legal ceiling that no break waiver (and no approval workflow)
@@ -538,8 +568,8 @@ def create_time_entry(
         db=db,
         user_id=current_user.id,
         entry_date=entry_data.date,
-        start_time=entry_data.start_time,
-        end_time=entry_data.end_time,
+        start_time=eff_start,
+        end_time=eff_end,
         break_minutes=entry_data.break_minutes,
     )
     if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
@@ -559,8 +589,8 @@ def create_time_entry(
             db=db,
             user_id=current_user.id,
             entry_date=entry_data.date,
-            start_time=entry_data.start_time,
-            end_time=entry_data.end_time,
+            start_time=eff_start,
+            end_time=eff_end,
             break_minutes=entry_data.break_minutes,
         )
         if break_error:
@@ -571,6 +601,7 @@ def create_time_entry(
             # A valid waiver was supplied. If the practice requires approval,
             # do NOT write the entry — file a ChangeRequest (request_type=CREATE)
             # that materialises the entry (with break_waiver_reason) on approval.
+            # Store clamped times in the CR so that approval applies credited time.
             if _break_exception_requires_approval(db, current_user.tenant_id):
                 cr = ChangeRequest(
                     user_id=current_user.id,
@@ -579,8 +610,8 @@ def create_time_entry(
                     entry_kind="time_entry",
                     status=ChangeRequestStatus.PENDING,
                     proposed_date=entry_data.date,
-                    proposed_start_time=entry_data.start_time,
-                    proposed_end_time=entry_data.end_time,
+                    proposed_start_time=eff_start,
+                    proposed_end_time=eff_end,
                     proposed_break_minutes=entry_data.break_minutes,
                     proposed_note=entry_data.note,
                     reason=waiver_reason,
@@ -614,8 +645,8 @@ def create_time_entry(
             db=db,
             user_id=current_user.id,
             entry_date=entry_data.date,
-            start_time=entry_data.start_time,
-            end_time=entry_data.end_time,
+            start_time=eff_start,
+            end_time=eff_end,
             break_minutes=entry_data.break_minutes,
         )
         warnings.append(f"BREAK_WAIVER: {waiver_detail}")
@@ -626,8 +657,8 @@ def create_time_entry(
             db=db,
             user_id=current_user.id,
             entry_date=entry_data.date,
-            start_time=entry_data.start_time,
-            end_time=entry_data.end_time,
+            start_time=eff_start,
+            end_time=eff_end,
             break_minutes=entry_data.break_minutes,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -641,7 +672,7 @@ def create_time_entry(
             warnings.append("HOLIDAY_WORK")
         if (
             current_user.is_night_worker
-            and is_night_work(entry_data.start_time, entry_data.end_time)
+            and is_night_work(eff_start, eff_end)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             warnings.append(
@@ -649,13 +680,15 @@ def create_time_entry(
                 "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
             )
 
-    # Create entry
+    # Create entry with clamped times; raw_* capture the original input when clamped.
     entry = TimeEntry(
         user_id=current_user.id,
         tenant_id=current_user.tenant_id,
         date=entry_data.date,
-        start_time=entry_data.start_time,
-        end_time=entry_data.end_time,
+        start_time=eff_start,
+        end_time=eff_end,
+        raw_start_time=raw_start,
+        raw_end_time=raw_end,
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
         sunday_exception_reason=entry_data.sunday_exception_reason,
@@ -731,6 +764,19 @@ def update_time_entry(
     if entry.end_time is not None and entry.end_time <= entry.start_time:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
+    # #201: clamp start/end to [soll − grace, soll + grace] BEFORE all §4/§3
+    # checks so compliance is assessed on credited time. Recomputed every update
+    # so raw_* is reset to None when the edited values fall within the window.
+    from app.services import work_window_service
+    _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
+        current_user, entry.date, entry.start_time, entry.end_time, _grace,
+    )
+    entry.start_time = _eff_start
+    entry.end_time = _eff_end
+    entry.raw_start_time = _raw_start
+    entry.raw_end_time = _raw_end
+
     exempt = current_user.exempt_from_arbzg
 
     # §3 ArbZG: daily hours hard cap – skipped for exempt users.
@@ -775,7 +821,7 @@ def update_time_entry(
 
             if _break_exception_requires_approval(db, current_user.tenant_id):
                 # Do not persist the edit — file an UPDATE ChangeRequest with
-                # the proposed values and revert the in-memory mutation.
+                # the clamped proposed values and revert the in-memory mutation.
                 cr = ChangeRequest(
                     user_id=entry.user_id,
                     tenant_id=current_user.tenant_id,

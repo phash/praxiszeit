@@ -683,6 +683,46 @@ class TestUsersOverview:
     # TestAdminUsers.test_employee_cannot_list_users — no separate test here.
 
 
+class TestScheduledWindowRoundtrip:
+    """#201: scheduled_start/end_monday..friday round-trip through admin user API."""
+
+    def test_user_scheduled_window_roundtrip(self, admin_client, _db_session):
+        resp = admin_client.post("/api/admin/users", json={
+            "username": "win",
+            "first_name": "Win",
+            "last_name": "Dow",
+            "weekly_hours": 40.0,
+            "vacation_days": 30,
+            "work_days_per_week": 5,
+            "password": "WindowPass2025!",
+            "scheduled_start_monday": "08:00",
+            "scheduled_end_monday": "17:00",
+        })
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["user"]["scheduled_start_monday"] == "08:00:00"
+        assert resp.json()["user"]["scheduled_end_monday"] == "17:00:00"
+        assert resp.json()["user"]["scheduled_start_tuesday"] is None
+
+        # Also verify the GET list includes the fields
+        list_resp = admin_client.get("/api/admin/users")
+        assert list_resp.status_code == 200
+        users = list_resp.json()
+        win = next((u for u in users if u["username"] == "win"), None)
+        assert win is not None
+        assert win["scheduled_start_monday"] == "08:00:00"
+        assert win["scheduled_end_monday"] == "17:00:00"
+        assert win["scheduled_start_tuesday"] is None
+
+    def test_user_scheduled_window_update(self, admin_client, employee_user, _db_session):
+        resp = admin_client.put(f"/api/admin/users/{employee_user.id}", json={
+            "scheduled_start_friday": "09:00",
+            "scheduled_end_friday": "15:00",
+        })
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["scheduled_start_friday"] == "09:00:00"
+        assert resp.json()["scheduled_end_friday"] == "15:00:00"
+
+
 class TestAdminYearClosing:
     """POST / DELETE /api/admin/year-closing/{year}"""
 
@@ -859,3 +899,14 @@ class TestChangePassword:
             "new_password": "short",
         })
         assert resp.status_code == 422
+
+
+class TestAdminSettings:
+    """PUT /api/admin/settings/{key}"""
+
+    def test_set_work_window_grace_minutes(self, admin_client):
+        """#201: Gültige Pufferzeit wird gespeichert, negative Werte abgelehnt."""
+        ok = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "20"})
+        assert ok.status_code == 200, ok.text
+        bad = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "-5"})
+        assert bad.status_code == 400

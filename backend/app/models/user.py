@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Numeric, Integer, BigInteger, Enum, DateTime, Date, Text, ForeignKey
+from sqlalchemy import Column, String, Boolean, Numeric, Integer, BigInteger, Enum, DateTime, Date, Text, Time, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -37,6 +37,18 @@ class User(Base):
     hours_wednesday = Column(Numeric(4, 2), nullable=True)
     hours_thursday = Column(Numeric(4, 2), nullable=True)
     hours_friday = Column(Numeric(4, 2), nullable=True)
+    # #201: optionales Soll-Arbeitszeit-Fenster je Wochentag (Mo–Fr). NULL =
+    # kein Fenster an dem Tag → keine Kappung. Kappt nur das Ist, nicht das Soll.
+    scheduled_start_monday = Column(Time, nullable=True)
+    scheduled_end_monday = Column(Time, nullable=True)
+    scheduled_start_tuesday = Column(Time, nullable=True)
+    scheduled_end_tuesday = Column(Time, nullable=True)
+    scheduled_start_wednesday = Column(Time, nullable=True)
+    scheduled_end_wednesday = Column(Time, nullable=True)
+    scheduled_start_thursday = Column(Time, nullable=True)
+    scheduled_end_thursday = Column(Time, nullable=True)
+    scheduled_start_friday = Column(Time, nullable=True)
+    scheduled_end_friday = Column(Time, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_hidden = Column(Boolean, default=False, nullable=False, server_default='false')  # Hidden from reports/overviews
     token_version = Column(Integer, default=0, nullable=False, server_default='0')  # Increment to invalidate all tokens

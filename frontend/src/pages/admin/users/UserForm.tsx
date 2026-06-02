@@ -28,6 +28,16 @@ interface User {
   hours_wednesday: number | null;
   hours_thursday: number | null;
   hours_friday: number | null;
+  scheduled_start_monday: string | null;
+  scheduled_end_monday: string | null;
+  scheduled_start_tuesday: string | null;
+  scheduled_end_tuesday: string | null;
+  scheduled_start_wednesday: string | null;
+  scheduled_end_wednesday: string | null;
+  scheduled_start_thursday: string | null;
+  scheduled_end_thursday: string | null;
+  scheduled_start_friday: string | null;
+  scheduled_end_friday: string | null;
   first_work_day: string | null;
   last_work_day: string | null;
   department?: string | null;
@@ -71,6 +81,16 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     hours_wednesday: 8,
     hours_thursday: 8,
     hours_friday: 8,
+    scheduled_start_monday: '',
+    scheduled_end_monday: '',
+    scheduled_start_tuesday: '',
+    scheduled_end_tuesday: '',
+    scheduled_start_wednesday: '',
+    scheduled_end_wednesday: '',
+    scheduled_start_thursday: '',
+    scheduled_end_thursday: '',
+    scheduled_start_friday: '',
+    scheduled_end_friday: '',
     overtime_carryover: 0, // #158: Anfangssaldo Überstunden (kein User-Feld, separater Carryover-Call)
   });
   // #158: vorhandener Vortrag zum Startjahr — wird beim Speichern erhalten.
@@ -101,6 +121,16 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         hours_wednesday: editUser.hours_wednesday ?? 8,
         hours_thursday: editUser.hours_thursday ?? 8,
         hours_friday: editUser.hours_friday ?? 8,
+        scheduled_start_monday: editUser.scheduled_start_monday?.substring(0, 5) || '',
+        scheduled_end_monday: editUser.scheduled_end_monday?.substring(0, 5) || '',
+        scheduled_start_tuesday: editUser.scheduled_start_tuesday?.substring(0, 5) || '',
+        scheduled_end_tuesday: editUser.scheduled_end_tuesday?.substring(0, 5) || '',
+        scheduled_start_wednesday: editUser.scheduled_start_wednesday?.substring(0, 5) || '',
+        scheduled_end_wednesday: editUser.scheduled_end_wednesday?.substring(0, 5) || '',
+        scheduled_start_thursday: editUser.scheduled_start_thursday?.substring(0, 5) || '',
+        scheduled_end_thursday: editUser.scheduled_end_thursday?.substring(0, 5) || '',
+        scheduled_start_friday: editUser.scheduled_start_friday?.substring(0, 5) || '',
+        scheduled_end_friday: editUser.scheduled_end_friday?.substring(0, 5) || '',
         overtime_carryover: 0,
       });
     }
@@ -152,6 +182,16 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         first_work_day: formData.first_work_day || null,
         last_work_day: formData.last_work_day || null,
         department: formData.department.trim() || null,
+        scheduled_start_monday: formData.scheduled_start_monday || null,
+        scheduled_end_monday: formData.scheduled_end_monday || null,
+        scheduled_start_tuesday: formData.scheduled_start_tuesday || null,
+        scheduled_end_tuesday: formData.scheduled_end_tuesday || null,
+        scheduled_start_wednesday: formData.scheduled_start_wednesday || null,
+        scheduled_end_wednesday: formData.scheduled_end_wednesday || null,
+        scheduled_start_thursday: formData.scheduled_start_thursday || null,
+        scheduled_end_thursday: formData.scheduled_end_thursday || null,
+        scheduled_start_friday: formData.scheduled_start_friday || null,
+        scheduled_end_friday: formData.scheduled_end_friday || null,
       };
       const startYear = formData.first_work_day
         ? new Date(formData.first_work_day).getFullYear()
@@ -505,6 +545,43 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               )}
             </div>
           )}
+
+          {/* Soll-Arbeitszeiten (Arbeitszeit-Fenster) */}
+          <div className="md:col-span-2 border border-gray-200 rounded-lg p-4">
+            <p className="text-sm font-medium text-gray-700 mb-3">
+              Soll-Arbeitszeiten je Wochentag <span className="text-gray-400 font-normal">(optional – leer lassen = kein Fenster)</span>
+            </p>
+            <div className="grid grid-cols-5 gap-3">
+              {(
+                [
+                  { label: 'Mo', startKey: 'scheduled_start_monday', endKey: 'scheduled_end_monday' },
+                  { label: 'Di', startKey: 'scheduled_start_tuesday', endKey: 'scheduled_end_tuesday' },
+                  { label: 'Mi', startKey: 'scheduled_start_wednesday', endKey: 'scheduled_end_wednesday' },
+                  { label: 'Do', startKey: 'scheduled_start_thursday', endKey: 'scheduled_end_thursday' },
+                  { label: 'Fr', startKey: 'scheduled_start_friday', endKey: 'scheduled_end_friday' },
+                ] as const
+              ).map(({ label, startKey, endKey }) => (
+                <div key={label} className="flex flex-col gap-1">
+                  <span className="block text-xs font-medium text-gray-600 text-center">{label}</span>
+                  <input
+                    type="time"
+                    value={formData[startKey]}
+                    onChange={(e) => setFormData({ ...formData, [startKey]: e.target.value })}
+                    aria-label={`Soll-Beginn ${label}`}
+                    className="w-full px-1 py-1 text-center border border-gray-300 rounded-sm focus:ring-2 focus:ring-primary text-xs"
+                  />
+                  <input
+                    type="time"
+                    value={formData[endKey]}
+                    onChange={(e) => setFormData({ ...formData, [endKey]: e.target.value })}
+                    aria-label={`Soll-Ende ${label}`}
+                    className="w-full px-1 py-1 text-center border border-gray-300 rounded-sm focus:ring-2 focus:ring-primary text-xs"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Oben: Soll-Beginn · Unten: Soll-Ende</p>
+          </div>
 
           <div className="md:col-span-2">
             <button
