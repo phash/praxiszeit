@@ -406,7 +406,12 @@ def update_user(
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     if user_data.username and user_data.username.lower() != user.username.lower():
-        existing = db.query(User).filter(func.lower(User.username) == user_data.username.lower()).first()
+        # F-026: scope the uniqueness probe to the tenant (parity with
+        # create_user) — usernames are unique per tenant, not globally.
+        existing = db.query(User).filter(
+            func.lower(User.username) == user_data.username.lower(),
+            User.tenant_id == current_user.tenant_id,
+        ).first()
         if existing:
             raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
@@ -569,9 +574,12 @@ def delete_working_hours_change(
     current_user: User = Depends(require_admin)
 ):
     """Delete a working hours change (admin only)."""
+    # F-026: explicit tenant filter on the .delete() lookup (it runs before the
+    # _get_user_in_tenant validation below, so RLS would be the only guard).
     change = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.id == change_id,
-        WorkingHoursChange.user_id == user_id
+        WorkingHoursChange.user_id == user_id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,
     ).first()
 
     if not change:

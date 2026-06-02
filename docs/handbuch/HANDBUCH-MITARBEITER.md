@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.1 · **Stand:** April 2026
+**Version:** 2.2 · **Stand:** Juni 2026 (PraxisZeit 1.8.0)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -11,17 +11,21 @@
 1. [Anmelden](#1-anmelden)
 2. [Dashboard – Die Übersicht](#2-dashboard--die-übersicht)
 3. [Zeiterfassung](#3-zeiterfassung)
-   - 3.1 [Arbeitszeit eintragen](#31-arbeitszeit-eintragen)
-   - 3.2 [Eintrag bearbeiten oder löschen](#32-eintrag-bearbeiten-oder-löschen)
-   - 3.3 [Korrekturantrag stellen](#33-korrekturantrag-stellen)
-   - 3.4 [Anträge verwalten (Anträge-Tab)](#34-anträge-verwalten-anträge-tab)
+   - 3.1 [Ein- und Ausstempeln (Stoppuhr)](#31-ein--und-ausstempeln-stoppuhr)
+   - 3.2 [Arbeitszeit von Hand eintragen](#32-arbeitszeit-von-hand-eintragen)
+   - 3.3 [Soll-Arbeitszeiten und Anrechnung](#33-soll-arbeitszeiten-und-anrechnung)
+   - 3.4 [Eintrag bearbeiten oder löschen](#34-eintrag-bearbeiten-oder-löschen)
+   - 3.5 [Korrekturantrag stellen](#35-korrekturantrag-stellen)
+   - 3.6 [Anträge verwalten (Anträge-Tab)](#36-anträge-verwalten-anträge-tab)
 4. [Abwesenheiten](#4-abwesenheiten)
    - 4.1 [Abwesenheit eintragen](#41-abwesenheit-eintragen)
    - 4.2 [Urlaubsantrag stellen (bei Genehmigungspflicht)](#42-urlaubsantrag-stellen-bei-genehmigungspflicht)
    - 4.3 [Abwesenheit löschen](#43-abwesenheit-löschen)
-5. [Profil & Passwort](#5-profil--passwort)
-6. [Mobil-Nutzung](#6-mobil-nutzung)
-7. [Häufige Fragen (FAQ)](#7-häufige-fragen-faq)
+   - 4.4 [So wird Ihr Urlaub berechnet](#44-so-wird-ihr-urlaub-berechnet)
+5. [Wenn für Sie keine Stunden gezählt werden](#5-wenn-für-sie-keine-stunden-gezählt-werden)
+6. [Profil & Passwort](#6-profil--passwort)
+7. [Mobil-Nutzung](#7-mobil-nutzung)
+8. [Häufige Fragen (FAQ)](#8-häufige-fragen-faq)
 
 ---
 
@@ -60,6 +64,8 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
 
 > **Zeitanzeige:** Stunden werden im Format H:MM angezeigt (z. B. „8:30" für 8 Stunden 30 Minuten). Negative Salden werden mit einem Minus-Zeichen dargestellt (z. B. „-2:15").
+
+> **Hinweis:** Falls Ihre Praxis für Sie **keine Stundenzählung** führt, fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto** – das ist bei Ihnen so eingestellt und kein Fehler. Ihr **Urlaubskonto** wird trotzdem geführt. Mehr dazu in [Abschnitt 5](#5-wenn-für-sie-keine-stunden-gezählt-werden).
 
 ### Monatsübersicht (Tabelle)
 
@@ -113,9 +119,37 @@ Die Seite gliedert sich in **drei Tabs**:
 
 ---
 
-### 3.1 Arbeitszeit eintragen
+### 3.1 Ein- und Ausstempeln (Stoppuhr)
 
-Klicken Sie oben rechts auf **+ Neuer Eintrag**.
+Am einfachsten erfassen Sie Ihre Arbeitszeit live mit der Stempeluhr. Sie finden den **Einstempeln**-Button auf dem Dashboard (am Smartphone zusätzlich über den großen Knopf unten in der Mitte).
+
+**So stempeln Sie ein:**
+
+1. Klicken bzw. tippen Sie auf **Einstempeln**.
+2. Die Uhr beginnt zu laufen und zeigt Ihre heutige Arbeitszeit live an.
+
+**So stempeln Sie aus:**
+
+1. Klicken bzw. tippen Sie auf **Ausstempeln**.
+2. Es erscheint ein Feld **Pause (Min.)** – tragen Sie hier ein, wie viele Minuten Pause Sie heute gemacht haben (z. B. `30`).
+3. Klicken bzw. tippen Sie auf **Jetzt ausstempeln**.
+
+> **Wichtig – Pause nacherfassen (§ 4 ArbZG):**
+> Wenn Sie an einem Tag **mehr als 6 Stunden** gearbeitet haben, schreibt das Gesetz eine Pause vor (mind. 30 Min. bei mehr als 6 h, mind. 45 Min. bei mehr als 9 h). Tragen Sie deshalb beim Ausstempeln Ihre tatsächliche Pause ein.
+>
+> Reicht die eingetragene Pause nicht aus, erscheint ein gelber Hinweis. Sie haben dann **zwei Möglichkeiten**:
+> 1. **Pause oben nachtragen** – wenn Sie tatsächlich länger Pause gemacht haben, korrigieren Sie einfach die Minuten.
+> 2. **Begründung angeben** – falls eine Pause wirklich nicht möglich war, schreiben Sie in das Textfeld kurz, warum (z. B. „Notfall, keine Vertretung"). Diese **dokumentierte Ausnahme** wird gespeichert, und Sie können danach normal ausstempeln.
+>
+> Anders als früher genügt also kein flüchtiger Hinweis mehr – Sie müssen entweder die Pause eintragen **oder** die Ausnahme begründen, bevor das Ausstempeln abgeschlossen wird.
+
+> **Verschrieben?** Mit **Abbrechen** schließen Sie das Pausenfeld wieder, ohne auszustempeln – die Uhr läuft weiter.
+
+---
+
+### 3.2 Arbeitszeit von Hand eintragen
+
+Wenn Sie nicht gestempelt haben (z. B. einen vergangenen Tag nachtragen möchten), klicken Sie oben rechts auf **+ Neuer Eintrag**.
 
 ![Zeiteintrag Formular](screenshots/04-ma-zeiteintrag-formular.png)
 
@@ -141,7 +175,21 @@ Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das
 
 ---
 
-### 3.2 Eintrag bearbeiten oder löschen
+### 3.3 Soll-Arbeitszeiten und Anrechnung
+
+Manche Praxen hinterlegen für einzelne Wochentage **feste Soll-Arbeitszeiten** (z. B. „Montag 8:00–17:00"). Ist das bei Ihnen eingestellt, gilt:
+
+- **Zu früh eingestempelt:** Stempeln Sie deutlich **vor Ihrem Soll-Beginn** ein, wird die Zeit davor nicht als Arbeitszeit angerechnet. Ein kleiner **Puffer** (Standard 15 Minuten) ist erlaubt. Sie sehen dann den Hinweis: *„Du hast vor deinem Soll-Beginn eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt."*
+- **Zu spät ausgestempelt:** Bleiben Sie nach Ihrem **Soll-Ende** noch deutlich länger (über den Puffer hinaus), wird die Zeit danach ebenfalls nicht mitgezählt.
+- In der Eintragsliste erkennen Sie das an einer kleinen Zusatzzeile unter der Uhrzeit, z. B. *„gestempelt 07:30 · angerechnet ab 07:45"*.
+
+> **Ihre echte Stempelzeit geht nicht verloren:** Der Zeitpunkt, zu dem Sie tatsächlich gestempelt haben, bleibt immer gespeichert (gesetzlich vorgeschrieben, § 16 ArbZG). Für Ihr Stundenkonto wird nur die **angerechnete** Zeit verwendet.
+
+> **Hinweis:** Diese Begrenzung ist **nur aktiv, wenn Ihre Praxis Soll-Zeiten für Sie hinterlegt hat**. Ist nichts hinterlegt, ändert sich für Sie nichts – dann zählt Ihre gestempelte Zeit ganz normal. Bei Fragen zu Ihren Soll-Zeiten wenden Sie sich an Ihren Administrator.
+
+---
+
+### 3.4 Eintrag bearbeiten oder löschen
 
 In der Spalte **Aktionen** finden Sie Buttons je nach Zustand des Eintrags:
 
@@ -153,12 +201,12 @@ In der Spalte **Aktionen** finden Sie Buttons je nach Zustand des Eintrags:
 | **Löschantrag** | Antrag auf Löschung eines gesperrten Eintrags stellen |
 
 > **Warum können ältere Einträge nicht direkt geändert werden?**
-> Nach einer Sperrfrist gelten Einträge als bestätigt. Korrekturen erfordern dann einen formellen Antrag (→ [Abschnitt 3.3](#33-korrekturantrag-stellen)).
+> Nach einer Sperrfrist gelten Einträge als bestätigt. Korrekturen erfordern dann einen formellen Antrag (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)).
 > Dies dient der Nachvollziehbarkeit gem. [§ 16 ArbZG](https://www.gesetze-im-internet.de/arbzg/__16.html).
 
 ---
 
-### 3.3 Korrekturantrag stellen
+### 3.5 Korrekturantrag stellen
 
 Wenn ein Eintrag gesperrt ist oder Sie nachträglich eine Korrektur beantragen möchten, klicken Sie in der Zeile des betroffenen Eintrags auf den Button **Änderungsantrag**.
 
@@ -170,6 +218,9 @@ Ein Dialog öffnet sich mit dem Vergleich von aktuellem und gewünschtem Eintrag
 
 Für eine vollständige Löschung eines gesperrten Eintrags klicken Sie stattdessen auf **Löschantrag**, geben eine Begründung ein und bestätigen.
 
+> **Pflicht-Pause war nicht möglich? (§ 4 ArbZG):**
+> Wenn Ihre korrigierten Zeiten die Pausenregel nicht erfüllen (mind. 30 Min. bei mehr als 6 h, mind. 45 Min. bei mehr als 9 h), wird Ihr Antrag **nicht einfach abgelehnt**. Stattdessen erscheint ein zusätzliches Feld **„Pflicht-Pause war nicht möglich – Begründung"**. Tragen Sie dort kurz ein, warum keine ausreichende Pause möglich war (z. B. „Notfall, keine Vertretung verfügbar"), und senden Sie den Antrag mit **Mit dokumentierter Ausnahme senden** ab. Die Abweichung wird dokumentiert und dem Administrator zur Genehmigung vorgelegt.
+
 **Was danach passiert:**
 - Der Antrag erscheint beim Administrator zur Prüfung
 - Sie sehen den Status unter **Zeiterfassung → Tab „Anträge"**
@@ -177,7 +228,7 @@ Für eine vollständige Löschung eines gesperrten Eintrags klicken Sie stattdes
 
 ---
 
-### 3.4 Anträge verwalten (Anträge-Tab)
+### 3.6 Anträge verwalten (Anträge-Tab)
 
 Wechseln Sie im Tab-Menü der Zeiterfassung auf **Anträge**.
 
@@ -299,7 +350,19 @@ PraxisZeit führt Urlaub **nach Arbeitstagen** (Tagesprinzip nach § 3 BUrlG) �
 
 ---
 
-## 5. Profil & Passwort
+## 5. Wenn für Sie keine Stunden gezählt werden
+
+Für manche Mitarbeitende führt die Praxis bewusst **keine Stundenzählung**. Das bedeutet:
+
+- Es gibt **kein Soll/Ist** und **keine Überstunden** für Sie. Auf dem Dashboard fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto**, und auch der Stempel-Button (Ein-/Ausstempeln) wird nicht angezeigt.
+- **Urlaub und Krankheit werden trotzdem erfasst** – und zwar **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag (ein Halbtag zählt als voller Tag). Ihr **Urlaubskonto** auf dem Dashboard funktioniert wie bei allen anderen.
+- Sie nutzen den Bereich **Abwesenheiten** ganz normal (siehe [Abschnitt 4](#4-abwesenheiten)) – nur die reine Arbeitszeit-Erfassung entfällt.
+
+> **Ist das ein Fehler?** Nein. Wenn bei Ihnen die Stunden- und Überstundenanzeige fehlt, ist das eine bewusste Einstellung Ihrer Praxis für Ihren Account. Bei Fragen wenden Sie sich an Ihren Administrator.
+
+---
+
+## 6. Profil & Passwort
 
 Klicken Sie in der Navigation auf **Profil**.
 
@@ -331,7 +394,7 @@ Unter **Weitere Einstellungen** (aufklappbar) können Sie persönliche Darstellu
 
 ---
 
-## 6. Mobil-Nutzung
+## 7. Mobil-Nutzung
 
 PraxisZeit ist vollständig für mobile Geräte optimiert.
 
@@ -364,7 +427,7 @@ Auf unterstützten Geräten können Sie PraxisZeit wie eine App installieren:
 
 ---
 
-## 7. Häufige Fragen (FAQ)
+## 8. Häufige Fragen (FAQ)
 
 **F: Ich sehe meinen Eintrag nicht mehr, obwohl ich ihn gespeichert habe.**
 A: Überprüfen Sie, ob Sie den richtigen Monat anzeigen. Nutzen Sie die Pfeile `<` `>` neben dem Monatsnamen.
@@ -375,8 +438,17 @@ A: PraxisZeit prüft die gesetzlichen Grenzen:
 - Netto > 10h: Blockiert (Tageshöchstgrenze – § 3 ArbZG)
 - Zu kurze Pause: Warnung (§ 4 ArbZG – bei >6h mind. 30 Min., bei >9h mind. 45 Min.)
 
+**F: Beim Ausstempeln werde ich nach meiner Pause gefragt – was muss ich eintragen?**
+A: Tragen Sie im Feld **Pause (Min.)** ein, wie viele Minuten Sie heute Pause gemacht haben. Bei mehr als 6 Stunden Arbeit verlangt das Gesetz eine Pause (§ 4 ArbZG). Reicht Ihre Eingabe nicht aus, können Sie entweder die Pausenminuten korrigieren **oder** im erscheinenden Textfeld kurz begründen, warum keine Pause möglich war. Erst danach ist das Ausstempeln abgeschlossen.
+
+**F: Warum steht bei meinem Eintrag „gestempelt 07:30 · angerechnet ab 07:45"?**
+A: Ihre Praxis hat für diesen Wochentag eine Soll-Arbeitszeit hinterlegt. Wenn Sie deutlich vor dem Soll-Beginn ein- oder nach dem Soll-Ende ausstempeln, wird nur bis zu einem kleinen Puffer (Standard 15 Min.) angerechnet. Ihre tatsächliche Stempelzeit bleibt aber gespeichert. Siehe [Abschnitt 3.3](#33-soll-arbeitszeiten-und-anrechnung).
+
 **F: Wie berechnet sich mein Urlaubsanspruch?**
-A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet.
+A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet. Verbraucht wird **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag (siehe [Abschnitt 4.4](#44-so-wird-ihr-urlaub-berechnet)).
+
+**F: Bei mir fehlen die Stunden- und Überstundenkacheln. Ist das kaputt?**
+A: Nein. Für manche Mitarbeitende führt die Praxis keine Stundenzählung. Dann entfallen Soll/Ist, Überstunden und der Stempel-Button; Urlaub und Krankheit werden weiter tagebasiert geführt. Mehr dazu in [Abschnitt 5](#5-wenn-für-sie-keine-stunden-gezählt-werden).
 
 **F: Was bedeutet der rote „-" Wert bei Überstunden?**
 A: Ein negativer Wert bedeutet, dass Sie weniger gearbeitet haben als Ihre Sollstunden.
@@ -412,4 +484,4 @@ Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https:/
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.1 | April 2026*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.2 | Juni 2026 (PraxisZeit 1.8.0)*

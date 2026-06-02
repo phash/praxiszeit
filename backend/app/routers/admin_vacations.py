@@ -212,17 +212,23 @@ def review_vacation_request(
     if not dates_to_create:
         raise HTTPException(status_code=400, detail="Keine gültigen Arbeitstage im Zeitraum")
 
-    # Check for existing absences of the same type on those days
+    # R2-c: block ANY pre-existing absence on those days, not just the same
+    # type. The unique constraint is (tenant_id, user_id, date, type) — a
+    # DIFFERENT type (e.g. an existing SICK absence) would slip past a
+    # same-type-only check and let approval insert a second absence on the same
+    # day (cross-type double-booking). One absence per day, period. Mirrors
+    # create_absence. F-026: explicit tenant scoping; with_for_update() closes
+    # the race between this probe and the INSERT below.
     for d in dates_to_create:
         existing = db.query(Absence).filter(
             Absence.user_id == target_user.id,
+            Absence.tenant_id == current_user.tenant_id,
             Absence.date == d,
-            Absence.type == absence_type,
-        ).first()
+        ).with_for_update().first()
         if existing:
             raise HTTPException(
-                status_code=400,
-                detail=f"Es existiert bereits ein {absence_type_str}-Eintrag am {d.strftime('%d.%m.%Y')}",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Am {d.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})",
             )
 
     # Check vacation budget only for VACATION type (per year for cross-year requests)
@@ -233,7 +239,21 @@ def review_vacation_request(
         for check_year, year_dates in dates_by_year.items():
             vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
             # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5).
-            days_needed = len(year_dates) * (0.5 if vr.half_day else 1.0)
+            # R1-3: skip days with 0h target only when use_daily_schedule=True
+            # (e.g. Mo/Mi/Fr user — mirrors the creation loop which skips
+            # hours_for_day == 0). Only applies when track_hours=True; for
+            # track_hours=False users all weekdays count (pure day-based booking).
+            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
+                billable_days = [
+                    d for d in year_dates
+                    if float(calculation_service.get_daily_target_for_date(
+                        target_user, d,
+                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                    )) > 0
+                ]
+            else:
+                billable_days = year_dates
+            days_needed = len(billable_days) * (0.5 if vr.half_day else 1.0)
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -263,7 +283,12 @@ def review_vacation_request(
         # tragen kann). Halber Tag = 0,5 × Tagessoll.
         weekly = calculation_service.get_weekly_hours_for_date(db, target_user, d)
         hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
-        if hours_for_day == 0:
+        # Review R3 (HIGH): only skip genuine 0h days for TRACKED users. For
+        # track_hours=False the daily target is always 0; skipping would book
+        # nothing, leaving the approved request with no absence rows and the
+        # day-based vacation account at 0 used. dates_to_create already excludes
+        # weekends/holidays → every remaining day is booked (hours stay 0).
+        if hours_for_day == 0 and target_user.track_hours:
             continue
         if vr.half_day:
             hours_for_day = round(hours_for_day / 2, 2)

@@ -245,6 +245,10 @@ def review_change_request(
 
     # Absence CR preconditions
     absence = None
+    # Review R2-a: a pre-existing absence on the target day that the CREATE
+    # path would collide with. Same type → idempotent (skip the insert below);
+    # different type → raised as 409 here, before any state change.
+    existing_absence = None
     if cr.entry_kind == "absence":
         if cr.request_type in (ChangeRequestType.UPDATE, ChangeRequestType.DELETE):
             absence = db.query(Absence).filter(Absence.id == cr.absence_id).first()
@@ -259,6 +263,34 @@ def review_change_request(
                     raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
                 if cr_user.last_work_day and cr.proposed_date > cr_user.last_work_day:
                     raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
+
+        # Review R2-a: guard the CREATE materialisation against double-booking.
+        # Without this, approving a CREATE-CR whose target day already has an
+        # absence either crashes with 500 (uq_tenant_user_date_type violation
+        # for the SAME type — which then rolls back the status flip and wedges
+        # the CR PENDING / un-approvable) or silently double-books (a DIFFERENT
+        # type slips past the unique constraint). Mirror create_absence: same
+        # type = idempotent skip, different type = clean 409. with_for_update()
+        # closes the race between this probe and the INSERT below.
+        if cr.request_type == ChangeRequestType.CREATE and cr.proposed_date:
+            existing_absence = (
+                db.query(Absence)
+                .filter(
+                    Absence.user_id == cr.user_id,
+                    Absence.tenant_id == cr.tenant_id,
+                    Absence.date == cr.proposed_date,
+                )
+                .with_for_update()
+                .first()
+            )
+            if existing_absence and existing_absence.type.value != cr.proposed_absence_type:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Am {cr.proposed_date.strftime('%d.%m.%Y')} existiert bereits "
+                        f"eine Abwesenheit ({existing_absence.type.value})"
+                    ),
+                )
 
     # All preconditions met — now mark as approved
     cr.status = ChangeRequestStatus.APPROVED
@@ -361,7 +393,34 @@ def review_change_request(
 
     # Absence CR actions
     if cr.entry_kind == "absence":
-        if cr.request_type == ChangeRequestType.CREATE:
+        if cr.request_type == ChangeRequestType.CREATE and existing_absence is not None:
+            # Review R2-a: idempotent — an absence of the SAME type already
+            # exists for this day (different types were rejected with 409 in the
+            # precondition above). Approve the CR and link it to the existing
+            # row instead of inserting a duplicate (which would violate
+            # uq_tenant_user_date_type and 500/wedge the CR).
+            cr.absence_id = existing_absence.id
+            # Review R3: still record an audit row so the approval-against-an-
+            # existing-absence stays traceable (§16) — every other CR branch
+            # writes one; the idempotent link must not be the silent exception.
+            audit = TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=cr.user_id,
+                changed_by=current_user.id,
+                action="create",
+                new_date=existing_absence.date,
+                new_start_time=existing_absence.start_time,
+                new_end_time=existing_absence.end_time,
+                new_note=(
+                    f"absence:{existing_absence.type.value}:"
+                    f"{float(existing_absence.hours)}h (link-existing)"
+                ),
+                source="change_request",
+                change_request_id=cr.id,
+                tenant_id=cr_tenant_id,
+            )
+            db.add(audit)
+        elif cr.request_type == ChangeRequestType.CREATE:
             # §3 EntgFG: Bei Krankmeldung immer die vertragliche Tages-Sollzeit
             # gutschreiben, nicht den vom Antragsteller eingetragenen Wert.
             if cr.proposed_absence_type == "sick":

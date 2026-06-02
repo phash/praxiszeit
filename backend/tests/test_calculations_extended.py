@@ -310,18 +310,22 @@ def test_vacation_account_last_work_day_reduces_budget(db):
     assert result["budget_days"] == 12.0
 
 
-def test_vacation_account_both_set_takes_minimum(db):
-    """Prüft dass bei Ein- und Austritt im selben Jahr das Minimum beider Quoten gilt."""
+def test_vacation_account_both_set_overlap(db):
+    """Prüft dass bei Ein- und Austritt im selben Jahr die echte Beschäftigungsdauer gilt.
+
+    Eintritt 01.07. → months_remaining=6, Austritt 31.08. → months_worked=8.
+    employed_months = 6 + 8 − 12 = 2 (Jul + Aug) → 24 × 2/12 = 4.0 Tage.
+    """
     user = _make_user(
         db,
         username="both_emp",
         email="both@example.com",
         vacation_days=24,
-        first_work_day=date(2026, 7, 1),   # → 12.0
-        last_work_day=date(2026, 8, 31),   # → 24*8/12 = 16.0 → min(12,16)=12
+        first_work_day=date(2026, 7, 1),
+        last_work_day=date(2026, 8, 31),
     )
     result = calculation_service.get_vacation_account(db, user, 2026)
-    assert result["budget_days"] == 12.0
+    assert result["budget_days"] == 4.0
 
 
 def test_vacation_account_mid_month_day_accurate(db):

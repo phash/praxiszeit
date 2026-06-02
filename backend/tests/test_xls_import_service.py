@@ -439,3 +439,79 @@ def test_execute_import_stores_raw_start_time_in_db(db, test_user, test_admin):
     assert db_entry.start_time == time(7, 45)
     assert db_entry.raw_start_time == time(7, 0)
     assert db_entry.raw_end_time is None
+
+
+# ── §3/§4 Tagesaggregation im Import (Fix A) ─────────────────────────────────
+
+def test_parse_xls_two_batch_rows_same_day_trigger_s4_warning(db, test_user):
+    """Fix A: Zwei Import-Zeilen am selben Tag, die einzeln <6h sind, aber zusammen >6h ohne
+    ausreichende Pause bilden, müssen eine §4-ArbZG-Warnung auslösen.
+    Vor dem Fix: keine Warnung (jede Zeile wurde isoliert geprüft).
+    Nach dem Fix: §4-Warnung an der zweiten Zeile (Tages-Aggregation).
+    """
+    # 08:00–11:00 = 3h, 11:30–15:00 = 3,5h → Zusammen 6,5h netto (Lücke 30 min < min. 30 min
+    # Pflichtpause für >6h?). Lücke von 30 min zwischen 11:00 und 11:30 ist genau 30 min
+    # → Grenzfall: Pause >= 30 min → kein §4-Fehler. Um sicher eine Warnung zu erzeugen,
+    # nutzen wir eine Lücke von 0 min: Zwei Blöcke 08:00–11:00 und 11:00–15:30 → 7,5h netto,
+    # keine deklarierten Pausen, keine Lücke → Lücke 0 min → §4 Warnung.
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 8, 0), _dt(2026, 1, 12, 11, 0)),   # 3h, break=0
+        _make_data_row(_dt(2026, 1, 12, 11, 0), _dt(2026, 1, 12, 15, 30)), # 4,5h, break=0
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    assert len(entries) == 2
+
+    # Erster Eintrag: 3h, einzeln kein §4-Problem
+    assert not any("§4" in w for w in entries[0].arbzg_warnings), (
+        f"Erster Eintrag soll keine §4-Warnung haben: {entries[0].arbzg_warnings}"
+    )
+
+    # Zweiter Eintrag: bei Tagesaggregation zusammen 7,5h netto, 0 min Pause → §4-Warnung
+    all_warnings_day = entries[0].arbzg_warnings + entries[1].arbzg_warnings
+    assert any("§4" in w for w in all_warnings_day), (
+        f"Tages-§4-Warnung erwartet, aber nicht gefunden. "
+        f"Warnungen Eintrag 0: {entries[0].arbzg_warnings} | "
+        f"Warnungen Eintrag 1: {entries[1].arbzg_warnings}"
+    )
+
+
+def test_parse_xls_two_batch_rows_same_day_no_spurious_s4_warning(db, test_user):
+    """Fix A Negativ-Test: Zwei Import-Zeilen am selben Tag mit ausreichender Pause lösen
+    keine §4-Warnung aus."""
+    # 08:00–11:00 = 3h, 11:30–14:30 = 3h → Zusammen 6h netto, 30 min Lücke → kein §4-Problem
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 8, 0), _dt(2026, 1, 12, 11, 0)),
+        _make_data_row(_dt(2026, 1, 12, 11, 30), _dt(2026, 1, 12, 14, 30)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    all_s4 = [w for e in entries for w in e.arbzg_warnings if "§4" in w]
+    assert all_s4 == [], f"Keine §4-Warnung erwartet, aber erhalten: {all_s4}"
+
+
+def test_parse_xls_db_entry_plus_import_same_day_trigger_s4_warning(db, test_user):
+    """Fix A: Ein vorhandener DB-Eintrag + ein importierter Eintrag am selben Tag ergeben
+    zusammen >6h ohne ausreichende Pause → §4-Warnung im Import-Eintrag."""
+    # DB-Eintrag: 08:00–11:00 = 3h
+    existing = TimeEntry(
+        user_id=test_user.id,
+        tenant_id=DEFAULT_TENANT_ID,
+        date=date(2026, 1, 14),
+        start_time=time(8, 0),
+        end_time=time(11, 0),
+        break_minutes=0,
+    )
+    db.add(existing)
+    db.commit()
+
+    # Import-Zeile am selben Tag: 11:00–15:30 = 4,5h, keine Pause, keine Lücke → 7,5h gesamt
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 14, 11, 0), _dt(2026, 1, 14, 15, 30)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    assert len(entries) == 1
+    assert any("§4" in w for w in entries[0].arbzg_warnings), (
+        f"§4-Warnung erwartet (DB+Import), aber nicht gefunden: {entries[0].arbzg_warnings}"
+    )

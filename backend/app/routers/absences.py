@@ -41,7 +41,9 @@ def list_absences(
     Regular users can only see their own absences.
     Admins can filter by user_id.
     """
-    query = db.query(Absence)
+    # F-026 belt-and-suspenders: explicit tenant scope on top of RLS — the admin
+    # branch below accepts an arbitrary user_id from the caller.
+    query = db.query(Absence).filter(Absence.tenant_id == current_user.tenant_id)
 
     # If user_id is provided, only admin can filter by it
     if user_id:
@@ -79,6 +81,9 @@ def get_absence_calendar(
     rows = db.query(
         Absence, User.first_name, User.last_name, User.calendar_color, User.department
     ).join(User).filter(
+        # F-026: this standalone calendar query broadcasts absences tenant-wide
+        # — pin it to the caller's tenant explicitly, not just via RLS.
+        Absence.tenant_id == current_user.tenant_id,
         User.is_active == True,
         User.is_hidden == False,
         date_in_month(Absence.date, year, month_num)
@@ -129,6 +134,8 @@ def get_team_upcoming_absences(
     rows = db.query(
         Absence, User.first_name, User.last_name, User.calendar_color
     ).join(User).filter(
+        # F-026: explicit tenant scope on the tenant-wide upcoming-absences feed.
+        Absence.tenant_id == current_user.tenant_id,
         User.is_active == True,
         User.is_hidden == False,
         Absence.date >= today
@@ -323,7 +330,22 @@ def create_absence(
             # day (0,5 for a half day, #167); compare the day COUNT against the
             # remaining DAYS, not hours (hours-based checks mis-block uneven
             # schedules / part-time).
-            days_needed = len(year_dates) * (0.5 if absence_data.half_day else 1.0)
+            # R1-3: skip days with 0h daily target only when use_daily_schedule=True
+            # (e.g. Mon/Wed/Fri user — Tuesday has 0h and is skipped by the creation
+            # loop too). Only applies when track_hours=True; for track_hours=False users
+            # all weekdays count (pure day-based booking, hours are always 0).
+            # Pre-check must agree with what the booking actually consumes.
+            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
+                billable_days = [
+                    d for d in year_dates
+                    if float(calculation_service.get_daily_target_for_date(
+                        target_user, d,
+                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                    )) > 0
+                ]
+            else:
+                billable_days = year_dates
+            days_needed = len(billable_days) * (0.5 if absence_data.half_day else 1.0)
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -336,6 +358,7 @@ def create_absence(
         for date in dates_to_create:
             vacation_entry = db.query(Absence).filter(
                 Absence.user_id == target_user.id,
+                Absence.tenant_id == target_user.tenant_id,  # F-026
                 Absence.date == date,
                 Absence.type == AbsenceType.VACATION
             ).first()
@@ -386,8 +409,14 @@ def create_absence(
         if absence_data.type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
             weekly = calculation_service.get_weekly_hours_for_date(db, target_user, date)
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, weekly_hours=weekly))
-            if hours_for_day == 0:
-                continue  # Skip days with 0 scheduled hours
+            # Review R3 (HIGH): only skip genuine 0h days for TRACKED users (e.g.
+            # a Mo/Mi/Fr part-timer's Tue/Thu). For track_hours=False the daily
+            # target is ALWAYS 0 — skipping here would create NO absence at all,
+            # so the day-based vacation account (#191) never sees a row to count.
+            # dates_to_create already excludes weekends/holidays, so every
+            # remaining day must be booked (hours stay 0, counted day-based).
+            if hours_for_day == 0 and target_user.track_hours:
+                continue  # tracked user: scheduled non-working day → skip
             # #167: halber Tag = 0,5 × Tagessoll → zählt diskriminierungsfrei als 0,5
             # Urlaubstag (8h-Tag: 4h; 3h-Tag: 1,5h — je 0,5 Tag). Nicht für OVERTIME.
             if absence_data.half_day:
@@ -425,7 +454,12 @@ def delete_absence(
     current_user: User = Depends(get_current_user)
 ):
     """Delete an absence entry."""
-    absence = db.query(Absence).filter(Absence.id == absence_id).first()
+    # F-026: the rule explicitly requires an explicit tenant filter on .delete()
+    # lookups, not RLS alone.
+    absence = db.query(Absence).filter(
+        Absence.id == absence_id,
+        Absence.tenant_id == current_user.tenant_id,
+    ).first()
 
     if not absence:
         raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")

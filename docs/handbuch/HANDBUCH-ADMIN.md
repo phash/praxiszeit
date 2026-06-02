@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.2 | Stand: April 2026**
+**Version 2.3 | Stand: Juni 2026 (für PraxisZeit 1.8.0)**
 
 ---
 
@@ -19,6 +19,12 @@
 11. [Betriebsferien verwalten](#11-betriebsferien-verwalten)
 12. [Import](#12-import)
 13. [Einstellungen](#13-einstellungen)
+    - [Feiertage / Eigene Feiertage](#feiertage)
+    - [Sondertage 24./31.12.](#sondertage-2431-12)
+    - [Urlaubsgenehmigung](#urlaubsgenehmigung)
+    - [Pflicht-Pause-Ausnahme](#pflicht-pause-ausnahme)
+    - [Soll-Arbeitszeit-Fenster (Puffer)](#soll-arbeitszeit-fenster-puffer)
+    - [Farben](#farben)
 14. [ArbZG-Compliance-Berichte](#14-arbzg-compliance-berichte)
 15. [Überstundenausgleich](#15-überstundenausgleich)
 16. [Änderungsanträge für Abwesenheiten](#16-änderungsanträge-für-abwesenheiten)
@@ -153,34 +159,55 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 |------|-------------|
 | **E-Mail** | Für Kontaktzwecke (optional) |
 | **Vorname / Nachname** | Anzeigename |
-| **Stundenzählung aktiv** | Deaktivieren für Mitarbeiter ohne Zeiterfassungspflicht (keine Soll/Ist-Stunden). Urlaub und Krankheit werden trotzdem **tagebasiert** geführt. |
-| **ArbZG-Prüfungen aussetzen** | Für leitende Angestellte nach § 18 ArbZG |
+| **Stundenzählung aktiv (Soll-Stunden werden berechnet)** | Standardmäßig aktiv. Deaktivieren Sie diese Option für **Mitarbeiter ohne Stundenzählung** – siehe eigener Abschnitt unten. |
+| **ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)** | Setzt die ArbZG-Prüfungen für diese Person aus. **Eigenständige, von der Stundenzählung unabhängige Einstellung** – siehe Hinweis unten. |
 | **Nachtarbeitnehmer** | § 6 ArbZG – 8h-Tageslimit bei Nachtarbeit |
-| **Nimmt an Betriebsferien teil** | Standardmäßig aktiv. Bestimmt, ob der/die Mitarbeitende bei angelegten Betriebsferien automatisch Abwesenheitseinträge erhält – **unabhängig von der Rolle**. Für reine Verwaltungs-Accounts (Admin ohne eigene Zeiterfassung) abwählbar. |
-| **Erster / Letzter Arbeitstag** | Eintrittsdatum und ggf. geplantes Austrittsdatum. Das **Soll wird nur innerhalb dieses Zeitraums** berechnet – vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll (und der Urlaubsanspruch wird anteilig berechnet). |
-| **Individuelle Tagesstunden** | Abweichende Stundenverteilung Mo–Fr statt einheitlich |
+| **Nimmt an Betriebsferien teil** | Standardmäßig aktiv. Bestimmt, ob der/die Mitarbeitende bei angelegten Betriebsferien automatisch Abwesenheitseinträge erhält – **unabhängig von der Rolle**. Für reine Verwaltungs-Accounts (Admin ohne eigene Zeiterfassung) abwählbar. Siehe eigener Abschnitt unten. |
+| **Erster / Letzter Arbeitstag** | Eintrittsdatum und ggf. geplantes Austrittsdatum. Das **Soll wird nur innerhalb dieses Zeitraums** berechnet – vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll, und auch tatsächlich erfasste Zeiten außerhalb des Beschäftigungszeitraums erzeugen keine Überstunden. Der **Urlaubsanspruch wird anteilig** berechnet (für ein unterjähriges Eintritts-/Austrittsjahr). |
+| **Individuelle Tagesstunden** | Abweichende Stundenverteilung Mo–Fr statt einheitlich (nur bei aktiver Stundenzählung) |
 | **Abteilung/Bereich** | Optionale Zuordnung (Freitext); ermöglicht Filterung im Abwesenheitskalender |
-| **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein) |
+| **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein; nur bei aktiver Stundenzählung) |
+| **Soll-Arbeitszeiten je Wochentag** | Optionaler Soll-Beginn / Soll-Ende pro Wochentag (Mo–Fr) – siehe eigener Abschnitt „Soll-Arbeitszeiten" unten. |
 
-> **Rechtlicher Hinweis (§18 ArbZG):** Leitende Angestellte können von ArbZG-Beschränkungen ausgenommen werden. Aktivieren Sie dieses Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen. (Unabhängig davon: „Stundenzählung aktiv" deaktiviert lediglich die Soll/Ist-Erfassung – Urlaub/Krank bleiben tagebasiert.)
+> **Wichtig – zwei getrennte Einstellungen, bitte nicht verwechseln:**
+> - **„Stundenzählung aktiv"** steuert nur, **ob** für diese Person Soll-/Ist-Stunden und Überstunden geführt werden. Sie hat **nichts** mit dem § 18 ArbZG zu tun.
+> - **„ArbZG-Prüfungen aussetzen (§ 18 ArbZG)"** ist eine eigene Checkbox und setzt die arbeitszeitrechtlichen Prüfungen aus. Diese betrifft ausschließlich leitende Angestellte im Sinne des § 18 ArbZG.
+>
+> Beide Optionen lassen sich frei und unabhängig kombinieren. Aktivieren Sie das § 18-Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen.
 
-> **Überstunden-Übersicht:** Die Benutzerübersicht zeigt pro Mitarbeiter:in zusätzlich zum Urlaubskonto den **aktuellen Überstundensaldo (Jahr bis heute)**. Bei deaktivierter Stundenzählung erscheint hier „—".
+> **Überstunden-Übersicht:** Die Benutzerübersicht zeigt pro Mitarbeiter:in zusätzlich zum Urlaubskonto den **aktuellen Überstundensaldo (Jahr bis heute)** in der Spalte **„Überstunden (JTD)"**. Bei Mitarbeitern ohne Stundenzählung erscheint hier „—" (→ [Abschnitt „Mitarbeiter ohne Stundenzählung"](#mitarbeiter-ohne-stundenzählung)).
 
-> **So wird Urlaub berechnet (Tagesprinzip, § 3 BUrlG / BAG):** Der Urlaub wird **nach Arbeitstagen** geführt, nicht nach Stunden. Ein freier Arbeitstag verbraucht **genau 1 Urlaubstag**, unabhängig von der Tagesstundenzahl – ein langer Tag (z. B. 9 h) kostet so viel wie ein kurzer (z. B. 4 h): einen Tag. Auch bei **individuellen Tagesstunden** kostet jeder Arbeitstag gleich viel (Montag = Dienstag). Der Jahresanspruch wird anteilig nach Arbeitstagen vorgeschlagen. Intern speichert das System Stunden (für die Soll-/Ist-Berechnung); der **Verbrauch wird tagebasiert** gezählt und im Urlaubskonto in Tagen angezeigt.
+> **So wird Urlaub berechnet (Tagesprinzip, § 3 BUrlG / BAG):** Der Urlaub wird **nach Arbeitstagen** geführt, nicht nach Stunden. Ein freier Arbeitstag verbraucht **genau 1 Urlaubstag**, unabhängig von der Tagesstundenzahl – ein langer Tag (z. B. 9 h) kostet so viel wie ein kurzer (z. B. 4 h): einen Tag. Ein **halber freier Tag** (Halbtags-Abwesenheit) kostet **0,5 Urlaubstage**. Auch bei **individuellen Tagesstunden** kostet jeder Arbeitstag gleich viel (Montag = Dienstag). Der Jahresanspruch wird anteilig nach Arbeitstagen vorgeschlagen (`30 × Arbeitstage ÷ 5`) und bei unterjährigem Eintritt/Austritt zeitanteilig berechnet. Intern speichert das System Stunden (für die Soll-/Ist-Berechnung); der **Verbrauch wird tagebasiert** gezählt und im Urlaubskonto in Tagen angezeigt.
 
-### Soll-Arbeitszeiten (Arbeitszeit-Fenster, #201)
+### Mitarbeiter ohne Stundenzählung
 
-Im Benutzerformular können Sie pro Mitarbeiter und Wochentag (Mo–Fr) **Soll-Beginn** und **Soll-Ende** festlegen. Das System kappt dann automatisch erfasste Zeiten außerhalb dieses Fensters auf den jeweils erlaubten Rand (zuzüglich des konfigurierbaren Puffers).
+Über die Checkbox **„Stundenzählung aktiv (Soll-Stunden werden berechnet)"** (standardmäßig aktiv) legen Sie fest, ob für eine Person die Arbeitszeit ausgewertet wird. Deaktivieren Sie die Checkbox, wird der/die Mitarbeitende zu einem **Mitarbeiter ohne Stundenzählung**.
+
+**Was sich ändert, wenn die Stundenzählung deaktiviert ist:**
+- **Keine Soll-/Ist-Stundenberechnung** und **keine Überstundenberechnung.** In der Benutzerübersicht erscheint in der Spalte „Überstunden (JTD)" ein „—".
+- Die Felder „Anfangssaldo Überstunden", „Individuelle Tagesstunden" und das Soll-/Ist-Dashboard entfallen für diese Person.
+- **Urlaub und Krankheit werden trotzdem geführt** – und zwar **tagebasiert**: 1 genommener freier Arbeitstag = 1 Urlaubstag (Sondertage wie Heiligabend zählen ebenfalls als 1 Tag). Der Urlaubsanspruch bleibt anteilig nach Arbeitstagen und behält die Vorjahresübernahme.
+
+**Wofür gedacht:** z. B. Personen, deren Arbeitszeit nicht erfasst, deren Urlaub aber dennoch verwaltet werden soll.
+
+> **Abgrenzung (bitte nicht verwechseln):** „Mitarbeiter ohne Stundenzählung" hat **nichts** mit § 18 ArbZG zu tun. Die § 18-Ausnahme („ArbZG-Prüfungen aussetzen") ist eine **separate, unabhängige Checkbox** und betrifft ausschließlich leitende Angestellte. Eine Person kann z. B. Stundenzählung haben **und** § 18-befreit sein – oder umgekehrt.
+>
+> **Hinweis zu Halbtagen:** Bei Mitarbeitern ohne Stundenzählung zählt ein halber Tag derzeit als voller Tag (es findet keine Stunden-/Halbtagsverrechnung statt).
+
+### Soll-Arbeitszeiten (Soll-Arbeitszeit-Fenster, #201)
+
+Im Benutzerformular finden Sie den Bereich **„Soll-Arbeitszeiten je Wochentag"**. Dort können Sie pro Wochentag (Mo–Fr) einen **Soll-Beginn** (oberes Feld) und ein **Soll-Ende** (unteres Feld) hinterlegen. Beide Felder sind **optional** – leer lassen bedeutet „kein Fenster". Das System rechnet dann erfasste Zeiten außerhalb dieses Fensters **nicht** auf die Arbeitszeit an, sondern kürzt sie auf den jeweils erlaubten Rand (zuzüglich eines konfigurierbaren Puffers).
 
 **Funktionsweise:**
-- Eingetragene Uhrzeiten außerhalb des Fensters werden **nicht angerechnet** – der Zeiteintrag endet spätestens zum Soll-Ende (plus Puffer), frühestens zum Soll-Beginn (minus Puffer).
-- Der **tatsächlich gestempelte Zeitpunkt** bleibt intern als Rohstempel gespeichert und ist im Eintrag sichtbar (§16 ArbZG – Dokumentationspflicht).
-- Salden und Überstundenkonto rechnen ausschließlich mit der angerechneten (gekappten) Zeit.
-- **Puffer:** Der systemweite Toleranzbereich (Standard: 15 Minuten) ist unter **Einstellungen → Arbeitszeit-Fenster Puffer** konfigurierbar. Innerhalb des Puffers wird die Differenz angerechnet; außerhalb wird auf den Fensterrand gekürzt.
+- Zeiten außerhalb des Fensters werden **nicht angerechnet**: Die angerechnete Zeit beginnt frühestens beim Soll-Beginn (minus Puffer) und endet spätestens beim Soll-Ende (plus Puffer).
+- Der **tatsächlich gestempelte Zeitpunkt** bleibt als Rohstempel erhalten und ist im Eintrag nachvollziehbar (§ 16 ArbZG – Dokumentationspflicht). Salden und Überstundenkonto rechnen ausschließlich mit der angerechneten (gekürzten) Zeit.
+- **Puffer:** Der systemweite Toleranzbereich (Standard: **15 Minuten**) ist unter **Einstellungen → „Soll-Arbeitszeit-Fenster"** im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** konfigurierbar (→ [Abschnitt 13](#soll-arbeitszeit-fenster-puffer)). Innerhalb des Puffers wird die Differenz angerechnet; außerhalb wird auf den Fensterrand gekürzt.
 
-**Opt-in:** Sind für einen Mitarbeiter keine Soll-Zeiten hinterlegt, ändert sich das bisherige Verhalten nicht. Auch Mitarbeitende mit deaktivierter Stundenzählung (`track_hours=False`) sind ausgenommen.
+**Opt-in:** Sind für einen Mitarbeiter **keine** Soll-Zeiten hinterlegt, ändert sich nichts am bisherigen Verhalten. Die Kappung wird außerdem **übersprungen** bei Mitarbeitern ohne Stundenzählung. Bei **§ 18-befreiten** Mitarbeitern (ArbZG-Prüfungen ausgesetzt) wird **trotzdem gekappt** – es handelt sich um eine reine Anwesenheits-Policy, nicht um eine ArbZG-Prüfung.
 
-> **Rechtlicher Hinweis:** Die Nicht-Anrechnung von Zeiten außerhalb des Fensters ist eine Arbeitgeber-seitige Policy-Entscheidung (keine gesetzliche Vorgabe). Der Rohstempel dokumentiert gemäß §16 ArbZG die tatsächliche Anwesenheit.
+Eingehängt ist die Kappung an **allen** Schreibpfaden: Ein-/Ausstempeln, manuelles Anlegen/Bearbeiten von Zeiteinträgen, Admin-Korrekturen, XLS-Import und genehmigte Korrekturanträge.
+
+> **Rechtlicher Hinweis:** Die Nicht-Anrechnung von Zeiten außerhalb des Soll-Fensters ist eine **Arbeitgeber-seitige Policy-Entscheidung** (keine gesetzliche Vorgabe). Die arbeitsrechtliche Zulässigkeit (z. B. Umgang mit angeordneter Mehrarbeit) verantwortet der Betrieb. Der erhaltene Rohstempel dokumentiert gemäß § 16 ArbZG die tatsächliche Anwesenheit.
 
 ### Mitarbeiter bearbeiten
 
@@ -209,13 +236,13 @@ Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich
 
 ### Kalenderansicht
 
-Farbcodierte Balken pro Mitarbeiter:
-- **Blau**: Urlaub
-- **Rot**: Krankheit
-- **Orange**: Fortbildung
-- **Grau**: Sonstige Abwesenheit
+Abwesenheiten werden farbcodiert nach Typ dargestellt (z. B. Urlaub, Krankheit, Fortbildung, Überstundenausgleich, Sonstiges). Die genauen Farben sind unter **Einstellungen → „Farben"** je Typ frei konfigurierbar (→ [Abschnitt 13](#farben)). Jeder Mitarbeitende hat zusätzlich eine **eigene Kalenderfarbe**, die er im eigenen Profil wählt.
 
-Jeder Mitarbeiter hat zusätzlich eine individuelle **Kalenderfarbe** (konfigurierbar in der Benutzerverwaltung).
+**Sondertage und Feiertage im Kalender:**
+- **Gesetzliche Feiertage** und arbeitsfreie **Sondertage** (24./31.12. im Modus „Frei") werden **grau** hinterlegt und sind nicht buchbar.
+- **Halbe Sondertage** (24./31.12. im Modus „Halbtag") werden **amber/gelb** hinterlegt.
+
+Die Anzeige folgt der Konfiguration unter **Einstellungen → „Sondertage (24./31.12.)"** (→ [Abschnitt 13](#sondertage-2431-12)).
 
 ### Als Admin Abwesenheit eintragen
 
@@ -342,6 +369,7 @@ Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränder
 | **Benutzerverwaltung** | Neue Benutzer, Passwortänderungen, Deaktivierungen |
 | **Korrekturanträge** | Stellen, Genehmigen, Ablehnen |
 | **Betriebsferien** | Anlegen und Löschen |
+| **Pflicht-Pause-Ausnahmen** | Erfasste § 4-Ausnahmen samt Begründung (Quelle „break_waiver") |
 
 ### Filter und Suche
 
@@ -420,10 +448,64 @@ Dieser Bereich ist für die initiale Datenübernahme oder die Massenbefüllung b
 
 ## 13. Einstellungen
 
-Unter **Einstellungen** konfigurieren Sie systemweite Parameter:
+Unter **Einstellungen** konfigurieren Sie alle systemweiten Parameter. Jeder Bereich hat einen eigenen **Speichern**-Button – Änderungen werden erst durch Klick darauf wirksam.
 
-- **Genehmigungspflicht für Urlaubsanträge** (alternativ auch über den Urlaubsanträge-Bereich konfigurierbar)
-- Weitere systemweite Konfigurationsoptionen
+<a id="feiertage"></a>
+### Feiertage / Eigene Feiertage
+
+**Feiertage:** Wählen Sie das **Bundesland**, dessen gesetzliche Feiertage gelten sollen. Nach dem Speichern werden alle gesetzlichen Feiertage automatisch neu berechnet. Feiertage reduzieren das Stundensoll und werden im Kalender grau dargestellt.
+
+**Eigene Feiertage:** Legen Sie zusätzlich lokale/regionale Feiertage an (z. B. Schützenfest, Karneval) – mit **Name** und **Datum**. Eigene Feiertage reduzieren die Soll-Zeit wie gesetzliche Feiertage und können bearbeitet oder gelöscht werden. Gesetzliche Feiertage werden nur zur Information angezeigt und lassen sich nicht ändern. Über das Jahr-Auswahlfeld blättern Sie zwischen den Jahren. Eigene Feiertage bleiben erhalten, wenn Sie das Bundesland wechseln.
+
+<a id="sondertage-2431-12"></a>
+### Sondertage 24./31.12.
+
+Heiligabend (24.12.) und Silvester (31.12.) sind keine gesetzlichen Feiertage. Im Bereich **„Sondertage (24./31.12.)"** legen Sie für **jeden** der beiden Tage getrennt fest, wie er behandelt wird.
+
+**Modus** (Auswahlfeld pro Tag):
+| Modus | Bedeutung |
+|-------|-----------|
+| **Arbeitstag** (Standard) | Voller Arbeitstag, normales Tagessoll |
+| **Halbtag** | Halbes Tagessoll; im Kalender amber/gelb hinterlegt |
+| **Frei** | Arbeitsfrei (wie ein Feiertag), Tagessoll 0; im Kalender grau hinterlegt |
+
+**Anrechnung** (zusätzliches Auswahlfeld, erscheint nur bei Modus „Frei"):
+| Auswahl | Bedeutung |
+|---------|-----------|
+| **Urlaub** | Der freie Tag wird vom Urlaubskonto abgezogen |
+| **Bezahlte Freistellung** | Kein Abzug vom Urlaubskonto (wie ein Feiertag) |
+
+Die Einstellung wirkt sich automatisch auf **Stundensoll**, **Urlaubskonto** und die **Kalenderdarstellung** aus. Klicken Sie nach Änderungen auf **Speichern**.
+
+<a id="urlaubsgenehmigung"></a>
+### Urlaubsgenehmigung
+
+Der Schalter **„Genehmigung erforderlich"** steuert, ob Urlaubsanträge von einem Admin genehmigt werden müssen, bevor sie wirksam werden:
+- **Aus** (Standard): Mitarbeiter buchen Urlaub direkt.
+- **Ein**: Urlaubsanträge landen als „Offen" im Bereich **Anträge** beim Admin (→ [Abschnitt 7](#7-abwesenheitsanträge-genehmigen)).
+
+Diese Einstellung lässt sich alternativ auch direkt im Bereich „Abwesenheitsanträge" umschalten.
+
+<a id="pflicht-pause-ausnahme"></a>
+### Pflicht-Pause-Ausnahme
+
+> **Hinweis:** Hintergrund zur Pausenpflicht selbst (§ 4 ArbZG) siehe [Abschnitt 14 → „Pflicht-Pause-Ausnahme"](#pflicht-pause-ausnahme-§4-arbzg).
+
+Konnte eine gesetzlich vorgeschriebene Pause (§ 4 ArbZG) nicht eingelegt werden, kann ein Eintrag mit einer **Pflicht-Begründung** trotzdem erfasst werden, statt ihn zu blockieren. Der Schalter **„Genehmigung erforderlich"** steuert das Verhalten:
+- **Aus** (Standard): Der Eintrag wird sofort gespeichert; die Abweichung wird als Warnung gemeldet und im Änderungsprotokoll dokumentiert.
+- **Ein**: Der Eintrag wird erst nach **Admin-Genehmigung** wirksam (**4-Augen-Prinzip**).
+
+> **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden.
+
+<a id="soll-arbeitszeit-fenster-puffer"></a>
+### Soll-Arbeitszeit-Fenster (Puffer)
+
+Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** den systemweiten Toleranzbereich für die in der Benutzerverwaltung hinterlegten Soll-Arbeitszeiten fest (Standard: **15** Minuten). Anwesenheit vor oder nach dem Soll-Fenster zählt nur bis zu diesem Puffer zur Arbeitszeit; Stempel außerhalb des Puffers werden auf die Fenstergrenze gekürzt. Details und rechtlicher Hinweis: [Abschnitt 4 → „Soll-Arbeitszeiten"](#soll-arbeitszeiten-soll-arbeitszeit-fenster-201).
+
+<a id="farben"></a>
+### Farben
+
+Im Bereich **„Farben"** legen Sie für jeden Anwesenheits- und Abwesenheitstyp eine eigene Farbe fest (Arbeit/Anwesenheit, Fortbildung, Urlaub, Krank, Überstundenausgleich, Sonstiges, Bezahlte Freistellung). Die Farben werden im Kalender, in den Übersichten und bei der Zeiterfassung verwendet. Eine kleine „Aa"-Vorschau zeigt, ob die Schrift auf der gewählten Farbe lesbar bleibt.
 
 ---
 
@@ -498,17 +580,41 @@ Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
 
 ---
 
+### §3 ArbZG – Tageshöchstgrenze (10 Stunden)
+
+Nach § 3 ArbZG darf die werktägliche Arbeitszeit 8 Stunden nicht überschreiten; sie darf auf bis zu **10 Stunden** verlängert werden, wenn innerhalb von 6 Kalendermonaten / 24 Wochen im Schnitt 8 Stunden eingehalten werden. PraxisZeit behandelt die 10-Stunden-Grenze je nach Erfassungsweg unterschiedlich:
+
+- **Beim Live-Ausstempeln** wird ein Tag über 10 Stunden **nicht mehr blockiert** – die Arbeitszeit ist bereits tatsächlich geleistet und muss gemäß § 16 ArbZG dokumentiert werden. Der Eintrag wird gespeichert, und der § 3-Verstoß wird als **deutliche Warnung** gemeldet (und steht für die Compliance-Berichte zur Verfügung).
+- **Bei manueller Eingabe oder einem Antrag** (frei wählbare Start-/Endzeit) bleibt die 10-Stunden-Grenze eine **harte Sperre**: Ein solcher Eintrag kann nicht über 10 Stunden hinaus gespeichert werden.
+
+Eine **8-Stunden-Warnung** weist bereits ab Überschreiten der Regelgrenze auf den nötigen Ausgleich hin. § 18-befreite Mitarbeitende sind von diesen Prüfungen ausgenommen.
+
+---
+
+<a id="pflicht-pause-ausnahme-§4-arbzg"></a>
+### §4 ArbZG – Pausenpflicht und Pflicht-Pause-Ausnahme
+
+Nach § 4 ArbZG ist die Arbeit durch im Voraus feststehende Ruhepausen zu unterbrechen: **mindestens 30 Minuten** bei mehr als 6 Stunden, **mindestens 45 Minuten** bei mehr als 9 Stunden Arbeitszeit.
+
+Wird beim Erfassen, Korrigieren oder Genehmigen eines Eintrags die Pausenpflicht verletzt, blockiert PraxisZeit den Vorgang nicht zwingend. Stattdessen kann eine **dokumentierte Ausnahme mit Pflicht-Begründung** erfasst werden, falls die Pause im konkreten Fall nicht eingelegt werden konnte. Die Begründung wird im Änderungsprotokoll festgehalten.
+
+Ob solche Ausnahmen sofort wirksam werden oder zuerst genehmigt werden müssen, steuern Sie unter **Einstellungen → „Pflicht-Pause-Ausnahme"** (→ [Abschnitt 13](#pflicht-pause-ausnahme)).
+
+> **4-Augen-Prinzip:** Ist die Genehmigungspflicht aktiv, darf ein Admin seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen**. Sie muss von einer zweiten Person geprüft werden.
+
+---
+
 ### Automatische Warnungen im Alltag
 
-| Warnung | Auslöser | Rechtsgrundlage |
-|---------|----------|----------------|
-| **Tageshöchstgrenze** | > 10h Arbeitszeit | § 3 ArbZG |
-| **8h-Warnung** | > 8h Arbeitszeit | § 3 ArbZG |
-| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h | § 4 ArbZG |
-| **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag | § 9 ArbZG |
-| **Wochenhöchstgrenze** | > 48h/Woche | § 14 ArbZG |
-| **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | § 6 ArbZG |
-| **Ruhezeitwarnung** | < 11h seit letztem Arbeitsende beim Einstempeln | § 5 ArbZG |
+| Warnung | Auslöser | Verhalten | Rechtsgrundlage |
+|---------|----------|-----------|----------------|
+| **Tageshöchstgrenze** | > 10h Arbeitszeit | Warnung beim Live-Ausstempeln; harte Sperre bei manueller Eingabe/Antrag | § 3 ArbZG |
+| **8h-Warnung** | > 8h Arbeitszeit | Warnung | § 3 ArbZG |
+| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h | Warnung; dokumentierte Ausnahme mit Begründung möglich | § 4 ArbZG |
+| **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag | Warnung | § 9 ArbZG |
+| **Wochenhöchstgrenze** | > 48h/Woche | Warnung | § 14 ArbZG |
+| **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | Warnung | § 6 ArbZG |
+| **Ruhezeitwarnung** | < 11h seit letztem Arbeitsende beim Einstempeln | Warnung | § 5 ArbZG |
 
 ---
 
@@ -559,8 +665,8 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 | Paragraph | Inhalt | Umsetzung in PraxisZeit |
 |-----------|--------|------------------------|
-| [§3](https://www.gesetze-im-internet.de/arbzg/__3.html) | Max. 8h/Tag (bis 10h mit Ausgleich) | Warnung > 8h, Sperrung > 10h |
-| [§4](https://www.gesetze-im-internet.de/arbzg/__4.html) | Ruhepausen: 30 Min. ab 6h, 45 Min. ab 9h | Automatische Pausenvalidierung |
+| [§3](https://www.gesetze-im-internet.de/arbzg/__3.html) | Max. 8h/Tag (bis 10h mit Ausgleich) | Warnung > 8h; > 10h: Warnung beim Live-Ausstempeln, harte Sperre bei manueller Eingabe/Antrag |
+| [§4](https://www.gesetze-im-internet.de/arbzg/__4.html) | Ruhepausen: 30 Min. ab 6h, 45 Min. ab 9h | Automatische Pausenvalidierung; dokumentierte Ausnahme mit Begründung möglich (optional genehmigungspflichtig, 4-Augen-Prinzip) |
 | [§5](https://www.gesetze-im-internet.de/arbzg/__5.html) | Ruhezeit mind. 11h | Ruhezeitbericht im Admin-Bereich |
 | [§6](https://www.gesetze-im-internet.de/arbzg/__6.html) | Nachtarbeit 23–6 Uhr: max. 8h für Nachtarbeitnehmer | Nachtarbeit-Flag, 8h-Warnung, Nachtarbeit-Report |
 | [§9](https://www.gesetze-im-internet.de/arbzg/__9.html) | Sonn- und Feiertagsruhe | Warnung bei Eintrag an Sonntag/Feiertag |
@@ -575,7 +681,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 1. **Regelmäßige Datenexporte** (mindestens monatlich) und sichere Aufbewahrung für 2 Jahre
 2. **Zeitnahe Prüfung** von Korrekturanträgen
 3. **Überwachung der ArbZG-Berichte** – besonders §5 (Ruhezeit) und §11 (Sonntage)
-4. **Dokumentation von Ausnahmen** (Sonntagsarbeit, verlängerte Arbeitszeiten)
+4. **Dokumentation von Ausnahmen** (Sonntagsarbeit, verlängerte Arbeitszeiten, Pflicht-Pause-Ausnahmen)
 5. **Aktuelle Benutzerdaten** – bei Stundenänderungen immer Wirkungsdatum eintragen
 6. **Abgleich Urlaubskonten** mit tatsächlichem Urlaubsanspruch
 
@@ -584,4 +690,4 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: April 2026*
+*Stand: Juni 2026 (Version 2.3, für PraxisZeit 1.8.0)*
