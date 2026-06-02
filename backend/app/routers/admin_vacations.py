@@ -14,6 +14,7 @@ from app.services import calculation_service
 from app.services.calculation_service import count_workdays
 from app.services.timezone_service import today_local
 from app.routers.admin_helpers import _create_audit_log
+from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.vacation_requests import (
     cancel_approved_vacation_request,
     apply_vacation_request_patch,
@@ -148,6 +149,21 @@ def review_vacation_request(
         db.commit()
         db.refresh(vr)
         return _enrich_vr_response(vr, db)
+
+    # Audit A01: 4-eyes principle. An admin must not approve their OWN vacation
+    # request — but ONLY when independent oversight is actually possible (another
+    # active admin exists in the tenant). A sole-admin practice may still
+    # self-approve (reviewed_by == user_id records it). Raised before any state
+    # change / absence materialisation; the get_db txn rolls back the reviewed_*
+    # assignments above so the VR stays cleanly PENDING.
+    if vr.user_id == current_user.id and _tenant_has_other_active_admin(db, current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Eigene Urlaubsanträge dürfen nicht selbst genehmigt werden, "
+                "wenn ein weiterer Admin vorhanden ist (4-Augen-Prinzip)."
+            ),
+        )
 
     # Approve: create absence entries (same logic as create_absence in absences.py)
     # F-026: explicit tenant scoping

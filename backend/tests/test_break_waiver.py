@@ -619,6 +619,90 @@ class TestBreakWaiverSelfApprovalForbidden:
         assert cr.status == ChangeRequestStatus.APPROVED
 
 
+class TestOrdinaryCrSelfApproval:
+    """Audit A01 (4-Augen-Prinzip): ein Admin, der zugleich getrackter MA ist,
+    darf seinen EIGENEN normalen (Nicht-Waiver) Zeit-Änderungsantrag nur dann
+    selbst genehmigen, wenn es KEINEN weiteren aktiven Admin gibt (Einzel-
+    Admin-Praxis). Gibt es einen zweiten aktiven Admin, ist Selbstgenehmigung
+    verboten (403)."""
+
+    def _ordinary_cr(self, db, user):
+        cr = ChangeRequest(
+            user_id=user.id,
+            tenant_id=DEFAULT_TENANT_ID,
+            request_type=ChangeRequestType.CREATE,
+            entry_kind="time_entry",
+            status=ChangeRequestStatus.PENDING,
+            proposed_date=date.today() - timedelta(days=2),
+            proposed_start_time=time(8, 0),
+            proposed_end_time=time(12, 0),  # 4h, kein §4-/§3-Problem
+            proposed_break_minutes=0,
+            reason="Nachtrag eigener Eintrag",
+        )
+        db.add(cr)
+        db.commit()
+        db.refresh(cr)
+        return cr
+
+    def _second_admin(self, db):
+        u = User(
+            username="admin2_bw",
+            email="admin2_bw@example.com",
+            password_hash=auth_service.hash_password("admin123"),
+            first_name="Zweit",
+            last_name="Admin",
+            role=UserRole.ADMIN,
+            weekly_hours=40.0,
+            vacation_days=30,
+            work_days_per_week=5,
+            is_active=True,
+            tenant_id=DEFAULT_TENANT_ID,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u
+
+    def test_self_approve_blocked_with_second_admin(self, db, admin, admin_client):
+        """Zweiter aktiver Admin vorhanden → Selbstgenehmigung verboten (403)."""
+        self._second_admin(db)
+        cr = self._ordinary_cr(db, admin)
+        resp = admin_client.post(
+            f"/api/admin/change-requests/{cr.id}/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "selbst genehmigt" in resp.json()["detail"].lower()
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.PENDING
+        assert db.query(TimeEntry).filter(TimeEntry.user_id == admin.id).count() == 0
+
+    def test_self_approve_allowed_sole_admin(self, db, admin, admin_client):
+        """Einziger Admin → Selbstgenehmigung erlaubt (200), Eintrag entsteht."""
+        cr = self._ordinary_cr(db, admin)
+        resp = admin_client.post(
+            f"/api/admin/change-requests/{cr.id}/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 200, resp.text
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.APPROVED
+        assert cr.reviewed_by == admin.id
+        assert db.query(TimeEntry).filter(TimeEntry.user_id == admin.id).count() == 1
+
+    def test_reject_own_cr_always_allowed(self, db, admin, admin_client):
+        """Ablehnung des eigenen Antrags bleibt erlaubt (kein 4-Augen-Block)."""
+        self._second_admin(db)
+        cr = self._ordinary_cr(db, admin)
+        resp = admin_client.post(
+            f"/api/admin/change-requests/{cr.id}/review",
+            json={"action": "reject", "rejection_reason": "doch nicht"},
+        )
+        assert resp.status_code == 200, resp.text
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.REJECTED
+
+
 class TestCrApprovalRevalidatesDailyHardCap:
     """C-1: a CREATE/UPDATE ChangeRequest is re-validated against the CURRENT DB
     state on approval. A CR that was valid (≤10h) at creation time but would,

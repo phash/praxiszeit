@@ -16,6 +16,7 @@ from app.schemas.change_request import (
 )
 from app.schemas.time_entry import TimeEntryResponse
 from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response, _enrich_cr_responses
+from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
@@ -144,6 +145,21 @@ def review_change_request(
         raise HTTPException(
             status_code=403,
             detail="Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden.",
+        )
+
+    # Audit A01: 4-eyes principle for ORDINARY change-requests. An admin who is
+    # also a tracked employee must not approve their OWN time-entry/absence CR —
+    # but ONLY when independent oversight is actually possible (another active
+    # admin exists). Sole-admin practices may still self-approve (the break-waiver
+    # block above stays unconditional/stricter for §4 waivers). reviewed_by ==
+    # user_id already records the allowed sole-admin self-approval.
+    if cr.user_id == current_user.id and _tenant_has_other_active_admin(db, current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Eigene Änderungsanträge dürfen nicht selbst genehmigt werden, "
+                "wenn ein weiterer Admin vorhanden ist (4-Augen-Prinzip)."
+            ),
         )
 
     # Approve: validate preconditions BEFORE changing status
