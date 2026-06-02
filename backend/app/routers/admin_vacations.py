@@ -233,7 +233,21 @@ def review_vacation_request(
         for check_year, year_dates in dates_by_year.items():
             vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
             # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5).
-            days_needed = len(year_dates) * (0.5 if vr.half_day else 1.0)
+            # R1-3: skip days with 0h target only when use_daily_schedule=True
+            # (e.g. Mo/Mi/Fr user — mirrors the creation loop which skips
+            # hours_for_day == 0). Only applies when track_hours=True; for
+            # track_hours=False users all weekdays count (pure day-based booking).
+            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
+                billable_days = [
+                    d for d in year_dates
+                    if float(calculation_service.get_daily_target_for_date(
+                        target_user, d,
+                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                    )) > 0
+                ]
+            else:
+                billable_days = year_dates
+            days_needed = len(billable_days) * (0.5 if vr.half_day else 1.0)
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

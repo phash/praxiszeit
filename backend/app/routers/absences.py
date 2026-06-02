@@ -323,7 +323,22 @@ def create_absence(
             # day (0,5 for a half day, #167); compare the day COUNT against the
             # remaining DAYS, not hours (hours-based checks mis-block uneven
             # schedules / part-time).
-            days_needed = len(year_dates) * (0.5 if absence_data.half_day else 1.0)
+            # R1-3: skip days with 0h daily target only when use_daily_schedule=True
+            # (e.g. Mon/Wed/Fri user — Tuesday has 0h and is skipped by the creation
+            # loop too). Only applies when track_hours=True; for track_hours=False users
+            # all weekdays count (pure day-based booking, hours are always 0).
+            # Pre-check must agree with what the booking actually consumes.
+            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
+                billable_days = [
+                    d for d in year_dates
+                    if float(calculation_service.get_daily_target_for_date(
+                        target_user, d,
+                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                    )) > 0
+                ]
+            else:
+                billable_days = year_dates
+            days_needed = len(billable_days) * (0.5 if absence_data.half_day else 1.0)
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
