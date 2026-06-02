@@ -114,6 +114,32 @@ def _verify_download_host(download_url: str) -> None:
         )
 
 
+def _version_tuple(v: str) -> tuple:
+    """Parse 'X.Y.Z[-suffix]' into a comparable (major, minor, patch) int tuple.
+    Non-numeric/pre-release suffixes are truncated (best-effort, defensive)."""
+    parts = []
+    for p in str(v).split(".")[:3]:
+        digits = ""
+        for ch in p:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
+def _is_newer_version(candidate: str, current: str) -> bool:
+    """Audit R3 (A08 anti-rollback): True only if *candidate* is strictly newer
+    than *current*. A manifest signature is valid for ANY version the issuer ever
+    signed, so a replayed/compromised update server could otherwise serve an
+    older, validly-signed manifest to force a signed DOWNGRADE. Comparing by
+    semver (not string ``!=``) makes equal-or-older versions a no-op."""
+    return _version_tuple(candidate) > _version_tuple(current)
+
+
 @dataclass
 class UpdateInfo:
     """Available update information."""
@@ -133,7 +159,7 @@ class UpdateInfo:
             "size_mb": self.size_mb,
             "checksum_sha256": self.checksum_sha256,
             "critical": self.critical,
-            "update_available": self.latest_version != APP_VERSION,
+            "update_available": _is_newer_version(self.latest_version, APP_VERSION),
         }
 
 
@@ -185,7 +211,11 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
         return None
 
     latest = data.get("latest", APP_VERSION)
-    if latest == APP_VERSION:
+    # Audit R3 (A08 anti-rollback): only treat a STRICTLY NEWER version as an
+    # update. Equal OR older (a replayed, validly-signed downgrade manifest) is a
+    # no-op — a valid signature alone must not be sufficient to move the client
+    # to an older, potentially weaker build.
+    if not _is_newer_version(latest, APP_VERSION):
         _cached_update = None
         return None
 
