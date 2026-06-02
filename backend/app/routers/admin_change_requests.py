@@ -400,6 +400,26 @@ def review_change_request(
             # row instead of inserting a duplicate (which would violate
             # uq_tenant_user_date_type and 500/wedge the CR).
             cr.absence_id = existing_absence.id
+            # Review R3: still record an audit row so the approval-against-an-
+            # existing-absence stays traceable (§16) — every other CR branch
+            # writes one; the idempotent link must not be the silent exception.
+            audit = TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=cr.user_id,
+                changed_by=current_user.id,
+                action="create",
+                new_date=existing_absence.date,
+                new_start_time=existing_absence.start_time,
+                new_end_time=existing_absence.end_time,
+                new_note=(
+                    f"absence:{existing_absence.type.value}:"
+                    f"{float(existing_absence.hours)}h (link-existing)"
+                ),
+                source="change_request",
+                change_request_id=cr.id,
+                tenant_id=cr_tenant_id,
+            )
+            db.add(audit)
         elif cr.request_type == ChangeRequestType.CREATE:
             # §3 EntgFG: Bei Krankmeldung immer die vertragliche Tages-Sollzeit
             # gutschreiben, nicht den vom Antragsteller eingetragenen Wert.
