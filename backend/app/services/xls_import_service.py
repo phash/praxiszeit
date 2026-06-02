@@ -406,6 +406,11 @@ def _execute_import_inner(
             existing.end_time = entry.end_time
             existing.break_minutes = entry.break_minutes
             existing.note = entry.note
+            # Audit R3/§16: Roh-Stempel des Import-Eintrags übernehmen, sonst
+            # geht der Nachweis der tatsächlichen Anwesenheit beim Overwrite
+            # verloren (gekappter Wert bliebe, Rohwert verschwände).
+            existing.raw_start_time = entry.raw_start_time
+            existing.raw_end_time = entry.raw_end_time
             db.add(log)
             overwritten += 1
         else:

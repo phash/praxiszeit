@@ -852,3 +852,32 @@ class TestClockOutSection3NonBlocking:
         assert resp.status_code == 200, resp.text
         warnings = resp.json().get("warnings", [])
         assert not any("DAILY_HOURS_HARD" in w for w in warnings), warnings
+
+
+class TestChangeRequestWeeklyWarning:
+    """Audit R3 (§3/§14 ArbZG): Der Mitarbeiter-Änderungsantrag-Erstellpfad muss
+    — wie create_time_entry und die CR-Genehmigung — bei >48h Wochenarbeitszeit
+    eine WEEKLY_HOURS_WARNING zurückgeben (fehlte bisher)."""
+
+    def test_create_cr_over_48h_week_emits_weekly_warning(self, db, employee, employee_client):
+        # 5 vergangene Werktage à 10h netto (06:00–16:30, 30min Pause) = 50h.
+        for d in [date(2026, 5, 25), date(2026, 5, 26), date(2026, 5, 27),
+                  date(2026, 5, 28), date(2026, 5, 29)]:
+            db.add(TimeEntry(
+                user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+                start_time=time(6, 0), end_time=time(16, 30), break_minutes=30,
+            ))
+        db.commit()
+
+        # CR (create) für den Samstag derselben ISO-Woche → Woche > 48h.
+        resp = employee_client.post("/api/change-requests", json={
+            "request_type": "create",
+            "proposed_date": "2026-05-30",
+            "proposed_start_time": "06:00",
+            "proposed_end_time": "09:00",
+            "proposed_break_minutes": 0,
+            "reason": "Wochenende nachtragen",
+        })
+        assert resp.status_code in (200, 201), resp.text
+        warnings = resp.json().get("warnings", [])
+        assert any("WEEKLY_HOURS_WARNING" in w for w in warnings), warnings

@@ -9,8 +9,8 @@ from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
 from app.services.break_validation_service import validate_daily_break
 from app.routers.time_entries import (
-    _calculate_daily_net_hours,
-    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN,
+    _calculate_daily_net_hours, _calculate_weekly_net_hours,
+    MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 from app.services.arbzg_utils import is_night_work
 
@@ -297,6 +297,22 @@ def create_change_request(
                 f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({daily_hours_check:.1f}h). "
                 "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
             )
+
+        # Audit R3 (§3/§14 ArbZG): Wochen-48h-Warnung — fehlte bisher im
+        # Mitarbeiter-CR-Pfad (in time_entries.create + admin_change_requests
+        # bereits vorhanden), damit der Antrag schon bei Einreichung den
+        # Wochenüberschreitungs-Hinweis trägt.
+        weekly_hours_check = _calculate_weekly_net_hours(
+            db=db,
+            user_id=current_user.id,
+            entry_date=data.proposed_date,
+            start_time=data.proposed_start_time,
+            end_time=data.proposed_end_time,
+            break_minutes=data.proposed_break_minutes or 0,
+            exclude_entry_id=entry.id if entry else None,
+        )
+        if weekly_hours_check > MAX_WEEKLY_HOURS_WARN:
+            response.warnings.append("WEEKLY_HOURS_WARNING")
 
     return response
 
