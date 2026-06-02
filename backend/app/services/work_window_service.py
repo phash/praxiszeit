@@ -72,4 +72,9 @@ def clamp(
         if end > ceil:
             eff_end, raw_end = ceil, end
 
+    # Schutz vor Inversion: liegt der Eintrag ganz außerhalb des Fensters,
+    # würde Kappen eff_start >= eff_end erzeugen → NICHT kappen (Rohwerte behalten),
+    # damit keine 0h-/invertierte Buchung entsteht und net_hours korrekt bleibt.
+    if eff_start is not None and eff_end is not None and eff_start >= eff_end:
+        return (start, end, None, None)
     return (eff_start, eff_end, raw_start, raw_end)
