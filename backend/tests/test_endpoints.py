@@ -859,3 +859,14 @@ class TestChangePassword:
             "new_password": "short",
         })
         assert resp.status_code == 422
+
+
+class TestAdminSettings:
+    """PUT /api/admin/settings/{key}"""
+
+    def test_set_work_window_grace_minutes(self, admin_client):
+        """#201: Gültige Pufferzeit wird gespeichert, negative Werte abgelehnt."""
+        ok = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "20"})
+        assert ok.status_code == 200, ok.text
+        bad = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "-5"})
+        assert bad.status_code == 400
