@@ -24,6 +24,7 @@ from app.routers.time_entries import (
 from app.services.break_validation_service import validate_daily_break
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
+from app.services import work_window_service
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -270,12 +271,24 @@ def review_change_request(
     # TimeEntry CR actions
     if cr.entry_kind != "absence":
         if cr.request_type == ChangeRequestType.CREATE:
+            # #201: clamp proposed times to the CR employee's soll window.
+            _cr_user_te = db.query(User).filter(
+                User.id == cr.user_id,
+                User.tenant_id == cr.tenant_id,
+            ).first()
+            _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+            eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+                _cr_user_te, cr.proposed_date,
+                cr.proposed_start_time, cr.proposed_end_time, _grace,
+            )
             entry = TimeEntry(
                 user_id=cr.user_id,
                 tenant_id=cr_tenant_id,
                 date=cr.proposed_date,
-                start_time=cr.proposed_start_time,
-                end_time=cr.proposed_end_time,
+                start_time=eff_start,
+                end_time=eff_end,
+                raw_start_time=raw_start,
+                raw_end_time=raw_end,
                 break_minutes=cr.proposed_break_minutes or 0,
                 note=cr.proposed_note,
                 # #144 §4 ArbZG: materialise the documented break-exception on
@@ -298,6 +311,16 @@ def review_change_request(
 
         elif cr.request_type == ChangeRequestType.UPDATE:
             # entry already fetched in precondition check above
+            # #201: clamp proposed times to the CR employee's soll window.
+            _cr_user_te = db.query(User).filter(
+                User.id == cr.user_id,
+                User.tenant_id == cr.tenant_id,
+            ).first()
+            _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+            eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+                _cr_user_te, cr.proposed_date,
+                cr.proposed_start_time, cr.proposed_end_time, _grace,
+            )
             # #144 §4 ArbZG: mark the audit source as 'break_waiver' when this
             # CR carries a documented break-exception, mirroring the direct path.
             _create_audit_log(
@@ -305,8 +328,8 @@ def review_change_request(
                 action="update", old_entry=entry,
                 new_entry={
                     "date": cr.proposed_date,
-                    "start_time": cr.proposed_start_time,
-                    "end_time": cr.proposed_end_time,
+                    "start_time": eff_start,
+                    "end_time": eff_end,
                     "break_minutes": cr.proposed_break_minutes,
                     "note": cr.proposed_note,
                 },
@@ -315,8 +338,10 @@ def review_change_request(
                 tenant_id=cr_tenant_id,
             )
             entry.date = cr.proposed_date
-            entry.start_time = cr.proposed_start_time
-            entry.end_time = cr.proposed_end_time
+            entry.start_time = eff_start
+            entry.end_time = eff_end
+            entry.raw_start_time = raw_start
+            entry.raw_end_time = raw_end
             entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
             if cr.proposed_note is not None:
                 entry.note = cr.proposed_note

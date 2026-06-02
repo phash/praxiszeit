@@ -288,3 +288,51 @@ def test_admin_create_caps_both_ends(db, employee, admin, admin_client):
     assert entry.raw_start_time == dt.time(7, 0), f"Expected raw_start 07:00, got {entry.raw_start_time}"
     assert entry.end_time == dt.time(17, 15), f"Expected 17:15, got {entry.end_time}"
     assert entry.raw_end_time == dt.time(18, 0), f"Expected raw_end 18:00, got {entry.raw_end_time}"
+
+
+def test_cr_approval_create_clamps_to_soll_window(db, employee, admin, admin_client):
+    """CR-Genehmigung (request_type=create, entry_kind=time_entry) klappt
+    start_time ins Soll-Fenster und speichert den Rohwert in raw_start_time.
+
+    Soll Mo 08:00 (scheduled_start_monday), grace=15 min → floor=07:45.
+    CR proposed_start_time=07:00 (60 min zu früh) → nach Genehmigung:
+      start_time=07:45, raw_start_time=07:00.
+    2026-06-01 ist ein Montag.
+    """
+    from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRequestStatus
+
+    # Soll-Beginn Montag 08:00; kein Soll-Ende → nur Start-Kappung.
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+
+    # CR direkt in der DB anlegen (pending, create, time_entry).
+    cr = ChangeRequest(
+        tenant_id=DEFAULT_TENANT_ID,
+        user_id=employee.id,
+        request_type=ChangeRequestType.CREATE,
+        entry_kind="time_entry",
+        status=ChangeRequestStatus.PENDING,
+        proposed_date=dt.date(2026, 6, 1),
+        proposed_start_time=dt.time(7, 0),
+        proposed_end_time=dt.time(16, 0),
+        proposed_break_minutes=30,
+        reason="Frühschicht",
+    )
+    db.add(cr)
+    db.commit()
+    db.refresh(cr)
+
+    # Admin genehmigt den CR.
+    resp = admin_client.post(
+        f"/api/admin/change-requests/{cr.id}/review",
+        json={"action": "approve"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Materialisierter TimeEntry muss gekappt sein.
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert entry.start_time == dt.time(7, 45), f"Expected 07:45 (clamped), got {entry.start_time}"
+    assert entry.raw_start_time == dt.time(7, 0), f"Expected raw 07:00, got {entry.raw_start_time}"
+    # Ende 16:00 liegt innerhalb des Fensters (kein Soll-Ende konfiguriert) → kein Clamp.
+    assert entry.end_time == dt.time(16, 0), f"Expected 16:00 (unclamped), got {entry.end_time}"
+    assert entry.raw_end_time is None, f"Expected raw_end_time=None, got {entry.raw_end_time}"
