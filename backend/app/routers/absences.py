@@ -41,7 +41,9 @@ def list_absences(
     Regular users can only see their own absences.
     Admins can filter by user_id.
     """
-    query = db.query(Absence)
+    # F-026 belt-and-suspenders: explicit tenant scope on top of RLS — the admin
+    # branch below accepts an arbitrary user_id from the caller.
+    query = db.query(Absence).filter(Absence.tenant_id == current_user.tenant_id)
 
     # If user_id is provided, only admin can filter by it
     if user_id:
@@ -79,6 +81,9 @@ def get_absence_calendar(
     rows = db.query(
         Absence, User.first_name, User.last_name, User.calendar_color, User.department
     ).join(User).filter(
+        # F-026: this standalone calendar query broadcasts absences tenant-wide
+        # — pin it to the caller's tenant explicitly, not just via RLS.
+        Absence.tenant_id == current_user.tenant_id,
         User.is_active == True,
         User.is_hidden == False,
         date_in_month(Absence.date, year, month_num)
@@ -129,6 +134,8 @@ def get_team_upcoming_absences(
     rows = db.query(
         Absence, User.first_name, User.last_name, User.calendar_color
     ).join(User).filter(
+        # F-026: explicit tenant scope on the tenant-wide upcoming-absences feed.
+        Absence.tenant_id == current_user.tenant_id,
         User.is_active == True,
         User.is_hidden == False,
         Absence.date >= today
@@ -351,6 +358,7 @@ def create_absence(
         for date in dates_to_create:
             vacation_entry = db.query(Absence).filter(
                 Absence.user_id == target_user.id,
+                Absence.tenant_id == target_user.tenant_id,  # F-026
                 Absence.date == date,
                 Absence.type == AbsenceType.VACATION
             ).first()
@@ -446,7 +454,12 @@ def delete_absence(
     current_user: User = Depends(get_current_user)
 ):
     """Delete an absence entry."""
-    absence = db.query(Absence).filter(Absence.id == absence_id).first()
+    # F-026: the rule explicitly requires an explicit tenant filter on .delete()
+    # lookups, not RLS alone.
+    absence = db.query(Absence).filter(
+        Absence.id == absence_id,
+        Absence.tenant_id == current_user.tenant_id,
+    ).first()
 
     if not absence:
         raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
