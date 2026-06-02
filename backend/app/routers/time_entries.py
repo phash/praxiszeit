@@ -337,13 +337,20 @@ def clock_out(
     new_end_time = now.time().replace(second=0, microsecond=0)
     exempt = current_user.exempt_from_arbzg
 
+    # #201: clamp late end to [soll_end + grace]; preserve raw stamp.
+    from app.services import work_window_service
+    grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    _eff_start, eff_end, _raw_start, raw_end = work_window_service.clamp(
+        current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
+    )
+
     # §3 ArbZG: check daily hours before committing – skipped for exempt users
     daily_hours = _calculate_daily_net_hours(
         db=db,
         user_id=current_user.id,
         entry_date=open_entry.date,
         start_time=open_entry.start_time,
-        end_time=new_end_time,
+        end_time=eff_end,
         break_minutes=body.break_minutes,
         exclude_entry_id=open_entry.id,
     )
@@ -353,7 +360,8 @@ def clock_out(
             detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
         )
 
-    open_entry.end_time = new_end_time
+    open_entry.end_time = eff_end
+    open_entry.raw_end_time = raw_end
     open_entry.break_minutes = body.break_minutes
     if body.note:
         open_entry.note = body.note
@@ -369,7 +377,7 @@ def clock_out(
             user_id=current_user.id,
             entry_date=open_entry.date,
             start_time=open_entry.start_time,
-            end_time=new_end_time,
+            end_time=eff_end,
             break_minutes=body.break_minutes,
             exclude_entry_id=open_entry.id,
         )
@@ -404,7 +412,7 @@ def clock_out(
             user_id=current_user.id,
             entry_date=open_entry.date,
             start_time=open_entry.start_time,
-            end_time=new_end_time,
+            end_time=eff_end,
             break_minutes=body.break_minutes,
             exclude_entry_id=open_entry.id,
         )
@@ -416,7 +424,7 @@ def clock_out(
             clock_out_warnings.append("HOLIDAY_WORK")
         if (
             current_user.is_night_worker
-            and is_night_work(open_entry.start_time, new_end_time)
+            and is_night_work(open_entry.start_time, eff_end)
             and daily_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             clock_out_warnings.append(

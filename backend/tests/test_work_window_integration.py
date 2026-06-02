@@ -173,3 +173,21 @@ def test_clock_in_no_window_configured(db, employee, employee_client, monkeypatc
     entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
     assert entry.start_time == dt.time(6, 0)
     assert entry.raw_start_time is None
+
+
+def test_clock_out_caps_late_end(db, employee, employee_client, monkeypatch):
+    import datetime as dt
+    employee.scheduled_end_monday = dt.time(17, 0)
+    db.commit()
+    import app.routers.time_entries as te
+    from app.models import TimeEntry
+    db.add(TimeEntry(user_id=employee.id, tenant_id=employee.tenant_id,
+                     date=dt.date(2026, 6, 1), start_time=dt.time(8, 0), end_time=None, break_minutes=0))
+    db.commit()
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 18, 30))
+    monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
+    resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 30})
+    assert resp.status_code == 200, resp.text
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert entry.end_time == dt.time(17, 15)   # 17:00 + 15min grace
+    assert entry.raw_end_time == dt.time(18, 30)
