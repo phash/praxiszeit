@@ -389,3 +389,53 @@ def test_execute_import_returns_arbzg_warnings(db, test_user, test_admin):
                             tenant_id=DEFAULT_TENANT_ID)
     assert len(result.warnings) == 1
     assert "§3" in result.warnings[0]
+
+
+# ── work_window clamp im XLS-Import ─────────────────────────────────────────
+
+def test_parse_xls_clamps_early_start_to_soll_window(db, test_user):
+    """#201: Zeilen vor dem Soll-Fenster (inkl. Puffer) werden auf Fenster-Beginn minus
+    Puffer gekappt; raw_start_time bewahrt den Rohwert."""
+    # Montag 2026-01-12, Soll-Beginn 08:00
+    test_user.scheduled_start_monday = time(8, 0)
+    test_user.scheduled_end_monday = time(17, 0)
+    db.commit()
+
+    # Importzeile: 07:00 Uhr — 15 min Puffer → floor = 07:45
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 7, 0), _dt(2026, 1, 12, 16, 0)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    assert len(entries) == 1
+    entry = entries[0]
+    # Effektive Startzeit = 07:45 (Soll 08:00 minus 15 min Puffer)
+    assert entry.start_time == time(7, 45), f"expected 07:45 but got {entry.start_time}"
+    # Rohwert bewahrt
+    assert entry.raw_start_time == time(7, 0), f"expected raw 07:00 but got {entry.raw_start_time}"
+    # Ende unverändert (innerhalb des Fensters)
+    assert entry.end_time == time(16, 0)
+    assert entry.raw_end_time is None
+
+
+def test_execute_import_stores_raw_start_time_in_db(db, test_user, test_admin):
+    """#201: execute_import schreibt raw_start_time/-end_time in den TimeEntry."""
+    test_user.scheduled_start_monday = time(8, 0)
+    test_user.scheduled_end_monday = time(17, 0)
+    db.commit()
+
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 7, 0), _dt(2026, 1, 12, 16, 0)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    execute_import(
+        test_user.id, entries, overwrite=False, db=db,
+        changed_by_id=test_admin.id, filename="test.xls",
+        tenant_id=DEFAULT_TENANT_ID,
+    )
+    db_entry = db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).first()
+    assert db_entry is not None
+    assert db_entry.start_time == time(7, 45)
+    assert db_entry.raw_start_time == time(7, 0)
+    assert db_entry.raw_end_time is None
