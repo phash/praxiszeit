@@ -168,6 +168,20 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 
 > **So wird Urlaub berechnet (Tagesprinzip, § 3 BUrlG / BAG):** Der Urlaub wird **nach Arbeitstagen** geführt, nicht nach Stunden. Ein freier Arbeitstag verbraucht **genau 1 Urlaubstag**, unabhängig von der Tagesstundenzahl – ein langer Tag (z. B. 9 h) kostet so viel wie ein kurzer (z. B. 4 h): einen Tag. Auch bei **individuellen Tagesstunden** kostet jeder Arbeitstag gleich viel (Montag = Dienstag). Der Jahresanspruch wird anteilig nach Arbeitstagen vorgeschlagen. Intern speichert das System Stunden (für die Soll-/Ist-Berechnung); der **Verbrauch wird tagebasiert** gezählt und im Urlaubskonto in Tagen angezeigt.
 
+### Soll-Arbeitszeiten (Arbeitszeit-Fenster, #201)
+
+Im Benutzerformular können Sie pro Mitarbeiter und Wochentag (Mo–Fr) **Soll-Beginn** und **Soll-Ende** festlegen. Das System kappt dann automatisch erfasste Zeiten außerhalb dieses Fensters auf den jeweils erlaubten Rand (zuzüglich des konfigurierbaren Puffers).
+
+**Funktionsweise:**
+- Eingetragene Uhrzeiten außerhalb des Fensters werden **nicht angerechnet** – der Zeiteintrag endet spätestens zum Soll-Ende (plus Puffer), frühestens zum Soll-Beginn (minus Puffer).
+- Der **tatsächlich gestempelte Zeitpunkt** bleibt intern als Rohstempel gespeichert und ist im Eintrag sichtbar (§16 ArbZG – Dokumentationspflicht).
+- Salden und Überstundenkonto rechnen ausschließlich mit der angerechneten (gekappten) Zeit.
+- **Puffer:** Der systemweite Toleranzbereich (Standard: 15 Minuten) ist unter **Einstellungen → Arbeitszeit-Fenster Puffer** konfigurierbar. Innerhalb des Puffers wird die Differenz angerechnet; außerhalb wird auf den Fensterrand gekürzt.
+
+**Opt-in:** Sind für einen Mitarbeiter keine Soll-Zeiten hinterlegt, ändert sich das bisherige Verhalten nicht. Auch Mitarbeitende mit deaktivierter Stundenzählung (`track_hours=False`) sind ausgenommen.
+
+> **Rechtlicher Hinweis:** Die Nicht-Anrechnung von Zeiten außerhalb des Fensters ist eine Arbeitgeber-seitige Policy-Entscheidung (keine gesetzliche Vorgabe). Der Rohstempel dokumentiert gemäß §16 ArbZG die tatsächliche Anwesenheit.
+
 ### Mitarbeiter bearbeiten
 
 ![Mitarbeiter bearbeiten](screenshots/17-admin-benutzer-bearbeiten.png)
