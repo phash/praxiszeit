@@ -170,6 +170,24 @@ def test_clock_in_caps_early_start(db, employee, employee_client, monkeypatch):
     assert entry.raw_start_time == dt.time(7, 0), f"Expected raw 07:00, got {entry.raw_start_time}"
 
 
+def test_clock_in_early_start_warning(db, employee, employee_client, monkeypatch):
+    """Frühstart-Kappung erzeugt EARLY_START-Warnung in der Response."""
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+
+    import app.routers.time_entries as te
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 7, 0))
+    monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
+
+    resp = employee_client.post("/api/time-entries/clock-in", json={})
+    assert resp.status_code in (200, 201), resp.text
+
+    warnings = resp.json().get("warnings", [])
+    assert any(w.startswith("EARLY_START") for w in warnings), (
+        f"Expected an EARLY_START warning, got: {warnings}"
+    )
+
+
 def test_clock_in_no_clamp_within_grace(db, employee, employee_client, monkeypatch):
     """Stempelt ein MA innerhalb des Puffers ein, bleibt start_time unverändert
     und raw_start_time ist NULL (keine Kappung)."""

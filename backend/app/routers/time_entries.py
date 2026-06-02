@@ -273,6 +273,10 @@ def clock_in(
 
     # §5 ArbZG: Ruhezeit-Warnung (11h seit letztem Arbeitsende)
     clock_in_warnings: list[str] = []
+    if raw_start is not None:
+        clock_in_warnings.append(
+            f"EARLY_START: Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab {eff_start.strftime('%H:%M')}."
+        )
     if not current_user.exempt_from_arbzg:
         last_entry = db.query(TimeEntry).filter(
             TimeEntry.user_id == current_user.id,
