@@ -90,6 +90,11 @@ export default function Settings() {
   const [originalBreakApproval, setOriginalBreakApproval] = useState(false);
   const [savingBreakApproval, setSavingBreakApproval] = useState(false);
 
+  // #201 Soll-Fenster-Puffer (work_window_grace_minutes)
+  const [graceMinutes, setGraceMinutes] = useState('15');
+  const [originalGraceMinutes, setOriginalGraceMinutes] = useState('15');
+  const [savingGrace, setSavingGrace] = useState(false);
+
   // Custom holidays
   const currentYear = new Date().getFullYear();
   const [holidayYear, setHolidayYear] = useState(currentYear);
@@ -152,6 +157,12 @@ export default function Settings() {
       const breakVal = breakSetting?.value?.toLowerCase() === 'true';
       setBreakApprovalRequired(breakVal);
       setOriginalBreakApproval(breakVal);
+
+      // #201 Soll-Fenster-Puffer
+      const graceSetting = settingsRes.data.find((s) => s.key === 'work_window_grace_minutes');
+      const graceVal = graceSetting?.value ?? '15';
+      setGraceMinutes(graceVal);
+      setOriginalGraceMinutes(graceVal);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -262,6 +273,21 @@ export default function Settings() {
       toast.error(getErrorMessage(err));
     } finally {
       setSavingBreakApproval(false);
+    }
+  };
+
+  const saveGraceMinutes = async () => {
+    setSavingGrace(true);
+    try {
+      await apiClient.put('/admin/settings/work_window_grace_minutes', {
+        value: String(graceMinutes),
+      });
+      setOriginalGraceMinutes(graceMinutes);
+      toast.success('Soll-Fenster-Puffer gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingGrace(false);
     }
   };
 
@@ -744,6 +770,41 @@ export default function Settings() {
           <button
             onClick={saveBreakApproval}
             disabled={savingBreakApproval || breakApprovalRequired === originalBreakApproval}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save size={16} />
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      {/* Soll-Fenster-Puffer (#201) */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Soll-Arbeitszeit-Fenster</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Anwesenheit vor oder nach dem Soll-Fenster zählt nur bis zu diesem Puffer zur Arbeitszeit.
+          Stempel außerhalb des Puffers werden auf die Fenstergrenze gekürzt.
+        </p>
+        <div className="flex items-end gap-4">
+          <div>
+            <label
+              htmlFor="grace-minutes"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Puffer für Soll-Arbeitszeit-Fenster (Min.)
+            </label>
+            <input
+              id="grace-minutes"
+              type="number"
+              min="0"
+              value={graceMinutes}
+              onChange={(e) => setGraceMinutes(e.target.value)}
+              className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+            />
+          </div>
+          <button
+            onClick={saveGraceMinutes}
+            disabled={savingGrace || graceMinutes === originalGraceMinutes}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

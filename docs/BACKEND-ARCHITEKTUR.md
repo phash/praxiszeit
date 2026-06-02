@@ -109,6 +109,40 @@ Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 - Konvertierung Tage ↔ Stunden via aktuellem `daily_target`
 - **`track_hours=False` (Mitarbeitende ohne Stundenzählung, #191):** `daily_target == 0`, daher **reine Tageszählung** — jede VACATION-Absence = 1 Tag, jeder `free`+`counts_as_vacation`-Sondertag = 1 Tag; alle Stunden-Felder bleiben 0, `budget_days` behält Pro-Rata + Carryover. Ersetzt die alte F-046-„nicht anwendbar"-Rückgabe (0 verbraucht / voller Rest), die den tagebasierten Budget-Check aushebelte. Halbtage sind ohne Stundenzählung nicht erkennbar → zählen als voller Tag. Edit-Pfad-Budget-Check tagebasiert (#196 behoben). Offen: Jahresabschluss-Carryover für untracked (#191).
 
+### Arbeitszeit-Fenster (#201, work_window_service.py)
+
+**Datenmodell:** Pro `User` je Wochentag (Mo–Fr) optionale Spalten `scheduled_start_<wd>` / `scheduled_end_<wd>` (Python `time | None`). Tenant-Setting `work_window_grace_minutes` (Integer, Default 15) in `system_settings`.
+
+**Clamp-Logik (`work_window_service.clamp`):**
+1. Liest Soll-Zeiten für den Wochentag des Eintrags. Fehlen beide → kein Eingriff (Opt-in).
+2. Berechnet Fenster: `[soll_start − puffer, soll_ende + puffer]`.
+3. Kürzt `start_time` auf max(original, fenster_start) und `end_time` auf min(original, fenster_ende).
+4. Schreibt die Originalwerte in `raw_start_time` / `raw_end_time` (§16-Dokumentation, unveränderlich).
+5. `net_hours` und alle Salden rechnen mit der **gekappten** Zeit.
+
+**Schreibpfade (vollständig):**
+
+| Pfad | Wo gekappt |
+|------|-----------|
+| `clock_in` | Start beim Einstempeln |
+| `clock_out` | Ende beim Ausstempeln |
+| `create_time_entry` / `update_time_entry` | MA-eigener CRUD |
+| `admin_time_entries` create + update | Admin-CRUD |
+| `xls_import_service` | Bulk-Import |
+| `admin_change_requests.review_change_request` | CR-Genehmigung |
+
+**Ausnahmen:**
+- `track_hours=False` → kein Clamp (keine Stundenzählung, kein Fenster sinnvoll).
+- `exempt_from_arbzg` (§18) → Clamp greift **trotzdem** (Anwesenheits-Policy, unabhängig von ArbZG-Checks).
+
+**Verhältnis zu §4/§3-Prüfungen:** ArbZG-Checks laufen auf der bereits gekappten Zeit (kein Doppeleingriff).
+
+**Services-Eintrag:**
+
+| Service | Datei | Zweck |
+|---------|-------|-------|
+| `work_window_service.py` | Arbeitszeit-Fenster | clamp(), raw_*-Persistenz, Fenster-Berechnung |
+
 ## Wichtige Patterns
 
 - **`get_weekly_hours_for_date(db, user, date)`** — Immer pro Tag aufrufen, nie `user.weekly_hours` direkt (historische Änderungen!)

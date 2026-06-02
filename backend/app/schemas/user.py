@@ -1,7 +1,7 @@
 import re
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 from typing import Optional
-from datetime import datetime, date
+from datetime import datetime, date, time
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
@@ -50,6 +50,17 @@ class UserBase(BaseModel):
     first_work_day: Optional[date] = None  # Erster Arbeitstag
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
+    # #201: Soll-Zeitfenster pro Wochentag
+    scheduled_start_monday: Optional[time] = None
+    scheduled_end_monday: Optional[time] = None
+    scheduled_start_tuesday: Optional[time] = None
+    scheduled_end_tuesday: Optional[time] = None
+    scheduled_start_wednesday: Optional[time] = None
+    scheduled_end_wednesday: Optional[time] = None
+    scheduled_start_thursday: Optional[time] = None
+    scheduled_end_thursday: Optional[time] = None
+    scheduled_start_friday: Optional[time] = None
+    scheduled_end_friday: Optional[time] = None
 
     @model_validator(mode='after')
     def check_work_day_order(self):
@@ -95,6 +106,17 @@ class UserUpdate(BaseModel):
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
+    # #201: Soll-Zeitfenster pro Wochentag
+    scheduled_start_monday: Optional[time] = None
+    scheduled_end_monday: Optional[time] = None
+    scheduled_start_tuesday: Optional[time] = None
+    scheduled_end_tuesday: Optional[time] = None
+    scheduled_start_wednesday: Optional[time] = None
+    scheduled_end_wednesday: Optional[time] = None
+    scheduled_start_thursday: Optional[time] = None
+    scheduled_end_thursday: Optional[time] = None
+    scheduled_start_friday: Optional[time] = None
+    scheduled_end_friday: Optional[time] = None
 
     @model_validator(mode='after')
     def check_work_day_order(self):
@@ -153,6 +175,17 @@ class UserListResponse(BaseModel):
     first_work_day: Optional[date] = None
     last_work_day: Optional[date] = None
     department: Optional[str] = None  # #162: Abteilung/Bereich
+    # #201: Soll-Zeitfenster pro Wochentag
+    scheduled_start_monday: Optional[time] = None
+    scheduled_end_monday: Optional[time] = None
+    scheduled_start_tuesday: Optional[time] = None
+    scheduled_end_tuesday: Optional[time] = None
+    scheduled_start_wednesday: Optional[time] = None
+    scheduled_end_wednesday: Optional[time] = None
+    scheduled_start_thursday: Optional[time] = None
+    scheduled_end_thursday: Optional[time] = None
+    scheduled_start_friday: Optional[time] = None
+    scheduled_end_friday: Optional[time] = None
     totp_enabled: bool = False
     deactivated_at: Optional[datetime] = None
     created_at: datetime

@@ -71,6 +71,8 @@ class TimeEntryResponse(BaseModel):
     is_night_work: bool = False
     sunday_exception_reason: Optional[str] = None  # §10 ArbZG
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
+    raw_start_time: Optional[time] = None  # #201: unklammerter Stempelzeitpunkt
+    raw_end_time: Optional[time] = None    # #201: unklammerter Stempelzeitpunkt
     created_at: datetime
 
     @field_serializer('id', 'user_id')

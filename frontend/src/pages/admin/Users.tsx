@@ -34,6 +34,16 @@ interface User {
   hours_wednesday: number | null;
   hours_thursday: number | null;
   hours_friday: number | null;
+  scheduled_start_monday: string | null;
+  scheduled_end_monday: string | null;
+  scheduled_start_tuesday: string | null;
+  scheduled_end_tuesday: string | null;
+  scheduled_start_wednesday: string | null;
+  scheduled_end_wednesday: string | null;
+  scheduled_start_thursday: string | null;
+  scheduled_end_thursday: string | null;
+  scheduled_start_friday: string | null;
+  scheduled_end_friday: string | null;
   first_work_day: string | null;
   last_work_day: string | null;
   is_active: boolean;

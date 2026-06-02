@@ -35,6 +35,8 @@ interface TimeEntry {
   is_night_work: boolean;
   sunday_exception_reason?: string | null;
   break_waiver_reason?: string | null;
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
 }
 
 interface DailyScheduleUser {
@@ -833,9 +835,27 @@ export default function TimeTracking() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{entry.start_time.substring(0, 5)}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {entry.end_time ? entry.end_time.substring(0, 5) : <span className={`font-medium ${new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'text-danger' : 'text-green-600'}`}>offen</span>}
+                        {entry.start_time.substring(0, 5)}
+                        {entry.raw_start_time && (
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            gestempelt {entry.raw_start_time.substring(0, 5)} · angerechnet ab {entry.start_time.substring(0, 5)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {entry.end_time ? (
+                          <>
+                            {entry.end_time.substring(0, 5)}
+                            {entry.raw_end_time && (
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                gestempelt {entry.raw_end_time.substring(0, 5)} · angerechnet bis {entry.end_time.substring(0, 5)}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <span className={`font-medium ${new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'text-danger' : 'text-green-600'}`}>offen</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.break_minutes} min</td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
@@ -933,6 +953,16 @@ export default function TimeTracking() {
                         <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(entry.net_hours)}h</span>
                       </div>
                       <TimeBar startTime={entry.start_time} endTime={entry.end_time} />
+                      {(entry.raw_start_time || entry.raw_end_time) && (
+                        <div className="text-xs text-gray-500 mb-2 space-y-0.5">
+                          {entry.raw_start_time && (
+                            <div>gestempelt {entry.raw_start_time.substring(0, 5)} · angerechnet ab {entry.start_time.substring(0, 5)}</div>
+                          )}
+                          {entry.raw_end_time && entry.end_time && (
+                            <div>gestempelt {entry.raw_end_time.substring(0, 5)} · angerechnet bis {entry.end_time.substring(0, 5)}</div>
+                          )}
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                         <div className="flex justify-between">
                           <span className="text-text-secondary">Arbeitszeit</span>

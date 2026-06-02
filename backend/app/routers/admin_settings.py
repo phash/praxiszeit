@@ -30,6 +30,7 @@ _ALLOWED_SETTINGS = {
     "vacation_approval_required",
     "holiday_state",
     "break_exception_requires_approval",  # #144 §4 ArbZG: Pflicht-Pause-Ausnahme
+    "work_window_grace_minutes",  # #201 Arbeitszeit-Fenster: Pufferzeit in Minuten
 } | special_days_service.SETTING_KEYS
 
 # Settings whose value must be a boolean ("true"/"false").
@@ -97,6 +98,14 @@ def update_setting(
     if key not in _ALLOWED_SETTINGS:
         raise HTTPException(status_code=400, detail=f"Unbekannte Einstellung: {key}")
     value = body.value
+
+    # #201: validate work_window_grace_minutes as a non-negative integer
+    if key == "work_window_grace_minutes":
+        try:
+            if int(value) < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="work_window_grace_minutes muss eine nicht-negative Zahl sein")
 
     # Validate holiday_state against supported states
     if key == "holiday_state":
