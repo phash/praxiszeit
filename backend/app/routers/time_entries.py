@@ -252,11 +252,20 @@ def clock_in(
     if current_user.last_work_day and now.date() > current_user.last_work_day:
         raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
 
+    # #201: clamp early start to [soll_start − grace]; preserve raw stamp.
+    from app.services import work_window_service
+    grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    start_t = now.time().replace(second=0, microsecond=0)
+    eff_start, _eff_end, raw_start, _raw_end = work_window_service.clamp(
+        current_user, now.date(), start_t, None, grace,
+    )
+
     entry = TimeEntry(
         user_id=current_user.id,
         tenant_id=current_user.tenant_id,
         date=now.date(),
-        start_time=now.time().replace(second=0, microsecond=0),
+        start_time=eff_start,
+        raw_start_time=raw_start,
         end_time=None,
         break_minutes=0,
         note=body.note,
