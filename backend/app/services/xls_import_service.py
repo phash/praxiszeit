@@ -66,11 +66,15 @@ def _check_arbzg(
     prev_end_dt: Optional[datetime],
     exempt: bool = False,
     is_night_worker: bool = False,
+    same_day_blocks: Optional[list[dict]] = None,
 ) -> list[str]:
-    """ArbZG-Warnungen ermitteln (§3 Tageslimit, §5 Ruhezeit, §6 Nachtarbeit).
+    """ArbZG-Warnungen ermitteln (§3 Tageslimit, §4 Pause, §5 Ruhezeit, §6 Nachtarbeit).
 
     exempt=True (§18 ArbZG): alle Prüfungen werden übersprungen.
     is_night_worker=True (§6 Abs. 2 ArbZG): 8h-Limit statt 10h.
+    same_day_blocks: Liste von {"start": time, "end": time, "break_minutes": int} für
+        andere Einträge am selben Tag (aus Import-Batch + vorhandener DB). Wenn übergeben,
+        werden §3 und §4 auf Basis der Tages-Aggregation statt des Einzeleintrags bewertet.
     """
     if exempt:
         return []
@@ -79,16 +83,63 @@ def _check_arbzg(
     gross_seconds = (end.hour * 3600 + end.minute * 60) - (start.hour * 3600 + start.minute * 60)
     net_hours = (gross_seconds / 3600.0) - (break_min / 60.0)
 
-    # §6 Abs. 2: strengeres 8h-Limit für Nachtarbeitnehmer
-    if is_night_worker and net_hours > NIGHT_WORKER_MAX_NET_HOURS:
-        warnings.append(
-            f"§6 Abs. 2 ArbZG: Nachtarbeitnehmer — Netto-Arbeitszeit {net_hours:.1f}h überschreitet 8h-Limit"
+    if same_day_blocks:
+        # §3 / §4 Aggregation: alle Blöcke des Tages zusammenfassen (inkl. diesem Eintrag)
+        all_blocks = list(same_day_blocks) + [{"start": start, "end": end, "break_minutes": break_min}]
+        all_blocks.sort(key=lambda b: b["start"])
+
+        total_gross_min = sum(
+            (b["end"].hour * 60 + b["end"].minute) - (b["start"].hour * 60 + b["start"].minute)
+            for b in all_blocks
         )
-    elif net_hours > MAX_DAILY_NET_HOURS:
-        # §3: allgemeines 10h-Tageslimit
-        warnings.append(
-            f"§3 ArbZG: Netto-Arbeitszeit {net_hours:.1f}h überschreitet das 10h-Tageslimit"
+        total_declared_break_min = sum(
+            b["break_minutes"] for b in all_blocks if b["break_minutes"] >= 15
         )
+        # Lücken zwischen aufeinanderfolgenden Blöcken (≥15 min zählen als Pause)
+        total_gap_min = 0
+        for i in range(1, len(all_blocks)):
+            gap = (
+                (all_blocks[i]["start"].hour * 60 + all_blocks[i]["start"].minute)
+                - (all_blocks[i - 1]["end"].hour * 60 + all_blocks[i - 1]["end"].minute)
+            )
+            if gap >= 15:
+                total_gap_min += gap
+        total_net_min = total_gross_min - total_declared_break_min
+        total_net_hours = total_net_min / 60.0
+        total_effective_break = total_declared_break_min + total_gap_min
+
+        # §3 / §6 Abs. 2 auf Tagesbasis
+        if is_night_worker and total_net_hours > NIGHT_WORKER_MAX_NET_HOURS:
+            warnings.append(
+                f"§6 Abs. 2 ArbZG: Nachtarbeitnehmer — Tages-Netto-Arbeitszeit {total_net_hours:.1f}h überschreitet 8h-Limit"
+            )
+        elif total_net_hours > MAX_DAILY_NET_HOURS:
+            warnings.append(
+                f"§3 ArbZG: Tages-Netto-Arbeitszeit {total_net_hours:.1f}h überschreitet das 10h-Tageslimit"
+            )
+
+        # §4 Pausenpflicht auf Tagesbasis
+        if total_net_min > 540 and total_effective_break < 45:
+            warnings.append(
+                f"§4 ArbZG: Tages-Netto-Arbeitszeit {total_net_hours:.1f}h erfordert mindestens 45 Minuten Pause "
+                f"(Gesamtpause: {total_effective_break} Minuten)"
+            )
+        elif total_net_min > 360 and total_effective_break < 30:
+            warnings.append(
+                f"§4 ArbZG: Tages-Netto-Arbeitszeit {total_net_hours:.1f}h erfordert mindestens 30 Minuten Pause "
+                f"(Gesamtpause: {total_effective_break} Minuten)"
+            )
+    else:
+        # Einzeleintrag: §3 / §6 Abs. 2 nur anhand dieses Eintrags
+        if is_night_worker and net_hours > NIGHT_WORKER_MAX_NET_HOURS:
+            warnings.append(
+                f"§6 Abs. 2 ArbZG: Nachtarbeitnehmer — Netto-Arbeitszeit {net_hours:.1f}h überschreitet 8h-Limit"
+            )
+        elif net_hours > MAX_DAILY_NET_HOURS:
+            # §3: allgemeines 10h-Tageslimit
+            warnings.append(
+                f"§3 ArbZG: Netto-Arbeitszeit {net_hours:.1f}h überschreitet das 10h-Tageslimit"
+            )
 
     if is_night_work(start, end):
         # §6 Abs. 1: Nachtarbeit-Erkennung (>2h zwischen 23:00–06:00)
@@ -140,6 +191,12 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
     prev_end_dt: Optional[datetime] = None
     first_import_date: Optional[date] = None
 
+    # §3/§4 Tagesaggregation: Blöcke pro Datum sammeln (Import-Batch + DB-Einträge bereits gecacht)
+    # batch_blocks_by_date: date -> list of {"start": time, "end": time, "break_minutes": int}
+    batch_blocks_by_date: dict[date, list[dict]] = {}
+    # db_blocks_by_date: gecachte DB-Einträge pro Datum (einmalig pro Datum abgefragt)
+    db_blocks_by_date: dict[date, list[dict]] = {}
+
     for row_idx in range(ws.nrows):
         # Datenzeile erkennbar durch numerischen ctype (3) in Ein-Spalte (D)
         if ws.cell(row_idx, 3).ctype != 3:
@@ -181,10 +238,32 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
             if last_db_entry and last_db_entry.end_time:
                 check_prev = datetime.combine(last_db_entry.date, last_db_entry.end_time)
 
+        # §3/§4 Tagesaggregation: bestehende DB-Einträge für diesen Tag einmalig laden
+        if entry_date not in db_blocks_by_date:
+            db_entries_today = (
+                db.query(TimeEntry)
+                .filter(TimeEntry.user_id == user_id, TimeEntry.date == entry_date)
+                .all()
+            )
+            db_blocks_by_date[entry_date] = [
+                {"start": e.start_time, "end": e.end_time, "break_minutes": e.break_minutes}
+                for e in db_entries_today
+                if e.end_time is not None
+            ]
+
+        # Alle anderen Blöcke am selben Tag = DB-Blöcke + bisher im Batch gesammelte Blöcke
+        other_blocks = db_blocks_by_date[entry_date] + batch_blocks_by_date.get(entry_date, [])
+
         arbzg_warnings = _check_arbzg(
             entry_date, start_t, end_t, break_min, check_prev,
             exempt=exempt, is_night_worker=is_night_worker,
+            same_day_blocks=other_blocks if other_blocks else None,
         )
+
+        # Diesen Block für nachfolgende Zeilen am selben Tag merken
+        if entry_date not in batch_blocks_by_date:
+            batch_blocks_by_date[entry_date] = []
+        batch_blocks_by_date[entry_date].append({"start": start_t, "end": end_t, "break_minutes": break_min})
 
         # Konflikt-Check nach UniqueConstraint (user_id + date + start_time)
         existing = (
