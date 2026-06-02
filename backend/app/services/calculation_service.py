@@ -652,21 +652,38 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
 
     # Calculate budget in hours, pro-rated for first/last work day
     budget_days = Decimal(str(user.vacation_days))
-    if user.first_work_day and user.first_work_day.year == year:
+    first_in_year = user.first_work_day and user.first_work_day.year == year
+    last_in_year = user.last_work_day and user.last_work_day.year == year
+    if first_in_year and last_in_year:
+        # Eintritt UND Austritt im selben Jahr: Beschäftigungsdauer ist die echte
+        # Überlappung beider Grenzen (nicht min() zweier einseitiger Pro-Ratas).
+        # employed_months = months_remaining + months_worked − 12  (≥ 0)
+        fwd = user.first_work_day
+        fwd_days_in_month = monthrange(fwd.year, fwd.month)[1]
+        fwd_days_remaining = fwd_days_in_month - fwd.day + 1  # inklusive Starttag
+        months_remaining = (Decimal(str(12 - fwd.month))
+                            + Decimal(str(fwd_days_remaining)) / Decimal(str(fwd_days_in_month)))
+        lwd = user.last_work_day
+        lwd_days_in_month = monthrange(lwd.year, lwd.month)[1]
+        lwd_days_worked = lwd.day  # inklusive letzten Tag
+        months_worked = (Decimal(str(lwd.month - 1))
+                         + Decimal(str(lwd_days_worked)) / Decimal(str(lwd_days_in_month)))
+        employed_months = max(Decimal('0'), months_remaining + months_worked - Decimal('12'))
+        budget_days = (Decimal(str(user.vacation_days)) * employed_months / Decimal('12')).quantize(Decimal('0.1'))
+    elif first_in_year:
         fwd = user.first_work_day
         days_in_month = monthrange(fwd.year, fwd.month)[1]
         days_remaining = days_in_month - fwd.day + 1  # inklusive Starttag
         # Vollständige Monate nach Startmonat + Anteil des Startmonats
         months_remaining = Decimal(str(12 - fwd.month)) + Decimal(str(days_remaining)) / Decimal(str(days_in_month))
         budget_days = (Decimal(str(user.vacation_days)) * months_remaining / Decimal('12')).quantize(Decimal('0.1'))
-    if user.last_work_day and user.last_work_day.year == year:
+    elif last_in_year:
         lwd = user.last_work_day
         days_in_month = monthrange(lwd.year, lwd.month)[1]
         days_worked = lwd.day  # inklusive letzten Tag
         # Vollständige Monate vor Endmonat + Anteil des Endmonats
         months_worked = Decimal(str(lwd.month - 1)) + Decimal(str(days_worked)) / Decimal(str(days_in_month))
-        budget_days_last = (Decimal(str(user.vacation_days)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
-        budget_days = min(budget_days, budget_days_last)
+        budget_days = (Decimal(str(user.vacation_days)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
     # Add carryover vacation days from previous year
     carryover = db.query(YearCarryover).filter(
         YearCarryover.user_id == user.id,
