@@ -2,6 +2,77 @@
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-06-02
+
+Reines Härtungs-Release aus einem ArbZG- und Sicherheits-Audit (OWASP). Keine
+neuen Funktionen, keine Datenbank-Migration. Empfohlenes Update für alle
+Installationen. (Das Audit ergab **keine** kritischen/hochgradigen Befunde; zwei
+ältere offene Punkte — RLS-Mandantentrennung, Content-Security-Policy — wurden
+als bereits geschlossen bestätigt.)
+
+### 🔒 Sicherheit
+- **Update-Schutz gegen Downgrade:** PraxisZeit aktualisiert sich nur noch auf
+  echt neuere Versionen. Ein (auch gültig signiertes) älteres Update-Paket wird
+  ignoriert — schützt vor erzwungenem Zurückstufen auf eine schwächere Version.
+- **Vier-Augen-Prinzip erweitert:** Wer zugleich Administrator und Mitarbeiter
+  ist, kann eigene Zeit-Korrekturanträge und Urlaubsanträge nicht mehr selbst
+  genehmigen, solange ein weiterer aktiver Administrator existiert. (In der
+  Ein-Personen-Verwaltung bleibt die Selbstgenehmigung möglich.)
+- **Protokollierung von Anmelde-Ereignissen:** Erfolgreiche und fehlgeschlagene
+  Logins, Konto-Sperren, Abmeldungen und Passwortänderungen werden jetzt
+  strukturiert protokolliert (ohne Passwörter/Token) — bessere Nachvollziehbarkeit.
+- Interne Härtung der Zwei-Faktor-Prüfung.
+
+### 🧮 Arbeitszeitgesetz / Nachweis
+- **§16:** Beim Überschreiben eines Eintrags per Excel-Import bleiben die
+  tatsächlich gestempelten Roh-Zeiten erhalten (Nachweis der echten Anwesenheit).
+- **§3/§14:** Auch ein Änderungsantrag zeigt jetzt die Warnung bei mehr als 48 h
+  Wochenarbeitszeit — wie die direkte Zeiterfassung.
+
+## [1.8.1] - 2026-06-02
+
+Fix-Release aus einem intensiven Gesamtreview (Funktion, Robustheit, Sicherheit).
+
+### 🐞 Behoben
+- **Urlaub/Krank für Mitarbeitende ohne Stundenzählung** wurde zwar „genehmigt",
+  aber nicht tatsächlich gebucht — jetzt korrekt tagebasiert erfasst.
+- **Abwesenheits-Änderungsanträge:** Die Genehmigung konnte fehlschlagen und den
+  Antrag dauerhaft blockieren, wenn am Tag bereits eine Abwesenheit bestand —
+  jetzt saubere Behandlung (idempotent bzw. klarer Hinweis).
+- **Ausstempeln über 10 h** wird nicht mehr blockiert: Der Eintrag wird
+  gespeichert und der Verstoß als deutliche Warnung gemeldet (die Arbeitszeit ist
+  bereits geleistet). Bei manueller Eingabe bleibt die 10-h-Grenze eine harte Sperre.
+- **Urlaubsantrag:** Feiertage werden korrekt nicht vom Budget abgezogen; keine
+  doppelte Buchung über verschiedene Abwesenheitstypen am selben Tag.
+- **Anzeige:** Pausen-Prüfung bei Schichten über Mitternacht; Urlaubs-Fortschritts­
+  balken bei noch fehlendem Anspruch.
+
+### 📚 Sonstiges
+- Handbücher, Cheat-Sheets und die In-App-Hilfe vollständig überarbeitet.
+
+## [1.8.0] - 2026-06-01
+
+Erste Produktivversion (Beta — ohne Lizenzpflicht).
+
+### ✨ Neu
+- **Soll-Arbeitszeit-Fenster:** Pro Mitarbeiter je Wochentag optionale
+  Soll-Beginn-/Soll-Ende-Zeiten. Anwesenheit außerhalb des Fensters (plus Puffer)
+  wird nicht angerechnet; die echte Stempelzeit bleibt erhalten.
+- **Sondertage 24./31.12.:** Im Kalender als arbeitsfrei oder halber Tag
+  markierbar; wirkt auf Soll-Zeit und Urlaubskonto.
+- **Betriebsferien-Teilnahme** je Mitarbeiter ein-/ausschaltbar (unabhängig von
+  der Rolle).
+- **Mitarbeitende ohne Stundenzählung:** Keine Soll-/Ist-/Überstundenrechnung;
+  Urlaub und Krankheit zählen tagebasiert.
+- **Überstunden-Übersicht** je Mitarbeiter in der Benutzerverwaltung.
+- **Pflicht-Pause-Ausnahme:** Bei nicht möglicher Pause kann mit Begründung
+  dokumentiert werden (optional genehmigungspflichtig); die Pause wird beim
+  Ausstempeln aktiv abgefragt.
+
+### 🧱 Plattform
+- **Beta-Modus** (keine Lizenz nötig), mehrere akzeptierte Lizenzschlüssel
+  (sanfte Rotation), Docker-Bundle, Härtung der nativen Linux-Installation.
+
 ## [1.7.0] - 2026-05-28
 
 ### 🧮 Korrekte Soll-Stunden in den Berichten an Sondertagen
