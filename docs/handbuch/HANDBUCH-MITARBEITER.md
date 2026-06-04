@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.2 · **Stand:** Juni 2026 (PraxisZeit 1.8.0)
+**Version:** 2.3 · **Stand:** Juni 2026 (PraxisZeit 1.8.2)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -22,10 +22,11 @@
    - 4.2 [Urlaubsantrag stellen (bei Genehmigungspflicht)](#42-urlaubsantrag-stellen-bei-genehmigungspflicht)
    - 4.3 [Abwesenheit löschen](#43-abwesenheit-löschen)
    - 4.4 [So wird Ihr Urlaub berechnet](#44-so-wird-ihr-urlaub-berechnet)
-5. [Wenn für Sie keine Stunden gezählt werden](#5-wenn-für-sie-keine-stunden-gezählt-werden)
-6. [Profil & Passwort](#6-profil--passwort)
-7. [Mobil-Nutzung](#7-mobil-nutzung)
-8. [Häufige Fragen (FAQ)](#8-häufige-fragen-faq)
+5. [So berechnet PraxisZeit Ihre Stunden und Ihren Urlaub](#5-so-berechnet-praxiszeit-ihre-stunden-und-ihren-urlaub)
+6. [Wenn für Sie keine Stunden gezählt werden](#6-wenn-für-sie-keine-stunden-gezählt-werden)
+7. [Profil & Passwort](#7-profil--passwort)
+8. [Mobil-Nutzung](#8-mobil-nutzung)
+9. [Häufige Fragen (FAQ)](#9-häufige-fragen-faq)
 
 ---
 
@@ -65,7 +66,7 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 > **Zeitanzeige:** Stunden werden im Format H:MM angezeigt (z. B. „8:30" für 8 Stunden 30 Minuten). Negative Salden werden mit einem Minus-Zeichen dargestellt (z. B. „-2:15").
 
-> **Hinweis:** Falls Ihre Praxis für Sie **keine Stundenzählung** führt, fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto** – das ist bei Ihnen so eingestellt und kein Fehler. Ihr **Urlaubskonto** wird trotzdem geführt. Mehr dazu in [Abschnitt 5](#5-wenn-für-sie-keine-stunden-gezählt-werden).
+> **Hinweis:** Falls Ihre Praxis für Sie **keine Stundenzählung** führt, fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto** – das ist bei Ihnen so eingestellt und kein Fehler. Ihr **Urlaubskonto** wird trotzdem geführt. Mehr dazu in [Abschnitt 6](#6-wenn-für-sie-keine-stunden-gezählt-werden).
 
 ### Monatsübersicht (Tabelle)
 
@@ -350,7 +351,46 @@ PraxisZeit führt Urlaub **nach Arbeitstagen** (Tagesprinzip nach § 3 BUrlG) �
 
 ---
 
-## 5. Wenn für Sie keine Stunden gezählt werden
+## 5. So berechnet PraxisZeit Ihre Stunden und Ihren Urlaub
+
+Dieser Abschnitt erklärt in einfachen Worten, wie die Werte auf Ihrem Dashboard zustande kommen.
+
+### Ihr Tagessoll
+
+Ihr **Tagessoll** ist die Stundenzahl, die Sie an einem Arbeitstag leisten sollen. Es ergibt sich aus Ihren Wochenstunden geteilt durch Ihre Arbeitstage pro Woche:
+
+> **Tagessoll = Wochenstunden ÷ Arbeitstage pro Woche**
+
+Beispiele: 40 h auf 5 Tage = **8 h/Tag**; 20 h auf 5 Tage = **4 h/Tag**; 24 h auf 3 Tage = **8 h/Tag**. Hat Ihre Praxis für Sie individuelle Tagesstunden hinterlegt (z. B. Mo/Di je 10 h, Mi 4 h), gilt der jeweils eingetragene Wert. An Wochenenden und Feiertagen ist das Tagessoll 0.
+
+### Ihre Ist-Stunden
+
+Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit: **(Ende − Beginn) − Pause** je Eintrag. Zusätzlich werden **Krankheit** und **Fortbildung** so angerechnet, als hätten Sie an diesen Tagen normal gearbeitet – sie zählen also zu Ihrem Ist.
+
+### Saldo und Überstunden
+
+- **Tagessaldo / Monatssaldo:** Ist − Soll. Ein **grüner** Saldo (+) bedeutet Mehrarbeit, ein **roter** (−) Minusstunden.
+- **Überstundenkonto:** der fortlaufend aufsummierte Saldo seit Jahresbeginn – inklusive des Übertrags aus dem Vorjahr.
+
+### Was passiert bei Abwesenheiten?
+
+| Abwesenheit | Wirkung auf Ihre Stunden |
+|---|---|
+| **Urlaub** | Soll des Tages entfällt, 1 Urlaubstag wird abgezogen |
+| **Krank** | Soll bleibt, wird als geleistet gutgeschrieben (kein Minus) |
+| **Fortbildung** | zählt wie Arbeitszeit |
+| **Bezahlte Freistellung / Sonstiges** | Soll des Tages entfällt, **kein** Urlaubsabzug |
+| **Überstundenausgleich** | Soll bleibt, der Tag zählt als 0 Stunden → Ihr Überstundenkonto sinkt |
+
+### Ihr Urlaub
+
+Urlaub wird **nach Tagen** gezählt: 1 freier Arbeitstag = 1 Urlaubstag – egal, wie lang der Tag ist. Die Details stehen in [Abschnitt 4.4](#44-so-wird-ihr-urlaub-berechnet).
+
+> **Kurzbeispiel (40 h / 5 Tage, Tagessoll 8 h):** In einem Monat mit 22 Werktagen, davon 1 Feiertag und 4 Urlaubstagen, bleiben 17 Soll-Tage → **136 h Soll**. Arbeiten Sie 137,5 h, steht Ihr Monatssaldo bei **+1,5 h**.
+
+---
+
+## 6. Wenn für Sie keine Stunden gezählt werden
 
 Für manche Mitarbeitende führt die Praxis bewusst **keine Stundenzählung**. Das bedeutet:
 
@@ -362,7 +402,7 @@ Für manche Mitarbeitende führt die Praxis bewusst **keine Stundenzählung**. D
 
 ---
 
-## 6. Profil & Passwort
+## 7. Profil & Passwort
 
 Klicken Sie in der Navigation auf **Profil**.
 
@@ -394,7 +434,7 @@ Unter **Weitere Einstellungen** (aufklappbar) können Sie persönliche Darstellu
 
 ---
 
-## 7. Mobil-Nutzung
+## 8. Mobil-Nutzung
 
 PraxisZeit ist vollständig für mobile Geräte optimiert.
 
@@ -427,7 +467,7 @@ Auf unterstützten Geräten können Sie PraxisZeit wie eine App installieren:
 
 ---
 
-## 8. Häufige Fragen (FAQ)
+## 9. Häufige Fragen (FAQ)
 
 **F: Ich sehe meinen Eintrag nicht mehr, obwohl ich ihn gespeichert habe.**
 A: Überprüfen Sie, ob Sie den richtigen Monat anzeigen. Nutzen Sie die Pfeile `<` `>` neben dem Monatsnamen.
@@ -448,7 +488,7 @@ A: Ihre Praxis hat für diesen Wochentag eine Soll-Arbeitszeit hinterlegt. Wenn 
 A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet. Verbraucht wird **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag (siehe [Abschnitt 4.4](#44-so-wird-ihr-urlaub-berechnet)).
 
 **F: Bei mir fehlen die Stunden- und Überstundenkacheln. Ist das kaputt?**
-A: Nein. Für manche Mitarbeitende führt die Praxis keine Stundenzählung. Dann entfallen Soll/Ist, Überstunden und der Stempel-Button; Urlaub und Krankheit werden weiter tagebasiert geführt. Mehr dazu in [Abschnitt 5](#5-wenn-für-sie-keine-stunden-gezählt-werden).
+A: Nein. Für manche Mitarbeitende führt die Praxis keine Stundenzählung. Dann entfallen Soll/Ist, Überstunden und der Stempel-Button; Urlaub und Krankheit werden weiter tagebasiert geführt. Mehr dazu in [Abschnitt 6](#6-wenn-für-sie-keine-stunden-gezählt-werden).
 
 **F: Was bedeutet der rote „-" Wert bei Überstunden?**
 A: Ein negativer Wert bedeutet, dass Sie weniger gearbeitet haben als Ihre Sollstunden.
@@ -484,4 +524,4 @@ Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https:/
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.2 | Juni 2026 (PraxisZeit 1.8.0)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.3 | Juni 2026 (PraxisZeit 1.8.2)*

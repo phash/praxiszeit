@@ -338,7 +338,19 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     ),
   },
   {
-    title: '8. Wenn für Sie keine Stunden gezählt werden',
+    title: '8. So werden Ihre Stunden & Ihr Urlaub berechnet',
+    content: (
+      <div className="space-y-2">
+        <p><strong>Tagessoll</strong> = Wochenstunden ÷ Arbeitstage pro Woche (z. B. 40 h auf 5 Tage = 8 h/Tag; 24 h auf 3 Tage = 8 h/Tag). Individuelle Tagesstunden überschreiben das. Wochenende und Feiertag = 0.</p>
+        <p><strong>Ist</strong> = (Ende − Beginn) − Pause je Eintrag. <strong>Krankheit</strong> und <strong>Fortbildung</strong> werden so angerechnet, als hätten Sie gearbeitet, und zählen zu Ihrem Ist.</p>
+        <p><strong>Saldo</strong> = Ist − Soll (grün = Mehrarbeit, rot = Minusstunden). Das <strong>Überstundenkonto</strong> summiert die Salden seit Jahresbeginn inkl. Vorjahresübertrag.</p>
+        <p><strong>Überstundenausgleich:</strong> Das Soll bleibt, der Tag zählt als 0 Stunden → Ihr Überstundenkonto sinkt.</p>
+        <p className="text-gray-700"><strong>Urlaub (Tagesprinzip, §3 BUrlG):</strong> 1 freier Arbeitstag = 1 Urlaubstag, egal wie lang der Tag ist (Halbtag = 0,5).</p>
+      </div>
+    ),
+  },
+  {
+    title: '9. Wenn für Sie keine Stunden gezählt werden',
     content: (
       <div className="space-y-2">
         <p>Für manche Mitarbeitende führt die Praxis bewusst <strong>keine Stundenzählung</strong>. Dann fehlen die Kacheln <strong>Tagessaldo</strong>, <strong>Monatssaldo</strong> und <strong>Überstundenkonto</strong> sowie der Stempel-Button – das ist so eingestellt und kein Fehler.</p>
@@ -347,7 +359,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     ),
   },
   {
-    title: '9. Profil & Passwort',
+    title: '10. Profil & Passwort',
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Profil</strong> sehen Sie Ihre persönlichen Daten. Über <strong>Passwort ändern → Ändern</strong> setzen Sie ein neues Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer).</p>
@@ -450,6 +462,19 @@ export const handbuchAdminSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Das <strong>Änderungsprotokoll</strong> zeichnet alle Aktionen unveränderlich auf (Login, Zeiteinträge, Abwesenheiten, Benutzerverwaltung, Korrekturanträge). Dient als Nachweis gem. §16 ArbZG bei Betriebsprüfungen.</p>
         <p>Das <strong>Fehler-Monitoring</strong> zeigt Backend-Fehler mit Häufigkeit und Kontext. Wiederkehrende Fehler als GitHub Issue melden (Button in der Detailansicht).</p>
+      </div>
+    ),
+  },
+  {
+    title: '10. Berechnungsgrundlagen (Soll, Ist, Überstunden, Urlaub)',
+    content: (
+      <div className="space-y-2">
+        <p><strong>Tagessoll</strong> = Wochenstunden ÷ Arbeitstage pro Woche – der Divisor ist <strong>nicht</strong> fix 5 (24 h auf 3 Tage = 8 h/Tag). Individuelle Tagesstunden je Wochentag sind möglich; Wochenende/Feiertag/außerhalb des Beschäftigungszeitraums = 0.</p>
+        <p><strong>Ist</strong> = (Ende − Beginn) − Pause, nie negativ. Ein Soll-Arbeitszeit-Fenster kürzt die Anrechnung auf das Fenster (± Puffer); der Rohstempel bleibt erhalten (§16 ArbZG). Krank und Fortbildung zählen als Ist (§3 EntgFG).</p>
+        <p><strong>Abwesenheiten:</strong> Urlaub, bezahlte Freistellung &amp; Sonstige senken das Soll; Krank &amp; Fortbildung füllen das Ist auf (saldo-neutral); der Überstundenausgleich lässt das Soll stehen (Ist 0 h) und baut Überstunden ab.</p>
+        <p><strong>Überstundenkonto</strong> = fortlaufende Summe der Monatssalden ab dem Jahresübertrag. Die Spalte „Überstunden (JTD)" zeigt 1. Januar bis heute zzgl. Carryover.</p>
+        <p><strong>Urlaub (Tagesprinzip §3 BUrlG):</strong> 1 freier Arbeitstag = 1 Tag (Halbtag 0,5), unabhängig von der Stundenzahl. Anspruch <code>30 × Arbeitstage ÷ 5</code>, anteilig bei unterjährigem Eintritt/Austritt; nur Urlaub belastet das Budget.</p>
+        <p className="text-gray-500">Vollständige Formeln und durchgerechnete Beispiele: <code>docs/BERECHNUNGEN.md</code> bzw. Admin-Handbuch-Anhang „Berechnungsgrundlagen".</p>
       </div>
     ),
   },
