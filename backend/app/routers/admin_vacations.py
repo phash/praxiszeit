@@ -294,20 +294,28 @@ def review_vacation_request(
 
     # Create absence entries
     for d in dates_to_create:
-        # #156/T1 + #167: ein voller Urlaubstag wird immer mit dem Tagessoll des
-        # Tages gebucht (Tagesprinzip), nicht mit vr.hours (das den 8h-Default
-        # tragen kann). Halber Tag = 0,5 × Tagessoll.
         weekly = calculation_service.get_weekly_hours_for_date(db, target_user, d)
-        hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
-        # Review R3 (HIGH): only skip genuine 0h days for TRACKED users. For
-        # track_hours=False the daily target is always 0; skipping would book
-        # nothing, leaving the approved request with no absence rows and the
-        # day-based vacation account at 0 used. dates_to_create already excludes
-        # weekends/holidays → every remaining day is booked (hours stay 0).
-        if hours_for_day == 0 and target_user.track_hours:
-            continue
-        if vr.half_day:
-            hours_for_day = round(hours_for_day / 2, 2)
+        # #156/T1 + #167: Voll-Tag-Typen werden immer mit dem Tagessoll des Tages
+        # gebucht (Tagesprinzip), nicht mit vr.hours (das den 8h-Default tragen
+        # kann). Halber Tag = 0,5 × Tagessoll. NUR der Überstundenausgleich
+        # (OVERTIME) behält die explizit beantragten Stunden — identisch zum
+        # Direkt-Buchungspfad in absences.py. CLAUDE.md: die OVERTIME-Ausnahme
+        # MUSS in BEIDEN Pfaden gepflegt werden (vorher fehlte sie hier → ein per
+        # Antrag genehmigter Ausgleich buchte das Tagessoll statt der beantragten
+        # Stunden; rechnerisch neutral, aber falsch in Anzeige/Reports).
+        if absence_type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
+            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
+            # Review R3 (HIGH): only skip genuine 0h days for TRACKED users. For
+            # track_hours=False the daily target is always 0; skipping would book
+            # nothing, leaving the approved request with no absence rows and the
+            # day-based vacation account at 0 used. dates_to_create already excludes
+            # weekends/holidays → every remaining day is booked (hours stay 0).
+            if hours_for_day == 0 and target_user.track_hours:
+                continue
+            if vr.half_day:
+                hours_for_day = round(hours_for_day / 2, 2)
+        else:
+            hours_for_day = float(vr.hours)
 
         absence = Absence(
             user_id=target_user.id,
