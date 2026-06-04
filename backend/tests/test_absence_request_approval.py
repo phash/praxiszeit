@@ -247,6 +247,29 @@ class TestFall1_ApproveCreatesAbsence:
         assert absence is not None
         assert absence.type == AbsenceType.OVERTIME
 
+    def test_approve_overtime_keeps_explicit_hours(self, db, employee, admin_client):
+        """Überstundenausgleich behält die beantragten EXPLIZITEN Stunden (nicht das
+        Tagessoll) — Konsistenz mit der Direkt-Buchung (absences.py) und der
+        CLAUDE.md-Invariante 'nur OVERTIME behält explizite Stunden in BEIDEN Pfaden'.
+        employee = 8h/Tag; beantragt werden 4h Ausgleich → die gebuchte Absence muss
+        4h tragen, nicht das 8h-Tagessoll."""
+        vr = _create_pending_request(db, employee, absence_type="overtime",
+                                      req_date=date(2025, 3, 12), hours=4.0)
+
+        resp = admin_client.post(
+            f"/api/admin/vacation-requests/{vr.id}/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 200
+
+        absence = db.query(Absence).filter(
+            Absence.user_id == employee.id,
+            Absence.date == date(2025, 3, 12),
+        ).first()
+        assert absence is not None
+        assert absence.type == AbsenceType.OVERTIME
+        assert float(absence.hours) == 4.0
+
     def test_response_includes_absence_type(self, db, employee, admin_client):
         """Prüft dass die API-Response den absence_type enthält, damit das Frontend den Typ anzeigen kann."""
         vr = _create_pending_request(db, employee, absence_type="training")
