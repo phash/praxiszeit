@@ -178,6 +178,8 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 
 > **Überstunden-Übersicht:** Die Benutzerübersicht zeigt pro Mitarbeiter:in zusätzlich zum Urlaubskonto den **aktuellen Überstundensaldo (Jahr bis heute)** in der Spalte **„Überstunden (JTD)"**. Bei Mitarbeitern ohne Stundenzählung erscheint hier „—" (→ [Abschnitt „Mitarbeiter ohne Stundenzählung"](#mitarbeiter-ohne-stundenzählung)).
 
+> ⚠️ **Wichtig bei unterjährigem Eintritt:** Tragen Sie für Mitarbeitende, die **nicht seit dem 1. Januar** im System sind, unbedingt den **„Ersten Arbeitstag"** ein. Ohne dieses Datum zählt das System das Stundensoll für den Eintrittsmonat (bzw. die JTD-Überstunden ab dem 1. Januar) auch für Tage **vor** dem tatsächlichen Eintritt mit – es entstehen **Phantom-Minusstunden**. Mit gesetztem Eintrittsdatum bleibt das Überstundenkonto korrekt.
+
 > **So wird Urlaub berechnet (Tagesprinzip, § 3 BUrlG / BAG):** Der Urlaub wird **nach Arbeitstagen** geführt, nicht nach Stunden. Ein freier Arbeitstag verbraucht **genau 1 Urlaubstag**, unabhängig von der Tagesstundenzahl – ein langer Tag (z. B. 9 h) kostet so viel wie ein kurzer (z. B. 4 h): einen Tag. Ein **halber freier Tag** (Halbtags-Abwesenheit) kostet **0,5 Urlaubstage**. Auch bei **individuellen Tagesstunden** kostet jeder Arbeitstag gleich viel (Montag = Dienstag). Der Jahresanspruch wird anteilig nach Arbeitstagen vorgeschlagen (`30 × Arbeitstage ÷ 5`) und bei unterjährigem Eintritt/Austritt zeitanteilig berechnet. Intern speichert das System Stunden (für die Soll-/Ist-Berechnung); der **Verbrauch wird tagebasiert** gezählt und im Urlaubskonto in Tagen angezeigt.
 
 ### Mitarbeiter ohne Stundenzählung

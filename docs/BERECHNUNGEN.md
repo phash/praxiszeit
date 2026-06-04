@@ -316,6 +316,12 @@ Tage **vor** `first_work_day` oder **nach** `last_work_day` tragen weder Soll no
 (`_within_employment_window`). Das gilt symmetrisch an allen Per-Tag-Schleifen (Monats-Soll,
 Überstundenkonto, JTD und Ist-Seite) → keine Phantom-Überstunden durch Einträge außerhalb des Fensters.
 
+> ⚠️ **Ist `first_work_day` NICHT gesetzt** und existiert kein Carryover, beginnt
+> `get_overtime_account` am 1. des Monats des **ersten Zeiteintrags** und `get_ytd_summary` am
+> 1. Januar — das Soll der davorliegenden Tage wird mitgezählt → **Phantom-Minusstunden** bei
+> unterjährigem Eintritt. Praxis-Empfehlung: bei jedem nicht-Januar-Eintritt `first_work_day`
+> setzen (siehe [HANDBUCH-ADMIN.md](handbuch/HANDBUCH-ADMIN.md) §4 Benutzerverwaltung).
+
 ---
 
 ## 11. Worked Examples – Vollzeit
