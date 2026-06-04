@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.3 | Stand: Juni 2026 (für PraxisZeit 1.8.0)**
+**Version 2.4 | Stand: Juni 2026 (für PraxisZeit 1.8.2)**
 
 ---
 
@@ -29,6 +29,7 @@
 15. [Überstundenausgleich](#15-überstundenausgleich)
 16. [Änderungsanträge für Abwesenheiten](#16-änderungsanträge-für-abwesenheiten)
 17. [Rechtliche Grundlagen](#17-rechtliche-grundlagen)
+18. [Berechnungsgrundlagen (Anhang)](#18-berechnungsgrundlagen-anhang)
 
 ---
 
@@ -689,5 +690,94 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ---
 
+## 18. Berechnungsgrundlagen (Anhang)
+
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.8.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+
+### 18.1 Grundbegriffe
+
+| Begriff | Bedeutung |
+|---------|-----------|
+| **Soll** | Stunden, die ein Mitarbeiter an einem Tag/Monat vertraglich arbeiten müsste |
+| **Ist** | Tatsächlich erfasste Arbeitszeit + gutgeschriebene Abwesenheiten (Krank/Fortbildung) |
+| **Saldo / Überstunden** | Ist − Soll (positiv = Mehrarbeit, negativ = Minusstunden) |
+| **Tagessoll** | Soll-Stunden für einen einzelnen Arbeitstag |
+| **Tagesprinzip** | Urlaub wird in **Tagen** gezählt (§ 3 BUrlG): 1 freier Arbeitstag = 1 Urlaubstag |
+| **Carryover** | Jahresübertrag von Überstunden und Resturlaub ins Folgejahr |
+
+### 18.2 Tagessoll
+
+Bei gleichmäßiger Verteilung gilt:
+
+> **Tagessoll = Wochenstunden ÷ Arbeitstage pro Woche**
+
+⚠️ Der Divisor ist die **Arbeitstage pro Woche**, **nicht** fix 5. Ein Mitarbeiter mit 24 h auf 3 Tage hat **8 h/Tag**, nicht 4,8 h.
+
+| Wochenstunden | Arbeitstage/Woche | Tagessoll |
+|---|---|---|
+| 40 | 5 | 8,00 h |
+| 20 | 5 | 4,00 h |
+| 24 | 3 | 8,00 h |
+| 20 | 2 | 10,00 h |
+
+Bei **individuellen Tagesstunden** (z. B. Mo 10 h / Di 10 h / Mi 4 h) zählt der konkrete Wert des jeweiligen Wochentags. Wochenenden, Tage vor Eintritt / nach Austritt sowie Mitarbeiter ohne Stundenzählung haben Tagessoll 0.
+
+### 18.3 Ist-Stunden
+
+Pro Zeiteintrag: **Ist = (Ende − Beginn) − Pause**, auf 2 Nachkommastellen gerundet und **nie negativ**.
+
+Ist ein **Soll-Arbeitszeit-Fenster** hinterlegt (→ [Abschnitt 4, Soll-Arbeitszeiten](#4-benutzerverwaltung)), wird die angerechnete Zeit auf das Fenster (± Puffer) gekürzt; der Rohstempel bleibt erhalten (§ 16 ArbZG). Zusätzlich zählen **Krankheit** und **Fortbildung** mit ihren gebuchten Stunden als Ist (siehe Matrix).
+
+### 18.4 Monats-Soll
+
+PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll – **außer** an: Wochenenden, Feiertagen, Tagen außerhalb des Beschäftigungszeitraums und Abwesenheitstagen, die das Soll reduzieren (siehe Matrix). Sondertage 24./31.12. wirken mit Faktor 0,5 (Halbtag) bzw. 0 (frei).
+
+### 18.5 Abwesenheits-Typen-Matrix
+
+| Typ | reduziert Soll? | zählt als Ist? | belastet Urlaub? | Effekt aufs Konto |
+|-----|:---:|:---:|:---:|---|
+| **Urlaub** | ✅ | ❌ | ✅ | saldo-neutral; zieht 1 Urlaubstag |
+| **Krank** | ❌ | ✅ | ❌ | saldo-neutral (Soll bleibt, Ist gutgeschrieben, § 3 EntgFG) |
+| **Fortbildung** | ❌ | ✅ | ❌ | saldo-neutral (zählt als gearbeitet) |
+| **Bezahlte Freistellung** | ✅ | ❌ | ❌ | saldo-neutral, aber **kein** Urlaubsverbrauch |
+| **Sonstige** | ✅ | ❌ | ❌ | saldo-neutral |
+| **Überstundenausgleich** | ❌ | ❌ (Ist = 0) | ❌ | Soll bleibt, Ist = 0 h → **Überstundenkonto sinkt** |
+
+> **Merksatz:** Krankheit & Fortbildung **füllen das Ist auf** (kein Saldo-Effekt). Urlaub, bezahlte Freistellung & Sonstige **senken das Soll**. Nur der Überstundenausgleich lässt das Soll stehen und baut so Überstunden ab.
+
+### 18.6 Saldo & Überstundenkonto
+
+**Monatssaldo = Monats-Ist − Monats-Soll.** Das kumulierte Überstundenkonto summiert die Monatssalden fortlaufend und startet beim **Jahresübertrag** (Carryover) des Jahres. Die Spalte „Überstunden (JTD)" in der Benutzerübersicht zeigt den Saldo vom 1. Januar bis heute zzgl. Carryover.
+
+### 18.7 Urlaubskonto (Tagesprinzip)
+
+- **Budget** = Jahresanspruch in Tagen (anteilig bei unterjährigem Eintritt/Austritt) + Resturlaub-Carryover.
+- **Verbrauch:** Nur Urlaub belastet das Budget. Jeder freie Arbeitstag kostet **1 Tag** (Halbtag 0,5) – unabhängig von der Stundenzahl des Tages.
+- **Budget-Check** beim Antrag zählt **buchbare Arbeitstage** (Tagessoll > 0). Eine ganze Urlaubswoche kostet einen 3-Tage-Mitarbeiter nur 3 Tage.
+- Jahresanspruch-Vorschlag: `30 × Arbeitstage ÷ 5` (5 Tage → 30; 3 Tage → 18), überschreibbar.
+
+### 18.8 Sonderfälle
+
+- **Mitarbeiter ohne Stundenzählung (leitende Angestellte):** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (jeder Urlaubs-/Sondertag = 1 Tag).
+- **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
+- **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
+- **Rückwirkende Stundenänderung:** alte Monate rechnen mit dem damals gültigen Wochensoll (Stundenhistorie / Wirkungsdatum).
+
+### 18.9 Durchgerechnetes Beispiel (Vollzeit)
+
+Profil: 40 h / 5 Tage → Tagessoll 8,00 h, 30 Urlaubstage. Beispielmonat mit 22 Werktagen, davon 1 Feiertag.
+
+```
+Werktage 22 − 1 Feiertag − 4 Urlaubstage = 17 Soll-Tage
+Monats-Soll  = 17 × 8,00 h               = 136,00 h
+Ist (14 Tage à 8,0 h + 3 Tage à 8,5 h)   = 137,50 h
+Monatssaldo  = 137,50 − 136,00           = +1,50 h
+Urlaubskonto = 30 − 4                     = 26 Tage übrig
+```
+
+> Vollständige Beispiele für Teilzeit, individuellen Tagesplan, Pro-rata-Eintritt und rückwirkende Stundenänderung stehen in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+
+---
+
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juni 2026 (Version 2.3, für PraxisZeit 1.8.0)*
+*Stand: Juni 2026 (Version 2.4, für PraxisZeit 1.8.2)*
