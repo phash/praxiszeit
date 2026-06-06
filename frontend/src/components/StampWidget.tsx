@@ -82,6 +82,10 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
           setShowSuccess(false);
           onSuccess?.();
         }, 600);
+      } else {
+        // Cross-page refresh (CLAUDE.md): the inline (Dashboard) variant must
+        // also notify so the overtime/saldo tiles + recent entries re-fetch.
+        onSuccess?.();
       }
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Fehler beim Einstempeln'));
@@ -128,6 +132,10 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
           setShowSuccess(false);
           onSuccess?.();
         }, 600);
+      } else {
+        // Cross-page refresh (CLAUDE.md): the inline (Dashboard) variant must
+        // also notify so the overtime/saldo tiles + recent entries re-fetch.
+        onSuccess?.();
       }
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Fehler beim Ausstempeln'));
