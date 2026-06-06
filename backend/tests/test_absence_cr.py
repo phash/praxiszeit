@@ -217,6 +217,71 @@ class TestAbsenceCRApprovalDuplicate:
         db.rollback()
         db.refresh(cr)
         assert cr.status == ChangeRequestStatus.PENDING
+
+
+class TestAbsenceCRBooksTagessoll:
+    """#6 (Tagesprinzip): die Genehmigung eines Voll-Tag-Absence-CR bucht das
+    TAGESSOLL des Tages, NICHT den vom Antragsteller gelieferten Wert (8h-Default).
+    Nur OVERTIME behält explizite Stunden — wie create_absence/review_vacation_request."""
+
+    def _admin(self, db):
+        return _make_user(db, username="cr_admin_ts", email="admints@test.de",
+                          role=UserRole.ADMIN)
+
+    def test_vacation_cr_books_daily_target_not_client_hours(self, db):
+        from app.routers.admin_change_requests import review_change_request
+        from app.schemas.change_request import ChangeRequestReview
+
+        # Teilzeit 20h/5 Tage → Tagessoll 4h. Der Antrag schickt den 8h-Default.
+        emp = _make_user(db, username="pt_vac", email="ptvac@test.de", weekly_hours=20.0)
+        admin = self._admin(db)
+        d = date(2026, 6, 1)  # Montag, Arbeitstag
+        cr = _make_absence_cr(
+            db, emp, request_type=ChangeRequestType.CREATE,
+            proposed_date=d, proposed_absence_type="vacation",
+            proposed_absence_hours=8.0,
+        )
+
+        review_change_request(
+            request_id=str(cr.id),
+            review=ChangeRequestReview(action="approve"),
+            db=db, current_user=admin,
+        )
+
+        absence = db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.date == d,
+        ).one()
+        # Tagessoll 4h, NICHT die 8h aus dem Antrag.
+        assert float(absence.hours) == 4.0, f"expected Tagessoll 4h, got {absence.hours}"
+        # Tagebasiert: genau 1 Urlaubstag verbraucht (Bug buchte 8/4 = 2 Tage).
+        acc = calculation_service.get_vacation_account(db, emp, 2026)
+        assert float(acc['used_days']) == 1.0, acc['used_days']
+
+    def test_overtime_cr_keeps_explicit_hours(self, db):
+        from app.routers.admin_change_requests import review_change_request
+        from app.schemas.change_request import ChangeRequestReview
+
+        # Vollzeit (Tagessoll 8h), OVERTIME-Ausgleich über 3h beantragt.
+        emp = _make_user(db, username="ot_emp", email="otemp@test.de", weekly_hours=40.0)
+        admin = self._admin(db)
+        d = date(2026, 6, 2)  # Dienstag
+        cr = _make_absence_cr(
+            db, emp, request_type=ChangeRequestType.CREATE,
+            proposed_date=d, proposed_absence_type="overtime",
+            proposed_absence_hours=3.0,
+        )
+
+        review_change_request(
+            request_id=str(cr.id),
+            review=ChangeRequestReview(action="approve"),
+            db=db, current_user=admin,
+        )
+
+        absence = db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.date == d,
+        ).one()
+        # OVERTIME behält die explizit beantragten 3h (nicht das 8h-Tagessoll).
+        assert float(absence.hours) == 3.0, f"expected explicit 3h, got {absence.hours}"
         # Keine Doppelbuchung: weiterhin nur die ursprüngliche Vacation-Absence.
         n = db.query(Absence).filter(
             Absence.user_id == emp.id, Absence.date == d,

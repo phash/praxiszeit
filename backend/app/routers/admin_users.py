@@ -236,6 +236,14 @@ def anonymize_user(
     user.username = f"deleted_{str(user.id)[:8]}"
     user.email = None
     user.calendar_color = "#9CA3AF"
+    # DSGVO Art. 17: clear biometric-equivalent data and security secrets
+    user.profile_picture = None          # Base64-Lichtbild löschen (Art. 4 Nr. 1)
+    user.totp_secret = None              # TOTP-Secret enthält kryptogr. Geheimnis
+    user.totp_enabled = False
+    user.last_totp_counter = None
+    user.department = None               # Org-Zuordnung ist PII
+    # Invalidate all sessions so the deactivated account cannot be re-entered
+    user.token_version = (user.token_version or 0) + 1
 
     # Delete absences (no statutory retention requirement)
     db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete()

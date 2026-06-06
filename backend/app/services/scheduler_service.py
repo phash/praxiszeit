@@ -96,6 +96,30 @@ def _run_apply_scheduled_deletions() -> None:
         db.close()
 
 
+def _run_cleanup_old_errors() -> None:
+    """DSGVO Art. 5 Abs. 1 lit. e Speicherbegrenzung: purge resolved/ignored
+    error-log rows older than 90 days on a daily schedule.
+
+    Startup-only cleanup (main.py step 5) only ran on (re)start; this daily job
+    ensures the table doesn't accumulate unbounded over months without restarts.
+    Note: only resolved/ignored rows are purged (same policy as the startup
+    cleanup). 'open' rows are intentionally retained for triage — see the DSGVO
+    recommendation to actively resolve/ignore them organisationally.
+    """
+    from app.services.error_log_service import cleanup_old_errors
+    db = SessionLocal()
+    try:
+        set_superadmin_context(db)
+        # resolved/ignored: 90 days (same as startup cleanup)
+        deleted = cleanup_old_errors(db, max_age_days=90)
+        if deleted:
+            logger.info("scheduler: purged %d resolved/ignored error-log rows (>90d)", deleted)
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: cleanup_old_errors failed")
+    finally:
+        db.close()
+
+
 # ───────────────── Public API (start / stop) ─────────────────────────
 
 # Job-ID constants — tests assert against these names so the cron-trigger
@@ -103,6 +127,7 @@ def _run_apply_scheduled_deletions() -> None:
 JOB_VACATION_AUDIT_PURGE = "vacation_audit_purge"
 JOB_APPLY_SCHEDULED_SUSPENDS = "apply_scheduled_suspends"
 JOB_APPLY_SCHEDULED_DELETIONS = "apply_scheduled_deletions"
+JOB_CLEANUP_OLD_ERRORS = "cleanup_old_errors"
 
 # Daily run at 03:00 local time. Avoids the midnight rollover bookkeeping
 # rush + leaves the cutoff math (``datetime.now() - timedelta(days=...)``)
@@ -176,6 +201,15 @@ def start_scheduler(app: FastAPI):  # noqa: ARG001  (kept for future use)
         trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
         id=JOB_APPLY_SCHEDULED_DELETIONS,
         name="Lifecycle: anonymize tenants past deletion grace period",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        _run_cleanup_old_errors,
+        trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
+        id=JOB_CLEANUP_OLD_ERRORS,
+        name="DSGVO Art.5(1)(e): purge resolved/ignored error-log rows >90d",
         replace_existing=True,
         coalesce=True,
         max_instances=1,

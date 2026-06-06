@@ -1,7 +1,7 @@
 # Verarbeitungsverzeichnis nach Art. 30 DSGVO
 
 **Verantwortlicher:** [Name der Praxis / des Unternehmens]
-**Stand:** 2026-05-24
+**Stand:** 2026-06-06
 **Erstellt mit:** PraxisZeit-Zeiterfassungssystem
 
 ---
@@ -47,7 +47,7 @@
 |----------------|--------|-----------------|
 | Identifikationsdaten | Benutzername, Vorname, Nachname | Art. 6 Abs. 1 lit. b DSGVO |
 | Kontaktdaten | E-Mail-Adresse (optional) | Art. 6 Abs. 1 lit. b DSGVO |
-| Zugangs­daten | Passwort-Hash (bcrypt), JWT-Token-Version, TOTP-Secret (verschlüsselt, optional) | Art. 6 Abs. 1 lit. b DSGVO |
+| Zugangs­daten | Passwort-Hash (bcrypt_sha256), JWT-Token-Version, TOTP-Secret (Base32-Klartext, DB-Spalte users.totp_secret – AES-Verschlüsselung ausstehend, siehe TODO), optional | Art. 6 Abs. 1 lit. b DSGVO |
 | Vertrags­daten | Wochenstunden, Arbeitstage, Urlaubstage, Kalenderfarbe | Art. 6 Abs. 1 lit. b DSGVO |
 | Organisations­daten | Abteilung/Bereich (optional, Freitext; #162) | Art. 6 Abs. 1 lit. f DSGVO (Organisation/Dienstplanung) |
 

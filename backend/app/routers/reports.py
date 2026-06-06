@@ -170,8 +170,14 @@ def get_yearly_absences(
         for a in all_absences:
             hours_by_type[a.type] = hours_by_type.get(a.type, 0.0) + float(a.hours)
 
-        vacation_hours = hours_by_type.get(AbsenceType.VACATION, 0.0)
-        vacation_days = vacation_hours / float(daily_target)
+        # Vacation is reported DAY-BASED (Tagesprinzip §3 BUrlG) from the same
+        # source as remaining below — so "budget − genommen == Rest" holds in the
+        # same response. The hours/Ø-target approximation (used by the other
+        # columns, documented above) diverges from the day principle for
+        # use_daily_schedule employees; vacation is the maßgebliche value and
+        # must not contradict the vacation account.
+        vacation_account = calculation_service.get_vacation_account(db, user, year)
+        vacation_days = float(vacation_account['used_days'])
 
         sick_hours = hours_by_type.get(AbsenceType.SICK, 0.0)
         sick_days = sick_hours / float(daily_target)
@@ -191,8 +197,7 @@ def get_yearly_absences(
         effective_sick_days = sick_days if include_health_data else 0.0
         total_days = vacation_days + effective_sick_days + training_days + overtime_comp_days + other_days + paid_leave_days
 
-        # Calculate remaining vacation
-        vacation_account = calculation_service.get_vacation_account(db, user, year)
+        # Remaining vacation from the same account fetched above (day-based).
         remaining_vacation_days = vacation_account['remaining_days']
 
         # Calculate overtime for the year (up to today for current year, full year otherwise)
@@ -250,7 +255,7 @@ def export_monthly_report(
         db.commit()
 
     # Generate Excel file
-    excel_file = export_service.generate_monthly_report(db, year, month_num, include_health_data)
+    excel_file = export_service.generate_monthly_report(db, year, month_num, include_health_data, tenant_id=current_user.tenant_id)
 
     # F-053: release the DB connection before streaming. The workbook is
     # already fully materialised in the BytesIO, so holding a connection
@@ -299,7 +304,7 @@ def export_yearly_report(
         db.add(log)
         db.commit()
 
-    excel_file = export_service.generate_yearly_report(db, year, include_health_data)
+    excel_file = export_service.generate_yearly_report(db, year, include_health_data, tenant_id=current_user.tenant_id)
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_{year}.xlsx"
     return StreamingResponse(
@@ -336,7 +341,7 @@ def export_yearly_report_classic(
         db.add(log)
         db.commit()
 
-    excel_file = export_service.generate_yearly_report_classic(db, year, include_health_data)
+    excel_file = export_service.generate_yearly_report_classic(db, year, include_health_data, tenant_id=current_user.tenant_id)
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_Classic_{year}.xlsx"
     return StreamingResponse(
@@ -378,7 +383,7 @@ def export_monthly_report_ods(
         db.add(log)
         db.commit()
 
-    ods_file = ods_export_service.generate_monthly_report(db, year, month_num, include_health_data)
+    ods_file = ods_export_service.generate_monthly_report(db, year, month_num, include_health_data, tenant_id=current_user.tenant_id)
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.ods"
     return StreamingResponse(
@@ -416,7 +421,7 @@ def export_monthly_report_pdf(
         db.add(log)
         db.commit()
 
-    pdf_file = export_service.generate_monthly_report_pdf(db, year, month_num, include_health_data)
+    pdf_file = export_service.generate_monthly_report_pdf(db, year, month_num, include_health_data, tenant_id=current_user.tenant_id)
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.pdf"
     return StreamingResponse(
@@ -431,11 +436,25 @@ def export_monthly_report_pdf(
 def export_yearly_report_ods(
     request: Request,
     year: int = Query(..., description="Year (e.g., 2026)"),
+    include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """Export yearly detailed report as ODS file."""
-    ods_file = ods_export_service.generate_yearly_report(db, year)
+    """Export yearly detailed report as ODS file.
+    Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged)."""
+    if include_health_data:
+        log = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_export",
+            source="dsgvo",
+            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Jahresreport {year} exportiert – Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
+        )
+        db.add(log)
+        db.commit()
+    ods_file = ods_export_service.generate_yearly_report(db, year, include_health_data, tenant_id=current_user.tenant_id)
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_{year}.ods"
     return StreamingResponse(
@@ -450,11 +469,25 @@ def export_yearly_report_ods(
 def export_yearly_report_classic_ods(
     request: Request,
     year: int = Query(..., description="Year (e.g., 2026)"),
+    include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
-    """Export yearly classic report as ODS file."""
-    ods_file = ods_export_service.generate_yearly_report_classic(db, year)
+    """Export yearly classic report as ODS file.
+    Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged)."""
+    if include_health_data:
+        log = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_export",
+            source="dsgvo",
+            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Jahresreport Classic {year} exportiert – Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
+        )
+        db.add(log)
+        db.commit()
+    ods_file = ods_export_service.generate_yearly_report_classic(db, year, include_health_data, tenant_id=current_user.tenant_id)
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_Classic_{year}.ods"
     return StreamingResponse(
@@ -722,9 +755,13 @@ def get_24_week_averaging_period(
     exception allowance and the ArbZG averaging clause no longer covers them.
     """
     from datetime import timedelta
+    from app.services.timezone_service import today_local
 
     if end_date is None:
-        end_date = date.today()
+        # Europe/Berlin, not UTC/container time — consistent with all other
+        # business-logic "today" stichtage (Dashboard, YTD, vacation warnings).
+        # date.today() rolled the §3 24-week window by a day between 00:00–02:00 CET.
+        end_date = today_local()
     start_date = end_date - timedelta(weeks=24)
 
     users = _get_active_visible_users(db, current_user.tenant_id)

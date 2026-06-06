@@ -96,25 +96,26 @@ def _save(doc: OpenDocumentSpreadsheet) -> BytesIO:
     return buf
 
 
-def _get_active_users(db: Session) -> List[User]:
-    return (
-        db.query(User)
-        .filter(User.is_active == True)
-        .order_by(User.last_name, User.first_name)
-        .all()
-    )
+def _get_active_users(db: Session, tenant_id=None) -> List[User]:
+    """Return active, non-hidden users. F-026: apply explicit tenant filter
+    (belt-and-suspenders on top of RLS) when tenant_id is provided."""
+    q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
+    if tenant_id is not None:
+        q = q.filter(User.tenant_id == tenant_id)
+    return q.order_by(User.last_name, User.first_name).all()
 
 
 # ---------------------------------------------------------------------------
 # Monthly report
 # ---------------------------------------------------------------------------
 
-def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
+def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
     """One sheet per employee, daily rows with target/actual/diff.
-    DSGVO F-003: sick absences are masked when include_health_data=False (default)."""
+    DSGVO F-003: sick absences are masked when include_health_data=False (default).
+    F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db)
+    users = _get_active_users(db, tenant_id)
     for user in users:
         _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data)
 
@@ -329,20 +330,22 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
 # Yearly detailed report
 # ---------------------------------------------------------------------------
 
-def generate_yearly_report(db: Session, year: int) -> BytesIO:
-    """Overview + absences overview + one detail sheet per employee (365 days)."""
+def generate_yearly_report(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+    """Overview + absences overview + one detail sheet per employee (365 days).
+    DSGVO F-003: sick/health data masked unless include_health_data=True.
+    F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db)
-    _yearly_overview_sheet(doc, db, users, year, bold)
-    _absences_overview_sheet(doc, db, users, year, bold)
+    users = _get_active_users(db, tenant_id)
+    _yearly_overview_sheet(doc, db, users, year, bold, include_health_data)
+    _absences_overview_sheet(doc, db, users, year, bold, include_health_data)
     for user in users:
-        _yearly_employee_sheet(doc, db, user, year, bold)
+        _yearly_employee_sheet(doc, db, user, year, bold, include_health_data)
 
     return _save(doc)
 
 
-def _yearly_overview_sheet(doc, db, users, year, bold):
+def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool = False):
     table = Table(name="Jahresübersicht")
     doc.spreadsheet.addElement(table)
 
@@ -389,11 +392,12 @@ def _yearly_overview_sheet(doc, db, users, year, bold):
         tr.addElement(_float_cell(actual - target))
         tr.addElement(_float_cell(overtime))
         tr.addElement(_float_cell(vac_h))
-        tr.addElement(_float_cell(sick_h))
+        # DSGVO F-003: mask sick hours unless health data explicitly requested (Art. 9)
+        tr.addElement(_float_cell(sick_h) if include_health_data else _str_cell("–"))
         table.addElement(tr)
 
 
-def _absences_overview_sheet(doc, db, users, year, bold):
+def _absences_overview_sheet(doc, db, users, year, bold, include_health_data: bool = False):
     table = Table(name="Abwesenheiten")
     doc.spreadsheet.addElement(table)
 
@@ -429,20 +433,22 @@ def _absences_overview_sheet(doc, db, users, year, bold):
         vac_acc = calculation_service.get_vacation_account(db, user, year)
         remaining = float(vac_acc["remaining_days"])
 
+        # DSGVO F-003: mask sick days unless health data explicitly requested (Art. 9)
+        effective_sick = sick if include_health_data else 0.0
         tr = TableRow()
         tr.addElement(_str_cell(f"{user.last_name}, {user.first_name}"))
         tr.addElement(_float_cell(vac))
-        tr.addElement(_float_cell(sick))
+        tr.addElement(_float_cell(sick) if include_health_data else _str_cell("–"))
         tr.addElement(_float_cell(train))
         tr.addElement(_float_cell(overtime_comp))
         tr.addElement(_float_cell(other))
         tr.addElement(_float_cell(paid_leave))
-        tr.addElement(_float_cell(vac + sick + train + overtime_comp + other + paid_leave))
+        tr.addElement(_float_cell(vac + effective_sick + train + overtime_comp + other + paid_leave))
         tr.addElement(_float_cell(remaining))
         table.addElement(tr)
 
 
-def _yearly_employee_sheet(doc, db, user, year, bold):
+def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool = False):
     sheet_name = f"{user.last_name} {user.first_name}"[:31]
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
@@ -571,11 +577,18 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
                     bem_parts.append(e.note)
             tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif absence:
-            label = ABSENCE_LABELS.get(absence.type.value, absence.type.value)
+            # DSGVO F-003/Art. 9: mask sick absences (label + note) unless health
+            # data is explicitly requested — mirrors _monthly_sheet.
+            if absence.type.value == "sick" and not include_health_data:
+                label = "Abwesenheit"
+                note_str = ""
+            else:
+                label = ABSENCE_LABELS.get(absence.type.value, absence.type.value)
+                note_str = absence.note or ""
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(f"{label} ({float(absence.hours):.1f}h)"))
-            tr.addElement(_str_cell(absence.note or ""))
+            tr.addElement(_str_cell(note_str))
         else:
             target = float(daily_target)
             tr.addElement(_float_cell(target))
@@ -593,18 +606,20 @@ def _yearly_employee_sheet(doc, db, user, year, bold):
 # Yearly classic report (compact – one row per month)
 # ---------------------------------------------------------------------------
 
-def generate_yearly_report_classic(db: Session, year: int) -> BytesIO:
-    """One sheet per employee, 12 rows (one per month)."""
+def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+    """One sheet per employee, 12 rows (one per month).
+    DSGVO F-003: sick/health data masked unless include_health_data=True.
+    F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db)
+    users = _get_active_users(db, tenant_id)
     for user in users:
-        _classic_sheet(doc, db, user, year, bold)
+        _classic_sheet(doc, db, user, year, bold, include_health_data)
 
     return _save(doc)
 
 
-def _classic_sheet(doc, db, user, year, bold):
+def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False):
     sheet_name = f"{user.last_name} {user.first_name}"[:31]
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
@@ -680,7 +695,8 @@ def _classic_sheet(doc, db, user, year, bold):
         tr.addElement(_float_cell(actual))
         tr.addElement(_float_cell(actual - target))
         tr.addElement(_float_cell(vac))
-        tr.addElement(_float_cell(sick))
+        # DSGVO F-003: mask sick hours unless health data explicitly requested (Art. 9)
+        tr.addElement(_float_cell(sick) if include_health_data else _str_cell("–"))
         tr.addElement(_float_cell(train))
         tr.addElement(_float_cell(other))
         tr.addElement(_float_cell(paid_leave))
@@ -702,7 +718,8 @@ def _classic_sheet(doc, db, user, year, bold):
     tr.addElement(_float_cell(total_actual))
     tr.addElement(_float_cell(total_actual - total_target))
     tr.addElement(_float_cell(total_vac))
-    tr.addElement(_float_cell(total_sick))
+    # DSGVO F-003: mask sick total unless health data explicitly requested (Art. 9)
+    tr.addElement(_float_cell(total_sick) if include_health_data else _str_cell("–"))
     tr.addElement(_float_cell(total_train))
     tr.addElement(_float_cell(total_other))
     tr.addElement(_float_cell(total_paid_leave))
