@@ -4,6 +4,7 @@ import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
+import { formatHoursHMText } from '../utils/formatters';
 import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
@@ -89,22 +90,16 @@ const TYPE_COLORS: Record<string, string> = {
   mixed: 'text-gray-900',
 };
 
+// Thin wrappers over the shared formatter (utils/formatters.ts) — the previous
+// local implementations reintroduced the "7h 60min" rollover bug and lacked the
+// non-finite guard (rendered "NaNh NaNmin"). formatHours = signed (balance);
+// formatHoursSimple = unsigned (actual/target). Both show '–' for 0.
 function formatHours(h: number): string {
-  if (h === 0) return '–';
-  const sign = h < 0 ? '-' : '+';
-  const abs = Math.abs(h);
-  const hours = Math.floor(abs);
-  const mins = Math.round((abs - hours) * 60);
-  return mins > 0 ? `${sign}${hours}h ${mins}min` : `${sign}${hours}h`;
+  return formatHoursHMText(h, { signed: true, dashForZero: true });
 }
 
 function formatHoursSimple(h: number): string {
-  if (h === 0) return '–';
-  const abs = Math.abs(h);
-  const hours = Math.floor(abs);
-  const mins = Math.round((abs - hours) * 60);
-  const prefix = h < 0 ? '-' : '';
-  return mins > 0 ? `${prefix}${hours}h ${mins}min` : `${prefix}${hours}h`;
+  return formatHoursHMText(h, { dashForZero: true });
 }
 
 function isPastDay(dateStr: string): boolean {

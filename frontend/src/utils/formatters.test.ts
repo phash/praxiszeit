@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, parseHours } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -27,6 +27,39 @@ describe('formatHoursHM', () => {
     expect(formatHoursHM(NaN)).toBe('0:00');
     expect(formatHoursHM(Infinity)).toBe('0:00');
     expect(formatHoursHM(-Infinity)).toBe('0:00');
+  });
+});
+
+describe('formatHoursHMText', () => {
+  it('formats whole + fractional hours as "Xh Ymin"', () => {
+    expect(formatHoursHMText(8)).toBe('8h');
+    expect(formatHoursHMText(8.5)).toBe('8h 30min');
+  });
+
+  it('rolls 60 minutes up to the next hour (the "7h 60min" bug)', () => {
+    expect(formatHoursHMText(7.9999)).toBe('8h');
+  });
+
+  it('signed: + for positive, - for negative (balance display)', () => {
+    expect(formatHoursHMText(1.5, { signed: true })).toBe('+1h 30min');
+    expect(formatHoursHMText(-1.5, { signed: true })).toBe('-1h 30min');
+    expect(formatHoursHMText(2, { signed: true })).toBe('+2h');
+  });
+
+  it('unsigned: no + prefix for positive', () => {
+    expect(formatHoursHMText(2)).toBe('2h');
+    expect(formatHoursHMText(-2)).toBe('-2h');
+  });
+
+  it('dashForZero renders 0 and non-finite as "–"', () => {
+    expect(formatHoursHMText(0, { dashForZero: true })).toBe('–');
+    expect(formatHoursHMText(NaN, { dashForZero: true })).toBe('–');
+    expect(formatHoursHMText(Infinity, { dashForZero: true })).toBe('–');
+  });
+
+  it('non-finite without dashForZero falls back to "0h" (no "NaNh NaNmin")', () => {
+    expect(formatHoursHMText(NaN)).toBe('0h');
+    expect(formatHoursHMText(Infinity)).toBe('0h');
   });
 });
 

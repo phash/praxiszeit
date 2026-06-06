@@ -105,7 +105,7 @@ export default function Dashboard() {
   // #157: Team-Kalender färbt nach Abwesenheits-TYP (konfigurierbar), nicht
   // mehr nach Mitarbeiter-Farbe.
   const absColors = useTypeColorsStore((s) => s.colors);
-  const { openStampSheet, stampVersion } = useUIStore();
+  const { openStampSheet, stampVersion, notifyStampChange } = useUIStore();
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [clockStatus, setClockStatus] = useState<{ is_clocked_in: boolean; elapsed_minutes?: number | null; current_entry?: { start_time: string } } | null>(null);
@@ -464,7 +464,7 @@ export default function Dashboard() {
 
       {/* Stamp Widget - Desktop only */}
       <div className="hidden md:block">
-        <StampWidget />
+        <StampWidget onSuccess={notifyStampChange} />
       </div>
 
       {/* Stats Grid */}
