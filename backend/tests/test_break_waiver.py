@@ -359,6 +359,78 @@ class TestBreakWaiverWithApproval:
         assert entry.break_minutes == 0
         assert str(cr.time_entry_id) == str(entry.id)
 
+    def test_approval_preserves_raw_stamp_through_window_clamp(self, db, employee, admin, monkeypatch):
+        """§16/#201 (review-Medium regression): mit gesetztem Soll-Fenster muss
+        die genehmigungspflichtige Waiver-CR die ROHEN (ungekappten) Zeiten
+        tragen, damit der Clamp BEI der Genehmigung raw_start/raw_end
+        rekonstruiert. Vorher speicherte die CR bereits gekappte Zeiten → der
+        Clamp bei Genehmigung war ein No-op → raw_* = None → der tatsächliche
+        Anwesenheits-Stempel (§16 ArbZG) ging dauerhaft verloren."""
+        import datetime as dt
+        import app.routers.time_entries as te
+        _set_break_setting(db, "true")
+        # Soll-Fenster gibt es nur Mo–Fr (work_window_service._WEEKDAY_ATTR), und
+        # der POST-Endpoint verbietet vergangene Tage. Deshalb "heute" auf einen
+        # fixen Montag einfrieren → Eintrag ist gleichzeitig "heute" (nicht
+        # vergangen) UND ein Werktag mit Soll-Fenster. Voll deterministisch.
+        monday = date(2026, 6, 1)
+        assert monday.weekday() == 0
+        monkeypatch.setattr(te, "_today_local", lambda: monday)
+        monkeypatch.setattr(
+            te, "_now_local",
+            lambda: dt.datetime(2026, 6, 1, 12, 0, tzinfo=te.LOCAL_TZ),
+        )
+        employee.track_hours = True
+        employee.scheduled_start_monday = dt.time(8, 0)  # grace=15 → Fenster [07:45, 16:15]
+        employee.scheduled_end_monday = dt.time(16, 0)
+        db.commit()
+
+        def override_db():
+            yield db
+
+        _app.dependency_overrides[get_db] = override_db
+        _app.dependency_overrides[get_current_user] = lambda: employee
+        _app.dependency_overrides[require_admin] = lambda: admin
+        client = TestClient(_app)
+        try:
+            # Roh 07:00–17:30 (außerhalb des Fensters), 0 Pause. Auf gekappter
+            # Zeit (07:45–16:15 = 8,5h) bleibt §3 (<10h) erfüllt; §4 (0 Pause bei
+            # >6h) schlägt fehl → Waiver → CR.
+            resp = client.post(
+                "/api/time-entries/",
+                json={
+                    "date": monday.isoformat(),
+                    "start_time": "07:00",
+                    "end_time": "17:30",
+                    "break_minutes": 0,
+                    "break_waiver_reason": "OP-Notfall",
+                },
+            )
+            assert resp.status_code == 202, resp.text
+            cr_id = resp.json()["change_request_id"]
+
+            # Die CR trägt die ROHEN Wunschzeiten (Fix), nicht die gekappten.
+            cr = db.query(ChangeRequest).filter(ChangeRequest.id == uuid.UUID(cr_id)).one()
+            assert cr.proposed_start_time == dt.time(7, 0), cr.proposed_start_time
+            assert cr.proposed_end_time == dt.time(17, 30), cr.proposed_end_time
+
+            _app.dependency_overrides[get_current_user] = lambda: admin
+            review = client.post(
+                f"/api/admin/change-requests/{cr_id}/review",
+                json={"action": "approve"},
+            )
+            assert review.status_code == 200, review.text
+        finally:
+            _app.dependency_overrides.clear()
+
+        entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+        # Angerechnete (gekappte) Zeit:
+        assert entry.start_time == dt.time(7, 45), entry.start_time
+        assert entry.end_time == dt.time(16, 15), entry.end_time
+        # §16: der Rohstempel hat die Genehmigung überlebt (Bug erzeugte hier None).
+        assert entry.raw_start_time == dt.time(7, 0), entry.raw_start_time
+        assert entry.raw_end_time == dt.time(17, 30), entry.raw_end_time
+
     def test_admin_cannot_approve_own_break_waiver_cr(self, db, admin, admin_client):
         """SEC-E (regression): the 4-eyes guard forbids an admin approving their
         OWN documented break-exception. Previously only the cross-user happy
@@ -965,3 +1037,55 @@ class TestChangeRequestWeeklyWarning:
         assert resp.status_code in (200, 201), resp.text
         warnings = resp.json().get("warnings", [])
         assert any("WEEKLY_HOURS_WARNING" in w for w in warnings), warnings
+
+
+class TestDataExportRawStamp:
+    """H-001 (DSGVO Art. 20): der persönliche Datenexport muss den Rohstempel
+    (raw_start_time/raw_end_time) enthalten — die tatsächliche Anwesenheit der
+    betroffenen Person vor der Soll-Fenster-Kappung."""
+
+    @staticmethod
+    def _export_client(db, user):
+        # Der gemeinsame _app inkludiert den auth-Router (mit /me/export) nicht;
+        # daher eine eigene Mini-App nur mit dem auth-Router. /me/export ist
+        # nicht rate-limited → kein slowapi-State nötig.
+        from fastapi import FastAPI
+        from app.routers import auth as auth_router
+        app = FastAPI()
+        app.include_router(auth_router.router)
+
+        def override_db():
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        app.dependency_overrides[get_current_user] = lambda: user
+        return TestClient(app)
+
+    def test_export_includes_raw_stamp(self, db, employee):
+        db.add(TimeEntry(
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=date.today(),
+            start_time=time(7, 45), end_time=time(16, 15),
+            raw_start_time=time(7, 0), raw_end_time=time(17, 30),
+            break_minutes=30,
+        ))
+        db.commit()
+
+        resp = self._export_client(db, employee).get("/api/auth/me/export")
+        assert resp.status_code == 200, resp.text
+        entries = resp.json()["zeiteintraege"]
+        assert len(entries) == 1
+        assert entries[0]["raw_start_time"] == "07:00:00", entries[0]
+        assert entries[0]["raw_end_time"] == "17:30:00", entries[0]
+
+    def test_export_raw_stamp_null_when_not_clamped(self, db, employee):
+        db.add(TimeEntry(
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=date.today(),
+            start_time=time(8, 0), end_time=time(16, 0), break_minutes=30,
+        ))
+        db.commit()
+
+        resp = self._export_client(db, employee).get("/api/auth/me/export")
+        assert resp.status_code == 200, resp.text
+        entries = resp.json()["zeiteintraege"]
+        assert entries[0]["raw_start_time"] is None, entries[0]
+        assert entries[0]["raw_end_time"] is None, entries[0]

@@ -614,7 +614,11 @@ def create_time_entry(
             # A valid waiver was supplied. If the practice requires approval,
             # do NOT write the entry — file a ChangeRequest (request_type=CREATE)
             # that materialises the entry (with break_waiver_reason) on approval.
-            # Store clamped times in the CR so that approval applies credited time.
+            # §16/#201: store the employee's RAW (un-clamped) times in the CR.
+            # The clamp is applied once, at approval (admin_change_requests), which
+            # derives entry.raw_start/raw_end from these raw values. Storing the
+            # already-clamped time here would make the approval-time clamp a no-op
+            # (raw_* = None) and permanently lose the original stamp (§16 ArbZG).
             if _break_exception_requires_approval(db, current_user.tenant_id):
                 cr = ChangeRequest(
                     user_id=current_user.id,
@@ -623,8 +627,8 @@ def create_time_entry(
                     entry_kind="time_entry",
                     status=ChangeRequestStatus.PENDING,
                     proposed_date=entry_data.date,
-                    proposed_start_time=eff_start,
-                    proposed_end_time=eff_end,
+                    proposed_start_time=entry_data.start_time,
+                    proposed_end_time=entry_data.end_time,
                     proposed_break_minutes=entry_data.break_minutes,
                     proposed_note=entry_data.note,
                     reason=waiver_reason,
@@ -766,6 +770,10 @@ def update_time_entry(
         "end_time": entry.end_time,
         "break_minutes": entry.break_minutes,
         "note": entry.note,
+        # §16: keep the persisted raw stamp so an approval-required waiver CR
+        # can preserve it when start/end are not part of this partial update.
+        "raw_start_time": entry.raw_start_time,
+        "raw_end_time": entry.raw_end_time,
     }
 
     # Update fields
@@ -776,6 +784,20 @@ def update_time_entry(
     # Validate end_time > start_time (only if both are set)
     if entry.end_time is not None and entry.end_time <= entry.start_time:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
+
+    # §16/#201: snapshot the employee's intended RAW times BEFORE the clamp below
+    # overwrites entry.start/end with credited time. An approval-required waiver
+    # CR (further down) must carry these raw values so the clamp at approval can
+    # reconstruct raw_start/raw_end. If start/end were not part of this partial
+    # update, fall back to the entry's existing raw stamp (or its start/end).
+    _intended_start = (
+        entry.start_time if "start_time" in update_data
+        else (orig_snapshot["raw_start_time"] or orig_snapshot["start_time"])
+    )
+    _intended_end = (
+        entry.end_time if "end_time" in update_data
+        else (orig_snapshot["raw_end_time"] or orig_snapshot["end_time"])
+    )
 
     # #201: clamp start/end to [soll − grace, soll + grace] BEFORE all §4/§3
     # checks so compliance is assessed on credited time. Recomputed every update
@@ -833,8 +855,10 @@ def update_time_entry(
                 raise HTTPException(status_code=400, detail=break_error)
 
             if _break_exception_requires_approval(db, current_user.tenant_id):
-                # Do not persist the edit — file an UPDATE ChangeRequest with
-                # the clamped proposed values and revert the in-memory mutation.
+                # Do not persist the edit — file an UPDATE ChangeRequest with the
+                # employee's RAW (un-clamped) proposed times (§16, see snapshot
+                # above) and revert the in-memory mutation. Clamping is applied
+                # once, at approval, so raw_start/raw_end are preserved.
                 cr = ChangeRequest(
                     user_id=entry.user_id,
                     tenant_id=current_user.tenant_id,
@@ -843,8 +867,8 @@ def update_time_entry(
                     status=ChangeRequestStatus.PENDING,
                     time_entry_id=entry.id,
                     proposed_date=entry.date,
-                    proposed_start_time=entry.start_time,
-                    proposed_end_time=entry.end_time,
+                    proposed_start_time=_intended_start,
+                    proposed_end_time=_intended_end,
                     proposed_break_minutes=entry.break_minutes,
                     proposed_note=entry.note,
                     original_date=orig_snapshot["date"],
