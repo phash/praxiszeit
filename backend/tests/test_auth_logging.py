@@ -100,6 +100,30 @@ class TestLoginFailedLogging:
         assert "ghost" in recs[0].getMessage()
         _no_credentials_leaked(caplog, password=SECRET_PASSWORD)
 
+    def test_inactive_user_indistinguishable_from_unknown(
+        self, login_client, employee_user, _db_session, caplog
+    ):
+        # M-001 (DSGVO Art. 5 Abs. 1 lit. f/c): a deactivated account must log
+        # the SAME reason code as a non-existent one. Otherwise anyone with log
+        # access can tell that a specific (e.g. terminated) employee's account
+        # exists, leaking employment status.
+        from app.routers import auth as auth_mod
+        auth_mod._failed_logins.clear()  # deterministic: no leftover lockout
+        employee_user.is_active = False
+        _db_session.commit()
+
+        with caplog.at_level(logging.WARNING, logger=SECURITY_LOGGER):
+            resp = _login(login_client, "employee", SECRET_PASSWORD)
+
+        assert resp.status_code == 401
+        recs = [r for r in caplog.records if "AUTH login_failed" in r.getMessage()]
+        assert recs, "expected an 'AUTH login_failed' record for an inactive user"
+        msg = recs[0].getMessage()
+        assert "inactive_user" not in msg, f"log leaks account existence: {msg!r}"
+        # Identical to the unknown-user reason → indistinguishable.
+        assert "reason=unknown_user" in msg, msg
+        _no_credentials_leaked(caplog, password=SECRET_PASSWORD)
+
 
 class TestLoginSuccessLogging:
     def test_valid_login_emits_login_success_info(self, login_client, employee_user, caplog):

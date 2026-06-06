@@ -229,12 +229,24 @@ def review_change_request(
                 # exclude it from the daily picture (mirrors update_time_entry).
                 exclude_id = entry.id if cr.request_type == ChangeRequestType.UPDATE and entry else None
 
+                # §16/#201: the CR carries the employee's RAW proposed times.
+                # §3/§4 compliance is assessed on the CREDITED (clamped) time —
+                # exactly as create_time_entry/update_time_entry do — so clamp to
+                # the soll-window first, then re-validate. Checking the raw span
+                # here would wrongly reject an entry whose credited time is legal
+                # (e.g. a wide raw stamp the window clamps back under 10h).
+                _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+                _eff_start, _eff_end, _, _ = work_window_service.clamp(
+                    cr_user, cr.proposed_date,
+                    cr.proposed_start_time, cr.proposed_end_time, _grace,
+                )
+
                 daily_hours_revalidate = _calculate_daily_net_hours(
                     db=db,
                     user_id=cr.user_id,
                     entry_date=cr.proposed_date,
-                    start_time=cr.proposed_start_time,
-                    end_time=cr.proposed_end_time,
+                    start_time=_eff_start,
+                    end_time=_eff_end,
                     break_minutes=cr.proposed_break_minutes or 0,
                     exclude_entry_id=exclude_id,
                 )
@@ -251,8 +263,8 @@ def review_change_request(
                         db=db,
                         user_id=cr.user_id,
                         entry_date=cr.proposed_date,
-                        start_time=cr.proposed_start_time,
-                        end_time=cr.proposed_end_time,
+                        start_time=_eff_start,
+                        end_time=_eff_end,
                         break_minutes=cr.proposed_break_minutes or 0,
                         exclude_entry_id=exclude_id,
                     )
@@ -548,19 +560,27 @@ def review_change_request(
     ):
         cr_user = db.query(User).filter(User.id == cr.user_id).first()
         if cr_user and not cr_user.exempt_from_arbzg:
+            # §16/#201: assess the informational ArbZG warnings on the CREDITED
+            # (clamped) time too — consistent with the §3/§4 hard re-check above
+            # and the create/update paths. The CR stores the RAW proposed times.
+            _wgrace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+            _w_start, _w_end, _, _ = work_window_service.clamp(
+                cr_user, cr.proposed_date,
+                cr.proposed_start_time, cr.proposed_end_time, _wgrace,
+            )
             daily_hours_cr = _calculate_daily_net_hours(
                 db=db,
                 user_id=cr.user_id,
                 entry_date=cr.proposed_date,
-                start_time=cr.proposed_start_time,
-                end_time=cr.proposed_end_time,
+                start_time=_w_start,
+                end_time=_w_end,
                 break_minutes=cr.proposed_break_minutes or 0,
             )
 
             # SS6 Abs. 2: Nachtarbeitnehmer-Tageslimit
             if (
                 cr_user.is_night_worker
-                and is_night_work(cr.proposed_start_time, cr.proposed_end_time)
+                and is_night_work(_w_start, _w_end)
                 and daily_hours_cr > MAX_NIGHT_WORKER_DAILY_WARN
             ):
                 cr_response.warnings.append(
@@ -573,8 +593,8 @@ def review_change_request(
                 db=db,
                 user_id=cr.user_id,
                 entry_date=cr.proposed_date,
-                start_time=cr.proposed_start_time,
-                end_time=cr.proposed_end_time,
+                start_time=_w_start,
+                end_time=_w_end,
                 break_minutes=cr.proposed_break_minutes or 0,
             )
             if weekly > MAX_WEEKLY_HOURS_WARN:

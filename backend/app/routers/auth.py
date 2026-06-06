@@ -180,9 +180,17 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         # module load time from a random string (see _DUMMY_BCRYPT_HASH).
         auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
         _record_failed_login(username_lower, now)
+        # M-001 (DSGVO Art. 5 Abs. 1 lit. f/c): do NOT distinguish a deactivated
+        # account from a non-existent one in the security log. A distinct
+        # reason=inactive_user would let anyone with log access infer that a
+        # specific (e.g. terminated) employee's account exists — leaking
+        # employment status. Both cases log the same neutral reason; the HTTP
+        # response is already identical (and timing-equalised via the dummy
+        # bcrypt verify above). Active-account failures keep their own reason
+        # codes (bad_password/bad_totp), which only reveal what colleagues
+        # already know (the person works here).
         security_logger.warning(
-            "AUTH login_failed user=%s reason=%s", username_lower,
-            "unknown_user" if not user else "inactive_user",
+            "AUTH login_failed user=%s reason=%s", username_lower, "unknown_user",
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -496,6 +504,11 @@ def export_my_data(
                 "date": str(e.date),
                 "start_time": str(e.start_time),
                 "end_time": str(e.end_time),
+                # H-001 (DSGVO Art. 20): the raw stamp (actual attendance before
+                # the soll-window clamp) is the data subject's own personal data
+                # and must be part of the export. NULL when no clamping occurred.
+                "raw_start_time": str(e.raw_start_time) if e.raw_start_time else None,
+                "raw_end_time": str(e.raw_end_time) if e.raw_end_time else None,
                 "break_minutes": e.break_minutes,
                 "note": e.note,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
