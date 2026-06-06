@@ -21,7 +21,7 @@
     "qrcode.react": "^3.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0",
+    "react-router-dom": "^6.30.4",
     "zustand": "^4.5.0"
   },
   "overrides": {
@@ -52,6 +52,6 @@
     "typescript-eslint": "^8.58.1",
     "vite": "^6.4.2",
     "vite-plugin-pwa": "^1.2.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.0"
   }
 }
