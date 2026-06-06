@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-06-06
+
+Fix-Release aus einem zweiten Gesamt-Codebase-Review (Korrektheit, DSGVO,
+Sicherheit). Enthält **eine Datenbank-Migration (049, RLS-Härtung)** — Update
+für alle Installationen empfohlen.
+
+### 🧮 Berechnung / Reports
+- **Klassischer Jahresreport (XLSX):** Der StundenSaldo war um die Urlaubsstunden
+  zu hoch (Phantom-Überstunden, z. B. +32 h statt 0 h), weil das bereits
+  netto-bereinigte Soll noch einmal um Urlaub/Krank reduziert wurde. Der Report
+  rechnet jetzt im traditionellen Brutto-Stundenkonto und ist konsistent zu den
+  übrigen Reports.
+- **Monatsjournal:** Tageszeilen berücksichtigen jetzt Sondertage (24./31.12.)
+  und das Eintritts-/Austrittsfenster — die Tagessumme passt wieder zum Monats-Soll.
+- **Jahres-Abwesenheitsreport:** „Urlaub genommen" wird tagebasiert gezählt
+  (konsistent mit dem Resturlaub im selben Bericht).
+- **§3-24-Wochen-Mittel** rechnet in lokaler Zeit (Europe/Berlin) statt UTC —
+  keine Fenster-Verschiebung um einen Tag mehr.
+- **Teilzeit:** Die Genehmigung eines Abwesenheits-Änderungsantrags bucht das
+  Tagessoll des Tages statt eines pauschalen 8-h-Werts — kein doppelter
+  Urlaubsverbrauch mehr bei z. B. 4-h-Tagen.
+
+### 🔒 Sicherheit / DSGVO
+- **RLS-Härtung (Migration 049):** `stripe_events` und `signup_audit_log`
+  erhalten Row-Level-Security (ENABLE + FORCE + Mandanten-Policy) — beide hatten
+  bisher `tenant_id` ohne RLS.
+- **Art. 9:** Die ODS-Jahresexporte maskieren Krankdaten und schreiben ein
+  Zugriffs-Audit-Log wie alle übrigen Exporte.
+- **Art. 17:** Löschung/Anonymisierung umfasst jetzt Profilbild, TOTP-Secret und
+  Abteilung und invalidiert offene Sitzungen.
+- **Art. 32:** Export-Services filtern zusätzlich explizit nach Mandant
+  (Belt-and-Suspenders über RLS).
+- **Art. 5:** Das Aufräumen alter Fehlerprotokolle läuft als täglicher Job
+  (nicht mehr nur beim Start).
+- Verarbeitungsverzeichnis / DSFA auf Stand 2026-06-06.
+
+### 🐞 Behoben (Frontend)
+- **Dashboard:** Nach dem Stempeln aktualisieren Überstunden-/Saldo-Kacheln und
+  die letzten Einträge sofort (vorher blieben sie stehen).
+- **Monatsjournal:** Stundenformat ohne „7h 60min"- bzw. „NaNh NaNmin"-Anzeige.
+
 ## [1.8.2] - 2026-06-02
 
 Reines Härtungs-Release aus einem ArbZG- und Sicherheits-Audit (OWASP). Keine
