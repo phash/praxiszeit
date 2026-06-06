@@ -2,7 +2,7 @@
 
 **System:** PraxisZeit – Elektronisches Zeiterfassungssystem
 **Verantwortlicher:** [Name der Praxis / des Unternehmens]
-**Stand:** 2026-05-24 (aktualisiert: Self-Service-Art-15-Export #119 ergänzt)
+**Stand:** 2026-06-06 (aktualisiert: ODS-Jahresexport-Masking, Anonymisierungs-Gap, Fehlermeldungs-Retention)
 **Status:** Technisch abgeschlossen – durch Verantwortlichen zu prüfen und zu unterzeichnen
 
 ---

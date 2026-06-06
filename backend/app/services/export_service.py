@@ -32,7 +32,7 @@ def neutralize_spreadsheet_formula(value):
     return value
 
 
-def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
+def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
     """
     Generate Excel report for all employees for a given month.
     Creates one sheet per employee.
@@ -42,6 +42,7 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
         year: Year
         month: Month (1-12)
         include_health_data: If False (default), sick absences are shown as "Abwesenheit" (Art. 9 DSGVO protection)
+        tenant_id: F-026 belt-and-suspenders explicit tenant filter (on top of RLS)
 
     Returns:
         BytesIO object containing Excel file
@@ -50,8 +51,11 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
     # Remove default sheet
     wb.remove(wb.active)
 
-    # Get all active, non-hidden employees
-    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
+    # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
+    q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
+    if tenant_id is not None:
+        q = q.filter(User.tenant_id == tenant_id)
+    users = q.order_by(User.last_name, User.first_name).all()
 
     for user in users:
         _create_employee_sheet(wb, db, user, year, month, include_health_data)
@@ -351,7 +355,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.column_dimensions['J'].width = 35
 
 
-def generate_yearly_report(db: Session, year: int, include_health_data: bool = False) -> BytesIO:
+def generate_yearly_report(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
     """
     Generate Excel report for all employees for a given year.
     Creates:
@@ -362,6 +366,7 @@ def generate_yearly_report(db: Session, year: int, include_health_data: bool = F
     Args:
         db: Database session
         year: Year
+        tenant_id: F-026 belt-and-suspenders explicit tenant filter (on top of RLS)
 
     Returns:
         BytesIO object containing Excel file
@@ -370,8 +375,11 @@ def generate_yearly_report(db: Session, year: int, include_health_data: bool = F
     # Remove default sheet
     wb.remove(wb.active)
 
-    # Get all active, non-hidden employees
-    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
+    # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
+    q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
+    if tenant_id is not None:
+        q = q.filter(User.tenant_id == tenant_id)
+    users = q.order_by(User.last_name, User.first_name).all()
 
     # Create overview sheet
     _create_yearly_overview_sheet(wb, db, users, year, include_health_data)
@@ -875,7 +883,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.column_dimensions['J'].width = 35
 
 
-def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False) -> BytesIO:
+def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
     """
     Generate classic yearly report (compact format with months as columns).
     Creates one sheet per employee.
@@ -883,6 +891,7 @@ def generate_yearly_report_classic(db: Session, year: int, include_health_data: 
     Args:
         db: Database session
         year: Year
+        tenant_id: F-026 belt-and-suspenders explicit tenant filter (on top of RLS)
 
     Returns:
         BytesIO object containing Excel file
@@ -891,8 +900,11 @@ def generate_yearly_report_classic(db: Session, year: int, include_health_data: 
     # Remove default sheet
     wb.remove(wb.active)
 
-    # Get all active, non-hidden employees
-    users = db.query(User).filter(User.is_active == True, User.is_hidden == False).order_by(User.last_name, User.first_name).all()
+    # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
+    q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
+    if tenant_id is not None:
+        q = q.filter(User.tenant_id == tenant_id)
+    users = q.order_by(User.last_name, User.first_name).all()
 
     for user in users:
         _create_employee_classic_sheet(wb, db, user, year, include_health_data)
@@ -1115,11 +1127,12 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
 # PDF Export (reportlab)
 # ---------------------------------------------------------------------------
 
-def generate_monthly_report_pdf(db: Session, year: int, month: int, include_health_data: bool = False) -> BytesIO:
+def generate_monthly_report_pdf(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
     """
     Generate PDF monthly report for all employees.
     One page per employee, landscape A4.
     Same data as Excel monthly report.
+    F-026: pass tenant_id for belt-and-suspenders explicit filter.
     """
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -1153,10 +1166,11 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     month_names = ['Januar', 'Februar', 'Maerz', 'April', 'Mai', 'Juni',
                    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
-    users = (db.query(User)
-             .filter(User.is_active == True, User.is_hidden == False)
-             .order_by(User.last_name, User.first_name)
-             .all())
+    # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
+    _q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
+    if tenant_id is not None:
+        _q = _q.filter(User.tenant_id == tenant_id)
+    users = _q.order_by(User.last_name, User.first_name).all()
 
     # Landscape A4: 297mm − 30mm margins = 267mm usable
     col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 16*mm, 14*mm, 16*mm, 74*mm, 74*mm]

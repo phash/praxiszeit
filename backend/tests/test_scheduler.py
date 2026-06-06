@@ -41,21 +41,22 @@ def test_start_scheduler_skipped_in_pytest_mode():
     assert scheduler_service.get_scheduler() is None
 
 
-def test_start_scheduler_registers_three_daily_cron_jobs():
-    """Outside pytest mode, three cron-triggered jobs are registered."""
+def test_start_scheduler_registers_four_daily_cron_jobs():
+    """Outside pytest mode, four cron-triggered jobs are registered."""
     with patch.object(scheduler_service, "_is_pytest_mode", return_value=False):
         sched = scheduler_service.start_scheduler(app=MagicMock())
 
     assert sched is not None
     try:
         jobs = sched.get_jobs()
-        assert len(jobs) == 3
+        assert len(jobs) == 4
 
         job_ids = {j.id for j in jobs}
         assert job_ids == {
             scheduler_service.JOB_VACATION_AUDIT_PURGE,
             scheduler_service.JOB_APPLY_SCHEDULED_SUSPENDS,
             scheduler_service.JOB_APPLY_SCHEDULED_DELETIONS,
+            scheduler_service.JOB_CLEANUP_OLD_ERRORS,
         }
 
         # Every job must be a daily cron at the documented time. We
@@ -81,7 +82,7 @@ def test_start_scheduler_is_idempotent():
 
     try:
         assert first is second
-        assert len(first.get_jobs()) == 3
+        assert len(first.get_jobs()) == 4
     finally:
         first.shutdown(wait=False)
 
@@ -131,6 +132,23 @@ def test_apply_scheduled_deletions_job_calls_lifecycle_service():
 
         mock_set_ctx.assert_called_once_with(mock_db)
         mock_delete.assert_called_once_with(mock_db)
+        mock_db.close.assert_called_once()
+
+
+def test_cleanup_old_errors_job_calls_error_log_service():
+    """The wrapper opens a DB session, sets superadmin context, and delegates
+    to ``cleanup_old_errors`` with the 90-day cutoff (DSGVO Art. 5(1)(e))."""
+    with patch.object(scheduler_service, "SessionLocal") as mock_session_cls, \
+         patch.object(scheduler_service, "set_superadmin_context") as mock_set_ctx, \
+         patch("app.services.error_log_service.cleanup_old_errors") as mock_cleanup:
+        mock_db = MagicMock()
+        mock_session_cls.return_value = mock_db
+        mock_cleanup.return_value = 3
+
+        scheduler_service._run_cleanup_old_errors()
+
+        mock_set_ctx.assert_called_once_with(mock_db)
+        mock_cleanup.assert_called_once_with(mock_db, max_age_days=90)
         mock_db.close.assert_called_once()
 
 

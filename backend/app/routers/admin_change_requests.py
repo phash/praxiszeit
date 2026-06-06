@@ -449,16 +449,19 @@ def review_change_request(
             )
             db.add(audit)
         elif cr.request_type == ChangeRequestType.CREATE:
-            # §3 EntgFG: Bei Krankmeldung immer die vertragliche Tages-Sollzeit
-            # gutschreiben, nicht den vom Antragsteller eingetragenen Wert.
-            if cr.proposed_absence_type == "sick":
-                cr_user = db.query(User).filter(User.id == cr.user_id).first()
-                if cr_user:
-                    weekly = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
-                    daily_target = get_daily_target_for_date(cr_user, cr.proposed_date, weekly)
-                    hours = float(daily_target)
-                else:
-                    hours = float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0
+            # CLAUDE.md / Tagesprinzip: Voll-Tag-Abwesenheitstypen buchen das
+            # TAGESSOLL des Tages, NICHT den vom Antragsteller eingetragenen Wert
+            # (8h-Client-Default). Nur der Überstundenausgleich (OVERTIME) behält
+            # seine explizit beantragten Stunden — identisch zu create_absence
+            # und review_vacation_request (die §3-EntgFG-Krank-Gutschrift ist
+            # derselbe Tagessoll-Wert). Ohne diese Regel buchte ein per CR
+            # genehmigter Urlaub die 8h und verbrauchte bei Teilzeit (4h/Tag)
+            # doppelten Urlaub (8/4 = 2 Tage statt 1).
+            cr_user = db.query(User).filter(User.id == cr.user_id).first()
+            _is_overtime = cr.proposed_absence_type == AbsenceType.OVERTIME.value
+            if cr_user and (not _is_overtime or getattr(cr_user, "use_daily_schedule", False)):
+                weekly = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
+                hours = float(get_daily_target_for_date(cr_user, cr.proposed_date, weekly))
             else:
                 hours = float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0
 

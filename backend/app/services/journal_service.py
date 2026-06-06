@@ -6,7 +6,7 @@ from typing import Dict, List, Any
 from sqlalchemy.orm import Session
 
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
-from app.services import calculation_service
+from app.services import calculation_service, special_days_service
 from app.services.date_filters import date_in_month
 
 
@@ -47,6 +47,22 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
     ).all()
     holiday_map: Dict[date, str] = {h.date: h.name for h in holidays}
 
+    # #146/#193: the per-day target rows MUST apply the same special-day factor
+    # (24./31.12.) and employment-window guard as get_monthly_target — otherwise
+    # the day rows do not sum to monthly_summary.target_hours (a half-day 24.12.
+    # showed the full Tagessoll; days before first_work_day showed full target).
+    special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
+
+    def _eff_daily_target(d: date) -> Decimal:
+        if not calculation_service._within_employment_window(user, d):
+            return Decimal("0")
+        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
+        dt = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+        factor = special_days_service.special_day_target_factor(d, special_day_config)
+        if factor is not None:
+            dt = dt * factor
+        return dt
+
     days = []
     for day_num in range(1, last_day + 1):
         d = date(year, month, day_num)
@@ -83,8 +99,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             actual_hours = time_hours
             target_hours = Decimal("0")
         elif day_absences and not day_entries:
-            weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
-            daily_target = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+            daily_target = _eff_daily_target(d)
             if day_absences[0].type == AbsenceType.TRAINING:
                 actual_hours = absence_sum
                 target_hours = daily_target
@@ -100,8 +115,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
                 target_hours = absence_sum
         elif day_entries and day_absences:
             # Mixed day: time entries + absences (e.g. half-day work + half-day sick/training)
-            weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
-            daily_target = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+            daily_target = _eff_daily_target(d)
             actual_hours = time_hours + credited_sum
             # VACATION/OTHER/OVERTIME reduce target on mixed days
             target_reducing_sum = Decimal(str(sum(
@@ -111,8 +125,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             target_hours = daily_target - target_reducing_sum
         else:
             actual_hours = time_hours
-            weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
-            target_hours = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+            target_hours = _eff_daily_target(d)
 
         balance = actual_hours - target_hours
 
