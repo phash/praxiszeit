@@ -1001,8 +1001,11 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=6, column=col).value = working_days
         sheet.cell(row=6, column=col).alignment = center_align
 
-        # Row 7: Target hours
-        target_hours = calculation_service.get_monthly_target(db, user, year, month)
+        # Row 7: GROSS target hours (all working days). The explicit "minus Krank
+        # / minus Urlaub" rows below reduce it — traditional Stundenkonto layout.
+        # NOT get_monthly_target (which already nets vacation out → using it here
+        # double-subtracted vacation and produced a phantom +Saldo).
+        target_hours = calculation_service.get_gross_monthly_target(db, user, year, month)
         sheet.cell(row=7, column=col).value = float(target_hours)
         sheet.cell(row=7, column=col).number_format = '0.0'
         sheet.cell(row=7, column=col).alignment = right_align
@@ -1014,12 +1017,13 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
             date_in_month(Absence.date, year, month)
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
+        real_sick = sick_hours  # kept for the masked-case credit on Row 11
         if include_health_data:
             sheet.cell(row=8, column=col).value = sick_hours
             sheet.cell(row=8, column=col).number_format = '0.0'
         else:
             sheet.cell(row=8, column=col).value = "–"
-            sick_hours = 0  # Treat as 0 for subsequent calculations
+            sick_hours = 0  # not subtracted from soll when masked (Art. 9)
         sheet.cell(row=8, column=col).alignment = right_align
 
         # Row 9: Vacation hours
@@ -1039,13 +1043,22 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=10, column=col).number_format = '0.0'
         sheet.cell(row=10, column=col).alignment = right_align
 
-        # Row 11: Actual hours
-        actual_hours = calculation_service.get_monthly_actual(db, user, year, month)
-        sheet.cell(row=11, column=col).value = float(actual_hours)
+        # Row 11: hours physically WORKED (no credited sick/training), paired with
+        # the gross-minus-absences adjusted target so the balance equals the
+        # canonical Ist − Soll for the {Arbeit, Krank, Urlaub} model this classic
+        # format represents. When health data is masked, Krank is NOT subtracted
+        # above; credit it to the worked side instead so the masked Saldo stays
+        # correct AND Krank is never derivable from the displayed cells (Art. 9).
+        # NOTE: TRAINING / OTHER / PAID_LEAVE / OVERTIME are not modelled by this
+        # 2-row layout — use the standard report for richer absence mixes.
+        actual_hours = float(calculation_service.get_monthly_worked_hours(db, user, year, month))
+        if not include_health_data:
+            actual_hours += real_sick
+        sheet.cell(row=11, column=col).value = actual_hours
         sheet.cell(row=11, column=col).number_format = '0.0'
         sheet.cell(row=11, column=col).alignment = right_align
 
-        # Row 12: Monthly balance (Actual - Adjusted Target)
+        # Row 12: Monthly balance (worked − adjusted target = canonical Ist − Soll)
         monthly_balance = float(actual_hours) - adjusted_target
         sheet.cell(row=12, column=col).value = monthly_balance
         sheet.cell(row=12, column=col).number_format = '0.0'

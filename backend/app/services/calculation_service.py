@@ -326,6 +326,62 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
     return (Decimal(str(total)) + credited_hours).quantize(Decimal('0.01'))
 
 
+def get_gross_monthly_target(db: Session, user: User, year: int, month: int) -> Decimal:
+    """Gross monthly target — like get_monthly_target but WITHOUT subtracting the
+    soll-reducing absence days (VACATION/OTHER/PAID_LEAVE). Weekend, holiday,
+    employment-window (#193) and special-day factor (#146) are still applied.
+
+    Used ONLY by the classic yearly report, which presents the traditional
+    "Brutto-Soll − Krank − Urlaub = bereinigtes Soll" layout: the explicit
+    "minus" rows are the ones that reduce the soll there, so row 7 must be the
+    gross value (get_monthly_target already nets vacation/other/paid_leave out).
+    """
+    if not user.track_hours:
+        return Decimal('0')
+
+    holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
+        date_in_month(PublicHoliday.date, year, month),
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).all()}
+    special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
+
+    _, last_day = monthrange(year, month)
+    gross = Decimal('0')
+    for day in range(1, last_day + 1):
+        d = date(year, month, day)
+        if d.weekday() >= 5:
+            continue
+        if not _within_employment_window(user, d):
+            continue
+        if d in holiday_dates:
+            continue
+        weekly_hours = get_weekly_hours_for_date(db, user, d)
+        daily_target = get_daily_target_for_date(user, d, weekly_hours)
+        factor = special_days_service.special_day_target_factor(d, special_day_config)
+        if factor is not None:
+            daily_target = daily_target * factor
+        gross += daily_target
+
+    return gross.quantize(Decimal('0.01'))
+
+
+def get_monthly_worked_hours(db: Session, user: User, year: int, month: int) -> Decimal:
+    """Hours physically WORKED (Σ net_hours of time entries, employment-windowed)
+    — WITHOUT the credited TRAINING/SICK hours that get_monthly_actual adds.
+
+    Used by the classic yearly report's "erbrachte Stunden" row, whose
+    traditional gross-model balance compares worked-only against the
+    absence-reduced soll. NOT a substitute for get_monthly_actual anywhere else.
+    """
+    entries = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        date_in_month(TimeEntry.date, year, month),
+    ).all()
+    total = sum((entry.net_hours for entry in entries
+                 if _within_employment_window(user, entry.date)), start=Decimal('0'))
+    return Decimal(str(total)).quantize(Decimal('0.01'))
+
+
 def get_monthly_balance(db: Session, user: User, year: int, month: int) -> Decimal:
     """
     Calculate monthly balance (Actual - Target).
