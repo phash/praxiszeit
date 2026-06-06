@@ -156,3 +156,44 @@ class TestFormulaInjection:
                     target = val
         assert target is not None, "note payload not found in sheet"
         assert target.startswith("'"), f"formula not neutralized: {target!r}"
+
+
+class TestClassicReportSaldo:
+    """#1 (Critical): the classic yearly report must compute StundenSaldo as the
+    canonical Ist − Soll. The gross-model layout is Brutto-Soll − Krank − Urlaub
+    = bereinigtes Soll; Ist_gearbeitet − bereinigt. Previously row 7 used the
+    already-net get_monthly_target AND row 10 subtracted vacation again → the
+    Saldo was inflated by the vacation hours (phantom overtime)."""
+
+    def test_classic_saldo_equals_canonical_with_vacation(self, db, test_user):
+        from app.models import Absence, AbsenceType
+        from app.services import calculation_service
+        from app.services.export_service import generate_yearly_report_classic
+
+        # Juni 2026: 1 Urlaubstag (Mo 1.6.) + an drei Tagen exakt das 8h-Soll.
+        db.add(Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                       date=date(2026, 6, 1), type=AbsenceType.VACATION, hours=8.0))
+        for d in (date(2026, 6, 2), date(2026, 6, 3), date(2026, 6, 4)):
+            _make_time_entry(db, test_user, d, 8, 16, 0)  # 8h netto
+        db.commit()
+
+        # Kanonisch = Ist − Soll (wie Dashboard / Standard-XLSX / ODS).
+        canonical = (
+            float(calculation_service.get_monthly_actual(db, test_user, 2026, 6))
+            - float(calculation_service.get_monthly_target(db, test_user, 2026, 6))
+        )
+
+        result = generate_yearly_report_classic(db, 2026, include_health_data=True)
+        wb, _ = _load_xlsx(result)
+        ws = next((wb[n] for n in wb.sheetnames if test_user.last_name in n),
+                  wb[wb.sheetnames[0]])
+        col = 6 + 2  # Juni → Spalte 8 (col = month + 2)
+        gross = float(ws.cell(row=7, column=col).value)
+        adjusted = float(ws.cell(row=10, column=col).value)
+        saldo = float(ws.cell(row=12, column=col).value)
+
+        # Saldo == kanonisch (der Bug erzeugte hier +8h Phantom durch den Urlaub).
+        assert abs(saldo - canonical) < 0.01, f"saldo {saldo} != canonical {canonical}"
+        # Brutto-Modell: das Brutto-Soll enthält den Urlaubstag, das bereinigte
+        # Soll nicht → Differenz ≈ 8h (der eine Urlaubstag).
+        assert abs((gross - adjusted) - 8.0) < 0.01, f"gross {gross} - adjusted {adjusted}"
