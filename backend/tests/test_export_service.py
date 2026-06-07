@@ -197,3 +197,46 @@ class TestClassicReportSaldo:
         # Brutto-Modell: das Brutto-Soll enthält den Urlaubstag, das bereinigte
         # Soll nicht → Differenz ≈ 8h (der eine Urlaubstag).
         assert abs((gross - adjusted) - 8.0) < 0.01, f"gross {gross} - adjusted {adjusted}"
+
+
+class TestPdfMarkupEscaping:
+    """Vuln-1/4: user-controlled free text must be escaped before it reaches a
+    reportlab ``Paragraph``. Unescaped, notes/names are parsed as reportlab's
+    intra-paragraph markup mini-language → content injection into the official
+    §16 compliance PDF, ``<img src>`` server-side fetch (SSRF), and a single
+    stray tag raises during ``doc.build`` and 500s the whole multi-employee
+    report."""
+
+    def test_escape_pdf_text_neutralizes_markup(self):
+        from app.services.export_service import escape_pdf_text
+        assert escape_pdf_text('<img src="http://evil/x"/>a & b') == \
+            '&lt;img src="http://evil/x"/&gt;a &amp; b'
+        assert escape_pdf_text(None) == ''
+        assert escape_pdf_text(123) == '123'
+
+    def test_monthly_pdf_does_not_crash_on_markup_note(self, db, test_user):
+        """A low-priv employee's note with reportlab markup must not break the
+        admin's monthly PDF (proves the escape choke-point is on the PDF path)."""
+        from app.services.export_service import generate_monthly_report_pdf
+        e = TimeEntry(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            date=date(2026, 1, 8), start_time=time(8, 0), end_time=time(16, 0),
+            break_minutes=30, note='<b>injected</i> & <img src="http://evil/x">',
+        )
+        db.add(e)
+        db.commit()
+        result = generate_monthly_report_pdf(db, 2026, 1, tenant_id=DEFAULT_TENANT_ID)
+        data = result.getvalue() if hasattr(result, "getvalue") else result
+        assert data[:4] == b"%PDF", "monthly PDF must render despite markup in a note"
+
+    def test_avv_pdf_does_not_crash_on_markup_billing_fields(self):
+        """Tenant-admin-PATCHable billing fields must be escaped before the AVV
+        Paragraph (same root cause)."""
+        from app.models.tenant import Tenant
+        from app.services.avv_generator import generate_avv_pdf
+        t = Tenant(
+            name="T", company_name="<script>x</script>", vat_id="<i>v", country="DE",
+            billing_address={"street": "<b>Street", "zip": "12345", "city": "City"},
+        )
+        data = generate_avv_pdf(t)
+        assert data[:4] == b"%PDF"
