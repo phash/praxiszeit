@@ -89,6 +89,37 @@ def test_masked_sick_still_carries_user_color(db, test_user, default_tenant):
     assert row["user_color"] == "#AB12CD"
 
 
+def test_masking_indistinguishable_from_other_sensitive_types(db, test_user, default_tenant):
+    """DSGVO Art. 9: the masked bucket must NOT be a 1:1 tell for sick-leave.
+
+    If only SICK were rewritten to "absent" while every other type kept its
+    real value, a colleague could deterministically infer health status from
+    the unique "absent" bucket. OTHER and PAID_LEAVE (potentially sensitive /
+    unspecified) must therefore also collapse to "absent" for non-admin
+    viewers of *other* employees — so "absent" means sick-or-other-or-paidleave,
+    not sick. Non-sensitive planning types (VACATION) stay truthful.
+    """
+    other = _mk_employee(db, "#FE01DC")
+    _mk_absence(db, other, date(2026, 3, 10), AbsenceType.OTHER)
+    _mk_absence(db, other, date(2026, 3, 11), AbsenceType.PAID_LEAVE)
+    _mk_absence(db, other, date(2026, 3, 12), AbsenceType.VACATION)
+    resp = _client(db, test_user).get("/api/absences/calendar?month=2026-03")
+    assert resp.status_code == 200, resp.text
+    by_date = {r["date"]: r["type"] for r in resp.json() if r["user_color"] == "#FE01DC"}
+    assert by_date["2026-03-10"] == "absent", "OTHER must be masked so 'absent' isn't unique to sick"
+    assert by_date["2026-03-11"] == "absent", "PAID_LEAVE must be masked too"
+    assert by_date["2026-03-12"] == "vacation", "VACATION stays truthful (non-sensitive planning info)"
+
+
+def test_own_sensitive_absence_not_masked_to_self(db, test_user):
+    """The owner still sees their own real absence type (masking is for *others*)."""
+    _mk_absence(db, test_user, date(2026, 3, 13), AbsenceType.OTHER)
+    resp = _client(db, test_user).get("/api/absences/calendar?month=2026-03")
+    assert resp.status_code == 200, resp.text
+    row = next(r for r in resp.json() if r["date"] == "2026-03-13")
+    assert row["type"] == "other"
+
+
 def test_calendar_department_visible_to_admin(db, test_user, test_admin):
     """#162 + DSGVO: admins see the department (for the filter)."""
     test_user.department = "Verwaltung"

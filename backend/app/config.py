@@ -105,6 +105,14 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost,http://localhost:5173"
 
+    # Host header allowlist (TrustedHostMiddleware). Comma-separated hostnames.
+    # Default "*" = accept any Host (no behaviour change for on-prem / LAN-by-IP
+    # installs and tests). Internet-facing deployments SHOULD set this to the
+    # served domain(s) — e.g. ALLOWED_HOSTS=praxis.example.com — to reject
+    # spoofed/malformed Host headers (defence-in-depth vs Starlette CVE-2026-48710
+    # "BadHost", which can desync request.url.path from the routed path).
+    ALLOWED_HOSTS: str = "*"
+
     # Cookie security (set COOKIE_SECURE=false only for local HTTP development)
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "lax"

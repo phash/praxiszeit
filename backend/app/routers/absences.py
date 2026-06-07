@@ -14,6 +14,15 @@ from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
 
+# DSGVO Art. 9: in the colleague-facing feeds (team calendar / upcoming), the
+# masked bucket must NOT be a 1:1 tell for sick-leave. If only SICK were
+# rewritten to "absent" while every other type kept its real value, the unique
+# "absent" bucket would let any non-admin deterministically infer a coworker's
+# health status. We therefore collapse the sensitive / unspecified types into
+# the same generic "absent" bucket; non-sensitive planning types (VACATION,
+# TRAINING, OVERTIME) stay truthful so colleagues can still coordinate cover.
+_MASKED_ABSENCE_TYPES = {AbsenceType.SICK, AbsenceType.OTHER, AbsenceType.PAID_LEAVE}
+
 
 @router.get("/daily-target")
 def get_daily_target_for_date_endpoint(
@@ -96,7 +105,7 @@ def get_absence_calendar(
     for absence, first_name, last_name, calendar_color, department in rows:
         display_type = absence.type.value
         if (
-            absence.type == AbsenceType.SICK
+            absence.type in _MASKED_ABSENCE_TYPES
             and current_user.role != UserRole.ADMIN
             and absence.user_id != current_user.id
         ):
