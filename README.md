@@ -168,7 +168,7 @@ Neue Migration erstellen:
 docker-compose exec backend alembic revision --autogenerate -m "description"
 ```
 
-**Aktuelle Migrationen (001–030):**
+**Aktuelle Migrationen (001–049):**
 - `001` - Initial Schema (User, TimeEntry, Absence, PublicHoliday)
 - `002` - Add track_hours field
 - `003` - Add end_date to absences (Zeiträume)
@@ -192,6 +192,25 @@ docker-compose exec backend alembic revision --autogenerate -m "description"
 - `028` - Review-Findings (ConfigDict, Type Escapes)
 - `029` - VacationRequest absence_type Erweiterung
 - `030` - Absence Start-/Endzeit + Change Request Absence-Felder
+- `031` - Composite-Indizes (tenant_id, user_id, date) für Report-Queries
+- `032` - last_totp_counter (TOTP-Replay-Schutz)
+- `033` - Tenant-Billing-Felder + tenant_invoices (SaaS Phase 2)
+- `034` - Self-Service-Signup-Tokens + DSGVO-Consent-Audit (Phase 3)
+- `035` - Stripe-Webhook-Idempotenz-Cache (Phase 4)
+- `036` - Tenant-Lifecycle (Suspend-/Löschungs-Zeitstempel, Phase 6)
+- `037` - time_entry_audit_logs.source auf VARCHAR(40) verbreitert
+- `038` - VacationRequest last_modified_by
+- `039` - users.onboarding_completed_at (First-Login-Tour)
+- `040` - public_holidays.is_custom + source (admin-gepflegte Feiertage)
+- `041` - absences.closure_id FK → company_closures
+- `042` - PAID_LEAVE-Typ + company_closures.counts_as_vacation (#145)
+- `043` - break_waiver_reason (time_entries + change_requests, §4-Ausnahme)
+- `044` - time_entry_audit_logs.action auf VARCHAR(40) verbreitert
+- `045` - users.department (#162)
+- `046` - vacation_requests.half_day (halbe Urlaubstage, #167)
+- `047` - users.receives_company_closures (#189)
+- `048` - Arbeitszeit-Fenster: scheduled_start/end_<wochentag> + raw_start/end_time (#201)
+- `049` - RLS (ENABLE+FORCE) auf stripe_events + signup_audit_log
 
 ## Entwicklung
 
