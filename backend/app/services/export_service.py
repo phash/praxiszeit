@@ -32,6 +32,26 @@ def neutralize_spreadsheet_formula(value):
     return value
 
 
+def escape_pdf_text(value):
+    """Escape user-controlled text before it is placed into a reportlab
+    ``Paragraph``.
+
+    reportlab parses an intra-paragraph XML/HTML-like markup mini-language
+    (``<b>``, ``<font>``, ``<a href>``, ``<img src>``, entities). Unescaped
+    free text (notes, names, billing fields) is therefore an injection sink:
+    content/link spoofing into the official §16 PDF, a server-side fetch of an
+    attacker-chosen ``<img src>`` URL (SSRF), and — most reliably — a single
+    unbalanced tag raises during ``doc.build`` and 500s the whole report.
+
+    This is the PDF-side counterpart to :func:`neutralize_spreadsheet_formula`
+    and must be applied at every ``Paragraph`` that carries user input.
+    ``&`` ``<`` ``>`` are the only characters reportlab treats as markup."""
+    if value is None:
+        return ""
+    from xml.sax.saxutils import escape as _xml_escape
+    return _xml_escape(str(value))
+
+
 def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
     """
     Generate Excel report for all employees for a given month.
@@ -1207,7 +1227,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         arbzg_flag = " | \u00a718-befreit" if user.exempt_from_arbzg else ""
         night_flag = " | Nachtarbeitnehmer (\u00a76)" if user.is_night_worker else ""
         meta_label = f"{user.first_name} {user.last_name}  \u2013  {float(user.weekly_hours):.1f}h/Woche{arbzg_flag}{night_flag}"
-        story.append(Paragraph(meta_label, ParagraphStyle('meta', fontName='Helvetica', fontSize=8, leading=10,
+        story.append(Paragraph(escape_pdf_text(meta_label), ParagraphStyle('meta', fontName='Helvetica', fontSize=8, leading=10,
                                                            textColor=colors.HexColor('#374151'))))
         story.append(Spacer(1, 2 * mm))
 
@@ -1348,8 +1368,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 Paragraph(f"{netto_val:.2f}", s_center),
                 Paragraph(f"{float(target):.2f}", s_center),
                 diff_cell,
-                Paragraph(abw, s_normal),
-                Paragraph(bem, s_normal),
+                Paragraph(escape_pdf_text(abw), s_normal),
+                Paragraph(escape_pdf_text(bem), s_normal),
             ]
             table_data.append(row)
             if bg:

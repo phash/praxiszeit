@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
@@ -432,6 +433,23 @@ app.add_middleware(RequestSizeLimitMiddleware, max_size=2 * 1024 * 1024)  # 2MB
 # proxy is ever misconfigured, replaced (e.g. Caddy), or bypassed. HSTS inside
 # the middleware is still gated on HTTPS.
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+def _allowed_hosts() -> list[str]:
+    """Parse settings.ALLOWED_HOSTS into a TrustedHostMiddleware allowlist.
+
+    Default ``"*"`` → ``["*"]`` which TrustedHostMiddleware treats as allow-any
+    (no behaviour change for on-prem / LAN-by-IP installs and the test suite).
+    Read at call time so tests can monkeypatch the setting."""
+    return [h.strip() for h in settings.ALLOWED_HOSTS.split(",") if h.strip()] or ["*"]
+
+
+# Vuln-3 / CVE-2026-48710 "BadHost": validate the Host header against an
+# operator-configured allowlist. Added last → outermost → runs before the
+# path-based middlewares (CSRF exemption, license, SPA routing) that a Host
+# desync on an unpatched Starlette could otherwise confuse. No-op while
+# ALLOWED_HOSTS="*" (the default).
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)
 # DSGVO F-007: sqlalchemy.engine intentionally NOT attached (SQL queries can contain PII)
