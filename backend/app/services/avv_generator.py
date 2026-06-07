@@ -17,6 +17,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
+from app.services.export_service import escape_pdf_text
+
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
 
@@ -48,9 +50,9 @@ def generate_avv_pdf(tenant: "Tenant") -> bytes:
         p(_PROVIDER_ADDRESS),
         Spacer(1, 6),
         p("<b>Verantwortlicher</b>"),
-        p(f"{tenant.company_name or tenant.name}"),
+        p(escape_pdf_text(tenant.company_name or tenant.name)),
         p(_address_line(tenant) or "<i>Keine Anschrift hinterlegt – bitte in den Abrechnungsdaten ergänzen.</i>"),
-        p(f"USt-ID: {tenant.vat_id or '—'}"),
+        p(f"USt-ID: {escape_pdf_text(tenant.vat_id) if tenant.vat_id else '—'}"),
         Spacer(1, 12),
 
         p("<b>2. Gegenstand und Dauer der Verarbeitung</b>", "Heading2"),
@@ -117,9 +119,11 @@ def _address_line(tenant: "Tenant") -> str | None:
     addr = tenant.billing_address or {}
     if not addr:
         return None
-    street = addr.get("street", "")
-    zip_ = addr.get("zip", "")
-    city = addr.get("city", "")
-    country = tenant.country or ""
+    # Escape each part individually so the intentional <br/> separators survive
+    # while user-controlled address fields can't inject reportlab markup.
+    street = escape_pdf_text(addr.get("street", ""))
+    zip_ = escape_pdf_text(addr.get("zip", ""))
+    city = escape_pdf_text(addr.get("city", ""))
+    country = escape_pdf_text(tenant.country or "")
     parts = [p for p in (street, f"{zip_} {city}".strip(), country) if p and p.strip()]
     return "<br/>".join(parts) or None
