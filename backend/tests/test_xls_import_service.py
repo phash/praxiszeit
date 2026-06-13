@@ -299,6 +299,32 @@ def test_execute_import_creates_entries(db, test_user, test_admin):
     assert len(db_entries) == 2
 
 
+def test_execute_import_skips_end_before_start(db, test_user, test_admin):
+    """Guard: a row with end_time <= start_time (overnight / corrupt source) must
+    NOT be silently imported. net_hours floors a negative duration to 0, so such a
+    row would otherwise persist as a phantom 0h entry — wrong pay AND it disables
+    the §3 daily-hours cap. The system's invariant is end > start (enforced on the
+    interactive paths); the importer is the only write path that bypassed it, and
+    /confirm even trusts client-supplied entries. Such rows are skipped + warned."""
+    entries = [
+        ImportedEntry(date=date(2026, 1, 12), start_time=time(8, 0), end_time=time(16, 0),
+                      break_minutes=30, note="valid", has_conflict=False, arbzg_warnings=[]),
+        ImportedEntry(date=date(2026, 1, 13), start_time=time(15, 0), end_time=time(7, 0),
+                      break_minutes=0, note="overnight", has_conflict=False, arbzg_warnings=[]),
+    ]
+    result = execute_import(test_user.id, entries, overwrite=False, db=db,
+                            changed_by_id=test_admin.id, filename="test.xls",
+                            tenant_id=DEFAULT_TENANT_ID)
+    assert result.imported == 1, "only the valid entry is imported"
+    assert result.skipped == 1, "the end<=start entry is skipped"
+    assert any("Endzeit" in w for w in result.warnings), "skip is surfaced as a warning"
+    # the invalid row must NOT have been persisted as a 0h phantom entry
+    bad = db.query(TimeEntry).filter(
+        TimeEntry.user_id == test_user.id, TimeEntry.date == date(2026, 1, 13)
+    ).all()
+    assert bad == [], "no phantom entry for the end<=start row"
+
+
 def test_execute_import_skips_conflict_without_overwrite(db, test_user, test_admin):
     """Prüft dass Konflikte ohne overwrite=True uebersprungen werden — bestehende Daten geschuetzt."""
     existing = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, 12),

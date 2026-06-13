@@ -1,7 +1,7 @@
 """Calendar endpoint exposes per-employee colour for the badge ring (#157),
 while DSGVO Art. 9 sick-masking stays intact."""
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -109,6 +109,30 @@ def test_masking_indistinguishable_from_other_sensitive_types(db, test_user, def
     assert by_date["2026-03-10"] == "absent", "OTHER must be masked so 'absent' isn't unique to sick"
     assert by_date["2026-03-11"] == "absent", "PAID_LEAVE must be masked too"
     assert by_date["2026-03-12"] == "vacation", "VACATION stays truthful (non-sensitive planning info)"
+
+
+def test_team_upcoming_masks_all_sensitive_types(db, test_user, default_tenant):
+    """DSGVO Art. 9: /team/upcoming must mask the SAME sensitive set as /calendar.
+
+    Regression for the leak where /team/upcoming masked only SICK while OTHER /
+    PAID_LEAVE kept their real value — making the "absent" bucket a 1:1 tell for
+    sick-leave on the colleague-facing upcoming feed. VACATION stays truthful.
+    """
+    from app.services.timezone_service import today_local
+    base = today_local() + timedelta(days=14)
+    other = _mk_employee(db, "#C0FFEE")
+    _mk_absence(db, other, base, AbsenceType.SICK)
+    _mk_absence(db, other, base + timedelta(days=1), AbsenceType.OTHER)
+    _mk_absence(db, other, base + timedelta(days=2), AbsenceType.PAID_LEAVE)
+    _mk_absence(db, other, base + timedelta(days=3), AbsenceType.VACATION)
+
+    resp = _client(db, test_user).get("/api/absences/team/upcoming")
+    assert resp.status_code == 200, resp.text
+    by_date = {r["date"]: r["type"] for r in resp.json() if r["user_color"] == "#C0FFEE"}
+    assert by_date[str(base)] == "absent", "SICK masked"
+    assert by_date[str(base + timedelta(days=1))] == "absent", "OTHER must be masked too"
+    assert by_date[str(base + timedelta(days=2))] == "absent", "PAID_LEAVE must be masked too"
+    assert by_date[str(base + timedelta(days=3))] == "vacation", "VACATION stays truthful"
 
 
 def test_own_sensitive_absence_not_masked_to_self(db, test_user):

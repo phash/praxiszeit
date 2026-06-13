@@ -47,7 +47,15 @@ MAX_NIGHT_WORKER_DAILY_WARN = 8.0   # §6 Abs. 2 ArbZG: Tageslimit für Nachtarb
 
 
 def _net_hours(st: time, et: time, brk: int) -> float:
-    """Calculate net working hours from start/end time and break minutes."""
+    """Calculate net working hours from start/end time and break minutes.
+
+    Invariant: et > st. This is NOT over-midnight aware on purpose — the system
+    models over-midnight shifts as two separate entries, and end<=start is
+    rejected on every write path (schema + router validation; the XLS importer
+    skips such rows in execute_import). Reinterpreting et<st as "+1 day" would
+    silently turn a data-entry error (e.g. swapped start/end) into a 16h shift,
+    so we keep the max(0, …) floor as a last-resort guard instead.
+    """
     mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
     return max(0.0, (mins - brk) / 60.0)
 
