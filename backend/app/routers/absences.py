@@ -154,8 +154,10 @@ def get_team_upcoming_absences(
     seen = set()
     team_absences = []
 
-    # DSGVO Art. 9: Krankheitsdaten sind besonders schützenswert.
-    # Nicht-Admins sehen fremde Krankmeldungen nur als "absent".
+    # DSGVO Art. 9: Krankheitsdaten sind besonders schützenswert. Es muss
+    # derselbe sensible Satz maskiert werden wie im /calendar-Feed
+    # (_MASKED_ABSENCE_TYPES), sonst wäre "absent" hier ein 1:1-Indikator für
+    # Krankheit (SICK→absent, während OTHER/PAID_LEAVE wahr blieben).
     for absence, first_name, last_name, calendar_color in rows:
         # Create a unique key for this absence period
         key = (absence.user_id, absence.date, absence.end_date or absence.date, absence.type)
@@ -164,7 +166,7 @@ def get_team_upcoming_absences(
             seen.add(key)
             display_type = absence.type.value
             if (
-                absence.type == AbsenceType.SICK
+                absence.type in _MASKED_ABSENCE_TYPES
                 and current_user.role != UserRole.ADMIN
                 and absence.user_id != current_user.id
             ):
