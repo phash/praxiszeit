@@ -363,6 +363,22 @@ def _execute_import_inner(
     all_warnings: list[str] = []
 
     for entry in entries:
+        # Invariant end_time > start_time. net_hours floors a negative duration
+        # to 0, so an end<=start row (over-midnight shift, or corrupt/forged
+        # source — /confirm trusts client-supplied entries) would otherwise be
+        # stored as a phantom 0h entry: wrong pay + it bypasses the §3 daily cap.
+        # The interactive write paths reject this; the importer must too. Skip it
+        # with a visible warning (over-midnight shifts are entered as two entries).
+        if entry.end_time is None or entry.end_time <= entry.start_time:
+            skipped += 1
+            all_warnings.append(
+                f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — Endzeit "
+                f"({entry.end_time.strftime('%H:%M') if entry.end_time else '—'}) "
+                f"liegt nicht nach Startzeit ({entry.start_time.strftime('%H:%M')}). "
+                f"Über-Mitternacht-Schichten als zwei Einträge erfassen."
+            )
+            continue
+
         for w in entry.arbzg_warnings:
             all_warnings.append(f"{entry.date.strftime('%d.%m.%Y')}: {w}")
 

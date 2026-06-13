@@ -8,6 +8,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import Badge from '../../components/Badge';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { formatHoursHM } from '../../utils/formatters';
 import SetPasswordModal from './users/SetPasswordModal';
 import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
@@ -540,7 +541,7 @@ export default function Users() {
                               ? 'text-red-600'
                               : 'text-gray-600'
                           }`}>
-                            {overtimeInfo[user.id].overtime > 0 ? '+' : ''}{overtimeInfo[user.id].overtime.toFixed(1)} h
+                            {overtimeInfo[user.id].overtime > 0 ? '+' : ''}{formatHoursHM(overtimeInfo[user.id].overtime)}
                           </span>
                         ) : (
                           <span className="text-gray-400" title="Keine Stundenzählung">—</span>

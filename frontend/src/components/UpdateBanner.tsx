@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import apiClient from '../api/client';
+import { safeHttpUrl } from '../utils/url';
 
 interface UpdateData {
   latest_version: string;
@@ -27,7 +28,10 @@ export default function UpdateBanner() {
       if (!data?.update_available || !data?.update) return;
       if (sessionStorage.getItem('pz-update-dismissed') === data.update.latest_version) return;
       setInfo(data.update);
-      if (data.download_page) setDownloadPage(data.download_page);
+      // download_page stammt vom Update-Server → vor dem Rendern als href
+      // auf ein sicheres http(s)-Schema einschränken (kein javascript:/data:).
+      const safe = safeHttpUrl(data.download_page);
+      if (safe) setDownloadPage(safe);
     };
     const cached = sessionStorage.getItem('pz-update-check');
     if (cached) {
