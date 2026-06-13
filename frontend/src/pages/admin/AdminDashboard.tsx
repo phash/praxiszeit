@@ -9,6 +9,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { formatHoursHM } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
@@ -410,7 +411,7 @@ export default function AdminDashboard() {
           ) : (
             <p className={`text-3xl font-bold ${avgBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {avgBalance >= 0 ? '+' : ''}
-              {avgBalance.toFixed(2)} h
+              {formatHoursHM(avgBalance)}
             </p>
           )}
           {exemptCount > 0 && (
@@ -575,22 +576,22 @@ export default function AdminDashboard() {
                       {emp.last_name}, {emp.first_name}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">{emp.weekly_hours}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{emp.target_hours.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{emp.actual_hours.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.target_hours)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.actual_hours)}</td>
                     <td className="px-6 py-4 text-sm">
                       <span className={emp.balance >= 0 ? 'text-green-600' : 'text-red-600'}>
                         {emp.balance >= 0 ? '+' : ''}
-                        {emp.balance.toFixed(2)}
+                        {formatHoursHM(emp.balance)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <span className={emp.overtime_cumulative >= 0 ? 'text-green-600' : 'text-red-600'}>
                         {emp.overtime_cumulative >= 0 ? '+' : ''}
-                        {emp.overtime_cumulative.toFixed(2)}
+                        {formatHoursHM(emp.overtime_cumulative)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{emp.vacation_used_hours.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{emp.sick_hours.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.vacation_used_hours)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.sick_hours)}</td>
                     <td className="px-6 py-4 text-right">
                       <ChevronRight size={20} className="text-gray-400 inline" />
                     </td>
@@ -635,7 +636,7 @@ export default function AdminDashboard() {
                         emp.overtime_cumulative >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
                         {emp.overtime_cumulative >= 0 ? '+' : ''}
-                        {emp.overtime_cumulative.toFixed(1)}h
+                        {formatHoursHM(emp.overtime_cumulative)}
                       </span>
                       <ChevronRight size={20} className="text-gray-400" />
                     </div>
@@ -645,18 +646,18 @@ export default function AdminDashboard() {
                   <div className="grid grid-cols-3 gap-3 text-sm mb-3">
                     <div>
                       <span className="text-gray-500 block">Soll</span>
-                      <p className="font-medium">{emp.target_hours.toFixed(1)}h</p>
+                      <p className="font-medium">{formatHoursHM(emp.target_hours)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500 block">Ist</span>
-                      <p className="font-medium">{emp.actual_hours.toFixed(1)}h</p>
+                      <p className="font-medium">{formatHoursHM(emp.actual_hours)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500 block">Saldo</span>
                       <p className={`font-medium ${
                         emp.balance >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {emp.balance >= 0 ? '+' : ''}{emp.balance.toFixed(1)}h
+                        {emp.balance >= 0 ? '+' : ''}{formatHoursHM(emp.balance)}
                       </p>
                     </div>
                   </div>
@@ -666,11 +667,11 @@ export default function AdminDashboard() {
                     <div className="flex items-center space-x-4">
                       <div>
                         <span className="text-gray-500">Urlaub:</span>
-                        <span className="font-medium ml-1">{emp.vacation_used_hours.toFixed(1)}h</span>
+                        <span className="font-medium ml-1">{formatHoursHM(emp.vacation_used_hours)}</span>
                       </div>
                       <div>
                         <span className="text-gray-500">Krank:</span>
-                        <span className="font-medium ml-1">{emp.sick_hours.toFixed(1)}h</span>
+                        <span className="font-medium ml-1">{formatHoursHM(emp.sick_hours)}</span>
                       </div>
                     </div>
                   </div>
@@ -846,7 +847,7 @@ export default function AdminDashboard() {
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           emp.overtime_year >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
-                          {emp.overtime_year >= 0 ? '+' : ''}{emp.overtime_year.toFixed(1)}h
+                          {emp.overtime_year >= 0 ? '+' : ''}{formatHoursHM(emp.overtime_year)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
@@ -950,7 +951,7 @@ export default function AdminDashboard() {
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           emp.overtime_year >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
-                          {emp.overtime_year >= 0 ? '+' : ''}{emp.overtime_year.toFixed(1)}h
+                          {emp.overtime_year >= 0 ? '+' : ''}{formatHoursHM(emp.overtime_year)}
                         </span>
                       </div>
                     </div>
@@ -1063,11 +1064,11 @@ export default function AdminDashboard() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs text-gray-500 mb-1">Soll</p>
-                      <p className="text-xl font-bold">{selectedEmployee.target_hours.toFixed(2)} h</p>
+                      <p className="text-xl font-bold">{formatHoursHM(selectedEmployee.target_hours)}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs text-gray-500 mb-1">Ist</p>
-                      <p className="text-xl font-bold">{selectedEmployee.actual_hours.toFixed(2)} h</p>
+                      <p className="text-xl font-bold">{formatHoursHM(selectedEmployee.actual_hours)}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs text-gray-500 mb-1">Saldo</p>
@@ -1077,7 +1078,7 @@ export default function AdminDashboard() {
                         }`}
                       >
                         {selectedEmployee.balance >= 0 ? '+' : ''}
-                        {selectedEmployee.balance.toFixed(2)} h
+                        {formatHoursHM(selectedEmployee.balance)}
                       </p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4">
@@ -1088,7 +1089,7 @@ export default function AdminDashboard() {
                         }`}
                       >
                         {selectedEmployee.overtime_cumulative >= 0 ? '+' : ''}
-                        {selectedEmployee.overtime_cumulative.toFixed(2)} h
+                        {formatHoursHM(selectedEmployee.overtime_cumulative)}
                       </p>
                     </div>
                   </div>
