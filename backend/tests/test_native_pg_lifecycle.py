@@ -321,6 +321,108 @@ class TestWinGrantNetworkservice:
 
 # --- M4: cmd_start branching matrix ------------------------------------------
 
+class TestForeignPgIsolation:
+    """#174: a foreign system PostgreSQL listening on TCP localhost:5432 must
+    NEVER be mistaken for our bundled cluster.
+
+    Field repro (Debian/Ubuntu host with system PG on :5432): ``pg_is_running``
+    TCP-probed localhost:5432, got a false positive from the foreign server,
+    so ``pg_start`` returned early ("already running") and our own cluster was
+    never started. ``pg_setup_database`` then ran psql against a cluster that
+    wasn't there (no socket) / the wrong one and crashed before writing
+    ``.db-credentials`` → permanent crash-loop.
+
+    Fix: on Unix the bundled cluster is socket-only (``listen_addresses = ''``)
+    in ``DATA_DIR/run``. The running-check and every connection URL must target
+    that unix socket, never TCP :5432. Windows has no unix sockets and keeps
+    its TCP service unchanged.
+    """
+
+    def _capture_run(self, srv, monkeypatch):
+        captured = {}
+
+        def _run(argv, *a, **kw):
+            captured["argv"] = list(argv)
+            from unittest.mock import MagicMock
+            m = MagicMock()
+            m.returncode = 0
+            return m
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        return captured
+
+    def test_pg_is_running_unix_probes_own_socket_not_tcp(
+        self, srv, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
+        captured = self._capture_run(srv, monkeypatch)
+
+        srv.pg_is_running()
+
+        argv = captured["argv"]
+        # -h must point at OUR socket directory, never a TCP host that a foreign
+        # system PostgreSQL on :5432 would happily answer.
+        assert str(tmp_path / "run") in argv, f"socket dir not in probe: {argv}"
+        assert "localhost" not in argv, f"must not TCP-probe localhost: {argv}"
+
+    def test_pg_is_running_windows_uses_tcp_localhost(self, srv, monkeypatch):
+        # Windows has no unix sockets; the bundled cluster runs as a TCP service.
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        captured = self._capture_run(srv, monkeypatch)
+
+        srv.pg_is_running()
+
+        assert "localhost" in captured["argv"]
+
+    def test_database_url_unix_uses_socket(self, srv, tmp_path, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
+
+        url = srv._database_url("praxiszeit_app", "p@ss/w0rd", "praxiszeit")
+
+        assert "@localhost:5432" not in url, f"must not use TCP :5432: {url}"
+        assert "host=" in url, f"must connect via unix socket dir: {url}"
+        assert "run" in url, f"socket dir DATA_DIR/run missing: {url}"
+        # password special chars must be url-encoded (psycopg2/SQLAlchemy)
+        assert "p%40ss%2Fw0rd" in url
+
+    def test_database_url_windows_uses_tcp(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+
+        url = srv._database_url("praxiszeit_app", "pw", "praxiszeit")
+
+        assert url == "postgresql://praxiszeit_app:pw@localhost:5432/praxiszeit"
+
+    def test_pg_init_unix_is_socket_only(self, srv, tmp_path, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        pg_data = tmp_path / "db"
+        pg_data.mkdir()
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr(srv, "PG_DATA", pg_data)
+        monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(srv, "BIN_DIR", tmp_path / "bin")
+        monkeypatch.setattr(srv, "LOG_DIR", log_dir)
+
+        import types
+
+        def _fake_run(*a, **kw):
+            return types.SimpleNamespace(returncode=0, check_returncode=lambda: None)
+
+        monkeypatch.setattr(srv.subprocess, "run", _fake_run)
+
+        srv.pg_init({})
+
+        conf = (pg_data / "postgresql.conf").read_text()
+        # Socket-only: no TCP listener at all, so a foreign PG already bound to
+        # :5432 can never collide with our cluster (#174).
+        assert "listen_addresses = ''" in conf, conf
+        assert "listen_addresses = 'localhost'" not in conf, conf
+        # The socket directory must still be our own data dir.
+        assert f"unix_socket_directories = '{tmp_path / 'run'}'" in conf
+
+
 class TestDecidePgInitAction:
     """Pure-function unit tests for the cmd_start branch matrix. Each row in
     the table in :func:`_decide_pg_init_action`'s docstring gets one test.
