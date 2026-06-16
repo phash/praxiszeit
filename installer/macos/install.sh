@@ -65,10 +65,13 @@ elif [ -f "$PG_DMG" ]; then
     fi
 
     # Installer im DMG finden
-    PG_APP=$(find "$MOUNT_POINT" -name "postgresql-*.app" -maxdepth 1 2>/dev/null | head -1)
+    # awk 'NR==1' statt '| head -1': head -1 schliesst die Pipe nach Zeile 1 ->
+    # find bekommt SIGPIPE, und mit `set -o pipefail` (Zeile 4) liefert das $(...)
+    # dann 141 -> set -e killt den Installer. awk liest den Stream komplett.
+    PG_APP=$(find "$MOUNT_POINT" -name "postgresql-*.app" -maxdepth 1 2>/dev/null | awk 'NR==1')
     if [ -z "$PG_APP" ]; then
         # Fallback: .app im Root oder MacOS-Binary
-        PG_APP=$(find "$MOUNT_POINT" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
+        PG_APP=$(find "$MOUNT_POINT" -name "*.app" -maxdepth 1 2>/dev/null | awk 'NR==1')
     fi
 
     if [ -n "$PG_APP" ]; then
@@ -85,7 +88,11 @@ elif [ -f "$PG_DMG" ]; then
             # which runs initdb with its own secrets.token_hex(32) credentials
             # persisted in .db-credentials. The one-shot password only has to
             # live long enough for the installer itself to run.
-            EDB_SU_PW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+            # openssl rand statt `tr </dev/urandom | head -c 32`: head -c schliesst
+            # die Pipe -> tr (liest /dev/urandom endlos) bekommt SIGPIPE -> pipefail
+            # + set -e killen den Installer (nahezu sicher). openssl rand hat keine
+            # Pipe und liefert 32 alphanumerische (hex) Zeichen.
+            EDB_SU_PW="$(openssl rand -hex 16)"
             "$PG_INSTALLER" \
                 --mode unattended \
                 --unattendedmodeui none \
