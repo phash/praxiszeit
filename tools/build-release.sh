@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.8.6"
+APP_VERSION="1.8.7"
 PYTHON_VERSION="3.13.13"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 # 20260510 buendelt CPython 3.13.13 — enthaelt die tarfile-Fixes

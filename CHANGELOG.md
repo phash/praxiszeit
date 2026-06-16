@@ -2,6 +2,62 @@
 
 ## [Unreleased]
 
+## [1.8.7] - 2026-06-16
+
+Korrektur-Release rund um das selbstsignierte SSL-Zertifikat (Feldreport: Anwender
+kommt im Browser nicht an die Anmeldung) plus Review-Härtung.
+
+### 🔒 SSL / Zertifikat
+- **Selbstsigniertes Zertifikat ist jetzt ein gültiges End-Entity-Server-Cert.**
+  Bisher wurde ein CA-Zertifikat ohne `serverAuth` erzeugt (und der native
+  Linux-Installer nutzte einen Ed25519-Schlüssel, den Browser für TLS-Server-
+  Zertifikate nicht unterstützen) → Firefox/Chrome verweigerten die Seite ohne
+  Ausnahme-Option. Alle Generatoren (Installer, Docker-Skript, Laufzeit-
+  Auto-Generator im Server, Tool) erzeugen jetzt **RSA-2048** mit
+  `basicConstraints=CA:FALSE`, `keyUsage` und `extendedKeyUsage=serverAuth`.
+- **SAN deckt zusätzlich den Hostnamen ab** (Zugriff via `https://<host>/`), und
+  ein leeres `hostname -I` bricht die Cert-Erzeugung nicht mehr still ab.
+
+### 🧰 Intern / Härtung
+- `pg_env()` erzwingt `PGHOST` auf das eigene Socket-Verzeichnis (ein vererbtes
+  `PGHOST`/`PGPORT` kann psql/pg_dump nicht mehr auf einen fremden Cluster lenken).
+- Verbindungs-URL kodiert User/Passwort RFC-3986-konform (Sonderzeichen wie
+  Leerzeichen/`+` korrekt).
+- `ssl/generate-cert.sh` ohne hartcodierten Kundennamen im Zertifikats-Subject.
+
+## [1.8.6] - 2026-06-16
+
+### 🐳 Docker
+- **Dashboard-Ladefehler behoben** („Fehler beim Laden des Dashboards", leere
+  Urlaubskonto-Karte). Der nginx-Proxy reicht den Host-Header jetzt mit Port
+  weiter (`$http_host`), sodass die internen 307-Weiterleitungen (z. B.
+  `/api/dashboard`, `/api/absences`) nicht mehr den Port verlieren. Betrifft nur
+  Docker-Installationen; native Installationen waren nicht betroffen.
+
+## [1.8.5] - 2026-06-16
+
+### 🖥️ Native Installation
+- **Behebt fehlgeschlagene Installation auf Servern mit vorhandener
+  PostgreSQL auf Port 5432** (#174). Die mitgelieferte Datenbank läuft unter
+  Linux/macOS jetzt ausschließlich über einen eigenen Unix-Socket und kollidiert
+  nicht mehr mit einer System-PostgreSQL. Bestehende Installationen bleiben
+  erreichbar; Windows ist unverändert.
+
+## [1.8.4] - 2026-06-13
+
+Kleines Sicherheits- und Korrektur-Update (Empfehlung für alle Installationen).
+
+### 🔒 Sicherheit / DSGVO
+- **DSGVO Art. 9:** Auch der Feed „kommende Abwesenheiten des Teams" maskiert
+  Kranken-/sonstige sensible Abwesenheiten für Nicht-Admins (zuvor nur der
+  Kalender) — kein Krankheits-Indikator mehr aus Fremd-Einträgen.
+- PDF-Export: Sonderzeichen werden sauber escaped (reportlab); Host-Allowlist
+  gehärtet.
+
+### 🧮 Korrektur
+- Update-Banner-Link korrigiert; `formatHoursHM` überlaufsicher; XLS-Import lehnt
+  Einträge mit Ende ≤ Start ab.
+
 ## [1.8.3] - 2026-06-06
 
 Fix-Release aus einem zweiten Gesamt-Codebase-Review (Korrektheit, DSGVO,
