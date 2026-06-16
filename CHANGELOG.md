@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [1.8.10] - 2026-06-16
+
+Hotfix zu 1.8.9: die 1.8.9-Dependency-Aktualisierung machte die App auf allen
+Plattformen unbenutzbar.
+
+### 🐞 Korrektur
+- **HTTP 500 auf Login und fast der gesamten API behoben.** FastAPI 0.137 führt
+  intern `_IncludedRouter`-Routen (ohne `.path`) ein; `prometheus-fastapi-instrumentator`
+  8.0.0 griff ungeschützt auf `route.path` zu → `AttributeError` → 500 auf jedem
+  Endpoint aus einem included-Router (Login inklusive). `/api/health` ist ein
+  Top-Level-Endpoint → blieb 200, was den Fehler verschleierte.
+- Fix: `fastapi==0.136.*` (knapp unter der brechenden 0.137; restlicher neuer
+  Stack bleibt — Starlette 1.3, uvicorn 0.49, alembic 1.18, instrumentator 8).
+  Zurück auf 0.137+, sobald der Instrumentator-Fix (Upstream #370/#371) released ist.
+- Auf echtem Linux-Host end-to-end verifiziert (Installation, Dienststart,
+  echter Login = 200).
+
 ## [1.8.9] - 2026-06-16
 
 Wartungs-Release: Dependency-Aktualisierung und Code-Review-Härtung (Security/DSGVO).
