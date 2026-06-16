@@ -142,12 +142,16 @@ def _compute_is_editable(entry: TimeEntry, current_user: User) -> bool:
     return entry.date == _today_local()
 
 
-def _get_open_entry(db: Session, user_id, with_lock: bool = False) -> Optional[TimeEntry]:
+def _get_open_entry(db: Session, user_id, with_lock: bool = False, tenant_id=None) -> Optional[TimeEntry]:
     """Find an open (clocked-in, no end_time) entry for the user."""
     query = db.query(TimeEntry).filter(
         TimeEntry.user_id == user_id,
         TimeEntry.end_time.is_(None),
     )
+    # F-026: expliziter Tenant-Filter zusätzlich zu RLS (belt-and-suspenders) —
+    # dieser Lookup liegt im Clock-in/out-Schreibpfad.
+    if tenant_id is not None:
+        query = query.filter(TimeEntry.tenant_id == tenant_id)
     if with_lock:
         query = query.with_for_update()
     return query.first()
@@ -204,7 +208,7 @@ def get_clock_status(
     current_user: User = Depends(get_current_user),
 ):
     """Get the current clock-in/out status for the authenticated user."""
-    open_entry = _get_open_entry(db, current_user.id)
+    open_entry = _get_open_entry(db, current_user.id, tenant_id=current_user.tenant_id)
 
     if not open_entry:
         return ClockStatusResponse(is_clocked_in=False)
@@ -238,7 +242,7 @@ def clock_in(
 ):
     """Clock in: create a time entry with start_time=now, end_time=NULL."""
     # VULN-009: use SELECT FOR UPDATE to prevent race condition on concurrent clock-in
-    open_entry = _get_open_entry(db, current_user.id, with_lock=True)
+    open_entry = _get_open_entry(db, current_user.id, with_lock=True, tenant_id=current_user.tenant_id)
     if open_entry:
         if open_entry.date != _today_local():
             # Stale entry from a previous day: auto-close in the same
@@ -288,6 +292,7 @@ def clock_in(
     if not current_user.exempt_from_arbzg:
         last_entry = db.query(TimeEntry).filter(
             TimeEntry.user_id == current_user.id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
             TimeEntry.end_time.isnot(None),
             TimeEntry.date <= now.date(),
         ).order_by(TimeEntry.date.desc(), TimeEntry.end_time.desc()).first()
@@ -325,7 +330,7 @@ def clock_out(
     current_user: User = Depends(get_current_user),
 ):
     """Clock out: set end_time=now and break_minutes on the open entry."""
-    open_entry = _get_open_entry(db, current_user.id, with_lock=True)
+    open_entry = _get_open_entry(db, current_user.id, with_lock=True, tenant_id=current_user.tenant_id)
 
     if not open_entry:
         raise HTTPException(
@@ -478,7 +483,8 @@ def list_time_entries(
     Regular users can only see their own entries.
     Admins can filter by user_id.
     """
-    query = db.query(TimeEntry)
+    # F-026: expliziter Tenant-Filter zusätzlich zu RLS
+    query = db.query(TimeEntry).filter(TimeEntry.tenant_id == current_user.tenant_id)
 
     # If user_id is provided, only admin can filter by it
     if user_id:
@@ -519,7 +525,10 @@ def get_time_entry(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific time entry."""
-    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).first()
+    entry = db.query(TimeEntry).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).first()
 
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
@@ -557,6 +566,7 @@ def create_time_entry(
     # Check for overlapping entries on the same date
     existing = db.query(TimeEntry).filter(
         TimeEntry.user_id == current_user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
         TimeEntry.date == entry_data.date,
         TimeEntry.start_time == entry_data.start_time
     ).first()
@@ -753,7 +763,10 @@ def update_time_entry(
     current_user: User = Depends(get_current_user)
 ):
     """Update a time entry."""
-    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).first()
+    entry = db.query(TimeEntry).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).first()
 
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
@@ -991,7 +1004,10 @@ def delete_time_entry(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a time entry."""
-    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).first()
+    entry = db.query(TimeEntry).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).first()
 
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")

@@ -8,8 +8,9 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies — npm ci (deterministisch, lock-treu): scheitert hart bei
+# package.json/lock-Drift statt still eine abweichende Auflösung zu bauen.
+RUN npm ci
 
 # Copy source code
 COPY . .

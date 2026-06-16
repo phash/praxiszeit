@@ -275,6 +275,18 @@ SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(64))" 2>/dev/nu
 
 # --- Write configuration ---
 
+# TOML-Werte escapen: Praxis-Name, Admin-Username, E-Mail UND Passwort sind
+# freie Nutzereingaben. Ein " oder \ darin wuerde die praxiszeit.conf
+# syntaktisch zerstoeren (load_config()->tomllib->TOMLDecodeError -> Dienst
+# startet nicht) oder zusaetzliche TOML-Keys injizieren. tomllib entschluesselt
+# \" / \\ beim Lesen wieder zurueck -> Passwort/Name round-trippen korrekt.
+# Backslash zuerst ersetzen, dann das doppelte Anfuehrungszeichen.
+toml_escape() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
+PRACTICE_NAME_ESC=$(toml_escape "$PRACTICE_NAME")
+ADMIN_USERNAME_ESC=$(toml_escape "$ADMIN_USERNAME")
+ADMIN_EMAIL_ESC=$(toml_escape "$ADMIN_EMAIL")
+ADMIN_PASSWORD_ESC=$(toml_escape "$ADMIN_PASSWORD")
+
 info "Schreibe Konfiguration..."
 cat > "${INSTALL_DIR}/config/praxiszeit.conf" << TOMLEOF
 [server]
@@ -288,13 +300,13 @@ superuser = "praxiszeit"
 app_user = "praxiszeit_app"
 
 [practice]
-name = "${PRACTICE_NAME}"
+name = "${PRACTICE_NAME_ESC}"
 holiday_state = "${HOLIDAY_STATE}"
 
 [admin]
-username = "${ADMIN_USERNAME}"
-email = "${ADMIN_EMAIL}"
-password = "${ADMIN_PASSWORD}"
+username = "${ADMIN_USERNAME_ESC}"
+email = "${ADMIN_EMAIL_ESC}"
+password = "${ADMIN_PASSWORD_ESC}"
 
 [security]
 secret_key = "${SECRET_KEY}"
@@ -315,6 +327,11 @@ schedule = "02:00"
 retention_days = 31
 TOMLEOF
 
+# Passwort nicht laenger als noetig im Shell-Environment des Installers halten
+# (war via /proc/self/environ fuer Co-Prozesse lesbar). Es steht jetzt escaped
+# in der 0600-conf; der Backend-Erststart liest es von dort.
+unset ADMIN_PASSWORD ADMIN_PASSWORD2 ADMIN_PASSWORD_ESC
+
 # --- Copy license file ---
 
 if [ -n "${LICENSE_FILE}" ] && [ -f "${LICENSE_FILE}" ]; then
@@ -332,6 +349,10 @@ fi
 if [ "${GEN_SSL,,}" = "j" ]; then
     info "Generiere selbstsigniertes SSL-Zertifikat..."
     SERVER_IP=$(hostname -I | awk '{print $1}')
+    # Nur gueltige IP-Zeichen behalten — hostname-Output ist system-, aber nicht
+    # garantiert sauber (DNS-Fehlkonfig); ungefilterte Kommas/Metazeichen wuerden
+    # die openssl -addext "subjectAltName=..."-Liste verfaelschen.
+    SERVER_IP=$(printf '%s' "$SERVER_IP" | tr -cd '0-9a-fA-F.:')
     # SAN konditionell zusammenbauen: ein leeres SERVER_IP (IPv6-only / nur
     # loopback) liesse openssl mit "IP:" leer abbrechen — vorher schluckte
     # 2>/dev/null den Fehler und es wurde KEIN Cert geschrieben, obwohl "OK"
@@ -339,6 +360,9 @@ if [ "${GEN_SSL,,}" = "j" ]; then
     SAN="DNS:localhost,IP:127.0.0.1"
     [ -n "${SERVER_IP}" ] && SAN="${SAN},IP:${SERVER_IP}"
     HOST_FQDN=$(hostname -f 2>/dev/null || hostname 2>/dev/null || true)
+    # Nur Hostname-Zeichen behalten (Buchstaben/Ziffern/Punkt/Bindestrich) — ein
+    # Komma im FQDN wuerde sonst einen zusaetzlichen DNS-SAN-Eintrag erzeugen.
+    HOST_FQDN=$(printf '%s' "$HOST_FQDN" | tr -cd 'a-zA-Z0-9.-')
     [ -n "${HOST_FQDN}" ] && [ "${HOST_FQDN}" != "localhost" ] && SAN="${SAN},DNS:${HOST_FQDN}"
     # RSA-2048 statt ed25519: Browser (Firefox/NSS, Chrome) unterstuetzen
     # Ed25519-TLS-SERVER-Zertifikate praktisch nicht -> harter Handshake-Fehler

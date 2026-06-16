@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.8.8"
+APP_VERSION="1.8.9"
 PYTHON_VERSION="3.13.13"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 # 20260510 buendelt CPython 3.13.13 — enthaelt die tarfile-Fixes
@@ -196,6 +196,11 @@ PG_MACOS_INSTALLER="postgresql-macos.dmg"
 
 # nssm (Windows Service Manager) — web archive fallback, nssm.cc is unreliable
 NSSM_URL="https://web.archive.org/web/2024/https://nssm.cc/release/nssm-${NSSM_VERSION}.zip"
+# SHA256 der offiziellen nssm-2.24.zip. web.archive.org ist KEINE content-
+# addressierte Quelle (gleiche URL kann ueber die Zeit anderen Inhalt liefern)
+# und nssm.exe landet 1:1 als Windows-Dienstmanager beim Kunden — daher den
+# Hash pinnen und nach dem Download (auch bei Cache-Hit) verifizieren.
+NSSM_SHA256="727d1e42275c605e0f04aba98095c38a8e1e46def453cdffce42869428aa6743"
 
 # pip bootstrap
 GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
@@ -436,6 +441,16 @@ fi
 if [ "$BUILD_WINDOWS" = true ]; then
     download "$PYTHON_WINDOWS_URL" "${CACHE_DIR}/python-windows-x64.tar.gz"
     download "$NSSM_URL"           "${CACHE_DIR}/nssm.zip"
+    # nssm.zip gegen den gepinnten Hash pruefen — auch bei --skip-download/Cache-
+    # Hit, da das eingebettete nssm.exe direkt aus dieser Datei stammt.
+    _nssm_actual=$(sha256sum "${CACHE_DIR}/nssm.zip" | awk '{print $1}')
+    if [ "$_nssm_actual" != "$NSSM_SHA256" ]; then
+        error "nssm.zip SHA256 stimmt nicht: erwartet ${NSSM_SHA256}, ist ${_nssm_actual}"
+        error "  (web.archive.org-Quelle moeglicherweise veraendert — Build abgebrochen)"
+        rm -f "${CACHE_DIR}/nssm.zip"
+        exit 1
+    fi
+    info "nssm.zip SHA256 verifiziert"
     download "$GET_PIP_URL"        "${CACHE_DIR}/get-pip.py"
     download "$VC_REDIST_URL"      "${CACHE_DIR}/vc_redist.x64.exe"
 

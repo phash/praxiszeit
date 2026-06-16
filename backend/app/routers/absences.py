@@ -316,6 +316,18 @@ def create_absence(
         if existing:
             if existing.type == absence_data.type:
                 skip_dates.append(d)  # Skip duplicate of same type (idempotent)
+            elif (
+                absence_data.type == AbsenceType.SICK
+                and absence_data.refund_vacation
+                and existing.type == AbsenceType.VACATION
+            ):
+                # "Krank während Urlaub": die SICK-Buchung ersetzt den Urlaub an
+                # diesem Tag. Der Refund-Block weiter unten löscht den VACATION-
+                # Eintrag (mit Audit-Log), bevor die SICK-Abwesenheit angelegt
+                # wird — daher hier KEIN 409. Ohne diese Ausnahme war
+                # refund_vacation totes Feature: der Konflikt-Check schlug immer
+                # vor der Urlaubsrückgabe zu (Code-Review 1.8.9, F-B).
+                pass
             else:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,

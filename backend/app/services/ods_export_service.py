@@ -144,7 +144,10 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     meta2.addElement(_str_cell("Ja" if user.exempt_from_arbzg else "Nein"))
     meta2.addElement(_empty_cell())
     meta2.addElement(_str_cell("Nachtarbeitnehmer (§6 Abs. 2 ArbZG):", style=bold))
-    meta2.addElement(_str_cell("Ja" if user.is_night_worker else "Nein"))
+    # DSGVO F-006: is_night_worker ist gesundheitsnah (§6 ArbZG-Pflichtunter-
+    # suchungen) — nur bei include_health_data zeigen, sonst maskieren (analog
+    # zum XLS-Export in export_service.py).
+    meta2.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
     table.addElement(meta2)
 
     table.addElement(TableRow())  # Blank separator
@@ -459,7 +462,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     meta1.addElement(_str_cell("Ja" if user.exempt_from_arbzg else "Nein"))
     meta1.addElement(_empty_cell())
     meta1.addElement(_str_cell("Nachtarbeitnehmer (§6 Abs. 2 ArbZG):", style=bold))
-    meta1.addElement(_str_cell("Ja" if user.is_night_worker else "Nein"))
+    # DSGVO F-006: is_night_worker nur bei include_health_data zeigen (s. _monthly_sheet).
+    meta1.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
     table.addElement(meta1)
     table.addElement(TableRow())  # blank
 
@@ -635,7 +639,8 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
     flags_tr.addElement(_str_cell("Ja" if user.exempt_from_arbzg else "Nein"))
     flags_tr.addElement(_empty_cell())
     flags_tr.addElement(_str_cell("Nachtarbeitnehmer (§6 Abs. 2 ArbZG):", style=bold))
-    flags_tr.addElement(_str_cell("Ja" if user.is_night_worker else "Nein"))
+    # DSGVO F-006: is_night_worker nur bei include_health_data zeigen (s. _monthly_sheet).
+    flags_tr.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
     table.addElement(flags_tr)
     table.addElement(TableRow())  # blank
 

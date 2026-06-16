@@ -309,7 +309,10 @@ def purge_user(
         changed_by=current_user.id,
         action="dsgvo_purge",
         source="dsgvo",
-        old_note=f"Endgültige Löschung von User-ID {user_id} ({user.first_name} {user.last_name}) durch Admin {current_user.username}",
+        # DSGVO: KEIN Klarname im Audit-Log — der Zweck der Purge ist gerade die
+        # Namenslöschung; ein Klarname hier konservierte ihn über die Aufbewahrungs-
+        # frist hinaus. User-ID + Zeitstempel belegen die Compliance ausreichend.
+        old_note=f"Endgültige Löschung von User-ID {user_id} durch Admin {current_user.username}",
         tenant_id=current_user.tenant_id,
     )
     db.add(log)

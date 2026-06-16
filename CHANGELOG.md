@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## [1.8.9] - 2026-06-16
+
+Wartungs-Release: Dependency-Aktualisierung und Code-Review-Härtung (Security/DSGVO).
+
+### 📦 Dependencies
+- **Frontend:** vite-8-Kompatibilität hergestellt (`@vitejs/plugin-react` 5.1.4 → 5.2.0;
+  `npm ci` schlug zuvor mit Peer-Konflikt fehl). Sichere Updates: axios 1.16 → 1.18,
+  tailwindcss 4.2 → 4.3, vitest 4.1.0 → 4.1.9, jsdom, focus-trap-react, typescript-eslint.
+- **Backend:** fastapi 0.115 → 0.137, uvicorn 0.34 → 0.49, alembic 1.14 → 1.18,
+  PyJWT 2.12 → 2.13, prometheus-fastapi-instrumentator 7 → 8. Volle Test-Suite grün.
+
+### 🔒 Security / Härtung
+- **`install.sh`:** Praxis-Name, Admin-Benutzer/-Mail und -Passwort werden jetzt
+  TOML-escaped in die `praxiszeit.conf` geschrieben (ein `"`/`\` zerstörte zuvor die
+  Konfiguration → Dienst startete nicht). Die `hostname`-Ausgabe wird vor der SAN-Bildung
+  validiert; `ADMIN_PASSWORD` wird nach dem Schreiben aus dem Shell-Environment entfernt.
+- **`build-release.sh`:** `nssm.zip` (web.archive-Quelle) wird gegen einen gepinnten
+  SHA256 verifiziert, bevor `nssm.exe` ins Windows-Paket eingebettet wird.
+- **`praxiszeit-server.py`:** Fehlgeschlagene Migrationen maskieren die DB-Connection-URL
+  im Log (kein Passwort mehr); `.secret-key` wird atomar mit 0600 angelegt.
+
+### 🐛 Korrekturen
+- **„Krank während Urlaub" gibt den Urlaub wieder zurück** (`refund_vacation`): Der
+  Duplikat-Konflikt-Check warf bisher einen 409, bevor die Urlaubsrückgabe greifen
+  konnte — das Feature war faktisch wirkungslos.
+- **DSGVO:** Nachtarbeitnehmer-Status (gesundheitsnah, §6 ArbZG) wird in den ODS-Exporten
+  nur noch bei `include_health_data` ausgegeben (analog zum XLS-Export). Die endgültige
+  Nutzer-Löschung (`purge_user`) schreibt keinen Klarnamen mehr ins Audit-Log.
+- **Mandantentrennung:** Zeiterfassungs-Endpunkte (`time_entries`) ergänzen den expliziten
+  `tenant_id`-Filter (F-026, belt-and-suspenders zusätzlich zu RLS).
+
 ## [1.8.8] - 2026-06-16
 
 Korrektur-Release: native Installation lief auf realen Hosts nicht durch

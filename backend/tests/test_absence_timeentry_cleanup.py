@@ -348,3 +348,67 @@ class TestF3_ClosureSkipsAllAbsenceTypes:
         ).all()
         assert len(absences) == 1
         assert absences[0].type == AbsenceType.SICK
+
+
+# ---------------------------------------------------------------------------
+# F-B (Code-Review 1.8.9): "Krank während Urlaub" gibt den Urlaub zurück
+# ---------------------------------------------------------------------------
+
+class TestRefundVacationOnSick:
+    """refund_vacation war totes Feature: der Duplikat-Konflikt-Check warf 409,
+    bevor die Urlaubsrückgabe (Delete der VACATION-Absence) laufen konnte."""
+
+    def test_sick_with_refund_replaces_vacation(self, db, employee, admin, admin_client):
+        """SICK mit refund_vacation über einem Urlaubstag -> 201, Urlaub wird zurückgegeben."""
+        resp = admin_client.post("/api/absences/", json={
+            "user_id": str(employee.id),
+            "date": "2025-03-12",
+            "type": "vacation",
+            "hours": 8.0,
+        })
+        assert resp.status_code == 201
+
+        resp = admin_client.post("/api/absences/", json={
+            "user_id": str(employee.id),
+            "date": "2025-03-12",
+            "type": "sick",
+            "hours": 8.0,
+            "refund_vacation": True,
+        })
+        assert resp.status_code == 201, resp.text
+
+        # Urlaub entfernt, SICK angelegt
+        assert db.query(Absence).filter(
+            Absence.user_id == employee.id,
+            Absence.date == date(2025, 3, 12),
+            Absence.type == AbsenceType.VACATION,
+        ).count() == 0
+        assert db.query(Absence).filter(
+            Absence.user_id == employee.id,
+            Absence.date == date(2025, 3, 12),
+            Absence.type == AbsenceType.SICK,
+        ).count() == 1
+
+        # Urlaubsrückgabe ist im Audit-Log dokumentiert
+        assert db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.user_id == employee.id,
+            TimeEntryAuditLog.source == "vacation_refund",
+        ).count() == 1
+
+    def test_sick_without_refund_still_conflicts(self, db, employee, admin, admin_client):
+        """Regressionsschutz: ohne refund_vacation bleibt der 409-Konflikt erhalten."""
+        resp = admin_client.post("/api/absences/", json={
+            "user_id": str(employee.id),
+            "date": "2025-03-12",
+            "type": "vacation",
+            "hours": 8.0,
+        })
+        assert resp.status_code == 201
+
+        resp = admin_client.post("/api/absences/", json={
+            "user_id": str(employee.id),
+            "date": "2025-03-12",
+            "type": "sick",
+            "hours": 8.0,
+        })
+        assert resp.status_code == 409, resp.text

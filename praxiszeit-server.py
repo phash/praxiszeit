@@ -837,6 +837,17 @@ def pg_load_credentials():
 
 # --- Alembic Migrations ---
 
+def _redact_db_url(text: str) -> str:
+    """Maskiert Passwörter in postgresql://user:pass@host-URLs.
+
+    Alembic schreibt bei Verbindungsfehlern die komplette Connection-URL
+    (inkl. Passwort aus DATABASE_URL_MIGRATIONS) auf stderr; ungefiltert
+    landete das im rotierenden logs/praxiszeit.log (Art. 32 DSGVO).
+    """
+    import re
+    return re.sub(r'(://[^:/@\s]+:)[^@/\s]+(@)', r'\1***\2', text)
+
+
 def run_migrations(config: dict):
     """Run Alembic migrations."""
     logger.info("Running database migrations...")
@@ -866,11 +877,11 @@ def run_migrations(config: dict):
         last_err = result.stderr
         logger.warning(
             f"Migration attempt {attempt}/3 failed (rc={result.returncode}); "
-            f"retrying in 3s...\n{result.stderr}"
+            f"retrying in 3s...\n{_redact_db_url(result.stderr)}"
         )
         time.sleep(3)
 
-    logger.error(f"Migration failed after 3 attempts:\n{last_err}")
+    logger.error(f"Migration failed after 3 attempts:\n{_redact_db_url(last_err)}")
     sys.exit(1)
 
 
@@ -1377,7 +1388,19 @@ def cmd_start(args):
                 sk = sk_file.read_text().strip()
             else:
                 sk = secrets.token_hex(32)
-                sk_file.write_text(sk)
+                # Datei atomar mit 0600 anlegen (O_EXCL|mode) statt write_text +
+                # nachträglichem chmod — schliesst das umask-Fenster, in dem die
+                # frische .secret-key kurz world-readable sein konnte (Linux).
+                # Auf Windows greift zusätzlich _restrict_file_permissions (ACL).
+                try:
+                    _fd = os.open(str(sk_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    try:
+                        os.write(_fd, sk.encode("ascii"))
+                    finally:
+                        os.close(_fd)
+                except FileExistsError:
+                    # Race: anderer Start hat die Datei gerade angelegt — diese nutzen
+                    sk = sk_file.read_text().strip()
                 _restrict_file_permissions(sk_file)
                 logger.info("Generated and saved SECRET_KEY")
         os.environ["SECRET_KEY"] = sk
