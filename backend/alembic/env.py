@@ -27,7 +27,12 @@ target_metadata = Base.metadata
 # fall back to DATABASE_URL (app user) when running outside Docker or for local dev.
 import os
 db_url = os.environ.get("DATABASE_URL_MIGRATIONS", settings.DATABASE_URL)
-config.set_main_option("sqlalchemy.url", db_url)
+# configparser (via set_main_option) interpretiert '%' als Interpolation. Eine
+# Unix-Socket-URL wie ...?host=%2Fopt%2F... (#174, Native) — oder ein Passwort mit
+# Sonderzeichen — enthält %-Sequenzen → "invalid interpolation syntax", der Dienst
+# crash-loopt in alembic (Feldtest .131, 2026-06). '%' → '%%' escapen; beim Lesen
+# (get_main_option/get_section) liefert configparser wieder das einfache '%'.
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:
