@@ -285,5 +285,8 @@ def decode_token(token: str) -> Optional[dict]:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         return payload
-    except (PyJWTError, Exception):
+    except PyJWTError:
+        # Nur JWT-Fehler (expired/invalid/wrong-secret) = "Token ungültig" -> None.
+        # NICHT `Exception` mitfangen: das maskierte echte Programmierfehler als
+        # "ungültiges Token". Alle jwt.decode-Fehler sind PyJWTError-Subklassen.
         return None

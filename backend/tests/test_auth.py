@@ -133,7 +133,9 @@ class TestDecodeToken:
             "tv": 0,
             "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
         }
-        forged = jwt.encode(payload, "attacker-chosen-secret", algorithm="HS256")
+        # >=32 Zeichen: PyJWT 2.13 warnt sonst (InsecureKeyLength). Hier irrelevant —
+        # Testzweck ist nur "anderes Secret als SECRET_KEY -> gefälschtes Token verworfen".
+        forged = jwt.encode(payload, "attacker-chosen-secret-0123456789abcdef", algorithm="HS256")
         assert auth_service.decode_token(forged) is None
 
     def test_expired_token_rejected(self):

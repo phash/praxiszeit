@@ -32,7 +32,7 @@ from tests.conftest import (
 # skips the production lifespan (which requires PostgreSQL, Prometheus, etc.)
 # ---------------------------------------------------------------------------
 
-def _create_test_app() -> FastAPI:
+def _create_endpoints_app() -> FastAPI:
     """Create a FastAPI app identical to production but without lifespan."""
     from app.routers import (
         auth as auth_router,
@@ -93,7 +93,7 @@ def _create_test_app() -> FastAPI:
     return app
 
 
-test_app = _create_test_app()
+endpoints_app = _create_endpoints_app()
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -191,13 +191,13 @@ def employee_client(_db_session, employee_user):
     def _override_current_user():
         return employee_user
 
-    test_app.dependency_overrides[get_db] = _override_db
-    test_app.dependency_overrides[get_current_user] = _override_current_user
+    endpoints_app.dependency_overrides[get_db] = _override_db
+    endpoints_app.dependency_overrides[get_current_user] = _override_current_user
 
-    with TestClient(test_app) as client:
+    with TestClient(endpoints_app) as client:
         yield client
 
-    test_app.dependency_overrides.clear()
+    endpoints_app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="function")
@@ -213,14 +213,14 @@ def admin_client(_db_session, admin_user):
     def _override_require_admin():
         return admin_user
 
-    test_app.dependency_overrides[get_db] = _override_db
-    test_app.dependency_overrides[get_current_user] = _override_current_user
-    test_app.dependency_overrides[require_admin] = _override_require_admin
+    endpoints_app.dependency_overrides[get_db] = _override_db
+    endpoints_app.dependency_overrides[get_current_user] = _override_current_user
+    endpoints_app.dependency_overrides[require_admin] = _override_require_admin
 
-    with TestClient(test_app) as client:
+    with TestClient(endpoints_app) as client:
         yield client
 
-    test_app.dependency_overrides.clear()
+    endpoints_app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="function")
@@ -230,13 +230,13 @@ def unauthenticated_client(_db_session):
     def _override_db():
         yield _db_session
 
-    test_app.dependency_overrides[get_db] = _override_db
+    endpoints_app.dependency_overrides[get_db] = _override_db
     # Do NOT override get_current_user -- let the real dependency reject
 
-    with TestClient(test_app) as client:
+    with TestClient(endpoints_app) as client:
         yield client
 
-    test_app.dependency_overrides.clear()
+    endpoints_app.dependency_overrides.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -252,12 +252,12 @@ class TestHealthEndpoint:
         def _override_db():
             yield _db_session
 
-        test_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_db] = _override_db
 
-        with TestClient(test_app) as client:
+        with TestClient(endpoints_app) as client:
             resp = client.get("/api/health")
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert resp.status_code == 200
         data = resp.json()
@@ -277,17 +277,17 @@ class TestAuthLogin:
         def _override_db():
             yield _db_session
 
-        test_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_db] = _override_db
 
         # Patch set_superadmin_context because SQLite has no SET LOCAL
         with patch("app.routers.auth.set_superadmin_context"):
-            with TestClient(test_app) as client:
+            with TestClient(endpoints_app) as client:
                 resp = client.post("/api/auth/login", json={
                     "username": "employee",
                     "password": "Employee2025!",
                 })
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert resp.status_code == 200
         data = resp.json()
@@ -300,16 +300,16 @@ class TestAuthLogin:
         def _override_db():
             yield _db_session
 
-        test_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_db] = _override_db
 
         with patch("app.routers.auth.set_superadmin_context"):
-            with TestClient(test_app) as client:
+            with TestClient(endpoints_app) as client:
                 resp = client.post("/api/auth/login", json={
                     "username": "employee",
                     "password": "WrongPassword1!",
                 })
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert resp.status_code == 401
         assert "detail" in resp.json(), "401 without a detail message is a UX bug"
@@ -321,16 +321,16 @@ class TestAuthLogin:
         def _override_db():
             yield _db_session
 
-        test_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_db] = _override_db
 
         with patch("app.routers.auth.set_superadmin_context"):
-            with TestClient(test_app) as client:
+            with TestClient(endpoints_app) as client:
                 resp = client.post("/api/auth/login", json={
                     "username": "nobody",
                     "password": "SomePass1234!",
                 })
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert resp.status_code == 401
 
@@ -348,10 +348,10 @@ class TestAuthLogin:
         def _override_db():
             yield _db_session
 
-        test_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_db] = _override_db
 
         with patch("app.routers.auth.set_superadmin_context"):
-            with TestClient(test_app) as client:
+            with TestClient(endpoints_app) as client:
                 existing = client.post("/api/auth/login", json={
                     "username": "employee",
                     "password": "DefinitelyWrong!1",
@@ -361,7 +361,7 @@ class TestAuthLogin:
                     "password": "DefinitelyWrong!1",
                 })
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert existing.status_code == nonexistent.status_code == 401
         assert existing.json() == nonexistent.json(), (
@@ -374,12 +374,12 @@ class TestAuthLogin:
         def _override_db():
             yield _db_session
 
-        test_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_db] = _override_db
 
-        with TestClient(test_app) as client:
+        with TestClient(endpoints_app) as client:
             resp = client.post("/api/auth/login", json={})
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert resp.status_code == 422
 
@@ -567,15 +567,15 @@ class TestAdminUsers:
         def _override_current_user():
             return employee_user
 
-        test_app.dependency_overrides[get_db] = _override_db
-        test_app.dependency_overrides[get_current_user] = _override_current_user
+        endpoints_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_current_user] = _override_current_user
         # Explicitly remove require_admin override if any leftover
-        test_app.dependency_overrides.pop(require_admin, None)
+        endpoints_app.dependency_overrides.pop(require_admin, None)
 
-        with TestClient(test_app) as client:
+        with TestClient(endpoints_app) as client:
             resp = client.get("/api/admin/users")
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert resp.status_code == 403
         body = resp.json()
@@ -766,14 +766,14 @@ class TestAdminYearClosing:
         def _override_current_user():
             return employee_user
 
-        test_app.dependency_overrides[get_db] = _override_db
-        test_app.dependency_overrides[get_current_user] = _override_current_user
-        test_app.dependency_overrides.pop(require_admin, None)
+        endpoints_app.dependency_overrides[get_db] = _override_db
+        endpoints_app.dependency_overrides[get_current_user] = _override_current_user
+        endpoints_app.dependency_overrides.pop(require_admin, None)
 
-        with TestClient(test_app) as client:
+        with TestClient(endpoints_app) as client:
             resp = client.post("/api/admin/year-closing/2025")
 
-        test_app.dependency_overrides.clear()
+        endpoints_app.dependency_overrides.clear()
 
         assert resp.status_code == 403
         assert "detail" in resp.json()
