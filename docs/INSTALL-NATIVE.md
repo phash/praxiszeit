@@ -483,3 +483,36 @@ sudo installer/linux/install-local.sh /opt/praxiszeit
 ```
 
 Nutzt systemweit installiertes Python + PostgreSQL statt gebundelter Binaries.
+
+---
+
+## Build & Release: PostgreSQL-Quelle & macOS-Verifikation (Hintergrund)
+
+*(Ausgelagert aus CLAUDE.md — 1.5.x-Postmortems, hier mit voller Historie.)*
+
+**PostgreSQL-Quelle (ab 1.5.0):** Linux- und macOS-Tarbälle bündeln
+`theseus-rs/postgresql-binaries` **16.13.0** (Manylinux-Build, forward-kompatibel
+bis **glibc 2.34** → Ubuntu 22.04+, Debian 12+, RHEL/Rocky/Alma 9+, Fedora 35+).
+Die früher genutzten **EDB-Tarbälle sind seit 2026-05 nicht mehr verfügbar**
+(HTTP 403); der System-PG-Fallback wurde mit **#125** entfernt. `build-release.sh`
+bricht hart ab, wenn die Quelle nicht erreichbar ist oder das `postgres`-Binary
+glibc-Symbole > 2.34 verlangt (`check_glibc_compat`).
+
+**Integritätsprüfung der PG-Downloads:**
+- Linux UND macOS: SHA256-verifiziert (`download_with_sha`).
+- macOS zusätzlich: nach `tar xzf` werden `postgres`/`initdb` per `file(1)` als
+  **Mach-O** verifiziert. Das ist die **1.5.2-Härtung** und verhindert das
+  **1.5.0-Pattern**, bei dem nur das EDB-**DMG** (ohne entpackbare Binaries) im
+  Paket landete und der Build trotzdem „erfolgreich" meldete.
+
+**⚠️ macOS-CI-Gap:** `validate-macos.yml` läuft auf dem **privaten** Repo **nicht**
+(alle Runs hängen dauerhaft `queued` — keine macOS-Runner-Minuten). 1.8.1–1.8.7
+wurden daher **nur** auf Basis der lokalen `file(1)`-Mach-O-Prüfung im Build
+ausgeliefert. **Nicht** auf den GH-Workflow warten; echtes macOS-`initdb`-Smoke
+ggf. manuell auf einem Mac. `tools/validate-release.sh` (Linux, Docker-Smoke
+gegen 4 Distros) muss vor jedem Release grün sein.
+
+**Windows-PG ≠ theseus:** Die `.exe`/`.zip`-Pakete bündeln den **EDB-Installer**
+(`postgresql-installer.exe`, PG 18.x); die theseus-16-Binaries gelten nur für die
+Linux/macOS-Tarbälle. PG-Windows-Installer direkt (kein Webformular):
+`https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe`.

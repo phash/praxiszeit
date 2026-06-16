@@ -221,6 +221,34 @@ dann `net start PraxisZeit`.
 Regressionstest: `backend/tests/test_native_pg_lifecycle.py::TestVcRuntimeDiagnostic`.
 **Feldreport:** 2026-05-26 (Kunden-Erstinstallation), behoben in 1.5.3.
 
+**Update-Pfad-Härtung (ab 1.5.4):** `setup.bat --install_runtimes 1` deckt nur die
+**Erstinstallation** ab — ein In-Place-Update (`update-wizard.ps1`, auch der
+`setup.exe`-Update-Modus via `-Headless`) startet den EDB-Installer **nicht**.
+Daher bündelt `build-release.sh` jetzt `bin/vc_redist.x64.exe`, und
+`update-wizard.ps1` führt es in `Step-VcRedist` idempotent aus
+(`/install /quiet /norestart`, Exit `0/1638/3010/1641` = OK), best-effort/
+nicht-fatal vor dem Service-Start. Für Bestands-Installs unkritisch (liefen schon
+= Runtime da), schützt aber Maschinen ohne Runtime.
+
+**setup.bat-Detail:** KEINE Klammern in den `REM`-Kommentaren im `()`-Block —
+unbalancierte Klammern beenden den Block vorzeitig (Batch-Parser).
+
+---
+
+## 12. Windows-Python-Deps müssen beim BUILD ins Bundle (nicht install-zeitig)
+
+**Problem (vor 1.5.1):** Die Python-Abhängigkeiten wurden install-zeitig per
+`setup.bat`-`pip` nachgeladen — unzuverlässig (Netz/Timing). Auf Maschinen mit
+einem **System-Python 3.13** sah pip dessen User-Site, meldete „bereits erfüllt"
+und installierte **NICHTS** ins Bundle → der Dienst (LocalSystem) fand
+`alembic`/`uvicorn` nicht → `ERR_CONNECTION_REFUSED` im Browser.
+
+**Lösung (1.5.1):** `build-release.sh` Phase 5 installiert die
+cp313-win_amd64-Wheels **beim Build** vor nach
+`bin/python/Lib/site-packages` (analog Linux) → die Kunden-Installation braucht
+**keinen** PyPI-Download. Beim pip-Aufruf `PYTHONNOUSERSITE=1` setzen (ignoriert
+ein System-Python-User-Site) + Import-Verify (Build **und** `setup.bat`).
+
 ---
 
 ## Checkliste fuer zukuenftige Native Windows Deployments
