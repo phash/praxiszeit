@@ -1,4 +1,12 @@
-fastapi==0.137.*
+# fastapi auf 0.136.* gecappt (NICHT 0.137): FastAPI 0.137 hat include_router()
+# umgebaut und führt _IncludedRouter-Wrapper-Routen (ohne .path) in app.routes ein.
+# prometheus-fastapi-instrumentator 8.0.0 (neueste) macht ungeschützt route.path
+# -> AttributeError -> HTTP 500 auf JEDEM Endpoint aus einem included-Router
+# (Login + fast die ganze API; /api/health ist Top-Level -> 200, maskiert es).
+# Upstream: instrumentator-Issue #370 / PR #371 (noch nicht released, Stand 2026-06).
+# 0.136.* ist trotzdem neuer Stack (Starlette v1) — zurück auf 0.137+, sobald der
+# Instrumentator-Fix released ist.
+fastapi==0.136.*
 uvicorn[standard]==0.49.*
 sqlalchemy==2.0.*
 alembic==1.18.*
