@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.8.5 (Stand 2026-06-16)
+**Aktuelle Version:** 1.8.6 (Stand 2026-06-16)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
@@ -99,6 +99,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - Migrationen auf Host erstellen + committen **vor** Container-Rebuild
 - Pydantic Response-Schemas: `float` statt `Decimal`
 - nginx SPA vs. Static-Dir: `location = /route` VOR `location /` einfügen
+- **nginx `/api/`-Proxy: `Host $http_host` (NICHT `$host`) (#dashboard-307, 1.8.6):** Bare-Collection-Routes (`@router.get("/")` wie `/api/dashboard`, `/api/absences`) lösen einen FastAPI-307-Trailing-Slash-Redirect aus; FastAPI baut die **absolute** Location aus dem Host-Header. `$host` lässt den Port weg → `http://localhost/…` statt `:PORT` → Browser folgt auf falschen Port → CORS/Network-Error → „Fehler beim Laden des Dashboards". `$http_host` erhält den Port; Schema kommt via `X-Forwarded-Proto` (uvicorn läuft mit `--proxy-headers`). Gilt für `frontend/nginx.conf` UND `ssl/nginx-ssl.conf`. **Nur Docker betroffen** (nativ = uvicorn ohne Proxy, sieht echte Host:Port).
 - Stunden-Anzeige: `formatHoursHM()` aus `utils/errorMessage.ts` (H:MM, Overflow-safe)
 - **ArbZG-Warnungen aus API-Responses:** immer über `showArbzgWarnings(toast, response.warnings)` aus `utils/arbzgWarnings.ts` (nicht einzelne `if includes(...)` Blöcke duplizieren)
 - **Toast-Dauer:** Nicht hardcoden — `ToastContext` setzt severity-basierte Defaults (success 3s, error 8s, warning 6s, info 5s)
