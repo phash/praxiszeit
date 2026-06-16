@@ -876,9 +876,9 @@ echo "    ${CACHE_DIR}/ ($(du -sh "${CACHE_DIR}" | cut -f1))"
 echo ""
 
 $BUILD_LINUX && cat << EOF
-  Linux-Installation:
-    tar xzf praxiszeit-${APP_VERSION}-linux-x64.tar.gz
-    sudo ./install.sh
+  Linux-Installation (Tarball entpackt FLACH -> in Zielordner entpacken):
+    mkdir -p praxiszeit-${APP_VERSION} && tar xzf praxiszeit-${APP_VERSION}-linux-x64.tar.gz -C praxiszeit-${APP_VERSION}
+    sudo praxiszeit-${APP_VERSION}/install.sh
 
 EOF
 
@@ -902,9 +902,9 @@ $BUILD_WINDOWS && cat << EOF
 EOF
 
 $BUILD_MACOS && cat << EOF
-  macOS-Installation (Intel ODER Apple Silicon):
-    tar xzf praxiszeit-${APP_VERSION}-macos-{x64|arm64}.tar.gz
-    sudo ./install.sh
+  macOS-Installation (Intel ODER Apple Silicon; Tarball entpackt FLACH):
+    mkdir -p praxiszeit-${APP_VERSION} && tar xzf praxiszeit-${APP_VERSION}-macos-{x64|arm64}.tar.gz -C praxiszeit-${APP_VERSION}
+    sudo praxiszeit-${APP_VERSION}/install.sh
 
 EOF
 

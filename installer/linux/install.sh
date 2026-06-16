@@ -52,9 +52,19 @@ fi
 # installieren die fehlenden Pakete jetzt, damit der PG-Start nicht an
 # "shared library not found" scheitert.
 install_runtime_deps() {
+    # ldconfig-Ausgabe EINMAL in eine Variable lesen und per Here-String matchen.
+    # NICHT `ldconfig -p | grep -q` verwenden: grep -q beendet bei Treffer frueh,
+    # ldconfig bekommt SIGPIPE (Exit 141), und mit `set -o pipefail` (Zeile 4)
+    # wird die Pipeline dadurch non-zero -> `if !` schlaegt um -> auf Hosts mit
+    # VIELEN Libs (lange ldconfig-Ausgabe, z.B. Desktop) wird die Lib faelschlich
+    # als "missing" gemeldet bzw. unten die Rolling-Distro-Bremse falsch ausgeloest
+    # (Feldreport Mint/Ubuntu 24.04, 2026-06; minimale Validate-Container mit kurzer
+    # ldconfig-Ausgabe maskierten den Bug). Here-String = keine Pipe -> kein SIGPIPE.
+    local ldcache
+    ldcache=$(ldconfig -p 2>/dev/null || true)
     local missing=()
     for lib in libxml2.so.2 libssl.so.3 libgssapi_krb5.so.2 libzstd.so.1 liblz4.so.1 libreadline.so.8 libbrotlidec.so.1; do
-        if ! ldconfig -p 2>/dev/null | grep -q "^[[:space:]]*${lib}\b"; then
+        if ! grep -q "^[[:space:]]*${lib}\b" <<<"$ldcache"; then
             missing+=("$lib")
         fi
     done
@@ -96,7 +106,8 @@ install_runtime_deps() {
     # Arch/CachyOS liefern ab libxml2 2.14 nur noch libxml2.so.16 -> der
     # PG-Start wuerde mit "libxml2.so.2: cannot open shared object file"
     # scheitern. Frueh + klar abbrechen statt im Dienst-Crash-Loop zu landen.
-    if ! ldconfig -p 2>/dev/null | grep -qE "^[[:space:]]*libxml2\.so\.2\b"; then
+    ldcache=$(ldconfig -p 2>/dev/null || true)   # nach apt/dnf/zypper/pacman neu einlesen
+    if ! grep -qE "^[[:space:]]*libxml2\.so\.2\b" <<<"$ldcache"; then
         error "libxml2.so.2 ist auf diesem System nicht verfuegbar."
         error "Vermutlich eine Rolling-Distro (z.B. Arch/CachyOS) mit libxml2 >= 2.14"
         error "(nur libxml2.so.16). Die mitgelieferte PostgreSQL benoetigt aber"
