@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.8.8] - 2026-06-16
+
+Korrektur-Release: native Installation lief auf realen Hosts nicht durch
+(End-to-End-Test auf echtem Linux-Mint mit belegtem Port 5432).
+
+### 🖥️ Native Installation
+- **Falscher „Rolling-Distro"-Abbruch / Installer bricht ohne Ausgabe ab behoben.**
+  Mehrere Shell-Pipes in `install.sh` (`ldconfig | grep -q`, `ldd | head`) lösten
+  unter `set -o pipefail` SIGPIPE aus → vorhandene Bibliotheken wurden fälschlich
+  als fehlend gemeldet bzw. der Installer brach kommentarlos ab (v. a. auf Systemen
+  mit vielen Bibliotheken). Geprüft wird jetzt SIGPIPE-sicher (Here-String / `awk`).
+- **Dienst-Crash-Loop in den Datenbank-Migrationen behoben.** Eine `%`-Sequenz in
+  der internen DB-Verbindung (Unix-Socket, #174) löste in Alembic
+  `invalid interpolation syntax` aus → der Dienst startete nicht. `%` wird jetzt
+  für configparser escaped.
+- Verifiziert: vollständiger Native-Install + Start aus dem ausgelieferten Tarball
+  auf Linux Mint 22.3 (Dienst aktiv, DB verbunden, Login erreichbar).
+
 ## [1.8.7] - 2026-06-16
 
 Korrektur-Release rund um das selbstsignierte SSL-Zertifikat (Feldreport: Anwender
