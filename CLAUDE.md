@@ -145,6 +145,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **SPA-Fallback:** Middleware statt catch-all Route! `@app.get("/{full_path:path}")` verursacht 405 für POST/PUT/DELETE
 - **SECRET_KEY persistieren:** Muss in `config/.secret-key` gespeichert werden, sonst Session-Verlust bei Restart
 - **cookie_secure:** Muss `false` sein ohne SSL, sonst lehnt Browser das Refresh-Cookie ab
+- **Self-signed SSL-Cert = End-Entity-Server-Cert in ALLEN 4 Generatoren (1.8.7):** Browser brauchen **RSA** (NICHT ed25519 — für TLS-Server-Certs nicht unterstützt → harte Ablehnung OHNE „Erweitert") + `basicConstraints=CA:FALSE` + `keyUsage` + `extendedKeyUsage=serverAuth` + Hostname im SAN. ⚠️ **Vier Stellen synchron halten:** `installer/linux/install.sh`, `ssl/generate-cert.sh`, `tools/generate-self-signed-cert.py` UND `_ensure_self_signed_cert()` in `praxiszeit-server.py` (Laufzeit-Auto-Generator = Default-Pfad für native Windows/macOS, wird leicht übersehen). macOS-Installer erzeugt gar kein Cert (HTTP).
 - **Subprocess `*` verboten:** Python 3.13/Windows expanded `*` als Glob in subprocess-Args → explizite Werte nutzen
 - **PYTHONUTF8=1:** Immer für uvicorn-Subprozesse setzen (cp1252-Crashes bei Emojis)
 - **APP_VERSION:** Backend-SoT in `app/core/updater.py`; Frontend-Footer liest `__APP_VERSION__` aus `frontend/package.json.version` (via vite `define`). Beide + `tools/build-release.sh` Default müssen synchron bleiben — Build-Script enforced das.
