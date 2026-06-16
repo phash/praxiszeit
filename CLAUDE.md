@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.8.8 (Stand 2026-06-16)
+**Aktuelle Version:** 1.8.9 (Stand 2026-06-16)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
@@ -33,6 +33,7 @@ bash tools/validate-release.sh                 # Linux-Tarball: Docker-Smoke geg
 # auf macos-15-intel + macos-14 — manuell triggerbar via gh workflow run.
 ```
 **Build-Release-Frontend + Host-Node:** `build-release.sh` ruft intern `npm run build` (Schritt 3) — bricht mit Host-Node ≥26. Frontend vorher mit `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm run build"` bauen und dann mit `--skip-frontend` releasen (`dist/` muss existieren).
+**Frontend-Dep-Bumps — vite/plugin-react im Gleichschritt (1.8.9):** Ein Dependabot-`vite`-Major-Bump (z. B. 7→8) ohne passenden `@vitejs/plugin-react`-Bump bricht `npm ci` mit `ERESOLVE` — plugin-react **5.1.4** kennt als Peer nur `vite ≤7`, **5.2.0+** ergänzt `vite 8` (6.0+ ist vite-8-only). Beim vite-Major immer plugin-react mitziehen + `npm ci` lokal verifizieren. Frontend-`Dockerfile` nutzt jetzt `npm ci` (scheitert hart bei Lock-Drift, statt still abweichend zu bauen). `npm update` kann auf Windows am optionalen `@tailwindcss/oxide-wasm32-wasi` (ENOENT-Cleanup) hängen → `rm -rf node_modules && npm install` oder `--package-lock-only`.
 **Native-PG = `theseus-rs` 16.13.0** (glibc-2.34-portabel: Ubuntu 22.04+/Debian 12+/RHEL·Rocky·Alma 9+/Fedora 35+; EDB-Quelle seit #125 raus, Build bricht bei glibc-Symbolen > 2.34 ab). PG-Downloads SHA256-verifiziert, macOS zusätzlich per `file(1)` als Mach-O geprüft. ⚠️ `validate-macos.yml` läuft auf dem Privat-Repo **NIE** (Runs `queued`) → macOS-Release stützt sich auf die lokale Mach-O-Prüfung im Build, NICHT auf den GH-Workflow; echtes macOS-`initdb`-Smoke ggf. manuell auf einem Mac. `tools/validate-release.sh` (Linux) muss vor jedem Release grün sein. Hintergrund (EDB-403, 1.5.0-DMG-Pattern) → [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md).
 Git Bash on Windows: `rsync`/`zip` fehlen → Script hat `tar`/PowerShell-`Compress-Archive`-Fallbacks.
 PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe` (kein Webformular).
