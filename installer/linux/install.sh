@@ -32,7 +32,11 @@ fi
 
 # --- glibc version check ---
 # Bundled PostgreSQL binary verlangt glibc >= 2.34 (manylinux-Build).
-GLIBC_VER=$(ldd --version 2>&1 | head -1 | awk '{print $NF}')
+# awk 'NR==1' statt '| head -1 | awk': head -1 schliesst die Pipe nach der ersten
+# Zeile -> ldd bekommt SIGPIPE (141), und mit `set -o pipefail` (Zeile 4) liefert
+# die $(...)-Substitution dann 141 -> `set -e` killt den Installer VOR jeder
+# Ausgabe (racy, je nach ldd-Timing). awk liest den Stream komplett -> kein SIGPIPE.
+GLIBC_VER=$(ldd --version 2>&1 | awk 'NR==1{print $NF}')
 GLIBC_MAJOR=${GLIBC_VER%%.*}
 GLIBC_MINOR=${GLIBC_VER#*.}
 GLIBC_MINOR=${GLIBC_MINOR%%.*}
@@ -478,7 +482,10 @@ systemctl start "${SERVICE_NAME}"
 
 # Wait for startup
 for i in $(seq 1 30); do
-    if curl -sk "https://localhost:${PORT}/api/health" 2>/dev/null | grep -q "healthy"; then
+    # Here-String statt `curl | grep -q`: grep -q beendet bei Treffer frueh ->
+    # curl SIGPIPE -> mit pipefail wuerde die Bedingung nie wahr (Wait liefe
+    # immer volle 30s). So bricht der Wait korrekt ab, sobald healthy.
+    if grep -q "healthy" <<<"$(curl -sk "https://localhost:${PORT}/api/health" 2>/dev/null || true)"; then
         break
     fi
     sleep 1
