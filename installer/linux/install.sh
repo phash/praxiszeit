@@ -317,10 +317,19 @@ fi
 if [ "${GEN_SSL,,}" = "j" ]; then
     info "Generiere selbstsigniertes SSL-Zertifikat..."
     SERVER_IP=$(hostname -I | awk '{print $1}')
-    openssl req -x509 -newkey ed25519 -keyout "${INSTALL_DIR}/config/ssl/key.pem" \
+    # RSA-2048 statt ed25519: Browser (Firefox/NSS, Chrome) unterstuetzen
+    # Ed25519-TLS-SERVER-Zertifikate praktisch nicht -> harter Handshake-Fehler
+    # OHNE "Erweitert"/Ausnahme-Option (Feldreport 2026-06).
+    # basicConstraints=CA:FALSE + keyUsage + extendedKeyUsage=serverAuth machen
+    # daraus ein gueltiges End-Entity-Server-Zertifikat statt eines CA-Certs
+    # (ein CA-Cert wird vom Browser nicht als Server-Cert akzeptiert).
+    openssl req -x509 -newkey rsa:2048 -keyout "${INSTALL_DIR}/config/ssl/key.pem" \
         -out "${INSTALL_DIR}/config/ssl/cert.pem" -days 3650 -nodes \
         -subj "/CN=PraxisZeit/O=${PRACTICE_NAME}" \
         -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:${SERVER_IP}" \
+        -addext "basicConstraints=critical,CA:FALSE" \
+        -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+        -addext "extendedKeyUsage=serverAuth" \
         2>/dev/null
     info "SSL-Zertifikat generiert (10 Jahre gueltig)"
 fi
