@@ -379,11 +379,13 @@ class TestForeignPgIsolation:
         monkeypatch.setattr(srv, "IS_WINDOWS", False)
         monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
 
+        from urllib.parse import quote_plus
+
         url = srv._database_url("praxiszeit_app", "p@ss/w0rd", "praxiszeit")
 
         assert "@localhost:5432" not in url, f"must not use TCP :5432: {url}"
-        assert "host=" in url, f"must connect via unix socket dir: {url}"
-        assert "run" in url, f"socket dir DATA_DIR/run missing: {url}"
+        # must point at OUR socket directory, precisely (not just any "run" substring)
+        assert f"host={quote_plus(str(tmp_path / 'run'))}" in url, url
         # password special chars must be url-encoded (psycopg2/SQLAlchemy)
         assert "p%40ss%2Fw0rd" in url
 

@@ -10,7 +10,14 @@ echo "Generiere selbstsigniertes SSL-Zertifikat..."
 
 # Server-IP ermitteln
 SERVER_IP=$(hostname -I | awk '{print $1}')
-echo "Erkannte Server-IP: $SERVER_IP"
+echo "Erkannte Server-IP: ${SERVER_IP:-<keine>}"
+
+# SAN konditionell: leeres SERVER_IP (IPv6-only/loopback) sonst -> openssl-Fehler.
+# Hostname mitnehmen (Zugriff via https://<host>/).
+SAN="DNS:localhost,IP:127.0.0.1"
+[ -n "$SERVER_IP" ] && SAN="$SAN,IP:$SERVER_IP"
+HOST_FQDN=$(hostname -f 2>/dev/null || hostname 2>/dev/null || true)
+[ -n "$HOST_FQDN" ] && [ "$HOST_FQDN" != "localhost" ] && SAN="$SAN,DNS:$HOST_FQDN"
 
 # Zertifikat generieren (10 Jahre gueltig)
 # End-Entity-Server-Zertifikat: CA:FALSE + keyUsage + extendedKeyUsage=serverAuth.
@@ -20,8 +27,8 @@ openssl req -x509 -nodes -days 3650 \
     -newkey rsa:2048 \
     -keyout "$SCRIPT_DIR/key.pem" \
     -out "$SCRIPT_DIR/cert.pem" \
-    -subj "/C=DE/ST=Bayern/L=Muenchen/O=Praxis Klotz-Roedig/CN=praxiszeit" \
-    -addext "subjectAltName=IP:$SERVER_IP,IP:127.0.0.1,DNS:localhost" \
+    -subj "/O=PraxisZeit/CN=praxiszeit" \
+    -addext "subjectAltName=$SAN" \
     -addext "basicConstraints=critical,CA:FALSE" \
     -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
     -addext "extendedKeyUsage=serverAuth"

@@ -317,21 +317,32 @@ fi
 if [ "${GEN_SSL,,}" = "j" ]; then
     info "Generiere selbstsigniertes SSL-Zertifikat..."
     SERVER_IP=$(hostname -I | awk '{print $1}')
+    # SAN konditionell zusammenbauen: ein leeres SERVER_IP (IPv6-only / nur
+    # loopback) liesse openssl mit "IP:" leer abbrechen — vorher schluckte
+    # 2>/dev/null den Fehler und es wurde KEIN Cert geschrieben, obwohl "OK"
+    # gemeldet wurde. Hostname mitnehmen (Zugriff via https://<host>/).
+    SAN="DNS:localhost,IP:127.0.0.1"
+    [ -n "${SERVER_IP}" ] && SAN="${SAN},IP:${SERVER_IP}"
+    HOST_FQDN=$(hostname -f 2>/dev/null || hostname 2>/dev/null || true)
+    [ -n "${HOST_FQDN}" ] && [ "${HOST_FQDN}" != "localhost" ] && SAN="${SAN},DNS:${HOST_FQDN}"
     # RSA-2048 statt ed25519: Browser (Firefox/NSS, Chrome) unterstuetzen
     # Ed25519-TLS-SERVER-Zertifikate praktisch nicht -> harter Handshake-Fehler
     # OHNE "Erweitert"/Ausnahme-Option (Feldreport 2026-06).
     # basicConstraints=CA:FALSE + keyUsage + extendedKeyUsage=serverAuth machen
     # daraus ein gueltiges End-Entity-Server-Zertifikat statt eines CA-Certs
     # (ein CA-Cert wird vom Browser nicht als Server-Cert akzeptiert).
-    openssl req -x509 -newkey rsa:2048 -keyout "${INSTALL_DIR}/config/ssl/key.pem" \
+    # Fehler NICHT verschlucken: schlaegt openssl fehl, soll der Install es zeigen.
+    if openssl req -x509 -newkey rsa:2048 -keyout "${INSTALL_DIR}/config/ssl/key.pem" \
         -out "${INSTALL_DIR}/config/ssl/cert.pem" -days 3650 -nodes \
         -subj "/CN=PraxisZeit/O=${PRACTICE_NAME}" \
-        -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:${SERVER_IP}" \
+        -addext "subjectAltName=${SAN}" \
         -addext "basicConstraints=critical,CA:FALSE" \
         -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
-        -addext "extendedKeyUsage=serverAuth" \
-        2>/dev/null
-    info "SSL-Zertifikat generiert (10 Jahre gueltig)"
+        -addext "extendedKeyUsage=serverAuth"; then
+        info "SSL-Zertifikat generiert (10 Jahre gueltig, SAN: ${SAN})"
+    else
+        warn "SSL-Zertifikat konnte nicht erzeugt werden — PraxisZeit erzeugt beim ersten Start automatisch eines."
+    fi
 fi
 
 # --- Set permissions ---
