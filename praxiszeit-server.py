@@ -176,7 +176,11 @@ def pg_env() -> dict:
         env["LD_LIBRARY_PATH"] = f"{pg_lib}:{existing}" if existing else pg_lib
         # psql findet sonst den Unix-Socket im falschen Default-Pfad
         # (/var/run/postgresql) — wir verwenden unser eigenes Datenverzeichnis.
-        env.setdefault("PGHOST", str(DATA_DIR / "run"))
+        # Hart setzen (nicht setdefault): ein vererbtes PGHOST/PGPORT aus der
+        # Dienst-Umgebung würde psql/pg_dump sonst auf einen FREMDEN Cluster
+        # lenken (z.B. eine System-PG). Wir wollen immer unseren eigenen Socket.
+        env["PGHOST"] = str(DATA_DIR / "run")
+        env.pop("PGPORT", None)
     return env
 
 
@@ -260,12 +264,15 @@ def _database_url(user: str, password: str, db: str) -> str:
     Windows has no unix sockets; the cluster runs as a TCP service, so the URL
     keeps the historic localhost:5432 form (unchanged behaviour).
     """
-    from urllib.parse import quote_plus
+    from urllib.parse import quote, quote_plus
     # Build the userinfo (user:password) as a separate token so the source
     # never contains a literal "scheme://user:pass@" pattern — that would trip
     # the repo's secret-scanner pre-commit hook (false positive on f-string
     # placeholders). The produced URL is identical either way.
-    cred = f"{user}:{quote_plus(password)}"
+    # quote(safe="") (NOT quote_plus) for userinfo: in the userinfo component a
+    # space/'+' must be %-encoded, not turned into '+' (quote_plus would corrupt
+    # an operator-supplied password containing a space or '+').
+    cred = f"{quote(user, safe='')}:{quote(password, safe='')}"
     if IS_WINDOWS:
         return f"postgresql://{cred}@localhost:5432/{db}"
     sock = quote_plus(str(DATA_DIR / "run"))
@@ -931,11 +938,12 @@ def _ensure_self_signed_cert(cert_path: Path, key_path: Path, practice_name: str
         return True
     try:
         import ipaddress
+        import socket
         from datetime import datetime, timedelta, timezone
         from cryptography import x509
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
-        from cryptography.x509.oid import NameOID
+        from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
     except ImportError:
         logger.warning(
             "SSL configured but cert/key missing and 'cryptography' is "
@@ -958,6 +966,15 @@ def _ensure_self_signed_cert(cert_path: Path, key_path: Path, practice_name: str
             sans.append(x509.IPAddress(ipaddress.IPv4Address(primary)))
         except ipaddress.AddressValueError:
             pass
+    # Also cover the machine hostname so access via https://<hostname>/ (common
+    # on Windows/LAN) does not trip a name-mismatch error on top of the
+    # self-signed warning.
+    try:
+        hostname = socket.gethostname()
+        if hostname and hostname.lower() != "localhost":
+            sans.append(x509.DNSName(hostname))
+    except OSError:
+        pass
 
     now = datetime.now(timezone.utc)
     cert = (
@@ -970,6 +987,24 @@ def _ensure_self_signed_cert(cert_path: Path, key_path: Path, practice_name: str
         .not_valid_after(now + timedelta(days=3650))
         .add_extension(x509.SubjectAlternativeName(sans), critical=False)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        # End-Entity-Server-Cert: ohne keyUsage + extendedKeyUsage=serverAuth
+        # akzeptieren moderne Browser das Zertifikat nicht als Server-Cert
+        # (Feldreport 2026-06). Dieser Laufzeit-Generator ist der Default-Pfad
+        # für native Windows-/macOS-Installs und muss dieselben Extensions
+        # setzen wie install.sh / generate-cert.sh / generate-self-signed-cert.py.
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True, key_encipherment=True,
+                content_commitment=False, data_encipherment=False,
+                key_agreement=False, key_cert_sign=False, crl_sign=False,
+                encipher_only=False, decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]),
+            critical=False,
+        )
         .sign(key, hashes.SHA256())
     )
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))

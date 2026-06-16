@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 
 def default_out_dir() -> str:
@@ -86,6 +86,27 @@ def main() -> int:
         .add_extension(
             x509.BasicConstraints(ca=False, path_length=None),
             critical=True,
+        )
+        # End-Entity-Server-Cert: keyUsage + extendedKeyUsage=serverAuth.
+        # Ohne serverAuth-EKU akzeptieren moderne Browser das Cert nicht als
+        # Server-Zertifikat (vgl. native ed25519/CA-Cert-Feldreport 2026-06).
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                key_encipherment=True,
+                content_commitment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]),
+            critical=False,
         )
         .sign(key, hashes.SHA256())
     )
