@@ -13,12 +13,18 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 echo "Erkannte Server-IP: $SERVER_IP"
 
 # Zertifikat generieren (10 Jahre gueltig)
+# End-Entity-Server-Zertifikat: CA:FALSE + keyUsage + extendedKeyUsage=serverAuth.
+# Ohne diese Extensions ist es ein CA-Cert ohne serverAuth, das Browser nicht
+# als Server-Zertifikat akzeptieren (Feldreport 2026-06, native ed25519-Variante).
 openssl req -x509 -nodes -days 3650 \
     -newkey rsa:2048 \
     -keyout "$SCRIPT_DIR/key.pem" \
     -out "$SCRIPT_DIR/cert.pem" \
     -subj "/C=DE/ST=Bayern/L=Muenchen/O=Praxis Beispielpraxis/CN=praxiszeit" \
-    -addext "subjectAltName=IP:$SERVER_IP,IP:127.0.0.1,DNS:localhost"
+    -addext "subjectAltName=IP:$SERVER_IP,IP:127.0.0.1,DNS:localhost" \
+    -addext "basicConstraints=critical,CA:FALSE" \
+    -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+    -addext "extendedKeyUsage=serverAuth"
 
 echo ""
 echo "Zertifikat erstellt:"
