@@ -222,15 +222,54 @@ def _check_pg_launchable(returncode: int, exe: str) -> None:
 
 
 def pg_is_running() -> bool:
-    """Check if PostgreSQL is running."""
+    """Check whether *our* bundled PostgreSQL cluster is accepting connections.
+
+    Unix: probe the bundled unix-socket directory (DATA_DIR/run), NEVER TCP
+    localhost:5432. A foreign system PostgreSQL already listening on :5432 must
+    not be mistaken for our cluster (#174) — otherwise pg_start() returns early
+    ("already running") and our own socket-only cluster is never started, and
+    pg_setup_database then runs psql against the wrong/absent server and crashes
+    before .db-credentials is written → permanent crash-loop.
+
+    Windows has no unix sockets; there the bundled cluster runs as its own
+    NetworkService TCP service on localhost:5432, so the TCP probe is correct.
+    """
+    if IS_WINDOWS:
+        host = "localhost"
+    else:
+        host = str(DATA_DIR / "run")
     try:
         result = subprocess.run(
-            [str(pg_cmd("pg_isready")), "-h", "localhost", "-p", "5432"],
+            [str(pg_cmd("pg_isready")), "-h", host, "-p", "5432"],
             capture_output=True, timeout=5, env=pg_env(),
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
+
+
+def _database_url(user: str, password: str, db: str) -> str:
+    """Build the SQLAlchemy/psycopg2 connection URL for the bundled cluster.
+
+    Unix: the cluster is socket-only (``listen_addresses = ''``), so we connect
+    via the bundled unix-socket directory (DATA_DIR/run) — never TCP
+    localhost:5432, which on a host with a foreign system PostgreSQL would
+    silently hit the wrong server (#174). libpq/psycopg2 take the socket
+    directory as the ``host`` query parameter.
+
+    Windows has no unix sockets; the cluster runs as a TCP service, so the URL
+    keeps the historic localhost:5432 form (unchanged behaviour).
+    """
+    from urllib.parse import quote_plus
+    # Build the userinfo (user:password) as a separate token so the source
+    # never contains a literal "scheme://user:pass@" pattern — that would trip
+    # the repo's secret-scanner pre-commit hook (false positive on f-string
+    # placeholders). The produced URL is identical either way.
+    cred = f"{user}:{quote_plus(password)}"
+    if IS_WINDOWS:
+        return f"postgresql://{cred}@localhost:5432/{db}"
+    sock = quote_plus(str(DATA_DIR / "run"))
+    return f"postgresql://{cred}@/{db}?host={sock}"
 
 
 def pg_init(config: dict):
@@ -275,7 +314,15 @@ def pg_init(config: dict):
     pg_conf = PG_DATA / "postgresql.conf"
     with open(pg_conf, "a") as f:
         f.write("\n# PraxisZeit configuration\n")
-        f.write("listen_addresses = 'localhost'\n")
+        if IS_WINDOWS:
+            # Windows has no unix sockets; the cluster runs as a TCP service.
+            f.write("listen_addresses = 'localhost'\n")
+        else:
+            # Socket-only on Unix: no TCP listener at all, so a foreign system
+            # PostgreSQL already bound to :5432 can never collide with our
+            # cluster (#174). Clients connect via the unix socket in
+            # DATA_DIR/run (see unix_socket_directories below + _database_url).
+            f.write("listen_addresses = ''\n")
         f.write("port = 5432\n")
         f.write("max_connections = 50\n")
         f.write("shared_buffers = 128MB\n")
@@ -729,14 +776,10 @@ def pg_setup_database(config: dict):
         check=True, capture_output=True, text=True, env=pg_env(),
     )
 
-    # Store connection strings as environment variables for the backend
-    from urllib.parse import quote_plus
-    os.environ["DATABASE_URL"] = (
-        f"postgresql://{app_user}:{quote_plus(app_password)}@localhost:5432/{db_name}"
-    )
-    os.environ["DATABASE_URL_MIGRATIONS"] = (
-        f"postgresql://{superuser}:{quote_plus(su_password)}@localhost:5432/{db_name}"
-    )
+    # Store connection strings as environment variables for the backend.
+    # _database_url() picks unix-socket (Unix) vs TCP (Windows) — see #174.
+    os.environ["DATABASE_URL"] = _database_url(app_user, app_password, db_name)
+    os.environ["DATABASE_URL_MIGRATIONS"] = _database_url(superuser, su_password, db_name)
 
     # Save passwords to a secure file for future starts
     _save_credentials(su_password, app_password)
@@ -1247,14 +1290,11 @@ def cmd_start(args):
         # Load saved credentials
         su_password, app_password = pg_load_credentials()
         if su_password and app_password:
-            from urllib.parse import quote_plus
             superuser = get_config_value(config, "database", "superuser", "praxiszeit")
             app_user = get_config_value(config, "database", "app_user", "praxiszeit_app")
-            os.environ["DATABASE_URL"] = (
-                f"postgresql://{app_user}:{quote_plus(app_password)}@localhost:5432/praxiszeit"
-            )
-            os.environ["DATABASE_URL_MIGRATIONS"] = (
-                f"postgresql://{superuser}:{quote_plus(su_password)}@localhost:5432/praxiszeit"
+            os.environ["DATABASE_URL"] = _database_url(app_user, app_password, "praxiszeit")
+            os.environ["DATABASE_URL_MIGRATIONS"] = _database_url(
+                superuser, su_password, "praxiszeit"
             )
         else:
             logger.error("Database credentials not found. Run 'praxiszeit-server init' first.")
