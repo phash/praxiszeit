@@ -24,9 +24,9 @@ Alle Pakete enthalten Python und PostgreSQL — keine Voraussetzungen noetig.
 # 1. Herunterladen + entpacken
 #    Das Tarball entpackt FLACH (kein Top-Level-Ordner) — daher zuerst einen
 #    Zielordner anlegen und mit -C dorthin entpacken:
-mkdir -p praxiszeit-1.8.0
-tar xzf praxiszeit-1.8.0-linux-x64.tar.gz -C praxiszeit-1.8.0
-cd praxiszeit-1.8.0
+mkdir -p praxiszeit-1.8.10
+tar xzf praxiszeit-1.8.10-linux-x64.tar.gz -C praxiszeit-1.8.10
+cd praxiszeit-1.8.10
 
 # 2. Installer starten (als root)
 sudo ./install.sh
@@ -54,7 +54,7 @@ journalctl -u praxiszeit -f          # Live-Logs
 ## Windows-Installation
 
 ```
-1. praxiszeit-1.8.0-windows-x64.zip entpacken nach C:\PraxisZeit\
+1. praxiszeit-1.8.10-windows-x64.zip entpacken nach C:\PraxisZeit\
 
 2. setup.bat als Administrator ausfuehren
    - Installiert PostgreSQL (silent, kein GUI)
@@ -88,20 +88,22 @@ Deinstallation: `uninstall-service.bat` ausfuehren (Datenbank wird beibehalten).
 
 ```bash
 # Tarball entpackt flach — in einen eigenen Ordner entpacken:
-mkdir -p praxiszeit-1.8.0 && cd praxiszeit-1.8.0
+mkdir -p praxiszeit-1.8.10 && cd praxiszeit-1.8.10
 
 # Intel Mac:
-tar xzf ../praxiszeit-1.8.0-macos-x64.tar.gz
+tar xzf ../praxiszeit-1.8.10-macos-x64.tar.gz
 
 # Apple Silicon (M1/M2/M3/M4):
-tar xzf ../praxiszeit-1.8.0-macos-arm64.tar.gz
+tar xzf ../praxiszeit-1.8.10-macos-arm64.tar.gz
 
 # Installer starten (als root)
 sudo ./install.sh
 ```
 
 Der Installer fragt interaktiv nach Praxis-Name, Admin-Zugangsdaten und Port.
-PostgreSQL wird automatisch aus dem mitgelieferten DMG installiert.
+PostgreSQL ist im Paket **gebuendelt** (theseus-rs 16) und wird beim ersten Start
+automatisch initialisiert — eine separate PostgreSQL-Installation (Homebrew /
+Postgres.app) ist **nicht** noetig.
 
 Service-Verwaltung (launchd):
 ```bash
@@ -192,11 +194,12 @@ login_rate_limit = "5/minute"
 cookie_secure = true                # false fuer HTTP-only
 
 [license]
+# Beta: Lizenzpruefung deaktiviert — kein license.key noetig (derzeit ungenutzt).
 key_file = "config/license.key"     # Optional
 
 [updates]
 check_enabled = true
-server_url = "https://updates.praxiszeit.de"
+server_url = "https://updates.mr-development.de"
 
 [backup]
 enabled = true
@@ -210,13 +213,26 @@ Vollstaendiges Beispiel: `config/praxiszeit.conf.example`
 
 ## SSL/HTTPS
 
+Der Installer erzeugt beim ersten Start automatisch ein gueltiges,
+selbstsigniertes **Server**-Zertifikat (RSA-2048, mit Hostname/IP im SAN) —
+Browser akzeptieren es nach einmaliger Ausnahme-Bestaetigung. Nur falls Sie
+manuell eines erzeugen oder ein abgelehntes ersetzen wollen:
+
 ```bash
-# Selbstsigniertes Zertifikat generieren (10 Jahre)
-openssl req -x509 -newkey ed25519 \
-  -keyout config/ssl/key.pem \
-  -out config/ssl/cert.pem \
-  -days 3650 -nodes \
-  -subj "/CN=PraxisZeit"
+# WICHTIG: RSA-2048 + End-Entity-SERVER-Zertifikat. NICHT ed25519 und KEIN
+# CA-Cert: Browser (Chrome, Firefox/NSS) lehnen ed25519-TLS-Server-Zertifikate
+# und CA-Certs ohne extendedKeyUsage=serverAuth ohne "Erweitert"-Option ab.
+SERVER_IP=$(hostname -I | awk '{print $1}')
+SAN="DNS:localhost,IP:127.0.0.1"
+[ -n "$SERVER_IP" ] && SAN="$SAN,IP:$SERVER_IP"
+
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout config/ssl/key.pem -out config/ssl/cert.pem \
+  -subj "/O=PraxisZeit/CN=praxiszeit" \
+  -addext "subjectAltName=$SAN" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+  -addext "extendedKeyUsage=serverAuth"
 
 # In praxiszeit.conf eintragen:
 # [server]
@@ -224,6 +240,11 @@ openssl req -x509 -newkey ed25519 \
 # ssl_key = "config/ssl/key.pem"
 # + cookie_secure = true in [security]
 ```
+
+> **Hinweis:** Aeltere Anleitungen zeigten `openssl … -newkey ed25519` — solche
+> Zertifikate lehnen Browser hart ab (kein „Erweitert"). In dem Fall mit obigem
+> RSA-Befehl neu erzeugen und den Dienst neu starten. Im Docker-Deployment
+> uebernimmt `ssl/generate-cert.sh` dasselbe.
 
 ---
 
@@ -255,28 +276,22 @@ Aufbewahrung: 31 Tage. ArbZG §16 verlangt 2 Jahre — passen Sie `retention_day
 
 ## Lizenzierung
 
-```bash
-# Lizenzschluessel einspielen
-cp license.key /opt/praxiszeit/config/license.key
-
-# In praxiszeit.conf:
-# [license]
-# key_file = "config/license.key"
-
-# Service neu starten
-```
-
-Ohne Lizenz laeuft die Anwendung uneingeschraenkt.
-Bei abgelaufener Lizenz: Nur-Lese-Modus (Daten bleiben einsehbar und exportierbar).
+> **Beta:** Die Lizenzpruefung ist derzeit **deaktiviert**. PraxisZeit laeuft
+> waehrend der oeffentlichen Beta **ohne** `license.key` mit vollem
+> Funktionsumfang — es ist **kein** Lizenzierungs-Schritt noetig. Ein
+> Lizenzmodell wird zu einem spaeteren Zeitpunkt eingefuehrt; Nutzer werden
+> rechtzeitig informiert.
 
 ---
 
 ## Release-Pakete selber bauen
 
 Voraussetzungen zum Bauen: Linux mit Python 3.12+, Node.js 20+, curl, rsync, zip.
-PostgreSQL-Installer fuer Windows (.exe) und macOS (.dmg) muessen manuell von
-[enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads)
-heruntergeladen und in `~/Downloads/` abgelegt werden.
+PostgreSQL fuer **Linux und macOS** wird beim Build automatisch als
+`theseus-rs/postgresql-binaries` 16 geladen (SHA256-verifiziert) — kein manueller
+Download noetig. Nur fuer **Windows** wird der EDB-Installer (.exe) gebuendelt
+(direkter Link `https://get.enterprisedb.com/postgresql/…-windows-x64.exe`, kein
+Webformular); mit `--skip-download` wird der Cache aus `~/Downloads/` genutzt.
 
 ```bash
 # Alle Plattformen bauen
@@ -323,7 +338,7 @@ praxiszeit-X.Y.Z-SHA256SUMS.txt
 | Keine Berechtigung | Linux: `sudo chown -R praxiszeit:praxiszeit /opt/praxiszeit` |
 | Migration fehlgeschlagen | Process Manager manuell starten, Fehlerausgabe lesen |
 | Windows: setup.bat schlaegt fehl | Als Administrator ausfuehren, Internetverbindung pruefen |
-| macOS: PostgreSQL-DMG nicht gefunden | PostgreSQL manuell installieren: [postgresapp.com](https://postgresapp.com) |
+| macOS: PostgreSQL startet nicht | PG ist gebuendelt (theseus), keine Extra-Installation noetig — Logs pruefen: `logs/postgresql-startup.log` |
 | `.db-credentials` fehlt, Dienst startet nicht | Siehe Abschnitt "Disaster Recovery" unten |
 
 ---

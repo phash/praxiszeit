@@ -318,7 +318,7 @@ $( { [ -n "${LICENSE_FILE}" ] || [ "${EXISTING_LICENSE}" = "1" ]; } && echo "key
 
 [updates]
 check_enabled = true
-server_url = "https://updates.praxiszeit.de"
+server_url = "https://updates.mr-development.de"
 check_interval_hours = 12
 
 [backup]

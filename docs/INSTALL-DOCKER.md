@@ -26,8 +26,8 @@ Dateien (inkl. `docker-compose.yml`) zu kommen:
 
 ```bash
 # 1. Bundle entpacken (enthält einen Top-Level-Ordner praxiszeit-X.Y.Z/)
-tar xzf praxiszeit-1.8.0-docker.tar.gz
-cd praxiszeit-1.8.0
+tar xzf praxiszeit-1.8.10-docker.tar.gz
+cd praxiszeit-1.8.10
 
 # 2. Secrets erzeugen (.env mit Zufallswerten + komplexem Admin-Passwort)
 bash generate-secrets.sh

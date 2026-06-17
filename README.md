@@ -63,6 +63,11 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 
 ## Installation
 
+PraxisZeit lässt sich auf zwei Wegen betreiben:
+
+- **Docker Compose** (empfohlen, dieser Abschnitt) — ausführlich: [docs/INSTALL-DOCKER.md](docs/INSTALL-DOCKER.md)
+- **Nativ ohne Docker** (Kundenserver, gebündeltes Python + PostgreSQL, systemd/launchd/Windows-Dienst) — [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md)
+
 ### Voraussetzungen
 
 - Docker & Docker Compose
@@ -90,7 +95,7 @@ Bearbeite `.env` und setze:
 
 3. **Docker Container starten:**
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 Die Datenbank wird automatisch initialisiert und Migrationen ausgeführt.
@@ -110,6 +115,7 @@ PraxisZeit kann als App auf dem Smartphone oder Desktop installiert werden:
 - **Chrome (Android):** Menü → "App installieren" oder "Zum Startbildschirm"
 - **Safari (iOS):** Teilen → "Zum Home-Bildschirm"
 - **Im WLAN:** `http://<SERVER-IP>` im Browser öffnen
+- **QR-Code:** Auf der Login-Seite öffnet "Auf dem Smartphone öffnen (QR-Code)" einen QR-Code mit der Server-Adresse — mit der Handy-Kamera scannen, dann am Handy normal anmelden (gleiches Netzwerk nötig; meldet nicht automatisch an)
 
 ### Initiales Admin-Login
 
@@ -122,7 +128,7 @@ Die Zugangsdaten für den Admin-Account sind in der `.env`-Datei definiert:
 Um das System mit realistischen Test-Daten für 2026 zu befüllen:
 
 ```bash
-docker-compose exec backend python create_test_data.py
+docker compose exec backend python create_test_data.py
 ```
 
 Dies erstellt:
@@ -159,13 +165,13 @@ Die Stempeluhr erscheint oben auf dem Dashboard und ermöglicht schnelles Ein-/A
 Die Datenbank wird beim Start automatisch migriert. Manuelle Migration:
 
 ```bash
-docker-compose exec backend alembic upgrade head
+docker compose exec backend alembic upgrade head
 ```
 
 Neue Migration erstellen:
 
 ```bash
-docker-compose exec backend alembic revision --autogenerate -m "description"
+docker compose exec backend alembic revision --autogenerate -m "description"
 ```
 
 **Aktuelle Migrationen (001–049):**
@@ -236,8 +242,8 @@ npm run dev
 ### Logs anzeigen
 
 ```bash
-docker-compose logs -f backend
-docker-compose logs -f frontend
+docker compose logs -f backend
+docker compose logs -f frontend
 ```
 
 ## API Dokumentation
@@ -316,12 +322,12 @@ Datenbank-Migrationen werden automatisch beim Start ausgeführt.
 
 **Datenbank-Backup:**
 ```bash
-docker-compose exec db pg_dump -U praxiszeit praxiszeit > backup.sql
+docker compose exec db pg_dump -U praxiszeit praxiszeit > backup.sql
 ```
 
 **Datenbank-Restore:**
 ```bash
-docker-compose exec -T db psql -U praxiszeit praxiszeit < backup.sql
+docker compose exec -T db psql -U praxiszeit praxiszeit < backup.sql
 ```
 
 ## Compliance & Audits

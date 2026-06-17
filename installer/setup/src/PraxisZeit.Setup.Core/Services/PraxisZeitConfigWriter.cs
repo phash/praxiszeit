@@ -178,7 +178,7 @@ public static class PraxisZeitConfigWriter
 
         sb.AppendLine("[updates]");
         sb.AppendLine("check_enabled = true");
-        sb.AppendLine("server_url = \"https://updates.praxiszeit.de\"");
+        sb.AppendLine("server_url = \"https://updates.mr-development.de\"");
         sb.AppendLine("check_interval_hours = 12");
         sb.AppendLine();
 

@@ -44,7 +44,7 @@ key_file = "config/license.key"
 [updates]
 # Automatische Update-Pruefung
 check_enabled = true
-server_url = "https://updates.praxiszeit.de"
+server_url = "https://updates.mr-development.de"
 check_interval_hours = 12
 
 [backup]

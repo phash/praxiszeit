@@ -459,6 +459,22 @@ Am unteren Rand befindet sich eine **Tab-Leiste** mit Direktzugriffen:
 
 Tippen Sie auf den **+ Button** oben rechts auf der Zeiterfassungsseite, um das Eingabeformular zu öffnen.
 
+### Schnell aufs Smartphone öffnen (QR-Code)
+
+Sie müssen die Server-Adresse nicht abtippen: Auf der **Login-Seite** gibt es den
+Link **„Auf dem Smartphone öffnen (QR-Code)"**. Er zeigt einen QR-Code mit der
+Adresse genau dieser PraxisZeit-Installation.
+
+1. Öffnen Sie PraxisZeit am PC über die richtige Adresse (z. B. `https://192.168.178.50`).
+2. Klicken Sie auf **„Auf dem Smartphone öffnen (QR-Code)"**.
+3. Scannen Sie den QR-Code mit der **Kamera** Ihres Smartphones — der Handy-Browser
+   öffnet dieselbe Login-Seite.
+4. Melden Sie sich dort wie gewohnt mit **Benutzername und Passwort** an.
+
+> Der QR-Code **öffnet nur die Seite** — er meldet Sie nicht automatisch an. Ihr
+> Smartphone muss im selben Netzwerk (Praxis-WLAN) sein wie der Server, und bei
+> einem selbstsignierten Zertifikat bestätigen Sie einmalig die Sicherheitswarnung.
+
 ### Installation als App (PWA)
 
 Auf unterstützten Geräten können Sie PraxisZeit wie eine App installieren:
