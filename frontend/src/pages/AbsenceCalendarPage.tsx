@@ -176,22 +176,20 @@ export default function AbsenceCalendarPage() {
         setMyAbsences(absencesRes.data);
         setHolidays(holidaysRes.data);
       } else {
-        // Fetch all months for the year
-        const promises = Array.from({ length: 12 }, (_, i) => {
+        // Alle 12 Monate + Jahres-Absences + Feiertage in EINEM Batch laden,
+        // damit setCalendarEntries nicht vor dem finalen seq-Check passiert
+        // (sonst Mix aus altem Jahr-Kalender + neuem Jahr-Absences bei Wechsel).
+        const monthPromises = Array.from({ length: 12 }, (_, i) => {
           const month = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
           return apiClient.get(`/absences/calendar?month=${month}`);
         });
-        const results = await Promise.all(promises);
-        if (seq !== fetchSeq.current) return;
-        const allEntries = results.flatMap(r => r.data);
-        setCalendarEntries(allEntries);
-
-        // Fetch user absences and holidays for the year
-        const [absencesRes, holidaysRes] = await Promise.all([
+        const [results, absencesRes, holidaysRes] = await Promise.all([
+          Promise.all(monthPromises),
           apiClient.get(`/absences?year=${currentYear}`),
           apiClient.get(`/holidays?year=${currentYear}`),
         ]);
         if (seq !== fetchSeq.current) return;
+        setCalendarEntries(results.flatMap(r => r.data));
         setMyAbsences(absencesRes.data);
         setHolidays(holidaysRes.data);
       }

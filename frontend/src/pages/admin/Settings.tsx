@@ -7,6 +7,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore';
+import { useSystemStore } from '../../stores/systemStore';
 
 // #157: Reihenfolge + Labels der konfigurierbaren Typ-Farben.
 const COLOR_TYPE_ORDER: { key: string; label: string }[] = [
@@ -294,6 +295,9 @@ export default function Settings() {
         value: String(onboardingEnabled),
       });
       setOriginalOnboarding(onboardingEnabled);
+      // systemStore aktualisieren, damit das OnboardingModal sofort auf die neue
+      // Einstellung reagiert (sonst erst nach Hard-Refresh sichtbar).
+      await useSystemStore.getState().fetch();
       toast.success('Onboarding-Einstellung gespeichert.');
     } catch (err) {
       toast.error(getErrorMessage(err));

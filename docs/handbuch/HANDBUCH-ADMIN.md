@@ -453,6 +453,11 @@ Dieser Bereich ist für die initiale Datenübernahme oder die Massenbefüllung b
 
 Unter **Einstellungen** konfigurieren Sie alle systemweiten Parameter. Jeder Bereich hat einen eigenen **Speichern**-Button – Änderungen werden erst durch Klick darauf wirksam.
 
+<a id="onboarding"></a>
+### Onboarding / Willkommens-Tour
+
+Beim **ersten Login** sehen neue Mitarbeitende und Admins eine kurze, rollenspezifische **Willkommens-Tour** mit den wichtigsten Bereichen. Im Bereich **„Onboarding / Willkommens-Tour"** schalten Sie diese mit dem Schalter **„Willkommens-Tour anzeigen"** praxisweit ein oder aus (Standard: **an**). Bereits gesehene Touren erscheinen ohnehin nicht erneut. Eine eigene **Schnellstart**-Anleitung für die Ersteinrichtung erreichen Sie jederzeit über den Button **„Schnellstart"** unten links in der Seitenleiste.
+
 <a id="feiertage"></a>
 ### Feiertage / Eigene Feiertage
 

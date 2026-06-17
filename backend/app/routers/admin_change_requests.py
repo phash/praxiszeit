@@ -167,6 +167,7 @@ def review_change_request(
     if cr.entry_kind != "absence":
         if cr.request_type == ChangeRequestType.CREATE:
             duplicate = db.query(TimeEntry).filter(
+                TimeEntry.tenant_id == cr.tenant_id,
                 TimeEntry.user_id == cr.user_id,
                 TimeEntry.date == cr.proposed_date,
                 TimeEntry.start_time == cr.proposed_start_time,
@@ -181,13 +182,15 @@ def review_change_request(
             # matching the update_time_entry path — prevents a concurrent admin
             # edit from racing the re-validation/materialisation below.
             entry = db.query(TimeEntry).filter(
-                TimeEntry.id == cr.time_entry_id
+                TimeEntry.id == cr.time_entry_id,
+                TimeEntry.tenant_id == cr.tenant_id,
             ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
             # Check for unique constraint violation on date/start_time change
             if cr.proposed_date != entry.date or cr.proposed_start_time != entry.start_time:
                 dup = db.query(TimeEntry).filter(
+                    TimeEntry.tenant_id == cr.tenant_id,
                     TimeEntry.user_id == cr.user_id,
                     TimeEntry.date == cr.proposed_date,
                     TimeEntry.start_time == cr.proposed_start_time,
@@ -204,7 +207,8 @@ def review_change_request(
             # matching the update_time_entry path — prevents a concurrent admin
             # edit from racing the re-validation/materialisation below.
             entry = db.query(TimeEntry).filter(
-                TimeEntry.id == cr.time_entry_id
+                TimeEntry.id == cr.time_entry_id,
+                TimeEntry.tenant_id == cr.tenant_id,
             ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")

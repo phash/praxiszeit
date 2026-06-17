@@ -445,11 +445,14 @@ def _allowed_hosts() -> list[str]:
     # Security-Audit M-01: ALLOWED_HOSTS='*' macht TrustedHostMiddleware zum No-Op.
     # Für internet-facing Production laut, aber NICHT-fatal warnen (LAN-by-IP/on-prem
     # bleiben absichtlich offen → kein Verhaltenswechsel, nur ein Log-Hinweis).
-    if hosts == ["*"] and getattr(settings, "ENVIRONMENT", "development").lower() == "production":
+    _prod = getattr(settings, "ENVIRONMENT", "development").lower() == "production"
+    _saas = getattr(settings, "DEPLOYMENT_MODE", "onprem").lower() == "saas"
+    if hosts == ["*"] and (_prod or _saas):
         logging.getLogger("uvicorn.error").warning(
-            "ALLOWED_HOSTS='*' im Production-Modus: Host-Header-Schutz (TrustedHost) ist "
-            "deaktiviert. Für internet-facing Deployments ALLOWED_HOSTS auf die echte(n) "
-            "Domain(s) setzen."
+            "ALLOWED_HOSTS='*' (%s): Host-Header-Schutz (TrustedHost) ist deaktiviert. "
+            "Für internet-facing / Multi-Tenant-Deployments ALLOWED_HOSTS auf die echte(n) "
+            "Domain(s) setzen.",
+            "SaaS" if _saas else "Production",
         )
     return hosts
 
