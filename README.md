@@ -349,6 +349,8 @@ Jeder Ordner enthält eine `HOWTO.md` mit dem Audit-Prozess, dem Claude-Prompt z
 - **docs/generated/** - Generierte PDF/HTML-Handbücher (lokal, nicht im Repo)
 - **docs/ARC42.md** - Architekturdokumentation (ARC42-Format)
 - **docs/INSTALLATION.md** - Detaillierte Installationsanleitung
+- **docs/DOCKER-START.md** - PraxisZeit mit Docker starten (aus dem Docker-Paket, ohne git)
+- **docs/UPDATE.md** - Bestehende Docker-/Native-Installation aktualisieren
 - **docs/specs/** - Audit-Berichte (Security, DSGVO, ArbZG)
 - **API Docs** - http://localhost:8000/docs
 - **GitHub Issues** - https://github.com/phash/praxiszeit/issues
