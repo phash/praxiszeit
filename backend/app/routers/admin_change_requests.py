@@ -279,13 +279,13 @@ def review_change_request(
     existing_absence = None
     if cr.entry_kind == "absence":
         if cr.request_type in (ChangeRequestType.UPDATE, ChangeRequestType.DELETE):
-            absence = db.query(Absence).filter(Absence.id == cr.absence_id).first()
+            absence = db.query(Absence).filter(Absence.id == cr.absence_id, Absence.tenant_id == cr.tenant_id).first()
             if not absence:
                 raise HTTPException(status_code=404, detail="Abwesenheit nicht mehr vorhanden")
 
         # Arbeitszeitraum-Prüfung für Absence CREATE/UPDATE
         if cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE):
-            cr_user = db.query(User).filter(User.id == cr.user_id).first()
+            cr_user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
             if cr_user and cr.proposed_date:
                 if cr_user.first_work_day and cr.proposed_date < cr_user.first_work_day:
                     raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
@@ -457,7 +457,7 @@ def review_change_request(
             # derselbe Tagessoll-Wert). Ohne diese Regel buchte ein per CR
             # genehmigter Urlaub die 8h und verbrauchte bei Teilzeit (4h/Tag)
             # doppelten Urlaub (8/4 = 2 Tage statt 1).
-            cr_user = db.query(User).filter(User.id == cr.user_id).first()
+            cr_user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
             _is_overtime = cr.proposed_absence_type == AbsenceType.OVERTIME.value
             if cr_user and (not _is_overtime or getattr(cr_user, "use_daily_schedule", False)):
                 weekly = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
@@ -513,9 +513,20 @@ def review_change_request(
 
             if cr.proposed_absence_type:
                 absence.type = AbsenceType(cr.proposed_absence_type)
-            # Stunden nur aktualisieren, wenn explizit angegeben.
-            # Nicht gesetzte proposed_absence_hours belassen den Originalwert.
-            if cr.proposed_absence_hours is not None:
+            # H-1: Voll-Tag-Typen aufs Tagessoll des Tages umbuchen — identisch zum
+            # CREATE-Pfad (Z.460-466), create_absence und review_vacation_request.
+            # Bei Typwechsel (z.B. OVERTIME→VACATION) dürfen NICHT die alten
+            # expliziten Stunden bleiben, sonst verbraucht Teilzeit (4h/Tag) bei
+            # 8h doppelten Urlaub. Nur OVERTIME behält explizite Stunden.
+            _upd_user = db.query(User).filter(
+                User.id == cr.user_id, User.tenant_id == cr_tenant_id
+            ).first()
+            _upd_date = cr.proposed_date or absence.date
+            _upd_is_overtime = absence.type == AbsenceType.OVERTIME
+            if _upd_user and (not _upd_is_overtime or getattr(_upd_user, "use_daily_schedule", False)):
+                _upd_weekly = get_weekly_hours_for_date(db, _upd_user, _upd_date)
+                absence.hours = float(get_daily_target_for_date(_upd_user, _upd_date, _upd_weekly))
+            elif cr.proposed_absence_hours is not None:
                 absence.hours = float(cr.proposed_absence_hours)
             if cr.proposed_date:
                 absence.date = cr.proposed_date
@@ -561,7 +572,7 @@ def review_change_request(
         and cr.proposed_start_time
         and cr.proposed_end_time
     ):
-        cr_user = db.query(User).filter(User.id == cr.user_id).first()
+        cr_user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
         if cr_user and not cr_user.exempt_from_arbzg:
             # §16/#201: assess the informational ArbZG warnings on the CREDITED
             # (clamped) time too — consistent with the §3/§4 hard re-check above

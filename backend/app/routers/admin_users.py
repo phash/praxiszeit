@@ -276,16 +276,24 @@ def purge_user(
     if user.is_active:
         raise HTTPException(status_code=400, detail="Benutzer muss zuerst deaktiviert werden")
 
-    last_entry = db.query(TimeEntry).filter(
-        TimeEntry.user_id == user.id
+    # ArbZG §16: 730-Tage-Aufbewahrung. Die jüngste aufbewahrungspflichtige
+    # Aufzeichnung kann ein Zeiteintrag ODER eine Abwesenheit sein (z. B. Urlaub/
+    # Krank nach dem letzten Stempel). Beide müssen die Frist überdauern, sonst
+    # löscht der Purge noch pflichtige Daten vorzeitig (DSGVO-Audit M).
+    last_te = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id
     ).order_by(TimeEntry.date.desc()).first()
-
-    if last_entry:
-        days_since = (today_local() - last_entry.date).days
+    last_abs = db.query(Absence).filter(
+        Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id
+    ).order_by(Absence.date.desc()).first()
+    candidate_dates = [r.date for r in (last_te, last_abs) if r]
+    if candidate_dates:
+        latest = max(candidate_dates)
+        days_since = (today_local() - latest).days
         if days_since < 730:
             raise HTTPException(
                 status_code=409,
-                detail=f"Aufbewahrungsfrist noch nicht abgelaufen. Letzter Eintrag: {last_entry.date.strftime('%d.%m.%Y')} ({days_since} Tage, Pflicht: 730 Tage gem. ArbZG §16)."
+                detail=f"Aufbewahrungsfrist noch nicht abgelaufen. Jüngste Aufzeichnung: {latest.strftime('%d.%m.%Y')} ({days_since} Tage, Pflicht: 730 Tage gem. ArbZG §16)."
             )
 
     # Remove FK dependencies before deleting user.

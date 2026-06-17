@@ -9,7 +9,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 import MonthSelector from '../../components/MonthSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { parseHours } from '../../utils/formatters';
+import { parseHours, formatHoursHM } from '../../utils/formatters';
 
 interface CompanyClosure {
   id: string;
@@ -678,7 +678,7 @@ export default function AdminAbsences() {
                         {typeLabels[absence.type]}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{absence.hours} h</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{absence.note || '–'}</td>
                     <td className="px-6 py-4 text-right">
                       <button
@@ -759,7 +759,7 @@ export default function AdminAbsences() {
                                 {typeLabels[absence.type]}
                               </span>
                             </td>
-                            <td className="px-6 py-3 text-sm text-gray-900">{absence.hours} h</td>
+                            <td className="px-6 py-3 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
                             <td className="px-6 py-3 text-right">
                               <button
                                 onClick={() => handleDelete(absence.id, emp.id)}

@@ -94,6 +94,10 @@ def _create_endpoints_app() -> FastAPI:
 
 
 endpoints_app = _create_endpoints_app()
+# Back-compat alias: 10 Test-Module importieren historisch `test_app`. Eine
+# Variable (TestClient-Instanz) mit test_-Präfix wird von pytest NICHT als Test
+# kollektiert (nur Funktionen/Klassen), daher kollisionsfrei.
+test_app = endpoints_app
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -56,7 +56,7 @@ class User(Base):
     is_night_worker = Column(Boolean, default=False, nullable=False, server_default='false')  # §6 Abs. 2 ArbZG: reduziertes Tageslimit 8h
     receives_company_closures = Column(Boolean, default=True, nullable=False, server_default='true')  # #189: nimmt an Betriebsferien teil (unabhängig von der Rolle)
     department = Column(String(100), nullable=True)  # #162: Abteilung/Bereich (Freitext, optional)
-    totp_secret = Column(String(64), nullable=True)  # F-019: TOTP secret (None if 2FA not set up)
+    totp_secret = Column(String(255), nullable=True)  # F-019: TOTP secret, Fernet-encrypted at-rest (DSGVO Art.32); None if 2FA not set up
     totp_enabled = Column(Boolean, default=False, nullable=False, server_default='false')  # F-019: 2FA active
     last_totp_counter = Column(BigInteger, nullable=True)  # Highest counter value already accepted (replay guard)
     first_work_day = Column(Date, nullable=True)  # Erster Arbeitstag

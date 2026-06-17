@@ -28,17 +28,17 @@ def get_setting(db: Session, key: str, tenant_id, default: str = "") -> str:
 
 def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
     resp = VacationRequestResponse.model_validate(vr)
-    user = db.query(User).filter(User.id == vr.user_id).first()
+    user = db.query(User).filter(User.id == vr.user_id, User.tenant_id == vr.tenant_id).first()
     if user:
         resp.user_first_name = user.first_name
         resp.user_last_name = user.last_name
     if vr.reviewed_by:
-        reviewer = db.query(User).filter(User.id == vr.reviewed_by).first()
+        reviewer = db.query(User).filter(User.id == vr.reviewed_by, User.tenant_id == vr.tenant_id).first()
         if reviewer:
             resp.reviewer_first_name = reviewer.first_name
             resp.reviewer_last_name = reviewer.last_name
     if vr.last_modified_by:
-        modifier = db.query(User).filter(User.id == vr.last_modified_by).first()
+        modifier = db.query(User).filter(User.id == vr.last_modified_by, User.tenant_id == vr.tenant_id).first()
         if modifier:
             resp.last_modifier_first_name = modifier.first_name
             resp.last_modifier_last_name = modifier.last_name

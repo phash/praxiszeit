@@ -68,6 +68,26 @@ def list_absences(
         query = query.filter(date_in_year(Absence.date, year))
 
     absences = query.order_by(Absence.date.desc()).offset(skip).limit(limit).all()
+
+    # DSGVO Art. 9/32 (Audit M): Admin-Zugriff auf FREMDE Gesundheitsdaten
+    # (Krank/Sonstiges/bezahlte Freistellung) protokollieren — eine Zeile pro
+    # Request (nicht pro Eintrag), nur beim gezielten Einzel-MA-Adminblick.
+    if (
+        current_user.role == UserRole.ADMIN
+        and user_id
+        and str(user_id) != str(current_user.id)
+        and any(a.type in _MASKED_ABSENCE_TYPES for a in absences)
+    ):
+        db.add(TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=user_id,
+            changed_by=current_user.id,
+            action="health_data_read",
+            source="dsgvo",
+            tenant_id=current_user.tenant_id,
+        ))
+        db.commit()
+
     return absences
 
 
