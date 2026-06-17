@@ -140,14 +140,18 @@ export default function AdminDashboard() {
     }
   };
 
+  // C-2: Out-of-order-Schutz bei schnellem Jahreswechsel (Last-Write-Wins).
+  const yearlySeq = useRef(0);
   const fetchYearlyAbsences = async () => {
+    const seq = ++yearlySeq.current;
     try {
       const response = await apiClient.get(`/admin/reports/yearly-absences?year=${currentYear}`);
+      if (seq !== yearlySeq.current) return;
       setYearlyAbsences(response.data);
     } catch (error) {
-      toast.error('Fehler beim Laden der Jahresübersicht');
+      if (seq === yearlySeq.current) toast.error('Fehler beim Laden der Jahresübersicht');
     } finally {
-      setYearlyLoading(false);
+      if (seq === yearlySeq.current) setYearlyLoading(false);
     }
   };
 
