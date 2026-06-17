@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.8.10 (Stand 2026-06-16)
+**Aktuelle Version:** 1.8.11 (Stand 2026-06-17)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
@@ -227,6 +227,8 @@ JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 
 | Admin-Cheat-Sheet | [docs/handbuch/CHEATSHEET-ADMIN.md](docs/handbuch/CHEATSHEET-ADMIN.md) |
 | Native Installation | [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md) |
 | Docker-Installation | [docs/INSTALL-DOCKER.md](docs/INSTALL-DOCKER.md) |
+| Docker-Schnellstart (aus Tarball/ZIP, ohne git) | [docs/DOCKER-START.md](docs/DOCKER-START.md) |
+| Update (Docker & Native) | [docs/UPDATE.md](docs/UPDATE.md) |
 | Native Installer Design | [docs/superpowers/specs/2026-04-07-native-single-instance-installer-design.md](docs/superpowers/specs/2026-04-07-native-single-instance-installer-design.md) |
 | Specs & Design-Docs | `docs/specs/` (arbzg, dsgvo, features, security) |
 
