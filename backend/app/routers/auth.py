@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File, status
 from fastapi.responses import JSONResponse
 from app.core.limiter import limiter
+from app.core import totp_crypto
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel, Field, field_validator
@@ -233,8 +234,10 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 detail="TOTP-Code erforderlich",
                 headers={"X-Requires-TOTP": "true"},
             )
+        stored_secret = user.totp_secret
+        plain_secret = totp_crypto.decrypt_secret(stored_secret)
         accepted_counter = auth_service.verify_totp_with_counter(
-            user.totp_secret, login_data.totp_code, user.last_totp_counter
+            plain_secret, login_data.totp_code, user.last_totp_counter
         )
         if accepted_counter is None:
             _record_failed_login(username_lower, now)
@@ -244,6 +247,12 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 detail="Ungültiger TOTP-Code",
             )
         user.last_totp_counter = accepted_counter
+        # DSGVO Art. 32: Bestands-Klartext-Secret bei erfolgreichem Login auf
+        # Fernet-Verschlüsselung migrieren (analog bcrypt-Rehash-on-login).
+        # M-2: kein zweites Decrypt — decrypt_secret gibt Legacy-Klartext unverändert
+        # zurück, ein Fernet-Token nie (Ciphertext != Base32-Klartext).
+        if plain_secret == stored_secret:
+            user.totp_secret = totp_crypto.encrypt_secret(plain_secret)
         db.add(user)
         db.commit()
 
@@ -592,7 +601,10 @@ def totp_setup(
     Returns the otpauth:// URI for QR rendering and the raw secret for manual entry.
     """
     secret = auth_service.generate_totp_secret()
-    current_user.totp_secret = secret
+    current_user.totp_secret = totp_crypto.encrypt_secret(secret)
+    # M-1: Counter mit dem neuen Secret zurücksetzen, sonst kann ein Setup direkt
+    # nach einem Login im selben 30s-Fenster nicht bestätigt werden (Replay-Guard).
+    current_user.last_totp_counter = None
     db.commit()
 
     return TotpSetupResponse(
@@ -623,7 +635,7 @@ def totp_verify(
     # accepted counter, so the code that activates 2FA cannot then be replayed
     # against /login within the ±30s window.
     accepted_counter = auth_service.verify_totp_with_counter(
-        current_user.totp_secret, verify_data.code, current_user.last_totp_counter
+        totp_crypto.decrypt_secret(current_user.totp_secret), verify_data.code, current_user.last_totp_counter
     )
     if accepted_counter is None:
         raise HTTPException(
@@ -657,6 +669,9 @@ def totp_disable(
 
     current_user.totp_secret = None
     current_user.totp_enabled = False
+    # M-1: Counter zurücksetzen — sonst lehnt ein Re-Enroll im selben 30s-Fenster
+    # den ersten Code als Replay ab (neuer Counter == altem last_totp_counter).
+    current_user.last_totp_counter = None
     # S-L03: invalidate other sessions on a security-relevant change, mirroring
     # deactivate / set-password / role-change. Disabling 2FA must not leave
     # stale sessions authenticated.

@@ -772,6 +772,10 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         h = Decimal(str(a.hours))
         used_hours += h
         dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date))
+        # §3 BUrlG / Tagesprinzip: Urlaub an einem NICHT-Arbeitstag des MA
+        # (dt_day == 0, z. B. Di/Do bei einer Mo/Mi/Fr-Kraft) verbraucht 0 Urlaubs-
+        # tage — das Überspringen ist gewollt, KEIN Buchungsverlust (Funktions-
+        # Review 2026-06-17 verifiziert).
         if dt_day > 0:
             used_days += (h / Decimal(str(dt_day)))
 

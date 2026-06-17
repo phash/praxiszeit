@@ -549,7 +549,7 @@ export default function TimeTracking() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="entry-form-title"
+            aria-label={editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
             className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-xs md:border md:p-6 md:mb-6"
             style={{ animation: 'slideUpSheet 0.25s ease-out' }}
           >
@@ -559,7 +559,7 @@ export default function TimeTracking() {
             </div>
             {/* Mobile header with close button */}
             <div className="md:hidden flex items-center justify-between px-4 pb-3 border-b border-gray-100">
-              <h3 id="entry-form-title" className="text-base font-semibold text-gray-900">
+              <h3 className="text-base font-semibold text-gray-900">
                 {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
               </h3>
               <button onClick={resetForm} className="p-2 text-gray-500 hover:text-gray-700" aria-label="Formular schließen">
@@ -567,7 +567,7 @@ export default function TimeTracking() {
               </button>
             </div>
             {/* Desktop title */}
-            <h3 id="entry-form-title" className="hidden md:block text-lg font-semibold mb-4">
+            <h3 className="hidden md:block text-lg font-semibold mb-4">
               {editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
             </h3>
           {errors.overlap && (

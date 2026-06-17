@@ -29,6 +29,7 @@ import {
   Play,
   Timer,
   Coffee,
+  Rocket,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 import StampWidget from './StampWidget';
@@ -45,7 +46,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
+  const [drawerTab, setDrawerTab] = useState<'schnellstart' | 'cheatsheet' | 'handbuch'>('cheatsheet');
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [sheetClosing, setSheetClosing] = useState(false);
   const [pendingCRCount, setPendingCRCount] = useState(0);
@@ -335,6 +336,15 @@ export default function Layout() {
           </Link>
           {/* Handbuch-Downloads */}
           <div className="mb-2 flex flex-col gap-1">
+            {user?.role === 'admin' && (
+              <button
+                onClick={() => { setDrawerTab('schnellstart'); setDrawerOpen(true); }}
+                className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors w-full text-left"
+              >
+                <Rocket size={13} />
+                <span>Schnellstart</span>
+              </button>
+            )}
             <button
               onClick={() => { setDrawerTab('cheatsheet'); setDrawerOpen(true); }}
               className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors w-full text-left"

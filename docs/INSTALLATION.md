@@ -56,28 +56,38 @@ cd praxiszeit
 
 ## Schritt 3: Konfiguration (.env-Datei)
 
-Die `.env`-Datei mit den Produktions-Einstellungen anlegen:
+PraxisZeit liest alle Geheimnisse und Einstellungen aus einer `.env`-Datei.
+**Niemals echte Passwörter/Keys fest in eine Anleitung schreiben** — das
+mitgelieferte Skript erzeugt starke Zufallswerte:
 
 ```bash
-cat > .env << 'EOF'
-# Datenbank
-POSTGRES_USER=praxiszeit
-POSTGRES_PASSWORD=REDACTED-DBPW
-POSTGRES_DB=praxiszeit
-
-# Backend
-SECRET_KEY=REDACTED-SECRETKEY
-DATABASE_URL=postgresql://praxiszeit:REDACTED-DBPW@db:5432/praxiszeit
-ACCESS_TOKEN_EXPIRE_MINUTES=480
-REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# Admin-Konto (wird beim ersten Start automatisch angelegt)
-ADMIN_EMAIL=erika@example.de
-ADMIN_PASSWORD=REDACTED-PW
-ADMIN_FIRST_NAME=Dr. Muster
-ADMIN_LAST_NAME=Beispielpraxis
-EOF
+cd ~/praxiszeit
+bash tools/docker/generate-secrets.sh
 ```
+
+Das Skript schreibt `.env` mit zufälligem `SECRET_KEY`, `POSTGRES_PASSWORD`,
+`APP_DB_PASSWORD`, `GRAFANA_ADMIN_PASSWORD` und einem komplexen `ADMIN_PASSWORD`
+(wird am Ende ausgegeben — **notieren!**) und setzt `ENVIRONMENT=production`.
+
+Anschließend nur noch die praxis-spezifischen Werte anpassen:
+
+```bash
+nano .env
+```
+
+| Variable | Bedeutung |
+|----------|-----------|
+| `ADMIN_USERNAME` / `ADMIN_EMAIL` | Initialer Admin-Login |
+| `ADMIN_FIRST_NAME` / `ADMIN_LAST_NAME` | Name des Admins |
+| `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint in Excel-Exporten (DSGVO) |
+| `HOLIDAY_STATE` | Bundesland für Feiertage (z. B. `Bayern`) |
+| `CORS_ORIGINS` / `ALLOWED_HOSTS` | Eigene Domain statt `localhost` (bei Internet-Zugriff) |
+
+> **Wichtig (seit RLS-Umbau):** Die `.env` braucht zusätzlich
+> `APP_DB_USER`/`APP_DB_PASSWORD`, `ENVIRONMENT` und `CORS_ORIGINS`. Eine alte,
+> von Hand geschriebene `.env` ohne diese Werte lässt `docker compose up` mit
+> `required variable APP_DB_PASSWORD is missing` abbrechen — daher
+> `generate-secrets.sh` nutzen (oder `cp .env.example .env` als Vorlage).
 
 ---
 
@@ -127,8 +137,8 @@ hostname -I
 ```
 
 ### Erster Login
-- **Email:** erika@example.de
-- **Passwort:** REDACTED-PW
+- **Email/Benutzer:** der in `.env` gesetzte `ADMIN_EMAIL` / `ADMIN_USERNAME`
+- **Passwort:** das von `generate-secrets.sh` ausgegebene `ADMIN_PASSWORD`
 - **Wichtig:** Passwort nach dem ersten Login unter "Profil" aendern!
 
 ### Firewall (falls ufw aktiv)

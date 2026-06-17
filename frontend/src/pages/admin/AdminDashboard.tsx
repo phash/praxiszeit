@@ -111,23 +111,32 @@ export default function AdminDashboard() {
   }, [currentMonth]);
 
   useEffect(() => {
+    // Re-fetch des offenen Mitarbeiters bei Monatswechsel. selectedEmployee ist
+    // bewusst KEINE Dependency: die Auswahl löst ihren eigenen Fetch aus, hier als
+    // Dep ergänzt würde es doppelt fetchen. Der Effect erfasst das aktuelle
+    // selectedEmployee (läuft nur bei currentMonth-Änderung).
     if (selectedEmployee) {
       fetchEmployeeDetails(selectedEmployee);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMonth]);
 
   useEffect(() => {
     fetchYearlyAbsences();
   }, [currentYear]);
 
+  // C-2: Out-of-order-Schutz bei schnellem Monatswechsel (Last-Write-Wins).
+  const reportSeq = useRef(0);
   const fetchReport = async () => {
+    const seq = ++reportSeq.current;
     try {
       const response = await apiClient.get(`/admin/reports/monthly?month=${currentMonth}`);
+      if (seq !== reportSeq.current) return;
       setReport(response.data);
     } catch (error) {
-      toast.error('Fehler beim Laden des Monatsberichts');
+      if (seq === reportSeq.current) toast.error('Fehler beim Laden des Monatsberichts');
     } finally {
-      setLoading(false);
+      if (seq === reportSeq.current) setLoading(false);
     }
   };
 
@@ -1308,7 +1317,7 @@ export default function AdminDashboard() {
                                       : 'Sonstiges'}
                                   </span>
                                 </td>
-                                <td className="px-4 py-2 text-sm">{absence.hours} h</td>
+                                <td className="px-4 py-2 text-sm">{formatHoursHM(absence.hours)} h</td>
                                 <td className="px-4 py-2 text-sm text-gray-500">{absence.note || '-'}</td>
                               </tr>
                             ))}

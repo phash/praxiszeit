@@ -21,13 +21,13 @@ def _enrich_response(cr: ChangeRequest, db: Session) -> ChangeRequestResponse:
     """Add user names to the change request response."""
     response = ChangeRequestResponse.model_validate(cr)
 
-    user = db.query(User).filter(User.id == cr.user_id).first()
+    user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
     if user:
         response.user_first_name = user.first_name
         response.user_last_name = user.last_name
 
     if cr.reviewed_by:
-        reviewer = db.query(User).filter(User.id == cr.reviewed_by).first()
+        reviewer = db.query(User).filter(User.id == cr.reviewed_by, User.tenant_id == cr.tenant_id).first()
         if reviewer:
             response.reviewer_first_name = reviewer.first_name
             response.reviewer_last_name = reviewer.last_name
@@ -58,7 +58,7 @@ def create_change_request(
         if data.request_type in ("update", "delete"):
             if not data.absence_id:
                 raise HTTPException(status_code=400, detail="absence_id erforderlich für Absence-Änderung/Löschung")
-            absence = db.query(Absence).filter(Absence.id == data.absence_id).first()
+            absence = db.query(Absence).filter(Absence.id == data.absence_id, Absence.tenant_id == current_user.tenant_id).first()
             if not absence:
                 raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
             if absence.user_id != current_user.id:
@@ -92,6 +92,7 @@ def create_change_request(
         # Check for duplicate pending absence requests
         if data.request_type == "create" and data.proposed_date:
             existing_pending = db.query(ChangeRequest).filter(
+                ChangeRequest.tenant_id == current_user.tenant_id,
                 ChangeRequest.user_id == current_user.id,
                 ChangeRequest.status == ChangeRequestStatus.PENDING,
                 ChangeRequest.entry_kind == "absence",
@@ -103,6 +104,7 @@ def create_change_request(
                 raise HTTPException(status_code=400, detail="Es existiert bereits ein offener Antrag für dieses Datum und diesen Typ")
         elif data.request_type in ("update", "delete") and data.absence_id:
             existing_pending = db.query(ChangeRequest).filter(
+                ChangeRequest.tenant_id == current_user.tenant_id,
                 ChangeRequest.user_id == current_user.id,
                 ChangeRequest.status == ChangeRequestStatus.PENDING,
                 ChangeRequest.absence_id == data.absence_id,
@@ -145,7 +147,7 @@ def create_change_request(
     if data.request_type in ("update", "delete"):
         if not data.time_entry_id:
             raise HTTPException(status_code=400, detail="time_entry_id erforderlich für Änderung/Löschung")
-        entry = db.query(TimeEntry).filter(TimeEntry.id == data.time_entry_id).first()
+        entry = db.query(TimeEntry).filter(TimeEntry.id == data.time_entry_id, TimeEntry.tenant_id == current_user.tenant_id).first()
         if not entry:
             raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
         if entry.user_id != current_user.id:
@@ -223,6 +225,7 @@ def create_change_request(
 
     # Check for duplicate pending requests
     existing_pending = db.query(ChangeRequest).filter(
+        ChangeRequest.tenant_id == current_user.tenant_id,
         ChangeRequest.user_id == current_user.id,
         ChangeRequest.status == ChangeRequestStatus.PENDING,
     )
@@ -349,7 +352,7 @@ def get_change_request(
     current_user: User = Depends(get_current_user),
 ):
     """Get a specific change request."""
-    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id).first()
+    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id, ChangeRequest.tenant_id == current_user.tenant_id).first()
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.user_id != current_user.id and current_user.role != UserRole.ADMIN:
@@ -364,7 +367,7 @@ def withdraw_change_request(
     current_user: User = Depends(get_current_user),
 ):
     """Withdraw a pending change request."""
-    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id).first()
+    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id, ChangeRequest.tenant_id == current_user.tenant_id).first()
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.user_id != current_user.id:

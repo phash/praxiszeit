@@ -10,6 +10,9 @@ interface DocDrawerProps {
 }
 
 function getDownloadUrl(isAdmin: boolean, tab: DocTab): string {
+  if (tab === 'schnellstart') {
+    return '/help/SCHNELLSTART.md';
+  }
   if (tab === 'cheatsheet') {
     return isAdmin ? '/help/CHEATSHEET-ADMIN.md' : '/help/CHEATSHEET-MITARBEITER.md';
   }

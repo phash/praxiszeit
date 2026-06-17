@@ -19,7 +19,7 @@ export default function Privacy() {
             <h1 className="text-3xl font-bold text-gray-900">Datenschutzerklärung</h1>
           </div>
           <p className="text-gray-600">PraxisZeit – Zeiterfassungssystem</p>
-          <p className="text-sm text-gray-500 mt-1">Stand: Februar 2026</p>
+          <p className="text-sm text-gray-500 mt-1">Stand: Juni 2026</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 space-y-8 text-gray-800">
@@ -157,9 +157,11 @@ export default function Privacy() {
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Empfänger der Daten</h2>
             <p className="text-gray-600">
-              Personenbezogene Daten werden nicht an Dritte weitergegeben. Die Anwendung wird auf
-              dem Server des Arbeitgebers (On-Premises) betrieben. Es findet keine Übermittlung in
-              Drittländer außerhalb der EU/EWR statt.
+              Personenbezogene Daten werden nicht an Dritte weitergegeben. Bei der
+              On-Premises-Installation wird die Anwendung auf dem Server des Arbeitgebers betrieben;
+              es findet keine Übermittlung in Drittländer außerhalb der EU/EWR statt. Wird PraxisZeit
+              als gehosteter Dienst genutzt, regelt ein Auftragsverarbeitungsvertrag (Art. 28 DSGVO)
+              das Verhältnis zum Anbieter; auch dann erfolgt das Hosting innerhalb der EU/EWR.
             </p>
           </section>
 

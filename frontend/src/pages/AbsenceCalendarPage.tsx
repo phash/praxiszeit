@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
@@ -11,7 +11,7 @@ import AbsenceBadge from '../components/AbsenceBadge';
 import { useTypeColorsStore } from '../stores/typeColorsStore';
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
-import { parseHours } from '../utils/formatters';
+import { parseHours, formatHoursHM } from '../utils/formatters';
 import { getSpecialDayInfo, type SpecialDaySettings } from '../utils/specialDays';
 import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
@@ -157,16 +157,21 @@ export default function AbsenceCalendarPage() {
     }
   };
 
+  // C-2: Out-of-order-Schutz — bei schnellem Monats-/Jahr-/View-Wechsel darf eine
+  // langsamere ältere Antwort die neuere nicht überschreiben (Last-Write-Wins).
+  const fetchSeq = useRef(0);
   const fetchData = async () => {
+    const seq = ++fetchSeq.current;
     try {
       const year = viewMode === 'month' ? parseInt(currentMonth.split('-')[0]) : currentYear;
-      
+
       if (viewMode === 'month') {
         const [calendarRes, absencesRes, holidaysRes] = await Promise.all([
           apiClient.get(`/absences/calendar?month=${currentMonth}`),
           apiClient.get(`/absences?year=${year}`),
           apiClient.get(`/holidays?year=${year}`),
         ]);
+        if (seq !== fetchSeq.current) return;
         setCalendarEntries(calendarRes.data);
         setMyAbsences(absencesRes.data);
         setHolidays(holidaysRes.data);
@@ -177,6 +182,7 @@ export default function AbsenceCalendarPage() {
           return apiClient.get(`/absences/calendar?month=${month}`);
         });
         const results = await Promise.all(promises);
+        if (seq !== fetchSeq.current) return;
         const allEntries = results.flatMap(r => r.data);
         setCalendarEntries(allEntries);
 
@@ -185,11 +191,12 @@ export default function AbsenceCalendarPage() {
           apiClient.get(`/absences?year=${currentYear}`),
           apiClient.get(`/holidays?year=${currentYear}`),
         ]);
+        if (seq !== fetchSeq.current) return;
         setMyAbsences(absencesRes.data);
         setHolidays(holidaysRes.data);
       }
     } catch (error) {
-      toast.error('Fehler beim Laden des Kalenders');
+      if (seq === fetchSeq.current) toast.error('Fehler beim Laden des Kalenders');
     }
   };
 
@@ -1021,7 +1028,7 @@ export default function AbsenceCalendarPage() {
                         {typeLabels[absence.type]}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{absence.hours} h</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{absence.note || '-'}</td>
                     <td className="px-6 py-4 text-right text-sm">
                       <button
@@ -1075,7 +1082,7 @@ export default function AbsenceCalendarPage() {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Stunden:</span>
-                      <span className="font-medium">{absence.hours} h</span>
+                      <span className="font-medium">{formatHoursHM(absence.hours)} h</span>
                     </div>
                     {absence.note && (
                       <div>
