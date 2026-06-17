@@ -269,6 +269,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Öffnen Sie PraxisZeit im Browser und melden Sie sich mit Ihrem <strong>Benutzernamen</strong> und <strong>Passwort</strong> an. Nach dem Login landen Sie automatisch auf dem Dashboard.</p>
         <p>Falls Sie Ihr Passwort vergessen haben, wenden Sie sich an Ihren Administrator.</p>
+        <p><strong>Auf dem Smartphone:</strong> Der Link <strong>„Auf dem Smartphone öffnen (QR-Code)"</strong> auf der Login-Seite zeigt einen QR-Code mit der Server-Adresse. Mit der Handy-Kamera scannen → dieselbe Login-Seite öffnet sich am Handy (gleiches Netzwerk nötig; meldet nicht automatisch an — normal mit Benutzername/Passwort einloggen). Über „Zum Startbildschirm hinzufügen" lässt sich PraxisZeit als App installieren.</p>
       </div>
     ),
   },
@@ -481,9 +482,47 @@ export const handbuchAdminSections: AccordionItem[] = [
   },
 ];
 
+// ── Schnellstart (Admin) ─────────────────────────────────────────────────────
+// In-App-Version von docs/handbuch/SCHNELLSTART.md — bei Änderungen BEIDES pflegen.
+
+export function SchnellstartAdmin() {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-gray-600">
+        In wenigen Minuten von der Installation zur laufenden Zeiterfassung. Details im <strong>Admin-Handbuch</strong>.
+      </p>
+
+      <section>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">1. Praxis konfigurieren</h3>
+        <p className="text-sm text-gray-600">Unter <strong>Einstellungen</strong>: Bundesland (Feiertage), Urlaubsgenehmigung (an/aus), Sondertage 24./31.12., Onboarding-Tour (Standard an).</p>
+      </section>
+
+      <section>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">2. Mitarbeiter anlegen</h3>
+        <p className="text-sm text-gray-600 mb-1"><strong>Benutzerverwaltung → „Neue:r Mitarbeiter:in"</strong>: Benutzername + Startpasswort, Name, Wochenstunden bzw. Tagesplan, Urlaubsanspruch → Speichern.</p>
+        <ul className="text-sm text-gray-500 list-disc list-inside space-y-0.5">
+          <li>Leitende Angestellte: <em>„Keine Stundenzählung"</em> – Urlaub/Krank trotzdem tagebasiert.</li>
+          <li>Ein-/Austritt: <em>Erster/Letzter Arbeitstag</em> setzen.</li>
+          <li>Optional: Soll-Arbeitszeit-Fenster (Soll-Beginn/-Ende je Wochentag).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">3. Betrieb</h3>
+        <p className="text-sm text-gray-600">Mitarbeiter stempeln/erfassen; das <strong>Admin-Dashboard</strong> zeigt Salden + fehlende Buchungen. Korrektur-/Urlaubsanträge prüfen, Berichte exportieren.</p>
+      </section>
+
+      <section>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">4. Pflichten (§16 ArbZG)</h3>
+        <p className="text-sm text-gray-600">Zeitaufzeichnungen <strong>2 Jahre aufbewahren</strong> → Backups sichern. Über 10 h netto gesperrt, ab 8 h Warnung; Pflichtpausen ab 6 h / 9 h.</p>
+      </section>
+    </div>
+  );
+}
+
 // ── DocViewerContent ─────────────────────────────────────────────────────────
 
-export type DocTab = 'cheatsheet' | 'handbuch';
+export type DocTab = 'schnellstart' | 'cheatsheet' | 'handbuch';
 
 interface DocViewerContentProps {
   isAdmin: boolean;
@@ -501,9 +540,9 @@ export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChan
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tab bar */}
+      {/* Tab bar — Schnellstart nur für Admins */}
       <div className="border-b border-gray-200 px-4 flex gap-6 shrink-0">
-        {(['cheatsheet', 'handbuch'] as const).map((tab) => (
+        {((isAdmin ? ['schnellstart', 'cheatsheet', 'handbuch'] : ['cheatsheet', 'handbuch']) as DocTab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => handleTab(tab)}
@@ -513,14 +552,16 @@ export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChan
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab === 'cheatsheet' ? 'Kurzanleitung' : 'Handbuch'}
+            {tab === 'schnellstart' ? 'Schnellstart' : tab === 'cheatsheet' ? 'Kurzanleitung' : 'Handbuch'}
           </button>
         ))}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'cheatsheet'
+        {activeTab === 'schnellstart' && isAdmin
+          ? <SchnellstartAdmin />
+          : activeTab === 'cheatsheet'
           ? (isAdmin ? <CheatsheetAdmin /> : <CheatsheetMitarbeiter />)
           : <Accordion items={isAdmin ? handbuchAdminSections : handbuchMitarbeiterSections} />
         }

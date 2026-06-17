@@ -9,6 +9,8 @@
 
 **Administration:** Admin-Dashboard · Benutzerverwaltung · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Anträge · Import · Einstellungen
 
+> **Neu hier?** Der **Schnellstart** (Button unten links in der Seitenleiste) führt in wenigen Minuten durch die Ersteinrichtung der Praxis.
+
 ---
 
 ## Benutzerverwaltung
@@ -125,6 +127,7 @@ Jeder Bereich hat einen eigenen **Speichern**-Button.
 | **Urlaubsgenehmigung** | Genehmigungspflicht an/aus |
 | **Pflicht-Pause-Ausnahme** | Genehmigungspflicht für §4-Ausnahmen (s. o.) |
 | **Soll-Arbeitszeit-Fenster** | Puffer (Min.) für Soll-Zeiten, Default 15 (s. o.) |
+| **Onboarding / Willkommens-Tour** | Erst-Login-Tour für neue Nutzer an/aus (Standard **an**) |
 | **Farben** | Farbe je An-/Abwesenheitstyp |
 
 ### Sondertage 24./31.12. (#188)
@@ -199,9 +202,8 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 
 ## Lizenz
 
-- Liegt in `config/license.key` (aus dem Shop **praxiszeit.mr-development.de**).
-- **Abgelaufen/ungültig → Read-Only-Modus:** Anmeldung und Daten-**Export** funktionieren weiter, aber **Stempeln** und **Anträge stellen/genehmigen** sind gesperrt. Der Dienst stürzt NICHT ab.
-- **Lösung:** aktuelle Lizenz aus dem Shop holen, `config/license.key` ersetzen, Dienst neu starten (`net stop PraxisZeit` / `net start PraxisZeit`).
+- **Beta:** Die Lizenzprüfung ist derzeit **deaktiviert** – PraxisZeit läuft ohne `license.key` mit vollem Funktionsumfang. Es ist **kein** Lizenzierungs-Schritt nötig.
+- Ein Lizenzmodell wird zu einem späteren Zeitpunkt eingeführt; Sie werden rechtzeitig informiert.
 
 ---
 

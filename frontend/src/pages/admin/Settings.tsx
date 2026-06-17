@@ -90,6 +90,11 @@ export default function Settings() {
   const [originalBreakApproval, setOriginalBreakApproval] = useState(false);
   const [savingBreakApproval, setSavingBreakApproval] = useState(false);
 
+  // Onboarding (Erst-Login-Willkommens-Tour) an/aus — Default an.
+  const [onboardingEnabled, setOnboardingEnabled] = useState(true);
+  const [originalOnboarding, setOriginalOnboarding] = useState(true);
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
+
   // #201 Soll-Fenster-Puffer (work_window_grace_minutes)
   const [graceMinutes, setGraceMinutes] = useState('15');
   const [originalGraceMinutes, setOriginalGraceMinutes] = useState('15');
@@ -157,6 +162,12 @@ export default function Settings() {
       const breakVal = breakSetting?.value?.toLowerCase() === 'true';
       setBreakApprovalRequired(breakVal);
       setOriginalBreakApproval(breakVal);
+
+      // Onboarding-Tour (Default an: nur ein explizites "false" deaktiviert)
+      const obSetting = settingsRes.data.find((s) => s.key === 'onboarding_enabled');
+      const obVal = obSetting?.value?.toLowerCase() !== 'false';
+      setOnboardingEnabled(obVal);
+      setOriginalOnboarding(obVal);
 
       // #201 Soll-Fenster-Puffer
       const graceSetting = settingsRes.data.find((s) => s.key === 'work_window_grace_minutes');
@@ -273,6 +284,21 @@ export default function Settings() {
       toast.error(getErrorMessage(err));
     } finally {
       setSavingBreakApproval(false);
+    }
+  };
+
+  const saveOnboarding = async () => {
+    setSavingOnboarding(true);
+    try {
+      await apiClient.put('/admin/settings/onboarding_enabled', {
+        value: String(onboardingEnabled),
+      });
+      setOriginalOnboarding(onboardingEnabled);
+      toast.success('Onboarding-Einstellung gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingOnboarding(false);
     }
   };
 
@@ -770,6 +796,46 @@ export default function Settings() {
           <button
             onClick={saveBreakApproval}
             disabled={savingBreakApproval || breakApprovalRequired === originalBreakApproval}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save size={16} />
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      {/* Onboarding / Willkommens-Tour */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Onboarding / Willkommens-Tour</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Beim ersten Login sehen neue Mitarbeitende und Admins eine kurze, rollenspezifische
+          Willkommens-Tour mit den wichtigsten Bereichen. Deaktivieren Sie diese Option, wenn die
+          Tour nicht angezeigt werden soll. Bereits gesehene Touren erscheinen ohnehin nicht erneut.
+        </p>
+        <div className="flex items-center justify-between max-w-sm">
+          <label htmlFor="onboarding-toggle" className="text-sm font-medium text-gray-700">
+            Willkommens-Tour anzeigen
+          </label>
+          <button
+            id="onboarding-toggle"
+            role="switch"
+            aria-checked={onboardingEnabled}
+            onClick={() => setOnboardingEnabled(!onboardingEnabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              onboardingEnabled ? 'bg-primary' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                onboardingEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={saveOnboarding}
+            disabled={savingOnboarding || onboardingEnabled === originalOnboarding}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

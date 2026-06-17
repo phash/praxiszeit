@@ -441,7 +441,17 @@ def _allowed_hosts() -> list[str]:
     Default ``"*"`` → ``["*"]`` which TrustedHostMiddleware treats as allow-any
     (no behaviour change for on-prem / LAN-by-IP installs and the test suite).
     Read at call time so tests can monkeypatch the setting."""
-    return [h.strip() for h in settings.ALLOWED_HOSTS.split(",") if h.strip()] or ["*"]
+    hosts = [h.strip() for h in settings.ALLOWED_HOSTS.split(",") if h.strip()] or ["*"]
+    # Security-Audit M-01: ALLOWED_HOSTS='*' macht TrustedHostMiddleware zum No-Op.
+    # Für internet-facing Production laut, aber NICHT-fatal warnen (LAN-by-IP/on-prem
+    # bleiben absichtlich offen → kein Verhaltenswechsel, nur ein Log-Hinweis).
+    if hosts == ["*"] and getattr(settings, "ENVIRONMENT", "development").lower() == "production":
+        logging.getLogger("uvicorn.error").warning(
+            "ALLOWED_HOSTS='*' im Production-Modus: Host-Header-Schutz (TrustedHost) ist "
+            "deaktiviert. Für internet-facing Deployments ALLOWED_HOSTS auf die echte(n) "
+            "Domain(s) setzen."
+        )
+    return hosts
 
 
 # Vuln-3 / CVE-2026-48710 "BadHost": validate the Host header against an
@@ -672,11 +682,33 @@ def system_info():
     """Public system info — lets the frontend branch on deployment mode
     without a login. Intentionally minimal: exposes only deployment_mode +
     version so we don't leak operational details to unauthenticated users."""
+    # onboarding_enabled (Default-Tenant): Admin-Toggle für die Willkommens-Tour.
+    # Default an; ein Lesefehler darf system/info NIE brechen → True.
+    onboarding_enabled = True
+    try:
+        from app.models.system_setting import SystemSetting
+        from app.database import set_superadmin_context as _set_sa
+        _default_tid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+        _db = SessionLocal()
+        try:
+            _set_sa(_db)
+            _s = _db.query(SystemSetting).filter(
+                SystemSetting.key == "onboarding_enabled",
+                SystemSetting.tenant_id == _default_tid,
+            ).first()
+            if _s is not None:
+                onboarding_enabled = _s.value.strip().lower() == "true"
+        finally:
+            _db.close()
+    except Exception:  # noqa: BLE001
+        onboarding_enabled = True
     return {
         "deployment_mode": settings.DEPLOYMENT_MODE,
         "version": APP_VERSION,
         # beta: Lizenzpruefung deaktiviert; Frontend zeigt das "BETA"-Badge.
         "beta": settings.BETA_MODE,
+        # onboarding_enabled: Admin kann die Erst-Login-Tour deaktivieren (Default an).
+        "onboarding_enabled": onboarding_enabled,
     }
 
 

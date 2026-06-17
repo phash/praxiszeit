@@ -4,6 +4,7 @@ import {
   Clock, Calendar, User as UserIcon, BookOpen,
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
+import { useSystemStore } from '../stores/systemStore';
 import apiClient from '../api/client';
 
 interface Feature {
@@ -37,9 +38,11 @@ const EMPLOYEE_FEATURES: Feature[] = [
  */
 export default function OnboardingModal() {
   const { user, setUser } = useAuthStore();
+  // Admin-Toggle (Default an): ein explizites false in /system/info unterdrückt die Tour.
+  const onboardingEnabled = useSystemStore((s) => s.info?.onboarding_enabled !== false);
   const [closed, setClosed] = useState(false);
 
-  const show = !!user && !closed && !user.onboarding_completed_at;
+  const show = !!user && !closed && !user.onboarding_completed_at && onboardingEnabled;
 
   const complete = useCallback(async () => {
     setClosed(true); // optimistisch sofort ausblenden

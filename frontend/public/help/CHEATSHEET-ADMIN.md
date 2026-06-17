@@ -9,6 +9,8 @@
 
 **Administration:** Admin-Dashboard · Benutzerverwaltung · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Anträge · Import · Einstellungen
 
+> **Neu hier?** Der **Schnellstart** (Button unten links in der Seitenleiste) führt in wenigen Minuten durch die Ersteinrichtung der Praxis.
+
 ---
 
 ## Benutzerverwaltung
@@ -19,7 +21,31 @@
 - Vorname / Nachname, E-Mail (optional)
 - Wochenstunden, Arbeitstage/Woche, Urlaubstage
 - Rolle: Mitarbeiter:in oder Admin
-- Optional: ArbZG-Prüfungen aussetzen (§18), Nachtarbeitnehmer (§6)
+- Optional: **Stundenzählung aktiv** (s. u.), **ArbZG-Prüfungen aussetzen (§18)** (separate Checkbox – s. u.), Nachtarbeitnehmer (§6), **Nimmt an Betriebsferien teil** (Standard an), **Soll-Arbeitszeiten je Wochentag** (s. u.), Erster/Letzter Arbeitstag (Soll nur in diesem Zeitraum), individuelle Tagesstunden, Abteilung/Bereich, Anfangssaldo Überstunden
+
+> **Urlaub (Tagesprinzip):** 1 freier Arbeitstag = 1 Urlaubstag (unabhängig von Tagesstunden/Wochentag). Halbtag = 0,5. Anspruch anteilig: `30 × Arbeitstage/5`. Verbrauch tagebasiert, Stunden nur intern.
+
+> **Benutzerübersicht (#194)** zeigt je MA Urlaubskonto **und** aktuellen Überstundensaldo in der Spalte **„Überstunden (JTD)"**; „—" bei Mitarbeitern ohne Stundenzählung.
+
+### Stundenzählung an/aus (#191)
+
+Checkbox **„Stundenzählung aktiv"** (Standard an). Aus = **Mitarbeiter ohne Stundenzählung** (NIE „leitende Angestellte" nennen!).
+- Keine Soll-/Ist-/Überstundenberechnung → Spalte „Überstunden (JTD)" zeigt **„—"**.
+- Felder Anfangssaldo / individuelle Tagesstunden entfallen.
+- **Urlaub + Krank zählen trotzdem – tagebasiert** (1 Tag = 1 Tag, Sondertage = 1 Tag; Halbtag zählt hier als voller Tag). Anspruch anteilig + Vorjahresübernahme bleiben.
+
+> **Abgrenzung – zwei getrennte Checkboxen, nicht verwechseln:**
+> - **„Stundenzählung aktiv"** = ob Soll-/Ist-/Überstunden geführt werden. Hat **nichts** mit §18 zu tun.
+> - **„ArbZG-Prüfungen aussetzen (§18)"** = eigene Checkbox, setzt nur die ArbZG-Prüfungen aus (echte leitende Angestellte i. S. §18). Frei kombinierbar.
+
+### Soll-Arbeitszeit-Fenster (#201)
+
+Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich „Soll-Arbeitszeiten je Wochentag").
+- Anwesenheit außerhalb `[Soll−Puffer, Soll+Ende-Puffer]` wird **gekappt** (nicht angerechnet).
+- **Rohstempel bleibt erhalten** (§16) – Salden/Überstunden rechnen mit der gekappten Zeit.
+- **Puffer global:** Einstellungen → „Soll-Arbeitszeit-Fenster" → „Puffer (Min.)", Default **15**.
+- **Opt-in:** ohne gesetzte Soll-Zeiten kein Verhaltenswechsel. Übersprungen bei Mitarbeitern ohne Stundenzählung; §18-MA werden **trotzdem** gekappt (reine Anwesenheits-Policy).
+- Greift an allen Schreibpfaden (Stempeln, manuell, Admin-Korrektur, Import, CR-Genehmigung).
 
 ### Stundenänderung (Teilzeit etc.)
 **Benutzer öffnen** → neue Wochenstunden + **Wirkungsdatum** eintragen
@@ -84,22 +110,63 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 **Abwesenheiten → Tab Betriebsferien → Neue Betriebsferien**
 - Bezeichnung + Von–Bis → Speichern
-- → Alle MA erhalten automatisch Abwesenheitseinträge (keine Urlaubstage!)
+- → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Abwesenheitseinträge (keine Urlaubstage!) – rollenunabhängig (auch Admins, die MA sind)
+- Nachträglich Berechtigte: Option setzen, dann Betriebsferien **einmal erneut speichern** → Einträge werden nachgetragen
 - Löschen: Einträge werden bei allen MA automatisch entfernt
+
+---
+
+## Einstellungen (Auswahl)
+
+Jeder Bereich hat einen eigenen **Speichern**-Button.
+
+| Bereich | Was |
+|---------|-----|
+| **Feiertage** | Bundesland wählen + eigene Feiertage (reduzieren Soll, grau im Kalender) |
+| **Sondertage (24./31.12.)** | s. u. (#188) |
+| **Urlaubsgenehmigung** | Genehmigungspflicht an/aus |
+| **Pflicht-Pause-Ausnahme** | Genehmigungspflicht für §4-Ausnahmen (s. o.) |
+| **Soll-Arbeitszeit-Fenster** | Puffer (Min.) für Soll-Zeiten, Default 15 (s. o.) |
+| **Onboarding / Willkommens-Tour** | Erst-Login-Tour für neue Nutzer an/aus (Standard **an**) |
+| **Farben** | Farbe je An-/Abwesenheitstyp |
+
+### Sondertage 24./31.12. (#188)
+
+Heiligabend + Silvester sind **keine** gesetzlichen Feiertage → pro Tag getrennt einstellbar:
+
+| Modus | Wirkung | Kalender |
+|-------|---------|----------|
+| **Arbeitstag** (Standard) | volles Tagessoll | normal |
+| **Halbtag** | halbes Tagessoll | **amber/gelb** |
+| **Frei** | Tagessoll 0 (wie Feiertag) | **grau** |
+
+Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender.
 
 ---
 
 ## ArbZG-Pflichten – Automatik bei Zeiterfassung
 
-| Prüfung | Grenze | § |
-|---------|--------|---|
-| Tagesarbeitszeit Warnung | > 8h Netto | §3 |
-| Tagesarbeitszeit Sperrung | > 10h Netto | §3 |
-| Pausenpflicht | > 6h → 30 Min. / > 9h → 45 Min. | §4 |
-| Nachtarbeitnehmer | > 8h täglich | §6 |
-| Sonntagsarbeit | Warnung + Ausnahmegrund-Pflicht | §9/§10 |
-| Wochenstunden | Warnung > 48h | §14 |
-| Ruhezeitwarnung | < 11h seit letztem Arbeitsende (beim Einstempeln) | §5 |
+| Prüfung | Grenze | Verhalten | § |
+|---------|--------|-----------|---|
+| Tagesarbeitszeit Warnung | > 8h Netto | Warnung | §3 |
+| Tagesarbeitszeit 10h | > 10h Netto | **Live-Ausstempeln: nur Warnung (kein Block)**; manuelle Eingabe/Antrag: **harte Sperre** | §3 |
+| Pausenpflicht | > 6h → 30 Min. / > 9h → 45 Min. | Warnung; dokumentierte Ausnahme mit Begründung möglich (s. u.) | §4 |
+| Nachtarbeitnehmer | > 8h täglich | Warnung | §6 |
+| Sonntagsarbeit | Eintrag an So/Feiertag | Warnung + Ausnahmegrund-Pflicht | §9/§10 |
+| Wochenstunden | > 48h | Warnung | §14 |
+| Ruhezeitwarnung | < 11h seit letztem Arbeitsende (beim Einstempeln) | Warnung | §5 |
+
+> **§3-10h (R2):** Live-Ausstempeln über 10h wird **nicht geblockt** (Zeit ist geleistet → §16-Doku-Pflicht), nur deutlich gewarnt. Manuelle Eingaben und Anträge bleiben über 10h **gesperrt**.
+
+---
+
+## Pflicht-Pause-Ausnahme (§4)
+
+Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** möglich (im Änderungsprotokoll dokumentiert, Quelle „break_waiver").
+**Einstellungen → „Pflicht-Pause-Ausnahme" → „Genehmigung erforderlich":**
+- **Aus** (Standard): Eintrag sofort wirksam, Abweichung als Warnung
+- **Ein**: Eintrag erst nach Admin-Genehmigung wirksam
+> **4-Augen:** Eigene Pflicht-Pause-Ausnahme **nie selbst genehmigen** – muss ein anderer Admin prüfen.
 
 ---
 
@@ -135,9 +202,8 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 ## Lizenz
 
-- Liegt in `config/license.key` (aus dem Shop **praxiszeit.mr-development.de**).
-- **Abgelaufen/ungültig → Read-Only-Modus:** Anmeldung und Daten-**Export** funktionieren weiter, aber **Stempeln** und **Anträge stellen/genehmigen** sind gesperrt. Der Dienst stürzt NICHT ab.
-- **Lösung:** aktuelle Lizenz aus dem Shop holen, `config/license.key` ersetzen, Dienst neu starten (`net stop PraxisZeit` / `net start PraxisZeit`).
+- **Beta:** Die Lizenzprüfung ist derzeit **deaktiviert** – PraxisZeit läuft ohne `license.key` mit vollem Funktionsumfang. Es ist **kein** Lizenzierungs-Schritt nötig.
+- Ein Lizenzmodell wird zu einem späteren Zeitpunkt eingeführt; Sie werden rechtzeitig informiert.
 
 ---
 

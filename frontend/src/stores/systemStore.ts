@@ -7,6 +7,7 @@ interface SystemInfo {
   deployment_mode: DeploymentMode;
   version: string;
   beta?: boolean;
+  onboarding_enabled?: boolean;
 }
 
 interface SystemState {
@@ -16,6 +17,7 @@ interface SystemState {
   isSaas: () => boolean;
   isOnprem: () => boolean;
   isBeta: () => boolean;
+  isOnboardingEnabled: () => boolean;
 }
 
 // Conservative default: treat as on-prem until the /api/system/info response
@@ -40,4 +42,7 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   isSaas: () => get().info?.deployment_mode === 'saas',
   isOnprem: () => get().info?.deployment_mode !== 'saas',
   isBeta: () => get().info?.beta === true,
+  // Default an: solange /system/info nicht geladen ist ODER das Feld fehlt, wird
+  // das Onboarding gezeigt (nur ein explizites false unterdrückt es).
+  isOnboardingEnabled: () => get().info?.onboarding_enabled !== false,
 }));
