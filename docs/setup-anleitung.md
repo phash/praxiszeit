@@ -1,7 +1,15 @@
 # Setup-Anleitung PraxisZeit
 
-**Aktuelle Version:** 1.4.4 · **Stand:** 23. Mai 2026
+**Aktuelle Version:** 1.8.11 · **Stand:** Juni 2026
 Für Linux und Windows · Native Installation und Docker-Deployment
+
+> **Maßgebliche, gepflegte Anleitungen:** [INSTALL-NATIVE.md](INSTALL-NATIVE.md)
+> (nativ), [INSTALL-DOCKER.md](INSTALL-DOCKER.md) / [DOCKER-START.md](DOCKER-START.md)
+> (Docker), [UPDATE.md](UPDATE.md) (Update) und [BACKUP.md](BACKUP.md) (Sicherung).
+> Dieses Dokument ist die ausführliche Schritt-für-Schritt-Variante. Einzelne
+> versionsspezifische Beispiele (Release-Dateinamen, GitHub-Release-Hinweise)
+> stammen noch aus der 1.4.x-Ära — ausgeliefert wird inzwischen über den Shop
+> (praxiszeit.mr-development.de). In der Beta ist keine Lizenz nötig.
 
 ---
 
@@ -161,9 +169,8 @@ Der Installer ist **vollständig interaktiv** und fragt der Reihe nach ab:
 | `Admin-E-Mail:` | `admin@praxis.local` | Pflicht |
 | `Admin-Passwort (min. 12 Zeichen):` | `********` | Mindestens 12 Zeichen, **kein** Komplexitäts-Check (nur Längencheck) |
 | `Passwort wiederholen:` | `********` | Muss übereinstimmen |
-| `Lizenzschluessel-Datei:` | leer oder Pfad | Kann später nachgereicht werden |
 | `HTTPS-Port [443]:` | `443` | Default-Port ist HTTPS:443 |
-| `Selbstsigniertes SSL-Zertifikat generieren? [J/n]:` | `J` | Erzeugt sofort ed25519-Cert (10 Jahre) |
+| `Selbstsigniertes SSL-Zertifikat generieren? [J/n]:` | `J` | Erzeugt sofort ein selbstsigniertes **RSA-2048-Server-Zertifikat** (10 Jahre, Hostname/IP im SAN) |
 | `Installationsverzeichnis [/opt/praxiszeit]:` | leer = Default | Frei wählbar |
 
 Anschließend wird eine **Zusammenfassung** angezeigt und mit `J/n` bestätigt.
@@ -176,7 +183,7 @@ Anschließend wird eine **Zusammenfassung** angezeigt und mit `J/n` bestätigt.
 - Schreibt `config/praxiszeit.conf` mit `chmod 600` (Owner-only-Lesen)
 - Generiert optional selbstsigniertes SSL-Zertifikat
 - Registriert systemd-Service `praxiszeit.service`
-- Richtet täglichen **Backup-Cron um 02:00** ein (per `crontab -u praxiszeit`)
+- Richtet ein tägliches **Backup um 02:00** ein — über einen **systemd-Timer** `praxiszeit-backup.timer` (cron ist auf Minimal-/Cloud-Images oft nicht installiert)
 - Startet den Dienst und wartet auf den Health-Check
 
 ### 4.4 Service-Verwaltung
@@ -392,7 +399,7 @@ docker compose ps                                    # alle 5 Container sollten 
 curl http://localhost/api/health
 # {"status":"healthy","database":"connected"}
 curl http://localhost/api/system/info
-# {"deployment_mode":"onprem","version":"1.4.4"}
+# {"deployment_mode":"onprem","version":"1.8.11"}
 ```
 
 ### 6.5 Im LAN erreichbar machen
@@ -481,12 +488,17 @@ retention_days = 730                  # § 16 ArbZG: min. 2 Jahre!
 Bei der Linux-Installation wird das Zertifikat optional schon vom Installer generiert (`Selbstsigniertes SSL-Zertifikat generieren? [J/n]`). Manuell nachholen:
 
 ```bash
-sudo -u praxiszeit openssl req -x509 -newkey ed25519 \
+# WICHTIG: RSA-2048 + serverAuth. Browser lehnen ed25519-TLS-Server-Zertifikate
+# und CA-Certs (ohne extendedKeyUsage=serverAuth) ohne "Erweitert"-Option ab.
+sudo -u praxiszeit openssl req -x509 -nodes -newkey rsa:2048 \
   -keyout /opt/praxiszeit/config/ssl/key.pem \
   -out    /opt/praxiszeit/config/ssl/cert.pem \
-  -days 3650 -nodes \
-  -subj "/CN=PraxisZeit/O=Praxis Dr. Müller" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:$(hostname -I | awk '{print $1}')"
+  -days 3650 \
+  -subj "/O=PraxisZeit/CN=praxiszeit" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:$(hostname -I | awk '{print $1}')" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+  -addext "extendedKeyUsage=serverAuth"
 ```
 
 In `praxiszeit.conf`:
@@ -534,10 +546,12 @@ Arbeitgeber müssen Arbeitszeiten **mindestens 2 Jahre** revisionssicher aufbewa
 
 ### 9.2 Automatische Backups (Native)
 
-Sind ab Werk aktiviert. Der Installer registriert einen Cron-Job:
+Sind ab Werk aktiviert. Der Installer richtet einen **systemd-Timer** ein (cron
+ist auf Minimal-/Cloud-Images oft nicht vorhanden):
 ```bash
-sudo crontab -u praxiszeit -l
-# 0 2 * * * /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py backup
+systemctl status praxiszeit-backup.timer
+systemctl list-timers | grep praxiszeit
+# Manuell sofort: sudo systemctl start praxiszeit-backup.service
 ```
 
 Retention erhöhen für ArbZG-Konformität:
@@ -771,4 +785,4 @@ C:\PraxisZeit\                    (Windows)
 
 ---
 
-*PraxisZeit · Version 1.4.4 · © 2026 · Erstellt am 23. Mai 2026 · Iteration 2*
+*PraxisZeit · Version 1.8.11 · © 2026*

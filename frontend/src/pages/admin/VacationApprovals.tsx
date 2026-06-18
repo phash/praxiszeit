@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../../api/client';
 import { Clock, CheckCircle, XCircle, AlertCircle, Check, X, Trash2, Pencil } from 'lucide-react';
@@ -66,16 +66,21 @@ export default function VacationApprovals() {
     }
   };
 
+  // Out-of-order-Schutz: schneller Filter-Wechsel (Offen->Genehmigt->Offen) kann
+  // sonst die langsamere alte Antwort zuletzt anzeigen. Last-Write-Wins über requestsSeq.
+  const requestsSeq = useRef(0);
   const fetchRequests = async () => {
+    const seq = ++requestsSeq.current;
     setLoading(true);
     try {
       const params = filter ? `?status=${filter}` : '';
       const res = await apiClient.get(`/admin/vacation-requests${params}`);
+      if (seq !== requestsSeq.current) return;
       setRequests(res.data);
     } catch {
-      toast.error('Fehler beim Laden der Anträge');
+      if (seq === requestsSeq.current) toast.error('Fehler beim Laden der Anträge');
     } finally {
-      setLoading(false);
+      if (seq === requestsSeq.current) setLoading(false);
     }
   };
 

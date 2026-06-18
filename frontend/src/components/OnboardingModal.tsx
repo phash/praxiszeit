@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useSystemStore } from '../stores/systemStore';
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock';
 import apiClient from '../api/client';
 
 interface Feature {
@@ -40,9 +41,12 @@ export default function OnboardingModal() {
   const { user, setUser } = useAuthStore();
   // Admin-Toggle (Default an): ein explizites false in /system/info unterdrückt die Tour.
   const onboardingEnabled = useSystemStore((s) => s.info?.onboarding_enabled !== false);
+  // Erst nach geladenem /system/info entscheiden — sonst flackert die Tour kurz auf,
+  // bevor ein evtl. gesetztes onboarding_enabled=false greift.
+  const systemLoaded = useSystemStore((s) => s.isLoaded);
   const [closed, setClosed] = useState(false);
 
-  const show = !!user && !closed && !user.onboarding_completed_at && onboardingEnabled;
+  const show = !!user && !closed && !user.onboarding_completed_at && onboardingEnabled && systemLoaded;
 
   const complete = useCallback(async () => {
     setClosed(true); // optimistisch sofort ausblenden
@@ -60,10 +64,10 @@ export default function OnboardingModal() {
     if (!show) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') void complete(); };
     document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      unlockBodyScroll();
     };
   }, [show, complete]);
 
@@ -73,7 +77,7 @@ export default function OnboardingModal() {
   const features = isAdmin ? ADMIN_FEATURES : EMPLOYEE_FEATURES;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={() => void complete()} aria-hidden="true" />
 
       <div

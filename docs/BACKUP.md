@@ -14,9 +14,10 @@ gelegentlich die Wiederherstellung.
 | **Docker** | ❌ **nein** | nur manuell bzw. per Host-Cron (s. u.) | wohin Sie den Dump schreiben |
 
 > **Native:** Das Backup ruft intern `praxiszeit-server.py backup`. Der Dienst
-> muss dafür **nicht** gestoppt werden (Online-Dump). Standard-Aufbewahrung:
-> **31 Tage** (`retention_days` in `praxiszeit.conf` → für §16 auf z. B. `760`
-> erhöhen, oder zusätzlich Jahresarchive extern ablegen).
+> muss dafür **nicht** gestoppt werden (Online-Dump, Plain-SQL `pg_dump` + gzip).
+> Standard-Aufbewahrung: **31 Tage** (`retention_days` in `praxiszeit.conf` → für
+> §16 auf z. B. `730` (= 2 Jahre) erhöhen, oder zusätzlich Jahresarchive extern
+> ablegen).
 >
 > **Docker hat KEIN eingebautes Auto-Backup** — richten Sie einen Host-Cron ein
 > (siehe unten) oder ziehen Sie regelmäßig ein manuelles Backup.
@@ -74,14 +75,27 @@ täglich 02:00 + 30-Tage-Rotation:
 
 ### Native
 
+Die Backups sind **gzip-komprimierte Plain-SQL-Dumps** (`praxiszeit_<ts>.sql.gz`,
+erzeugt mit `--clean --if-exists` → der Restore dropt + legt die Objekte neu an).
+Erst entpacken, dann durch `psql` leiten — **nicht** `psql -f` auf die `.gz`:
+
 ```bash
-# Linux/macOS — psql aus dem gebündelten PostgreSQL
-/opt/praxiszeit/bin/postgresql/bin/psql -U praxiszeit -h /opt/praxiszeit/data/run \
-    -d praxiszeit -f /opt/praxiszeit/data/backups/<datei>.sql
+# Linux/macOS — gebündeltes psql, Verbindung über den eigenen Unix-Socket.
+# Das Superuser-Passwort steht in config/.db-credentials (SUPERUSER_PASSWORD=...).
+PZ=/opt/praxiszeit          # macOS: /usr/local/praxiszeit
+export PGPASSWORD="$(grep '^SUPERUSER_PASSWORD=' "$PZ/config/.db-credentials" | cut -d= -f2-)"
+gunzip -c "$PZ/data/backups/<datei>.sql.gz" \
+  | "$PZ/bin/postgresql/bin/psql" -w -h "$PZ/data/run" -U praxiszeit -d praxiszeit
+unset PGPASSWORD
 ```
+> Möglichst zu einem ruhigen Zeitpunkt einspielen (kein paralleles Stempeln).
+> Der Dienst (und damit PostgreSQL) muss laufen, damit der Socket erreichbar ist.
+
 ```bat
-:: Windows
-C:\PraxisZeit\bin\postgresql\bin\psql.exe -U praxiszeit -h localhost -d praxiszeit -f <datei>.sql
+:: Windows — der gebündelte restore-backup.bat stoppt den Dienst, legt die DB
+:: frisch an, entpackt und spielt das Backup ein (erwartet die .sql.gz direkt):
+cd C:\PraxisZeit
+restore-backup.bat data\backups\<datei>.sql.gz
 ```
 
 ### Docker

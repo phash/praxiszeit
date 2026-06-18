@@ -183,7 +183,13 @@ export default function Dashboard() {
           ? user.weekly_hours / (user.work_days_per_week || 5)
           : 8;
 
-        const vacation_days = sumAbsenceDays(absences, 'vacation', dailyTarget);
+        // Urlaub: autoritativ vom Backend (Tagesprinzip §3 BUrlG — zählt pro Tag
+        // mit dem Tagessoll DES TAGES). Die Client-Approximation Σ(Stunden) ÷
+        // Ø-Tagessoll ist für MA mit ungleichmäßigem Tagesplan (use_daily_schedule)
+        // systematisch falsch und darf für den legal relevanten Urlaub nicht
+        // genutzt werden. sick/training/overtime/other bleiben reine Anzeige-
+        // Näherungen (kein Budget, keine §-Pflicht).
+        const vacation_days = vacationRes.data?.used_days ?? sumAbsenceDays(absences, 'vacation', dailyTarget);
         const sick_days = sumAbsenceDays(absences, 'sick', dailyTarget);
         const training_days = sumAbsenceDays(absences, 'training', dailyTarget);
         const overtime_days = sumAbsenceDays(absences, 'overtime', dailyTarget);

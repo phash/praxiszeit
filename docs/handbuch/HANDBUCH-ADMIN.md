@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.4 | Stand: Juni 2026 (für PraxisZeit 1.8.2)**
+**Version 2.4 | Stand: Juni 2026 (für PraxisZeit 1.8.11)**
 
 ---
 
@@ -76,7 +76,7 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 | **Ist** | Tatsächlich geleistete Stunden |
 | **Saldo** | Differenz Ist – Soll (H:MM, + = Überstunden, – = Fehlstunden) |
 | **Übersto. Kum.** | Kumulierter Jahressaldo |
-| **Urlaub** | Verbleibende Urlaubsstunden (Ampelfarbe) |
+| **Urlaub** | Verbleibende Urlaubstage (Ampelfarbe) |
 | **Krank** | Kranktage im aktuellen Monat |
 
 ### Statistiken (oben)
@@ -699,7 +699,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.8.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.8.11). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -787,4 +787,4 @@ Urlaubskonto = 30 − 4                     = 26 Tage übrig
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juni 2026 (Version 2.4, für PraxisZeit 1.8.2)*
+*Stand: Juni 2026 (Version 2.4, für PraxisZeit 1.8.11)*

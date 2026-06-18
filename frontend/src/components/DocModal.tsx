@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { DocViewerContent, type DocTab } from './DocViewer';
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock';
 
 interface DocModalProps {
   open: boolean;
@@ -42,14 +43,11 @@ export function DocModal({ open, onClose, initialTab = 'cheatsheet' }: DocModalP
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
 
-  // Body scroll lock
+  // Body scroll lock (ref-gezählt -> kollidiert nicht mit anderen Overlays)
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
+    if (!open) return;
+    lockBodyScroll();
+    return () => { unlockBodyScroll(); };
   }, [open]);
 
   // Focus trap (live query per keydown) + initial focus on close button

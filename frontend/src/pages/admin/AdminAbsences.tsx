@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Plus, X, Trash2, Pencil, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
@@ -173,7 +173,11 @@ export default function AdminAbsences() {
     }
   };
 
+  // Out-of-order-Schutz: bei schnellem Monatswechsel kann eine ältere (langsamere)
+  // Antwort die neueren Daten überschreiben. Last-Write-Wins über allAbsencesSeq.
+  const allAbsencesSeq = useRef(0);
   const loadAllAbsences = async () => {
+    const seq = ++allAbsencesSeq.current;
     const year = currentMonth.split('-')[0];
     const result: Record<string, Absence[]> = {};
     await Promise.all(
@@ -189,6 +193,7 @@ export default function AdminAbsences() {
         }
       })
     );
+    if (seq !== allAbsencesSeq.current) return;
     setAllAbsences(result);
   };
 
