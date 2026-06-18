@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { DocViewerContent, type DocTab } from './DocViewer';
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock';
 
 interface DocDrawerProps {
   open: boolean;
@@ -76,14 +77,11 @@ export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }:
     return () => document.removeEventListener('keydown', handleTab);
   }, [open]);
 
-  // Body scroll lock on mobile
+  // Body scroll lock on mobile (ref-gezählt -> kollidiert nicht mit anderen Overlays)
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
+    if (!open) return;
+    lockBodyScroll();
+    return () => { unlockBodyScroll(); };
   }, [open]);
 
   const downloadUrl = getDownloadUrl(isAdmin, activeTab);

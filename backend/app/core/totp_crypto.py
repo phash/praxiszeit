@@ -18,6 +18,7 @@ blast radius as session invalidation. Affected users must re-enroll 2FA. This is
 documented and acceptable for the on-prem single-instance deployment model.
 """
 import base64
+import logging
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
@@ -25,8 +26,17 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 # Versioned context label — changing it (or SECRET_KEY) invalidates old tokens.
 _HKDF_INFO = b"praxiszeit-totp-secret-encryption-v1"
+
+
+def _looks_like_token(stored: str) -> bool:
+    """Heuristik: Fernet-Tokens sind urlsafe-base64 eines fuehrenden 0x80-
+    Versionsbytes und beginnen daher IMMER mit ``gAAAAA``. Legacy-base32-TOTP-
+    Secrets bestehen nur aus Grossbuchstaben A-Z und Ziffern 2-7 (nie lowercase)."""
+    return stored.startswith("gAAAAA")
 
 
 def _fernet() -> Fernet:
@@ -57,6 +67,15 @@ def decrypt_secret(stored: str) -> str:
     try:
         return _fernet().decrypt(stored.encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError):
+        if _looks_like_token(stored):
+            # Sieht aus wie ein Fernet-Token, laesst sich aber nicht entschluesseln
+            # -> SECRET_KEY wurde rotiert / passt nicht. Das Secret ist verloren;
+            # der Nutzer muss 2FA neu einrichten. Laut loggen, sonst aeussert es
+            # sich nur als "Ungueltiger TOTP-Code" (sieht aus wie Tippfehler/Drift).
+            logger.warning(
+                "TOTP-Secret nicht entschluesselbar (SECRET_KEY rotiert?). "
+                "Betroffener Nutzer muss 2FA neu einrichten."
+            )
         return stored
 
 

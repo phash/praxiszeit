@@ -287,6 +287,14 @@ ADMIN_USERNAME_ESC=$(toml_escape "$ADMIN_USERNAME")
 ADMIN_EMAIL_ESC=$(toml_escape "$ADMIN_EMAIL")
 ADMIN_PASSWORD_ESC=$(toml_escape "$ADMIN_PASSWORD")
 
+if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
+    # Reinstall/Update: bestehende Konfiguration NICHT ueberschreiben. Ein neu
+    # generierter secret_key wuerde sonst alle Sessions ungueltig machen UND alle
+    # verschluesselten TOTP-Secrets (Migration 050) unentschluesselbar -> jeder
+    # 2FA-Nutzer ausgesperrt. Auch port/SSL/retention/Admin-Passwort des Betreibers
+    # bleiben so erhalten. Neue Eingaben aus diesem Lauf werden bewusst ignoriert.
+    info "Bestehende config/praxiszeit.conf erkannt -> wird beibehalten (Reinstall/Update)."
+else
 info "Schreibe Konfiguration..."
 cat > "${INSTALL_DIR}/config/praxiszeit.conf" << TOMLEOF
 [server]
@@ -326,6 +334,7 @@ enabled = true
 schedule = "02:00"
 retention_days = 31
 TOMLEOF
+fi
 
 # Passwort nicht laenger als noetig im Shell-Environment des Installers halten
 # (war via /proc/self/environ fuer Co-Prozesse lesbar). Es steht jetzt escaped

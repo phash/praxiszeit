@@ -24,9 +24,9 @@ Alle Pakete enthalten Python und PostgreSQL — keine Voraussetzungen noetig.
 # 1. Herunterladen + entpacken
 #    Das Tarball entpackt FLACH (kein Top-Level-Ordner) — daher zuerst einen
 #    Zielordner anlegen und mit -C dorthin entpacken:
-mkdir -p praxiszeit-1.8.10
-tar xzf praxiszeit-1.8.10-linux-x64.tar.gz -C praxiszeit-1.8.10
-cd praxiszeit-1.8.10
+mkdir -p praxiszeit-1.8.11
+tar xzf praxiszeit-1.8.11-linux-x64.tar.gz -C praxiszeit-1.8.11
+cd praxiszeit-1.8.11
 
 # 2. Installer starten (als root)
 sudo ./install.sh
@@ -54,7 +54,7 @@ journalctl -u praxiszeit -f          # Live-Logs
 ## Windows-Installation
 
 ```
-1. praxiszeit-1.8.10-windows-x64.zip entpacken nach C:\PraxisZeit\
+1. praxiszeit-1.8.11-windows-x64.zip entpacken nach C:\PraxisZeit\
 
 2. setup.bat als Administrator ausfuehren
    - Installiert PostgreSQL (silent, kein GUI)
@@ -88,13 +88,13 @@ Deinstallation: `uninstall-service.bat` ausfuehren (Datenbank wird beibehalten).
 
 ```bash
 # Tarball entpackt flach — in einen eigenen Ordner entpacken:
-mkdir -p praxiszeit-1.8.10 && cd praxiszeit-1.8.10
+mkdir -p praxiszeit-1.8.11 && cd praxiszeit-1.8.11
 
 # Intel Mac:
-tar xzf ../praxiszeit-1.8.10-macos-x64.tar.gz
+tar xzf ../praxiszeit-1.8.11-macos-x64.tar.gz
 
 # Apple Silicon (M1/M2/M3/M4):
-tar xzf ../praxiszeit-1.8.10-macos-arm64.tar.gz
+tar xzf ../praxiszeit-1.8.11-macos-arm64.tar.gz
 
 # Installer starten (als root)
 sudo ./install.sh
@@ -120,10 +120,12 @@ tail -f /usr/local/praxiszeit/logs/praxiszeit.log
 
 **Standardpfad:** `/usr/local/praxiszeit/`
 
-Deinstallation:
+Deinstallation (beide launchd-Jobs entladen — Server **und** Backup-Timer):
 ```bash
 sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.backup.plist
 sudo rm /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo rm /Library/LaunchDaemons/de.praxiszeit.backup.plist
 sudo rm -rf /usr/local/praxiszeit   # Optional: Daten loeschen
 ```
 

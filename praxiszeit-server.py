@@ -838,7 +838,7 @@ def pg_load_credentials():
 # --- Alembic Migrations ---
 
 def _redact_db_url(text: str) -> str:
-    """Maskiert Passwörter in postgresql://user:pass@host-URLs.
+    """Maskiert Passwörter in postgresql://<user>:<pass>@<host>-URLs.
 
     Alembic schreibt bei Verbindungsfehlern die komplette Connection-URL
     (inkl. Passwort aus DATABASE_URL_MIGRATIONS) auf stderr; ungefiltert
@@ -1200,25 +1200,45 @@ def create_backup(config: dict):
 
     logger.info(f"Creating backup: {backup_file}")
 
-    # "-w": never prompt for a password (fail fast instead of hanging).
+    # Plain-SQL-Format (NICHT -Fc!): pg_dumps Custom-Format ist bereits komprimiert;
+    # ein zweites gzip darueber erzeugt ein DOPPELT komprimiertes Artefakt, das die
+    # dokumentierten "gunzip | psql"-Restores NICHT einlesen koennen (psql parst
+    # Custom-Format-Binaerdaten als SQL -> Syntaxfehler). Plain-SQL + gzip ist mit
+    # "gunzip -c <datei>.sql.gz | psql" restorebar. "--clean --if-exists" macht den
+    # Restore idempotent (DROP ... IF EXISTS vor jedem CREATE), auch in eine bereits
+    # befuellte DB. "-w": nie nach Passwort fragen (fail fast statt Haenger).
     pg_dump = subprocess.Popen(
-        [str(pg_cmd("pg_dump")), "-w", "-U", superuser, "-d", "praxiszeit", "-Fc"],
+        [str(pg_cmd("pg_dump")), "-w", "--clean", "--if-exists",
+         "-U", superuser, "-d", "praxiszeit"],
         stdout=subprocess.PIPE,
         env={**pg_env(), "PGPASSWORD": su_password},
     )
 
-    with open(backup_file, "wb") as f:
-        import gzip
-        with gzip.open(f, "wb") as gz:
-            while True:
-                chunk = pg_dump.stdout.read(8192)
-                if not chunk:
-                    break
-                gz.write(chunk)
+    import gzip
+    write_error = None
+    try:
+        with open(backup_file, "wb") as f:
+            with gzip.open(f, "wb") as gz:
+                while True:
+                    chunk = pg_dump.stdout.read(8192)
+                    if not chunk:
+                        break
+                    gz.write(chunk)
+    except OSError as e:  # z. B. Platte voll waehrend des Schreibens
+        write_error = e
+    finally:
+        if pg_dump.stdout:
+            pg_dump.stdout.close()
 
     pg_dump.wait()
-    if pg_dump.returncode != 0:
-        logger.error("Backup failed!")
+    # Erfolg nur, wenn pg_dump sauber durchlief UND eine nicht-leere Datei entstand.
+    # Sonst wuerde ein truncated/leeres Backup als "complete" geloggt und ueberlebte
+    # die Retention -> stiller Datenverlust im Ernstfall.
+    if (write_error is not None or pg_dump.returncode != 0
+            or not backup_file.exists() or backup_file.stat().st_size == 0):
+        logger.error(
+            f"Backup failed (rc={pg_dump.returncode}, write_error={write_error})!"
+        )
         backup_file.unlink(missing_ok=True)
         return None
 

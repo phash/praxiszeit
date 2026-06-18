@@ -1,8 +1,14 @@
 # PraxisZeit – Windows-Installation und Erstinbetriebnahme
 
-**Aktuelle Version:** 1.4.4 · **Stand:** 23. Mai 2026
+**Aktuelle Version:** 1.8.11 · **Stand:** Juni 2026
 **Zielgruppe:** Praxis-Inhaber:in oder IT-Betreuer:in, der/die PraxisZeit erstmalig auf einem Windows-Rechner einrichtet
 **Ergebnis:** Ein einsatzbereiter Praxis-Server, eingerichtete Mitarbeiter:innen-Konten und der erste erfolgreiche Stempelvorgang am Morgen.
+
+> **Maßgebliche, gepflegte Anleitungen:** [INSTALL-NATIVE.md](INSTALL-NATIVE.md),
+> [UPDATE.md](UPDATE.md), [BACKUP.md](BACKUP.md) und
+> [NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md). Auslieferung erfolgt
+> über den Shop (praxiszeit.mr-development.de); in der Beta ist keine Lizenz nötig.
+> Einzelne versionsspezifische Beispiele unten stammen noch aus der 1.4.x-Ära.
 
 Diese Anleitung deckt **nur Windows** ab und führt Schritt für Schritt vom heruntergeladenen ZIP-Paket bis zum ersten Arbeitstag eines Mitarbeiters. Für Linux- oder Docker-Installationen siehe [`setup-anleitung.md`](setup-anleitung.md).
 
@@ -75,7 +81,10 @@ Folgende Dateien herunterladen:
 - `praxiszeit-<VERSION>-windows-x64.zip` (z. B. `praxiszeit-1.3.6-windows-x64.zip`)
 - `praxiszeit-<VERSION>-SHA256SUMS.txt` (Prüfsummen-Datei)
 
-> **Hinweis zur Versionslage (Stand 23.05.2026):** Aktuell signierte Releases sind **v1.3.5 / v1.3.6** (Windows). Neuere Features im `master`-Branch (1.4.x) erfordern einen Eigen-Build (siehe `setup-anleitung.md`, Kapitel 3.4).
+> **Hinweis zur Versionslage:** Releases (inkl. Windows-ZIP) werden inzwischen
+> zentral über den Shop **praxiszeit.mr-development.de** ausgeliefert (nicht mehr
+> nur als GitHub-Release). Aktuelle Version: **1.8.11**. Ein Eigen-Build aus dem
+> `master`-Branch ist weiterhin via `tools/build-release.sh` möglich.
 
 ### 2.2 Integrität prüfen (PowerShell)
 
@@ -232,12 +241,18 @@ install-service.bat
 Selbstsigniertes Zertifikat für lokalen HTTPS-Zugriff:
 
 ```cmd
+:: WICHTIG: RSA-2048 + serverAuth. Browser lehnen ed25519-TLS-Server-Zertifikate
+:: und CA-Certs (ohne extendedKeyUsage=serverAuth) ohne "Erweitert"-Option ab.
 cd C:\PraxisZeit
-bin\postgresql\bin\openssl.exe req -x509 -newkey ed25519 ^
+bin\postgresql\bin\openssl.exe req -x509 -nodes -newkey rsa:2048 ^
   -keyout config\ssl\key.pem ^
   -out    config\ssl\cert.pem ^
-  -days 3650 -nodes ^
-  -subj "/CN=PraxisZeit/O=Praxis Dr. Müller"
+  -days 3650 ^
+  -subj "/O=PraxisZeit/CN=praxiszeit" ^
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" ^
+  -addext "basicConstraints=critical,CA:FALSE" ^
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment" ^
+  -addext "extendedKeyUsage=serverAuth"
 ```
 
 Dann in `config\praxiszeit.conf` aktivieren:
@@ -577,4 +592,4 @@ schtasks /query /tn "PraxisZeit-Backup" /v /fo LIST > C:\PraxisZeit\logs\task-st
 
 ---
 
-*PraxisZeit · Windows-Setup · Version 1.4.4 · Erstellt am 23. Mai 2026*
+*PraxisZeit · Windows-Setup · Version 1.8.11 · © 2026*

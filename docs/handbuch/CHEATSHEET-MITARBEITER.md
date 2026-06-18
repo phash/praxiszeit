@@ -53,7 +53,7 @@ Aktionsspalte in der Einträge-Tabelle:
 
 ### Tagesgrenze (§3 ArbZG)
 - Warnung ab **8 Stunden** Nettoarbeitszeit
-- Gesperrt ab **10 Stunden** Nettoarbeitszeit
+- Ab **10 Stunden** netto: manuelle Eingabe gesperrt; Live-Ausstempeln nur Warnung (Zeit ist bereits geleistet)
 
 ### Soll-Arbeitszeit-Fenster
 *Nur aktiv, wenn die Praxis für Sie Soll-Zeiten hinterlegt hat – sonst zählt alles wie gewohnt.*

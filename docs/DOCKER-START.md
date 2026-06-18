@@ -7,7 +7,7 @@ Daten in eine Cloud übertragen.
 > **Wichtig — welches Paket?** Die **Native-Pakete**
 > (`praxiszeit-…-linux-x64.tar.gz`, `…-windows-x64.zip` usw.) enthalten **kein**
 > `docker-compose.yml` — sie sind für die Installation **ohne** Docker gedacht.
-> Für Docker brauchen Sie das **Docker-Paket** `praxiszeit-<version>-docker.zip`
+> Für Docker brauchen Sie das **Docker-Paket** `praxiszeit-<version>-docker.tar.gz`
 > (enthält Compose + Build-Kontext) **oder** den Quellcode (`git clone`).
 
 ---
@@ -23,8 +23,8 @@ Daten in eine Cloud übertragen.
 ## 1. Docker-Paket entpacken
 
 ```bash
-unzip praxiszeit-<version>-docker.zip
-cd praxiszeit-<version>-docker
+tar xzf praxiszeit-<version>-docker.tar.gz
+cd praxiszeit-<version>
 ```
 
 Das Paket enthält alles Nötige: `docker-compose.yml`, `docker-compose.ssl.yml`,

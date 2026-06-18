@@ -859,8 +859,8 @@ DOCKEREOF
     tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-docker.tar.gz" \
         -C "${BUILD_DIR}/docker" "praxiszeit-${APP_VERSION}"
     info "Docker-Bundle: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-docker.tar.gz" | cut -f1)"
-    warn "Docker-Bundle gehoert an ein GitHub-Release — der '-docker'-Name passt"
-    warn "NICHT in das strikte pzweb-Upload-Regex (nur linux/macos/windows)."
+    info "Docker-Bundle: das pzweb-Upload-Regex akzeptiert seit 2026-06 auch '-docker'"
+    info "(neben linux/macos/windows) — kann also in den Shop ODER an ein GitHub-Release."
 else
     step "6b — Docker: uebersprungen"
 fi

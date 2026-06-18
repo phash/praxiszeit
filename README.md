@@ -9,7 +9,7 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 - ✅ **Stempeluhr** - Ein-/Ausstempeln direkt auf dem Dashboard
 - ✅ **Zeiterfassung** (von–bis mit Pausen)
 - ✅ **Dashboard** mit Soll/Ist-Vergleich und Überstundenkonto
-- ✅ **Urlaubsverwaltung** (stundenbasiert mit Restanzeige)
+- ✅ **Urlaubsverwaltung** (tagebasiert nach Tagesprinzip §3 BUrlG, mit Restanzeige)
 - ✅ **Abwesenheiten** (Urlaub, Krankheit, Fortbildung, Überstundenausgleich, Sonstiges)
 - ✅ **Abwesenheiten mit Zeiten** (Start-/Endzeit oder "ganzer Tag")
 - ✅ **Zeitraum-Erfassung** (mehrere Tage auf einmal)
@@ -34,7 +34,7 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 - ✅ **ArbZG-Compliance-Reports**: Ruhezeitverstöße (§5), Sonntagsarbeit (§11), Nachtarbeit (§6), Ersatzruhetag-Tracking (§11)
 
 ### ArbZG-Compliance (§3–§18)
-- ⚖️ **§3**: 8h-Warnung + 10h-Hard-Stop an allen Eingabepfaden (inkl. Admin-Direkteintrag, Änderungsanträge)
+- ⚖️ **§3**: 8h-Warnung überall; 10h-Hard-Stop bei manuellen Eingaben (Admin-Direkteintrag, Änderungsanträge) — Live-Ausstempeln erzeugt nur eine Warnung (die Zeit ist bereits geleistet und §16-aufzeichnungspflichtig)
 - ⚖️ **§4**: Pflichtpause-Prüfung (>6h→30min, >9h→45min) + Mindestdauer-Warnung (<15min, §4 Satz 2)
 - ⚖️ **§5**: 11h-Mindestruhezeit — Echtzeit-Warnung beim Einstempeln + Admin-Report
 - ⚖️ **§6**: Nachtarbeit-Erkennung (23–6 Uhr), Badge im Frontend, Admin-Report mit Nachtarbeitnehmer-Schwellwert (≥48 Tage/Jahr)

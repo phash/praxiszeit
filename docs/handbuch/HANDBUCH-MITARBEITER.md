@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.3 · **Stand:** Juni 2026 (PraxisZeit 1.8.2)
+**Version:** 2.3 · **Stand:** Juni 2026 (PraxisZeit 1.8.11)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -170,7 +170,7 @@ Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das
 > PraxisZeit prüft Eingaben automatisch auf ArbZG-Einhaltung:
 >
 > - **> 8 Stunden Netto:** Hinweis gem. [§ 3 ArbZG](https://www.gesetze-im-internet.de/arbzg/__3.html)
-> - **> 10 Stunden Netto:** Eintrag wird blockiert (Tageshöchstgrenze)
+> - **> 10 Stunden Netto:** Bei **manueller Eingabe** (wie hier) wird der Eintrag blockiert (Tageshöchstgrenze). Beim **Live-Ausstempeln** wird stattdessen nur gewarnt — die Zeit ist dann bereits geleistet und § 16-aufzeichnungspflichtig.
 > - **Zu kurze Pause:** Warnung gem. [§ 4 ArbZG](https://www.gesetze-im-internet.de/arbzg/__4.html):
 >   bei > 6h → mind. 30 Min.; bei > 9h → mind. 45 Min.
 
@@ -491,7 +491,7 @@ A: Überprüfen Sie, ob Sie den richtigen Monat anzeigen. Nutzen Sie die Pfeile 
 **F: Ich bekomme eine Warnung bei der Eingabe meiner Arbeitszeit.**
 A: PraxisZeit prüft die gesetzlichen Grenzen:
 - Netto > 8h: Hinweis (zulässig mit Ausgleich – § 3 ArbZG)
-- Netto > 10h: Blockiert (Tageshöchstgrenze – § 3 ArbZG)
+- Netto > 10h: bei **manueller Eingabe** blockiert; beim **Live-Ausstempeln** nur Warnung, weil die Zeit bereits geleistet ist (Tageshöchstgrenze – § 3 ArbZG)
 - Zu kurze Pause: Warnung (§ 4 ArbZG – bei >6h mind. 30 Min., bei >9h mind. 45 Min.)
 
 **F: Beim Ausstempeln werde ich nach meiner Pause gefragt – was muss ich eintragen?**
@@ -540,4 +540,4 @@ Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https:/
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.3 | Juni 2026 (PraxisZeit 1.8.2)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.3 | Juni 2026 (PraxisZeit 1.8.11)*

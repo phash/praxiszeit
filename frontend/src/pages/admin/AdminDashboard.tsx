@@ -193,7 +193,13 @@ export default function AdminDashboard() {
     });
   };
 
+  // C-2: Out-of-order-Schutz. Wechselt der Admin bei offenem Detail-Modal schnell
+  // den Monat, läuft fetchEmployeeDetails erneut, während der alte Lauf noch
+  // pendet — die langsamere Antwort würde sonst die Detaildaten des falschen
+  // Monats setzen. Last-Write-Wins über detailSeq.
+  const detailSeq = useRef(0);
   const fetchEmployeeDetails = async (employee: EmployeeReport) => {
+    const seq = ++detailSeq.current;
     setSelectedEmployee(employee);
     setDetailLoading(true);
     try {
@@ -201,6 +207,7 @@ export default function AdminDashboard() {
 
       // Fetch user details
       const userResponse = await apiClient.get(`/admin/users/${employee.user_id}`);
+      if (seq !== detailSeq.current) return;
       setSelectedUserDetails(userResponse.data);
 
       // Fetch time entries
@@ -210,6 +217,7 @@ export default function AdminDashboard() {
           month: currentMonth
         }
       });
+      if (seq !== detailSeq.current) return;
       setEmployeeTimeEntries(entriesResponse.data);
 
       // Fetch absences
@@ -219,14 +227,15 @@ export default function AdminDashboard() {
           year: parseInt(year)
         }
       });
+      if (seq !== detailSeq.current) return;
       setEmployeeAbsences(absencesResponse.data);
 
       // Fetch audit log
       fetchAuditForUser(employee.user_id);
     } catch (error) {
-      toast.error('Fehler beim Laden der Mitarbeiterdaten');
+      if (seq === detailSeq.current) toast.error('Fehler beim Laden der Mitarbeiterdaten');
     } finally {
-      setDetailLoading(false);
+      if (seq === detailSeq.current) setDetailLoading(false);
     }
   };
 

@@ -32,8 +32,11 @@ export const useSystemStore = create<SystemState>((set, get) => ({
       const { data } = await apiClient.get<SystemInfo>('/system/info');
       set({ info: data, isLoaded: true });
     } catch {
+      // onboarding_enabled: false im Fehler-Fallback — laesst sich die Einstellung
+      // nicht laden, NICHT die Tour zeigen (sonst erschiene sie trotz Admin-
+      // Deaktivierung, weil ein fehlendes Feld als "an" gilt).
       set({
-        info: { deployment_mode: 'onprem', version: '' },
+        info: { deployment_mode: 'onprem', version: '', onboarding_enabled: false },
         isLoaded: true,
       });
     }

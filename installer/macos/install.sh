@@ -153,6 +153,13 @@ cp "${SCRIPT_DIR}/praxiszeit-server.py" "${INSTALL_DIR}/"
 
 SECRET_KEY=$("${INSTALL_DIR}/bin/python/bin/python3" -c "import secrets; print(secrets.token_hex(64))")
 
+if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
+    # Reinstall/Update: bestehende Konfiguration NICHT ueberschreiben. Ein neu
+    # generierter secret_key wuerde sonst alle Sessions ungueltig machen UND alle
+    # verschluesselten TOTP-Secrets (Migration 050) unentschluesselbar -> jeder
+    # 2FA-Nutzer ausgesperrt. port/retention/Admin-Passwort bleiben so erhalten.
+    info "Bestehende config/praxiszeit.conf erkannt -> wird beibehalten (Reinstall/Update)."
+else
 info "Schreibe Konfiguration..."
 cat > "${INSTALL_DIR}/config/praxiszeit.conf" << CONFEOF
 [server]
@@ -190,6 +197,7 @@ enabled = true
 schedule = "02:00"
 retention_days = 31
 CONFEOF
+fi
 chmod 600 "${INSTALL_DIR}/config/praxiszeit.conf"
 
 # --- Service-User ---
