@@ -245,6 +245,39 @@ PLISTEOF
 
 launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
 
+info "Richte taegliches Backup ein (launchd, 03:00)..."
+cat > /Library/LaunchDaemons/de.praxiszeit.backup.plist << BKPLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>de.praxiszeit.backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${INSTALL_DIR}/bin/python/bin/python3</string>
+        <string>${INSTALL_DIR}/praxiszeit-server.py</string>
+        <string>backup</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${INSTALL_DIR}</string>
+    <key>UserName</key>
+    <string>_praxiszeit</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>3</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${INSTALL_DIR}/logs/backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>${INSTALL_DIR}/logs/backup.log</string>
+</dict>
+</plist>
+BKPLISTEOF
+
+launchctl load /Library/LaunchDaemons/de.praxiszeit.backup.plist
+
 # --- Fertig ---
 
 echo ""

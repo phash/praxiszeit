@@ -351,6 +351,7 @@ Jeder Ordner enthält eine `HOWTO.md` mit dem Audit-Prozess, dem Claude-Prompt z
 - **docs/INSTALLATION.md** - Detaillierte Installationsanleitung
 - **docs/DOCKER-START.md** - PraxisZeit mit Docker starten (aus dem Docker-Paket, ohne git)
 - **docs/UPDATE.md** - Bestehende Docker-/Native-Installation aktualisieren
+- **docs/BACKUP.md** - Datensicherung: Auto-Backup je Variante, manuelles Backup, Restore
 - **docs/specs/** - Audit-Berichte (Security, DSGVO, ArbZG)
 - **API Docs** - http://localhost:8000/docs
 - **GitHub Issues** - https://github.com/phash/praxiszeit/issues
