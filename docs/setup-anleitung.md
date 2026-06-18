@@ -88,16 +88,18 @@ PraxisZeit ist eine **Arbeitszeiterfassung speziell für Arzt- und Therapie-Prax
 
 Es gibt drei Wege zum Installations-Paket — die Wahl hängt von der Plattform ab.
 
-### 3.1 Verfügbarkeits-Matrix (Stand: 1.4.4)
+### 3.1 Verfügbarkeits-Matrix
 
-| Plattform | GitHub-Release verfügbar? | Empfehlung |
+| Plattform | Bezug | Empfehlung |
 |---|---|---|
-| **Windows x64** | ✅ Ja (`v1.3.5`, `v1.3.6`) | Download von Releases-Seite (siehe 3.2) |
-| **Linux x64** | ❌ Aktuell **kein** Linux-Asset in den Releases | Selber bauen (siehe 3.4) **ODER** Docker (Variante C) |
-| **macOS x64 / arm64** | ❌ Aktuell **kein** macOS-Asset | Selber bauen (siehe 3.4) |
-| **Docker** | — (kein Paket nötig) | Repository klonen (siehe Variante C, Kapitel 6) |
+| **Windows x64** | Shop (`…-windows-x64.zip`) | Download über praxiszeit.mr-development.de |
+| **Linux x64** | Shop (`…-linux-x64.tar.gz`) | Download über praxiszeit.mr-development.de **ODER** Docker (Variante C) |
+| **macOS x64 / arm64** | Shop (`…-macos-x64.tar.gz` / `…-macos-arm64.tar.gz`) | Download über praxiszeit.mr-development.de |
+| **Docker** | Docker-Bundle (`…-docker.tar.gz`) oder Quellcode | siehe Variante C, Kapitel 6 |
 
-> **Hinweis:** Die aktuellste GitHub-Release ist v1.3.6 (Windows-only). Der `master`-Branch ist auf v1.4.4 — neuere Features (z. B. 24-Wochen-Ausgleichsreport, vacation-request-edit) sind nur per Build-from-Source verfügbar, bis ein neuer Release-Tag gesetzt wird.
+> **Hinweis:** Releases werden zentral über den Shop **praxiszeit.mr-development.de**
+> ausgeliefert (alle vier Plattformen). Ein Eigen-Build aus dem `master`-Branch ist
+> weiterhin via `tools/build-release.sh` möglich (siehe 3.4).
 
 ### 3.2 Windows: Direkter Download aus GitHub-Releases
 
