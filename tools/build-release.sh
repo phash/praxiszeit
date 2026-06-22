@@ -39,6 +39,9 @@ BUILD_MACOS=true
 BUILD_DOCKER=true
 SKIP_DOWNLOAD=false
 SKIP_FRONTEND=false
+# #81: GUI-Installer (Avalonia setup.exe) steuern.
+SKIP_SETUP=false     # Payload bauen, aber KEINE setup.exe (dotnet fehlt/kaputt)
+SETUP_ONLY=false     # nur die Windows-setup.exe iterieren (kein separates payload-ZIP)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -46,6 +49,11 @@ while [[ $# -gt 0 ]]; do
         --windows-only)  BUILD_LINUX=false; BUILD_MACOS=false; BUILD_DOCKER=false; shift ;;
         --macos-only)    BUILD_LINUX=false; BUILD_WINDOWS=false; BUILD_DOCKER=false; shift ;;
         --docker-only)   BUILD_LINUX=false; BUILD_WINDOWS=false; BUILD_MACOS=false; shift ;;
+        # #81: nur die Windows-setup.exe (fuer schnelle Installer-Iteration) —
+        # baut den Windows-Payload-Tree + setup.exe, ueberspringt Linux/macOS/Docker
+        # UND das separate windows-x64.zip (Payload steckt bereits in der setup.exe).
+        --setup-only)    SETUP_ONLY=true; BUILD_LINUX=false; BUILD_MACOS=false; BUILD_DOCKER=false; BUILD_WINDOWS=true; shift ;;
+        --skip-setup)    SKIP_SETUP=true; shift ;;
         --skip-download) SKIP_DOWNLOAD=true; shift ;;
         --skip-frontend) SKIP_FRONTEND=true; shift ;;
         --version)       APP_VERSION="$2"; shift 2 ;;
@@ -58,6 +66,10 @@ Options:
   --windows-only     Build nur die Windows-Plattform
   --macos-only       Build nur die macOS-Plattform
   --docker-only      Build nur das Docker-Bundle (compose + Build-Kontext)
+  --setup-only       Nur die Windows-GUI-setup.exe iterieren (Windows-Payload +
+                     setup.exe; ohne Linux/macOS/Docker UND ohne windows-x64.zip)
+  --skip-setup       Payload bauen, aber KEINE setup.exe (z. B. wenn .NET fehlt
+                     oder der Installer-Build kaputt ist; .bat-Fallback bleibt)
   --skip-download    Cache nutzen (PG/Python-Downloads nicht wiederholen)
   --skip-frontend    Frontend-Build überspringen (Dist muss schon existieren)
   --version VERSION  Explizit Versionsnummer setzen
@@ -662,7 +674,21 @@ PTHEOF
     # entpackt und setup.bat / update-wizard.ps1 -Headless aufruft.
     # ========================================================================
     _setup_exe_dist=""
-    if command -v dotnet &>/dev/null; then
+    if [ "$SKIP_SETUP" = true ]; then
+        info "setup.exe-Build uebersprungen (--skip-setup) — .bat-Fallback bleibt funktional."
+    elif command -v dotnet &>/dev/null; then
+        # #81: Pre-Build-Gate — die Installer-Unit-Tests muessen gruen sein, sonst
+        # wird KEINE setup.exe gebaut (verhindert die Auslieferung eines kaputten
+        # GUI-Installers). Failt das, bricht der Build hart ab.
+        info "Installer-Tests (dotnet test)..."
+        if ! dotnet test "${REPO_DIR}/installer/setup/PraxisZeit.Setup.slnx" \
+                -c Release --nologo -v quiet \
+                > "${BUILD_DIR}/setup-tests.log" 2>&1; then
+            error "Installer-Tests FEHLGESCHLAGEN — setup.exe wird NICHT gebaut."
+            error "Log: ${BUILD_DIR}/setup-tests.log"
+            exit 1
+        fi
+        info "Installer-Tests gruen."
         info "Erzeuge Payload-ZIP fuer Embedding..."
         _payload_zip="${BUILD_DIR}/payload-${APP_VERSION}-windows-x64.zip"
         rm -f "${_payload_zip}"
@@ -713,6 +739,9 @@ PTHEOF
         warn "dotnet SDK nicht gefunden — setup.exe wird nicht gebaut (.bat-Fallback bleibt funktional)"
     fi
 
+    if [ "$SETUP_ONLY" = true ]; then
+        info "windows-x64.zip uebersprungen (--setup-only) — Payload steckt bereits in der setup.exe."
+    else
     info "Erstelle ZIP..."
     _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.zip"
     if command -v zip &>/dev/null; then
@@ -739,6 +768,7 @@ PTHEOF
             exit 1
         fi
     fi
+    fi  # Ende --setup-only-Guard um die windows-x64.zip-Emission
     if [ -n "${_setup_exe_dist}" ] && [ -f "${_setup_exe_dist}" ]; then
         info "setup.exe (Standalone): $(du -h "${_setup_exe_dist}" | cut -f1)"
     fi
