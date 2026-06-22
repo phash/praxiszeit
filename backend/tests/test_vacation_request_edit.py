@@ -228,14 +228,17 @@ class TestEmployeeEdit:
         ).count()
         assert audits == 0
 
-    def test_edit_foreign_request_forbidden(
+    def test_edit_foreign_request_returns_404(
         self, db, employee, other_employee, other_employee_client
     ):
+        # #120: Ein fremder Antrag im selben Tenant wird wie ein unbekannter
+        # behandelt (404 statt 403) — der Response-Code verraet die Existenz
+        # einer fremden VR-ID nicht.
         vr = _vr(db, employee)
         resp = other_employee_client.patch(
             f"/api/vacation-requests/{vr.id}", json={"note": "hack"}
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_edit_approved_rejected(self, db, employee, employee_client):
         vr = _vr(db, employee, status_val=VacationRequestStatus.APPROVED.value)

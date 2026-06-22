@@ -62,7 +62,8 @@ def create_change_request(
             if not absence:
                 raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
             if absence.user_id != current_user.id:
-                raise HTTPException(status_code=403, detail="Zugriff verweigert")
+                # #120: 404 statt 403 — kein Existenz-Leak fremder Abwesenheiten.
+                raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
 
         # For CREATE/UPDATE: validate required fields
         if data.request_type in ("create", "update"):
@@ -151,7 +152,8 @@ def create_change_request(
         if not entry:
             raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
         if entry.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Zugriff verweigert")
+            # #120: 404 statt 403 — kein Existenz-Leak fremder Zeiteintraege.
+            raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
 
     # For CREATE, proposed values are required
     if data.request_type == "create":
@@ -356,7 +358,8 @@ def get_change_request(
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.user_id != current_user.id and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120: 404 statt 403 — kein Existenz-Leak fremder Antraege.
+        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     return _enrich_response(cr, db)
 
 
@@ -371,7 +374,8 @@ def withdraw_change_request(
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120: 404 statt 403 — kein Existenz-Leak fremder Antraege.
+        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.status != ChangeRequestStatus.PENDING:
         raise HTTPException(status_code=400, detail="Nur offene Anträge können zurückgezogen werden")
 
