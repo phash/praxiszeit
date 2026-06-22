@@ -107,15 +107,17 @@ install_runtime_deps() {
     fi
 
     # Rolling-Distro-Soname-Check: theseus' postgres linkt gegen libxml2.so.2.
-    # Arch/CachyOS liefern ab libxml2 2.14 nur noch libxml2.so.16 -> der
-    # PG-Start wuerde mit "libxml2.so.2: cannot open shared object file"
-    # scheitern. Frueh + klar abbrechen statt im Dienst-Crash-Loop zu landen.
+    # Arch/CachyOS liefern ab libxml2 2.14 nur noch libxml2.so.16.
+    # #177: Das Bundle bringt libxml2.so.2 jetzt in bin/postgresql/lib/ mit (PG
+    # findet sie via RPATH/LD_LIBRARY_PATH). Daher NUR abbrechen, wenn WEDER das
+    # Bundle NOCH das System die .so.2 hat (frueh + klar statt opaker Crash-Loop).
     ldcache=$(ldconfig -p 2>/dev/null || true)   # nach apt/dnf/zypper/pacman neu einlesen
-    if ! grep -qE "^[[:space:]]*libxml2\.so\.2\b" <<<"$ldcache"; then
-        error "libxml2.so.2 ist auf diesem System nicht verfuegbar."
-        error "Vermutlich eine Rolling-Distro (z.B. Arch/CachyOS) mit libxml2 >= 2.14"
-        error "(nur libxml2.so.16). Die mitgelieferte PostgreSQL benoetigt aber"
-        error "libxml2.so.2. Unterstuetzt: Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+."
+    bundled_libxml2="$(cd "$(dirname "$0")" && pwd)/bin/postgresql/lib/libxml2.so.2"
+    if [ ! -f "$bundled_libxml2" ] && ! grep -qE "^[[:space:]]*libxml2\.so\.2\b" <<<"$ldcache"; then
+        error "libxml2.so.2 fehlt — weder im Bundle (bin/postgresql/lib/) noch im System."
+        error "Vermutlich ein unvollstaendiges Paket auf einer Rolling-Distro (Arch/CachyOS)."
+        error "Unterstuetzt: Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+ (System-libxml2),"
+        error "Rolling-Distros via gebuendelte libxml2.so.2."
         exit 1
     fi
 }

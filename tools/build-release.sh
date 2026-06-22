@@ -567,6 +567,37 @@ if [ "$BUILD_LINUX" = true ]; then
     fi
     info "PostgreSQL ${POSTGRESQL_VERSION} entpackt (glibc-2.34-portabel)"
 
+    # #177: theseus-PG linkt libxml2.so.2; Rolling-Distros (Arch/CachyOS) liefern
+    # nur noch libxml2.so.16 -> PG laedt nicht (Crash-Loop). libxml2.so.2 aus
+    # rockylinux:9 buendeln (glibc-2.34, gebaut OHNE ICU -> nur base libs
+    # libz/liblzma/libm/libc), abgelegt in bin/postgresql/lib/, das pg_env() per
+    # LD_LIBRARY_PATH-Prepend findet -> Native-Install wird distro-unabhaengig.
+    if command -v docker &>/dev/null; then
+        info "Buendle libxml2.so.2 (Rolling-Distro-Support, #177)..."
+        if docker run --rm rockylinux:9 sh -c \
+                'dnf install -y -q libxml2 >/dev/null 2>&1 && cat "$(readlink -f /usr/lib64/libxml2.so.2)"' \
+                > "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2" 2>/dev/null \
+           && [ -s "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2" ]; then
+            # Sanity: glibc <= Baseline (sonst wuerde es die unterstuetzten Distros
+            # brechen) — derselbe Check wie fuer das postgres-Binary.
+            if ! check_glibc_compat "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2"; then
+                error "Gebuendeltes libxml2.so.2 ueberschreitet die glibc-Baseline — Abbruch."
+                exit 1
+            fi
+            # Defensive: keine ICU-Abhaengigkeit (sonst kaskadiert das Soname-Problem)
+            if command -v objdump &>/dev/null && objdump -p "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2" 2>/dev/null | grep -qi 'libicu'; then
+                error "Gebuendeltes libxml2.so.2 haengt an ICU — falsche Quelle, Abbruch."
+                exit 1
+            fi
+            info "libxml2.so.2 gebuendelt ($(du -h "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2" | cut -f1), glibc-2.34, ohne ICU)"
+        else
+            rm -f "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2"
+            warn "libxml2.so.2 konnte nicht gebuendelt werden — Rolling-Distros bleiben unsupported (install.sh-Fail-Fast greift)."
+        fi
+    else
+        warn "docker fehlt -> libxml2.so.2 NICHT gebuendelt (#177); Rolling-Distros bleiben unsupported."
+    fi
+
     info "Erstelle Tarball..."
     tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-linux-x64.tar.gz" \
         -C "${LINUX_DIR}" .
