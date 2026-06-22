@@ -81,7 +81,9 @@ services:
   prometheus:
     # F-037: pinned to a specific minor version for reproducible builds.
     # Bump deliberately via Dependabot/Renovate, not via `docker pull`.
-    image: prom/prometheus:v2.54.1
+    # #175: v2.54 war seit 2024-09 EOL -> auf v3 LTS-Linie. Config ist minimal
+    # (global + ein scrape-job) und v3-kompatibel (promtool check config gruen).
+    image: prom/prometheus:v3.12.0
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
