@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File, status
 from fastapi.responses import JSONResponse
+from urllib.parse import quote
 from app.core.limiter import limiter
 from app.core import totp_crypto
 from sqlalchemy.orm import Session
@@ -539,7 +540,12 @@ def export_my_data(
     return JSONResponse(
         content=data,
         headers={
-            "Content-Disposition": f'attachment; filename="PraxisZeit_Datenauszug_{current_user.username}.json"',
+            # Review 2026-06-23: username ist nicht zeichen-restringiert (kann " /
+            # Sonderzeichen enthalten) -> RFC-5987-konform encoden statt roh in den
+            # Header zu interpolieren.
+            "Content-Disposition": "attachment; filename*=UTF-8''" + quote(
+                f"PraxisZeit_Datenauszug_{current_user.username}.json"
+            ),
             "Content-Type": "application/json; charset=utf-8",
         }
     )
@@ -554,7 +560,9 @@ async def update_profile_picture(
     db: Session = Depends(get_db)
 ):
     """Upload profile picture. Max 500KB, JPEG or PNG only. Magic bytes verified."""
-    contents = await file.read()
+    # Review 2026-06-23: nur bis zur Grenze + 1 Byte lesen, statt den ganzen Body
+    # in den Speicher zu ziehen und erst danach zu pruefen (Memory-DoS-Verstaerker).
+    contents = await file.read(512_001)
     if len(contents) > 512_000:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bild zu groß (max. 500 KB)")
 

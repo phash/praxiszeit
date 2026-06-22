@@ -58,6 +58,11 @@ VACATION_AUDIT_RETENTION_DAYS = 730
 VACATION_AUDIT_SOURCES = (
     "vacation_request_edit",
     "vacation_request_cancel",
+    # #208 / Art. 5(1)(e): auch die Abwesenheits-Buchungs-/Genehmigungs-Audits
+    # dokumentieren den Antrags-Workflow (nicht die ArbZG-§16-Zeitaufzeichnung)
+    # und werden nach 730 Tagen mitgepurged, statt unbegrenzt zu akkumulieren.
+    "absence_creation",
+    "absence_request_approval",
 )
 
 
@@ -342,6 +347,11 @@ def _time_entry_dict(te: TimeEntry) -> dict[str, Any]:
         "date": te.date.isoformat() if te.date else None,
         "start_time": str(te.start_time) if te.start_time else None,
         "end_time": str(te.end_time) if te.end_time else None,
+        # §16 ArbZG (Review 2026-06-23): die ungekappten Rohstempel sind die
+        # eigentliche Arbeitszeitaufzeichnung vor der Work-Window-Kappung (#201)
+        # und gehoeren in den Pflicht-/Auskunfts-Export (wie im MA-Self-Export).
+        "raw_start_time": str(te.raw_start_time) if getattr(te, "raw_start_time", None) else None,
+        "raw_end_time": str(te.raw_end_time) if getattr(te, "raw_end_time", None) else None,
         "break_minutes": te.break_minutes,
         "note": te.note,
         # §10 ArbZG: Begruendung fuer Sonn-/Feiertagsarbeit — Pflichtbestandteil

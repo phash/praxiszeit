@@ -76,13 +76,20 @@ def list_absences(
         current_user.role == UserRole.ADMIN
         and user_id
         and str(user_id) != str(current_user.id)
-        and any(a.type in _MASKED_ABSENCE_TYPES for a in absences)
     ):
+        # #208 / Art. 9 + Art. 5(2): JEDEN gezielten Admin-Lesezugriff auf fremde
+        # Abwesenheiten protokollieren (eine Zeile pro Request) — nicht nur, wenn
+        # Gesundheitsdaten IM ERGEBNIS landen. Sonst haengt die Spur am Inhalt:
+        # eine gezielte Suche nach Krankmeldungen, die (noch) nichts findet,
+        # bliebe unprotokolliert.
+        sensitive = any(a.type in _MASKED_ABSENCE_TYPES for a in absences)
         db.add(TimeEntryAuditLog(
             time_entry_id=None,
             user_id=user_id,
             changed_by=current_user.id,
-            action="health_data_read",
+            action="health_data_read" if sensitive else "absence_list_read",
+            new_note=("Admin-Lesezugriff auf fremde Abwesenheiten "
+                      + ("inkl. Gesundheitsdaten" if sensitive else "ohne Gesundheitsdaten")),
             source="dsgvo",
             tenant_id=current_user.tenant_id,
         ))
@@ -363,6 +370,13 @@ def create_absence(
 
     # For vacation, check remaining vacation days (per year for cross-year ranges)
     if absence_data.type == AbsenceType.VACATION:
+        # BUG-3 (Review 2026-06-23): Budget-Check + Insert atomar machen. Ohne Lock
+        # koennen zwei gleichzeitige Urlaubsbuchungen fuer denselben MA beide
+        # remaining_days lesen, beide den Check passieren und das Budget ueberziehen
+        # (der per-Datum-with_for_update unten verhindert nur Doppelbuchungen am
+        # selben Tag, nicht den Budget-Overrun ueber verschiedene Tage). Die
+        # User-Zeile sperren serialisiert die Urlaubsbuchung pro MA bis zum Commit.
+        db.query(User).filter(User.id == target_user.id).with_for_update().first()
         # Group dates by year for budget check
         dates_by_year = {}
         for d in dates_to_create:
