@@ -391,6 +391,23 @@ def clock_out(
     db.commit()
     db.refresh(open_entry)
 
+    # H-2 (§16 ArbZG / EuGH C-55/18, Review 2026-06-23): jeden normalen
+    # Ausstempelvorgang protokollieren — bisher nur bei break_waiver. Ohne Audit
+    # zeigte ein spaeteres Admin-Edit als "original" die Admin-gesetzte Zeit statt
+    # des echten Stempelzeitpunkts. Quelle 'clock_out' (<= varchar(40)).
+    _create_audit_log(
+        db,
+        open_entry.id,
+        open_entry.user_id,
+        current_user.id,
+        action="update",
+        new_entry=open_entry,
+        source="clock_out",
+        tenant_id=current_user.tenant_id,
+    )
+    db.commit()
+    db.refresh(open_entry)
+
     clock_out_warnings: list[str] = []
     if not exempt:
         # ArbZG §4: break validation (warning only, don't block clock-out)
@@ -535,7 +552,9 @@ def get_time_entry(
 
     # Check permissions
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120 (Review 2026-06-23): 404 statt 403 — ein fremder Same-Tenant-Eintrag
+        # wird wie ein unbekannter behandelt (kein Existenz-Leak via Response-Code).
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
 
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db)
@@ -773,7 +792,9 @@ def update_time_entry(
 
     # Check permissions
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120 (Review 2026-06-23): 404 statt 403 — ein fremder Same-Tenant-Eintrag
+        # wird wie ein unbekannter behandelt (kein Existenz-Leak via Response-Code).
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
 
     # Edit protection: employees can only edit today's entries
     if current_user.role != UserRole.ADMIN and entry.date != _today_local():
@@ -1014,7 +1035,9 @@ def delete_time_entry(
 
     # Check permissions
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120 (Review 2026-06-23): 404 statt 403 — ein fremder Same-Tenant-Eintrag
+        # wird wie ein unbekannter behandelt (kein Existenz-Leak via Response-Code).
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
 
     # Edit protection: employees can only delete today's entries
     if current_user.role != UserRole.ADMIN and entry.date != _today_local():

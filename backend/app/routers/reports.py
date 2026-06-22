@@ -513,7 +513,7 @@ def get_rest_time_violations(
     Default minimum rest time: 11 hours (German law ArbZG §5).
     """
     violations = rest_time_service.check_all_users_violations(
-        db, year, month, min_rest_hours
+        db, year, month, min_rest_hours, tenant_id=current_user.tenant_id
     )
     return {
         "year": year,

@@ -160,6 +160,11 @@ def _create_closure_absences(
                         employee, workday, weekly_hours=weekly_hours
                     )
                 ),
+                # #205-Konsistenz (Review 2026-06-23): Betriebsferien sind immer
+                # volle Tage -> half_day=False, damit get_vacation_account den
+                # tagebasierten (WHChange-stabilen) Pfad nimmt statt der Legacy-
+                # Stundenlogik (die bei spaeterer Stundenaenderung driften wuerde).
+                half_day=False,
                 note=f"Betriebsferien: {closure.name}",
                 closure_id=closure.id,
             )

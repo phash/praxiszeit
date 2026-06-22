@@ -132,9 +132,13 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
         # (#195; das Tagessoll ist via _eff_daily_target schon 0). Sonst weicht die
         # Summe der Tageszeilen vom angezeigten Monats-Ist ab, sobald ein TimeEntry/
         # SICK ausserhalb des Fensters liegt (Rehire/Import/Datumskorrektur). Die
-        # Roh-Eintraege bleiben sichtbar (§16), zaehlen aber 0.
+        # Roh-Eintraege bleiben sichtbar (§16), zaehlen aber 0. target_hours wird
+        # ebenfalls genullt: auf einem out-of-window MISCH-Tag (Eintrag+Absence)
+        # waere target = _eff_daily_target(0) − reducing_sum negativ -> sonst ein
+        # phantom-positiver Tages-Saldo (Review 2026-06-23).
         if not calculation_service._within_employment_window(user, d):
             actual_hours = Decimal("0")
+            target_hours = Decimal("0")
 
         balance = actual_hours - target_hours
 

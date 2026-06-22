@@ -166,11 +166,14 @@ def review_vacation_request(
         )
 
     # Approve: create absence entries (same logic as create_absence in absences.py)
-    # F-026: explicit tenant scoping
+    # F-026: explicit tenant scoping. BUG-3 (Review 2026-06-23): with_for_update
+    # sperrt die User-Zeile -> zwei gleichzeitige Genehmigungen fuer denselben MA
+    # serialisieren, sonst koennten beide den Urlaubsbudget-Check passieren und
+    # das Budget ueberziehen.
     target_user = db.query(User).filter(
         User.id == vr.user_id,
         User.tenant_id == current_user.tenant_id,
-    ).first()
+    ).with_for_update().first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 

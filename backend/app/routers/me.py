@@ -9,6 +9,7 @@ Routenmuster ``/api/me/*`` ist reserviert für Self-Service ohne Admin-Rolle.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -87,5 +88,7 @@ def data_export(
     return StreamingResponse(
         iter([blob]),
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        # Review 2026-06-23: filename enthaelt den username (nicht zeichen-
+        # restringiert) -> RFC-5987-encoden statt roh interpolieren.
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(filename)},
     )

@@ -105,7 +105,8 @@ def check_all_users_violations(
     db: Session,
     year: int,
     month: Optional[int] = None,
-    min_rest_hours: Optional[float] = None
+    min_rest_hours: Optional[float] = None,
+    tenant_id=None,
 ) -> List[Dict]:
     """
     Check rest time violations for all active employees.
@@ -113,7 +114,17 @@ def check_all_users_violations(
     Returns list of violations grouped by employee.
     """
     from app.models import UserRole
-    users = db.query(User).filter(User.is_active == True).all()
+    # H-1 (Review 2026-06-23): §18 ArbZG — exempt_from_arbzg-MA (leitende
+    # Angestellte) gehoeren NICHT in den Ruhezeit-Report (der Echtzeit-Check beim
+    # Einstempeln schliesst sie bereits aus). F-026: zusaetzlich explizit auf den
+    # Tenant scopen (belt-and-suspenders ueber RLS).
+    user_query = db.query(User).filter(
+        User.is_active == True,
+        User.exempt_from_arbzg == False,
+    )
+    if tenant_id is not None:
+        user_query = user_query.filter(User.tenant_id == tenant_id)
+    users = user_query.all()
 
     all_violations = []
     for user in users:
