@@ -1,13 +1,18 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator, field_serializer
 from typing import Optional, List
-from datetime import date, time, datetime
+# #225: alias `date` so the field literally named `date` does not shadow the type.
+# With `from datetime import date`, a field `date: Optional[date] = None` makes
+# Pydantic 2.13 resolve the annotation in a namespace where `date` is bound to the
+# default `None` → `Optional[None]` == NoneType → every edit rejected with
+# "Input should be None". holiday.py/vacation_request.py already use this alias.
+from datetime import date as date_type, time, datetime
 from app.services.timezone_service import today_local
 from decimal import Decimal
 from uuid import UUID
 
 
 class TimeEntryBase(BaseModel):
-    date: date
+    date: date_type
     start_time: time
     end_time: time
     break_minutes: int = Field(default=0, ge=0)
@@ -39,7 +44,7 @@ class TimeEntryCreate(TimeEntryBase):
 
 
 class TimeEntryUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     start_time: Optional[time] = None
     end_time: Optional[time] = None
     break_minutes: Optional[int] = Field(None, ge=0)
@@ -59,7 +64,7 @@ class TimeEntryUpdate(BaseModel):
 class TimeEntryResponse(BaseModel):
     id: UUID
     user_id: UUID
-    date: date
+    date: date_type
     start_time: time
     end_time: Optional[time] = None
     break_minutes: int = Field(default=0, ge=0)
