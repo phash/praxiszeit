@@ -1036,7 +1036,11 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
             Absence.type == AbsenceType.SICK,
             date_in_month(Absence.date, year, month)
         ).all()
-        sick_hours = sum(float(a.hours) for a in sick_absences)
+        # #198: gefenstert wie das Ist (Row 11 = get_monthly_worked_hours, #195).
+        # Sonst verschoebe eine out-of-window-SICK-Absence den adjusted_target
+        # (Row 10 = target − sick − vacation), ohne die Ist-Seite zu beruehren.
+        sick_hours = sum(float(a.hours) for a in sick_absences
+                         if calculation_service._within_employment_window(user, a.date))
         real_sick = sick_hours  # kept for the masked-case credit on Row 11
         if include_health_data:
             sheet.cell(row=8, column=col).value = sick_hours
@@ -1052,7 +1056,9 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
             Absence.type == AbsenceType.VACATION,
             date_in_month(Absence.date, year, month)
         ).all()
-        vacation_hours = sum(float(a.hours) for a in vacation_absences)
+        # #198: gefenstert wie Ist + sick (Row 10/11-Konsistenz).
+        vacation_hours = sum(float(a.hours) for a in vacation_absences
+                             if calculation_service._within_employment_window(user, a.date))
         sheet.cell(row=9, column=col).value = vacation_hours
         sheet.cell(row=9, column=col).number_format = '0.0'
         sheet.cell(row=9, column=col).alignment = right_align
