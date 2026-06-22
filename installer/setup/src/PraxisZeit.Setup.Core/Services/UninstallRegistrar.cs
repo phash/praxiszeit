@@ -29,8 +29,12 @@ public static class UninstallRegistrar
     /// <summary>Berechnet die Registry-Werte (rein, ohne Seiteneffekt → testbar).</summary>
     public static IReadOnlyList<RegEntry> BuildEntries(string installDir, string version)
     {
-        var uninstall = Path.Combine(installDir, "uninstall.bat");
-        var icon = Path.Combine(installDir, "app", "frontend", "favicon.ico");
+        // #81: Diese Werte landen in der WINDOWS-Registry und muessen IMMER
+        // Backslashes nutzen — unabhaengig vom Build-Host. Path.Combine nutzt auf
+        // Linux/macOS (CI/Build-Server) aber '/', wodurch UninstallString/Icon
+        // falsche Separatoren bekaemen. Darum hart auf '\' normalisieren.
+        var uninstall = Path.Combine(installDir, "uninstall.bat").Replace('/', '\\');
+        var icon = Path.Combine(installDir, "app", "frontend", "favicon.ico").Replace('/', '\\');
         return new List<RegEntry>
         {
             new("DisplayName",     "REG_SZ",    "PraxisZeit"),

@@ -80,12 +80,13 @@ public sealed class EmbeddedPayloadExtractorTests
     {
         var extractor = new EmbeddedPayloadExtractor(_testAssembly);
         var progressValues = new List<double>();
-        var progress = new Progress<double>(v => progressValues.Add(v));
+        // #81: Progress<T> verteilt Callbacks auf den ThreadPool (kein
+        // SynchronizationContext im Test) -> die Reports liefen async nach und
+        // der frühere Task.Delay(50) war flaky (CI-Build-Gate). Ein synchrones
+        // IProgress sammelt deterministisch waehrend ExtractAsync.
+        var progress = new SynchronousProgress(progressValues.Add);
 
         var tempDir = await extractor.ExtractAsync(progress);
-        // Progress<T> dispatched synchron in Tests ohne SynchronizationContext —
-        // aber zur Sicherheit kurz warten falls einzelne Reports nachlaufen
-        await Task.Delay(50);
 
         try
         {
@@ -112,5 +113,15 @@ public sealed class EmbeddedPayloadExtractorTests
         // Soll keine Exception werfen
         EmbeddedPayloadExtractor.DeleteExtractedPayload("/path/that/does/not/exist");
         EmbeddedPayloadExtractor.DeleteExtractedPayload(string.Empty);
+    }
+
+    /// <summary>IProgress, das Report synchron im aufrufenden Thread ausfuehrt —
+    /// damit der Test deterministisch alle Werte sieht (kein ThreadPool-Nachlauf
+    /// wie bei Progress&lt;T&gt;).</summary>
+    private sealed class SynchronousProgress : IProgress<double>
+    {
+        private readonly Action<double> _handler;
+        public SynchronousProgress(Action<double> handler) => _handler = handler;
+        public void Report(double value) => _handler(value);
     }
 }
