@@ -151,6 +151,26 @@ describe('401 response interceptor', () => {
     await expect(apiClient.post('/auth/login', {})).rejects.toBeTruthy();
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it('does NOT attempt refresh for /auth/logout 401 (prevents logout↔refresh storm)', async () => {
+    // A 401 on logout must NOT trigger the refresh path. Otherwise:
+    // logout 401 → refresh fails → 'auth:session-expired' → logout() → ∞ loop
+    // (real incident: logout 401 ×382, refresh 429 ×50, dashboard hangs).
+    setAccessToken('stale');
+    const refresh = vi
+      .spyOn(axios, 'post')
+      .mockRejectedValue(new Error('refresh must not be called from logout'));
+    const onExpired = vi.fn();
+    window.addEventListener('auth:session-expired', onExpired);
+
+    apiClient.defaults.adapter = (config) => reply(config, 401);
+
+    await expect(apiClient.post('/auth/logout')).rejects.toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+    // No refresh attempt ⇒ no session-expired re-dispatch ⇒ loop can't form.
+    expect(onExpired).not.toHaveBeenCalled();
+    window.removeEventListener('auth:session-expired', onExpired);
+  });
 });
 
 describe('tryRefreshSession', () => {

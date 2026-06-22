@@ -150,4 +150,22 @@ describe('auth:session-expired listener', () => {
     });
     expect(post).toHaveBeenCalledWith('/auth/logout');
   });
+
+  it('collapses a burst of session-expired events into a single logout', async () => {
+    useAuthStore.setState({ user: USER as any, isAuthenticated: true, isHydrating: false });
+    post.mockResolvedValue({ data: {} });
+
+    // A broken session fires many events at once (e.g. dashboard's 7 parallel
+    // requests all fail the shared refresh). The re-entrancy guard must turn
+    // this into exactly one server logout.
+    window.dispatchEvent(new CustomEvent('auth:session-expired'));
+    window.dispatchEvent(new CustomEvent('auth:session-expired'));
+    window.dispatchEvent(new CustomEvent('auth:session-expired'));
+
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/auth/logout');
+  });
 });
