@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
@@ -409,7 +409,17 @@ export default function Layout() {
       <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-20 lg:pb-0 bg-background" tabIndex={-1}>
         <TrialBanner />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-          <Outlet />
+          {/* #147: Lazy-geladene Routen (admin/* + Help) -> Suspense nur um den
+              Content, damit die Sidebar beim Chunk-Laden stehen bleibt. */}
+          <Suspense
+            fallback={
+              <div role="status" aria-live="polite" className="py-12 text-center text-gray-500">
+                Lädt…
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </div>
       </main>
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useSystemStore } from './stores/systemStore';
@@ -11,20 +11,22 @@ import Dashboard from './pages/Dashboard';
 import TimeTracking from './pages/TimeTracking';
 import AbsenceCalendarPage from './pages/AbsenceCalendarPage';
 import Profile from './pages/Profile';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import Users from './pages/admin/Users';
-import AdminChangeRequests from './pages/admin/ChangeRequests';
-import Reports from './pages/admin/Reports';
-import AuditLog from './pages/admin/AuditLog';
-import AdminAbsences from './pages/admin/AdminAbsences';
-import ErrorMonitoring from './pages/admin/ErrorMonitoring';
-import VacationApprovals from './pages/admin/VacationApprovals';
-import ImportXls from './pages/admin/ImportXls';
-import AdminSettings from './pages/admin/Settings';
-import AdminBilling from './pages/admin/Billing';
-import UserJournal from './pages/admin/UserJournal';
-import Help from './pages/Help';
 import Privacy from './pages/Privacy';
+// #147: Admin-Routen + Help per Code-Splitting lazy laden -> kleineres
+// Initial-Bundle. Der Suspense-Fallback liegt in Layout um den <Outlet />.
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const Users = lazy(() => import('./pages/admin/Users'));
+const AdminChangeRequests = lazy(() => import('./pages/admin/ChangeRequests'));
+const Reports = lazy(() => import('./pages/admin/Reports'));
+const AuditLog = lazy(() => import('./pages/admin/AuditLog'));
+const AdminAbsences = lazy(() => import('./pages/admin/AdminAbsences'));
+const ErrorMonitoring = lazy(() => import('./pages/admin/ErrorMonitoring'));
+const VacationApprovals = lazy(() => import('./pages/admin/VacationApprovals'));
+const ImportXls = lazy(() => import('./pages/admin/ImportXls'));
+const AdminSettings = lazy(() => import('./pages/admin/Settings'));
+const AdminBilling = lazy(() => import('./pages/admin/Billing'));
+const UserJournal = lazy(() => import('./pages/admin/UserJournal'));
+const Help = lazy(() => import('./pages/Help'));
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 
