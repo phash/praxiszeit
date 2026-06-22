@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry, WorkingHoursChange
 from app.schemas.absence import AbsenceResponse
 from app.services import calculation_service
 from app.routers.admin_helpers import _create_audit_log
@@ -95,25 +95,44 @@ def _create_closure_absences(
         AbsenceType.VACATION if closure.counts_as_vacation else AbsenceType.PAID_LEAVE
     )
     affected = 0
+
+    # #204: Statt ~3 Queries pro (MA × Arbeitstag) — bei z. B. 40 MA × 15 Tagen
+    # ~1.800 SELECTs — die Referenzdaten in je EINER Query vorladen und in-memory
+    # nachschlagen. Logik unveraendert.
+    emp_ids = [e.id for e in employees]
+    existing_keys = set()
+    te_by_key: dict = {}
+    wh_by_user: dict = {}
+    if emp_ids:
+        existing_keys = {
+            (a.user_id, a.date)
+            for a in db.query(Absence.user_id, Absence.date).filter(
+                Absence.user_id.in_(emp_ids),
+                Absence.tenant_id == current_user.tenant_id,
+                Absence.date.in_(workdays),
+            ).all()
+        }
+        for entry in db.query(TimeEntry).filter(
+            TimeEntry.user_id.in_(emp_ids),
+            TimeEntry.tenant_id == current_user.tenant_id,
+            TimeEntry.date.in_(workdays),
+        ).all():
+            te_by_key.setdefault((entry.user_id, entry.date), []).append(entry)
+        for wh in db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id.in_(emp_ids),
+        ).order_by(WorkingHoursChange.effective_from).all():
+            wh_by_user.setdefault(wh.user_id, []).append(wh)
+
     for employee in employees:
         created_for_employee = False
+        emp_wh = wh_by_user.get(employee.id, [])
         for workday in workdays:
             # Skip if any absence already exists for this day (not just vacation)
-            existing = db.query(Absence).filter(
-                Absence.user_id == employee.id,
-                Absence.tenant_id == current_user.tenant_id,
-                Absence.date == workday,
-            ).first()
-            if existing:
+            if (employee.id, workday) in existing_keys:
                 continue
 
             # Delete existing time entries on this day with audit log
-            te_entries = db.query(TimeEntry).filter(
-                TimeEntry.user_id == employee.id,
-                TimeEntry.tenant_id == current_user.tenant_id,
-                TimeEntry.date == workday,
-            ).all()
-            for entry in te_entries:
+            for entry in te_by_key.get((employee.id, workday), []):
                 _create_audit_log(
                     db, entry.id, employee.id, current_user.id,
                     action="delete", old_entry=entry,
@@ -126,9 +145,9 @@ def _create_closure_absences(
             # a closure spanning a WorkingHoursChange credits the right
             # daily target. Passing weekly_hours explicitly is a CLAUDE.md
             # requirement — get_daily_target_for_date must never fall
-            # back to user.weekly_hours.
+            # back to user.weekly_hours. (#204: wh_changes vorgeladen.)
             weekly_hours = calculation_service.get_weekly_hours_for_date(
-                db, employee, workday
+                db, employee, workday, wh_changes=emp_wh
             )
             absence = Absence(
                 user_id=employee.id,
