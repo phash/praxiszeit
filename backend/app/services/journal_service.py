@@ -127,6 +127,15 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             actual_hours = time_hours
             target_hours = _eff_daily_target(d)
 
+        # #198: Tage ausserhalb des Beschaeftigungsfensters (vor first_work_day /
+        # nach last_work_day) zaehlen kein Ist — symmetrisch zu get_monthly_actual
+        # (#195; das Tagessoll ist via _eff_daily_target schon 0). Sonst weicht die
+        # Summe der Tageszeilen vom angezeigten Monats-Ist ab, sobald ein TimeEntry/
+        # SICK ausserhalb des Fensters liegt (Rehire/Import/Datumskorrektur). Die
+        # Roh-Eintraege bleiben sichtbar (§16), zaehlen aber 0.
+        if not calculation_service._within_employment_window(user, d):
+            actual_hours = Decimal("0")
+
         balance = actual_hours - target_hours
 
         days.append({

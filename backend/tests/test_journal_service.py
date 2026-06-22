@@ -3,7 +3,7 @@ import pytest
 from decimal import Decimal
 from datetime import date, time
 from app.models import TimeEntry, Absence, AbsenceType, PublicHoliday
-from app.services import journal_service
+from app.services import journal_service, calculation_service
 from tests.conftest import DEFAULT_TENANT_ID
 
 
@@ -113,3 +113,22 @@ def test_journal_user_info_included(db, test_user):
     result = journal_service.get_journal(db, test_user, 2026, 3)
     assert result["user"]["first_name"] == test_user.first_name
     assert result["user"]["last_name"] == test_user.last_name
+
+
+def test_journal_day_actuals_windowed_match_monthly_actual(db, test_user):
+    """#198: Ein TimeEntry VOR first_work_day darf das Tages-Ist nicht aufblaehen.
+    Summe der Tageszeilen muss dem (gefensterten) Monats-Ist entsprechen."""
+    test_user.first_work_day = date(2026, 3, 16)  # Eintritt Mitte Maerz
+    db.commit()
+    _make_entry(db, test_user, date(2026, 3, 9), 8, 16)    # Mo, VOR Eintritt (out-of-window)
+    _make_entry(db, test_user, date(2026, 3, 23), 8, 16)   # Mo, nach Eintritt (zaehlt)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    sum_day_actual = round(sum(d["actual_hours"] for d in result["days"]), 2)
+    monthly_actual = round(float(calculation_service.get_monthly_actual(db, test_user, 2026, 3)), 2)
+    assert sum_day_actual == monthly_actual
+
+    mar9 = next(d for d in result["days"] if d["date"] == "2026-03-09")
+    assert mar9["actual_hours"] == 0.0   # out-of-window -> kein Ist
+    mar23 = next(d for d in result["days"] if d["date"] == "2026-03-23")
+    assert mar23["actual_hours"] == 8.0  # in-window -> zaehlt
