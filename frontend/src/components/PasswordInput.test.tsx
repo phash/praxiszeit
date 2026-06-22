@@ -82,4 +82,66 @@ describe('PasswordInput', () => {
     expect(input.className).toContain('custom-input');
     expect(input.className).toContain('pr-10');
   });
+
+  it('warns when Caps Lock is active while typing, and clears it again', async () => {
+    const user = userEvent.setup();
+    render(<PasswordInput aria-label="Passwort" />);
+    const input = screen.getByLabelText('Passwort');
+    await user.click(input);
+
+    // No warning before Caps Lock is engaged.
+    expect(screen.queryByText(/Feststelltaste/i)).not.toBeInTheDocument();
+
+    // {CapsLock} toggles the lock on; the trailing key reports the new state.
+    await user.keyboard('{CapsLock}a');
+    expect(screen.getByText(/Feststelltaste/i)).toBeInTheDocument();
+
+    // Toggling Caps Lock off must remove the warning.
+    await user.keyboard('{CapsLock}a');
+    expect(screen.queryByText(/Feststelltaste/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the Caps Lock warning when the field loses focus', async () => {
+    const user = userEvent.setup();
+    render(<PasswordInput aria-label="Passwort" />);
+    const input = screen.getByLabelText('Passwort');
+    await user.click(input);
+    await user.keyboard('{CapsLock}a');
+    expect(screen.getByText(/Feststelltaste/i)).toBeInTheDocument();
+
+    // Blur clears the warning — we can no longer observe the modifier state.
+    await user.tab();
+    expect(screen.queryByText(/Feststelltaste/i)).not.toBeInTheDocument();
+    // Reset the lock so it doesn't leak into the next test.
+    await user.keyboard('{CapsLock}');
+  });
+
+  it('never shows the warning when showCapsLockWarning={false}', async () => {
+    const user = userEvent.setup();
+    render(<PasswordInput aria-label="Passwort" showCapsLockWarning={false} />);
+    const input = screen.getByLabelText('Passwort');
+    await user.click(input);
+    await user.keyboard('{CapsLock}a');
+    expect(screen.queryByText(/Feststelltaste/i)).not.toBeInTheDocument();
+    await user.keyboard('{CapsLock}'); // reset lock state
+  });
+
+  it('still forwards consumer onKeyDown/onBlur handlers', async () => {
+    const user = userEvent.setup();
+    let keyDowns = 0;
+    let blurs = 0;
+    render(
+      <PasswordInput
+        aria-label="Passwort"
+        onKeyDown={() => { keyDowns += 1; }}
+        onBlur={() => { blurs += 1; }}
+      />,
+    );
+    const input = screen.getByLabelText('Passwort');
+    await user.click(input);
+    await user.keyboard('x');
+    await user.tab();
+    expect(keyDowns).toBeGreaterThan(0);
+    expect(blurs).toBe(1);
+  });
 });
