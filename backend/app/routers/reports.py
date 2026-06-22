@@ -77,7 +77,9 @@ def get_monthly_report(
     for user in users:
         target = calculation_service.get_monthly_target(db, user, year, month_num)
         actual = calculation_service.get_monthly_actual(db, user, year, month_num)
-        balance = calculation_service.get_monthly_balance(db, user, year, month_num)
+        # #150: target/actual sind bereits berechnet — get_monthly_balance würde
+        # beide pro User redundant neu laden. Identisch zu dessen (actual-target).quantize.
+        balance = (actual - target).quantize(Decimal('0.01'))
         overtime = calculation_service.get_overtime_account(db, user, year, month_num)
 
         # Get vacation and sick hours for the month (F-033: sargable)

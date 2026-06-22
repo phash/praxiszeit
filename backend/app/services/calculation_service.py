@@ -561,6 +561,145 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
     return total_balance.quantize(Decimal('0.01'))
 
 
+def get_overtime_history(
+    db: Session, user: User, up_to_year: int, up_to_month: int
+) -> Dict[tuple, Decimal]:
+    """Kumulatives Überstundenkonto NACH jedem Monat (Start..up_to) in EINEM Pass.
+
+    Invariante: für jeden Monat (y, m) im Bereich gilt
+        get_overtime_history(...)[(y, m)] == get_overtime_account(db, user, y, m)
+    (gepinnt durch test_overtime_history_matches_account). #150: damit baut das
+    Dashboard seine Monats-History in O(Monate) statt get_overtime_account pro
+    Monat zu rufen (O(Monate²), weil jede Einzelrufung ab Carryover-Start neu
+    iteriert). Leeres Dict bei track_hours=False / keinen Daten.
+
+    Wie get_overtime_account ist ein YearCarryover ein Reset-Punkt: im Januar
+    eines Jahres MIT eigenem Carryover startet der laufende Saldo neu vom
+    Carryover-Wert (spiegelt die "latest carryover <= year"-Auswahl der
+    Einzelfunktion).
+    """
+    if not user.track_hours:
+        return {}
+
+    up_to_date = date(up_to_year, up_to_month, monthrange(up_to_year, up_to_month)[1])
+
+    carryovers: Dict[int, Decimal] = {
+        c.year: Decimal(str(c.overtime_hours))
+        for c in db.query(YearCarryover).filter(YearCarryover.user_id == user.id).all()
+    }
+
+    first_entry = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id
+    ).order_by(TimeEntry.date).first()
+    if first_entry is None and not carryovers:
+        return {}
+
+    if first_entry is not None:
+        fe_year, fe_month = first_entry.date.year, first_entry.date.month
+    else:
+        fe_year, fe_month = min(carryovers), 1
+
+    # Start-Punkt = der Carryover, den get_overtime_account fuer den ersten Monat
+    # waehlen wuerde (latest <= fe_year), sonst der erste Time-Entry.
+    applicable = [y for y in carryovers if y <= fe_year]
+    if applicable:
+        start_year, start_month = max(applicable), 1
+        initial_balance = carryovers[start_year]
+    else:
+        start_year, start_month = fe_year, fe_month
+        initial_balance = Decimal('0.00')
+
+    start_date = date(start_year, start_month, 1)
+
+    # --- ein Bulk-Fetch ueber den ganzen Bereich (wie get_overtime_account) ---
+    actual_by_month: Dict[tuple, Decimal] = {}
+    for e in db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.date >= start_date,
+        TimeEntry.date <= up_to_date,
+    ).all():
+        if not _within_employment_window(user, e.date):
+            continue
+        k = (e.date.year, e.date.month)
+        actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(e.net_hours))
+
+    for ca in db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.date >= start_date,
+        Absence.date <= up_to_date,
+        Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
+    ).all():
+        if not _within_employment_window(user, ca.date):
+            continue
+        k = (ca.date.year, ca.date.month)
+        actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(ca.hours))
+
+    absence_dates = {a.date for a in db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.date >= start_date,
+        Absence.date <= up_to_date,
+        Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
+    ).all()}
+
+    holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
+        PublicHoliday.date >= start_date,
+        PublicHoliday.date <= up_to_date,
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).all()}
+
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+    special_day_configs: Dict[int, dict] = {}
+
+    def _cfg(yr: int) -> dict:
+        c = special_day_configs.get(yr)
+        if c is None:
+            c = special_days_service.get_special_day_config(db, user.tenant_id, yr)
+            special_day_configs[yr] = c
+        return c
+
+    history: Dict[tuple, Decimal] = {}
+    total_balance = initial_balance
+    cy, cm = start_year, start_month
+
+    while (cy < up_to_year) or (cy == up_to_year and cm <= up_to_month):
+        # Reset im Januar eines Jahres mit eigenem Carryover (ausser dem Start).
+        if cm == 1 and cy in carryovers and (cy, cm) != (start_year, start_month):
+            total_balance = carryovers[cy]
+
+        _, last_day = monthrange(cy, cm)
+        cfg = _cfg(cy)
+        monthly_target = Decimal('0')
+        for day in range(1, last_day + 1):
+            d = date(cy, cm, day)
+            if d.weekday() >= 5:
+                continue
+            if not _within_employment_window(user, d):
+                continue
+            if d in holiday_dates or d in absence_dates:
+                continue
+            weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
+            daily_target = get_daily_target_for_date(user, d, weekly_hours)
+            factor = special_days_service.special_day_target_factor(d, cfg)
+            if factor is not None:
+                daily_target = daily_target * factor
+            monthly_target += daily_target
+
+        monthly_actual = actual_by_month.get((cy, cm), Decimal('0'))
+        total_balance += (monthly_actual - monthly_target)
+        history[(cy, cm)] = total_balance.quantize(Decimal('0.01'))
+
+        if cm == 12:
+            cm = 1
+            cy += 1
+        else:
+            cm += 1
+
+    return history
+
+
 def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     """
     Calculate year-to-date summary from Jan 1 to today.

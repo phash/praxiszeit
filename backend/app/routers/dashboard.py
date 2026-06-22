@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
+from decimal import Decimal
 from typing import List, Optional
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole
@@ -143,6 +144,12 @@ def get_overtime_account(
     history = []
     now = now_local()
 
+    # #150: das kumulative Konto EINMAL als Single-Pass holen, statt
+    # get_overtime_account pro Monat zu rufen (jede Einzelrufung iteriert ab
+    # Carryover-Start neu -> O(Monate²)). history_map[(y,m)] entspricht bitgenau
+    # get_overtime_account(y,m) (gepinnt: test_overtime_history_matches_account).
+    history_map = calculation_service.get_overtime_history(db, current_user, now.year, now.month)
+
     if first_entry:
         start_year = first_entry.date.year
         start_month = first_entry.date.month
@@ -155,7 +162,7 @@ def get_overtime_account(
             target = calculation_service.get_monthly_target(db, current_user, current_year, current_month)
             actual = calculation_service.get_monthly_actual(db, current_user, current_year, current_month)
             balance = actual - target
-            cumulative = calculation_service.get_overtime_account(db, current_user, current_year, current_month)
+            cumulative = history_map.get((current_year, current_month), Decimal('0.00'))
 
             history.append(OvertimeHistory(
                 year=current_year,
@@ -174,9 +181,7 @@ def get_overtime_account(
                 current_month += 1
 
     # Current balance
-    current_balance = calculation_service.get_overtime_account(
-        db, current_user, now.year, now.month
-    )
+    current_balance = history_map.get((now.year, now.month), Decimal('0.00'))
 
     return OvertimeAccount(
         current_balance=current_balance,
