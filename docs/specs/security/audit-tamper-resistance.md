@@ -1,9 +1,39 @@
 # Audit-Log Tamper-Resistance — Design-Spec
 
 **Issue:** [#121](https://github.com/phash/praxiszeit/issues/121)
-**Status:** Vorschlag · zur Entscheidung
-**Autor:** Claude Opus 4.7
-**Datum:** 24. Mai 2026
+**Status:** **v1 umgesetzt** (per-Row-HMAC) · Hash-CHAIN aufgeschoben
+**Autor:** Claude Opus 4.7 (Design) · Opus 4.8 (v1-Umsetzung)
+**Datum:** 24. Mai 2026 (Design) · 22. Juni 2026 (v1)
+
+---
+
+## Umgesetzt (v1) — was wirklich shipped
+
+v1 implementiert eine **bewusst vereinfachte Variante von Option B**: einen
+**Per-Row-HMAC** (`row_hash`) **ohne** den `prev_hash`-Chain-Teil. Code:
+`backend/app/core/audit_integrity.py`, `backend/tests/test_audit_integrity.py`,
+Migration `051_add_audit_row_hash`.
+
+| Aspekt | Proposal unten (Option B) | v1 (umgesetzt) |
+|---|---|---|
+| Hash pro Row | ✅ `row_hash` | ✅ `row_hash` (HMAC-SHA256, 64 hex) |
+| `prev_hash`-Chain (Löschungs-Detection) | ✅ | ⏸ **aufgeschoben** (Concurrency-Forks ohne Pro-Tenant-Serialisierung) |
+| Schlüssel | separater `AUDIT_HMAC_KEY` / `.audit-hmac-key` | **aus `SECRET_KEY` via HKDF** abgeleitet (kein neues Key-File; Muster wie `totp_crypto.py`) |
+| Hash-Berechnung | `sign_and_insert`-Helper an ~12 Stellen | zentral im `before_insert`-Event (keine Call-Site-Änderung) |
+| Verify | Cron + Tabelle | **Online-Endpoint** `GET /api/admin/audit/verify-integrity` (require_admin, F-026) |
+| `created_at` im Hash | ja | **nein** (DB-Zeitstempel → Round-Trip-Fehlalarm-Risiko zwischen PG/SQLite); `id` ist gebunden |
+
+**Erkannt:** Modifikation von Audit-Inhalt + gefälschte Rows (ohne Schlüssel kein
+gültiger Hash). **Nicht erkannt (v1):** Löschung einzelner Rows (kein Chain-Glied).
+Legacy-Rows ohne Hash gelten als `legacy_unhashed`, nicht `tampered`. `SECRET_KEY`-
+Rotation macht Hashes unverifizierbar (Blast-Radius wie Session-Invalidierung).
+
+**Folge-Schritte (offen):** voller `prev_hash`-Chain (Löschungs-Detection, braucht
+`SELECT … FOR UPDATE` auf den Tenant-Chain-Tail + Bulk-Insert-Sonderpfad),
+optional Append-Only-Role (Option A) als Defense-in-Depth, Cron-Verify + Admin-UI-Card.
+
+Der Rest dieses Dokuments ist die ursprüngliche Options-Abwägung (Stand 05/2026)
+und bleibt als Entscheidungs-Record erhalten.
 
 ---
 

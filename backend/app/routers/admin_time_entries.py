@@ -379,3 +379,49 @@ def list_audit_log(
             .all()
         )
     return _enrich_audit_responses(logs, db)
+
+
+@router.get("/audit/verify-integrity")
+def verify_audit_integrity(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#121: Tamper-Evidence-Check aller Audit-Rows des Tenants.
+
+    Berechnet pro Row den HMAC neu (Schluessel aus SECRET_KEY abgeleitet) und
+    vergleicht ihn mit dem gespeicherten ``row_hash``. Eine nachtraegliche
+    Manipulation einer Audit-Row (z. B. via SQL-Injection an anderer Stelle)
+    bricht den Hash -> ``tampered``. Vor dem Feature geschriebene Rows ohne Hash
+    sind ``legacy_unhashed`` (nicht verifizierbar, NICHT als Manipulation
+    gewertet). ``intact`` ist true, wenn keine gehashte Row manipuliert wurde.
+    """
+    from app.core import audit_integrity
+
+    checked = ok = tampered = legacy = 0
+    tampered_ids: list[str] = []
+    # F-026: explizit auf den Tenant scopen (zusaetzlich zu RLS). yield_per haelt
+    # den Speicher bei sehr grossen Audit-Tabellen klein.
+    rows = (
+        db.query(TimeEntryAuditLog)
+        .filter(TimeEntryAuditLog.tenant_id == current_user.tenant_id)
+        .yield_per(500)
+    )
+    for row in rows:
+        checked += 1
+        if not row.row_hash:
+            legacy += 1
+        elif audit_integrity.verify_row(row):
+            ok += 1
+        else:
+            tampered += 1
+            if len(tampered_ids) < 100:  # Antwort begrenzen
+                tampered_ids.append(str(row.id))
+
+    return {
+        "checked": checked,
+        "ok": ok,
+        "tampered": tampered,
+        "legacy_unhashed": legacy,
+        "intact": tampered == 0,
+        "tampered_ids": tampered_ids,
+    }
