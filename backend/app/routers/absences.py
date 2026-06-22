@@ -509,7 +509,9 @@ def delete_absence(
 
     # Check permissions
     if absence.user_id != current_user.id and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120: 404 statt 403 — fremde (Same-Tenant-)Abwesenheit wird wie eine
+        # unbekannte behandelt, kein Existenz-Leak via Response-Code.
+        raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
 
     # DSGVO Art. 5 Abs. 2: Audit-Log vor Löschung
     audit = TimeEntryAuditLog(

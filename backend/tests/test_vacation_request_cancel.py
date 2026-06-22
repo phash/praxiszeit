@@ -222,14 +222,15 @@ class TestEmployeeWithdraw:
         resp = employee_client.delete(f"/api/vacation-requests/{vr.id}")
         assert resp.status_code == 400
 
-    def test_withdraw_foreign_request_forbidden(
+    def test_withdraw_foreign_request_returns_404(
         self, db, employee, other_employee, other_employee_client
     ):
-        """Fremden Antrag zurückziehen → 403, auch wenn selbes Tenant."""
+        """#120: Fremden Antrag zurückziehen → 404 (wie unbekannt), auch im
+        selben Tenant — kein Existenz-Leak via Response-Code."""
         vr = _vr(db, employee, VacationRequestStatus.PENDING.value,
                  date.today() + timedelta(days=30))
         resp = other_employee_client.delete(f"/api/vacation-requests/{vr.id}")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_withdraw_only_matching_absence_type_is_deleted(
         self, db, employee, employee_client

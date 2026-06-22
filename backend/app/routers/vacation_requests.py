@@ -442,7 +442,10 @@ def update_vacation_request(
     if not vr:
         raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
     if str(vr.user_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120: 404 statt 403 — ein fremder (Same-Tenant-)Antrag wird wie ein
+        # unbekannter behandelt, damit der Response-Code nicht die Existenz einer
+        # fremden VR-ID im eigenen Tenant verraet (gleiche Meldung wie "not found").
+        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
     if vr.status != VacationRequestStatus.PENDING.value:
         raise HTTPException(
             status_code=400,
@@ -485,7 +488,10 @@ def withdraw_vacation_request(
     if not vr:
         raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
     if str(vr.user_id) != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Zugriff verweigert")
+        # #120: 404 statt 403 — ein fremder (Same-Tenant-)Antrag wird wie ein
+        # unbekannter behandelt, damit der Response-Code nicht die Existenz einer
+        # fremden VR-ID im eigenen Tenant verraet (gleiche Meldung wie "not found").
+        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
 
     if vr.status == VacationRequestStatus.PENDING.value:
         db.delete(vr)
