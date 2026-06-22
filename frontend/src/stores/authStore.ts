@@ -1,32 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import apiClient, { setAccessToken, tryRefreshSession } from '../api/client';
-
-interface User {
-  id: string;
-  username: string;
-  email: string | null;
-  first_name: string;
-  last_name: string;
-  role: 'admin' | 'employee';
-  weekly_hours: number;
-  work_days_per_week: number;
-  vacation_days: number;
-  calendar_color: string;
-  track_hours: boolean;
-  exempt_from_arbzg: boolean;  // §18 ArbZG: leitende Angestellte
-  is_active: boolean;
-  totp_enabled: boolean;
-  profile_picture?: string | null;
-  onboarding_completed_at?: string | null;  // NULL = Onboarding noch nicht gesehen
-  created_at: string;
-  use_daily_schedule: boolean;
-  hours_monday: number | null;
-  hours_tuesday: number | null;
-  hours_wednesday: number | null;
-  hours_thursday: number | null;
-  hours_friday: number | null;
-}
+import type { User } from '../types/user';
 
 interface AuthState {
   user: User | null;
