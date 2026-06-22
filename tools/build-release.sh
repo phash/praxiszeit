@@ -694,7 +694,11 @@ PTHEOF
                 # in Phase 7 die EXE mit aufnimmt.
                 _setup_exe_dist="${DIST_DIR}/praxiszeit-${APP_VERSION}-setup-windows-x64.exe"
                 cp "${_setup_publish}/PraxisZeit.Setup.exe" "${_setup_exe_dist}"
-                cp "${_setup_publish}/PraxisZeit.Setup.exe" "${WIN_DIR}/setup.exe"
+                # setup.exe wird NICHT in WIN_DIR kopiert: sonst landet die ~500 MB
+                # single-file-EXE (die denselben Payload bereits eingebettet hat) auch
+                # noch in der windows-x64.zip -> Payload doppelt, ZIP ~1 GB statt ~490 MB.
+                # Die setup.exe wird ausschliesslich als eigenes Artefakt
+                # praxiszeit-*-setup-windows-x64.exe ausgeliefert (oben nach DIST kopiert).
                 info "setup.exe: $(du -h "${_setup_exe_dist}" | cut -f1)"
                 rm -rf "${_setup_publish}" "${BUILD_DIR}/tmp-setup-publish.log" "${_payload_zip}"
             else
@@ -726,6 +730,15 @@ PTHEOF
         _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.tar.gz"
     fi
     info "Windows-Paket: $(du -h "$_win_zip" | cut -f1)"
+    # Regression-Guard: die portable/Updater-ZIP darf KEINE setup.exe enthalten
+    # (sonst ist der Payload doppelt drin — siehe Phase 5b). setup.exe wird separat
+    # als praxiszeit-*-setup-windows-x64.exe ausgeliefert.
+    if command -v unzip &>/dev/null && [[ "$_win_zip" == *.zip ]]; then
+        if unzip -Z1 "$_win_zip" 2>/dev/null | grep -qiE '(^|[/\\])setup\.exe$'; then
+            error "windows-x64.zip enthaelt setup.exe — Payload doppelt (~1 GB statt ~490 MB). Build abgebrochen."
+            exit 1
+        fi
+    fi
     if [ -n "${_setup_exe_dist}" ] && [ -f "${_setup_exe_dist}" ]; then
         info "setup.exe (Standalone): $(du -h "${_setup_exe_dist}" | cut -f1)"
     fi
@@ -821,7 +834,9 @@ if [ "$BUILD_DOCKER" = true ]; then
     cp "${REPO_DIR}/docker-compose.ssl.yml"           "${DOCKER_STAGE}/"
     cp "${REPO_DIR}/.env.example"                     "${DOCKER_STAGE}/"
     cp "${REPO_DIR}/tools/docker/generate-secrets.sh" "${DOCKER_STAGE}/generate-secrets.sh"
-    chmod +x "${DOCKER_STAGE}/generate-secrets.sh"
+    cp "${REPO_DIR}/tools/docker/backup.sh"           "${DOCKER_STAGE}/backup.sh"
+    cp "${REPO_DIR}/tools/docker/restore.sh"          "${DOCKER_STAGE}/restore.sh"
+    chmod +x "${DOCKER_STAGE}/generate-secrets.sh" "${DOCKER_STAGE}/backup.sh" "${DOCKER_STAGE}/restore.sh"
 
     # Build-Kontext kopieren (ohne Ballast / ohne evtl. lokale Secrets+Certs).
     # cd ins REPO_DIR -> Pfade in den tar-Excludes sind relativ ("backend/...").
@@ -852,6 +867,19 @@ if [ "$BUILD_DOCKER" = true ]; then
 3. Starten (HTTPS):         docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
    ODER (nur intern, HTTP): in .env ENVIRONMENT=development + COOKIE_SECURE=false setzen, dann
                             docker compose up -d --build
+
+## Datensicherung / Update
+
+Vor jedem Versions-Update die DB der laufenden (alten) Version sichern und nach
+dem Hochziehen der neuen Version wieder einspielen:
+
+    bash backup.sh                                  # -> backups/praxiszeit_<ts>.sql.gz
+    # ... neue Version entpacken, .env + backups/ uebernehmen, Stack starten ...
+    bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB einspielen
+    docker compose up -d backend                    # Alembic-Migrationen -> Schema auf head
+
+Die Backups sind gzip-komprimierte Plain-SQL-Dumps und lassen sich auch per
+\`gunzip -c <datei>.sql.gz | docker compose exec -T db psql -U praxiszeit praxiszeit\` einspielen.
 
 Volle Anleitung: https://github.com/phash/praxiszeit/blob/master/docs/INSTALL-DOCKER.md
 DOCKEREOF
@@ -899,7 +927,8 @@ EOF
 
 $BUILD_WINDOWS && cat << EOF
   Windows-Installation/Update (empfohlen, ab 1.4.0):
-    1. ZIP entpacken
+    1. praxiszeit-${APP_VERSION}-setup-windows-x64.exe herunterladen
+       (eigenes Artefakt — NICHT in der ZIP enthalten)
     2. setup.exe (als Administrator) doppelklicken
        -> erkennt automatisch Erstinstallation, Update oder Reparatur
 
