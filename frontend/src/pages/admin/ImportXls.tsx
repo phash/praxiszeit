@@ -4,6 +4,7 @@ import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import type { User } from '../../types/user';
 
 // ── Typen ────────────────────────────────────────────────────────────────────
 
@@ -29,14 +30,6 @@ interface ImportResult {
   skipped: number;
   overwritten: number;
   warnings: string[];
-}
-
-interface User {
-  id: string;
-  first_name: string;
-  last_name: string;
-  username: string;
-  is_active: boolean;
 }
 
 type WizardStep = 'upload' | 'preview' | 'result';
