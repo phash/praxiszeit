@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.8.11 (Stand 2026-06-17)
+**Aktuelle Version:** 1.8.14 (Stand 2026-06-22)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
@@ -73,6 +73,7 @@ docker compose exec backend pytest tests/test_concurrency.py     # Postgres-only
 cd frontend && npm test                                          # Vitest Utils-Tests
 ```
 All-in-one: `bash scripts/local-ci.sh` (backend pytest split SQLite/Postgres, vitest, tsc, eslint, vite build, e2e).
+**⚠️ Vitest hängt mit Default-`forks`-Pool auf dieser Maschine** (Node 24 + vitest 4 / Windows): `Failed to start forks worker … Timeout waiting for worker to respond` (60s-Timeout, `Test Files no tests`). Workaround: `npx vitest run --pool=threads` (einzeln: `npx vitest run <datei> --pool=threads`). Falls `scripts/local-ci.sh` dort ebenfalls hängt, Pool gleich setzen.
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
 **Version-Smoke-Test:** `/api/health` liefert nur `{status, database}` — **keine Version**. Version steht in `/openapi.json`, im Frontend-Footer (nach Hard-Refresh), oder unter `/` (nur wenn `SERVE_FRONTEND=False`).
 **⚠️ `validate-release.sh` smoke-testet NUR `postgres`/`initdb`, KEINEN echten Login/keine API** — die 1.8.5–1.8.10-Bugs (instrumentator-500, alembic-`%`-Crash, SIGPIPE) rutschten dadurch durch. **Nach JEDEM Dependency-Bump oder Installer-Change: echten Login auf einem REALEN Host prüfen** (nativ auf [[reference_test-box-131]] via `install.sh` + Browser/`curl POST /api/auth/login`, oder Docker-Bundle hochfahren) — Unit-Tests + validate-release reichen NICHT.
@@ -102,6 +103,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - Pydantic Response-Schemas: `float` statt `Decimal`
 - nginx SPA vs. Static-Dir: `location = /route` VOR `location /` einfügen
 - **nginx `/api/`-Proxy: `Host $http_host` (NICHT `$host`) (#dashboard-307, 1.8.6):** Bare-Collection-Routes (`@router.get("/")` wie `/api/dashboard`, `/api/absences`) lösen einen FastAPI-307-Trailing-Slash-Redirect aus; FastAPI baut die **absolute** Location aus dem Host-Header. `$host` lässt den Port weg → `http://localhost/…` statt `:PORT` → Browser folgt auf falschen Port → CORS/Network-Error → „Fehler beim Laden des Dashboards". `$http_host` erhält den Port; Schema kommt via `X-Forwarded-Proto` (uvicorn läuft mit `--proxy-headers`). Gilt für `frontend/nginx.conf` UND `ssl/nginx-ssl.conf`. **Nur Docker betroffen** (nativ = uvicorn ohne Proxy, sieht echte Host:Port).
+- **401-Refresh-Interceptor (`frontend/src/api/client.ts`): `/auth/logout` MUSS ausgeschlossen bleiben** (neben `/auth/login` + `/auth/refresh`). Sonst: logout 401 → refresh → `auth:session-expired`-Event → `logout()` → **Endlosschleife** aus logout+refresh, die den Browser-Connection-Pool (~6/Host) sättigt + das Refresh-Rate-Limit (429) trippt → eingeloggte Nutzer hängen dauerhaft auf „Lade Dashboard…" (Dashboard-`Promise.all` settled nie, `loading` bleibt true). Realer Vorfall v1.8.14-Hotfix #229 (logout 401 ×382, refresh 429 ×50). Zusätzlich Re-Entrancy-Guard am `auth:session-expired`-Listener in `authStore.ts` (ein Event-Schwall → ein Logout). Beim Anfassen der Exclude-Liste NIE `logout` entfernen.
 - Stunden-Anzeige: `formatHoursHM()` aus `utils/errorMessage.ts` (H:MM, Overflow-safe)
 - **ArbZG-Warnungen aus API-Responses:** immer über `showArbzgWarnings(toast, response.warnings)` aus `utils/arbzgWarnings.ts` (nicht einzelne `if includes(...)` Blöcke duplizieren)
 - **Toast-Dauer:** Nicht hardcoden — `ToastContext` setzt severity-basierte Defaults (success 3s, error 8s, warning 6s, info 5s)
