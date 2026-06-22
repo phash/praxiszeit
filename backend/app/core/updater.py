@@ -36,7 +36,7 @@ from app.core.license import _PUBLIC_KEY_PEM  # reuse the same trust root
 logger = logging.getLogger(__name__)
 
 # Current application version
-APP_VERSION = "1.8.13"
+APP_VERSION = "1.8.14"
 
 # F-036: Allowed update-server host prefixes. The download URL returned by
 # the server is refused unless its host matches one of these. Prevents a
