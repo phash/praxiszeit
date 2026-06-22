@@ -257,6 +257,19 @@ fi
 info "Erstelle Verzeichnisse..."
 mkdir -p "${INSTALL_DIR}"/{bin,app,data/db,data/backups,config/ssl,logs}
 
+# Issue #217: Bei einer Re-Installation/Update ueber eine noch LAUFENDE Instanz
+# sind die gebuendelten Binaries (postgres, python3.13) gemappt -> "Text file
+# busy", und das folgende cp scheitert semi-stumm. Darum den Dienst – falls
+# vorhanden und aktiv – vorher stoppen (wird am Ende wieder gestartet). Stoppt
+# zugleich die als Kind laufende PostgreSQL, sodass die Binaries frei sind.
+if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    info "Bestehender Dienst '${SERVICE_NAME}' laeuft — wird fuer das Update gestoppt..."
+    systemctl stop "${SERVICE_NAME}"
+    # Kurze Pause: das als Kind laufende postgres gibt die gemappten Binaries
+    # erst nach dem Cgroup-Stop frei (sonst vereinzelt weiter "Text file busy").
+    sleep 2
+fi
+
 info "Kopiere Anwendungsdateien..."
 # The installer package should contain these directories at the same level
 if [ -d "${SCRIPT_DIR}/bin" ]; then
