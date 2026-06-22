@@ -42,3 +42,9 @@ xlwt==1.3.0
 # Issue #126: Daily-Jobs (lifecycle, vacation-audit-purge) via BackgroundScheduler.
 # Pin to 3.x — 4.x is async-only and would require rewriting the registered jobs.
 apscheduler==3.*
+# Issue #139: tzdata gebuendelt mitliefern. zoneinfo (timezone_service.py:
+# ZoneInfo("Europe/Berlin")) braucht eine IANA-DB. Auf Minimal-/Container-/Cloud-
+# Images fehlt das OS-/usr/share/zoneinfo -> harter Boot-Crash (ZoneInfoNotFound).
+# Das pip-Paket liefert die DB als zoneinfo-Fallback mit -> OS-unabhaengig, landet
+# im Docker-Image UND im nativen Bundle (build-release pip-Install).
+tzdata>=2025.1
