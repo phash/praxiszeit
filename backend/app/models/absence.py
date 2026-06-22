@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint
+from sqlalchemy import Column, Date, Time, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -59,6 +59,10 @@ class Absence(Base):
     hours = Column(Numeric(4, 2), nullable=False)  # Hours absent per day
     start_time = Column(Time, nullable=True)  # NULL = ganzer Tag
     end_time = Column(Time, nullable=True)    # NULL = ganzer Tag
+    # #205: halber Urlaubstag (0,5). NULLABLE — vor #205 geschriebene Rows sind
+    # NULL und werden im Urlaubsverbrauch mit der Legacy-Stundenlogik gezaehlt;
+    # neue Rows tragen True/False und werden tagebasiert gezaehlt.
+    half_day = Column(Boolean, nullable=True)
     note = Column(Text, nullable=True)
     # Link to the CompanyClosure (Betriebsferien) that generated this absence.
     # NULL for manually created absences. ON DELETE SET NULL — the closure

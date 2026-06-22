@@ -476,6 +476,10 @@ def create_absence(
             hours=hours_for_day,
             start_time=absence_data.start_time,
             end_time=absence_data.end_time,
+            # #205: Buchungs-Intent persistieren -> tagebasierter, WHChange-stabiler
+            # Urlaubsverbrauch (Voll-Tag False, Halbtag True). Bei Zeitraeumen ist
+            # half_day per Schema False (Halbtag ist ein Einzeltag-Konzept).
+            half_day=absence_data.half_day,
             note=absence_data.note
         )
         db.add(absence)

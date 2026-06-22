@@ -916,7 +916,17 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         # tage — das Überspringen ist gewollt, KEIN Buchungsverlust (Funktions-
         # Review 2026-06-17 verifiziert).
         if dt_day > 0:
-            used_days += (h / Decimal(str(dt_day)))
+            if a.half_day is None:
+                # #205: Legacy-Row (vor dem half_day-Feld) — tagebasierte Info
+                # fehlt, daher wie bisher Stunden ÷ (live) Tagessoll. Das driftet
+                # nur im seltenen Fall einer NACHTRAEGLICHEN WorkingHoursChange auf
+                # ein bereits gebuchtes Datum (ohne gespeicherte Buchungszeit nicht
+                # rekonstruierbar — bewusst kein unzuverlaessiges Raten).
+                used_days += (h / Decimal(str(dt_day)))
+            else:
+                # #205: tagebasiert (Voll-Tag 1,0; Halbtag 0,5) — unabhaengig von
+                # spaeteren Aenderungen des Tagessolls (kein Drift mehr).
+                used_days += (Decimal('0.5') if a.half_day else Decimal('1'))
 
     # #146: a special day (24./31.12.) configured as `free` + counts_as_vacation
     # consumes one vacation day too. We account for it non-invasively here
@@ -938,12 +948,17 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     # #189 / leitende Angestellte: a user without hours tracking
     # (daily_target == 0) gets a pure DAY count — each VACATION absence day is
     # one vacation day, each 'free'+counts_as_vacation special day (24./31.12.)
-    # is one vacation day, and all hour figures stay 0. Half days are not
-    # distinguishable without hours (Absence has no half_day flag, hours=0) and
-    # therefore count as a full day. Budget (budget_days) follows the normal
-    # pro-rata + carryover logic above — "sonst wie ein normaler MA".
+    # is one vacation day, and all hour figures stay 0. Budget (budget_days)
+    # follows the normal pro-rata + carryover logic above — "sonst wie ein
+    # normaler MA".
+    # #205: Halbtage werden jetzt unterschieden — half_day=True zaehlt 0,5 (passt
+    # zum 0,5-Vorab-Budgetcheck). Legacy-Rows (half_day=None, vor dem Feld) und
+    # Voll-Tage zaehlen 1,0 wie bisher.
     if daily_target <= 0:
-        used_days = Decimal(str(len(vacation_absences)))
+        used_days = sum(
+            (Decimal('0.5') if a.half_day else Decimal('1') for a in vacation_absences),
+            Decimal('0'),
+        )
         for d in deduction_dates:
             if d in existing_vacation_dates:
                 continue
