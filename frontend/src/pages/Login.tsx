@@ -2,7 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSystemStore } from '../stores/systemStore';
-import { LogIn, FileText, Shield, Smartphone } from 'lucide-react';
+import { LogIn, FileText, Shield, Smartphone, AlertCircle } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
 import { DocModal } from '../components/DocModal';
@@ -14,6 +14,7 @@ export default function Login() {
   const [totpCode, setTotpCode] = useState('');
   const [totpRequired, setTotpRequired] = useState(false);
   const [error, setError] = useState('');
+  const [showCredentialHint, setShowCredentialHint] = useState(false);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
@@ -26,6 +27,7 @@ export default function Login() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    setShowCredentialHint(false);
     setLoading(true);
 
     try {
@@ -40,6 +42,10 @@ export default function Login() {
         setError(
           getErrorMessage(err, 'Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.')
         );
+        // Show the spelling/Caps-Lock hint only for a plain wrong-credentials
+        // 401. A wrong 2FA code (totpRequired) or a 429 lockout already carry a
+        // specific, self-explanatory message from the backend.
+        setShowCredentialHint(err.response?.status === 401 && !totpRequired);
         if (totpRequired) setTotpCode(''); // Clear wrong TOTP code
       }
     } finally {
@@ -57,8 +63,22 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
+            <div
+              role="alert"
+              className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <div>
+                  <p className="font-medium">{error}</p>
+                  {showCredentialHint && (
+                    <p className="mt-1 text-xs text-red-600">
+                      Bitte prüfen Sie Benutzername und Passwort. Achten Sie auf
+                      Groß-/Kleinschreibung und die Feststelltaste (Caps&nbsp;Lock).
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
