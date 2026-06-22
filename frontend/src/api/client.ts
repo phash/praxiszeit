@@ -76,10 +76,19 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Don't intercept auth endpoint errors (login / refresh themselves)
-    // to avoid masking TOTP-required responses or refresh failures.
+    // Don't intercept auth endpoint errors (login / refresh / logout).
+    // - login/refresh: avoid masking TOTP-required responses or refresh failures.
+    // - logout: a 401 here must NOT trigger a refresh. logout() is reached via
+    //   the 'auth:session-expired' handler, so refreshing on a logout 401 (which
+    //   then fails again) re-dispatches 'auth:session-expired' → logout() → an
+    //   infinite logout↔refresh storm that saturates the connection pool and
+    //   hangs every other request (incident: logout 401 ×382, refresh 429 ×50).
     const url: string = originalRequest?.url || '';
-    if (url.includes('/auth/login') || url.includes('/auth/refresh')) {
+    if (
+      url.includes('/auth/login') ||
+      url.includes('/auth/refresh') ||
+      url.includes('/auth/logout')
+    ) {
       return Promise.reject(error);
     }
 

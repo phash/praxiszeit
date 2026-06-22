@@ -177,8 +177,23 @@ export const useAuthStore = create<AuthState>()(
 
 // Global listener: when the refresh interceptor gives up, clear auth state.
 // This ensures every tab in the same window coordinates via one code path.
+//
+// Defense-in-depth (paired with the /auth/logout interceptor guard): a single
+// broken session can fire MANY 'auth:session-expired' events nearly at once —
+// e.g. the dashboard's 7 parallel requests all fail the shared refresh together.
+// The re-entrancy flag collapses such a burst into ONE logout; otherwise each
+// event would POST /auth/logout again, amplifying the storm. The `!user` check
+// drops events that arrive after we're already logged out (stale in-flight reqs).
 if (typeof window !== 'undefined') {
+  let loggingOut = false;
   window.addEventListener('auth:session-expired', () => {
-    void useAuthStore.getState().logout();
+    if (loggingOut || !useAuthStore.getState().user) return;
+    loggingOut = true;
+    void useAuthStore
+      .getState()
+      .logout()
+      .finally(() => {
+        loggingOut = false;
+      });
   });
 }
