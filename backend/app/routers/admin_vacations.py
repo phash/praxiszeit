@@ -324,6 +324,9 @@ def review_vacation_request(
             end_date=vr.end_date,
             type=absence_type,
             hours=hours_for_day,
+            # #205: Buchungs-Intent (Halbtag) auf der Absence persistieren ->
+            # tagebasierter, WHChange-stabiler Urlaubsverbrauch.
+            half_day=vr.half_day,
             note=vr.note,
         )
         db.add(absence)
