@@ -32,6 +32,10 @@ DISTROS=(
     "ubuntu:22.04"
     "debian:12"
     "rockylinux:9"
+    # #177: Rolling-Distro. Arch/CachyOS liefern libxml2 nur noch als .so.16;
+    # der Test beweist, dass das ins Bundle gelegte libxml2.so.2 den PG-Start
+    # trotzdem traegt (System-libxml2 wird hier bewusst NICHT installiert).
+    "archlinux:latest"
 )
 
 FAILED=()
@@ -45,6 +49,11 @@ for distro in "${DISTROS[@]}"; do
             ;;
         rockylinux:*|almalinux:*|fedora:*)
             INSTALL_CMD='dnf install -y -q libxml2 openssl-libs krb5-libs libzstd lz4-libs readline libbrotli shadow-utils >/dev/null'
+            ;;
+        archlinux:*)
+            # Bewusst OHNE libxml2: Arch liefert nur .so.16; das gebuendelte
+            # libxml2.so.2 muss den PG-Start tragen (#177). shadow ist in base.
+            INSTALL_CMD='pacman -Sy --noconfirm --needed openssl krb5 zstd lz4 readline brotli >/dev/null 2>&1'
             ;;
         *)
             INSTALL_CMD='true'
