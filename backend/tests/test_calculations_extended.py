@@ -401,3 +401,60 @@ def test_overtime_account_cumulates_across_months(db, test_user):
     assert result < Decimal('0')
     # Verify both months are included: if only Jan were counted, result would be > -175
     assert result < Decimal('-175')
+
+
+# ---------------------------------------------------------------------------
+# #150: get_overtime_history (Single-Pass) muss bitgenau get_overtime_account
+# pro Monat reproduzieren — sonst aendert das Dashboard payroll-relevante Zahlen.
+# ---------------------------------------------------------------------------
+def test_overtime_history_matches_account(db, test_user):
+    """history[(y,m)] == get_overtime_account(y,m) fuer JEDEN Monat im Bereich —
+    ueber zwei Jahre hinweg, inkl. YearCarryover-Reset zum 2025-Jahreswechsel."""
+    from app.models import YearCarryover
+
+    def add_entry(d, start, end, brk=60):
+        db.add(TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                         date=d, start_time=start, end_time=end, break_minutes=brk))
+
+    # 2024 (vor jedem Carryover) + 2025 (nach Carryover-Reset), gemischte Stunden.
+    add_entry(date(2024, 11, 4), time(8, 0), time(17, 0))   # Mo 8h
+    add_entry(date(2024, 11, 5), time(8, 0), time(18, 30))  # Di 9.5h
+    add_entry(date(2024, 12, 2), time(8, 0), time(16, 0))   # Mo 7h
+    add_entry(date(2025, 1, 6), time(8, 0), time(19, 0))    # Mo 10h
+    add_entry(date(2025, 2, 3), time(8, 0), time(16, 30))   # Mo 7.5h
+    db.add(YearCarryover(tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id,
+                         year=2025, overtime_hours=Decimal('12.50'),
+                         vacation_days=Decimal('0')))
+    db.commit()
+
+    history = calculation_service.get_overtime_history(db, test_user, 2025, 3)
+    assert history, "history darf nicht leer sein"
+    # Deckt den ganzen Anzeigebereich ab (erster Eintrag 2024-11 .. up_to 2025-03).
+    assert (2024, 11) in history and (2025, 3) in history
+    # Bitgenaue Gleichheit pro Monat gegen die (langsame) Einzelfunktion.
+    for (y, m), cumulative in history.items():
+        expected = calculation_service.get_overtime_account(db, test_user, y, m)
+        assert cumulative == expected, f"{y}-{m:02d}: history {cumulative} != account {expected}"
+
+
+def test_overtime_history_matches_account_no_carryover(db, test_user):
+    """Gleiche Invariante ohne jeden Carryover (Start ab erstem Time-Entry)."""
+    db.add(TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                     date=date(2025, 1, 6), start_time=time(8, 0), end_time=time(18, 0),
+                     break_minutes=60))
+    db.add(TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                     date=date(2025, 3, 3), start_time=time(8, 0), end_time=time(15, 0),
+                     break_minutes=30))
+    db.commit()
+
+    history = calculation_service.get_overtime_history(db, test_user, 2025, 3)
+    assert history
+    for (y, m), cumulative in history.items():
+        assert cumulative == calculation_service.get_overtime_account(db, test_user, y, m)
+
+
+def test_overtime_history_empty_untracked(db, test_user):
+    """track_hours=False -> leeres Dict (wie get_overtime_account 0.00 liefert)."""
+    test_user.track_hours = False
+    db.commit()
+    assert calculation_service.get_overtime_history(db, test_user, 2025, 3) == {}
