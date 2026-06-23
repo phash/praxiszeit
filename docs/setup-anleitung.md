@@ -1,6 +1,6 @@
 # Setup-Anleitung PraxisZeit
 
-**Aktuelle Version:** 1.8.11 · **Stand:** Juni 2026
+**Aktuelle Version:** 1.9.0 · **Stand:** Juni 2026
 Für Linux und Windows · Native Installation und Docker-Deployment
 
 > **Maßgebliche, gepflegte Anleitungen:** [INSTALL-NATIVE.md](INSTALL-NATIVE.md)
@@ -401,7 +401,7 @@ docker compose ps                                    # alle 5 Container sollten 
 curl http://localhost/api/health
 # {"status":"healthy","database":"connected"}
 curl http://localhost/api/system/info
-# {"deployment_mode":"onprem","version":"1.8.11"}
+# {"deployment_mode":"onprem","version":"1.9.0"}
 ```
 
 ### 6.5 Im LAN erreichbar machen
@@ -787,4 +787,4 @@ C:\PraxisZeit\                    (Windows)
 
 ---
 
-*PraxisZeit · Version 1.8.11 · © 2026*
+*PraxisZeit · Version 1.9.0 · © 2026*
