@@ -32,6 +32,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models import SystemSetting
+from app.services import settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +72,6 @@ class BackupConfig:
 # Konfiguration (SystemSetting, global unter Default-Tenant)
 # ---------------------------------------------------------------------------
 
-def _get_setting(db: Session, key: str) -> Optional[str]:
-    row = (
-        db.query(SystemSetting)
-        .filter(SystemSetting.key == key, SystemSetting.tenant_id == DEFAULT_TENANT_ID)
-        .first()
-    )
-    return row.value if row else None
-
-
 def _set_setting(db: Session, key: str, value: str) -> None:
     row = (
         db.query(SystemSetting)
@@ -94,7 +86,7 @@ def _set_setting(db: Session, key: str, value: str) -> None:
 
 def get_backup_dir(db: Session) -> Path:
     """Effektives Backup-Verzeichnis: Setting-Override > Env > Docker-Default."""
-    override = (_get_setting(db, SETTING_LOCATION) or "").strip()
+    override = (settings_service.get_setting(db, SETTING_LOCATION, tenant_id=DEFAULT_TENANT_ID) or "").strip()
     if override:
         return Path(override)
     env_dir = os.environ.get("PRAXISZEIT_BACKUP_DIR", "").strip()
@@ -104,14 +96,14 @@ def get_backup_dir(db: Session) -> Path:
 
 
 def get_config(db: Session) -> BackupConfig:
-    enabled = (_get_setting(db, SETTING_ENABLED) or "false").lower() == "true"
+    enabled = settings_service.get_bool_setting(db, SETTING_ENABLED, tenant_id=DEFAULT_TENANT_ID)
     try:
-        hour = int(_get_setting(db, SETTING_HOUR) or DEFAULT_HOUR)
+        hour = int(settings_service.get_setting(db, SETTING_HOUR, tenant_id=DEFAULT_TENANT_ID) or DEFAULT_HOUR)
     except ValueError:
         hour = DEFAULT_HOUR
     hour = min(23, max(0, hour))
     try:
-        retention = int(_get_setting(db, SETTING_RETENTION_DAYS) or DEFAULT_RETENTION_DAYS)
+        retention = int(settings_service.get_setting(db, SETTING_RETENTION_DAYS, tenant_id=DEFAULT_TENANT_ID) or DEFAULT_RETENTION_DAYS)
     except ValueError:
         retention = DEFAULT_RETENTION_DAYS
     retention = max(1, retention)

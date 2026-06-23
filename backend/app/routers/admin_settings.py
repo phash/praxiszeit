@@ -13,15 +13,6 @@ from typing import Dict
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
-def _get_setting(db: Session, key: str, default: str = "", tenant_id=None) -> str:
-    """Retrieve a value from system_settings."""
-    q = db.query(SystemSetting).filter(SystemSetting.key == key)
-    if tenant_id is not None:
-        q = q.filter(SystemSetting.tenant_id == tenant_id)
-    s = q.first()
-    return s.value if s else default
-
-
 # #146: the four special-day keys (24./31.12. mode + counts_as_vacation) are
 # managed through this router too. They are added to the whitelist so the
 # generic PUT accepts them; mode keys are validated against the allowed modes.
