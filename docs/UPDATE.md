@@ -19,6 +19,26 @@ Die Daten liegen im Docker-Volume `postgres_data` und bleiben über Updates
 hinweg erhalten — der `docker compose down`/`up`-Zyklus löscht sie **nicht**
 (nur `down -v` würde das Volume entfernen — niemals ungesichert tun).
 
+> ### ⚠️ Update auf 1.10.0 = PostgreSQL-Major-Upgrade (16 → 18)
+>
+> Ab **1.10.0** bündelt PraxisZeit **PostgreSQL 18** (vorher 16). Ein PG-Major-
+> Upgrade ist **nicht in-place**: `postgres:18` kann ein von `postgres:16`
+> angelegtes `postgres_data`-Volume nicht starten (es bricht mit einer
+> „incompatible"-Meldung ab). Kommst du von **1.9.x oder älter**, nutze den
+> **geführten Helfer im Docker-Bundle** statt eines einfachen `up`:
+>
+> ```bash
+> bash update-pg-major.sh   # alter Stack muss noch laufen
+> ```
+>
+> Er sichert die laufende DB, entfernt **nur** das `*_postgres_data`-Volume (die
+> #213-Backups im `praxiszeit_backups`-Volume bleiben), startet den frischen
+> PG18-Stack und spielt den Dump wieder ein. Manuell:
+> `bash backup.sh` → `docker compose down` → `docker volume rm <projekt>_postgres_data`
+> → neuen Stack `up -d --build` → `bash restore.sh backups/praxiszeit_<ts>.sql.gz`.
+> Verifiziert (PG16→18, Daten byte-genau identisch + Login). Spätere 1.10.x-Updates
+> bleiben wieder normale In-Place-Updates.
+
 ### 1. Backup
 
 ```bash
