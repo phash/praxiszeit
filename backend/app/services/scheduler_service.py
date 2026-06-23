@@ -120,6 +120,34 @@ def _run_cleanup_old_errors() -> None:
         db.close()
 
 
+def _run_scheduled_backup() -> None:
+    """#213: erstellt zur vom Admin konfigurierten Stunde ein DB-Backup, sofern
+    aktiviert. Stuendlich getriggert (:30); der Job vergleicht die aktuelle
+    Europe/Berlin-Stunde mit der Soll-Stunde -> feuert genau einmal pro Tag.
+    Tz-explizit (zoneinfo), unabhaengig von der Container-TZ."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.services import backup_service
+    db = SessionLocal()
+    try:
+        set_superadmin_context(db)
+        cfg = backup_service.get_config(db)
+        if not cfg.enabled:
+            return
+        if datetime.now(ZoneInfo("Europe/Berlin")).hour != cfg.hour:
+            return
+        result = backup_service.create_backup(db)
+        removed = backup_service.prune_old_backups(db)
+        logger.info(
+            "scheduler: backup %s (%d bytes), pruned %d old",
+            result.filename, result.size_bytes, removed,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: scheduled_backup failed")
+    finally:
+        db.close()
+
+
 # ───────────────── Public API (start / stop) ─────────────────────────
 
 # Job-ID constants — tests assert against these names so the cron-trigger
@@ -128,6 +156,7 @@ JOB_VACATION_AUDIT_PURGE = "vacation_audit_purge"
 JOB_APPLY_SCHEDULED_SUSPENDS = "apply_scheduled_suspends"
 JOB_APPLY_SCHEDULED_DELETIONS = "apply_scheduled_deletions"
 JOB_CLEANUP_OLD_ERRORS = "cleanup_old_errors"
+JOB_SCHEDULED_BACKUP = "scheduled_backup"  # #213
 
 # Daily run at 03:00 local time. Avoids the midnight rollover bookkeeping
 # rush + leaves the cutoff math (``datetime.now() - timedelta(days=...)``)
@@ -210,6 +239,16 @@ def start_scheduler(app: FastAPI):  # noqa: ARG001  (kept for future use)
         trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
         id=JOB_CLEANUP_OLD_ERRORS,
         name="DSGVO Art.5(1)(e): purge resolved/ignored error-log rows >90d",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    scheduler.add_job(
+        _run_scheduled_backup,
+        trigger=CronTrigger(minute=30),  # jede Stunde :30; Job prueft die Soll-Stunde
+        id=JOB_SCHEDULED_BACKUP,
+        name="#213: DB-Backup zur konfigurierten Stunde (wenn aktiviert)",
         replace_existing=True,
         coalesce=True,
         max_instances=1,

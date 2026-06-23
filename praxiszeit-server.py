@@ -1367,6 +1367,13 @@ def cmd_start(args):
             pg_stop()
             sys.exit(1)
 
+    # 3a2. #213: Der Backup-Service im Backend braucht das Ziel-Verzeichnis UND
+    # den gebuendelten pg_dump-Pfad — anders als im Docker-Image liegt pg_dump
+    # nativ nicht im PATH. Beide statisch (nicht cred-abhaengig) -> hier einmal
+    # fuer beide Start-Pfade (Erstsetup + Folgestart) gesetzt.
+    os.environ["PRAXISZEIT_BACKUP_DIR"] = str(BACKUP_DIR)
+    os.environ["PRAXISZEIT_PG_DUMP"] = str(pg_cmd("pg_dump"))
+
     # 3b. Set environment variables from config for backend (Pydantic Settings)
     _CONF_TO_ENV = {
         ("admin", "email"): "ADMIN_EMAIL",

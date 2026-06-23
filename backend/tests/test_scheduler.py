@@ -41,15 +41,16 @@ def test_start_scheduler_skipped_in_pytest_mode():
     assert scheduler_service.get_scheduler() is None
 
 
-def test_start_scheduler_registers_four_daily_cron_jobs():
-    """Outside pytest mode, four cron-triggered jobs are registered."""
+def test_start_scheduler_registers_daily_cron_jobs():
+    """Outside pytest mode, the four daily lifecycle jobs PLUS the #213 hourly
+    backup job are registered."""
     with patch.object(scheduler_service, "_is_pytest_mode", return_value=False):
         sched = scheduler_service.start_scheduler(app=MagicMock())
 
     assert sched is not None
     try:
         jobs = sched.get_jobs()
-        assert len(jobs) == 4
+        assert len(jobs) == 5
 
         job_ids = {j.id for j in jobs}
         assert job_ids == {
@@ -57,17 +58,19 @@ def test_start_scheduler_registers_four_daily_cron_jobs():
             scheduler_service.JOB_APPLY_SCHEDULED_SUSPENDS,
             scheduler_service.JOB_APPLY_SCHEDULED_DELETIONS,
             scheduler_service.JOB_CLEANUP_OLD_ERRORS,
+            scheduler_service.JOB_SCHEDULED_BACKUP,
         }
 
-        # Every job must be a daily cron at the documented time. We
-        # introspect the CronTrigger's per-field representation rather
-        # than touching private attributes — the public ``fields`` API
-        # is APScheduler's stable contract.
+        # The four lifecycle jobs are daily crons at the documented time. The
+        # backup job (#213) is intentionally HOURLY (:30) — it checks the
+        # configured Soll-Stunde itself — so it is excluded from this assertion.
         for job in jobs:
-            trigger = job.trigger
-            # CronTrigger exposes `.fields` as an ordered list of
-            # BaseField objects; we look up by name to be position-safe.
-            fields = {f.name: str(f) for f in trigger.fields}
+            if job.id == scheduler_service.JOB_SCHEDULED_BACKUP:
+                fields = {f.name: str(f) for f in job.trigger.fields}
+                assert fields["minute"] == "30"
+                assert fields["hour"] == "*"
+                continue
+            fields = {f.name: str(f) for f in job.trigger.fields}
             assert fields["hour"] == str(scheduler_service.DAILY_HOUR)
             assert fields["minute"] == str(scheduler_service.DAILY_MINUTE)
     finally:
@@ -82,7 +85,7 @@ def test_start_scheduler_is_idempotent():
 
     try:
         assert first is second
-        assert len(first.get_jobs()) == 4
+        assert len(first.get_jobs()) == 5
     finally:
         first.shutdown(wait=False)
 
