@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../../api/client';
-import { Clock, CheckCircle, XCircle, AlertCircle, Check, X, Trash2, Pencil } from 'lucide-react';
+import { AlertCircle, Check, X, Trash2, Pencil } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -29,12 +29,7 @@ interface VacationRequest {
   created_at: string;
 }
 
-const statusConfig = {
-  pending: { label: 'Offen', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
-  approved: { label: 'Genehmigt', color: 'bg-green-100 text-green-800', icon: CheckCircle },
-  rejected: { label: 'Abgelehnt', color: 'bg-red-100 text-red-800', icon: XCircle },
-  withdrawn: { label: 'Zurückgezogen', color: 'bg-gray-100 text-gray-600', icon: XCircle },
-};
+import { STATUS_CONFIG as statusConfig } from '../../constants/statusConfig';
 
 export default function VacationApprovals() {
   const toast = useToast();

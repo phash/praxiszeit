@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../api/client';
-import { Trash2, Clock, CheckCircle, XCircle, FileEdit } from 'lucide-react';
+import { Trash2, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -37,12 +37,7 @@ interface ChangeRequest {
   created_at: string;
 }
 
-const statusConfig = {
-  pending: { label: 'Offen', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
-  approved: { label: 'Genehmigt', color: 'bg-green-100 text-green-800', icon: CheckCircle },
-  rejected: { label: 'Abgelehnt', color: 'bg-red-100 text-red-800', icon: XCircle },
-};
-
+import { STATUS_CONFIG as statusConfig } from '../constants/statusConfig';
 import { CHANGE_REQUEST_TYPE_LABELS } from '../constants/changeRequestTypes';
 import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
 const typeLabels = CHANGE_REQUEST_TYPE_LABELS;
