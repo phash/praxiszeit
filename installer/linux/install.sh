@@ -319,6 +319,9 @@ if [ -f "${OLD_PGDATA}/PG_VERSION" ] && [ -x "${NEW_POSTGRES}" ] && [ -f "${INST
             error "PG-Upgrade: Dump verdaechtig klein (${DUMP_SIZE} Bytes) — Abbruch (Daten unangetastet)."; exit 1
         fi
         sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w stop 2>/dev/null || true
+        # DSGVO Art. 32: der Dump enthält personenbezogene Daten -> nur Owner lesbar
+        # (gzip-Redirect legt sonst per umask 0o644/world-readable an).
+        chmod 600 "${DUMP_FILE}" 2>/dev/null || true
         # Alte Daten zur Seite legen (NIE löschen) + Marker für praxiszeit-server.py.
         mv "${OLD_PGDATA}" "${INSTALL_DIR}/data/db.pg${OLD_MAJOR}-${TS}"
         echo "${DUMP_FILE}" > "${INSTALL_DIR}/data/.pg-upgrade-restore"

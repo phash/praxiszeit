@@ -4,6 +4,7 @@ pg_dump wird gemockt (kein echtes pg_dump in der SQLite-Suite); die Auth-Gates
 und Response-Formen laufen echt gegen die FastAPI-App.
 """
 import io
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -86,6 +87,8 @@ def test_create_backup_endpoint(admin_client, monkeypatch):
     fn = r.json()["filename"]
     assert fn.startswith("praxiszeit_") and fn.endswith(".sql.gz")
     assert (tmp_path / fn).exists()
+    # DSGVO Art. 32: Backup enthält personenbezogene Daten -> nur Owner lesbar.
+    assert (os.stat(tmp_path / fn).st_mode & 0o077) == 0, "Backup darf nicht group/world-lesbar sein"
     # taucht jetzt in der Liste auf
     assert any(b["filename"] == fn for b in client.get("/api/admin/backups").json()["backups"])
 

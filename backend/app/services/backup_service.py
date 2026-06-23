@@ -290,6 +290,9 @@ def create_backup(db: Session) -> BackupFile:
     write_error: Optional[OSError] = None
     try:
         with gzip.open(backup_file, "wb") as gz:
+            # DSGVO Art. 32: das Backup enthält personenbezogene Daten -> nur der
+            # Dienst-Owner darf es lesen (gzip.open legt sonst per umask 0o644 an).
+            os.chmod(backup_file, 0o600)
             assert proc.stdout is not None
             while True:
                 chunk = proc.stdout.read(8192)

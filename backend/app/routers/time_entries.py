@@ -11,7 +11,7 @@ from app.models import (
     User, TimeEntry, UserRole, TimeEntryAuditLog,
     ChangeRequest, ChangeRequestType, ChangeRequestStatus,
 )
-from app.models.system_setting import SystemSetting
+from app.services import settings_service
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
@@ -33,11 +33,9 @@ BREAK_WAIVER_SOURCE = "break_waiver"  # 12 chars
 
 def _break_exception_requires_approval(db: Session, tenant_id) -> bool:
     """Read the per-practice toggle whether break-waivers need admin approval."""
-    s = db.query(SystemSetting).filter(
-        SystemSetting.key == "break_exception_requires_approval",
-        SystemSetting.tenant_id == tenant_id,
-    ).first()
-    return (s.value if s else "false").lower() == "true"
+    return settings_service.get_bool_setting(
+        db, "break_exception_requires_approval", tenant_id=tenant_id
+    )
 
 
 MAX_DAILY_HOURS_HARD = 10.0         # §3 ArbZG: absolute Obergrenze

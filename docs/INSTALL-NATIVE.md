@@ -101,7 +101,7 @@ sudo ./install.sh
 ```
 
 Der Installer fragt interaktiv nach Praxis-Name, Admin-Zugangsdaten und Port.
-PostgreSQL ist im Paket **gebuendelt** (theseus-rs 16) und wird beim ersten Start
+PostgreSQL ist im Paket **gebuendelt** (theseus-rs 18) und wird beim ersten Start
 automatisch initialisiert — eine separate PostgreSQL-Installation (Homebrew /
 Postgres.app) ist **nicht** noetig.
 
@@ -290,7 +290,7 @@ Aufbewahrung: 31 Tage. ArbZG §16 verlangt 2 Jahre — passen Sie `retention_day
 
 Voraussetzungen zum Bauen: Linux mit Python 3.12+, Node.js 20+, curl, rsync, zip.
 PostgreSQL fuer **Linux und macOS** wird beim Build automatisch als
-`theseus-rs/postgresql-binaries` 16 geladen (SHA256-verifiziert) — kein manueller
+`theseus-rs/postgresql-binaries` 18 geladen (SHA256-verifiziert) — kein manueller
 Download noetig. Nur fuer **Windows** wird der EDB-Installer (.exe) gebuendelt
 (direkter Link `https://get.enterprisedb.com/postgresql/…-windows-x64.exe`, kein
 Webformular); mit `--skip-download` wird der Cache aus `~/Downloads/` genutzt.
@@ -316,7 +316,7 @@ Gebuendelte Komponenten:
 | Komponente | Linux | Windows | macOS |
 |------------|-------|---------|-------|
 | Python 3.13 | python-build-standalone | python-build-standalone | python-build-standalone |
-| PostgreSQL | theseus-rs 16 (gebuendelt) | EDB Installer (.exe, silent) | theseus-rs 16 (gebuendelt) |
+| PostgreSQL | theseus-rs 18 (gebuendelt) | EDB Installer (.exe, silent) | theseus-rs 18 (gebuendelt) |
 | Service Manager | systemd | nssm | launchd |
 
 Ergebnis in `dist/`:
@@ -508,7 +508,7 @@ Nutzt systemweit installiertes Python + PostgreSQL statt gebundelter Binaries.
 *(Ausgelagert aus CLAUDE.md — 1.5.x-Postmortems, hier mit voller Historie.)*
 
 **PostgreSQL-Quelle (ab 1.5.0):** Linux- und macOS-Tarbälle bündeln
-`theseus-rs/postgresql-binaries` **16.13.0** (Manylinux-Build, forward-kompatibel
+`theseus-rs/postgresql-binaries` **18.4.0** (Manylinux-Build, forward-kompatibel
 bis **glibc 2.34** → Ubuntu 22.04+, Debian 12+, RHEL/Rocky/Alma 9+, Fedora 35+).
 Die früher genutzten **EDB-Tarbälle sind seit 2026-05 nicht mehr verfügbar**
 (HTTP 403); der System-PG-Fallback wurde mit **#125** entfernt. `build-release.sh`
@@ -530,6 +530,6 @@ ggf. manuell auf einem Mac. `tools/validate-release.sh` (Linux, Docker-Smoke
 gegen 4 Distros) muss vor jedem Release grün sein.
 
 **Windows-PG ≠ theseus:** Die `.exe`/`.zip`-Pakete bündeln den **EDB-Installer**
-(`postgresql-installer.exe`, PG 18.x); die theseus-16-Binaries gelten nur für die
+(`postgresql-installer.exe`, PG 18.x); die theseus-18-Binaries gelten nur für die
 Linux/macOS-Tarbälle. PG-Windows-Installer direkt (kein Webformular):
 `https://get.enterprisedb.com/postgresql/postgresql-X.Y-Z-windows-x64.exe`.

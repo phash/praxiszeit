@@ -232,7 +232,7 @@ Verdichteter Katalog (UC-Granularität, nicht jeder der 140 Endpoints einzeln). 
 |---------------|------------|
 | Frontend: **React 18.3 + TypeScript + Tailwind 4 + Vite 6** | Responsive SPA, PWA-fähig |
 | Backend: **FastAPI 0.115 (Python 3.12) + SQLAlchemy 2.0 + Alembic** | Async, automatische OpenAPI-Doku, Pydantic-Validierung |
-| Datenbank: **PostgreSQL 16** | Row-Level-Security (Mandantentrennung), Transaktions-Locks, bewährt |
+| Datenbank: **PostgreSQL 18** | Row-Level-Security (Mandantentrennung), Transaktions-Locks, bewährt |
 | Auth: **JWT (HS256) + HttpOnly-Refresh-Cookie + optional TOTP-2FA** | Stateless Access-Token, sichere Sitzungserneuerung |
 | Zwei Deployment-Modelle: **Docker Compose** und **Native Installer** | Praxen ohne Docker (Windows-Server) bedienbar |
 | Zwei Betriebsmodi: **`onprem` (Single-Tenant)** und **`saas` (Multi-Tenant)** | Ein Code-Stand für beide Welten |
@@ -259,7 +259,7 @@ flowchart TB
     LB["📊 Lohnbuchhaltung"] -. nutzt Exporte .-> SPA
 
     SPA["Browser / PWA — React SPA"] -->|REST/JSON über HTTPS| API
-    API["FastAPI Backend<br/>JWT · RLS · Business Logic"] --> DB[("PostgreSQL 16<br/>Row-Level-Security")]
+    API["FastAPI Backend<br/>JWT · RLS · Business Logic"] --> DB[("PostgreSQL 18<br/>Row-Level-Security")]
 
     API -. Feiertage .-> WK["workalendar (lokal)"]
     API -. Update/Lizenz/Feedback .-> PZ["pzweb<br/>updates.mr-development.de"]
@@ -422,7 +422,7 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 
 ```
 ┌───────────────────────── Docker Host ──────────────────────────┐
-│  frontend (nginx, :80)   backend (uvicorn, :8000)   db (PG16)   │
+│  frontend (nginx, :80)   backend (uvicorn, :8000)   db (PG18)   │
 │  prometheus (:9090, lokal)   grafana (via nginx /grafana/, IP-restr.) │
 │  Volumes: postgres_data (persistent, §16!), grafana_data        │
 │  Netz: praxiszeit-network (bridge)                              │

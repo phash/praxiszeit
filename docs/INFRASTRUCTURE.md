@@ -4,7 +4,7 @@
 
 | Service | Image | Port (intern) | Port (extern) | Zweck |
 |---------|-------|---------------|----------------|-------|
-| **db** | postgres:16-alpine | 5432 | — | PostgreSQL mit RLS |
+| **db** | postgres:18-alpine | 5432 | — | PostgreSQL mit RLS |
 | **backend** | praxiszeit-backend | 8000 | — | FastAPI (Python 3.12) |
 | **frontend** | praxiszeit-frontend | 80/443 | 80, 443 (SSL) | nginx Reverse Proxy + SPA |
 | **prometheus** | prom/prometheus | 9090 | 127.0.0.1:9090 | Metriken |
