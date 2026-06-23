@@ -67,7 +67,13 @@ def _german_holidays(state: Optional[str], year: int):
     """
     import holidays
     state = state or settings.HOLIDAY_STATE
-    code = SUPPORTED_STATES.get(state, "BY")
+    code = SUPPORTED_STATES.get(state)
+    if code is None:
+        # Kein stilles Zurückfallen auf Bayern: ein vertipptes/altes HOLIDAY_STATE
+        # würde sonst fremde Feiertage seeden (z. B. NRW bekäme Fronleichnam).
+        raise ValueError(
+            f"Unbekanntes Bundesland {state!r} — erlaubt: {', '.join(sorted(SUPPORTED_STATES))}"
+        )
     kwargs = {"years": year, "subdiv": code, "language": "de"}
     if code == "BY":
         kwargs["categories"] = ("public", "catholic")

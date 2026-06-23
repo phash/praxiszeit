@@ -281,7 +281,9 @@ OLD_PGDATA="${INSTALL_DIR}/data/db"
 NEW_POSTGRES="${SCRIPT_DIR}/bin/postgresql/bin/postgres"
 if [ -f "${OLD_PGDATA}/PG_VERSION" ] && [ -x "${NEW_POSTGRES}" ] && [ -f "${INSTALL_DIR}/config/.db-credentials" ]; then
     OLD_MAJOR=$(cut -d. -f1 "${OLD_PGDATA}/PG_VERSION" 2>/dev/null)
-    NEW_MAJOR=$(LD_LIBRARY_PATH="${SCRIPT_DIR}/bin/postgresql/lib" "${NEW_POSTGRES}" --version 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    # awk 'NR==1' statt 'head -1': head schliesst die Pipe frueh -> SIGPIPE +
+    # pipefail (CLAUDE.md 1.8.8). Hier zwar kleine Ausgabe, aber konsistent robust.
+    NEW_MAJOR=$(LD_LIBRARY_PATH="${SCRIPT_DIR}/bin/postgresql/lib" "${NEW_POSTGRES}" --version 2>/dev/null | grep -oE '[0-9]+' | awk 'NR==1')
     if [ -n "${OLD_MAJOR}" ] && [ -n "${NEW_MAJOR}" ] && [ "${OLD_MAJOR}" -lt "${NEW_MAJOR}" ] 2>/dev/null; then
         info "PostgreSQL-Major-Upgrade ${OLD_MAJOR} -> ${NEW_MAJOR} erkannt — sichere Daten mit den alten Binaries..."
         OLD_PGBIN="${INSTALL_DIR}/bin/postgresql/bin"
@@ -300,10 +302,21 @@ if [ -f "${OLD_PGDATA}/PG_VERSION" ] && [ -x "${NEW_POSTGRES}" ] && [ -f "${INST
         if ! sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w -t 60 start; then
             error "PG-Upgrade: alter Cluster ließ sich nicht starten — Abbruch (Daten unangetastet)."; exit 1
         fi
+        # set -o pipefail im sh -c: sonst maskiert ein erfolgreiches gzip einen
+        # mittendrin abgebrochenen pg_dump (partieller, aber valider .gz = Daten-
+        # verlust). Bricht jetzt hart ab, wenn pg_dump scheitert.
         if ! sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" PGPASSWORD="${SU_PW}" \
-                sh -c "'${OLD_PGBIN}/pg_dump' -w --clean --if-exists -h '${RUN_DIR}' -U praxiszeit -d praxiszeit | gzip > '${DUMP_FILE}'"; then
+                sh -c "set -o pipefail; '${OLD_PGBIN}/pg_dump' -w --clean --if-exists -h '${RUN_DIR}' -U praxiszeit -d praxiszeit | gzip > '${DUMP_FILE}'"; then
             sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w stop 2>/dev/null || true
+            rm -f "${DUMP_FILE}"
             error "PG-Upgrade: pg_dump fehlgeschlagen — Abbruch (Daten unangetastet)."; exit 1
+        fi
+        # Plausibilitaet: ein echter Dump ist nie winzig (selbst leere DB > 1 KB).
+        DUMP_SIZE=$(stat -c%s "${DUMP_FILE}" 2>/dev/null || echo 0)
+        if [ "${DUMP_SIZE}" -lt 1024 ]; then
+            sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w stop 2>/dev/null || true
+            rm -f "${DUMP_FILE}"
+            error "PG-Upgrade: Dump verdaechtig klein (${DUMP_SIZE} Bytes) — Abbruch (Daten unangetastet)."; exit 1
         fi
         sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w stop 2>/dev/null || true
         # Alte Daten zur Seite legen (NIE löschen) + Marker für praxiszeit-server.py.

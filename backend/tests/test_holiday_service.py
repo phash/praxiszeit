@@ -141,3 +141,18 @@ def test_holiday_names_normalized_to_project_spelling(db, default_tenant):
     assert mayday is not None and mayday.name == "Tag der Arbeit"
     xmas = db.query(PublicHoliday).filter(PublicHoliday.date == date(2026, 12, 25)).first()
     assert xmas is not None and xmas.name == "1. Weihnachtstag"
+
+
+def test_sync_holidays_idempotent(db, default_tenant):
+    """Zweiter Sync desselben Jahres fügt nichts hinzu — keine Duplikate."""
+    holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
+    db.commit()
+    second = holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
+    db.commit()
+    assert second == 0
+
+
+def test_german_holidays_rejects_unknown_state():
+    """Unbekanntes Bundesland -> ValueError statt stillem Fallback auf Bayern."""
+    with pytest.raises(ValueError):
+        holiday_service._german_holidays("Tirol", 2026)

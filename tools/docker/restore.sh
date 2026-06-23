@@ -38,6 +38,9 @@ PG_USER="${PG_USER:-praxiszeit}"
 PG_DB="${PG_DB:-praxiszeit}"
 
 echo "Spiele '${FILE}' in Datenbank '${PG_DB}' (User '${PG_USER}') ein ..."
-gunzip -c "$FILE" | docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB"
+# ON_ERROR_STOP=1: psql bricht beim ersten echten SQL-Fehler ab + Exit != 0 (sonst
+# meldet psql trotz Fehlern Exit 0 -> ein kaputter Restore sähe erfolgreich aus).
+# Die DROP … IF EXISTS aus --clean --if-exists erzeugen keine Fehler.
+gunzip -c "$FILE" | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB"
 echo "Restore abgeschlossen."
 echo "Backend neu starten, damit Migrationen laufen: docker compose up -d backend"
