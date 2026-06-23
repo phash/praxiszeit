@@ -22,6 +22,15 @@ from app.services import work_window_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
+# #284: The audit table stores BOTH real changes to time entries/absences
+# (create/update/delete) AND access/system events (e.g. DSGVO read-access markers
+# 'absence_list_read'/'health_data_read' written on every admin open of an
+# employee, #208). The operational per-employee "Änderungsprotokoll" must show
+# only the former; otherwise every open spawns a fresh access-log row that the
+# UI rendered as a phantom "Gelöscht". The dedicated compliance audit page keeps
+# full visibility (changes_only=False).
+_CHANGE_ACTIONS = ("create", "update", "delete")
+
 
 # ── Admin Time Entry Management ─────────────────────────────────────────
 
@@ -326,6 +335,11 @@ def list_audit_log(
         None,
         description="Keyset cursor — ISO-8601 timestamp; return entries strictly older than this",
     ),
+    changes_only: bool = Query(
+        False,
+        description="Return only real change actions (create/update/delete), "
+        "excluding access/system events such as DSGVO read-access markers (#284).",
+    ),
     skip: int = 0,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
@@ -349,6 +363,10 @@ def list_audit_log(
 
     if user_id:
         query = query.filter(TimeEntryAuditLog.user_id == user_id)
+
+    if changes_only:
+        # #284: keep the per-employee change log free of access/system events.
+        query = query.filter(TimeEntryAuditLog.action.in_(_CHANGE_ACTIONS))
 
     if month:
         try:

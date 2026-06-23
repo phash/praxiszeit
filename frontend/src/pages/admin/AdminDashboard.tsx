@@ -262,7 +262,10 @@ export default function AdminDashboard() {
   const fetchAuditForUser = async (userId: string) => {
     setAuditLoading(true);
     try {
-      const response = await apiClient.get(`/admin/audit-log?user_id=${userId}&month=${currentMonth}`);
+      // #284: only real changes (create/update/delete) belong in the per-employee
+      // change log — access/system events (e.g. DSGVO read-access markers written
+      // on every open) otherwise piled up here, rendered as phantom "Gelöscht".
+      const response = await apiClient.get(`/admin/audit-log?user_id=${userId}&month=${currentMonth}&changes_only=true`);
       setAuditLog(response.data);
     } catch (error) {
       toast.error('Fehler beim Laden des Audit-Logs');
@@ -1407,9 +1410,10 @@ export default function AdminDashboard() {
                                 <span className={`px-2 py-0.5 rounded font-medium ${
                                   log.action === 'create' ? 'bg-green-100 text-green-800' :
                                   log.action === 'update' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-red-100 text-red-800'
+                                  log.action === 'delete' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-700'
                                 }`}>
-                                  {log.action === 'create' ? 'Erstellt' : log.action === 'update' ? 'Geändert' : 'Gelöscht'}
+                                  {log.action === 'create' ? 'Erstellt' : log.action === 'update' ? 'Geändert' : log.action === 'delete' ? 'Gelöscht' : log.action}
                                 </span>
                                 <span className="text-gray-500">
                                   {format(new Date(log.created_at), 'dd.MM. HH:mm')} | {log.changed_by_first_name} {log.changed_by_last_name}

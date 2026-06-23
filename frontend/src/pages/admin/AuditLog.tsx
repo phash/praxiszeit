@@ -37,20 +37,48 @@ interface UserOption {
 }
 
 const actionLabels: Record<string, string> = {
+  // Änderungen an Zeiteinträgen/Abwesenheiten
   create: 'Erstellt',
   update: 'Geändert',
   delete: 'Gelöscht',
+  import: 'Importiert',
+  profile_update: 'Profil geändert',
+  // Zugriffs-/Systemereignisse (keine Änderung — #284: NICHT als „Gelöscht" rendern)
+  absence_list_read: 'Abwesenheiten gelesen',
+  health_data_read: 'Gesundheitsdaten gelesen',
+  health_export: 'Gesundheitsdaten exportiert',
+  self_data_export: 'Eigene Daten exportiert',
+  arbzg_superadmin_export: 'Notfall-Export (§16)',
+  dsgvo_anonymize: 'Anonymisiert (Art. 17)',
+  dsgvo_purge: 'Endgültig gelöscht (Art. 17)',
+  license_readonly_mode_entered: 'Lizenz: Read-Only aktiviert',
 };
 
 const actionColors: Record<string, string> = {
   create: 'bg-green-100 text-green-800',
   update: 'bg-blue-100 text-blue-800',
   delete: 'bg-red-100 text-red-800',
+  import: 'bg-blue-100 text-blue-800',
+  profile_update: 'bg-blue-100 text-blue-800',
+  // destruktive DSGVO-Aktionen rot, Zugriffe/Exporte/Systemereignisse neutral
+  dsgvo_anonymize: 'bg-red-100 text-red-800',
+  dsgvo_purge: 'bg-red-100 text-red-800',
+  absence_list_read: 'bg-gray-100 text-gray-700',
+  health_data_read: 'bg-amber-100 text-amber-800',
+  health_export: 'bg-amber-100 text-amber-800',
+  self_data_export: 'bg-gray-100 text-gray-700',
+  arbzg_superadmin_export: 'bg-amber-100 text-amber-800',
+  license_readonly_mode_entered: 'bg-amber-100 text-amber-800',
 };
 
 const sourceLabels: Record<string, string> = {
   manual: 'Admin',
   change_request: 'Antrag',
+  import: 'Import',
+  dsgvo: 'DSGVO',
+  break_waiver: 'Pausen-Verzicht',
+  vacation_request_cancel: 'Urlaub storniert',
+  license_startup: 'Lizenz',
 };
 
 export default function AuditLog() {
@@ -214,7 +242,7 @@ export default function AuditLog() {
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
-                    {format(new Date(entry.created_at), 'dd.MM.yyyy HH:mm')} | von {entry.changed_by_first_name} {entry.changed_by_last_name} | {sourceLabels[entry.source]}
+                    {format(new Date(entry.created_at), 'dd.MM.yyyy HH:mm')} | von {entry.changed_by_first_name} {entry.changed_by_last_name} | {sourceLabels[entry.source] || entry.source}
                   </div>
                   <div className="flex items-center space-x-2 text-xs">
                     {entry.old_date && (
