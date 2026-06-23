@@ -15,10 +15,11 @@ from datetime import datetime, timezone
 from io import BytesIO
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.limiter import limiter
 from app.database import get_db, set_superadmin_context
 from app.middleware.auth import require_superadmin
 from app.models import (
@@ -134,7 +135,9 @@ def list_all_tenants(
 
 
 @router.get("/tenants/{tenant_id}/arbzg-export")
+@limiter.limit("20/minute")
 def export_tenant_arbzg_data(
+    request: Request,
     tenant_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_superadmin),
@@ -201,8 +204,11 @@ def export_tenant_arbzg_data(
         # the legally-mandated §16 export itself. Roll back the failed marker
         # and still deliver the records.
         db.rollback()
-        print(f"AUDIT WARN: Superadmin-ArbZG-Export-Marker konnte nicht "
-              f"persistiert werden (tenant={tenant_id}): {exc}")
+        logger.error(
+            "AUDIT WARN: Superadmin-ArbZG-Export-Marker konnte nicht "
+            "persistiert werden (tenant=%s): %s",
+            tenant_id, exc,
+        )
 
     buffer = BytesIO(json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
     filename = f"PraxisZeit_ArbZG-Export_{tenant.slug}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"

@@ -96,6 +96,33 @@ def test_yearly_absences_endpoint_includes_paid_leave(db, test_user, test_admin)
     assert row["total_days"] == pytest.approx(5.0)
 
 
+def test_monthly_report_reports_vacation_and_sick_in_days(db, test_user, test_admin):
+    """Bug-Fix: die Monatsübersicht muss Urlaub/Krank auch in TAGEN liefern (nicht
+    nur in Stunden), damit die Anzeige Tage zeigen kann. Krank ist ohne
+    include_health_data 0 (DSGVO Art. 9), mit Flag in Tagen sichtbar."""
+    _mk_absence(db, test_user, date(YEAR, 6, 1), AbsenceType.VACATION, 8.0)  # 1 Tag Urlaub
+    _mk_absence(db, test_user, date(YEAR, 6, 2), AbsenceType.SICK, 8.0)      # 1 Tag krank
+
+    def override_db():
+        yield db
+
+    _app.dependency_overrides[get_db] = override_db
+    _app.dependency_overrides[get_current_user] = lambda: test_admin
+    _app.dependency_overrides[require_admin] = lambda: test_admin
+    try:
+        client = TestClient(_app)
+        r1 = client.get(f"/api/admin/reports/monthly?month={YEAR}-06")
+        assert r1.status_code == 200, r1.text
+        row1 = next(r for r in r1.json() if r["user_id"] == str(test_user.id))
+        assert row1["vacation_used_days"] == pytest.approx(1.0)   # 8h ÷ 8h Tagessoll
+        assert row1["sick_days"] == 0.0                            # DSGVO-maskiert ohne Flag
+        r2 = client.get(f"/api/admin/reports/monthly?month={YEAR}-06&include_health_data=true")
+        row2 = next(r for r in r2.json() if r["user_id"] == str(test_user.id))
+        assert row2["sick_days"] == pytest.approx(1.0)             # 8h ÷ 8h, jetzt sichtbar
+    finally:
+        _app.dependency_overrides.clear()
+
+
 # ---------------------------------------------------------------------------
 # XLSX yearly export — "Bez. Freistellung" column on the absences overview
 # ---------------------------------------------------------------------------

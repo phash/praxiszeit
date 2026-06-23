@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import date, timedelta
@@ -188,12 +189,28 @@ def list_closures(
     closures = db.query(CompanyClosure).filter(
         CompanyClosure.tenant_id == current_user.tenant_id,
     ).order_by(CompanyClosure.start_date.desc()).offset(skip).limit(limit).all()
-    # Query is constant per request — compute once outside the loop (Fix B)
-    affected = db.query(User).filter(
-        User.is_active == True,
-        User.receives_company_closures == True,
-        User.tenant_id == current_user.tenant_id,
-    ).count()
+
+    # affected_employees PRO Betriebsferien: die Zahl der MA, die tatsächlich eine
+    # generierte Absence zu DIESER Schließung haben (eine MA, die an dem Tag schon
+    # eine Fremd-Absence hatte, wurde übersprungen und zählt hier nicht mit). Eine
+    # einzige GROUP-BY-Query statt einer Zählung pro Schließung (N+1).
+    closure_ids = [c.id for c in closures]
+    affected_by_closure: dict = {}
+    if closure_ids:
+        rows = (
+            db.query(
+                Absence.closure_id,
+                func.count(func.distinct(Absence.user_id)),
+            )
+            .filter(
+                Absence.closure_id.in_(closure_ids),
+                Absence.tenant_id == current_user.tenant_id,
+            )
+            .group_by(Absence.closure_id)
+            .all()
+        )
+        affected_by_closure = {cid: cnt for cid, cnt in rows}
+
     result = []
     for c in closures:
         result.append(CompanyClosureResponse(
@@ -203,7 +220,7 @@ def list_closures(
             end_date=c.end_date,
             created_by=str(c.created_by),
             counts_as_vacation=c.counts_as_vacation,
-            affected_employees=affected
+            affected_employees=affected_by_closure.get(c.id, 0),
         ))
     return result
 
@@ -348,6 +365,12 @@ def update_closure(
             absence.end_date = data.end_date
             if type_changed:
                 absence.type = new_absence_type
+
+    # L-3: die obigen Deletes/Updates in die DB schreiben, BEVOR der Create-Helper
+    # seine existing_keys-Vorabfrage stellt — sonst sähe er die behaltenen Tage
+    # nicht, würde sie erneut einfügen und am (tenant_id, user_id, date, type)-
+    # Unique-Constraint mit einem 500 scheitern.
+    db.flush()
 
     # Add absences for newly covered workdays. Reuse the create-time helper,
     # which already skips days where the employee has ANY existing absence

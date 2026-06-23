@@ -65,7 +65,17 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
         if cr.reviewed_by:
             user_ids.add(cr.reviewed_by)
     user_ids.discard(None)
-    users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+    # F-026: scope referenced users (incl. reviewed_by) to the tenants of the
+    # requests they belong to — sonst könnte ein reviewed_by/user_id aus einem
+    # fremden Tenant durchsickern. Mirrors _enrich_vr_responses.
+    tenant_ids = {cr.tenant_id for cr in crs}
+    users = (
+        db.query(User)
+        .filter(User.id.in_(user_ids), User.tenant_id.in_(tenant_ids))
+        .all()
+        if user_ids
+        else []
+    )
     user_map = {u.id: u for u in users}
 
     results = []
@@ -99,7 +109,17 @@ def _enrich_audit_responses(logs: list, db: Session) -> list[AuditLogResponse]:
         if log.changed_by:
             user_ids.add(log.changed_by)
     user_ids.discard(None)
-    users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+    # F-026: scope referenced users (incl. changed_by) to the tenants of the
+    # audit rows they belong to — sonst könnte ein changed_by/user_id aus einem
+    # fremden Tenant durchsickern. Mirrors _enrich_vr_responses.
+    tenant_ids = {log.tenant_id for log in logs}
+    users = (
+        db.query(User)
+        .filter(User.id.in_(user_ids), User.tenant_id.in_(tenant_ids))
+        .all()
+        if user_ids
+        else []
+    )
     user_map = {u.id: u for u in users}
 
     results = []

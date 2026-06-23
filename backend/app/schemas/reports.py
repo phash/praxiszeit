@@ -77,7 +77,9 @@ class EmployeeMonthlyReport(BaseModel):
     balance: float
     overtime_cumulative: float
     vacation_used_hours: float
+    vacation_used_days: float   # Tagesprinzip: Stunden ÷ Tagessoll (für die Anzeige)
     sick_hours: float
+    sick_days: float            # 0 ohne include_health_data (DSGVO Art. 9)
     exempt_from_arbzg: bool = False  # #159: leitende Angestellte (§18) — Filter im Dashboard-Schnitt
 
 

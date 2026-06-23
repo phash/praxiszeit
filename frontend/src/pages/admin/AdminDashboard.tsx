@@ -24,7 +24,9 @@ interface EmployeeReport {
   balance: number;
   overtime_cumulative: number;
   vacation_used_hours: number;
+  vacation_used_days: number;
   sick_hours: number;
+  sick_days: number;
   exempt_from_arbzg?: boolean;
 }
 
@@ -105,10 +107,15 @@ export default function AdminDashboard() {
   const [sortField, setSortField] = useState<keyof EmployeeReport | ''>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterText, setFilterText] = useState('');
+  // DSGVO Art. 9: Krankheitstage nur auf ausdrücklichen Opt-in zeigen — das löst
+  // serverseitig ein Audit-Log aus (analog zum Reports-Export). Ohne Opt-in
+  // liefert das Backend für Krank 0 / wird hier maskiert dargestellt.
+  const [showHealthData, setShowHealthData] = useState(false);
 
   useEffect(() => {
     fetchReport();
-  }, [currentMonth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMonth, showHealthData]);
 
   useEffect(() => {
     // Re-fetch des offenen Mitarbeiters bei Monatswechsel. selectedEmployee ist
@@ -123,14 +130,16 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchYearlyAbsences();
-  }, [currentYear]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentYear, showHealthData]);
 
   // C-2: Out-of-order-Schutz bei schnellem Monatswechsel (Last-Write-Wins).
   const reportSeq = useRef(0);
   const fetchReport = async () => {
     const seq = ++reportSeq.current;
     try {
-      const response = await apiClient.get(`/admin/reports/monthly?month=${currentMonth}`);
+      const hp = showHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/monthly?month=${currentMonth}${hp}`);
       if (seq !== reportSeq.current) return;
       setReport(response.data);
     } catch (error) {
@@ -145,7 +154,8 @@ export default function AdminDashboard() {
   const fetchYearlyAbsences = async () => {
     const seq = ++yearlySeq.current;
     try {
-      const response = await apiClient.get(`/admin/reports/yearly-absences?year=${currentYear}`);
+      const hp = showHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/yearly-absences?year=${currentYear}${hp}`);
       if (seq !== yearlySeq.current) return;
       setYearlyAbsences(response.data);
     } catch (error) {
@@ -319,6 +329,10 @@ export default function AdminDashboard() {
       });
       setEmployeeAbsences(absencesResponse.data);
       fetchAuditForUser(selectedEmployee.user_id);
+      // C-2: Monatsbericht (Ist, Saldo, Urlaub/Krank) + Jahresübersicht aktualisieren,
+      // damit die Zusammenfassung sofort die Mutation widerspiegelt.
+      fetchReport();
+      fetchYearlyAbsences();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
@@ -341,6 +355,9 @@ export default function AdminDashboard() {
             setEmployeeTimeEntries(entriesResponse.data);
             fetchAuditForUser(selectedEmployee.user_id);
           }
+          // C-2: Monatsbericht + Jahresübersicht aktualisieren.
+          fetchReport();
+          fetchYearlyAbsences();
         } catch (error) {
           toast.error('Fehler beim Löschen');
         }
@@ -460,7 +477,7 @@ export default function AdminDashboard() {
             <Clock className="text-primary" size={24} />
           </div>
           <p className="text-xl font-bold text-gray-900">
-            {format(new Date(currentMonth + '-01'), 'MMMM yyyy')}
+            {format(new Date(currentMonth + '-01T00:00:00'), 'MMMM yyyy')}
           </p>
         </div>
       </div>
@@ -490,8 +507,19 @@ export default function AdminDashboard() {
 
       {/* Employee Table */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-4 flex-wrap">
           <h2 className="text-lg font-semibold">Monatsübersicht</h2>
+          {/* DSGVO Art. 9: Krankheitstage nur auf ausdrücklichen Opt-in zeigen
+              (löst serverseitig einen Audit-Log-Eintrag aus). */}
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showHealthData}
+              onChange={(e) => setShowHealthData(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Krankheitstage anzeigen <span className="text-gray-400">(Art. 9 DSGVO – wird protokolliert)</span>
+          </label>
         </div>
         
         {/* Desktop Table */}
@@ -565,8 +593,28 @@ export default function AdminDashboard() {
                     )}
                   </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Urlaub (h)</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Krank (h)</th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('vacation_used_days')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Urlaub (Tage)</span>
+                    {sortField === 'vacation_used_days' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
+                  onClick={() => handleSort('sick_days')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Krank (Tage)</span>
+                    {sortField === 'sick_days' && (
+                      sortDirection === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                    )}
+                  </div>
+                </th>
                 <th className="px-6 py-3"></th>
               </tr>
             </thead>
@@ -612,8 +660,8 @@ export default function AdminDashboard() {
                         {formatHoursHM(emp.overtime_cumulative)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.vacation_used_hours)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.sick_hours)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{emp.vacation_used_days.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{showHealthData ? emp.sick_days.toFixed(1) : '—'}</td>
                     <td className="px-6 py-4 text-right">
                       <ChevronRight size={20} className="text-gray-400 inline" />
                     </td>
@@ -689,11 +737,11 @@ export default function AdminDashboard() {
                     <div className="flex items-center space-x-4">
                       <div>
                         <span className="text-gray-500">Urlaub:</span>
-                        <span className="font-medium ml-1">{formatHoursHM(emp.vacation_used_hours)}</span>
+                        <span className="font-medium ml-1">{emp.vacation_used_days.toFixed(1)} Tage</span>
                       </div>
                       <div>
                         <span className="text-gray-500">Krank:</span>
-                        <span className="font-medium ml-1">{formatHoursHM(emp.sick_hours)}</span>
+                        <span className="font-medium ml-1">{showHealthData ? `${emp.sick_days.toFixed(1)} Tage` : '—'}</span>
                       </div>
                     </div>
                   </div>
@@ -852,7 +900,7 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {emp.sick_days.toFixed(1)} Tage
+                          {showHealthData ? `${emp.sick_days.toFixed(1)} Tage` : '—'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
@@ -939,7 +987,7 @@ export default function AdminDashboard() {
                           <span className="text-sm text-gray-600">Krank</span>
                         </div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {emp.sick_days.toFixed(1)} Tage
+                          {showHealthData ? `${emp.sick_days.toFixed(1)} Tage` : '—'}
                         </span>
                       </div>
 
@@ -1012,7 +1060,7 @@ export default function AdminDashboard() {
                     {selectedEmployee.last_name}, {selectedEmployee.first_name}
                   </h2>
                   <p className="text-sm opacity-90">
-                    {format(new Date(currentMonth + '-01'), 'MMMM yyyy')} - Details
+                    {format(new Date(currentMonth + '-01T00:00:00'), 'MMMM yyyy')} - Details
                   </p>
                 </div>
                 <button

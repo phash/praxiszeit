@@ -85,10 +85,14 @@ class TestExportSurvivesAuditFailure:
         """Schlägt der Audit-Marker-Write fehl, muss der gesetzlich
         vorgeschriebene Export trotzdem ausgeliefert werden (nicht 500)."""
         from app.routers import superadmin as sa_router
+        from app.core.limiter import limiter
         from starlette.responses import StreamingResponse
 
         # SQLite kennt kein RLS → set_superadmin_context no-oppen.
         monkeypatch.setattr(sa_router, "set_superadmin_context", lambda _db: None)
+        # L-6: der Endpoint trägt jetzt @limiter.limit (+ request-Param). Beim
+        # Direkt-Aufruf (kein App-Kontext) den Limiter durchreichen.
+        monkeypatch.setattr(limiter, "enabled", False)
 
         # commit() so patchen, dass der Audit-Marker-Write hart fehlschlägt.
         original_commit = db.commit
@@ -99,6 +103,7 @@ class TestExportSurvivesAuditFailure:
         monkeypatch.setattr(db, "commit", boom)
 
         response = sa_router.export_tenant_arbzg_data(
+            request=None,  # nur für den @limiter.limit-Decorator; der Body nutzt es nicht
             tenant_id=default_tenant.id,
             db=db,
             current_user=superadmin_user,

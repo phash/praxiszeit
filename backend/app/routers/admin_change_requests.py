@@ -24,7 +24,9 @@ from app.routers.time_entries import (
 )
 from app.services.break_validation_service import validate_daily_break
 from app.services.arbzg_utils import is_night_work
-from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
+from app.services.calculation_service import (
+    get_weekly_hours_for_date, get_daily_target_for_date, get_vacation_account,
+)
 from app.services import work_window_service
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 
@@ -253,6 +255,7 @@ def review_change_request(
                     end_time=_eff_end,
                     break_minutes=cr.proposed_break_minutes or 0,
                     exclude_entry_id=exclude_id,
+                    tenant_id=cr.tenant_id,
                 )
                 if daily_hours_revalidate > MAX_DAILY_HOURS_HARD:
                     raise HTTPException(
@@ -469,6 +472,34 @@ def review_change_request(
             else:
                 hours = float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0
 
+            # M-2: Urlaubsbudget-Prüfung VOR dem INSERT — wie review_vacation_request
+            # und create_absence. Ohne diese Prüfung konnte ein per CR genehmigter
+            # Urlaub das verbleibende Budget überziehen (der Direkt-Buchungs- und der
+            # Antrags-Pfad prüfen, dieser nicht). Tagesprinzip (#156/#167): 1 freier
+            # Arbeitstag = 1 Urlaubstag. Die CR bucht genau EINEN Tag (cr.proposed_date)
+            # und kennt KEIN half_day-Feld → days_needed = 1,0 für einen abrechenbaren
+            # Tag. Für use_daily_schedule+track_hours-User zählt ein 0h-Tag nicht.
+            if (
+                cr_user
+                and cr.proposed_absence_type == AbsenceType.VACATION.value
+                and cr.proposed_date
+            ):
+                _bill_day = True
+                if getattr(cr_user, "use_daily_schedule", False) and cr_user.track_hours:
+                    _bw = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
+                    _bill_day = float(get_daily_target_for_date(cr_user, cr.proposed_date, _bw)) > 0
+                if _bill_day:
+                    vacation_account = get_vacation_account(db, cr_user, cr.proposed_date.year)
+                    days_needed = 1.0
+                    if days_needed > vacation_account["remaining_days"] + 1e-9:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=(
+                                f"Nicht genügend Urlaubstage für {cr.proposed_date.year} "
+                                f"({vacation_account['remaining_days']:.1f} Tage verfügbar)"
+                            ),
+                        )
+
             new_absence = Absence(
                 user_id=cr.user_id,
                 tenant_id=cr_tenant_id,
@@ -500,6 +531,33 @@ def review_change_request(
 
         elif cr.request_type == ChangeRequestType.UPDATE:
             # absence already fetched in precondition check above
+            # M-4: Bei Datumswechsel prüfen, ob am Zieltag bereits eine andere
+            # Abwesenheit liegt — sonst verletzt das UPDATE den Unique-Constraint
+            # (tenant_id, user_id, date, type) und crasht mit 500. Spiegelt die
+            # Existenz-Prüfung des CREATE-Pfads (Z.307-325); with_for_update()
+            # schließt die Race zwischen Prüfung und Schreiben. Die eigene
+            # Absence (absence.id) wird ausgeklammert.
+            if cr.proposed_date and cr.proposed_date != absence.date:
+                conflicting_absence = (
+                    db.query(Absence)
+                    .filter(
+                        Absence.user_id == cr.user_id,
+                        Absence.tenant_id == cr.tenant_id,
+                        Absence.date == cr.proposed_date,
+                        Absence.id != absence.id,
+                    )
+                    .with_for_update()
+                    .first()
+                )
+                if conflicting_absence:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Am {cr.proposed_date.strftime('%d.%m.%Y')} existiert bereits "
+                            f"eine Abwesenheit ({conflicting_absence.type.value})"
+                        ),
+                    )
+
             # Audit-Log für Absence-CR UPDATE (alte Werte sichern)
             audit = TimeEntryAuditLog(
                 time_entry_id=None,
@@ -593,6 +651,7 @@ def review_change_request(
                 start_time=_w_start,
                 end_time=_w_end,
                 break_minutes=cr.proposed_break_minutes or 0,
+                tenant_id=cr.tenant_id,
             )
 
             # SS6 Abs. 2: Nachtarbeitnehmer-Tageslimit
@@ -614,6 +673,7 @@ def review_change_request(
                 start_time=_w_start,
                 end_time=_w_end,
                 break_minutes=cr.proposed_break_minutes or 0,
+                tenant_id=cr.tenant_id,
             )
             if weekly > MAX_WEEKLY_HOURS_WARN:
                 cr_response.warnings.append(

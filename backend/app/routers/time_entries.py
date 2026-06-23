@@ -66,6 +66,7 @@ def _calculate_daily_net_hours(
     end_time: time,
     break_minutes: int,
     exclude_entry_id=None,
+    tenant_id=None,
 ) -> float:
     """Sum up all net hours for a user on a given date, including the new/updated entry."""
     query = db.query(TimeEntry).filter(
@@ -73,6 +74,9 @@ def _calculate_daily_net_hours(
         TimeEntry.date == entry_date,
         TimeEntry.end_time.isnot(None),
     )
+    # F-026: expliziter Tenant-Filter zusätzlich zu RLS (belt-and-suspenders).
+    if tenant_id is not None:
+        query = query.filter(TimeEntry.tenant_id == tenant_id)
     if exclude_entry_id:
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
@@ -90,6 +94,7 @@ def _calculate_weekly_net_hours(
     end_time: time,
     break_minutes: int,
     exclude_entry_id=None,
+    tenant_id=None,
 ) -> float:
     """Sum all net hours for the ISO calendar week containing entry_date, including the new/updated entry."""
     from datetime import timedelta
@@ -103,6 +108,9 @@ def _calculate_weekly_net_hours(
         TimeEntry.date <= sunday,
         TimeEntry.end_time.isnot(None),
     )
+    # F-026: expliziter Tenant-Filter zusätzlich zu RLS (belt-and-suspenders).
+    if tenant_id is not None:
+        query = query.filter(TimeEntry.tenant_id == tenant_id)
     if exclude_entry_id:
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
@@ -368,6 +376,7 @@ def clock_out(
         end_time=eff_end,
         break_minutes=body.break_minutes,
         exclude_entry_id=open_entry.id,
+        tenant_id=current_user.tenant_id,
     )
     # Review R2-b: §3 ArbZG (10h-Höchstgrenze) darf das Ausstempeln NICHT mit
     # 422 blockieren. Die Arbeitszeit IST zum Ausstempel-Zeitpunkt bereits
@@ -460,6 +469,7 @@ def clock_out(
             end_time=eff_end,
             break_minutes=body.break_minutes,
             exclude_entry_id=open_entry.id,
+            tenant_id=current_user.tenant_id,
         )
         if weekly_hours_out > MAX_WEEKLY_HOURS_WARN:
             clock_out_warnings.append("WEEKLY_HOURS_WARNING")
@@ -619,6 +629,7 @@ def create_time_entry(
         start_time=eff_start,
         end_time=eff_end,
         break_minutes=entry_data.break_minutes,
+        tenant_id=current_user.tenant_id,
     )
     if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
         raise HTTPException(
@@ -712,6 +723,7 @@ def create_time_entry(
             start_time=eff_start,
             end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
             warnings.append("WEEKLY_HOURS_WARNING")
@@ -868,6 +880,7 @@ def update_time_entry(
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
             exclude_entry_id=entry.id,
+            tenant_id=entry.tenant_id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
             raise HTTPException(
@@ -983,6 +996,7 @@ def update_time_entry(
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
             exclude_entry_id=entry.id,
+            tenant_id=entry.tenant_id,
         )
         if saved_hours > MAX_DAILY_HOURS_WARN:
             update_warnings.append("DAILY_HOURS_WARNING")
@@ -994,6 +1008,7 @@ def update_time_entry(
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
             exclude_entry_id=entry.id,
+            tenant_id=entry.tenant_id,
         )
         if weekly > MAX_WEEKLY_HOURS_WARN:
             update_warnings.append("WEEKLY_HOURS_WARNING")
