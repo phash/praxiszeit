@@ -131,3 +131,16 @@ def test_totp_activation_persists_counter_and_blocks_replay(_totp_db, _totp_user
         ) is None
     finally:
         test_app.dependency_overrides.clear()
+
+
+def test_verify_totp_with_invalid_base32_secret_returns_none():
+    """Review 2026-06-23: ein nicht entschluesselbares Secret (SECRET_KEY rotiert ->
+    decrypt_secret gibt den Fernet-Ciphertext zurueck, der KEIN gueltiges Base32 ist)
+    liess pyotp.TOTP.at() ein binascii.Error werfen -> HTTP 500 auf dem Login.
+    verify_totp_with_counter faengt das jetzt und lehnt sauber ab (None)."""
+    # Fernet-Token-aehnlich: enthaelt Kleinbuchstaben/-/_/= -> kein Base32.
+    assert auth_service.verify_totp_with_counter(
+        "gAAAAAB_not-valid-base32_=", "123456", last_counter=None
+    ) is None
+    # Auch ein leerer/zu kurzer Secret-String darf nicht crashen.
+    assert auth_service.verify_totp_with_counter("", "123456", last_counter=None) is None
