@@ -1,0 +1,42 @@
+# Line-Ending-Normalisierung.
+#
+# Hintergrund: Ohne diese Datei werden auf Windows (core.autocrlf=true) ALLE
+# Textdateien — auch Shell-Skripte — als CRLF ausgecheckt. Ein in einem Linux-
+# Container ausgefuehrtes Skript mit CRLF-Shebang bricht dann mit
+#   "/bin/bash^M: bad interpreter: No such file or directory"
+# ab. Real aufgetreten beim PG16->18-Docker-Reinit: die
+# docker-entrypoint-initdb.d-Skripte (init-db-user.sh) liefen nicht ->
+# praxiszeit_app ohne Passwort -> Backend-Login "password authentication failed".
+#
+# Git speichert Text im Repo als LF; eol=lf/eol=crlf steuert den Checkout.
+
+* text=auto
+
+# In Linux-Containern/Hosts ausgefuehrte Skripte MUESSEN LF sein.
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.sql   text eol=lf
+
+# Windows-Skripte bleiben CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binaerdateien nie normalisieren.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.zip   binary
+*.gz    binary
+*.exe   binary
+*.xls   binary
+*.xlsx  binary
+*.ods   binary
