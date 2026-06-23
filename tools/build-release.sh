@@ -172,6 +172,22 @@ if [ "$_be_ver" != "$APP_VERSION" ]; then
     exit 1
 fi
 
+# package-lock.json mitprüfen (4. Stelle, CLAUDE.md): npm ci scheitert sonst erst
+# spät beim Frontend-Build auf einer 2. Maschine — hier früh + mit klarer Meldung.
+_lock_ver=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' "${REPO_DIR_PRE}/frontend/package-lock.json" | head -1)
+if [ -n "$_lock_ver" ] && [ "$_lock_ver" != "$APP_VERSION" ]; then
+    echo -e "${RED}[ERROR]${NC} Version-Drift: frontend/package-lock.json = ${_lock_ver} (erwartet ${APP_VERSION})" >&2
+    echo -e "${RED}[ERROR]${NC} Fix: cd frontend && npm install --package-lock-only" >&2
+    exit 1
+fi
+
+# POSTGRESQL_VERSION muss 3-komponentig sein (z.B. 18.4.0): die Windows-EDB-URL
+# leitet sich via ${POSTGRESQL_VERSION%.*} ab -> bei "18.4" käme die falsche URL.
+if ! [[ "$POSTGRESQL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo -e "${RED}[ERROR]${NC} POSTGRESQL_VERSION='${POSTGRESQL_VERSION}' muss drei Komponenten haben (z.B. 18.4.0)" >&2
+    exit 1
+fi
+
 # BETA_MODE-Hinweis: solange Default True, ist die Lizenzpruefung in JEDEM
 # gebauten Paket deaktiviert (keine Lizenz noetig). Das ist in der Beta gewollt,
 # aber vor dem ersten KOSTENPFLICHTIGEN Release MUSS BETA_MODE auf False —
@@ -293,7 +309,13 @@ download_with_sha() {
             fi
             info "SHA256 verifiziert: ${name}"
         else
-            warn "Keine .sha256-Datei fuer ${name} (Quelle: ${sha_url})"
+            # Hart abbrechen statt warn(): ohne .sha256 lässt sich die Integrität
+            # nicht garantieren -> ein gecachter partieller/fremder Tarball würde
+            # sonst ungeprüft ins Release wandern (genau der Fehlermodus, den der
+            # Pin verhindern soll).
+            error "Keine .sha256-Datei fuer ${name} (Quelle: ${sha_url}) — Integrität nicht prüfbar, Abbruch."
+            rm -f "$target"
+            return 1
         fi
     fi
 }

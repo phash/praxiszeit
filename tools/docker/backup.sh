@@ -31,9 +31,11 @@ OUT="${BACKUP_DIR}/praxiszeit_$(date +%Y%m%d_%H%M%S).sql.gz"
 
 echo "Sichere Datenbank '${PG_DB}' (User '${PG_USER}') ..."
 if docker compose exec -T db pg_dump -U "$PG_USER" --clean --if-exists "$PG_DB" | gzip > "$OUT"; then
-    # Leeren/abgebrochenen Dump erkennen (1.8.12-Lehre): gzip muss intakt sein und
-    # entpackt mindestens ein Byte liefern, sonst war der Dump nicht erfolgreich.
-    if ! gzip -t "$OUT" 2>/dev/null || [ -z "$(gzip -dc "$OUT" 2>/dev/null | head -c 1)" ]; then
+    # Leeren/abgebrochenen Dump erkennen (1.8.12-Lehre): gzip muss intakt sein
+    # (-t fängt Trunkierung) UND mehr als ein leeres gzip-Gerüst (~20 Byte) sein.
+    # Kein `gzip -dc | head` unter pipefail (SIGPIPE-Footgun, CLAUDE.md) — die
+    # komprimierte Größe genügt: ein leeres gzip ist ~20 Byte, ein echter Dump KB+.
+    if ! gzip -t "$OUT" 2>/dev/null || [ "$(stat -c%s "$OUT" 2>/dev/null || echo 0)" -le 30 ]; then
         echo "FEHLER: Backup ist leer/ungueltig — wird geloescht." >&2
         rm -f "$OUT"
         exit 1

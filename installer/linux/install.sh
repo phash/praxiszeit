@@ -454,9 +454,13 @@ if [ "${GEN_SSL,,}" = "j" ]; then
     # daraus ein gueltiges End-Entity-Server-Zertifikat statt eines CA-Certs
     # (ein CA-Cert wird vom Browser nicht als Server-Cert akzeptiert).
     # Fehler NICHT verschlucken: schlaegt openssl fehl, soll der Install es zeigen.
+    # PRACTICE_NAME fuer -subj entschaerfen: ein '/' (z.B. "Dr. Mueller / Partner")
+    # zerstoert sonst den RDN-String -> Cert-Erzeugung scheitert -> kein TLS ->
+    # Login mit cookie_secure=true bricht. '/' und '\' -> '_', ',' -> ' '.
+    _O_NAME=$(printf '%s' "${PRACTICE_NAME}" | tr '/\\' '__' | tr ',' ' ')
     if openssl req -x509 -newkey rsa:2048 -keyout "${INSTALL_DIR}/config/ssl/key.pem" \
         -out "${INSTALL_DIR}/config/ssl/cert.pem" -days 3650 -nodes \
-        -subj "/CN=PraxisZeit/O=${PRACTICE_NAME}" \
+        -subj "/CN=PraxisZeit/O=${_O_NAME}" \
         -addext "subjectAltName=${SAN}" \
         -addext "basicConstraints=critical,CA:FALSE" \
         -addext "keyUsage=critical,digitalSignature,keyEncipherment" \

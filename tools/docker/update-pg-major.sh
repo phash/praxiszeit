@@ -22,7 +22,11 @@ BK="$(ls -1t backups/praxiszeit_*.sql.gz 2>/dev/null | head -1)"
 # Vollständigkeit prüfen, BEVOR gleich das Volume zerstört wird: ein vollständiger
 # Plain-SQL-Dump endet immer mit dem pg_dump-Trailer. Fehlt er, war der Dump
 # abgebrochen (partiell-aber-valides gzip) -> NICHT weitermachen.
-if ! gzip -dc "$BK" | tail -5 | grep -q "PostgreSQL database dump complete"; then
+# Kein `... | grep -q` unter `set -o pipefail`: grep beendet bei Treffer früh ->
+# tail/gzip bekommen SIGPIPE (141) -> pipefail macht die Pipe non-zero -> `if !`
+# kippt um (CLAUDE.md). Erst in eine Variable, dann per Here-String prüfen.
+_dump_tail="$(gzip -dc "$BK" | tail -5)"
+if ! grep -q "PostgreSQL database dump complete" <<<"$_dump_tail"; then
     echo "FEHLER: Dump-Trailer fehlt — Backup unvollständig. Abbruch (Daten unangetastet)." >&2; exit 1
 fi
 echo "    Backup: $BK (vollständig)"

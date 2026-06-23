@@ -1304,9 +1304,14 @@ def _restore_pending_major_upgrade():
     import tempfile
     env = {**pg_env(), "PGPASSWORD": su_password}
     tmp_path = None
+    proc = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".sql", delete=False, dir=str(DATA_DIR)) as tmp:
             tmp_path = tmp.name
+            # DSGVO Art. 32: der entpackte Klartext-Dump enthält personenbezogene
+            # Daten -> explizit nur Owner-lesbar (NamedTemporaryFile ist zwar schon
+            # 0600, aber explizit = robust gegen künftige Umstellungen).
+            os.chmod(tmp_path, 0o600)
             with gzip.open(dump, "rb") as gz:
                 shutil.copyfileobj(gz, tmp)
         proc = subprocess.run(
@@ -1320,6 +1325,13 @@ def _restore_pending_major_upgrade():
                 os.unlink(tmp_path)
             except OSError:
                 pass
+    if proc is None:
+        # gzip/copy ist geflogen -> NICHT in den UnboundLocalError laufen, sondern
+        # klar melden (Alt-Daten + Dump bleiben erhalten).
+        raise RuntimeError(
+            "PG-Upgrade-Restore: Dump konnte nicht entpackt werden (I/O-Fehler oder "
+            "korrupte Datei) — alte Daten unter data/db.pg* erhalten."
+        )
     if proc.returncode != 0:
         stderr = proc.stderr.decode("utf-8", "replace") if proc.stderr else ""
         logger.error(

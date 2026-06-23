@@ -135,7 +135,17 @@ def update_config(
             # (nur im Log sichtbar) scheitern zu lassen.
             try:
                 probe_dir = Path(loc)
-                probe_dir.mkdir(parents=True, exist_ok=True)
+                # KEIN mkdir(parents=True): ein Admin könnte sonst per Setting
+                # beliebige Verzeichnisbäume auf dem Host anlegen lassen (Review:
+                # Privilege-Surface auf Native-Installs). Das übergeordnete
+                # Verzeichnis muss existieren; nur das letzte Segment wird angelegt.
+                if not probe_dir.exists():
+                    if not probe_dir.parent.is_dir():
+                        raise BackupError(
+                            f"Übergeordnetes Verzeichnis von '{loc}' existiert nicht — "
+                            "bitte den Pfad manuell anlegen."
+                        )
+                    probe_dir.mkdir(exist_ok=True)
                 probe = probe_dir / ".praxiszeit-write-test"
                 probe.write_text("ok")
                 probe.unlink()
@@ -289,10 +299,11 @@ def create_backup(db: Session) -> BackupFile:
 
     write_error: Optional[OSError] = None
     try:
-        with gzip.open(backup_file, "wb") as gz:
-            # DSGVO Art. 32: das Backup enthält personenbezogene Daten -> nur der
-            # Dienst-Owner darf es lesen (gzip.open legt sonst per umask 0o644 an).
-            os.chmod(backup_file, 0o600)
+        # DSGVO Art. 32: das Backup enthält personenbezogene Daten -> ATOMAR nur
+        # Owner-lesbar anlegen (os.open mit 0o600), nicht erst gzip.open(umask 0644)
+        # + nachträgliches chmod (dazwischen kurz world-readable).
+        _fd = os.open(backup_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(_fd, "wb") as _raw, gzip.GzipFile(fileobj=_raw, mode="wb") as gz:
             assert proc.stdout is not None
             while True:
                 chunk = proc.stdout.read(8192)

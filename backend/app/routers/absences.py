@@ -224,6 +224,7 @@ def get_next_vacation(
     today = today_local()
 
     next_vacation = db.query(Absence).filter(
+        Absence.tenant_id == current_user.tenant_id,  # F-026: explizit, nicht nur RLS
         Absence.user_id == current_user.id,
         Absence.type == AbsenceType.VACATION,
         Absence.date >= today

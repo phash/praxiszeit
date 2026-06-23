@@ -205,7 +205,9 @@ def delete_all_holidays(db: Session, tenant_id=None, source: Optional[str] = Non
     if source is not None:
         query = query.filter(PublicHoliday.source == source)
     count = query.count()
-    query.delete()
+    # synchronize_session=False: count() hat die Rows schon in die Session geladen;
+    # die Default-"evaluate"-Strategie kann sonst bei geladenen Objekten brechen.
+    query.delete(synchronize_session=False)
     # F-034: invalidate the cache after bulk-delete
     invalidate_holiday_cache(tenant_id=tenant_id)
     # No commit – let the caller manage the transaction
