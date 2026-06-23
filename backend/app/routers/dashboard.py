@@ -138,7 +138,8 @@ def get_overtime_account(
     """
     # Get first time entry to determine start
     first_entry = db.query(TimeEntry).filter(
-        TimeEntry.user_id == current_user.id
+        TimeEntry.user_id == current_user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
     ).order_by(TimeEntry.date).first()
 
     history = []

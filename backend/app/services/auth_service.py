@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import hmac
 from datetime import datetime, timedelta, timezone
@@ -241,25 +242,33 @@ def verify_totp_with_counter(
     before the next call is dispatched.
     """
     import time as _time
-    totp = pyotp.TOTP(secret)
-    now = int(_time.time())
-    step = totp.interval
+    # Defensiv (Review 2026-06-23): ein nicht entschluesselbares Secret (SECRET_KEY
+    # rotiert -> decrypt_secret gibt den Fernet-Ciphertext zurueck, der KEIN gueltiges
+    # Base32 ist) wuerde pyotp's .at() ein binascii.Error werfen lassen -> HTTP 500
+    # auf dem Login. Wir fangen das ab und behandeln es als saubere Ablehnung (None
+    # -> "Ungueltiger TOTP-Code"); der Nutzer richtet 2FA neu ein.
+    try:
+        totp = pyotp.TOTP(secret)
+        now = int(_time.time())
+        step = totp.interval
 
-    # Iterate windows oldest-first so that if two codes within the window
-    # both match (pathological clock skew), we accept the highest counter.
-    accepted: Optional[int] = None
-    for offset in range(-valid_window, valid_window + 1):
-        candidate_time = now + offset * step
-        counter = candidate_time // step
-        if last_counter is not None and counter <= last_counter:
-            continue
-        expected = totp.at(candidate_time)
-        # pyotp's internal comparison is constant-time; fall back to `==`
-        # for simplicity since the strings are fixed length.
-        if _consteq(expected, code.strip()):
-            # Keep scanning so we take the newest matching counter if any
-            accepted = counter
-    return accepted
+        # Iterate windows oldest-first so that if two codes within the window
+        # both match (pathological clock skew), we accept the highest counter.
+        accepted: Optional[int] = None
+        for offset in range(-valid_window, valid_window + 1):
+            candidate_time = now + offset * step
+            counter = candidate_time // step
+            if last_counter is not None and counter <= last_counter:
+                continue
+            expected = totp.at(candidate_time)
+            # pyotp's internal comparison is constant-time; fall back to `==`
+            # for simplicity since the strings are fixed length.
+            if _consteq(expected, code.strip()):
+                # Keep scanning so we take the newest matching counter if any
+                accepted = counter
+        return accepted
+    except (binascii.Error, ValueError):
+        return None
 
 
 def _consteq(a: str, b: str) -> bool:

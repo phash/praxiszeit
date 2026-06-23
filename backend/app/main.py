@@ -447,12 +447,19 @@ def _allowed_hosts() -> list[str]:
     # bleiben absichtlich offen → kein Verhaltenswechsel, nur ein Log-Hinweis).
     _prod = getattr(settings, "ENVIRONMENT", "development").lower() == "production"
     _saas = getattr(settings, "DEPLOYMENT_MODE", "onprem").lower() == "saas"
-    if hosts == ["*"] and (_prod or _saas):
+    # SaaS (multi-tenant, internet-facing) MIT Wildcard = harter Fehler: ein
+    # No-Op-TrustedHost ist dort nicht tolerierbar (Host-Header-Desync,
+    # Cache-Poisoning ueber Tenants). On-Prem-Production bleibt eine WARNUNG —
+    # LAN-by-IP-Zugriff ist dort eine bewusste, legitime Betriebsart (Review 2026-06-23).
+    if hosts == ["*"] and _saas:
+        raise RuntimeError(
+            "ALLOWED_HOSTS='*' ist im SaaS-Modus nicht erlaubt — TrustedHost waere ein "
+            "No-Op (Host-Header-Schutz aus). ALLOWED_HOSTS auf die echte(n) Domain(s) setzen."
+        )
+    if hosts == ["*"] and _prod:
         logging.getLogger("uvicorn.error").warning(
-            "ALLOWED_HOSTS='*' (%s): Host-Header-Schutz (TrustedHost) ist deaktiviert. "
-            "Für internet-facing / Multi-Tenant-Deployments ALLOWED_HOSTS auf die echte(n) "
-            "Domain(s) setzen.",
-            "SaaS" if _saas else "Production",
+            "ALLOWED_HOSTS='*' (Production): Host-Header-Schutz (TrustedHost) ist deaktiviert. "
+            "Für internet-facing Deployments ALLOWED_HOSTS auf die echte(n) Domain(s) setzen.",
         )
     return hosts
 

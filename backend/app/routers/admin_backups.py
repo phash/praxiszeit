@@ -13,10 +13,14 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.database import get_db
-from app.models import User
 from app.middleware.auth import require_admin
 from app.services import backup_service
 
+# ⚠️ SaaS-Gate (#100): Ein Backup ist ein Voll-Dump der GESAMTEN DB (alle Tenants,
+# inkl. Art.-9-naher Abwesenheitsdaten). Auf On-Prem (single-tenant) gehoert es dem
+# Admin — korrekt. VOR dem SaaS-Cutover MUSS dieser Router auf require_superadmin
+# umgestellt (oder aus der Tenant-Admin-Oberflaeche entfernt) werden, sonst kann ein
+# Tenant-Admin die Daten aller Tenants exportieren.
 router = APIRouter(prefix="/api/admin/backups", tags=["admin", "backup"],
                    dependencies=[Depends(require_admin)])
 
@@ -79,13 +83,16 @@ def create_backup_now(db: Session = Depends(get_db)):
 @router.put("/config", response_model=BackupConfigResponse)
 def update_config(payload: BackupConfigUpdate, db: Session = Depends(get_db)):
     """Zeitplan (enabled/hour), Aufbewahrung (Tage) und Pfad-Override setzen."""
-    cfg = backup_service.update_config(
-        db,
-        enabled=payload.enabled,
-        hour=payload.hour,
-        retention_days=payload.retention_days,
-        location=payload.location,
-    )
+    try:
+        cfg = backup_service.update_config(
+            db,
+            enabled=payload.enabled,
+            hour=payload.hour,
+            retention_days=payload.retention_days,
+            location=payload.location,
+        )
+    except backup_service.BackupError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return _cfg(cfg)
 
 

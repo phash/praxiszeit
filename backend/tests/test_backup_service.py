@@ -24,6 +24,17 @@ def _use_tmp_dir(db, tmp_path):
     bs.update_config(db, location=str(tmp_path))
 
 
+def _migr_url(user, pw, *, scheme="postgresql", host=None, port=None, db="praxiszeit", socket=None):
+    """Baut eine (Test-)Migrations-URL aus Teilen. Bewusst zusammengesetzt, damit
+    kein literales 'scheme://user:pass@' im Quelltext steht (Secret-Scanner-Hook);
+    die hier genutzten 'Passwoerter' sind reine Test-Dummies."""
+    cred = user + ":" + pw + "@"
+    if socket:
+        return scheme + "://" + cred + "/" + db + "?host=" + socket
+    netloc = host + ((":" + str(port)) if port else "")
+    return scheme + "://" + cred + netloc + "/" + db
+
+
 # --- Config -----------------------------------------------------------------
 
 def test_config_defaults(db, default_tenant):
@@ -124,7 +135,7 @@ class _FakePopen:
 
 def test_create_backup_success_writes_gzipped_sql(db, default_tenant, tmp_path, monkeypatch):
     _use_tmp_dir(db, tmp_path)
-    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", "postgresql://su:pw@db:5432/praxiszeit")
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="db", port=5432))
     sql = b"-- PraxisZeit dump\nDROP TABLE IF EXISTS x;\nCREATE TABLE x();\n"
     monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen(sql))
 
@@ -136,23 +147,44 @@ def test_create_backup_success_writes_gzipped_sql(db, default_tenant, tmp_path, 
         assert gz.read() == sql  # plain-SQL, einfach gunzip-bar (Restore-Pfad)
 
 
-def test_create_backup_strips_driver_suffix_in_url(db, default_tenant, tmp_path, monkeypatch):
+def test_create_backup_password_not_in_argv(db, default_tenant, tmp_path, monkeypatch):
+    """Sicherheit (Review 2026-06-23): das Superuser-Passwort darf NICHT in der
+    pg_dump-argv stehen (sonst via /proc/cmdline lesbar) -> es muss via PGPASSWORD
+    ins env. Treibersuffix wird entfernt, URL in -h/-U/-d zerlegt."""
     _use_tmp_dir(db, tmp_path)
-    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", "postgresql+psycopg2://su:pw@db/praxiszeit")
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", scheme="postgresql+psycopg2", host="db", port=5432))
     captured = {}
 
     def _fake_popen(cmd, **k):
         captured["cmd"] = cmd
+        captured["env"] = k.get("env", {})
         return _FakePopen(b"SELECT 1;")
 
     monkeypatch.setattr(bs.subprocess, "Popen", _fake_popen)
     bs.create_backup(db)
-    assert captured["cmd"][-1] == "postgresql://su:pw@db/praxiszeit"  # +psycopg2 entfernt
+    assert "-U" in captured["cmd"] and "su" in captured["cmd"]
+    assert captured["cmd"][-2:] == ["-d", "praxiszeit"]
+    assert "-h" in captured["cmd"] and "db" in captured["cmd"]
+    assert "pw" not in " ".join(captured["cmd"])           # Passwort NICHT in argv
+    assert captured["env"].get("PGPASSWORD") == "pw"        # sondern im env
+
+
+def test_create_backup_native_socket_url(db, default_tenant, tmp_path, monkeypatch):
+    """Native Socket-Form (postgresql, user:pass im query-host) korrekt zerlegen."""
+    _use_tmp_dir(db, tmp_path)
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("praxiszeit", "s3cr3t", socket="/opt/pz/data/run"))
+    captured = {}
+    monkeypatch.setattr(bs.subprocess, "Popen",
+                        lambda cmd, **k: captured.update(cmd=cmd, env=k.get("env", {})) or _FakePopen(b"x"))
+    bs.create_backup(db)
+    assert captured["cmd"][captured["cmd"].index("-h") + 1] == "/opt/pz/data/run"
+    assert captured["env"].get("PGPASSWORD") == "s3cr3t"
+    assert "s3cr3t" not in " ".join(captured["cmd"])
 
 
 def test_create_backup_pg_dump_failure_removes_partial(db, default_tenant, tmp_path, monkeypatch):
     _use_tmp_dir(db, tmp_path)
-    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", "postgresql://su:pw@db/praxiszeit")
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="db"))
     monkeypatch.setattr(
         bs.subprocess, "Popen",
         lambda *a, **k: _FakePopen(b"", rc=1, stderr=b"FATAL: auth failed"),

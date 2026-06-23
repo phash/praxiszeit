@@ -136,7 +136,20 @@ def update_config(
     if retention_days is not None:
         _set_setting(db, SETTING_RETENTION_DAYS, str(max(1, int(retention_days))))
     if location is not None:
-        _set_setting(db, SETTING_LOCATION, location.strip())
+        loc = location.strip()
+        if loc:
+            # Schreibprobe (Review 2026-06-23): einen nicht beschreibbaren Pfad
+            # ablehnen, statt ihn still zu speichern und erst beim naechsten Backup
+            # (nur im Log sichtbar) scheitern zu lassen.
+            try:
+                probe_dir = Path(loc)
+                probe_dir.mkdir(parents=True, exist_ok=True)
+                probe = probe_dir / ".praxiszeit-write-test"
+                probe.write_text("ok")
+                probe.unlink()
+            except OSError as e:
+                raise BackupError(f"Backup-Verzeichnis '{loc}' ist nicht beschreibbar: {e}") from e
+        _set_setting(db, SETTING_LOCATION, loc)
     db.commit()
     return get_config(db)
 
@@ -213,12 +226,34 @@ def _pg_dump_bin() -> str:
     return os.environ.get("PRAXISZEIT_PG_DUMP", "").strip() or "pg_dump"
 
 
-def _superuser_url() -> Optional[str]:
-    url = os.environ.get("DATABASE_URL_MIGRATIONS", "").strip()
-    if not url:
+def _pg_dump_conn() -> Optional[tuple]:
+    """Parst DATABASE_URL_MIGRATIONS in pg_dump-Verbindungsargumente + Passwort.
+
+    Das Passwort wird NICHT in die argv gelegt — es waere sonst via
+    /proc/<pid>/cmdline bzw. `ps auxww` von jedem lokalen Prozess lesbar (das ist
+    die RLS-umgehende Superuser-Credential). Stattdessen geht es ueber PGPASSWORD
+    ins Subprocess-Env (so macht es auch der native Pfad in praxiszeit-server.py).
+    Behandelt die native Socket-Form `postgresql://u:p@/db?host=/run/sock`.
+    Gibt (conn_args, password|None) zurueck oder None, wenn keine URL gesetzt ist.
+    """
+    raw = os.environ.get("DATABASE_URL_MIGRATIONS", "").strip()
+    if not raw:
         return None
-    # pg_dump/libpq erwartet 'postgresql://' — SQLAlchemy-Treibersuffixe entfernen.
-    return re.sub(r"^postgresql\+[a-z0-9]+://", "postgresql://", url)
+    raw = re.sub(r"^postgresql\+[a-z0-9]+://", "postgresql://", raw)
+    from urllib.parse import urlparse, parse_qs, unquote
+    p = urlparse(raw)
+    qs = parse_qs(p.query)
+    host = (qs.get("host", [None])[0]) or p.hostname  # Socket-Dir (Unix) oder TCP-Host
+    args: list = []
+    if host:
+        args += ["-h", unquote(host)]
+    if p.port:
+        args += ["-p", str(p.port)]
+    if p.username:
+        args += ["-U", unquote(p.username)]
+    args += ["-d", (p.path or "").lstrip("/") or "praxiszeit"]
+    password = unquote(p.password) if p.password else None
+    return args, password
 
 
 class BackupError(RuntimeError):
@@ -227,12 +262,13 @@ class BackupError(RuntimeError):
 
 def create_backup(db: Session) -> BackupFile:
     """Erzeugt ein komprimiertes Plain-SQL-Backup. Wirft BackupError bei Fehlern."""
-    url = _superuser_url()
-    if not url:
+    conn = _pg_dump_conn()
+    if not conn:
         raise BackupError(
             "DATABASE_URL_MIGRATIONS ist nicht gesetzt — ohne Superuser-Verbindung "
             "kann kein vollstaendiges Backup erstellt werden."
         )
+    conn_args, password = conn
 
     backup_dir = get_backup_dir(db)
     try:
@@ -244,11 +280,15 @@ def create_backup(db: Session) -> BackupFile:
     backup_file = backup_dir / f"praxiszeit_{timestamp}.sql.gz"
     logger.info("Erstelle Backup: %s", backup_file)
 
-    # '-w': nie nach Passwort fragen (Passwort steckt in der URL) -> fail fast statt
-    # Haenger im Dienst-Kontext. '--clean --if-exists' -> idempotenter Restore.
-    cmd = [_pg_dump_bin(), "-w", "--clean", "--if-exists", "-d", url]
+    # '-w': nie nach Passwort fragen (Passwort kommt via PGPASSWORD ins env, NICHT
+    # in die argv) -> fail fast statt Haenger im Dienst-Kontext. '--clean
+    # --if-exists' -> idempotenter Restore.
+    cmd = [_pg_dump_bin(), "-w", "--clean", "--if-exists", *conn_args]
+    env = os.environ.copy()
+    if password:
+        env["PGPASSWORD"] = password
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     except FileNotFoundError as e:
         raise BackupError(
             f"pg_dump nicht gefunden ({_pg_dump_bin()}). Im Docker-Image fehlt "
