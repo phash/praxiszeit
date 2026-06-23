@@ -44,12 +44,16 @@ def test_config_defaults(db, default_tenant):
     assert cfg.retention_days == bs.DEFAULT_RETENTION_DAYS
 
 
-def test_update_config_persists_and_clamps(db, default_tenant):
-    cfg = bs.update_config(db, enabled=True, hour=99, retention_days=0, location="/var/backups/pz")
+def test_update_config_persists_and_clamps(db, default_tenant, tmp_path):
+    # Writable location (tmp_path) statt eines root-only Systempfads — update_config
+    # probt die Schreibbarkeit, sodass /var/backups/pz unter dem non-root Test-User
+    # (appuser im Backend-Container) fehlschluege.
+    loc = str(tmp_path / "pz")
+    cfg = bs.update_config(db, enabled=True, hour=99, retention_days=0, location=loc)
     assert cfg.enabled is True
     assert cfg.hour == 23          # geclamped auf 0..23
     assert cfg.retention_days == 1  # geclamped auf >=1
-    assert cfg.location == "/var/backups/pz"
+    assert cfg.location == loc
     # frisch gelesen identisch
     assert bs.get_config(db).enabled is True
 
