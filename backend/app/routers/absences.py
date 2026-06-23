@@ -322,6 +322,14 @@ def create_absence(
             detail="Keine gültigen Arbeitstage im angegebenen Zeitraum"
         )
 
+    # BUG-3 / Review 2026-06-23 (2. Schleife): die User-Zeile ZUERST sperren —
+    # VOR den per-Datum-Absence-Locks unten — damit beide Urlaubs-Buchungspfade
+    # (create_absence + review_vacation_request) dieselbe Lock-Reihenfolge
+    # (User -> Absence) nutzen und kein ABBA-Deadlock moeglich ist. Der Lock
+    # serialisiert zugleich den Budget-Check + Insert pro MA (kein Budget-Overrun).
+    if absence_data.type == AbsenceType.VACATION:
+        db.query(User).filter(User.id == target_user.id).with_for_update().first()
+
     # Check for existing absences (any type — no double-booking allowed).
     # F-028: with_for_update() on the existence probe closes the race window
     # between this check and the INSERT below. The DB-level unique constraint
@@ -368,15 +376,10 @@ def create_absence(
             detail="Alle Tage im Zeitraum haben bereits eine Abwesenheit dieses Typs"
         )
 
-    # For vacation, check remaining vacation days (per year for cross-year ranges)
+    # For vacation, check remaining vacation days (per year for cross-year ranges).
+    # Die User-Zeile ist oben bereits per with_for_update gesperrt (BUG-3 +
+    # ABBA-Fix) -> Budget-Check + Insert sind pro MA serialisiert.
     if absence_data.type == AbsenceType.VACATION:
-        # BUG-3 (Review 2026-06-23): Budget-Check + Insert atomar machen. Ohne Lock
-        # koennen zwei gleichzeitige Urlaubsbuchungen fuer denselben MA beide
-        # remaining_days lesen, beide den Check passieren und das Budget ueberziehen
-        # (der per-Datum-with_for_update unten verhindert nur Doppelbuchungen am
-        # selben Tag, nicht den Budget-Overrun ueber verschiedene Tage). Die
-        # User-Zeile sperren serialisiert die Urlaubsbuchung pro MA bis zum Commit.
-        db.query(User).filter(User.id == target_user.id).with_for_update().first()
         # Group dates by year for budget check
         dates_by_year = {}
         for d in dates_to_create:
