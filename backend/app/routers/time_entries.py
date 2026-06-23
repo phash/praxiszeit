@@ -972,6 +972,11 @@ def update_time_entry(
         update_warnings.append(f"BREAK_WAIVER: {waiver_detail}")
     saved_hours = 0.0  # defined here so the night-worker check below can always reference it
     if not exempt and entry.end_time is not None:
+        # #252: Diese Warn-Berechnung läuft NACH db.commit() — der bearbeitete
+        # Eintrag steckt also schon (mit dem NEUEN Wert) in der DB. _calculate_*_
+        # net_hours addiert die übergebenen Zeiten ZUSÄTZLICH zur Tabellen-Summe,
+        # daher MUSS der Eintrag per exclude_entry_id ausgeschlossen werden, sonst
+        # wird er doppelt gezählt (6h-Eintrag -> 12h -> fälschliche >8h-Warnung).
         saved_hours = _calculate_daily_net_hours(
             db=db,
             user_id=entry.user_id,
@@ -979,7 +984,7 @@ def update_time_entry(
             start_time=entry.start_time,
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
-            exclude_entry_id=None,
+            exclude_entry_id=entry.id,
         )
         if saved_hours > MAX_DAILY_HOURS_WARN:
             update_warnings.append("DAILY_HOURS_WARNING")
@@ -990,7 +995,7 @@ def update_time_entry(
             start_time=entry.start_time,
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
-            exclude_entry_id=None,
+            exclude_entry_id=entry.id,
         )
         if weekly > MAX_WEEKLY_HOURS_WARN:
             update_warnings.append("WEEKLY_HOURS_WARNING")

@@ -515,6 +515,31 @@ class TestTimeEntryCreate:
         assert resp.status_code == 422
 
 
+class TestTimeEntryUpdateWarning:
+    """PUT /api/time-entries/{id} — §3-Warnung darf NICHT fälschlich feuern (#252)."""
+
+    def test_update_under_8h_no_daily_warning(self, employee_client):
+        """#252: Ein Eintrag <8h, der bearbeitet wird (weiter <8h), darf KEINE
+        DAILY_HOURS_WARNING auslösen. Bug: die Warn-Berechnung lief NACH dem commit
+        mit exclude_entry_id=None -> der bereits gespeicherte Eintrag wurde doppelt
+        gezählt (6h -> 12h -> >8h-Warnung), obwohl der Tag <8h hat."""
+        today = date.today().isoformat()
+        # 08:00–14:00, 0 Pause = 6h (<8h)
+        r = employee_client.post("/api/time-entries/", json={
+            "date": today, "start_time": "08:00", "end_time": "14:00", "break_minutes": 0,
+        })
+        assert r.status_code in (200, 201), r.text
+        eid = r.json()["id"]
+        # Bearbeiten auf 08:00–13:00 = 5h (immer noch <8h)
+        r2 = employee_client.put(f"/api/time-entries/{eid}", json={
+            "date": today, "start_time": "08:00", "end_time": "13:00", "break_minutes": 0,
+        })
+        assert r2.status_code == 200, r2.text
+        warnings = r2.json().get("warnings", [])
+        assert "DAILY_HOURS_WARNING" not in warnings, f"Fälschliche §3-Warnung bei <8h: {warnings}"
+        assert "WEEKLY_HOURS_WARNING" not in warnings, f"Fälschliche §3-Wochen-Warnung: {warnings}"
+
+
 class TestTimeEntryDelete:
     """DELETE /api/time-entries/{entry_id}"""
 
