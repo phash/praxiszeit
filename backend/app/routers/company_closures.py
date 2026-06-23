@@ -120,6 +120,7 @@ def _create_closure_absences(
             te_by_key.setdefault((entry.user_id, entry.date), []).append(entry)
         for wh in db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id.in_(emp_ids),
+            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
         ).order_by(WorkingHoursChange.effective_from).all():
             wh_by_user.setdefault(wh.user_id, []).append(wh)
 
