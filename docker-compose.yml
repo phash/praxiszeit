@@ -52,6 +52,11 @@ services:
       PRACTICE_NAME: ${PRACTICE_NAME:-Praxis}
       PRACTICE_ADDRESS: ${PRACTICE_ADDRESS:-}
       HOLIDAY_STATE: ${HOLIDAY_STATE:-Bayern}
+      # #213: Zielverzeichnis fuer DB-Backups (in das praxiszeit_backups-Volume).
+      PRAXISZEIT_BACKUP_DIR: ${BACKUP_DIR:-/app/backups}
+    volumes:
+      # #213: persistente DB-Backups (pg_dump --clean --if-exists | gzip)
+      - praxiszeit_backups:/app/backups
     depends_on:
       db:
         condition: service_healthy
@@ -125,6 +130,8 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  # #213: DB-Backups (manuell + geplant). NICHT zusammen mit postgres_data loeschen.
+  praxiszeit_backups:
 
 networks:
   praxiszeit-network:

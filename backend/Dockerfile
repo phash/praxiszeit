@@ -39,10 +39,19 @@ FROM python:3.12.13-slim-bookworm AS runtime
 
 WORKDIR /app
 
-# Runtime system dependencies — only libpq5 for psycopg2 network support.
-# No gcc, no postgresql-client binaries, no build toolchain.
+# Runtime system dependencies: libpq5 (psycopg2) + postgresql-client-16 for the
+# #213 DB-Backup-Feature (pg_dump). Der Client MUSS zur Server-Major (postgres:16)
+# passen — bookworm liefert nur Client 15 (verweigert den Dump eines 16er-Servers),
+# daher das PGDG-Repo. curl/gnupg werden nur fuer den Repo-Key gebraucht und danach
+# wieder entfernt.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpq5 \
+        libpq5 curl ca-certificates gnupg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y curl gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the prebuilt wheels (no index → no network fetch)
@@ -54,8 +63,12 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.t
 # Copy application code
 COPY . .
 
-# Create non-root user and set ownership
+# Create non-root user and set ownership.
+# #213: /app/backups vorab anlegen + dem appuser geben — beim ersten Mount eines
+# (leeren) named volumes uebernimmt Docker die Ownership dieses Image-Pfads, sonst
+# gehoert der Mountpoint root und der non-root-Backend kann pg_dump nicht schreiben.
 RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser \
+    && mkdir -p /app/backups \
     && chown -R appuser:appuser /app
 USER appuser
 
