@@ -239,7 +239,7 @@ Das Script läuft **nicht-interaktiv** und erledigt automatisch:
 
 1. **PostgreSQL-Erkennung:** Sucht in Registry + `%ProgramFiles%\PostgreSQL\{14..18}` nach bestehender Installation
    - Major ≥ 16 vorhanden → wird per `mklink /J` ins Bundle-Verzeichnis verlinkt
-   - Sonst: still installiert PostgreSQL 16.8 aus dem EDB-Installer mit zufälligem 32-Zeichen-Initialpasswort (wird sofort danach durch ein `secrets.token_hex(32)`-generiertes Passwort ersetzt)
+   - Sonst: still installiert PostgreSQL 18.4 aus dem EDB-Installer mit zufälligem 32-Zeichen-Initialpasswort (wird sofort danach durch ein `secrets.token_hex(32)`-generiertes Passwort ersetzt)
 2. **Python-Setup:** Bootstrap von `pip`, Installation aller Abhängigkeiten aus `requirements.txt`
 3. **Konfigurationsdatei:** Kopiert `config\praxiszeit.conf.example` nach `config\praxiszeit.conf` (falls nicht vorhanden)
 
@@ -735,7 +735,7 @@ C:\PraxisZeit\                    (Windows)
 │
 ├── bin/
 │   ├── python/                   Python 3.13 (gebündelt)
-│   └── postgresql/               PostgreSQL 16 (gebündelt oder Junction)
+│   └── postgresql/               PostgreSQL 18 (gebündelt oder Junction)
 ├── app/
 │   ├── backend/                  FastAPI + Alembic
 │   └── frontend/                 React (kompiliert)
