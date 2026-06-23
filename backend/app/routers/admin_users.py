@@ -224,12 +224,8 @@ def anonymize_user(
                 status_code=400,
                 detail=f"Sperrfrist läuft noch {remaining} Tag(e). Anonymisierung frühestens am {grace_end} möglich."
             )
-    elif user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Benutzer muss zuerst deaktiviert werden"
-        )
-    # If deactivated_at is None but user is inactive: allow anonymization (legacy user)
+    # If deactivated_at is None but user is inactive: allow anonymization (legacy user).
+    # Der is_active-Fall ist bereits oben (vor der Grace-Period-Prüfung) abgefangen.
 
     user.first_name = "Gelöschter"
     user.last_name = "Benutzer"
@@ -336,10 +332,10 @@ def purge_user(
         VacationRequest.reviewed_by == user.id,
         VacationRequest.tenant_id == current_user.tenant_id,
     ).update({"reviewed_by": None}, synchronize_session=False)
-    db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id, WorkingHoursChange.tenant_id == current_user.tenant_id).delete()
-    db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id, ChangeRequest.tenant_id == current_user.tenant_id).delete()
-    db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id).delete()
-    db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete()
+    db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id, WorkingHoursChange.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
+    db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id, ChangeRequest.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
+    db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
+    db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     db.delete(user)
     db.commit()
 
@@ -636,6 +632,7 @@ def delete_working_hours_change(
 
     most_recent = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
         WorkingHoursChange.effective_from <= today_local()
     ).order_by(WorkingHoursChange.effective_from.desc()).first()
 

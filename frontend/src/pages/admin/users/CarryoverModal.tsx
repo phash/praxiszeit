@@ -25,6 +25,7 @@ interface CarryoverModalProps {
 export default function CarryoverModal({ userId, userName, onClose, onSaved }: CarryoverModalProps) {
   const toast = useToast();
   const [carryovers, setCarryovers] = useState<YearCarryover[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     year: new Date().getFullYear(),
     overtime_hours: 0,
@@ -65,6 +66,8 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
   };
 
   const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       await apiClient.put(
         `/admin/users/${userId}/carryovers/${formData.year}`,
@@ -80,6 +83,8 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
       onSaved();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -152,7 +157,8 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
 
           <button
             onClick={handleSubmit}
-            className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-3"
+            disabled={submitting}
+            className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-3 rounded-lg flex items-center justify-center space-x-2 transition mb-3 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save size={18} />
             <span>Speichern</span>

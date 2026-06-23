@@ -65,7 +65,10 @@ export default function Settings() {
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  // L-4: getrennte Busy-Flags, damit das Speichern von Bundesland und
+  // Urlaubsgenehmigung sich nicht gegenseitig deaktiviert.
+  const [savingHolidayState, setSavingHolidayState] = useState(false);
+  const [savingApproval, setSavingApproval] = useState(false);
 
   // Holiday state
   const [states, setStates] = useState<string[]>([]);
@@ -195,7 +198,7 @@ export default function Settings() {
   };
 
   const saveHolidayState = async () => {
-    setSaving(true);
+    setSavingHolidayState(true);
     try {
       await apiClient.put('/admin/settings/holiday_state', { value: selectedState });
       setOriginalState(selectedState);
@@ -205,12 +208,12 @@ export default function Settings() {
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
-      setSaving(false);
+      setSavingHolidayState(false);
     }
   };
 
   const saveApproval = async () => {
-    setSaving(true);
+    setSavingApproval(true);
     try {
       await apiClient.put('/admin/settings/vacation_approval_required', {
         value: String(approvalRequired),
@@ -220,7 +223,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
-      setSaving(false);
+      setSavingApproval(false);
     }
   };
 
@@ -449,7 +452,7 @@ export default function Settings() {
           </div>
           <button
             onClick={saveHolidayState}
-            disabled={saving || selectedState === originalState}
+            disabled={savingHolidayState || selectedState === originalState}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />
@@ -757,7 +760,7 @@ export default function Settings() {
         <div className="mt-4">
           <button
             onClick={saveApproval}
-            disabled={saving || approvalRequired === originalApproval}
+            disabled={savingApproval || approvalRequired === originalApproval}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

@@ -73,6 +73,7 @@ def admin_create_time_entry(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            tenant_id=current_user.tenant_id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
             raise HTTPException(
@@ -89,6 +90,7 @@ def admin_create_time_entry(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
             admin_create_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")
@@ -156,8 +158,12 @@ def admin_update_time_entry(
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 
-    # Get user for SS18 exempt check and night worker warning
-    affected_user = db.query(User).filter(User.id == entry.user_id).first()
+    # Get user for SS18 exempt check and night worker warning.
+    # F-026: expliziter Tenant-Filter zusätzlich zu RLS (belt-and-suspenders).
+    affected_user = db.query(User).filter(
+        User.id == entry.user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).first()
 
     # Use provided values or fall back to existing
     update_date = entry_data.date if entry_data.date is not None else entry.date
@@ -199,6 +205,7 @@ def admin_update_time_entry(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            tenant_id=current_user.tenant_id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
             raise HTTPException(
@@ -215,6 +222,7 @@ def admin_update_time_entry(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
             admin_update_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")

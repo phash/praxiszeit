@@ -186,9 +186,9 @@ def resolve_backup_path(db: Session, filename: str) -> Optional[Path]:
     """Path-Traversal-sicher: nur exakte praxiszeit_<ts>.sql.gz-Namen im Backup-Dir."""
     if not _FILENAME_RE.match(filename or ""):
         return None
-    candidate = (get_backup_dir(db) / filename).resolve()
-    backup_dir = get_backup_dir(db).resolve()
-    if backup_dir not in candidate.parents:
+    backup_dir = get_backup_dir(db)
+    candidate = (backup_dir / filename).resolve()
+    if backup_dir.resolve() not in candidate.parents:
         return None
     return candidate if candidate.is_file() else None
 

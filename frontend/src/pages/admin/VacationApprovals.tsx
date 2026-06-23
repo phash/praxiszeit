@@ -95,12 +95,13 @@ export default function VacationApprovals() {
 
   // Review 2026-06-23: synchroner Doppelklick-Schutz — ein schneller Doppelklick
   // schickte sonst zwei Review-POSTs (der zweite wird serverseitig per Precondition
-  // abgelehnt, erzeugt aber einen verwirrenden Fehler-Toast).
-  const actionLock = useRef(false);
+  // abgelehnt, erzeugt aber einen verwirrenden Fehler-Toast). Per-Antrag gesperrt,
+  // damit eine langsame Aktion auf einer Karte nicht eine andere Karte blockiert.
+  const pendingIds = useRef(new Set<string>());
 
   const handleApprove = async (id: string) => {
-    if (actionLock.current) return;
-    actionLock.current = true;
+    if (pendingIds.current.has(id)) return;
+    pendingIds.current.add(id);
     try {
       await apiClient.post(`/admin/vacation-requests/${id}/review`, { action: 'approve' });
       toast.success('Antrag genehmigt');
@@ -108,13 +109,13 @@ export default function VacationApprovals() {
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
     } finally {
-      actionLock.current = false;
+      pendingIds.current.delete(id);
     }
   };
 
   const handleReject = async (id: string) => {
-    if (actionLock.current) return;
-    actionLock.current = true;
+    if (pendingIds.current.has(id)) return;
+    pendingIds.current.add(id);
     try {
       await apiClient.post(`/admin/vacation-requests/${id}/review`, {
         action: 'reject',
@@ -127,7 +128,7 @@ export default function VacationApprovals() {
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Ablehnen'));
     } finally {
-      actionLock.current = false;
+      pendingIds.current.delete(id);
     }
   };
 

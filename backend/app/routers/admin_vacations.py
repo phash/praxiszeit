@@ -140,22 +140,26 @@ def review_vacation_request(
     if vr.status != VacationRequestStatus.PENDING.value:
         raise HTTPException(status_code=400, detail="Antrag wurde bereits bearbeitet")
 
-    vr.reviewed_by = current_user.id
-    vr.reviewed_at = datetime.now(timezone.utc)
-
     if review.action == "reject":
+        # Ablehnen ist keine Selbst-Genehmigung -> die reviewed_*-Felder dürfen
+        # hier gesetzt werden (sie belegen, wer wann abgelehnt hat).
+        vr.reviewed_by = current_user.id
+        vr.reviewed_at = datetime.now(timezone.utc)
         vr.status = VacationRequestStatus.REJECTED.value
         vr.rejection_reason = review.rejection_reason
         db.commit()
         db.refresh(vr)
         return _enrich_vr_response(vr, db)
 
+    # CLAUDE.md "Precondition-Checks VOR Status-Änderung": die reviewed_*-Felder
+    # werden auf dem Approve-Pfad erst NACH allen Vorbedingungen gesetzt (4-Augen
+    # + Budget-/Arbeitstag-Checks weiter unten), nicht vorab.
+    #
     # Audit A01: 4-eyes principle. An admin must not approve their OWN vacation
     # request — but ONLY when independent oversight is actually possible (another
     # active admin exists in the tenant). A sole-admin practice may still
     # self-approve (reviewed_by == user_id records it). Raised before any state
-    # change / absence materialisation; the get_db txn rolls back the reviewed_*
-    # assignments above so the VR stays cleanly PENDING.
+    # change / absence materialisation.
     if vr.user_id == current_user.id and _tenant_has_other_active_admin(db, current_user):
         raise HTTPException(
             status_code=403,
@@ -334,6 +338,9 @@ def review_vacation_request(
         )
         db.add(absence)
 
+    # Alle Vorbedingungen bestanden -> jetzt erst Reviewer + Genehmigung setzen.
+    vr.reviewed_by = current_user.id
+    vr.reviewed_at = datetime.now(timezone.utc)
     vr.status = VacationRequestStatus.APPROVED.value
     db.commit()
     db.refresh(vr)

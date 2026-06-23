@@ -145,12 +145,18 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     for entry in time_entries:
         entries_by_date.setdefault(entry.date, []).append(entry)
 
-    # Get all absences for the month
+    # Get all absences for the month.
+    # I-1: ein Tag kann MEHRERE Absences tragen (Unique-Constraint ist je
+    # (date, type) — z. B. ein halber Tag Urlaub + ein halber Tag Sonstiges).
+    # Daher pro Tag eine LISTE statt einer einzelnen Absence, sonst verschluckt
+    # die Anzeige die zweite stillschweigend.
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         date_in_month(Absence.date, year, month)
     ).all()
-    absences_by_date = {absence.date: absence for absence in absences}
+    absences_by_date: dict = {}
+    for absence in absences:
+        absences_by_date.setdefault(absence.date, []).append(absence)
 
     # Get public holidays (tenant-scoped: each tenant may run a different
     # state-holiday set, so a global query would leak or miss holidays).
@@ -184,7 +190,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # Check if it's a weekend, holiday, or absence
         is_weekend = weekday >= 5
         is_holiday = current_date in holidays_by_date
-        absence = absences_by_date.get(current_date)
+        day_absences = absences_by_date.get(current_date, [])  # I-1: alle Absences des Tages
 
         # Date column
         sheet.cell(row=row, column=1).value = current_date
@@ -269,25 +275,32 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             # col 10 (Bemerkung) bereits oben gesetzt – NICHT mit holiday.name überschreiben
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
-        elif absence:
+        elif day_absences:
             target = Decimal('0.00')
-            # DSGVO F-003: mask sick absences when health data export not explicitly requested
-            if absence.type.value == "sick" and not include_health_data:
-                type_name = "Abwesenheit"
-                # Do not expose sick note (may contain diagnosis details)
-            else:
-                absence_type_map = {
-                    "vacation": "Urlaub",
-                    "sick": "Krank",
-                    "training": "Fortbildung",
-                    "overtime": "Überstundenausgleich",
-                    "other": "Sonstiges",
-                    "paid_leave": "Bez. Freistellung"
-                }
-                type_name = absence_type_map.get(absence.type.value, absence.type.value)
-                if absence.note:
-                    sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(absence.note)
-            sheet.cell(row=row, column=9).value = f"{type_name} ({float(absence.hours)}h)"
+            absence_type_map = {
+                "vacation": "Urlaub",
+                "sick": "Krank",
+                "training": "Fortbildung",
+                "overtime": "Überstundenausgleich",
+                "other": "Sonstiges",
+                "paid_leave": "Bez. Freistellung"
+            }
+            # I-1: ALLE Absences des Tages anzeigen (Label in Spalte 9 verbinden,
+            # Notizen in Spalte 10). DSGVO F-003: Krank ohne Health-Flag maskieren
+            # (Label "Abwesenheit", Notiz unterdrückt — kann Diagnose enthalten).
+            abw_parts = []
+            note_parts = []
+            for absence in day_absences:
+                if absence.type.value == "sick" and not include_health_data:
+                    type_name = "Abwesenheit"
+                else:
+                    type_name = absence_type_map.get(absence.type.value, absence.type.value)
+                    if absence.note:
+                        note_parts.append(absence.note)
+                abw_parts.append(f"{type_name} ({float(absence.hours)}h)")
+            sheet.cell(row=row, column=9).value = " | ".join(abw_parts)
+            if note_parts:
+                sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(" | ".join(note_parts))
         else:
             # Regulärer Arbeitstag
             target = daily_target
@@ -670,12 +683,15 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     for entry in time_entries:
         entries_by_date.setdefault(entry.date, []).append(entry)
 
-    # Get all absences for the year
+    # Get all absences for the year.
+    # I-1: pro Tag eine LISTE (mehrere Absences je Tag möglich, s. _create_employee_sheet).
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         date_in_year(Absence.date, year)
     ).all()
-    absences_by_date = {absence.date: absence for absence in absences}
+    absences_by_date: dict = {}
+    for absence in absences:
+        absences_by_date.setdefault(absence.date, []).append(absence)
 
     # Get public holidays for the year (tenant-scoped; see generate_monthly_report).
     holidays = db.query(PublicHoliday).filter(
@@ -725,7 +741,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
         is_weekend = weekday >= 5
         is_holiday = current_date in holidays_by_date
-        absence = absences_by_date.get(current_date)
+        day_absences = absences_by_date.get(current_date, [])  # I-1: alle Absences des Tages
 
         sheet.cell(row=row, column=1).value = current_date
         sheet.cell(row=row, column=1).number_format = 'DD.MM.YYYY'
@@ -802,24 +818,31 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             sheet.cell(row=row, column=9).value = abw
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
-        elif absence:
+        elif day_absences:
             target = Decimal('0.00')
-            # DSGVO F-003: mask sick absences unless health data explicitly requested
-            if absence.type.value == "sick" and not include_health_data:
-                type_name = "Abwesenheit"
-            else:
-                absence_type_map = {
-                    "vacation": "Urlaub",
-                    "sick": "Krank",
-                    "training": "Fortbildung",
-                    "overtime": "Überstundenausgleich",
-                    "other": "Sonstiges",
-                    "paid_leave": "Bez. Freistellung"
-                }
-                type_name = absence_type_map.get(absence.type.value, absence.type.value)
-                if absence.note:
-                    sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(absence.note)
-            sheet.cell(row=row, column=9).value = f"{type_name} ({float(absence.hours)}h)"
+            absence_type_map = {
+                "vacation": "Urlaub",
+                "sick": "Krank",
+                "training": "Fortbildung",
+                "overtime": "Überstundenausgleich",
+                "other": "Sonstiges",
+                "paid_leave": "Bez. Freistellung"
+            }
+            # I-1: ALLE Absences des Tages anzeigen; DSGVO F-003: Krank ohne
+            # Health-Flag maskieren (Label "Abwesenheit", Notiz unterdrückt).
+            abw_parts = []
+            note_parts = []
+            for absence in day_absences:
+                if absence.type.value == "sick" and not include_health_data:
+                    type_name = "Abwesenheit"
+                else:
+                    type_name = absence_type_map.get(absence.type.value, absence.type.value)
+                    if absence.note:
+                        note_parts.append(absence.note)
+                abw_parts.append(f"{type_name} ({float(absence.hours)}h)")
+            sheet.cell(row=row, column=9).value = " | ".join(abw_parts)
+            if note_parts:
+                sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(" | ".join(note_parts))
         else:
             target = daily_target
             if is_night_wrk:
@@ -1268,7 +1291,10 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             Absence.user_id == user.id,
             date_in_month(Absence.date, year, month),
         ).all()
-        absences_by_date = {a.date: a for a in absences}
+        # I-1: pro Tag eine LISTE (mehrere Absences je Tag möglich, s. _create_employee_sheet).
+        absences_by_date: dict = {}
+        for a in absences:
+            absences_by_date.setdefault(a.date, []).append(a)
 
         holidays = db.query(PublicHoliday).filter(
             PublicHoliday.tenant_id == user.tenant_id,
@@ -1296,7 +1322,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             is_weekend = wd >= 5
             is_sunday = wd == 6
             is_holiday = cur in holidays_by_date
-            absence = absences_by_date.get(cur)
+            day_absences = absences_by_date.get(cur, [])  # I-1: alle Absences des Tages
             day_entries = entries_by_date.get(cur, [])
 
             is_night = any(
@@ -1355,19 +1381,22 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 if is_night:
                     abw += ' | Nachtarbeit'
                 bg = colors.HexColor('#FFFFCC')
-            elif absence:
+            elif day_absences:
                 target = Decimal('0.00')
-                if absence.type.value == 'sick' and not include_health_data:
-                    type_name = 'Abwesenheit'
-                    bem = ''
-                else:
-                    type_name = absence_type_map.get(absence.type.value, absence.type.value)
-                    if absence.note:
-                        if absence.type == AbsenceType.SICK and not include_health_data:
-                            pass  # Don't show sick notes without health data permission
-                        else:
-                            bem = absence.note
-                abw = f"{type_name} ({float(absence.hours):.1f}h)"
+                # I-1: ALLE Absences des Tages zeigen; DSGVO F-003: Krank ohne
+                # Health-Flag maskieren (Label 'Abwesenheit', Notiz unterdrückt).
+                abw_parts = []
+                note_parts = []
+                for absence in day_absences:
+                    if absence.type.value == 'sick' and not include_health_data:
+                        type_name = 'Abwesenheit'
+                    else:
+                        type_name = absence_type_map.get(absence.type.value, absence.type.value)
+                        if absence.note:
+                            note_parts.append(absence.note)
+                    abw_parts.append(f"{type_name} ({float(absence.hours):.1f}h)")
+                abw = " | ".join(abw_parts)
+                bem = " | ".join(note_parts)  # ersetzt evtl. Eintrags-Bemerkung wie zuvor
                 bg = None
             else:
                 target = daily_target

@@ -248,7 +248,8 @@ export default function Reports() {
   const handleYearlyExportOds = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get(`/admin/reports/export-yearly-ods?year=${selectedYear}`, {
+      const healthParam = includeHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/export-yearly-ods?year=${selectedYear}${healthParam}`, {
         responseType: 'blob',
       });
       downloadBlob(response.data, `PraxisZeit_Jahresreport_${selectedYear}.ods`);
@@ -262,7 +263,8 @@ export default function Reports() {
   const handleYearlyClassicExportOds = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get(`/admin/reports/export-yearly-classic-ods?year=${selectedYear}`, {
+      const healthParam = includeHealthData ? '&include_health_data=true' : '';
+      const response = await apiClient.get(`/admin/reports/export-yearly-classic-ods?year=${selectedYear}${healthParam}`, {
         responseType: 'blob',
       });
       downloadBlob(response.data, `PraxisZeit_Jahresreport_Classic_${selectedYear}.ods`);

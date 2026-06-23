@@ -33,6 +33,7 @@ export default function Backups() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [config, setConfig] = useState<BackupConfig>({
     enabled: false, hour: 2, retention_days: 30, location: '',
@@ -87,11 +88,14 @@ export default function Backups() {
   };
 
   const handleDownload = async (filename: string) => {
+    setDownloadingFile(filename);
     try {
       const res = await apiClient.get(`/admin/backups/${filename}/download`, { responseType: 'blob' });
       downloadBlob(res.data, filename, 'application/gzip');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Download fehlgeschlagen'));
+    } finally {
+      setDownloadingFile(null);
     }
   };
 
@@ -220,7 +224,8 @@ export default function Backups() {
                   <td className="py-2 text-right space-x-2 whitespace-nowrap">
                     <button
                       onClick={() => handleDownload(b.filename)}
-                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                      disabled={downloadingFile === b.filename}
+                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Herunterladen"
                     >
                       <Download className="w-4 h-4" />

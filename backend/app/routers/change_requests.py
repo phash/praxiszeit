@@ -218,6 +218,7 @@ def create_change_request(
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
             exclude_entry_id=entry.id if entry else None,
+            tenant_id=current_user.tenant_id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
             raise HTTPException(
@@ -292,6 +293,7 @@ def create_change_request(
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
             exclude_entry_id=entry.id if entry else None,
+            tenant_id=current_user.tenant_id,
         )
         if (
             current_user.is_night_worker
@@ -315,6 +317,7 @@ def create_change_request(
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
             exclude_entry_id=entry.id if entry else None,
+            tenant_id=current_user.tenant_id,
         )
         if weekly_hours_check > MAX_WEEKLY_HOURS_WARN:
             response.warnings.append("WEEKLY_HOURS_WARNING")

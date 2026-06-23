@@ -68,7 +68,10 @@ def get_monthly_report(
             tenant_id=current_user.tenant_id,
         )
         db.add(audit)
-        db.commit()
+        # L-2: nur flushen — der Audit-Eintrag wird erst committet, NACHDEM der
+        # Report fehlerfrei gebaut ist (sonst bliebe bei einem Fehler beim Bauen ein
+        # health_data_read-Audit ohne tatsächlich ausgelieferte Daten stehen).
+        db.flush()
 
     users = _get_active_visible_users(db, current_user.tenant_id)
 
@@ -97,6 +100,13 @@ def get_monthly_report(
         ).all()
         sick_hours = sum(float(a.hours) for a in sick_absences)
 
+        # Tagesprinzip (§3 BUrlG, #156/#205): Urlaub/Krank TAGEBASIERT zählen — exakt
+        # wie get_vacation_account (voller Tag 1,0; half_day 0,5; Legacy h÷Tagessoll-
+        # des-Tages; untracked rein tagebasiert). NICHT Σh ÷ Ø-Tagessoll, das driftet
+        # bei ungleichmäßigem Tagesplan oder Halbtagen.
+        vacation_days = float(calculation_service.absence_days(db, user, vacation_absences).quantize(Decimal('0.1')))
+        sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
+
         # Use weekly_hours valid at start of report month, not current value
         report_date = date(year, month_num, 1)
         hist_weekly = calculation_service.get_weekly_hours_for_date(db, user, report_date)
@@ -111,9 +121,16 @@ def get_monthly_report(
             balance=float(balance),
             overtime_cumulative=float(overtime),
             vacation_used_hours=vacation_hours,
+            vacation_used_days=vacation_days,
             sick_hours=sick_hours if include_health_data else 0.0,
+            sick_days=sick_days if include_health_data else 0.0,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
         ))
+
+    # L-2: Report erfolgreich gebaut -> jetzt erst den (ggf. oben geflushten)
+    # health_data_read-Audit-Eintrag dauerhaft festschreiben.
+    if include_health_data:
+        db.commit()
 
     return reports
 
@@ -145,7 +162,9 @@ def get_yearly_absences(
             tenant_id=current_user.tenant_id,
         )
         db.add(audit)
-        db.commit()
+        # L-2: nur flushen — Commit erst nach erfolgreichem Aufbau der Übersicht
+        # (siehe get_monthly_report).
+        db.flush()
 
     users = _get_active_visible_users(db, current_user.tenant_id)
 
@@ -220,6 +239,10 @@ def get_yearly_absences(
             overtime_year=float(overtime_year),
             total_days=total_days
         ))
+
+    # L-2: Übersicht erfolgreich gebaut -> health_data_read-Audit festschreiben.
+    if include_health_data:
+        db.commit()
 
     return results
 
@@ -657,6 +680,17 @@ def get_compensatory_rest(
     users = _get_active_visible_users(db, current_user.tenant_id)
     result = []
 
+    # L-7: Feiertage des Jahres EINMAL vorladen (tenant-scoped) statt _is_holiday
+    # pro Eintrag (DB-Query je Eintrag) — danach reine Set-Mitgliedschaft. Gleiches
+    # Muster wie der 24-Wochen-Schnitt-Endpoint; Verhalten unverändert.
+    holiday_dates = {
+        h.date
+        for h in db.query(PublicHoliday).filter(
+            PublicHoliday.year == year,
+            PublicHoliday.tenant_id == current_user.tenant_id,
+        ).all()
+    }
+
     for user in users:
         entries = (
             db.query(TimeEntry)
@@ -671,14 +705,11 @@ def get_compensatory_rest(
         worked_dates = {e.date for e in entries}
 
         # Get all dates worked on Sundays or holidays
-        from app.services.holiday_service import is_holiday as _is_holiday
-
         sunday_holidays_worked = []
         for e in entries:
             weekday = e.date.weekday()
             is_sun = weekday == 6
-            # F-026: is_holiday requires tenant_id per CLAUDE.md multi-tenant rules
-            is_hol = _is_holiday(db, e.date, tenant_id=current_user.tenant_id)
+            is_hol = e.date in holiday_dates
             if is_sun or is_hol:
                 sunday_holidays_worked.append({
                     "date": e.date,

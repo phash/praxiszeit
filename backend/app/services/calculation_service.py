@@ -813,6 +813,30 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     }
 
 
+def absence_days(db: Session, user: User, absences: list) -> Decimal:
+    """Zähle Abwesenheiten TAGEBASIERT (Tagesprinzip §3 BUrlG, #156/#205) — exakt
+    nach derselben Regel wie ``used_days`` in ``get_vacation_account``: voller Tag
+    = 1,0, ``half_day=True`` = 0,5, Legacy-Row (``half_day=None``) = Stunden ÷
+    Tagessoll DES TAGES. Ein Tag mit Tagessoll 0 (Urlaub an einem Nicht-Arbeitstag)
+    zählt 0. Untracked-MA (``get_daily_target<=0``, leitende Angestellte): rein
+    tagebasiert (Halbtag 0,5, sonst 1,0). Quelle für die Tage-Anzeige in den
+    Reports — NICHT die naive Σh ÷ Ø-Tagessoll (die für ungleichmäßige Tagespläne
+    bzw. Halbtage falsch ist)."""
+    tracked = get_daily_target(user) > 0
+    total = Decimal('0')
+    for a in absences:
+        if not tracked:
+            total += Decimal('0.5') if a.half_day else Decimal('1')
+            continue
+        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date))
+        if dt_day > 0:
+            if a.half_day is None:
+                total += Decimal(str(a.hours)) / Decimal(str(dt_day))
+            else:
+                total += Decimal('0.5') if a.half_day else Decimal('1')
+    return total
+
+
 def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     """
     Calculate vacation account for a given year.
@@ -1062,9 +1086,10 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
         vacation_account = get_vacation_account(db, user, year)
         remaining_vacation = Decimal(str(vacation_account['remaining_days']))
 
-        # Create or update carryover for next year
+        # Create or update carryover for next year (F-026: explicit tenant scope)
         carryover = db.query(YearCarryover).filter(
             YearCarryover.user_id == user.id,
+            YearCarryover.tenant_id == user.tenant_id,
             YearCarryover.year == next_year,
         ).first()
 
