@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-06-23
+
+Bugfix-Release: korrekte Tage-Anzeige in der Admin-Übersicht plus eine umfassende
+Härtung der gesamten Admin-Sektion (Review, alle Findings bis *low* behoben).
+
+### 🐞 Korrekturen
+- **Admin-Monatsübersicht zeigt Urlaub & Krank in *Tagen* statt Stunden (#281).**
+  Bisher wurden Urlaub/Krank in Stunden dargestellt (und Krank dauerhaft als 0).
+  Jetzt korrekt in **Tagen** nach dem Tagesprinzip (§3 BUrlG) — konsistent mit der
+  Jahresübersicht; ein halber Urlaubs-/Kranktag zählt 0,5, ein voller 1,0,
+  unabhängig vom individuellen Tagesplan.
+- **Krankheitstage sichtbar machen.** Krank ist aus Datenschutzgründen (Art. 9
+  DSGVO) standardmäßig maskiert und lässt sich über die Option **„Krankheitstage
+  anzeigen"** einblenden; der Zugriff wird protokolliert.
+
+### 🔒 Sicherheit / Robustheit (Admin-Review)
+- Durchgängige Mandanten-Filter (Mehrmandanten-Sicherheit) an allen geprüften
+  Admin-Abfragen; korrekte Bulk-Lösch-Strategie; saubere Reihenfolge der
+  Genehmigungsprüfungen.
+- **Änderungsanträge für Abwesenheiten** prüfen jetzt das Urlaubsbudget (Neuanlage)
+  bzw. Datums-Konflikte (Änderung) — keine stillen Überbuchungen oder Server-Fehler.
+- §16-Export vollständig (mehrere Abwesenheiten pro Tag werden nicht mehr verworfen);
+  Zugriffe auf Gesundheitsdaten werden erst nach erfolgreicher Auslieferung
+  protokolliert; Ratenbegrenzung auf den Mandanten-Export.
+
+### 🧹 Intern / UI
+- Monats- und Jahresübersicht aktualisieren sofort nach Korrekturen; tagbasierte
+  Spalten sind sortierbar; robustere Doppelklick- und Zeitzonen-Behandlung in
+  mehreren Admin-Dialogen; ODS-Jahresexport reicht die Gesundheitsdaten-Option durch.
+
 ## [1.10.1] - 2026-06-23
 
 Patch-Release: korrigiert die Windows-PostgreSQL-Version und härtet 1.10.0
