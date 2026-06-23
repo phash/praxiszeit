@@ -2,6 +2,143 @@
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-06-23
+
+Funktions- und Wartungs-Release: PostgreSQL 18, gepflegte Feiertagsberechnung
+und ein Zeiterfassungs-Fix.
+
+### ✨ Neu
+- **PostgreSQL 16 → 18 (#270).** Natives Bundle (theseus-rs 18.4.0,
+  glibc-2.34-portabel; validiert auf Ubuntu 22/24, Debian 12, Rocky 9, Arch) und
+  Docker (`postgres:18-alpine` + `postgresql-client-18`). Da ein Major-Upgrade
+  nicht in-place läuft, überführt ein automatischer dump/restore-Pfad die Daten:
+  `install.sh` erkennt den Versions-Sprung, dumpt den alten Cluster nach
+  `data/backups/pre-upgrade-pgXX-*.sql.gz`, legt das alte Datenverzeichnis als
+  `data/db.pgXX-*` zur Seite (nie gelöscht) und spielt den Dump in den frischen
+  PG18-Cluster ein; bricht bei jedem Fehler ab, ohne Daten anzutasten. `PGDATA`
+  bleibt explizit auf `.../data` gepinnt (PG18 würde sonst einen Major-Unterordner
+  anlegen). *Echter PG16→18-Upgrade auf einem Realhost steht noch aus.*
+- **Feiertage über `python-holidays` (#270).** Ersetzt die bisherige
+  Feiertagsberechnung durch eine gepflegte Bibliothek inkl. bundeslandspezifischer
+  Feiertage.
+
+### 🐞 Korrekturen
+- **Fälschliche §3-Tagesstunden-Warnung beim Bearbeiten (#252).**
+  `update_time_entry` berechnete die >8h-Warnung nach dem Commit mit
+  `exclude_entry_id=None` — der bearbeitete Eintrag wurde dadurch doppelt gezählt
+  (ein 6h-Eintrag las als 12h → „Tagesarbeitszeit über 8 Stunden", obwohl der Tag
+  <8h hat; gespeichert wurde korrekt). Fix: Tages- und Wochenberechnung nach dem
+  Commit nutzen `exclude_entry_id=entry.id`; die Nachtarbeit-Prüfung profitiert mit.
+
+### 🔒 Security / DSGVO
+- **DB-Backups owner-only `0600` (Art. 32, #272).** `#213`-`create_backup` und der
+  `install.sh`-PG-Upgrade-Dump legten Sicherungen world-readable (`0644`) an —
+  beide jetzt explizit `chmod 0600` (Backups enthalten personenbezogene Daten).
+  Regressionstest ergänzt.
+
+### 🧹 Intern
+- `system_settings`-Lese-Helfer in `settings_service` gebündelt (#271, #219-Nachzug;
+  letzter Inline-`SystemSetting`-Read aus `time_entries.py` entfernt).
+- e2e Release-Smoke schließt das Onboarding-Modal + tolerantere Backup-Assertion
+  (#273); lokale `screenshots-*/`-Verzeichnisse ignoriert (#274).
+- PG18 in den operativen Anleitungen (INSTALL-NATIVE/DOCKER, INFRASTRUCTURE,
+  arc42, CLAUDE.md) nachgezogen (#272).
+
+## [1.9.0] - 2026-06-23
+
+Funktions-Release rund um die neue **Datensicherung** sowie Korrekturen an
+Zeiterfassung, Urlaub und Installation. Enthält auch die nie an Kunden
+ausgelieferte Zwischenversion 1.8.15 (Zeiteintrag-Edit-Fix, Docker-Backup-Skripte).
+
+### ✨ Neu
+- **Datensicherung / DB-Backup-Verwaltung (#213).** Neuer Admin-Bereich
+  „Datensicherung": Sicherungen lassen sich manuell oder zeitgesteuert anlegen —
+  sowohl nativ als auch unter Docker — und bei Bedarf wiederherstellen.
+  Backend (#257) + Admin-UI (#258), inkl. Docker-Backup/Restore-Skripte (#231).
+- **Audit-Log Tamper-Evidence (#121).** Jeder Audit-Log-Eintrag erhält einen
+  per-Row-HMAC, sodass nachträgliche Manipulation erkennbar wird (v1).
+- **Linux-Rolling-Distro-Support (#177).** `libxml2.so.2` wird ins Linux-Bundle
+  eingebettet → Installation läuft auch auf Rolling-Release-Distributionen.
+- **Build-Härtung (#81).** Installer-Build-Flags + `dotnet test`-Gate im Release-Build.
+
+### 🐛 Korrekturen
+- **Zeiteintrag bearbeiten schlug mit „Input should be None" fehl (#225).**
+- **Tagebasierter Urlaubsverbrauch (#205).** Urlaub wird taggenau inklusive
+  halber Tage über ein persistiertes `half_day` verbraucht.
+- **Journal-/Export-Berechnung (#198).** Ist-Fensterung in den Journal-Tageszeilen
+  und die Zwischensummen in den Exporten korrigiert.
+- **404 statt 403 bei fremden Same-Tenant-Ressourcen (#120).**
+- **Dienst vor Re-Installation stoppen (#217).** Verhindert „Text file busy" beim
+  Update bzw. der Neuinstallation.
+- **tzdata gebündelt (#139).** Behebt `ZoneInfoNotFound` auf Minimal-Images (Docker).
+- **Mandantentrennung F-026.** Explizite `tenant_id`-Filter ergänzt (belt-and-suspenders
+  zusätzlich zu RLS).
+
+### ⚡ Performance
+- **Überstunden-Dashboard + Monatsreport (#150).** O(Monate²)/N+1-Abfragen entfernt.
+- **Firmenschließtage (#204).** Referenzdaten werden gebündelt vorgeladen statt
+  ~3 Abfragen je Mitarbeiter×Tag.
+- **Code-Splitting der `/admin/*`-Routen + Hilfe (#147).** Schnellere Ladezeiten.
+
+### 🔒 Security / Härtung
+- **Prod-Review-Härtung:** Backend-Korrektheit + Security (#260), Frontend
+  (Object-URL-Leaks, NaN, Doppelklick, URL-Guard) (#261), Infra/Build
+  (Doppel-Backup-Schutz, Version-Single-Source-of-Truth, PG-Sanity) (#262).
+- ABBA-Lock-Reihenfolge + HMAC-Kanonisierung gehärtet.
+- Hardening aus intensivem Code-/Security-/ArbZG-Review (#251).
+- `/system/info`-Leak-Guard um `onboarding_enabled` ergänzt.
+- `md-to-pdf` entfernt (verwundbares `js-yaml@3.14.2` raus).
+
+### 📦 Dependencies
+- fastapi `0.136.*` → `0.138` (Versions-Cap aus 1.8.10 entfernt) + sichere
+  Frontend-Bumps.
+- Prometheus v2.54 (EOL) → v3.12.0 (#175).
+
+### 🧹 Refactor
+- Gemeinsame Status-Badge-Config (3 Duplikate → 1, #219).
+- Gemeinsamer User-Typ statt 4 Duplikaten im Frontend (#151).
+
+## [1.8.14] - 2026-06-22
+
+Hotfix-Release: Dashboard-Hang nach Sitzungsablauf. Enthält auch die nie an
+Kunden ausgelieferte Zwischenversion 1.8.13 (Login-Fehleranzeige).
+
+### 🐞 Korrekturen
+- **Dashboard-Hang behoben (#229).** Nach Ablauf der Sitzung geriet die App in
+  eine Schleife aus automatischem Abmelden und erneutem Anmelden (logout↔refresh-Storm),
+  sodass „Lade Dashboard…" nicht mehr fertig lud. Der Logout wird jetzt sauber beendet.
+
+### 🔑 Anmeldung
+- **Klarere Falsch-Passwort-Anzeige + Caps-Lock-Hinweis (#227).** Eine
+  fehlgeschlagene Anmeldung wird jetzt deutlich angezeigt — mit Hinweis auf
+  Groß-/Kleinschreibung und einer Warnung bei aktiver Feststelltaste. Zuvor war
+  eine Falscheingabe leicht als „Dashboard lädt nicht" misszuverstehen.
+
+## [1.8.12] - 2026-06-19
+
+Wartungs-Release: erste Datensicherungs-Bausteine, Onboarding-Schnellstart und
+Security-/DSGVO-Härtung. Enthält auch die nie an Kunden ausgelieferte
+Zwischenversion 1.8.11.
+
+### ✨ Neu
+- **Onboarding-Schnellstart.** Schnellstart-Anleitung + Admin-Toggle zum
+  Aktivieren des Onboardings; überarbeitetes Cheat-Sheet.
+- **macOS-Auto-Backup (launchd).** Automatische Datensicherung unter macOS;
+  `docs/BACKUP.md` dokumentiert Backup und Restore.
+
+### 🐞 Korrekturen
+- **Backup-Restore (CRITICAL) behoben** sowie `praxiszeit.conf`-Guard und
+  Onboarding-Block korrigiert (Review 2026-06-18).
+
+### 🔒 Security / DSGVO / Härtung
+- **TOTP-Secrets werden at-rest verschlüsselt** (Audit-Fix aus dem Code-Review).
+- Security-/DSGVO-/ArbZG-Audit-Fixes bis Low; Hilfe-Texte aktualisiert.
+- **Dependabot-Security:** `undici` + `js-yaml` aktualisiert.
+
+### 🔧 Sonstiges
+- Update-Server-URL auf `mr-development.de` umgestellt; Lizenz-Beta-Cleanup;
+  Installations-Doku + §3.1-Verfügbarkeits-Matrix aktualisiert.
+
 ## [1.8.10] - 2026-06-16
 
 Hotfix zu 1.8.9: die 1.8.9-Dependency-Aktualisierung machte die App auf allen
