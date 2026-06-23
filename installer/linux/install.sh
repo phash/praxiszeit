@@ -272,6 +272,49 @@ if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
     sleep 2
 fi
 
+# --- PostgreSQL Major-Upgrade (z. B. 16 -> 18) ---
+# PG18-Binaries können ein PG16-Datenverzeichnis NICHT starten (Major-Upgrade ist
+# nicht in-place). Daher VOR dem Binary-Tausch mit den ALTEN Binaries dumpen, das
+# alte Datenverzeichnis zur Seite legen (NIE löschen) + einen Marker schreiben;
+# praxiszeit-server.py spielt den Dump beim ersten Start in den frischen Cluster.
+OLD_PGDATA="${INSTALL_DIR}/data/db"
+NEW_POSTGRES="${SCRIPT_DIR}/bin/postgresql/bin/postgres"
+if [ -f "${OLD_PGDATA}/PG_VERSION" ] && [ -x "${NEW_POSTGRES}" ] && [ -f "${INSTALL_DIR}/config/.db-credentials" ]; then
+    OLD_MAJOR=$(cut -d. -f1 "${OLD_PGDATA}/PG_VERSION" 2>/dev/null)
+    NEW_MAJOR=$(LD_LIBRARY_PATH="${SCRIPT_DIR}/bin/postgresql/lib" "${NEW_POSTGRES}" --version 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    if [ -n "${OLD_MAJOR}" ] && [ -n "${NEW_MAJOR}" ] && [ "${OLD_MAJOR}" -lt "${NEW_MAJOR}" ] 2>/dev/null; then
+        info "PostgreSQL-Major-Upgrade ${OLD_MAJOR} -> ${NEW_MAJOR} erkannt — sichere Daten mit den alten Binaries..."
+        OLD_PGBIN="${INSTALL_DIR}/bin/postgresql/bin"
+        OLD_PGLIB="${INSTALL_DIR}/bin/postgresql/lib"
+        RUN_DIR="${INSTALL_DIR}/data/run"
+        SU_PW=$(grep -E '^SUPERUSER_PASSWORD=' "${INSTALL_DIR}/config/.db-credentials" | cut -d= -f2-)
+        TS=$(date +%Y%m%d_%H%M%S)
+        DUMP_FILE="${INSTALL_DIR}/data/backups/pre-upgrade-pg${OLD_MAJOR}-${TS}.sql.gz"
+        mkdir -p "${INSTALL_DIR}/data/backups" "${RUN_DIR}"
+        chown "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/data/backups" "${RUN_DIR}" 2>/dev/null || true
+        if [ -z "${SU_PW}" ]; then
+            error "PG-Upgrade: .db-credentials ohne SUPERUSER_PASSWORD — Migration nicht möglich. Abbruch (Daten unangetastet)."; exit 1
+        fi
+        # Alten Cluster starten (alte postgresql.conf hat listen_addresses='' +
+        # unix_socket_directories bereits gesetzt), dumpen, stoppen — als Dienst-User.
+        if ! sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w -t 60 start; then
+            error "PG-Upgrade: alter Cluster ließ sich nicht starten — Abbruch (Daten unangetastet)."; exit 1
+        fi
+        if ! sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" PGPASSWORD="${SU_PW}" \
+                sh -c "'${OLD_PGBIN}/pg_dump' -w --clean --if-exists -h '${RUN_DIR}' -U praxiszeit -d praxiszeit | gzip > '${DUMP_FILE}'"; then
+            sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w stop 2>/dev/null || true
+            error "PG-Upgrade: pg_dump fehlgeschlagen — Abbruch (Daten unangetastet)."; exit 1
+        fi
+        sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w stop 2>/dev/null || true
+        # Alte Daten zur Seite legen (NIE löschen) + Marker für praxiszeit-server.py.
+        mv "${OLD_PGDATA}" "${INSTALL_DIR}/data/db.pg${OLD_MAJOR}-${TS}"
+        echo "${DUMP_FILE}" > "${INSTALL_DIR}/data/.pg-upgrade-restore"
+        chown "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/data/.pg-upgrade-restore" 2>/dev/null || true
+        info "Daten gesichert: ${DUMP_FILE}"
+        info "Frischer PG${NEW_MAJOR}-Cluster wird beim Start angelegt + Dump eingespielt; alter Cluster bleibt als data/db.pg${OLD_MAJOR}-${TS} erhalten."
+    fi
+fi
+
 info "Kopiere Anwendungsdateien..."
 # The installer package should contain these directories at the same level
 if [ -d "${SCRIPT_DIR}/bin" ]; then

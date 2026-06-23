@@ -1266,6 +1266,52 @@ def _signal_handler(signum, frame):
     _shutdown_requested = True
 
 
+PG_UPGRADE_RESTORE_MARKER = DATA_DIR / ".pg-upgrade-restore"
+
+
+def _restore_pending_major_upgrade():
+    """PG-Major-Upgrade (z. B. 16 -> 18): install.sh hat mit den ALTEN Binaries
+    gedumpt, das alte Datenverzeichnis zur Seite gelegt (``data/db.pgXX-<ts>``,
+    NIE gelöscht) und den Dump-Pfad in den Marker geschrieben. Hier — nachdem
+    cmd_start den frischen PGNN-Cluster initialisiert + die DB/Rollen angelegt hat
+    — spielen wir den Dump in die leere ``praxiszeit``-DB ein. Idempotent: ohne
+    Marker passiert nichts; bei Restore-Fehler bleibt der Marker + das alte
+    Datenverzeichnis erhalten (recoverable), und wir brechen ab statt mit
+    Teildaten weiterzulaufen."""
+    if not PG_UPGRADE_RESTORE_MARKER.exists():
+        return
+    dump = Path(PG_UPGRADE_RESTORE_MARKER.read_text().strip())
+    if not dump.is_file():
+        logger.error("PG-Upgrade-Marker vorhanden, aber Dump fehlt: %s — übersprungen.", dump)
+        PG_UPGRADE_RESTORE_MARKER.unlink()
+        return
+    su_password, _ = pg_load_credentials()
+    if not su_password:
+        raise RuntimeError("PG-Upgrade-Restore: keine Superuser-Credentials gefunden.")
+    logger.info("PostgreSQL-Major-Upgrade: spiele gesicherten Daten-Dump ein (%s)...", dump.name)
+    import gzip
+    with gzip.open(dump, "rb") as gz:
+        sql = gz.read()
+    env = {**pg_env(), "PGPASSWORD": su_password}
+    # Dump ist Plain-SQL mit --clean --if-exists -> idempotent in die frische DB.
+    proc = subprocess.run(
+        [str(pg_cmd("psql")), "-w", "-U", "praxiszeit", "-d", "praxiszeit", "-v", "ON_ERROR_STOP=0"],
+        input=sql, env=env, capture_output=True,
+    )
+    stderr = proc.stderr.decode("utf-8", "replace") if proc.stderr else ""
+    errors = sum(1 for ln in stderr.splitlines() if ln.strip().startswith("ERROR"))
+    if proc.returncode != 0 or errors:
+        logger.error(
+            "PG-Upgrade-Restore fehlgeschlagen (Exit %s, %d ERROR-Zeilen). Das alte "
+            "Datenverzeichnis (data/db.pg*) + der Dump bleiben erhalten — bitte manuell "
+            "wiederherstellen. Letzte Fehler:\n%s",
+            proc.returncode, errors, "\n".join(stderr.splitlines()[-8:]),
+        )
+        raise RuntimeError("PG-Upgrade-Restore fehlgeschlagen — alte Daten unter data/db.pg* erhalten.")
+    logger.info("PostgreSQL-Major-Upgrade: Daten erfolgreich eingespielt.")
+    PG_UPGRADE_RESTORE_MARKER.unlink()
+
+
 # --- Main Commands ---
 
 def cmd_start(args):
@@ -1366,6 +1412,11 @@ def cmd_start(args):
             logger.error("Database credentials not found. Run 'praxiszeit-server init' first.")
             pg_stop()
             sys.exit(1)
+
+    # 3a1. PG-Major-Upgrade: falls install.sh die Alt-Daten gedumpt + zur Seite
+    # gelegt hat (Marker), den Dump jetzt in den frischen Cluster einspielen.
+    # Idempotent (no-op ohne Marker); läuft NACH pg_setup_database (DB + Rollen da).
+    _restore_pending_major_upgrade()
 
     # 3a2. #213: Der Backup-Service im Backend braucht das Ziel-Verzeichnis UND
     # den gebuendelten pg_dump-Pfad — anders als im Docker-Image liegt pg_dump
