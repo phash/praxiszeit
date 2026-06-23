@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-06-23
+
+Patch-Release: korrigiert die Windows-PostgreSQL-Version und härtet 1.10.0
+(Review-Findings bis Schweregrad *medium*).
+
+### 🐞 Korrekturen
+- **Windows: PostgreSQL 18.4 statt 16.13.** Das Windows-Paket von 1.10.0 bündelte
+  versehentlich PostgreSQL **16.13** (ein veralteter, lokal gecachter EDB-Installer),
+  während Linux/macOS/Docker bereits auf PG 18.4 liefen. Der Build lädt den
+  Windows-PG-Installer jetzt versioniert per direktem EDB-Link und **verifiziert die
+  SHA256** des offiziellen `postgresql-18.4-1-windows-x64.exe`; bei falscher/alter
+  Datei bricht er ab. Damit bündeln alle Build-Maschinen identisch PG 18.4 —
+  end-to-end im Windows-11-Emulator verifiziert (Installation + Dienst + Login +
+  `psql 18.4`).
+
+### 🔒 Security / DSGVO / Robustheit
+- DB-Backups werden **atomar** mit `0600` angelegt (`os.open`) statt erst per umask
+  `0644` mit nachträglichem `chmod` — das kurze World-Read-Fenster ist geschlossen.
+- Fehlender expliziter `tenant_id`-Filter in `get_next_vacation` ergänzt (F-026).
+- `delete_all_holidays` nutzt `synchronize_session=False` (verhindert seltene
+  `InvalidRequestError` beim Bundesland-Resync).
+- Windows-`uninstall.bat`: `pg_dump -w` (sonst Endlos-Hänger an der Passwortabfrage).
+- Windows-Update-Assistent schließt `cert.pem`/`key.pem` von der Kopie aus
+  (verhinderte, dass ein Paket-Platzhalter das echte SSL-Zertifikat überschreibt).
+- `install.sh`: Praxisname mit `/` zerstörte den openssl-`-subj`-String (→ kein TLS,
+  Login mit `cookie_secure=true` schlug fehl) — jetzt entschärft.
+- PG-Upgrade-Restore: Temp-Dump explizit `0600`; klare Fehlermeldung statt
+  `UnboundLocalError`, falls das Entpacken scheitert.
+
+### 🧹 Intern / Build
+- Windows-PG-Installer **SHA256-gepinnt** — verhindert, dass verschiedene
+  Build-Maschinen still unterschiedliche PostgreSQL-Versionen bündeln.
+- `build-release`: fehlende `.sha256` → harter Abbruch; zusätzlicher
+  `package-lock.json`-Versions-Check und `POSTGRESQL_VERSION`-Format-Assertion;
+  SIGPIPE-sichere `gzip`-Prüfungen in den Docker-Backup-Skripten.
+- **`docs/BUILD.md`** (neu): vollständige Build-Anleitung für alle OS inkl. Footguns.
+
 ## [1.10.0] - 2026-06-23
 
 Funktions- und Wartungs-Release: PostgreSQL 18, gepflegte Feiertagsberechnung
