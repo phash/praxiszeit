@@ -320,15 +320,22 @@ Datenbank-Migrationen werden automatisch beim Start ausgeführt.
 
 ### Backup
 
-**Datenbank-Backup:**
+Am einfachsten über die Admin-Oberfläche: **Admin → Datensicherung** (Native und
+Docker) — manuell auslösen, täglichen Zeitplan + Aufbewahrung konfigurieren,
+Sicherungen herunterladen. Auf der Kommandozeile (Docker):
+
+**Backup** (gzip, damit der Restore zusammenpasst):
 ```bash
-docker compose exec db pg_dump -U praxiszeit praxiszeit > backup.sql
+docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup.sql.gz
 ```
 
-**Datenbank-Restore:**
+**Restore** (idempotent dank `--clean --if-exists`, kein manuelles Leeren nötig):
 ```bash
-docker compose exec -T db psql -U praxiszeit praxiszeit < backup.sql
+gunzip -c backup.sql.gz | docker compose exec -T db psql -U praxiszeit praxiszeit
 ```
+
+Vollständige Anleitung (Native + Docker, geplante Sicherung, §16-Aufbewahrung):
+[docs/BACKUP.md](docs/BACKUP.md).
 
 ## Compliance & Audits
 

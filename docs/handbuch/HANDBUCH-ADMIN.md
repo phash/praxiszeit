@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.4 | Stand: Juni 2026 (für PraxisZeit 1.8.11)**
+**Version 2.4 | Stand: Juni 2026 (für PraxisZeit 1.9.0)**
 
 ---
 
@@ -30,6 +30,7 @@
 16. [Änderungsanträge für Abwesenheiten](#16-änderungsanträge-für-abwesenheiten)
 17. [Rechtliche Grundlagen](#17-rechtliche-grundlagen)
 18. [Berechnungsgrundlagen (Anhang)](#18-berechnungsgrundlagen-anhang)
+19. [Datensicherung (Backup & Restore)](#19-datensicherung-backup--restore)
 
 ---
 
@@ -699,7 +700,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.8.11). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.9.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -786,5 +787,23 @@ Urlaubskonto = 30 − 4                     = 26 Tage übrig
 
 ---
 
+## 19. Datensicherung (Backup & Restore)
+
+Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne Kommandozeile — in der Docker- **und** der nativen Installation:
+
+- **Jetzt sichern** — erstellt umgehend ein vollständiges, komprimiertes Backup (`praxiszeit_<Zeitstempel>.sql.gz`, Plain-SQL mit `--clean --if-exists`).
+- **Geplante Sicherung** — tägliche automatische Sicherung zur eingestellten Stunde aktivieren, mit Aufbewahrungsdauer (Tage) und optionalem Speicherort.
+- **Liste** — vorhandene Sicherungen **herunterladen** (für eine externe Kopie) oder löschen.
+
+**Wo:** Docker im Volume `praxiszeit_backups`, native im `data/backups/`-Verzeichnis.
+
+**§16 ArbZG:** Zeitaufzeichnungen mindestens **2 Jahre** aufbewahren — Aufbewahrungsdauer entsprechend setzen, eine Kopie **außerhalb** des Servers vorhalten und vor jedem Update zusätzlich sichern.
+
+> **Native:** Die *geplante* Sicherung läuft weiterhin über den OS-Timer (systemd/launchd/Task); der *manuelle* Trigger und die Liste funktionieren überall.
+
+**Wiederherstellung** (idempotent dank `--clean --if-exists`, kein manuelles Leeren der DB nötig) und alle Kommandozeilen-Varianten: siehe [`docs/BACKUP.md`](../BACKUP.md).
+
+---
+
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juni 2026 (Version 2.4, für PraxisZeit 1.8.11)*
+*Stand: Juni 2026 (für PraxisZeit 1.9.0)*

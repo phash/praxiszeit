@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.3 · **Stand:** Juni 2026 (PraxisZeit 1.8.11)
+**Version:** 2.3 · **Stand:** Juni 2026 (PraxisZeit 1.9.0)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -540,4 +540,4 @@ Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https:/
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.3 | Juni 2026 (PraxisZeit 1.8.11)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.3 | Juni 2026 (PraxisZeit 1.9.0)*

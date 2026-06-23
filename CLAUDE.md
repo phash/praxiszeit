@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.8.15 (Stand 2026-06-22)
+**Aktuelle Version:** 1.9.0 (Stand 2026-06-23)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
@@ -171,7 +171,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - **`time_entry_audit_logs.source` UND `action` sind `varchar(40)`** (Migrationen 037 bzw. 044). Neue Marker müssen <40 Zeichen sein, sonst 500 beim INSERT (`StringDataRightTruncation`) — **SQLite-Tests fangen das NICHT** (ignorieren varchar-Länge), gegen Prod-DB-Kopie / Postgres prüfen. Source-Werte u. a.: `manual`, `import`, `change_request`, `vacation_request_cancel`, `break_waiver`, `dsgvo`, `license_startup`.
 - **`backend/create_handbuch_testdata.py`** ist multi-tenant-aware: ruft `set_superadmin_context(db)` auf + setzt `tenant_id=TENANT_ID` an User/TimeEntry/Absence/ChangeRequest. Wer das Script forkt für andere Seed-Daten muss beides mitnehmen, sonst RLS-Violation beim INSERT.
 - **Container-File-Updates aus fremdem cwd:** `docker compose cp` resolved Host-Pfade **relativ zum cwd**. Aus `e2e/` heraus → `lstat e2e/backend/...: no such file`. Lösung: `docker cp <host-abs-path> praxiszeit-backend-1:/app/<path>`.
-- **fastapi auf `0.136.*` cappen — NICHT auf 0.137+ bumpen (1.8.10):** FastAPI 0.137 führt `_IncludedRouter`-Routen (ohne `.path`) ein; `prometheus-fastapi-instrumentator` 8.0.0 macht ungeschützt `route.path` → **HTTP 500 auf Login + JEDEM included-Router-Endpoint** (`/api/health` ist Top-Level → 200, maskiert es). Upstream offen: instrumentator #370/#371. Erst auf 0.137+ zurück, wenn der Instrumentator-Fix released ist. Pin-Kommentar steht in `backend/requirements.txt`.
+- **fastapi-Cap aufgehoben → `0.138.*` (1.9.0):** Der 0.137-Crash (HTTP 500 auf Login + jedem included-Router-Endpoint) kam daher, dass `prometheus-fastapi-instrumentator` 8.0.0 ungeschützt `route.path` las, während FastAPI 0.137 `_IncludedRouter`-Routen (ohne `.path`) in `app.routes` einführte. **Instrumentator 8.0.1 guardet das jetzt** (`routing.py:57` `if hasattr(route, "path")`) → 0.137+ ist wieder sicher; `prometheus-fastapi-instrumentator>=8.0.1` ist Voraussetzung (Pin in `backend/requirements.txt`). Verifiziert end-to-end (Login + included-Router-Endpoints + `/metrics` + volle Suite). Bei künftigen fastapi-Bumps trotzdem **echten Login + `/metrics` auf einem Realhost prüfen** (instrumentator hängt eng an FastAPIs Routing-Interna).
 
 ### pzweb-Integration (ab 1.5.0)
 

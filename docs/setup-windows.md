@@ -1,6 +1,6 @@
 # PraxisZeit – Windows-Installation und Erstinbetriebnahme
 
-**Aktuelle Version:** 1.8.11 · **Stand:** Juni 2026
+**Aktuelle Version:** 1.9.0 · **Stand:** Juni 2026
 **Zielgruppe:** Praxis-Inhaber:in oder IT-Betreuer:in, der/die PraxisZeit erstmalig auf einem Windows-Rechner einrichtet
 **Ergebnis:** Ein einsatzbereiter Praxis-Server, eingerichtete Mitarbeiter:innen-Konten und der erste erfolgreiche Stempelvorgang am Morgen.
 
@@ -83,7 +83,7 @@ Folgende Dateien herunterladen:
 
 > **Hinweis zur Versionslage:** Releases (inkl. Windows-ZIP) werden inzwischen
 > zentral über den Shop **praxiszeit.mr-development.de** ausgeliefert (nicht mehr
-> nur als GitHub-Release). Aktuelle Version: **1.8.11**. Ein Eigen-Build aus dem
+> nur als GitHub-Release). Aktuelle Version: **1.9.0**. Ein Eigen-Build aus dem
 > `master`-Branch ist weiterhin via `tools/build-release.sh` möglich.
 
 ### 2.2 Integrität prüfen (PowerShell)
@@ -592,4 +592,4 @@ schtasks /query /tn "PraxisZeit-Backup" /v /fo LIST > C:\PraxisZeit\logs\task-st
 
 ---
 
-*PraxisZeit · Windows-Setup · Version 1.8.11 · © 2026*
+*PraxisZeit · Windows-Setup · Version 1.9.0 · © 2026*

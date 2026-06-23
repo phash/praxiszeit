@@ -26,8 +26,8 @@ Dateien (inkl. `docker-compose.yml`) zu kommen:
 
 ```bash
 # 1. Bundle entpacken (enthält einen Top-Level-Ordner praxiszeit-X.Y.Z/)
-tar xzf praxiszeit-1.8.11-docker.tar.gz
-cd praxiszeit-1.8.11
+tar xzf praxiszeit-1.9.0-docker.tar.gz
+cd praxiszeit-1.9.0
 
 # 2. Secrets erzeugen (.env mit Zufallswerten + komplexem Admin-Passwort)
 bash generate-secrets.sh
@@ -124,15 +124,25 @@ docker compose pull && docker compose up -d --build   # Update (Weg A: neues Bun
 ## Backup (gesetzliche Aufbewahrung, §16 ArbZG)
 
 Die Zeitdaten liegen im Docker-Volume `postgres_data`. **Vor jedem `docker
-compose down -v` und vor Updates** ein DB-Dump ziehen:
+compose down -v` und vor Updates** sichern.
+
+**Am einfachsten:** in der App unter **Admin → Datensicherung** — manuell auslösen
+oder einen täglichen Zeitplan + Aufbewahrung konfigurieren. Die Sicherungen landen
+im Volume `praxiszeit_backups` und lassen sich dort herunterladen.
+
+**Kommandozeile** (gzip, damit der Restore mit `gunzip -c | psql` zusammenpasst):
 
 ```bash
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
-    > backup-$(date +%F).sql
+docker compose exec -T db pg_dump -U "$POSTGRES_USER" --clean --if-exists "$POSTGRES_DB" \
+    | gzip > backup-$(date +%F).sql.gz
 ```
 
-§16 ArbZG verlangt eine Aufbewahrung von mindestens 2 Jahren. Das Volume
-`postgres_data` daher **niemals ungesichert löschen**.
+Im Docker-Bundle gibt es dafür auch die geprüften Scripts `bash backup.sh` /
+`bash restore.sh` (neben der `docker-compose.yml`). Restore + Details:
+[BACKUP.md](BACKUP.md).
+
+§16 ArbZG verlangt eine Aufbewahrung von mindestens 2 Jahren. Die Volumes
+`postgres_data` + `praxiszeit_backups` daher **niemals ungesichert löschen**.
 
 ---
 

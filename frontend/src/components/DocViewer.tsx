@@ -480,6 +480,17 @@ export const handbuchAdminSections: AccordionItem[] = [
       </div>
     ),
   },
+  {
+    title: '11. Datensicherung (Backup & Restore)',
+    content: (
+      <div className="space-y-2">
+        <p>Unter <strong>Datensicherung</strong> erstellen Sie jederzeit eine vollständige, komprimierte Sicherung der Datenbank (<strong>Jetzt sichern</strong>) oder aktivieren eine <strong>tägliche automatische Sicherung</strong> mit Aufbewahrungsdauer und optionalem Speicherort.</p>
+        <p>Vorhandene Sicherungen lassen sich in der Liste <strong>herunterladen</strong> (für eine externe Kopie) oder löschen. Format ist Plain-SQL + gzip (<code>praxiszeit_&lt;Zeitstempel&gt;.sql.gz</code>), mit <code>--clean --if-exists</code> idempotent wiederherstellbar.</p>
+        <p><strong>§16 ArbZG:</strong> Zeitaufzeichnungen sind mind. 2 Jahre aufzubewahren — Aufbewahrungsdauer entsprechend setzen und eine Kopie <strong>außerhalb</strong> des Servers vorhalten. Vor jedem Update zusätzlich sichern.</p>
+        <p className="text-gray-500">Native installiert läuft die <em>geplante</em> Sicherung über den OS-Timer; der <em>manuelle</em> Trigger und die Liste funktionieren überall. Wiederherstellung &amp; Details: <code>docs/BACKUP.md</code>.</p>
+      </div>
+    ),
+  },
 ];
 
 // ── Schnellstart (Admin) ─────────────────────────────────────────────────────
