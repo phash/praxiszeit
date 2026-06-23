@@ -55,7 +55,7 @@ Diese Anleitung deckt **nur Windows** ab und führt Schritt für Schritt vom her
 `setup.bat` erkennt eine bereits installierte PostgreSQL-Instanz in Registry und `%ProgramFiles%\PostgreSQL\{14..18}\`.
 
 - **Major-Version ≥ 16** → wird per Junction (`mklink /J`) in das PraxisZeit-Bundle verlinkt, kein Neu-Setup nötig
-- **Major-Version < 16** → der mitgelieferte EDB-Installer installiert PostgreSQL 16 parallel ins Bundle-Verzeichnis
+- **Major-Version < 16** → der mitgelieferte EDB-Installer installiert PostgreSQL 18 parallel ins Bundle-Verzeichnis
 
 > Wer kein PostgreSQL hat, muss nichts vorbereiten — der Installer bringt alles mit.
 
@@ -136,7 +136,7 @@ setup.bat
 
 ### Was läuft jetzt automatisch?
 
-1. **PostgreSQL-Erkennung** — bestehende Installation wird per Junction wiederverwendet (Major ≥ 16) oder PostgreSQL 16.8 still neu installiert (mit zufälligem 32-Zeichen-Passwort, das danach sofort durch ein in `config\.db-credentials` abgelegtes ersetzt wird).
+1. **PostgreSQL-Erkennung** — bestehende Installation wird per Junction wiederverwendet (Major ≥ 16) oder PostgreSQL 18.4 still neu installiert (mit zufälligem 32-Zeichen-Passwort, das danach sofort durch ein in `config\.db-credentials` abgelegtes ersetzt wird).
 2. **Verzeichnisse** `data\db\`, `data\backups\`, `config\ssl\`, `logs\` werden angelegt.
 3. **Python-Bootstrap** — `pip` wird neu installiert, anschließend werden alle Abhängigkeiten aus `requirements.txt` ins gebundelte `bin\python\` installiert.
 4. **Konfigurations-Vorlage** — falls noch nicht vorhanden, wird `config\praxiszeit.conf.example` nach `config\praxiszeit.conf` kopiert.

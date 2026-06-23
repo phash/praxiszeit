@@ -27,6 +27,13 @@ PYTHON_STANDALONE_TAG="20260510"
 POSTGRESQL_VERSION="18.4.0"
 # EDB-Format (für Legacy-Fallback, falls jemals wieder verfügbar)
 POSTGRESQL_EDB_SUFFIX="1"
+# Windows-PG: der EDB-Installer (.exe) wird per direktem Link geladen UND
+# SHA256-verifiziert — KEIN ungeprüfter ~/Downloads-Griff mehr. Real passiert:
+# verschiedene Build-Maschinen bundelten still UNTERSCHIEDLICHE PG-Versionen
+# (lokal 16.13 vs. Büro-Build-Maschine abweichend, beide ungeprüft) -> 1.10.0-
+# Windows war PG 16.13 statt 18. Beim PG-Bump diese SHA mitziehen (zur
+# POSTGRESQL_VERSION passende postgresql-<maj.min>-<suffix>-windows-x64.exe).
+PG_WINDOWS_SHA256="44b8187d2db7e866495952d8260a1d7252cbb5125843142e1f0bf30115d23279"  # postgresql-18.4-1-windows-x64.exe
 NSSM_VERSION="2.24"
 
 # =============================================================================
@@ -208,10 +215,10 @@ PG_MACOS_ARM64_SHA_URL="${_THESEUS}/postgresql-${POSTGRESQL_VERSION}-aarch64-app
 _EDB="https://get.enterprisedb.com/postgresql"
 _PGV_EDB="postgresql-${POSTGRESQL_VERSION%.*}-${POSTGRESQL_EDB_SUFFIX}"
 PG_LINUX_EDB_URL="${_EDB}/${_PGV_EDB}-linux-x64-binaries.tar.gz"
-# Windows: EDB Installer (.exe) — muss manuell heruntergeladen werden
-# Download: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
-# Datei in build/cache/postgresql-windows-x64.exe ablegen
+# Windows: EDB Installer (.exe) — wird vom Build per direktem Link geladen +
+# SHA256-verifiziert (PG_WINDOWS_SHA256 oben). Fallback bei EDB-403: manuell laden.
 PG_WINDOWS_INSTALLER="postgresql-windows-x64.exe"
+PG_WINDOWS_URL="${_EDB}/postgresql-${POSTGRESQL_VERSION%.*}-${POSTGRESQL_EDB_SUFFIX}-windows-x64.exe"
 # macOS: EDB Installer (.dmg) — muss manuell heruntergeladen werden
 # Download: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
 # Datei in build/cache/postgresql-macos.dmg ablegen
@@ -477,31 +484,34 @@ if [ "$BUILD_WINDOWS" = true ]; then
     download "$GET_PIP_URL"        "${CACHE_DIR}/get-pip.py"
     download "$VC_REDIST_URL"      "${CACHE_DIR}/vc_redist.x64.exe"
 
-    # PostgreSQL Windows: EDB Installer muss manuell heruntergeladen werden
-    if [ ! -f "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}" ]; then
-        # Suche in ~/Downloads
-        _found=""
-        for f in ~/Downloads/postgresql-*-windows-x64.exe; do
-            [ -f "$f" ] && _found="$f" && break
-        done
-        if [ -n "$_found" ]; then
-            info "PostgreSQL-Installer gefunden: $(basename "$_found")"
-            cp "$_found" "${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
-        else
-            # Frueher: nur warn() — silent-fail produzierte unbenutzbare ZIPs
-            # ohne PG-Installer (Kunde bekam beim setup.bat sofort einen Fehler).
-            # Jetzt: hart abbrechen, analog zur Linux-Logik fuer fehlende PG-Tarballs.
-            error "PostgreSQL Windows-Installer FEHLT!"
-            error "  Erwartet: ${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
-            error "  (oder in ~/Downloads/postgresql-*-windows-x64.exe)"
-            error ""
-            error "Download via direkter EDB-Link (kein Webformular noetig):"
-            error "  https://get.enterprisedb.com/postgresql/postgresql-${POSTGRESQL_VERSION%.*}-${POSTGRESQL_EDB_SUFFIX}-windows-x64.exe"
-            error ""
-            error "Datei nach ${CACHE_DIR}/${PG_WINDOWS_INSTALLER} kopieren und Build wiederholen."
-            error "Ohne Installer waere das Windows-ZIP unbrauchbar (setup.bat schlaegt fehl)."
+    # PostgreSQL Windows: EDB-Installer per direktem Link laden + SHA256-pinnen.
+    # KEIN ungeprüfter ~/Downloads-Griff mehr — der bundelte je nach Maschine
+    # still eine andere PG-Version (real: lokal 16.13 vs. Büro-Build abweichend).
+    # Jetzt zentral gepinnt -> alle Build-Maschinen bundeln identisch PG
+    # ${POSTGRESQL_VERSION%.*}, sonst harter Abbruch.
+    _winpg="${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
+    if [ -f "$_winpg" ] && [ "$(sha256sum "$_winpg" | cut -d' ' -f1)" = "$PG_WINDOWS_SHA256" ]; then
+        info "PostgreSQL Windows-Installer im Cache (SHA256 ok, PG ${POSTGRESQL_VERSION%.*})."
+    else
+        [ -f "$_winpg" ] && warn "Gecachter Windows-PG-Installer hat FALSCHE SHA256 (alte/fremde Version) — wird neu geladen."
+        info "Lade EDB-PostgreSQL-Windows-Installer: ${PG_WINDOWS_URL}"
+        if ! curl -fSL --retry 3 -o "$_winpg" "$PG_WINDOWS_URL"; then
+            rm -f "$_winpg"
+            error "PostgreSQL Windows-Installer-Download fehlgeschlagen (EDB evtl. 403/Netz)."
+            error "  Manuell laden:    ${PG_WINDOWS_URL}"
+            error "  Erwartete SHA256: ${PG_WINDOWS_SHA256}"
+            error "  Datei nach ${_winpg} legen und Build wiederholen."
             exit 1
         fi
+        _got="$(sha256sum "$_winpg" | cut -d' ' -f1)"
+        if [ "$_got" != "$PG_WINDOWS_SHA256" ]; then
+            rm -f "$_winpg"
+            error "PostgreSQL Windows-Installer SHA256-MISMATCH (falsche Version geladen?)!"
+            error "  erwartet: ${PG_WINDOWS_SHA256}"
+            error "  erhalten: ${_got}"
+            exit 1
+        fi
+        info "PostgreSQL Windows-Installer geladen + SHA256 verifiziert (PG ${POSTGRESQL_VERSION%.*})."
     fi
 fi
 
