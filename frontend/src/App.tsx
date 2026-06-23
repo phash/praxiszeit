@@ -24,6 +24,7 @@ const ErrorMonitoring = lazy(() => import('./pages/admin/ErrorMonitoring'));
 const VacationApprovals = lazy(() => import('./pages/admin/VacationApprovals'));
 const ImportXls = lazy(() => import('./pages/admin/ImportXls'));
 const AdminSettings = lazy(() => import('./pages/admin/Settings'));
+const AdminBackups = lazy(() => import('./pages/admin/Backups'));
 const AdminBilling = lazy(() => import('./pages/admin/Billing'));
 const UserJournal = lazy(() => import('./pages/admin/UserJournal'));
 const Help = lazy(() => import('./pages/Help'));
@@ -149,6 +150,7 @@ function App() {
           <Route path="vacation-approvals" element={<VacationApprovals />} />
           <Route path="import" element={<ImportXls />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="backups" element={<AdminBackups />} />
           <Route path="billing" element={<AdminBilling />} />
         </Route>
 
