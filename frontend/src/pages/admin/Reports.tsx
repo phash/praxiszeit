@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Download, Calendar, FileText, Clock, AlertTriangle, ChevronDown, ChevronUp, Sun } from 'lucide-react';
 import apiClient from '../../api/client';
+import { downloadBlob } from '../../utils/downloadBlob';
 import { useToast } from '../../contexts/ToastContext';
 import { parseHours } from '../../utils/formatters';
 
@@ -176,13 +177,7 @@ export default function Reports() {
       const response = await apiClient.get(`/admin/reports/export?month=${selectedMonth}${healthParam}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_Monatsreport_${selectedMonth}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_Monatsreport_${selectedMonth}.xlsx`);
     } catch {
       toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
@@ -197,13 +192,7 @@ export default function Reports() {
       const response = await apiClient.get(`/admin/reports/export-yearly?year=${selectedYear}${healthParam}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_Jahresreport_${selectedYear}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_Jahresreport_${selectedYear}.xlsx`);
     } catch (error) {
       toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
@@ -218,13 +207,7 @@ export default function Reports() {
       const response = await apiClient.get(`/admin/reports/export-yearly-classic?year=${selectedYear}${healthParam}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_Jahresreport_Classic_${selectedYear}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_Jahresreport_Classic_${selectedYear}.xlsx`);
     } catch (error) {
       toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
@@ -239,13 +222,7 @@ export default function Reports() {
       const response = await apiClient.get(`/admin/reports/export-pdf?month=${selectedMonth}${healthParam}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_Monatsreport_${selectedMonth}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_Monatsreport_${selectedMonth}.pdf`);
     } catch {
       toast.error('PDF-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
@@ -260,13 +237,7 @@ export default function Reports() {
       const response = await apiClient.get(`/admin/reports/export-ods?month=${selectedMonth}${healthParam}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_Monatsreport_${selectedMonth}.ods`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_Monatsreport_${selectedMonth}.ods`);
     } catch {
       toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
@@ -280,13 +251,7 @@ export default function Reports() {
       const response = await apiClient.get(`/admin/reports/export-yearly-ods?year=${selectedYear}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_Jahresreport_${selectedYear}.ods`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_Jahresreport_${selectedYear}.ods`);
     } catch {
       toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
@@ -300,13 +265,7 @@ export default function Reports() {
       const response = await apiClient.get(`/admin/reports/export-yearly-classic-ods?year=${selectedYear}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_Jahresreport_Classic_${selectedYear}.ods`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_Jahresreport_Classic_${selectedYear}.ods`);
     } catch {
       toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
     } finally {
@@ -426,7 +385,7 @@ export default function Reports() {
               <input
                 type="number"
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value) || new Date().getFullYear())}
                 min="2020"
                 max="2050"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../api/client';
+import { downloadBlob } from '../../utils/downloadBlob';
 import { Database, Download, Trash2, Play, Save, Clock, HardDrive } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -88,14 +89,7 @@ export default function Backups() {
   const handleDownload = async (filename: string) => {
     try {
       const res = await apiClient.get(`/admin/backups/${filename}/download`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      downloadBlob(res.data, filename, 'application/gzip');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Download fehlgeschlagen'));
     }

@@ -93,17 +93,28 @@ export default function VacationApprovals() {
     }
   };
 
+  // Review 2026-06-23: synchroner Doppelklick-Schutz — ein schneller Doppelklick
+  // schickte sonst zwei Review-POSTs (der zweite wird serverseitig per Precondition
+  // abgelehnt, erzeugt aber einen verwirrenden Fehler-Toast).
+  const actionLock = useRef(false);
+
   const handleApprove = async (id: string) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
     try {
       await apiClient.post(`/admin/vacation-requests/${id}/review`, { action: 'approve' });
       toast.success('Antrag genehmigt');
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
+    } finally {
+      actionLock.current = false;
     }
   };
 
   const handleReject = async (id: string) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
     try {
       await apiClient.post(`/admin/vacation-requests/${id}/review`, {
         action: 'reject',
@@ -115,6 +126,8 @@ export default function VacationApprovals() {
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Ablehnen'));
+    } finally {
+      actionLock.current = false;
     }
   };
 

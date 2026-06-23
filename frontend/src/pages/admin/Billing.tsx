@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CreditCard, ArrowUpCircle, AlertTriangle, Download, FileText, Pause, Trash2, UserCheck } from 'lucide-react';
 import apiClient from '../../api/client';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { safeHttpUrl } from '../../utils/url';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
@@ -92,7 +93,9 @@ export default function Billing() {
         success_url: `${window.location.origin}/admin/billing?success=1`,
         cancel_url: `${window.location.origin}/admin/billing?canceled=1`,
       });
-      window.location.href = data.url;
+      const safeUrl = safeHttpUrl(data.url);  // Review 2026-06-23: kein offener Redirect
+      if (safeUrl) window.location.href = safeUrl;
+      else setError('Ungültige Weiterleitungs-URL vom Server erhalten.');
     } catch (err: any) {
       setError(getErrorMessage(err, 'Checkout fehlgeschlagen'));
     }
@@ -103,7 +106,9 @@ export default function Billing() {
       const { data } = await apiClient.post<{ url: string }>('/billing/portal', {
         return_url: `${window.location.origin}/admin/billing`,
       });
-      window.location.href = data.url;
+      const safeUrl = safeHttpUrl(data.url);  // Review 2026-06-23: kein offener Redirect
+      if (safeUrl) window.location.href = safeUrl;
+      else setError('Ungültige Weiterleitungs-URL vom Server erhalten.');
     } catch (err: any) {
       setError(getErrorMessage(err, 'Kundenportal nicht erreichbar'));
     }
@@ -306,9 +311,9 @@ export default function Billing() {
                     {(inv.amount_cents / 100).toFixed(2)} {inv.currency.toUpperCase()} · {inv.status}
                   </p>
                 </div>
-                {inv.hosted_invoice_url && (
+                {safeHttpUrl(inv.hosted_invoice_url) && (
                   <a
-                    href={inv.hosted_invoice_url}
+                    href={safeHttpUrl(inv.hosted_invoice_url) ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline"
