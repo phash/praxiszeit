@@ -70,6 +70,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   }, [status?.is_clocked_in, variant]);
 
   const handleClockIn = async () => {
+    if (acting) return;  // synchroner Doppelklick-Schutz (setActing ist async, disabled greift zu spät)
     setActing(true);
     try {
       const res = await apiClient.post('/time-entries/clock-in', {});
@@ -99,6 +100,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       setShowBreakInput(true);
       return;
     }
+    if (acting) return;  // synchroner Doppelklick-Schutz (setActing ist async)
     // #199: §4-Pausenpflicht — bei >6h Netto und unzureichender Pause die Pause
     // nacherfassen ODER eine dokumentierte Ausnahme verlangen, statt still mit
     // Warn-Toast durchzuwinken. (Aggregat mehrerer Tagesblöcke prüft das Backend.)

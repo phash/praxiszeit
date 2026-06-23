@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format, subMonths, startOfMonth, endOfMonth, startOfYear, endOfYear, subYears } from 'date-fns';
 import apiClient from '../../api/client';
 import { AlertCircle, Check, X } from 'lucide-react';
@@ -137,7 +137,13 @@ export default function AdminChangeRequests() {
     }
   };
 
+  // Review 2026-06-23: synchroner Doppelklick-Schutz (Einzel-Approve/Reject; der
+  // Bulk-Pfad ist via bulkProcessing bereits geschützt).
+  const actionLock = useRef(false);
+
   const handleApprove = async (id: string) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
     try {
       await apiClient.post(`/admin/change-requests/${id}/review`, {
         action: 'approve',
@@ -146,10 +152,14 @@ export default function AdminChangeRequests() {
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
+    } finally {
+      actionLock.current = false;
     }
   };
 
   const handleReject = async (id: string) => {
+    if (actionLock.current) return;
+    actionLock.current = true;
     try {
       await apiClient.post(`/admin/change-requests/${id}/review`, {
         action: 'reject',
@@ -161,6 +171,8 @@ export default function AdminChangeRequests() {
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Ablehnen'));
+    } finally {
+      actionLock.current = false;
     }
   };
 

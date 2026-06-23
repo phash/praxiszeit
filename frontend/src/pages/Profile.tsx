@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import apiClient from '../api/client';
+import { downloadBlob } from '../utils/downloadBlob';
 import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
@@ -177,13 +178,7 @@ export default function Profile() {
     try {
       const response = await apiClient.get('/me/data-export', { responseType: 'blob' });
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/json' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `PraxisZeit_MeineDaten_${user?.username}_${ts}.json`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(response.data, `PraxisZeit_MeineDaten_${user?.username}_${ts}.json`, 'application/json');
       toast.success('Auskunfts-Export heruntergeladen');
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Datenexport'));
