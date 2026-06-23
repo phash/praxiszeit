@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format, subMonths, startOfMonth, endOfMonth, startOfYear, endOfYear, subYears } from 'date-fns';
 import apiClient from '../../api/client';
-import { Clock, CheckCircle, XCircle, AlertCircle, Check, X } from 'lucide-react';
+import { AlertCircle, Check, X } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -43,11 +43,7 @@ interface UserOption {
   last_name: string;
 }
 
-const statusConfig = {
-  pending: { label: 'Offen', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
-  approved: { label: 'Genehmigt', color: 'bg-green-100 text-green-800', icon: CheckCircle },
-  rejected: { label: 'Abgelehnt', color: 'bg-red-100 text-red-800', icon: XCircle },
-};
+import { STATUS_CONFIG as statusConfig } from '../../constants/statusConfig';
 
 import { CHANGE_REQUEST_TYPE_LABELS } from '../../constants/changeRequestTypes';
 import { ABSENCE_TYPE_LABELS } from '../../constants/absenceTypes';
