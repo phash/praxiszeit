@@ -206,7 +206,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
 
         if day_entries:
             first_start = day_entries[0].start_time
-            last_end = day_entries[-1].end_time
+            # spätestes Ende des Tages, nicht der zuletzt START-ende Eintrag — bei
+            # überlappenden Mehrfach-Einträgen (A 08–17, B 12–14) war "Bis" sonst
+            # 14:00 statt 17:00 (Review 2026-06-23, §16-Korrektheit).
+            last_end = max((e.end_time for e in day_entries if e.end_time), default=None)
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
@@ -740,7 +743,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
         if day_entries:
             first_start = day_entries[0].start_time
-            last_end = day_entries[-1].end_time
+            # spätestes Ende des Tages, nicht der zuletzt START-ende Eintrag — bei
+            # überlappenden Mehrfach-Einträgen (A 08–17, B 12–14) war "Bis" sonst
+            # 14:00 statt 17:00 (Review 2026-06-23, §16-Korrektheit).
+            last_end = max((e.end_time for e in day_entries if e.end_time), default=None)
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
@@ -1111,15 +1117,25 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
 
         # Row 15: Remaining vacation in hours
         vacation_account = calculation_service.get_vacation_account(db, user, year)
-        # Calculate remaining vacation up to this month
+        # Calculate remaining vacation up to this month.
+        # F-026 (Review 2026-06-23): explizit auf den Tenant scopen.
         vacation_used_ytd = sum(
             float(a.hours) for a in db.query(Absence).filter(
                 Absence.user_id == user.id,
+                Absence.tenant_id == user.tenant_id,
                 Absence.type == AbsenceType.VACATION,
                 date_in_year_up_to_month(Absence.date, year, month),
             ).all()
         )
-        vacation_remaining = float(vacation_account['budget_hours']) - vacation_used_ytd
+        # Jahresend-Spalte: den autoritativen remaining_hours-Wert aus
+        # get_vacation_account nehmen — er beruecksichtigt die Sondertags-Abzuege
+        # (24./31.12 als Urlaub, #188), die als Absence-Rows nicht existieren und
+        # die naive budget − ytd-Rechnung sonst um einen Tagessoll ueberzeichnet.
+        # Frühere Monate: Sondertage (Jahresende) sind noch nicht eingetreten.
+        if month == 12:
+            vacation_remaining = float(vacation_account['remaining_hours'])
+        else:
+            vacation_remaining = float(vacation_account['budget_hours']) - vacation_used_ytd
         sheet.cell(row=15, column=col).value = vacation_remaining
         sheet.cell(row=15, column=col).number_format = '0.0'
         sheet.cell(row=15, column=col).alignment = right_align
@@ -1292,7 +1308,10 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
             if day_entries:
                 von = day_entries[0].start_time.strftime('%H:%M')
-                last_end = day_entries[-1].end_time
+                # spätestes Ende des Tages, nicht der zuletzt START-ende Eintrag — bei
+                # überlappenden Mehrfach-Einträgen (A 08–17, B 12–14) war "Bis" sonst
+                # 14:00 statt 17:00 (Review 2026-06-23, §16-Korrektheit).
+                last_end = max((e.end_time for e in day_entries if e.end_time), default=None)
                 bis = last_end.strftime('%H:%M') if last_end else 'offen'
                 pause_str = str(sum(e.break_minutes or 0 for e in day_entries))
                 total_day_net = sum(e.net_hours for e in day_entries)

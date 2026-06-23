@@ -119,10 +119,14 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             # Mixed day: time entries + absences (e.g. half-day work + half-day sick/training)
             daily_target = _eff_daily_target(d)
             actual_hours = time_hours + credited_sum
-            # VACATION/OTHER/OVERTIME reduce target on mixed days
+            # VACATION/OTHER reduzieren das Soll auf Misch-Tagen. OVERTIME NICHT
+            # (Review 2026-06-23): get_monthly_target schliesst OVERTIME explizit
+            # von der Soll-Reduktion aus (Soll bleibt, Tag zaehlt als 0h Ist) — die
+            # Journal-Tageszeile muss dieselbe Regel nutzen, sonst weicht der
+            # Tages-Saldo vom Monats-Summary ab.
             target_reducing_sum = Decimal(str(sum(
                 float(a.hours) for a in day_absences
-                if a.type not in (AbsenceType.TRAINING, AbsenceType.SICK)
+                if a.type not in (AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME)
             )))
             target_hours = daily_target - target_reducing_sum
         else:

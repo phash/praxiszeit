@@ -65,6 +65,14 @@ def preview_import(
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Datei zu groß (max. 5 MB)")
 
+    # Magic-Byte-Guard (Review 2026-06-23): xlrd 1.2.0 verarbeitet nur echtes
+    # BIFF/.xls (OLE2-Header D0 CF 11 E0). Eine .xlsx/ZIP (PK\x03\x04) oder anderes
+    # vorab klar ablehnen, statt xlrd auf Fremdformat laufen zu lassen.
+    if not content.startswith(b"\xd0\xcf\x11\xe0"):
+        if content[:4] == b"PK\x03\x04":
+            raise HTTPException(status_code=400, detail="Bitte eine .xls-Datei hochladen (kein .xlsx/ZIP).")
+        raise HTTPException(status_code=400, detail="Ungültiges Dateiformat — es wird eine .xls-Datei (BIFF) erwartet.")
+
     try:
         entries = parse_xls(content, user_id, db)
     except ValueError as e:

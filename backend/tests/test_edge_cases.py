@@ -448,15 +448,22 @@ class TestJournalMultiEntry:
         assert day["balance"] == 0.0
 
     def test_mixed_day_work_plus_overtime_comp(self, db, test_user):
-        """Prüft gemischten Tag (Arbeit+Ausgleich): Soll reduziert, Ausgleich zaehlt nicht als Ist."""
+        """Gemischter Tag (Arbeit + Überstundenausgleich): Soll BLEIBT voll, der
+        Ausgleich zaehlt nicht als Ist -> negativer Tages-Saldo zehrt das Konto.
+
+        Korrigiert (Review 2026-06-23): frueher reduzierte das Journal das Soll um die
+        OVERTIME-Stunden (Saldo 0) — das widersprach der Regel 'Soll bleibt, NICHT
+        reduzieren' UND get_monthly_target (zieht OVERTIME nie vom Soll ab), sodass
+        Tageszeile und Monats-Summary divergierten und der Ausgleich das Konto nicht
+        senkte. Jetzt: Soll=8h, Ist=4h, Saldo=-4h (= 4h Überstunden verbraucht)."""
         _make_entry(db, test_user, date(2026, 3, 10), 8, 12, break_min=0)  # 4h Arbeit
         _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.OVERTIME, 4.0)
         journal = journal_service.get_journal(db, test_user, 2026, 3)
         day = next(d for d in journal["days"] if d["date"] == "2026-03-10")
         assert day["type"] == "mixed"
-        assert day["actual_hours"] == 4.0  # Nur Arbeitsstunden, OVERTIME zählt nicht als Ist
-        assert day["target_hours"] == 4.0  # 8h - 4h Überstundenausgleich
-        assert day["balance"] == 0.0
+        assert day["actual_hours"] == 4.0   # Nur Arbeitsstunden, OVERTIME zählt nicht als Ist
+        assert day["target_hours"] == 8.0   # Soll bleibt voll (OVERTIME reduziert NICHT)
+        assert day["balance"] == -4.0       # zehrt das Überstundenkonto um 4h
 
     def test_three_entries_summed_correctly(self, db, test_user):
         """Prüft dass drei Eintraege am selben Tag korrekt summiert werden — Multi-Entry-Export."""

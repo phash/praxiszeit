@@ -331,7 +331,10 @@ def list_change_requests(
     current_user: User = Depends(get_current_user),
 ):
     """List own change requests (employee view)."""
-    query = db.query(ChangeRequest).filter(ChangeRequest.user_id == current_user.id)
+    query = db.query(ChangeRequest).filter(
+        ChangeRequest.user_id == current_user.id,
+        ChangeRequest.tenant_id == current_user.tenant_id,  # F-026
+    )
 
     if request_status:
         try:

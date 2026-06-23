@@ -365,7 +365,10 @@ def list_my_vacation_requests(
     current_user: User = Depends(get_current_user),
 ):
     """List the current user's vacation requests."""
-    query = db.query(VacationRequest).filter(VacationRequest.user_id == current_user.id)
+    query = db.query(VacationRequest).filter(
+        VacationRequest.user_id == current_user.id,
+        VacationRequest.tenant_id == current_user.tenant_id,  # F-026
+    )
     if year:
         from sqlalchemy import extract
         query = query.filter(date_in_year(VacationRequest.date, year))
