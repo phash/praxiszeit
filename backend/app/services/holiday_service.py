@@ -7,63 +7,41 @@ from app.config import settings
 from app.services.timezone_service import today_local
 
 
-# German translations for holiday names returned by workalendar
-HOLIDAY_NAME_DE = {
-    # Fixed holidays
-    "New year": "Neujahr",
-    "New Year's Day": "Neujahr",
-    "Epiphany": "Heilige Drei Könige",
-    "Labour Day": "Tag der Arbeit",
-    "German Unity Day": "Tag der Deutschen Einheit",
-    "All Saints Day": "Allerheiligen",
-    "Christmas Day": "1. Weihnachtstag",
-    "Second Day of Christmas": "2. Weihnachtstag",
-    "Christmas": "1. Weihnachtstag",
-    "Second Christmas Day": "2. Weihnachtstag",
-    # Easter-based
-    "Good Friday": "Karfreitag",
-    "Easter Sunday": "Ostersonntag",
-    "Easter Monday": "Ostermontag",
-    "Ascension Thursday": "Christi Himmelfahrt",
-    "Ascension Day": "Christi Himmelfahrt",
-    "Whit Sunday": "Pfingstsonntag",
-    "Whit Monday": "Pfingstmontag",
-    "Corpus Christi": "Fronleichnam",
-    # Regional
-    "Assumption of Mary to Heaven": "Mariä Himmelfahrt",
-    "Assumption of Mary": "Mariä Himmelfahrt",
-    "Day of Repentance and Prayer": "Buß- und Bettag",
-    "Reformation Day": "Reformationstag",
-    "Peace Festival": "Augsburger Hohes Friedensfest",
-    "St. Stephen's Day": "2. Weihnachtstag",
-    "International Women's Day": "Internationaler Frauentag",
-    "World Children's Day": "Weltkindertag",
+# python-holidays (Sprache "de") liefert bereits deutsche Namen; nur wenige
+# weichen von den im Projekt/Handbuch etablierten Schreibweisen ab. Hier auf die
+# Projekt-Schreibweise normalisiert, damit Resyncs keine Bestands-Namen umbenennen
+# und UI/Handbuch konsistent bleiben.
+_NAME_NORMALIZE = {
+    "Erster Mai": "Tag der Arbeit",
+    "Erster Weihnachtstag": "1. Weihnachtstag",
+    "Zweiter Weihnachtstag": "2. Weihnachtstag",
+    "Frauentag": "Internationaler Frauentag",
 }
 
-# Supported German states mapping (class names from workalendar.europe)
+# Bundesland-Name -> ISO-3166-2-Subdivisions-Code für python-holidays.
 SUPPORTED_STATES = {
-    "Baden-Württemberg": "workalendar.europe.BadenWurttemberg",
-    "Bayern": "workalendar.europe.Bavaria",
-    "Berlin": "workalendar.europe.Berlin",
-    "Brandenburg": "workalendar.europe.Brandenburg",
-    "Bremen": "workalendar.europe.Bremen",
-    "Hamburg": "workalendar.europe.Hamburg",
-    "Hessen": "workalendar.europe.Hesse",
-    "Mecklenburg-Vorpommern": "workalendar.europe.MecklenburgVorpommern",
-    "Niedersachsen": "workalendar.europe.LowerSaxony",
-    "Nordrhein-Westfalen": "workalendar.europe.NorthRhineWestphalia",
-    "Rheinland-Pfalz": "workalendar.europe.RhinelandPalatinate",
-    "Saarland": "workalendar.europe.Saarland",
-    "Sachsen": "workalendar.europe.Saxony",
-    "Sachsen-Anhalt": "workalendar.europe.SaxonyAnhalt",
-    "Schleswig-Holstein": "workalendar.europe.SchleswigHolstein",
-    "Thüringen": "workalendar.europe.Thuringia",
+    "Baden-Württemberg": "BW",
+    "Bayern": "BY",
+    "Berlin": "BE",
+    "Brandenburg": "BB",
+    "Bremen": "HB",
+    "Hamburg": "HH",
+    "Hessen": "HE",
+    "Mecklenburg-Vorpommern": "MV",
+    "Niedersachsen": "NI",
+    "Nordrhein-Westfalen": "NW",
+    "Rheinland-Pfalz": "RP",
+    "Saarland": "SL",
+    "Sachsen": "SN",
+    "Sachsen-Anhalt": "ST",
+    "Schleswig-Holstein": "SH",
+    "Thüringen": "TH",
 }
 
 
 def _translate_name(name: str) -> str:
-    """Translate English holiday name to German."""
-    return HOLIDAY_NAME_DE.get(name, name)
+    """Normalisiere python-holidays-Namen auf die Projekt-Schreibweise."""
+    return _NAME_NORMALIZE.get(name, name)
 
 
 def get_holiday_state(db: Session, tenant_id=None) -> str:
@@ -77,15 +55,29 @@ def get_holiday_state(db: Session, tenant_id=None) -> str:
     return settings.HOLIDAY_STATE
 
 
-def _get_calendar(state: Optional[str] = None):
-    """Return the workalendar calendar for the given or configured state."""
+def _german_holidays(state: Optional[str], year: int):
+    """python-holidays-Feiertage (deutsch) für das Bundesland + Jahr.
+
+    Bayern bekommt zusätzlich die katholische Kategorie, damit Mariä Himmelfahrt
+    (in den kath.-geprägten Gemeinden gesetzlich, ~75 % Bayerns) wie zuvor unter
+    workalendar als Feiertag gilt; Praxen in den wenigen nicht-kath. Gemeinden
+    können den Tag als Custom-Holiday entfernen. python-holidays ist gepflegt und
+    bildet u. a. den Frauentag (MV, seit 2023), Weltkindertag (TH) und Oster-/
+    Pfingstsonntag (BB) korrekt ab — workalendar (seit 2023 unmaintained) nicht.
+    """
+    import holidays
     state = state or settings.HOLIDAY_STATE
-    module_path = SUPPORTED_STATES.get(state, "workalendar.europe.Bavaria")
-    module_name, class_name = module_path.rsplit(".", 1)
-    import importlib
-    module = importlib.import_module(module_name)
-    cal_class = getattr(module, class_name)
-    return cal_class()
+    code = SUPPORTED_STATES.get(state)
+    if code is None:
+        # Kein stilles Zurückfallen auf Bayern: ein vertipptes/altes HOLIDAY_STATE
+        # würde sonst fremde Feiertage seeden (z. B. NRW bekäme Fronleichnam).
+        raise ValueError(
+            f"Unbekanntes Bundesland {state!r} — erlaubt: {', '.join(sorted(SUPPORTED_STATES))}"
+        )
+    kwargs = {"years": year, "subdiv": code, "language": "de"}
+    if code == "BY":
+        kwargs["categories"] = ("public", "catholic")
+    return holidays.Germany(**kwargs)
 
 
 def sync_holidays(db: Session, year: int, state: Optional[str] = None, tenant_id=None) -> int:
@@ -94,11 +86,10 @@ def sync_holidays(db: Session, year: int, state: Optional[str] = None, tenant_id
     Caller is responsible for committing.
     Returns number of holidays added.
     """
-    cal = _get_calendar(state)
-    holidays = cal.holidays(year)
+    cal = _german_holidays(state, year)
 
     count = 0
-    for holiday_date, holiday_name in holidays:
+    for holiday_date, holiday_name in sorted(cal.items()):
         german_name = _translate_name(holiday_name)
 
         query = db.query(PublicHoliday).filter(PublicHoliday.date == holiday_date)

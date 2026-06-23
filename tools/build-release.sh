@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.9.0"
+APP_VERSION="1.10.0"
 PYTHON_VERSION="3.13.13"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 # 20260510 buendelt CPython 3.13.13 — enthaelt die tarfile-Fixes
@@ -24,7 +24,7 @@ PYTHON_STANDALONE_TAG="20260510"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases
-POSTGRESQL_VERSION="16.13.0"
+POSTGRESQL_VERSION="18.4.0"
 # EDB-Format (für Legacy-Fallback, falls jemals wieder verfügbar)
 POSTGRESQL_EDB_SUFFIX="1"
 NSSM_VERSION="2.24"
@@ -913,7 +913,8 @@ if [ "$BUILD_DOCKER" = true ]; then
     cp "${REPO_DIR}/tools/docker/generate-secrets.sh" "${DOCKER_STAGE}/generate-secrets.sh"
     cp "${REPO_DIR}/tools/docker/backup.sh"           "${DOCKER_STAGE}/backup.sh"
     cp "${REPO_DIR}/tools/docker/restore.sh"          "${DOCKER_STAGE}/restore.sh"
-    chmod +x "${DOCKER_STAGE}/generate-secrets.sh" "${DOCKER_STAGE}/backup.sh" "${DOCKER_STAGE}/restore.sh"
+    cp "${REPO_DIR}/tools/docker/update-pg-major.sh"  "${DOCKER_STAGE}/update-pg-major.sh"
+    chmod +x "${DOCKER_STAGE}/generate-secrets.sh" "${DOCKER_STAGE}/backup.sh" "${DOCKER_STAGE}/restore.sh" "${DOCKER_STAGE}/update-pg-major.sh"
 
     # Build-Kontext kopieren (ohne Ballast / ohne evtl. lokale Secrets+Certs).
     # cd ins REPO_DIR -> Pfade in den tar-Excludes sind relativ ("backend/...").
@@ -954,6 +955,20 @@ dem Hochziehen der neuen Version wieder einspielen:
     # ... neue Version entpacken, .env + backups/ uebernehmen, Stack starten ...
     bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB einspielen
     docker compose up -d backend                    # Alembic-Migrationen -> Schema auf head
+
+## ⚠️ PostgreSQL-Major-Upgrade (ab dieser Version PostgreSQL 18)
+
+Ein PostgreSQL-Major-Upgrade (z. B. 16 -> 18) ist NICHT in-place: postgres:18 kann
+ein von postgres:16 angelegtes Daten-Volume nicht starten. Kommst du von einer
+Version mit PostgreSQL 16 (PraxisZeit <= 1.9.x), nutze den gefuehrten Helfer
+STATT eines einfachen \`up\` — er sichert, ersetzt nur das DB-Volume (deine
+#213-Backups bleiben) und spielt die Daten in den frischen PG18-Cluster ein:
+
+    bash update-pg-major.sh
+
+(Der ALTE Stack muss beim Aufruf noch laufen.) Manuell entspricht das: backup.sh
+-> docker compose down -> Volume \`*_postgres_data\` entfernen -> neuen Stack
+hochziehen -> restore.sh.
 
 Die Backups sind gzip-komprimierte Plain-SQL-Dumps und lassen sich auch per
 \`gunzip -c <datei>.sql.gz | docker compose exec -T db psql -U praxiszeit praxiszeit\` einspielen.

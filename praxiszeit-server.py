@@ -1266,6 +1266,73 @@ def _signal_handler(signum, frame):
     _shutdown_requested = True
 
 
+PG_UPGRADE_RESTORE_MARKER = DATA_DIR / ".pg-upgrade-restore"
+
+
+def _restore_pending_major_upgrade():
+    """PG-Major-Upgrade (z. B. 16 -> 18): install.sh hat mit den ALTEN Binaries
+    gedumpt, das alte Datenverzeichnis zur Seite gelegt (``data/db.pgXX-<ts>``,
+    NIE gelöscht) und den Dump-Pfad in den Marker geschrieben. Hier — nachdem
+    cmd_start den frischen PGNN-Cluster initialisiert + die DB/Rollen angelegt hat
+    — spielen wir den Dump in die leere ``praxiszeit``-DB ein. Idempotent: ohne
+    Marker passiert nichts; bei Restore-Fehler bleibt der Marker + das alte
+    Datenverzeichnis erhalten (recoverable), und wir brechen ab statt mit
+    Teildaten weiterzulaufen."""
+    if not PG_UPGRADE_RESTORE_MARKER.exists():
+        return
+    dump = Path(PG_UPGRADE_RESTORE_MARKER.read_text().strip())
+    if not dump.is_file():
+        # Marker da, Dump weg: NICHT stillschweigend mit leerer DB weiterlaufen —
+        # die Alt-Daten liegen noch unter data/db.pg*. Abbrechen; der Operator
+        # spielt den Dump zurück ODER entfernt den Marker bewusst.
+        raise RuntimeError(
+            f"PG-Upgrade-Marker vorhanden, aber Dump-Datei fehlt: {dump}. "
+            "Bitte den Dump wiederherstellen oder data/.pg-upgrade-restore manuell entfernen, "
+            "um einen Start ohne Restore zu erzwingen (Alt-Daten unter data/db.pg* erhalten)."
+        )
+    su_password, _ = pg_load_credentials()
+    if not su_password:
+        raise RuntimeError("PG-Upgrade-Restore: keine Superuser-Credentials gefunden.")
+    logger.info("PostgreSQL-Major-Upgrade: spiele gesicherten Daten-Dump ein (%s)...", dump.name)
+    # Streamend in eine temporäre .sql-Datei entpacken (NICHT den ganzen Dump in
+    # den RAM laden -> kein OOM auf kleinen VPS) und per `psql -f` einspielen.
+    # ON_ERROR_STOP=1: jeder echte Fehler -> Exit != 0 (die DROP … IF EXISTS aus
+    # --clean --if-exists erzeugen in der frischen DB keine Fehler) — zuverlässiger
+    # als das vorherige stderr-"ERROR"-Zeilenzählen.
+    import gzip
+    import shutil
+    import tempfile
+    env = {**pg_env(), "PGPASSWORD": su_password}
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".sql", delete=False, dir=str(DATA_DIR)) as tmp:
+            tmp_path = tmp.name
+            with gzip.open(dump, "rb") as gz:
+                shutil.copyfileobj(gz, tmp)
+        proc = subprocess.run(
+            [str(pg_cmd("psql")), "-w", "-U", "praxiszeit", "-d", "praxiszeit",
+             "-v", "ON_ERROR_STOP=1", "-f", tmp_path],
+            env=env, capture_output=True,
+        )
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", "replace") if proc.stderr else ""
+        logger.error(
+            "PG-Upgrade-Restore fehlgeschlagen (Exit %s). Das alte Datenverzeichnis "
+            "(data/db.pg*) + der Dump bleiben erhalten — bitte manuell wiederherstellen. "
+            "Letzte Fehler:\n%s",
+            proc.returncode, "\n".join(stderr.splitlines()[-8:]),
+        )
+        raise RuntimeError("PG-Upgrade-Restore fehlgeschlagen — alte Daten unter data/db.pg* erhalten.")
+    logger.info("PostgreSQL-Major-Upgrade: Daten erfolgreich eingespielt.")
+    PG_UPGRADE_RESTORE_MARKER.unlink()
+
+
 # --- Main Commands ---
 
 def cmd_start(args):
@@ -1366,6 +1433,11 @@ def cmd_start(args):
             logger.error("Database credentials not found. Run 'praxiszeit-server init' first.")
             pg_stop()
             sys.exit(1)
+
+    # 3a1. PG-Major-Upgrade: falls install.sh die Alt-Daten gedumpt + zur Seite
+    # gelegt hat (Marker), den Dump jetzt in den frischen Cluster einspielen.
+    # Idempotent (no-op ohne Marker); läuft NACH pg_setup_database (DB + Rollen da).
+    _restore_pending_major_upgrade()
 
     # 3a2. #213: Der Backup-Service im Backend braucht das Ziel-Verzeichnis UND
     # den gebuendelten pg_dump-Pfad — anders als im Docker-Image liegt pg_dump

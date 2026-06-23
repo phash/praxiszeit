@@ -39,9 +39,9 @@ FROM python:3.12.13-slim-bookworm AS runtime
 
 WORKDIR /app
 
-# Runtime system dependencies: libpq5 (psycopg2) + postgresql-client-16 for the
-# #213 DB-Backup-Feature (pg_dump). Der Client MUSS zur Server-Major (postgres:16)
-# passen — bookworm liefert nur Client 15 (verweigert den Dump eines 16er-Servers),
+# Runtime system dependencies: libpq5 (psycopg2) + postgresql-client-18 for the
+# #213 DB-Backup-Feature (pg_dump). Der Client MUSS zur Server-Major (postgres:18)
+# passen — bookworm liefert nur Client 15 (verweigert den Dump eines 18er-Servers),
 # daher das PGDG-Repo. curl/gnupg werden nur fuer den Repo-Key gebraucht und danach
 # wieder entfernt.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -50,7 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list \
-    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
     && apt-get purge -y curl gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 

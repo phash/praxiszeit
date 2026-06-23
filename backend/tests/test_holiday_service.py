@@ -114,3 +114,45 @@ def test_sync_current_and_next_year_returns_dict(db, default_tenant):
     assert result["next_count"] > 0
     total = db.query(PublicHoliday).count()
     assert total > 0
+
+
+# --- python-holidays-Migration (#175): korrekte + aktuelle Bundesland-Feiertage ---
+
+def test_bavaria_keeps_assumption_day(db, default_tenant):
+    """Bayern behält Mariä Himmelfahrt (15.8., kath. Kategorie) wie zuvor unter workalendar."""
+    holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
+    db.commit()
+    h = db.query(PublicHoliday).filter(PublicHoliday.date == date(2026, 8, 15)).first()
+    assert h is not None and h.name == "Mariä Himmelfahrt"
+
+
+def test_mv_has_womens_day(db, default_tenant):
+    """MV: Internationaler Frauentag (8.3., gesetzlich seit 2023) — das unmaintained workalendar kannte ihn nicht."""
+    holiday_service.sync_holidays(db, 2026, state="Mecklenburg-Vorpommern", tenant_id=DEFAULT_TENANT_ID)
+    db.commit()
+    assert db.query(PublicHoliday).filter(PublicHoliday.date == date(2026, 3, 8)).first() is not None
+
+
+def test_holiday_names_normalized_to_project_spelling(db, default_tenant):
+    """python-holidays-Namen auf Projekt-Schreibweise normalisiert (z. B. 'Erster Mai' -> 'Tag der Arbeit')."""
+    holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
+    db.commit()
+    mayday = db.query(PublicHoliday).filter(PublicHoliday.date == date(2026, 5, 1)).first()
+    assert mayday is not None and mayday.name == "Tag der Arbeit"
+    xmas = db.query(PublicHoliday).filter(PublicHoliday.date == date(2026, 12, 25)).first()
+    assert xmas is not None and xmas.name == "1. Weihnachtstag"
+
+
+def test_sync_holidays_idempotent(db, default_tenant):
+    """Zweiter Sync desselben Jahres fügt nichts hinzu — keine Duplikate."""
+    holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
+    db.commit()
+    second = holiday_service.sync_holidays(db, 2026, state="Bayern", tenant_id=DEFAULT_TENANT_ID)
+    db.commit()
+    assert second == 0
+
+
+def test_german_holidays_rejects_unknown_state():
+    """Unbekanntes Bundesland -> ValueError statt stillem Fallback auf Bayern."""
+    with pytest.raises(ValueError):
+        holiday_service._german_holidays("Tirol", 2026)

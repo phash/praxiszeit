@@ -17,9 +17,10 @@ PyJWT[crypto]==2.13.*
 # continue to verify without migration.
 bcrypt==5.*
 python-multipart>=0.0.18,<0.1  # Floor >=0.0.18 (DoS-Fix, security-Audit M-02), bleibt 0.0.x
-# VULN-014: workalendar is unmaintained (last release 2023); consider replacing with
-# python-holidays (actively maintained) in a future migration.
-workalendar==17.*
+# Feiertage: python-holidays (aktiv gepflegt) — ersetzt das seit 2023 unmaintained
+# workalendar (#175). Bildet aktuelle Bundesland-Feiertage korrekt ab (z. B. MV
+# Frauentag seit 2023). Nur zur Sync-Zeit genutzt (seedet PublicHoliday-Rows).
+holidays==0.99
 openpyxl==3.1.*
 odfpy==1.4.*
 reportlab==4.*
