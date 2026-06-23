@@ -68,7 +68,7 @@ VACATION_FLAG_KEYS = {
 def _get_raw_setting(db: Session, key: str, tenant_id, default: str) -> str:
     """Read a single tenant-scoped value from ``system_settings``.
 
-    Mirrors ``holiday_service.get_holiday_state`` / ``admin_settings._get_setting``.
+    Mirrors ``holiday_service.get_holiday_state`` / ``settings_service.get_setting``.
     """
     # SEC-F: always scope by tenant_id. All callers pass a real tenant_id, and
     # leaving the filter conditional risked leaking another tenant's setting if

@@ -8,22 +8,13 @@ from datetime import datetime, timezone, timedelta, date
 from app.database import get_db
 from app.models import User, UserRole, PublicHoliday, Absence, AbsenceType, TimeEntryAuditLog
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
-from app.models.system_setting import SystemSetting
 from app.middleware.auth import get_current_user
 from app.schemas.vacation_request import VacationRequestCreate, VacationRequestResponse, VacationRequestUpdate
 from app.services.calculation_service import count_workdays
 from app.services.timezone_service import today_local
+from app.services import settings_service
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
-
-
-def get_setting(db: Session, key: str, tenant_id, default: str = "") -> str:
-    """Retrieve a tenant-scoped value from system_settings."""
-    s = db.query(SystemSetting).filter(
-        SystemSetting.key == key,
-        SystemSetting.tenant_id == tenant_id,
-    ).first()
-    return s.value if s else default
 
 
 def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
@@ -237,7 +228,7 @@ def create_vacation_request(
     requests up front so they don't reach the admin review queue as
     garbage.
     """
-    if get_setting(db, "vacation_approval_required", current_user.tenant_id, "false").lower() != "true":
+    if not settings_service.get_bool_setting(db, "vacation_approval_required", tenant_id=current_user.tenant_id):
         raise HTTPException(
             status_code=400,
             detail="Urlaubsanträge sind nicht aktiviert. Urlaub direkt über Abwesenheiten buchen.",
