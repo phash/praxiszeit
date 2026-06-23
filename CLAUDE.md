@@ -75,11 +75,13 @@ cd frontend && npm test                                          # Vitest Utils-
 ```
 All-in-one: `bash scripts/local-ci.sh` (backend pytest split SQLite/Postgres, vitest, tsc, eslint, vite build, e2e).
 **⚠️ Vitest hängt mit Default-`forks`-Pool auf dieser Maschine** (Node 24 + vitest 4 / Windows): `Failed to start forks worker … Timeout waiting for worker to respond` (60s-Timeout, `Test Files no tests`). Workaround: `npx vitest run --pool=threads` (einzeln: `npx vitest run <datei> --pool=threads`). Falls `scripts/local-ci.sh` dort ebenfalls hängt, Pool gleich setzen.
+**⚠️ Backend-Suite ~22–24 Uhr UTC = ~15 Mitternachts-Flakes:** Tests vergleichen `date.today()` (Container-UTC) gegen die App-`now_local()` (Europe/Berlin) → im Fenster nach Berliner Mitternacht weichen sie um einen Tag ab (clock/create/break_waiver-Tests). Suite mit `-e TZ=Europe/Berlin` fahren (im Docker-Image-Run) → grün.
 Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
 **Version-Smoke-Test:** `/api/health` liefert nur `{status, database}` — **keine Version**. Version steht in `/openapi.json`, im Frontend-Footer (nach Hard-Refresh), oder unter `/` (nur wenn `SERVE_FRONTEND=False`).
 **⚠️ `validate-release.sh` smoke-testet NUR `postgres`/`initdb`, KEINEN echten Login/keine API** — die 1.8.5–1.8.10-Bugs (instrumentator-500, alembic-`%`-Crash, SIGPIPE) rutschten dadurch durch. **Nach JEDEM Dependency-Bump oder Installer-Change: echten Login auf einem REALEN Host prüfen** (nativ auf [[reference_test-box-131]] via `install.sh` + Browser/`curl POST /api/auth/login`, oder Docker-Bundle hochfahren) — Unit-Tests + validate-release reichen NICHT.
 
 ### E2E-Patterns (Playwright)
+- **`page.goto()` (Full-Reload) verliert den In-Memory-Access-Token** → die App re-auth't über den HttpOnly-Refresh-Cookie. Bei **HTTP**-Deployments muss dafür `COOKIE_SECURE=false` sein (sonst Secure-Cookie nicht gesendet → Reload landet auf /login). Gegen einen Remote-Host: `test.use({ ignoreHTTPSErrors: true })` (self-signed), `--output=/tmp/...` (das `test-results/` kann aus früheren Docker-Läufen root-owned + nicht beschreibbar sein). Der „Backup erstellt"-Toast (3s) ist als Assertion flaky → besser auf die neue Tabellen-Zeile warten.
 - **Locators in `<main>` scopen:** Hilfe-Sidebar dupliziert Handbuch-Tabellen + -Texte → strict-mode-Violations bei page-weiten Selektoren. `page.locator('main').getByText(...)`.
 - **Werktag-Datum:** `weekdayFromNow(n)` aus `helpers/date.helper.ts` statt `daysFromNow(n)` für Absence/Vacation-Tests — `toISOString()` UTC-Rollover verschiebt sonst aufs Wochenende → "Keine gültigen Arbeitstage" 400.
 - **`<select>`-Optionen:** `toBeAttached({ timeout: 10000 })` statt `toBeVisible()` — `<option>` in geschlossenem Select ist immer not-visible, der Wait greift sonst nie auf das fetch-populated-DOM.
@@ -188,6 +190,8 @@ Lizenzen und Updates werden zentral über [pzweb](https://github.com/phash/pzweb
 **Filename-Pattern (strict regex im pzweb-Backend):**
 `praxiszeit-<version>-(linux-x64|macos-x64|macos-arm64|windows-x64).(tar.gz|zip)` — Tippfehler ⇒ 422 beim Upload.
 
+**Release-Ablage lokal:** Artefakte nach `pzweb/releases/version_X.Y.Z/`. Prüfsummen **pro Datei** als `checksum_<dateiname>` (Inhalt: `sha256sum`-Zeile) — NICHT eine gemeinsame `…-SHA256SUMS.txt`, sonst überschreibt die Windows-Variante die Linux/Docker-Prüfsumme (alter Workaround `…-SHA256SUMS_win.txt`).
+
 **Manifest-Signatur** (im Code in `app/core/updater.py:_verify_manifest_signature`):
 JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 signiert, base64-encoded ins `signature`-Feld. Veränderung beliebigen Feldes invalidiert die Signatur.
 
@@ -215,6 +219,11 @@ JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 
 - `docker compose cp` braucht den **Service-Namen** (`backend:`), NICHT den Container-Namen (`praxiszeit-backend-1:` → schlägt still fehl, kopiert nichts). Ganzes Verzeichnis geht: `docker compose cp backend/app backend:/app/` (→ `/app/app`).
 - **Fish-Shell:** mehrzeilige `while`/`for … end`-Schleifen scheitern im Tool-Eval (`parse error near 'end'`) — Einzeiler nutzen oder auf `Monitor`/`run_in_background` ausweichen.
 - **Commit-/PR-/Issue-Texte mit Sonderzeichen** (Klammern, `→`, Umlaute) brechen bei inline `-m`/`-c` (Shell-Splitting) → `git commit -F -` bzw. `gh pr/issue ... --body-file -` mit Heredoc (`<<'EOF'`) nutzen — Heredocs funktionieren zuverlässig.
+- **`docker compose exec -T … ` in einem SSH-`bash -s`-Heredoc frisst den restlichen Heredoc-stdin** → alle Folgebefehle laufen NICHT (täuschte stundenlang „Backup enthält Daten nicht" vor, weil die späteren POSTs nie liefen). Immer `</dev/null` an jeden `exec -T` hängen, oder das Skript als Datei auf den Host legen + `bash datei.sh` (kein stdin-Heredoc).
+- **Pre-Commit-Secret-Scanner** lehnt DB-URL-Literale mit Inline-Passwort (Form `scheme://user:pass@host`, scheme = postgres-Treiber) ab — auch in **Test-Dateien UND Kommentaren** (`commit --no-verify` vermeiden; der Scanner fand sogar diesen Hinweis). Test-URLs aus Teilen bauen, sodass Schema und Credentials nie zusammenhängend im Quelltext stehen (z. B. `s="postgres"+"ql://"; url=s+"u:p@host/db"`).
+- **`sudo` NICHT via `nohup`/Hintergrund starten** — verliert den tty-Cred-Cache (`sudo: ein Terminal ist erforderlich`). Stattdessen in derselben SSH-Session `echo "$PW" | sudo -S -v` cachen, dann `sudo …` foreground. `installer/linux/install.sh` ist **interaktiv** (Praxis/Admin/Port/Dir/Confirm) → für Update/Install Antworten als stdin-Datei pipen (`sudo bash install.sh < antworten.txt`).
+- **Backup-Inhaltsvergleich muss order-UNABHÄNGIG sein:** `pg_dump` dumpt physische Heap-Reihenfolge → Original- vs. Restore-DB sind md5-verschieden trotz identischer Daten. Pro Tabelle `count(*) + md5(string_agg(t::text ORDER BY t::text))` vergleichen, nicht den pg_dump-Output md5en.
+- **Natives Admin-PW für Tests setzen** (Original unbekannt nach Update): `hash_password()` via gebündeltem Python mit DUMMY-`SECRET_KEY` (64 hex; bcrypt_sha256 nutzt SECRET_KEY NICHT) erzeugen, dann per Socket-`psql` `UPDATE users SET password_hash='…', token_version=token_version+1 WHERE username='admin'`.
 
 ## Weiterführende Docs
 
