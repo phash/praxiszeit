@@ -25,7 +25,10 @@ BK="$(ls -1t backups/praxiszeit_*.sql.gz 2>/dev/null | head -1)"
 # Kein `... | grep -q` unter `set -o pipefail`: grep beendet bei Treffer früh ->
 # tail/gzip bekommen SIGPIPE (141) -> pipefail macht die Pipe non-zero -> `if !`
 # kippt um (CLAUDE.md). Erst in eine Variable, dann per Here-String prüfen.
-_dump_tail="$(gzip -dc "$BK" | tail -5)"
+# tail -15 (nicht -5): pg_dump 18 hängt nach dem "dump complete"-Trailer noch eine
+# `\unrestrict <token>`-Zeile (+ Leerzeilen) an -> der Trailer steht nicht mehr
+# ganz am Ende; -15 lässt Luft für künftige Endzeilen.
+_dump_tail="$(gzip -dc "$BK" | tail -15)"
 if ! grep -q "PostgreSQL database dump complete" <<<"$_dump_tail"; then
     echo "FEHLER: Dump-Trailer fehlt — Backup unvollständig. Abbruch (Daten unangetastet)." >&2; exit 1
 fi
