@@ -24,7 +24,7 @@ PYTHON_STANDALONE_TAG="20260510"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases
-POSTGRESQL_VERSION="16.13.0"
+POSTGRESQL_VERSION="18.4.0"
 # EDB-Format (für Legacy-Fallback, falls jemals wieder verfügbar)
 POSTGRESQL_EDB_SUFFIX="1"
 NSSM_VERSION="2.24"
