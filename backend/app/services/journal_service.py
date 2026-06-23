@@ -24,6 +24,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
 
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         date_in_month(TimeEntry.date, year, month),
     ).order_by(TimeEntry.date, TimeEntry.start_time).all()
 
@@ -33,6 +34,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
 
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026
         date_in_month(Absence.date, year, month),
     ).order_by(Absence.date, Absence.type).all()
 

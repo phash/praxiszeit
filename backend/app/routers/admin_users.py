@@ -558,7 +558,8 @@ def list_working_hours_changes(
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user_id
+        WorkingHoursChange.user_id == user_id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
     ).order_by(WorkingHoursChange.effective_from.desc()).all()
     return changes
 
@@ -577,6 +578,7 @@ def create_working_hours_change(
 
     existing = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
         WorkingHoursChange.effective_from == change_data.effective_from
     ).first()
 
@@ -598,6 +600,7 @@ def create_working_hours_change(
     if change_data.effective_from <= today_local():
         most_recent = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == user_id,
+            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
             WorkingHoursChange.effective_from <= today_local()
         ).order_by(WorkingHoursChange.effective_from.desc()).first()
         if most_recent:

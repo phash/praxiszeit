@@ -30,7 +30,8 @@ def list_carryovers(
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     carryovers = db.query(YearCarryover).filter(
-        YearCarryover.user_id == user_id
+        YearCarryover.user_id == user_id,
+        YearCarryover.tenant_id == current_user.tenant_id,  # F-026
     ).order_by(YearCarryover.year.desc()).all()
 
     return carryovers
@@ -58,6 +59,7 @@ def upsert_carryover(
 
     carryover = db.query(YearCarryover).filter(
         YearCarryover.user_id == user_id,
+        YearCarryover.tenant_id == current_user.tenant_id,  # F-026
         YearCarryover.year == year,
     ).first()
 
