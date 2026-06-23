@@ -127,7 +127,15 @@ def _run_scheduled_backup() -> None:
     Tz-explizit (zoneinfo), unabhaengig von der Container-TZ."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    from app.config import settings
     from app.services import backup_service
+    # Nativ (SERVE_FRONTEND=True): der systemd-/launchd-Backup-Timer ist der
+    # Out-of-Box-Auto-Backup (laeuft unabhaengig von der App-/uvicorn-Uptime). Der
+    # In-App-Scheduler wuerde sonst DOPPELT sichern (Review 2026-06-23) -> hier
+    # ueberspringen. Manueller Trigger + Liste + Aufbewahrung gelten weiter; die
+    # In-App-Zeitplan-Konfiguration steuert die Docker-Deployments.
+    if getattr(settings, "SERVE_FRONTEND", False):
+        return
     db = SessionLocal()
     try:
         set_superadmin_context(db)

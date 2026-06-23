@@ -154,6 +154,17 @@ if [ "$_fe_ver" != "$APP_VERSION" ]; then
     exit 1
 fi
 
+# updater.py ist die dokumentierte SoT (CLAUDE.md) — ebenfalls gegen APP_VERSION
+# pruefen, sonst koennte die App eine andere Version melden als der Paketname (Review 2026-06-23).
+_be_ver=$(sed -n 's/^APP_VERSION = "\([^"]*\)".*/\1/p' "${REPO_DIR_PRE}/backend/app/core/updater.py" | head -1)
+if [ "$_be_ver" != "$APP_VERSION" ]; then
+    echo -e "${RED}[ERROR]${NC} Version-Drift erkannt:" >&2
+    echo -e "${RED}[ERROR]${NC}   APP_VERSION (build-release.sh)        = ${APP_VERSION}" >&2
+    echo -e "${RED}[ERROR]${NC}   backend/app/core/updater.py APP_VERSION = ${_be_ver}" >&2
+    echo -e "${RED}[ERROR]${NC} Fix: APP_VERSION in updater.py auf ${APP_VERSION} setzen (SoT)." >&2
+    exit 1
+fi
+
 # BETA_MODE-Hinweis: solange Default True, ist die Lizenzpruefung in JEDEM
 # gebauten Paket deaktiviert (keine Lizenz noetig). Das ist in der Beta gewollt,
 # aber vor dem ersten KOSTENPFLICHTIGEN Release MUSS BETA_MODE auf False —
@@ -554,8 +565,11 @@ if [ "$BUILD_LINUX" = true ]; then
     # theseus-Tarball-Layout: top-level postgresql-<ver>-<triple>/{bin,lib,share,include}
     tar xzf "${CACHE_DIR}/postgresql-linux-x64.tar.gz" \
         -C "${LINUX_DIR}/bin/postgresql" --strip-components=1
-    # Sanity: erwartete Pfade existieren
-    for f in bin/postgres bin/initdb bin/psql lib/libpq.so.5 share/postgres.bki; do
+    # Sanity: erwartete Pfade existieren. pg_dump/pg_ctl/pg_isready ergaenzt
+    # (Review 2026-06-23): pg_dump braucht das #213-Backup, pg_ctl der Start/Stop,
+    # pg_isready die pg_is_running-Probe — ein truncated Tarball ohne sie wuerde
+    # sonst durchrutschen und nativ erst zur Laufzeit scheitern.
+    for f in bin/postgres bin/initdb bin/psql bin/pg_dump bin/pg_ctl bin/pg_isready lib/libpq.so.5 share/postgres.bki; do
         if [ ! -e "${LINUX_DIR}/bin/postgresql/${f}" ]; then
             error "Theseus-Tarball unvollstaendig: ${f} fehlt"
             exit 1
@@ -845,7 +859,9 @@ if [ "$BUILD_MACOS" = true ]; then
         info "PostgreSQL (macOS ${arch}) — theseus-rs ${POSTGRESQL_VERSION}..."
         mkdir -p "${mac_dir}/bin/postgresql"
         tar xzf "${pg_tar}" -C "${mac_dir}/bin/postgresql" --strip-components=1
-        for f in bin/postgres bin/initdb bin/psql; do
+        # pg_dump/pg_ctl/pg_isready ergaenzt (Review 2026-06-23): #213-Backup,
+        # Start/Stop bzw. pg_is_running-Probe brauchen sie auch auf macOS.
+        for f in bin/postgres bin/initdb bin/psql bin/pg_dump bin/pg_ctl bin/pg_isready; do
             if [ ! -e "${mac_dir}/bin/postgresql/${f}" ]; then
                 error "Theseus macOS-${arch}-Tarball unvollstaendig: ${f} fehlt"
                 exit 1
