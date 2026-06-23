@@ -101,7 +101,7 @@ Das initiale Admin-Passwort **nach dem ersten Login** in der Benutzerverwaltung
 |--------|------|-------|
 | frontend (nginx) | 80 (+443 mit SSL) | Web-UI + Reverse-Proxy auf das Backend |
 | backend (FastAPI) | intern 8000 | API |
-| db (PostgreSQL 16) | intern 5432 | Datenbank (Volume `postgres_data`) |
+| db (PostgreSQL 18) | intern 5432 | Datenbank (Volume `postgres_data`) |
 | prometheus | `127.0.0.1:9090` | Metriken (nur lokal) |
 | grafana | unter `/grafana/` | Dashboards (Passwort = `GRAFANA_ADMIN_PASSWORD`) |
 
