@@ -622,7 +622,10 @@ function Step-CopyFiles {
             '/NFL', '/NDL', '/NJH', '/NJS', '/NC', '/NS',
             '/R:2', '/W:2',
             '/XD', 'data', 'logs', 'ssl',
-            '/XF', 'praxiszeit.conf', '.db-credentials', '.secret-key', 'license.key'
+            # cert.pem/key.pem zusaetzlich ausschliessen: das SSL-Cert liegt in
+            # config\ssl\ (vom /XD 'ssl' NICHT erfasst, da nur Top-Level), sonst
+            # ueberschreibt ein Paket-Platzhalter das echte Cert des Betreibers.
+            '/XF', 'praxiszeit.conf', '.db-credentials', '.secret-key', 'license.key', 'cert.pem', 'key.pem'
         )
         Write-Log "  robocopy $WizardDirResolved -> $InstallDir"
         $out = & robocopy.exe @rcArgs 2>&1

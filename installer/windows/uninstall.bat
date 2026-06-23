@@ -72,11 +72,10 @@ if %errorlevel% neq 0 (
 
 SET "BACKUP_FILE=%BACKUP_DIR%\praxiszeit-backup-%date:~6,4%%date:~3,2%%date:~0,2%.sql"
 
-REM Versuche mit User praxiszeit, dann postgres
-"%PG_DUMP%" -U praxiszeit -d praxiszeit -f "%BACKUP_FILE%" 2>nul
-if not exist "%BACKUP_FILE%" (
-    "%PG_DUMP%" -U postgres -d praxiszeit -f "%BACKUP_FILE%" 2>nul
-)
+REM -w PFLICHT: ohne haengt pg_dump headless an der Passwort-Abfrage (stderr ist
+REM unterdrueckt). Der PraxisZeit-Cluster hat KEINEN postgres-Superuser -> der
+REM frueher Fallback haette nur gehangen, daher entfernt.
+"%PG_DUMP%" -w -U praxiszeit -d praxiszeit -f "%BACKUP_FILE%" 2>nul
 
 if exist "%BACKUP_FILE%" goto :backup_ok
 
