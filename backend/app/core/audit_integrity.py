@@ -36,8 +36,11 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Versioned context label — changing it (or SECRET_KEY) invalidates old hashes.
-_HKDF_INFO = b"praxiszeit-audit-row-hmac-v1"
+# Versioned context label — changing it (or SECRET_KEY) invalidiert alte Hashes.
+# v2 (Review 2026-06-23, 2. Schleife): laengen-praefigierte Kanonisierung statt
+# '|'-Join (Delimiter-Injection-Haertung). #121 ist noch nicht released -> es gibt
+# keine bestehenden row_hashes, die das invalidieren wuerde.
+_HKDF_INFO = b"praxiszeit-audit-row-hmac-v2"
 
 # Integrity-relevant fields that round-trip cleanly (UUID/date/time/int/str).
 # created_at is excluded on purpose (see module docstring).
@@ -62,12 +65,19 @@ def _audit_key() -> bytes:
 
 
 def _canonical(audit) -> bytes:
-    # NULL und der Leerstring duerfen NICHT kollidieren -> NULL als Sentinel.
+    # Laengen-praefigiert + feldbenannt: ein '|' / Newline im Wert (nur die
+    # *_note-Felder sind Freitext) kann die Feldgrenzen nicht verschieben, und
+    # eine Umsortierung der Felder ist ausgeschlossen. NULL ('N') und der
+    # Leerstring ('0:') bleiben unterscheidbar.
     parts = []
     for field in _HASHED_FIELDS:
         value = getattr(audit, field, None)
-        parts.append("\x00" if value is None else str(value))
-    return "|".join(parts).encode("utf-8")
+        if value is None:
+            parts.append(f"{field}:N")
+        else:
+            s = str(value)
+            parts.append(f"{field}:{len(s)}:{s}")
+    return "\n".join(parts).encode("utf-8")
 
 
 def compute_row_hash(audit) -> str:
