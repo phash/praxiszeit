@@ -684,7 +684,10 @@ export default function Profile() {
                 {PASTEL_COLORS.map((color) => (
                   <button
                     key={color.hex}
+                    type="button"
                     onClick={() => handleColorChange(color.hex)}
+                    aria-label={`Farbe ${color.name}`}
+                    aria-pressed={selectedColor === color.hex}
                     className={`relative w-full aspect-square rounded-lg transition-all hover:scale-110 ${
                       selectedColor === color.hex
                         ? 'ring-4 ring-primary ring-offset-2 scale-110'
