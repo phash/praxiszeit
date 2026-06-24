@@ -1027,8 +1027,8 @@ DOCKEREOF
     tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-docker.tar.gz" \
         -C "${BUILD_DIR}/docker" "praxiszeit-${APP_VERSION}"
     info "Docker-Bundle: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-docker.tar.gz" | cut -f1)"
-    info "Docker-Bundle: das pzweb-Upload-Regex akzeptiert seit 2026-06 auch '-docker'"
-    info "(neben linux/macos/windows) — kann also in den Shop ODER an ein GitHub-Release."
+    info "Docker-Bundle: gehoert in den pzweb-Shop (os=docker) — alle 6 Artefakte (pzweb #35);"
+    info "setup.exe + docker werden zusaetzlich ans GitHub-Release gehaengt."
 else
     step "6b — Docker: uebersprungen"
 fi
@@ -1100,7 +1100,7 @@ $BUILD_MACOS && cat << EOF
 EOF
 
 $BUILD_DOCKER && cat << EOF
-  Docker-Installation (Bundle -> GitHub-Release, NICHT pzweb):
+  Docker-Installation (Bundle: pzweb-Shop + GitHub-Release):
     tar xzf praxiszeit-${APP_VERSION}-docker.tar.gz
     cd praxiszeit-${APP_VERSION}
     bash generate-secrets.sh && bash ssl/generate-cert.sh
