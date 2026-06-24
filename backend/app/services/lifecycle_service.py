@@ -25,6 +25,7 @@ All mutations commit the DB session themselves.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -44,6 +45,8 @@ from app.models import (
     VacationRequest,
 )
 from app.models.tenant import Tenant
+
+logger = logging.getLogger(__name__)
 
 
 SUSPEND_GRACE_DAYS = 7
@@ -95,7 +98,8 @@ def request_deletion(db: Session, tenant: Tenant, by_user: User) -> datetime:
         from app.services.alerting import alert_deletion_requested
         alert_deletion_requested(tenant.name)
     except Exception:  # noqa: BLE001
-        pass
+        # Best-effort alert after the commit — log instead of swallowing silently.
+        logger.warning("alert_deletion_requested failed", exc_info=True)
     return now + timedelta(days=DELETE_GRACE_DAYS)
 
 

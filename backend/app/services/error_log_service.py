@@ -311,7 +311,14 @@ class DBErrorHandler(logging.Handler):
                 traceback_str=tb,
             )
         except Exception:
-            pass  # Never let logging break the application
+            # Never let logging break the application — but don't go fully silent.
+            # Write to stderr (NOT via the logging module → no recursion into this
+            # handler) so a broken DB-logger is still visible in container logs.
+            try:
+                import sys
+                sys.stderr.write("DBErrorHandler.emit failed:\n" + traceback.format_exc())
+            except Exception:
+                pass
         finally:
             try:
                 db.close()
