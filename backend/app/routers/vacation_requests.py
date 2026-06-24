@@ -93,6 +93,10 @@ def apply_vacation_request_patch(
     effective_end = new_end_date if new_end_date else new_date
     if effective_end < new_date:
         raise HTTPException(status_code=400, detail="Enddatum muss nach dem Startdatum liegen")
+    # Same bound as the POST path: an approved request overwrites time entries
+    # per workday — a PATCH must not be able to silently extend to an unbounded span.
+    if (effective_end - new_date).days > 366:
+        raise HTTPException(status_code=400, detail="Der Zeitraum darf maximal ein Jahr umfassen")
     if target_user.first_work_day and new_date < target_user.first_work_day:
         raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
     if target_user.last_work_day and effective_end > target_user.last_work_day:

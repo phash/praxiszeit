@@ -432,7 +432,7 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 - Urlaubstage werden **nicht** verbraucht
 - Wochenenden und gesetzliche Feiertage werden übersprungen
 
-> **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option bei einem Mitarbeiter erst nach dem Anlegen der Betriebsferien, **speichern Sie die betreffenden Betriebsferien einmal erneut** (Bearbeiten → Speichern) – die Abwesenheiten werden dann für die nun berechtigten Personen nachgetragen.
+> **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option „Nimmt an Betriebsferien teil" bei einem Mitarbeiter und speichern Sie die Benutzer-Änderung. Die Abwesenheiten werden **automatisch** für alle laufenden und künftigen Betriebsferien nachgetragen – ein erneutes Speichern der Betriebsferien ist nicht mehr nötig, und bereits erfasste Arbeitszeiten bleiben erhalten. (Bereits abgelaufene Betriebsferien werden bewusst nicht rückwirkend ergänzt.)
 
 ### Betriebsferien löschen
 
