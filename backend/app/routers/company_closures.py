@@ -76,6 +76,7 @@ def _create_closure_absences(
     workdays: List[date],
     employees: List[User],
     current_user: User,
+    delete_time_entries: bool = True,
 ) -> int:
     """Create the closure absences linked to ``closure`` for the given workdays.
 
@@ -133,15 +134,27 @@ def _create_closure_absences(
             if (employee.id, workday) in existing_keys:
                 continue
 
+            day_entries = te_by_key.get((employee.id, workday), [])
+
+            # #290: On a re-save / backfill (delete_time_entries=False) we must
+            # NEVER silently destroy a participant's logged work. If the day
+            # already holds a real time entry, the employee demonstrably worked
+            # despite the closure → leave it untouched and do NOT book a closure
+            # absence over it (work wins; no double-counting). Only the initial
+            # create path (default True) replaces pre-existing entries.
+            if day_entries and not delete_time_entries:
+                continue
+
             # Delete existing time entries on this day with audit log
-            for entry in te_by_key.get((employee.id, workday), []):
-                _create_audit_log(
-                    db, entry.id, employee.id, current_user.id,
-                    action="delete", old_entry=entry,
-                    source="company_closure",
-                    tenant_id=current_user.tenant_id,
-                )
-                db.delete(entry)
+            if delete_time_entries:
+                for entry in day_entries:
+                    _create_audit_log(
+                        db, entry.id, employee.id, current_user.id,
+                        action="delete", old_entry=entry,
+                        source="company_closure",
+                        tenant_id=current_user.tenant_id,
+                    )
+                    db.delete(entry)
 
             # F-027: Use the authoritative weekly_hours lookup so that
             # a closure spanning a WorkingHoursChange credits the right
@@ -380,7 +393,13 @@ def update_closure(
         User.receives_company_closures == True,
         User.tenant_id == current_user.tenant_id,
     ).all()
-    _create_closure_absences(db, closure, workdays, employees, current_user)
+    # #290: re-save must NOT delete logged work. delete_time_entries=False →
+    # days where a participant already logged real time are left intact (no
+    # closure-absence booked over them). New participants still get absences on
+    # their non-worked covered days. Only the initial create_closure clears entries.
+    _create_closure_absences(
+        db, closure, workdays, employees, current_user, delete_time_entries=False
+    )
 
     db.commit()
     db.refresh(closure)
