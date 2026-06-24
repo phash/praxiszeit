@@ -39,6 +39,42 @@ def _get_user_in_tenant(db: Session, user_id: str, current_user: User) -> User:
     return user
 
 
+def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -> None:
+    """#290: fold a newly participating employee into CURRENT + FUTURE company
+    closures so admins never have to re-save a closure (the re-save was the
+    documented #290 workaround and silently deleted logged work).
+
+    - Only closures whose end_date is today or later (PAST closures are NOT
+      backfilled — an employee hired after a closure ended must not get
+      retroactive absences, consistent with #193 _within_employment_window).
+    - Only covered workdays on/after the employee's first_work_day (if set).
+    - delete_time_entries=False: never destroys logged work on those days.
+    Best-effort: a failure here must not abort user creation (the closure
+    enrolment can be repaired by re-saving the closure).
+    """
+    if not (user.receives_company_closures and user.is_active):
+        return
+    from app.models import CompanyClosure
+    from app.routers.company_closures import _get_holidays_for_range, _get_workdays, _create_closure_absences
+
+    today = today_local()
+    closures = db.query(CompanyClosure).filter(
+        CompanyClosure.tenant_id == current_user.tenant_id,
+        CompanyClosure.end_date >= today,
+    ).all()
+    for closure in closures:
+        holidays = _get_holidays_for_range(
+            db, closure.start_date, closure.end_date, current_user.tenant_id
+        )
+        workdays = _get_workdays(closure.start_date, closure.end_date, holidays)
+        if user.first_work_day:
+            workdays = [d for d in workdays if d >= user.first_work_day]
+        if workdays:
+            _create_closure_absences(
+                db, closure, workdays, [user], current_user, delete_time_entries=False
+            )
+
+
 def _tenant_has_other_active_admin(db: Session, current_user: User) -> bool:
     """Audit A01 (4-Augen-Prinzip): does the caller's tenant have ANOTHER
     active admin besides ``current_user``?
@@ -426,6 +462,11 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
     db.commit()
     db.refresh(new_user)
 
+    # #290: enrol the new participant into existing current/future closures now,
+    # so the admin never needs the data-destroying closure re-save workaround.
+    _enroll_user_in_open_closures(db, new_user, current_user)
+    db.commit()
+
     return UserCreateResponse(
         user=UserResponse.model_validate(new_user)
     )
@@ -458,6 +499,11 @@ def update_user(
 
     # VULN-010: invalidate existing JWTs when role is changed
     role_changed = 'role' in update_data and update_data['role'] != user.role
+    # #290: did this update turn closure participation ON? Then enrol below.
+    closures_enabled = (
+        update_data.get('receives_company_closures') is True
+        and not user.receives_company_closures
+    )
 
     for field, value in update_data.items():
         setattr(user, field, value)
@@ -467,6 +513,13 @@ def update_user(
 
     db.commit()
     db.refresh(user)
+
+    # #290: a user newly toggled into Betriebsferien-participation is enrolled
+    # into current/future closures here (never deletes logged work), so no
+    # closure re-save is needed.
+    if closures_enabled:
+        _enroll_user_in_open_closures(db, user, current_user)
+        db.commit()
     return user
 
 

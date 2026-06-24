@@ -418,3 +418,117 @@ class TestTenantIsolation:
         assert db.query(CompanyClosure).filter(
             CompanyClosure.id == uuid.UUID(closure["id"]),
         ).count() == 1
+
+
+# ---------------------------------------------------------------------------
+# #290: re-saving a closure must NEVER delete a participant's logged work
+# ---------------------------------------------------------------------------
+
+class TestResavePreservesTimeEntries:
+    def test_resave_does_not_delete_logged_time_entry(self, db, admin, admin_client):
+        """Regression #290: an employee who logged real work on a covered day
+        (because they had no closure-absence — e.g. onboarded after creation)
+        must keep that TimeEntry when the closure is re-saved. Re-save was the
+        documented #290 workaround and silently destroyed worked time."""
+        from datetime import time
+        from app.models import TimeEntry, TimeEntryAuditLog
+
+        emp1 = _make_user(db, DEFAULT_TENANT_ID, "emp_keep_a")
+        closure = _create_closure(admin_client, "Betriebsferien", MON, WED)
+
+        # A second employee, created AFTER the closure -> no closure-absence for them.
+        emp2 = _make_user(db, DEFAULT_TENANT_ID, "emp_keep_b")
+        te = TimeEntry(
+            user_id=emp2.id, tenant_id=DEFAULT_TENANT_ID, date=TUE,
+            start_time=time(8, 0), end_time=time(16, 0), break_minutes=30,
+        )
+        db.add(te)
+        db.commit()
+        te_id = te.id
+
+        # Re-save the UNCHANGED closure (the #290 "Betroffene aktualisieren" workaround).
+        resp = admin_client.put(f"/api/company-closures/{closure['id']}", json={
+            "name": "Betriebsferien",
+            "start_date": MON.isoformat(),
+            "end_date": WED.isoformat(),
+            "counts_as_vacation": True,
+        })
+        assert resp.status_code == 200, resp.text
+
+        survived = db.query(TimeEntry).filter(TimeEntry.id == te_id).first()
+        assert survived is not None, "re-save deleted a real time entry (#290 data loss!)"
+        # And no closure-absence was booked over the worked day (work wins).
+        booked = db.query(Absence).filter(
+            Absence.user_id == emp2.id, Absence.date == TUE,
+            Absence.closure_id == uuid.UUID(closure["id"]),
+        ).count()
+        assert booked == 0, "closure-absence booked over a logged work day"
+
+    def test_create_still_clears_time_entries(self, db, admin, admin_client):
+        """CREATE keeps its original behaviour: a closure replaces pre-existing
+        time entries on covered days (deliberate first-time action)."""
+        from datetime import time
+        from app.models import TimeEntry
+
+        emp = _make_user(db, DEFAULT_TENANT_ID, "emp_create_clear")
+        te = TimeEntry(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=TUE,
+            start_time=time(8, 0), end_time=time(16, 0), break_minutes=30,
+        )
+        db.add(te)
+        db.commit()
+        te_id = te.id
+
+        _create_closure(admin_client, "Neue Ferien", MON, WED)
+
+        # On create, the worked entry is replaced by the closure absence (legacy intent).
+        assert db.query(TimeEntry).filter(TimeEntry.id == te_id).first() is None
+
+
+# ---------------------------------------------------------------------------
+# #290: a newly created participating employee is auto-enrolled into existing
+# current/future closures (no destructive re-save needed); PAST closures are not.
+# ---------------------------------------------------------------------------
+
+class TestNewUserEnrolledInOpenClosures:
+    def test_enroll_current_future_not_past(self, db, admin):
+        from datetime import timedelta
+        from app.models import CompanyClosure
+        from app.routers.admin_users import _enroll_user_in_open_closures
+
+        today = date.today()
+        fut = CompanyClosure(
+            name="Sommer", start_date=today + timedelta(days=7),
+            end_date=today + timedelta(days=13), counts_as_vacation=True,
+            created_by=admin.id, tenant_id=DEFAULT_TENANT_ID,
+        )
+        past = CompanyClosure(
+            name="Winter alt", start_date=today - timedelta(days=30),
+            end_date=today - timedelta(days=24), counts_as_vacation=True,
+            created_by=admin.id, tenant_id=DEFAULT_TENANT_ID,
+        )
+        db.add_all([fut, past])
+        db.commit()
+
+        emp = User(
+            username="emp_enroll", email="emp_enroll@example.com",
+            password_hash="x", first_name="E", last_name="E",
+            role=UserRole.EMPLOYEE, weekly_hours=40.0, vacation_days=30,
+            work_days_per_week=5, is_active=True,
+            receives_company_closures=True, tenant_id=DEFAULT_TENANT_ID,
+        )
+        db.add(emp)
+        db.commit()
+        db.refresh(emp)
+
+        _enroll_user_in_open_closures(db, emp, admin)
+        db.commit()
+
+        fut_abs = db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == fut.id,
+        ).count()
+        past_abs = db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == past.id,
+        ).count()
+        assert fut_abs > 0, "#290: new employee not enrolled in current/future closure"
+        assert past_abs == 0, "#290: new employee wrongly backfilled into a PAST closure"
