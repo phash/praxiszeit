@@ -718,7 +718,7 @@ export default function AdminAbsences() {
                     </span>
                     {empAbsences.length > 0 && (
                       <span className="text-sm text-gray-500">
-                        {empAbsences.length} Eintrag{empAbsences.length !== 1 ? 'träge' : ''}
+                        {empAbsences.length} {empAbsences.length === 1 ? 'Eintrag' : 'Einträge'}
                       </span>
                     )}
                     {empAbsences.length === 0 && (

@@ -7,22 +7,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useToast } from '../contexts/ToastContext';
-
-// 12 beautiful pastel colors for calendar
-const PASTEL_COLORS = [
-  { name: 'Blau', hex: '#93C5FD' },
-  { name: 'Rosa', hex: '#F9A8D4' },
-  { name: 'Lila', hex: '#DDD6FE' },
-  { name: 'Grün', hex: '#86EFAC' },
-  { name: 'Gelb', hex: '#FDE047' },
-  { name: 'Orange', hex: '#FDBA74' },
-  { name: 'Türkis', hex: '#5EEAD4' },
-  { name: 'Mint', hex: '#A7F3D0' },
-  { name: 'Pfirsich', hex: '#FED7AA' },
-  { name: 'Lavendel', hex: '#E9D5FF' },
-  { name: 'Hellblau', hex: '#BAE6FD' },
-  { name: 'Koralle', hex: '#FCA5A5' },
-];
+import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../utils/calendarColors';
 
 export default function Profile() {
   const toast = useToast();
@@ -39,7 +24,7 @@ export default function Profile() {
     new_password: '',
     confirm_password: '',
   });
-  const [selectedColor, setSelectedColor] = useState(user?.calendar_color || '#93C5FD');
+  const [selectedColor, setSelectedColor] = useState(user?.calendar_color || DEFAULT_CALENDAR_COLOR);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [colorMessage, setColorMessage] = useState('');
