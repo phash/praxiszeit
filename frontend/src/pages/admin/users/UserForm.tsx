@@ -6,6 +6,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours } from '../../../utils/formatters';
+import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
 
 import type { User } from '../../../types/user';
 
@@ -34,6 +35,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     exempt_from_arbzg: false,
     is_night_worker: false,
     receives_company_closures: true,
+    calendar_color: DEFAULT_CALENDAR_COLOR,
     first_work_day: '',
     last_work_day: '',
     department: '',
@@ -74,6 +76,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         exempt_from_arbzg: editUser.exempt_from_arbzg ?? false,
         is_night_worker: editUser.is_night_worker ?? false,
         receives_company_closures: editUser.receives_company_closures ?? true,
+        calendar_color: editUser.calendar_color || DEFAULT_CALENDAR_COLOR,
         first_work_day: editUser.first_work_day || '',
         last_work_day: editUser.last_work_day || '',
         department: editUser.department || '',
@@ -424,6 +427,47 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
             <label htmlFor="receives_company_closures" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nimmt an Betriebsferien teil (Betriebsferien werden automatisch eingetragen)
             </label>
+          </div>
+
+          {/* #297: Kalenderfarbe — vom Admin für jede:n Mitarbeiter:in setzbar
+              (ergänzt die Selbst-Auswahl im Profil). */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Kalenderfarbe
+              <span
+                className="ml-2 inline-block w-4 h-4 rounded-full align-middle border border-gray-300"
+                style={{ backgroundColor: formData.calendar_color }}
+              />
+            </label>
+            <div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
+              {PASTEL_COLORS.map((color) => (
+                <button
+                  key={color.hex}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, calendar_color: color.hex })}
+                  aria-label={`Farbe ${color.name}`}
+                  aria-pressed={formData.calendar_color === color.hex}
+                  title={color.name}
+                  className={`relative w-full aspect-square rounded-lg transition-all hover:scale-110 ${
+                    formData.calendar_color === color.hex
+                      ? 'ring-4 ring-primary ring-offset-2 scale-110'
+                      : 'hover:ring-2 hover:ring-gray-300'
+                  }`}
+                  style={{ backgroundColor: color.hex }}
+                >
+                  {formData.calendar_color === color.hex && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-3 h-3 bg-white rounded-full flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                      </div>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Farbe des Badge-Rings im Kalender. Mitarbeitende können sie auch selbst im Profil ändern.
+            </p>
           </div>
 
           {/* First / Last Work Day */}
