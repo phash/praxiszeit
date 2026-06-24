@@ -431,6 +431,7 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 - Alle aktiven Mitarbeiter **mit der Option „Nimmt an Betriebsferien teil"** (Standard) erhalten für jeden Werktag Abwesenheitseinträge – unabhängig von der Rolle, also auch Admins, die zugleich als Mitarbeiter geführt werden. Reine Verwaltungs-Accounts können die Option in der Benutzerverwaltung abwählen.
 - Urlaubstage werden **nicht** verbraucht
 - Wochenenden und gesetzliche Feiertage werden übersprungen
+- Mitarbeiter erhalten Einträge **nur für Tage innerhalb ihres Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
 
 > **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option „Nimmt an Betriebsferien teil" bei einem Mitarbeiter und speichern Sie die Benutzer-Änderung. Die Abwesenheiten werden **automatisch** für alle laufenden und künftigen Betriebsferien nachgetragen – ein erneutes Speichern der Betriebsferien ist nicht mehr nötig, und bereits erfasste Arbeitszeiten bleiben erhalten. (Bereits abgelaufene Betriebsferien werden bewusst nicht rückwirkend ergänzt.)
 

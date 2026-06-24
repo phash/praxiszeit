@@ -95,3 +95,28 @@ def test_closure_skips_days_after_last_work_day(db, default_tenant):
     booked = sorted(a.date for a in db.query(Absence).filter(Absence.user_id == leaver.id).all())
     post_end = [d for d in booked if d > lwd]
     assert post_end == [], f"booked closure absences AFTER last_work_day: {post_end}"
+
+
+def test_affected_count_excludes_out_of_window_employees(db, default_tenant):
+    """#298: the affected-employee count (used by create_closure's response) must
+    NOT include employees who got no absence because they are outside their window."""
+    from app.routers.company_closures import _create_closure_absences
+
+    admin = _mk(db, "admin298c", role=UserRole.ADMIN)
+    in_window = _mk(db, "inwin298")  # no first_work_day -> always employed
+    future = _mk(db, "fut298", first_work_day=date(2026, 9, 1))  # starts AFTER the closure
+
+    closure = CompanyClosure(
+        name="VorEintritt", start_date=date(2026, 8, 24), end_date=date(2026, 8, 28),
+        counts_as_vacation=True, tenant_id=DEFAULT_TENANT_ID, created_by=admin.id,
+    )
+    db.add(closure); db.commit(); db.refresh(closure)
+
+    workdays = _weekdays(closure.start_date, closure.end_date)  # all BEFORE 2026-09-01
+    affected = _create_closure_absences(db, closure, workdays, [in_window, future], admin)
+    db.commit()
+
+    # only the in-window employee got absences; the future starter is skipped
+    assert affected == 1, f"expected 1 affected, got {affected}"
+    assert db.query(Absence).filter(Absence.user_id == future.id).count() == 0
+    assert db.query(Absence).filter(Absence.user_id == in_window.id).count() == len(workdays)

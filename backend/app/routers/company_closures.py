@@ -293,7 +293,7 @@ def create_closure(
         User.tenant_id == current_user.tenant_id,
     ).all()
 
-    _create_closure_absences(db, closure, workdays, employees, current_user)
+    affected = _create_closure_absences(db, closure, workdays, employees, current_user)
 
     db.commit()
     db.refresh(closure)
@@ -305,9 +305,12 @@ def create_closure(
         end_date=closure.end_date,
         created_by=str(closure.created_by),
         counts_as_vacation=closure.counts_as_vacation,
-        # All active employees are considered affected by the closure
-        # (kept consistent with list_closures' naive count).
-        affected_employees=len(employees),
+        # #298: count only employees who actually received an absence. With the
+        # employment-window guard, future-start / departed employees (and anyone
+        # with a pre-existing foreign absence) are skipped — so len(employees)
+        # would over-count. _create_closure_absences returns the distinct count
+        # of employees that got ≥1 absence, matching list_closures' COUNT(DISTINCT).
+        affected_employees=affected,
     )
 
 
@@ -415,6 +418,15 @@ def update_closure(
     db.commit()
     db.refresh(closure)
 
+    # #298: report the AUTHORITATIVE distinct count of employees actually affected
+    # by this closure (same COUNT(DISTINCT) as list_closures). The helper's return
+    # value is only the NEWLY booked employees, which on a re-save (no new days)
+    # would be 0; len(employees) would over-count out-of-window/foreign-absence MA.
+    affected = db.query(func.count(func.distinct(Absence.user_id))).filter(
+        Absence.closure_id == closure.id,
+        Absence.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar() or 0
+
     return CompanyClosureResponse(
         id=str(closure.id),
         name=closure.name,
@@ -422,7 +434,7 @@ def update_closure(
         end_date=closure.end_date,
         created_by=str(closure.created_by),
         counts_as_vacation=closure.counts_as_vacation,
-        affected_employees=len(employees),
+        affected_employees=affected,
     )
 
 
