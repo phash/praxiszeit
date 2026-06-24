@@ -107,28 +107,33 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
             --disable-components stackbuilder,pgAdmin ^
             --servicename "PraxisZeit-PostgreSQL" ^
             --install_runtimes 1
-        if not errorlevel 1 set "PG_INSTALL_RESULT=0"
     )
+    REM #286: Der EDB-Unattended-Installer kehrt teils mit Nicht-0-Exitcode zurueck
+    REM bzw. legt die Binaries ASYNCHRON ab - sie erscheinen erst Minuten spaeter.
+    REM Erfolg daher an der Existenz von pg_ctl.exe festmachen, nicht am Exitcode,
+    REM und bis zu 6 Minuten darauf warten. CRLF-Zeilenenden noetig: mit LF brechen
+    REM cmd.exe-Label-Spruenge call/goto :label und mehrzeilige Klammer-Bloecke.
+    REM Hinweis: keine Klammern in diesen REM-Zeilen - dies ist noch ein ()-Block.
+    echo Warte auf PostgreSQL-Binaries ^(kann einige Minuten dauern^)...
+    for /l %%w in (1,1,72) do if not exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" timeout /t 5 /nobreak >nul
 
-    if not "%PG_INSTALL_RESULT%"=="0" (
-        echo.
-        echo FEHLER: PostgreSQL-Installation fehlgeschlagen!
-        echo Bitte installieren Sie PostgreSQL manuell von:
-        echo   https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
-        if not defined PRAXISZEIT_NONINTERACTIVE pause
-        exit /b 1
+    if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
+        REM Binaries vorhanden = EDB-Installer fertig -> dessen eigenen Dienst und
+        REM Datenverzeichnis entfernen. PraxisZeit verwaltet PG mit eigenem Cluster.
+        REM Kein Race mit dem Installer, weil die Binaries bereits geschrieben sind.
+        echo Raeume EDB-Installer auf...
+        net stop PraxisZeit-PostgreSQL 2>nul
+        sc delete PraxisZeit-PostgreSQL 2>nul
+        if exist "%PG_DATA_DIR%\PG_VERSION" rd /s /q "%PG_DATA_DIR%"
+        if not exist "%PG_DATA_DIR%" mkdir "%PG_DATA_DIR%"
+        echo PostgreSQL installiert.
+    ) else (
+        REM Binaries noch nicht da ist KEIN harter Fehler: der Dienst initialisiert
+        REM PostgreSQL beim ersten Start selbst und legt ein fremdes EDB-Datadir
+        REM dabei sauber zur Seite. Kein exit/b - sonst bricht das Setup grundlos ab.
+        echo HINWEIS: PostgreSQL-Binaries noch nicht sichtbar. Der Dienst
+        echo initialisiert die Datenbank beim ersten Start. Setup faehrt fort.
     )
-
-    REM EDB erstellt einen eigenen Service und Datenverzeichnis mit User "postgres".
-    REM PraxisZeit verwaltet PostgreSQL selbst mit eigenem Superuser "praxiszeit".
-    REM Daher: EDB-Service und Datenverzeichnis entfernen.
-    echo Raeume EDB-Installer auf...
-    net stop PraxisZeit-PostgreSQL 2>nul
-    sc delete PraxisZeit-PostgreSQL 2>nul
-    if exist "%PG_DATA_DIR%\PG_VERSION" rd /s /q "%PG_DATA_DIR%"
-    if not exist "%PG_DATA_DIR%" mkdir "%PG_DATA_DIR%"
-
-    echo PostgreSQL installiert.
 ) else (
     echo.
     echo WARNUNG: PostgreSQL-Installer nicht gefunden.

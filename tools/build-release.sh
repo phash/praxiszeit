@@ -668,6 +668,9 @@ if [ "$BUILD_WINDOWS" = true ]; then
     cp "${REPO_DIR}/installer/windows/backup.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/update-wizard.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/update-wizard.ps1" "${WIN_DIR}/"
+    # restore-backup.bat aus dem Template ausliefern (BACKUP.md/UPDATE.md verweisen
+    # darauf). Das Template defaultet INSTALL_DIR auf C:\praxiszeit -> direkt nutzbar.
+    cp "${REPO_DIR}/installer/windows/restore-backup.template.bat" "${WIN_DIR}/restore-backup.bat"
 
     info "Entpacke Python ${PYTHON_VERSION} (Windows x64)..."
     mkdir -p "${WIN_DIR}/bin/python"
@@ -740,6 +743,19 @@ PTHEOF
 
     # Setup + Service Scripts aus dem Repo kopieren
     cp "${REPO_DIR}/installer/windows/setup.bat" "${WIN_DIR}/"
+
+    # #286: Windows-Skripte ZWINGEND mit CRLF ausliefern. Bei LF-Zeilenenden findet
+    # cmd.exe keine Labels (call/goto :label -> "cannot find batch label specified")
+    # und mehrzeilige ()-Bloecke brechen -> setup.bat meldete faelschlich
+    # "PostgreSQL-Installation fehlgeschlagen!" obwohl PG 18.4 korrekt installierte.
+    # .gitattributes (*.bat eol=crlf) griff nicht auf jeder Build-Maschine (stale
+    # working tree) -> hier hart erzwingen, damit jede Build-Maschine identisch liefert.
+    find "${WIN_DIR}" -type f \( -name '*.bat' -o -name '*.cmd' -o -name '*.ps1' \) \
+        -exec perl -0777 -i -pe 's/\r?\n/\r\n/g' {} +
+    if ! grep -q $'\r' "${WIN_DIR}/setup.bat"; then
+        echo -e "${RED}[ERROR]${NC} setup.bat ohne CRLF — Windows-cmd bricht an Labels ab (#286)." >&2
+        exit 1
+    fi
 
     # ========================================================================
     # Phase 5b: Avalonia GUI-Installer (setup.exe) mit eingebettetem Payload

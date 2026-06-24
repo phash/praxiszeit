@@ -86,7 +86,7 @@ Oder direkt aus dem `db`-Container (Dienst läuft weiter) — **mit gzip**, dami
 Restore mit `gunzip -c | psql` zusammenpasst:
 
 ```bash
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" --clean --if-exists "$POSTGRES_DB" \
+docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit \
     | gzip > backup-$(date +%F).sql.gz
 ```
 
