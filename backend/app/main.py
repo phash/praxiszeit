@@ -499,7 +499,12 @@ app.include_router(feedback.router)
 app.include_router(public_signup.router)
 app.include_router(billing.router)
 app.include_router(billing.webhook_router)
-app.include_router(admin_backups.router)  # #213 DB-Backup-Verwaltung
+# #213 DB-Backup-Verwaltung — NUR On-Prem einbinden. Im SaaS-Modus darf ein
+# Mandant nicht per API den (nicht tenant-scoped) DB-Server sichern/herunterladen
+# (Daten-Exfiltration über Tenant-Grenzen). Hart gaten statt nur per Doku-Kommentar.
+from app.core.deployment import is_onprem as _is_onprem
+if _is_onprem():
+    app.include_router(admin_backups.router)
 
 
 @app.middleware("http")

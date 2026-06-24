@@ -319,7 +319,9 @@ def handle_event(db: Session, event) -> dict:
                 from app.services.alerting import alert_plan_upgrade
                 alert_plan_upgrade(tenant.name, plan)
             except Exception:  # noqa: BLE001
-                pass
+                # Best-effort alert — must not break webhook processing, but a
+                # silently swallowed failure left no trace. Log it (no PII).
+                logger.warning("alert_plan_upgrade failed", exc_info=True)
         action = "subscription_activated"
 
     elif etype == "customer.subscription.updated":

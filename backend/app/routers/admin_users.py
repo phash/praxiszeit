@@ -351,10 +351,9 @@ def purge_user(
 @router.get("/users/{user_id}", response_model=UserResponse)
 def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Get a specific user by ID (admin only)."""
-    user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
-    return user
+    # _get_user_in_tenant raises 404 itself (never returns None) — the former
+    # `if not user` guard here was dead code; the tenant scope is already enforced.
+    return _get_user_in_tenant(db, user_id, current_user)
 
 
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)

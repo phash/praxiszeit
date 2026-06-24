@@ -222,6 +222,14 @@ def create_vacation_request(
             status_code=400,
             detail="Enddatum muss nach dem Startdatum liegen",
         )
+    # Bound the range: an approved request books an absence per workday AND
+    # overwrites time entries on those days — an unbounded span is a data-loss
+    # amplifier and never a legitimate single request.
+    if (end_date - start_date).days > 366:
+        raise HTTPException(
+            status_code=400,
+            detail="Der Zeitraum darf maximal ein Jahr umfassen",
+        )
 
     # 2. first_work_day / last_work_day (parity with create_absence)
     if current_user.first_work_day and start_date < current_user.first_work_day:
