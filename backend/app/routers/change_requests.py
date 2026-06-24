@@ -13,26 +13,11 @@ from app.routers.time_entries import (
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 from app.services.arbzg_utils import is_night_work
+# #219: single shared CR-enricher (was duplicated per-item here vs the batch in
+# admin_helpers). _enrich_cr_response wraps the batch _enrich_cr_responses([cr]).
+from app.routers.admin_helpers import _enrich_cr_response as _enrich_response
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
-
-
-def _enrich_response(cr: ChangeRequest, db: Session) -> ChangeRequestResponse:
-    """Add user names to the change request response."""
-    response = ChangeRequestResponse.model_validate(cr)
-
-    user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
-    if user:
-        response.user_first_name = user.first_name
-        response.user_last_name = user.last_name
-
-    if cr.reviewed_by:
-        reviewer = db.query(User).filter(User.id == cr.reviewed_by, User.tenant_id == cr.tenant_id).first()
-        if reviewer:
-            response.reviewer_first_name = reviewer.first_name
-            response.reviewer_last_name = reviewer.last_name
-
-    return response
 
 
 @router.post("/", response_model=ChangeRequestResponse, status_code=status.HTTP_201_CREATED)

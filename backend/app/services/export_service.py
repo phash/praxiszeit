@@ -24,6 +24,16 @@ from sqlalchemy import extract
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
+def _group_by_date(rows) -> dict:
+    """#219: group TimeEntry/Absence rows into {date: [rows…]} (Reihenfolge erhalten).
+    Pro Tag eine LISTE — ein Tag kann mehrere Einträge/Abwesenheiten tragen
+    (I-1: z. B. halber Tag Urlaub + halber Tag Sonstiges)."""
+    by_date: dict = {}
+    for r in rows:
+        by_date.setdefault(r.date, []).append(r)
+    return by_date
+
+
 def neutralize_spreadsheet_formula(value):
     """Return ``value`` with a leading apostrophe if it could be parsed as a
     spreadsheet formula. Non-strings and safe strings are returned unchanged."""
@@ -141,9 +151,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         TimeEntry.user_id == user.id,
         date_in_month(TimeEntry.date, year, month)
     ).order_by(TimeEntry.start_time).all()
-    entries_by_date: dict = {}
-    for entry in time_entries:
-        entries_by_date.setdefault(entry.date, []).append(entry)
+    entries_by_date = _group_by_date(time_entries)  # #219: shared
 
     # Get all absences for the month.
     # I-1: ein Tag kann MEHRERE Absences tragen (Unique-Constraint ist je
@@ -154,9 +162,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         Absence.user_id == user.id,
         date_in_month(Absence.date, year, month)
     ).all()
-    absences_by_date: dict = {}
-    for absence in absences:
-        absences_by_date.setdefault(absence.date, []).append(absence)
+    absences_by_date = _group_by_date(absences)  # #219: shared
 
     # Get public holidays (tenant-scoped: each tenant may run a different
     # state-holiday set, so a global query would leak or miss holidays).
@@ -679,9 +685,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         TimeEntry.user_id == user.id,
         date_in_year(TimeEntry.date, year)
     ).order_by(TimeEntry.start_time).all()
-    entries_by_date: dict = {}
-    for entry in time_entries:
-        entries_by_date.setdefault(entry.date, []).append(entry)
+    entries_by_date = _group_by_date(time_entries)  # #219: shared
 
     # Get all absences for the year.
     # I-1: pro Tag eine LISTE (mehrere Absences je Tag möglich, s. _create_employee_sheet).
@@ -689,9 +693,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         Absence.user_id == user.id,
         date_in_year(Absence.date, year)
     ).all()
-    absences_by_date: dict = {}
-    for absence in absences:
-        absences_by_date.setdefault(absence.date, []).append(absence)
+    absences_by_date = _group_by_date(absences)  # #219: shared
 
     # Get public holidays for the year (tenant-scoped; see generate_monthly_report).
     holidays = db.query(PublicHoliday).filter(

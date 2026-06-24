@@ -3,8 +3,11 @@
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.models import User, ChangeRequest, TimeEntryAuditLog
+from app.models.vacation_request import VacationRequest
 from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
+from app.schemas.vacation_request import VacationRequestResponse
+from app.services.calculation_service import count_workdays
 
 
 def _get_field(entry, field: str):
@@ -91,6 +94,59 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
                 response.reviewer_first_name = reviewer.first_name
                 response.reviewer_last_name = reviewer.last_name
         results.append(response)
+    return results
+
+
+def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResponse:
+    """Add user names + workdays to a vacation request response (single item)."""
+    return _enrich_vr_responses([vr], db)[0]
+
+
+def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse]:
+    """#219: single shared enricher for vacation requests (was duplicated in
+    admin_vacations._enrich_vr_responses + vacation_requests._enrich, the latter
+    doing 3 DB queries PER item). Batch: one user query for the whole list."""
+    if not vrs:
+        return []
+    user_ids = set()
+    for vr in vrs:
+        user_ids.add(vr.user_id)
+        if vr.reviewed_by:
+            user_ids.add(vr.reviewed_by)
+        if vr.last_modified_by:
+            user_ids.add(vr.last_modified_by)
+    user_ids.discard(None)
+    # F-026: scope referenced users to the tenants of the requests they belong to.
+    tenant_ids = {vr.tenant_id for vr in vrs}
+    users = (
+        db.query(User)
+        .filter(User.id.in_(user_ids), User.tenant_id.in_(tenant_ids))
+        .all()
+        if user_ids
+        else []
+    )
+    user_map = {u.id: u for u in users}
+
+    results = []
+    for vr in vrs:
+        resp = VacationRequestResponse.model_validate(vr)
+        user = user_map.get(vr.user_id)
+        if user:
+            resp.user_first_name = user.first_name
+            resp.user_last_name = user.last_name
+        if vr.reviewed_by:
+            reviewer = user_map.get(vr.reviewed_by)
+            if reviewer:
+                resp.reviewer_first_name = reviewer.first_name
+                resp.reviewer_last_name = reviewer.last_name
+        if vr.last_modified_by:
+            modifier = user_map.get(vr.last_modified_by)
+            if modifier:
+                resp.last_modifier_first_name = modifier.first_name
+                resp.last_modifier_last_name = modifier.last_name
+        end = vr.end_date if vr.end_date else vr.date
+        resp.days = count_workdays(db, vr.date, end, tenant_id=vr.tenant_id)
+        results.append(resp)
     return results
 
 

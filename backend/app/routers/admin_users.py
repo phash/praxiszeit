@@ -39,6 +39,18 @@ def _get_user_in_tenant(db: Session, user_id: str, current_user: User) -> User:
     return user
 
 
+def _filtered_user_list_query(db: Session, current_user: User, include_inactive: bool, include_hidden: bool):
+    """#219: shared user-list query for list_users + users_overview (#194 keeps them
+    in sync). Returns the UNEXECUTED query so callers add their own .offset/.limit/.all.
+    F-026: explicit tenant filter on top of RLS; active+visible by default."""
+    query = db.query(User).filter(User.tenant_id == current_user.tenant_id)
+    if not include_inactive:
+        query = query.filter(User.is_active == True)  # noqa: E712
+    if not include_hidden:
+        query = query.filter(User.is_hidden == False)  # noqa: E712
+    return query.order_by(User.last_name, User.first_name)
+
+
 def _tenant_has_other_active_admin(db: Session, current_user: User) -> bool:
     """Audit A01 (4-Augen-Prinzip): does the caller's tenant have ANOTHER
     active admin besides ``current_user``?
@@ -76,13 +88,10 @@ def list_users(
     """List users (admin only). By default only active, visible users."""
     # F-026: belt-and-suspenders — RLS already scopes by tenant, but every
     # list endpoint must add the explicit filter so a missing GUC cannot
-    # leak cross-tenant rows.
-    query = db.query(User).filter(User.tenant_id == current_user.tenant_id)
-    if not include_inactive:
-        query = query.filter(User.is_active == True)
-    if not include_hidden:
-        query = query.filter(User.is_hidden == False)
-    users = query.order_by(User.last_name, User.first_name).offset(skip).limit(limit).all()
+    # leak cross-tenant rows. (#219: shared with users_overview.)
+    users = _filtered_user_list_query(
+        db, current_user, include_inactive, include_hidden
+    ).offset(skip).limit(limit).all()
     return users
 
 
@@ -101,12 +110,9 @@ def users_overview(
     F-026: explicit tenant filter on top of RLS.
     """
     year = year or today_local().year
-    query = db.query(User).filter(User.tenant_id == current_user.tenant_id)
-    if not include_inactive:
-        query = query.filter(User.is_active == True)
-    if not include_hidden:
-        query = query.filter(User.is_hidden == False)
-    users = query.order_by(User.last_name, User.first_name).all()
+    users = _filtered_user_list_query(
+        db, current_user, include_inactive, include_hidden
+    ).all()
 
     result = []
     for u in users:
