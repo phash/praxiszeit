@@ -39,6 +39,7 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
     # 1) Open entries: end_time is NULL, date < today
     open_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == tenant_id,  # F-026
         TimeEntry.end_time.is_(None),
         TimeEntry.date < today,
     ).order_by(TimeEntry.date).all()
@@ -64,6 +65,7 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
     entry_dates = set(
         row[0] for row in db.query(TimeEntry.date).filter(
             TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == tenant_id,  # F-026
             TimeEntry.date >= start_date,
             TimeEntry.date <= end_date,
         ).all()
@@ -73,6 +75,7 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
     absence_dates = set()
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == tenant_id,  # F-026
         Absence.date >= start_date,
         Absence.date <= end_date,
     ).all()

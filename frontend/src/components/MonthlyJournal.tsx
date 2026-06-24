@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
-import { formatHoursHMText } from '../utils/formatters';
+import { formatHoursHMText, parseHours } from '../utils/formatters';
 import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
@@ -211,7 +211,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           user_id: userId,
           date: dateStr,
           type: editState.entryType,
-          hours: parseFloat(editState.absenceHours) || 0,
+          hours: parseHours(editState.absenceHours),
           keep_time_entries: hasExistingEntries,
         });
       }
@@ -274,7 +274,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           user_id: userId,
           date: day.date,
           type: editState.entryType,
-          hours: parseFloat(editState.absenceHours) || 0,
+          hours: parseHours(editState.absenceHours),
           keep_time_entries: remainingEntries.length > 0,
         });
       }
@@ -359,7 +359,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           reason: submitReason.trim(),
           proposed_date: day.date,
           proposed_absence_type: editState.entryType,
-          proposed_absence_hours: parseFloat(editState.absenceHours) || 0,
+          proposed_absence_hours: parseHours(editState.absenceHours),
         };
       }
 

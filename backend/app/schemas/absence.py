@@ -4,6 +4,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
 from app.models.absence import AbsenceType
+from app.schemas.validators import validate_half_day_single_day
 
 
 class AbsenceBase(BaseModel):
@@ -25,13 +26,7 @@ class AbsenceCreate(AbsenceBase):
     @field_validator('half_day')
     @classmethod
     def half_day_single_day(cls, v, info):
-        # Halbe Tage nur für Einzeltage — ein Zeitraum würde jeden Tag halbieren.
-        if v:
-            start = info.data.get('date')
-            end = info.data.get('end_date')
-            if end is not None and start is not None and end != start:
-                raise ValueError('Halbe Tage sind nur für Einzeltage möglich')
-        return v
+        return validate_half_day_single_day(v, info)  # #219: shared
 
 
 class AbsenceResponse(AbsenceBase):

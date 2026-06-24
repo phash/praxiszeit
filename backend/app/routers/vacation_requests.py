@@ -10,33 +10,13 @@ from app.models import User, UserRole, PublicHoliday, Absence, AbsenceType, Time
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import get_current_user
 from app.schemas.vacation_request import VacationRequestCreate, VacationRequestResponse, VacationRequestUpdate
-from app.services.calculation_service import count_workdays
 from app.services.timezone_service import today_local
 from app.services import settings_service
+# #219: single shared VR-enricher (was duplicated here as a per-item N+1 copy of
+# admin_vacations._enrich_vr_responses). _enrich = thin single-item alias.
+from app.routers.admin_helpers import _enrich_vr_response as _enrich, _enrich_vr_responses
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
-
-
-def _enrich(vr: VacationRequest, db: Session) -> VacationRequestResponse:
-    resp = VacationRequestResponse.model_validate(vr)
-    user = db.query(User).filter(User.id == vr.user_id, User.tenant_id == vr.tenant_id).first()
-    if user:
-        resp.user_first_name = user.first_name
-        resp.user_last_name = user.last_name
-    if vr.reviewed_by:
-        reviewer = db.query(User).filter(User.id == vr.reviewed_by, User.tenant_id == vr.tenant_id).first()
-        if reviewer:
-            resp.reviewer_first_name = reviewer.first_name
-            resp.reviewer_last_name = reviewer.last_name
-    if vr.last_modified_by:
-        modifier = db.query(User).filter(User.id == vr.last_modified_by, User.tenant_id == vr.tenant_id).first()
-        if modifier:
-            resp.last_modifier_first_name = modifier.first_name
-            resp.last_modifier_last_name = modifier.last_name
-    # Compute workdays
-    end = vr.end_date if vr.end_date else vr.date
-    resp.days = count_workdays(db, vr.date, end, tenant_id=vr.tenant_id)
-    return resp
 
 
 def format_vacation_request_audit_text(vr: VacationRequest) -> str:
@@ -242,6 +222,14 @@ def create_vacation_request(
             status_code=400,
             detail="Enddatum muss nach dem Startdatum liegen",
         )
+    # Bound the range: an approved request books an absence per workday AND
+    # overwrites time entries on those days — an unbounded span is a data-loss
+    # amplifier and never a legitimate single request.
+    if (end_date - start_date).days > 366:
+        raise HTTPException(
+            status_code=400,
+            detail="Der Zeitraum darf maximal ein Jahr umfassen",
+        )
 
     # 2. first_work_day / last_work_day (parity with create_absence)
     if current_user.first_work_day and start_date < current_user.first_work_day:
@@ -366,7 +354,7 @@ def list_my_vacation_requests(
     if status:
         query = query.filter(VacationRequest.status == status)
     requests = query.order_by(VacationRequest.created_at.desc()).offset(skip).limit(limit).all()
-    return [_enrich(vr, db) for vr in requests]
+    return _enrich_vr_responses(requests, db)  # #219: batch (was per-item N+1)
 
 
 def cancel_approved_vacation_request(
