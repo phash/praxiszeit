@@ -130,6 +130,17 @@ def _create_closure_absences(
         created_for_employee = False
         emp_wh = wh_by_user.get(employee.id, [])
         for workday in workdays:
+            # #298: never book closure absences OUTSIDE the employee's employment
+            # window. A future-start employee (first_work_day in the future, e.g. an
+            # Azubine starting on 1.9.) or an already-departed one (after last_work_day)
+            # must not receive VACATION/PAID_LEAVE for days she is not employed —
+            # otherwise a vacation-deducting Betriebsferien shows her with "genommene
+            # Urlaubstage" today, before she has even started. Mirrors the per-day
+            # employment-window guard from #193/#195 (which only covered the calc
+            # loops + the #290 new-user enrol path, not the closure-booking itself).
+            if not calculation_service._within_employment_window(employee, workday):
+                continue
+
             # Skip if any absence already exists for this day (not just vacation)
             if (employee.id, workday) in existing_keys:
                 continue
