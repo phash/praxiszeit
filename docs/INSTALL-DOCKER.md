@@ -25,9 +25,9 @@ Dateien (inkl. `docker-compose.yml`) zu kommen:
 ## Weg A — Docker-Bundle
 
 ```bash
-# 1. Bundle entpacken (enthält einen Top-Level-Ordner praxiszeit-X.Y.Z/)
-tar xzf praxiszeit-1.9.0-docker.tar.gz
-cd praxiszeit-1.9.0
+# 1. Bundle entpacken (enthält einen Top-Level-Ordner praxiszeit-<version>/)
+tar xzf praxiszeit-<version>-docker.tar.gz
+cd praxiszeit-<version>      # z. B. praxiszeit-1.10.3
 
 # 2. Secrets erzeugen (.env mit Zufallswerten + komplexem Admin-Passwort)
 bash generate-secrets.sh
@@ -133,7 +133,7 @@ im Volume `praxiszeit_backups` und lassen sich dort herunterladen.
 **Kommandozeile** (gzip, damit der Restore mit `gunzip -c | psql` zusammenpasst):
 
 ```bash
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" --clean --if-exists "$POSTGRES_DB" \
+docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit \
     | gzip > backup-$(date +%F).sql.gz
 ```
 

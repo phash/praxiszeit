@@ -42,8 +42,13 @@ hinweg erhalten — der `docker compose down`/`up`-Zyklus löscht sie **nicht**
 ### 1. Backup
 
 ```bash
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-$(date +%F).sql
+# Default-User/-DB = praxiszeit (eigene Werte ggf. aus der .env ablesen).
+# --clean --if-exists + gzip → exakt so zurückspielbar wie unter „Rollback".
+docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup-$(date +%F).sql.gz
 ```
+
+> Die `$POSTGRES_USER`/`$POSTGRES_DB` aus der `.env` sind **nur im Container** gesetzt,
+> nicht in deiner Host-Shell — deshalb oben die festen Default-Namen `praxiszeit`.
 
 ### 2a. Mit Docker-Paket (Tarball/ZIP, ohne git)
 
@@ -55,8 +60,8 @@ lassen — das überschriebe Secrets und das Admin-Passwort):
 # im neuen, entpackten Paket-Ordner:
 cp /pfad/zur/alten/installation/.env ./.env
 # Falls SSL genutzt wird, auch das Zertifikat übernehmen:
-cp -r /pfad/zur/alten/installation/ssl/cert.pem ssl/cert.pem 2>/dev/null || true
-cp -r /pfad/zur/alten/installation/ssl/key.pem  ssl/key.pem  2>/dev/null || true
+cp /pfad/zur/alten/installation/ssl/cert.pem ssl/cert.pem 2>/dev/null || true
+cp /pfad/zur/alten/installation/ssl/key.pem  ssl/key.pem  2>/dev/null || true
 
 # HTTP:
 docker compose up -d --build
@@ -70,6 +75,16 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 > Wechsel das SQL-Backup ziehen und nach dem Start prüfen, ob die Daten da sind.
 
 ### 2b. Aus dem Quellcode (nur mit git-Zugriff)
+
+> **Von 1.9.x oder älter? Erst das PostgreSQL-Major-Upgrade fahren** — sonst
+> scheitert `up --build` am inkompatiblen PG16-Volume (siehe Box oben). Der Helfer
+> funktioniert auch aus dem git-Checkout (er findet die `docker-compose.yml` im
+> Repo-Root und nutzt `backup.sh`/`restore.sh` daneben):
+> ```bash
+> cd praxiszeit && git pull                 # holt PG18-Compose + den Helfer
+> bash tools/docker/update-pg-major.sh      # Backup → frischer PG18 → Restore
+> ```
+> Bereits auf 1.10.x? Dann ist es ein normales In-Place-Update:
 
 ```bash
 cd praxiszeit
@@ -155,7 +170,14 @@ beschriebenen Schritte.
 ## Rollback
 
 Es gibt keinen automatischen Rollback. Im Problemfall: die alte Paket-/Code-Version
-erneut einspielen und das **vor** dem Update gezogene DB-Backup zurückspielen
-(Docker: `psql … < backup.sql`; nativ: `pg_dump`/`psql` aus `bin/postgresql/bin`,
-siehe INSTALL-Dokumente). Migrationen sind in der Regel vorwärtskompatibel; ein
-Downgrade des Schemas wird **nicht** unterstützt — daher das Backup.
+erneut einspielen und das **vor** dem Update gezogene DB-Backup zurückspielen.
+Docker (zum `--clean`-gzip-Backup aus Schritt 1):
+
+```bash
+gunzip -c backup-JJJJ-MM-TT.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
+docker compose up -d backend
+```
+
+Nativ: `pg_dump`/`psql` aus `bin/postgresql/bin` (siehe INSTALL-Dokumente).
+Migrationen sind in der Regel vorwärtskompatibel; ein Downgrade des Schemas wird
+**nicht** unterstützt — daher das Backup.

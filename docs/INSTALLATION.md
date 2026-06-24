@@ -111,7 +111,8 @@ Pruefen ob alles laeuft:
 docker compose ps
 ```
 
-Alle 3 Dienste sollten "Up" zeigen. Health-Check:
+Alle Dienste sollten "Up" zeigen (`db`, `backend`, `frontend` und das Monitoring
+`prometheus`/`grafana`). Health-Check:
 ```bash
 curl http://localhost/api/health
 # Erwartet: {"status":"healthy","database":"connected"}
@@ -222,6 +223,12 @@ docker compose up -d
 
 ## Updates einspielen
 
+> **⚠️ Von 1.9.x oder älter auf 1.10.x?** Das ist ein PostgreSQL-Major-Upgrade
+> (16 → 18, **nicht in-place**) — ein einfaches `up --build` scheitert am
+> inkompatiblen PG16-Volume. Vorher den geführten Helfer fahren (läuft auch aus
+> dem git-Checkout): `bash tools/docker/update-pg-major.sh`. Vollständige
+> Anleitung inkl. Backup/Restore: **[UPDATE.md](UPDATE.md)**.
+
 ```bash
 cd ~/praxiszeit
 docker compose down
@@ -233,6 +240,7 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```
 
 Datenbank-Migrationen werden automatisch beim Start ausgefuehrt.
+Details & alle Pfade (Docker, Native, Windows): **[UPDATE.md](UPDATE.md)**.
 
 ---
 
@@ -241,7 +249,8 @@ Datenbank-Migrationen werden automatisch beim Start ausgefuehrt.
 ### Manuelles Backup
 ```bash
 cd ~/praxiszeit
-docker compose exec db pg_dump -U praxiszeit praxiszeit > backup_$(date +%Y%m%d).sql
+# --clean --if-exists + gzip → sauber zurückspielbar (s. „Backup wiederherstellen").
+docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup_$(date +%Y%m%d).sql.gz
 ```
 
 ### Automatisches taegliches Backup (Cron)
@@ -261,7 +270,8 @@ mkdir -p ~/backups
 ### Backup wiederherstellen
 ```bash
 cd ~/praxiszeit
-docker compose exec -T db psql -U praxiszeit praxiszeit < backup_20260214.sql
+gunzip -c backup_20260214.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
+docker compose up -d backend   # Migrationen heben das Schema auf head
 ```
 
 ---

@@ -11,7 +11,10 @@
 # komprimiert und liesse sich nicht wie dokumentiert per gunzip|psql einspielen).
 set -euo pipefail
 
+# Bundle: docker-compose.yml + .env liegen NEBEN diesem Skript. Git-Checkout:
+# das Skript liegt in tools/docker/, docker-compose.yml + .env im Repo-Root.
 cd "$(dirname "$0")"
+if [ ! -f docker-compose.yml ] && [ -f ../../docker-compose.yml ]; then cd ../../; fi
 
 if [ ! -f .env ]; then
     echo "FEHLER: .env nicht gefunden — zuerst 'bash generate-secrets.sh' ausfuehren." >&2

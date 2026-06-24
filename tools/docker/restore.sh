@@ -16,9 +16,15 @@
 # also die vorhandenen Tabellen.
 set -euo pipefail
 
-cd "$(dirname "$0")"
-
+# $FILE relativ zum AUFRUF-Verzeichnis absolut machen, BEVOR das cwd wechselt.
 FILE="${1:-}"
+case "$FILE" in /*|"") ;; *) FILE="$(pwd)/$FILE" ;; esac
+
+# Bundle: docker-compose.yml + .env liegen NEBEN diesem Skript. Git-Checkout:
+# das Skript liegt in tools/docker/, docker-compose.yml + .env im Repo-Root.
+cd "$(dirname "$0")"
+if [ ! -f docker-compose.yml ] && [ -f ../../docker-compose.yml ]; then cd ../../; fi
+
 if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
     echo "Aufruf: bash restore.sh <pfad/zu/praxiszeit_*.sql.gz>" >&2
     exit 1
