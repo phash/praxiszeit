@@ -1039,7 +1039,14 @@ fi
 
 step "7 — Pruefsummen + Zusammenfassung"
 
-(cd "${DIST_DIR}" && sha256sum praxiszeit-${APP_VERSION}-* > "praxiszeit-${APP_VERSION}-SHA256SUMS.txt" 2>/dev/null || true)
+# Remove any SHA file from a PRIOR build of this version FIRST — otherwise the
+# praxiszeit-<ver>-* glob matches it and sha256sum lists the SHA file itself (a
+# self-reference whose hash can never match → spurious `sha256sum -c` FAILED on the
+# SHA file). Then write the sums to a temp name (which does NOT match the glob) and
+# rename, so the listing contains only the real artifacts.
+(cd "${DIST_DIR}" && rm -f "praxiszeit-${APP_VERSION}-SHA256SUMS.txt" ".sha256sums.tmp"; \
+    sha256sum praxiszeit-${APP_VERSION}-* > ".sha256sums.tmp" 2>/dev/null; \
+    mv -f ".sha256sums.tmp" "praxiszeit-${APP_VERSION}-SHA256SUMS.txt") || true
 if [ -f "${DIST_DIR}/praxiszeit-${APP_VERSION}-SHA256SUMS.txt" ]; then
     cat "${DIST_DIR}/praxiszeit-${APP_VERSION}-SHA256SUMS.txt"
 fi
