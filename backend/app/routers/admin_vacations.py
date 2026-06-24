@@ -11,9 +11,12 @@ from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview, VacationRequestUpdate
 from app.services import calculation_service
-from app.services.calculation_service import count_workdays
 from app.services.timezone_service import today_local
-from app.routers.admin_helpers import _create_audit_log
+from app.routers.admin_helpers import (
+    _create_audit_log,
+    _enrich_vr_response,
+    _enrich_vr_responses,
+)
 from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.vacation_requests import (
     cancel_approved_vacation_request,
@@ -37,56 +40,7 @@ def get_pending_vacation_request_count(
     return {"count": count}
 
 
-def _enrich_vr_response(vr: VacationRequest, db: Session) -> VacationRequestResponse:
-    """Add user names to the vacation request response (single item)."""
-    return _enrich_vr_responses([vr], db)[0]
-
-
-def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse]:
-    """Add user names to vacation request responses (batch, single query)."""
-    if not vrs:
-        return []
-    user_ids = set()
-    for vr in vrs:
-        user_ids.add(vr.user_id)
-        if vr.reviewed_by:
-            user_ids.add(vr.reviewed_by)
-        if vr.last_modified_by:
-            user_ids.add(vr.last_modified_by)
-    user_ids.discard(None)
-    # F-026: scope referenced users to the tenants of the requests they belong to.
-    tenant_ids = {vr.tenant_id for vr in vrs}
-    users = (
-        db.query(User)
-        .filter(User.id.in_(user_ids), User.tenant_id.in_(tenant_ids))
-        .all()
-        if user_ids
-        else []
-    )
-    user_map = {u.id: u for u in users}
-
-    results = []
-    for vr in vrs:
-        resp = VacationRequestResponse.model_validate(vr)
-        user = user_map.get(vr.user_id)
-        if user:
-            resp.user_first_name = user.first_name
-            resp.user_last_name = user.last_name
-        if vr.reviewed_by:
-            reviewer = user_map.get(vr.reviewed_by)
-            if reviewer:
-                resp.reviewer_first_name = reviewer.first_name
-                resp.reviewer_last_name = reviewer.last_name
-        if vr.last_modified_by:
-            modifier = user_map.get(vr.last_modified_by)
-            if modifier:
-                resp.last_modifier_first_name = modifier.first_name
-                resp.last_modifier_last_name = modifier.last_name
-        # Compute workdays
-        end = vr.end_date if vr.end_date else vr.date
-        resp.days = count_workdays(db, vr.date, end, tenant_id=vr.tenant_id)
-        results.append(resp)
-    return results
+# _enrich_vr_response / _enrich_vr_responses live in admin_helpers now (#219).
 
 
 @router.get("/vacation-requests", response_model=List[VacationRequestResponse])

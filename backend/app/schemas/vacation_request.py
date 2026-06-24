@@ -4,6 +4,11 @@ from datetime import date as _date_type
 from typing import Optional, Literal
 import uuid
 
+from app.schemas.validators import (
+    validate_half_day_single_day,
+    validate_vr_absence_type,
+)
+
 
 class VacationRequestCreate(BaseModel):
     date: date
@@ -16,10 +21,7 @@ class VacationRequestCreate(BaseModel):
     @field_validator('absence_type')
     @classmethod
     def validate_absence_type(cls, v):
-        allowed = {"vacation", "training", "overtime", "other"}
-        if v not in allowed:
-            raise ValueError(f'absence_type muss einer von {allowed} sein')
-        return v
+        return validate_vr_absence_type(v, allow_none=False)  # #219: shared
 
     @field_validator('end_date')
     @classmethod
@@ -31,14 +33,7 @@ class VacationRequestCreate(BaseModel):
     @field_validator('half_day')
     @classmethod
     def half_day_single_day(cls, v, info):
-        # Halbe Tage sind ein Einzeltag-Konzept — ein Zeitraum mit half_day=True
-        # würde jeden Tag des Bereichs halbieren (überraschend, inkonsistent zur UI).
-        if v:
-            start = info.data.get('date')
-            end = info.data.get('end_date')
-            if end is not None and start is not None and end != start:
-                raise ValueError('Halbe Tage sind nur für Einzeltage möglich')
-        return v
+        return validate_half_day_single_day(v, info)  # #219: shared
 
 
 class VacationRequestUpdate(BaseModel):
@@ -64,12 +59,7 @@ class VacationRequestUpdate(BaseModel):
     @field_validator('absence_type')
     @classmethod
     def validate_absence_type(cls, v):
-        if v is None:
-            return v
-        allowed = {"vacation", "training", "overtime", "other"}
-        if v not in allowed:
-            raise ValueError(f'absence_type muss einer von {allowed} sein')
-        return v
+        return validate_vr_absence_type(v, allow_none=True)  # #219: shared
 
 
 class VacationRequestReview(BaseModel):

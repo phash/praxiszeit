@@ -9,7 +9,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { formatHoursHM } from '../../utils/formatters';
+import { formatHoursHM, parseHours } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
@@ -1253,7 +1253,7 @@ export default function AdminDashboard() {
                               min="0"
                               max="24"
                               value={entryForm.absence_hours}
-                              onChange={(e) => setEntryForm({ ...entryForm, absence_hours: parseFloat(e.target.value) || 0 })}
+                              onChange={(e) => setEntryForm({ ...entryForm, absence_hours: parseHours(e.target.value) })}
                               placeholder="Stunden"
                               aria-label="Stunden"
                               className="px-2 py-1 border border-gray-300 rounded-sm text-sm"
