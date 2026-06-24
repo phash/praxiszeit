@@ -410,7 +410,11 @@ export default function Layout() {
       {/* Main Content */}
       <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-20 lg:pb-0 bg-background" tabIndex={-1}>
         <TrialBanner />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+        {/* #287: Arbeitsbereich nutzt die volle Breite neben dem Menü (kein
+            max-w-7xl-Cap mehr, das auf breiten Screens ~die Hälfte leer ließ).
+            Die responsive px-Polsterung lässt einen schmalen Rand ⇒ ~95 % Füllung.
+            Schmale Form-Seiten (Billing/Backups) behalten ihre eigenen max-w. */}
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           {/* #147: Lazy-geladene Routen (admin/* + Help) -> Suspense nur um den
               Content, damit die Sidebar beim Chunk-Laden stehen bleibt. */}
           <Suspense
