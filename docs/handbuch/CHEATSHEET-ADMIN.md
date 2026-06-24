@@ -111,7 +111,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 **Abwesenheiten → Tab Betriebsferien → Neue Betriebsferien**
 - Bezeichnung + Von–Bis → Speichern
 - → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Abwesenheitseinträge (keine Urlaubstage!) – rollenunabhängig (auch Admins, die MA sind)
-- Nachträglich Berechtigte: Option setzen, dann Betriebsferien **einmal erneut speichern** → Einträge werden nachgetragen
+- Nachträglich Berechtigte: Option setzen → Einträge werden **automatisch** für laufende und künftige Betriebsferien nachgetragen (Neu-Speichern nicht nötig)
 - Löschen: Einträge werden bei allen MA automatisch entfernt
 
 ---

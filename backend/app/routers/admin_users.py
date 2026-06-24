@@ -1,5 +1,6 @@
 """Admin sub-router: User Management + Working Hours Changes."""
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -16,6 +17,8 @@ from app.services import auth_service, calculation_service
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+logger = logging.getLogger(__name__)
 
 
 def _get_user_in_tenant(db: Session, user_id: str, current_user: User) -> User:
@@ -57,22 +60,29 @@ def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -
     from app.models import CompanyClosure
     from app.routers.company_closures import _get_holidays_for_range, _get_workdays, _create_closure_absences
 
-    today = today_local()
-    closures = db.query(CompanyClosure).filter(
-        CompanyClosure.tenant_id == current_user.tenant_id,
-        CompanyClosure.end_date >= today,
-    ).all()
-    for closure in closures:
-        holidays = _get_holidays_for_range(
-            db, closure.start_date, closure.end_date, current_user.tenant_id
-        )
-        workdays = _get_workdays(closure.start_date, closure.end_date, holidays)
-        if user.first_work_day:
-            workdays = [d for d in workdays if d >= user.first_work_day]
-        if workdays:
-            _create_closure_absences(
-                db, closure, workdays, [user], current_user, delete_time_entries=False
+    # Honour the best-effort contract: a failure here must NOT abort the (already
+    # committed) user create/update. Roll back the partial enrolment and log;
+    # the gap can be repaired by re-saving the closure.
+    try:
+        today = today_local()
+        closures = db.query(CompanyClosure).filter(
+            CompanyClosure.tenant_id == current_user.tenant_id,  # F-026
+            CompanyClosure.end_date >= today,
+        ).all()
+        for closure in closures:
+            holidays = _get_holidays_for_range(
+                db, closure.start_date, closure.end_date, current_user.tenant_id
             )
+            workdays = _get_workdays(closure.start_date, closure.end_date, holidays)
+            if user.first_work_day:
+                workdays = [d for d in workdays if d >= user.first_work_day]
+            if workdays:
+                _create_closure_absences(
+                    db, closure, workdays, [user], current_user, delete_time_entries=False
+                )
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.warning("closure auto-enrollment failed for user %s", user.id, exc_info=True)
 
 
 def _filtered_user_list_query(db: Session, current_user: User, include_inactive: bool, include_hidden: bool):
