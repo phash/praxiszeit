@@ -389,6 +389,7 @@ export const handbuchAdminSections: AccordionItem[] = [
         <p><strong>Erster/Letzter Arbeitstag</strong> begrenzen die Soll-Berechnung: vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll. Die Übersicht zeigt je MA Urlaubskonto <strong>und</strong> Überstundensaldo (Jahr bis heute; „—" ohne Stundenzählung).</p>
         <p className="text-amber-700">⚠️ Bei <strong>unterjährigem Eintritt</strong> (nicht seit 1. Januar im System) den „Ersten Arbeitstag" unbedingt setzen – sonst zählt das Soll auch Tage vor dem Eintritt und es entstehen Phantom-Minusstunden.</p>
         <p><strong>Soll-Arbeitszeiten (Arbeitszeit-Fenster):</strong> Im Benutzerformular können Sie pro MA und Wochentag Soll-Beginn und Soll-Ende hinterlegen. Zeiten außerhalb des Fensters (abzüglich Puffer) werden nicht angerechnet; der gestempelte Rohwert bleibt gespeichert (§16). Der systemweite Puffer (Standard 15 Min.) ist unter <strong>Einstellungen → Arbeitszeit-Fenster Puffer</strong> konfigurierbar. Opt-in: ohne Soll-Zeiten kein Eingriff. MA mit deaktivierter Stundenzählung sind ausgenommen.</p>
+        <p><strong>Kalenderfarbe:</strong> Im Benutzerformular können Sie die Kalenderfarbe aus einer Palette für jede:n Mitarbeiter:in vorgeben (Badge-Ring im Teamkalender); der/die Mitarbeiter:in kann sie auch selbst im Profil ändern.</p>
       </div>
     ),
   },
@@ -415,7 +416,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p><strong>Urlaubsanträge:</strong> Toggle „Genehmigungspflicht" aktiviert den Workflow. Anträge erscheinen als „Offen" → Genehmigen (grün) oder Ablehnen (rot, optional Grund).</p>
-        <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter mit der Option „Nimmt an Betriebsferien teil" (Standard, rollenunabhängig) erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug). Nachträglich Berechtigte: Option setzen – die Einträge werden automatisch für laufende und künftige Betriebsferien nachgetragen. Beim Löschen werden alle Einträge entfernt.</p>
+        <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter mit der Option „Nimmt an Betriebsferien teil" (Standard, rollenunabhängig) erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug); Tage außerhalb des Beschäftigungszeitraums (noch nicht eingetreten / bereits ausgetreten) werden übersprungen. Nachträglich Berechtigte: Option setzen – die Einträge werden automatisch für laufende und künftige Betriebsferien nachgetragen. Beim Löschen werden alle Einträge entfernt.</p>
         <p className="text-gray-700"><strong>Urlaubsberechnung (Tagesprinzip, §3 BUrlG):</strong> Urlaub wird nach Arbeitstagen geführt – ein freier Arbeitstag = <strong>1 Urlaubstag</strong>, unabhängig von Tagesstunden und Wochentag (auch bei individuellen Tagesstunden). Jahresanspruch anteilig: <code>30 × Arbeitstage ÷ 5</code> (überschreibbar beim Anlegen). Verbrauch wird tagebasiert gezählt, intern gespeicherte Stunden dienen nur der Soll-/Ist-Berechnung.</p>
       </div>
     ),

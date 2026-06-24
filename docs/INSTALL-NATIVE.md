@@ -24,9 +24,9 @@ Alle Pakete enthalten Python und PostgreSQL — keine Voraussetzungen noetig.
 # 1. Herunterladen + entpacken
 #    Das Tarball entpackt FLACH (kein Top-Level-Ordner) — daher zuerst einen
 #    Zielordner anlegen und mit -C dorthin entpacken:
-mkdir -p praxiszeit-1.9.0
-tar xzf praxiszeit-1.9.0-linux-x64.tar.gz -C praxiszeit-1.9.0
-cd praxiszeit-1.9.0
+mkdir -p praxiszeit-X.Y.Z
+tar xzf praxiszeit-X.Y.Z-linux-x64.tar.gz -C praxiszeit-X.Y.Z
+cd praxiszeit-X.Y.Z
 
 # 2. Installer starten (als root)
 sudo ./install.sh
@@ -54,7 +54,7 @@ journalctl -u praxiszeit -f          # Live-Logs
 ## Windows-Installation
 
 ```
-1. praxiszeit-1.9.0-windows-x64.zip entpacken nach C:\PraxisZeit\
+1. praxiszeit-X.Y.Z-windows-x64.zip entpacken nach C:\PraxisZeit\
 
 2. setup.bat als Administrator ausfuehren
    - Installiert PostgreSQL (silent, kein GUI)
@@ -88,13 +88,13 @@ Deinstallation: `uninstall-service.bat` ausfuehren (Datenbank wird beibehalten).
 
 ```bash
 # Tarball entpackt flach — in einen eigenen Ordner entpacken:
-mkdir -p praxiszeit-1.9.0 && cd praxiszeit-1.9.0
+mkdir -p praxiszeit-X.Y.Z && cd praxiszeit-X.Y.Z
 
 # Intel Mac:
-tar xzf ../praxiszeit-1.9.0-macos-x64.tar.gz
+tar xzf ../praxiszeit-X.Y.Z-macos-x64.tar.gz
 
 # Apple Silicon (M1/M2/M3/M4):
-tar xzf ../praxiszeit-1.9.0-macos-arm64.tar.gz
+tar xzf ../praxiszeit-X.Y.Z-macos-arm64.tar.gz
 
 # Installer starten (als root)
 sudo ./install.sh

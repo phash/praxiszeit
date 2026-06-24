@@ -50,7 +50,10 @@ def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -
     - Only closures whose end_date is today or later (PAST closures are NOT
       backfilled — an employee hired after a closure ended must not get
       retroactive absences, consistent with #193 _within_employment_window).
-    - Only covered workdays on/after the employee's first_work_day (if set).
+    - Only covered workdays within the employee's employment window: this
+      function pre-filters on first_work_day, and the booking in
+      _create_closure_absences additionally enforces first_work_day AND
+      last_work_day per workday via _within_employment_window (#193/#195/#298).
     - delete_time_entries=False: never destroys logged work on those days.
     Best-effort: a failure here must not abort user creation (the closure
     enrolment can be repaired by re-saving the closure).
