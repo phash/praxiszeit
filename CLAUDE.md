@@ -204,6 +204,7 @@ JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 
 ### Multi-Tenant
 - **SaaS-Roadmap:** Meta-Issue [#100](https://github.com/phash/praxiszeit/issues/100) trackt 8-Phasen-Umbau (Phase 0 fertig in PR #91). On-Prem bleibt single-tenant via geplantem `DEPLOYMENT_MODE`-Schalter (Issue #92).
 - **Jede neue Tabelle** braucht `tenant_id` FK + RLS-Policy + Eintrag in Migration
+- **Neue Tabelle mit FK auf `users.id` → `purge_user()` (admin_users.py, DSGVO Art.17) mitpflegen:** Ein FK ohne passende `ondelete`-Regel lässt den Hard-Delete eines Users auf **Postgres** mit `ForeignKeyViolation` (500) abbrechen — die Erasure ist dann blockiert. SQLite-Tests laufen mit FK AUS → fangen das NIE. `created_by`-artige (NOT NULL) FKs vor `db.delete(user)` umhängen (auf den handelnden Admin), `user_id`-Daten löschen (oder `ondelete=CASCADE`). Real passiert bei #305 (`shift_plans.created_by`).
 - **Neue Endpoints:** `set_tenant_context(db, tid)` oder `set_superadmin_context(db)` aufrufen
 - **Neue Sessions** (`SessionLocal()` direkt): RLS-Kontext setzen, sonst 0 Rows!
 - **DB-User:** App = `praxiszeit_app` (RLS enforced), Migrations = `praxiszeit` (Superuser)
