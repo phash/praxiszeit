@@ -540,4 +540,19 @@ Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https:/
 
 ---
 
+## Schichtplan (falls Ihre Praxis ihn nutzt)
+
+Nutzt Ihre Praxis die **Schichtplanung**, erscheint links der Menüpunkt
+**Schichtplan**. Dort sehen Sie die aktiven Wochenpläne als Übersicht: welcher
+Arbeitsplatz (z. B. Tresen, Labor) wann besetzt ist und wer eingeteilt ist.
+
+Auf dem **Dashboard** zeigt die Karte **„Deine Einteilung heute"** Ihre heutigen
+Einsätze mit Arbeitsplatz und Uhrzeit.
+
+Die Schichtplanung ist ein reines Planungswerkzeug und verändert **nicht** Ihre
+erfassten Arbeitszeiten, Ihren Urlaub oder Ihr Überstundenkonto. Die Einteilung
+legt Ihr Administrator fest.
+
+---
+
 *PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.3 | Juni 2026 (PraxisZeit 1.9.0)*

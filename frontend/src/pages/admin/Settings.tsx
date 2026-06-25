@@ -99,6 +99,11 @@ export default function Settings() {
   const [originalOnboarding, setOriginalOnboarding] = useState(true);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
 
+  // #305 Schichtplanung-Feature an/aus — Default AUS, nur per Admin aktivierbar.
+  const [shiftPlanningEnabled, setShiftPlanningEnabled] = useState(false);
+  const [originalShiftPlanning, setOriginalShiftPlanning] = useState(false);
+  const [savingShiftPlanning, setSavingShiftPlanning] = useState(false);
+
   // #201 Soll-Fenster-Puffer (work_window_grace_minutes)
   const [graceMinutes, setGraceMinutes] = useState('15');
   const [originalGraceMinutes, setOriginalGraceMinutes] = useState('15');
@@ -172,6 +177,12 @@ export default function Settings() {
       const obVal = obSetting?.value?.toLowerCase() !== 'false';
       setOnboardingEnabled(obVal);
       setOriginalOnboarding(obVal);
+
+      // #305 Schichtplanung (Default aus: nur explizites "true" aktiviert)
+      const spSetting = settingsRes.data.find((s) => s.key === 'shift_planning_enabled');
+      const spVal = spSetting?.value?.toLowerCase() === 'true';
+      setShiftPlanningEnabled(spVal);
+      setOriginalShiftPlanning(spVal);
 
       // #201 Soll-Fenster-Puffer
       const graceSetting = settingsRes.data.find((s) => s.key === 'work_window_grace_minutes');
@@ -306,6 +317,24 @@ export default function Settings() {
       toast.error(getErrorMessage(err));
     } finally {
       setSavingOnboarding(false);
+    }
+  };
+
+  const saveShiftPlanning = async () => {
+    setSavingShiftPlanning(true);
+    try {
+      await apiClient.put('/admin/settings/shift_planning_enabled', {
+        value: String(shiftPlanningEnabled),
+      });
+      setOriginalShiftPlanning(shiftPlanningEnabled);
+      // systemStore aktualisieren, damit Navigation + Dashboard-Widget sofort
+      // auf die neue Einstellung reagieren (sonst erst nach Hard-Refresh).
+      await useSystemStore.getState().fetch();
+      toast.success('Schichtplanungs-Einstellung gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingShiftPlanning(false);
     }
   };
 
@@ -843,6 +872,48 @@ export default function Settings() {
           <button
             onClick={saveOnboarding}
             disabled={savingOnboarding || onboardingEnabled === originalOnboarding}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save size={16} />
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      {/* Schichtplanung (#305) — Default deaktiviert */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Schichtplanung</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Die Schichtplanung ist <strong>standardmäßig deaktiviert</strong>. Aktivieren Sie sie,
+          um Wochen-Schichtpläne, Arbeitsplätze und Standorte anzulegen und Mitarbeitende auf
+          Zeitslots zu verteilen. Solange das Feature aus ist, sehen weder Admins noch
+          Mitarbeitende die Schichtplanung. Die Funktion ist ein reines Planungswerkzeug und
+          verändert keine Zeiterfassungs-, Urlaubs- oder Überstundendaten.
+        </p>
+        <div className="flex items-center justify-between max-w-sm">
+          <label htmlFor="shift-planning-toggle" className="text-sm font-medium text-gray-700">
+            Schichtplanung aktivieren
+          </label>
+          <button
+            id="shift-planning-toggle"
+            role="switch"
+            aria-checked={shiftPlanningEnabled}
+            onClick={() => setShiftPlanningEnabled(!shiftPlanningEnabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              shiftPlanningEnabled ? 'bg-primary' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                shiftPlanningEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={saveShiftPlanning}
+            disabled={savingShiftPlanning || shiftPlanningEnabled === originalShiftPlanning}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

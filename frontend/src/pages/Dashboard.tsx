@@ -8,6 +8,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useUIStore } from '../stores/uiStore';
 import { formatHoursHM } from '../utils/errorMessage';
 import StampWidget from '../components/StampWidget';
+import ShiftTodayCard from '../components/ShiftTodayCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
@@ -472,6 +473,9 @@ export default function Dashboard() {
       <div className="hidden md:block">
         <StampWidget onSuccess={notifyStampChange} />
       </div>
+
+      {/* #305 Schichtplanung: heutige Einteilung (nur wenn Feature aktiv + Einteilung vorhanden) */}
+      <ShiftTodayCard />
 
       {/* Stats Grid */}
       <div className={`grid grid-cols-1 md:grid-cols-2 ${trackHours ? 'lg:grid-cols-4' : ''} gap-6 mb-8`}>

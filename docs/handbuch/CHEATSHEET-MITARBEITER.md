@@ -172,4 +172,12 @@ Für manche Mitarbeitende führt die Praxis **keine Stundenzählung**:
 
 ---
 
+## Schichtplan (falls aktiv)
+
+- Menü **Schichtplan**: aktive Wochenpläne ansehen (wer wann wo).
+- **Dashboard → „Deine Einteilung heute"**: Ihre heutigen Einsätze mit Zeit.
+- Nur Planung – ändert **nicht** Ihre Arbeitszeiten/Urlaub/Überstunden. Einteilung macht der Admin.
+
+---
+
 *PraxisZeit · Zeiterfassung nach ArbZG · [gesetze-im-internet.de/arbzg](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)*

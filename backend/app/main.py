@@ -30,7 +30,7 @@ from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups, shift_planning
 
 # Used by the startup bootstrap to warn/abort when the initial admin still
 # uses a throwaway password. Kept at module level so git diffs that re-indent
@@ -499,6 +499,9 @@ app.include_router(feedback.router)
 app.include_router(public_signup.router)
 app.include_router(billing.router)
 app.include_router(billing.webhook_router)
+# #305 Schichtplanung — global feature, gated per-tenant by the
+# `shift_planning_enabled` setting (router returns 404 when off).
+app.include_router(shift_planning.router)
 # #213 DB-Backup-Verwaltung — NUR On-Prem einbinden. Im SaaS-Modus darf ein
 # Mandant nicht per API den (nicht tenant-scoped) DB-Server sichern/herunterladen
 # (Daten-Exfiltration über Tenant-Grenzen). Hart gaten statt nur per Doku-Kommentar.
@@ -701,6 +704,9 @@ def system_info():
     # onboarding_enabled (Default-Tenant): Admin-Toggle für die Willkommens-Tour.
     # Default an; ein Lesefehler darf system/info NIE brechen → True.
     onboarding_enabled = True
+    # shift_planning_enabled (#305): Feature-Flag, Default AUS. Nur ein Admin
+    # kann es aktivieren; ein Lesefehler darf system/info NIE brechen → False.
+    shift_planning_enabled = False
     try:
         from app.models.system_setting import SystemSetting
         from app.database import set_superadmin_context as _set_sa
@@ -714,10 +720,17 @@ def system_info():
             ).first()
             if _s is not None:
                 onboarding_enabled = _s.value.strip().lower() == "true"
+            _sp = _db.query(SystemSetting).filter(
+                SystemSetting.key == "shift_planning_enabled",
+                SystemSetting.tenant_id == _default_tid,
+            ).first()
+            if _sp is not None:
+                shift_planning_enabled = _sp.value.strip().lower() == "true"
         finally:
             _db.close()
     except Exception:  # noqa: BLE001
         onboarding_enabled = True
+        shift_planning_enabled = False
     return {
         "deployment_mode": settings.DEPLOYMENT_MODE,
         "version": APP_VERSION,
@@ -725,6 +738,8 @@ def system_info():
         "beta": settings.BETA_MODE,
         # onboarding_enabled: Admin kann die Erst-Login-Tour deaktivieren (Default an).
         "onboarding_enabled": onboarding_enabled,
+        # shift_planning_enabled: Admin aktiviert die Schichtplanung (Default aus).
+        "shift_planning_enabled": shift_planning_enabled,
     }
 
 

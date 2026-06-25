@@ -23,10 +23,11 @@ _ALLOWED_SETTINGS = {
     "break_exception_requires_approval",  # #144 §4 ArbZG: Pflicht-Pause-Ausnahme
     "work_window_grace_minutes",  # #201 Arbeitszeit-Fenster: Pufferzeit in Minuten
     "onboarding_enabled",  # Erst-Login-Willkommens-Tour an/aus (Default an)
+    "shift_planning_enabled",  # #305 Schichtplanung aktivieren (Default aus)
 } | special_days_service.SETTING_KEYS
 
 # Settings whose value must be a boolean ("true"/"false").
-_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "onboarding_enabled"}
+_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "onboarding_enabled", "shift_planning_enabled"}
 
 
 @router.get("/settings")
