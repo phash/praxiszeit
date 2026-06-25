@@ -15,12 +15,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
-
-# Hex colour `#RRGGBB` — the workstation colour column is String(7); anything
-# longer would StringDataRightTruncation (500) on Postgres (SQLite tests don't
-# enforce varchar length), so validate format + length at the edge.
-_HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -34,6 +30,26 @@ from app.models.shift_planning import (
     ShiftAssignment,
 )
 from app.services import settings_service, shift_planning_service
+
+# Hex colour `#RRGGBB` — the workstation colour column is String(7); anything
+# longer would StringDataRightTruncation (500) on Postgres (SQLite tests don't
+# enforce varchar length), so validate format + length at the edge.
+_HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _commit_or_conflict(db: Session, detail: str) -> None:
+    """Commit, translating a unique-constraint violation into a clean 409.
+
+    The create/update endpoints pre-check names with a SELECT, but two admins
+    racing on the same new name can both pass the check and then collide on the
+    ``uq_tenant_*_name`` constraint at COMMIT. Without this guard the loser gets
+    a 500 instead of the advertised 409 (no data is corrupted either way).
+    """
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
 def require_shift_planning_enabled(
@@ -186,7 +202,7 @@ def create_location(
         raise HTTPException(status_code=409, detail="Ein Standort mit diesem Namen existiert bereits")
     loc = Location(tenant_id=current_user.tenant_id, name=name, sort_order=data.sort_order)
     db.add(loc)
-    db.commit()
+    _commit_or_conflict(db, "Ein Standort mit diesem Namen existiert bereits")
     db.refresh(loc)
     return _loc_dict(loc)
 
@@ -221,7 +237,7 @@ def update_location(
         raise HTTPException(status_code=409, detail="Ein Standort mit diesem Namen existiert bereits")
     loc.name = name
     loc.sort_order = data.sort_order
-    db.commit()
+    _commit_or_conflict(db, "Ein Standort mit diesem Namen existiert bereits")
     db.refresh(loc)
     return _loc_dict(loc)
 
@@ -319,7 +335,7 @@ def create_workstation(
         sort_order=data.sort_order,
     )
     db.add(ws)
-    db.commit()
+    _commit_or_conflict(db, "Ein Arbeitsplatz mit diesem Namen existiert bereits")
     db.refresh(ws)
     loc_names = _location_name_map(db, current_user.tenant_id)
     return _ws_dict(ws, loc_names.get(ws.location_id))
@@ -358,7 +374,7 @@ def update_workstation(
     ws.location_id = data.location_id
     ws.color = data.color
     ws.sort_order = data.sort_order
-    db.commit()
+    _commit_or_conflict(db, "Ein Arbeitsplatz mit diesem Namen existiert bereits")
     db.refresh(ws)
     loc_names = _location_name_map(db, current_user.tenant_id)
     return _ws_dict(ws, loc_names.get(ws.location_id))
@@ -555,7 +571,7 @@ def create_plan(
         created_by=current_user.id,
     )
     db.add(plan)
-    db.commit()
+    _commit_or_conflict(db, "Ein Schichtplan mit diesem Namen existiert bereits")
     db.refresh(plan)
     return _plan_summary(plan)
 
@@ -584,7 +600,7 @@ def update_plan(
         raise HTTPException(status_code=409, detail="Ein Schichtplan mit diesem Namen existiert bereits")
     plan.name = name
     plan.description = data.description
-    db.commit()
+    _commit_or_conflict(db, "Ein Schichtplan mit diesem Namen existiert bereits")
     db.refresh(plan)
     return _plan_summary(plan)
 
