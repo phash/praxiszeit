@@ -323,6 +323,20 @@ class TestReviewFixes:
         )
         assert r.status_code == 422, r.text
 
+    def test_commit_conflict_guard_returns_409(self, db, default_tenant):
+        """A unique-name collision at COMMIT is translated to 409, not a 500."""
+        from fastapi import HTTPException
+        from app.routers.shift_planning import _commit_or_conflict
+        from app.models.shift_planning import Location
+
+        db.add(Location(tenant_id=DEFAULT_TENANT_ID, name="Dup"))
+        db.commit()
+        # second row violates uq_tenant_location_name (SQLite enforces UNIQUE)
+        db.add(Location(tenant_id=DEFAULT_TENANT_ID, name="Dup"))
+        with pytest.raises(HTTPException) as exc:
+            _commit_or_conflict(db, "Standort existiert bereits")
+        assert exc.value.status_code == 409
+
     def test_purge_user_reassigns_created_shift_plans(self, enabled, admin_client, db, test_admin):
         """DSGVO Art.17 purge of a user who created a shift plan must not orphan/FK-fail."""
         from app.models import User, UserRole
