@@ -806,5 +806,30 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 
 ---
 
+## Schichtplanung (optional, standardmäßig deaktiviert)
+
+Mit der **Schichtplanung** erstellen Sie wöchentliche Einsatzpläne (wer steht
+wann an welchem Arbeitsplatz). Sie ist ein **reines Planungswerkzeug** und
+verändert **nicht** Zeiterfassung, Soll/Ist-Stunden, ArbZG-Prüfungen, Urlaub
+oder Überstunden.
+
+**Aktivieren:** **Einstellungen → Schichtplanung → „Schichtplanung aktivieren"
+→ Speichern.** Das Modul ist nach der Installation **aus**; nur Admins können es
+einschalten. Erst danach erscheinen die Menüpunkte und das Dashboard-Widget.
+
+**Stammdaten:** **Standorte** (optional) und **Arbeitsplätze** (Tresen, Labor,
+Springer … mit Farbe) anlegen. **Schichtpläne:** beliebig viele benannte
+Wochenpläne („Normalzustand", „Azubis Schulferien" …). Im **Wochen-Editor**
+Zeitslots per **Drag & Drop** oder Klick-Dialog über die Woche verteilen,
+**Mitarbeitende** per Drag auf einen Slot ziehen, optional eine
+**Mindestbesetzung** setzen (unterbesetzte Slots werden markiert – weiche
+Warnung, blockiert nicht).
+
+**Aktiv schalten** macht einen Plan für alle sichtbar; **mehrere Pläne können
+gleichzeitig aktiv** sein. Mitarbeitende sehen ihre heutige Einteilung im
+Dashboard. Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
+
+---
+
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
 *Stand: Juni 2026 (für PraxisZeit 1.9.0)*

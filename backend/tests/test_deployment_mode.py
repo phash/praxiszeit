@@ -75,12 +75,18 @@ class TestSystemInfoEndpoint:
 
     def test_response_does_not_leak_internal_state(self, client, onprem_mode):
         # Intentionally tight schema: no env, no ADMIN_EMAIL, no DB status.
-        # onboarding_enabled is a public UI feature-toggle (welcome tour), not
-        # internal state — exposed deliberately so the frontend can branch
-        # pre-login (added with the Onboarding-Admin-Toggle, commit 316ebbf).
+        # onboarding_enabled and shift_planning_enabled are public UI
+        # feature-toggles (welcome tour / Schichtplanung #305), not internal
+        # state — exposed deliberately so the frontend can branch pre-login.
         response = client.get("/api/system/info")
         data = response.json()
-        assert set(data.keys()) == {"deployment_mode", "version", "beta", "onboarding_enabled"}
+        assert set(data.keys()) == {
+            "deployment_mode",
+            "version",
+            "beta",
+            "onboarding_enabled",
+            "shift_planning_enabled",
+        }
 
 
 class TestBetaMode:

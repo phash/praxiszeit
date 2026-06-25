@@ -257,4 +257,14 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 
 ---
 
+## Schichtplanung (optional)
+
+- **Aus per Default.** Aktivieren: **Einstellungen → Schichtplanung → Speichern**.
+- **Stammdaten:** Standorte (optional) + Arbeitsplätze (mit Farbe) anlegen.
+- **Plan:** beliebig viele Wochenpläne; Slots per Drag & Drop / Klick, Mitarbeitende auf Slot ziehen, Mindestbesetzung optional.
+- **Aktiv schalten** → für alle sichtbar (mehrere Pläne gleichzeitig aktiv möglich).
+- Reines Planungswerkzeug – **keine** Wirkung auf Zeiterfassung/ArbZG/Urlaub/Überstunden. Details: `docs/SCHICHTPLANUNG.md`.
+
+---
+
 *PraxisZeit · ArbZG-Volltext: [gesetze-im-internet.de/arbzg](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)*

@@ -391,6 +391,21 @@ def purge_user(
     db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id, ChangeRequest.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
+    # #305 Schichtplanung: shift_plans.created_by is NOT NULL with no ON DELETE
+    # rule → a raw user delete FK-violates on Postgres (SQLite tests run with FK
+    # off, so this is Postgres-only). Reassign the user's plans to the acting
+    # admin (preserves ownership/audit trail) and drop their assignments
+    # explicitly (shift_assignments.user_id is ON DELETE CASCADE on Postgres, but
+    # be explicit for SQLite). Both F-026 tenant-scoped.
+    from app.models.shift_planning import ShiftPlan, ShiftAssignment
+    db.query(ShiftPlan).filter(
+        ShiftPlan.created_by == user.id,
+        ShiftPlan.tenant_id == current_user.tenant_id,
+    ).update({ShiftPlan.created_by: current_user.id}, synchronize_session=False)
+    db.query(ShiftAssignment).filter(
+        ShiftAssignment.user_id == user.id,
+        ShiftAssignment.tenant_id == current_user.tenant_id,
+    ).delete(synchronize_session=False)
     db.delete(user)
     db.commit()
 

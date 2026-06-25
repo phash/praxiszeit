@@ -31,6 +31,7 @@ import {
   Coffee,
   Rocket,
   Database,
+  CalendarClock,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 import StampWidget from './StampWidget';
@@ -42,6 +43,7 @@ export default function Layout() {
   const { isStampSheetOpen, openStampSheet, closeStampSheet, notifyStampChange } = useUIStore();
   const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
   const isBeta = useSystemStore((s) => s.info?.beta === true);
+  const shiftPlanningEnabled = useSystemStore((s) => s.isShiftPlanningEnabled());
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -176,6 +178,10 @@ export default function Layout() {
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/time-tracking', label: 'Zeiterfassung', icon: Clock },
     { path: '/absences', label: 'Abwesenheiten', icon: Calendar },
+    // #305 Schichtplan (read-only) — nur wenn das Feature aktiviert ist.
+    ...(shiftPlanningEnabled
+      ? [{ path: '/shift-planning', label: 'Schichtplan', icon: CalendarClock }]
+      : []),
     { path: '/profile', label: 'Profil', icon: User },
   ];
 
@@ -190,6 +196,10 @@ export default function Layout() {
     { path: '/admin/vacation-approvals', label: 'Anträge', icon: ClipboardCheck, badge: pendingVRCount },
     { path: '/admin/import', label: 'Import', icon: Upload, badge: 0 },
     { path: '/admin/settings', label: 'Einstellungen', icon: Settings, badge: 0 },
+    // #305 Schichtplanung-Verwaltung — nur wenn das Feature aktiviert ist.
+    ...(shiftPlanningEnabled
+      ? [{ path: '/admin/shift-planning', label: 'Schichtplanung', icon: CalendarClock, badge: 0 }]
+      : []),
     { path: '/admin/backups', label: 'Datensicherung', icon: Database, badge: 0 },
     // Billing is SaaS-only — on-prem installs hide this entry via the filter below.
     ...(deploymentMode === 'saas'

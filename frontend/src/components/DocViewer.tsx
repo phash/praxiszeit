@@ -368,6 +368,16 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       </div>
     ),
   },
+  {
+    title: '11. Schichtplan einsehen',
+    content: (
+      <div className="space-y-2">
+        <p>Wenn Ihre Praxis die <strong>Schichtplanung</strong> nutzt, finden Sie links den Menüpunkt <strong>Schichtplan</strong>. Dort sehen Sie die aktiven Wochenpläne als Übersicht: welcher Arbeitsplatz (z. B. Tresen, Labor) zu welcher Zeit besetzt ist und wer eingeteilt ist.</p>
+        <p>Auf dem <strong>Dashboard</strong> zeigt die Karte <strong>„Deine Einteilung heute"</strong> Ihre heutigen Einsätze mit Arbeitsplatz und Uhrzeit.</p>
+        <p>Die Schichtplanung ist ein reines Planungswerkzeug – sie verändert <strong>nicht</strong> Ihre erfassten Arbeitszeiten, Ihren Urlaub oder Ihr Überstundenkonto. Die Einteilung legt Ihr Administrator fest; bei Fragen wenden Sie sich an ihn.</p>
+      </div>
+    ),
+  },
 ];
 
 export const handbuchAdminSections: AccordionItem[] = [
@@ -489,6 +499,18 @@ export const handbuchAdminSections: AccordionItem[] = [
         <p>Vorhandene Sicherungen lassen sich in der Liste <strong>herunterladen</strong> (für eine externe Kopie) oder löschen. Format ist Plain-SQL + gzip (<code>praxiszeit_&lt;Zeitstempel&gt;.sql.gz</code>), mit <code>--clean --if-exists</code> idempotent wiederherstellbar.</p>
         <p><strong>§16 ArbZG:</strong> Zeitaufzeichnungen sind mind. 2 Jahre aufzubewahren — Aufbewahrungsdauer entsprechend setzen und eine Kopie <strong>außerhalb</strong> des Servers vorhalten. Vor jedem Update zusätzlich sichern.</p>
         <p className="text-gray-500">Native installiert läuft die <em>geplante</em> Sicherung über den OS-Timer; der <em>manuelle</em> Trigger und die Liste funktionieren überall. Wiederherstellung &amp; Details: <code>docs/BACKUP.md</code>.</p>
+      </div>
+    ),
+  },
+  {
+    title: '12. Schichtplanung (optional)',
+    content: (
+      <div className="space-y-2">
+        <p>Die <strong>Schichtplanung</strong> ist <strong>standardmäßig deaktiviert</strong>. Sie aktivieren sie unter <strong>Einstellungen → Schichtplanung</strong>. Erst danach erscheinen die Menüpunkte <strong>Schichtplanung</strong> (Admin) und <strong>Schichtplan</strong> (alle) und das Dashboard-Widget.</p>
+        <p>Unter <strong>Schichtplanung → Stammdaten</strong> legen Sie <strong>Standorte</strong> (optional) und <strong>Arbeitsplätze</strong> (z. B. Tresen, Labor, Springer – mit Farbe) an. Unter <strong>Schichtpläne</strong> erstellen Sie beliebig viele benannte <strong>Wochenpläne</strong> (z. B. „Normalzustand", „Azubis Schulferien").</p>
+        <p>Im Wochen-Editor verteilen Sie <strong>Zeitslots</strong> per Drag &amp; Drop oder Klick über die Woche und ziehen <strong>Mitarbeitende</strong> aus der Liste auf einen Slot. Optional setzen Sie pro Slot eine <strong>Mindestbesetzung</strong>; unterbesetzte Slots werden markiert (weiche Warnung, blockiert nicht).</p>
+        <p>Mit <strong>Aktiv schalten</strong> machen Sie einen Plan für alle sichtbar; <strong>mehrere Pläne können gleichzeitig aktiv</strong> sein. Mitarbeitende sehen ihre heutige Einteilung im Dashboard.</p>
+        <p className="text-gray-500">Die Schichtplanung ist ein reines Planungswerkzeug und berührt <strong>nicht</strong> Zeiterfassung, Soll/Ist-Stunden, ArbZG-Prüfungen, Urlaub oder Überstunden. Details: <code>docs/SCHICHTPLANUNG.md</code>.</p>
       </div>
     ),
   },

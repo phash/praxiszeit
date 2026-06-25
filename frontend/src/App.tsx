@@ -28,6 +28,9 @@ const AdminBackups = lazy(() => import('./pages/admin/Backups'));
 const AdminBilling = lazy(() => import('./pages/admin/Billing'));
 const UserJournal = lazy(() => import('./pages/admin/UserJournal'));
 const Help = lazy(() => import('./pages/Help'));
+// #305 Schichtplanung — lazy (zieht @dnd-kit nur bei Bedarf ins Bundle)
+const ShiftPlanning = lazy(() => import('./pages/ShiftPlanning'));
+const AdminShiftPlanning = lazy(() => import('./pages/admin/ShiftPlanning'));
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -125,6 +128,7 @@ function App() {
           <Route path="time-tracking" element={<TimeTracking />} />
           <Route path="change-requests" element={<Navigate to="/time-tracking?tab=requests" replace />} />
           <Route path="absences" element={<AbsenceCalendarPage />} />
+          <Route path="shift-planning" element={<ShiftPlanning />} />
           <Route path="journal" element={<Navigate to="/time-tracking?tab=journal" replace />} />
           <Route path="profile" element={<Profile />} />
           <Route path="help" element={<Help />} />
@@ -151,6 +155,7 @@ function App() {
           <Route path="import" element={<ImportXls />} />
           <Route path="settings" element={<AdminSettings />} />
           <Route path="backups" element={<AdminBackups />} />
+          <Route path="shift-planning" element={<AdminShiftPlanning />} />
           <Route path="billing" element={<AdminBilling />} />
         </Route>
 

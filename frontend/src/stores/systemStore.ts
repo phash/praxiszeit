@@ -8,6 +8,7 @@ interface SystemInfo {
   version: string;
   beta?: boolean;
   onboarding_enabled?: boolean;
+  shift_planning_enabled?: boolean;
 }
 
 interface SystemState {
@@ -18,6 +19,7 @@ interface SystemState {
   isOnprem: () => boolean;
   isBeta: () => boolean;
   isOnboardingEnabled: () => boolean;
+  isShiftPlanningEnabled: () => boolean;
 }
 
 // Conservative default: treat as on-prem until the /api/system/info response
@@ -36,7 +38,7 @@ export const useSystemStore = create<SystemState>((set, get) => ({
       // nicht laden, NICHT die Tour zeigen (sonst erschiene sie trotz Admin-
       // Deaktivierung, weil ein fehlendes Feld als "an" gilt).
       set({
-        info: { deployment_mode: 'onprem', version: '', onboarding_enabled: false },
+        info: { deployment_mode: 'onprem', version: '', onboarding_enabled: false, shift_planning_enabled: false },
         isLoaded: true,
       });
     }
@@ -48,4 +50,8 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   // Default an: solange /system/info nicht geladen ist ODER das Feld fehlt, wird
   // das Onboarding gezeigt (nur ein explizites false unterdrückt es).
   isOnboardingEnabled: () => get().info?.onboarding_enabled !== false,
+  // Default AUS (#305): Schichtplanung ist ein Feature-Flag, das nur ein Admin
+  // aktivieren kann. Nur ein explizites true schaltet die UI frei (konservativ,
+  // analog isBeta) — solange /system/info nicht geladen ist, bleibt sie aus.
+  isShiftPlanningEnabled: () => get().info?.shift_planning_enabled === true,
 }));

@@ -13,6 +13,13 @@ from app.models.system_setting import SystemSetting
 from app.models.year_carryover import YearCarryover
 from app.models.signup_token import SignupToken, SignupAuditLog
 from app.models.stripe_event import StripeEvent
+from app.models.shift_planning import (
+    Location,
+    Workstation,
+    ShiftPlan,
+    ShiftSlot,
+    ShiftAssignment,
+)
 
 __all__ = [
     "Tenant",
@@ -37,4 +44,9 @@ __all__ = [
     "SignupToken",
     "SignupAuditLog",
     "StripeEvent",
+    "Location",
+    "Workstation",
+    "ShiftPlan",
+    "ShiftSlot",
+    "ShiftAssignment",
 ]
