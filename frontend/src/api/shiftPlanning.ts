@@ -48,6 +48,9 @@ export interface PlanSummary {
   name: string;
   description: string | null;
   is_active: boolean;
+  active_from_date: string | null; // ISO date, #305 M2 KW-Planung
+  active_until_date: string | null;
+  active_today: boolean; // is_active OR window covers today
   slot_count: number;
   is_valid: boolean;
 }
@@ -57,6 +60,9 @@ export interface PlanDetail {
   name: string;
   description: string | null;
   is_active: boolean;
+  active_from_date: string | null;
+  active_until_date: string | null;
+  active_today: boolean;
   slots: ShiftSlot[];
   validation: { is_valid: boolean; understaffed_slot_ids: string[]; unqualified_slot_ids?: string[] };
 }
@@ -129,9 +135,29 @@ export const listPlans = () => apiClient.get<PlanSummary[]>(`${BASE}/plans`).the
 export const getPlan = (id: string) => apiClient.get<PlanDetail>(`${BASE}/plans/${id}`).then((r) => r.data);
 export const createPlan = (name: string, description?: string) =>
   apiClient.post<PlanSummary>(`${BASE}/plans`, { name, description: description || null }).then((r) => r.data);
-export const updatePlan = (id: string, name: string, description?: string) =>
-  apiClient.put<PlanSummary>(`${BASE}/plans/${id}`, { name, description: description || null }).then((r) => r.data);
+export interface PlanUpdateBody {
+  name: string;
+  description?: string | null;
+  active_from_date?: string | null;
+  active_until_date?: string | null;
+}
+export const updatePlan = (id: string, body: PlanUpdateBody) =>
+  apiClient
+    .put<PlanSummary>(`${BASE}/plans/${id}`, {
+      name: body.name,
+      description: body.description ?? null,
+      active_from_date: body.active_from_date ?? null,
+      active_until_date: body.active_until_date ?? null,
+    })
+    .then((r) => r.data);
 export const deletePlan = (id: string) => apiClient.delete(`${BASE}/plans/${id}`);
+
+export interface GenerationResult {
+  plan: PlanDetail;
+  generation: { assigned: number; unfilled_slot_ids: string[] };
+}
+export const generatePlan = (id: string, body: { target_monday: string; mode: 'replace' | 'fill_gaps' }) =>
+  apiClient.post<GenerationResult>(`${BASE}/plans/${id}/generate`, body).then((r) => r.data);
 export const activatePlan = (id: string) =>
   apiClient.post<PlanSummary>(`${BASE}/plans/${id}/activate`).then((r) => r.data);
 export const deactivatePlan = (id: string) =>

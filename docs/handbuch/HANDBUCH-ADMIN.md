@@ -832,8 +832,14 @@ Dashboard.
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
 eingewiesenen Person erscheint die weiche Warnung „nicht eingewiesen" (blockiert
-nicht); Mitarbeitende sehen ihre Einweisungen im Profil. Details:
-[`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
+nicht); Mitarbeitende sehen ihre Einweisungen im Profil.
+
+Über **Bearbeiten** setzen Sie pro Plan optional ein **Aktiv-Datums-Fenster**
+(„von/bis"), in dem der Plan automatisch aktiv wird (Jahresübersicht als
+Zeitstrahl). **Automatisch füllen** verteilt eingewiesene, verfügbare
+Mitarbeitende greedy auf die Slots (Zielwoche wählbar, ausgewogen nach
+Auslastung/Überstunden) — als Entwurf zum Review, ohne den Plan zu aktivieren.
+Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 
 ---
 

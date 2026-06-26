@@ -7,6 +7,7 @@ import {
   heightForRange,
   pxDeltaToMinutes,
   colorForWorkstation,
+  mondayOfWeek,
   computeWeekLayout,
   type SlotLike,
   GRID_START_HOUR,
@@ -69,6 +70,19 @@ describe('weekGridUtils time math', () => {
     expect(colorForWorkstation('#abcdef', 0)).toBe('#abcdef');
     expect(colorForWorkstation(null, 0)).toBe(DEFAULT_WS_COLORS[0]);
     expect(colorForWorkstation(null, DEFAULT_WS_COLORS.length)).toBe(DEFAULT_WS_COLORS[0]); // wraps
+  });
+});
+
+describe('mondayOfWeek (TZ-safe, #305 M2 auto-gen)', () => {
+  it('returns the Monday of the week for any weekday', () => {
+    expect(mondayOfWeek('2026-06-24')).toBe('2026-06-22'); // Wed → Mon
+    expect(mondayOfWeek('2026-06-22')).toBe('2026-06-22'); // Mon → Mon
+    expect(mondayOfWeek('2026-06-28')).toBe('2026-06-22'); // Sun → Mon
+  });
+
+  it('the result is itself a Monday — regression for the toISOString UTC roll-back', () => {
+    // Under a UTC+ TZ the old toISOString() version returned the prior Sunday.
+    expect(new Date(mondayOfWeek('2026-06-24') + 'T00:00:00').getDay()).toBe(1);
   });
 });
 

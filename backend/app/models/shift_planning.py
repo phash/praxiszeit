@@ -25,6 +25,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     Time,
+    Date,
     Boolean,
     DateTime,
     ForeignKey,
@@ -110,6 +111,11 @@ class ShiftPlan(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=False, server_default="false")
+    # #305 M2: optional Datums-Fenster — der Plan gilt zusätzlich zu is_active
+    # als aktiv, wenn das heutige Datum in [active_from_date, active_until_date]
+    # liegt (NULL = offene Grenze; greift nur, wenn mind. eine Grenze gesetzt ist).
+    active_from_date = Column(Date, nullable=True)
+    active_until_date = Column(Date, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
