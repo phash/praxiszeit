@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.5 | Stand: Juni 2026 (für PraxisZeit 1.10.6)**
+**Version 2.5 | Stand: Juni 2026 (für PraxisZeit 1.11.0)**
 
 ---
 
@@ -832,4 +832,4 @@ Dashboard. Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juni 2026 (für PraxisZeit 1.10.6)*
+*Stand: Juni 2026 (für PraxisZeit 1.11.0)*
