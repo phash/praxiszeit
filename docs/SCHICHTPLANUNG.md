@@ -38,6 +38,7 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 | **Schichtplan** | Ein benannter **Wochenplan** (z. B. „Normalzustand", „Azubis Schulferien", „Gabi nicht da") mit optionaler Beschreibung. Beliebig viele möglich. |
 | **Zeitslot** | Ein Arbeitsplatz, an einem Wochentag, in einem Zeitfenster (z. B. Tresen, Mo, 08:00–12:00), mit optionaler **Mindestbesetzung**. |
 | **Zuweisung** | Ein oder mehrere Mitarbeitende, die einem Slot zugeordnet sind. |
+| **Einweisung** | Für welche Arbeitsplätze ein:e Mitarbeiter:in qualifiziert/eingewiesen ist (z. B. Azubi: Empfang ja, Labor nein). |
 
 ---
 
@@ -46,6 +47,11 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 **Stammdaten** (Reiter *Stammdaten*):
 - **Standorte** anlegen/umbenennen/löschen (löschen nur, wenn kein Arbeitsplatz daran hängt).
 - **Arbeitsplätze** anlegen mit optionalem Standort und Farbe (löschen nur, wenn in keinem Slot verwendet).
+
+**Einweisungen** (Reiter *Einweisungen*):
+- Matrix **Mitarbeiter × Arbeitsplätze** mit Häkchen: festlegen, für welche Arbeitsplätze jemand eingewiesen ist. Speichern erfolgt pro Zeile sofort.
+- Zieht man im Editor eine:n nicht eingewiesene:n Mitarbeiter:in auf einen Slot, erscheint die **weiche Warnung „nicht eingewiesen"** (gelb); der Slot wird im Wochenraster dezent (gestrichelt) markiert. Es wird **nicht** blockiert — der Admin entscheidet bewusst (z. B. Einarbeitung unter Aufsicht).
+- Mitarbeitende sehen ihre eigenen Einweisungen unter **Profil → „Meine Einweisungen"**.
 
 **Schichtpläne** (Reiter *Schichtpläne*):
 - Plan anlegen, auswählen, umbenennen, löschen (löscht zugehörige Slots + Zuweisungen).
@@ -80,8 +86,11 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 - **Backend:** `app/routers/shift_planning.py` (Router, hinter der Flag-Dependency
   `require_shift_planning_enabled` → 404 wenn aus), `app/services/shift_planning_service.py`
   (Validierung + „my-today"), Modelle in `app/models/shift_planning.py`
-  (`locations`, `workstations`, `shift_plans`, `shift_slots`, `shift_assignments`),
-  Migration `053_add_shift_planning` (Tabellen + RLS).
+  (`locations`, `workstations`, `shift_plans`, `shift_slots`, `shift_assignments`,
+  `workstation_qualifications`), Migrationen `053_add_shift_planning` +
+  `054_add_workstation_quals` (Tabellen + RLS). Einweisungen: `GET/PUT
+  /qualifications`, `GET /me/qualifications`; pro Slot-Assignment ein
+  `qualified`-Flag, pro Plan `unqualified_slot_ids` (weich).
 - **Feature-Flag `shift_planning_enabled`** an **drei** Stellen synchron:
   `admin_settings.py` (`_ALLOWED_SETTINGS` + `_BOOL_SETTINGS`), `main.py::system_info()`
   (öffentlich, Default `false`, nie 500), `frontend/src/stores/systemStore.ts`

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import FocusTrap from 'focus-trap-react';
-import { X, Trash2 } from 'lucide-react';
+import { X, Trash2, AlertTriangle } from 'lucide-react';
 import Button from '../Button';
 import FormSelect from '../FormSelect';
 import FormInput from '../FormInput';
-import { WEEKDAY_LABELS_LONG, type Workstation, type SlotInput } from '../../api/shiftPlanning';
+import { getQualifications, WEEKDAY_LABELS_LONG, type Workstation, type SlotInput } from '../../api/shiftPlanning';
 
 export interface SlotEmployee {
   id: string;
@@ -49,6 +49,8 @@ export default function SlotDialog({
   const [minStaff, setMinStaff] = useState(initial.min_staff);
   const [userIds, setUserIds] = useState<string[]>(initial.userIds);
   const [submitting, setSubmitting] = useState(false);
+  // #305 M2d: workstation_id -> set of qualified user_ids (for the "not trained" hint)
+  const [qualifiedByWs, setQualifiedByWs] = useState<Record<string, Set<string>>>({});
 
   useEffect(() => {
     if (isOpen) {
@@ -58,11 +60,23 @@ export default function SlotDialog({
       setEnd(initial.end_time);
       setMinStaff(initial.min_staff);
       setUserIds(initial.userIds);
+      getQualifications()
+        .then((m) => {
+          const map: Record<string, Set<string>> = {};
+          m.qualifications.forEach((q) => {
+            (map[q.workstation_id] ??= new Set()).add(q.user_id);
+          });
+          setQualifiedByWs(map);
+        })
+        .catch(() => setQualifiedByWs({}));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const isQualified = (userId: string) =>
+    !workstationId || (qualifiedByWs[workstationId]?.has(userId) ?? false);
 
   const timeInvalid = end <= start;
   const noWorkstation = !workstationId;
@@ -165,8 +179,13 @@ export default function SlotDialog({
                         onChange={() => toggleUser(emp.id)}
                         className="rounded border-gray-300"
                       />
-                      <span>
+                      <span className="flex items-center gap-2">
                         {emp.first_name} {emp.last_name}
+                        {!isQualified(emp.id) && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">
+                            <AlertTriangle size={11} /> nicht eingewiesen
+                          </span>
+                        )}
                       </span>
                     </label>
                   ))

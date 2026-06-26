@@ -19,6 +19,7 @@ from app.models.shift_planning import (
     ShiftPlan,
     ShiftSlot,
     ShiftAssignment,
+    WorkstationQualification,
 )
 
 __all__ = [
@@ -49,4 +50,5 @@ __all__ = [
     "ShiftPlan",
     "ShiftSlot",
     "ShiftAssignment",
+    "WorkstationQualification",
 ]

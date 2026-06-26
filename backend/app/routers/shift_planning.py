@@ -21,13 +21,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User
+from app.models import User, UserRole
 from app.models.shift_planning import (
     Location,
     Workstation,
     ShiftPlan,
     ShiftSlot,
     ShiftAssignment,
+    WorkstationQualification,
 )
 from app.services import settings_service, shift_planning_service
 
@@ -130,6 +131,10 @@ class AssignmentsIn(BaseModel):
     user_ids: List[UUID]
 
 
+class QualificationsIn(BaseModel):
+    workstation_ids: List[UUID]
+
+
 # ─── serializers ─────────────────────────────────────────────────────
 
 
@@ -163,6 +168,8 @@ def _slot_dict(slot: ShiftSlot, ws: Optional[Workstation], assignments: List[dic
         "end_time": _hhmm(slot.end_time),
         "min_staff": slot.min_staff,
         "understaffed": shift_planning_service.is_understaffed(slot.min_staff, len(assignments)),
+        # #305 M2d: slot has ≥1 person not trained for its workstation (soft).
+        "unqualified": any(not a.get("qualified", True) for a in assignments),
         "assignments": assignments,
     }
 
@@ -516,13 +523,39 @@ def get_plan(
             "user_name": f"{u.first_name} {u.last_name}".strip(),
         })
 
+    # #305 M2d: the per-person "trained / not trained" signal is HR-sensitive
+    # competency data → ADMIN-ONLY. Non-admins (read-only view) get the
+    # who-works-where + understaffing picture but NOT colleagues' qualification
+    # gaps (consistent with the DSGVO masking of individual-sensitive data).
+    is_admin = current_user.role == UserRole.ADMIN
+    qual_pairs = set()
+    if is_admin:
+        ws_in_plan = {s.workstation_id for s in slots}
+        if ws_in_plan:
+            for uid, wsid in (
+                db.query(WorkstationQualification.user_id, WorkstationQualification.workstation_id)
+                .filter(
+                    WorkstationQualification.tenant_id == tid,
+                    WorkstationQualification.workstation_id.in_(ws_in_plan),
+                )
+                .all()
+            ):
+                qual_pairs.add((str(uid), str(wsid)))
+
     slot_dicts = []
     understaffed_ids = []
+    unqualified_ids = []
     for s in slots:
         a_list = assigns_by_slot.get(s.id, [])
+        if is_admin:
+            ws_key = str(s.workstation_id)
+            for a in a_list:
+                a["qualified"] = (a["user_id"], ws_key) in qual_pairs
         d = _slot_dict(s, ws_map.get(s.workstation_id), a_list)
         if d["understaffed"]:
             understaffed_ids.append(d["id"])
+        if is_admin and d["unqualified"]:
+            unqualified_ids.append(d["id"])
         slot_dicts.append(d)
 
     return {
@@ -534,6 +567,7 @@ def get_plan(
         "validation": {
             "is_valid": len(understaffed_ids) == 0,
             "understaffed_slot_ids": understaffed_ids,
+            "unqualified_slot_ids": unqualified_ids,
         },
     }
 
@@ -678,8 +712,14 @@ def _single_slot_dict(db: Session, tenant_id, slot: ShiftSlot) -> dict:
         .filter(ShiftAssignment.tenant_id == tenant_id, ShiftAssignment.shift_slot_id == slot.id)
         .all()
     )
+    qualified = shift_planning_service.qualified_user_ids(db, tenant_id, slot.workstation_id)
     a_list = [
-        {"id": str(a.id), "user_id": str(a.user_id), "user_name": f"{u.first_name} {u.last_name}".strip()}
+        {
+            "id": str(a.id),
+            "user_id": str(a.user_id),
+            "user_name": f"{u.first_name} {u.last_name}".strip(),
+            "qualified": str(a.user_id) in qualified,
+        }
         for a, u in rows
     ]
     return _slot_dict(slot, ws, a_list)
@@ -791,6 +831,100 @@ def set_assignments(
         })
     db.commit()
     return {"slot_id": str(slot.id), "assignments": assignments}
+
+
+# ─── qualifications / Einweisungen (#305 M2d) ────────────────────────
+
+
+@router.get("/qualifications")
+def get_qualifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Matrix: active employees × workstations + the set qualifications."""
+    tid = current_user.tenant_id
+    loc_names = _location_name_map(db, tid)
+    workstations = (
+        db.query(Workstation)
+        .filter(Workstation.tenant_id == tid)
+        .order_by(Workstation.sort_order, Workstation.name)
+        .all()
+    )
+    users = (
+        db.query(User)
+        .filter(User.tenant_id == tid, User.is_active.is_(True), User.is_hidden.is_(False))
+        .order_by(User.last_name, User.first_name)
+        .all()
+    )
+    quals = (
+        db.query(WorkstationQualification)
+        .filter(WorkstationQualification.tenant_id == tid)
+        .all()
+    )
+    return {
+        "workstations": [_ws_dict(w, loc_names.get(w.location_id)) for w in workstations],
+        "users": [
+            {"id": str(u.id), "first_name": u.first_name, "last_name": u.last_name} for u in users
+        ],
+        "qualifications": [
+            {"user_id": str(q.user_id), "workstation_id": str(q.workstation_id)} for q in quals
+        ],
+    }
+
+
+@router.put("/qualifications/{user_id}")
+def set_user_qualifications(
+    user_id: UUID,
+    data: QualificationsIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Replace a user's workstation qualifications (idempotent set, dedup)."""
+    tid = current_user.tenant_id
+    user = db.query(User).filter(User.id == user_id, User.tenant_id == tid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Mitarbeiter nicht gefunden")
+
+    unique_ws = list(dict.fromkeys(data.workstation_ids))
+    if unique_ws:
+        found = (
+            db.query(Workstation.id)
+            .filter(Workstation.id.in_(unique_ws), Workstation.tenant_id == tid)
+            .all()
+        )
+        if len({r[0] for r in found}) != len(unique_ws):
+            raise HTTPException(status_code=404, detail="Mindestens ein Arbeitsplatz wurde nicht gefunden")
+
+    db.query(WorkstationQualification).filter(
+        WorkstationQualification.tenant_id == tid,
+        WorkstationQualification.user_id == user_id,
+    ).delete(synchronize_session=False)
+    for wsid in unique_ws:
+        db.add(WorkstationQualification(tenant_id=tid, user_id=user_id, workstation_id=wsid))
+    db.commit()
+    return {"user_id": str(user_id), "workstation_ids": [str(w) for w in unique_ws]}
+
+
+@router.get("/me/qualifications")
+def my_qualifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The logged-in employee's own workstation qualifications."""
+    tid = current_user.tenant_id
+    loc_names = _location_name_map(db, tid)
+    rows = (
+        db.query(Workstation)
+        .join(WorkstationQualification, WorkstationQualification.workstation_id == Workstation.id)
+        .filter(
+            WorkstationQualification.tenant_id == tid,
+            WorkstationQualification.user_id == current_user.id,
+            Workstation.tenant_id == tid,
+        )
+        .order_by(Workstation.sort_order, Workstation.name)
+        .all()
+    )
+    return {"workstations": [_ws_dict(w, loc_names.get(w.location_id)) for w in rows]}
 
 
 # ─── dashboard ───────────────────────────────────────────────────────

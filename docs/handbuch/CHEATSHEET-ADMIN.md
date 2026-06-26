@@ -263,6 +263,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **Stammdaten:** Standorte (optional) + Arbeitsplätze (mit Farbe) anlegen.
 - **Plan:** beliebig viele Wochenpläne; Slots per Drag & Drop / Klick, Mitarbeitende auf Slot ziehen, Mindestbesetzung optional.
 - **Aktiv schalten** → für alle sichtbar (mehrere Pläne gleichzeitig aktiv möglich).
+- **Einweisungen:** Matrix MA × Arbeitsplätze; nicht eingewiesene Zuweisung → weiche Warnung (blockiert nicht). MA sehen ihre Einweisungen im Profil.
 - Reines Planungswerkzeug – **keine** Wirkung auf Zeiterfassung/ArbZG/Urlaub/Überstunden. Details: `docs/SCHICHTPLANUNG.md`.
 
 ---

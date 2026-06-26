@@ -201,3 +201,36 @@ class ShiftAssignment(Base):
 
     def __repr__(self):
         return f"<ShiftAssignment(slot={self.shift_slot_id}, user={self.user_id})>"
+
+
+class WorkstationQualification(Base):
+    """Einweisung — which workstations an employee is trained/qualified for (#305 M2d).
+
+    Pure planning metadata: drives a soft "not trained" warning when assigning an
+    employee to a slot's workstation, and is the input for later auto-generation.
+    Decoupled from the ArbZG/calculation model.
+    """
+
+    __tablename__ = "workstation_qualifications"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "workstation_id", name="uq_tenant_user_workstation"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    workstation_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workstations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<WorkstationQualification(user={self.user_id}, ws={self.workstation_id})>"

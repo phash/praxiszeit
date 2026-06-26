@@ -5,6 +5,7 @@ import { downloadBlob } from '../utils/downloadBlob';
 import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
+import MyQualificationsCard from '../components/MyQualificationsCard';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useToast } from '../contexts/ToastContext';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../utils/calendarColors';
@@ -470,6 +471,11 @@ export default function Profile() {
             Mind. 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer
           </p>
         )}
+      </div>
+
+      {/* #305 M2d: Meine Einweisungen (nur wenn Schichtplanung aktiv) */}
+      <div className="mt-6">
+        <MyQualificationsCard />
       </div>
 
       {/* Weitere Einstellungen */}

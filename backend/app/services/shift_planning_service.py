@@ -19,8 +19,22 @@ from app.models.shift_planning import (
     ShiftAssignment,
     Workstation,
     Location,
+    WorkstationQualification,
 )
 from app.services.timezone_service import today_local
+
+
+def qualified_user_ids(db: Session, tenant_id, workstation_id) -> set:
+    """Set of user-ids (as str) trained/qualified for a workstation (#305 M2d)."""
+    rows = (
+        db.query(WorkstationQualification.user_id)
+        .filter(
+            WorkstationQualification.tenant_id == tenant_id,
+            WorkstationQualification.workstation_id == workstation_id,
+        )
+        .all()
+    )
+    return {str(r[0]) for r in rows}
 
 
 def is_understaffed(min_staff: int, assignment_count: int) -> bool:

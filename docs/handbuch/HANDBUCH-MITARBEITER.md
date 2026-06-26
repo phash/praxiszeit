@@ -547,7 +547,8 @@ Nutzt Ihre Praxis die **Schichtplanung**, erscheint links der Menüpunkt
 Arbeitsplatz (z. B. Tresen, Labor) wann besetzt ist und wer eingeteilt ist.
 
 Auf dem **Dashboard** zeigt die Karte **„Deine Einteilung heute"** Ihre heutigen
-Einsätze mit Arbeitsplatz und Uhrzeit.
+Einsätze mit Arbeitsplatz und Uhrzeit. Unter **Profil → „Meine Einweisungen"**
+sehen Sie, für welche Arbeitsplätze Sie eingewiesen sind (pflegt Ihr Administrator).
 
 Die Schichtplanung ist ein reines Planungswerkzeug und verändert **nicht** Ihre
 erfassten Arbeitszeiten, Ihren Urlaub oder Ihr Überstundenkonto. Die Einteilung

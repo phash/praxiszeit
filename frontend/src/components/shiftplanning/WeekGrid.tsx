@@ -39,6 +39,9 @@ function blockStyle(slot: ShiftSlot, box: SlotBox): React.CSSProperties {
     width: `calc(${box.widthPct}% - 4px)`,
     backgroundColor: `${color}1a`, // ~10% alpha
     borderLeft: `3px solid ${color}`,
+    // #305 M2d: dashed amber outline when ≥1 assigned person is not trained.
+    outline: slot.unqualified ? '1px dashed #d97706' : undefined,
+    outlineOffset: slot.unqualified ? '-2px' : undefined,
   };
 }
 

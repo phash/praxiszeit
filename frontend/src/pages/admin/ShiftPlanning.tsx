@@ -17,6 +17,7 @@ import {
   CalendarDays,
   Settings2,
   GripVertical,
+  GraduationCap,
 } from 'lucide-react';
 import apiClient from '../../api/client';
 import Button from '../../components/Button';
@@ -30,6 +31,7 @@ import WeekGrid from '../../components/shiftplanning/WeekGrid';
 import SlotDialog, { type SlotDialogInitial, type SlotEmployee } from '../../components/shiftplanning/SlotDialog';
 import LocationManager from '../../components/shiftplanning/LocationManager';
 import WorkstationManager from '../../components/shiftplanning/WorkstationManager';
+import QualificationMatrix from '../../components/shiftplanning/QualificationMatrix';
 import {
   timeToMinutes,
   minutesToTime,
@@ -74,7 +76,7 @@ export default function AdminShiftPlanning() {
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
-  const [tab, setTab] = useState<'plans' | 'stations'>('plans');
+  const [tab, setTab] = useState<'plans' | 'stations' | 'qualifications'>('plans');
   const [locations, setLocations] = useState<Location[]>([]);
   const [workstations, setWorkstations] = useState<Workstation[]>([]);
   const [employees, setEmployees] = useState<SlotEmployee[]>([]);
@@ -335,6 +337,14 @@ export default function AdminShiftPlanning() {
         >
           <Settings2 size={16} /> Stammdaten
         </button>
+        <button
+          onClick={() => setTab('qualifications')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            tab === 'qualifications' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <GraduationCap size={16} /> Einweisungen
+        </button>
       </div>
 
       {tab === 'stations' && (
@@ -343,6 +353,8 @@ export default function AdminShiftPlanning() {
           <WorkstationManager workstations={workstations} locations={locations} onChanged={loadStations} />
         </div>
       )}
+
+      {tab === 'qualifications' && <QualificationMatrix />}
 
       {tab === 'plans' && (
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">

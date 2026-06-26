@@ -26,6 +26,7 @@ export interface ShiftAssignment {
   id: string;
   user_id: string;
   user_name: string;
+  qualified?: boolean; // #305 M2d: trained for this slot's workstation
 }
 
 export interface ShiftSlot {
@@ -38,6 +39,7 @@ export interface ShiftSlot {
   end_time: string; // "HH:MM"
   min_staff: number;
   understaffed: boolean;
+  unqualified?: boolean; // #305 M2d: ≥1 assigned person not trained for the workstation
   assignments: ShiftAssignment[];
 }
 
@@ -56,7 +58,22 @@ export interface PlanDetail {
   description: string | null;
   is_active: boolean;
   slots: ShiftSlot[];
-  validation: { is_valid: boolean; understaffed_slot_ids: string[] };
+  validation: { is_valid: boolean; understaffed_slot_ids: string[]; unqualified_slot_ids?: string[] };
+}
+
+// ─── Einweisungen / Skill-Matrix (#305 M2d) ───
+export interface QualUser {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+export interface QualificationMatrix {
+  workstations: Workstation[];
+  users: QualUser[];
+  qualifications: { user_id: string; workstation_id: string }[];
+}
+export interface MyQualifications {
+  workstations: Workstation[];
 }
 
 export interface MyTodayEntry {
@@ -134,6 +151,18 @@ export const setAssignments = (slotId: string, userIds: string[]) =>
       user_ids: userIds,
     })
     .then((r) => r.data);
+
+// ─── qualifications / Einweisungen (#305 M2d) ───
+export const getQualifications = () =>
+  apiClient.get<QualificationMatrix>(`${BASE}/qualifications`).then((r) => r.data);
+export const setUserQualifications = (userId: string, workstationIds: string[]) =>
+  apiClient
+    .put<{ user_id: string; workstation_ids: string[] }>(`${BASE}/qualifications/${userId}`, {
+      workstation_ids: workstationIds,
+    })
+    .then((r) => r.data);
+export const getMyQualifications = () =>
+  apiClient.get<MyQualifications>(`${BASE}/me/qualifications`).then((r) => r.data);
 
 // ─── dashboard ───
 export const getMyToday = () => apiClient.get<MyToday>(`${BASE}/my-today`).then((r) => r.data);
