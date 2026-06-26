@@ -555,4 +555,4 @@ legt Ihr Administrator fest.
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.4 | Juni 2026 (PraxisZeit 1.10.6)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.4 | Juni 2026 (PraxisZeit 1.11.0)*
