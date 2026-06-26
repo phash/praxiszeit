@@ -827,7 +827,13 @@ Warnung, blockiert nicht).
 
 **Aktiv schalten** macht einen Plan für alle sichtbar; **mehrere Pläne können
 gleichzeitig aktiv** sein. Mitarbeitende sehen ihre heutige Einteilung im
-Dashboard. Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
+Dashboard.
+
+Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
+fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
+eingewiesenen Person erscheint die weiche Warnung „nicht eingewiesen" (blockiert
+nicht); Mitarbeitende sehen ihre Einweisungen im Profil. Details:
+[`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 
 ---
 
