@@ -83,3 +83,7 @@ docs/generated/
 
 # Raw user feedback inputs (may contain personal data) — never commit
 feedback/
+
+# Local-only tooling & test scaffolds (never commit)
+.claude/
+.win-test/
