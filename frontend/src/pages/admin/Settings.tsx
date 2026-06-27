@@ -962,6 +962,12 @@ export default function Settings() {
           Betriebsferien, die als Urlaub zählen. <strong>Standardmäßig deaktiviert</strong> (dann entstehen
           wie bisher Minus-Urlaubstage).
         </p>
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+          <strong>Hinweis:</strong> Die Option wirkt beim <strong>Anlegen</strong> von Betriebsferien. Für
+          <strong> bereits eingetragene</strong> Betriebsferien greift sie nicht automatisch — öffne sie einmal
+          unter „Betriebsferien" und <strong>speichere sie erneut</strong>, dann werden die Tage neu berechnet
+          (Urlaub zuerst, danach Überstundenabbau).
+        </p>
         <div className="flex items-center justify-between max-w-sm">
           <label htmlFor="closure-overtime-toggle" className="text-sm font-medium text-gray-700">
             Überzählige Betriebsferien als Überstundenabbau

@@ -392,9 +392,6 @@ def update_closure(
 
     name_changed = closure.name != data.name
     type_changed = closure.counts_as_vacation != data.counts_as_vacation
-    # #314: capture BEFORE the overwrite below — whether the date range or the
-    # vacation flag actually changed. A pure rename must NOT trigger the re-split.
-    range_changed = closure.start_date != data.start_date or closure.end_date != data.end_date
 
     # Apply the new attributes on the closure first so generated notes /
     # end_date / absence type use the updated values.
@@ -419,18 +416,19 @@ def update_closure(
 
     workday_set = set(workdays)
 
-    # #314: when the surplus-as-overtime split is active for a vacation closure,
-    # re-typing absences in place is unsafe — a counts_as_vacation toggle would
-    # blindly turn budget-exhausted OVERTIME days back into VACATION and re-create
-    # minus-vacation (the exact thing #314 prevents). In that case we DELETE the
-    # linked in-range absences and let _create_closure_absences re-book them with
-    # a FRESH budget snapshot (correct re-split). Split off → legacy in-place sync.
-    #
-    # Gated on a STRUCTURAL change (range or vacation-flag): a cosmetic rename must
-    # not re-split against a now-different budget and silently shift OVERTIME/VACATION
-    # days (review finding) — a rename then falls through to the idempotent in-place
-    # branch (note only).
-    split_active = (range_changed or type_changed) and data.counts_as_vacation and settings_service.get_bool_setting(
+    # #314 (+ follow-up, customer report): when the surplus-as-overtime split is
+    # active for a vacation closure, ANY update — including a plain re-save or a
+    # cosmetic rename — re-applies the split. We DELETE the linked in-range absences
+    # and let _create_closure_absences re-book them against a FRESH budget snapshot.
+    # The snapshot is computed WITHOUT this closure's own days (they are deleted +
+    # flushed first), so re-splitting when nothing else changed is value-stable
+    # (idempotent). This is the supported way to apply a *newly enabled* global
+    # toggle to an EXISTING Betriebsferien: flipping the switch alone does not
+    # re-book already-persisted absences — re-saving the closure does. Re-typing in
+    # place would be unsafe (a counts_as_vacation toggle would blindly turn budget-
+    # exhausted OVERTIME days back into VACATION and re-create minus-vacation).
+    # Split off → legacy in-place sync.
+    split_active = data.counts_as_vacation and settings_service.get_bool_setting(
         db, "closure_overtime_after_vacation", current_user.tenant_id, False
     )
 
