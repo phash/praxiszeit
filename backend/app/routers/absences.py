@@ -6,7 +6,10 @@ from typing import List, Optional
 from datetime import timedelta, date
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog
+from app.models import (
+    User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
+    AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE,
+)
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service
@@ -82,7 +85,13 @@ def list_absences(
         # Gesundheitsdaten IM ERGEBNIS landen. Sonst haengt die Spur am Inhalt:
         # eine gezielte Suche nach Krankmeldungen, die (noch) nichts findet,
         # bliebe unprotokolliert.
-        sensitive = any(a.type in _MASKED_ABSENCE_TYPES for a in absences)
+        # #312: a custom-reason absence may be health-sensitive (e.g. "Reha"
+        # mapped to TRAINING), so it counts as sensitive for the audit trail too
+        # — consistent with the colleague-feed masking.
+        sensitive = any(
+            a.type in _MASKED_ABSENCE_TYPES or a.reason_id is not None
+            for a in absences
+        )
         db.add(TimeEntryAuditLog(
             time_entry_id=None,
             user_id=user_id,
@@ -125,18 +134,30 @@ def get_absence_calendar(
         date_in_month(Absence.date, year, month_num)
     ).order_by(Absence.date).all()
 
+    # #312: custom-reason labels (batch-loaded once) — shown to admins/owners,
+    # masked for colleagues (a custom reason may be health-sensitive, e.g. "Reha").
+    # Key on str(id) so the lookup is robust to UUID-vs-string typing (SQLite).
+    reason_names = {
+        str(r.id): r.name for r in db.query(AbsenceReason.id, AbsenceReason.name)
+        .filter(AbsenceReason.tenant_id == current_user.tenant_id).all()
+    }
+
     # Convert to calendar entries (no extra queries needed)
     # DSGVO Art. 9: Krankheitsdaten sind besonders schützenswert.
     # Nicht-Admins sehen fremde Krankmeldungen nur als "absent".
     calendar_entries = []
     for absence, first_name, last_name, calendar_color, department in rows:
         display_type = absence.type.value
-        if (
-            absence.type in _MASKED_ABSENCE_TYPES
+        # #312: any custom-reason absence is masked for non-admin colleagues too.
+        masked = (
+            (absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None)
             and current_user.role != UserRole.ADMIN
             and absence.user_id != current_user.id
-        ):
+        )
+        if masked:
             display_type = "absent"
+        elif absence.reason_id is not None:
+            display_type = reason_names.get(str(absence.reason_id), display_type)
         # DSGVO-Minimierung: die Abteilung (Org-Zuordnung) wird nur Admins
         # ausgeliefert (Filter-Use-Case). Kolleg:innen erhalten den Team-Kalender
         # ohne Abteilungsmerkmal → kein tenant-weites Org-Chart-Broadcast.
@@ -181,6 +202,13 @@ def get_team_upcoming_absences(
     seen = set()
     team_absences = []
 
+    # #312: custom-reason labels (shown to admins/owners, masked for colleagues),
+    # mirroring the /calendar feed. Key on str(id) (robust to UUID-vs-string).
+    reason_names = {
+        str(r.id): r.name for r in db.query(AbsenceReason.id, AbsenceReason.name)
+        .filter(AbsenceReason.tenant_id == current_user.tenant_id).all()
+    }
+
     # DSGVO Art. 9: Krankheitsdaten sind besonders schützenswert. Es muss
     # derselbe sensible Satz maskiert werden wie im /calendar-Feed
     # (_MASKED_ABSENCE_TYPES), sonst wäre "absent" hier ein 1:1-Indikator für
@@ -192,12 +220,16 @@ def get_team_upcoming_absences(
         if key not in seen:
             seen.add(key)
             display_type = absence.type.value
-            if (
-                absence.type in _MASKED_ABSENCE_TYPES
+            # #312: custom-reason absences are masked for non-admin colleagues too.
+            masked = (
+                (absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None)
                 and current_user.role != UserRole.ADMIN
                 and absence.user_id != current_user.id
-            ):
+            )
+            if masked:
                 display_type = "absent"
+            elif absence.reason_id is not None:
+                display_type = reason_names.get(str(absence.reason_id), display_type)
             team_absences.append(TeamAbsenceEntry(
                 date=absence.date,
                 end_date=absence.end_date,
@@ -266,6 +298,24 @@ def create_absence(
         ).first()
         if not target_user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # #312: a custom absence reason determines the absence TYPE via its base
+    # behaviour (the calculation runs on `type`). Resolve it up front so all
+    # downstream type-specific logic uses the mapped built-in type; reason_id is
+    # stored on the row for the display label/colour.
+    reason_id = absence_data.reason_id
+    if reason_id is not None:
+        reason = db.query(AbsenceReason).filter(
+            AbsenceReason.id == reason_id,
+            AbsenceReason.tenant_id == current_user.tenant_id,  # F-026
+            AbsenceReason.is_active.is_(True),
+        ).first()
+        if not reason:
+            raise HTTPException(status_code=404, detail="Abwesenheitsgrund nicht gefunden oder inaktiv")
+        try:
+            absence_data.type = BEHAVIOR_TO_ABSENCE_TYPE[AbsenceReasonBehavior(reason.base_behavior)]
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=400, detail="Ungültiges Basis-Verhalten des Abwesenheitsgrundes")
 
     # Determine date range
     start_date = absence_data.date
@@ -498,7 +548,8 @@ def create_absence(
             # Urlaubsverbrauch (Voll-Tag False, Halbtag True). Bei Zeitraeumen ist
             # half_day per Schema False (Halbtag ist ein Einzeltag-Konzept).
             half_day=absence_data.half_day,
-            note=absence_data.note
+            note=absence_data.note,
+            reason_id=reason_id,  # #312
         )
         db.add(absence)
         created_absences.append(absence)

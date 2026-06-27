@@ -20,7 +20,7 @@ from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_month, date_in_year
-from app.services.export_service import neutralize_spreadsheet_formula
+from app.services.export_service import neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +123,7 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
 
 
 def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data: bool = False):
+    reason_names = _load_reason_names(db, user.tenant_id)  # #312
     sheet_name = f"{user.last_name} {user.first_name}"[:31]
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
@@ -278,12 +279,11 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         elif absence:
             target = Decimal("0.00")
             # DSGVO F-003: mask sick absences unless health data explicitly requested
-            if absence.type.value == "sick" and not include_health_data:
-                label = "Abwesenheit"
-                note_str = ""
-            else:
-                label = ABSENCE_LABELS.get(absence.type.value, absence.type.value)
-                note_str = absence.note or ""
+            # #312: sick AND custom-reason absences are masked (label + note)
+            # unless health data is explicitly requested — a custom reason can be
+            # health-sensitive. Otherwise a custom reason shows its own name.
+            label, _show_note = _absence_export_label(absence, ABSENCE_LABELS, reason_names, include_health_data)
+            note_str = (absence.note or "") if _show_note else ""
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(f"{label} ({float(absence.hours):.1f}h)"))
@@ -452,6 +452,7 @@ def _absences_overview_sheet(doc, db, users, year, bold, include_health_data: bo
 
 
 def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool = False):
+    reason_names = _load_reason_names(db, user.tenant_id)  # #312
     sheet_name = f"{user.last_name} {user.first_name}"[:31]
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
@@ -583,12 +584,11 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         elif absence:
             # DSGVO F-003/Art. 9: mask sick absences (label + note) unless health
             # data is explicitly requested — mirrors _monthly_sheet.
-            if absence.type.value == "sick" and not include_health_data:
-                label = "Abwesenheit"
-                note_str = ""
-            else:
-                label = ABSENCE_LABELS.get(absence.type.value, absence.type.value)
-                note_str = absence.note or ""
+            # #312: sick AND custom-reason absences are masked (label + note)
+            # unless health data is explicitly requested — a custom reason can be
+            # health-sensitive. Otherwise a custom reason shows its own name.
+            label, _show_note = _absence_export_label(absence, ABSENCE_LABELS, reason_names, include_health_data)
+            note_str = (absence.note or "") if _show_note else ""
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell(f"{label} ({float(absence.hours):.1f}h)"))

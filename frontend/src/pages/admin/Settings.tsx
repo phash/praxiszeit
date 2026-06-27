@@ -7,6 +7,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore';
+import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
 
 // #157: Reihenfolge + Labels der konfigurierbaren Typ-Farben.
@@ -477,6 +478,9 @@ export default function Settings() {
         onCancel={handleCancel}
       />
       <h1 className="text-2xl font-bold text-gray-900">Einstellungen</h1>
+
+      {/* #312 Eigene Abwesenheitsgründe */}
+      <AbsenceReasonsManager />
 
       {/* Feiertage */}
       <div className="bg-white rounded-xl shadow-sm p-6">

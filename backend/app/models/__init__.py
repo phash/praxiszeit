@@ -1,7 +1,13 @@
 from app.models.tenant import Tenant, TenantInvoice
 from app.models.user import User, UserRole
 from app.models.time_entry import TimeEntry
-from app.models.absence import Absence, AbsenceType
+from app.models.absence import (
+    Absence,
+    AbsenceType,
+    AbsenceReason,
+    AbsenceReasonBehavior,
+    BEHAVIOR_TO_ABSENCE_TYPE,
+)
 from app.models.public_holiday import PublicHoliday
 from app.models.working_hours_change import WorkingHoursChange
 from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRequestStatus
@@ -30,6 +36,9 @@ __all__ = [
     "TimeEntry",
     "Absence",
     "AbsenceType",
+    "AbsenceReason",
+    "AbsenceReasonBehavior",
+    "BEHAVIOR_TO_ABSENCE_TYPE",
     "PublicHoliday",
     "WorkingHoursChange",
     "ChangeRequest",

@@ -508,6 +508,7 @@ def review_change_request(
                 hours=hours,
                 start_time=cr.proposed_start_time,
                 end_time=cr.proposed_end_time,
+                reason_id=cr.proposed_reason_id,  # #312: carry the custom reason through
             )
             db.add(new_absence)
             db.flush()
@@ -575,6 +576,11 @@ def review_change_request(
 
             if cr.proposed_absence_type:
                 absence.type = AbsenceType(cr.proposed_absence_type)
+            # #312: only set the reason when the CR actually carried one — mirror the
+            # type guard above so an unrelated absence-UPDATE (no reason proposed)
+            # does not silently clear an existing custom reason.
+            if cr.proposed_reason_id is not None:
+                absence.reason_id = cr.proposed_reason_id
             # H-1: Voll-Tag-Typen aufs Tagessoll des Tages umbuchen — identisch zum
             # CREATE-Pfad (Z.460-466), create_absence und review_vacation_request.
             # Bei Typwechsel (z.B. OVERTIME→VACATION) dürfen NICHT die alten

@@ -11,6 +11,8 @@ import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
+import { myReasons } from '../api/absenceReasons';
+import type { AbsenceReason } from '../api/absenceReasons';
 
 // ---- Types ----------------------------------------------------------------
 
@@ -60,6 +62,7 @@ interface EditState {
   breakMinutes: string; // string for <input> binding
   entryType: 'work' | 'sick' | 'training' | 'overtime' | 'other';
   absenceHours: string;
+  reasonId?: string | null; // #312: selected custom absence reason
 }
 
 // ---- Helper functions -----------------------------------------------------
@@ -124,7 +127,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [addingDate, setAddingDate] = useState<string | null>(null); // separate state for adding new entry
-  const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0', entryType: 'work', absenceHours: '8' });
+  const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0', entryType: 'work', absenceHours: '8', reasonId: null });
+  const [reasons, setReasons] = useState<AbsenceReason[]>([]); // #312
+  useEffect(() => { myReasons().then(setReasons).catch(() => { /* picker omits custom reasons */ }); }, []);
   const [saving, setSaving] = useState(false);
   const [submittingDate, setSubmittingDate] = useState<string | null>(null);
   const [submitReason, setSubmitReason] = useState('');
@@ -168,6 +173,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       breakMinutes: String(entry?.break_minutes ?? 0),
       entryType: hasAbsence ? (absence.type as EditState['entryType']) : 'work',
       absenceHours: hasAbsence ? String(absence.hours) : '8',
+      reasonId: (absence as { reason_id?: string | null } | null)?.reason_id ?? null, // #312
     });
   }
 
@@ -180,6 +186,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       breakMinutes: '0',
       entryType: 'work',
       absenceHours: '8',
+      reasonId: null, // #312
     });
   }
 
@@ -212,6 +219,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           date: dateStr,
           type: editState.entryType,
           hours: parseHours(editState.absenceHours),
+          reason_id: editState.reasonId ?? null, // #312
           keep_time_entries: hasExistingEntries,
         });
       }
@@ -275,6 +283,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           date: day.date,
           type: editState.entryType,
           hours: parseHours(editState.absenceHours),
+          reason_id: editState.reasonId ?? null, // #312
           keep_time_entries: remainingEntries.length > 0,
         });
       }
@@ -360,6 +369,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           proposed_date: day.date,
           proposed_absence_type: editState.entryType,
           proposed_absence_hours: parseHours(editState.absenceHours),
+          reason_id: editState.reasonId ?? null, // #312
         };
       }
 
@@ -471,8 +481,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                         <td className={`px-3 py-2 ${TYPE_COLORS[day.type]}`}>
                           {editingDate === day.date && isAdminView ? (
                             <select
-                              value={editState.entryType}
-                              onChange={(e) => setEditState(s => ({ ...s, entryType: e.target.value as EditState['entryType'] }))}
+                              value={editState.reasonId ? `reason:${editState.reasonId}` : editState.entryType}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v.startsWith('reason:')) {
+                                  // a custom reason is always an absence — force the absence path
+                                  setEditState(s => ({ ...s, reasonId: v.slice('reason:'.length), entryType: s.entryType === 'work' ? 'other' : s.entryType }));
+                                } else {
+                                  setEditState(s => ({ ...s, entryType: v as EditState['entryType'], reasonId: null }));
+                                }
+                              }}
                               className="border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                             >
                               <option value="work">Arbeit</option>
@@ -480,6 +498,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               <option value="training">Fortbildung</option>
                               <option value="overtime">ÜSt-Ausgleich</option>
                               <option value="other">Sonstiges</option>
+                              {reasons.length > 0 && (
+                                <optgroup label="Eigene Gründe">
+                                  {reasons.map(r => (
+                                    <option key={r.id} value={`reason:${r.id}`}>{r.name}</option>
+                                  ))}
+                                </optgroup>
+                              )}
                             </select>
                           ) : (
                             <>
@@ -687,8 +712,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           <td className="px-3 py-2 hidden sm:table-cell"></td>
                           <td className="px-3 py-2">
                             <select
-                              value={editState.entryType}
-                              onChange={(e) => setEditState(s => ({ ...s, entryType: e.target.value as EditState['entryType'] }))}
+                              value={editState.reasonId ? `reason:${editState.reasonId}` : editState.entryType}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v.startsWith('reason:')) {
+                                  // a custom reason is always an absence — force the absence path
+                                  setEditState(s => ({ ...s, reasonId: v.slice('reason:'.length), entryType: s.entryType === 'work' ? 'other' : s.entryType }));
+                                } else {
+                                  setEditState(s => ({ ...s, entryType: v as EditState['entryType'], reasonId: null }));
+                                }
+                              }}
                               className="border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                             >
                               <option value="work">Arbeit</option>
@@ -696,6 +729,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               <option value="training">Fortbildung</option>
                               <option value="overtime">ÜSt-Ausgleich</option>
                               <option value="other">Sonstiges</option>
+                              {reasons.length > 0 && (
+                                <optgroup label="Eigene Gründe">
+                                  {reasons.map(r => (
+                                    <option key={r.id} value={`reason:${r.id}`}>{r.name}</option>
+                                  ))}
+                                </optgroup>
+                              )}
                             </select>
                           </td>
                           <td className="px-3 py-2 hidden md:table-cell">
