@@ -234,10 +234,19 @@ def get_range_target(
 
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
         date_in_range(Absence.date, start, end),
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
     absence_dates = {a.date for a in absences}
+
+    # Preload the user's WorkingHoursChange rows ONCE and resolve the per-day
+    # weekly hours in memory (avoids one SELECT per day — N+1 — for a multi-day
+    # range; mirrors get_overtime_account). F-026: tenant-scoped.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
 
     # #146: special-day config can differ per year (a week may cross Dec/Jan).
     _special_cfg_cache: dict = {}
@@ -269,7 +278,7 @@ def get_range_target(
             d += timedelta(days=1)
             continue
 
-        weekly_hours = get_weekly_hours_for_date(db, user, d)
+        weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
         daily_target = get_daily_target_for_date(user, d, weekly_hours)
 
         # #146: apply the special-day rule (after weekend/holiday/absence so we

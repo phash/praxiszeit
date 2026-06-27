@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import TimeEntry, Absence, AbsenceType
+from app.models import TimeEntry, Absence, AbsenceType, User, UserRole, TimeEntryAuditLog
+from app.services import auth_service
 from tests.conftest import DEFAULT_TENANT_ID
 
 
@@ -129,6 +130,47 @@ def test_weekly_report_sick_masked_without_flag(db, test_user, test_admin):
         assert _row(r1, test_user)["sick_days"] == 0.0   # DSGVO Art. 9
         r2 = client.get(f"/api/admin/reports/weekly?week_start={WK_MON.isoformat()}&include_health_data=true")
         assert _row(r2, test_user)["sick_days"] == pytest.approx(1.0)
+    finally:
+        _app.dependency_overrides.clear()
+
+
+def test_weekly_report_respects_employment_window(db, test_admin):
+    # #193: a mid-week start (first_work_day = Wed 03.06.) means the week's Soll
+    # only counts Wed–Fri, not Mon/Tue before the employee started.
+    emp = User(
+        username="midweek", email="midweek@x.de",
+        password_hash=auth_service.hash_password("test123"),
+        first_name="Mid", last_name="Week", role=UserRole.EMPLOYEE,
+        weekly_hours=40.0, work_days_per_week=5, is_active=True, track_hours=True,
+        first_work_day=date(2026, 6, 3), tenant_id=DEFAULT_TENANT_ID,
+    )
+    db.add(emp)
+    db.commit()
+    try:
+        client = _client(db, test_admin)
+        r = client.get(f"/api/admin/reports/weekly?week_start={WK_MON.isoformat()}&soll_basis=monatsende")
+        assert r.status_code == 200, r.text
+        assert _row(r, emp)["target_hours"] == 24.0  # Wed/Thu/Fri only
+    finally:
+        _app.dependency_overrides.clear()
+
+
+def test_weekly_report_health_data_writes_audit_log(db, test_user, test_admin):
+    # DSGVO Art. 9: reading sick data with include_health_data must persist a
+    # health_data_read audit entry (L-2 pattern, committed only on success).
+    db.add(Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 6, 3),
+                   type=AbsenceType.SICK, hours=8.0))
+    db.commit()
+    try:
+        client = _client(db, test_admin)
+        r = client.get(f"/api/admin/reports/weekly?week_start={WK_MON.isoformat()}&include_health_data=true")
+        assert r.status_code == 200, r.text
+        log = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.action == "health_data_read",
+            TimeEntryAuditLog.source == "dsgvo",
+        ).first()
+        assert log is not None
+        assert "Wochenreport" in (log.new_note or "")
     finally:
         _app.dependency_overrides.clear()
 

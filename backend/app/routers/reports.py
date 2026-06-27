@@ -102,6 +102,7 @@ def get_monthly_report(
         # Get vacation and sick hours for the month (F-033: sargable)
         vacation_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
             Absence.type == AbsenceType.VACATION,
             date_in_month(Absence.date, year, month_num),
         ).all()
@@ -109,6 +110,7 @@ def get_monthly_report(
 
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
             Absence.type == AbsenceType.SICK,
             date_in_month(Absence.date, year, month_num),
         ).all()
@@ -215,19 +217,28 @@ def get_weekly_report(
             db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff
         )
 
-        # Urlaub/Krank in der Woche (F-033: sargable range)
+        # Urlaub/Krank in der Woche (F-033: sargable range). Bei soll_basis=bis_heute
+        # denselben Cutoff wie Soll/Ist anwenden, damit die Tage-Spalten nicht eine
+        # für die laufende Woche vorausgebuchte Abwesenheit zählen, die das (gekappte)
+        # Soll/Ist gar nicht erfasst.
         vacation_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
             Absence.type == AbsenceType.VACATION,
             date_in_range(Absence.date, wk_start, wk_end),
         ).all()
+        if cutoff is not None:
+            vacation_absences = [a for a in vacation_absences if a.date <= cutoff]
         vacation_hours = sum(float(a.hours) for a in vacation_absences)
 
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
             Absence.type == AbsenceType.SICK,
             date_in_range(Absence.date, wk_start, wk_end),
         ).all()
+        if cutoff is not None:
+            sick_absences = [a for a in sick_absences if a.date <= cutoff]
         sick_hours = sum(float(a.hours) for a in sick_absences)
 
         # Tagesprinzip (§3 BUrlG, #156/#205): Urlaub/Krank tagebasiert zählen.
