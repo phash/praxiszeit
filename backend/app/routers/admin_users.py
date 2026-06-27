@@ -166,7 +166,10 @@ def users_overview(
     result = []
     for u in users:
         vac = calculation_service.get_vacation_account(db, u, year)
-        ytd = calculation_service.get_ytd_summary(db, u, year)
+        # #313: YTD-Überstunden bis zum letzten abgeschlossenen Arbeitstag
+        ytd = calculation_service.get_ytd_summary(
+            db, u, year, cutoff_date=calculation_service.get_soll_cutoff_date(db, u)
+        )
         result.append(AdminUserOverview(
             user_id=str(u.id),
             first_name=u.first_name,

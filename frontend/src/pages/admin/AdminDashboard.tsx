@@ -111,11 +111,14 @@ export default function AdminDashboard() {
   // serverseitig ein Audit-Log aus (analog zum Reports-Export). Ohne Opt-in
   // liefert das Backend für Krank 0 / wird hier maskiert dargestellt.
   const [showHealthData, setShowHealthData] = useState(false);
+  // #313: Soll-Basis — 'bis_heute' (bis zum letzten abgeschlossenen Arbeitstag,
+  // kein Monatsanfangs-Minus) oder 'monatsende' (voller Monat).
+  const [sollBasis, setSollBasis] = useState<'bis_heute' | 'monatsende'>('bis_heute');
 
   useEffect(() => {
     fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth, showHealthData]);
+  }, [currentMonth, showHealthData, sollBasis]);
 
   useEffect(() => {
     // Re-fetch des offenen Mitarbeiters bei Monatswechsel. selectedEmployee ist
@@ -139,7 +142,9 @@ export default function AdminDashboard() {
     const seq = ++reportSeq.current;
     try {
       const hp = showHealthData ? '&include_health_data=true' : '';
-      const response = await apiClient.get(`/admin/reports/monthly?month=${currentMonth}${hp}`);
+      const response = await apiClient.get(
+        `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`,
+      );
       if (seq !== reportSeq.current) return;
       setReport(response.data);
     } catch (error) {
@@ -512,6 +517,19 @@ export default function AdminDashboard() {
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-4 flex-wrap">
           <h2 className="text-lg font-semibold">Monatsübersicht</h2>
+          {/* #313: Soll-Basis umschalten — bis heute (kein Monatsanfangs-Minus) oder voller Monat. */}
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            Soll:
+            <select
+              value={sollBasis}
+              onChange={(e) => setSollBasis(e.target.value as 'bis_heute' | 'monatsende')}
+              className="rounded border-gray-300 text-sm py-1"
+              title="Soll nur bis zum letzten abgeschlossenen Arbeitstag oder für den vollen Monat"
+            >
+              <option value="bis_heute">bis heute</option>
+              <option value="monatsende">Monatsende</option>
+            </select>
+          </label>
           {/* DSGVO Art. 9: Krankheitstage nur auf ausdrücklichen Opt-in zeigen
               (löst serverseitig einen Audit-Log-Eintrag aus). */}
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">

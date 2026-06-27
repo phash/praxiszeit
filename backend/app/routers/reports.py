@@ -40,13 +40,24 @@ def _get_active_visible_users(db: Session, tenant_id) -> list:
 def get_monthly_report(
     month: str = Query(..., description="Month in YYYY-MM format"),
     include_health_data: bool = Query(False, description="Krankheitsdaten einschließen (Art. 9 DSGVO)"),
+    soll_basis: str = Query(
+        "bis_heute",
+        description="#313 Soll-Basis: 'bis_heute' (bis zum letzten abgeschlossenen Arbeitstag) oder 'monatsende' (voller Monat)",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
     """
     Get monthly report for all employees.
     Shows target, actual, balance, overtime, vacation, and sick hours.
+
+    #313: ``soll_basis`` schaltet das Monats-Soll um — ``bis_heute`` (Default)
+    zählt nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-
+    Minus), ``monatsende`` den vollen Monat. Für abgeschlossene Monate sind beide
+    identisch.
     """
+    if soll_basis not in ("bis_heute", "monatsende"):
+        raise HTTPException(status_code=400, detail="soll_basis muss 'bis_heute' oder 'monatsende' sein")
     try:
         year, month_num = map(int, month.split('-'))
     except ValueError:
@@ -78,12 +89,15 @@ def get_monthly_report(
     reports = []
 
     for user in users:
-        target = calculation_service.get_monthly_target(db, user, year, month_num)
-        actual = calculation_service.get_monthly_actual(db, user, year, month_num)
+        # #313: per-user cutoff (each user's last finished workday) unless the
+        # report is explicitly run on the full-month ('monatsende') basis.
+        cutoff = calculation_service.get_soll_cutoff_date(db, user) if soll_basis == "bis_heute" else None
+        target = calculation_service.get_monthly_target(db, user, year, month_num, up_to_date=cutoff)
+        actual = calculation_service.get_monthly_actual(db, user, year, month_num, up_to_date=cutoff)
         # #150: target/actual sind bereits berechnet — get_monthly_balance würde
         # beide pro User redundant neu laden. Identisch zu dessen (actual-target).quantize.
         balance = (actual - target).quantize(Decimal('0.01'))
-        overtime = calculation_service.get_overtime_account(db, user, year, month_num)
+        overtime = calculation_service.get_overtime_account(db, user, year, month_num, cutoff_date=cutoff)
 
         # Get vacation and sick hours for the month (F-033: sargable)
         vacation_absences = db.query(Absence).filter(
@@ -222,7 +236,10 @@ def get_yearly_absences(
         remaining_vacation_days = vacation_account['remaining_days']
 
         # Calculate overtime for the year (up to today for current year, full year otherwise)
-        ytd = calculation_service.get_ytd_summary(db, user, year)
+        # #313: YTD-Überstunden bis zum letzten abgeschlossenen Arbeitstag
+        ytd = calculation_service.get_ytd_summary(
+            db, user, year, cutoff_date=calculation_service.get_soll_cutoff_date(db, user)
+        )
         overtime_year = ytd['overtime']
 
         results.append(EmployeeYearlyAbsences(

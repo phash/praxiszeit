@@ -117,9 +117,13 @@ def get_dashboard(
     year = year or now.year
     month = month or now.month
 
-    target = calculation_service.get_monthly_target(db, current_user, year, month)
-    actual = calculation_service.get_monthly_actual(db, current_user, year, month)
-    balance = calculation_service.get_monthly_balance(db, current_user, year, month)
+    # #313: Soll/Ist/Saldo nur bis zum letzten abgeschlossenen Arbeitstag → kein
+    # Monatsanfangs-Minus. Für vergangene Monate liegt der Stichtag nach dem
+    # Monatsende, der volle Monat zählt also unverändert.
+    cutoff = calculation_service.get_soll_cutoff_date(db, current_user)
+    target = calculation_service.get_monthly_target(db, current_user, year, month, up_to_date=cutoff)
+    actual = calculation_service.get_monthly_actual(db, current_user, year, month, up_to_date=cutoff)
+    balance = calculation_service.get_monthly_balance(db, current_user, year, month, up_to_date=cutoff)
 
     return MonthlyDashboard(
         year=year,
@@ -148,11 +152,15 @@ def get_overtime_account(
     history = []
     now = now_local()
 
+    # #313: laufender Monat nur bis zum letzten abgeschlossenen Arbeitstag — der
+    # Stichtag trimmt allein den aktuellen Monat (vergangene Monate liegen davor).
+    cutoff = calculation_service.get_soll_cutoff_date(db, current_user)
+
     # #150: das kumulative Konto EINMAL als Single-Pass holen, statt
     # get_overtime_account pro Monat zu rufen (jede Einzelrufung iteriert ab
     # Carryover-Start neu -> O(Monate²)). history_map[(y,m)] entspricht bitgenau
     # get_overtime_account(y,m) (gepinnt: test_overtime_history_matches_account).
-    history_map = calculation_service.get_overtime_history(db, current_user, now.year, now.month)
+    history_map = calculation_service.get_overtime_history(db, current_user, now.year, now.month, cutoff_date=cutoff)
 
     if first_entry:
         start_year = first_entry.date.year
@@ -163,8 +171,8 @@ def get_overtime_account(
 
         # Build history month by month
         while (current_year < now.year) or (current_year == now.year and current_month <= now.month):
-            target = calculation_service.get_monthly_target(db, current_user, current_year, current_month)
-            actual = calculation_service.get_monthly_actual(db, current_user, current_year, current_month)
+            target = calculation_service.get_monthly_target(db, current_user, current_year, current_month, up_to_date=cutoff)
+            actual = calculation_service.get_monthly_actual(db, current_user, current_year, current_month, up_to_date=cutoff)
             balance = actual - target
             cumulative = history_map.get((current_year, current_month), Decimal('0.00'))
 
@@ -206,7 +214,8 @@ def get_ytd_overtime(
     now = now_local()
     year = year or now.year
 
-    summary = calculation_service.get_ytd_summary(db, current_user, year)
+    cutoff = calculation_service.get_soll_cutoff_date(db, current_user)  # #313
+    summary = calculation_service.get_ytd_summary(db, current_user, year, cutoff_date=cutoff)
 
     return YtdOvertime(
         year=year,
