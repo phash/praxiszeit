@@ -30,7 +30,7 @@ from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups, shift_planning
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups, shift_planning, absence_reasons
 
 # Used by the startup bootstrap to warn/abort when the initial admin still
 # uses a throwaway password. Kept at module level so git diffs that re-indent
@@ -502,6 +502,9 @@ app.include_router(billing.webhook_router)
 # #305 Schichtplanung — global feature, gated per-tenant by the
 # `shift_planning_enabled` setting (router returns 404 when off).
 app.include_router(shift_planning.router)
+# #312 Eigene Abwesenheitsgründe — Admin-CRUD + Mitarbeiter-Read (für den Picker).
+app.include_router(absence_reasons.admin_router)
+app.include_router(absence_reasons.read_router)
 # #213 DB-Backup-Verwaltung — NUR On-Prem einbinden. Im SaaS-Modus darf ein
 # Mandant nicht per API den (nicht tenant-scoped) DB-Server sichern/herunterladen
 # (Daten-Exfiltration über Tenant-Grenzen). Hart gaten statt nur per Doku-Kommentar.

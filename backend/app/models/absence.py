@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint, Boolean
+from sqlalchemy import Column, Date, Time, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint, Boolean, String, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -45,6 +45,56 @@ class AbsenceType(str, enum.Enum):
     PAID_LEAVE = "paid_leave"
 
 
+class AbsenceReasonBehavior(str, enum.Enum):
+    """#312: how a custom absence reason behaves in the Soll/Ist calculation.
+
+    Each value maps to an EXISTING ``AbsenceType`` so the audited calculation
+    model stays frozen — a custom reason is only a label+colour overlay; the
+    Absence keeps a built-in ``type`` (driven by this behaviour) that the calc
+    runs on. See ``BEHAVIOR_TO_ABSENCE_TYPE``.
+    """
+    WORKED = "worked"            # zählt als gearbeitet (wie Fortbildung, §3) → z. B. Schule/Azubi
+    PAID_FREE = "paid_free"      # bezahlt frei (wie PAID_LEAVE: Soll→0, saldo-neutral, kein Urlaub)
+    OVERTIME_COMP = "overtime_comp"  # Überstundenabbau (wie OVERTIME)
+
+
+# #312: the single source of truth mapping a reason behaviour to the built-in
+# AbsenceType that drives the calculation. Changing a mapping changes calc
+# semantics — keep in sync with the AbsenceType business rules above.
+BEHAVIOR_TO_ABSENCE_TYPE = {
+    AbsenceReasonBehavior.WORKED: AbsenceType.TRAINING,
+    AbsenceReasonBehavior.PAID_FREE: AbsenceType.PAID_LEAVE,
+    AbsenceReasonBehavior.OVERTIME_COMP: AbsenceType.OVERTIME,
+}
+
+
+class AbsenceReason(Base):
+    """#312: tenant-defined custom absence reason (free text + colour + behaviour).
+
+    Admins create/rename these in Settings. An Absence may reference one via
+    ``reason_id`` for its display label/colour; the absence's ``type`` is set
+    from ``base_behavior`` so the calculation is unchanged.
+    """
+
+    __tablename__ = "absence_reasons"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String(80), nullable=False)
+    color = Column(String(7), nullable=True)  # #RRGGBB
+    base_behavior = Column(String(20), nullable=False)  # AbsenceReasonBehavior value
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_absence_reason_tenant_name"),
+    )
+
+    def __repr__(self):
+        return f"<AbsenceReason(id={self.id}, name={self.name}, behavior={self.base_behavior})>"
+
+
 class Absence(Base):
     """Absence model for tracking vacation, sick days, etc."""
 
@@ -71,6 +121,16 @@ class Absence(Base):
     closure_id = Column(
         UUID(as_uuid=True),
         ForeignKey("company_closures.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # #312: optional custom absence reason (label + colour overlay). The absence
+    # ``type`` still drives ALL calculation; reason_id only carries the display
+    # label/colour. ON DELETE SET NULL — deleting a reason keeps the absence (it
+    # falls back to its base-type label).
+    reason_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("absence_reasons.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
