@@ -11,6 +11,7 @@ export interface SlotEmployee {
   id: string;
   first_name: string;
   last_name: string;
+  weekly_hours?: number; // #330: contract weekly hours, for the assigned-vs-contract badge
 }
 
 export interface SlotDialogInitial {

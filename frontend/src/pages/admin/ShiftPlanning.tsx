@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -47,12 +47,21 @@ import {
 } from '../../components/shiftplanning/weekGridUtils';
 import * as api from '../../api/shiftPlanning';
 import type { Location, Workstation, PlanSummary, PlanDetail, ShiftSlot, SlotInput } from '../../api/shiftPlanning';
+import { assignedMinutesByUser, formatLoad, loadColor } from '../../components/shiftplanning/employeeLoad';
 
-function DraggableEmployee({ emp }: { emp: SlotEmployee }) {
+function DraggableEmployee({ emp, assignedMinutes }: { emp: SlotEmployee; assignedMinutes: number }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `emp-${emp.id}`,
     data: { type: 'employee', userId: emp.id },
   });
+  // #330: zugewiesene Schichtstunden (dieser Plan) vs. Wochenarbeitszeit.
+  const weekly = emp.weekly_hours ?? 0;
+  const color = loadColor(assignedMinutes, weekly);
+  const loadClass =
+    color === 'green' ? 'text-green-600'
+    : color === 'yellow' ? 'text-amber-600'
+    : color === 'red' ? 'text-red-600'
+    : 'text-gray-400';
   return (
     <div
       ref={setNodeRef}
@@ -64,8 +73,13 @@ function DraggableEmployee({ emp }: { emp: SlotEmployee }) {
       {...listeners}
       {...attributes}
     >
-      <GripVertical size={14} className="text-gray-300" />
-      {emp.first_name} {emp.last_name}
+      <GripVertical size={14} className="text-gray-300 shrink-0" />
+      <div className="min-w-0">
+        <div className="truncate">{emp.first_name} {emp.last_name}</div>
+        <div className={`text-xs ${loadClass}`} title="Zugewiesene Schichtstunden in diesem Plan / Wochenarbeitszeit">
+          {formatLoad(assignedMinutes, weekly)}
+        </div>
+      </div>
     </div>
   );
 }
@@ -97,6 +111,13 @@ export default function AdminShiftPlanning() {
   const [shiftView, setShiftView] = useState<'week' | 'day'>('week');
   const [dayWeekday, setDayWeekday] = useState(0);
 
+  // #330: zugewiesene Minuten je MA für den aktuell offenen Plan — aktualisiert
+  // sich automatisch, sobald sich planDetail (nach Zuweisung) ändert.
+  const assignedByUser = useMemo(
+    () => assignedMinutesByUser(planDetail?.slots ?? []),
+    [planDetail],
+  );
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const loadStations = useCallback(async () => {
@@ -123,7 +144,7 @@ export default function AdminShiftPlanning() {
       setEmployees(
         res.data
           .filter((u: any) => u.is_active && !u.is_hidden)
-          .map((u: any) => ({ id: u.id, first_name: u.first_name, last_name: u.last_name })),
+          .map((u: any) => ({ id: u.id, first_name: u.first_name, last_name: u.last_name, weekly_hours: u.weekly_hours })),
       );
     } catch {
       /* employees are optional for the grid; ignore */
@@ -540,7 +561,9 @@ export default function AdminShiftPlanning() {
                       {employees.length === 0 ? (
                         <p className="text-xs text-gray-400">Keine Mitarbeiter.</p>
                       ) : (
-                        employees.map((emp) => <DraggableEmployee key={emp.id} emp={emp} />)
+                        employees.map((emp) => (
+                          <DraggableEmployee key={emp.id} emp={emp} assignedMinutes={assignedByUser.get(emp.id) ?? 0} />
+                        ))
                       )}
                     </div>
                   </div>
