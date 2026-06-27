@@ -402,7 +402,7 @@ def purge_user(
     # admin (preserves ownership/audit trail) and drop their assignments
     # explicitly (shift_assignments.user_id is ON DELETE CASCADE on Postgres, but
     # be explicit for SQLite). Both F-026 tenant-scoped.
-    from app.models.shift_planning import ShiftPlan, ShiftAssignment
+    from app.models.shift_planning import ShiftPlan, ShiftAssignment, WorkstationQualification
     db.query(ShiftPlan).filter(
         ShiftPlan.created_by == user.id,
         ShiftPlan.tenant_id == current_user.tenant_id,
@@ -410,6 +410,12 @@ def purge_user(
     db.query(ShiftAssignment).filter(
         ShiftAssignment.user_id == user.id,
         ShiftAssignment.tenant_id == current_user.tenant_id,
+    ).delete(synchronize_session=False)
+    # #305 M2d: workstation_qualifications.user_id is ON DELETE CASCADE on
+    # Postgres, but delete explicitly for SQLite tests (FK off) + consistency.
+    db.query(WorkstationQualification).filter(
+        WorkstationQualification.user_id == user.id,
+        WorkstationQualification.tenant_id == current_user.tenant_id,
     ).delete(synchronize_session=False)
     db.delete(user)
     db.commit()

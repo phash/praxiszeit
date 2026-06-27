@@ -64,6 +64,15 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 - „Aktiv schalten" macht den Plan für alle sichtbar (Read-only-Ansicht + Dashboard).
 - **Mehrere Pläne können gleichzeitig aktiv** sein (z. B. je Standort). Das Dashboard zeigt jedem Mitarbeitenden die **Vereinigung** seiner Einteilungen über alle aktiven Pläne für den heutigen Wochentag.
 
+**KW-/Ganzjahres-Planung (Datums-Fenster):**
+- Über **Bearbeiten** kann pro Plan ein optionales **Aktiv-Datums-Fenster** („aktiv von/bis") gesetzt werden. Der Plan gilt dann **automatisch** als aktiv, wenn das heutige Datum im Fenster liegt — zusätzlich zum manuellen „Aktiv schalten". Eine offene Grenze ist erlaubt (nur „von" oder nur „bis").
+- Die ausklappbare **Jahresübersicht** zeigt als Zeitstrahl, welcher Plan in welchem Zeitraum des Jahres läuft (mit „heute"-Markierung).
+
+**Auto-Generierung (automatisch füllen):**
+- **Automatisch füllen** öffnet einen Dialog: Zielwoche (für Abwesenheiten/Stunden) + Modus (**alle neu verteilen** oder **nur Lücken auffüllen**).
+- Der Generator besetzt die Slots greedy mit **eingewiesenen, an dem Tag nicht abwesenden** Mitarbeitenden (innerhalb ihres Beschäftigungsfensters, keine Doppelbelegung überlappender Slots), ausgewogen nach **Auslastung** und **Überstundenkonto**. Ergebnis ist ein **Entwurf** zum Review; der Plan wird **nicht** automatisch aktiv. Nicht besetzbare Slots bleiben offen (Rückmeldung im Toast + Unterbesetzungs-Markierung).
+- Liest Abwesenheiten/Stunden/Überstunden **nur lesend** — verändert nichts am Berechnungs-/ArbZG-Modell.
+
 ## Bedienung (Mitarbeitende)
 
 - **Schichtplan** (Menü): aktive Wochenpläne als Übersicht ansehen (nur lesen).
@@ -87,10 +96,15 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
   `require_shift_planning_enabled` → 404 wenn aus), `app/services/shift_planning_service.py`
   (Validierung + „my-today"), Modelle in `app/models/shift_planning.py`
   (`locations`, `workstations`, `shift_plans`, `shift_slots`, `shift_assignments`,
-  `workstation_qualifications`), Migrationen `053_add_shift_planning` +
-  `054_add_workstation_quals` (Tabellen + RLS). Einweisungen: `GET/PUT
+  `workstation_qualifications`), Migrationen `053`–`055` (Tabellen + RLS +
+  `shift_plans.active_from_date/active_until_date`). Einweisungen: `GET/PUT
   /qualifications`, `GET /me/qualifications`; pro Slot-Assignment ein
-  `qualified`-Flag, pro Plan `unqualified_slot_ids` (weich).
+  `qualified`-Flag, pro Plan `unqualified_slot_ids` (weich, admin-only).
+- **KW-Planung:** `shift_planning_service.is_plan_active_on/plan_active_filter`
+  (is_active ODER Datums-Fenster); `active_today` in der Plan-Liste/-Detail.
+- **Auto-Generierung:** `app/services/shift_planning_generator.py` (Greedy,
+  read-only ggü. Calc-Modell), Endpoint `POST /plans/{id}/generate`
+  (`target_monday` + `mode=replace|fill_gaps`).
 - **Feature-Flag `shift_planning_enabled`** an **drei** Stellen synchron:
   `admin_settings.py` (`_ALLOWED_SETTINGS` + `_BOOL_SETTINGS`), `main.py::system_info()`
   (öffentlich, Default `false`, nie 500), `frontend/src/stores/systemStore.ts`

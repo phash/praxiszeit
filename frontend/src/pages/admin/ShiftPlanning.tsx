@@ -18,6 +18,8 @@ import {
   Settings2,
   GripVertical,
   GraduationCap,
+  Pencil,
+  Wand2,
 } from 'lucide-react';
 import apiClient from '../../api/client';
 import Button from '../../components/Button';
@@ -32,6 +34,9 @@ import SlotDialog, { type SlotDialogInitial, type SlotEmployee } from '../../com
 import LocationManager from '../../components/shiftplanning/LocationManager';
 import WorkstationManager from '../../components/shiftplanning/WorkstationManager';
 import QualificationMatrix from '../../components/shiftplanning/QualificationMatrix';
+import PlanSettingsDialog from '../../components/shiftplanning/PlanSettingsDialog';
+import YearTimeline from '../../components/shiftplanning/YearTimeline';
+import GenerateDialog from '../../components/shiftplanning/GenerateDialog';
 import {
   timeToMinutes,
   minutesToTime,
@@ -86,6 +91,8 @@ export default function AdminShiftPlanning() {
   const [newPlanName, setNewPlanName] = useState('');
   const [creatingPlan, setCreatingPlan] = useState(false);
   const [slotDialog, setSlotDialog] = useState<SlotDialogState | null>(null);
+  const [planSettingsOpen, setPlanSettingsOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -357,6 +364,8 @@ export default function AdminShiftPlanning() {
       {tab === 'qualifications' && <QualificationMatrix />}
 
       {tab === 'plans' && (
+        <>
+        <YearTimeline plans={plans} />
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
           {/* Plan list */}
           <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 h-fit">
@@ -386,8 +395,11 @@ export default function AdminShiftPlanning() {
                       }`}
                     >
                       <span className="flex items-center gap-2 truncate">
-                        {p.is_active ? (
-                          <span className="h-2 w-2 rounded-full bg-green-500" title="Aktiv" />
+                        {p.active_today ? (
+                          <span
+                            className="h-2 w-2 rounded-full bg-green-500"
+                            title={p.is_active ? 'Aktiv' : 'Heute aktiv (Zeitraum)'}
+                          />
                         ) : (
                           <span className="h-2 w-2 rounded-full bg-gray-300" title="Inaktiv" />
                         )}
@@ -419,6 +431,15 @@ export default function AdminShiftPlanning() {
                   <div>
                     <h2 className="text-xl font-semibold text-gray-900">{planDetail.name}</h2>
                     {planDetail.description && <p className="text-sm text-gray-500">{planDetail.description}</p>}
+                    {(planDetail.active_from_date || planDetail.active_until_date) && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Automatisch aktiv {planDetail.active_from_date ? `ab ${planDetail.active_from_date}` : ''}
+                        {planDetail.active_until_date ? ` bis ${planDetail.active_until_date}` : ''}
+                        {planDetail.active_today && !planDetail.is_active && (
+                          <span className="ml-2 rounded-full bg-green-100 px-1.5 py-0.5 text-green-700">heute aktiv</span>
+                        )}
+                      </p>
+                    )}
                     {!planDetail.validation.is_valid && (
                       <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
                         <AlertTriangle size={12} /> Unterbesetzte Slots — Plan ist aktivierbar, aber prüfen Sie die
@@ -436,6 +457,12 @@ export default function AdminShiftPlanning() {
                     </Button>
                     <Button variant="primary" icon={Plus} onClick={() => openCreateSlot(0)}>
                       Slot
+                    </Button>
+                    <Button variant="secondary" icon={Wand2} onClick={() => setGenerateOpen(true)}>
+                      Automatisch füllen
+                    </Button>
+                    <Button variant="secondary" icon={Pencil} onClick={() => setPlanSettingsOpen(true)}>
+                      Bearbeiten
                     </Button>
                     <Button
                       variant="ghost"
@@ -471,6 +498,7 @@ export default function AdminShiftPlanning() {
             )}
           </div>
         </div>
+        </>
       )}
 
       {slotDialog && (
@@ -483,6 +511,23 @@ export default function AdminShiftPlanning() {
           onSubmit={submitSlot}
           onDelete={slotDialog.mode === 'edit' ? deleteSlot : undefined}
           onClose={() => setSlotDialog(null)}
+        />
+      )}
+
+      {planSettingsOpen && planDetail && (
+        <PlanSettingsDialog
+          isOpen={planSettingsOpen}
+          plan={planDetail}
+          onSaved={refreshSelected}
+          onClose={() => setPlanSettingsOpen(false)}
+        />
+      )}
+
+      {generateOpen && planDetail && (
+        <GenerateDialog
+          planId={planDetail.id}
+          onGenerated={refreshSelected}
+          onClose={() => setGenerateOpen(false)}
         />
       )}
     </div>

@@ -60,6 +60,22 @@ export function colorForWorkstation(color: string | null, fallbackIndex: number)
   return color || DEFAULT_WS_COLORS[fallbackIndex % DEFAULT_WS_COLORS.length];
 }
 
+/**
+ * Monday (YYYY-MM-DD) of the ISO week containing the given YYYY-MM-DD date.
+ *
+ * Uses LOCAL date components only — it must NOT round-trip through
+ * `toISOString()`, which converts local midnight to UTC and rolls a UTC+
+ * timezone (e.g. Europe/Berlin) back to the previous day → the wrong week
+ * (#305 M2 Auto-Generierung).
+ */
+export function mondayOfWeek(iso: string): string {
+  const d = new Date(iso + 'T00:00:00');
+  const dow = (d.getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+  d.setDate(d.getDate() - dow);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // ── layout engine ─────────────────────────────────────────────────────
 // Computes a per-weekday side-by-side ("lane") layout so that concurrent
 // slots (e.g. two workstations staffed in parallel) render next to each other

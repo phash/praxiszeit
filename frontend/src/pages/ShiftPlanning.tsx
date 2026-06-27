@@ -18,7 +18,8 @@ export default function ShiftPlanning() {
     (async () => {
       try {
         const summaries = await api.listPlans();
-        const active = summaries.filter((p) => p.is_active);
+        // #305 M2: "aktiv heute" = manuell aktiv ODER Datums-Fenster deckt heute ab.
+        const active = summaries.filter((p) => p.active_today);
         const details = await Promise.all(active.map((p) => api.getPlan(p.id)));
         if (!cancelled) setActivePlans(details);
       } catch (err) {

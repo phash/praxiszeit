@@ -9,7 +9,7 @@ feels absent. Write endpoints additionally require admin. Read endpoints are
 available to any authenticated user (read-only view + dashboard).
 """
 import re
-from datetime import time
+from datetime import date, time, timedelta
 from typing import List, Optional
 from uuid import UUID
 
@@ -30,7 +30,8 @@ from app.models.shift_planning import (
     ShiftAssignment,
     WorkstationQualification,
 )
-from app.services import settings_service, shift_planning_service
+from app.services import settings_service, shift_planning_service, shift_planning_generator
+from app.services.timezone_service import today_local
 
 # Hex colour `#RRGGBB` — the workstation colour column is String(7); anything
 # longer would StringDataRightTruncation (500) on Postgres (SQLite tests don't
@@ -103,6 +104,8 @@ class WorkstationIn(BaseModel):
 class PlanIn(BaseModel):
     name: str
     description: Optional[str] = None
+    active_from_date: Optional[date] = None
+    active_until_date: Optional[date] = None
 
 
 class SlotIn(BaseModel):
@@ -133,6 +136,18 @@ class AssignmentsIn(BaseModel):
 
 class QualificationsIn(BaseModel):
     workstation_ids: List[UUID]
+
+
+class GenerateIn(BaseModel):
+    target_monday: date
+    mode: str = "replace"
+
+    @field_validator("mode")
+    @classmethod
+    def _mode_valid(cls, v: str) -> str:
+        if v not in ("replace", "fill_gaps"):
+            raise ValueError("mode muss 'replace' oder 'fill_gaps' sein")
+        return v
 
 
 # ─── serializers ─────────────────────────────────────────────────────
@@ -458,6 +473,7 @@ def list_plans(
     for s in slots:
         slots_by_plan.setdefault(s.shift_plan_id, []).append(s)
 
+    today = today_local()
     result = []
     for p in plans:
         p_slots = slots_by_plan.get(p.id, [])
@@ -470,6 +486,9 @@ def list_plans(
             "name": p.name,
             "description": p.description,
             "is_active": p.is_active,
+            "active_from_date": _iso(p.active_from_date),
+            "active_until_date": _iso(p.active_until_date),
+            "active_today": shift_planning_service.is_plan_active_on(p, today),
             "slot_count": len(p_slots),
             "is_valid": len(understaffed) == 0,
         })
@@ -487,17 +506,12 @@ def _plan_or_404(db: Session, tenant_id, plan_id: UUID) -> ShiftPlan:
     return plan
 
 
-@router.get("/plans/{plan_id}")
-def get_plan(
-    plan_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    tid = current_user.tenant_id
-    plan = _plan_or_404(db, tid, plan_id)
+def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dict:
+    """Full plan detail (slots + assignments + validation). The per-person
+    `qualified` / slot `unqualified` flags are included only for admins (#305 M2d)."""
     slots = (
         db.query(ShiftSlot)
-        .filter(ShiftSlot.tenant_id == tid, ShiftSlot.shift_plan_id == plan_id)
+        .filter(ShiftSlot.tenant_id == tid, ShiftSlot.shift_plan_id == plan.id)
         .order_by(ShiftSlot.weekday, ShiftSlot.start_time)
         .all()
     )
@@ -527,7 +541,6 @@ def get_plan(
     # competency data → ADMIN-ONLY. Non-admins (read-only view) get the
     # who-works-where + understaffing picture but NOT colleagues' qualification
     # gaps (consistent with the DSGVO masking of individual-sensitive data).
-    is_admin = current_user.role == UserRole.ADMIN
     qual_pairs = set()
     if is_admin:
         ws_in_plan = {s.workstation_id for s in slots}
@@ -563,6 +576,9 @@ def get_plan(
         "name": plan.name,
         "description": plan.description,
         "is_active": plan.is_active,
+        "active_from_date": _iso(plan.active_from_date),
+        "active_until_date": _iso(plan.active_until_date),
+        "active_today": shift_planning_service.is_plan_active_on(plan, today_local()),
         "slots": slot_dicts,
         "validation": {
             "is_valid": len(understaffed_ids) == 0,
@@ -572,13 +588,56 @@ def get_plan(
     }
 
 
+@router.get("/plans/{plan_id}")
+def get_plan(
+    plan_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tid = current_user.tenant_id
+    plan = _plan_or_404(db, tid, plan_id)
+    return _build_plan_detail(db, tid, plan, current_user.role == UserRole.ADMIN)
+
+
+@router.post("/plans/{plan_id}/generate")
+def generate_plan(
+    plan_id: UUID,
+    data: GenerateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#305 M2: greedy auto-fill the plan's slots for a target week (Monday).
+
+    Reads absences/hours/overtime read-only; writes only assignments; does NOT
+    activate the plan. Returns the refreshed plan detail + a generation summary.
+    """
+    tid = current_user.tenant_id
+    plan = _plan_or_404(db, tid, plan_id)
+    # normalise to the Monday of the chosen week
+    monday = data.target_monday - timedelta(days=data.target_monday.weekday())
+    gen = shift_planning_generator.generate_plan(db, tid, plan, monday, data.mode)
+    detail = _build_plan_detail(db, tid, plan, True)  # admin path
+    return {"plan": detail, "generation": gen}
+
+
+def _iso(d) -> Optional[str]:
+    return d.isoformat() if d else None
+
+
 def _plan_summary(plan: ShiftPlan) -> dict:
     return {
         "id": str(plan.id),
         "name": plan.name,
         "description": plan.description,
         "is_active": plan.is_active,
+        "active_from_date": _iso(plan.active_from_date),
+        "active_until_date": _iso(plan.active_until_date),
     }
+
+
+def _validate_window(data: PlanIn) -> None:
+    if data.active_from_date and data.active_until_date and data.active_from_date > data.active_until_date:
+        raise HTTPException(status_code=400, detail="'aktiv von' darf nicht nach 'aktiv bis' liegen")
 
 
 @router.post("/plans", status_code=status.HTTP_201_CREATED)
@@ -597,11 +656,14 @@ def create_plan(
     )
     if exists:
         raise HTTPException(status_code=409, detail="Ein Schichtplan mit diesem Namen existiert bereits")
+    _validate_window(data)
     plan = ShiftPlan(
         tenant_id=current_user.tenant_id,
         name=name,
         description=data.description,
         is_active=False,
+        active_from_date=data.active_from_date,
+        active_until_date=data.active_until_date,
         created_by=current_user.id,
     )
     db.add(plan)
@@ -632,8 +694,11 @@ def update_plan(
     )
     if clash:
         raise HTTPException(status_code=409, detail="Ein Schichtplan mit diesem Namen existiert bereits")
+    _validate_window(data)
     plan.name = name
     plan.description = data.description
+    plan.active_from_date = data.active_from_date
+    plan.active_until_date = data.active_until_date
     _commit_or_conflict(db, "Ein Schichtplan mit diesem Namen existiert bereits")
     db.refresh(plan)
     return _plan_summary(plan)
@@ -829,7 +894,9 @@ def set_assignments(
             "user_id": str(uid),
             "user_name": f"{u.first_name} {u.last_name}".strip(),
         })
-    db.commit()
+    # concurrent double-submit can race the delete+insert into the
+    # uq_tenant_slot_user constraint → 409 instead of a 500 (review finding).
+    _commit_or_conflict(db, "Die Zuweisungen wurden zwischenzeitlich geändert, bitte erneut versuchen")
     return {"slot_id": str(slot.id), "assignments": assignments}
 
 

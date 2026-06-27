@@ -372,6 +372,25 @@ class TestReviewFixes:
         assert survived is not None, "plan must survive the creator's purge"
         assert survived.created_by == test_admin.id, "created_by reassigned to acting admin"
 
+    def test_purge_user_deletes_qualifications(self, enabled, admin_client, db):
+        """DSGVO Art.17 (round-1 finding): purge must remove the user's
+        workstation_qualifications explicitly (not only via Postgres CASCADE)."""
+        from app.models import User, UserRole
+        from app.models.shift_planning import Workstation, WorkstationQualification
+        emp = User(username="qual_purge", email="qp@example.com", password_hash="x",
+                   first_name="Q", last_name="P", role=UserRole.EMPLOYEE, weekly_hours=40.0,
+                   vacation_days=30, work_days_per_week=5, is_active=False, tenant_id=DEFAULT_TENANT_ID)
+        db.add(emp); db.commit(); db.refresh(emp)
+        ws = Workstation(tenant_id=DEFAULT_TENANT_ID, name="WS-Purge")
+        db.add(ws); db.commit(); db.refresh(ws)
+        db.add(WorkstationQualification(tenant_id=DEFAULT_TENANT_ID, user_id=emp.id, workstation_id=ws.id))
+        db.commit()
+        eid = emp.id
+
+        assert admin_client.delete(f"/api/admin/users/{emp.id}/purge").status_code == 200
+        db.expire_all()
+        assert db.query(WorkstationQualification).filter(WorkstationQualification.user_id == eid).count() == 0
+
 
 class TestMyToday:
     def test_union_over_active_plans_for_today(self, enabled, admin_client, employee_client, test_user):

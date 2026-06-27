@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import List
 
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 
 from app.models.shift_planning import (
@@ -22,6 +23,28 @@ from app.models.shift_planning import (
     WorkstationQualification,
 )
 from app.services.timezone_service import today_local
+
+
+def is_plan_active_on(plan, d) -> bool:
+    """#305 M2: a plan is active on date ``d`` if manually is_active OR its
+    optional date window covers ``d`` (NULL = open grenze; the window only
+    counts when at least one bound is set)."""
+    if plan.is_active:
+        return True
+    frm, until = plan.active_from_date, plan.active_until_date
+    if frm is None and until is None:
+        return False
+    return (frm is None or frm <= d) and (until is None or until >= d)
+
+
+def plan_active_filter(d):
+    """SQLAlchemy filter expression equivalent to ``is_plan_active_on`` for date ``d``."""
+    has_window = or_(ShiftPlan.active_from_date.isnot(None), ShiftPlan.active_until_date.isnot(None))
+    in_window = and_(
+        or_(ShiftPlan.active_from_date.is_(None), ShiftPlan.active_from_date <= d),
+        or_(ShiftPlan.active_until_date.is_(None), ShiftPlan.active_until_date >= d),
+    )
+    return or_(ShiftPlan.is_active.is_(True), and_(has_window, in_window))
 
 
 def qualified_user_ids(db: Session, tenant_id, workstation_id) -> set:
@@ -76,7 +99,7 @@ def get_my_today(db: Session, user) -> dict:
         .outerjoin(Location, Workstation.location_id == Location.id)
         .filter(
             ShiftPlan.tenant_id == tid,
-            ShiftPlan.is_active.is_(True),
+            plan_active_filter(today),
             ShiftSlot.tenant_id == tid,
             ShiftSlot.weekday == weekday,
             ShiftAssignment.tenant_id == tid,
