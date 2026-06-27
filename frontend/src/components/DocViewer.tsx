@@ -532,6 +532,7 @@ export function SchnellstartAdmin() {
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">1. Praxis konfigurieren</h3>
         <p className="text-sm text-gray-600">Unter <strong>Einstellungen</strong>: Bundesland (Feiertage), Urlaubsgenehmigung (an/aus), Sondertage 24./31.12., Onboarding-Tour (Standard an).</p>
+        <p className="text-sm text-gray-500 mt-1"><strong>Eigene Abwesenheitsgründe</strong> (z. B. „Schule" für Azubis) legen Sie unter <strong>Einstellungen → „Eigene Abwesenheitsgründe"</strong> an: Bezeichnung + Farbe + Basis-Verhalten (<em>zählt als gearbeitet</em> / <em>bezahlt frei</em> / <em>Überstundenabbau</em>; nach dem Anlegen fix). Sie erscheinen beim Buchen unter „Eigene Gründe"; im Team-Kalender werden sie für Kolleg:innen aus Datenschutzgründen als „abwesend" maskiert.</p>
       </section>
 
       <section>

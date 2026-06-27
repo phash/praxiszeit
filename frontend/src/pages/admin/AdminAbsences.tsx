@@ -10,6 +10,8 @@ import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenc
 import MonthSelector from '../../components/MonthSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { parseHours, formatHoursHM } from '../../utils/formatters';
+import { myReasons } from '../../api/absenceReasons';
+import type { AbsenceReason } from '../../api/absenceReasons';
 
 interface CompanyClosure {
   id: string;
@@ -61,6 +63,13 @@ export default function AdminAbsences() {
     note: '',
     half_day: false,
   });
+  // #312: optional custom absence reason (sends reason_id → backend maps the type)
+  const [selectedReasonId, setSelectedReasonId] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<AbsenceReason[]>([]);
+
+  useEffect(() => {
+    myReasons().then(setReasons).catch(() => { /* picker just omits custom reasons */ });
+  }, []);
 
   const typeLabels = ABSENCE_TYPE_LABELS;
   const typeColors = ABSENCE_TYPE_COLORS;
@@ -215,10 +224,12 @@ export default function AdminAbsences() {
         hours: formData.hours,
         note: formData.note || null,
         half_day: !isDateRange && formData.half_day,
+        reason_id: selectedReasonId,  // #312: backend maps the type from the reason
       });
       toast.success('Abwesenheit erfolgreich eingetragen');
       setShowForm(false);
       setIsDateRange(false);
+      setSelectedReasonId(null);
       setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 8, note: '', half_day: false });
       loadAbsences(targetId);
     } catch (error: any) {
@@ -589,8 +600,16 @@ export default function AdminAbsences() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Typ</label>
                 <select
-                  value={formData.type}
-                  onChange={e => setFormData(p => ({ ...p, type: e.target.value as any }))}
+                  value={selectedReasonId ? `reason:${selectedReasonId}` : formData.type}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v.startsWith('reason:')) {
+                      setSelectedReasonId(v.slice('reason:'.length));
+                    } else {
+                      setSelectedReasonId(null);
+                      setFormData(p => ({ ...p, type: v as any }));
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 >
                   <option value="vacation">Urlaub</option>
@@ -599,6 +618,13 @@ export default function AdminAbsences() {
                   <option value="overtime">Überstundenausgleich</option>
                   <option value="paid_leave">Bezahlte Freistellung (kein Urlaubsabzug)</option>
                   <option value="other">Sonstiges</option>
+                  {reasons.length > 0 && (
+                    <optgroup label="Eigene Gründe">
+                      {reasons.map(r => (
+                        <option key={r.id} value={`reason:${r.id}`}>{r.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 {formData.type === 'paid_leave' && (
                   <p className="text-xs text-gray-500 mt-1">
