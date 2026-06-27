@@ -71,6 +71,7 @@ def generate_plan(db: Session, tenant_id, plan, target_monday: date, mode: str =
         .filter(
             Absence.tenant_id == tenant_id,
             Absence.start_time.is_(None),  # ganztägig
+            Absence.half_day.isnot(True),  # halbe Tage blockieren nicht (review finding)
             Absence.date <= week_end,
             # bound the scan to the target week (review finding): an absence
             # overlaps iff it ends on/after week_start — for single-day rows

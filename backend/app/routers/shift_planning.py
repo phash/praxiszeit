@@ -894,7 +894,9 @@ def set_assignments(
             "user_id": str(uid),
             "user_name": f"{u.first_name} {u.last_name}".strip(),
         })
-    db.commit()
+    # concurrent double-submit can race the delete+insert into the
+    # uq_tenant_slot_user constraint → 409 instead of a 500 (review finding).
+    _commit_or_conflict(db, "Die Zuweisungen wurden zwischenzeitlich geändert, bitte erneut versuchen")
     return {"slot_id": str(slot.id), "assignments": assignments}
 
 

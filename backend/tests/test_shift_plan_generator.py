@@ -125,6 +125,19 @@ class TestGenerator:
         res = _generate(admin_client, str(plan.id))
         assert _assigned_user_ids(res["plan"], str(s.id)) == {str(b.id)}
 
+    def test_half_day_absence_does_not_block(self, enabled, admin_client, db):
+        # round-2 finding: a HALF-day absence must not block the whole day.
+        a = _emp(db, "ha")
+        ws = _ws(db, "WSH")
+        _qualify(db, a, ws)
+        db.add(Absence(tenant_id=DEFAULT_TENANT_ID, user_id=a.id, date=TARGET_MONDAY,
+                       type=AbsenceType.VACATION, hours=4, half_day=True))
+        db.commit()
+        plan = _plan(db)
+        s = _slot(db, plan, ws, weekday=0, min_staff=1)
+        res = _generate(admin_client, str(plan.id))
+        assert _assigned_user_ids(res["plan"], str(s.id)) == {str(a.id)}
+
     def test_min_staff_and_balance(self, enabled, admin_client, db):
         a, b = _emp(db, "ba"), _emp(db, "bb")
         ws = _ws(db, "WS")
