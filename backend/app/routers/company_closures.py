@@ -195,12 +195,24 @@ def _create_closure_absences(
             # daily target. Passing weekly_hours explicitly is a CLAUDE.md
             # requirement — get_daily_target_for_date must never fall
             # back to user.weekly_hours. (#204: wh_changes vorgeladen.)
+            # #314/#201: compute the day's target FIRST. A 0-target scheduled day
+            # (a use_daily_schedule part-timer's off-weekday, booked at hours=0)
+            # consumes NO real vacation (get_vacation_account counts only
+            # dt_day>0), so it must NOT decrement the budget snapshot — otherwise
+            # it would wrongly push real working days into OVERTIME and silently
+            # lose paid vacation. hours==0 days are calc-neutral either way.
+            weekly_hours = calculation_service.get_weekly_hours_for_date(
+                db, employee, workday, wh_changes=emp_wh
+            )
+            day_target = calculation_service.get_daily_target_for_date(
+                employee, workday, weekly_hours=weekly_hours
+            )
+
             # #314: decide VACATION vs OVERTIME per day. VACATION while the
             # remaining budget covers a full day; afterwards OVERTIME (no minus-
-            # vacation). The budget is a snapshot taken before booking and only
-            # decremented for days actually booked as VACATION.
+            # vacation). Only positive-target days consume the budget snapshot.
             day_type = absence_type
-            if emp_split:
+            if emp_split and day_target > 0:
                 yr = workday.year
                 if yr not in remaining_by_year:
                     remaining_by_year[yr] = float(
@@ -212,20 +224,13 @@ def _create_closure_absences(
                 else:
                     day_type = AbsenceType.OVERTIME
 
-            weekly_hours = calculation_service.get_weekly_hours_for_date(
-                db, employee, workday, wh_changes=emp_wh
-            )
             absence = Absence(
                 user_id=employee.id,
                 tenant_id=current_user.tenant_id,
                 date=workday,
                 end_date=closure.end_date,
                 type=day_type,
-                hours=float(
-                    calculation_service.get_daily_target_for_date(
-                        employee, workday, weekly_hours=weekly_hours
-                    )
-                ),
+                hours=float(day_target),
                 # #205-Konsistenz (Review 2026-06-23): Betriebsferien sind immer
                 # volle Tage -> half_day=False, damit get_vacation_account den
                 # tagebasierten (WHChange-stabilen) Pfad nimmt statt der Legacy-

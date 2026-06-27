@@ -130,6 +130,32 @@ class TestClosureOvertimeSplit:
             AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
         ]
 
+    def test_zero_target_scheduled_day_does_not_consume_budget(self, db, default_tenant, admin_client):
+        # round-1 finding: a use_daily_schedule part-timer's 0-target weekday must
+        # NOT consume the vacation budget, else real working days wrongly go to OVERTIME.
+        FRI = date(2025, 3, 14)
+        emp = User(
+            username="e_dsched", email="dsched@x.de", password_hash=auth_service.hash_password("test123"),
+            first_name="D", last_name="S", role=UserRole.EMPLOYEE, weekly_hours=24.0, vacation_days=2,
+            work_days_per_week=3, is_active=True, track_hours=True, use_daily_schedule=True,
+            hours_monday=8, hours_tuesday=0, hours_wednesday=8, hours_thursday=0, hours_friday=8,
+            tenant_id=DEFAULT_TENANT_ID,
+        )
+        db.add(emp); db.commit(); db.refresh(emp)
+        _set_toggle(db, True)
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "BF", "start_date": MON.isoformat(), "end_date": FRI.isoformat(), "counts_as_vacation": True,
+        })
+        assert r.status_code == 201, r.text
+        c = r.json()
+        by_date = {a.date: a.type for a in db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(c["id"])).all()}
+        # the two real 8h days (Mon, Wed) consume the 2-day budget as VACATION; Fri → OVERTIME.
+        # Tue/Thu are 0-target days and must NOT have burned budget.
+        assert by_date[MON] == AbsenceType.VACATION
+        assert by_date[WED] == AbsenceType.VACATION
+        assert by_date[FRI] == AbsenceType.OVERTIME
+
     def test_zero_budget_all_overtime(self, db, default_tenant, admin_client):
         emp = _make_user(db, "e_zero", vacation_days=0)
         _set_toggle(db, True)
