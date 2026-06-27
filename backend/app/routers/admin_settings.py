@@ -24,10 +24,11 @@ _ALLOWED_SETTINGS = {
     "work_window_grace_minutes",  # #201 Arbeitszeit-Fenster: Pufferzeit in Minuten
     "onboarding_enabled",  # Erst-Login-Willkommens-Tour an/aus (Default an)
     "shift_planning_enabled",  # #305 Schichtplanung aktivieren (Default aus)
+    "closure_overtime_after_vacation",  # #314 Betriebsferien > Urlaub → Überstundenabbau (Default aus)
 } | special_days_service.SETTING_KEYS
 
 # Settings whose value must be a boolean ("true"/"false").
-_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "onboarding_enabled", "shift_planning_enabled"}
+_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "onboarding_enabled", "shift_planning_enabled", "closure_overtime_after_vacation"}
 
 
 @router.get("/settings")

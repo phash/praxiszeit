@@ -234,6 +234,7 @@ export function CheatsheetAdmin() {
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">📅 Betriebsferien</h3>
         <p className="text-sm text-gray-600">Abwesenheiten → Neue Betriebsferien → Bezeichnung + Von–Bis → Speichern</p>
         <p className="text-sm text-gray-500 mt-1">Alle MA mit „Nimmt an Betriebsferien teil" (Standard) erhalten automatisch Einträge – rollenunabhängig, keine Urlaubstage. Nachträglich Berechtigte: Option setzen – Einträge werden automatisch für laufende und künftige Betriebsferien nachgetragen.</p>
+        <p className="text-sm text-gray-500 mt-1">Sind die (urlaubszählenden) Betriebsferien länger als das Resturlaub-Budget, lässt sich unter <strong>Einstellungen → „Betriebsferien &amp; Urlaub"</strong> die Option „Überzählige Betriebsferien als Überstundenabbau" aktivieren: erst Urlaub, dann Überstunden (Konto darf ins Minus) – statt Minus-Urlaub. Global, Standard aus.</p>
       </section>
 
       {/* ArbZG */}

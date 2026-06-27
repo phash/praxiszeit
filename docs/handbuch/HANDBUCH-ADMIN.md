@@ -435,6 +435,8 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 
 > **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option „Nimmt an Betriebsferien teil" bei einem Mitarbeiter und speichern Sie die Benutzer-Änderung. Die Abwesenheiten werden **automatisch** für alle laufenden und künftigen Betriebsferien nachgetragen – ein erneutes Speichern der Betriebsferien ist nicht mehr nötig, und bereits erfasste Arbeitszeiten bleiben erhalten. (Bereits abgelaufene Betriebsferien werden bewusst nicht rückwirkend ergänzt.)
 
+> **Betriebsferien länger als der Jahresurlaub (#314):** Sind die als Urlaub zählenden Betriebsferien länger als das Resturlaubs-Budget einer Mitarbeiterin, entstehen standardmäßig **Minus-Urlaubstage**. Unter **Einstellungen → „Betriebsferien & Urlaub"** können Sie die Option **„Überzählige Betriebsferien als Überstundenabbau"** aktivieren: Dann wird zuerst der Urlaub aufgezehrt und die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Überstundenkonto darf dabei ins Minus gehen) – statt Minus-Urlaub. Die Option ist global und standardmäßig deaktiviert.
+
 ### Betriebsferien löschen
 
 Klicken Sie auf das Löschen-Symbol. Die Abwesenheitseinträge werden bei allen Mitarbeitern automatisch entfernt.
