@@ -65,7 +65,8 @@ def create_reason(
     name = data.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name darf nicht leer sein")
-    _validate_color(data.color)
+    color = data.color or None  # treat "" as "no colour" (consistent with update_reason)
+    _validate_color(color)
     exists = (
         db.query(AbsenceReason)
         .filter(AbsenceReason.tenant_id == current_user.tenant_id, AbsenceReason.name == name)
@@ -74,7 +75,7 @@ def create_reason(
     if exists:
         raise HTTPException(status_code=409, detail="Ein Abwesenheitsgrund mit diesem Namen existiert bereits")
     r = AbsenceReason(
-        tenant_id=current_user.tenant_id, name=name, color=data.color,
+        tenant_id=current_user.tenant_id, name=name, color=color,
         base_behavior=data.base_behavior.value, sort_order=data.sort_order, is_active=True,
     )
     db.add(r)

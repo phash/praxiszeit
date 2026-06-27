@@ -319,3 +319,33 @@ class TestAbsenceCRCustomReason:
         a = db.query(Absence).filter(Absence.user_id == emp.id, Absence.date == d).one()
         assert a.type == AbsenceType.TRAINING
         assert a.reason_id == reason.id
+
+
+class TestAbsenceCRValidationNoReason:
+    """round-2 fix: the hours/start-end validation must run for EVERY absence CR,
+    not only custom-reason ones (it had regressed into the reason_id block)."""
+
+    def test_inverted_times_rejected_without_reason(self, db, test_user):
+        from fastapi import HTTPException
+        from app.routers.change_requests import create_change_request
+        from app.schemas.change_request import ChangeRequestCreate
+        data = ChangeRequestCreate(
+            request_type="create", entry_kind="absence", reason="x",
+            proposed_date=date(2026, 3, 10), proposed_absence_type="training",
+            proposed_start_time=time(17, 0), proposed_end_time=time(9, 0),  # inverted, no reason_id
+        )
+        with pytest.raises(HTTPException) as exc:
+            create_change_request(data=data, db=db, current_user=test_user)
+        assert exc.value.status_code == 400
+
+    def test_no_hours_no_times_rejected_without_reason(self, db, test_user):
+        from fastapi import HTTPException
+        from app.routers.change_requests import create_change_request
+        from app.schemas.change_request import ChangeRequestCreate
+        data = ChangeRequestCreate(
+            request_type="create", entry_kind="absence", reason="x",
+            proposed_date=date(2026, 3, 10), proposed_absence_type="training",  # no hours, no times
+        )
+        with pytest.raises(HTTPException) as exc:
+            create_change_request(data=data, db=db, current_user=test_user)
+        assert exc.value.status_code == 400
