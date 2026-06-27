@@ -20,6 +20,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 
 from app.models import User
@@ -71,6 +72,13 @@ def generate_plan(db: Session, tenant_id, plan, target_monday: date, mode: str =
             Absence.tenant_id == tenant_id,
             Absence.start_time.is_(None),  # ganztägig
             Absence.date <= week_end,
+            # bound the scan to the target week (review finding): an absence
+            # overlaps iff it ends on/after week_start — for single-day rows
+            # (end_date NULL) that means date >= week_start.
+            or_(
+                Absence.end_date >= week_start,
+                and_(Absence.end_date.is_(None), Absence.date >= week_start),
+            ),
         )
         .all()
     ):
