@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
+import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { formatHoursHM, parseHours } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
@@ -114,11 +115,28 @@ export default function AdminDashboard() {
   // #313: Soll-Basis — 'bis_heute' (bis zum letzten abgeschlossenen Arbeitstag,
   // kein Monatsanfangs-Minus) oder 'monatsende' (voller Monat).
   const [sollBasis, setSollBasis] = useState<'bis_heute' | 'monatsende'>('bis_heute');
+  // #329: Monat ↔ Woche umschalten. Auswahl persistiert pro Browser-User.
+  const [viewMode, setViewMode] = useState<'month' | 'week'>(
+    () => (localStorage.getItem('adminDashboardViewMode') as 'month' | 'week') || 'month',
+  );
+  const [currentWeek, setCurrentWeek] = useState<string>(() => isoWeekMonday());
+
+  const changeViewMode = (mode: 'month' | 'week') => {
+    setViewMode(mode);
+    localStorage.setItem('adminDashboardViewMode', mode);
+  };
+
+  // Bei Wochenwechsel auch den Monat mitführen, damit die Mitarbeiter-Detailansicht
+  // (monatsbasiert) zum betrachteten Zeitraum passt.
+  const handleWeekChange = (mondayIso: string) => {
+    setCurrentWeek(mondayIso);
+    setCurrentMonth(mondayIso.slice(0, 7));
+  };
 
   useEffect(() => {
     fetchReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMonth, showHealthData, sollBasis]);
+  }, [viewMode, currentMonth, currentWeek, showHealthData, sollBasis]);
 
   useEffect(() => {
     // Re-fetch des offenen Mitarbeiters bei Monatswechsel. selectedEmployee ist
@@ -142,13 +160,14 @@ export default function AdminDashboard() {
     const seq = ++reportSeq.current;
     try {
       const hp = showHealthData ? '&include_health_data=true' : '';
-      const response = await apiClient.get(
-        `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`,
-      );
+      const url = viewMode === 'week'
+        ? `/admin/reports/weekly?week_start=${currentWeek}${hp}&soll_basis=${sollBasis}`
+        : `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`;
+      const response = await apiClient.get(url);
       if (seq !== reportSeq.current) return;
       setReport(response.data);
     } catch (error) {
-      if (seq === reportSeq.current) toast.error('Fehler beim Laden des Monatsberichts');
+      if (seq === reportSeq.current) toast.error('Fehler beim Laden des Berichts');
     } finally {
       if (seq === reportSeq.current) setLoading(false);
     }
@@ -481,21 +500,49 @@ export default function AdminDashboard() {
 
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-600">Monat</h3>
+            <h3 className="text-sm font-medium text-gray-600">{viewMode === 'week' ? 'Woche' : 'Monat'}</h3>
             <Clock className="text-primary" size={24} />
           </div>
           <p className="text-xl font-bold text-gray-900">
-            {format(new Date(currentMonth + '-01T00:00:00'), 'MMMM yyyy')}
+            {viewMode === 'week'
+              ? weekLabel(currentWeek)
+              : format(new Date(currentMonth + '-01T00:00:00'), 'MMMM yyyy')}
           </p>
         </div>
       </div>
 
-      {/* Month Selector */}
-      <MonthSelector
-        value={currentMonth}
-        onChange={setCurrentMonth}
-        className="mb-6"
-      />
+      {/* Period selector: Monat ↔ Woche umschalten (#329) */}
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <div
+          className="inline-flex rounded-xl border border-gray-300 overflow-hidden"
+          role="group"
+          aria-label="Zeitraum-Ansicht"
+        >
+          <button
+            onClick={() => changeViewMode('month')}
+            aria-pressed={viewMode === 'month'}
+            className={`px-4 py-2 text-sm font-medium transition ${
+              viewMode === 'month' ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-muted'
+            }`}
+          >
+            Monat
+          </button>
+          <button
+            onClick={() => changeViewMode('week')}
+            aria-pressed={viewMode === 'week'}
+            className={`px-4 py-2 text-sm font-medium transition ${
+              viewMode === 'week' ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-muted'
+            }`}
+          >
+            Woche
+          </button>
+        </div>
+        {viewMode === 'week' ? (
+          <WeekSelector value={currentWeek} onChange={handleWeekChange} />
+        ) : (
+          <MonthSelector value={currentMonth} onChange={setCurrentMonth} />
+        )}
+      </div>
 
       {/* Filter Input */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 mb-4">
@@ -516,18 +563,18 @@ export default function AdminDashboard() {
       {/* Employee Table */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-4 flex-wrap">
-          <h2 className="text-lg font-semibold">Monatsübersicht</h2>
-          {/* #313: Soll-Basis umschalten — bis heute (kein Monatsanfangs-Minus) oder voller Monat. */}
+          <h2 className="text-lg font-semibold">{viewMode === 'week' ? 'Wochenübersicht' : 'Monatsübersicht'}</h2>
+          {/* #313: Soll-Basis umschalten — bis heute (kein Anfangs-Minus) oder voller Zeitraum. */}
           <label className="flex items-center gap-2 text-sm text-gray-600">
             Soll:
             <select
               value={sollBasis}
               onChange={(e) => setSollBasis(e.target.value as 'bis_heute' | 'monatsende')}
               className="rounded border-gray-300 text-sm py-1"
-              title="Soll nur bis zum letzten abgeschlossenen Arbeitstag oder für den vollen Monat"
+              title="Soll nur bis zum letzten abgeschlossenen Arbeitstag oder für den vollen Zeitraum"
             >
               <option value="bis_heute">bis heute</option>
-              <option value="monatsende">Monatsende</option>
+              <option value="monatsende">{viewMode === 'week' ? 'volle Woche' : 'Monatsende'}</option>
             </select>
           </label>
           {/* DSGVO Art. 9: Krankheitstage nur auf ausdrücklichen Opt-in zeigen

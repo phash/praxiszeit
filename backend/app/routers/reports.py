@@ -7,7 +7,7 @@ from starlette.requests import Request
 from typing import List
 from decimal import Decimal
 from io import BytesIO
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import quote
 from app.database import get_db
 from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
@@ -16,7 +16,7 @@ from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
 from app.services.arbzg_utils import is_night_work
-from app.services.date_filters import date_in_year, date_in_month
+from app.services.date_filters import date_in_year, date_in_month, date_in_range
 from app.core.limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -143,6 +143,116 @@ def get_monthly_report(
 
     # L-2: Report erfolgreich gebaut -> jetzt erst den (ggf. oben geflushten)
     # health_data_read-Audit-Eintrag dauerhaft festschreiben.
+    if include_health_data:
+        db.commit()
+
+    return reports
+
+
+@router.get("/weekly", response_model=List[EmployeeMonthlyReport])
+def get_weekly_report(
+    week_start: str = Query(..., description="Beliebiges Datum der Woche (YYYY-MM-DD); wird auf Montag normalisiert"),
+    include_health_data: bool = Query(False, description="Krankheitsdaten einschließen (Art. 9 DSGVO)"),
+    soll_basis: str = Query(
+        "bis_heute",
+        description="#313 Soll-Basis: 'bis_heute' (bis letzter abgeschlossener Arbeitstag) oder 'monatsende' (volle Woche)",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#329: Wochenreport für alle Mitarbeiter — gleiches Schema wie ``/monthly``,
+    aber für eine ISO-Kalenderwoche (Mo–So).
+
+    ``week_start`` wird auf den **Montag** der Woche normalisiert, daher darf die
+    Woche eine Monats-/Jahresgrenze überschreiten. ``soll_basis`` wirkt wie bei
+    ``/monthly``: ``bis_heute`` (Default) kappt die laufende Woche am letzten
+    abgeschlossenen Arbeitstag, ``monatsende`` zählt die volle Woche. Die
+    Überstunden-Spalte ist der kumulative laufende Saldo zum Ende der Woche.
+    """
+    if soll_basis not in ("bis_heute", "monatsende"):
+        raise HTTPException(status_code=400, detail="soll_basis muss 'bis_heute' oder 'monatsende' sein")
+    try:
+        anchor = date.fromisoformat(week_start)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültiges Datumsformat (YYYY-MM-DD erwartet)")
+
+    wk_start = anchor - timedelta(days=anchor.weekday())  # Monday
+    wk_end = wk_start + timedelta(days=6)                  # Sunday
+
+    if include_health_data:
+        logger.info(
+            "DSGVO-Datenzugriff: Wochenreport %s–%s aufgerufen von Admin %s",
+            wk_start, wk_end, current_user.username,
+        )
+        # F-020: Audit log for sensitive health data read (Art. 9 – sick_hours in response)
+        audit = TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=current_user.id,
+            changed_by=current_user.id,
+            action="health_data_read",
+            source="dsgvo",
+            new_note=f"Wochenreport {wk_start}–{wk_end} (inkl. Krankheitsstunden) gelesen von Admin: {current_user.username}",
+            tenant_id=current_user.tenant_id,
+        )
+        db.add(audit)
+        # L-2: nur flushen — Commit erst nach erfolgreichem Aufbau (siehe /monthly).
+        db.flush()
+
+    users = _get_active_visible_users(db, current_user.tenant_id)
+
+    reports = []
+
+    for user in users:
+        # #313: per-user cutoff (last finished workday) unless run on the full basis.
+        cutoff = calculation_service.get_soll_cutoff_date(db, user) if soll_basis == "bis_heute" else None
+        target = calculation_service.get_range_target(db, user, wk_start, wk_end, up_to_date=cutoff)
+        actual = calculation_service.get_range_actual(db, user, wk_start, wk_end, up_to_date=cutoff)
+        balance = (actual - target).quantize(Decimal('0.01'))
+        # Überstunden = kumulativer laufender Saldo zum Wochenende (für die laufende
+        # Woche am bis_heute-Cutoff gekappt).
+        ot_cutoff = wk_end if cutoff is None else min(wk_end, cutoff)
+        overtime = calculation_service.get_overtime_account(
+            db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff
+        )
+
+        # Urlaub/Krank in der Woche (F-033: sargable range)
+        vacation_absences = db.query(Absence).filter(
+            Absence.user_id == user.id,
+            Absence.type == AbsenceType.VACATION,
+            date_in_range(Absence.date, wk_start, wk_end),
+        ).all()
+        vacation_hours = sum(float(a.hours) for a in vacation_absences)
+
+        sick_absences = db.query(Absence).filter(
+            Absence.user_id == user.id,
+            Absence.type == AbsenceType.SICK,
+            date_in_range(Absence.date, wk_start, wk_end),
+        ).all()
+        sick_hours = sum(float(a.hours) for a in sick_absences)
+
+        # Tagesprinzip (§3 BUrlG, #156/#205): Urlaub/Krank tagebasiert zählen.
+        vacation_days = float(calculation_service.absence_days(db, user, vacation_absences).quantize(Decimal('0.1')))
+        sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
+
+        # weekly_hours valid at the week's Monday (mirrors /monthly's report_date).
+        hist_weekly = calculation_service.get_weekly_hours_for_date(db, user, wk_start)
+
+        reports.append(EmployeeMonthlyReport(
+            user_id=str(user.id),
+            first_name=user.first_name,
+            last_name=user.last_name,
+            weekly_hours=float(hist_weekly),
+            target_hours=float(target),
+            actual_hours=float(actual),
+            balance=float(balance),
+            overtime_cumulative=float(overtime),
+            vacation_used_hours=vacation_hours,
+            vacation_used_days=vacation_days,
+            sick_hours=sick_hours if include_health_data else 0.0,
+            sick_days=sick_days if include_health_data else 0.0,
+            exempt_from_arbzg=bool(user.exempt_from_arbzg),
+        ))
+
     if include_health_data:
         db.commit()
 

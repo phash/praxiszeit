@@ -42,6 +42,15 @@ def date_in_month(column, year: int, month: int):
     return and_(column >= start, column < end)
 
 
+def date_in_range(column, start: date, end: date):
+    """Inclusive range filter ``start <= column <= end`` (sargable).
+
+    Used by the #329 weekly admin view, whose range can cross a month/year
+    boundary and therefore cannot use ``date_in_month``.
+    """
+    return and_(column >= start, column <= end)
+
+
 def date_in_year_up_to_month(column, year: int, month: int):
     """
     Range filter ``column IN year AND month <= :month`` as a sargable

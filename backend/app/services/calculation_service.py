@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 from app.services.timezone_service import today_local
-from app.services.date_filters import date_in_year, date_in_month
+from app.services.date_filters import date_in_year, date_in_month, date_in_range
 from decimal import Decimal
 from calendar import monthrange
 from typing import Dict, List, Optional
@@ -204,155 +204,154 @@ def get_soll_cutoff_date(db: Session, user: User, today: date = None) -> date:
     return today if has_completed_today else today - timedelta(days=1)
 
 
-def get_monthly_target(
-    db: Session, user: User, year: int, month: int, up_to_date: date = None
+def get_range_target(
+    db: Session, user: User, start: date, end: date, up_to_date: date = None
 ) -> Decimal:
+    """Soll hours for an arbitrary inclusive ``[start, end]`` range.
+
+    Same per-day logic as :func:`get_monthly_target` (skip weekends / public
+    holidays / soll-reducing absences, respect the employment window #193 and the
+    #313 ``up_to_date`` cutoff, apply the #146 special-day factor), but over a
+    range that may cross a month or year boundary. ``get_monthly_target``
+    delegates here so there is a single source of truth.
+
+    Absences REDUCE the target (the employee need not work those days), except
+    TRAINING/SICK/OVERTIME (credited / Überstundenausgleich — see
+    get_monthly_target's original note). The special-day config is fetched per
+    year so a range spanning Dec/Jan stays correct.
+
+    Returns 0 if ``track_hours`` is False or the range is empty.
     """
-    Calculate monthly target hours.
-
-    Formula:
-    For each weekday (Mon-Fri) in month:
-        - Skip public holidays
-        - Skip absence days
-        - Add daily target (based on weekly hours valid for that date)
-
-    IMPORTANT: Absences REDUCE the target, because the employee
-    doesn't need to work on those days.
-
-    This function now considers historical working hours changes,
-    so if hours changed mid-month, both values are used correctly.
-
-    Args:
-        db: Database session
-        user: User object
-        year: Year
-        month: Month (1-12)
-
-    Returns:
-        Monthly target hours as Decimal (0 if track_hours is False)
-    """
-    if not user.track_hours:
+    if not user.track_hours or end < start:
         return Decimal('0')
 
-    # Get holidays and absences for the month (F-033: sargable date range)
+    # F-033: sargable date range.
     holidays = db.query(PublicHoliday).filter(
-        date_in_month(PublicHoliday.date, year, month),
+        date_in_range(PublicHoliday.date, start, end),
         PublicHoliday.tenant_id == user.tenant_id,
     ).all()
     holiday_dates = {h.date for h in holidays}
 
-    # Exclude TRAINING, SICK, and OVERTIME from target reduction:
-    # - TRAINING counts as worked time (außer Haus)
-    # - SICK: §3 EntgFG - employee must be credited as if they worked the planned hours
-    # - OVERTIME: Überstundenausgleich – Soll bleibt bestehen, Tag zählt als 0h Ist,
-    #   dadurch reduziert sich das Überstundenkonto um die geplanten Stunden
-    # VACATION, OTHER and PAID_LEAVE (#145) are NOT excluded -> they all
-    # reduce the target (the employee doesn't have to work those days). For
-    # PAID_LEAVE the rechen-mechanik is identical to OTHER; the difference is
-    # only that PAID_LEAVE is paid and doesn't touch the vacation budget
-    # (see get_vacation_account, which sums only VACATION).
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
-        date_in_month(Absence.date, year, month),
+        date_in_range(Absence.date, start, end),
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
     absence_dates = {a.date for a in absences}
 
-    # #146: configurable handling of 24./31.12. (working_day | half_day | free).
-    # Loaded once per call; applied per day below.
-    special_day_config = special_days_service.get_special_day_config(
-        db, user.tenant_id, year
-    )
+    # #146: special-day config can differ per year (a week may cross Dec/Jan).
+    _special_cfg_cache: dict = {}
 
-    # Calculate target by iterating through each day
-    _, last_day = monthrange(year, month)
-    monthly_target = Decimal('0')
+    def _special_cfg(yr: int) -> dict:
+        if yr not in _special_cfg_cache:
+            _special_cfg_cache[yr] = special_days_service.get_special_day_config(
+                db, user.tenant_id, yr
+            )
+        return _special_cfg_cache[yr]
 
-    for day in range(1, last_day + 1):
-        d = date(year, month, day)
-
+    total = Decimal('0')
+    d = start
+    while d <= end:
         # Skip weekends
         if d.weekday() >= 5:  # Saturday or Sunday
+            d += timedelta(days=1)
             continue
-
         # #313: only count up to the running cutoff (e.g. last finished workday)
         if up_to_date is not None and d > up_to_date:
+            d += timedelta(days=1)
             continue
-
         # #193: skip days outside the employment window (before entry / after exit)
         if not _within_employment_window(user, d):
+            d += timedelta(days=1)
             continue
-
         # Skip holidays and absences
         if d in holiday_dates or d in absence_dates:
+            d += timedelta(days=1)
             continue
 
-        # Get weekly hours valid for this specific date
         weekly_hours = get_weekly_hours_for_date(db, user, d)
         daily_target = get_daily_target_for_date(user, d, weekly_hours)
 
         # #146: apply the special-day rule (after weekend/holiday/absence so we
         # never double-handle a 24./31.12. that already is a weekend or holiday).
-        factor = special_days_service.special_day_target_factor(d, special_day_config)
+        factor = special_days_service.special_day_target_factor(d, _special_cfg(d.year))
         if factor is not None:
             daily_target = (daily_target * factor)
 
-        monthly_target += daily_target
+        total += daily_target
+        d += timedelta(days=1)
 
-    return monthly_target.quantize(Decimal('0.01'))
+    return total.quantize(Decimal('0.01'))
 
 
-def get_monthly_actual(
-    db: Session, user: User, year: int, month: int, up_to_date: date = None
+def get_range_actual(
+    db: Session, user: User, start: date, end: date, up_to_date: date = None
 ) -> Decimal:
+    """Ist hours worked in an arbitrary inclusive ``[start, end]`` range.
+
+    Sum of TimeEntry net_hours + credited TRAINING/SICK hours, both windowed by
+    the employment window (#195) and the optional ``up_to_date`` cutoff.
+    ``get_monthly_actual`` delegates here.
     """
-    Calculate actual hours worked in a month.
-    Sum of all net_hours from TimeEntry records + credited absence hours.
+    if end < start:
+        return Decimal('0')
 
-    Training (Fortbildung) and sick-leave (Kranktage) hours count as worked time:
-    - Training: employee is absent but credited for the planned hours.
-    - Sick: §3 EntgFG – employee must be credited as if they worked the planned hours.
-
-    Args:
-        db: Database session
-        user: User object
-        year: Year
-        month: Month (1-12)
-
-    Returns:
-        Actual hours worked as Decimal
-    """
-    # F-033: sargable date range. The Python-level Decimal sum is kept
-    # because the SQL @expression for net_hours relies on Postgres's
-    # EXTRACT(EPOCH FROM time - time) semantics which do not port to
-    # SQLite used by the test suite. Fetching the rows is still faster
-    # than per-day queries thanks to the composite index from Sprint 3.1.
+    # F-033: sargable date range. The Python-level Decimal sum is kept because
+    # the SQL @expression for net_hours relies on Postgres EXTRACT(EPOCH ...)
+    # semantics that do not port to the SQLite test suite.
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
-        date_in_month(TimeEntry.date, year, month),
+        date_in_range(TimeEntry.date, start, end),
     ).all()
     # #195: only count Ist within the employment window — symmetric to the Soll
-    # guard (_within_employment_window in get_monthly_target). A TimeEntry before
-    # first_work_day / after last_work_day (rehire, import, date corrected after
-    # the fact) must contribute neither Soll nor Ist, otherwise the balance shows
-    # phantom overtime.
+    # guard. A TimeEntry before first_work_day / after last_work_day must
+    # contribute neither Soll nor Ist, otherwise the balance shows phantom overtime.
     total = sum((entry.net_hours for entry in entries
                  if _within_employment_window(user, entry.date)
                  and (up_to_date is None or entry.date <= up_to_date)), start=Decimal('0'))
 
-    # Training and sick hours count as actual worked hours:
-    # - TRAINING: außer Haus, credited as worked
-    # - SICK: §3 EntgFG - credited as if the planned hours were worked
+    # Training and sick hours count as actual worked hours (außer Haus / §3 EntgFG).
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
-        date_in_month(Absence.date, year, month),
+        date_in_range(Absence.date, start, end),
     ).all()
     credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences
                           if _within_employment_window(user, a.date)
                           and (up_to_date is None or a.date <= up_to_date)), Decimal('0'))
 
     return (Decimal(str(total)) + credited_hours).quantize(Decimal('0.01'))
+
+
+def get_monthly_target(
+    db: Session, user: User, year: int, month: int, up_to_date: date = None
+) -> Decimal:
+    """
+    Calculate monthly target hours (thin wrapper over :func:`get_range_target`).
+
+    For each weekday (Mon-Fri) in the month: skip public holidays + soll-reducing
+    absences, add the daily target (based on the weekly hours valid for that date,
+    so a mid-month WorkingHoursChange is handled correctly). Absences REDUCE the
+    target. Returns 0 if track_hours is False.
+    """
+    _, last_day = monthrange(year, month)
+    return get_range_target(
+        db, user, date(year, month, 1), date(year, month, last_day), up_to_date=up_to_date
+    )
+
+
+def get_monthly_actual(
+    db: Session, user: User, year: int, month: int, up_to_date: date = None
+) -> Decimal:
+    """
+    Calculate actual hours worked in a month (thin wrapper over
+    :func:`get_range_actual`). Sum of TimeEntry net_hours + credited
+    TRAINING/SICK hours (§3 EntgFG / Fortbildung außer Haus).
+    """
+    _, last_day = monthrange(year, month)
+    return get_range_actual(
+        db, user, date(year, month, 1), date(year, month, last_day), up_to_date=up_to_date
+    )
 
 
 def get_gross_monthly_target(db: Session, user: User, year: int, month: int) -> Decimal:
