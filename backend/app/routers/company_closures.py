@@ -147,6 +147,11 @@ def _create_closure_absences(
         # #314: remaining vacation budget snapshot per year, consumed as we book
         # VACATION days; once exhausted the surplus days become OVERTIME.
         remaining_by_year: dict = {}
+        # The split only makes sense for time-tracked employees: an untracked MA
+        # (track_hours=False, daily target 0) has no overtime account, so an
+        # OVERTIME day would vanish from all accounting. Keep legacy VACATION for
+        # them (review finding).
+        emp_split = split_overtime and employee.track_hours
         for workday in workdays:
             # #298: never book closure absences OUTSIDE the employee's employment
             # window. A future-start employee (first_work_day in the future, e.g. an
@@ -195,7 +200,7 @@ def _create_closure_absences(
             # vacation). The budget is a snapshot taken before booking and only
             # decremented for days actually booked as VACATION.
             day_type = absence_type
-            if split_overtime:
+            if emp_split:
                 yr = workday.year
                 if yr not in remaining_by_year:
                     remaining_by_year[yr] = float(
@@ -382,6 +387,9 @@ def update_closure(
 
     name_changed = closure.name != data.name
     type_changed = closure.counts_as_vacation != data.counts_as_vacation
+    # #314: capture BEFORE the overwrite below — whether the date range or the
+    # vacation flag actually changed. A pure rename must NOT trigger the re-split.
+    range_changed = closure.start_date != data.start_date or closure.end_date != data.end_date
 
     # Apply the new attributes on the closure first so generated notes /
     # end_date / absence type use the updated values.
@@ -412,7 +420,12 @@ def update_closure(
     # minus-vacation (the exact thing #314 prevents). In that case we DELETE the
     # linked in-range absences and let _create_closure_absences re-book them with
     # a FRESH budget snapshot (correct re-split). Split off → legacy in-place sync.
-    split_active = data.counts_as_vacation and settings_service.get_bool_setting(
+    #
+    # Gated on a STRUCTURAL change (range or vacation-flag): a cosmetic rename must
+    # not re-split against a now-different budget and silently shift OVERTIME/VACATION
+    # days (review finding) — a rename then falls through to the idempotent in-place
+    # branch (note only).
+    split_active = (range_changed or type_changed) and data.counts_as_vacation and settings_service.get_bool_setting(
         db, "closure_overtime_after_vacation", current_user.tenant_id, False
     )
 

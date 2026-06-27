@@ -61,11 +61,11 @@ def default_tenant(db):
     return t
 
 
-def _make_user(db, username, role=UserRole.EMPLOYEE, vacation_days=30):
+def _make_user(db, username, role=UserRole.EMPLOYEE, vacation_days=30, track_hours=True):
     u = User(
         username=username, email=f"{username}@x.de", password_hash=auth_service.hash_password("test123"),
         first_name=username, last_name="T", role=role, weekly_hours=40.0, vacation_days=vacation_days,
-        work_days_per_week=5, is_active=True, tenant_id=DEFAULT_TENANT_ID,
+        work_days_per_week=5, is_active=True, track_hours=track_hours, tenant_id=DEFAULT_TENANT_ID,
     )
     db.add(u); db.commit(); db.refresh(u)
     return u
@@ -182,6 +182,33 @@ class TestClosureOvertimeSplitUpdate:
         assert _types(db, emp, c["id"]) == [
             AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
         ]
+
+    def test_pure_rename_does_not_resplit(self, db, default_tenant, admin_client):
+        # Review finding: a cosmetic rename (no range/flag change) must NOT
+        # delete-and-recreate the absences (which would re-split against a
+        # now-different budget and silently shift OVERTIME/VACATION days).
+        emp = _make_user(db, "e_rn", vacation_days=2)
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)
+        ids_before = {a.id for a in db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(c["id"])).all()}
+        _update(admin_client, c["id"], counts_as_vacation=True, name="BF-umbenannt")
+        ids_after = {a.id for a in db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(c["id"])).all()}
+        # same rows (in-place note update), not deleted+recreated
+        assert ids_before == ids_after
+        assert _types(db, emp, c["id"]) == [
+            AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
+        ]
+
+    def test_untracked_employee_keeps_vacation_not_overtime(self, db, default_tenant, admin_client):
+        # Review finding: an untracked MA (track_hours=False) has no overtime
+        # account → the split must NOT apply (legacy VACATION), otherwise the
+        # surplus day vanishes from all accounting.
+        emp = _make_user(db, "e_unt", vacation_days=0, track_hours=False)
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)
+        assert _types(db, emp, c["id"]) == [AbsenceType.VACATION] * 4
 
     def test_double_toggle_through_paid_leave_no_minus_vacation(self, db, default_tenant, admin_client):
         # The exact audit bug: split → Freistellung → zurück zu Urlaub must NOT
