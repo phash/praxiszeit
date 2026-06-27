@@ -16,6 +16,7 @@ class ChangeRequestCreate(BaseModel):
     proposed_note: Optional[str] = None
     proposed_absence_type: Optional[str] = None
     proposed_absence_hours: Optional[float] = None
+    reason_id: Optional[UUID] = None  # #312: custom absence reason (overrides type via its behaviour)
     reason: str = Field(..., min_length=1)
     # SEC-D: cap length to prevent storage DoS via unbounded free text.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG

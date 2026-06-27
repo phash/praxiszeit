@@ -85,7 +85,13 @@ def list_absences(
         # Gesundheitsdaten IM ERGEBNIS landen. Sonst haengt die Spur am Inhalt:
         # eine gezielte Suche nach Krankmeldungen, die (noch) nichts findet,
         # bliebe unprotokolliert.
-        sensitive = any(a.type in _MASKED_ABSENCE_TYPES for a in absences)
+        # #312: a custom-reason absence may be health-sensitive (e.g. "Reha"
+        # mapped to TRAINING), so it counts as sensitive for the audit trail too
+        # — consistent with the colleague-feed masking.
+        sensitive = any(
+            a.type in _MASKED_ABSENCE_TYPES or a.reason_id is not None
+            for a in absences
+        )
         db.add(TimeEntryAuditLog(
             time_entry_id=None,
             user_id=user_id,

@@ -112,8 +112,11 @@ def update_reason(
             raise HTTPException(status_code=409, detail="Ein Abwesenheitsgrund mit diesem Namen existiert bereits")
         r.name = name
     if data.color is not None:
-        _validate_color(data.color)
-        r.color = data.color
+        if data.color == "":
+            r.color = None  # explicit clear
+        else:
+            _validate_color(data.color)
+            r.color = data.color
     if data.is_active is not None:
         r.is_active = data.is_active
     if data.sort_order is not None:
