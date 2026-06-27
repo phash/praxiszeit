@@ -103,6 +103,10 @@ export default function Settings() {
   const [shiftPlanningEnabled, setShiftPlanningEnabled] = useState(false);
   const [originalShiftPlanning, setOriginalShiftPlanning] = useState(false);
   const [savingShiftPlanning, setSavingShiftPlanning] = useState(false);
+  // #314 Betriebsferien über Urlaub hinaus als Überstundenabbau (Default aus)
+  const [closureOvertime, setClosureOvertime] = useState(false);
+  const [originalClosureOvertime, setOriginalClosureOvertime] = useState(false);
+  const [savingClosureOvertime, setSavingClosureOvertime] = useState(false);
 
   // #201 Soll-Fenster-Puffer (work_window_grace_minutes)
   const [graceMinutes, setGraceMinutes] = useState('15');
@@ -183,6 +187,12 @@ export default function Settings() {
       const spVal = spSetting?.value?.toLowerCase() === 'true';
       setShiftPlanningEnabled(spVal);
       setOriginalShiftPlanning(spVal);
+
+      // #314 Betriebsferien > Urlaub → Überstundenabbau (Default aus)
+      const coSetting = settingsRes.data.find((s) => s.key === 'closure_overtime_after_vacation');
+      const coVal = coSetting?.value?.toLowerCase() === 'true';
+      setClosureOvertime(coVal);
+      setOriginalClosureOvertime(coVal);
 
       // #201 Soll-Fenster-Puffer
       const graceSetting = settingsRes.data.find((s) => s.key === 'work_window_grace_minutes');
@@ -335,6 +345,21 @@ export default function Settings() {
       toast.error(getErrorMessage(err));
     } finally {
       setSavingShiftPlanning(false);
+    }
+  };
+
+  const saveClosureOvertime = async () => {
+    setSavingClosureOvertime(true);
+    try {
+      await apiClient.put('/admin/settings/closure_overtime_after_vacation', {
+        value: String(closureOvertime),
+      });
+      setOriginalClosureOvertime(closureOvertime);
+      toast.success('Betriebsferien-Einstellung gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingClosureOvertime(false);
     }
   };
 
@@ -914,6 +939,49 @@ export default function Settings() {
           <button
             onClick={saveShiftPlanning}
             disabled={savingShiftPlanning || shiftPlanningEnabled === originalShiftPlanning}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save size={16} />
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      {/* Betriebsferien über Urlaub hinaus (#314) — Default deaktiviert */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Betriebsferien &amp; Urlaub</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Wenn die Betriebsferien (Praxis geschlossen) <strong>länger als der Jahresurlaub</strong> einer
+          Mitarbeiterin sind: Mit dieser Option werden die überzähligen Tage <strong>nicht</strong> als
+          Minus-Urlaub gebucht, sondern als <strong>Überstundenabbau</strong> — erst wird der Urlaub
+          aufgezehrt, dann die Überstunden (das Überstundenkonto darf dabei ins Minus gehen). Gilt nur für
+          Betriebsferien, die als Urlaub zählen. <strong>Standardmäßig deaktiviert</strong> (dann entstehen
+          wie bisher Minus-Urlaubstage).
+        </p>
+        <div className="flex items-center justify-between max-w-sm">
+          <label htmlFor="closure-overtime-toggle" className="text-sm font-medium text-gray-700">
+            Überzählige Betriebsferien als Überstundenabbau
+          </label>
+          <button
+            id="closure-overtime-toggle"
+            role="switch"
+            aria-checked={closureOvertime}
+            onClick={() => setClosureOvertime(!closureOvertime)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              closureOvertime ? 'bg-primary' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                closureOvertime ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={saveClosureOvertime}
+            disabled={savingClosureOvertime || closureOvertime === originalClosureOvertime}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

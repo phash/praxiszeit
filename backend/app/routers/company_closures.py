@@ -10,7 +10,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry, WorkingHoursChange
 from app.schemas.absence import AbsenceResponse
-from app.services import calculation_service
+from app.services import calculation_service, settings_service
 from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/company-closures", tags=["company-closures"])
@@ -85,6 +85,11 @@ def _create_closure_absences(
     default), PAID_LEAVE when they are paid leave like a holiday (no vacation
     deduction, balance-neutral, target reduced to 0).
 
+    #314: when ``closure_overtime_after_vacation`` is enabled AND the closure
+    counts as vacation, days are booked chronologically — first as VACATION while
+    the per-year remaining budget covers a full day, then as OVERTIME
+    (Überstundenabbau, no minus-vacation; the overtime account may go negative).
+
     Mirrors the create-time logic: skips any day where the employee already
     has an absence (Fremd-Absence wird nicht überschrieben), deletes existing
     time entries on covered days (with audit log) and credits the
@@ -96,6 +101,16 @@ def _create_closure_absences(
     absence_type = (
         AbsenceType.VACATION if closure.counts_as_vacation else AbsenceType.PAID_LEAVE
     )
+    # #314: global toggle — when a *vacation* closure exceeds an employee's
+    # remaining vacation budget, book the surplus days as OVERTIME
+    # (Überstundenausgleich → reduces the overtime account, may go negative)
+    # instead of producing minus-vacation. Chronological: vacation first, then
+    # overtime. Off (default) = legacy behaviour (all VACATION).
+    split_overtime = closure.counts_as_vacation and settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", current_user.tenant_id, False
+    )
+    # consume the budget earliest-first
+    workdays = sorted(workdays)
     affected = 0
 
     # #204: Statt ~3 Queries pro (MA × Arbeitstag) — bei z. B. 40 MA × 15 Tagen
@@ -129,6 +144,9 @@ def _create_closure_absences(
     for employee in employees:
         created_for_employee = False
         emp_wh = wh_by_user.get(employee.id, [])
+        # #314: remaining vacation budget snapshot per year, consumed as we book
+        # VACATION days; once exhausted the surplus days become OVERTIME.
+        remaining_by_year: dict = {}
         for workday in workdays:
             # #298: never book closure absences OUTSIDE the employee's employment
             # window. A future-start employee (first_work_day in the future, e.g. an
@@ -172,6 +190,23 @@ def _create_closure_absences(
             # daily target. Passing weekly_hours explicitly is a CLAUDE.md
             # requirement — get_daily_target_for_date must never fall
             # back to user.weekly_hours. (#204: wh_changes vorgeladen.)
+            # #314: decide VACATION vs OVERTIME per day. VACATION while the
+            # remaining budget covers a full day; afterwards OVERTIME (no minus-
+            # vacation). The budget is a snapshot taken before booking and only
+            # decremented for days actually booked as VACATION.
+            day_type = absence_type
+            if split_overtime:
+                yr = workday.year
+                if yr not in remaining_by_year:
+                    remaining_by_year[yr] = float(
+                        calculation_service.get_vacation_account(db, employee, yr)["remaining_days"]
+                    )
+                if remaining_by_year[yr] >= 1.0:
+                    day_type = AbsenceType.VACATION
+                    remaining_by_year[yr] -= 1.0
+                else:
+                    day_type = AbsenceType.OVERTIME
+
             weekly_hours = calculation_service.get_weekly_hours_for_date(
                 db, employee, workday, wh_changes=emp_wh
             )
@@ -180,7 +215,7 @@ def _create_closure_absences(
                 tenant_id=current_user.tenant_id,
                 date=workday,
                 end_date=closure.end_date,
-                type=absence_type,
+                type=day_type,
                 hours=float(
                     calculation_service.get_daily_target_for_date(
                         employee, workday, weekly_hours=weekly_hours
@@ -371,6 +406,16 @@ def update_closure(
 
     workday_set = set(workdays)
 
+    # #314: when the surplus-as-overtime split is active for a vacation closure,
+    # re-typing absences in place is unsafe — a counts_as_vacation toggle would
+    # blindly turn budget-exhausted OVERTIME days back into VACATION and re-create
+    # minus-vacation (the exact thing #314 prevents). In that case we DELETE the
+    # linked in-range absences and let _create_closure_absences re-book them with
+    # a FRESH budget snapshot (correct re-split). Split off → legacy in-place sync.
+    split_active = data.counts_as_vacation and settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", current_user.tenant_id, False
+    )
+
     # All absences currently linked to this closure (tenant-scoped via FK).
     linked = db.query(Absence).filter(
         Absence.closure_id == closure.id,
@@ -385,6 +430,9 @@ def update_closure(
     # (tenant_id, user_id, date, type) unique constraint.
     for absence in linked:
         if absence.date not in workday_set:
+            db.delete(absence)
+        elif split_active:
+            # delete → re-created + re-split by the create helper below
             db.delete(absence)
         else:
             if name_changed:
