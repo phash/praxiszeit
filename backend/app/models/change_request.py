@@ -43,6 +43,10 @@ class ChangeRequest(Base):
     proposed_absence_hours = Column(Numeric(4, 2), nullable=True)
     original_absence_type = Column(String(20), nullable=True)
     original_absence_hours = Column(Numeric(4, 2), nullable=True)
+    # #312: optional custom absence reason carried through the CR workflow.
+    proposed_reason_id = Column(
+        UUID(as_uuid=True), ForeignKey("absence_reasons.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
 
     # Proposed values (for CREATE and UPDATE)
     proposed_date = Column(Date, nullable=True)

@@ -136,6 +136,45 @@ class TestReasonCrud:
         rid = _mk(admin_client)["id"]
         assert admin_client.delete(f"{ADMIN_BASE}/{rid}").status_code == 204
 
+    def test_delete_in_use_409(self, default_tenant, admin_client, employee):
+        rid = _mk(admin_client)["id"]
+        admin_client.post("/api/absences/", json={
+            "user_id": str(employee.id), "date": MON.isoformat(), "type": "vacation",
+            "hours": 8, "reason_id": rid,
+        })
+        assert admin_client.delete(f"{ADMIN_BASE}/{rid}").status_code == 409
+
+    def test_clear_color_with_empty_string(self, default_tenant, admin_client):
+        rid = _mk(admin_client, color="#abcdef")["id"]
+        r = admin_client.put(f"{ADMIN_BASE}/{rid}", json={"color": ""})
+        assert r.status_code == 200 and r.json()["color"] is None
+
+
+class TestBookingSecurity:
+    def test_inactive_reason_rejected(self, default_tenant, admin_client, employee):
+        rid = _mk(admin_client)["id"]
+        admin_client.put(f"{ADMIN_BASE}/{rid}", json={"is_active": False})
+        r = admin_client.post("/api/absences/", json={
+            "user_id": str(employee.id), "date": MON.isoformat(), "type": "vacation",
+            "hours": 8, "reason_id": rid,
+        })
+        assert r.status_code in (400, 404)
+
+    def test_cross_tenant_reason_rejected(self, default_tenant, admin_client, employee, db):
+        # a reason belonging to ANOTHER tenant must not be bookable here (F-026/IDOR)
+        from app.models.tenant import Tenant
+        other_tid = uuid.UUID("00000000-0000-0000-0000-0000000000ff")
+        db.add(Tenant(id=other_tid, name="Other", slug="other", is_active=True, mode="single"))
+        foreign = AbsenceReason(tenant_id=other_tid, name="Fremd", base_behavior="worked", is_active=True)
+        db.add(foreign); db.commit(); db.refresh(foreign)
+        r = admin_client.post("/api/absences/", json={
+            "user_id": str(employee.id), "date": MON.isoformat(), "type": "vacation",
+            "hours": 8, "reason_id": str(foreign.id),
+        })
+        assert r.status_code in (400, 404)
+        # and it is invisible to this tenant's admin list
+        assert all(x["id"] != str(foreign.id) for x in admin_client.get(ADMIN_BASE).json())
+
 
 class TestBookingIntegration:
     def test_reason_sets_mapped_type(self, default_tenant, admin_client, employee, db):

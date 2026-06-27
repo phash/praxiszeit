@@ -4,7 +4,10 @@ from typing import List, Optional
 from datetime import date
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole, Absence, AbsenceType
+from app.models import (
+    User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole, Absence, AbsenceType,
+    AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE,
+)
 from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
 from app.services.break_validation_service import validate_daily_break
@@ -63,6 +66,20 @@ def create_change_request(
                 AbsenceType(data.proposed_absence_type)
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Ungültiger Abwesenheitstyp: {data.proposed_absence_type}")
+
+        # #312: a custom absence reason overrides the proposed type via its
+        # behaviour and is carried to approval (resolved tenant-scoped + active).
+        resolved_reason_id = None
+        if data.entry_kind == "absence" and data.request_type in ("create", "update") and data.reason_id:
+            reason = db.query(AbsenceReason).filter(
+                AbsenceReason.id == data.reason_id,
+                AbsenceReason.tenant_id == current_user.tenant_id,  # F-026
+                AbsenceReason.is_active.is_(True),
+            ).first()
+            if not reason:
+                raise HTTPException(status_code=404, detail="Abwesenheitsgrund nicht gefunden oder inaktiv")
+            data.proposed_absence_type = BEHAVIOR_TO_ABSENCE_TYPE[AbsenceReasonBehavior(reason.base_behavior)].value
+            resolved_reason_id = data.reason_id
             # Need either hours or start/end time
             if data.proposed_absence_hours is None and not (data.proposed_start_time and data.proposed_end_time):
                 raise HTTPException(status_code=400, detail="Stunden oder Start-/Endzeit erforderlich")
@@ -110,6 +127,7 @@ def create_change_request(
             proposed_end_time=data.proposed_end_time,
             proposed_absence_type=data.proposed_absence_type,
             proposed_absence_hours=data.proposed_absence_hours,
+            proposed_reason_id=resolved_reason_id,  # #312
             reason=data.reason,
         )
 

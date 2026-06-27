@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
+from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
@@ -98,6 +98,30 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
     return output
 
 
+def _load_reason_names(db: Session, tenant_id) -> dict:
+    """#312: {str(reason_id): name} for the tenant — custom-reason export labels."""
+    return {
+        str(r.id): r.name for r in db.query(AbsenceReason.id, AbsenceReason.name)
+        .filter(AbsenceReason.tenant_id == tenant_id).all()
+    }
+
+
+def _absence_export_label(absence, type_map: dict, reason_names: dict, include_health_data: bool):
+    """#312: (label, show_note) for an absence in §16 exports.
+
+    SICK *and* custom-reason absences are masked (label "Abwesenheit", note
+    hidden) unless health data is explicitly included — a custom reason can be
+    health-sensitive (e.g. "Reha"). Otherwise a custom reason shows its own
+    name; built-in types use the German type label.
+    """
+    if (absence.type.value == "sick" and not include_health_data) or \
+       (absence.reason_id is not None and not include_health_data):
+        return "Abwesenheit", False
+    if absence.reason_id is not None:
+        return reason_names.get(str(absence.reason_id)) or type_map.get(absence.type.value, absence.type.value), True
+    return type_map.get(absence.type.value, absence.type.value), True
+
+
 def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, month: int, include_health_data: bool = False):
     """
     Create a worksheet for a single employee.
@@ -115,6 +139,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     - Bemerkung
     """
     sheet = wb.create_sheet(title=f"{user.last_name} {user.first_name}"[:31])  # Excel sheet name max 31 chars
+
+    reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
     # Row 1–2: ArbZG-relevante Mitarbeiter-Metadaten (§16 ArbZG Aufzeichnungspflicht)
     sheet.cell(row=1, column=1).value = "Mitarbeiter:"
@@ -297,12 +323,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             abw_parts = []
             note_parts = []
             for absence in day_absences:
-                if absence.type.value == "sick" and not include_health_data:
-                    type_name = "Abwesenheit"
-                else:
-                    type_name = absence_type_map.get(absence.type.value, absence.type.value)
-                    if absence.note:
-                        note_parts.append(absence.note)
+                type_name, show_note = _absence_export_label(
+                    absence, absence_type_map, reason_names, include_health_data)
+                if show_note and absence.note:
+                    note_parts.append(absence.note)
                 abw_parts.append(f"{type_name} ({float(absence.hours)}h)")
             sheet.cell(row=row, column=9).value = " | ".join(abw_parts)
             if note_parts:
@@ -656,6 +680,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     Similar to monthly report but for the entire year.
     """
     sheet = wb.create_sheet(title=f"{user.last_name[:20]}")
+    reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
     # Title
     sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name} - Jahresreport {year}")
@@ -835,12 +860,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             abw_parts = []
             note_parts = []
             for absence in day_absences:
-                if absence.type.value == "sick" and not include_health_data:
-                    type_name = "Abwesenheit"
-                else:
-                    type_name = absence_type_map.get(absence.type.value, absence.type.value)
-                    if absence.note:
-                        note_parts.append(absence.note)
+                type_name, show_note = _absence_export_label(
+                    absence, absence_type_map, reason_names, include_health_data)
+                if show_note and absence.note:
+                    note_parts.append(absence.note)
                 abw_parts.append(f"{type_name} ({float(absence.hours)}h)")
             sheet.cell(row=row, column=9).value = " | ".join(abw_parts)
             if note_parts:
@@ -1262,6 +1285,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     for i, user in enumerate(users):
         if i > 0:
             story.append(PageBreak())
+        reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
         # ── Title ──
         story.append(Paragraph(
@@ -1390,12 +1414,10 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 abw_parts = []
                 note_parts = []
                 for absence in day_absences:
-                    if absence.type.value == 'sick' and not include_health_data:
-                        type_name = 'Abwesenheit'
-                    else:
-                        type_name = absence_type_map.get(absence.type.value, absence.type.value)
-                        if absence.note:
-                            note_parts.append(absence.note)
+                    type_name, show_note = _absence_export_label(
+                        absence, absence_type_map, reason_names, include_health_data)
+                    if show_note and absence.note:
+                        note_parts.append(absence.note)
                     abw_parts.append(f"{type_name} ({float(absence.hours):.1f}h)")
                 abw = " | ".join(abw_parts)
                 bem = " | ".join(note_parts)  # ersetzt evtl. Eintrags-Bemerkung wie zuvor
