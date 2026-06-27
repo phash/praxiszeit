@@ -163,10 +163,15 @@ def users_overview(
         db, current_user, include_inactive, include_hidden
     ).all()
 
+    is_current_year = (year == today_local().year)
     result = []
     for u in users:
         vac = calculation_service.get_vacation_account(db, u, year)
-        ytd = calculation_service.get_ytd_summary(db, u, year)
+        # #313: YTD-Überstunden bis zum letzten abgeschlossenen Arbeitstag — der
+        # Stichtag ist nur im LAUFENDEN Jahr relevant; für vergangene Jahre voller
+        # Jahresumfang (spart die per-User-Stichtag-Query). (round-2 N+1-Fix)
+        cutoff = calculation_service.get_soll_cutoff_date(db, u) if is_current_year else None
+        ytd = calculation_service.get_ytd_summary(db, u, year, cutoff_date=cutoff)
         result.append(AdminUserOverview(
             user_id=str(u.id),
             first_name=u.first_name,

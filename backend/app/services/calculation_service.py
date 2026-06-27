@@ -185,7 +185,28 @@ def _within_employment_window(user: User, d: date) -> bool:
     return True
 
 
-def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decimal:
+def get_soll_cutoff_date(db: Session, user: User, today: date = None) -> date:
+    """#313: last date (inclusive) that counts toward the running Soll/Ist.
+
+    ``today`` counts only once it is a *completed* workday — i.e. a clocked-out
+    ``TimeEntry`` exists for today; otherwise the cutoff is *yesterday*. This way
+    the running month no longer starts on the 1st with the whole month's Soll as
+    a deficit; the balance is built up to the last finished working day.
+    """
+    if today is None:
+        today = today_local()
+    has_completed_today = db.query(TimeEntry.id).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
+        TimeEntry.date == today,
+        TimeEntry.end_time.isnot(None),
+    ).first() is not None
+    return today if has_completed_today else today - timedelta(days=1)
+
+
+def get_monthly_target(
+    db: Session, user: User, year: int, month: int, up_to_date: date = None
+) -> Decimal:
     """
     Calculate monthly target hours.
 
@@ -254,6 +275,10 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
         if d.weekday() >= 5:  # Saturday or Sunday
             continue
 
+        # #313: only count up to the running cutoff (e.g. last finished workday)
+        if up_to_date is not None and d > up_to_date:
+            continue
+
         # #193: skip days outside the employment window (before entry / after exit)
         if not _within_employment_window(user, d):
             continue
@@ -277,7 +302,9 @@ def get_monthly_target(db: Session, user: User, year: int, month: int) -> Decima
     return monthly_target.quantize(Decimal('0.01'))
 
 
-def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decimal:
+def get_monthly_actual(
+    db: Session, user: User, year: int, month: int, up_to_date: date = None
+) -> Decimal:
     """
     Calculate actual hours worked in a month.
     Sum of all net_hours from TimeEntry records + credited absence hours.
@@ -310,7 +337,8 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
     # the fact) must contribute neither Soll nor Ist, otherwise the balance shows
     # phantom overtime.
     total = sum((entry.net_hours for entry in entries
-                 if _within_employment_window(user, entry.date)), start=Decimal('0'))
+                 if _within_employment_window(user, entry.date)
+                 and (up_to_date is None or entry.date <= up_to_date)), start=Decimal('0'))
 
     # Training and sick hours count as actual worked hours:
     # - TRAINING: außer Haus, credited as worked
@@ -321,7 +349,8 @@ def get_monthly_actual(db: Session, user: User, year: int, month: int) -> Decima
         date_in_month(Absence.date, year, month),
     ).all()
     credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences
-                          if _within_employment_window(user, a.date)), Decimal('0'))
+                          if _within_employment_window(user, a.date)
+                          and (up_to_date is None or a.date <= up_to_date)), Decimal('0'))
 
     return (Decimal(str(total)) + credited_hours).quantize(Decimal('0.01'))
 
@@ -382,7 +411,9 @@ def get_monthly_worked_hours(db: Session, user: User, year: int, month: int) -> 
     return Decimal(str(total)).quantize(Decimal('0.01'))
 
 
-def get_monthly_balance(db: Session, user: User, year: int, month: int) -> Decimal:
+def get_monthly_balance(
+    db: Session, user: User, year: int, month: int, up_to_date: date = None
+) -> Decimal:
     """
     Calculate monthly balance (Actual - Target).
 
@@ -395,15 +426,17 @@ def get_monthly_balance(db: Session, user: User, year: int, month: int) -> Decim
     Returns:
         Monthly balance as Decimal (positive = overtime, negative = deficit)
     """
-    target = get_monthly_target(db, user, year, month)
-    actual = get_monthly_actual(db, user, year, month)
+    target = get_monthly_target(db, user, year, month, up_to_date=up_to_date)
+    actual = get_monthly_actual(db, user, year, month, up_to_date=up_to_date)
 
     balance = actual - target
 
     return balance.quantize(Decimal('0.01'))
 
 
-def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: int) -> Decimal:
+def get_overtime_account(
+    db: Session, user: User, up_to_year: int, up_to_month: int, cutoff_date: date = None
+) -> Decimal:
     """
     Calculate cumulative overtime account up to specified month.
 
@@ -466,6 +499,8 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
     for e in entries:
         if not _within_employment_window(user, e.date):
             continue
+        if cutoff_date is not None and e.date > cutoff_date:  # #313
+            continue
         key = (e.date.year, e.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(e.net_hours))
 
@@ -478,6 +513,8 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
     ).all()
     for ca in credited_absences:
         if not _within_employment_window(user, ca.date):
+            continue
+        if cutoff_date is not None and ca.date > cutoff_date:  # #313
             continue
         key = (ca.date.year, ca.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
@@ -536,6 +573,9 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
             d = date(current_year, current_month, day)
             if d.weekday() >= 5:
                 continue
+            # #313: only count Soll up to the running cutoff (last finished workday)
+            if cutoff_date is not None and d > cutoff_date:
+                continue
             # #193: skip days outside the employment window (before entry / after exit)
             if not _within_employment_window(user, d):
                 continue
@@ -562,7 +602,7 @@ def get_overtime_account(db: Session, user: User, up_to_year: int, up_to_month: 
 
 
 def get_overtime_history(
-    db: Session, user: User, up_to_year: int, up_to_month: int
+    db: Session, user: User, up_to_year: int, up_to_month: int, cutoff_date: date = None
 ) -> Dict[tuple, Decimal]:
     """Kumulatives Überstundenkonto NACH jedem Monat (Start..up_to) in EINEM Pass.
 
@@ -620,6 +660,8 @@ def get_overtime_history(
     ).all():
         if not _within_employment_window(user, e.date):
             continue
+        if cutoff_date is not None and e.date > cutoff_date:  # #313
+            continue
         k = (e.date.year, e.date.month)
         actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(e.net_hours))
 
@@ -630,6 +672,8 @@ def get_overtime_history(
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all():
         if not _within_employment_window(user, ca.date):
+            continue
+        if cutoff_date is not None and ca.date > cutoff_date:  # #313
             continue
         k = (ca.date.year, ca.date.month)
         actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(ca.hours))
@@ -676,6 +720,8 @@ def get_overtime_history(
             d = date(cy, cm, day)
             if d.weekday() >= 5:
                 continue
+            if cutoff_date is not None and d > cutoff_date:  # #313
+                continue
             if not _within_employment_window(user, d):
                 continue
             if d in holiday_dates or d in absence_dates:
@@ -700,7 +746,7 @@ def get_overtime_history(
     return history
 
 
-def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
+def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date = None) -> Dict:
     """
     Calculate year-to-date summary from Jan 1 to today.
 
@@ -722,8 +768,14 @@ def get_ytd_summary(db: Session, user: User, year: int = None) -> Dict:
     if year is None:
         year = today.year
 
-    # End date: today if current year, else Dec 31
-    end = today if year == today.year else date(year, 12, 31)
+    # End date: today if current year, else Dec 31.
+    # #313: when a cutoff is given, the running year ends at the cutoff (= last
+    # finished workday) instead of always "today", so the YTD-Soll doesn't
+    # include today before it's a completed workday.
+    if year == today.year:
+        end = cutoff_date if cutoff_date is not None else today
+    else:
+        end = date(year, 12, 31)
     start = date(year, 1, 1)
 
     if start > end:
