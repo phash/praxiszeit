@@ -66,6 +66,14 @@ def create_change_request(
                 AbsenceType(data.proposed_absence_type)
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Ungültiger Abwesenheitstyp: {data.proposed_absence_type}")
+            # Need either hours or start/end time — runs for EVERY absence CR, not
+            # only custom-reason ones (round-2 fix: this had regressed into the
+            # reason_id block below).
+            if data.proposed_absence_hours is None and not (data.proposed_start_time and data.proposed_end_time):
+                raise HTTPException(status_code=400, detail="Stunden oder Start-/Endzeit erforderlich")
+            if data.proposed_start_time and data.proposed_end_time:
+                if data.proposed_start_time >= data.proposed_end_time:
+                    raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
         # #312: a custom absence reason overrides the proposed type via its
         # behaviour and is carried to approval (resolved tenant-scoped + active).
@@ -80,12 +88,6 @@ def create_change_request(
                 raise HTTPException(status_code=404, detail="Abwesenheitsgrund nicht gefunden oder inaktiv")
             data.proposed_absence_type = BEHAVIOR_TO_ABSENCE_TYPE[AbsenceReasonBehavior(reason.base_behavior)].value
             resolved_reason_id = data.reason_id
-            # Need either hours or start/end time
-            if data.proposed_absence_hours is None and not (data.proposed_start_time and data.proposed_end_time):
-                raise HTTPException(status_code=400, detail="Stunden oder Start-/Endzeit erforderlich")
-            if data.proposed_start_time and data.proposed_end_time:
-                if data.proposed_start_time >= data.proposed_end_time:
-                    raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
         # For DELETE: validate absence exists (already fetched above)
         if data.request_type == "delete" and absence:
