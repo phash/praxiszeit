@@ -73,6 +73,10 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 - Der Generator besetzt die Slots greedy mit **eingewiesenen, an dem Tag nicht abwesenden** Mitarbeitenden (innerhalb ihres Beschäftigungsfensters, keine Doppelbelegung überlappender Slots), ausgewogen nach **Auslastung** und **Überstundenkonto**. Ergebnis ist ein **Entwurf** zum Review; der Plan wird **nicht** automatisch aktiv. Nicht besetzbare Slots bleiben offen (Rückmeldung im Toast + Unterbesetzungs-Markierung).
 - Liest Abwesenheiten/Stunden/Überstunden **nur lesend** — verändert nichts am Berechnungs-/ArbZG-Modell.
 
+**Tagesansicht (#321):** Im Plan-Editor schaltet **Woche / Tag** die Ansicht um; im Tag-Modus wählt ein Dropdown den Wochentag und zeigt nur dessen Slots in voller Breite — übersichtlich beim Einrichten.
+
+**Schicht kopieren (#322):** Beim **Bearbeiten** eines Slots gibt es **„Auf Wochentage kopieren"**: Wochentage anwählen → der Slot (Arbeitsplatz, Zeit, Mindestbesetzung **und** Zuweisungen) wird auf den gewählten Tagen zusätzlich angelegt — spart das wiederholte Eintippen wiederkehrender Schichten.
+
 ## Bedienung (Mitarbeitende)
 
 - **Schichtplan** (Menü): aktive Wochenpläne als Übersicht ansehen (nur lesen).
