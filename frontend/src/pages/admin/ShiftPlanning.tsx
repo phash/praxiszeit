@@ -93,6 +93,9 @@ export default function AdminShiftPlanning() {
   const [slotDialog, setSlotDialog] = useState<SlotDialogState | null>(null);
   const [planSettingsOpen, setPlanSettingsOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  // #321 Tagesansicht
+  const [shiftView, setShiftView] = useState<'week' | 'day'>('week');
+  const [dayWeekday, setDayWeekday] = useState(0);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -252,6 +255,22 @@ export default function AdminShiftPlanning() {
       await refreshSelected();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Fehler beim Speichern'));
+    }
+  };
+
+  // #322: copy a slot (config + assignments) to additional weekdays.
+  const copySlot = async (weekdays: number[], fields: SlotInput, userIds: string[]) => {
+    if (!selectedPlanId) return;
+    try {
+      for (const wd of weekdays) {
+        const created = await api.createSlot(selectedPlanId, { ...fields, weekday: wd });
+        if (userIds.length) await api.setAssignments(created.id, userIds);
+      }
+      setSlotDialog(null);
+      toast.success(`Slot auf ${weekdays.length} Tag${weekdays.length === 1 ? '' : 'e'} kopiert`);
+      await refreshSelected();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Kopieren'));
     }
   };
 
@@ -475,12 +494,44 @@ export default function AdminShiftPlanning() {
                   </div>
                 </div>
 
+                {/* #321: Woche/Tag-Umschalter */}
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+                    <button
+                      type="button"
+                      onClick={() => setShiftView('week')}
+                      className={`px-3 py-1 ${shiftView === 'week' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Woche
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShiftView('day')}
+                      className={`px-3 py-1 border-l border-gray-300 ${shiftView === 'day' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Tag
+                    </button>
+                  </div>
+                  {shiftView === 'day' && (
+                    <select
+                      value={dayWeekday}
+                      onChange={(e) => setDayWeekday(Number(e.target.value))}
+                      className="rounded-lg border-gray-300 text-sm py-1"
+                    >
+                      {api.WEEKDAY_LABELS_LONG.map((label, i) => (
+                        <option key={i} value={i}>{label}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 xl:grid-cols-[1fr_200px] gap-4">
                   <WeekGrid
                     slots={planDetail.slots}
                     editable
                     onSlotClick={openEditSlot}
                     onEmptyClick={openCreateSlot}
+                    singleDay={shiftView === 'day' ? dayWeekday : undefined}
                   />
                   <div>
                     <h3 className="text-sm font-semibold text-gray-700 mb-2">Mitarbeiter</h3>
@@ -510,6 +561,7 @@ export default function AdminShiftPlanning() {
           initial={slotDialog.initial}
           onSubmit={submitSlot}
           onDelete={slotDialog.mode === 'edit' ? deleteSlot : undefined}
+          onCopy={slotDialog.mode === 'edit' ? copySlot : undefined}
           onClose={() => setSlotDialog(null)}
         />
       )}

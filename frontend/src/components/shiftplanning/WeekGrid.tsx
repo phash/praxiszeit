@@ -8,6 +8,8 @@ interface WeekGridProps {
   editable?: boolean;
   onSlotClick?: (slot: ShiftSlot) => void;
   onEmptyClick?: (weekday: number) => void;
+  // #321: when set, render only this one weekday full-width (Tagesansicht).
+  singleDay?: number;
 }
 
 function SlotBody({ slot }: { slot: ShiftSlot }) {
@@ -143,27 +145,33 @@ function DayColumn({
   return editable ? <div ref={setNodeRef}>{inner}</div> : inner;
 }
 
-export default function WeekGrid({ slots, editable = false, onSlotClick, onEmptyClick }: WeekGridProps) {
+export default function WeekGrid({ slots, editable = false, onSlotClick, onEmptyClick, singleDay }: WeekGridProps) {
   const layout = computeWeekLayout(slots);
   const byDay = (wd: number) =>
     slots.filter((s) => s.weekday === wd).sort((a, b) => a.start_time.localeCompare(b.start_time));
 
+  // #321: Tagesansicht renders just one weekday; week view all seven.
+  const days = singleDay !== undefined ? [singleDay] : [0, 1, 2, 3, 4, 5, 6];
+
   return (
     <div className="overflow-x-auto">
-      <div className="min-w-[760px] grid" style={{ gridTemplateColumns: '48px repeat(7, 1fr)' }}>
+      <div
+        className={singleDay !== undefined ? 'grid' : 'min-w-[760px] grid'}
+        style={{ gridTemplateColumns: `48px repeat(${days.length}, 1fr)` }}
+      >
         {/* header row */}
         <div className="h-8" />
-        {WEEKDAY_LABELS_LONG.map((label, wd) => (
+        {days.map((wd) => (
           <div
             key={wd}
             className="h-8 flex items-center justify-between px-2 text-xs font-semibold text-gray-600 border-b border-gray-200"
           >
-            <span className="truncate">{label}</span>
+            <span className="truncate">{WEEKDAY_LABELS_LONG[wd]}</span>
             {editable && onEmptyClick && (
               <button
                 type="button"
                 onClick={() => onEmptyClick(wd)}
-                aria-label={`Slot am ${label} hinzufügen`}
+                aria-label={`Slot am ${WEEKDAY_LABELS_LONG[wd]} hinzufügen`}
                 className="text-gray-400 hover:text-primary"
               >
                 <Plus size={14} />
@@ -186,7 +194,7 @@ export default function WeekGrid({ slots, editable = false, onSlotClick, onEmpty
         </div>
 
         {/* day columns */}
-        {WEEKDAY_LABELS_LONG.map((_, wd) => (
+        {days.map((wd) => (
           <div key={wd} className="border-l border-gray-100">
             <DayColumn
               weekday={wd}

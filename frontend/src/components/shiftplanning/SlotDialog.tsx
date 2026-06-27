@@ -4,7 +4,8 @@ import { X, Trash2, AlertTriangle } from 'lucide-react';
 import Button from '../Button';
 import FormSelect from '../FormSelect';
 import FormInput from '../FormInput';
-import { getQualifications, WEEKDAY_LABELS_LONG, type Workstation, type SlotInput } from '../../api/shiftPlanning';
+import { getQualifications, WEEKDAY_LABELS, WEEKDAY_LABELS_LONG, type Workstation, type SlotInput } from '../../api/shiftPlanning';
+import { Copy } from 'lucide-react';
 
 export interface SlotEmployee {
   id: string;
@@ -30,6 +31,8 @@ interface SlotDialogProps {
   onSubmit: (fields: SlotInput, userIds: string[]) => Promise<void> | void;
   onDelete?: () => void;
   onClose: () => void;
+  // #322: copy this slot (same workstation/time/min_staff + assignments) to other weekdays.
+  onCopy?: (weekdays: number[], fields: SlotInput, userIds: string[]) => Promise<void> | void;
 }
 
 export default function SlotDialog({
@@ -41,6 +44,7 @@ export default function SlotDialog({
   onSubmit,
   onDelete,
   onClose,
+  onCopy,
 }: SlotDialogProps) {
   const [workstationId, setWorkstationId] = useState(initial.workstation_id);
   const [weekday, setWeekday] = useState(initial.weekday);
@@ -49,6 +53,8 @@ export default function SlotDialog({
   const [minStaff, setMinStaff] = useState(initial.min_staff);
   const [userIds, setUserIds] = useState<string[]>(initial.userIds);
   const [submitting, setSubmitting] = useState(false);
+  const [copyDays, setCopyDays] = useState<number[]>([]); // #322
+  const [copying, setCopying] = useState(false);
   // #305 M2d: workstation_id -> set of qualified user_ids (for the "not trained" hint)
   const [qualifiedByWs, setQualifiedByWs] = useState<Record<string, Set<string>>>({});
 
@@ -60,6 +66,7 @@ export default function SlotDialog({
       setEnd(initial.end_time);
       setMinStaff(initial.min_staff);
       setUserIds(initial.userIds);
+      setCopyDays([]);
       getQualifications()
         .then((m) => {
           const map: Record<string, Set<string>> = {};
@@ -83,6 +90,23 @@ export default function SlotDialog({
 
   const toggleUser = (id: string) =>
     setUserIds((prev) => (prev.includes(id) ? prev.filter((u) => u !== id) : [...prev, id]));
+
+  const toggleCopyDay = (d: number) =>
+    setCopyDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+
+  const handleCopy = async () => {
+    if (!onCopy || copyDays.length === 0 || timeInvalid || noWorkstation || copying) return;
+    setCopying(true);
+    try {
+      await onCopy(
+        copyDays,
+        { workstation_id: workstationId, weekday, start_time: start, end_time: end, min_staff: minStaff },
+        userIds,
+      );
+    } finally {
+      setCopying(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,6 +221,46 @@ export default function SlotDialog({
                 </p>
               )}
             </div>
+
+            {mode === 'edit' && onCopy && (
+              <div className="rounded-lg border border-gray-200 p-3">
+                <span className="block text-sm font-medium text-gray-700 mb-2">
+                  Auf Wochentage kopieren
+                </span>
+                <p className="text-xs text-gray-400 mb-2">
+                  Legt diesen Slot (Arbeitsplatz, Zeit, Mindestbesetzung und Zuweisungen) auf den gewählten
+                  Tagen zusätzlich an.
+                </p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {WEEKDAY_LABELS.map((label, i) =>
+                    i === weekday ? null : (
+                      <button
+                        type="button"
+                        key={i}
+                        onClick={() => toggleCopyDay(i)}
+                        className={`rounded-full px-2.5 py-1 text-xs border transition-colors ${
+                          copyDays.includes(i)
+                            ? 'bg-primary text-white border-primary'
+                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  icon={Copy}
+                  loading={copying}
+                  disabled={copying || copyDays.length === 0 || timeInvalid || noWorkstation}
+                  onClick={handleCopy}
+                >
+                  Auf {copyDays.length} Tag{copyDays.length === 1 ? '' : 'e'} kopieren
+                </Button>
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-2">
               {mode === 'edit' && onDelete ? (
