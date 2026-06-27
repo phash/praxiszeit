@@ -332,7 +332,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '7. Abwesenheiten eintragen',
     content: (
       <div className="space-y-2">
-        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum.</p>
+        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum. Hat Ihre Praxis zusätzliche Gründe eingerichtet (z. B. „Schule"), erscheinen diese in der Typ-Auswahl unter <strong>„Eigene Gründe"</strong>.</p>
         <p>Für Zeiträume aktivieren Sie die Checkbox <strong>„Zeitraum"</strong> und geben ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
         <p>Hat Ihre Praxis <strong>Heiligabend (24.12.)</strong> oder <strong>Silvester (31.12.)</strong> als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert: grau „Heiligabend (frei)" bzw. amber „Silvester (½ Tag)" – ähnlich einem Feiertag.</p>
         <p>Wenn Urlaubsgenehmigungspflicht aktiv ist, wechselt die App nach dem Absenden automatisch zum Tab <strong>„Meine Anträge"</strong>.</p>
@@ -389,7 +389,8 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Das <strong>Admin-Dashboard</strong> zeigt alle aktiven Mitarbeiter mit Soll, Ist, Saldo (H:MM), kumulierten Überstunden, verbleibenden Urlaubstagen und Kranktagen für den gewählten Monat.</p>
-        <p>Das Dropdown <strong>„Soll: bis heute / Monatsende"</strong> schaltet die Soll-Basis um: <strong>bis heute</strong> (Standard) zählt das Soll des laufenden Monats nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus), <strong>Monatsende</strong> den vollen Monat. Für abgeschlossene Monate identisch; die §16-Datei-Exporte bleiben voll-Monat.</p>
+        <p>Mit dem Umschalter <strong>„Monat / Woche"</strong> oben wechseln Sie zwischen Monats- und <strong>Wochenansicht</strong>. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche (z. B. <em>„22.–28.06.2026 (KW 26)"</em>); die Pfeile blättern wochenweise. Gleiche Spalten wie im Monat – ideal für eine schnelle Plausibilitätsübersicht. Ihre Auswahl bleibt pro Browser/Gerät gespeichert.</p>
+        <p>Das Dropdown <strong>„Soll: bis heute / Monatsende"</strong> schaltet die Soll-Basis um: <strong>bis heute</strong> (Standard) zählt das Soll des laufenden Monats nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus), <strong>Monatsende</strong> den vollen Monat. Für abgeschlossene Monate identisch; die §16-Datei-Exporte bleiben voll-Monat. In der Wochenansicht heißt die zweite Option entsprechend <strong>„volle Woche"</strong>.</p>
         <p>Klicken Sie auf den Pfeil am Ende einer Zeile für die Detailansicht. Nutzen Sie die Suche zum Filtern nach Name.</p>
       </div>
     ),
@@ -404,6 +405,7 @@ export const handbuchAdminSections: AccordionItem[] = [
         <p className="text-amber-700">⚠️ Bei <strong>unterjährigem Eintritt</strong> (nicht seit 1. Januar im System) den „Ersten Arbeitstag" unbedingt setzen – sonst zählt das Soll auch Tage vor dem Eintritt und es entstehen Phantom-Minusstunden.</p>
         <p><strong>Soll-Arbeitszeiten (Arbeitszeit-Fenster):</strong> Im Benutzerformular können Sie pro MA und Wochentag Soll-Beginn und Soll-Ende hinterlegen. Zeiten außerhalb des Fensters (abzüglich Puffer) werden nicht angerechnet; der gestempelte Rohwert bleibt gespeichert (§16). Der systemweite Puffer (Standard 15 Min.) ist unter <strong>Einstellungen → Arbeitszeit-Fenster Puffer</strong> konfigurierbar. Opt-in: ohne Soll-Zeiten kein Eingriff. MA mit deaktivierter Stundenzählung sind ausgenommen.</p>
         <p><strong>Kalenderfarbe:</strong> Im Benutzerformular können Sie die Kalenderfarbe aus einer Palette für jede:n Mitarbeiter:in vorgeben (Badge-Ring im Teamkalender); der/die Mitarbeiter:in kann sie auch selbst im Profil ändern.</p>
+        <p><strong>Monatsjournal:</strong> Das Buch-Symbol in der Aktionsspalte öffnet das Monatsjournal des/der Mitarbeitenden. Die Überschrift trägt den Namen – <strong>„Monatsjournal: Vorname Nachname"</strong> –, damit beim Wechsel zwischen Personen sofort klar ist, wessen Journal angezeigt wird.</p>
       </div>
     ),
   },
@@ -431,6 +433,7 @@ export const handbuchAdminSections: AccordionItem[] = [
       <div className="space-y-2">
         <p><strong>Urlaubsanträge:</strong> Toggle „Genehmigungspflicht" aktiviert den Workflow. Anträge erscheinen als „Offen" → Genehmigen (grün) oder Ablehnen (rot, optional Grund).</p>
         <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter mit der Option „Nimmt an Betriebsferien teil" (Standard, rollenunabhängig) erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug); Tage außerhalb des Beschäftigungszeitraums (noch nicht eingetreten / bereits ausgetreten) werden übersprungen. Nachträglich Berechtigte: Option setzen – die Einträge werden automatisch für laufende und künftige Betriebsferien nachgetragen. Beim Löschen werden alle Einträge entfernt.</p>
+        <p className="text-gray-700"><strong>Betriebsferien länger als der Jahresurlaub:</strong> Sind als Urlaub zählende Betriebsferien länger als das Resturlaub-Budget, entstehen standardmäßig <strong>Minus-Urlaubstage</strong>. Unter <strong>Einstellungen → „Betriebsferien &amp; Urlaub"</strong> aktivieren Sie optional <strong>„Überzählige Betriebsferien als Überstundenabbau"</strong>: dann wird zuerst der Urlaub aufgezehrt und die überzähligen Tage werden als Überstundenausgleich gebucht (Konto darf ins Minus) – statt Minus-Urlaub. Global, Standard <strong>aus</strong>. Wirkt beim Anlegen/erneuten Speichern – für bestehende Betriebsferien einmal öffnen und neu speichern.</p>
         <p className="text-gray-700"><strong>Urlaubsberechnung (Tagesprinzip, §3 BUrlG):</strong> Urlaub wird nach Arbeitstagen geführt – ein freier Arbeitstag = <strong>1 Urlaubstag</strong>, unabhängig von Tagesstunden und Wochentag (auch bei individuellen Tagesstunden). Jahresanspruch anteilig: <code>30 × Arbeitstage ÷ 5</code> (überschreibbar beim Anlegen). Verbrauch wird tagebasiert gezählt, intern gespeicherte Stunden dienen nur der Soll-/Ist-Berechnung.</p>
       </div>
     ),
@@ -516,6 +519,7 @@ export const handbuchAdminSections: AccordionItem[] = [
         <p>Im Reiter <strong>Einweisungen</strong> legen Sie per Matrix (Mitarbeiter × Arbeitsplätze) fest, wer für welchen Arbeitsplatz <strong>eingewiesen</strong> ist. Weisen Sie eine nicht eingewiesene Person zu, erscheint die weiche Warnung <strong>„nicht eingewiesen"</strong> (blockiert nicht). Mitarbeitende sehen ihre Einweisungen in ihrem Profil.</p>
         <p>Über <strong>Bearbeiten</strong> setzen Sie pro Plan optional ein <strong>Aktiv-Datums-Fenster</strong> („von/bis") — der Plan wird dann im Zeitraum automatisch aktiv; die <strong>Jahresübersicht</strong> zeigt das als Zeitstrahl. Mit <strong>Automatisch füllen</strong> verteilt der Generator eingewiesene, an dem Tag verfügbare Mitarbeitende greedy auf die Slots (ausgewogen nach Auslastung/Überstunden) — als Entwurf zum Review; der Plan wird dabei nicht aktiviert.</p>
         <p>Der <strong>Woche/Tag</strong>-Umschalter zeigt wahlweise die ganze Woche oder einen einzelnen Wochentag in voller Breite. Beim Bearbeiten eines Slots kopiert <strong>„Auf Wochentage kopieren"</strong> denselben Slot (inkl. Zuweisungen) auf weitere Tage — praktisch für wiederkehrende Schichten.</p>
+        <p>In der Mitarbeiterliste des Editors steht unter jedem Namen die <strong>Auslastung</strong> – zugewiesene Schichtstunden zur Wochenarbeitszeit, z. B. <em>„15,25 / 17 h"</em>: grün bei ±30 Min. zur Vertragszeit, gelb bei ±1 Std., sonst rot. Das erleichtert eine ausgewogene Einteilung.</p>
         <p>Mit <strong>Aktiv schalten</strong> machen Sie einen Plan für alle sichtbar; <strong>mehrere Pläne können gleichzeitig aktiv</strong> sein. Mitarbeitende sehen ihre heutige Einteilung im Dashboard.</p>
         <p className="text-gray-500">Die Schichtplanung ist ein reines Planungswerkzeug und berührt <strong>nicht</strong> Zeiterfassung, Soll/Ist-Stunden, ArbZG-Prüfungen, Urlaub oder Überstunden. Details: <code>docs/SCHICHTPLANUNG.md</code>.</p>
       </div>

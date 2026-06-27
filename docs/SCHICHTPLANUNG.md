@@ -77,6 +77,8 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 
 **Schicht kopieren (#322):** Beim **Bearbeiten** eines Slots gibt es **„Auf Wochentage kopieren"**: Wochentage anwählen → der Slot (Arbeitsplatz, Zeit, Mindestbesetzung **und** Zuweisungen) wird auf den gewählten Tagen zusätzlich angelegt — spart das wiederholte Eintippen wiederkehrender Schichten.
 
+**Auslastungsanzeige (#330):** In der Mitarbeiterliste des Editors steht unter jedem Namen die **Auslastung** — zugewiesene Schichtstunden (dieses Plans) zur Wochenarbeitszeit, z. B. **„15,25 / 17 h"**. Die Farbe signalisiert die Passung zur Vertragszeit: **grün** bei ±30 Minuten, **gelb** bei ±1 Stunde, sonst **rot** (ohne hinterlegte Wochenarbeitszeit bleibt die Anzeige neutral). Das erleichtert eine ausgewogene Einteilung.
+
 ## Bedienung (Mitarbeitende)
 
 - **Schichtplan** (Menü): aktive Wochenpläne als Übersicht ansehen (nur lesen).
