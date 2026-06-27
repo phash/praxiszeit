@@ -519,6 +519,20 @@ Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für S
 
 Im Bereich **„Farben"** legen Sie für jeden Anwesenheits- und Abwesenheitstyp eine eigene Farbe fest (Arbeit/Anwesenheit, Fortbildung, Urlaub, Krank, Überstundenausgleich, Sonstiges, Bezahlte Freistellung). Die Farben werden im Kalender, in den Übersichten und bei der Zeiterfassung verwendet. Eine kleine „Aa"-Vorschau zeigt, ob die Schrift auf der gewählten Farbe lesbar bleibt.
 
+### Eigene Abwesenheitsgründe (#312)
+
+Im Bereich **„Eigene Abwesenheitsgründe"** legen Sie zusätzliche, frei benannte Gründe an (z. B. **„Schule"** für Auszubildende mit Berufsschultagen) – mit eigener Farbe. Jeder Grund hat ein **Basis-Verhalten**, das die Berechnung bestimmt:
+
+| Basis-Verhalten | Wirkung |
+|---|---|
+| **Zählt als gearbeitet** | Die geplanten Stunden werden als Arbeitszeit gutgeschrieben (wie Fortbildung) – passend für **Berufsschule** (Arbeitszeit nach § 15 JArbSchG), es entstehen keine Stundenverluste. |
+| **Bezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug. |
+| **Überstundenabbau** | Das Überstundenkonto sinkt um das Tagessoll. |
+
+Das Basis-Verhalten ist **nach dem Anlegen fix**. Gründe lassen sich umbenennen, umfärben und deaktivieren (deaktivierte stehen beim Buchen nicht mehr zur Auswahl, bleiben aber an bestehenden Abwesenheiten erhalten). Beim Eintragen einer Abwesenheit erscheinen die eigenen Gründe unter **„Eigene Gründe"** in der Typ-Auswahl.
+
+> **Datenschutz:** Da ein eigener Grund sensibel sein kann (z. B. „Reha"), werden Abwesenheiten mit eigenem Grund im Team-Kalender für andere Mitarbeitende nur als **„abwesend"** angezeigt – nur Admins sehen die Bezeichnung.
+
 ---
 
 ## 14. ArbZG-Compliance-Berichte
