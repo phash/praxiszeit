@@ -22,6 +22,7 @@ class AbsenceCreate(AbsenceBase):
     refund_vacation: bool = False  # If sick: refund overlapping vacation days
     keep_time_entries: bool = False  # Don't delete existing time entries (mixed days)
     half_day: bool = False  # #167: half vacation day (0.5 × Tagessoll, diskriminierungsfrei)
+    reason_id: Optional[UUID] = None  # #312: custom absence reason; sets `type` from its behaviour
 
     @field_validator('half_day')
     @classmethod
@@ -34,12 +35,17 @@ class AbsenceResponse(AbsenceBase):
     user_id: UUID
     end_date: Optional[date] = None
     created_at: datetime
+    reason_id: Optional[UUID] = None  # #312
 
     model_config = ConfigDict(from_attributes=True)
 
     @field_serializer('id', 'user_id')
     def serialize_uuid(self, value: UUID) -> str:
         return str(value)
+
+    @field_serializer('reason_id')
+    def serialize_reason_id(self, value: Optional[UUID]) -> Optional[str]:
+        return str(value) if value else None
 
 
 class AbsenceCalendarEntry(BaseModel):
