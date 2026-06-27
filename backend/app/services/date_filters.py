@@ -51,6 +51,21 @@ def date_in_range(column, start: date, end: date):
     return and_(column >= start, column <= end)
 
 
+def parse_year_month(month: str) -> tuple:
+    """Parse a ``"YYYY-MM"`` string → ``(year, month)``.
+
+    Raises ``ValueError`` on a malformed string **or an out-of-range month**
+    (1–12). Callers wrap this in their existing ``except ValueError → HTTP 400``
+    so a syntactically valid but out-of-range value like ``"2026-13"``/``"2026-00"``
+    returns 400 instead of leaking an HTTP 500 from a later ``monthrange()`` /
+    ``date()`` call (which raise outside the original parse guard).
+    """
+    year, month_num = map(int, month.split('-'))
+    if not (1 <= month_num <= 12):
+        raise ValueError(f"month out of range: {month_num}")
+    return year, month_num
+
+
 def date_in_year_up_to_month(column, year: int, month: int):
     """
     Range filter ``column IN year AND month <= :month`` as a sargable

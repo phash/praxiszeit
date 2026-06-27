@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from app.services.date_filters import date_in_year, date_in_month
+from app.services.date_filters import date_in_year, date_in_month, parse_year_month
 from sqlalchemy import extract
 from typing import List, Optional
 from datetime import timedelta, date
@@ -118,7 +118,7 @@ def get_absence_calendar(
     Visible to all authenticated users.
     """
     try:
-        year, month_num = map(int, month.split('-'))
+        year, month_num = parse_year_month(month)
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 

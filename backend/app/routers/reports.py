@@ -16,7 +16,7 @@ from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
 from app.services.arbzg_utils import is_night_work
-from app.services.date_filters import date_in_year, date_in_month, date_in_range
+from app.services.date_filters import date_in_year, date_in_month, date_in_range, parse_year_month
 from app.core.limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ def get_monthly_report(
     if soll_basis not in ("bis_heute", "monatsende"):
         raise HTTPException(status_code=400, detail="soll_basis muss 'bis_heute' oder 'monatsende' sein")
     try:
-        year, month_num = map(int, month.split('-'))
+        year, month_num = parse_year_month(month)
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
@@ -400,7 +400,7 @@ def export_monthly_report(
     Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged).
     """
     try:
-        year, month_num = map(int, month.split('-'))
+        year, month_num = parse_year_month(month)
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
@@ -529,7 +529,7 @@ def export_monthly_report_ods(
     """Export monthly report as ODS file (Open Document Spreadsheet).
     Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged)."""
     try:
-        year, month_num = map(int, month.split('-'))
+        year, month_num = parse_year_month(month)
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
@@ -567,7 +567,7 @@ def export_monthly_report_pdf(
 ):
     """Export monthly report as PDF file (landscape A4, one page per employee)."""
     try:
-        year, month_num = map(int, month.split('-'))
+        year, month_num = parse_year_month(month)
     except ValueError:
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
