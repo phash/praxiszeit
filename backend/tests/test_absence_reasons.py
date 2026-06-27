@@ -136,6 +136,25 @@ class TestReasonCrud:
         rid = _mk(admin_client)["id"]
         assert admin_client.delete(f"{ADMIN_BASE}/{rid}").status_code == 204
 
+    def test_rename_to_existing_name_409(self, default_tenant, admin_client):
+        # round-1 finding 4: renaming to a duplicate must 409, not 500
+        _mk(admin_client, name="Schule")
+        rid_b = _mk(admin_client, name="Reha")["id"]
+        assert admin_client.put(f"{ADMIN_BASE}/{rid_b}", json={"name": "Schule"}).status_code == 409
+
+    def test_delete_blocked_by_pending_cr(self, default_tenant, admin_client, employee, db):
+        # round-1 finding 5: a reason referenced by a pending CR must not be deleted
+        from app.models import ChangeRequest, ChangeRequestStatus
+        rid = _mk(admin_client)["id"]
+        db.add(ChangeRequest(
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, request_type="create",
+            entry_kind="absence", status=ChangeRequestStatus.PENDING, reason="Antrag",
+            proposed_date=MON, proposed_absence_type="training", proposed_absence_hours=8.0,
+            proposed_reason_id=uuid.UUID(rid),
+        ))
+        db.commit()
+        assert admin_client.delete(f"{ADMIN_BASE}/{rid}").status_code == 409
+
     def test_delete_in_use_409(self, default_tenant, admin_client, employee):
         rid = _mk(admin_client)["id"]
         admin_client.post("/api/absences/", json={

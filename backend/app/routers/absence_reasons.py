@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, AbsenceReason, Absence
+from app.models import User, AbsenceReason, Absence, ChangeRequest, ChangeRequestStatus
 from app.schemas.absence_reason import AbsenceReasonCreate, AbsenceReasonUpdate, AbsenceReasonResponse
 
 admin_router = APIRouter(
@@ -121,7 +121,12 @@ def update_reason(
         r.is_active = data.is_active
     if data.sort_order is not None:
         r.sort_order = data.sort_order
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # racing rename to a now-duplicate name (the unique constraint catches it)
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Ein Abwesenheitsgrund mit diesem Namen existiert bereits")
     db.refresh(r)
     return r
 
@@ -133,17 +138,28 @@ def delete_reason(
     current_user: User = Depends(require_admin),
 ):
     r = _reason_or_404(db, current_user.tenant_id, reason_id)
-    # Only delete if unused — otherwise the admin should deactivate instead
-    # (an in-use reason backs real absences). F-026: tenant-scoped check.
+    # Only delete if unused — otherwise the admin should deactivate instead.
+    # F-026: tenant-scoped checks. In-use = referenced by an absence OR a pending
+    # change request (which would carry the reason to a future absence).
     used = (
         db.query(Absence.id)
         .filter(Absence.reason_id == reason_id, Absence.tenant_id == current_user.tenant_id)
         .first()
     )
+    if not used:
+        used = (
+            db.query(ChangeRequest.id)
+            .filter(
+                ChangeRequest.proposed_reason_id == reason_id,
+                ChangeRequest.tenant_id == current_user.tenant_id,
+                ChangeRequest.status == ChangeRequestStatus.PENDING,
+            )
+            .first()
+        )
     if used:
         raise HTTPException(
             status_code=409,
-            detail="Grund wird noch von Abwesenheiten genutzt — bitte stattdessen deaktivieren",
+            detail="Grund wird noch von Abwesenheiten/Anträgen genutzt — bitte stattdessen deaktivieren",
         )
     db.delete(r)
     db.commit()
