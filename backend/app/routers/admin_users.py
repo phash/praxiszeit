@@ -353,13 +353,17 @@ def purge_user(
             )
 
     # Remove FK dependencies before deleting user.
-    # For changed_by references: SET NULL to preserve other users' audit trails.
+    # changed_by is NOT NULL (migration 008) → we must NOT SET NULL (that raises a
+    # NOT NULL IntegrityError and aborts the whole Art.17 erasure for any user who
+    # has ever clocked out, since each clock_out writes an audit row with
+    # changed_by = the employee's own id). Reassign other users' audit rows to the
+    # acting admin instead — preserves the audit trail.
     # F-026: explicit tenant_id filter on every bulk op (CLAUDE.md rule —
     # RLS is belt-and-suspenders but the filter must be present in the query).
     db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.changed_by == user.id,
         TimeEntryAuditLog.tenant_id == current_user.tenant_id,
-    ).update({TimeEntryAuditLog.changed_by: None}, synchronize_session=False)
+    ).update({TimeEntryAuditLog.changed_by: current_user.id}, synchronize_session=False)
     # Delete the purged user's own audit log entries.
     db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.user_id == user.id,
@@ -394,6 +398,13 @@ def purge_user(
     ).update({"reviewed_by": None}, synchronize_session=False)
     db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == user.id, WorkingHoursChange.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     db.query(ChangeRequest).filter(ChangeRequest.user_id == user.id, ChangeRequest.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
+    # Nullify reviewed_by on OTHER users' change requests (nullable, no ON DELETE
+    # rule → a raw user delete FK-violates on Postgres). Mirrors the
+    # VacationRequest.reviewed_by nullify above.
+    db.query(ChangeRequest).filter(
+        ChangeRequest.reviewed_by == user.id,
+        ChangeRequest.tenant_id == current_user.tenant_id,
+    ).update({ChangeRequest.reviewed_by: None}, synchronize_session=False)
     db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     # #305 Schichtplanung: shift_plans.created_by is NOT NULL with no ON DELETE
@@ -416,6 +427,21 @@ def purge_user(
     db.query(WorkstationQualification).filter(
         WorkstationQualification.user_id == user.id,
         WorkstationQualification.tenant_id == current_user.tenant_id,
+    ).delete(synchronize_session=False)
+    # company_closure.created_by is NOT NULL with no ON DELETE rule → reassign the
+    # user's Betriebsferien to the acting admin (Postgres FK; SQLite tests run FK off).
+    from app.models import CompanyClosure
+    db.query(CompanyClosure).filter(
+        CompanyClosure.created_by == user.id,
+        CompanyClosure.tenant_id == current_user.tenant_id,
+    ).update({CompanyClosure.created_by: current_user.id}, synchronize_session=False)
+    # signup_tokens.user_id is NOT NULL with no ON DELETE rule and tokens are never
+    # deleted by the signup flow (only consumed_at is set) → delete the purged
+    # user's tokens explicitly. F-026 tenant-scoped.
+    from app.models import SignupToken
+    db.query(SignupToken).filter(
+        SignupToken.user_id == user.id,
+        SignupToken.tenant_id == current_user.tenant_id,
     ).delete(synchronize_session=False)
     db.delete(user)
     db.commit()

@@ -408,10 +408,18 @@ Wenn KEIN Backup der `.db-credentials` existiert, aber die Datenbank inhaltlich
 intakt ist und noch erreichbar (z.B. weil der alte Dienst noch laeuft oder
 sich `psql` lokal noch peer-authentifizieren kann):
 
+> **Hinweis (Linux/macOS):** Der native Cluster lauscht seit 1.8.5 **nur auf dem
+> Unix-Socket** (`listen_addresses=''`), nicht auf TCP `localhost:5432`. Daher
+> verbinden sich `pg_dumpall`/`psql` über das Socket-Verzeichnis `data/run`
+> (`-h .../data/run`), **nicht** über `-h localhost` — sonst „connection refused"
+> bzw., falls eine fremde System-PostgreSQL auf :5432 läuft, ein Treffer auf den
+> **falschen** Cluster. `-w` verhindert ein Aufhängen an der Passwortabfrage.
+> macOS-Pfad: `/usr/local/praxiszeit` statt `/opt/praxiszeit`.
+
 ```bash
-# 1. Backup ziehen, solange der Cluster noch antwortet
+# 1. Backup ziehen, solange der Cluster noch antwortet (Socket-Verbindung!)
 cd /opt/praxiszeit
-bin/postgresql/bin/pg_dumpall -U praxiszeit -h localhost > /root/praxiszeit-rescue.sql
+bin/postgresql/bin/pg_dumpall -w -U praxiszeit -h /opt/praxiszeit/data/run > /root/praxiszeit-rescue.sql
 
 # 2. Dienst stoppen
 sudo systemctl stop praxiszeit
@@ -423,7 +431,7 @@ sudo rm -rf data/db
 sudo systemctl start praxiszeit
 
 # 5. Daten zurueckspielen (nach erfolgreichem Start)
-bin/postgresql/bin/psql -U praxiszeit -h localhost -f /root/praxiszeit-rescue.sql
+bin/postgresql/bin/psql -w -U praxiszeit -h /opt/praxiszeit/data/run -d praxiszeit -f /root/praxiszeit-rescue.sql
 ```
 
 Windows-Aequivalent:
