@@ -88,8 +88,9 @@ def admin_client(db, admin):
 
 
 def _set_toggle(db, on: bool):
-    db.add(SystemSetting(key="closure_overtime_after_vacation", tenant_id=DEFAULT_TENANT_ID,
-                         value="true" if on else "false"))
+    # merge → upsert: safe to call twice (flip OFF→ON) despite the (key, tenant_id) PK.
+    db.merge(SystemSetting(key="closure_overtime_after_vacation", tenant_id=DEFAULT_TENANT_ID,
+                           value="true" if on else "false"))
     db.commit()
 
 
@@ -209,20 +210,32 @@ class TestClosureOvertimeSplitUpdate:
             AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
         ]
 
-    def test_pure_rename_does_not_resplit(self, db, default_tenant, admin_client):
-        # Review finding: a cosmetic rename (no range/flag change) must NOT
-        # delete-and-recreate the absences (which would re-split against a
-        # now-different budget and silently shift OVERTIME/VACATION days).
+    def test_resave_applies_split_after_enabling_toggle(self, db, default_tenant, admin_client):
+        # #314 follow-up (customer philvdb): a closure booked while the toggle was
+        # OFF is all-VACATION (= minus-vacation once the budget is exceeded). After
+        # the admin flips the global switch ON, a plain re-save (no date/flag change)
+        # must re-apply the split so the surplus days become OVERTIME instead of
+        # minus-vacation. Flipping the switch alone is not enough; re-saving is.
+        emp = _make_user(db, "e_resave", vacation_days=2)
+        _set_toggle(db, False)
+        c = _create_closure(admin_client)
+        assert _types(db, emp, c["id"]) == [AbsenceType.VACATION] * 4
+        _set_toggle(db, True)
+        _update(admin_client, c["id"], counts_as_vacation=True)  # plain re-save, unchanged name/dates
+        assert _types(db, emp, c["id"]) == [
+            AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
+        ]
+
+    def test_rename_resplits_idempotently(self, db, default_tenant, admin_client):
+        # #314 follow-up: re-save now re-applies the split (so flipping the global
+        # toggle takes effect on existing closures via a re-save). A rename therefore
+        # delete-and-recreates the in-range absences, but the re-split is computed
+        # against the budget WITHOUT this closure's own days → value-stable
+        # (idempotent): VACATION while the budget covers, OVERTIME after.
         emp = _make_user(db, "e_rn", vacation_days=2)
         _set_toggle(db, True)
         c = _create_closure(admin_client)
-        ids_before = {a.id for a in db.query(Absence).filter(
-            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(c["id"])).all()}
         _update(admin_client, c["id"], counts_as_vacation=True, name="BF-umbenannt")
-        ids_after = {a.id for a in db.query(Absence).filter(
-            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(c["id"])).all()}
-        # same rows (in-place note update), not deleted+recreated
-        assert ids_before == ids_after
         assert _types(db, emp, c["id"]) == [
             AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
         ]
