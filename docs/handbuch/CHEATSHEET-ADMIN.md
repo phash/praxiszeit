@@ -27,6 +27,8 @@
 
 > **Benutzerübersicht (#194)** zeigt je MA Urlaubskonto **und** aktuellen Überstundensaldo in der Spalte **„Überstunden (JTD)"**; „—" bei Mitarbeitern ohne Stundenzählung.
 
+> **Monatsjournal (#311):** Buch-Symbol in der Aktionsspalte öffnet das Journal; Überschrift jetzt **„Monatsjournal: Vorname Nachname"**.
+
 ### Stundenzählung an/aus (#191)
 
 Checkbox **„Stundenzählung aktiv"** (Standard an). Aus = **Mitarbeiter ohne Stundenzählung** (NIE „leitende Angestellte" nennen!).
@@ -68,6 +70,9 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 | **Krank** | Kranktage im Monat |
 
 Klick auf Pfeil → Detailansicht des Mitarbeiters
+
+**Monat ↔ Woche (#329):** Umschalter „Monat / Woche" oben → Wochenansicht zeigt die KW (z. B. „22.–28.06.2026 (KW 26)"), Pfeile blättern wochenweise. Auswahl bleibt pro Browser/Gerät gespeichert.
+**Soll-Basis (#313):** Dropdown „Soll: bis heute / Monatsende (volle Woche)". „bis heute" (Standard) zählt Soll nur bis zum letzten abgeschlossenen Arbeitstag → kein Monatsanfangs-Minus. Nur Live-Anzeigen; Datei-Exporte bleiben voller Monat.
 
 ---
 
@@ -128,6 +133,8 @@ Jeder Bereich hat einen eigenen **Speichern**-Button.
 | **Pflicht-Pause-Ausnahme** | Genehmigungspflicht für §4-Ausnahmen (s. o.) |
 | **Soll-Arbeitszeit-Fenster** | Puffer (Min.) für Soll-Zeiten, Default 15 (s. o.) |
 | **Onboarding / Willkommens-Tour** | Erst-Login-Tour für neue Nutzer an/aus (Standard **an**) |
+| **Eigene Abwesenheitsgründe** | Bezeichnung + Farbe + Basis-Verhalten (#312) – s. u. |
+| **Betriebsferien & Urlaub** | „Überzählige Betriebsferien als Überstundenabbau" (#314, Standard aus – s. Betriebsferien) |
 | **Farben** | Farbe je An-/Abwesenheitstyp |
 
 ### Sondertage 24./31.12. (#188)
@@ -141,6 +148,18 @@ Heiligabend + Silvester sind **keine** gesetzlichen Feiertage → pro Tag getren
 | **Frei** | Tagessoll 0 (wie Feiertag) | **grau** |
 
 Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender.
+
+### Eigene Abwesenheitsgründe (#312)
+
+Frei benannte Gründe (z. B. „Schule" für Azubis) mit Farbe + **Basis-Verhalten** (nach Anlegen **fix**):
+
+| Basis-Verhalten | Wirkung |
+|-----------------|---------|
+| **zählt als gearbeitet** | Stunden als Arbeitszeit gutgeschrieben (wie Fortbildung) |
+| **bezahlt frei** | Tagessoll 0, **kein** Urlaubsabzug |
+| **Überstundenabbau** | Überstundenkonto sinkt um Tagessoll |
+
+Erscheinen beim Buchen unter „Eigene Gründe". Im Team-Kalender für Kolleg:innen als **„abwesend"** maskiert (Datenschutz); nur Admins sehen die Bezeichnung. Deaktivierbar.
 
 ---
 
@@ -264,6 +283,9 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **Plan:** beliebig viele Wochenpläne; Slots per Drag & Drop / Klick, Mitarbeitende auf Slot ziehen, Mindestbesetzung optional.
 - **Aktiv schalten** → für alle sichtbar (mehrere Pläne gleichzeitig aktiv möglich).
 - **Einweisungen:** Matrix MA × Arbeitsplätze; nicht eingewiesene Zuweisung → weiche Warnung (blockiert nicht). MA sehen ihre Einweisungen im Profil.
+- **KW-/Jahresplanung (#305 M2):** pro Plan optionales Aktiv-Datums-Fenster („von/bis") + Jahres-Zeitstrahl. **Automatisch füllen** verteilt eingewiesene, verfügbare MA greedy auf die Slots (Zielwoche, ausgewogen nach Auslastung/Überstunden) → Entwurf, aktiviert den Plan **nicht**.
+- **Woche/Tag-Umschalter** (#321); im Slot-Dialog **„Auf Wochentage kopieren"** → Schicht inkl. Zuweisungen auf weitere Tage (#322).
+- **Auslastung (#330):** unter jedem Namen „zugewiesene Std / Wochenarbeitszeit" (z. B. „15,25 / 17 h") – grün ±30 Min, gelb ±1 Std, sonst rot.
 - Reines Planungswerkzeug – **keine** Wirkung auf Zeiterfassung/ArbZG/Urlaub/Überstunden. Details: `docs/SCHICHTPLANUNG.md`.
 
 ---

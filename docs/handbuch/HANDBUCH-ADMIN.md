@@ -88,6 +88,8 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 
 **Monat wechseln:** Mit den Pfeilen `<` und `>` wechseln Sie den angezeigten Monat.
 
+**Monat ↔ Woche umschalten (#329):** Über den Umschalter **„Monat / Woche"** oben neben dem Zeitraum wechseln Sie zwischen der Monats- und einer **Wochenansicht**. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche, z. B. **„22.–28.06.2026 (KW 26)"**; mit den Pfeilen blättern Sie wochenweise. Die Spalten sind dieselben wie im Monat. So erhalten Sie eine schnelle Plausibilitätsübersicht, wer zu viel oder zu wenig gearbeitet hat. Ihre Auswahl (Monat oder Woche) bleibt **pro Browser/Gerät** gespeichert. In der Wochenansicht heißt die zweite Option der Soll-Basis entsprechend **„volle Woche"** statt „Monatsende".
+
 **Soll-Basis umschalten (#313):** Über das Dropdown **„Soll: bis heute / Monatsende"** in der Monatsübersicht steuern Sie, wie das Monats-**Soll** gezählt wird:
 - **bis heute** (Standard): nur bis zum **letzten abgeschlossenen Arbeitstag** des laufenden Monats — so startet der Saldo nicht mit einem Monatsanfangs-Minus.
 - **Monatsende**: der **volle** Monat.
@@ -144,6 +146,8 @@ Die Liste zeigt alle aktiven Mitarbeiter mit:
 - **Urlaubskonto** (Budget, Genommen, Übrig – mit Ampelfarbe)
 
 **Filter:** Aktivieren Sie **„Inaktive anzeigen"** oder **„Ausgeblendete anzeigen"** um deaktivierte Mitarbeiter einzublenden.
+
+**Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird.
 
 ### Neuen Mitarbeiter anlegen
 
@@ -440,7 +444,7 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 
 > **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option „Nimmt an Betriebsferien teil" bei einem Mitarbeiter und speichern Sie die Benutzer-Änderung. Die Abwesenheiten werden **automatisch** für alle laufenden und künftigen Betriebsferien nachgetragen – ein erneutes Speichern der Betriebsferien ist nicht mehr nötig, und bereits erfasste Arbeitszeiten bleiben erhalten. (Bereits abgelaufene Betriebsferien werden bewusst nicht rückwirkend ergänzt.)
 
-> **Betriebsferien länger als der Jahresurlaub (#314):** Sind die als Urlaub zählenden Betriebsferien länger als das Resturlaubs-Budget einer Mitarbeiterin, entstehen standardmäßig **Minus-Urlaubstage**. Unter **Einstellungen → „Betriebsferien & Urlaub"** können Sie die Option **„Überzählige Betriebsferien als Überstundenabbau"** aktivieren: Dann wird zuerst der Urlaub aufgezehrt und die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Überstundenkonto darf dabei ins Minus gehen) – statt Minus-Urlaub. Die Option ist global und standardmäßig deaktiviert.
+> **Betriebsferien länger als der Jahresurlaub (#314):** Sind die als Urlaub zählenden Betriebsferien länger als das Resturlaubs-Budget einer Mitarbeiterin, entstehen standardmäßig **Minus-Urlaubstage**. Unter **Einstellungen → „Betriebsferien & Urlaub"** können Sie die Option **„Überzählige Betriebsferien als Überstundenabbau"** aktivieren: Dann wird zuerst der Urlaub aufgezehrt und die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Überstundenkonto darf dabei ins Minus gehen) – statt Minus-Urlaub. Die Option ist global und standardmäßig deaktiviert. **Wichtig:** Der Schalter wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien – für **bereits eingetragene** Betriebsferien öffnen Sie diese einmal und speichern erneut.
 
 ### Betriebsferien löschen
 
@@ -860,6 +864,15 @@ nicht); Mitarbeitende sehen ihre Einweisungen im Profil.
 Zeitstrahl). **Automatisch füllen** verteilt eingewiesene, verfügbare
 Mitarbeitende greedy auf die Slots (Zielwoche wählbar, ausgewogen nach
 Auslastung/Überstunden) — als Entwurf zum Review, ohne den Plan zu aktivieren.
+
+Mit dem **Woche/Tag**-Umschalter im Editor zeigen Sie wahlweise die ganze Woche
+oder einen einzelnen Wochentag in voller Breite an (#321). Beim **Bearbeiten**
+eines Slots kopiert **„Auf Wochentage kopieren"** die Schicht inkl. Zuweisungen
+auf weitere Wochentage – praktisch für wiederkehrende Schichten (#322). In der
+Mitarbeiterliste des Editors steht unter jedem Namen die **Auslastung** der
+zugewiesenen Schichtstunden zur Wochenarbeitszeit (z. B. **„15,25 / 17 h"**):
+grün bei ±30 Minuten zur Vertragszeit, gelb bei ±1 Stunde, sonst rot – das
+erleichtert eine ausgewogene Einteilung (#330).
 Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 
 ---

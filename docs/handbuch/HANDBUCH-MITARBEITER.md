@@ -303,6 +303,8 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 | **Fortbildung** | Externe Schulungen, Seminare, Pflichtfortbildungen |
 | **Sonstiges** | Arzttermine, Behördengänge, sonstige Freistellungen |
 
+> **Eigene Gründe:** Hat Ihre Praxis zusätzliche Abwesenheitsgründe eingerichtet (z. B. „Schule"), erscheinen diese bei der Typ-Auswahl unter **„Eigene Gründe"**. Wählen Sie sie wie einen normalen Typ aus.
+
 > **Gut zu wissen – Kranktage und Stundensaldo:** Kranktage werden nach § 3 EntgFG als gearbeitete Stunden angerechnet (Soll-Stunden als Ist), sodass keine Minusstunden entstehen.
 
 ---

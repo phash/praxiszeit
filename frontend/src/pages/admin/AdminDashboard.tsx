@@ -81,6 +81,10 @@ export default function AdminDashboard() {
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeReport | null>(null);
+  // #329: the detail modal is always MONTH-scoped (entries/audit/absences by month).
+  // In week view the clicked row holds WEEK figures, so the summary cards read this
+  // month-scoped row instead → header, cards and entry list stay on one scope.
+  const [detailSummary, setDetailSummary] = useState<EmployeeReport | null>(null);
   const [selectedUserDetails, setSelectedUserDetails] = useState<UserDetails | null>(null);
   const [employeeTimeEntries, setEmployeeTimeEntries] = useState<TimeEntry[]>([]);
   const [employeeAbsences, setEmployeeAbsences] = useState<Absence[]>([]);
@@ -235,9 +239,23 @@ export default function AdminDashboard() {
   const fetchEmployeeDetails = async (employee: EmployeeReport) => {
     const seq = ++detailSeq.current;
     setSelectedEmployee(employee);
+    // Month mode: the clicked row IS the monthly row. Week mode: fetch the month
+    // row so the modal's Soll/Ist/Saldo cards match its monthly header + entry list.
+    setDetailSummary(viewMode === 'week' ? null : employee);
     setDetailLoading(true);
     try {
       const [year] = currentMonth.split('-');
+
+      if (viewMode === 'week') {
+        const hp = showHealthData ? '&include_health_data=true' : '';
+        const monthly = await apiClient.get(
+          `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`,
+        );
+        if (seq !== detailSeq.current) return;
+        setDetailSummary(
+          monthly.data.find((r: EmployeeReport) => r.user_id === employee.user_id) ?? employee,
+        );
+      }
 
       // Fetch user details
       const userResponse = await apiClient.get(`/admin/users/${employee.user_id}`);
@@ -275,6 +293,7 @@ export default function AdminDashboard() {
 
   const closeDetail = () => {
     setSelectedEmployee(null);
+    setDetailSummary(null);
     setSelectedUserDetails(null);
     setEmployeeTimeEntries([]);
     setEmployeeAbsences([]);
@@ -1198,39 +1217,45 @@ export default function AdminDashboard() {
                     </div>
                   )}
 
-                  {/* Summary Cards */}
+                  {/* Summary Cards — month-scoped (matches the modal's monthly header
+                      + entry list); #329: detailSummary holds the monthly row in week view. */}
+                  {(() => {
+                    const summary = detailSummary ?? selectedEmployee;
+                    return (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs text-gray-500 mb-1">Soll</p>
-                      <p className="text-xl font-bold">{formatHoursHM(selectedEmployee.target_hours)}</p>
+                      <p className="text-xl font-bold">{formatHoursHM(summary.target_hours)}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs text-gray-500 mb-1">Ist</p>
-                      <p className="text-xl font-bold">{formatHoursHM(selectedEmployee.actual_hours)}</p>
+                      <p className="text-xl font-bold">{formatHoursHM(summary.actual_hours)}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs text-gray-500 mb-1">Saldo</p>
                       <p
                         className={`text-xl font-bold ${
-                          selectedEmployee.balance >= 0 ? 'text-green-600' : 'text-red-600'
+                          summary.balance >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}
                       >
-                        {selectedEmployee.balance >= 0 ? '+' : ''}
-                        {formatHoursHM(selectedEmployee.balance)}
+                        {summary.balance >= 0 ? '+' : ''}
+                        {formatHoursHM(summary.balance)}
                       </p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-xs text-gray-500 mb-1">Überstunden kum.</p>
                       <p
                         className={`text-xl font-bold ${
-                          selectedEmployee.overtime_cumulative >= 0 ? 'text-green-600' : 'text-red-600'
+                          summary.overtime_cumulative >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}
                       >
-                        {selectedEmployee.overtime_cumulative >= 0 ? '+' : ''}
-                        {formatHoursHM(selectedEmployee.overtime_cumulative)}
+                        {summary.overtime_cumulative >= 0 ? '+' : ''}
+                        {formatHoursHM(summary.overtime_cumulative)}
                       </p>
                     </div>
                   </div>
+                    );
+                  })()}
 
                   {/* Time Entries */}
                   <div className="bg-white border border-gray-200 rounded-lg">

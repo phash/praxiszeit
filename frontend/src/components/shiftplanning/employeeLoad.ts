@@ -8,6 +8,9 @@ import { timeToMinutes } from './weekGridUtils';
 export function assignedMinutesByUser(slots: ShiftSlot[]): Map<string, number> {
   const byUser = new Map<string, number>();
   for (const slot of slots) {
+    // Same-day slots only: the shift grid is bounded to GRID_START_HOUR..GRID_END_HOUR,
+    // so overnight slots (end < start) cannot be created via the UI. A non-positive
+    // duration is therefore treated as 0 (skipped), not wrapped past midnight.
     const duration = timeToMinutes(slot.end_time) - timeToMinutes(slot.start_time);
     if (duration <= 0) continue;
     for (const a of slot.assignments) {

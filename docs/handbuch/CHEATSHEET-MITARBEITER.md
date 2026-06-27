@@ -104,6 +104,8 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 | Zeitraum | Checkbox „Zeitraum" + Enddatum |
 | Speichern | Wochenenden/Feiertage werden übersprungen |
 
+> **Eigene Gründe:** Richtet Ihre Praxis weitere Gründe ein (z. B. „Schule"), erscheinen sie bei „Typ wählen" unter **„Eigene Gründe"**.
+
 **Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol
 
 ### Sondertage 24./31.12.
