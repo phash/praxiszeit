@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -102,6 +102,17 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     showToast('warning', message, duration);
   }, [showToast]);
 
+  // Memoise the provider value so it keeps a stable reference across renders
+  // (e.g. every time a toast is added/removed). The functions are already
+  // useCallback-stable, so this object only changes if one of them does (it
+  // never does after mount). Prevents an unstable useToast() reference from
+  // re-rendering all ~33 consumers and from retriggering effects that depend
+  // on the toast handle.
+  const value = useMemo(
+    () => ({ showToast, success, error, info, warning }),
+    [showToast, success, error, info, warning]
+  );
+
   const getIcon = (type: ToastType) => {
     switch (type) {
       case 'success':
@@ -129,7 +140,7 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
   };
 
   return (
-    <ToastContext.Provider value={{ showToast, success, error, info, warning }}>
+    <ToastContext.Provider value={value}>
       {children}
 
       {/* Toast Container */}
