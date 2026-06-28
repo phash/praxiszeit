@@ -121,6 +121,17 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         private_dates = {a.date for a in private}
         consumed = 0.0
         for a in private:
+            # Fix #3: skip days with Tagessoll 0 (e.g. a use_daily_schedule MA's
+            # free weekday) exactly like get_vacation_account's used_days loop —
+            # a vacation day on a non-working day consumes 0 budget. Without this
+            # ``consumed`` overcounted → closure_budget too small → a closure day
+            # wrongly fell to OVERTIME.
+            dt_day = calculation_service.get_daily_target_for_date(
+                employee, a.date,
+                weekly_hours=calculation_service.get_weekly_hours_for_date(db, employee, a.date),
+            )
+            if dt_day <= 0:
+                continue
             consumed += 0.5 if a.half_day else 1.0
         for d in deduction_dates:
             if d in private_dates:
@@ -128,6 +139,15 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             if employee.first_work_day and d < employee.first_work_day:
                 continue
             if employee.last_work_day and d > employee.last_work_day:
+                continue
+            # Fix #3: same Tagessoll>0 guard get_vacation_account applies to free
+            # special days (24./31.12.) — a free day on the MA's non-working
+            # weekday costs no vacation, so it must not reduce closure_budget.
+            dt_day = calculation_service.get_daily_target_for_date(
+                employee, d,
+                weekly_hours=calculation_service.get_weekly_hours_for_date(db, employee, d),
+            )
+            if dt_day <= 0:
                 continue
             consumed += 1.0
 
