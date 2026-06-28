@@ -313,6 +313,14 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               max="60"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
+            {editUser && (
+              <p className="mt-1 text-xs text-amber-600">
+                ⚠️ Eine Änderung hier wirkt <strong>rückwirkend</strong> auf das Soll aller
+                Zeiträume ohne eigenen Stundenhistorie-Eintrag. Für eine stichtagsgenaue
+                Änderung ab einem Datum stattdessen die <strong>Stundenhistorie</strong>
+                (Wochenstunden-Verlauf) nutzen.
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="f-work-days" className="block text-sm font-medium text-gray-700 mb-1">Arbeitstage pro Woche</label>

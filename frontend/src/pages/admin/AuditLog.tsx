@@ -85,6 +85,8 @@ export default function AuditLog() {
   const toast = useToast();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false); // ADM-12: weitere Seiten vorhanden
+  const [loadingMore, setLoadingMore] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [filterUserId, setFilterUserId] = useState('');
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -106,18 +108,30 @@ export default function AuditLog() {
     }
   };
 
-  const fetchAuditLog = async () => {
-    setLoading(true);
+  // ADM-12: Keyset-Pagination — das Backend liefert max. AUDIT_PAGE_SIZE Zeilen
+  // (created_at DESC). Ohne "Mehr laden" wurden in Monaten mit >100 Änderungen die
+  // ältesten Einträge stillschweigend abgeschnitten.
+  const AUDIT_PAGE_SIZE = 100;
+  const fetchAuditLog = async (append = false) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set('month', currentMonth);
       if (filterUserId) params.set('user_id', filterUserId);
+      params.set('limit', String(AUDIT_PAGE_SIZE));
+      if (append && entries.length > 0) {
+        params.set('before', entries[entries.length - 1].created_at); // Cursor = älteste Zeile
+      }
       const response = await apiClient.get(`/admin/audit-log?${params.toString()}`);
-      setEntries(response.data);
+      const data: AuditEntry[] = response.data;
+      setEntries(append ? [...entries, ...data] : data);
+      setHasMore(data.length === AUDIT_PAGE_SIZE);
     } catch (error) {
       toast.error('Fehler beim Laden des Audit-Logs');
     } finally {
-      setLoading(false);
+      if (append) setLoadingMore(false);
+      else setLoading(false);
     }
   };
 
@@ -262,6 +276,19 @@ export default function AuditLog() {
             </div>
           )}
         </div>
+
+        {/* ADM-12: weitere (ältere) Einträge nachladen */}
+        {hasMore && !loading && (
+          <div className="p-4 text-center border-t border-gray-200">
+            <button
+              onClick={() => fetchAuditLog(true)}
+              disabled={loadingMore}
+              className="px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5 rounded-lg disabled:opacity-50"
+            >
+              {loadingMore ? 'Lädt…' : 'Ältere Einträge laden'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
