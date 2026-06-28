@@ -6,6 +6,7 @@ import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { formatHoursHMText, parseHours } from '../utils/formatters';
 import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
+import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
@@ -268,13 +269,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         };
         const existing = !switchingToWork ? editedEntry : null;
         // #200: §4-Pausen-Ausnahme per Retry mit dokumentierter Begründung.
-        await submitWithBreakWaiver(async (extra) => {
-          if (existing) {
-            await apiClient.put(`/admin/time-entries/${existing.id}`, { ...payload, ...extra });
-          } else {
-            await apiClient.post(`/admin/users/${userId}/time-entries`, { date: day.date, ...payload, ...extra });
-          }
-        });
+        const res = await submitWithBreakWaiver(async (extra) =>
+          existing
+            ? apiClient.put(`/admin/time-entries/${existing.id}`, { ...payload, ...extra })
+            : apiClient.post(`/admin/users/${userId}/time-entries`, { date: day.date, ...payload, ...extra }),
+        );
+        // ArbZG-Warnungen der Admin-Schreibpfade anzeigen (§3 >8h/Tag, >48h/Woche,
+        // §6 Nacht, BREAK_WAIVER) — analog zu den MA-Pfaden (StampWidget/TimeTracking).
+        showArbzgWarnings(toast, res.data?.warnings);
       } else {
         // Delete existing absence of different type if present, then create new
         if (hadAbsence && day.absences[0] && !switchingToWork) {
