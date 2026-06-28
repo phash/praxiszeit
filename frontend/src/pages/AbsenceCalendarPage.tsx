@@ -13,6 +13,7 @@ import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseHours, formatHoursHM } from '../utils/formatters';
 import { getSpecialDayInfo, type SpecialDaySettings } from '../utils/specialDays';
+import { myReasons, type AbsenceReason } from '../api/absenceReasons';
 import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
@@ -117,7 +118,9 @@ export default function AbsenceCalendarPage() {
     hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8,
     note: '',
     half_day: false,
+    reasonId: undefined as string | undefined, // #312 MA-ABS-03: eigener Abwesenheitsgrund
   });
+  const [reasons, setReasons] = useState<AbsenceReason[]>([]); // #312: aktive eigene Gründe
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingRequest, setEditingRequest] = useState<VacationRequest | null>(null);
   // Guards against double-submit (fast double-click would create duplicate absences/requests).
@@ -129,6 +132,8 @@ export default function AbsenceCalendarPage() {
       setSpecialDays(res.data.special_days ?? null); // #188
     }).catch(() => {});
     fetchMyVacationRequests();
+    // #312 MA-ABS-03: aktive eigene Abwesenheitsgründe für den Picker laden.
+    myReasons().then(setReasons).catch(() => {});
   }, []);
 
   // Pre-fill hours from daily-target endpoint when type is "overtime"
@@ -202,8 +207,10 @@ export default function AbsenceCalendarPage() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      // If approval required and not sick leave: create an absence request instead
-      if (formData.type !== 'sick' && vacationApprovalRequired) {
+      // If approval required and not sick leave: create an absence request instead.
+      // #312 MA-ABS-03: eigene Gründe (worked/paid_free/overtime_comp) sind nie Urlaub
+      // → immer direkt buchen, nicht über den Genehmigungs-Workflow.
+      if (!formData.reasonId && formData.type !== 'sick' && vacationApprovalRequired) {
         await apiClient.post('/vacation-requests', {
           date: formData.date,
           end_date: isDateRange && formData.end_date ? formData.end_date : null,
@@ -216,7 +223,7 @@ export default function AbsenceCalendarPage() {
         fetchMyVacationRequests();
         setShowForm(false);
         setIsDateRange(false);
-        setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '', half_day: false });
+        setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '', half_day: false, reasonId: undefined });
         setActiveTab('requests');
         return;
       }
@@ -229,6 +236,7 @@ export default function AbsenceCalendarPage() {
         note: formData.note || null,
         refund_vacation: refundVacation,
         half_day: !isDateRange && formData.half_day,
+        ...(formData.reasonId ? { reason_id: formData.reasonId } : {}), // #312 MA-ABS-03
       };
       await apiClient.post('/absences', submitData);
       const msg = refundVacation
@@ -238,7 +246,7 @@ export default function AbsenceCalendarPage() {
       fetchData();
       setShowForm(false);
       setIsDateRange(false);
-      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '', half_day: false });
+      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '', half_day: false, reasonId: undefined });
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     } finally {
@@ -567,8 +575,17 @@ export default function AbsenceCalendarPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Typ</label>
                 <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                  value={formData.reasonId ? `reason:${formData.reasonId}` : formData.type}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v.startsWith('reason:')) {
+                      // #312 MA-ABS-03: eigener Grund → Typ wird im Backend aus dem
+                      // base_behavior abgeleitet; 'other' ist nur ein gültiger Platzhalter.
+                      setFormData({ ...formData, type: 'other', reasonId: v.slice(7) });
+                    } else {
+                      setFormData({ ...formData, type: v as any, reasonId: undefined });
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 >
                   <option value="vacation">Urlaub</option>
@@ -576,6 +593,13 @@ export default function AbsenceCalendarPage() {
                   <option value="training">Fortbildung (außer Haus)</option>
                   <option value="overtime">Überstundenausgleich</option>
                   <option value="other">Sonstiges</option>
+                  {reasons.length > 0 && (
+                    <optgroup label="Eigene Gründe">
+                      {reasons.map((r) => (
+                        <option key={r.id} value={`reason:${r.id}`}>{r.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               <div>
