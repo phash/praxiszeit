@@ -658,19 +658,35 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
     total_other = 0.0
     total_paid_leave = 0.0
 
+    # Fix #5: alle Absences + (Nacht-)TimeEntries des Jahres EINMAL laden statt
+    # 5 Typ-Queries × 12 Monate plus 12 Monats-Nacht-Queries. In dicts gruppieren;
+    # die Monatsschleife schlägt nur noch nach. Identische Werte: pro (Monat, Typ)
+    # werden dieselben float(a.hours) summiert; Nacht-Tage bleiben ein Date-Set.
+    year_absences = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        date_in_year(Absence.date, year),
+    ).all()
+    absence_hours_by_month_type: dict = {}
+    for a in year_absences:
+        key = (a.date.month, a.type)
+        absence_hours_by_month_type[key] = absence_hours_by_month_type.get(key, 0.0) + float(a.hours)
+
+    year_entries = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        date_in_year(TimeEntry.date, year),
+        TimeEntry.end_time.isnot(None),
+    ).all()
+    night_dates_by_month: dict = {}
+    for e in year_entries:
+        if is_night_work(e.start_time, e.end_time):
+            night_dates_by_month.setdefault(e.date.month, set()).add(e.date)
+
     for m in range(1, 13):
         target = float(calculation_service.get_monthly_target(db, user, year, m))
         actual = float(calculation_service.get_monthly_actual(db, user, year, m))
 
         def month_absence_hours(atype):
-            return sum(
-                float(a.hours)
-                for a in db.query(Absence).filter(
-                    Absence.user_id == user.id,
-                    Absence.type == atype,
-                    date_in_month(Absence.date, year, m),
-                ).all()
-            )
+            return absence_hours_by_month_type.get((m, atype), 0.0)
 
         vac = month_absence_hours(AbsenceType.VACATION)
         sick = month_absence_hours(AbsenceType.SICK)
@@ -686,13 +702,8 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
         total_other += other
         total_paid_leave += paid_leave
 
-        # Night work days for this month (§6 ArbZG)
-        month_entries = db.query(TimeEntry).filter(
-            TimeEntry.user_id == user.id,
-            date_in_month(TimeEntry.date, year, m),
-            TimeEntry.end_time.isnot(None),
-        ).all()
-        night_days = len({e.date for e in month_entries if is_night_work(e.start_time, e.end_time)})
+        # Night work days for this month (§6 ArbZG) — aus dem vorab geladenen Set.
+        night_days = len(night_dates_by_month.get(m, set()))
 
         tr = TableRow()
         tr.addElement(_str_cell(MONTH_NAMES[m - 1]))
@@ -708,15 +719,9 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
         tr.addElement(_int_cell(night_days))
         table.addElement(tr)
 
-    # Total row (night work total counted over all months)
-    total_night = len({
-        e.date for e in db.query(TimeEntry).filter(
-            TimeEntry.user_id == user.id,
-            date_in_year(TimeEntry.date, year),
-            TimeEntry.end_time.isnot(None),
-        ).all()
-        if is_night_work(e.start_time, e.end_time)
-    })
+    # Total row (night work total over all months) — aus demselben vorab
+    # geladenen Set (Monats-Sets sind nach Datum disjunkt -> Union = Jahressumme).
+    total_night = len({d for dates in night_dates_by_month.values() for d in dates})
     tr = TableRow()
     tr.addElement(_str_cell("Gesamt", style=bold))
     tr.addElement(_float_cell(total_target))
