@@ -478,8 +478,15 @@ def list_plans(
         slots_by_plan.setdefault(s.shift_plan_id, []).append(s)
 
     today = today_local()
+    # Fix #7: non-admins only see plans that are active today — inactive drafts
+    # are an admin planning artefact and must be filtered server-side (the
+    # frontend filtered, the backend did not).
+    is_admin = current_user.role == UserRole.ADMIN
     result = []
     for p in plans:
+        active_today = shift_planning_service.is_plan_active_on(p, today)
+        if not is_admin and not active_today:
+            continue
         p_slots = slots_by_plan.get(p.id, [])
         understaffed = [
             s for s in p_slots
@@ -492,7 +499,7 @@ def list_plans(
             "is_active": p.is_active,
             "active_from_date": _iso(p.active_from_date),
             "active_until_date": _iso(p.active_until_date),
-            "active_today": shift_planning_service.is_plan_active_on(p, today),
+            "active_today": active_today,
             "slot_count": len(p_slots),
             "is_valid": len(understaffed) == 0,
         })
@@ -600,7 +607,12 @@ def get_plan(
 ):
     tid = current_user.tenant_id
     plan = _plan_or_404(db, tid, plan_id)
-    return _build_plan_detail(db, tid, plan, current_user.role == UserRole.ADMIN)
+    is_admin = current_user.role == UserRole.ADMIN
+    # Fix #7: non-admins can only open plans that are active today — an inactive
+    # draft does not "exist" for them (404, consistent with list_plans filtering).
+    if not is_admin and not shift_planning_service.is_plan_active_on(plan, today_local()):
+        raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
+    return _build_plan_detail(db, tid, plan, is_admin)
 
 
 @router.post("/plans/{plan_id}/generate")
