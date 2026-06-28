@@ -225,14 +225,33 @@ class TestCalculationEdgeCases:
     """Edge Cases in der Stundenberechnung."""
 
     def test_half_day_absence_reduces_target_correctly(self, db, test_user):
-        """Prüft dass Halbtags-Abwesenheit das Soll reduziert — Tag wird komplett als Abwesenheit gezaehlt."""
+        """Fix #1: Halbtags-Abwesenheit (half_day=True) reduziert das Soll um
+        GENAU 0,5 × Tagessoll (4h), NICHT um das volle Tagessoll (8h). Die
+        gearbeitete zweite Tageshälfte bleibt als Soll bestehen (kein Phantom)."""
         target_before = calculation_service.get_monthly_target(db, test_user, 2026, 3)
-        _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.VACATION, 4.0)
+        # half_day=True → 0,5 × 8h = 4h des Tagessolls fallen weg, 4h bleiben Soll.
+        a = Absence(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            date=date(2026, 3, 10), type=AbsenceType.VACATION, hours=4.0, half_day=True,
+        )
+        db.add(a)
+        db.commit()
         target_after = calculation_service.get_monthly_target(db, test_user, 2026, 3)
-        # Vacation mit 4h → der Tag ist trotzdem ein "Absence-Tag" und wird komplett übersprungen
-        # Das ist by-design: absence_dates enthält den Tag, also wird das volle Tagessoll abgezogen
-        # Hier testen wir das IST-Verhalten (nicht unbedingt das gewünschte)
-        assert target_after < target_before
+        # Genau das halbe Tagessoll wird abgezogen (8h Tagessoll → −4h).
+        assert (target_before - target_after) == Decimal('4.00'), (target_before, target_after)
+
+    def test_full_day_absence_removes_whole_target(self, db, test_user):
+        """Regression zu Fix #1: ein Voll-Tag (half_day=False) entfernt weiter
+        das ganze Tagessoll (8h)."""
+        target_before = calculation_service.get_monthly_target(db, test_user, 2026, 3)
+        a = Absence(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            date=date(2026, 3, 10), type=AbsenceType.VACATION, hours=8.0, half_day=False,
+        )
+        db.add(a)
+        db.commit()
+        target_after = calculation_service.get_monthly_target(db, test_user, 2026, 3)
+        assert (target_before - target_after) == Decimal('8.00'), (target_before, target_after)
 
     def test_multiple_entries_same_day_summed(self, db, test_user):
         """Prüft dass mehrere Eintraege am selben Tag korrekt summiert werden — Multi-Entry."""

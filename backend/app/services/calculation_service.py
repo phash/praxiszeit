@@ -185,6 +185,65 @@ def _within_employment_window(user: User, d: date) -> bool:
     return True
 
 
+def _soll_reducing_absence_half_map(absences: List[Absence]) -> Dict[date, bool]:
+    """Fix #1: map each soll-reducing absence (VACATION/OTHER/PAID_LEAVE) date to
+    whether it is a HALF day, for the shared per-day Soll helper below.
+
+    Value semantics:
+
+    * date NOT in map → no soll-reducing absence that day (full Tagessoll counts)
+    * value ``False`` → full-day absence → the whole day's Soll is removed
+    * value ``True``  → half-day absence → only 0,5 × Tagessoll is removed
+                        (half the Soll remains so the worked half still counts)
+
+    ``half_day`` only counts as half when explicitly ``True``; legacy rows
+    (``None``) and full-day rows (``False``) keep the historic full-skip
+    behaviour. If two rows ever shared a date (the unique constraint normally
+    prevents it), a full day wins (more Soll removed = conservative).
+    """
+    m: Dict[date, bool] = {}
+    for a in absences:
+        is_half = a.half_day is True
+        m[a.date] = (m[a.date] and is_half) if a.date in m else is_half
+    return m
+
+
+def _day_soll_contribution(
+    db: Session,
+    user: User,
+    d: date,
+    *,
+    holiday_dates: set,
+    absence_half_map: Dict[date, bool],
+    wh_changes: Optional[List[WorkingHoursChange]],
+    special_cfg: dict,
+) -> Decimal:
+    """Fix #1: single source of truth for ONE weekday's Soll contribution, shared
+    by all four per-day Soll loops (get_range_target, get_overtime_account,
+    get_overtime_history, get_ytd_summary) so half-day handling never diverges.
+
+    The CALLER is responsible for the weekend / employment-window / up_to_date
+    cutoff skips. This helper handles, in order: holidays, soll-reducing
+    absences (full vs. half day), the per-date weekly-hours lookup, the #146
+    special-day factor and finally the half-day halving — special-day factor
+    FIRST, then ×0,5 for a half day. Returns 0 for a holiday or a full-day
+    soll-reducing absence.
+    """
+    if d in holiday_dates:
+        return Decimal('0')
+    half = absence_half_map.get(d)
+    if half is False:
+        return Decimal('0')  # full-day soll-reducing absence → no Soll this day
+    weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
+    daily_target = get_daily_target_for_date(user, d, weekly_hours)
+    factor = special_days_service.special_day_target_factor(d, special_cfg)
+    if factor is not None:
+        daily_target = daily_target * factor
+    if half is True:
+        daily_target = daily_target * Decimal('0.5')
+    return daily_target
+
+
 def get_soll_cutoff_date(db: Session, user: User, today: date = None) -> date:
     """#313: last date (inclusive) that counts toward the running Soll/Ist.
 
@@ -238,7 +297,8 @@ def get_range_target(
         date_in_range(Absence.date, start, end),
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
-    absence_dates = {a.date for a in absences}
+    # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
+    absence_half_map = _soll_reducing_absence_half_map(absences)
 
     # Preload the user's WorkingHoursChange rows ONCE and resolve the per-day
     # weekly hours in memory (avoids one SELECT per day — N+1 — for a multi-day
@@ -273,21 +333,17 @@ def get_range_target(
         if not _within_employment_window(user, d):
             d += timedelta(days=1)
             continue
-        # Skip holidays and absences
-        if d in holiday_dates or d in absence_dates:
-            d += timedelta(days=1)
-            continue
 
-        weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
-        daily_target = get_daily_target_for_date(user, d, weekly_hours)
-
-        # #146: apply the special-day rule (after weekend/holiday/absence so we
-        # never double-handle a 24./31.12. that already is a weekend or holiday).
-        factor = special_days_service.special_day_target_factor(d, _special_cfg(d.year))
-        if factor is not None:
-            daily_target = (daily_target * factor)
-
-        total += daily_target
+        # Fix #1: holidays / soll-reducing absences (full vs. half day) + the #146
+        # special-day factor live in the shared per-day helper so all four Soll
+        # loops behave identically (full-day absence → 0; half-day → 0,5×Soll).
+        total += _day_soll_contribution(
+            db, user, d,
+            holiday_dates=holiday_dates,
+            absence_half_map=absence_half_map,
+            wh_changes=wh_changes,
+            special_cfg=_special_cfg(d.year),
+        )
         d += timedelta(days=1)
 
     return total.quantize(Decimal('0.01'))
@@ -537,7 +593,8 @@ def get_overtime_account(
         Absence.date <= up_to_date,
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
-    absence_dates: set[date] = {a.date for a in absences}
+    # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
+    absence_half_map: Dict[date, bool] = _soll_reducing_absence_half_map(absences)
 
     # All public holidays in range
     holidays = db.query(PublicHoliday).filter(
@@ -587,15 +644,15 @@ def get_overtime_account(
             # #193: skip days outside the employment window (before entry / after exit)
             if not _within_employment_window(user, d):
                 continue
-            if d in holiday_dates or d in absence_dates:
-                continue
-            weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
-            daily_target = get_daily_target_for_date(user, d, weekly_hours)
-            # #146: apply special-day rule (half_day → ×0.5, free → ×0).
-            factor = special_days_service.special_day_target_factor(d, cfg)
-            if factor is not None:
-                daily_target = (daily_target * factor)
-            monthly_target += daily_target
+            # Fix #1: shared per-day helper (full-day absence → 0; half-day →
+            # 0,5×Soll; holiday → 0; #146 special-day factor applied first).
+            monthly_target += _day_soll_contribution(
+                db, user, d,
+                holiday_dates=holiday_dates,
+                absence_half_map=absence_half_map,
+                wh_changes=wh_changes,
+                special_cfg=cfg,
+            )
 
         monthly_actual = actual_by_month.get(key, Decimal('0'))
         total_balance += (monthly_actual - monthly_target)
@@ -686,12 +743,13 @@ def get_overtime_history(
         k = (ca.date.year, ca.date.month)
         actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(ca.hours))
 
-    absence_dates = {a.date for a in db.query(Absence).filter(
+    # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
+    absence_half_map = _soll_reducing_absence_half_map(db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start_date,
         Absence.date <= up_to_date,
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
-    ).all()}
+    ).all())
 
     holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
         PublicHoliday.date >= start_date,
@@ -732,14 +790,15 @@ def get_overtime_history(
                 continue
             if not _within_employment_window(user, d):
                 continue
-            if d in holiday_dates or d in absence_dates:
-                continue
-            weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
-            daily_target = get_daily_target_for_date(user, d, weekly_hours)
-            factor = special_days_service.special_day_target_factor(d, cfg)
-            if factor is not None:
-                daily_target = daily_target * factor
-            monthly_target += daily_target
+            # Fix #1: shared per-day helper (kept bit-identical with
+            # get_overtime_account so the history invariant holds).
+            monthly_target += _day_soll_contribution(
+                db, user, d,
+                holiday_dates=holiday_dates,
+                absence_half_map=absence_half_map,
+                wh_changes=wh_changes,
+                special_cfg=cfg,
+            )
 
         monthly_actual = actual_by_month.get((cy, cm), Decimal('0'))
         total_balance += (monthly_actual - monthly_target)
@@ -806,7 +865,8 @@ def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date
         Absence.date <= end,
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all()
-    absence_dates: set = {a.date for a in absences}
+    # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
+    absence_half_map: Dict[date, bool] = _soll_reducing_absence_half_map(absences)
 
     # Fetch working hours changes (pre-loaded for the per-day loop).
     # F-027: routed through get_weekly_hours_for_date() with in-memory path
@@ -824,16 +884,17 @@ def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date
     total_target = Decimal('0')
     current = start
     while current <= end:
-        if (current.weekday() < 5 and current not in holiday_dates
-                and current not in absence_dates
+        if (current.weekday() < 5
                 and _within_employment_window(user, current)):  # #193
-            weekly_hours = get_weekly_hours_for_date(db, user, current, wh_changes=wh_changes)
-            daily_target = get_daily_target_for_date(user, current, weekly_hours)
-            # #146: apply special-day rule (half_day → ×0.5, free → ×0).
-            factor = special_days_service.special_day_target_factor(current, special_day_config)
-            if factor is not None:
-                daily_target = (daily_target * factor)
-            total_target += daily_target
+            # Fix #1: holiday / soll-reducing absence (full vs. half day) + #146
+            # special-day factor via the shared per-day helper.
+            total_target += _day_soll_contribution(
+                db, user, current,
+                holiday_dates=holiday_dates,
+                absence_half_map=absence_half_map,
+                wh_changes=wh_changes,
+                special_cfg=special_day_config,
+            )
         current += timedelta(days=1)
 
     # Sum actual hours (time entries + credited absence hours: training + sick)

@@ -705,6 +705,22 @@ def create_working_hours_change(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
+    # Fix #2: a WorkingHoursChange only feeds get_weekly_hours_for_date, which
+    # get_daily_target_for_date IGNORES when use_daily_schedule=True (it reads
+    # hours_monday…friday instead). Writing such a row would have NO effect on
+    # the Soll while the UI still showed the new value → silently wrong §16
+    # records. Reject it instead of historising the per-weekday columns (which
+    # would be a separate, larger feature).
+    if getattr(user, "use_daily_schedule", False):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Für Mitarbeitende mit individuellem Tagesplan wird die "
+                "Stunden-Historie nicht unterstützt — bitte die Tagesstunden "
+                "direkt im Mitarbeiter-Profil ändern."
+            ),
+        )
+
     existing = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
         WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
