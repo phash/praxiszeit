@@ -860,17 +860,24 @@ def update_time_entry(
     )
 
     # #201: clamp start/end to [soll − grace, soll + grace] BEFORE all §4/§3
-    # checks so compliance is assessed on credited time. Recomputed every update
-    # so raw_* is reset to None when the edited values fall within the window.
+    # checks so compliance is assessed on credited time.
     from app.services import work_window_service
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
         current_user, entry.date, entry.start_time, entry.end_time, _grace,
     )
-    entry.start_time = _eff_start
-    entry.end_time = _eff_end
-    entry.raw_start_time = _raw_start
-    entry.raw_end_time = _raw_end
+    # Fix #2: only overwrite start/end + raw_* when the respective time was
+    # actually part of this partial update — mirrors the admin path
+    # (admin_time_entries.py). A note-only edit must NOT re-clamp the stored
+    # (already-credited) times and must NOT wipe raw_start/raw_end (§16 evidence;
+    # §5 rest-time also reads the raw stamp). Without this gate a reine
+    # Notiz-Änderung set raw_*=None and could lower Ist on a shifted soll window.
+    if "start_time" in update_data:
+        entry.start_time = _eff_start
+        entry.raw_start_time = _raw_start
+    if "end_time" in update_data:
+        entry.end_time = _eff_end
+        entry.raw_end_time = _raw_end
 
     exempt = current_user.exempt_from_arbzg
 
