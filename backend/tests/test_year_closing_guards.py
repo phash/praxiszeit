@@ -185,6 +185,41 @@ def test_cancel_vacation_without_closing_returns_204(db, default_tenant, admin, 
     assert r.status_code == 204, r.text
 
 
+# --- Fix #7: YearCarryover.source provenance ----------------------------------
+
+
+def test_delete_year_closing_keeps_manual_carryover(db, default_tenant, admin, emp):
+    other = _make_user(db, "emp2")
+    # emp: a year-closing carryover for 2026.
+    calculation_service.create_year_closing(db, 2025, [emp])
+    yc_closing = db.query(YearCarryover).filter(
+        YearCarryover.user_id == emp.id, YearCarryover.year == 2026).first()
+    assert yc_closing is not None and yc_closing.source == "year_closing"
+
+    # other: a MANUAL carryover for 2026 via the admin endpoint.
+    client = _client_as(db, admin)
+    r = client.put(f"/api/admin/users/{other.id}/carryovers/2026",
+                   json={"overtime_hours": 3.0, "vacation_days": 5.0})
+    assert r.status_code == 200, r.text
+    yc_manual = db.query(YearCarryover).filter(
+        YearCarryover.user_id == other.id, YearCarryover.year == 2026).first()
+    assert yc_manual is not None and yc_manual.source == "manual"
+
+    # Undo the 2025 closing → only the year_closing row goes, manual survives.
+    d = client.delete("/api/admin/year-closing/2025")
+    _app.dependency_overrides.clear()
+    assert d.status_code == 200, d.text
+    assert d.json()["deleted_count"] == 1
+
+    db.expire_all()
+    assert db.query(YearCarryover).filter(
+        YearCarryover.user_id == emp.id, YearCarryover.year == 2026).first() is None
+    surviving = db.query(YearCarryover).filter(
+        YearCarryover.user_id == other.id, YearCarryover.year == 2026).first()
+    assert surviving is not None
+    assert surviving.source == "manual"
+
+
 def test_delete_closure_after_closing_returns_stale_warning(db, default_tenant, admin, emp):
     _set_toggle(db, False)
     # Create a 2027 closure, then close 2027 → carryover 2028 exists.

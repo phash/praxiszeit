@@ -1198,6 +1198,9 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
         if carryover:
             carryover.overtime_hours = overtime_balance
             carryover.vacation_days = remaining_vacation
+            # Fix #7: the year-closing owns this row (so delete_year_closing may
+            # remove it) — even if it previously existed as a manual entry.
+            carryover.source = "year_closing"
         else:
             carryover = YearCarryover(
                 user_id=user.id,
@@ -1205,6 +1208,7 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
                 year=next_year,
                 overtime_hours=overtime_balance,
                 vacation_days=remaining_vacation,
+                source="year_closing",  # Fix #7
             )
             db.add(carryover)
 

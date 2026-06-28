@@ -66,6 +66,9 @@ def upsert_carryover(
     if carryover:
         carryover.overtime_hours = data.overtime_hours
         carryover.vacation_days = data.vacation_days
+        # Fix #7: a manual edit takes ownership — protect it from
+        # delete_year_closing (which removes only source='year_closing').
+        carryover.source = "manual"
     else:
         carryover = YearCarryover(
             user_id=user_id,
@@ -73,6 +76,7 @@ def upsert_carryover(
             year=year,
             overtime_hours=data.overtime_hours,
             vacation_days=data.vacation_days,
+            source="manual",  # Fix #7
         )
         db.add(carryover)
 
@@ -186,9 +190,12 @@ def delete_year_closing(
         raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
 
     next_year = year + 1
+    # Fix #7: remove ONLY the carryovers this year-closing created — manual
+    # carryovers (source='manual', entered via upsert_carryover) must survive.
     deleted = db.query(YearCarryover).filter(
         YearCarryover.year == next_year,
         YearCarryover.tenant_id == current_user.tenant_id,
+        YearCarryover.source == "year_closing",
     ).delete(synchronize_session=False)
 
     if deleted == 0:
