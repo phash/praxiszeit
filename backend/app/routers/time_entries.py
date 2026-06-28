@@ -314,11 +314,14 @@ def clock_in(
             # correct wall-clock gap. Using naive combine() was numerically
             # right in 51 weeks/year but off by 1h during the DST weekend —
             # the §5 warning would fire or not fire incorrectly.
+            # §5 misst die TATSÄCHLICHE Anwesenheit → Rohstempel (#201), nicht die
+            # work-window-gekappten Zeiten (sonst wird die Lücke zu groß gerechnet
+            # und ein echter Verstoß bleibt unentdeckt). Fallback auf die gekappten.
             last_end = datetime.combine(
-                last_entry.date, last_entry.end_time, tzinfo=LOCAL_TZ
+                last_entry.date, last_entry.raw_end_time or last_entry.end_time, tzinfo=LOCAL_TZ
             )
             current_start = datetime.combine(
-                now.date(), entry.start_time, tzinfo=LOCAL_TZ
+                now.date(), entry.raw_start_time or entry.start_time, tzinfo=LOCAL_TZ
             )
             rest_hours = (current_start - last_end).total_seconds() / 3600
             if rest_hours < 11:

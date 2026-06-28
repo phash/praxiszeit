@@ -69,10 +69,16 @@ def check_rest_time_violations(
         if not entry.end_time or not entry.start_time:
             continue
         d = entry.date
-        if d not in day_last_end or entry.end_time > day_last_end[d]:
-            day_last_end[d] = entry.end_time
-        if d not in day_first_start or entry.start_time < day_first_start[d]:
-            day_first_start[d] = entry.start_time
+        # §5 misst die TATSÄCHLICHE Anwesenheit → die ungekappten Rohstempel (#201),
+        # nicht die work-window-gekappten Zeiten. Sonst erscheint die Ruhelücke
+        # größer als sie ist (spätes Ausstempeln / frühes Einstempeln) und ein
+        # echter §5-Verstoß bleibt unentdeckt. Fallback für Rows ohne Kappung.
+        eff_end = entry.raw_end_time or entry.end_time
+        eff_start = entry.raw_start_time or entry.start_time
+        if d not in day_last_end or eff_end > day_last_end[d]:
+            day_last_end[d] = eff_end
+        if d not in day_first_start or eff_start < day_first_start[d]:
+            day_first_start[d] = eff_start
 
     # Check rest time between consecutive days that have entries
     sorted_days = sorted(day_last_end.keys())

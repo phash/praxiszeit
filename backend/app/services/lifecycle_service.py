@@ -372,6 +372,8 @@ def _absence_dict(a: Absence) -> dict[str, Any]:
         "date": a.date.isoformat() if a.date else None,
         "end_date": a.end_date.isoformat() if getattr(a, "end_date", None) else None,
         "type": a.type.value if hasattr(a.type, "value") else str(a.type),
+        # #312: eigener Abwesenheitsgrund (Klartextname via reason_names im Payload).
+        "reason_id": str(a.reason_id) if getattr(a, "reason_id", None) else None,
         "hours": float(a.hours) if a.hours is not None else None,
         "start_time": str(a.start_time) if getattr(a, "start_time", None) else None,
         "end_time": str(a.end_time) if getattr(a, "end_time", None) else None,
@@ -504,6 +506,19 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         ):
             own_qualifications_data.append({"workstation": ws.name if ws else str(q.workstation_id)})
 
+    # #312: Klartextnamen der eigenen Abwesenheitsgründe (DSGVO Art. 12 — verständliche
+    # Form; reason_id allein ist für den MA nutzlos). Tenant-scoped, inkl. inaktiver.
+    reason_ids = {a.reason_id for a in own_absences if getattr(a, "reason_id", None)}
+    reason_names: dict[str, str] = {}
+    if reason_ids:
+        from app.models import AbsenceReason
+        for rsn in (
+            db.query(AbsenceReason)
+            .filter(AbsenceReason.id.in_(reason_ids), AbsenceReason.tenant_id == tid)
+            .all()
+        ):
+            reason_names[str(rsn.id)] = rsn.name
+
     return {
         "export_generated_at": datetime.now(timezone.utc).isoformat(),
         "export_type": "self_service_dsgvo_art15",
@@ -514,6 +529,8 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         "subject": _user_dict(user),
         "time_entries": [_time_entry_dict(t) for t in own_entries],
         "absences": [_absence_dict(a) for a in own_absences],
+        # #312: id → Klartextname für reason_id in 'absences' (Art. 12).
+        "reason_names": reason_names,
         "vacation_requests": [_vacation_request_dict(v) for v in own_vacation_requests],
         "change_requests": [_change_request_dict(c) for c in own_change_requests],
         "audit_logs": [_audit_log_dict(a) for a in own_audit_logs],
