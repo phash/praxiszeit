@@ -120,6 +120,39 @@ def _run_cleanup_old_errors() -> None:
         db.close()
 
 
+def _run_suspend_expired_trials() -> None:
+    """Fix #4: flip tenants whose free trial has ended (and who have no Stripe
+    subscription) to ``subscription_status='suspended'``. SaaS billing
+    enforcement — previously only reachable via the manual superadmin cron."""
+    from app.services.signup_service import suspend_expired_trials
+    db = SessionLocal()
+    try:
+        set_superadmin_context(db)
+        n = suspend_expired_trials(db)
+        if n:
+            logger.info("scheduler: suspended %d expired-trial tenants", n)
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: suspend_expired_trials failed")
+    finally:
+        db.close()
+
+
+def _run_suspend_canceled_after_grace() -> None:
+    """Fix #4: flip tenants whose Stripe subscription has been canceled for
+    longer than the grace period to ``subscription_status='suspended'``."""
+    from app.services.stripe_service import suspend_canceled_after_grace
+    db = SessionLocal()
+    try:
+        set_superadmin_context(db)
+        n = suspend_canceled_after_grace(db)
+        if n:
+            logger.info("scheduler: suspended %d canceled-after-grace tenants", n)
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: suspend_canceled_after_grace failed")
+    finally:
+        db.close()
+
+
 def _run_scheduled_backup() -> None:
     """#213: erstellt zur vom Admin konfigurierten Stunde ein DB-Backup, sofern
     aktiviert. Stuendlich getriggert (:30); der Job vergleicht die aktuelle
@@ -165,6 +198,8 @@ JOB_APPLY_SCHEDULED_SUSPENDS = "apply_scheduled_suspends"
 JOB_APPLY_SCHEDULED_DELETIONS = "apply_scheduled_deletions"
 JOB_CLEANUP_OLD_ERRORS = "cleanup_old_errors"
 JOB_SCHEDULED_BACKUP = "scheduled_backup"  # #213
+JOB_SUSPEND_EXPIRED_TRIALS = "suspend_expired_trials"  # Fix #4 (saas only)
+JOB_SUSPEND_CANCELED_AFTER_GRACE = "suspend_canceled_after_grace"  # Fix #4 (saas only)
 
 # Daily run at 03:00 local time. Avoids the midnight rollover bookkeeping
 # rush + leaves the cutoff math (``datetime.now() - timedelta(days=...)``)
@@ -261,6 +296,30 @@ def start_scheduler(app: FastAPI):  # noqa: ARG001  (kept for future use)
         coalesce=True,
         max_instances=1,
     )
+
+    # Fix #4: SaaS billing enforcement — these flip tenants to 'suspended' based
+    # on Stripe/trial state and must NOT run on-prem (would suspend the single
+    # on-prem tenant). Only registered in saas mode.
+    from app.core.deployment import is_saas
+    if is_saas():
+        scheduler.add_job(
+            _run_suspend_expired_trials,
+            trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
+            id=JOB_SUSPEND_EXPIRED_TRIALS,
+            name="Billing: suspend tenants whose free trial has ended (no subscription)",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            _run_suspend_canceled_after_grace,
+            trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
+            id=JOB_SUSPEND_CANCELED_AFTER_GRACE,
+            name="Billing: suspend tenants canceled past the grace period",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
 
     scheduler.start()
     _scheduler = scheduler
