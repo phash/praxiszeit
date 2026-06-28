@@ -164,6 +164,24 @@ def _create_closure_absences(
             if not calculation_service._within_employment_window(employee, workday):
                 continue
 
+            # F-027/#204: authoritative weekly_hours lookup (get_daily_target_for_date
+            # must never fall back to user.weekly_hours; wh_changes vorgeladen).
+            weekly_hours = calculation_service.get_weekly_hours_for_date(
+                db, employee, workday, wh_changes=emp_wh
+            )
+            day_target = calculation_service.get_daily_target_for_date(
+                employee, workday, weekly_hours=weekly_hours
+            )
+            # #314 (philvdb): an einem Nicht-Arbeitstag eines use_daily_schedule-
+            # Teilzeitlers (Tagessoll 0 an diesem Wochentag) gibt es nichts zu
+            # schließen — KEINE Buchung (sonst eine irreführende 0h-„Urlaub"-Zeile).
+            # Vor der TimeEntry-Löschung, damit an einem solchen Tag nichts angefasst
+            # wird. Untracked/leitende (track_hours=False → Tagessoll immer 0) NICHT
+            # skippen: die bekommen tagebasiert 1 Urlaubstag pro Closure-Tag (#191).
+            if (employee.track_hours and getattr(employee, "use_daily_schedule", False)
+                    and day_target <= 0):
+                continue
+
             # Skip if any absence already exists for this day (not just vacation)
             if (employee.id, workday) in existing_keys:
                 continue
@@ -190,24 +208,6 @@ def _create_closure_absences(
                     )
                     db.delete(entry)
 
-            # F-027: Use the authoritative weekly_hours lookup so that
-            # a closure spanning a WorkingHoursChange credits the right
-            # daily target. Passing weekly_hours explicitly is a CLAUDE.md
-            # requirement — get_daily_target_for_date must never fall
-            # back to user.weekly_hours. (#204: wh_changes vorgeladen.)
-            # #314/#201: compute the day's target FIRST. A 0-target scheduled day
-            # (a use_daily_schedule part-timer's off-weekday, booked at hours=0)
-            # consumes NO real vacation (get_vacation_account counts only
-            # dt_day>0), so it must NOT decrement the budget snapshot — otherwise
-            # it would wrongly push real working days into OVERTIME and silently
-            # lose paid vacation. hours==0 days are calc-neutral either way.
-            weekly_hours = calculation_service.get_weekly_hours_for_date(
-                db, employee, workday, wh_changes=emp_wh
-            )
-            day_target = calculation_service.get_daily_target_for_date(
-                employee, workday, weekly_hours=weekly_hours
-            )
-
             # #314: decide VACATION vs OVERTIME per day. VACATION while the
             # remaining budget covers a full day; afterwards OVERTIME (no minus-
             # vacation). Only positive-target days consume the budget snapshot.
@@ -215,6 +215,13 @@ def _create_closure_absences(
             if emp_split and day_target > 0:
                 yr = workday.year
                 if yr not in remaining_by_year:
+                    # Resturlaub des Jahres als TAGE-Budget (Tagesprinzip). Die
+                    # closure-eigenen Tage sind beim Re-Save vorher gelöscht+geflusht
+                    # bzw. beim Create noch nicht vorhanden → der Snapshot zählt sie
+                    # nicht doppelt. So zehrt die Closure den VERBLEIBENDEN Urlaub
+                    # chronologisch bis 0 auf, der Rest wird Überstundenausgleich —
+                    # NIE Minus-Urlaub, auch wenn SPÄTER im Jahr Urlaub (z. B. Sommer)
+                    # gebucht ist (der zählt korrekt mit; #314 Folgefix-Review).
                     remaining_by_year[yr] = float(
                         calculation_service.get_vacation_account(db, employee, yr)["remaining_days"]
                     )
