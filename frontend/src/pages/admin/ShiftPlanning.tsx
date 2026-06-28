@@ -125,6 +125,9 @@ export default function AdminShiftPlanning() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  // `toast` is a stable ref (memoised ToastContext value) and only used in the
+  // catch branch — keeping it out of the deps keeps these loaders referentially
+  // stable so the mount effect below doesn't re-run when a toast fires.
   const loadStations = useCallback(async () => {
     try {
       const [locs, ws] = await Promise.all([api.listLocations(), api.listWorkstations()]);
@@ -133,7 +136,8 @@ export default function AdminShiftPlanning() {
     } catch (err) {
       toast.error(getErrorMessage(err, 'Fehler beim Laden der Stammdaten'));
     }
-  }, [toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadPlans = useCallback(async () => {
     try {
@@ -141,7 +145,8 @@ export default function AdminShiftPlanning() {
     } catch (err) {
       toast.error(getErrorMessage(err, 'Fehler beim Laden der Schichtpläne'));
     }
-  }, [toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadEmployees = useCallback(async () => {
     try {
@@ -164,7 +169,8 @@ export default function AdminShiftPlanning() {
         toast.error(getErrorMessage(err, 'Fehler beim Laden des Plans'));
       }
     },
-    [toast],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   useEffect(() => {

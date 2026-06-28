@@ -31,7 +31,11 @@ export default function ShiftPlanning() {
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+    // Load once on mount. `toast` is a stable ref (memoised ToastContext value)
+    // and only used in the catch branch — keeping it out of the deps avoids a
+    // re-fetch every time an unrelated toast fires (cf. Dashboard.tsx).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div>
