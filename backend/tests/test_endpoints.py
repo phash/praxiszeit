@@ -870,6 +870,24 @@ class TestClockEndpoints:
         })
         assert resp.status_code == 400
 
+    def test_clock_in_no_rest_warning_for_same_day_split_shift(self, employee_client, _db_session, employee_user):
+        """MZ-01: Ein früherer AUSGESTEMPELTER Eintrag AM SELBEN TAG (geteilte
+        Sprechzeit: vormittags aus, nachmittags wieder ein) darf KEINE §5-
+        Ruhezeitwarnung auslösen — das ist eine Pause innerhalb des Arbeitstags."""
+        from datetime import timedelta
+        from app.services.timezone_service import now_local
+        now = now_local()
+        _db_session.add(TimeEntry(
+            user_id=employee_user.id, tenant_id=DEFAULT_TENANT_ID, date=now.date(),
+            start_time=(now - timedelta(hours=4)).time(),
+            end_time=(now - timedelta(minutes=1)).time(),  # endete eben → ohne Fix < 11h
+        ))
+        _db_session.commit()
+        resp = employee_client.post("/api/time-entries/clock-in", json={})
+        assert resp.status_code == 201, resp.text
+        warnings = resp.json().get("warnings", [])
+        assert not any("REST_TIME_WARNING" in w for w in warnings), warnings
+
     def test_clock_out_stale_entry_gets_closed(self, employee_client, _db_session, employee_user):
         """B-H1: ein offener Eintrag von einem früheren Tag wird beim Ausstempeln
         automatisch geschlossen UND committed (nicht durch das 400-Raise verworfen),

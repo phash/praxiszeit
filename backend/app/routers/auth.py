@@ -368,6 +368,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 @limiter.limit("3/minute")
 def change_password(
     request: Request,
+    response: Response,
     password_data: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -399,6 +400,14 @@ def change_password(
     new_access_token = auth_service.create_access_token(
         str(current_user.id), current_user.role.value, current_user.token_version, tenant_id_str
     )
+    # AUTH-05: Auch ein frisches Refresh- + CSRF-Cookie setzen. Sonst trägt das
+    # Refresh-Cookie weiter die ALTE token_version → der nächste /refresh nach
+    # Ablauf des Access-Tokens scheitert am token_version-Check (stiller Logout).
+    new_refresh_token = auth_service.create_refresh_token(
+        str(current_user.id), current_user.token_version, tenant_id_str
+    )
+    _set_refresh_cookie(response, new_refresh_token)
+    _set_csrf_cookie(response)
     return {"message": "Passwort erfolgreich geändert", "access_token": new_access_token}
 
 

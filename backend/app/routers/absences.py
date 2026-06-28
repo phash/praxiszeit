@@ -12,7 +12,7 @@ from app.models import (
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
-from app.services import calculation_service
+from app.services import calculation_service, settings_service
 from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
@@ -316,6 +316,19 @@ def create_absence(
             absence_data.type = BEHAVIOR_TO_ABSENCE_TYPE[AbsenceReasonBehavior(reason.base_behavior)]
         except (KeyError, ValueError):
             raise HTTPException(status_code=400, detail="Ungültiges Basis-Verhalten des Abwesenheitsgrundes")
+
+    # MA-ABS-01: Bei aktivierter Genehmigungspflicht dürfen NICHT-Admins Urlaub
+    # nicht direkt buchen (sonst Approval-Bypass über die API) — sie müssen einen
+    # Urlaubsantrag stellen. Admins (auch für sich) buchen weiterhin direkt. Greift
+    # auch für eigene Gründe, die auf VACATION mappen (Auflösung steht oben).
+    if (absence_data.type == AbsenceType.VACATION
+            and current_user.role != UserRole.ADMIN
+            and settings_service.get_bool_setting(
+                db, "vacation_approval_required", current_user.tenant_id, False)):
+        raise HTTPException(
+            status_code=400,
+            detail="Urlaub ist genehmigungspflichtig — bitte einen Urlaubsantrag stellen.",
+        )
 
     # Determine date range
     start_date = absence_data.date
