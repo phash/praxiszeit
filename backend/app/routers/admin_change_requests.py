@@ -28,7 +28,8 @@ from app.services.calculation_service import (
     get_weekly_hours_for_date, get_daily_target_for_date, get_vacation_account,
     get_daily_target,
 )
-from app.services import work_window_service
+from app.services import work_window_service, settings_service
+from app.services.closure_split_service import resplit_year_closures
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -464,6 +465,10 @@ def review_change_request(
             db.delete(entry)
 
     # Absence CR actions
+    # Fix #5: collect the years whose Betriebsferien must be re-split after this
+    # approval — every VACATION-creating/-removing path triggers resplit so a
+    # closure day can flip VACATION<->OVERTIME (toggle-gated, see end of fn).
+    _resplit_years: set = set()
     if cr.entry_kind == "absence":
         if cr.request_type == ChangeRequestType.CREATE and existing_absence is not None:
             # Review R2-a: idempotent — an absence of the SAME type already
@@ -550,6 +555,11 @@ def review_change_request(
             db.add(new_absence)
             db.flush()
             cr.absence_id = new_absence.id
+
+            # Fix #5: a newly materialised VACATION consumes budget the closure
+            # split reserves up front → re-split that year.
+            if new_absence.type == AbsenceType.VACATION and cr.proposed_date:
+                _resplit_years.add(cr.proposed_date.year)
 
             # Fix #3: mirror create_absence — a newly materialised absence must
             # clear the day's time entries, otherwise the absence AND the time
@@ -707,6 +717,14 @@ def review_change_request(
                     db, cr.user_id, cr_tenant_id, absence.date, current_user.id, cr.id,
                 )
 
+            # Fix #5: a VACATION added or removed (type change) or moved (date
+            # change) shifts the closure-split budget → re-split BOTH the old and
+            # the new year when VACATION is involved on either side.
+            if _orig_abs_type == AbsenceType.VACATION:
+                _resplit_years.add(_orig_abs_date.year)
+            if absence.type == AbsenceType.VACATION:
+                _resplit_years.add(absence.date.year)
+
         elif cr.request_type == ChangeRequestType.DELETE:
             # Audit-Log für Absence-CR DELETE
             audit = TimeEntryAuditLog(
@@ -731,10 +749,27 @@ def review_change_request(
                 ChangeRequest.absence_id == absence.id,
                 ChangeRequest.tenant_id == cr_tenant_id,
             ).update({ChangeRequest.absence_id: None}, synchronize_session=False)
+            # Fix #5: deleting a VACATION frees budget the closure split reserved
+            # → a closure OVERTIME day can flip back to VACATION (capture the year
+            # BEFORE delete, attributes expire afterwards).
+            if absence.type == AbsenceType.VACATION:
+                _resplit_years.add(absence.date.year)
             db.delete(absence)
 
     db.commit()
     db.refresh(cr)
+
+    # Fix #5: re-split the affected years' Betriebsferien so closure days flip
+    # VACATION<->OVERTIME after a VACATION-relevant approval — mirrors the direct
+    # booking / vacation-request paths. Toggle-gated; the main commit above made
+    # the absence change visible to the budget snapshot inside resplit.
+    if _resplit_years and settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", cr_tenant_id, False
+    ):
+        for _yr in _resplit_years:
+            resplit_year_closures(db, cr_tenant_id, _yr)
+        db.commit()
+        db.refresh(cr)
 
     cr_response = _enrich_cr_response(cr, db)
 
