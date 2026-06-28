@@ -366,6 +366,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Profil</strong> sehen Sie Ihre persönlichen Daten. Über <strong>Passwort ändern → Ändern</strong> setzen Sie ein neues Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer).</p>
+        <p><strong>Zwei-Faktor-Authentifizierung (2FA):</strong> Schützen Sie Ihr Konto zusätzlich mit einem Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy). <strong>Aktivieren:</strong> Karte „Zwei-Faktor-Authentifizierung" → „2FA aktivieren" → QR-Code scannen (oder Schlüssel manuell eintragen) → 6-stelligen Code bestätigen. <strong>Login:</strong> nach Benutzername + Passwort wird der 6-stellige Code abgefragt. <strong>Deaktivieren:</strong> „2FA deaktivieren" → aktuelles Passwort bestätigen. Bei verlorenem Zugang zur App hilft Ihr Administrator.</p>
         <p>Persönliche Daten wie Name und Wochenstunden können nur vom Administrator geändert werden. Unter <strong>Weitere Einstellungen</strong> finden Sie optionale Darstellungsoptionen.</p>
       </div>
     ),
@@ -406,14 +407,16 @@ export const handbuchAdminSections: AccordionItem[] = [
         <p><strong>Soll-Arbeitszeiten (Arbeitszeit-Fenster):</strong> Im Benutzerformular können Sie pro MA und Wochentag Soll-Beginn und Soll-Ende hinterlegen. Zeiten außerhalb des Fensters (abzüglich Puffer) werden nicht angerechnet; der gestempelte Rohwert bleibt gespeichert (§16). Der systemweite Puffer (Standard 15 Min.) ist unter <strong>Einstellungen → Arbeitszeit-Fenster Puffer</strong> konfigurierbar. Opt-in: ohne Soll-Zeiten kein Eingriff. MA mit deaktivierter Stundenzählung sind ausgenommen.</p>
         <p><strong>Kalenderfarbe:</strong> Im Benutzerformular können Sie die Kalenderfarbe aus einer Palette für jede:n Mitarbeiter:in vorgeben (Badge-Ring im Teamkalender); der/die Mitarbeiter:in kann sie auch selbst im Profil ändern.</p>
         <p><strong>Monatsjournal:</strong> Das Buch-Symbol in der Aktionsspalte öffnet das Monatsjournal des/der Mitarbeitenden. Die Überschrift trägt den Namen – <strong>„Monatsjournal: Vorname Nachname"</strong> –, damit beim Wechsel zwischen Personen sofort klar ist, wessen Journal angezeigt wird.</p>
+        <p><strong>DSGVO: Anonymisierung &amp; endgültige Löschung (Art. 17):</strong> Ablauf <strong>Deaktivieren → 14-Tage-Sperrfrist → Anonymisieren → endgültig löschen</strong>. <strong>Anonymisieren</strong> (nach der Sperrfrist) entfernt persönliche Daten (Name, E-Mail, Lichtbild, 2FA); die <strong>Zeiteinträge bleiben</strong> erhalten (§16 ArbZG), Abwesenheiten werden gelöscht. <strong>Endgültig löschen (Purge)</strong> löscht den Benutzer samt aller Daten unwiderruflich – erst möglich, wenn die jüngste aufbewahrungspflichtige Aufzeichnung <strong>mindestens 730 Tage</strong> alt ist (sonst blockiert das System). Anonymisierte Nutzer können also erst nach Ablauf der 730 Tage endgültig gelöscht werden; beide Vorgänge werden im Änderungsprotokoll vermerkt.</p>
       </div>
     ),
   },
   {
-    title: '3. Berichte & Excel-Exporte',
+    title: '3. Berichte & Exporte',
     content: (
       <div className="space-y-2">
-        <p>Unter <strong>Berichte</strong> stehen drei Export-Typen bereit: <strong>Monatsreport</strong> (Gehaltsabrechnung), <strong>Jahresreport Classic</strong> (12 Monate kompakt) und <strong>Jahresreport Detailliert</strong> (365 Tage, für Steuerberater). Jeder Report ist als Excel oder CSV verfügbar.</p>
+        <p>Unter <strong>Berichte</strong> stehen drei Export-Typen bereit: <strong>Monatsreport</strong> (Gehaltsabrechnung), <strong>Jahresreport Classic</strong> (12 Monate kompakt) und <strong>Jahresreport Detailliert</strong> (365 Tage, für Steuerberater). Jeder Report ist als <strong>Excel (.xlsx)</strong> und <strong>ODS (.ods)</strong> verfügbar; den Monatsreport gibt es zusätzlich als <strong>PDF (.pdf)</strong>.</p>
+        <p>Mit der Checkbox <strong>„Krankheitsdaten einschließen" (Art. 9 DSGVO)</strong> nehmen Sie Krankheitsstunden/-tage mit in den Export auf. Krankheitsdaten sind besondere Kategorien personenbezogener Daten; jeder Export mit dieser Option wird im Änderungsprotokoll vermerkt.</p>
         <p>Aufbewahrungspflicht: <strong>2 Jahre</strong> (§16 ArbZG). Regelmäßig exportieren und sicher archivieren.</p>
       </div>
     ),
@@ -431,7 +434,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     title: '5. Urlaubsanträge & Betriebsferien',
     content: (
       <div className="space-y-2">
-        <p><strong>Urlaubsanträge:</strong> Toggle „Genehmigungspflicht" aktiviert den Workflow. Anträge erscheinen als „Offen" → Genehmigen (grün) oder Ablehnen (rot, optional Grund).</p>
+        <p><strong>Urlaubsanträge:</strong> Toggle „Genehmigungspflicht" aktiviert den Workflow. Anträge erscheinen als „Offen" → Genehmigen (grün) oder Ablehnen (rot, optional Grund). <strong>Stornieren:</strong> Im Filter „Genehmigt" lässt sich ein genehmigter Antrag über <strong>„Urlaub stornieren"</strong> rückgängig machen, solange der Zeitraum noch nicht begonnen hat – die erzeugten Abwesenheiten werden dabei <strong>automatisch entfernt</strong>, der Antrag wird auf „Zurückgezogen" gesetzt.</p>
         <p><strong>Betriebsferien:</strong> Abwesenheiten → Tab „Betriebsferien" → Neue Betriebsferien. Alle aktiven Mitarbeiter mit der Option „Nimmt an Betriebsferien teil" (Standard, rollenunabhängig) erhalten automatisch Abwesenheitseinträge (kein Urlaubsabzug); Tage außerhalb des Beschäftigungszeitraums (noch nicht eingetreten / bereits ausgetreten) werden übersprungen. Nachträglich Berechtigte: Option setzen – die Einträge werden automatisch für laufende und künftige Betriebsferien nachgetragen. Beim Löschen werden alle Einträge entfernt.</p>
         <p className="text-gray-700"><strong>Betriebsferien länger als der Jahresurlaub:</strong> Sind als Urlaub zählende Betriebsferien länger als das Resturlaub-Budget, entstehen standardmäßig <strong>Minus-Urlaubstage</strong>. Unter <strong>Einstellungen → „Betriebsferien &amp; Urlaub"</strong> aktivieren Sie optional <strong>„Überzählige Betriebsferien als Überstundenabbau"</strong>: dann wird zuerst der Urlaub aufgezehrt und die überzähligen Tage werden als Überstundenausgleich gebucht (Konto darf ins Minus) – statt Minus-Urlaub. Global, Standard <strong>aus</strong>. Wirkt beim Anlegen/erneuten Speichern – für bestehende Betriebsferien einmal öffnen und neu speichern.</p>
         <p className="text-gray-700"><strong>Urlaubsberechnung (Tagesprinzip, §3 BUrlG):</strong> Urlaub wird nach Arbeitstagen geführt – ein freier Arbeitstag = <strong>1 Urlaubstag</strong>, unabhängig von Tagesstunden und Wochentag (auch bei individuellen Tagesstunden). Jahresanspruch anteilig: <code>30 × Arbeitstage ÷ 5</code> (überschreibbar beim Anlegen). Verbrauch wird tagebasiert gezählt, intern gespeicherte Stunden dienen nur der Soll-/Ist-Berechnung.</p>

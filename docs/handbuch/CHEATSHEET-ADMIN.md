@@ -57,6 +57,13 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 **Benutzer öffnen** → Status „Inaktiv"
 → Daten 2 Jahre aufbewahren (§16 ArbZG)
 
+### DSGVO: Anonymisierung & endgültige Löschung (Art. 17)
+**Reihenfolge:** Deaktivieren → **14-Tage-Sperrfrist** → Anonymisieren → endgültig löschen
+- **Anonymisieren** (nach 14-Tage-Sperrfrist): entfernt persönliche Daten (Name/E-Mail/Lichtbild/2FA), **Zeiteinträge bleiben** (§16 ArbZG), Abwesenheiten weg
+- **Endgültig löschen (Purge):** vollständige Löschung – erst möglich, wenn die jüngste Aufzeichnung **≥ 730 Tage** alt ist (sonst blockiert)
+- Anonymisierte Nutzer können erst **nach 730 Tagen** endgültig gelöscht werden; alles wird im Änderungsprotokoll vermerkt
+- **Inaktive anzeigen** einblenden → System zeigt Sperrfrist + ob Anonymisierung/Löschung möglich
+
 ---
 
 ## Admin-Dashboard
@@ -80,11 +87,12 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 | Bericht | Inhalt | Formate |
 |---------|--------|---------|
-| **Monatsreport** | Tägliche Einträge aller MA | Excel + CSV |
-| **Jahresreport Classic** | 12 Monate kompakt | Excel + CSV |
-| **Jahresreport Detailliert** | 365 Tage, ~5s | Excel + CSV |
+| **Monatsreport** | Tägliche Einträge aller MA | Excel (.xlsx) + ODS (.ods) + PDF (.pdf) |
+| **Jahresreport Classic** | 12 Monate kompakt | Excel (.xlsx) + ODS (.ods) |
+| **Jahresreport Detailliert** | 365 Tage, ~5s | Excel (.xlsx) + ODS (.ods) |
 
-**Exportieren:** Berichte → Typ & Zeitraum wählen → Excel oder CSV klicken
+**Exportieren:** Berichte → Typ & Zeitraum wählen → Format klicken (**PDF nur beim Monatsreport**)
+**Krankheitsdaten:** Checkbox „Krankheitsdaten einschließen" (Art. 9 DSGVO) → nimmt Krank-Daten auf, jeder solche Export wird protokolliert
 **Aufbewahrungspflicht: 2 Jahre** (§16 ArbZG)
 
 ---
@@ -99,6 +107,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 **Genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen
 **Ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
+**Stornieren:** Filter „Genehmigt" → Antrag → **„Urlaub stornieren"** (nur wenn Zeitraum noch nicht begonnen) → Abwesenheiten werden **automatisch entfernt**, Antrag wird „Zurückgezogen"
 
 ---
 
