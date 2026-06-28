@@ -22,6 +22,7 @@
    - 4.2 [Urlaubsantrag stellen (bei Genehmigungspflicht)](#42-urlaubsantrag-stellen-bei-genehmigungspflicht)
    - 4.3 [Abwesenheit löschen](#43-abwesenheit-löschen)
    - 4.4 [So wird Ihr Urlaub berechnet](#44-so-wird-ihr-urlaub-berechnet)
+   - 4.5 [Betriebsferien (Praxisschließung)](#45-betriebsferien-praxisschließung)
 5. [So berechnet PraxisZeit Ihre Stunden und Ihren Urlaub](#5-so-berechnet-praxiszeit-ihre-stunden-und-ihren-urlaub)
 6. [Wenn für Sie keine Stunden gezählt werden](#6-wenn-für-sie-keine-stunden-gezählt-werden)
 7. [Profil & Passwort](#7-profil--passwort)
@@ -353,6 +354,17 @@ PraxisZeit führt Urlaub **nach Arbeitstagen** (Tagesprinzip nach § 3 BUrlG) �
 
 > Intern rechnet das System mit Stunden (für die Soll-/Ist-Berechnung), Ihr Urlaubsverbrauch wird Ihnen aber immer in **ganzen Tagen** angezeigt.
 
+### 4.5 Betriebsferien (Praxisschließung)
+
+Wenn Ihre Praxis **Betriebsferien** einträgt (z. B. Weihnachts- oder Sommerschließung), legt PraxisZeit für Ihre Arbeitstage in diesem Zeitraum **automatisch** Abwesenheiten an – Sie müssen dafür nichts selbst eintragen. Wochenenden, Feiertage und Ihre freien Wochentage bleiben dabei außen vor.
+
+Wie sich das auf Ihr Konto auswirkt, legt Ihre Praxisleitung fest:
+
+- **Als bezahlte Freistellung:** Es wird **kein** Urlaubstag abgezogen, Ihr Überstundenkonto bleibt unberührt (wie ein Feiertag).
+- **Als Urlaub:** Jeder Schließtag wird Ihrem **Urlaubskonto** als Urlaubstag abgezogen. Reicht Ihr Resturlaub nicht für die gesamte Schließung, wird – je nach Einstellung Ihrer Praxis – zunächst Ihr Urlaub aufgebraucht und die restlichen Schließtage als **Überstundenabbau** gebucht: Ihr **Überstundenkonto sinkt** (es kann dabei auch ins Minus gehen), aber es entsteht **kein Minus-Urlaub**. Ist diese Einstellung nicht aktiv, können bei längerer Schließung **Minus-Urlaubstage** entstehen.
+
+> Bei Fragen zur konkreten Verrechnung Ihrer Betriebsferien wenden Sie sich an Ihre Praxisleitung.
+
 ---
 
 ## 5. So berechnet PraxisZeit Ihre Stunden und Ihren Urlaub
@@ -385,6 +397,8 @@ Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit: **(Ende − Beginn) − 
 | **Fortbildung** | zählt wie Arbeitszeit |
 | **Bezahlte Freistellung / Sonstiges** | Soll des Tages entfällt, **kein** Urlaubsabzug |
 | **Überstundenausgleich** | Soll bleibt, der Tag zählt als 0 Stunden → Ihr Überstundenkonto sinkt |
+
+> **Betriebsferien** wirken je nach Einstellung Ihrer Praxis als Urlaub oder als bezahlte Freistellung – Details in [Abschnitt 4.5](#45-betriebsferien-praxisschließung).
 
 ### Ihr Urlaub
 

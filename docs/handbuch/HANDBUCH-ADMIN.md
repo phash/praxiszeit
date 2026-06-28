@@ -464,17 +464,44 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 
 1. **Bezeichnung** (z. B. „Weihnachtsschließzeit 2026")
 2. **Von** (Startdatum) und **Bis** (Enddatum)
-3. Speichern
+3. **Verrechnung** wählen (siehe nächster Abschnitt)
+4. Speichern
 
 **Was passiert automatisch:**
-- Alle aktiven Mitarbeiter **mit der Option „Nimmt an Betriebsferien teil"** (Standard) erhalten für jeden Werktag Abwesenheitseinträge – unabhängig von der Rolle, also auch Admins, die zugleich als Mitarbeiter geführt werden. Reine Verwaltungs-Accounts können die Option in der Benutzerverwaltung abwählen.
-- Urlaubstage werden **nicht** verbraucht
-- Wochenenden und gesetzliche Feiertage werden übersprungen
-- Mitarbeiter erhalten Einträge **nur für Tage innerhalb ihres Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
+- Alle aktiven Mitarbeiter **mit der Option „Nimmt an Betriebsferien teil"** (Standard) erhalten für jeden ihrer **tatsächlichen Arbeitstage** im Zeitraum einen Abwesenheitseintrag – unabhängig von der Rolle, also auch Admins, die zugleich als Mitarbeiter geführt werden. Reine Verwaltungs-Accounts können die Option in der Benutzerverwaltung abwählen.
+- Vorhandene Arbeitszeit-Einträge an diesen Tagen werden ersetzt (im Änderungsprotokoll dokumentiert).
+
+**Es wird _kein_ Eintrag gebucht an:**
+- Wochenenden und gesetzlichen **Feiertagen**
+- **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0)
+- als **„Frei" konfigurierten Sondertagen** (24./31.12.)
+- Tagen **außerhalb des Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
+- Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben)
+
+### Verrechnung: Urlaub oder bezahlte Freistellung
+
+Beim Anlegen legen Sie unter **„Verrechnung"** fest, wie die Schließtage verbucht werden:
+
+| Auswahl | Wirkung |
+|---|---|
+| **Als Urlaub werten** (Standard) | Jeder gebuchte Schließtag wird vom **Urlaubskonto** der Mitarbeiter abgezogen (1 Tag pro Arbeitstag, Tagesprinzip). |
+| **Bezahlte Freistellung** | Wie ein Feiertag: das Tagessoll entfällt, es wird **kein** Urlaubstag abgezogen und das **Überstundenkonto** bleibt unberührt (saldoneutral). |
 
 > **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option „Nimmt an Betriebsferien teil" bei einem Mitarbeiter und speichern Sie die Benutzer-Änderung. Die Abwesenheiten werden **automatisch** für alle laufenden und künftigen Betriebsferien nachgetragen – ein erneutes Speichern der Betriebsferien ist nicht mehr nötig, und bereits erfasste Arbeitszeiten bleiben erhalten. (Bereits abgelaufene Betriebsferien werden bewusst nicht rückwirkend ergänzt.)
 
-> **Betriebsferien länger als der Jahresurlaub (#314):** Sind die als Urlaub zählenden Betriebsferien länger als das Resturlaubs-Budget einer Mitarbeiterin, entstehen standardmäßig **Minus-Urlaubstage**. Unter **Einstellungen → „Betriebsferien & Urlaub"** können Sie die Option **„Überzählige Betriebsferien als Überstundenabbau"** aktivieren: Dann wird zuerst der Urlaub aufgezehrt und die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Überstundenkonto darf dabei ins Minus gehen) – statt Minus-Urlaub. Die Option ist global und standardmäßig deaktiviert. **Wichtig:** Der Schalter wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien – für **bereits eingetragene** Betriebsferien öffnen Sie diese einmal und speichern erneut.
+### Betriebsferien länger als der Jahresurlaub (#314)
+
+Sind die **als Urlaub** zählenden Betriebsferien länger als das **Resturlaub-Budget** einer Mitarbeiterin, hängt das Verhalten vom globalen Schalter **„Überzählige Betriebsferien als Überstundenabbau"** ab (unter **Einstellungen → „Betriebsferien & Urlaub"**, standardmäßig **aus**):
+
+- **Schalter AUS (Standard):** Alle Schließtage zählen als Urlaub. Übersteigen die Betriebsferien den Resturlaub, entstehen **Minus-Urlaubstage** (Pflichturlaub – die Schließung wird zwingend gebucht).
+- **Schalter AN:** Pro Mitarbeiter wird **erst der Urlaub aufgezehrt, dann auf Überstundenabbau** umgestellt. Die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Soll bleibt, der Tag zählt als 0 Stunden → das Überstundenkonto sinkt um das Tagessoll und **darf ins Minus gehen**). So entsteht **nie Minus-Urlaub**.
+
+Wenn der Schalter aktiv ist, gilt zusätzlich:
+
+- **Kalenderreihenfolge:** Der Jahresurlaub wird den Betriebsferien **chronologisch nach Datum** zugeteilt (frühere Schließung zuerst) – **unabhängig davon, in welcher Reihenfolge Sie die Betriebsferien eingegeben haben**. Die Überstunden-Tage landen damit immer auf der **letzten** Schließung des Jahres.
+- **Privater Urlaub** im selben Jahr reduziert den für die Betriebsferien verfügbaren Urlaub mit – auch wenn er erst später im Jahr (z. B. im Sommer) gebucht ist. Urlaub wird also immer **zuerst** verbraucht, die Betriebsferien greifen nur auf den verbleibenden Rest zu.
+
+> **Wichtig – nachträglich aktivierter Schalter:** Der Schalter wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien. Für **bereits eingetragene** Betriebsferien öffnen Sie diese einmal unter „Betriebsferien" und **speichern erneut** – dann werden die Tage nach derselben Regel neu berechnet (Urlaub zuerst, danach Überstundenabbau).
 
 ### Betriebsferien löschen
 
@@ -545,6 +572,16 @@ Der Schalter **„Genehmigung erforderlich"** steuert, ob Urlaubsanträge von ei
 - **Ein**: Urlaubsanträge landen als „Offen" im Bereich **Anträge** beim Admin (→ [Abschnitt 7](#7-abwesenheitsanträge-genehmigen)).
 
 Diese Einstellung lässt sich alternativ auch direkt im Bereich „Abwesenheitsanträge" umschalten.
+
+<a id="betriebsferien-urlaub"></a>
+### Betriebsferien & Urlaub
+
+Der Schalter **„Überzählige Betriebsferien als Überstundenabbau"** steuert, was passiert, wenn als Urlaub zählende Betriebsferien länger sind als der Resturlaub einer Mitarbeiterin (Standard: **aus**):
+
+- **Aus:** Alle Schließtage zählen als Urlaub. Reicht der Resturlaub nicht, entstehen **Minus-Urlaubstage**.
+- **Ein:** Zuerst wird der Urlaub aufgezehrt, die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Überstundenkonto darf ins Minus gehen) – statt Minus-Urlaub.
+
+Die Option ist **global** und gilt nur für Betriebsferien, die als Urlaub gewertet werden. Sie wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien; bereits eingetragene Betriebsferien aktualisieren Sie durch erneutes Speichern (→ [Abschnitt 11](#11-betriebsferien-verwalten)).
 
 <a id="pflicht-pause-ausnahme"></a>
 ### Pflicht-Pause-Ausnahme
@@ -824,10 +861,21 @@ PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll –
 
 ### 18.7 Urlaubskonto (Tagesprinzip)
 
-- **Budget** = Jahresanspruch in Tagen (anteilig bei unterjährigem Eintritt/Austritt) + Resturlaub-Carryover.
-- **Verbrauch:** Nur Urlaub belastet das Budget. Jeder freie Arbeitstag kostet **1 Tag** (Halbtag 0,5) – unabhängig von der Stundenzahl des Tages.
+Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip § 3 BUrlG). **Resturlaub = Anspruch − Verbrauch.**
+
+**Anspruch (Budget):**
+- **Jahresanspruch in Tagen** + Resturlaub-Vortrag (Carryover) aus dem Jahresabschluss.
+- **Anteilig (pro rata)** bei unterjährigem Eintritt/Austritt – nach den tatsächlichen Beschäftigungsmonaten.
+- **Teilzeit nach Arbeitstagen/Woche:** Anspruch = `30 × Arbeitstage pro Woche ÷ 5`. Wer weniger Tage pro Woche arbeitet, hat anteilig weniger Urlaubstage; wer 5 (kürzere) Tage arbeitet, behält den vollen Tagesanspruch von 30. Beispielwerte: 5 Tage → 30; 4 Tage → 24; 3 Tage → 18. Der Wert ist beim Anlegen **überschreibbar**.
+
+**Verbrauch:**
+- Nur **Urlaub** belastet das Budget (bezahlte Freistellung, Krank, Fortbildung **nicht**). Jeder freie Arbeitstag kostet **1 Tag** (Halbtag 0,5) – unabhängig von der Stundenzahl des Tages.
+- Als **„Frei" + „zählt als Urlaub"** konfigurierte **Sondertage 24./31.12.** kosten je **1 Urlaubstag** – auch ohne eigenen Abwesenheitseintrag.
 - **Budget-Check** beim Antrag zählt **buchbare Arbeitstage** (Tagessoll > 0). Eine ganze Urlaubswoche kostet einen 3-Tage-Mitarbeiter nur 3 Tage.
-- Jahresanspruch-Vorschlag: `30 × Arbeitstage ÷ 5` (5 Tage → 30; 3 Tage → 18), überschreibbar.
+
+**Beschäftigungsfenster:** Vor dem ersten / nach dem letzten Arbeitstag entstehen **weder Anspruch noch Verbrauch**.
+
+**Live-Anzeige:** Die Konto-Anzeigen rechnen „bis heute" (Stichtag, siehe Abschnitt 18.6); rechtsverbindliche Datei-Exporte rechnen den vollen Zeitraum.
 
 ### 18.8 Sonderfälle
 
@@ -835,6 +883,7 @@ PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll –
 - **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
 - **Rückwirkende Stundenänderung:** alte Monate rechnen mit dem damals gültigen Wochensoll (Stundenhistorie / Wirkungsdatum).
+- **Betriebsferien:** je nach Verrechnung Urlaubsabzug oder bezahlte Freistellung; bei aktivem Schalter „Überzählige Betriebsferien als Überstundenabbau" zuerst Urlaub, dann Überstundenausgleich (kein Minus-Urlaub) – Details in [Abschnitt 11](#11-betriebsferien-verwalten).
 
 ### 18.9 Durchgerechnetes Beispiel (Vollzeit)
 

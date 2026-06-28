@@ -123,10 +123,18 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 ## Betriebsferien
 
 **Abwesenheiten → Tab Betriebsferien → Neue Betriebsferien**
-- Bezeichnung + Von–Bis → Speichern
-- → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Abwesenheitseinträge (keine Urlaubstage!) – rollenunabhängig (auch Admins, die MA sind)
+- Bezeichnung + Von–Bis + **Verrechnung** → Speichern
+- → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Einträge an ihren **Arbeitstagen** – rollenunabhängig (auch Admins, die MA sind)
+- **Nicht gebucht:** Wochenende, Feiertage, freie Wochentage (Teilzeit), „Frei"-Sondertage (24./31.12.), außerhalb des Beschäftigungszeitraums (Eintritt/Austritt), Tage mit vorhandener Abwesenheit
+- **Verrechnung:** *Als Urlaub werten* (**Standard**, zieht 1 Urlaubstag je Tag) **oder** *Bezahlte Freistellung* (kein Urlaubsabzug, saldoneutral)
 - Nachträglich Berechtigte: Option setzen → Einträge werden **automatisch** für laufende und künftige Betriebsferien nachgetragen (Neu-Speichern nicht nötig)
 - Löschen: Einträge werden bei allen MA automatisch entfernt
+
+**Länger als der Jahresurlaub (#314)** – Schalter *Einstellungen → Betriebsferien & Urlaub → „Überzählige Betriebsferien als Überstundenabbau"* (global, Standard **aus**):
+- **AUS:** alles Urlaub → Überschuss = **Minus-Urlaub** (Pflichturlaub)
+- **AN:** erst Urlaub, dann **Überstundenabbau** (Konto sinkt, darf ins Minus) → **nie** Minus-Urlaub
+- Zuteilung **chronologisch nach Datum** (frühere Schließung zuerst, Überstunden-Tage auf die **letzte** Schließung) – unabhängig von der Eingabereihenfolge; privater Urlaub wird **zuerst** verbraucht
+- Wirkt beim **Anlegen/erneuten Speichern** → bestehende Betriebsferien einmal öffnen + neu speichern
 
 ---
 
