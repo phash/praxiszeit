@@ -101,16 +101,22 @@ if ! $COMPOSE up -d; then
 fi
 
 # --- 5. health check with retry window ---
-
-log ">> Waiting for backend health..."
+# #337: HEALTH_TIMEOUT (Sekunden, Default 120) — großzügig, weil auf schwachen
+# 1-Core-VMs (z. B. Proxmox) der Image-Build + Backend-Start (inkl. Alembic-
+# Migration) deutlich länger als die früheren 10 s dauern kann. Überschreibbar:
+#   HEALTH_TIMEOUT=180 ./deploy.sh
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
+log ">> Waiting for backend health (timeout ${HEALTH_TIMEOUT}s)..."
 HEALTHY=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
+WAITED=0
+while [ "${WAITED}" -lt "${HEALTH_TIMEOUT}" ]; do
     if $COMPOSE exec -T backend python -c "from urllib.request import urlopen; import json, sys; r=json.loads(urlopen('http://localhost:8000/api/health').read()); sys.exit(0 if r.get('status')=='healthy' else 1)" 2>/dev/null; then
         HEALTHY=1
-        log ">> Backend OK (after ${i}s)"
+        log ">> Backend OK (after ${WAITED}s)"
         break
     fi
-    sleep 1
+    sleep 2
+    WAITED=$((WAITED + 2))
 done
 
 if [ "${HEALTHY}" -ne 1 ]; then
