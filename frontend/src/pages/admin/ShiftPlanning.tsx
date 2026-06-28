@@ -22,6 +22,7 @@ import {
   Wand2,
   Copy,
 } from 'lucide-react';
+import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
 import Button from '../../components/Button';
 import FormInput from '../../components/FormInput';
@@ -648,34 +649,41 @@ export default function AdminShiftPlanning() {
         />
       )}
 
-      {/* #338: Plan duplizieren — Name der Kopie */}
+      {/* #338: Plan duplizieren — Name der Kopie (Focus-Trap + Enter/Escape wie die
+          übrigen Dialoge, ADM round2 #4) */}
       {duplicateState && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-5">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Schichtplan duplizieren</h3>
-            <p className="text-sm text-gray-500 mb-3">
-              Kopiert alle Zeitslots und Zuweisungen. Die Kopie ist zunächst <strong>inaktiv</strong>.
-            </p>
-            <FormInput
-              label="Name der Kopie"
-              value={duplicateState.name}
-              onChange={(e) => setDuplicateState({ ...duplicateState, name: e.target.value })}
-            />
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="secondary" onClick={() => setDuplicateState(null)}>
-                Abbrechen
-              </Button>
-              <Button
-                variant="primary"
-                icon={Copy}
-                onClick={confirmDuplicate}
-                disabled={duplicating || !duplicateState.name.trim()}
-              >
-                Duplizieren
-              </Button>
-            </div>
+        <FocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: () => setDuplicateState(null) }}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <form
+              onSubmit={(e) => { e.preventDefault(); confirmDuplicate(); }}
+              className="bg-white rounded-xl shadow-lg w-full max-w-md p-5"
+            >
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Schichtplan duplizieren</h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Kopiert alle Zeitslots und Zuweisungen. Die Kopie ist zunächst <strong>inaktiv</strong>.
+              </p>
+              <FormInput
+                label="Name der Kopie"
+                autoFocus
+                value={duplicateState.name}
+                onChange={(e) => setDuplicateState({ ...duplicateState, name: e.target.value })}
+              />
+              <div className="flex justify-end gap-2 mt-4">
+                <Button type="button" variant="secondary" onClick={() => setDuplicateState(null)}>
+                  Abbrechen
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  icon={Copy}
+                  disabled={duplicating || !duplicateState.name.trim()}
+                >
+                  Duplizieren
+                </Button>
+              </div>
+            </form>
           </div>
-        </div>
+        </FocusTrap>
       )}
     </div>
   );

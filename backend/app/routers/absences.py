@@ -12,7 +12,7 @@ from app.models import (
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
-from app.services import calculation_service, settings_service
+from app.services import calculation_service, settings_service, special_days_service
 from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
@@ -372,6 +372,14 @@ def create_absence(
             PublicHoliday.tenant_id == target_user.tenant_id,
         ).all()
         holidays.update([h.date for h in year_holidays])
+
+    # AC-11: auch im Direkt-Buchungspfad 'free'-Sondertage (24./31.12.) wie
+    # Feiertage ausschließen — soll-freie Tage dürfen keine Absence bekommen
+    # (sonst kostet ein freier Tag bei VACATION fälschlich einen Urlaubstag).
+    # Konsistent zu company_closures + admin_vacations.review_vacation_request.
+    holidays |= special_days_service.free_special_days_in_range(
+        db, target_user.tenant_id, start_date, end_date
+    )
 
     # Collect all weekdays in range (excluding weekends and holidays)
     while current_date <= end_date:

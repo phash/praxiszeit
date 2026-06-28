@@ -55,6 +55,7 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 
 **Schichtpläne** (Reiter *Schichtpläne*):
 - Plan anlegen, auswählen, umbenennen, löschen (löscht zugehörige Slots + Zuweisungen).
+- **Duplizieren:** Über **Duplizieren** im Plankopf wird ein Plan inklusive aller Slots und Zuweisungen kopiert. Die Kopie ist ein **inaktiver Entwurf ohne Aktiv-Datumsfenster** — ideal, um Varianten („Sommer", „Schulferien") aus einem Bestandsplan abzuleiten, statt alles neu anzulegen. Arbeitsplätze/Einweisungen sind nicht plan-gebunden und werden nicht mitkopiert.
 - Im **Wochen-Editor** Slots anlegen/verschieben:
   - **Drag & Drop:** Slot-Block auf einen anderen Wochentag / eine andere Uhrzeit ziehen (15-Minuten-Raster). Mitarbeitende aus der Liste rechts auf einen Slot ziehen → zugewiesen.
   - **Klick-Pfad:** „+ Slot" bzw. Klick auf eine freie Rasterfläche öffnet einen Dialog (Arbeitsplatz, Wochentag, Von/Bis, Mindestbesetzung, Mitarbeitende). Klick auf einen vorhandenen Slot bearbeitet ihn.
