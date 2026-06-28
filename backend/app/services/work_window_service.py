@@ -72,9 +72,17 @@ def clamp(
         if end > ceil:
             eff_end, raw_end = ceil, end
 
-    # Schutz vor Inversion: liegt der Eintrag ganz außerhalb des Fensters,
-    # würde Kappen eff_start >= eff_end erzeugen → NICHT kappen (Rohwerte behalten),
-    # damit keine 0h-/invertierte Buchung entsteht und net_hours korrekt bleibt.
+    # Komplett außerhalb des Fensters: liegt der Eintrag ganz vor
+    # [Soll-Beginn − Puffer] bzw. ganz hinter [Soll-Ende + Puffer], würde die
+    # Kappung eff_start >= eff_end erzeugen. #201-Design-Spec §5: dann werden
+    # **0 Stunden angerechnet**, der Rohstempel bleibt aber erhalten (§16) — sonst
+    # ließe sich Arbeitszeit außerhalb des Soll-Fensters „erarbeiten" (Anti-Abuse,
+    # die Motivation des Features). Die angerechnete (effektive) Zeit kollabiert
+    # deshalb auf einen Punkt (= ``start``) → ``TimeEntry.net_hours`` floored auf 0.
+    # Punkt = ``start``, damit auch ``clock_out`` (setzt nur ``end_time = eff_end``,
+    # ``start_time`` bleibt der Stempel) net_hours == 0 erhält. Beide Original-
+    # stempel werden in raw_start/raw_end bewahrt — die §5-Ruhezeitprüfung rechnet
+    # weiterhin gegen diese Rohstempel (``raw_* or <gekappt>``).
     if eff_start is not None and eff_end is not None and eff_start >= eff_end:
-        return (start, end, None, None)
+        return (start, start, start, end)
     return (eff_start, eff_end, raw_start, raw_end)

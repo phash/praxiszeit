@@ -1,5 +1,5 @@
 from datetime import date, time
-from app.models import User, UserRole
+from app.models import User, UserRole, TimeEntry
 from app.services import work_window_service as wws
 
 
@@ -59,15 +59,33 @@ def test_grace_shift_clamps_to_day_bounds():
     assert eff_e == time(23, 59)
 
 
-def test_entry_entirely_before_window_not_clamped():
-    # Nachmittagsschicht-Fenster, Vormittags-Eintrag → würde invertieren → KEINE Kappung
+def test_entry_entirely_before_window_zero_credit():
+    # Nachmittagsschicht-Fenster, Vormittags-Eintrag → komplett außerhalb.
+    # #201-Spec §5: 0 angerechnete Stunden (eff_start == eff_end → net 0),
+    # aber beide Rohstempel bleiben für den §16-Nachweis erhalten.
     u = _user(scheduled_start_monday=time(14, 0), scheduled_end_monday=time(18, 0))
     eff_s, eff_e, raw_s, raw_e = wws.clamp(u, MON, time(8, 0), time(9, 0), 15)
-    assert (eff_s, eff_e, raw_s, raw_e) == (time(8, 0), time(9, 0), None, None)
-    assert eff_s < eff_e  # nie invertiert
+    assert eff_s == eff_e          # angerechnete Zeit kollabiert auf einen Punkt → net 0
+    assert raw_s == time(8, 0)     # Originalstart bewahrt
+    assert raw_e == time(9, 0)     # Originalende bewahrt
 
 
-def test_entry_entirely_after_window_not_clamped():
+def test_entry_entirely_after_window_zero_credit():
     u = _user(scheduled_start_monday=time(8, 0), scheduled_end_monday=time(10, 0))
     eff_s, eff_e, raw_s, raw_e = wws.clamp(u, MON, time(14, 0), time(15, 0), 15)
-    assert (eff_s, eff_e, raw_s, raw_e) == (time(14, 0), time(15, 0), None, None)
+    assert eff_s == eff_e
+    assert raw_s == time(14, 0)
+    assert raw_e == time(15, 0)
+
+
+def test_entirely_outside_entry_has_zero_net_hours():
+    # Die kollabierte Effektivzeit erzeugt auf dem TimeEntry net_hours = 0.
+    u = _user(scheduled_start_monday=time(8, 0), scheduled_end_monday=time(10, 0))
+    eff_s, eff_e, raw_s, raw_e = wws.clamp(u, MON, time(14, 0), time(15, 0), 15)
+    te = TimeEntry(
+        start_time=eff_s, end_time=eff_e, break_minutes=0,
+        raw_start_time=raw_s, raw_end_time=raw_e,
+    )
+    assert te.net_hours == 0
+    # §16: die tatsächlichen Stempel bleiben rekonstruierbar.
+    assert te.raw_start_time == time(14, 0) and te.raw_end_time == time(15, 0)
