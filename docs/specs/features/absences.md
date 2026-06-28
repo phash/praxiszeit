@@ -2,8 +2,8 @@
 
 **Status:** Done
 **Erstellt:** 2026-02-01
-**Zuletzt aktualisiert:** 2026-04-01
-**Zugehörige Issues:** #8, #12, #16
+**Zuletzt aktualisiert:** 2026-06-28
+**Zugehörige Issues:** #8, #12, #16, #145 (PAID_LEAVE), #167/#205 (Halbtage), #312 (eigene Gründe)
 
 ---
 
@@ -19,9 +19,28 @@ Mitarbeiter erfassen Abwesenheiten (Urlaub, Krank, Fortbildung, Sonstiges) als e
 
 Als **Mitarbeiter** möchte ich Abwesenheiten eintragen, damit mein Urlaubskonto und Soll-Stunden korrekt berechnet werden.
 
-- [x] **REQ-1**: Abwesenheitstypen: Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges
+- [x] **REQ-1**: Eingebaute Abwesenheitstypen (`AbsenceType`): **VACATION** (Urlaub,
+  budgetgeführt), **SICK** (Krank, §3 EntgFG), **TRAINING** (Fortbildung),
+  **OVERTIME** (Überstundenausgleich), **OTHER** (Sonstiges, **unbezahlt**) und
+  **PAID_LEAVE** (bezahlte Freistellung, #145: Soll↓, Ist=0, bilanzneutral, **kein
+  Urlaubsabzug** — wie ein Feiertag; rechen-mechanisch identisch zu OTHER, nur
+  „bezahlt" statt „unbezahlt"). Der Typ treibt die **gesamte** Berechnung
+  (`calculation_service`). Detail-Matrix: `docs/BACKEND-ARCHITEKTUR.md`.
+- [x] **REQ-1b** (#312 — eigene Abwesenheitsgründe): Admins definieren tenant-eigene
+  Gründe (`absence_reasons`: Name + Farbe + `base_behavior`). Ein Grund ist ein
+  **Label-/Farb-Overlay** über einem eingebauten Typ: `Absence.reason_id` (nullable
+  FK) trägt nur die Anzeige; `Absence.type` wird beim Buchen aus dem
+  `base_behavior` gesetzt (`BEHAVIOR_TO_ABSENCE_TYPE`: `worked→TRAINING`,
+  `paid_free→PAID_LEAVE`, `overtime_comp→OVERTIME`) — das Calc-Modell bleibt
+  **eingefroren**. **DSGVO:** jede Absence mit `reason_id` wird in den
+  Kollegen-Feeds für Nicht-Admins als `"absent"` maskiert (ein eigener Grund kann
+  sensibel sein, z. B. „Reha"). Details: `2026-06-27-issue-312-custom-absence-reasons-design.md`.
+- [x] **REQ-1c** (Halbtage, #167/#205): `half_day=True` → 0,5 × Tagessoll → zählt
+  diskriminierungsfrei als **0,5 Urlaubstag** (Tagesprinzip §3 BUrlG). Halbtag ist
+  ein Einzeltag-Konzept (bei Zeiträumen `False`). Nicht für OVERTIME.
 - [x] **REQ-2**: Einzeltag oder Zeitraum (Start–Ende) eintragen
-- [x] **REQ-3**: Bei Zeitraum: nur Werktage (Mo–Fr), keine Wochenenden, keine Feiertage
+- [x] **REQ-3**: Bei Zeitraum: nur Werktage (Mo–Fr), keine Wochenenden, keine
+  Feiertage; zusätzlich werden `free`-Sondertage (24./31.12.) ausgeschlossen (AC-11)
 - [x] **REQ-4**: Abwesenheitskalender zeigt alle Teammitglieder farbcodiert
 - [x] **REQ-5**: Monatsnavigation im Kalender
 - [x] **REQ-6**: Kalenderklick füllt Datum im Formular vor
@@ -55,7 +74,7 @@ Als **Admin** möchte ich Betriebsferien (Betriebsurlaub) für alle Mitarbeiter 
 ### Out of Scope
 
 - ~~Urlaubsantrags-Workflow (Beantragen → Genehmigen)~~ → **implementiert** (siehe `vacation-requests.md`)
-- Halbtages-Abwesenheiten
+- ~~Halbtages-Abwesenheiten~~ → **implementiert** (`half_day`, #167/#205 — siehe REQ-1c)
 
 ---
 
@@ -69,13 +88,16 @@ CREATE TABLE absences (
     user_id UUID REFERENCES users(id) NOT NULL,
     date DATE NOT NULL,
     end_date DATE,              -- NULL = Einzeltag, gesetzt = Zeitraum
-    type VARCHAR(20) NOT NULL,  -- 'vacation' | 'sick' | 'training' | 'overtime' | 'other'
+    type VARCHAR(20) NOT NULL,  -- 'vacation'|'sick'|'training'|'overtime'|'other'|'paid_leave' (#145)
     hours DECIMAL(4,2) NOT NULL,
     notes VARCHAR(500),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 -- Indexes: user_id, date, type, (user_id, date)
+-- Später ergänzt: tenant_id (Multi-Tenant, Migration 027), half_day (#205),
+-- closure_id FK→company_closures (#142), reason_id FK→absence_reasons (#312),
+-- start_time/end_time (Teil-Tag). Unique: (tenant_id, user_id, date, type).
 
 CREATE TABLE company_closures (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

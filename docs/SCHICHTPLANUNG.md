@@ -82,7 +82,10 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 
 ## Bedienung (Mitarbeitende)
 
-- **Schichtplan** (Menü): aktive Wochenpläne als Übersicht ansehen (nur lesen).
+- **Schichtplan** (Menü): **heute aktive** Wochenpläne als Übersicht ansehen (nur
+  lesen). Inaktive Entwürfe sind reine Admin-Planungsartefakte und werden für
+  Nicht-Admins **serverseitig** ausgeblendet — nicht nur im Frontend (s.
+  „Sichtbarkeit").
 - **Dashboard → „Deine Einteilung heute":** Arbeitsplatz, Zeit und Plan der heutigen Einsätze.
 
 ---
@@ -108,7 +111,18 @@ Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
   /qualifications`, `GET /me/qualifications`; pro Slot-Assignment ein
   `qualified`-Flag, pro Plan `unqualified_slot_ids` (weich, admin-only).
 - **KW-Planung:** `shift_planning_service.is_plan_active_on/plan_active_filter`
-  (is_active ODER Datums-Fenster); `active_today` in der Plan-Liste/-Detail.
+  (is_active ODER Datums-Fenster deckt heute ab, Europe/Berlin via `today_local()`);
+  `active_today` in der Plan-Liste/-Detail.
+- **Sichtbarkeit (serverseitiges Gating, Fix #7):** Die Read-Endpoints filtern für
+  Nicht-Admins **im Backend** auf heute aktive Pläne — nicht nur das Frontend:
+  - `GET /plans` (`list_plans`): Nicht-Admins überspringen Pläne, die heute nicht
+    aktiv sind (`if not is_admin and not active_today: continue`); Admins sehen
+    alle (inkl. Entwürfe).
+  - `GET /plans/{id}` (`get_plan`): ein heute **nicht** aktiver Plan liefert für
+    Nicht-Admins **404** („existiert nicht"), Admins bekommen das volle Detail
+    (`_build_plan_detail(..., is_admin)`).
+  - `get_my_today` vereinigt die eigenen Zuweisungen über **alle** aktiven Pläne
+    (`plan_active_filter(today)`).
 - **Auto-Generierung:** `app/services/shift_planning_generator.py` (Greedy,
   read-only ggü. Calc-Modell), Endpoint `POST /plans/{id}/generate`
   (`target_monday` + `mode=replace|fill_gaps`).

@@ -37,7 +37,10 @@ specs/
 │   ├── reports.md          # Berichte & Export
 │   ├── dashboard.md        # Dashboard (MA + Admin)
 │   ├── holidays.md         # Feiertage & Betriebsferien
+│   ├── vacation-requests.md # Urlaubsantrags-Workflow
+│   ├── betriebsferien-ueberstunden-split.md # Betriebsferien → Überstundenabbau (#314)
 │   └── notifications.md    # Benachrichtigungen & Warnungen
+├── saas-phase-3-4-design.md # SaaS: Signup + Billing/Stripe + Tenant-Lifecycle (#100)
 ├── dsgvo/                  # Datenschutz-Dokumentation
 │   ├── dsgvo-report.html   # DSGVO-Prüfbericht (alle Findings behoben)
 │   ├── dsfa.md             # Datenschutz-Folgenabschätzung (Art. 35)
@@ -129,3 +132,6 @@ Alle bestehenden Features sind rückwirkend als Specs dokumentiert:
 | Dashboard | `features/dashboard.md` | Spec-anchored |
 | Feiertage | `features/holidays.md` | Spec-anchored |
 | Warnungen | `features/notifications.md` | Spec-anchored |
+| Urlaubsanträge | `features/vacation-requests.md` | Spec-anchored |
+| Betriebsferien → Überstundenabbau (#314) | `features/betriebsferien-ueberstunden-split.md` | Spec-anchored |
+| SaaS Phase 3/4 (Signup/Billing/Lifecycle) | `saas-phase-3-4-design.md` | Spec-anchored |
