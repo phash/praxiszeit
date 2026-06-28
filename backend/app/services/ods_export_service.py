@@ -413,27 +413,29 @@ def _absences_overview_sheet(doc, db, users, year, bold, include_health_data: bo
     table.addElement(_header_row(headers, bold))
 
     for user in users:
-        # Uses current daily target for hours-to-days conversion — approximate for display
-        dt = float(calculation_service.get_daily_target(user)) or 8.0
+        # Tagesprinzip (§3 BUrlG, #156/#205): die TAGE tagebasiert zählen
+        # (absence_days / get_vacation_account), NICHT als Σ(Absence.hours) ÷
+        # ⌀-Tagessoll. Nur so rekonzilieren „verbraucht" und „Rest"
+        # (budget − used == remaining) und Halbtage/Tagespläne/track_hours=False
+        # stimmen mit den Live-Reports.
+        def days(atype, _user=user):
+            absences = db.query(Absence).filter(
+                Absence.user_id == _user.id,
+                Absence.tenant_id == _user.tenant_id,  # F-026
+                Absence.type == atype,
+                date_in_year(Absence.date, year),
+            ).all()
+            return float(calculation_service.absence_days(db, _user, absences).quantize(Decimal('0.1')))
 
-        def days(atype):
-            return sum(
-                float(a.hours)
-                for a in db.query(Absence).filter(
-                    Absence.user_id == user.id,
-                    Absence.type == atype,
-                    date_in_year(Absence.date, year),
-                ).all()
-            ) / dt
-
-        vac = days(AbsenceType.VACATION)
+        vac_acc = calculation_service.get_vacation_account(db, user, year)
+        # VACATION über get_vacation_account → schließt die #146 free+counts_as_
+        # vacation-Sondertage ein und ist damit konsistent mit der Resturlaub-Spalte.
+        vac = round(float(vac_acc["used_days"]), 1)
         sick = days(AbsenceType.SICK)
         train = days(AbsenceType.TRAINING)
         overtime_comp = days(AbsenceType.OVERTIME)
         other = days(AbsenceType.OTHER)
         paid_leave = days(AbsenceType.PAID_LEAVE)
-
-        vac_acc = calculation_service.get_vacation_account(db, user, year)
         remaining = float(vac_acc["remaining_days"])
 
         # DSGVO F-003: mask sick days unless health data explicitly requested (Art. 9)
