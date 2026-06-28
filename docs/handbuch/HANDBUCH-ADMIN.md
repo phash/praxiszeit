@@ -241,6 +241,27 @@ Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich
 
 > **Rechtlicher Hinweis (§16 ArbZG):** Arbeitszeitaufzeichnungen müssen **mindestens 2 Jahre** aufbewahrt werden. Löschen Sie daher niemals Mitarbeiterdaten – deaktivieren Sie die Konten.
 
+### DSGVO: Anonymisierung & endgültige Löschung (Art. 17)
+
+Für das **Recht auf Löschung** (Art. 17 DSGVO) gibt es zwei Stufen, die das gesetzliche Spannungsfeld zwischen Löschpflicht und der **Aufbewahrungspflicht** für Arbeitszeitaufzeichnungen (§16 ArbZG) auflösen. Beide setzen voraus, dass das Konto **zuvor deaktiviert** wurde.
+
+**Ablauf in Kürze:**
+
+1. **Deaktivieren** Sie den/die Mitarbeiter:in (Status „Inaktiv"). Damit startet eine **14-tägige Sperrfrist**.
+2. Nach Ablauf der Sperrfrist kann **anonymisiert** werden.
+3. **Endgültig löschen** lässt sich ein Datensatz erst, wenn die **730-tägige (2-Jahre-)Aufbewahrungsfrist** abgelaufen ist.
+
+| Aktion | Was passiert | Voraussetzung |
+|--------|--------------|---------------|
+| **Anonymisieren** | Personenbezogene Daten werden entfernt (Name → „Gelöschter Benutzer", Benutzername/E-Mail, Lichtbild, Abteilung, 2FA-Geheimnis). Die **Zeiteinträge bleiben** erhalten (Pflicht nach §16 ArbZG), Abwesenheiten werden gelöscht. Der Datensatz selbst und die Aufzeichnungen bleiben bestehen. | Konto deaktiviert **und** 14-tägige Sperrfrist abgelaufen |
+| **Endgültig löschen (Purge)** | **Vollständige, unwiderrufliche Löschung** des Benutzers samt aller zugehörigen Daten (Zeiteinträge, Abwesenheiten, Anträge). | Konto deaktiviert **und** die jüngste aufbewahrungspflichtige Aufzeichnung (Zeiteintrag oder Abwesenheit) ist **mindestens 730 Tage** alt |
+
+- Die **Anonymisierung** ist der Regelweg, wenn die Aufbewahrungsfrist noch läuft: Die Person wird anonymisiert, die gesetzlich aufzubewahrenden Aufzeichnungen bleiben aber erhalten.
+- Die **endgültige Löschung** wird vom System blockiert, solange noch aufbewahrungspflichtige Aufzeichnungen jünger als 730 Tage existieren. Ein anonymisierter Benutzer kann also **erst nach Ablauf der 730 Tage** endgültig gelöscht werden.
+- Beide Vorgänge werden im **Änderungsprotokoll** dokumentiert (DSGVO-Rechenschaftspflicht, Art. 5 Abs. 2).
+
+> **Wo?** Blenden Sie über **„Inaktive anzeigen"** die deaktivierten Konten ein. Das System zeigt je Konto die verbleibende Sperrfrist sowie an, ob eine Anonymisierung bzw. endgültige Löschung bereits möglich ist.
+
 ---
 
 ## 5. Abwesenheitskalender
@@ -277,14 +298,14 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 ### Monatsreport
 
 - **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
-- **Format:** Excel (.xlsx) oder CSV
+- **Format:** Excel (.xlsx), ODS (.ods) oder PDF (.pdf)
 - **Details pro Mitarbeiter:** Datum, Wochentag, Start, Ende, Pause, Ist-Stunden, Soll-Stunden, Abwesenheitstyp, Monatssaldo
 
 **Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
 
 ### Jahresreport Classic
 
-- **Format:** Excel (.xlsx) oder CSV, ca. 17 KB
+- **Format:** Excel (.xlsx) oder ODS (.ods)
 - **Inhalt:** Pro Mitarbeiter eine Zeile pro Monat
 - **Details:** Soll, Ist, Saldo, Urlaubstage, Krankheitstage, Fortbildungstage
 
@@ -292,18 +313,20 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 ### Jahresreport Detailliert
 
-- **Format:** Excel (.xlsx) oder CSV, ca. 108 KB
+- **Format:** Excel (.xlsx) oder ODS (.ods)
 - **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter
 - **Hinweis:** Generierungszeit 3–5 Sekunden
 
 **Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung
 
+> **Hinweis:** Das **PDF**-Format gibt es nur für den **Monatsreport**. Die Jahresreports stehen als **Excel** und **ODS** zur Verfügung.
+
 ### Bericht erstellen
 
 1. Wählen Sie den **Berichtstyp**
 2. Wählen Sie **Monat** oder **Jahr**
-3. Optional: **„Krankheiten einstellen"** – legt fest, ab welchem Datum § 3 EntgFG (Kranktage als gearbeitete Zeit) gilt
-4. Klicken Sie auf **Excel** oder **CSV**
+3. Optional: **„Krankheitsdaten einschließen" (Art. 9 DSGVO)** – nimmt Krankheitsstunden bzw. -tage in den Export auf. Krankheitsdaten sind besondere Kategorien personenbezogener Daten (Art. 9 DSGVO); jeder Export mit dieser Option wird im **Änderungsprotokoll** vermerkt.
+4. Klicken Sie auf das gewünschte Format – **Excel (.xlsx)**, **ODS (.ods)** oder (beim Monatsreport) **PDF (.pdf)**
 5. Die Datei wird automatisch heruntergeladen
 
 > **Rechtlicher Hinweis (§16 ArbZG):** Exportieren Sie regelmäßig (mindestens jährlich) und sichern Sie die Dateien sicher für **2 Jahre**.
@@ -331,7 +354,14 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 2. Klicken Sie auf **„Genehmigen"** (grüner Button)
 3. Das System trägt automatisch Abwesenheiten für alle Werktage ein (Wochenenden und Feiertage ausgeschlossen)
 
-> **Achtung:** Eine Genehmigung ist unwiderruflich. Zum Stornieren müssen die erstellten Abwesenheitseinträge manuell gelöscht werden.
+### Genehmigten Antrag stornieren
+
+Eine Genehmigung lässt sich rückgängig machen, solange der Urlaubszeitraum **noch nicht begonnen hat** (Beginn in der Zukunft). Wechseln Sie dazu in den Filter **„Genehmigt"**, öffnen Sie den Antrag und klicken Sie auf **„Urlaub stornieren"**.
+
+- Die durch die Genehmigung erzeugten **Abwesenheitseinträge werden automatisch entfernt** – ein manuelles Löschen ist nicht nötig.
+- Der Antrag wird auf **„Zurückgezogen"** gesetzt und bleibt für die Nachvollziehbarkeit im Änderungsprotokoll erhalten.
+
+> **Hinweis:** Bereits begonnene oder vergangene Urlaube können nicht storniert werden. Offene Anträge können vor der Entscheidung jederzeit storniert werden.
 
 ### Antrag ablehnen
 
@@ -454,11 +484,20 @@ Klicken Sie auf das Löschen-Symbol. Die Abwesenheitseinträge werden bei allen 
 
 ## 12. Import
 
-Unter **Import** können Sie Zeiteinträge oder Abwesenheitsdaten aus externen Quellen (z. B. CSV-Dateien) in das System importieren.
+Unter **Import** übernehmen Sie historische **Zeiteinträge** aus einer **TimeRec-Datei im `.xls`-Format**. Der Bereich ist für die einmalige Datenübernahme bei der Einführung von PraxisZeit gedacht (z. B. Altdaten aus der bisherigen Zeiterfassung).
 
-Dieser Bereich ist für die initiale Datenübernahme oder die Massenbefüllung bei der Einführung von PraxisZeit vorgesehen.
+> **Wichtig:** Importiert werden **ausschließlich Zeiteinträge** (Arbeitszeiten). **Abwesenheiten** (Urlaub, Krank usw.) werden **nicht** importiert. Es gibt **keine** Vorlagendatei zum Herunterladen und es werden **keine** CSV- oder `.xlsx`-Dateien unterstützt – nur das echte `.xls`-Format (BIFF) mit einem Tabellenblatt namens **„Zeiterfassung"**.
 
-**Vorgehensweise:** Laden Sie die Vorlagendatei herunter, befüllen Sie sie gemäß der Vorgaben und laden Sie die Datei wieder hoch.
+**Anforderungen an die Datei:**
+
+- Format **`.xls`** (TimeRec-Export), maximal **5 MB**
+- Tabellenblatt **„Zeiterfassung"** mit den Spalten Datum, Tag, Total, Ein, Aus, Tagesnotiz
+
+**Vorgehensweise (Assistent in drei Schritten):**
+
+1. **Hochladen:** Wählen Sie den/die **Mitarbeiter:in** aus, dem/der die Einträge zugeordnet werden, und laden Sie die `.xls`-Datei hoch (Drag & Drop oder Klick). Klicken Sie auf **„Datei analysieren"**.
+2. **Vorschau:** Das System zeigt alle gefundenen Einträge in einer Tabelle mit Datum, Von/Bis, Pause und Netto-Stunden. **Konflikte** (bereits vorhandene Einträge am selben Tag) werden rot, **ArbZG-Warnungen** (z. B. Ruhezeit, Höchstarbeitszeit) gelb markiert. Über die Option **„Konflikte überschreiben"** entscheiden Sie, ob vorhandene Einträge ersetzt werden – andernfalls werden sie übersprungen. Klicken Sie auf **„Import bestätigen"**.
+3. **Ergebnis:** Sie sehen, wie viele Einträge importiert, überschrieben oder übersprungen wurden sowie die ArbZG-Warnungen. Der Import wird im **Änderungsprotokoll** dokumentiert.
 
 ---
 

@@ -153,6 +153,17 @@ Für manche Mitarbeitende führt die Praxis **keine Stundenzählung**:
 
 ---
 
+## Zwei-Faktor-Authentifizierung (2FA)
+
+Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy).
+
+**Aktivieren:** Profil → Karte „Zwei-Faktor-Authentifizierung" → **2FA aktivieren** → QR-Code scannen (oder Schlüssel manuell eintragen) → 6-stelligen Code eingeben → **Bestätigen**
+**Login:** Benutzername + Passwort → danach **6-stelligen Code** aus der App
+**Deaktivieren:** **2FA deaktivieren** → aktuelles **Passwort** bestätigen
+> App/Handy verloren? → Administrator kontaktieren
+
+---
+
 ## Häufige Probleme
 
 | Problem | Lösung |
