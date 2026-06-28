@@ -13,6 +13,7 @@ from app.models import (
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service, settings_service, special_days_service
+from app.services.closure_split_service import resplit_year_closures
 from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
@@ -580,6 +581,19 @@ def create_absence(
     # Refresh all created absences
     for absence in created_absences:
         db.refresh(absence)
+
+    # Fix #3: a freshly booked VACATION reduces the remaining budget that the
+    # #314 Betriebsferien split reserves up front. Re-split the affected years so
+    # a closure day can flip VACATION<->OVERTIME accordingly. Tenant-wide per
+    # year (idempotent for unaffected users); only when the global toggle is on.
+    if (absence_data.type == AbsenceType.VACATION and created_absences
+            and settings_service.get_bool_setting(
+                db, "closure_overtime_after_vacation", target_user.tenant_id, False)):
+        for yr in {a.date.year for a in created_absences}:
+            resplit_year_closures(db, target_user.tenant_id, yr)
+        db.commit()
+        for absence in created_absences:
+            db.refresh(absence)
 
     return created_absences
 

@@ -12,6 +12,7 @@ from app.middleware.auth import get_current_user
 from app.schemas.vacation_request import VacationRequestCreate, VacationRequestResponse, VacationRequestUpdate
 from app.services.timezone_service import today_local
 from app.services import settings_service
+from app.services.closure_split_service import resplit_year_closures
 # #219: single shared VR-enricher (was duplicated here as a per-item N+1 copy of
 # admin_vacations._enrich_vr_responses). _enrich = thin single-item alias.
 from app.routers.admin_helpers import _enrich_vr_response as _enrich, _enrich_vr_responses
@@ -490,7 +491,18 @@ def withdraw_vacation_request(
                 status_code=400,
                 detail="Genehmigte Anträge können nur storniert werden, wenn der Zeitraum noch nicht begonnen hat",
             )
+        vr_end = vr.end_date if vr.end_date else vr.date
+        years = set(range(vr.date.year, vr_end.year + 1))
         cancel_approved_vacation_request(db, vr, current_user)
+        # Fix #3: cancelling a VACATION frees budget → re-split the affected years
+        # so a closure OVERTIME day can flip back to VACATION (only when the
+        # toggle is on). Flush the deletes first so they leave the budget snapshot.
+        if settings_service.get_bool_setting(
+            db, "closure_overtime_after_vacation", current_user.tenant_id, False
+        ):
+            db.flush()
+            for yr in years:
+                resplit_year_closures(db, current_user.tenant_id, yr)
         db.commit()
         return None
 

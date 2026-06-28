@@ -10,7 +10,8 @@ from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry, Tim
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview, VacationRequestUpdate
-from app.services import calculation_service, special_days_service
+from app.services import calculation_service, special_days_service, settings_service
+from app.services.closure_split_service import resplit_year_closures
 from app.services.timezone_service import today_local
 from app.routers.admin_helpers import (
     _create_audit_log,
@@ -305,6 +306,17 @@ def review_vacation_request(
     vr.status = VacationRequestStatus.APPROVED.value
     db.commit()
     db.refresh(vr)
+
+    # Fix #3: an approved VACATION reduces the budget the #314 closure split
+    # reserves up front → re-split the affected years (only when the toggle is on).
+    if absence_type == AbsenceType.VACATION and settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", current_user.tenant_id, False
+    ):
+        for yr in {d.year for d in dates_to_create}:
+            resplit_year_closures(db, current_user.tenant_id, yr)
+        db.commit()
+        db.refresh(vr)
+
     return _enrich_vr_response(vr, db)
 
 
@@ -402,7 +414,18 @@ def cancel_vacation_request_as_admin(
                 status_code=400,
                 detail="Genehmigte Anträge können nur storniert werden, wenn der Zeitraum noch nicht begonnen hat",
             )
+        vr_end = vr.end_date if vr.end_date else vr.date
+        years = set(range(vr.date.year, vr_end.year + 1))
         cancel_approved_vacation_request(db, vr, current_user)
+        # Fix #3: cancelling a VACATION frees budget → re-split the affected years
+        # so a closure OVERTIME day can flip back to VACATION (only when the
+        # toggle is on). Flush the deletes first so they leave the budget snapshot.
+        if settings_service.get_bool_setting(
+            db, "closure_overtime_after_vacation", current_user.tenant_id, False
+        ):
+            db.flush()
+            for yr in years:
+                resplit_year_closures(db, current_user.tenant_id, yr)
         db.commit()
         return None
 
