@@ -115,3 +115,25 @@ def test_purge_user_who_reviewed_change_request(admin_client, db, test_user):
     db.expire_all()
     got = db.query(ChangeRequest).filter(ChangeRequest.id == crid).first()
     assert got is not None and got.reviewed_by is None
+
+
+def test_purge_recomputes_audit_row_hash_for_reassigned_rows(admin_client, db, test_admin):
+    """Round3 (DSGVO Art.5(2)/§16): changed_by ist Teil des #121-row_hash. Beim
+    Purge-Reassign MUSS der Hash neu berechnet werden — sonst meldet
+    verify-integrity die legitime, umgehängte Zeile als 'tampered'."""
+    from app.core import audit_integrity
+    u = _deactivated_user(db, "editor_hash")
+    row = TimeEntryAuditLog(
+        tenant_id=DEFAULT_TENANT_ID, time_entry_id=None, user_id=test_admin.id,
+        changed_by=u.id, action="update", source="manual",
+    )
+    db.add(row)
+    db.commit()
+    rid = row.id
+    assert audit_integrity.verify_row(row) is True  # vor Purge: Hash über changed_by=u.id
+    assert admin_client.delete(f"/api/admin/users/{u.id}/purge").status_code == 200
+    db.expire_all()
+    reassigned = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.id == rid).first()
+    assert reassigned is not None and reassigned.changed_by == test_admin.id
+    # Mit Hash-Recompute bleibt die Integritätskette intakt (ohne Fix: tampered).
+    assert audit_integrity.verify_row(reassigned) is True

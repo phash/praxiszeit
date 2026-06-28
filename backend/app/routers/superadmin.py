@@ -89,6 +89,9 @@ def _absence_dict(a: Absence) -> dict:
         "user_id": str(a.user_id),
         "date": _iso(a.date),
         "type": a.type.value if hasattr(a.type, "value") else str(a.type),
+        # #312: eigener Abwesenheitsgrund — type treibt die Berechnung, reason_id
+        # gehört aber zur vollständigen §16-Aufzeichnung.
+        "reason_id": str(a.reason_id) if getattr(a, "reason_id", None) else None,
         "hours": float(a.hours) if a.hours is not None else None,
         "start_time": _iso(a.start_time),
         "end_time": _iso(a.end_time),

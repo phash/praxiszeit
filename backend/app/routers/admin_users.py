@@ -360,15 +360,25 @@ def purge_user(
     # acting admin instead — preserves the audit trail.
     # F-026: explicit tenant_id filter on every bulk op (CLAUDE.md rule —
     # RLS is belt-and-suspenders but the filter must be present in the query).
-    db.query(TimeEntryAuditLog).filter(
-        TimeEntryAuditLog.changed_by == user.id,
-        TimeEntryAuditLog.tenant_id == current_user.tenant_id,
-    ).update({TimeEntryAuditLog.changed_by: current_user.id}, synchronize_session=False)
-    # Delete the purged user's own audit log entries.
+    # Delete the purged user's OWN audit log entries first (user_id == user.id).
     db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.user_id == user.id,
         TimeEntryAuditLog.tenant_id == current_user.tenant_id,
     ).delete(synchronize_session=False)
+    db.flush()
+    # Reassign the REMAINING rows this user authored on OTHER employees to the
+    # acting admin. changed_by is part of the #121 tamper-evidence row_hash — a
+    # bulk UPDATE bypasses the before_insert hook and leaves the stored hash stale,
+    # so verify-integrity would wrongly flag these legitimate rows as 'tampered'
+    # after every Art.17 purge of an editing admin. Load as ORM objects and
+    # recompute the hash. SQLite-Tests fangen das NICHT (kein verify-after-purge).
+    from app.core import audit_integrity
+    for row in db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.changed_by == user.id,
+        TimeEntryAuditLog.tenant_id == current_user.tenant_id,
+    ).all():
+        row.changed_by = current_user.id
+        row.row_hash = audit_integrity.compute_row_hash(row)
 
     # Audit after cleaning up the user's logs (use admin's own ID since target will be deleted)
     log = TimeEntryAuditLog(
