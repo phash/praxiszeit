@@ -587,59 +587,28 @@ def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User]
     # Data rows
     row = 4
     for user in users:
-        # Uses current daily target for hours-to-days conversion — approximate for display
-        daily_target = calculation_service.get_daily_target(user)
-        if daily_target == 0:
-            daily_target = Decimal('8.0')
+        # Tagesprinzip (§3 BUrlG, #156/#205): die TAGE tagebasiert zählen — exakt
+        # wie die Live-Reports (reports.py) und get_vacation_account, NICHT als
+        # Σ(Absence.hours) ÷ ⌀-Tagessoll. Die naive Stundenrechnung driftet bei
+        # ungleichmäßigem Tagesplan / Halbtagen und liefert für track_hours=False
+        # 0 Tage trotz gebuchten Urlaubs.
+        def _days(atype, _user=user):
+            absences = db.query(Absence).filter(
+                Absence.user_id == _user.id,
+                Absence.tenant_id == _user.tenant_id,  # F-026
+                Absence.type == atype,
+                date_in_year(Absence.date, year),
+            ).all()
+            return float(calculation_service.absence_days(db, _user, absences).quantize(Decimal('0.1')))
 
-        # Calculate days for each absence type
-        vacation_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.VACATION,
-            date_in_year(Absence.date, year)
-        ).all()
-        vacation_hours = sum(float(a.hours) for a in vacation_absences)
-        vacation_days = vacation_hours / float(daily_target)
-
-        sick_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.SICK,
-            date_in_year(Absence.date, year)
-        ).all()
-        sick_hours = sum(float(a.hours) for a in sick_absences)
-        sick_days = sick_hours / float(daily_target)
-
-        training_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.TRAINING,
-            date_in_year(Absence.date, year)
-        ).all()
-        training_hours = sum(float(a.hours) for a in training_absences)
-        training_days = training_hours / float(daily_target)
-
-        overtime_comp_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.OVERTIME,
-            date_in_year(Absence.date, year)
-        ).all()
-        overtime_comp_hours = sum(float(a.hours) for a in overtime_comp_absences)
-        overtime_comp_days = overtime_comp_hours / float(daily_target)
-
-        other_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.OTHER,
-            date_in_year(Absence.date, year)
-        ).all()
-        other_hours = sum(float(a.hours) for a in other_absences)
-        other_days = other_hours / float(daily_target)
-
-        paid_leave_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.type == AbsenceType.PAID_LEAVE,
-            date_in_year(Absence.date, year)
-        ).all()
-        paid_leave_hours = sum(float(a.hours) for a in paid_leave_absences)
-        paid_leave_days = paid_leave_hours / float(daily_target)
+        # VACATION über get_vacation_account → schließt die #146 free+counts_as_
+        # vacation-Sondertage (24./31.12.) ein, konsistent mit der Urlaubs-Rechnung.
+        vacation_days = round(float(calculation_service.get_vacation_account(db, user, year)["used_days"]), 1)
+        sick_days = _days(AbsenceType.SICK)
+        training_days = _days(AbsenceType.TRAINING)
+        overtime_comp_days = _days(AbsenceType.OVERTIME)
+        other_days = _days(AbsenceType.OTHER)
+        paid_leave_days = _days(AbsenceType.PAID_LEAVE)
 
         total_days = vacation_days + (sick_days if include_health_data else 0) + training_days + overtime_comp_days + other_days + paid_leave_days
 

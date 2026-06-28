@@ -146,3 +146,98 @@ class TestFormulaInjection:
         from odf.teletype import extractText
         from app.services.ods_export_service import _str_cell
         assert extractText(_str_cell('Mitarbeiter:')) == 'Mitarbeiter:'
+
+
+class TestAbsencesOverviewDayBased:
+    """Fix #2 (Tagesprinzip §3 BUrlG): die ODS-Abwesenheits-Übersicht muss die
+    Tage tagebasiert (absence_days / get_vacation_account) zählen, nicht
+    stundenbasiert (Σh ÷ ⌀-Tagessoll). Dann gilt im Sheet „verbraucht" == „Rest"
+    (budget − used == remaining) und Halbtage/Tagespläne/untracked stimmen."""
+
+    def _tagesplan_user(self, db):
+        from app.models import User, UserRole
+        from app.services import auth_service
+        u = User(
+            username="ods_tagesplan", email="ods_tagesplan@example.com",
+            password_hash=auth_service.hash_password("x12345678"),
+            first_name="Tages", last_name="Plan", role=UserRole.EMPLOYEE,
+            weekly_hours=15.0, work_days_per_week=3, vacation_days=30,
+            is_active=True, tenant_id=DEFAULT_TENANT_ID,
+            track_hours=True, use_daily_schedule=True,
+            hours_monday=8, hours_tuesday=4, hours_wednesday=6,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u
+
+    def _untracked_user(self, db):
+        from app.models import User, UserRole
+        from app.services import auth_service
+        u = User(
+            username="ods_untracked", email="ods_untracked@example.com",
+            password_hash=auth_service.hash_password("x12345678"),
+            first_name="Lei", last_name="Tend", role=UserRole.EMPLOYEE,
+            weekly_hours=40.0, work_days_per_week=5, vacation_days=30,
+            is_active=True, tenant_id=DEFAULT_TENANT_ID, track_hours=False,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u
+
+    def _absence(self, db, user, d, typ, hours, half_day=False):
+        a = Absence(
+            user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+            type=typ, hours=hours, half_day=half_day,
+        )
+        db.add(a)
+        db.commit()
+        return a
+
+    def _vac_cell(self, doc, last_name):
+        """Liefert (urlaub, resturlaub) als float aus der 'Abwesenheiten'-Tabelle
+        für die Datenzeile des MA (Spalte 1 = Urlaub, Spalte 8 = Resturlaub)."""
+        from odf.table import Table, TableRow, TableCell
+        from odf.teletype import extractText
+        table = [t for t in doc.spreadsheet.getElementsByType(Table)
+                 if t.getAttribute("name") == "Abwesenheiten"][0]
+        for row in table.getElementsByType(TableRow):
+            cells = row.getElementsByType(TableCell)
+            if cells and last_name in extractText(cells[0]):
+                return (float(cells[1].getAttribute("value")),
+                        float(cells[8].getAttribute("value")))
+        raise AssertionError(f"keine Zeile für {last_name}")
+
+    def test_ods_overview_days_are_day_based_and_consistent_with_remaining(self, db, default_tenant):
+        from app.models import AbsenceType
+        from app.services import calculation_service
+        from app.services.ods_export_service import _absences_overview_sheet, _doc_with_styles
+
+        user_a = self._tagesplan_user(db)
+        user_b = self._untracked_user(db)
+
+        self._absence(db, user_a, date(2026, 1, 5), AbsenceType.VACATION, 8)   # Mo voll
+        self._absence(db, user_a, date(2026, 1, 6), AbsenceType.VACATION, 4)   # Di voll
+        self._absence(db, user_a, date(2026, 1, 7), AbsenceType.VACATION, 3, half_day=True)  # Mi halb
+        self._absence(db, user_b, date(2026, 1, 12), AbsenceType.VACATION, 0)  # Mo voll
+        self._absence(db, user_b, date(2026, 1, 13), AbsenceType.VACATION, 0, half_day=True)  # Di halb
+
+        doc, bold, _normal = _doc_with_styles()
+        _absences_overview_sheet(doc, db, [user_a, user_b], 2026, bold, include_health_data=True)
+
+        a_vac, a_rest = self._vac_cell(doc, "Plan")
+        b_vac, b_rest = self._vac_cell(doc, "Tend")
+
+        assert a_vac == 2.5, f"Tagesplan-Urlaub: erwartet 2,5 (tagebasiert), bekam {a_vac}"
+        assert b_vac == 1.5, f"untracked-Urlaub: erwartet 1,5 (tagebasiert), bekam {b_vac}"
+
+        # „verbraucht" + „Rest" rekonzilieren mit get_vacation_account (Budget − used).
+        acc_a = calculation_service.get_vacation_account(db, user_a, 2026)
+        assert a_vac == round(float(acc_a["used_days"]), 1)
+        assert a_rest == round(float(acc_a["remaining_days"]), 1)
+        assert round(a_vac + a_rest, 1) == round(float(acc_a["budget_days"]), 1)
+
+        acc_b = calculation_service.get_vacation_account(db, user_b, 2026)
+        assert b_vac == round(float(acc_b["used_days"]), 1)
+        assert b_rest == round(float(acc_b["remaining_days"]), 1)

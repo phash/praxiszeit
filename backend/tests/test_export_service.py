@@ -240,3 +240,110 @@ class TestPdfMarkupEscaping:
         )
         data = generate_avv_pdf(t)
         assert data[:4] == b"%PDF"
+
+
+class TestAbsencesOverviewDayBased:
+    """Fix #2 (Tagesprinzip §3 BUrlG): die Abwesenheits-Übersicht muss die TAGE
+    tagebasiert über ``calculation_service.absence_days`` / ``get_vacation_account``
+    zählen — NICHT als Σ(Absence.hours) ÷ get_daily_target (Durchschnitt). Sonst
+    sind Tagespläne/Halbtage falsch und ein ``track_hours=False``-MA zeigt 0 Tage
+    trotz gebuchtem Urlaub (und im ODS gilt „verbraucht" ≠ „Rest")."""
+
+    def _tagesplan_user(self, db):
+        """Ungleichmäßiger Tagesplan: Mo 8h, Di 4h, Mi 6h; ⌀-Tagessoll = 5h
+        (weekly 15 / 3 Tage). Genau dieser Unterschied macht Σh÷⌀ falsch."""
+        from app.models import User, UserRole
+        from app.services import auth_service
+        u = User(
+            username="tagesplan", email="tagesplan@example.com",
+            password_hash=auth_service.hash_password("x12345678"),
+            first_name="Tages", last_name="Plan", role=UserRole.EMPLOYEE,
+            weekly_hours=15.0, work_days_per_week=3, vacation_days=30,
+            is_active=True, tenant_id=DEFAULT_TENANT_ID,
+            track_hours=True, use_daily_schedule=True,
+            hours_monday=8, hours_tuesday=4, hours_wednesday=6,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u
+
+    def _untracked_user(self, db):
+        """Leitende(r) Angestellte(r): track_hours=False → ⌀-Tagessoll 0 → Σh÷⌀
+        liefert 0 Tage trotz Urlaub. Tagebasiert müssen die Tage trotzdem zählen."""
+        from app.models import User, UserRole
+        from app.services import auth_service
+        u = User(
+            username="untracked", email="untracked@example.com",
+            password_hash=auth_service.hash_password("x12345678"),
+            first_name="Lei", last_name="Tend", role=UserRole.EMPLOYEE,
+            weekly_hours=40.0, work_days_per_week=5, vacation_days=30,
+            is_active=True, tenant_id=DEFAULT_TENANT_ID, track_hours=False,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u
+
+    def _absence(self, db, user, d, typ, hours, half_day=False):
+        from app.models import Absence
+        a = Absence(
+            user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+            type=typ, hours=hours, half_day=half_day,
+        )
+        db.add(a)
+        db.commit()
+        return a
+
+    def test_overview_days_are_day_based_not_hours_based(self, db, default_tenant):
+        from openpyxl import Workbook
+        from app.models import AbsenceType
+        from app.services import calculation_service
+        from app.services.export_service import _create_absences_overview_sheet
+
+        user_a = self._tagesplan_user(db)
+        user_b = self._untracked_user(db)
+
+        # user_a: 2 volle Urlaubstage (Mo 8h, Di 4h) + 1 Halbtag (Mi, 3h) → 2,5 Tage
+        self._absence(db, user_a, date(2026, 1, 5), AbsenceType.VACATION, 8)   # Mo
+        self._absence(db, user_a, date(2026, 1, 6), AbsenceType.VACATION, 4)   # Di
+        self._absence(db, user_a, date(2026, 1, 7), AbsenceType.VACATION, 3, half_day=True)  # Mi (halb)
+        # user_a Krank: 1 voller Tag an einem Montag (8h) → 1,0 Tag (Σh÷⌀ wäre 1,6)
+        self._absence(db, user_a, date(2026, 1, 19), AbsenceType.SICK, 8)      # Mo
+
+        # user_b (untracked): 1 voller + 1 halber Urlaubstag → 1,5 Tage (Σh÷⌀ = 0)
+        self._absence(db, user_b, date(2026, 1, 12), AbsenceType.VACATION, 0)  # Mo
+        self._absence(db, user_b, date(2026, 1, 13), AbsenceType.VACATION, 0, half_day=True)  # Di
+
+        wb = Workbook()
+        _create_absences_overview_sheet(wb, db, [user_a, user_b], 2026, include_health_data=True)
+        sheet = wb["Abwesenheiten"]
+
+        # Layout: row 3 = Header, Datenzeilen ab row 4. Spalten: 1 Name, 2 Urlaub,
+        # 3 Krank, 4 Fortbildung, 5 ÜStd, 6 Sonstiges, 7 Bez.Freistellung, 8 Gesamt.
+        a_vac = sheet.cell(row=4, column=2).value
+        a_sick = sheet.cell(row=4, column=3).value
+        b_vac = sheet.cell(row=5, column=2).value
+
+        # Tagebasiert (Tagesprinzip), NICHT Σh÷⌀-Tagessoll.
+        assert a_vac == 2.5, f"Tagesplan-Urlaub: erwartet 2,5 (tagebasiert), bekam {a_vac}"
+        assert a_sick == 1.0, f"Tagesplan-Krank: erwartet 1,0 (tagebasiert), bekam {a_sick}"
+        assert b_vac == 1.5, f"untracked-Urlaub: erwartet 1,5 (tagebasiert), bekam {b_vac}"
+
+        # Deckungsgleich mit den autoritativen Berechnungsfunktionen (Live-Reports).
+        vac_acc_a = calculation_service.get_vacation_account(db, user_a, 2026)
+        assert a_vac == round(float(vac_acc_a["used_days"]), 1)
+        vac_acc_b = calculation_service.get_vacation_account(db, user_b, 2026)
+        assert b_vac == round(float(vac_acc_b["used_days"]), 1)
+
+    def test_yearly_report_renders_with_tagesplan_and_untracked(self, db, default_tenant):
+        """End-to-end: der komplette Jahresreport baut ein valides XLSX, auch mit
+        Tagesplan- und untracked-MA (kein Crash, Sheet öffenbar)."""
+        from app.models import AbsenceType
+        from app.services.export_service import generate_yearly_report
+        user_a = self._tagesplan_user(db)
+        user_b = self._untracked_user(db)
+        self._absence(db, user_a, date(2026, 1, 5), AbsenceType.VACATION, 8)
+        self._absence(db, user_b, date(2026, 1, 12), AbsenceType.VACATION, 0)
+        wb, data = _load_xlsx(generate_yearly_report(db, 2026))
+        assert "Abwesenheiten" in wb.sheetnames

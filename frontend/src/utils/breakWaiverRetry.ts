@@ -11,11 +11,11 @@ import { getErrorMessage } from './errorMessage';
  * Erkennung: die §4-Meldung des Backends enthält stets „Pause"; der §3-10h-Cap
  * („Höchstgrenze … §3 ArbZG") NICHT — der harte §3-Block bleibt also bestehen.
  */
-export async function submitWithBreakWaiver(
-  submit: (extra: { break_waiver_reason?: string }) => Promise<void>,
-): Promise<void> {
+export async function submitWithBreakWaiver<T = void>(
+  submit: (extra: { break_waiver_reason?: string }) => Promise<T>,
+): Promise<T> {
   try {
-    await submit({});
+    return await submit({});
   } catch (err) {
     const msg = getErrorMessage(err, '');
     if (!msg.includes('Pause')) throw err;
@@ -25,6 +25,6 @@ export async function submitWithBreakWaiver(
         'Abbrechen lässt den Eintrag unverändert.',
     );
     if (!reason || !reason.trim()) throw err;
-    await submit({ break_waiver_reason: reason.trim() });
+    return await submit({ break_waiver_reason: reason.trim() });
   }
 }

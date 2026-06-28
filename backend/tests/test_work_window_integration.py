@@ -276,6 +276,39 @@ def test_manual_create_caps_both_ends(db, employee, employee_client, monkeypatch
     assert entry.raw_end_time == dt.time(18, 0), f"Expected raw_end 18:00, got {entry.raw_end_time}"
 
 
+def test_manual_create_entirely_outside_window_zero_credit(db, employee, employee_client, monkeypatch):
+    """#201-Spec §5: ein Eintrag KOMPLETT außerhalb des Soll-Fensters wird mit
+    0 angerechneten Stunden gebucht (net_hours == 0), die Rohstempel bleiben für
+    den §16-Nachweis erhalten.
+
+    Soll Mo 08:00–10:00, grace=15 min → Fenster [07:45, 10:15].
+    Eingabe: 14:00–15:00 (liegt ganz hinter dem Fenster).
+    Erwartet: net_hours == 0, raw_start=14:00, raw_end=15:00.
+    """
+    import datetime as dt
+    import app.routers.time_entries as te
+
+    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.scheduled_end_monday = dt.time(10, 0)
+    db.commit()
+
+    monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
+
+    resp = employee_client.post("/api/time-entries", json={
+        "date": "2026-06-01",
+        "start_time": "14:00",
+        "end_time": "15:00",
+        "break_minutes": 0,
+    })
+    assert resp.status_code == 201, resp.text
+
+    from app.models import TimeEntry
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert entry.net_hours == 0, f"Expected 0 angerechnete Stunden, got {entry.net_hours}"
+    assert entry.raw_start_time == dt.time(14, 0), f"Expected raw_start 14:00, got {entry.raw_start_time}"
+    assert entry.raw_end_time == dt.time(15, 0), f"Expected raw_end 15:00, got {entry.raw_end_time}"
+
+
 def test_admin_create_caps_both_ends(db, employee, admin, admin_client):
     """POST /api/admin/users/{id}/time-entries klappt Start und Ende des
     betroffenen Mitarbeiters ins Soll-Fenster.

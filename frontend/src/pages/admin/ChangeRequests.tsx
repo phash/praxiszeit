@@ -5,6 +5,7 @@ import { AlertCircle, Check, X } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { showArbzgWarnings } from '../../utils/arbzgWarnings';
 
 interface ChangeRequest {
   id: string;
@@ -145,10 +146,13 @@ export default function AdminChangeRequests() {
     if (actionLock.current) return;
     actionLock.current = true;
     try {
-      await apiClient.post(`/admin/change-requests/${id}/review`, {
+      const response = await apiClient.post(`/admin/change-requests/${id}/review`, {
         action: 'approve',
       });
       toast.success('Antrag genehmigt');
+      // ArbZG-Warnungen der Genehmigung anzeigen (§3 >48h/Woche, §6 Nacht) —
+      // analog zu den MA-Pfaden (StampWidget/TimeTracking); bisher verworfen.
+      showArbzgWarnings(toast, response.data?.warnings);
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
@@ -212,6 +216,12 @@ export default function AdminChangeRequests() {
         toast.error(`Alle ${failed} Anträge konnten nicht bearbeitet werden`);
       } else {
         toast.warning(`${succeeded} bearbeitet, ${failed} fehlgeschlagen`);
+      }
+      // Die Sammel-Genehmigung (bulk-review) liefert KEINE ArbZG-Warnungen pro
+      // Antrag zurück (nur {succeeded, failed}). Darauf hinweisen, damit §3/§6-
+      // Verstöße nicht unbemerkt durchrutschen — bei Bedarf einzeln genehmigen.
+      if (action === 'approve' && succeeded > 0) {
+        toast.info('Sammel-Genehmigung zeigt keine ArbZG-Warnungen — bei Bedarf einzeln genehmigen und prüfen.');
       }
       setSelectedIds(new Set());
       setBulkRejectMode(false);
