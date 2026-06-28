@@ -56,10 +56,10 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
   <div class="stats">
     <div class="stat"><b>177</b><span>Use-Cases</span></div>
     <div class="stat"><b>10</b><span>Bereiche</span></div>
-    <div class="stat"><b>132</b><span>dokumentiert</span></div>
-    <div class="stat"><b>45</b><span>nicht dokumentiert</span></div>
-    <div class="stat"><b>17</b><span>Impl.-Abweichungen</span></div>
-    <div class="stat"><b>16</b><span>Findings ≥ medium</span></div>
+    <div class="stat"><b>137</b><span>dokumentiert</span></div>
+    <div class="stat"><b>40</b><span>nicht dokumentiert</span></div>
+    <div class="stat"><b>8</b><span>Impl.-Abweichungen</span></div>
+    <div class="stat"><b>0</b><span>Findings ≥ medium</span></div>
   </div>
 </header>
 <div class="wrap">
@@ -72,88 +72,8 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
   </div>
 
   <details class="findings" open>
-    <summary>Offene Findings ≥ medium (16) · low: 37</summary>
-    <table><tbody><tr class="f-high">
-      <td><span class="sev sev-high">HIGH</span></td>
-      <td>doku</td>
-      <td><code>ABV-07</code></td>
-      <td><strong>DSGVO-Anonymisierung + endgueltige Loeschung nicht im Benutzer-Handbuch / In-App-Hilfe dokumentiert</strong><div class="muted">Die UI bietet Admins zwei irreversible Art.17-Aktionen mit nichttrivialen Regeln (14-Tage-Sperrfrist, 730-Tage-Aufbewahrung, Unterschied Anonymisierung vs. Purge, anonymisierte User koennen erst danach geloescht werden). Im Admin-Handbuch (HANDBUCH-ADMIN.md), Cheatsheet (CHEATSHEET-ADMIN.md) und der In-App-Hilfe (DocViewer.tsx) ist davon NICHTS beschrieben — dort steht nur die Deaktivierung (&#x27;niem</div><div class="fix">→ In HANDBUCH-ADMIN.md (Abschnitt Benutzerverwaltung) und CHEATSHEET-ADMIN.md einen Abschnitt &#x27;DSGVO-Anonymisierung &amp; endgueltige Loeschung (Art.17)&#x27; ergaenzen: Ablauf Deaktivieren -&gt; 14 Tage Sperrfrist -&gt; Anonymisieren (Name/Email/Profilbild weg, Zeiteintraege bleiben §16) -&gt; nach 730 Tagen endguelti</div></td>
-    </tr><tr class="f-high">
-      <td><span class="sev sev-high">HIGH</span></td>
-      <td>doku</td>
-      <td><code>IMP-01</code></td>
-      <td><strong>Handbuch-Import-Abschnitt beschreibt ein völlig anderes Feature (CSV/Abwesenheiten/Vorlage)</strong><div class="muted">docs/handbuch/HANDBUCH-ADMIN.md Abschnitt 12 (&#x27;Import&#x27;, Z.455-461) sagt: &#x27;Zeiteinträge oder Abwesenheitsdaten aus externen Quellen (z. B. CSV-Dateien) importieren&#x27; und &#x27;Laden Sie die Vorlagendatei herunter, befüllen Sie sie ... und laden Sie die Datei wieder hoch.&#x27; Tatsächlich importiert das Feature ausschließlich TimeRec-.xls (BIFF/OLE2) — CSV und .xlsx/ZIP werden per Magic-Byte-Guard mit HTTP 40</div><div class="fix">→ Abschnitt 12 neu schreiben: TimeRec-.xls (Sheet &#x27;Zeiterfassung&#x27;), nur Zeiteinträge, max. 5 MB, Wizard mit Vorschau (Konflikte/ArbZG-Warnungen) und Überschreiben-Option; ausdrücklich KEIN CSV/xlsx, keine Vorlage, keine Abwesenheiten. Vgl. docs/specs/2026-03-10-xls-import-design.md.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>AUTH-05</code></td>
-      <td><strong>change_password rotiert Access-Token, aber NICHT das Refresh-Cookie -&gt; stiller Logout nach ~30 min</strong><div class="muted">POST /api/auth/change-password macht token_version++ und gibt einen frischen Access-Token zurueck (Profile.tsx ruft setTokens). Das Refresh-Cookie traegt jedoch weiterhin die ALTE token_version und wird nicht neu gesetzt (der Handler hat gar keinen Response-Parameter, kann also kein Cookie setzen). Sobald der neue Access-Token nach ACCESS_TOKEN_EXPIRE_MINUTES (30 min) ablaeuft, schlaegt /api/auth/</div><div class="fix">→ change_password einen response: Response-Parameter geben und nach dem token_version-Bump ein frisches Refresh-Cookie (_set_refresh_cookie mit neuem create_refresh_token) + CSRF-Cookie setzen, analog zum Login. Alternativ bewusst sofort vollstaendig ausloggen und das im Handbuch so beschreiben.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>doku</td>
-      <td><code>AUTH-02</code></td>
-      <td><strong>2FA/TOTP komplett undokumentiert (Handbuch, Cheatsheet, In-App-Hilfe)</strong><div class="muted">Die gesamte 2FA-Funktionalitaet (Login-Challenge AUTH-02, Einrichten AUTH-09, Verifizieren AUTH-10, Deaktivieren AUTH-11) ist nirgends dokumentiert: kein Treffer fuer &#x27;2FA/TOTP/Authenticator/Zwei-Faktor&#x27; in HANDBUCH-MITARBEITER.md, HANDBUCH-ADMIN.md, CHEATSHEET-*.md oder frontend/src/components/DocViewer.tsx. Profil §7 listet nur Passwort + Kalenderfarbe unter &#x27;Weitere Einstellungen&#x27;, obwohl 2FA p</div><div class="fix">→ Abschnitt &#x27;Zwei-Faktor-Authentifizierung&#x27; in HANDBUCH-MITARBEITER.md §7, CHEATSHEET-MITARBEITER.md und DocViewer (handbuchMitarbeiterSections) ergaenzen: Aktivieren (QR/Secret), Login-Ablauf, Deaktivieren, Hinweis auf Geraeteverlust/Admin-Kontakt. CLAUDE.md fordert In-App-Hilfe UND Markdown-Handbuch</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>MZ-01</code></td>
-      <td><strong>§5-Ruhezeitwarnung feuert fälschlich beim 2. Einstempeln am selben Tag (Schichtwechsel/Mittagsschließung)</strong><div class="muted">In clock_in (time_entries.py Z.299-320) sucht die §5-Prüfung den letzten ausgestempelten Eintrag mit Filter `TimeEntry.date &lt;= now.date()` ohne Same-Day-Ausschluss. Stempelt ein MA in einer Arztpraxis mit geteilter Sprechzeit vormittags aus (z.B. 12:00) und nachmittags wieder ein (z.B. 15:00), errechnet sich rest_hours ~3h &lt; 11h → es erscheint die Warnung &#x27;Nur 3.0h Ruhezeit seit letztem Arbeitsend</div><div class="fix">→ Die §5-Query auf Einträge VOR dem aktuellen Tag beschränken (`TimeEntry.date &lt; now.date()`) oder den last_entry verwerfen, wenn last_entry.date == now.date(). Nur nicht-blockierende Warnung, daher keine Datenkorrektheits-, aber relevante UX-/Vertrauens-Wirkung.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>MA-ABS-03</code></td>
-      <td><strong>Picker &#x27;Eigene Gründe&#x27; fehlt im dokumentierten Direkt-Buchungsformular (AbsenceCalendarPage)</strong><div class="muted">Handbuch-MITARBEITER §4.1 und die In-App-Hilfe (DocViewer.tsx ~Z.335) versprechen: Eigene Abwesenheitsgründe &#x27;erscheinen … in der Typ-Auswahl unter &quot;Eigene Gründe&quot;&#x27; im Formular &#x27;+ Abwesenheit eintragen&#x27;. Das ist FALSCH: Die Typ-Auswahl in frontend/src/pages/AbsenceCalendarPage.tsx (Z.569-578) ist hartkodiert (vacation/sick/training/overtime/other), lädt KEINE absence-reasons und sendet im doSubmit</div><div class="fix">→ Entweder den Reason-Picker (myReasons() + optgroup &#x27;Eigene Gründe&#x27; wie in MonthlyJournal) in AbsenceCalendarPage einbauen und reason_id im POST /absences mitschicken; ODER Handbuch-MITARBEITER §4.1 + DocViewer ~Z.335 korrigieren, dass eigene Gründe über die Journal-Seite (als Antrag) gebucht werden.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>MA-ABS-01</code></td>
-      <td><strong>vacation_approval_required wird auf dem Direkt-Buchungsendpoint nicht erzwungen (Approval-Bypass via API)</strong><div class="muted">Bei aktivierter Genehmigungspflicht routet nur das Frontend (AbsenceCalendarPage doSubmit Z.206) Urlaub auf /vacation-requests. Der Backend-Endpoint POST /api/absences (absences.create_absence) prüft vacation_approval_required NIRGENDS — grep zeigt das Flag wird ausschließlich in vacation_requests.create_vacation_request gelesen. Ein Mitarbeiter kann die Genehmigungspflicht daher mit einem direkte</div><div class="fix">→ In create_absence bei type==VACATION (und ggf. weiteren genehmigungspflichtigen Typen) für Nicht-Admins prüfen: wenn settings_service.get_bool_setting(db,&#x27;vacation_approval_required&#x27;,tenant_id) → 400/403 mit Verweis auf den Antragsweg (Admins/eigene Buchung für andere ausgenommen).</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>MS-06</code></td>
-      <td><strong>DSGVO Art.15-Export enthält keine Schichtplanungs-/Einweisungsdaten</strong><div class="muted">build_self_export_payload (lifecycle_service.py) sammelt TimeEntries, Absences, VacationRequests, ChangeRequests und Audit-Logs, aber KEINE Schichtplanungs-Daten des MA: weder shift_assignments (wann/wo eingeteilt) noch workstation_qualifications (Einweisungen = personenbezogene Kompetenzdaten). Bei aktivierter Schichtplanung ist die Art.15-Auskunft damit unvollständig; auch art15_meta.b_datenkate</div><div class="fix">→ Bei aktiviertem Feature-Flag eigene ShiftAssignments (mit Plan/Slot/Arbeitsplatz/Wochentag/Zeit) und eigene WorkstationQualifications in den Export aufnehmen (tenant- + user_id-gescoped) und b_datenkategorien um &#x27;Schichtplanung/Einweisungen&#x27; ergänzen. Falls bewusst als reines Planungsartefakt ausges</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>ABV-14</code></td>
-      <td><strong>Jahresabschluss uebernimmt Resturlaub von MA ohne Stundenzaehlung NICHT (track_hours-Filter)</strong><div class="muted">create_year_closing-Endpoint (admin_carryovers.py Z.137-141) filtert User auf track_hours==True. MA ohne Stundenzaehlung (#191) fuehren laut GLOSSAR/Handbuch trotzdem tagebasiert Urlaub mit Pro-rata-Anspruch + Vortrag — werden aber beim Jahresabschluss uebersprungen, sodass ihr Resturlaub NICHT als YearCarryover ins Folgejahr uebernommen wird (geht verloren, sofern der Admin ihn nicht manuell per </div><div class="fix">→ Im Jahresabschluss untracked MA fuer die VACATION-Carryover-Berechnung einbeziehen (nur Resturlaub, Ueberstunden=0) ODER bis zur Loesung von #191 die Handbuch-/Cheatsheet-Formulierung praezisieren (&#x27;aktive MA mit Stundenzaehlung; bei MA ohne Stundenzaehlung Resturlaub manuell per Vorjahresuebernahme</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>code-qualitaet</td>
-      <td><code>ABV-12</code></td>
-      <td><strong>Direktes Editieren von weekly_hours im UserForm umgeht die Stundenhistorie (rueckwirkende Soll-Aenderung)</strong><div class="muted">UserForm sendet weekly_hours als regulaeres Update-Feld an PUT /users/{id}, das user.weekly_hours direkt setzt. get_weekly_hours_for_date faellt fuer Daten OHNE passenden WorkingHoursChange auf user.weekly_hours zurueck (calculation_service.py Z.57-63). Bei einem Bestands-MA ohne Stundenhistorie aendert ein Edit der Wochenstunden damit rueckwirkend ALLE vergangenen Monats-Solls/Salden — obwohl Han</div><div class="fix">→ Entweder das weekly_hours-Direktfeld im UserForm beim Bearbeiten read-only/entfernen und konsequent auf die Stundenhistorie verweisen, oder beim Edit eine Warnung/Confirm zeigen (&#x27;aendert rueckwirkend; fuer Teilzeitumstellung Stundenhistorie nutzen&#x27;). Mindestens als Tooltip im Formular klarstellen.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>doku</td>
-      <td><code>RPT-05</code></td>
-      <td><strong>In-App-Hilfe nennt falsches Exportformat (CSV) und unterschlägt ODS/PDF</strong><div class="muted">frontend/src/components/DocViewer.tsx Z.416 (&#x27;3. Berichte &amp; Excel-Exporte&#x27;): &#x27;Jeder Report ist als Excel oder CSV verfügbar.&#x27; Es gibt KEINEN CSV-Export. Die tatsächlichen Formate sind XLSX, ODS und (für den Monatsreport zusätzlich) PDF — siehe reports.py /export-ods, /export-pdf, /export-yearly-ods etc. Außerdem fehlt die Erwähnung der Art.9-Krankheitsdaten-Checkbox in der In-App-Hilfe.</div><div class="fix">→ DocViewer.tsx Z.416 auf &#x27;Excel (.xlsx), ODS (.ods) und PDF (nur Monatsreport)&#x27; korrigieren; optional Hinweis auf die Krankheitsdaten-Checkbox (Art.9, audit-protokolliert) ergänzen.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>RPT-12</code></td>
-      <td><strong>§18-befreite MA werden in Sonntags-/Nacht-/Ersatzruhetag-Auswertung nicht ausgeschlossen (inkonsistent)</strong><div class="muted">rest-time-violations (RPT-11, via rest_time_service Z.123 User.exempt_from_arbzg==False) UND 24-week-average (RPT-15 Z.952 &#x27;if user.exempt_from_arbzg: continue&#x27;) überspringen §18-leitende Angestellte. sunday-summary, night-work-summary und compensatory-rest (reports.py Z.710/759/818) iterieren dagegen über _get_active_visible_users OHNE exempt-Filter und können so §18-MA fälschlich als &#x27;§11/§6-Ver</div><div class="fix">→ In sunday-summary, night-work-summary und compensatory-rest entweder analog `if user.exempt_from_arbzg: continue` überspringen oder exempt-MA gesondert kennzeichnen — konsistent zu rest-time/24-week. Falls bewusst inkludiert (rein informativ), als &#x27;exempt&#x27;-Flag pro Zeile ausgeben statt als Verstoß z</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>doku</td>
-      <td><code>AC-08</code></td>
-      <td><strong>Handbuch behauptet Urlaubsgenehmigung sei unwiderruflich – Storno-Funktion existiert</strong><div class="muted">docs/handbuch/HANDBUCH-ADMIN.md §7 sagt: &#x27;Achtung: Eine Genehmigung ist unwiderruflich. Zum Stornieren müssen die erstellten Abwesenheitseinträge manuell gelöscht werden.&#x27; Tatsächlich gibt es DELETE /api/admin/vacation-requests/{id} (cancel_vacation_request_as_admin) plus den UI-Button &#x27;Urlaub stornieren&#x27; in admin/VacationApprovals.tsx, der für genehmigte ZUKÜNFTIGE Anträge die zugehörigen Abwesen</div><div class="fix">→ Handbuch-Abschnitt 7 (und ggf. DocViewer &#x27;5.&#x27;) korrigieren: genehmigte zukünftige Anträge können über &#x27;Urlaub stornieren&#x27; storniert werden (Absencen werden automatisch entfernt); zusätzlich die &#x27;Bearbeiten&#x27;-Funktion (PATCH, AC-07) für offene Anträge erwähnen.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>AC-11</code></td>
-      <td><strong>Betriebsferien/Urlaubsgenehmigung ignorieren Sondertage 24./31.12.</strong><div class="muted">Die Arbeitstags-Berechnung für Betriebsferien (company_closures._get_workdays) und für die Urlaubsantrags-Genehmigung (admin_vacations.review_vacation_request, Schleife cur.weekday()&lt;5 and cur not in holidays) schließt nur Wochenenden + gesetzliche Feiertage aus, NICHT die konfigurierbaren Sondertage 24./31.12. (free/half_day). day_target kommt aus get_daily_target_for_date, das den Sondertags-Fak</div><div class="fix">→ In _get_workdays bzw. _create_closure_absences und im review_vacation_request-Loop die Sondertage berücksichtigen: free-Tage (special_day_target_factor==0) überspringen (kein Eintrag), half_day-Tage mit half_day=True/halbem Tagessoll buchen – analog zur Feiertags-Behandlung bzw. konsistent mit speci</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>ADM-12</code></td>
-      <td><strong>Compliance-Änderungsprotokoll ohne Pagination: ältere Audit-Einträge werden ab &gt;100/Monat stillschweigend abgeschnitten</strong><div class="muted">AuditLog.tsx (Seite &#x27;Änderungsprotokoll&#x27;) ruft GET /admin/audit-log nur mit month + optional user_id auf, ohne skip/limit/before. Das Backend defaultet limit=100 und sortiert created_at DESC. In einem Monat mit mehr als 100 Audit-Rows (in einer aktiven Praxis mit mehreren MA inkl. Zugriffsmarkern realistisch, da changes_only=false ALLE Ereignisse zeigt) werden die ÄLTESTEN Einträge des Monats nich</div><div class="fix">→ Im Frontend Keyset-Pagination (before=created_at der letzten Zeile) bzw. eine &#x27;Mehr laden&#x27;-Schaltfläche implementieren, oder zumindest sichtbar warnen, wenn die Antwort das Limit erreicht. Backend-Keyset-Cursor ist vorhanden — nur das UI nutzt ihn nicht.</div></td>
-    </tr><tr class="f-medium">
-      <td><span class="sev sev-medium">MEDIUM</span></td>
-      <td>implementierung</td>
-      <td><code>CS-12</code></td>
-      <td><strong>Superadmin §16-Notfall-Export enthält die ungekappten Rohstempel (raw_start_time/raw_end_time) NICHT</strong><div class="muted">superadmin._time_entry_dict (backend/app/routers/superadmin.py:68-78) serialisiert nur start_time/end_time/break_minutes/note/sunday_exception_reason. Die work-window-Kappung (#201) speichert die tatsächlichen Stempel in raw_start_time/raw_end_time; eingehängt an allen Schreibpfaden. Der lifecycle-Export (build_tenant_export_payload._time_entry_dict, lifecycle_service.py:347-365) nimmt diese Felde</div><div class="fix">→ raw_start_time/raw_end_time (und sinnvollerweise created_at) in superadmin._time_entry_dict aufnehmen, analog zu lifecycle_service._time_entry_dict; idealerweise beide Serializer auf den gemeinsamen lifecycle-Helper konsolidieren, damit sie nicht erneut auseinanderlaufen.</div></td>
-    </tr></tbody></table>
+    <summary>Offene Findings ≥ medium (0) · low: 0</summary>
+    <table><tbody></tbody></table>
   </details>
 
   <section class="area" data-area="Authentifizierung &amp; Account">
@@ -173,19 +93,19 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">HANDBUCH-MITARBEITER.md §1 Anmelden; CHEATSHEET-MITARBEITER.md; DocViewer CheatsheetMitarbeiter</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">DSGVO Art.5 (neutrale Log-Gruende, kein Leak inactive vs unknown M-001); Timing-Equalisierung; per-Username-Lockout zusaetzlich zu slowapi IP-Limit; Multi-Tenant superadmin-Kontext beim Lookup</span></div>
           </div>
-        </div><div class="uc" data-actor="Mitarbeiter" data-area="Authentifizierung &amp; Account" data-doc="0" data-impl="1" data-text="auth-02 2fa/totp-challenge beim login bei totp_enabled ohne totp_code -&gt; 401 + header x-requires-totp (frontend zeigt code-feld). mit code: decrypt_secret + verify_totp_with_counter (replay-schutz via last_totp_counter), legacy-klartext-secret wird bei erfolg auf fernet migriert. post /api/auth/login (totp_code)">
+        </div><div class="uc" data-actor="Mitarbeiter" data-area="Authentifizierung &amp; Account" data-doc="1" data-impl="1" data-text="auth-02 2fa/totp-challenge beim login bei totp_enabled ohne totp_code -&gt; 401 + header x-requires-totp (frontend zeigt code-feld). mit code: decrypt_secret + verify_totp_with_counter (replay-schutz via last_totp_counter), legacy-klartext-secret wird bei erfolg auf fernet migriert. post /api/auth/login (totp_code)">
           <div class="uc-head">
             <code class="uc-id">AUTH-02</code>
             <span class="uc-title">2FA/TOTP-Challenge beim Login</span>
             <span class="actor actor-mitarbeiter">Mitarbeiter</span>
-            <span class="badge warn">nicht dokumentiert</span> <span class="badge ok">korrekt</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">User mit totp_enabled loggt sich ein</span></div>
             <div class="row"><span class="k">Ablauf</span><span class="v">Bei totp_enabled ohne totp_code -&gt; 401 + Header X-Requires-TOTP (Frontend zeigt Code-Feld). Mit Code: decrypt_secret + verify_totp_with_counter (Replay-Schutz via last_totp_counter), Legacy-Klartext-Secret wird bei Erfolg auf Fernet migriert.</span></div>
             <div class="row"><span class="k">Endpoints</span><span class="v"><code>POST /api/auth/login (totp_code)</code></span></div>
             <div class="row"><span class="k">UI</span><span class="v">Login.tsx (totpRequired-Feld)</span></div>
-            <div class="row"><span class="k">Doku</span><span class="v">FEHLT</span></div>
+            <div class="row"><span class="k">Doku</span><span class="v">(ergänzt im UC-Review)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">DSGVO Art.32 (TOTP-Secret Fernet-verschluesselt, Migration on-login); Replay-Schutz per Counter; ±30s Fenster</span></div>
           </div>
         </div><div class="uc" data-actor="System" data-area="Authentifizierung &amp; Account" data-doc="0" data-impl="1" data-text="auth-03 access-token-refresh ueber refresh-cookie post /api/auth/refresh liest httponly-cookie, decode + type==refresh, token_version-pruefung gegen db, tenant-aktiv, neuer access-token + rotiertes csrf-cookie. refresh-token selbst wird nicht rotiert (7 tage gueltig). post /api/auth/refresh">
@@ -218,12 +138,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">Implizit; HANDBUCH-MITARBEITER §1; Interceptor-Ausschluss /auth/logout in CLAUDE.md dokumentiert</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">token_version-Bump invalidiert ALLE Tokens; 401-Interceptor muss /auth/logout ausschliessen (CLAUDE.md-Regel)</span></div>
           </div>
-        </div><div class="uc" data-actor="Mitarbeiter" data-area="Authentifizierung &amp; Account" data-doc="1" data-impl="0" data-text="auth-05 passwort aendern post /api/auth/change-password (3/min): aktuelles pw verifizieren, komplexitaet (min10+gross+klein+ziffer, backend+frontend), hash setzen, token_version++, neuer access-token in response. post /api/auth/change-password">
+        </div><div class="uc" data-actor="Mitarbeiter" data-area="Authentifizierung &amp; Account" data-doc="1" data-impl="1" data-text="auth-05 passwort aendern post /api/auth/change-password (3/min): aktuelles pw verifizieren, komplexitaet (min10+gross+klein+ziffer, backend+frontend), hash setzen, token_version++, neuer access-token in response. post /api/auth/change-password">
           <div class="uc-head">
             <code class="uc-id">AUTH-05</code>
             <span class="uc-title">Passwort aendern</span>
             <span class="actor actor-mitarbeiter">Mitarbeiter</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Profil -&gt; Passwort aendern</span></div>
@@ -431,12 +351,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
         </div>
     </section><section class="area" data-area="Mitarbeiter-Zeiterfassung">
       <h2>Mitarbeiter-Zeiterfassung <span class="count">15</span></h2>
-      <div class="uc" data-actor="Mitarbeiter" data-area="Mitarbeiter-Zeiterfassung" data-doc="1" data-impl="0" data-text="mz-01 einstempeln (clock-in / stoppuhr starten) offenen eintrag per select for update prüfen (vuln-009); stale vortageseintrag in selber tx auto-schließen (23:59 + audit); first/last_work_day prüfen; startzeit auf [soll-beginn − puffer] clampen (#201, raw_start_time gespeichert); §5-ruhezeit-warnung (&lt;11h seit letztem arbeitsende, dst-aware, übersprungen für exempt); early_start-warnung; timeentry mit end_time=null anlegen, 201. post /api/time-entries/clock-in">
+      <div class="uc" data-actor="Mitarbeiter" data-area="Mitarbeiter-Zeiterfassung" data-doc="1" data-impl="1" data-text="mz-01 einstempeln (clock-in / stoppuhr starten) offenen eintrag per select for update prüfen (vuln-009); stale vortageseintrag in selber tx auto-schließen (23:59 + audit); first/last_work_day prüfen; startzeit auf [soll-beginn − puffer] clampen (#201, raw_start_time gespeichert); §5-ruhezeit-warnung (&lt;11h seit letztem arbeitsende, dst-aware, übersprungen für exempt); early_start-warnung; timeentry mit end_time=null anlegen, 201. post /api/time-entries/clock-in">
           <div class="uc-head">
             <code class="uc-id">MZ-01</code>
             <span class="uc-title">Einstempeln (clock-in / Stoppuhr starten)</span>
             <span class="actor actor-mitarbeiter">Mitarbeiter</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">MA klickt Einstempeln (Dashboard StampWidget / mobiler FAB-Sheet)</span></div>
@@ -674,12 +594,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">HANDBUCH-ADMIN.md ~Z.531; CHEATSHEET-ADMIN.md #312</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">F-026, base_behavior immutable (v1), In-Use-Schutz (Absence+pending CR), Unique-Name</span></div>
           </div>
-        </div><div class="uc" data-actor="Mitarbeiter" data-area="Mitarbeiter-Abwesenheiten/Anträge" data-doc="1" data-impl="0" data-text="ma-abs-01 abwesenheit direkt eintragen (urlaub/krank/fortbildung/überstundenausgleich/sonstiges) post /api/absences → datums-range expandiert auf werktage (wochenende+feiertage raus), beschäftigungsfenster geprüft, doppelbuchung (with_for_update) verhindert, bei vacation tagebasierter budget-check, voll-tag-typen werden mit tagessoll des tages gebucht (nur overtime behält explizite stunden), bestehende timeentries des tages werden gelöscht (außer keep_time_entries) post /api/absences/ ; get /api/absences/daily-target">
+        </div><div class="uc" data-actor="Mitarbeiter" data-area="Mitarbeiter-Abwesenheiten/Anträge" data-doc="1" data-impl="1" data-text="ma-abs-01 abwesenheit direkt eintragen (urlaub/krank/fortbildung/überstundenausgleich/sonstiges) post /api/absences → datums-range expandiert auf werktage (wochenende+feiertage raus), beschäftigungsfenster geprüft, doppelbuchung (with_for_update) verhindert, bei vacation tagebasierter budget-check, voll-tag-typen werden mit tagessoll des tages gebucht (nur overtime behält explizite stunden), bestehende timeentries des tages werden gelöscht (außer keep_time_entries) post /api/absences/ ; get /api/absences/daily-target">
           <div class="uc-head">
             <code class="uc-id">MA-ABS-01</code>
             <span class="uc-title">Abwesenheit direkt eintragen (Urlaub/Krank/Fortbildung/Überstundenausgleich/Sonstiges)</span>
             <span class="actor actor-mitarbeiter">Mitarbeiter</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">MA klickt auf Abwesenheiten → &#x27;+ Abwesenheit eintragen&#x27;, wählt Typ/Datum/Zeitraum</span></div>
@@ -704,12 +624,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">FEHLT (UI-Confirm vorhanden, aber keine Handbuch-/DocViewer-Beschreibung der Rückerstattung)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">§3 EntgFG (Krankheit im Urlaub gilt nicht als Urlaub), DSGVO Art.5(2) Audit-Log, F-026</span></div>
           </div>
-        </div><div class="uc" data-actor="Mitarbeiter" data-area="Mitarbeiter-Abwesenheiten/Anträge" data-doc="1" data-impl="0" data-text="ma-abs-03 abwesenheit mit eigenem grund buchen (#312) reason_id wird tenant-scoped + is_active aufgelöst, base_behavior → eingebauter absencetype (worked→training, paid_free→paid_leave, overtime_comp→overtime), absence trägt reason_id als label/farbe; berechnung läuft über type post /api/absences/ (reason_id) ; get /api/absence-reasons (picker)">
+        </div><div class="uc" data-actor="Mitarbeiter" data-area="Mitarbeiter-Abwesenheiten/Anträge" data-doc="1" data-impl="1" data-text="ma-abs-03 abwesenheit mit eigenem grund buchen (#312) reason_id wird tenant-scoped + is_active aufgelöst, base_behavior → eingebauter absencetype (worked→training, paid_free→paid_leave, overtime_comp→overtime), absence trägt reason_id als label/farbe; berechnung läuft über type post /api/absences/ (reason_id) ; get /api/absence-reasons (picker)">
           <div class="uc-head">
             <code class="uc-id">MA-ABS-03</code>
             <span class="uc-title">Abwesenheit mit eigenem Grund buchen (#312)</span>
             <span class="actor actor-mitarbeiter">Mitarbeiter</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">MA wählt einen tenant-eigenen Grund (z. B. &#x27;Schule&#x27;) beim Buchen</span></div>
@@ -1145,19 +1065,19 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">FEHLT (kein Handbuch-/Cheatsheet-/In-App-Eintrag fuer Ausblenden)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">F-026; Sichtbarkeit getrennt von Aktiv-Status</span></div>
           </div>
-        </div><div class="uc" data-actor="Admin" data-area="Admin-Benutzerverwaltung" data-doc="0" data-impl="1" data-text="abv-07 dsgvo-anonymisierung (art.17) post /api/admin/users/{id}/anonymize; pruefen: inaktiv + nicht bereits anonymisiert + 14-tage-grace abgelaufen; name/username/email/profilbild/totp/department geleert, token_version++; absences geloescht; zeiteintraege bleiben (§16); audit-log. post /api/admin/users/{user_id}/anonymize">
+        </div><div class="uc" data-actor="Admin" data-area="Admin-Benutzerverwaltung" data-doc="1" data-impl="1" data-text="abv-07 dsgvo-anonymisierung (art.17) post /api/admin/users/{id}/anonymize; pruefen: inaktiv + nicht bereits anonymisiert + 14-tage-grace abgelaufen; name/username/email/profilbild/totp/department geleert, token_version++; absences geloescht; zeiteintraege bleiben (§16); audit-log. post /api/admin/users/{user_id}/anonymize">
           <div class="uc-head">
             <code class="uc-id">ABV-07</code>
             <span class="uc-title">DSGVO-Anonymisierung (Art.17)</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge warn">nicht dokumentiert</span> <span class="badge ok">korrekt</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Admin klickt Anonymisieren-Icon (nur inaktiv, nach Sperrfrist)</span></div>
             <div class="row"><span class="k">Ablauf</span><span class="v">POST /api/admin/users/{id}/anonymize; pruefen: inaktiv + nicht bereits anonymisiert + 14-Tage-Grace abgelaufen; Name/Username/Email/Profilbild/TOTP/Department geleert, token_version++; Absences geloescht; Zeiteintraege bleiben (§16); Audit-Log.</span></div>
             <div class="row"><span class="k">Endpoints</span><span class="v"><code>POST /api/admin/users/{user_id}/anonymize</code></span></div>
             <div class="row"><span class="k">UI</span><span class="v">Users.tsx handleAnonymize</span></div>
-            <div class="row"><span class="k">Doku</span><span class="v">FEHLT in HANDBUCH-ADMIN/CHEATSHEET/DocViewer (nur in docs/specs/dsgvo)</span></div>
+            <div class="row"><span class="k">Doku</span><span class="v">in HANDBUCH-ADMIN/CHEATSHEET/DocViewer (nur in docs/specs/dsgvo) (ergänzt im UC-Review)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">Art.17 DSGVO; §16 ArbZG (TimeEntry-Retention); 14-Tage-Sperrfrist; Art.4/9 (Biometrie/TOTP loeschen); F-026</span></div>
           </div>
         </div><div class="uc" data-actor="Admin" data-area="Admin-Benutzerverwaltung" data-doc="0" data-impl="1" data-text="abv-08 dsgvo endgueltige loeschung (purge, art.17) delete /api/admin/users/{id}/purge; inaktiv noetig; juengste timeentry- und absence-datum muss &gt;=730 tage zurueck (409 sonst); fk-abhaengigkeiten aufgeloest (audit-logs umgehaengt/geloescht, vacationrequest/changerequest/workinghourschange/shiftplan/qualifications/companyclosure/signuptoken bereinigt), dann db.delete(user). delete /api/admin/users/{user_id}/purge">
@@ -1250,12 +1170,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">HANDBUCH-ADMIN.md (Vorjahresuebernahme/Anfangssaldo Z.180) + CHEATSHEET Z.249</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">F-026; Ueberstunden in Stunden, Urlaub in Tagen</span></div>
           </div>
-        </div><div class="uc" data-actor="Admin" data-area="Admin-Benutzerverwaltung" data-doc="1" data-impl="0" data-text="abv-14 jahresabschluss erstellen post /api/admin/year-closing/{year}; pg_advisory_xact_lock pro (tenant,year); 409 bei offenen changerequests des jahres; berechnet ueberstundensaldo + resturlaub per 31.12. fuer aktive user mit track_hours==true; upsert yearcarryover fuer year+1. post /api/admin/year-closing/{year}">
+        </div><div class="uc" data-actor="Admin" data-area="Admin-Benutzerverwaltung" data-doc="1" data-impl="1" data-text="abv-14 jahresabschluss erstellen post /api/admin/year-closing/{year}; pg_advisory_xact_lock pro (tenant,year); 409 bei offenen changerequests des jahres; berechnet ueberstundensaldo + resturlaub per 31.12. fuer aktive user mit track_hours==true; upsert yearcarryover fuer year+1. post /api/admin/year-closing/{year}">
           <div class="uc-head">
             <code class="uc-id">ABV-14</code>
             <span class="uc-title">Jahresabschluss erstellen</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Admin klickt &#x27;Jahresabschluss&#x27; im Admin-Dashboard</span></div>
@@ -1388,19 +1308,19 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
         </div>
     </section><section class="area" data-area="Admin-Berichte &amp; Datenaustausch">
       <h2>Admin-Berichte &amp; Datenaustausch <span class="count">19</span></h2>
-      <div class="uc" data-actor="Admin" data-area="Admin-Berichte &amp; Datenaustausch" data-doc="0" data-impl="1" data-text="imp-01 xls-import vorschau (timerec) datei &lt;=5mb, magic-byte-guard (nur ole2/biff .xls; .xlsx/zip + fremdformat abgelehnt 400), parse_xls (sheet &#x27;zeiterfassung&#x27;), soll-fenster-kappung (#201, raw_* erhalten), arbzg-warnungen (§3/§4 tagesaggregation, §5 inkl. db-vorlauf, §6, §18-bypass), konflikt-erkennung. kein schreiben. post /api/admin/import/preview (multipart: file, user_id)">
+      <div class="uc" data-actor="Admin" data-area="Admin-Berichte &amp; Datenaustausch" data-doc="1" data-impl="1" data-text="imp-01 xls-import vorschau (timerec) datei &lt;=5mb, magic-byte-guard (nur ole2/biff .xls; .xlsx/zip + fremdformat abgelehnt 400), parse_xls (sheet &#x27;zeiterfassung&#x27;), soll-fenster-kappung (#201, raw_* erhalten), arbzg-warnungen (§3/§4 tagesaggregation, §5 inkl. db-vorlauf, §6, §18-bypass), konflikt-erkennung. kein schreiben. post /api/admin/import/preview (multipart: file, user_id)">
           <div class="uc-head">
             <code class="uc-id">IMP-01</code>
             <span class="uc-title">XLS-Import Vorschau (TimeRec)</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge warn">nicht dokumentiert</span> <span class="badge ok">korrekt</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Import → Datei analysieren</span></div>
             <div class="row"><span class="k">Ablauf</span><span class="v">Datei &lt;=5MB, Magic-Byte-Guard (nur OLE2/BIFF .xls; .xlsx/ZIP + Fremdformat abgelehnt 400), parse_xls (Sheet &#x27;Zeiterfassung&#x27;), Soll-Fenster-Kappung (#201, raw_* erhalten), ArbZG-Warnungen (§3/§4 Tagesaggregation, §5 inkl. DB-Vorlauf, §6, §18-bypass), Konflikt-Erkennung. KEIN Schreiben.</span></div>
             <div class="row"><span class="k">Endpoints</span><span class="v"><code>POST /api/admin/import/preview (multipart: file, user_id)</code></span></div>
             <div class="row"><span class="k">UI</span><span class="v">ImportXls.tsx (Wizard Schritt 1→2)</span></div>
-            <div class="row"><span class="k">Doku</span><span class="v">FEHLT in In-App-Hilfe; HANDBUCH-ADMIN.md §12 vorhanden aber FALSCH (s. Finding)</span></div>
+            <div class="row"><span class="k">Doku</span><span class="v">in In-App-Hilfe; HANDBUCH-ADMIN.md §12 vorhanden aber FALSCH (s. Finding) (ergänzt im UC-Review)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">ArbZG §3/§4/§5/§6/§18; #201 work_window; F-026 (User tenant-scoped im Router); 5MB-Limit</span></div>
           </div>
         </div><div class="uc" data-actor="Admin" data-area="Admin-Berichte &amp; Datenaustausch" data-doc="0" data-impl="1" data-text="imp-02 xls-import ausführen execute_import: pro eintrag end&gt;start-guard (sonst skip+warnung, kein phantom-0h-eintrag, §3-bypass verhindert), konflikt-recheck (nicht client-flag vertrauen), overwrite→audit update / neu→audit create, raw_* übernommen (§16). f-042 voller try/except mit rollback + separater fehler-audit. summary-audit. audit source/action &lt;40 zeichen. post /api/admin/import/confirm">
@@ -1613,12 +1533,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">DocViewer.tsx Z.473, HANDBUCH-ADMIN.md ArbZG-Abschnitt</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">§5 ArbZG; §18 exempt korrekt ausgeschlossen; tenant_id-Filter im Service</span></div>
           </div>
-        </div><div class="uc" data-actor="Admin" data-area="Admin-Berichte &amp; Datenaustausch" data-doc="1" data-impl="0" data-text="rpt-12 §11 arbzg sonntagsarbeit-auswertung zählt gearbeitete vs. freie sonntage pro ma, mindestziel 15 freie/jahr. get /api/admin/reports/sunday-summary">
+        </div><div class="uc" data-actor="Admin" data-area="Admin-Berichte &amp; Datenaustausch" data-doc="1" data-impl="1" data-text="rpt-12 §11 arbzg sonntagsarbeit-auswertung zählt gearbeitete vs. freie sonntage pro ma, mindestziel 15 freie/jahr. get /api/admin/reports/sunday-summary">
           <div class="uc-head">
             <code class="uc-id">RPT-12</code>
             <span class="uc-title">§11 ArbZG Sonntagsarbeit-Auswertung</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Berichte → Sonntagsarbeit</span></div>
@@ -1781,19 +1701,19 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">FEHLT (Bearbeiten-Funktion im Handbuch nicht erwähnt)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">Tenant-Scope 404 statt 403; Validierung gegen MA, nicht Admin; rate-limit 60/min</span></div>
           </div>
-        </div><div class="uc" data-actor="Admin" data-area="Admin-Genehmigungen &amp; Kalender" data-doc="0" data-impl="1" data-text="ac-08 genehmigten zukünftigen urlaub stornieren / antrag löschen vr sperren → pending: row löschen; rejected: row löschen (keine seiteneffekte); approved &amp; start in zukunft: absencen löschen + withdrawn; approved &amp; bereits begonnen → 400 delete /api/admin/vacation-requests/{id}">
+        </div><div class="uc" data-actor="Admin" data-area="Admin-Genehmigungen &amp; Kalender" data-doc="1" data-impl="1" data-text="ac-08 genehmigten zukünftigen urlaub stornieren / antrag löschen vr sperren → pending: row löschen; rejected: row löschen (keine seiteneffekte); approved &amp; start in zukunft: absencen löschen + withdrawn; approved &amp; bereits begonnen → 400 delete /api/admin/vacation-requests/{id}">
           <div class="uc-head">
             <code class="uc-id">AC-08</code>
             <span class="uc-title">Genehmigten zukünftigen Urlaub stornieren / Antrag löschen</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge warn">nicht dokumentiert</span> <span class="badge ok">korrekt</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Admin klickt &#x27;Urlaub stornieren&#x27; (zukünftig) bzw. löscht offenen/abgelehnten Antrag</span></div>
             <div class="row"><span class="k">Ablauf</span><span class="v">VR sperren → PENDING: Row löschen; REJECTED: Row löschen (keine Seiteneffekte); APPROVED &amp; Start in Zukunft: Absencen löschen + WITHDRAWN; APPROVED &amp; bereits begonnen → 400</span></div>
             <div class="row"><span class="k">Endpoints</span><span class="v"><code>DELETE /api/admin/vacation-requests/{id}</code></span></div>
             <div class="row"><span class="k">UI</span><span class="v">admin/VacationApprovals.tsx (&#x27;Urlaub stornieren&#x27; nur wenn date&gt;today)</span></div>
-            <div class="row"><span class="k">Doku</span><span class="v">FALSCH dokumentiert: HANDBUCH-ADMIN.md §7 sagt &#x27;Genehmigung ist unwiderruflich, Abwesenheiten manuell löschen&#x27;</span></div>
+            <div class="row"><span class="k">Doku</span><span class="v">FALSCH dokumentiert: HANDBUCH-ADMIN.md §7 sagt &#x27;Genehmigung ist unwiderruflich, Abwesenheiten manuell löschen&#x27; (ergänzt im UC-Review)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">Vergangenheits-Schutz (date&lt;=today_local blockt); Audit beim Absencen-Löschen; F-026</span></div>
           </div>
         </div><div class="uc" data-actor="Admin" data-area="Admin-Genehmigungen &amp; Kalender" data-doc="1" data-impl="1" data-text="ac-09 genehmigungspflicht für abwesenheitsanträge umschalten get /admin/settings liest vacation_approval_required; toggle put setzt true/false get /api/admin/settings, put /api/admin/settings/vacation_approval_required">
@@ -1826,12 +1746,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">HANDBUCH-ADMIN.md §7</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">F-026; Anzeige in Tagen (vr.days), nicht Stunden</span></div>
           </div>
-        </div><div class="uc" data-actor="Admin" data-area="Admin-Genehmigungen &amp; Kalender" data-doc="1" data-impl="0" data-text="ac-11 betriebsferien anlegen (auto-buchung abwesenheiten) end&gt;=start prüfen → closure anlegen → arbeitstage (mo-fr ohne feiertage) → alle aktiven receives_company_closures-ma → _create_closure_absences: pro ma/tag beschäftigungsfenster-check (#298), use_daily_schedule-0h-tag überspringen, fremd-absence überspringen, timeentry löschen (audit), absence type vacation/paid_leave mit tagessoll → affected = distinct ma post /api/company-closures">
+        </div><div class="uc" data-actor="Admin" data-area="Admin-Genehmigungen &amp; Kalender" data-doc="1" data-impl="1" data-text="ac-11 betriebsferien anlegen (auto-buchung abwesenheiten) end&gt;=start prüfen → closure anlegen → arbeitstage (mo-fr ohne feiertage) → alle aktiven receives_company_closures-ma → _create_closure_absences: pro ma/tag beschäftigungsfenster-check (#298), use_daily_schedule-0h-tag überspringen, fremd-absence überspringen, timeentry löschen (audit), absence type vacation/paid_leave mit tagessoll → affected = distinct ma post /api/company-closures">
           <div class="uc-head">
             <code class="uc-id">AC-11</code>
             <span class="uc-title">Betriebsferien anlegen (Auto-Buchung Abwesenheiten)</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Admin legt Betriebsferien (Name, Von-Bis, Verrechnung) an</span></div>
@@ -2009,19 +1929,19 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">docs/SCHICHTPLANUNG.md, HANDBUCH-ADMIN.md, DocViewer.tsx §12</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">F-026; Cascade ohne passive_deletes (SQLite-FK-aus); 409 Namens-Kollision</span></div>
           </div>
-        </div><div class="uc" data-actor="Admin" data-area="Admin-Schichtplanung" data-doc="0" data-impl="1" data-text="sp-04 schichtplan duplizieren (#338) kopiert plan inkl. slots + zuweisungen als inaktiven entwurf ohne aktiv-datumsfenster. arbeitsplaetze/einweisungen werden nicht kopiert (nicht plan-gebunden). post /api/shift-planning/plans/{id}/duplicate">
+        </div><div class="uc" data-actor="Admin" data-area="Admin-Schichtplanung" data-doc="1" data-impl="1" data-text="sp-04 schichtplan duplizieren (#338) kopiert plan inkl. slots + zuweisungen als inaktiven entwurf ohne aktiv-datumsfenster. arbeitsplaetze/einweisungen werden nicht kopiert (nicht plan-gebunden). post /api/shift-planning/plans/{id}/duplicate">
           <div class="uc-head">
             <code class="uc-id">SP-04</code>
             <span class="uc-title">Schichtplan duplizieren (#338)</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge warn">nicht dokumentiert</span> <span class="badge ok">korrekt</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Button Duplizieren im Plan-Editor</span></div>
             <div class="row"><span class="k">Ablauf</span><span class="v">Kopiert Plan inkl. Slots + Zuweisungen als INAKTIVEN Entwurf OHNE Aktiv-Datumsfenster. Arbeitsplaetze/Einweisungen werden nicht kopiert (nicht plan-gebunden).</span></div>
             <div class="row"><span class="k">Endpoints</span><span class="v"><code>POST /api/shift-planning/plans/{id}/duplicate</code></span></div>
             <div class="row"><span class="k">UI</span><span class="v">ShiftPlanning.tsx Duplizier-Dialog (Name der Kopie)</span></div>
-            <div class="row"><span class="k">Doku</span><span class="v">FEHLT (weder HANDBUCH-ADMIN.md, CHEATSHEET-ADMIN.md, DocViewer §12 noch docs/SCHICHTPLANUNG.md)</span></div>
+            <div class="row"><span class="k">Doku</span><span class="v">(weder HANDBUCH-ADMIN.md, CHEATSHEET-ADMIN.md, DocViewer §12 noch docs/SCHICHTPLANUNG.md) (ergänzt im UC-Review)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">Kopie is_active=False, kein Datumsfenster (verhindert versehentliches Parallel-Aktiv); F-026; flush vor Slot/Assignment-Kopie</span></div>
           </div>
         </div><div class="uc" data-actor="Admin" data-area="Admin-Schichtplanung" data-doc="1" data-impl="1" data-text="sp-05 plan aktiv/inaktiv schalten setzt is_active. mehrere plaene koennen gleichzeitig aktiv sein. aktivierung ohne validierung (unterbesetzt bleibt erlaubt = weiche warnung). post /plans/{id}/activate, post /plans/{id}/deactivate">
@@ -2387,12 +2307,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">HANDBUCH-ADMIN.md §9</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">F-026 Tenant-Scope (fremde UUID → 404); F-028 Lock; Audit vor Delete</span></div>
           </div>
-        </div><div class="uc" data-actor="Admin" data-area="Admin-Betrieb" data-doc="1" data-impl="0" data-text="adm-12 compliance-änderungsprotokoll ansehen get /admin/audit-log mit month + optional user_id; volle sicht (changes_only=false) inkl. zugriffs-/systemereignisse get /api/admin/audit-log">
+        </div><div class="uc" data-actor="Admin" data-area="Admin-Betrieb" data-doc="1" data-impl="1" data-text="adm-12 compliance-änderungsprotokoll ansehen get /admin/audit-log mit month + optional user_id; volle sicht (changes_only=false) inkl. zugriffs-/systemereignisse get /api/admin/audit-log">
           <div class="uc-head">
             <code class="uc-id">ADM-12</code>
             <span class="uc-title">Compliance-Änderungsprotokoll ansehen</span>
             <span class="actor actor-admin">Admin</span>
-            <span class="badge ok">dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge ok">dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Seite Änderungsprotokoll öffnen</span></div>
@@ -2750,12 +2670,12 @@ footer{color:var(--mut);font-size:12px;text-align:center;padding:24px}
             <div class="row"><span class="k">Doku</span><span class="v">FEHLT (SaaS Phase 6)</span></div>
             <div class="row"><span class="k">Regeln</span><span class="v">ArbZG §16 2-Jahre-Aufbewahrung -&gt; Anonymisierung statt Hard-Delete; DSGVO Art.17 Abs.3</span></div>
           </div>
-        </div><div class="uc" data-actor="Superadmin" data-area="Querschnitt &amp; System" data-doc="0" data-impl="0" data-text="cs-12 superadmin §16-notfall-export deaktivierter tenants require_superadmin (tenant_id null), set_superadmin_context, exportiert users/timeentries/absences/auditlogs eines tenants als json auch bei is_active=false; export selbst wird im audit-log markiert (best-effort). get /api/superadmin/tenants/{id}/arbzg-export, get /api/superadmin/tenants">
+        </div><div class="uc" data-actor="Superadmin" data-area="Querschnitt &amp; System" data-doc="0" data-impl="1" data-text="cs-12 superadmin §16-notfall-export deaktivierter tenants require_superadmin (tenant_id null), set_superadmin_context, exportiert users/timeentries/absences/auditlogs eines tenants als json auch bei is_active=false; export selbst wird im audit-log markiert (best-effort). get /api/superadmin/tenants/{id}/arbzg-export, get /api/superadmin/tenants">
           <div class="uc-head">
             <code class="uc-id">CS-12</code>
             <span class="uc-title">Superadmin §16-Notfall-Export deaktivierter Tenants</span>
             <span class="actor actor-superadmin">Superadmin</span>
-            <span class="badge warn">nicht dokumentiert</span> <span class="badge warn">Abweichung</span>
+            <span class="badge warn">nicht dokumentiert</span> <span class="badge ok">korrekt</span>
           </div>
           <div class="uc-body">
             <div class="row"><span class="k">Auslöser</span><span class="v">Arbeitsschutzbehörde fordert Aufzeichnungen eines archivierten Kunden</span></div>

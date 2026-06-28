@@ -121,7 +121,11 @@ export default function AuditLog() {
       if (filterUserId) params.set('user_id', filterUserId);
       params.set('limit', String(AUDIT_PAGE_SIZE));
       if (append && entries.length > 0) {
-        params.set('before', entries[entries.length - 1].created_at); // Cursor = älteste Zeile
+        // ADM-12: Komposit-Cursor (created_at, id) — id als Tiebreaker, da created_at
+        // bei Bulk-Inserts mehrfach identisch sein kann (sonst werden Zeilen übersprungen).
+        const last = entries[entries.length - 1];
+        params.set('before', last.created_at);
+        params.set('before_id', last.id);
       }
       const response = await apiClient.get(`/admin/audit-log?${params.toString()}`);
       const data: AuditEntry[] = response.data;

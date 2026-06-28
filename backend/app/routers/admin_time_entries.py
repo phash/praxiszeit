@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
-from sqlalchemy import extract
+from sqlalchemy import extract, or_, and_
 from typing import List, Optional
 from app.database import get_db
 from app.models import User, TimeEntry, TimeEntryAuditLog
@@ -335,6 +335,11 @@ def list_audit_log(
         None,
         description="Keyset cursor — ISO-8601 timestamp; return entries strictly older than this",
     ),
+    before_id: Optional[str] = Query(
+        None,
+        description="Keyset-Tiebreaker — id der letzten Zeile; nötig, weil created_at "
+        "(func.now() = Transaktionszeit) bei Bulk-Inserts mehrfach identisch ist (ADM-12).",
+    ),
     changes_only: bool = Query(
         False,
         description="Return only real change actions (create/update/delete), "
@@ -388,9 +393,27 @@ def list_audit_log(
                 status_code=400,
                 detail="Ungültiges 'before' Format (ISO-8601 erwartet)",
             )
-        query = query.filter(TimeEntryAuditLog.created_at < before_ts)
+        # ADM-12: created_at allein ist KEIN eindeutiger Cursor — func.now() ist die
+        # Transaktionszeit, also tragen alle Audit-Rows EINER Transaktion (Bulk-Import,
+        # Betriebsferien, Jahresabschluss) denselben Timestamp. Ein striktes `< ts`
+        # würde an der Seitengrenze die restliche Gleichstands-Gruppe still verschlucken.
+        # Daher Komposit-Keyset (created_at, id) mit stabilem Sekundärsort.
+        if before_id:
+            query = query.filter(
+                or_(
+                    TimeEntryAuditLog.created_at < before_ts,
+                    and_(
+                        TimeEntryAuditLog.created_at == before_ts,
+                        TimeEntryAuditLog.id < before_id,
+                    ),
+                )
+            )
+        else:
+            query = query.filter(TimeEntryAuditLog.created_at < before_ts)
         logs = (
-            query.order_by(TimeEntryAuditLog.created_at.desc())
+            query.order_by(
+                TimeEntryAuditLog.created_at.desc(), TimeEntryAuditLog.id.desc()
+            )
             .limit(limit)
             .all()
         )
@@ -399,7 +422,9 @@ def list_audit_log(
         # the current frontend. Grows linearly with page index, deprecated
         # once the UI switches to 'before'.
         logs = (
-            query.order_by(TimeEntryAuditLog.created_at.desc())
+            query.order_by(
+                TimeEntryAuditLog.created_at.desc(), TimeEntryAuditLog.id.desc()
+            )
             .offset(skip)
             .limit(limit)
             .all()
