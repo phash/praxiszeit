@@ -106,6 +106,13 @@ def _create_closure_absences(
     absence_type = (
         AbsenceType.VACATION if closure.counts_as_vacation else AbsenceType.PAID_LEAVE
     )
+    # Fix #6 (by design — NO remaining_days cap): Betriebsferien are MANDATORY
+    # leave (Pflichturlaub) and are always booked, even past the vacation budget.
+    # With the toggle OFF this can produce minus-vacation; with it ON the surplus
+    # becomes Überstundenausgleich (see split below). This is the INTENDED
+    # difference to the direct/approval paths (create_absence /
+    # review_vacation_request), which DO cap hard with a 400 — an employee can't
+    # voluntarily overdraw, but the employer can impose closure leave.
     # #314: global toggle — when a *vacation* closure exceeds an employee's
     # remaining vacation budget, book the surplus days as OVERTIME
     # (Überstundenausgleich → reduces the overtime account, may go negative)
