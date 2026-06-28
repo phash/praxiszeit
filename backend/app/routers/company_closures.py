@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
@@ -591,4 +592,12 @@ def delete_closure(
             _resplit_year_closures(db, current_user.tenant_id, yr, current_user)
 
     db.commit()
+
+    # Fix #5: warn (non-destructively) if a deleted closure touched an already-
+    # closed year — that year's frozen carryover is now stale.
+    warning = calculation_service.stale_year_closing_warning(
+        db, current_user.tenant_id, affected_years
+    )
+    if warning:
+        return JSONResponse(status_code=200, content={"warning": warning})
     return None

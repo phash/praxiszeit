@@ -1,6 +1,7 @@
 """Admin sub-router: Vacation Request Management."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -416,7 +417,7 @@ def cancel_vacation_request_as_admin(
             )
         vr_end = vr.end_date if vr.end_date else vr.date
         years = set(range(vr.date.year, vr_end.year + 1))
-        cancel_approved_vacation_request(db, vr, current_user)
+        warning = cancel_approved_vacation_request(db, vr, current_user)
         # Fix #3: cancelling a VACATION frees budget → re-split the affected years
         # so a closure OVERTIME day can flip back to VACATION (only when the
         # toggle is on). Flush the deletes first so they leave the budget snapshot.
@@ -427,6 +428,10 @@ def cancel_vacation_request_as_admin(
             for yr in years:
                 resplit_year_closures(db, current_user.tenant_id, yr)
         db.commit()
+        # Fix #5: surface the stale-closing warning (200 + body) when present;
+        # otherwise the normal 204 No Content.
+        if warning:
+            return JSONResponse(status_code=200, content={"warning": warning})
         return None
 
     raise HTTPException(

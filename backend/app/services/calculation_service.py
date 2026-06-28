@@ -1134,6 +1134,33 @@ def count_workdays(db: Session, start: date, end: date, tenant_id=None) -> int:
     return count
 
 
+def stale_year_closing_warning(db: Session, tenant_id, years) -> Optional[str]:
+    """Fix #5: warn (non-destructively) when a retroactive change touches a year
+    whose Jahresabschluss was already done.
+
+    A year ``Y`` counts as closed when a ``YearCarryover`` for ``Y+1`` exists in
+    the tenant. After a retroactive storno / closure deletion the frozen
+    carryover ``Y+1`` is now stale. We deliberately do NOT recompute it (that
+    could overwrite manual adjustments) — we only return a German warning string
+    naming the EARLIEST affected closed year so the caller can surface it. Returns
+    None when no touched year was closed.
+    """
+    closed = sorted({
+        y for y in years
+        if db.query(YearCarryover.id).filter(
+            YearCarryover.tenant_id == tenant_id,
+            YearCarryover.year == y + 1,
+        ).first() is not None
+    })
+    if not closed:
+        return None
+    y = closed[0]
+    return (
+        f"Jahresabschluss {y} bereits erfolgt — Carryover {y + 1} ist nun "
+        f"veraltet, bitte Jahresabschluss erneut ausführen."
+    )
+
+
 def create_year_closing(db: Session, year: int, users: list) -> list:
     """
     Create year-end closing for all given users.

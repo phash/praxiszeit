@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.core.limiter import limiter
 from app.services.date_filters import date_in_year, date_in_month
@@ -366,13 +367,17 @@ def cancel_approved_vacation_request(
     db: Session,
     vr: VacationRequest,
     cancelled_by: User,
-) -> int:
+) -> Optional[str]:
     """Delete absences created by an APPROVED vacation request and mark it WITHDRAWN.
 
     Precondition (caller-enforced): vr.status == APPROVED and the entire
-    vacation range lies in the future (vr.date > today). Returns the number
-    of absences deleted. Uses an audit log row per deleted absence (DSGVO
-    Art. 5 Abs. 2).
+    vacation range lies in the future (vr.date > today). Uses an audit log row
+    per deleted absence (DSGVO Art. 5 Abs. 2).
+
+    Fix #5: returns a non-destructive ``warning`` string when the cancelled
+    range touches an already-closed year (a YearCarryover for year+1 exists) —
+    that frozen carryover is now stale. Returns None otherwise. (No automatic
+    recompute: that could overwrite manual carryover adjustments.)
     """
     end_date = vr.end_date if vr.end_date else vr.date
     try:
@@ -403,7 +408,12 @@ def cancel_approved_vacation_request(
         db.delete(absence)
 
     vr.status = VacationRequestStatus.WITHDRAWN.value
-    return len(absences_to_remove)
+
+    # Fix #5: non-destructive stale-closing warning for the touched year(s).
+    from app.services import calculation_service
+    return calculation_service.stale_year_closing_warning(
+        db, vr.tenant_id, range(vr.date.year, end_date.year + 1)
+    )
 
 
 @router.patch("/{request_id}", response_model=VacationRequestResponse)
@@ -493,7 +503,7 @@ def withdraw_vacation_request(
             )
         vr_end = vr.end_date if vr.end_date else vr.date
         years = set(range(vr.date.year, vr_end.year + 1))
-        cancel_approved_vacation_request(db, vr, current_user)
+        warning = cancel_approved_vacation_request(db, vr, current_user)
         # Fix #3: cancelling a VACATION frees budget → re-split the affected years
         # so a closure OVERTIME day can flip back to VACATION (only when the
         # toggle is on). Flush the deletes first so they leave the budget snapshot.
@@ -504,6 +514,10 @@ def withdraw_vacation_request(
             for yr in years:
                 resplit_year_closures(db, current_user.tenant_id, yr)
         db.commit()
+        # Fix #5: surface the stale-closing warning (200 + body) when present;
+        # otherwise the normal 204 No Content.
+        if warning:
+            return JSONResponse(status_code=200, content={"warning": warning})
         return None
 
     raise HTTPException(

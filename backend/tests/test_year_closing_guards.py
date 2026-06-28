@@ -134,3 +134,67 @@ def test_year_closing_ignores_non_pending_request(db, default_tenant, admin, emp
     r = _client_as(db, admin).post("/api/admin/year-closing/2025")
     _app.dependency_overrides.clear()
     assert r.status_code == 200, r.text
+
+
+# --- Fix #5: idempotency + stale-closing warning ------------------------------
+
+
+def test_double_year_closing_is_idempotent(db, default_tenant, admin, emp):
+    client = _client_as(db, admin)
+    r1 = client.post("/api/admin/year-closing/2025")
+    assert r1.status_code == 200, r1.text
+    r2 = client.post("/api/admin/year-closing/2025")
+    assert r2.status_code == 200, r2.text
+    _app.dependency_overrides.clear()
+    # Exactly one carryover per active user for 2026 (no duplicate rows).
+    rows = db.query(YearCarryover).filter(YearCarryover.year == 2026).all()
+    assert len(rows) == 2  # admin + emp
+    per_user = {r.user_id for r in rows}
+    assert len(per_user) == 2
+
+
+def test_cancel_vacation_after_closing_returns_stale_warning(db, default_tenant, admin, emp):
+    # Close a FUTURE year so the approved vacation is still cancellable.
+    calculation_service.create_year_closing(db, 2027, [emp])  # → carryover 2028
+    vr = VacationRequest(
+        user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=date(2027, 3, 2),
+        end_date=date(2027, 3, 3), hours=8.0, absence_type="vacation",
+        status=VacationRequestStatus.APPROVED.value)
+    db.add(vr)
+    db.add(Absence(user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=date(2027, 3, 2),
+                   type=AbsenceType.VACATION, hours=8.0, half_day=False))
+    db.commit()
+    db.refresh(vr)
+
+    r = _client_as(db, emp).delete(f"/api/vacation-requests/{vr.id}")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+    assert "Jahresabschluss 2027" in r.json()["warning"]
+
+
+def test_cancel_vacation_without_closing_returns_204(db, default_tenant, admin, emp):
+    vr = VacationRequest(
+        user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=date(2027, 3, 2),
+        end_date=date(2027, 3, 3), hours=8.0, absence_type="vacation",
+        status=VacationRequestStatus.APPROVED.value)
+    db.add(vr)
+    db.commit()
+    db.refresh(vr)
+    r = _client_as(db, emp).delete(f"/api/vacation-requests/{vr.id}")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 204, r.text
+
+
+def test_delete_closure_after_closing_returns_stale_warning(db, default_tenant, admin, emp):
+    _set_toggle(db, False)
+    # Create a 2027 closure, then close 2027 → carryover 2028 exists.
+    client = _client_as(db, admin)
+    c = client.post("/api/company-closures/", json={
+        "name": "BF", "start_date": "2027-03-01", "end_date": "2027-03-04",
+        "counts_as_vacation": True})
+    assert c.status_code == 201, c.text
+    calculation_service.create_year_closing(db, 2027, [emp, admin])
+    r = client.delete(f"/api/company-closures/{c.json()['id']}")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+    assert "Jahresabschluss 2027" in r.json()["warning"]
