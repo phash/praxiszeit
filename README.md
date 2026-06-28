@@ -15,14 +15,17 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 - ✅ **Zeitraum-Erfassung** (mehrere Tage auf einmal)
 - ✅ **Profilseite** (Passwort ändern, persönliche Daten)
 - ✅ **Änderungsanträge** für vergangene Tage (Arbeitszeit + Abwesenheiten)
+- ✅ **Saldo „bis heute"** – Dashboard-Salden bis zum letzten abgeschlossenen Arbeitstag (#313)
 
 ### Für Admins
 - ✅ **Benutzerverwaltung** mit Rollenverwaltung
 - ✅ **Arbeitszeiten-Historie** (Stundenänderungen nachverfolgen)
 - ✅ **Individuelle Tagesplanung** (Stunden je Wochentag konfigurierbar)
 - ✅ **Urlaubsübersicht** (Budget, Verbrauch, Resturlaub pro MA)
-- ✅ **Kalenderfarben** für Abwesenheitskalender
-- ✅ **Admin-Dashboard** mit Team-Übersicht
+- ✅ **Eigene Abwesenheitsgründe** (Name, Farbe, Grundverhalten als Label-Overlay; #312)
+- ✅ **Betriebsferien** – verordnete Schließtage, optional als Urlaub und/oder Überstundenausgleich (#314)
+- ✅ **Kalenderfarben** für Abwesenheitskalender (auch je Mitarbeiter setzbar)
+- ✅ **Admin-Dashboard** mit Team-Übersicht (umschaltbar Monat ↔ Woche)
 - ✅ **Berichte & Export**:
   - Monatsreport (detailliert mit täglichen Einträgen)
   - Jahresreport Classic (kompakte 12-Monats-Übersicht)
@@ -32,6 +35,13 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 - ✅ **Fehler-Monitoring** (Backend-Fehler mit Status und GitHub-Integration)
 - ✅ **Änderungsprotokoll** (Audit-Log aller Systemaktionen)
 - ✅ **ArbZG-Compliance-Reports**: Ruhezeitverstöße (§5), Sonntagsarbeit (§11), Nachtarbeit (§6), Ersatzruhetag-Tracking (§11)
+
+### Schichtplanung (optional, Feature-Flag)
+- 🗂️ **Standorte & Arbeitsplätze** sowie wochentagbasierte **Schichtpläne** mit Slots und Mitarbeiter-Zuweisungen
+- 📆 **Wochen- und Tagesansicht**, **Schicht auf Wochentage kopieren**, Schichtplan duplizieren
+- 🗓️ **KW-/Ganzjahres-Planung** mit Datums-Fenster und **Auto-Generierung** (Greedy-Vorschlag)
+- 🎓 **Einweisungs-/Skill-Matrix** (Mitarbeiter ↔ Arbeitsplatz) als weiche Qualifikations-Warnung
+- ⚙️ Hinter dem Tenant-Setting `shift_planning_enabled` (Default **aus**), vollständig von ArbZG/Soll-Ist entkoppelt (#305)
 
 ### ArbZG-Compliance (§3–§18)
 - ⚖️ **§3**: 8h-Warnung überall; 10h-Hard-Stop bei manuellen Eingaben (Admin-Direkteintrag, Änderungsanträge) — Live-Ausstempeln erzeugt nur eine Warnung (die Zeit ist bereits geleistet und §16-aufzeichnungspflichtig)
@@ -174,7 +184,7 @@ Neue Migration erstellen:
 docker compose exec backend alembic revision --autogenerate -m "description"
 ```
 
-**Aktuelle Migrationen (001–049):**
+**Aktuelle Migrationen (001–059):**
 - `001` - Initial Schema (User, TimeEntry, Absence, PublicHoliday)
 - `002` - Add track_hours field
 - `003` - Add end_date to absences (Zeiträume)
@@ -217,6 +227,14 @@ docker compose exec backend alembic revision --autogenerate -m "description"
 - `047` - users.receives_company_closures (#189)
 - `048` - Arbeitszeit-Fenster: scheduled_start/end_<wochentag> + raw_start/end_time (#201)
 - `049` - RLS (ENABLE+FORCE) auf stripe_events + signup_audit_log
+- `050` - totp_secret verbreitert (verschlüsseltes 2FA-Secret)
+- `051` - time_entry_audit_logs.row_hash (Audit-Integritätskette, #121)
+- `052` - absences.half_day (halbe Abwesenheitstage)
+- `053–055` - Schichtplanung (#305): Standorte, Arbeitsplätze, Schichtpläne/Slots/Zuweisungen + Einweisungs-Matrix + KW-/Jahresplanung
+- `056` - absence_reasons (eigene Abwesenheitsgründe, #312)
+- `057` - change_requests.proposed_reason_id (eigener Grund im Änderungsantrag, #312)
+- `058` - year_carryovers.source (`manual` vs. `year_closing`, #314)
+- `059` - change_requests.absence_id → ON DELETE SET NULL (entsperrt Antrags-Genehmigung & DSGVO-Löschung, #359)
 
 ## Entwicklung
 
