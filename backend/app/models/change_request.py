@@ -35,8 +35,14 @@ class ChangeRequest(Base):
     # Discriminator: 'time_entry' or 'absence'
     entry_kind = Column(String(20), nullable=False, server_default='time_entry')  # 'time_entry' | 'absence'
 
-    # Reference to existing absence (for absence CRs)
-    absence_id = Column(UUID(as_uuid=True), ForeignKey("absences.id"), nullable=True, index=True)
+    # Reference to existing absence (for absence CRs).
+    # Fix #1: ondelete="SET NULL" — without it, deleting an absence referenced by
+    # a ChangeRequest raises a ForeignKeyViolation (500) on Postgres, breaking
+    # absence deletion / refund / DSGVO purge. Mirrors time_entry_id above.
+    absence_id = Column(
+        UUID(as_uuid=True), ForeignKey("absences.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
 
     # Absence proposed/original fields
     proposed_absence_type = Column(String(20), nullable=True)

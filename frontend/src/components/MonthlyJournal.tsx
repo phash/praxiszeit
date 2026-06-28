@@ -139,7 +139,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
     const url = isAdminView
-      ? `/admin/users/${userId}/journal?year=${year}&month=${month}`
+      // Fix #6: admins legitimately review absences (incl. SICK) in the journal;
+      // request the health data explicitly so the backend serves it AND logs the
+      // Art. 9 access in the audit trail (otherwise SICK days are masked).
+      ? `/admin/users/${userId}/journal?year=${year}&month=${month}&include_health_data=true`
       : `/journal/me?year=${year}&month=${month}`;
 
     setLoading(true);

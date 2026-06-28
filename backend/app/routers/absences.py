@@ -8,7 +8,7 @@ from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
-    AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE,
+    AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
@@ -510,6 +510,13 @@ def create_absence(
                     tenant_id=current_user.tenant_id,
                 )
                 db.add(audit_log)
+                # Fix #1 (belt-and-suspenders): null any ChangeRequest referencing
+                # the refunded vacation absence before deleting it, so the delete
+                # cannot FK-violate (500) on a not-yet-migrated DB. Tenant-scoped.
+                db.query(ChangeRequest).filter(
+                    ChangeRequest.absence_id == vacation_entry.id,
+                    ChangeRequest.tenant_id == target_user.tenant_id,
+                ).update({ChangeRequest.absence_id: None}, synchronize_session=False)
                 db.delete(vacation_entry)
                 refunded_vacation_dates.append(date)
 
@@ -582,14 +589,22 @@ def create_absence(
     for absence in created_absences:
         db.refresh(absence)
 
-    # Fix #3: a freshly booked VACATION reduces the remaining budget that the
-    # #314 Betriebsferien split reserves up front. Re-split the affected years so
-    # a closure day can flip VACATION<->OVERTIME accordingly. Tenant-wide per
-    # year (idempotent for unaffected users); only when the global toggle is on.
-    if (absence_data.type == AbsenceType.VACATION and created_absences
+    # Fix #3 / Fix #8: changes to a user's private vacation shift the remaining
+    # budget that the #314 Betriebsferien split reserves up front. Re-split the
+    # affected years so a closure day can flip VACATION<->OVERTIME accordingly:
+    #  - a freshly booked VACATION (consumes budget), and
+    #  - a SICK refund that DELETED overlapping VACATION (frees budget → a closure
+    #    OVERTIME day may flip back to VACATION).
+    # Tenant-wide per year (idempotent for unaffected users); toggle-gated.
+    _resplit_years: set = set()
+    if absence_data.type == AbsenceType.VACATION and created_absences:
+        _resplit_years |= {a.date.year for a in created_absences}
+    if refunded_vacation_dates:
+        _resplit_years |= {d.year for d in refunded_vacation_dates}
+    if (_resplit_years
             and settings_service.get_bool_setting(
                 db, "closure_overtime_after_vacation", target_user.tenant_id, False)):
-        for yr in {a.date.year for a in created_absences}:
+        for yr in _resplit_years:
             resplit_year_closures(db, target_user.tenant_id, yr)
         db.commit()
         for absence in created_absences:
@@ -634,7 +649,32 @@ def delete_absence(
     )
     db.add(audit)
 
+    # Fix #1 (belt-and-suspenders): null any ChangeRequest referencing this
+    # absence so the delete cannot FK-violate (500) on a not-yet-migrated DB
+    # where the FK is still NO ACTION. Tenant-scoped.
+    db.query(ChangeRequest).filter(
+        ChangeRequest.absence_id == absence.id,
+        ChangeRequest.tenant_id == current_user.tenant_id,
+    ).update({ChangeRequest.absence_id: None}, synchronize_session=False)
+
+    # Fix #8: snapshot the year/type/tenant BEFORE the delete (attributes expire
+    # after flush) so we can re-split the closures of the affected year.
+    _was_vacation = absence.type == AbsenceType.VACATION
+    _abs_year = absence.date.year
+    _abs_tenant = absence.tenant_id
+
     db.delete(absence)
+    db.flush()
+
+    # Fix #8: deleting a VACATION absence frees budget that the #314 Betriebsferien
+    # split reserves up front → a closure OVERTIME day may flip back to VACATION.
+    # Re-split the affected year (toggle-gated; flush above ensures the deleted
+    # day no longer counts in the budget snapshot).
+    if (_was_vacation
+            and settings_service.get_bool_setting(
+                db, "closure_overtime_after_vacation", _abs_tenant, False)):
+        resplit_year_closures(db, _abs_tenant, _abs_year)
+
     db.commit()
 
     return None

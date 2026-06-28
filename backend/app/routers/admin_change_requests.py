@@ -33,6 +33,27 @@ from app.models.time_entry_audit_log import TimeEntryAuditLog
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
+def _delete_day_time_entries(db, user_id, tenant_id, target_date, changed_by, cr_id):
+    """Fix #3: delete all time entries of a user on a given day (with audit),
+    mirroring create_absence — an absence and a time entry on the same day must
+    not both count toward Ist. Tenant-scoped (F-026)."""
+    if target_date is None:
+        return
+    entries = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user_id,
+        TimeEntry.tenant_id == tenant_id,
+        TimeEntry.date == target_date,
+    ).all()
+    for te in entries:
+        _create_audit_log(
+            db, te.id, user_id, changed_by,
+            action="delete", old_entry=te,
+            source="change_request", change_request_id=cr_id,
+            tenant_id=tenant_id,
+        )
+        db.delete(te)
+
+
 @router.get("/change-requests/pending-count")
 def get_pending_change_request_count(
     db: Session = Depends(get_db),
@@ -514,6 +535,15 @@ def review_change_request(
             db.flush()
             cr.absence_id = new_absence.id
 
+            # Fix #3: mirror create_absence — a newly materialised absence must
+            # clear the day's time entries, otherwise the absence AND the time
+            # entry both count → Ist/Saldo inflation. Audited (§16) with the CR
+            # origin as source. The direct booking path does this; the CR
+            # approval path previously did not.
+            _delete_day_time_entries(
+                db, cr.user_id, cr_tenant_id, cr.proposed_date, current_user.id, cr.id,
+            )
+
             # Audit-Log für Absence-CR CREATE
             audit = TimeEntryAuditLog(
                 time_entry_id=None,
@@ -532,6 +562,11 @@ def review_change_request(
 
         elif cr.request_type == ChangeRequestType.UPDATE:
             # absence already fetched in precondition check above
+            # Fix #3: snapshot the pre-mutation date/type so we can clear the
+            # target day's time entries when the absence moves to a new day or
+            # changes into a full-day type (parity with create_absence).
+            _orig_abs_date = absence.date
+            _orig_abs_type = absence.type
             # M-4: Bei Datumswechsel prüfen, ob am Zieltag bereits eine andere
             # Abwesenheit liegt — sonst verletzt das UPDATE den Unique-Constraint
             # (tenant_id, user_id, date, type) und crasht mit 500. Spiegelt die
@@ -608,6 +643,15 @@ def review_change_request(
             audit.new_note = f"absence:{absence.type.value}:{float(absence.hours)}h"
             db.add(audit)
 
+            # Fix #3: when the absence moved to a new day or changed type, clear
+            # the (new) target day's time entries so absence + entry don't
+            # double-count (mirror create_absence). A pure time-only edit on the
+            # same day/type leaves entries alone (they were cleared at creation).
+            if absence.date != _orig_abs_date or absence.type != _orig_abs_type:
+                _delete_day_time_entries(
+                    db, cr.user_id, cr_tenant_id, absence.date, current_user.id, cr.id,
+                )
+
         elif cr.request_type == ChangeRequestType.DELETE:
             # Audit-Log für Absence-CR DELETE
             audit = TimeEntryAuditLog(
@@ -624,6 +668,14 @@ def review_change_request(
                 tenant_id=cr_tenant_id,
             )
             db.add(audit)
+            # Fix #1 (belt-and-suspenders): null any ChangeRequest still
+            # referencing this absence before deleting it. The FK is ON DELETE
+            # SET NULL on new DBs, but a not-yet-migrated install may still have
+            # NO ACTION → the delete would FK-violate (500). Tenant-scoped.
+            db.query(ChangeRequest).filter(
+                ChangeRequest.absence_id == absence.id,
+                ChangeRequest.tenant_id == cr_tenant_id,
+            ).update({ChangeRequest.absence_id: None}, synchronize_session=False)
             db.delete(absence)
 
     db.commit()
