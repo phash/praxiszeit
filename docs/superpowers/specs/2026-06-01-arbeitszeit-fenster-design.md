@@ -91,6 +91,30 @@ Regeln:
 - **`exempt_from_arbzg`** (§18): Kappung gilt trotzdem — sie ist eine
   Anwesenheits-Anrechnungs-Policy, **kein** ArbZG-Check (orthogonal zu §18).
 
+## 5a. ArbZG-Echtzeitprüfungen: Roh- vs. gekappte Zeit
+
+**Grundsatz:** `net_hours` und alle Salden (`calculation_service`) rechnen mit der
+**gekappten** Zeit (`start_time`/`end_time`); die Rohstempel (`raw_start_time`/
+`raw_end_time`) bleiben für den §16-Nachweis erhalten. Die **§5-Ruhezeitprüfung**
+ist die bewusste Ausnahme — sie misst die **tatsächliche Anwesenheit** und rechnet
+deshalb gegen die **Rohstempel** (mit Fallback auf die gekappte Zeit, wenn nicht
+gekappt wurde).
+
+| ArbZG-Prüfung | Zeitbasis | Begründung / Fundstelle |
+|---|---|---|
+| **§5 Ruhezeit** (11 h zwischen Schichten) | **ROH** (`raw_end_time or end_time`, `raw_start_time or start_time`) | Misst tatsächliche Anwesenheit. Die gekappte Zeit (z. B. spätes Ausstempeln auf 17:30 gekürzt) ließe eine echte Ruhezeitverletzung unentdeckt. `rest_time_service.check_rest_time_violations` **und** die Echtzeit-Warnung in `clock_in` (`time_entries.py`). |
+| **§4 Pause** | gekappt (`start_time`/`end_time`) | `break_validation_service` arbeitet auf den übergebenen (gekappten) Werten — Pausenpflicht bezieht sich auf die angerechnete Arbeitszeit. |
+| **§6 Nachtarbeit** (>2 h zwischen 23:00–06:00) | gekappt (`is_night_work(open_entry.start_time, eff_end)`) | `arbzg_utils.is_night_work` erhält die gekappten Zeiten. |
+
+> **Verifiziert** gegen `rest_time_service.py`, `routers/time_entries.py`
+> (`clock_in`/`clock_out`), `break_validation_service.py`, `arbzg_utils.py`,
+> `models/time_entry.py` (`net_hours`).
+
+**Konsequenz für die Implementierung:** Wer die §5-Prüfung anfasst, MUSS den
+`raw_* or <gekappt>`-Zugriff erhalten — ein versehentliches Umstellen auf die
+gekappte Zeit würde echte Ruhezeitlücken verdecken. §4/§6 bleiben bewusst auf der
+gekappten (angerechneten) Zeit.
+
 ## 6. Integration der Schreibpfade
 
 Der Clamp-Helper MUSS an **allen** eintrags-erzeugenden/-ändernden Pfaden sitzen
