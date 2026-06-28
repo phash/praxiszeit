@@ -432,6 +432,22 @@ Klicken Sie in der Karte **Passwort ändern** auf **Ändern**.
 
 > **Sicherheitshinweis:** Nach einer Passwortänderung werden alle anderen aktiven Sitzungen automatisch abgemeldet.
 
+### Zwei-Faktor-Authentifizierung (2FA)
+
+Sie können Ihr Konto zusätzlich mit einem Einmal-Code aus einer **Authenticator-App** (z. B. Google Authenticator, Authy) absichern. Ist 2FA aktiv, benötigen Sie beim Login neben Benutzername und Passwort einen wechselnden 6-stelligen Code.
+
+**2FA aktivieren** (Karte **Zwei-Faktor-Authentifizierung** im Profil):
+
+1. Klicken Sie auf **„2FA aktivieren"**.
+2. **Scannen Sie den angezeigten QR-Code** mit Ihrer Authenticator-App – alternativ tragen Sie den angezeigten Schlüssel manuell ein.
+3. Geben Sie den **6-stelligen Code** aus der App ein und bestätigen Sie mit **„Bestätigen & 2FA aktivieren"**.
+
+**Login mit aktiver 2FA:** Geben Sie wie gewohnt Benutzername und Passwort ein. Anschließend werden Sie nach dem **6-stelligen Code** aus Ihrer Authenticator-App gefragt.
+
+**2FA deaktivieren:** Klicken Sie auf **„2FA deaktivieren"** und bestätigen Sie zur Sicherheit Ihr **aktuelles Passwort**.
+
+> **Tipp:** Bewahren Sie Ihr Smartphone bzw. die Authenticator-App sicher auf. Verlieren Sie den Zugang zur App, wenden Sie sich an Ihren Administrator – er kann Ihr Konto zurücksetzen.
+
 ### Weitere Einstellungen
 
 Unter **Weitere Einstellungen** (aufklappbar) können Sie persönliche Darstellungsoptionen anpassen, z. B. Ihre Kalenderfarbe im Teamkalender.
