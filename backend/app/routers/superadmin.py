@@ -72,6 +72,11 @@ def _time_entry_dict(te: TimeEntry) -> dict:
         "date": _iso(te.date),
         "start_time": _iso(te.start_time),
         "end_time": _iso(te.end_time),
+        # CS-12: Rohstempel (#201 work-window) gehören in den §16-Notfall-Export —
+        # die gekappten start/end_time sind die angerechneten, raw_* die tatsächlich
+        # gestempelten Zeiten (Aufzeichnungspflicht).
+        "raw_start_time": _iso(te.raw_start_time),
+        "raw_end_time": _iso(te.raw_end_time),
         "break_minutes": te.break_minutes,
         "note": te.note,
         "sunday_exception_reason": te.sunday_exception_reason,

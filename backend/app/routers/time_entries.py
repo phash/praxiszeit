@@ -300,7 +300,12 @@ def clock_in(
             TimeEntry.user_id == current_user.id,
             TimeEntry.tenant_id == current_user.tenant_id,  # F-026
             TimeEntry.end_time.isnot(None),
-            TimeEntry.date <= now.date(),
+            # MZ-01: nur Einträge VOR HEUTE — §5 ist die Ruhezeit ZWISCHEN
+            # Arbeitstagen. Ein früherer ausgestempelter Eintrag am selben Tag
+            # (geteilte Sprechzeit: vormittags aus, nachmittags wieder ein) ist
+            # eine Pause innerhalb des Arbeitstags (§4), keine §5-Ruhezeit — sonst
+            # feuert die Warnung beim 2. Einstempeln fälschlich.
+            TimeEntry.date < now.date(),
         ).order_by(TimeEntry.date.desc(), TimeEntry.end_time.desc()).first()
 
         if last_entry:

@@ -471,6 +471,39 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         for u in reviewers
     }
 
+    # MS-06: Schichtplanungs-Daten des MA (DSGVO Art. 15) — eigene Einteilungen +
+    # Einweisungen sind personenbezogen. Nur wenn das Feature aktiv ist.
+    from app.services import settings_service
+    own_shift_assignments_data: list[dict[str, Any]] = []
+    own_qualifications_data: list[dict[str, Any]] = []
+    if settings_service.get_bool_setting(db, "shift_planning_enabled", tid, False):
+        from app.models.shift_planning import (
+            ShiftAssignment, ShiftSlot, ShiftPlan, Workstation, WorkstationQualification,
+        )
+        _WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+        for a, sl, pl, ws in (
+            db.query(ShiftAssignment, ShiftSlot, ShiftPlan, Workstation)
+            .join(ShiftSlot, ShiftAssignment.shift_slot_id == ShiftSlot.id)
+            .join(ShiftPlan, ShiftSlot.shift_plan_id == ShiftPlan.id)
+            .outerjoin(Workstation, ShiftSlot.workstation_id == Workstation.id)
+            .filter(ShiftAssignment.user_id == user.id, ShiftAssignment.tenant_id == tid)
+            .all()
+        ):
+            own_shift_assignments_data.append({
+                "plan": pl.name,
+                "weekday": _WD[sl.weekday] if 0 <= sl.weekday < 7 else sl.weekday,
+                "start_time": sl.start_time.strftime("%H:%M") if sl.start_time else None,
+                "end_time": sl.end_time.strftime("%H:%M") if sl.end_time else None,
+                "workstation": ws.name if ws else None,
+            })
+        for q, ws in (
+            db.query(WorkstationQualification, Workstation)
+            .outerjoin(Workstation, WorkstationQualification.workstation_id == Workstation.id)
+            .filter(WorkstationQualification.user_id == user.id, WorkstationQualification.tenant_id == tid)
+            .all()
+        ):
+            own_qualifications_data.append({"workstation": ws.name if ws else str(q.workstation_id)})
+
     return {
         "export_generated_at": datetime.now(timezone.utc).isoformat(),
         "export_type": "self_service_dsgvo_art15",
@@ -484,6 +517,9 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         "vacation_requests": [_vacation_request_dict(v) for v in own_vacation_requests],
         "change_requests": [_change_request_dict(c) for c in own_change_requests],
         "audit_logs": [_audit_log_dict(a) for a in own_audit_logs],
+        # MS-06: eigene Schichteinteilungen + Einweisungen (leer, wenn Feature aus).
+        "shift_assignments": own_shift_assignments_data,
+        "qualifications": own_qualifications_data,
         # Klartext-Aufloesung fuer reviewed_by / last_modified_by / changed_by
         # (siehe Kommentar oben). Schluessel = UUID-String, Wert = "First Last".
         "user_directory": user_directory,
@@ -493,6 +529,8 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
             "vacation_requests": len(own_vacation_requests),
             "change_requests": len(own_change_requests),
             "audit_logs": len(own_audit_logs),
+            "shift_assignments": len(own_shift_assignments_data),
+            "qualifications": len(own_qualifications_data),
         },
     }
 
@@ -513,6 +551,7 @@ def _build_art15_meta() -> dict[str, Any]:
             "Aenderungs- und Urlaubsantraege inkl. Begruendungen",
             "Audit-Log (Wer hat wann was geaendert)",
             "Authentifizierung (Passwort-Hash, ggf. TOTP-Status)",
+            "Schichtplanung (Einteilungen, Einweisungen) — sofern aktiviert",
         ],
         "c_empfaenger": (
             "Praxis-Administrator (zur Genehmigung/Korrektur), ggf. Lohnbuchhaltung "

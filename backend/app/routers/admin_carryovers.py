@@ -134,9 +134,12 @@ def create_year_closing(
             ),
         )
 
+    # ABV-14: auch MA OHNE Stundenzählung (#191) einbeziehen — sie führen
+    # tagebasiert Urlaub (Pro-rata + Vortrag). create_year_closing liefert für sie
+    # Überstunden = 0 und den korrekten Resturlaub-Vortrag; ohne sie ginge ihr
+    # Resturlaub beim Jahreswechsel verloren.
     users = db.query(User).filter(
         User.is_active == True,
-        User.track_hours == True,
         User.tenant_id == current_user.tenant_id,
     ).all()
 

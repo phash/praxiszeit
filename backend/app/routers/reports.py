@@ -711,6 +711,8 @@ def get_sunday_summary(
     result = []
 
     for user in users:
+        if user.exempt_from_arbzg:
+            continue  # RPT-12: §18-Leitende konsistent ausnehmen (wie rest-time/24-week)
         # Get all entries on Sundays in this year
         entries = (
             db.query(TimeEntry)
@@ -761,6 +763,8 @@ def get_night_work_summary(
     threshold = 48  # §6 ArbZG: Nachtarbeitnehmer if >= 48 days/year
 
     for user in users:
+        if user.exempt_from_arbzg:
+            continue  # RPT-12: §18-Leitende konsistent ausnehmen
         entries = (
             db.query(TimeEntry)
             .filter(
@@ -830,6 +834,8 @@ def get_compensatory_rest(
     }
 
     for user in users:
+        if user.exempt_from_arbzg:
+            continue  # RPT-12: §18-Leitende konsistent ausnehmen
         entries = (
             db.query(TimeEntry)
             .filter(
