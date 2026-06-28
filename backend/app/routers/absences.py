@@ -8,7 +8,7 @@ from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
-    AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE,
+    AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
@@ -510,6 +510,13 @@ def create_absence(
                     tenant_id=current_user.tenant_id,
                 )
                 db.add(audit_log)
+                # Fix #1 (belt-and-suspenders): null any ChangeRequest referencing
+                # the refunded vacation absence before deleting it, so the delete
+                # cannot FK-violate (500) on a not-yet-migrated DB. Tenant-scoped.
+                db.query(ChangeRequest).filter(
+                    ChangeRequest.absence_id == vacation_entry.id,
+                    ChangeRequest.tenant_id == target_user.tenant_id,
+                ).update({ChangeRequest.absence_id: None}, synchronize_session=False)
                 db.delete(vacation_entry)
                 refunded_vacation_dates.append(date)
 
@@ -633,6 +640,14 @@ def delete_absence(
         tenant_id=current_user.tenant_id,
     )
     db.add(audit)
+
+    # Fix #1 (belt-and-suspenders): null any ChangeRequest referencing this
+    # absence so the delete cannot FK-violate (500) on a not-yet-migrated DB
+    # where the FK is still NO ACTION. Tenant-scoped.
+    db.query(ChangeRequest).filter(
+        ChangeRequest.absence_id == absence.id,
+        ChangeRequest.tenant_id == current_user.tenant_id,
+    ).update({ChangeRequest.absence_id: None}, synchronize_session=False)
 
     db.delete(absence)
     db.commit()

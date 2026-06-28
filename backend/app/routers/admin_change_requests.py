@@ -624,6 +624,14 @@ def review_change_request(
                 tenant_id=cr_tenant_id,
             )
             db.add(audit)
+            # Fix #1 (belt-and-suspenders): null any ChangeRequest still
+            # referencing this absence before deleting it. The FK is ON DELETE
+            # SET NULL on new DBs, but a not-yet-migrated install may still have
+            # NO ACTION → the delete would FK-violate (500). Tenant-scoped.
+            db.query(ChangeRequest).filter(
+                ChangeRequest.absence_id == absence.id,
+                ChangeRequest.tenant_id == cr_tenant_id,
+            ).update({ChangeRequest.absence_id: None}, synchronize_session=False)
             db.delete(absence)
 
     db.commit()
