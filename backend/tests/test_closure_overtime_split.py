@@ -7,7 +7,7 @@ ist) und danach als OVERTIME (Überstundenausgleich → Überstundenkonto sinkt,
 darf ins Minus) — statt Minus-Urlaub zu erzeugen.
 """
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -245,6 +245,81 @@ class TestClosureOvertimeSplitUpdate:
         # account → the split must NOT apply (legacy VACATION), otherwise the
         # surplus day vanishes from all accounting.
         emp = _make_user(db, "e_unt", vacation_days=0, track_hours=False)
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)
+        assert _types(db, emp, c["id"]) == [AbsenceType.VACATION] * 4
+
+
+def _book_vacation_workdays(db, user, start: date, count: int):
+    """Book `count` VACATION workdays starting at `start` (skips weekends)."""
+    d, booked = start, 0
+    while booked < count:
+        if d.weekday() < 5:
+            db.add(Absence(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+                           type=AbsenceType.VACATION, hours=8.0, half_day=False))
+            booked += 1
+        d += timedelta(days=1)
+    db.commit()
+
+
+class TestClosureOvertimeSplitBudgetAndOffday:
+    """#314 reopened (philvdb): die Closure zehrt den VERBLEIBENDEN Jahres-Resturlaub
+    chronologisch bis 0 auf und bucht den Rest als Überstundenausgleich — NIE
+    Minus-Urlaub, auch wenn SPÄTER im Jahr Urlaub (Sommer) gebucht ist (der zählt
+    korrekt mit). Plus: an Nicht-Arbeitstagen eines use_daily_schedule-Teilzeitlers
+    wird keine irreführende 0-Std-Urlaubszeile gebucht."""
+
+    def test_future_vacation_consumes_remaining_then_overtime_no_minus(self, db, default_tenant, admin_client):
+        # Bereits (für den Sommer) gebuchter Urlaub schöpft das Jahresbudget mit aus:
+        # die Closure darf nur den VERBLEIBENDEN Urlaub als VACATION nehmen, der Rest
+        # wird Überstundenausgleich. Der Jahresurlaub darf dadurch NIE ins Minus.
+        from app.services import calculation_service
+        emp = _make_user(db, "e_future", vacation_days=10)
+        _book_vacation_workdays(db, emp, date(2025, 8, 4), 8)  # 8 von 10 Tagen im Sommer verplant
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)  # MON..THU (4 Arbeitstage im März)
+        assert _types(db, emp, c["id"]) == [
+            AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
+        ]
+        # Kein Minus-Urlaub: 8 (Sommer) + 2 (Closure-Urlaub) = 10 = Budget.
+        assert calculation_service.get_vacation_account(db, emp, 2025)["remaining_days"] == 0.0
+
+    def test_past_vacation_reduces_closure_budget(self, db, default_tenant, admin_client):
+        # 2 vacation days taken BEFORE the closure (February) with budget 3 →
+        # only 1 day left at closure time → 1 VACATION + 3 OVERTIME.
+        emp = _make_user(db, "e_past", vacation_days=3)
+        _book_vacation_workdays(db, emp, date(2025, 2, 3), 2)
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)
+        assert _types(db, emp, c["id"]) == [
+            AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
+        ]
+
+    def test_use_daily_schedule_offday_not_booked(self, db, default_tenant, admin_client):
+        # #314 secondary: a use_daily_schedule part-timer (Mon/Wed/Fri only) must NOT
+        # get a misleading 0-hour VACATION row on their non-work weekdays (Tue/Thu).
+        FRI = date(2025, 3, 14)
+        emp = User(
+            username="e_offday", email="offday@x.de", password_hash=auth_service.hash_password("test123"),
+            first_name="O", last_name="D", role=UserRole.EMPLOYEE, weekly_hours=24.0, vacation_days=30,
+            work_days_per_week=3, is_active=True, track_hours=True, use_daily_schedule=True,
+            hours_monday=8, hours_tuesday=0, hours_wednesday=8, hours_thursday=0, hours_friday=8,
+            tenant_id=DEFAULT_TENANT_ID,
+        )
+        db.add(emp); db.commit(); db.refresh(emp)
+        _set_toggle(db, True)
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "BF", "start_date": MON.isoformat(), "end_date": FRI.isoformat(), "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        booked = {a.date for a in db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(r.json()["id"])).all()}
+        assert booked == {MON, WED, FRI}  # Tue/Thu (0-Tagessoll) NOT booked
+
+    def test_untracked_booked_on_all_workdays(self, db, default_tenant, admin_client):
+        # Counter-test to the off-day skip: an untracked MA (track_hours=False,
+        # daily_target always 0) must STILL get one VACATION per workday (Tagesprinzip
+        # #191) — the skip is only for use_daily_schedule off-weekdays.
+        emp = _make_user(db, "e_unt2", vacation_days=30, track_hours=False)
         _set_toggle(db, True)
         c = _create_closure(admin_client)
         assert _types(db, emp, c["id"]) == [AbsenceType.VACATION] * 4
