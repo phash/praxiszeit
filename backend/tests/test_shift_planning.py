@@ -430,3 +430,43 @@ class TestMyToday:
         admin_client.post(f"{BASE}/plans/{plan}/activate")
         data = employee_client.get(f"{BASE}/my-today").json()
         assert data["entries"] == []
+
+
+class TestPlanDuplicate:
+    """#338: einen Schichtplan inkl. Slots + Zuweisungen duplizieren (neuer Name,
+    Kopie ist ein inaktiver Entwurf ohne Aktiv-Datumsfenster)."""
+
+    def test_duplicate_copies_slots_and_assignments(self, enabled, admin_client, test_user):
+        ws = _mk_workstation(admin_client, "Tresen")
+        src = _mk_plan(admin_client, "Original")
+        s1 = _mk_slot(admin_client, src, ws, weekday=0, start="08:00", end="12:00", min_staff=2)
+        _mk_slot(admin_client, src, ws, weekday=2, start="13:00", end="17:00")
+        admin_client.put(f"{BASE}/slots/{s1}/assignments", json={"user_ids": [str(test_user.id)]})
+        admin_client.post(f"{BASE}/plans/{src}/activate")  # Kopie darf das NICHT erben
+
+        r = admin_client.post(f"{BASE}/plans/{src}/duplicate", json={"name": "Kopie"})
+        assert r.status_code == 201, r.text
+        new = r.json()
+        assert new["id"] != src
+        assert new["name"] == "Kopie"
+        assert new["is_active"] is False
+
+        detail = admin_client.get(f"{BASE}/plans/{new['id']}").json()
+        slots = sorted(detail["slots"], key=lambda s: s["weekday"])
+        assert len(slots) == 2
+        assert slots[0]["weekday"] == 0 and slots[0]["start_time"] == "08:00" and slots[0]["min_staff"] == 2
+        assert {a["user_id"] for a in slots[0]["assignments"]} == {str(test_user.id)}
+        assert slots[1]["assignments"] == []  # zweiter Slot war unbesetzt
+
+    def test_duplicate_name_conflict(self, enabled, admin_client):
+        _mk_plan(admin_client, "A")
+        b = _mk_plan(admin_client, "B")
+        assert admin_client.post(f"{BASE}/plans/{b}/duplicate", json={"name": "A"}).status_code == 409
+
+    def test_duplicate_empty_name(self, enabled, admin_client):
+        p = _mk_plan(admin_client, "P")
+        assert admin_client.post(f"{BASE}/plans/{p}/duplicate", json={"name": "   "}).status_code == 400
+
+    def test_duplicate_unknown_404(self, enabled, admin_client):
+        import uuid as _uuid
+        assert admin_client.post(f"{BASE}/plans/{_uuid.uuid4()}/duplicate", json={"name": "X"}).status_code == 404

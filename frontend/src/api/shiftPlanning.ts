@@ -151,6 +151,9 @@ export const updatePlan = (id: string, body: PlanUpdateBody) =>
     })
     .then((r) => r.data);
 export const deletePlan = (id: string) => apiClient.delete(`${BASE}/plans/${id}`);
+// #338: Plan inkl. Slots + Zuweisungen duplizieren (Kopie = inaktiver Entwurf).
+export const duplicatePlan = (id: string, name: string) =>
+  apiClient.post<PlanSummary>(`${BASE}/plans/${id}/duplicate`, { name }).then((r) => r.data);
 
 export interface GenerationResult {
   plan: PlanDetail;

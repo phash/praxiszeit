@@ -108,6 +108,10 @@ class PlanIn(BaseModel):
     active_until_date: Optional[date] = None
 
 
+class PlanDuplicateIn(BaseModel):
+    name: str  # #338: Name der Kopie
+
+
 class SlotIn(BaseModel):
     workstation_id: UUID
     weekday: int
@@ -670,6 +674,72 @@ def create_plan(
     _commit_or_conflict(db, "Ein Schichtplan mit diesem Namen existiert bereits")
     db.refresh(plan)
     return _plan_summary(plan)
+
+
+@router.post("/plans/{plan_id}/duplicate", status_code=status.HTTP_201_CREATED)
+def duplicate_plan(
+    plan_id: UUID,
+    data: PlanDuplicateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#338: Schichtplan inkl. Slots + Zuweisungen duplizieren. Die Kopie ist ein
+    INAKTIVER Entwurf OHNE Aktiv-Datumsfenster (sie soll nicht versehentlich neben
+    dem Original aktiv werden); Arbeitsplätze/Einweisungen sind nicht plan-gebunden
+    und werden daher nicht kopiert. Alles tenant-scoped (F-026)."""
+    tid = current_user.tenant_id
+    src = _plan_or_404(db, tid, plan_id)
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name darf nicht leer sein")
+    clash = (
+        db.query(ShiftPlan)
+        .filter(ShiftPlan.tenant_id == tid, ShiftPlan.name == name)
+        .first()
+    )
+    if clash:
+        raise HTTPException(status_code=409, detail="Ein Schichtplan mit diesem Namen existiert bereits")
+
+    new_plan = ShiftPlan(
+        tenant_id=tid,
+        name=name,
+        description=src.description,
+        is_active=False,
+        active_from_date=None,
+        active_until_date=None,
+        created_by=current_user.id,
+    )
+    db.add(new_plan)
+    db.flush()  # new_plan.id
+
+    src_slots = (
+        db.query(ShiftSlot)
+        .filter(ShiftSlot.tenant_id == tid, ShiftSlot.shift_plan_id == src.id)
+        .all()
+    )
+    for s in src_slots:
+        ns = ShiftSlot(
+            tenant_id=tid,
+            shift_plan_id=new_plan.id,
+            workstation_id=s.workstation_id,
+            weekday=s.weekday,
+            start_time=s.start_time,
+            end_time=s.end_time,
+            min_staff=s.min_staff,
+        )
+        db.add(ns)
+        db.flush()  # ns.id
+        src_assigns = (
+            db.query(ShiftAssignment)
+            .filter(ShiftAssignment.tenant_id == tid, ShiftAssignment.shift_slot_id == s.id)
+            .all()
+        )
+        for a in src_assigns:
+            db.add(ShiftAssignment(tenant_id=tid, shift_slot_id=ns.id, user_id=a.user_id))
+
+    _commit_or_conflict(db, "Ein Schichtplan mit diesem Namen existiert bereits")
+    db.refresh(new_plan)
+    return _plan_summary(new_plan)
 
 
 @router.put("/plans/{plan_id}")

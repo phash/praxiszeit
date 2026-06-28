@@ -20,6 +20,7 @@ import {
   GraduationCap,
   Pencil,
   Wand2,
+  Copy,
 } from 'lucide-react';
 import apiClient from '../../api/client';
 import Button from '../../components/Button';
@@ -107,6 +108,9 @@ export default function AdminShiftPlanning() {
   const [slotDialog, setSlotDialog] = useState<SlotDialogState | null>(null);
   const [planSettingsOpen, setPlanSettingsOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  // #338: Duplizier-Dialog (null = zu); name = vorgeschlagener Name der Kopie.
+  const [duplicateState, setDuplicateState] = useState<{ planId: string; name: string } | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
   // #321 Tagesansicht
   const [shiftView, setShiftView] = useState<'week' | 'day'>('week');
   const [dayWeekday, setDayWeekday] = useState(0);
@@ -215,6 +219,28 @@ export default function AdminShiftPlanning() {
       await refreshSelected();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Fehler beim Umschalten'));
+    }
+  };
+
+  // #338: Plan duplizieren — Dialog mit vorgeschlagenem Namen „… (Kopie)".
+  const openDuplicate = (plan: { id: string; name: string }) =>
+    setDuplicateState({ planId: plan.id, name: `${plan.name} (Kopie)` });
+
+  const confirmDuplicate = async () => {
+    if (!duplicateState || duplicating) return;
+    const name = duplicateState.name.trim();
+    if (!name) return;
+    setDuplicating(true);
+    try {
+      const created = await api.duplicatePlan(duplicateState.planId, name);
+      setDuplicateState(null);
+      toast.success('Schichtplan dupliziert');
+      await loadPlans();
+      setSelectedPlanId(created.id);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Duplizieren'));
+    } finally {
+      setDuplicating(false);
     }
   };
 
@@ -517,6 +543,9 @@ export default function AdminShiftPlanning() {
                     <Button variant="secondary" icon={Pencil} onClick={() => setPlanSettingsOpen(true)}>
                       Bearbeiten
                     </Button>
+                    <Button variant="secondary" icon={Copy} onClick={() => openDuplicate(planDetail)}>
+                      Duplizieren
+                    </Button>
                     <Button
                       variant="ghost"
                       icon={Trash2}
@@ -617,6 +646,36 @@ export default function AdminShiftPlanning() {
           onGenerated={refreshSelected}
           onClose={() => setGenerateOpen(false)}
         />
+      )}
+
+      {/* #338: Plan duplizieren — Name der Kopie */}
+      {duplicateState && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-5">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Schichtplan duplizieren</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Kopiert alle Zeitslots und Zuweisungen. Die Kopie ist zunächst <strong>inaktiv</strong>.
+            </p>
+            <FormInput
+              label="Name der Kopie"
+              value={duplicateState.name}
+              onChange={(e) => setDuplicateState({ ...duplicateState, name: e.target.value })}
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="secondary" onClick={() => setDuplicateState(null)}>
+                Abbrechen
+              </Button>
+              <Button
+                variant="primary"
+                icon={Copy}
+                onClick={confirmDuplicate}
+                disabled={duplicating || !duplicateState.name.trim()}
+              >
+                Duplizieren
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
