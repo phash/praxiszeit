@@ -690,6 +690,12 @@ def delete_closure(
     if not closure:
         raise HTTPException(status_code=404, detail="Betriebsferien nicht gefunden")
 
+    # Fix #2: remember the affected years BEFORE deleting so we can re-split the
+    # REMAINING closures of those years (#314). Deleting the calendar-earlier,
+    # budget-filling closure frees vacation budget — the OVERTIME days of a later
+    # closure of the same year must flip back to VACATION.
+    affected_years = list(range(closure.start_date.year, closure.end_date.year + 1))
+
     # Delete the generated absences via FK (robust against renames / manual
     # note edits) — tenant_id filter kept as belt-and-suspenders (F-026).
     db.query(Absence).filter(
@@ -698,5 +704,17 @@ def delete_closure(
     ).delete(synchronize_session=False)
 
     db.delete(closure)
+
+    # Fix #2: re-classify the remaining closures of the affected years in calendar
+    # order (only when the global toggle is on; otherwise legacy all-VACATION).
+    # Flush the deletes first so the budget snapshot no longer counts this
+    # closure's own days.
+    if settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", current_user.tenant_id, False
+    ):
+        db.flush()
+        for yr in affected_years:
+            _resplit_year_closures(db, current_user.tenant_id, yr, current_user)
+
     db.commit()
     return None

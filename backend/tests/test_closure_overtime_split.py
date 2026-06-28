@@ -461,6 +461,58 @@ class TestClosureCalendarOrderResplit:
         assert by_date[date(2025, 12, 26)] == AbsenceType.OVERTIME
 
 
+class TestClosureDeleteResplit:
+    """Fix #2: Löschen einer Betriebsferien löst den Re-Split der betroffenen
+    Jahre aus. Löscht man die kalendarisch frühere, budget-füllende Schließung,
+    müssen die OVERTIME-Tage der späteren Schließung wieder VACATION werden, weil
+    nun Budget frei ist."""
+
+    def test_delete_earlier_closure_flips_later_overtime_back_to_vacation(
+        self, db, default_tenant, admin_client
+    ):
+        emp = _make_user(db, "e_del", vacation_days=10)
+        _set_toggle(db, True)
+        # A: Juni (10 Arbeitstage) füllt das 10-Tage-Budget komplett.
+        r_jun = admin_client.post("/api/company-closures/", json={
+            "name": "Juni", "start_date": "2025-06-09", "end_date": "2025-06-20",
+            "counts_as_vacation": True})
+        assert r_jun.status_code == 201, r_jun.text
+        # B: Dezember (5 Arbeitstage) — kein Budget mehr übrig → alle OVERTIME.
+        r_dec = admin_client.post("/api/company-closures/", json={
+            "name": "Dezember", "start_date": "2025-12-01", "end_date": "2025-12-05",
+            "counts_as_vacation": True})
+        assert r_dec.status_code == 201, r_dec.text
+        dec_before = _closure_types_by_date(db, emp, r_dec.json()["id"])
+        assert set(dec_before.values()) == {AbsenceType.OVERTIME}
+
+        # Lösche die frühere (Juni) → Budget frei → Dezember wird wieder Urlaub.
+        d = admin_client.delete(f"/api/company-closures/{r_jun.json()['id']}")
+        assert d.status_code == 204, d.text
+        db.expire_all()
+        dec_after = _closure_types_by_date(db, emp, r_dec.json()["id"])
+        assert set(dec_after.values()) == {AbsenceType.VACATION}
+
+    def test_delete_without_toggle_does_not_touch_other_closures(
+        self, db, default_tenant, admin_client
+    ):
+        # Setting OFF → legacy: alles VACATION, Löschen ändert keine Typen.
+        emp = _make_user(db, "e_del_off", vacation_days=10)
+        _set_toggle(db, False)
+        r_jun = admin_client.post("/api/company-closures/", json={
+            "name": "Juni", "start_date": "2025-06-09", "end_date": "2025-06-20",
+            "counts_as_vacation": True})
+        assert r_jun.status_code == 201
+        r_dec = admin_client.post("/api/company-closures/", json={
+            "name": "Dezember", "start_date": "2025-12-01", "end_date": "2025-12-05",
+            "counts_as_vacation": True})
+        assert r_dec.status_code == 201
+        d = admin_client.delete(f"/api/company-closures/{r_jun.json()['id']}")
+        assert d.status_code == 204
+        db.expire_all()
+        dec_after = _closure_types_by_date(db, emp, r_dec.json()["id"])
+        assert set(dec_after.values()) == {AbsenceType.VACATION}
+
+
 class TestClosureSpecialDays:
     """AC-11: als 'free' konfigurierte Sondertage (24./31.12.) sind soll-frei und
     bekommen KEINE Betriebsferien-Absence (sonst kostet ein freier Tag fälschlich
