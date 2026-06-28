@@ -174,7 +174,30 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     # Login needs to see all users across tenants (no tenant context yet)
     set_superadmin_context(db)
-    user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
+    # Fix #5: username is only unique per (tenant_id, username) — in SaaS two
+    # tenants may share one. ``.first()`` could authenticate the WRONG account,
+    # so load ALL matches and refuse when more than one ACTIVE account shares the
+    # name (neutral error, no info leak). On-prem (single tenant) always matches
+    # at most one → unchanged.
+    matching_users = (
+        db.query(User)
+        .filter(func.lower(User.username) == login_data.username.lower())
+        .all()
+    )
+    active_matches = [u for u in matching_users if u.is_active]
+    if len(active_matches) > 1:
+        # Equalise timing (dummy verify), record the failure and log the
+        # ambiguity for ops — but never reveal which/that accounts exist.
+        auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
+        _record_failed_login(username_lower, now)
+        security_logger.warning(
+            "AUTH login_ambiguous user=%s active_matches=%d", username_lower, len(active_matches),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ungültiger Benutzername oder Passwort",
+        )
+    user = active_matches[0] if active_matches else (matching_users[0] if matching_users else None)
 
     if not user or not user.is_active:
         # F-040: Run a dummy bcrypt verify so the response time does not
