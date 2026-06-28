@@ -204,3 +204,23 @@ def vacation_deduction_dates_for_year(
             continue
         result.add(d)
     return result
+
+
+def free_special_days_in_range(db: Session, tenant_id, start: date, end: date) -> set:
+    """Alle als ``free`` konfigurierten Sondertage (24./31.12.) im Bereich [start, end].
+
+    AC-11: Diese Tage sind soll-frei (Tagessoll 0) → sie sind KEINE Arbeitstage und
+    dürfen daher keine Betriebsferien-/Urlaubs-Absence bekommen (sonst kostete ein
+    ohnehin freier Tag fälschlich einen Urlaubstag und reduzierte das Soll doppelt).
+    ``free`` + ``counts_as_vacation``-Tage werden separat in get_vacation_account
+    gezählt (vacation_deduction_dates) → der Ausschluss hier bleibt budget-neutral.
+    (``half_day``-Sondertage werden derzeit als voller Tag behandelt — seltener Fall,
+    separater Tech-Debt.)
+    """
+    result = set()
+    for year in range(start.year, end.year + 1):
+        config = get_special_day_config(db, tenant_id, year)
+        for d, entry in config.items():
+            if entry["mode"] == MODE_FREE and start <= d <= end:
+                result.add(d)
+    return result

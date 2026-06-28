@@ -10,7 +10,7 @@ from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry, Tim
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview, VacationRequestUpdate
-from app.services import calculation_service
+from app.services import calculation_service, special_days_service
 from app.services.timezone_service import today_local
 from app.routers.admin_helpers import (
     _create_audit_log,
@@ -177,6 +177,13 @@ def review_vacation_request(
         ).all()
         for h in rows:
             holidays.add(h.date)
+
+    # AC-11: 'free'-Sondertage (24./31.12.) sind soll-frei → wie Feiertage
+    # ausschließen, sonst kostet ein Urlaubsantrag über einen freien Tag fälschlich
+    # einen Urlaubstag (free+counts_as_vacation wird separat im Konto gezählt).
+    holidays |= special_days_service.free_special_days_in_range(
+        db, current_user.tenant_id, start_date, end_date
+    )
 
     # Determine working days
     dates_to_create = []
