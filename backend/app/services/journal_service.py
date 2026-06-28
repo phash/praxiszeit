@@ -19,8 +19,23 @@ _ABSENCE_TYPE_MAP = {
 }
 
 
-def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any]:
+def get_journal(
+    db: Session, user: User, year: int, month: int, include_health_data: bool = True,
+) -> Dict[str, Any]:
+    """Tagesgenaues Monatsjournal.
+
+    Fix #6 (Art. 9 DSGVO): ``include_health_data=False`` maskiert SICK-Tage
+    (Tagestyp + Absence-Label -> "absent"), ohne die Soll-/Ist-/Saldo-Rechnung
+    zu verändern (SICK bleibt als gearbeitet angerechnet, wie in reports.py).
+    Default True für Abwärtskompatibilität (Eigenansicht ``/journal/me``); der
+    Admin-Endpoint gated explizit + auditiert den Zugriff.
+    """
     _, last_day = monthrange(year, month)
+
+    def _abs_type_label(a: Absence) -> str:
+        if not include_health_data and a.type == AbsenceType.SICK:
+            return "absent"
+        return a.type.value
 
     entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
@@ -82,7 +97,11 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
         elif day_entries and day_absences:
             day_type = "mixed"
         elif day_absences:
-            day_type = _ABSENCE_TYPE_MAP.get(day_absences[0].type, "other")
+            # Fix #6: mask a SICK day type when health data is not requested.
+            if not include_health_data and day_absences[0].type == AbsenceType.SICK:
+                day_type = "absent"
+            else:
+                day_type = _ABSENCE_TYPE_MAP.get(day_absences[0].type, "other")
         elif day_entries:
             day_type = "work"
         else:
@@ -167,7 +186,7 @@ def get_journal(db: Session, user: User, year: int, month: int) -> Dict[str, Any
             "absences": [
                 {
                     "id": str(a.id),
-                    "type": a.type.value,
+                    "type": _abs_type_label(a),  # Fix #6: SICK masked unless requested
                     "hours": float(Decimal(str(a.hours)).quantize(Decimal("0.01"))),
                     "start_time": a.start_time.strftime("%H:%M") if a.start_time else None,
                     "end_time": a.end_time.strftime("%H:%M") if a.end_time else None,
