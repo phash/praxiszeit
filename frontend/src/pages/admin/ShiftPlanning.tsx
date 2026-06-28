@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -172,6 +172,19 @@ export default function AdminShiftPlanning() {
     if (selectedPlanId) loadPlanDetail(selectedPlanId);
     else setPlanDetail(null);
   }, [selectedPlanId, loadPlanDetail]);
+
+  // #340: beim ersten Laden den aktuell aktiven Plan automatisch öffnen (häufigster
+  // Use-Case → spart einen Klick). Greift nur einmal (autoOpenedRef) und nur, wenn
+  // noch keiner gewählt ist — drängt sich nach manueller Aus-/Abwahl nicht erneut auf.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current || plans.length === 0) return;
+    autoOpenedRef.current = true;
+    if (!selectedPlanId) {
+      const active = plans.find((p) => p.active_today) ?? plans.find((p) => p.is_active);
+      if (active) setSelectedPlanId(active.id);
+    }
+  }, [plans, selectedPlanId]);
 
   const refreshSelected = async () => {
     await loadPlans();

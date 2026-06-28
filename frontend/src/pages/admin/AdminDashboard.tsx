@@ -485,7 +485,7 @@ export default function AdminDashboard() {
 
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-600">Ø Saldo (Monat)</h3>
+            <h3 className="text-sm font-medium text-gray-600">Ø Saldo ({viewMode === 'week' ? 'Woche' : 'Monat'})</h3>
             <TrendingUp
               className={avgBalance >= 0 ? 'text-green-600' : 'text-red-600'}
               size={24}
