@@ -2,6 +2,217 @@
 
 ## [Unreleased]
 
+## [1.12.3] - 2026-06-28
+
+Härtungs-Release aus einer mehrtägigen Multi-Agenten-Review-Kampagne (rund 30
+Fixes über die PRs #357–#366) — technisch, fachlich und an den Specs. Bringt
+zwei additive Migrationen (058/059), die u. a. den DSGVO-Hard-Delete entsperren.
+
+### 🐞 Korrekturen
+- **Betriebsferien-Urlaub kalenderchronologisch verteilen (#314).** Beim Split
+  „erst Urlaub, dann Überstundenausgleich" werden die Arbeitstage jetzt in echter
+  Kalenderreihenfolge belegt; ein Re-Save verteilt bestehende Buchungen neu.
+- **Halbtags-Soll zählt 0,5× (#361).** Halbe Abwesenheitstage rechneten zuvor mit
+  dem vollen Tagessoll → Phantom-Überstunden. Dazu: WHChange lehnt einen
+  inkonsistenten Tagesplan ab, Re-Split filtert sauber auf den jeweiligen Tag,
+  Änderungsantrag-Budget/-Resplit korrigiert.
+- **Arbeitszeit-Fenster außerhalb → 0h (#364, Anti-Abuse).** Stempelungen außerhalb
+  des konfigurierten Fensters werden auf 0h gekappt; die Rohstempel bleiben für die
+  §16-Aufzeichnung erhalten.
+- **Export-Tage tagebasiert (#364).** Urlaubs-/Kranktage im Export zählen nach dem
+  Tagesprinzip statt als Stundensumme ÷ Ø-Tagessoll; ArbZG-Warnungen greifen jetzt
+  auch in den Admin-Pfaden.
+- **7 weitere Lücken im Urlaubsprozess (#358).** U. a. Budget außerhalb des
+  Beschäftigungsfensters, Re-Split-Trigger bei Closure-Löschung/Privaturlaub,
+  Jahresabschluss-Antrags-Guard.
+
+### 🔒 Security / DSGVO
+- **HIGH — FK-Crash `change_requests.absence_id` → ON DELETE SET NULL (Migration
+  059, #359).** Der Fremdschlüssel ohne `ondelete` ließ die Antrags-Genehmigung und
+  den DSGVO-Art.-17-Hard-Delete auf Postgres mit `ForeignKeyViolation` abbrechen.
+- **Weitere Härtungen (#359):** Journal hinter Art.-9-Gate, Schichtplan-Read-Gating,
+  eindeutiger SaaS-Login, robustere Scheduler-Billing-Jobs, Rohstempel in
+  `update_time_entry`, saubere Zeiteintrag-Löschung über Änderungsanträge.
+- `SECURITY.md` mit echter Policy (unterstützte Versionen + Meldekanal, #360).
+
+### ⚡ Performance
+- **7 Perf-Fixes (#363):** Dashboard- und Export-Doppelberechnung (war O(Monate²))
+  linearisiert, N+1-Queries entfernt, ToastContext-`useMemo` gegen Re-Fetch-Loops.
+
+### 🧹 Intern
+- Migrationen **058** (`year_carryovers.source`) + **059**
+  (`change_requests.absence_id`-ondelete); up→down→up auf Wegwerf-PG18 verifiziert.
+- Spec-Lücken gefüllt + veraltete Spec-Docs korrigiert (#362); Handbücher und
+  In-App-Hilfe zu Urlaubsberechnung + Betriebsferien aktualisiert (#357).
+
+## [1.12.2] - 2026-06-28
+
+Patch-Release: kleinere Komfortfunktionen plus eine umfassende UC-Review-Härtung
+(drei adversarial verifizierte Runden, 25 Findings, PRs #346–#352).
+Keine DB-Migration (alembic bleibt `057`).
+
+### ✨ Neu
+- **Schichtplan duplizieren (#338).**
+- **Dashboard-Saldo-Label dynamisch + aktiver Schichtplan öffnet automatisch
+  (#339/#340).**
+- **Durchsuchbares Use-Case-Verzeichnis (177 UCs, `docs/uc/index.html`)** + neues
+  **Projekt-Glossar** (Stunden vs. Tage, Soll/Ist/Urlaub/Überstunden) (#341/#346).
+
+### 🐞 Korrekturen
+- **Betriebsferien-Split erzeugt keinen irreführenden 0-Std-Urlaub am Nicht-
+  Arbeitstag mehr (#314).**
+- `backup-db.sh` ausführbar + `deploy.sh`-Health-Timeout für schwache VMs (#337).
+- **UC-Review-Findings (#347–#351):** §5-Same-Day, Genehmigungs-Bypass auf
+  `POST /absences`, §18-Konsistenz in Reports, `change_password`-Refresh-Cookie,
+  Jahresabschluss ohne `track_hours`-Filter, free-Sondertage (24./31.12.) in
+  Betriebsferien + Urlaubsgenehmigung ausgeschlossen, Frontend Gründe-Picker und
+  Audit-Pagination.
+
+### 🔒 Security / DSGVO
+- **§5-Ruhezeit rechnet jetzt gegen die Rohstempel** statt der work-window-gekappten
+  Zeit — sonst blieb ein echter Verstoß bei spätem Ausstempeln unentdeckt (#352).
+- **DSGVO-Purge brach die Audit-`row_hash`-Kette** (Bulk-`UPDATE` umging den
+  Hash-Hook → legitime Zeilen wurden als „manipuliert" gemeldet) → ORM-Load +
+  Recompute (#352).
+- §16-Rohstempel im Superadmin-Export, DSGVO-Schichtexport, `reason_id`/
+  `reason_names` im Selbst- und §16-Export (#347/#352).
+
+### 🧹 Intern
+- Doku-Findings (Import, Reports, DSGVO-Löschung, Urlaubsstorno, 2FA) (#349).
+
+## [1.12.1] - 2026-06-28
+
+Patch-Release: zwei Dashboard-/Schichtplan-Komfortfunktionen plus eine Härtung
+nach intensivem Multi-Agenten-Pre-Release-Review. Keine DB-Migration (letzte
+Migration bleibt `057`).
+
+### ✨ Neu
+- **Admin-Dashboard: Monat ↔ Woche umschalten (#329).**
+- **Schichtplaner zeigt je MA zugewiesene vs. Wochenarbeitszeit (Auslastung)
+  (#330).**
+
+### 🐞 Korrekturen
+- **Betriebsferien-Überstunden-Split (#314)** wird beim erneuten Speichern jetzt
+  rückwirkend angewendet — ein nachträglich aktivierter Schalter greift per Re-Save
+  auf bestehende Betriebsferien (#331).
+- **Out-of-range-Monat liefert 400 statt 500.** `?month=2026-13`/`2026-00` warf in
+  allen vier Report-Endpoints und im Kalender einen Server-Fehler; neuer Helper
+  `parse_year_month` validiert 1–12 (#335).
+
+### 🔒 Security / DSGVO
+- **HIGH — DSGVO-Art.-17-Hard-Delete (`purge_user`) brach für jeden je
+  ausgestempelten Nutzer ab.** `time_entry_audit_logs.changed_by` ist NOT NULL — das
+  bisherige SET NULL warf `IntegrityError`. Fix: Reassign auf den handelnden Admin;
+  drei weitere `users.id`-FKs ohne `ON DELETE` bereinigt
+  (`company_closure.created_by`, `change_request.reviewed_by`,
+  `signup_tokens.user_id`) (#335).
+
+### 🧹 Intern
+- Disaster-Recovery-Doku (INSTALL-NATIVE) auf den socket-only Cluster korrigiert;
+  neue Tests (`purge_user`-FK-Cleanup, Monats-Param).
+
+## [1.12.0] - 2026-06-27
+
+Funktions-Release: Schichtplanung **M2** (KW-/Ganzjahres-Planung mit
+Auto-Generierung, Einweisungs-Matrix, Tagesansicht, Schicht kopieren) sowie eigene
+Abwesenheitsgründe und mehrere Kunden-Wünsche. Migrationen 054–057 (additiv).
+
+### ✨ Neu
+- **Schichtplanung M2 (#305).** KW-/Ganzjahres-Planung mit Datums-Fenster
+  (`active_from/until`) und greedy **Auto-Generierung** (`POST /plans/{id}/generate`,
+  `mode=replace|fill_gaps`), **Einweisungs-/Skill-Matrix** (Arbeitsplatz-
+  Qualifikationen als weiche Warnung), **Tagesansicht** und **„Schicht auf
+  Wochentage kopieren"** (#315/#316/#321/#322). Weiterhin hinter dem Feature-Flag
+  `shift_planning_enabled` (Default AUS) und von ArbZG/Soll-Ist entkoppelt.
+- **Eigene Abwesenheitsgründe (#312).** Tenantweit pflegbare Gründe (Name, Farbe,
+  Grundverhalten) als reines Label-/Farb-Overlay über die eingebauten Typen — die
+  Berechnung bleibt typgetrieben. In den Kollegen-Feeds DSGVO-maskiert.
+- **Monatssaldo „bis heute" (#313).** Live-Anzeigen (MA-Dashboard, Team-Tabelle,
+  Überstundenkonto, YTD) zeigen den Saldo nur bis zum letzten abgeschlossenen
+  Arbeitstag; Admin-Report-Toggle `bis_heute|monatsende`. Datei-Exporte und
+  §16-Belege bleiben bewusst voller Monat.
+- **Betriebsferien über Urlaub hinaus als Überstundenabbau (#314).** Optionales
+  Setting `closure_overtime_after_vacation` (Default aus): Closure-Arbeitstage werden
+  zuerst als Urlaub und danach als Überstundenausgleich gebucht — statt Minus-Urlaub.
+- **Mitarbeitername in der Monatsjournal-Überschrift (Admin-Sicht) (#311).**
+
+### 🧹 Intern
+- Migrationen **054** (`workstation_qualifications`), **055** (Schichtplan-
+  Datumsfenster), **056** (`absence_reasons`), **057**
+  (`change_requests.proposed_reason_id`).
+- Playwright-E2E für #311–#314 (#327).
+
+## [1.11.0] - 2026-06-26
+
+Funktions-Release: die neue (optionale) **Schichtplanung**. Die zuvor versehentlich
+als 1.10.6 gecuttete Version wurde zurückgezogen und als MINOR neu aufgelegt
+(byte-identischer Code).
+
+### ✨ Neu
+- **Schichtplanung (#305), M1.** Standorte, Arbeitsplätze und wochentagbasierte
+  Schichtpläne mit Slots und Mitarbeiter-Zuweisungen; Dashboard „meine heutigen
+  Schichten". Komplett hinter dem Feature-Flag `shift_planning_enabled` (Default AUS
+  → Router liefert 404, das Feature „existiert nicht") und vollständig von
+  ArbZG/Soll-Ist entkoppelt (keine Auswirkung auf Zeiterfassung oder Berechnung).
+  Migration **053** (5 mandantenisolierte Tabellen, RLS).
+
+### 🐞 Korrekturen
+- Namens-Race im Schichtplan-Router liefert 409 statt 500.
+
+## [1.10.5] - 2026-06-24
+
+Patch-Release mit komplettem Pre-Build-Review/Fix/Test-Zyklus.
+
+### ✨ Neu
+- **Admin kann die Kalenderfarbe je MA setzen (#297)** (geteilte
+  `calendarColors`-Utility).
+
+### 🐞 Korrekturen
+- **Betriebsferien bei zukünftigen/ausgetretenen MA (#298).**
+  `_create_closure_absences` buchte je Closure-Arbeitstag eine Abwesenheit OHNE
+  Prüfung des Beschäftigungsfensters — eine noch nicht eingetretene MA (z. B. eine im
+  September startende Azubine) bekam bei urlaubsabziehender Betriebsferien heute schon
+  Urlaubstage („34 genommene Urlaubstage"). Fix: Pro-MA-Guard
+  `_within_employment_window` auch in der Buchungsschleife; `affected_employees` zählt
+  nur tatsächlich gebuchte MA.
+- Wording „N Einträge" statt „N Eintragträge" (#296).
+
+## [1.10.4] - 2026-06-24
+
+Patch-Release (erster vollständiger `/buildrelease`-Lauf): Windows-Installer-
+Härtung, Betriebsferien-Fix und eine vorsichtige Service-/DB-Härtung.
+
+### 🐞 Korrekturen
+- **Betriebsferien-Speichern löscht keine erfassten Arbeitszeiten mehr** + Auto-
+  Enrollment neuer MA in offene Betriebsferien (#290).
+- **Windows-Installer-Härtung (#286).** `.bat`-Dateien jetzt mit CRLF — LF-
+  Zeilenenden ließen `cmd` die Sprungmarken nicht finden → falsche „PostgreSQL
+  fehlgeschlagen"-Meldung (PG war tatsächlich installiert). Dazu Docker-Upgrade-
+  Skripte + Upgrade-Doku.
+- Arbeitsbereich nutzt die volle Breite (kein `max-w-7xl`-Cap mehr) (#287).
+
+### 🔒 Security / DSGVO
+- **Service-/DB-Review (#15):** Backup-Router on-prem-gated, F-026-Lücken im
+  Dashboard geschlossen, stille `except`-Blöcke loggen, Urlaubs-Schranke „max. 1 Jahr"
+  auch im PATCH-Pfad.
+
+### 🧹 Intern
+- Code-Duplikation entfernt + N+1 im Audit-Log (#219).
+- Handbücher korrigiert: der datenzerstörende „Betriebsferien neu speichern"-
+  Workaround ist seit #290 obsolet.
+
+## [1.10.3] - 2026-06-24
+
+Bugfix-Release für ein Audit-Log-Phantom.
+
+### 🐞 Korrekturen
+- **Änderungsprotokoll zeigt keine Phantom-„Gelöscht"-Einträge mehr (#284).** Jeder
+  Admin-Lesezugriff auf die Abwesenheiten eines MA schreibt (DSGVO Art. 5 (2)) eine
+  Audit-Zeile `absence_list_read`, die die Per-MA-Änderungsansicht als „Gelöscht"
+  fehlinterpretierte. Fix: neuer Parameter `changes_only` (nur create/update/delete)
+  für die Änderungsansicht; die Compliance-Seite bleibt unverändert (mit allen
+  Zugriffs-Events) (#285).
+
 ## [1.10.2] - 2026-06-23
 
 Bugfix-Release: korrekte Tage-Anzeige in der Admin-Übersicht plus eine umfassende
