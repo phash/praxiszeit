@@ -408,18 +408,30 @@ def create_absence(
     # between this check and the INSERT below. The DB-level unique constraint
     # is (tenant_id, user_id, date, type) — different types on the same day
     # would slip through without the row lock, causing double-booking.
+    # Fix #6: alle bestehenden Absences der Ziel-Tage in EINER gesperrten Query
+    # laden statt N× .with_for_update().first() (eine Query pro Datum). setdefault
+    # behält die erste Zeile je Datum und spiegelt damit das frühere
+    # .first()-Verhalten für den Regelfall (höchstens eine Absence je
+    # (user, date); das UNIQUE ist (tenant, user, date, type)). Es werden
+    # dieselben Zeilen gesperrt; die User-Zeile ist für VACATION bereits oben
+    # gesperrt (gleiche Lock-Reihenfolge User -> Absence).
+    existing_rows = (
+        db.query(Absence)
+        .filter(
+            Absence.user_id == target_user.id,
+            Absence.tenant_id == target_user.tenant_id,
+            Absence.date.in_(dates_to_create),
+        )
+        .with_for_update()
+        .all()
+    )
+    existing_by_date = {}
+    for a in existing_rows:
+        existing_by_date.setdefault(a.date, a)
+
     skip_dates = []
     for d in dates_to_create:
-        existing = (
-            db.query(Absence)
-            .filter(
-                Absence.user_id == target_user.id,
-                Absence.tenant_id == target_user.tenant_id,
-                Absence.date == d,
-            )
-            .with_for_update()
-            .first()
-        )
+        existing = existing_by_date.get(d)
 
         if existing:
             if existing.type == absence_data.type:

@@ -1066,6 +1066,18 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     for row in range(6, 17):
         sheet.cell(row=row, column=1).font = normal_font
 
+    # #150/Fix #4: das kumulative Überstundenkonto je Monat (Row 14) EINMAL als
+    # Single-Pass holen, statt get_overtime_account pro Monat zu rufen (jede
+    # Einzelrufung iteriert ab Carryover-Start neu -> O(Monate²)).
+    # history[(year, m)] entspricht bitgenau get_overtime_account(year, m)
+    # (gepinnt: test_overtime_history_matches_account); Monate vor dem
+    # History-Bereich liefert get_overtime_account 0.00 -> Default.
+    overtime_history = calculation_service.get_overtime_history(db, user, year, 12)
+
+    # Fix #7: das Urlaubskonto hängt nur an (user, year) und ist über alle 12
+    # Monate identisch — EINMAL vor der Schleife berechnen statt pro Monat.
+    vacation_account = calculation_service.get_vacation_account(db, user, year)
+
     # Calculate data for each month
     for month in range(1, 13):
         col = month + 2  # Column 3 = January, ..., Column 14 = December
@@ -1150,8 +1162,8 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         elif monthly_balance < 0:
             sheet.cell(row=12, column=col).fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
 
-        # Row 14: Cumulative overtime
-        cumulative_overtime = calculation_service.get_overtime_account(db, user, year, month)
+        # Row 14: Cumulative overtime (Fix #4: aus dem Single-Pass-History)
+        cumulative_overtime = overtime_history.get((year, month), Decimal('0.00'))
         sheet.cell(row=14, column=col).value = float(cumulative_overtime)
         sheet.cell(row=14, column=col).number_format = '0.0'
         sheet.cell(row=14, column=col).alignment = right_align
@@ -1163,8 +1175,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         elif cumulative_overtime < 0:
             sheet.cell(row=14, column=col).fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
 
-        # Row 15: Remaining vacation in hours
-        vacation_account = calculation_service.get_vacation_account(db, user, year)
+        # Row 15: Remaining vacation in hours (vacation_account: s. o., 1× berechnet)
         # Calculate remaining vacation up to this month.
         # F-026 (Review 2026-06-23): explizit auf den Tenant scopen.
         vacation_used_ytd = sum(

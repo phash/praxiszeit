@@ -156,11 +156,15 @@ def get_overtime_account(
     # Stichtag trimmt allein den aktuellen Monat (vergangene Monate liegen davor).
     cutoff = calculation_service.get_soll_cutoff_date(db, current_user)
 
-    # #150: das kumulative Konto EINMAL als Single-Pass holen, statt
-    # get_overtime_account pro Monat zu rufen (jede Einzelrufung iteriert ab
-    # Carryover-Start neu -> O(Monate²)). history_map[(y,m)] entspricht bitgenau
-    # get_overtime_account(y,m) (gepinnt: test_overtime_history_matches_account).
-    history_map = calculation_service.get_overtime_history(db, current_user, now.year, now.month, cutoff_date=cutoff)
+    # #150 / Fix #3: Soll/Ist/Saldo/Konto je Monat in EINEM Single-Pass holen.
+    # detailed[(y,m)] liefert target/actual (bitgleich zu get_monthly_target/
+    # get_monthly_actual) UND cumulative (bitgleich zu get_overtime_account) —
+    # so entfallen die zusätzlichen Per-Monat-Calls (vorher O(Monate²)).
+    # Invarianten gepinnt in test_overtime_history_matches_account /
+    # test_overtime_history_detailed_matches_monthly.
+    history_detail = calculation_service.get_overtime_history_detailed(
+        db, current_user, now.year, now.month, cutoff_date=cutoff
+    )
 
     if first_entry:
         start_year = first_entry.date.year
@@ -171,10 +175,20 @@ def get_overtime_account(
 
         # Build history month by month
         while (current_year < now.year) or (current_year == now.year and current_month <= now.month):
-            target = calculation_service.get_monthly_target(db, current_user, current_year, current_month, up_to_date=cutoff)
-            actual = calculation_service.get_monthly_actual(db, current_user, current_year, current_month, up_to_date=cutoff)
+            entry = history_detail.get((current_year, current_month))
+            if entry is not None:
+                target = entry.target
+                actual = entry.actual
+                cumulative = entry.cumulative
+            else:
+                # Months before the history range (e.g. before the first time
+                # entry / carryover in an untracked-or-empty case) — fall back to
+                # the exact previous behaviour: 0 cumulative + direct per-month
+                # Soll/Ist (get_overtime_account would also yield 0.00 here).
+                target = calculation_service.get_monthly_target(db, current_user, current_year, current_month, up_to_date=cutoff)
+                actual = calculation_service.get_monthly_actual(db, current_user, current_year, current_month, up_to_date=cutoff)
+                cumulative = Decimal('0.00')
             balance = actual - target
-            cumulative = history_map.get((current_year, current_month), Decimal('0.00'))
 
             history.append(OvertimeHistory(
                 year=current_year,
@@ -193,7 +207,8 @@ def get_overtime_account(
                 current_month += 1
 
     # Current balance
-    current_balance = history_map.get((now.year, now.month), Decimal('0.00'))
+    current_month_detail = history_detail.get((now.year, now.month))
+    current_balance = current_month_detail.cumulative if current_month_detail is not None else Decimal('0.00')
 
     return OvertimeAccount(
         current_balance=current_balance,
