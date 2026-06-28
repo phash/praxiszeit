@@ -1,24 +1,29 @@
 # Security Policy
 
-## Supported Versions
+## Unterstützte Versionen
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Sicherheitsupdates erscheinen ausschließlich für die jeweils aktuelle
+Minor-Linie. Ältere Linien erhalten keine Backports — bitte auf die neueste
+Version aktualisieren.
 
-| Version | Supported          |
+| Version | Unterstützt        |
 | ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| 1.12.x  | :white_check_mark: |
+| < 1.12  | :x:                |
 
-## Reporting a Vulnerability
+## Sicherheitslücke melden
 
-Use this section to tell people how to report a vulnerability.
+Bitte Schwachstellen **nicht** über öffentliche GitHub-Issues melden, sondern
+einen der folgenden vertraulichen Wege nutzen:
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+- **GitHub Security Advisories:** „Report a vulnerability" unter
+  <https://github.com/phash/praxiszeit/security/advisories/new>
+- **E-Mail:** m.roedig@gmail.com (gerne mit „PraxisZeit Security" im Betreff)
+
+Bitte beschreibe die Lücke, betroffene Version/Komponente und – wenn möglich –
+einen Reproduktionsweg. Eine erste Rückmeldung erfolgt in der Regel innerhalb
+weniger Werktage; nach Bestätigung wird zeitnah ein Fix bereitgestellt und die
+gemeldete Person (auf Wunsch) in der Release-Notiz genannt.
 
 ## API-Konvention: 404 statt 403 bei fremden Ressourcen (#120)
 
