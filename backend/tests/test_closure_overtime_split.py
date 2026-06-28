@@ -338,6 +338,129 @@ class TestClosureOvertimeSplitBudgetAndOffday:
         ]
 
 
+def _closure_types_by_date(db, user, closure_id):
+    return {a.date: a.type for a in db.query(Absence).filter(
+        Absence.user_id == user.id, Absence.closure_id == uuid.UUID(closure_id),
+    ).all()}
+
+
+class TestClosureCalendarOrderResplit:
+    """#314 Folge-Fix: Urlaub wird über ALLE Betriebsferien eines Jahres in
+    KALENDERreihenfolge verteilt — unabhängig von der Eingabe-/Speicherreihenfolge.
+    Der Überstundenausgleich landet auf der LETZTEN Schließung des Jahres, nie auf
+    einer kalendarisch früheren, nur weil sie zuerst gespeichert wurde."""
+
+    def test_overflow_lands_on_latest_closure_not_input_order(self, db, default_tenant, admin_client):
+        # Budget 30. Lege ZUERST die Dezember-Ferien an, DANN die kalendarisch
+        # frühere Juni-Ferien, sodass die Summe das Budget übersteigt.
+        emp = _make_user(db, "e_cal", vacation_days=30)
+        _set_toggle(db, True)
+        r_dec = admin_client.post("/api/company-closures/", json={
+            "name": "Dezember", "start_date": "2025-12-01", "end_date": "2025-12-31",
+            "counts_as_vacation": True})
+        assert r_dec.status_code == 201, r_dec.text
+        r_jun = admin_client.post("/api/company-closures/", json={
+            "name": "Juni", "start_date": "2025-06-09", "end_date": "2025-06-20",
+            "counts_as_vacation": True})
+        assert r_jun.status_code == 201, r_jun.text
+
+        jun = _closure_types_by_date(db, emp, r_jun.json()["id"])
+        dec = _closure_types_by_date(db, emp, r_dec.json()["id"])
+
+        # Juni (kalendarisch früher) ist KOMPLETT Urlaub, obwohl zuletzt angelegt.
+        assert set(jun.values()) == {AbsenceType.VACATION}
+        assert AbsenceType.OVERTIME not in jun.values()
+        # Der Überhang über das 30-Tage-Budget landet als OVERTIME im DEZEMBER.
+        assert AbsenceType.OVERTIME in dec.values()
+        # Kein Minus-Urlaub: genau das Budget (30) ist als Urlaub gebucht.
+        total = len(jun) + len(dec)
+        total_vac = sum(1 for t in list(jun.values()) + list(dec.values())
+                        if t == AbsenceType.VACATION)
+        total_ot = sum(1 for t in list(jun.values()) + list(dec.values())
+                       if t == AbsenceType.OVERTIME)
+        assert total > 30, "Testaufbau muss das Budget übersteigen"
+        assert total_vac == 30
+        assert total_ot == total - 30
+        # Die OVERTIME-Tage im Dezember sind die chronologisch LETZTEN.
+        dec_vac_dates = [d for d, t in dec.items() if t == AbsenceType.VACATION]
+        dec_ot_dates = [d for d, t in dec.items() if t == AbsenceType.OVERTIME]
+        assert min(dec_ot_dates) > max(dec_vac_dates)
+
+    def test_resave_is_idempotent(self, db, default_tenant, admin_client):
+        # Erneutes Speichern (PUT) einer der Schließungen ohne inhaltliche Änderung
+        # lässt die Typen aller Schließungen des Jahres unverändert.
+        emp = _make_user(db, "e_idem", vacation_days=30)
+        _set_toggle(db, True)
+        r_dec = admin_client.post("/api/company-closures/", json={
+            "name": "Dezember", "start_date": "2025-12-01", "end_date": "2025-12-31",
+            "counts_as_vacation": True})
+        assert r_dec.status_code == 201, r_dec.text
+        r_jun = admin_client.post("/api/company-closures/", json={
+            "name": "Juni", "start_date": "2025-06-09", "end_date": "2025-06-20",
+            "counts_as_vacation": True})
+        assert r_jun.status_code == 201, r_jun.text
+
+        jun_before = _closure_types_by_date(db, emp, r_jun.json()["id"])
+        dec_before = _closure_types_by_date(db, emp, r_dec.json()["id"])
+
+        # Juni unverändert erneut speichern.
+        r = admin_client.put(f"/api/company-closures/{r_jun.json()['id']}", json={
+            "name": "Juni", "start_date": "2025-06-09", "end_date": "2025-06-20",
+            "counts_as_vacation": True})
+        assert r.status_code == 200, r.text
+
+        jun_after = _closure_types_by_date(db, emp, r_jun.json()["id"])
+        dec_after = _closure_types_by_date(db, emp, r_dec.json()["id"])
+        assert jun_after == jun_before
+        assert dec_after == dec_before
+
+    def test_untracked_employee_not_resplit(self, db, default_tenant, admin_client):
+        # Ein untracked MA (track_hours=False) hat kein Überstundenkonto → der
+        # Resplit darf ihn NICHT anfassen; seine Closure-Tage bleiben VACATION,
+        # auch wenn die Summe das (0-)Budget weit übersteigt.
+        emp = _make_user(db, "e_unt_cal", vacation_days=0, track_hours=False)
+        _set_toggle(db, True)
+        r_dec = admin_client.post("/api/company-closures/", json={
+            "name": "Dezember", "start_date": "2025-12-01", "end_date": "2025-12-31",
+            "counts_as_vacation": True})
+        assert r_dec.status_code == 201, r_dec.text
+        r_jun = admin_client.post("/api/company-closures/", json={
+            "name": "Juni", "start_date": "2025-06-09", "end_date": "2025-06-20",
+            "counts_as_vacation": True})
+        assert r_jun.status_code == 201, r_jun.text
+
+        all_types = [a.type for a in db.query(Absence).filter(
+            Absence.user_id == emp.id).all()]
+        assert all_types, "MA sollte Closure-Absencen haben"
+        assert set(all_types) == {AbsenceType.VACATION}
+        assert AbsenceType.OVERTIME not in all_types
+
+    def test_free_special_day_reduces_closure_budget(self, db, default_tenant, admin_client):
+        # Ein als 'free'+counts_as_vacation konfigurierter Sondertag (24.12.) zehrt
+        # einen Urlaubstag mit → reduziert das Budget für eine späte Dezember-Ferien:
+        # bei Budget 4 und 4 gebuchten Closure-Tagen wird ein Tag OVERTIME.
+        from app.models.system_setting import SystemSetting
+        emp = _make_user(db, "e_xmas_ot", vacation_days=4)
+        db.add(SystemSetting(key="special_day_dec24_mode",
+                             tenant_id=DEFAULT_TENANT_ID, value="free"))
+        db.add(SystemSetting(key="special_day_dec24_counts_as_vacation",
+                             tenant_id=DEFAULT_TENANT_ID, value="true"))
+        db.commit()
+        _set_toggle(db, True)
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "Weihnachten", "start_date": "2025-12-22", "end_date": "2025-12-26",
+            "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        by_date = _closure_types_by_date(db, emp, r.json()["id"])
+        # 24.12. (free) wird nicht gebucht.
+        assert date(2025, 12, 24) not in by_date
+        # 24.12. verbraucht 1 Budget-Tag → nur 3 Closure-Tage Urlaub, der 4. OVERTIME.
+        assert by_date[date(2025, 12, 22)] == AbsenceType.VACATION
+        assert by_date[date(2025, 12, 23)] == AbsenceType.VACATION
+        assert by_date[date(2025, 12, 25)] == AbsenceType.VACATION
+        assert by_date[date(2025, 12, 26)] == AbsenceType.OVERTIME
+
+
 class TestClosureSpecialDays:
     """AC-11: als 'free' konfigurierte Sondertage (24./31.12.) sind soll-frei und
     bekommen KEINE Betriebsferien-Absence (sonst kostet ein freier Tag fälschlich
