@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
@@ -11,6 +12,10 @@ from app.middleware.auth import get_current_user, require_admin
 from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry, WorkingHoursChange
 from app.schemas.absence import AbsenceResponse
 from app.services import calculation_service, settings_service, special_days_service
+# Fix #3: the year re-split lives in a service module so the private-vacation
+# write paths can call it without importing this router (circular-import safe).
+# Re-exported as _resplit_year_closures to keep the existing call sites intact.
+from app.services.closure_split_service import resplit_year_closures as _resplit_year_closures
 from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/company-closures", tags=["company-closures"])
@@ -101,6 +106,13 @@ def _create_closure_absences(
     absence_type = (
         AbsenceType.VACATION if closure.counts_as_vacation else AbsenceType.PAID_LEAVE
     )
+    # Fix #6 (by design — NO remaining_days cap): Betriebsferien are MANDATORY
+    # leave (Pflichturlaub) and are always booked, even past the vacation budget.
+    # With the toggle OFF this can produce minus-vacation; with it ON the surplus
+    # becomes Überstundenausgleich (see split below). This is the INTENDED
+    # difference to the direct/approval paths (create_absence /
+    # review_vacation_request), which DO cap hard with a 400 — an employee can't
+    # voluntarily overdraw, but the employer can impose closure leave.
     # #314: global toggle — when a *vacation* closure exceeds an employee's
     # remaining vacation budget, book the surplus days as OVERTIME
     # (Überstundenausgleich → reduces the overtime account, may go negative)
@@ -251,136 +263,6 @@ def _create_closure_absences(
         if created_for_employee:
             affected += 1
     return affected
-
-
-def _resplit_year_closures(db: Session, tenant_id, year: int, current_user: User) -> None:
-    """#314 follow-up: re-classify ALL split-able Betriebsferien absences of a
-    year into VACATION/OVERTIME in CALENDAR order.
-
-    ``_create_closure_absences`` decides VACATION-vs-OVERTIME per closure at save
-    time against the then-current remaining budget. Entering the December closure
-    BEFORE the (calendar-earlier) June closure therefore let December "inherit"
-    the vacation budget and pushed June onto OVERTIME — the booking followed the
-    INPUT order, not the calendar. This second pass fixes that surgically: it
-    walks ALL of the year's closure days in DATE order against the gross annual
-    budget minus all non-closure vacation consumption (private vacation + free
-    special days) and flips only ``absence.type``. The surplus over the budget
-    thus lands on the LAST closure of the year (never minus-vacation; once the
-    budget is exhausted the walk switches to OVERTIME).
-
-    Only ``absence.type`` of existing closure absences is mutated — no day is
-    created or deleted, so every guard in ``_create_closure_absences`` (#298
-    employment window, off-day skip, AC-11 free special days, #290 logged-work,
-    foreign-absence skip, audit log, half_day, closure_id, hours) stays intact.
-
-    Runs only when the global ``closure_overtime_after_vacation`` toggle is on
-    (otherwise legacy all-VACATION). Untracked employees (track_hours=False) have
-    no overtime account and are left as VACATION (mirrors the emp_split guard).
-    F-026: every query is tenant-scoped.
-    """
-    if not settings_service.get_bool_setting(
-        db, "closure_overtime_after_vacation", tenant_id, False
-    ):
-        return
-
-    year_start = date(year, 1, 1)
-    year_end = date(year, 12, 31)
-
-    # Split-able closures = vacation closures of this tenant that touch the year.
-    closures = db.query(CompanyClosure).filter(
-        CompanyClosure.tenant_id == tenant_id,
-        CompanyClosure.counts_as_vacation == True,
-        CompanyClosure.start_date <= year_end,
-        CompanyClosure.end_date >= year_start,
-    ).all()
-    if not closures:
-        return
-    closure_ids = [c.id for c in closures]
-
-    # All generated absences of those closures that fall in this year.
-    closure_absences = db.query(Absence).filter(
-        Absence.tenant_id == tenant_id,
-        Absence.closure_id.in_(closure_ids),
-        Absence.date >= year_start,
-        Absence.date <= year_end,
-    ).all()
-    if not closure_absences:
-        return
-
-    by_user: dict = {}
-    for a in closure_absences:
-        by_user.setdefault(a.user_id, []).append(a)
-
-    users = {
-        u.id: u
-        for u in db.query(User).filter(
-            User.id.in_(list(by_user.keys())),
-            User.tenant_id == tenant_id,
-        ).all()
-    }
-
-    # Free special days (24./31.12.) that cost a vacation day this year — same
-    # source get_vacation_account uses, so the budget bookkeeping matches.
-    holiday_dates_year = {
-        h.date
-        for h in db.query(PublicHoliday).filter(
-            PublicHoliday.year == year,
-            PublicHoliday.tenant_id == tenant_id,
-        ).all()
-    }
-    deduction_dates = special_days_service.vacation_deduction_dates_for_year(
-        db, tenant_id, year, holiday_dates_year
-    )
-
-    for user_id, absences in by_user.items():
-        employee = users.get(user_id)
-        # Untracked MA: no overtime account → keep legacy VACATION. Missing user
-        # (shouldn't happen) → leave untouched.
-        if employee is None or not employee.track_hours:
-            continue
-
-        # Gross annual budget (pro-rata + carryover), independent of bookings.
-        budget = float(
-            calculation_service.get_vacation_account(db, employee, year)["budget_days"]
-        )
-
-        # Non-closure vacation consumption (private vacation + free special days)
-        # is ALL deducted up front, so the closure days only ever take the
-        # REMAINING budget — even vacation booked LATER in the year (e.g. summer)
-        # reduces the closure budget (#314 reopened: NIE Minus-Urlaub).
-        private = db.query(Absence).filter(
-            Absence.user_id == user_id,
-            Absence.tenant_id == tenant_id,
-            Absence.type == AbsenceType.VACATION,
-            Absence.closure_id.is_(None),
-            Absence.date >= year_start,
-            Absence.date <= year_end,
-        ).all()
-        private_dates = {a.date for a in private}
-        consumed = 0.0
-        for a in private:
-            consumed += 0.5 if a.half_day else 1.0
-        for d in deduction_dates:
-            if d in private_dates:
-                continue  # already counted via a real VACATION absence
-            if employee.first_work_day and d < employee.first_work_day:
-                continue
-            if employee.last_work_day and d > employee.last_work_day:
-                continue
-            consumed += 1.0
-
-        closure_budget = budget - consumed
-
-        # Walk the closure days in CALENDAR order: VACATION while the remaining
-        # closure budget covers a full day, OVERTIME afterwards. The surplus
-        # therefore lands on the latest closure of the year.
-        used = 0.0
-        for a in sorted(absences, key=lambda x: x.date):
-            if closure_budget - used >= 1.0:
-                a.type = AbsenceType.VACATION
-                used += 1.0
-            else:
-                a.type = AbsenceType.OVERTIME
 
 
 @router.get("/", response_model=List[CompanyClosureResponse])
@@ -690,6 +572,12 @@ def delete_closure(
     if not closure:
         raise HTTPException(status_code=404, detail="Betriebsferien nicht gefunden")
 
+    # Fix #2: remember the affected years BEFORE deleting so we can re-split the
+    # REMAINING closures of those years (#314). Deleting the calendar-earlier,
+    # budget-filling closure frees vacation budget — the OVERTIME days of a later
+    # closure of the same year must flip back to VACATION.
+    affected_years = list(range(closure.start_date.year, closure.end_date.year + 1))
+
     # Delete the generated absences via FK (robust against renames / manual
     # note edits) — tenant_id filter kept as belt-and-suspenders (F-026).
     db.query(Absence).filter(
@@ -698,5 +586,25 @@ def delete_closure(
     ).delete(synchronize_session=False)
 
     db.delete(closure)
+
+    # Fix #2: re-classify the remaining closures of the affected years in calendar
+    # order (only when the global toggle is on; otherwise legacy all-VACATION).
+    # Flush the deletes first so the budget snapshot no longer counts this
+    # closure's own days.
+    if settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", current_user.tenant_id, False
+    ):
+        db.flush()
+        for yr in affected_years:
+            _resplit_year_closures(db, current_user.tenant_id, yr, current_user)
+
     db.commit()
+
+    # Fix #5: warn (non-destructively) if a deleted closure touched an already-
+    # closed year — that year's frozen carryover is now stale.
+    warning = calculation_service.stale_year_closing_warning(
+        db, current_user.tenant_id, affected_years
+    )
+    if warning:
+        return JSONResponse(status_code=200, content={"warning": warning})
     return None

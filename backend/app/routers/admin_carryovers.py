@@ -66,6 +66,9 @@ def upsert_carryover(
     if carryover:
         carryover.overtime_hours = data.overtime_hours
         carryover.vacation_days = data.vacation_days
+        # Fix #7: a manual edit takes ownership — protect it from
+        # delete_year_closing (which removes only source='year_closing').
+        carryover.source = "manual"
     else:
         carryover = YearCarryover(
             user_id=user_id,
@@ -73,6 +76,7 @@ def upsert_carryover(
             year=year,
             overtime_hours=data.overtime_hours,
             vacation_days=data.vacation_days,
+            source="manual",  # Fix #7
         )
         db.add(carryover)
 
@@ -134,6 +138,26 @@ def create_year_closing(
             ),
         )
 
+    # Fix #4: likewise refuse while a PENDING vacation request OVERLAPS the
+    # closing year — approving it later would book absences into the year and
+    # retroactively move the remaining-vacation balance we are about to freeze.
+    from app.models.vacation_request import VacationRequest, VacationRequestStatus
+    pending_vr_count = db.query(func.count(VacationRequest.id)).filter(
+        VacationRequest.tenant_id == current_user.tenant_id,
+        VacationRequest.status == VacationRequestStatus.PENDING.value,
+        VacationRequest.date <= end_of_year,
+        func.coalesce(VacationRequest.end_date, VacationRequest.date) >= start_of_year,
+    ).scalar() or 0
+    if pending_vr_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Jahresabschluss {year} abgelehnt: es gibt noch "
+                f"{pending_vr_count} offene Urlaubsanträge für dieses Jahr. "
+                f"Bitte erst bearbeiten, dann erneut versuchen."
+            ),
+        )
+
     # ABV-14: auch MA OHNE Stundenzählung (#191) einbeziehen — sie führen
     # tagebasiert Urlaub (Pro-rata + Vortrag). create_year_closing liefert für sie
     # Überstunden = 0 und den korrekten Resturlaub-Vortrag; ohne sie ginge ihr
@@ -166,9 +190,12 @@ def delete_year_closing(
         raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
 
     next_year = year + 1
+    # Fix #7: remove ONLY the carryovers this year-closing created — manual
+    # carryovers (source='manual', entered via upsert_carryover) must survive.
     deleted = db.query(YearCarryover).filter(
         YearCarryover.year == next_year,
         YearCarryover.tenant_id == current_user.tenant_id,
+        YearCarryover.source == "year_closing",
     ).delete(synchronize_session=False)
 
     if deleted == 0:

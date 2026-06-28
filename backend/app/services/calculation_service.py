@@ -933,7 +933,19 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     budget_days = Decimal(str(user.vacation_days))
     first_in_year = user.first_work_day and user.first_work_day.year == year
     last_in_year = user.last_work_day and user.last_work_day.year == year
-    if first_in_year and last_in_year:
+    # Fix #1: a year that lies ENTIRELY outside the employment window grants no
+    # budget. The pro-rata branches below only cover the entry/exit YEAR and have
+    # no `else`, so without this guard a departed employee kept the full
+    # `vacation_days` in every year AFTER last_work_day (and a future hire in
+    # every year BEFORE first_work_day) — phantom budget that even flowed into
+    # the carryover (double entitlement).
+    year_outside_window = bool(
+        (user.last_work_day and user.last_work_day.year < year)
+        or (user.first_work_day and user.first_work_day.year > year)
+    )
+    if year_outside_window:
+        budget_days = Decimal('0')
+    elif first_in_year and last_in_year:
         # Eintritt UND Austritt im selben Jahr: Beschäftigungsdauer ist die echte
         # Überlappung beider Grenzen (nicht min() zweier einseitiger Pro-Ratas).
         # employed_months = months_remaining + months_worked − 12  (≥ 0)
@@ -963,13 +975,16 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
         # Vollständige Monate vor Endmonat + Anteil des Endmonats
         months_worked = Decimal(str(lwd.month - 1)) + Decimal(str(days_worked)) / Decimal(str(days_in_month))
         budget_days = (Decimal(str(user.vacation_days)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
-    # Add carryover vacation days from previous year
-    carryover = db.query(YearCarryover).filter(
-        YearCarryover.user_id == user.id,
-        YearCarryover.year == year,
-    ).first()
-    carryover_days = Decimal(str(carryover.vacation_days)) if carryover else Decimal('0')
-    budget_days += carryover_days
+    # Add carryover vacation days from previous year — but only for a year the
+    # employee was (at least partly) employed. An out-of-window year gets zero
+    # budget and must not inherit a carryover either (Fix #1).
+    if not year_outside_window:
+        carryover = db.query(YearCarryover).filter(
+            YearCarryover.user_id == user.id,
+            YearCarryover.year == year,
+        ).first()
+        carryover_days = Decimal(str(carryover.vacation_days)) if carryover else Decimal('0')
+        budget_days += carryover_days
 
     budget_hours = budget_days * daily_target
 
@@ -1119,6 +1134,33 @@ def count_workdays(db: Session, start: date, end: date, tenant_id=None) -> int:
     return count
 
 
+def stale_year_closing_warning(db: Session, tenant_id, years) -> Optional[str]:
+    """Fix #5: warn (non-destructively) when a retroactive change touches a year
+    whose Jahresabschluss was already done.
+
+    A year ``Y`` counts as closed when a ``YearCarryover`` for ``Y+1`` exists in
+    the tenant. After a retroactive storno / closure deletion the frozen
+    carryover ``Y+1`` is now stale. We deliberately do NOT recompute it (that
+    could overwrite manual adjustments) — we only return a German warning string
+    naming the EARLIEST affected closed year so the caller can surface it. Returns
+    None when no touched year was closed.
+    """
+    closed = sorted({
+        y for y in years
+        if db.query(YearCarryover.id).filter(
+            YearCarryover.tenant_id == tenant_id,
+            YearCarryover.year == y + 1,
+        ).first() is not None
+    })
+    if not closed:
+        return None
+    y = closed[0]
+    return (
+        f"Jahresabschluss {y} bereits erfolgt — Carryover {y + 1} ist nun "
+        f"veraltet, bitte Jahresabschluss erneut ausführen."
+    )
+
+
 def create_year_closing(db: Session, year: int, users: list) -> list:
     """
     Create year-end closing for all given users.
@@ -1156,6 +1198,9 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
         if carryover:
             carryover.overtime_hours = overtime_balance
             carryover.vacation_days = remaining_vacation
+            # Fix #7: the year-closing owns this row (so delete_year_closing may
+            # remove it) — even if it previously existed as a manual entry.
+            carryover.source = "year_closing"
         else:
             carryover = YearCarryover(
                 user_id=user.id,
@@ -1163,6 +1208,7 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
                 year=next_year,
                 overtime_hours=overtime_balance,
                 vacation_days=remaining_vacation,
+                source="year_closing",  # Fix #7
             )
             db.add(carryover)
 
