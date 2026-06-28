@@ -336,3 +336,23 @@ class TestClosureOvertimeSplitBudgetAndOffday:
         assert _types(db, emp, c["id"]) == [
             AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
         ]
+
+
+class TestClosureSpecialDays:
+    """AC-11: als 'free' konfigurierte Sondertage (24./31.12.) sind soll-frei und
+    bekommen KEINE Betriebsferien-Absence (sonst kostet ein freier Tag fälschlich
+    einen Urlaubstag)."""
+
+    def test_closure_skips_free_special_day(self, db, default_tenant, admin_client):
+        from app.models.system_setting import SystemSetting
+        emp = _make_user(db, "e_xmas", vacation_days=30)
+        db.add(SystemSetting(key="special_day_dec24_mode", tenant_id=DEFAULT_TENANT_ID, value="free"))
+        db.commit()
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "Weihnachten", "start_date": "2025-12-22", "end_date": "2025-12-26",
+            "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        booked = {a.date for a in db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(r.json()["id"])).all()}
+        assert date(2025, 12, 24) not in booked, "24.12. (free) darf NICHT gebucht werden"
+        assert date(2025, 12, 22) in booked and date(2025, 12, 26) in booked

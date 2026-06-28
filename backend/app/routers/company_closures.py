@@ -10,7 +10,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry, WorkingHoursChange
 from app.schemas.absence import AbsenceResponse
-from app.services import calculation_service, settings_service
+from app.services import calculation_service, settings_service, special_days_service
 from app.routers.admin_helpers import _create_audit_log
 
 router = APIRouter(prefix="/api/company-closures", tags=["company-closures"])
@@ -330,6 +330,12 @@ def create_closure(
     holidays = _get_holidays_for_range(
         db, data.start_date, data.end_date, current_user.tenant_id
     )
+    # AC-11: als 'free' konfigurierte Sondertage (24./31.12.) sind soll-frei und
+    # dürfen keine Betriebsferien-Absence bekommen (sonst kostet ein freier Tag
+    # fälschlich einen Urlaubstag) — wie Feiertage ausschließen.
+    holidays |= special_days_service.free_special_days_in_range(
+        db, current_user.tenant_id, data.start_date, data.end_date
+    )
     workdays = _get_workdays(data.start_date, data.end_date, holidays)
 
     if not workdays:
@@ -415,6 +421,12 @@ def update_closure(
     # Target workdays of the (new) range.
     holidays = _get_holidays_for_range(
         db, data.start_date, data.end_date, current_user.tenant_id
+    )
+    # AC-11: als 'free' konfigurierte Sondertage (24./31.12.) sind soll-frei und
+    # dürfen keine Betriebsferien-Absence bekommen (sonst kostet ein freier Tag
+    # fälschlich einen Urlaubstag) — wie Feiertage ausschließen.
+    holidays |= special_days_service.free_special_days_in_range(
+        db, current_user.tenant_id, data.start_date, data.end_date
     )
     workdays = _get_workdays(data.start_date, data.end_date, holidays)
 
