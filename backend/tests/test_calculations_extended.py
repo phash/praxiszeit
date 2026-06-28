@@ -458,3 +458,67 @@ def test_overtime_history_empty_untracked(db, test_user):
     test_user.track_hours = False
     db.commit()
     assert calculation_service.get_overtime_history(db, test_user, 2025, 3) == {}
+
+
+# ---------------------------------------------------------------------------
+# Fix #3: get_overtime_history_detailed liefert je Monat target+actual+cumulative
+# in EINEM Pass. Die Dashboard-Spalten müssen bitgleich zu den (langsamen)
+# Einzelfunktionen bleiben — sonst ändern sich payroll-relevante Zahlen.
+# ---------------------------------------------------------------------------
+def test_overtime_history_detailed_matches_monthly(db, test_user):
+    """detailed[(y,m)].{target,actual,cumulative} == get_monthly_target /
+    get_monthly_actual / get_overtime_account für JEDEN Monat (mit Carryover-Reset)."""
+    from app.models import YearCarryover
+
+    def add_entry(d, start, end, brk=60):
+        db.add(TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                         date=d, start_time=start, end_time=end, break_minutes=brk))
+
+    add_entry(date(2024, 11, 4), time(8, 0), time(17, 0))   # Mo 8h
+    add_entry(date(2024, 11, 5), time(8, 0), time(18, 30))  # Di 9.5h
+    add_entry(date(2024, 12, 2), time(8, 0), time(16, 0))   # Mo 7h
+    add_entry(date(2025, 1, 6), time(8, 0), time(19, 0))    # Mo 10h
+    add_entry(date(2025, 2, 3), time(8, 0), time(16, 30))   # Mo 7.5h
+    # Eine soll-reduzierende Abwesenheit, damit target != gross getestet wird.
+    db.add(Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                   date=date(2025, 1, 7), type=AbsenceType.VACATION, hours=8.0))
+    db.add(YearCarryover(tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id,
+                         year=2025, overtime_hours=Decimal('12.50'),
+                         vacation_days=Decimal('0')))
+    db.commit()
+
+    detailed = calculation_service.get_overtime_history_detailed(db, test_user, 2025, 3)
+    assert detailed, "detailed darf nicht leer sein"
+    assert (2024, 11) in detailed and (2025, 3) in detailed
+    for (y, m), row in detailed.items():
+        assert row.target == calculation_service.get_monthly_target(db, test_user, y, m), \
+            f"{y}-{m:02d}: target {row.target} != monthly_target"
+        assert row.actual == calculation_service.get_monthly_actual(db, test_user, y, m), \
+            f"{y}-{m:02d}: actual {row.actual} != monthly_actual"
+        assert row.cumulative == calculation_service.get_overtime_account(db, test_user, y, m), \
+            f"{y}-{m:02d}: cumulative {row.cumulative} != overtime_account"
+        # Saldo wie das Dashboard ihn bildet.
+        assert (row.actual - row.target) == \
+            (calculation_service.get_monthly_actual(db, test_user, y, m)
+             - calculation_service.get_monthly_target(db, test_user, y, m))
+
+    # Wrapper get_overtime_history == {k: detailed[k].cumulative}
+    wrapped = calculation_service.get_overtime_history(db, test_user, 2025, 3)
+    assert wrapped == {k: v.cumulative for k, v in detailed.items()}
+
+
+def test_overtime_history_detailed_with_cutoff(db, test_user):
+    """Unter cutoff bleiben target/actual/cumulative bitgleich zu den Einzelfunktionen."""
+    db.add(TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                     date=date(2025, 1, 6), start_time=time(8, 0), end_time=time(18, 0),
+                     break_minutes=60))
+    db.add(TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                     date=date(2025, 1, 20), start_time=time(8, 0), end_time=time(15, 0),
+                     break_minutes=30))
+    db.commit()
+    cutoff = date(2025, 1, 10)
+    detailed = calculation_service.get_overtime_history_detailed(db, test_user, 2025, 1, cutoff_date=cutoff)
+    row = detailed[(2025, 1)]
+    assert row.target == calculation_service.get_monthly_target(db, test_user, 2025, 1, up_to_date=cutoff)
+    assert row.actual == calculation_service.get_monthly_actual(db, test_user, 2025, 1, up_to_date=cutoff)
+    assert row.cumulative == calculation_service.get_overtime_account(db, test_user, 2025, 1, cutoff_date=cutoff)

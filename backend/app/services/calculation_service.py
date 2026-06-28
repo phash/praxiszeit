@@ -3,7 +3,7 @@ from app.services.timezone_service import today_local
 from app.services.date_filters import date_in_year, date_in_month, date_in_range
 from decimal import Decimal
 from calendar import monthrange
-from typing import Dict, List, Optional
+from typing import Dict, List, NamedTuple, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
@@ -666,17 +666,36 @@ def get_overtime_account(
     return total_balance.quantize(Decimal('0.01'))
 
 
-def get_overtime_history(
-    db: Session, user: User, up_to_year: int, up_to_month: int, cutoff_date: date = None
-) -> Dict[tuple, Decimal]:
-    """Kumulatives Überstundenkonto NACH jedem Monat (Start..up_to) in EINEM Pass.
+class MonthlyOvertime(NamedTuple):
+    """Per-Monat-Aufschlüsselung aus :func:`get_overtime_history_detailed`.
 
-    Invariante: für jeden Monat (y, m) im Bereich gilt
-        get_overtime_history(...)[(y, m)] == get_overtime_account(db, user, y, m)
-    (gepinnt durch test_overtime_history_matches_account). #150: damit baut das
-    Dashboard seine Monats-History in O(Monate) statt get_overtime_account pro
-    Monat zu rufen (O(Monate²), weil jede Einzelrufung ab Carryover-Start neu
-    iteriert). Leeres Dict bei track_hours=False / keinen Daten.
+    ``target``/``actual`` sind auf 0.01 quantisiert und damit bitgleich zu
+    :func:`get_monthly_target` / :func:`get_monthly_actual` (gleicher cutoff);
+    ``cumulative`` ist bitgleich zu :func:`get_overtime_account`.
+    """
+    target: Decimal
+    actual: Decimal
+    cumulative: Decimal
+
+
+def get_overtime_history_detailed(
+    db: Session, user: User, up_to_year: int, up_to_month: int, cutoff_date: date = None
+) -> Dict[tuple, "MonthlyOvertime"]:
+    """Soll/Ist/Konto NACH jedem Monat (Start..up_to) in EINEM Pass.
+
+    Liefert je Monat (y, m) ein :class:`MonthlyOvertime` mit ``target``,
+    ``actual`` und ``cumulative``. Invarianten (gepinnt):
+        detailed[(y, m)].cumulative == get_overtime_account(db, user, y, m)
+        detailed[(y, m)].target     == get_monthly_target(db, user, y, m)
+        detailed[(y, m)].actual     == get_monthly_actual(db, user, y, m)
+    (jeweils mit demselben cutoff_date).
+
+    #150 / Fix #3: damit baut das Dashboard Soll/Ist/Saldo/Konto je Monat aus
+    EINEM Single-Pass — statt get_monthly_target + get_monthly_actual ZUSÄTZLICH
+    pro Monat zu rufen (jede Einzelrufung iteriert neu -> O(Monate²)).
+    :func:`get_overtime_history` ist ein dünner Wrapper, der nur ``cumulative``
+    zurückgibt (alter Vertrag + Invariante unverändert). Leeres Dict bei
+    track_hours=False / keinen Daten.
 
     Wie get_overtime_account ist ein YearCarryover ein Reset-Punkt: im Januar
     eines Jahres MIT eigenem Carryover startet der laufende Saldo neu vom
@@ -770,7 +789,7 @@ def get_overtime_history(
             special_day_configs[yr] = c
         return c
 
-    history: Dict[tuple, Decimal] = {}
+    history: Dict[tuple, MonthlyOvertime] = {}
     total_balance = initial_balance
     cy, cm = start_year, start_month
 
@@ -802,7 +821,15 @@ def get_overtime_history(
 
         monthly_actual = actual_by_month.get((cy, cm), Decimal('0'))
         total_balance += (monthly_actual - monthly_target)
-        history[(cy, cm)] = total_balance.quantize(Decimal('0.01'))
+        # cumulative wird (wie zuvor) aus den UNquantisierten Monatswerten
+        # akkumuliert und erst beim Speichern quantisiert -> bitgleich zu
+        # get_overtime_account. target/actual zusätzlich auf 0.01 quantisiert,
+        # damit sie get_monthly_target/get_monthly_actual exakt entsprechen.
+        history[(cy, cm)] = MonthlyOvertime(
+            target=monthly_target.quantize(Decimal('0.01')),
+            actual=monthly_actual.quantize(Decimal('0.01')),
+            cumulative=total_balance.quantize(Decimal('0.01')),
+        )
 
         if cm == 12:
             cm = 1
@@ -811,6 +838,25 @@ def get_overtime_history(
             cm += 1
 
     return history
+
+
+def get_overtime_history(
+    db: Session, user: User, up_to_year: int, up_to_month: int, cutoff_date: date = None
+) -> Dict[tuple, Decimal]:
+    """Kumulatives Überstundenkonto NACH jedem Monat (Start..up_to) in EINEM Pass.
+
+    Invariante: für jeden Monat (y, m) im Bereich gilt
+        get_overtime_history(...)[(y, m)] == get_overtime_account(db, user, y, m)
+    (gepinnt durch test_overtime_history_matches_account). Dünner Wrapper um
+    :func:`get_overtime_history_detailed` — gibt nur den kumulativen Saldo
+    zurück (alter Vertrag unverändert).
+    """
+    return {
+        k: v.cumulative
+        for k, v in get_overtime_history_detailed(
+            db, user, up_to_year, up_to_month, cutoff_date=cutoff_date
+        ).items()
+    }
 
 
 def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date = None) -> Dict:
