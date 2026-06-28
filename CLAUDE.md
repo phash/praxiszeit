@@ -239,6 +239,7 @@ JSON-Body über `sort_keys=True, separators=(",",":")` kanonisiert, mit Ed25519 
 
 | Thema | Datei |
 |-------|-------|
+| **Glossar (Stunden vs. Tage, Soll/Ist/Urlaub/Überstunden — verbindliche Begriffe)** | [docs/GLOSSAR.md](docs/GLOSSAR.md) |
 | Deployment & Prod | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Infrastruktur (Docker, nginx, Caddy, Mail, Monitoring) | [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) |
 | Backend-Architektur (Router, Services, Patterns) | [docs/BACKEND-ARCHITEKTUR.md](docs/BACKEND-ARCHITEKTUR.md) |
