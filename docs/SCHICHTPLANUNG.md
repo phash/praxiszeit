@@ -27,6 +27,22 @@ angelegten Daten bleiben erhalten und erscheinen beim erneuten Aktivieren wieder
 Technisch steuert das tenant-weite Setting `shift_planning_enabled` (Default
 `false`) das Modul.
 
+### Geplante Wochentage (#371)
+
+Unter **Einstellungen → Schichtplanung** (nur sichtbar, wenn die Schichtplanung
+aktiv ist) legen Sie über die Wochentag-Auswahl fest, **welche Wochentage im
+Schichtplaner angezeigt und geplant werden**. Standard ist **Montag–Freitag**;
+Samstag/Sonntag (oder z. B. ein Schließtag Donnerstag) lassen sich einzeln zu-
+oder abschalten. Mindestens ein Tag muss aktiv bleiben.
+
+Ein deaktivierter Wochentag verschwindet aus der **Wochenansicht**, kann **keine
+neuen Slots** aufnehmen (400) und wird von der **Auto-Generierung** übersprungen;
+Plan-Validierung, „Unterbesetzt"-Badge und die MA-Karte „Deine Einteilung heute"
+ignorieren ihn ebenfalls. Bereits auf einem Tag angelegte Slots bleiben in der
+Datenbank erhalten und erscheinen wieder, sobald der Tag reaktiviert wird (kein
+Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
+(CSV `0`=Mo … `6`=So, Default `0,1,2,3,4`).
+
 ---
 
 ## Konzepte

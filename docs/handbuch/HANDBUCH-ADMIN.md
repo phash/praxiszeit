@@ -930,6 +930,14 @@ oder Überstunden.
 → Speichern.** Das Modul ist nach der Installation **aus**; nur Admins können es
 einschalten. Erst danach erscheinen die Menüpunkte und das Dashboard-Widget.
 
+**Geplante Wochentage (#371):** Direkt darunter (nur bei aktiver Schichtplanung)
+legen Sie fest, **welche Wochentage** der Planer anzeigt und plant – Standard
+**Mo–Fr**. Samstag/Sonntag oder ein Schließtag (z. B. Donnerstag) lassen sich
+einzeln zu-/abschalten (mindestens ein Tag muss aktiv bleiben). Ein abgeschalteter
+Tag verschwindet aus der Wochenansicht, nimmt keine neuen Slots auf und wird von
+der Auto-Generierung übersprungen; bereits angelegte Slots bleiben erhalten und
+kehren beim Reaktivieren des Tages zurück.
+
 **Stammdaten:** **Standorte** (optional) und **Arbeitsplätze** (Tresen, Labor,
 Springer … mit Farbe) anlegen. **Schichtpläne:** beliebig viele benannte
 Wochenpläne („Normalzustand", „Azubis Schulferien" …). Im **Wochen-Editor**

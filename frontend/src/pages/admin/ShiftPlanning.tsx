@@ -188,6 +188,15 @@ export default function AdminShiftPlanning() {
     else setPlanDetail(null);
   }, [selectedPlanId, loadPlanDetail]);
 
+  // #371: if the weekday config resolves/changes after mount and the day-view
+  // weekday is no longer enabled, snap it to the first enabled day so the picker
+  // value can't diverge from its rendered <option>s.
+  useEffect(() => {
+    if (!planningWeekdays.includes(dayWeekday)) {
+      setDayWeekday(planningWeekdays[0] ?? 0);
+    }
+  }, [planningWeekdays, dayWeekday]);
+
   // #340: beim ersten Laden den aktuell aktiven Plan automatisch öffnen (häufigster
   // Use-Case → spart einen Klick). Greift nur einmal (autoOpenedRef) und nur, wenn
   // noch keiner gewählt ist — drängt sich nach manueller Aus-/Abwahl nicht erneut auf.
@@ -545,7 +554,13 @@ export default function AdminShiftPlanning() {
                     >
                       {planDetail.is_active ? 'Deaktivieren' : 'Aktiv schalten'}
                     </Button>
-                    <Button variant="primary" icon={Plus} onClick={() => openCreateSlot(0)}>
+                    <Button
+                      variant="primary"
+                      icon={Plus}
+                      onClick={() =>
+                        openCreateSlot(shiftView === 'day' ? dayWeekday : (planningWeekdays[0] ?? 0))
+                      }
+                    >
                       Slot
                     </Button>
                     <Button variant="secondary" icon={Wand2} onClick={() => setGenerateOpen(true)}>

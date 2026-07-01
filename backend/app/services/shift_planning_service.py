@@ -123,6 +123,11 @@ def get_my_today(db: Session, user) -> dict:
     weekday = today.weekday()
     tid = user.tenant_id
 
+    # #371: a weekday switched off in the planner has no shifts — don't surface a
+    # legacy assignment left over from when it was enabled.
+    if not is_weekday_enabled(db, tid, weekday):
+        return {"date": today.isoformat(), "weekday": weekday, "entries": []}
+
     rows = (
         db.query(
             ShiftPlan.id.label("plan_id"),

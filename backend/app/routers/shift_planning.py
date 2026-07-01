@@ -467,9 +467,12 @@ def list_plans(
         .order_by(ShiftPlan.name)
         .all()
     )
+    # #371: slot_count + is_valid must ignore slots on disabled weekdays (they are
+    # off the plan surface — same filter as _build_plan_detail / the generator).
+    enabled_weekdays = shift_planning_service.get_planning_weekdays(db, tid)
     slots = (
         db.query(ShiftSlot)
-        .filter(ShiftSlot.tenant_id == tid)
+        .filter(ShiftSlot.tenant_id == tid, ShiftSlot.weekday.in_(enabled_weekdays))
         .all()
     )
     counts = _assignment_counts(db, tid, [s.id for s in slots])
@@ -520,9 +523,17 @@ def _plan_or_404(db: Session, tenant_id, plan_id: UUID) -> ShiftPlan:
 def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dict:
     """Full plan detail (slots + assignments + validation). The per-person
     `qualified` / slot `unqualified` flags are included only for admins (#305 M2d)."""
+    # #371: only slots on enabled weekdays are part of the plan surface. A legacy
+    # slot on a since-disabled weekday is invisible in WeekGrid anyway; excluding
+    # it here keeps understaffed/is_valid honest (no phantom, unfixable warning).
+    enabled_weekdays = shift_planning_service.get_planning_weekdays(db, tid)
     slots = (
         db.query(ShiftSlot)
-        .filter(ShiftSlot.tenant_id == tid, ShiftSlot.shift_plan_id == plan.id)
+        .filter(
+            ShiftSlot.tenant_id == tid,
+            ShiftSlot.shift_plan_id == plan.id,
+            ShiftSlot.weekday.in_(enabled_weekdays),
+        )
         .order_by(ShiftSlot.weekday, ShiftSlot.start_time)
         .all()
     )

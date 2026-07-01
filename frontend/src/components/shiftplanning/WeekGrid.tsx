@@ -148,12 +148,15 @@ function DayColumn({
 }
 
 export default function WeekGrid({ slots, editable = false, onSlotClick, onEmptyClick, singleDay, weekdays }: WeekGridProps) {
-  const layout = computeWeekLayout(slots);
-  const byDay = (wd: number) =>
-    slots.filter((s) => s.weekday === wd).sort((a, b) => a.start_time.localeCompare(b.start_time));
-
   // #321: Tagesansicht renders just one weekday; week view the configured days (#371).
   const days = visibleWeekdays(singleDay, weekdays);
+
+  // #371: only slots on visible weekdays drive the layout — a legacy slot on a
+  // hidden weekday must not stretch the grid's time axis for the visible days.
+  const visibleSlots = slots.filter((s) => days.includes(s.weekday));
+  const layout = computeWeekLayout(visibleSlots);
+  const byDay = (wd: number) =>
+    visibleSlots.filter((s) => s.weekday === wd).sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   return (
     <div className="overflow-x-auto">
