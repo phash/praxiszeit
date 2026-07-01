@@ -849,6 +849,15 @@ def _validate_workstation(db: Session, tenant_id, workstation_id: UUID) -> Works
     return ws
 
 
+def _validate_weekday_enabled(db: Session, tenant_id, weekday: int) -> None:
+    """#371: reject slots on a weekday the tenant has switched off in the planner."""
+    if not shift_planning_service.is_weekday_enabled(db, tenant_id, weekday):
+        raise HTTPException(
+            status_code=400,
+            detail="Dieser Wochentag ist im Schichtplaner deaktiviert.",
+        )
+
+
 def _single_slot_dict(db: Session, tenant_id, slot: ShiftSlot) -> dict:
     ws = db.query(Workstation).filter(
         Workstation.id == slot.workstation_id, Workstation.tenant_id == tenant_id
@@ -883,6 +892,7 @@ def create_slot(
     _plan_or_404(db, tid, plan_id)
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail="Ende muss nach dem Beginn liegen")
+    _validate_weekday_enabled(db, tid, data.weekday)
     _validate_workstation(db, tid, data.workstation_id)
     slot = ShiftSlot(
         tenant_id=tid,
@@ -910,6 +920,7 @@ def update_slot(
     slot = _slot_or_404(db, tid, slot_id)
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail="Ende muss nach dem Beginn liegen")
+    _validate_weekday_enabled(db, tid, data.weekday)
     _validate_workstation(db, tid, data.workstation_id)
     slot.workstation_id = data.workstation_id
     slot.weekday = data.weekday

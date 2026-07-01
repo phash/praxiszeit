@@ -9,6 +9,7 @@ import {
   colorForWorkstation,
   mondayOfWeek,
   computeWeekLayout,
+  visibleWeekdays,
   type SlotLike,
   GRID_START_HOUR,
   HOUR_PX,
@@ -140,5 +141,22 @@ describe('computeWeekLayout', () => {
       slot('c', 3, '10:00', '13:00'),
     ]);
     expect(boxes['a'].widthPct).toBeCloseTo(100 / 3, 5);
+  });
+});
+
+describe('visibleWeekdays (#371 configurable weekdays)', () => {
+  it('single-day view always wins over the weekday config', () => {
+    expect(visibleWeekdays(2, [0, 1, 2, 3, 4])).toEqual([2]);
+    expect(visibleWeekdays(6, [0, 1, 2, 3, 4])).toEqual([6]);
+  });
+
+  it('renders only the configured weekdays, sorted', () => {
+    expect(visibleWeekdays(undefined, [0, 2, 4])).toEqual([0, 2, 4]);
+    expect(visibleWeekdays(undefined, [4, 0, 2])).toEqual([0, 2, 4]);
+  });
+
+  it('falls back to Mo–Fr when the config is empty or missing', () => {
+    expect(visibleWeekdays(undefined, [])).toEqual([0, 1, 2, 3, 4]);
+    expect(visibleWeekdays(undefined, undefined)).toEqual([0, 1, 2, 3, 4]);
   });
 });

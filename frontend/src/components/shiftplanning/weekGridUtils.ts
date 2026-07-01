@@ -7,6 +7,20 @@ export const SNAP_MINUTES = 15;
 
 export const gridHeightPx = (GRID_END_HOUR - GRID_START_HOUR) * HOUR_PX;
 
+// #371: default planner weekdays (Mo–Fr) when no config is available.
+export const DEFAULT_WEEKDAYS = [0, 1, 2, 3, 4];
+
+/**
+ * Which weekday columns the grid renders (0=Mo … 6=So).
+ * - `singleDay` (Tagesansicht #321) always wins — exactly that one day.
+ * - otherwise the configured `weekdays`, sorted; empty/undefined → Mo–Fr.
+ */
+export function visibleWeekdays(singleDay: number | undefined, weekdays: number[] | undefined): number[] {
+  if (singleDay !== undefined) return [singleDay];
+  if (weekdays && weekdays.length > 0) return [...weekdays].sort((a, b) => a - b);
+  return [...DEFAULT_WEEKDAYS];
+}
+
 export function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number);
   return h * 60 + m;

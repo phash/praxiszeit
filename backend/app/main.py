@@ -710,9 +710,13 @@ def system_info():
     # shift_planning_enabled (#305): Feature-Flag, Default AUS. Nur ein Admin
     # kann es aktivieren; ein Lesefehler darf system/info NIE brechen → False.
     shift_planning_enabled = False
+    # shift_planning_weekdays (#371): configurable planner weekdays (0=Mo…6=So),
+    # Default Mo–Fr; a read error must never break system/info → default.
+    shift_planning_weekdays = [0, 1, 2, 3, 4]
     try:
         from app.models.system_setting import SystemSetting
         from app.database import set_superadmin_context as _set_sa
+        from app.services import shift_planning_service as _sps
         _default_tid = uuid.UUID("00000000-0000-0000-0000-000000000001")
         _db = SessionLocal()
         try:
@@ -729,11 +733,13 @@ def system_info():
             ).first()
             if _sp is not None:
                 shift_planning_enabled = _sp.value.strip().lower() == "true"
+            shift_planning_weekdays = _sps.get_planning_weekdays(_db, _default_tid)
         finally:
             _db.close()
     except Exception:  # noqa: BLE001
         onboarding_enabled = True
         shift_planning_enabled = False
+        shift_planning_weekdays = [0, 1, 2, 3, 4]
     return {
         "deployment_mode": settings.DEPLOYMENT_MODE,
         "version": APP_VERSION,
@@ -743,6 +749,8 @@ def system_info():
         "onboarding_enabled": onboarding_enabled,
         # shift_planning_enabled: Admin aktiviert die Schichtplanung (Default aus).
         "shift_planning_enabled": shift_planning_enabled,
+        # shift_planning_weekdays: konfigurierte Planer-Wochentage (Default Mo–Fr).
+        "shift_planning_weekdays": shift_planning_weekdays,
     }
 
 

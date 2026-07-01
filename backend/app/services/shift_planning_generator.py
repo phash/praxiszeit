@@ -27,6 +27,7 @@ from app.models import User
 from app.models.absence import Absence
 from app.models.shift_planning import ShiftSlot, ShiftAssignment, WorkstationQualification
 from app.services import calculation_service
+from app.services import shift_planning_service
 
 
 def _minutes(t) -> int:
@@ -44,6 +45,10 @@ def generate_plan(db: Session, tenant_id, plan, target_monday: date, mode: str =
         .filter(ShiftSlot.tenant_id == tenant_id, ShiftSlot.shift_plan_id == plan.id)
         .all()
     )
+    # #371: ignore slots on weekdays the tenant switched off — they are off the
+    # planning surface (not assigned, not reported as unfilled).
+    enabled_weekdays = set(shift_planning_service.get_planning_weekdays(db, tenant_id))
+    slots = [s for s in slots if s.weekday in enabled_weekdays]
     if not slots:
         return {"assigned": 0, "unfilled_slot_ids": []}
     slot_ids = [s.id for s in slots]

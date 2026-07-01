@@ -5,11 +5,13 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import WeekGrid from '../components/shiftplanning/WeekGrid';
 import { useToast } from '../contexts/ToastContext';
 import { getErrorMessage } from '../utils/errorMessage';
+import { useSystemStore } from '../stores/systemStore';
 import * as api from '../api/shiftPlanning';
 import type { PlanDetail } from '../api/shiftPlanning';
 
 export default function ShiftPlanning() {
   const toast = useToast();
+  const weekdays = useSystemStore((s) => s.getShiftPlanningWeekdays());
   const [loading, setLoading] = useState(true);
   const [activePlans, setActivePlans] = useState<PlanDetail[]>([]);
 
@@ -59,7 +61,7 @@ export default function ShiftPlanning() {
             <div key={plan.id} className="bg-white rounded-xl shadow-xs border border-gray-200 p-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-1">{plan.name}</h2>
               {plan.description && <p className="text-sm text-gray-500 mb-3">{plan.description}</p>}
-              <WeekGrid slots={plan.slots} />
+              <WeekGrid slots={plan.slots} weekdays={weekdays} />
             </div>
           ))}
         </div>

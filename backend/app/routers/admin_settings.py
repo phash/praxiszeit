@@ -24,6 +24,7 @@ _ALLOWED_SETTINGS = {
     "work_window_grace_minutes",  # #201 Arbeitszeit-Fenster: Pufferzeit in Minuten
     "onboarding_enabled",  # Erst-Login-Willkommens-Tour an/aus (Default an)
     "shift_planning_enabled",  # #305 Schichtplanung aktivieren (Default aus)
+    "shift_planning_weekdays",  # #371 konfigurierbare Wochentage (CSV 0=Mo…6=So, Default Mo–Fr)
     "closure_overtime_after_vacation",  # #314 Betriebsferien > Urlaub → Überstundenabbau (Default aus)
 } | special_days_service.SETTING_KEYS
 
@@ -100,6 +101,25 @@ def update_setting(
                 raise ValueError
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="work_window_grace_minutes muss eine nicht-negative Zahl sein")
+
+    # #371: validate + normalise shift_planning_weekdays (CSV of 0..6, 0=Mo).
+    # At least one day; unique; stored sorted/deduped. Reject garbage with 400
+    # (NOT the silent default the read-side helper applies) so the admin gets
+    # feedback instead of a silently-ignored value.
+    if key == "shift_planning_weekdays":
+        parts = [p.strip() for p in str(value).split(",") if p.strip()]
+        days = []
+        for p in parts:
+            try:
+                n = int(p)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="shift_planning_weekdays: nur Zahlen 0–6 (0=Montag) erlaubt")
+            if not 0 <= n <= 6:
+                raise HTTPException(status_code=400, detail="shift_planning_weekdays: Werte müssen zwischen 0 (Montag) und 6 (Sonntag) liegen")
+            days.append(n)
+        if not days:
+            raise HTTPException(status_code=400, detail="shift_planning_weekdays: mindestens ein Wochentag muss aktiv sein")
+        value = ",".join(str(n) for n in sorted(set(days)))
 
     # Validate holiday_state against supported states
     if key == "holiday_state":
