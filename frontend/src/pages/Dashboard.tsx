@@ -103,6 +103,9 @@ function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], da
 export default function Dashboard() {
   const toast = useToast();
   const { user } = useAuthStore();
+  // #370: during read-only impersonation, hide the primary stamp CTA (the
+  // backend middleware blocks the write anyway; this avoids a confusing 403).
+  const isImpersonating = useAuthStore((s) => s.isImpersonating());
   // #157: Team-Kalender färbt nach Abwesenheits-TYP (konfigurierbar), nicht
   // mehr nach Mitarbeiter-Farbe.
   const absColors = useTypeColorsStore((s) => s.colors);
@@ -469,10 +472,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Stamp Widget - Desktop only */}
-      <div className="hidden md:block">
-        <StampWidget onSuccess={notifyStampChange} />
-      </div>
+      {/* Stamp Widget - Desktop only (hidden while impersonating, #370) */}
+      {!isImpersonating && (
+        <div className="hidden md:block">
+          <StampWidget onSuccess={notifyStampChange} />
+        </div>
+      )}
 
       {/* #305 Schichtplanung: heutige Einteilung (nur wenn Feature aktiv + Einteilung vorhanden) */}
       <ShiftTodayCard />

@@ -7,6 +7,18 @@ import type { User } from '../types/user';
 // impersonation session is active. Never persisted.
 let impersonationParentToken: string | null = null;
 
+// #370: shared in-flight guard so a "Zurück zu Admin" click and a concurrent
+// impersonation:expired event collapse into ONE stop (otherwise the second call
+// races on impersonationParentToken and can null the just-restored admin token).
+let stopImpersonationPromise: Promise<void> | null = null;
+
+// #370: fully clear impersonation state (module vars + client flag). Called on
+// login/logout so stale flags can never leak into a fresh session.
+function resetImpersonationState() {
+  impersonationParentToken = null;
+  setImpersonating(false);
+}
+
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
@@ -34,6 +46,10 @@ export const useAuthStore = create<AuthState>()(
       impersonation: null,
 
       login: async (username: string, password: string, totpCode?: string) => {
+        // #370: a fresh login must never inherit stale impersonation flags from a
+        // prior session in the same tab (SPA navigation, no reload).
+        resetImpersonationState();
+
         const body: Record<string, unknown> = { username, password };
         if (totpCode) body.totp_code = totpCode;
 
@@ -47,6 +63,7 @@ export const useAuthStore = create<AuthState>()(
           user,
           isAuthenticated: true,
           isHydrating: false,
+          impersonation: null,
         });
 
         // Lazily fetch full profile (incl. profile_picture) — excluded
@@ -61,6 +78,17 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        // #370: if impersonating, drop back to the ADMIN token first. Otherwise
+        // the /auth/logout POST carries the impersonation token → the read-only
+        // middleware 403s it (server session survives) AND, if it got through, it
+        // would bump the *employee's* token_version. Restoring the admin token
+        // makes logout invalidate the admin's own session + refresh cookie.
+        if (get().impersonation) {
+          setAccessToken(impersonationParentToken);
+          set({ impersonation: null });
+        }
+        resetImpersonationState();
+
         // Best-effort server logout (bumps token_version, clears refresh cookie)
         try {
           await apiClient.post('/auth/logout');
@@ -124,26 +152,36 @@ export const useAuthStore = create<AuthState>()(
       },
 
       // #370: end the impersonation session and return to the admin account.
+      // Guarded so a banner click + an impersonation:expired event collapse into
+      // one execution instead of racing on impersonationParentToken.
       stopImpersonation: async () => {
-        // End server-side while the impersonation token is still active (the
-        // read-only middleware whitelists this one write). Best-effort.
-        try {
-          await apiClient.post('/admin/impersonate/end');
-        } catch {
-          // Ignore — we restore the admin session regardless.
-        }
-        setImpersonating(false);
-        setAccessToken(impersonationParentToken);
-        impersonationParentToken = null;
-        set({ impersonation: null });
-        // Restore the admin identity.
-        try {
-          const me = await apiClient.get('/auth/me');
-          set({ user: me.data, isAuthenticated: true });
-        } catch {
-          // If the admin token is no longer valid, fall back to a clean logout.
-          await get().logout();
-        }
+        if (stopImpersonationPromise) return stopImpersonationPromise;
+        if (!get().impersonation) return;
+
+        stopImpersonationPromise = (async () => {
+          // End server-side while the impersonation token is still active (the
+          // read-only middleware whitelists this one write). Best-effort.
+          try {
+            await apiClient.post('/admin/impersonate/end');
+          } catch {
+            // Ignore — we restore the admin session regardless.
+          }
+          setImpersonating(false);
+          setAccessToken(impersonationParentToken);
+          impersonationParentToken = null;
+          set({ impersonation: null });
+          // Restore the admin identity.
+          try {
+            const me = await apiClient.get('/auth/me');
+            set({ user: me.data, isAuthenticated: true });
+          } catch {
+            // If the admin token is no longer valid, fall back to a clean logout.
+            await get().logout();
+          }
+        })().finally(() => {
+          stopImpersonationPromise = null;
+        });
+        return stopImpersonationPromise;
       },
 
       isImpersonating: () => get().impersonation !== null,

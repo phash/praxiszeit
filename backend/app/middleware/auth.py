@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db, set_tenant_context, set_superadmin_context
 from app.models import User, UserRole
 from app.models.tenant import Tenant
+from app.models.impersonation_session import ImpersonationSession
 from app.services import auth_service
 
 # HTTP Bearer token security scheme
@@ -100,9 +101,23 @@ def get_current_user(
     if imp:
         impersonator = db.query(User).filter(User.id == imp).first()
         validate_impersonator(impersonator, user.tenant_id)
+        # #370: "Zurück zu Admin" sets ended_at → the (memory-only) impersonation
+        # token is revoked server-side from that point, not just dropped client-side.
+        imp_sid = payload.get("imp_sid")
+        session = (
+            db.query(ImpersonationSession)
+            .filter(
+                ImpersonationSession.id == imp_sid,
+                ImpersonationSession.tenant_id == user.tenant_id,
+            )
+            .first()
+            if imp_sid
+            else None
+        )
+        assert_impersonation_session_active(session)
         request.state.is_impersonating = True
         request.state.impersonator_id = imp
-        request.state.impersonation_session_id = payload.get("imp_sid")
+        request.state.impersonation_session_id = imp_sid
     else:
         request.state.is_impersonating = False
 
@@ -121,6 +136,17 @@ def validate_impersonator(impersonator, target_tenant_id) -> None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültige Impersonation-Sitzung. Bitte erneut anmelden.",
+        )
+
+
+def assert_impersonation_session_active(session) -> None:
+    """#370: reject impersonation tokens whose session has been ended (or no longer
+    exists). Makes "Zurück zu Admin" a real server-side revocation, not just a
+    client-side token drop. Raises 401 otherwise."""
+    if session is None or session.ended_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Impersonation-Sitzung beendet. Bitte erneut anmelden.",
         )
 
 

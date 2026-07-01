@@ -47,6 +47,10 @@ _EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/api/auth/logout",
     "/api/auth/refresh",
     "/api/auth/password-reset",
+    # #370: ending a read-only impersonation session must always be reachable so
+    # the accountability log (ended_at) can be closed even under a read-only
+    # license — the session performs no data mutation.
+    "/api/admin/impersonate/end",
 )
 
 # DSGVO-Betroffenenrechte: muessen IMMER durchgelassen werden, auch bei

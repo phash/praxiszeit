@@ -202,6 +202,60 @@ describe('impersonation (#370)', () => {
     expect(mockSetAccessToken).toHaveBeenLastCalledWith('admin-tok');
     expect(useAuthStore.getState().isImpersonating()).toBe(false);
   });
+
+  it('concurrent stopImpersonation calls dedup: end fires once, admin token restored (not nulled)', async () => {
+    // MEDIUM #4: banner click + impersonation:expired event can race. A shared
+    // in-flight guard must prevent the second call from nulling the restored token.
+    useAuthStore.setState({ user: USER as any, isAuthenticated: true, isHydrating: false });
+    mockGetAccessToken.mockReturnValue('admin-tok');
+    post.mockResolvedValueOnce({ data: { access_token: 'imp-tok', user: TARGET } });
+    get.mockResolvedValueOnce({ data: TARGET });
+    await useAuthStore.getState().startImpersonation('9', 'Max');
+
+    post.mockResolvedValue({ data: {} });
+    get.mockResolvedValue({ data: USER });
+    await Promise.all([
+      useAuthStore.getState().stopImpersonation(),
+      useAuthStore.getState().stopImpersonation(),
+    ]);
+
+    const endCalls = post.mock.calls.filter((c) => c[0] === '/admin/impersonate/end').length;
+    expect(endCalls).toBe(1);
+    // The restored admin token must never be clobbered back to null by the racing call.
+    expect(mockSetAccessToken).toHaveBeenLastCalledWith('admin-tok');
+    expect(useAuthStore.getState().isImpersonating()).toBe(false);
+  });
+
+  it('logout while impersonating resets impersonation state and clears the flag', async () => {
+    // HIGH #1/#2: a normal "Abmelden" during impersonation must reset impersonation
+    // state (so it can't leak into the next SPA session) and end up logged out.
+    useAuthStore.setState({ user: USER as any, isAuthenticated: true, isHydrating: false });
+    mockGetAccessToken.mockReturnValue('admin-tok');
+    post.mockResolvedValueOnce({ data: { access_token: 'imp-tok', user: TARGET } });
+    get.mockResolvedValueOnce({ data: TARGET });
+    await useAuthStore.getState().startImpersonation('9', 'Max');
+
+    post.mockResolvedValueOnce({ data: {} }); // /auth/logout
+    await useAuthStore.getState().logout();
+
+    expect(useAuthStore.getState().isImpersonating()).toBe(false);
+    expect(useAuthStore.getState().impersonation).toBeNull();
+    expect(mockSetImpersonating).toHaveBeenLastCalledWith(false);
+    expect(post).toHaveBeenCalledWith('/auth/logout');
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it('login resets any stale impersonation state', async () => {
+    // HIGH #2: stale impersonation flags must never survive into a fresh login.
+    useAuthStore.setState({ impersonation: { targetName: 'Ghost' } as any });
+    post.mockResolvedValueOnce({ data: { access_token: 'tok', user: USER } });
+    get.mockResolvedValueOnce({ data: {} });
+
+    await useAuthStore.getState().login('erika', 'pw');
+
+    expect(useAuthStore.getState().impersonation).toBeNull();
+    expect(mockSetImpersonating).toHaveBeenCalledWith(false);
+  });
 });
 
 describe('impersonation:expired listener (#370)', () => {

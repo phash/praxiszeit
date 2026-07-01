@@ -10,6 +10,15 @@ Tenant-scoped (RLS ``tenant_isolation``, Migration 060). Beide User-FKs mit
 ``ondelete=CASCADE`` → der DSGVO-Purge (Art. 17) eines Users räumt seine
 Sessions automatisch ab (kein ForeignKeyViolation auf Postgres); ``purge_user``
 löscht sie zusätzlich explizit (SQLite-Tests laufen mit FK aus).
+
+``ended_at`` wird von ``POST /impersonate/end`` gesetzt (echte Server-Revokation:
+``get_current_user`` lehnt Tokens beendeter Sessions ab). Ein voller Seiten-Reload
+mitten in einer Session kann den End-Call NICHT auslösen (der In-Memory-Token ist
+weg, hydrate stellt still das Admin-Konto wieder her) → die Zeile bleibt dann mit
+``ended_at IS NULL`` offen. Das ist bewusst akzeptiert: der Impersonation-Token
+läuft nach ``ACCESS_TOKEN_EXPIRE_MINUTES`` (30 min) ohnehin ab und ist danach
+unbrauchbar; eine offene Session ohne ``ended_at`` bedeutet „durch Ablauf/Reload
+beendet", nicht „noch aktiv".
 """
 from sqlalchemy import Column, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID

@@ -17,7 +17,7 @@ Two endpoints:
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.models import User, UserRole, ImpersonationSession
@@ -87,6 +87,38 @@ def start_impersonation(
         "token_type": "bearer",
         "user": UserListResponse.model_validate(target),
     }
+
+
+@router.get("/impersonation-sessions")
+def list_impersonation_sessions(
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#370: the DSGVO Art. 5(2) accountability log — who viewed the app as whom,
+    and when. Admin-only, tenant-scoped (RLS + F-026), most recent first."""
+    limit = max(1, min(limit, 500))
+    imp = aliased(User)
+    tgt = aliased(User)
+    rows = (
+        db.query(ImpersonationSession, imp, tgt)
+        .join(imp, ImpersonationSession.impersonator_id == imp.id)
+        .join(tgt, ImpersonationSession.target_id == tgt.id)
+        .filter(ImpersonationSession.tenant_id == current_user.tenant_id)
+        .order_by(ImpersonationSession.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": str(s.id),
+            "impersonator_name": f"{a.first_name} {a.last_name}".strip() or a.username,
+            "target_name": f"{t.first_name} {t.last_name}".strip() or t.username,
+            "started_at": s.started_at,
+            "ended_at": s.ended_at,
+        }
+        for s, a, t in rows
+    ]
 
 
 @router.post("/impersonate/end")

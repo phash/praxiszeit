@@ -136,6 +136,29 @@ class TestImpersonateEndpoint:
         assert r.status_code == 404
 
 
+# ─── GET /api/admin/impersonation-sessions (accountability review) ───
+
+
+class TestListImpersonationSessions:
+    def test_lists_sessions_with_names(self, admin_client, db, test_admin):
+        emp = _mk_user(db, "list_emp")
+        db.add(ImpersonationSession(
+            tenant_id=DEFAULT_TENANT_ID, impersonator_id=test_admin.id, target_id=emp.id,
+        ))
+        db.commit()
+        r = admin_client.get("/api/admin/impersonation-sessions")
+        assert r.status_code == 200, r.text
+        rows = r.json()
+        assert len(rows) >= 1
+        row = rows[0]
+        assert "impersonator_name" in row and "target_name" in row
+        assert "started_at" in row and "ended_at" in row
+
+    def test_employee_forbidden(self, employee_client):
+        # employees must not see the accountability log
+        assert employee_client.get("/api/admin/impersonation-sessions").status_code == 403
+
+
 # ─── ImpersonationReadOnlyMiddleware ─────────────────────────────────
 
 
@@ -308,3 +331,36 @@ class TestValidateImpersonator:
         from fastapi import HTTPException
         with pytest.raises(HTTPException):
             validate_impersonator(test_admin, uuid.uuid4())
+
+
+# ─── session revocation on end (unit) ────────────────────────────────
+
+
+class TestAssertSessionActive:
+    def test_open_session_ok(self, db, test_admin):
+        from app.middleware.auth import assert_impersonation_session_active
+        target = _mk_user(db, "rev_ok")
+        s = ImpersonationSession(tenant_id=DEFAULT_TENANT_ID, impersonator_id=test_admin.id, target_id=target.id)
+        db.add(s); db.commit(); db.refresh(s)
+        assert_impersonation_session_active(s)  # no raise
+
+    def test_ended_session_rejected(self, db, test_admin):
+        from app.middleware.auth import assert_impersonation_session_active
+        from fastapi import HTTPException
+        target = _mk_user(db, "rev_ended")
+        s = ImpersonationSession(
+            tenant_id=DEFAULT_TENANT_ID, impersonator_id=test_admin.id, target_id=target.id,
+        )
+        db.add(s); db.commit(); db.refresh(s)
+        s.ended_at = __import__("app.services.timezone_service", fromlist=["now_local"]).now_local()
+        db.commit()
+        with pytest.raises(HTTPException) as exc:
+            assert_impersonation_session_active(s)
+        assert exc.value.status_code == 401
+
+    def test_missing_session_rejected(self):
+        from app.middleware.auth import assert_impersonation_session_active
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc:
+            assert_impersonation_session_active(None)
+        assert exc.value.status_code == 401
