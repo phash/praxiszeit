@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
-import { Plus, Edit2, Key, UserX, UserCheck, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, UserCheck, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight, LogIn } from 'lucide-react';
+import { useAuthStore } from '../../stores/authStore';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -39,6 +40,8 @@ function graceRemainingDays(user: User): number {
 export default function Users() {
   const navigate = useNavigate();
   const toast = useToast();
+  const startImpersonation = useAuthStore((s) => s.startImpersonation);
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
   const [overtimeInfo, setOvertimeInfo] = useState<Record<string, OvertimeInfo>>({}); // #194
@@ -119,6 +122,19 @@ export default function Users() {
 
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
+  };
+
+  // #370: read-only "Login als …" — view the app from the employee's perspective.
+  const handleImpersonate = async (user: User) => {
+    setImpersonatingId(user.id);
+    try {
+      await startImpersonation(user.id, `${user.first_name} ${user.last_name}`);
+      navigate('/');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Ansicht als Mitarbeiter:in fehlgeschlagen'));
+    } finally {
+      setImpersonatingId(null);
+    }
   };
 
   const handleDeactivate = (userId: string, name: string) => {
@@ -543,6 +559,17 @@ export default function Users() {
                       >
                         <BookOpen size={16} />
                       </button>
+                      {/* #370: read-only "Login als …" — nur aktive Mitarbeiter:innen */}
+                      {user.role !== 'admin' && user.is_active && (
+                        <button
+                          onClick={() => handleImpersonate(user)}
+                          disabled={impersonatingId === user.id}
+                          className="text-indigo-600 hover:text-indigo-800 disabled:opacity-40"
+                          title="Als diese:n Mitarbeiter:in ansehen (nur Lesen)"
+                        >
+                          <LogIn size={16} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleEdit(user)}
                         className="text-primary hover:text-primary-dark"

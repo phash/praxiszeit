@@ -4,6 +4,7 @@ import apiClient, {
   setAccessToken,
   getAccessToken,
   tryRefreshSession,
+  setImpersonating,
 } from './client';
 
 // Tests for the security-critical auth plumbing in client.ts: the Bearer-token
@@ -170,6 +171,28 @@ describe('401 response interceptor', () => {
     // No refresh attempt ⇒ no session-expired re-dispatch ⇒ loop can't form.
     expect(onExpired).not.toHaveBeenCalled();
     window.removeEventListener('auth:session-expired', onExpired);
+  });
+});
+
+describe('impersonation 401 handling (#370)', () => {
+  it('does NOT refresh during impersonation and dispatches impersonation:expired', async () => {
+    // An impersonation token is not refreshable — refreshing would silently
+    // upgrade the read-only MA view to a full admin token (via the admin's
+    // HttpOnly refresh cookie). On 401 we must bail back to the admin instead.
+    setAccessToken('imp-token');
+    setImpersonating(true);
+    const refresh = vi.spyOn(axios, 'post');
+    const onExpired = vi.fn();
+    window.addEventListener('impersonation:expired', onExpired);
+
+    apiClient.defaults.adapter = (config) => reply(config, 401);
+
+    await expect(apiClient.get('/data')).rejects.toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(onExpired).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener('impersonation:expired', onExpired);
+    setImpersonating(false);
   });
 });
 

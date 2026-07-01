@@ -11,6 +11,16 @@ let accessToken: string | null = null;
 // refresh-token rotation would invalidate concurrent retries.
 let refreshPromise: Promise<string> | null = null;
 
+// #370: true while a read-only impersonation token is active. Impersonation
+// tokens are NOT refreshable — refreshing would use the admin's HttpOnly cookie
+// and silently upgrade the MA view to a full admin token. On 401 we bail back to
+// the admin session instead (see the response interceptor below).
+let impersonating = false;
+
+export function setImpersonating(active: boolean) {
+  impersonating = active;
+}
+
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
@@ -95,6 +105,16 @@ apiClient.interceptors.response.use(
     // If 401 and we haven't retried yet, try to refresh the access token
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
+
+      // #370: during impersonation the token is intentionally non-refreshable.
+      // Signal the store to return to the admin session rather than refreshing
+      // (which would mint a full admin token behind the read-only MA view).
+      if (impersonating) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('impersonation:expired'));
+        }
+        return Promise.reject(error);
+      }
 
       try {
         // Deduplicate parallel refresh attempts

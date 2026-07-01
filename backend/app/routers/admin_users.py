@@ -453,6 +453,15 @@ def purge_user(
         SignupToken.user_id == user.id,
         SignupToken.tenant_id == current_user.tenant_id,
     ).delete(synchronize_session=False)
+    # #370: impersonation_sessions has two users.id FKs (impersonator_id + target_id),
+    # both ON DELETE CASCADE on Postgres. Delete explicitly for SQLite (FK off) and
+    # to keep the erasure self-documenting. F-026 tenant-scoped.
+    from app.models import ImpersonationSession
+    db.query(ImpersonationSession).filter(
+        (ImpersonationSession.impersonator_id == user.id)
+        | (ImpersonationSession.target_id == user.id),
+        ImpersonationSession.tenant_id == current_user.tenant_id,
+    ).delete(synchronize_session=False)
     db.delete(user)
     db.commit()
 

@@ -145,7 +145,14 @@ def needs_rehash(hashed_password: str) -> bool:
     return True
 
 
-def create_access_token(user_id: str, role: str, token_version: int = 0, tenant_id: str = None) -> str:
+def create_access_token(
+    user_id: str,
+    role: str,
+    token_version: int = 0,
+    tenant_id: str = None,
+    impersonator_id: str = None,
+    impersonation_session_id: str = None,
+) -> str:
     """
     Create JWT access token with 30 minutes expiry.
 
@@ -154,6 +161,10 @@ def create_access_token(user_id: str, role: str, token_version: int = 0, tenant_
         role: User role (admin or employee)
         token_version: Current token version for revocation support
         tenant_id: Optional tenant UUID as string; added as "tid" claim if provided
+        impersonator_id: #370 — when set, this is a read-only impersonation token;
+            ``sub`` is the impersonated employee, ``imp`` records the real admin.
+        impersonation_session_id: #370 — id of the impersonation_sessions row, for
+            end-of-session logging (``imp_sid`` claim).
 
     Returns:
         Encoded JWT token
@@ -168,6 +179,10 @@ def create_access_token(user_id: str, role: str, token_version: int = 0, tenant_
     }
     if tenant_id is not None:
         payload["tid"] = tenant_id
+    if impersonator_id is not None:
+        payload["imp"] = impersonator_id
+    if impersonation_session_id is not None:
+        payload["imp_sid"] = impersonation_session_id
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 

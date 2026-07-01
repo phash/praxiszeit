@@ -16,6 +16,7 @@ from app.middleware.static_serving import (
 )
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.license import LicenseReadOnlyMiddleware
+from app.middleware.impersonation import ImpersonationReadOnlyMiddleware
 from contextlib import asynccontextmanager
 import os
 import sys
@@ -30,7 +31,7 @@ from app.config import settings
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups, shift_planning, absence_reasons
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups, shift_planning, absence_reasons, impersonation
 
 # Used by the startup bootstrap to warn/abort when the initial admin still
 # uses a throwaway password. Kept at module level so git diffs that re-indent
@@ -420,6 +421,11 @@ app.add_middleware(CSRFMiddleware)
 # export §16-required records from an expired-license install.
 app.add_middleware(LicenseReadOnlyMiddleware)
 
+# #370: read-only enforcement for impersonation sessions ("Login als …"). When a
+# request carries an impersonation token, every write is rejected — an admin
+# viewing the app as an employee can never perform an attributable action.
+app.add_middleware(ImpersonationReadOnlyMiddleware)
+
 # GZip compression (replaces nginx gzip in native mode, harmless behind nginx)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
@@ -505,6 +511,7 @@ app.include_router(shift_planning.router)
 # #312 Eigene Abwesenheitsgründe — Admin-CRUD + Mitarbeiter-Read (für den Picker).
 app.include_router(absence_reasons.admin_router)
 app.include_router(absence_reasons.read_router)
+app.include_router(impersonation.router)
 # #213 DB-Backup-Verwaltung — NUR On-Prem einbinden. Im SaaS-Modus darf ein
 # Mandant nicht per API den (nicht tenant-scoped) DB-Server sichern/herunterladen
 # (Daten-Exfiltration über Tenant-Grenzen). Hart gaten statt nur per Doku-Kommentar.

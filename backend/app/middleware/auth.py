@@ -92,7 +92,36 @@ def get_current_user(
         set_superadmin_context(db)
         request.state.tenant_id = None
 
+    # #370: read-only impersonation. The token's ``sub`` is the impersonated
+    # employee (so data/RLS = employee view); ``imp`` is the real admin. Validate
+    # the impersonator and stash it on request.state — the read-only middleware
+    # blocks every write, so nothing can be attributed to the employee.
+    imp = payload.get("imp")
+    if imp:
+        impersonator = db.query(User).filter(User.id == imp).first()
+        validate_impersonator(impersonator, user.tenant_id)
+        request.state.is_impersonating = True
+        request.state.impersonator_id = imp
+        request.state.impersonation_session_id = payload.get("imp_sid")
+    else:
+        request.state.is_impersonating = False
+
     return user
+
+
+def validate_impersonator(impersonator, target_tenant_id) -> None:
+    """#370: an impersonation token is only valid if ``imp`` names an active admin
+    of the impersonated employee's own tenant. Raises 401 otherwise."""
+    if (
+        not impersonator
+        or not impersonator.is_active
+        or impersonator.role != UserRole.ADMIN
+        or impersonator.tenant_id != target_tenant_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ungültige Impersonation-Sitzung. Bitte erneut anmelden.",
+        )
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:

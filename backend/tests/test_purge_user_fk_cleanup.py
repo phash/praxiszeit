@@ -137,3 +137,27 @@ def test_purge_recomputes_audit_row_hash_for_reassigned_rows(admin_client, db, t
     assert reassigned is not None and reassigned.changed_by == test_admin.id
     # Mit Hash-Recompute bleibt die Integritätskette intakt (ohne Fix: tampered).
     assert audit_integrity.verify_row(reassigned) is True
+
+
+def test_purge_user_with_impersonation_sessions(admin_client, db, test_admin):
+    """#370: impersonation_sessions has two users.id FKs (impersonator_id,
+    target_id). Both must be cleaned up on Art.17 purge — ON DELETE CASCADE on
+    Postgres, explicit delete for SQLite (FK off). End state: sessions gone,
+    no FK crash."""
+    from app.models import ImpersonationSession
+
+    u = _deactivated_user(db, "imp_purge")
+    # (a) u was impersonated (target) and (b) u impersonated someone (as admin acting)
+    other = _deactivated_user(db, "imp_purge_other")
+    db.add_all([
+        ImpersonationSession(tenant_id=DEFAULT_TENANT_ID, impersonator_id=test_admin.id, target_id=u.id),
+        ImpersonationSession(tenant_id=DEFAULT_TENANT_ID, impersonator_id=u.id, target_id=other.id),
+    ])
+    db.commit()
+    uid = u.id
+    assert admin_client.delete(f"/api/admin/users/{u.id}/purge").status_code == 200
+    db.expire_all()
+    remaining = db.query(ImpersonationSession).filter(
+        (ImpersonationSession.target_id == uid) | (ImpersonationSession.impersonator_id == uid)
+    ).count()
+    assert remaining == 0
