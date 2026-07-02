@@ -149,6 +149,10 @@ Die Liste zeigt alle aktiven Mitarbeiter mit:
 
 **Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird.
 
+**„Login als …" – Ansicht als Mitarbeiter:in (#370):** Über das Anmelde-Symbol in der Aktionsspalte (nur bei **aktiven Mitarbeitenden**, nicht bei Admins) öffnen Sie die Anwendung aus der Perspektive dieser Person – praktisch, um das individuelle Dashboard zu beurteilen oder ein gemeldetes Problem nachzustellen. Die Ansicht ist **ausschließlich lesend**: Stempeln, Anträge stellen und jegliche Änderungen sind gesperrt (der Server weist Schreibversuche ab). Ein dauerhaftes Hinweisbanner am oberen Rand zeigt **„Sie sehen PraxisZeit als … – nur Lesen"**; über **„Zurück zu Admin"** kehren Sie jederzeit zu Ihrem eigenen Konto zurück.
+
+> **Datenschutz:** Jede „Login als"-Sitzung wird protokolliert (welcher Admin, welche Person, Beginn und Ende) – Rechenschaftspflicht nach Art. 5 Abs. 2 DSGVO. Da keine Änderungen möglich sind, kann keine Aktion fälschlich der/dem Mitarbeitenden zugerechnet werden (§ 16 ArbZG).
+
 ### Neuen Mitarbeiter anlegen
 
 ![Neuen Benutzer anlegen](screenshots/16-admin-benutzer-formular.png)

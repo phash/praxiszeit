@@ -5,6 +5,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useSystemStore } from '../stores/systemStore';
 import TrialBanner from './TrialBanner';
 import BetaBadge from './BetaBadge';
+import ImpersonationBanner from './ImpersonationBanner';
 import apiClient from '../api/client';
 import {
   LayoutDashboard,
@@ -40,6 +41,9 @@ import OnboardingModal from './OnboardingModal';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
+  // #370: during read-only impersonation, hide the primary write CTA (stamp
+  // button). The backend middleware is the hard guarantee; this is UX.
+  const isImpersonating = useAuthStore((s) => s.isImpersonating());
   const { isStampSheetOpen, openStampSheet, closeStampSheet, notifyStampChange } = useUIStore();
   const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
   const isBeta = useSystemStore((s) => s.info?.beta === true);
@@ -419,6 +423,7 @@ export default function Layout() {
 
       {/* Main Content */}
       <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-20 lg:pb-0 bg-background" tabIndex={-1}>
+        <ImpersonationBanner />
         <TrialBanner />
         {/* #287: Arbeitsbereich nutzt die volle Breite neben dem Menü (kein
             max-w-7xl-Cap mehr, das auf breiten Screens ~die Hälfte leer ließ).
@@ -443,7 +448,7 @@ export default function Layout() {
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="relative">
           {/* FAB - Centered Stamp Button */}
-          {user?.track_hours && (
+          {user?.track_hours && !isImpersonating && (
             <button
               ref={fabRef}
               onClick={openStampSheet}
@@ -497,7 +502,7 @@ export default function Layout() {
       </nav>
 
       {/* Stamp Bottom Sheet */}
-      {isStampSheetOpen && (
+      {isStampSheetOpen && !isImpersonating && (
         <>
           <div
             className="fixed inset-0 bg-black/40 z-40 lg:hidden transition-opacity duration-200"

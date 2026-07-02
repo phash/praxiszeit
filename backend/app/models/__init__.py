@@ -27,6 +27,7 @@ from app.models.shift_planning import (
     ShiftAssignment,
     WorkstationQualification,
 )
+from app.models.impersonation_session import ImpersonationSession
 
 __all__ = [
     "Tenant",
@@ -60,4 +61,5 @@ __all__ = [
     "ShiftSlot",
     "ShiftAssignment",
     "WorkstationQualification",
+    "ImpersonationSession",
 ]
