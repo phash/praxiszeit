@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.12.3 (Stand 2026-06-28)
+**Aktuelle Version:** 1.13.0 (Stand 2026-07-02)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
