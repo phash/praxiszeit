@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-07-02
+
+Feature-Release mit zwei Kundenwünschen, je adversarial multi-agent-reviewt
+(alle Findings bis Low-Severity gefixt). Eine additive Migration (060).
+
+### ✨ Neu
+- **„Login als …" — read-only Ansicht als Mitarbeiter:in (#370).** Admins können
+  die App aus der Sicht einer:s aktiven Mitarbeitenden ansehen (Dashboard prüfen,
+  Probleme nachstellen) — über das Anmelde-Symbol in der Benutzerübersicht. Die
+  Sitzung ist **strikt nur lesend** (jede Schreib-Aktion wird serverseitig
+  blockiert), ein Banner „… – nur Lesen" mit **„Zurück zu Admin"** ist dauerhaft
+  sichtbar. Jede Sitzung wird protokolliert (DSGVO-Rechenschaftspflicht,
+  Art. 5 Abs. 2); da nichts geschrieben werden kann, ist keine Aktion je fälschlich
+  der/dem Mitarbeitenden zurechenbar (§ 16 ArbZG). Nur Mitarbeitende (keine Admins)
+  sind ansehbar. Neue Tabelle `impersonation_sessions` (Migration 060).
+- **Konfigurierbare Wochentage im Schichtplaner (#371).** Unter
+  **Einstellungen → Schichtplanung** wählbar, welche Wochentage der Planer anzeigt
+  und plant — Standard **Mo–Fr**, Sa/So oder ein Schließtag einzeln zu-/abschaltbar
+  (mind. ein Tag). Ein abgeschalteter Tag verschwindet aus der Wochenansicht, nimmt
+  keine Slots auf und wird von der Auto-Generierung, Plan-Validierung und der
+  MA-Karte „Deine Einteilung heute" übersprungen. Bestehende Slots bleiben erhalten
+  und kehren beim Reaktivieren zurück (kein Datenverlust).
+
 ## [1.12.3] - 2026-06-28
 
 Härtungs-Release aus einer mehrtägigen Multi-Agenten-Review-Kampagne (rund 30
