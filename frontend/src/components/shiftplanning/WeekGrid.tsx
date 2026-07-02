@@ -1,6 +1,6 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { AlertTriangle, Plus, Users } from 'lucide-react';
-import { HOUR_PX, computeWeekLayout, type SlotBox, type WeekLayout } from './weekGridUtils';
+import { HOUR_PX, computeWeekLayout, visibleWeekdays, type SlotBox, type WeekLayout } from './weekGridUtils';
 import { WEEKDAY_LABELS_LONG, type ShiftSlot } from '../../api/shiftPlanning';
 
 interface WeekGridProps {
@@ -10,6 +10,8 @@ interface WeekGridProps {
   onEmptyClick?: (weekday: number) => void;
   // #321: when set, render only this one weekday full-width (Tagesansicht).
   singleDay?: number;
+  // #371: configured planner weekdays (0=Mo … 6=So). Undefined → Mo–Fr default.
+  weekdays?: number[];
 }
 
 function SlotBody({ slot }: { slot: ShiftSlot }) {
@@ -145,13 +147,16 @@ function DayColumn({
   return editable ? <div ref={setNodeRef}>{inner}</div> : inner;
 }
 
-export default function WeekGrid({ slots, editable = false, onSlotClick, onEmptyClick, singleDay }: WeekGridProps) {
-  const layout = computeWeekLayout(slots);
-  const byDay = (wd: number) =>
-    slots.filter((s) => s.weekday === wd).sort((a, b) => a.start_time.localeCompare(b.start_time));
+export default function WeekGrid({ slots, editable = false, onSlotClick, onEmptyClick, singleDay, weekdays }: WeekGridProps) {
+  // #321: Tagesansicht renders just one weekday; week view the configured days (#371).
+  const days = visibleWeekdays(singleDay, weekdays);
 
-  // #321: Tagesansicht renders just one weekday; week view all seven.
-  const days = singleDay !== undefined ? [singleDay] : [0, 1, 2, 3, 4, 5, 6];
+  // #371: only slots on visible weekdays drive the layout — a legacy slot on a
+  // hidden weekday must not stretch the grid's time axis for the visible days.
+  const visibleSlots = slots.filter((s) => days.includes(s.weekday));
+  const layout = computeWeekLayout(visibleSlots);
+  const byDay = (wd: number) =>
+    visibleSlots.filter((s) => s.weekday === wd).sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   return (
     <div className="overflow-x-auto">

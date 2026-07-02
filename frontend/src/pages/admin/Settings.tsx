@@ -10,6 +10,16 @@ import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore'
 import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
 
+// #371: Wochentag-Labels (Index 0=Mo … 6=So) für den Schichtplaner-Wochentag-Picker.
+const SHIFT_WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+
+// #371: order-unabhängiger Vergleich zweier Wochentag-Listen (für den Dirty-Check).
+function sameWeekdays(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  const sb = [...b].sort((x, y) => x - y);
+  return [...a].sort((x, y) => x - y).every((v, i) => v === sb[i]);
+}
+
 // #157: Reihenfolge + Labels der konfigurierbaren Typ-Farben.
 const COLOR_TYPE_ORDER: { key: string; label: string }[] = [
   { key: 'work', label: 'Arbeit (Anwesenheit)' },
@@ -104,6 +114,10 @@ export default function Settings() {
   const [shiftPlanningEnabled, setShiftPlanningEnabled] = useState(false);
   const [originalShiftPlanning, setOriginalShiftPlanning] = useState(false);
   const [savingShiftPlanning, setSavingShiftPlanning] = useState(false);
+  // #371 Schichtplaner-Wochentage (0=Mo … 6=So) — Default Mo–Fr.
+  const [shiftWeekdays, setShiftWeekdays] = useState<number[]>([0, 1, 2, 3, 4]);
+  const [originalShiftWeekdays, setOriginalShiftWeekdays] = useState<number[]>([0, 1, 2, 3, 4]);
+  const [savingShiftWeekdays, setSavingShiftWeekdays] = useState(false);
   // #314 Betriebsferien über Urlaub hinaus als Überstundenabbau (Default aus)
   const [closureOvertime, setClosureOvertime] = useState(false);
   const [originalClosureOvertime, setOriginalClosureOvertime] = useState(false);
@@ -188,6 +202,15 @@ export default function Settings() {
       const spVal = spSetting?.value?.toLowerCase() === 'true';
       setShiftPlanningEnabled(spVal);
       setOriginalShiftPlanning(spVal);
+
+      // #371 Schichtplaner-Wochentage (CSV 0=Mo…6=So; Default Mo–Fr)
+      const wdSetting = settingsRes.data.find((s) => s.key === 'shift_planning_weekdays');
+      const wdParsed = wdSetting?.value
+        ? wdSetting.value.split(',').map((n) => parseInt(n.trim(), 10)).filter((n) => n >= 0 && n <= 6)
+        : [];
+      const wdVal = wdParsed.length > 0 ? [...new Set(wdParsed)].sort((a, b) => a - b) : [0, 1, 2, 3, 4];
+      setShiftWeekdays(wdVal);
+      setOriginalShiftWeekdays(wdVal);
 
       // #314 Betriebsferien > Urlaub → Überstundenabbau (Default aus)
       const coSetting = settingsRes.data.find((s) => s.key === 'closure_overtime_after_vacation');
@@ -346,6 +369,30 @@ export default function Settings() {
       toast.error(getErrorMessage(err));
     } finally {
       setSavingShiftPlanning(false);
+    }
+  };
+
+  const toggleShiftWeekday = (wd: number) => {
+    setShiftWeekdays((prev) =>
+      prev.includes(wd) ? prev.filter((d) => d !== wd) : [...prev, wd].sort((a, b) => a - b),
+    );
+  };
+
+  const saveShiftWeekdays = async () => {
+    setSavingShiftWeekdays(true);
+    try {
+      await apiClient.put('/admin/settings/shift_planning_weekdays', {
+        value: [...shiftWeekdays].sort((a, b) => a - b).join(','),
+      });
+      setOriginalShiftWeekdays(shiftWeekdays);
+      // systemStore aktualisieren, damit die Wochenansicht sofort die neuen
+      // Spalten zeigt (sonst erst nach Hard-Refresh).
+      await useSystemStore.getState().fetch();
+      toast.success('Schichtplaner-Wochentage gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingShiftWeekdays(false);
     }
   };
 
@@ -949,6 +996,52 @@ export default function Settings() {
             Speichern
           </button>
         </div>
+
+        {/* #371: konfigurierbare Wochentage — nur sichtbar wenn Schichtplanung an */}
+        {shiftPlanningEnabled && (
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1">Geplante Wochentage</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Wählen Sie, welche Wochentage im Schichtplaner angezeigt und geplant werden. Deaktivierte Tage
+              erscheinen nicht in der Wochenansicht und werden bei der Auto-Generierung übersprungen.
+              Standard: Montag–Freitag. Mindestens ein Tag muss aktiv bleiben.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {SHIFT_WEEKDAY_LABELS.map((label, i) => {
+                const active = shiftWeekdays.includes(i);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={active}
+                    aria-label={label}
+                    onClick={() => toggleShiftWeekday(i)}
+                    className={`rounded-full px-3 py-1 text-sm border transition-colors ${
+                      active
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={saveShiftWeekdays}
+              disabled={
+                savingShiftWeekdays ||
+                shiftWeekdays.length === 0 ||
+                sameWeekdays(shiftWeekdays, originalShiftWeekdays)
+              }
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Save size={16} />
+              Wochentage speichern
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Betriebsferien über Urlaub hinaus (#314) — Default deaktiviert */}

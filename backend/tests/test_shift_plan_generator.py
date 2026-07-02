@@ -195,6 +195,25 @@ class TestGenerator:
         assert _assigned_user_ids(res["plan"], str(s.id)) == {str(a.id), str(b.id)}
 
 
+class TestGeneratorWeekdays:
+    """#371: the generator skips slots on weekdays disabled in the planner."""
+
+    def test_disabled_weekday_slot_skipped(self, enabled, admin_client, db):
+        db.add(SystemSetting(key="shift_planning_weekdays", tenant_id=DEFAULT_TENANT_ID, value="0,1,2,3,4"))
+        db.commit()
+        a = _emp(db, "wd")
+        ws = _ws(db, "Tresen")
+        _qualify(db, a, ws)
+        plan = _plan(db)
+        enabled_slot = _slot(db, plan, ws, weekday=2, min_staff=1)   # Wed, enabled
+        disabled_slot = _slot(db, plan, ws, weekday=5, min_staff=1)  # Sat, disabled
+        res = _generate(admin_client, str(plan.id))
+        assert _assigned_user_ids(res["plan"], str(enabled_slot.id)) == {str(a.id)}
+        assert _assigned_user_ids(res["plan"], str(disabled_slot.id)) == set()
+        # disabled-weekday slot must NOT be reported as unfilled — it is off the surface
+        assert str(disabled_slot.id) not in res.get("unfilled_slot_ids", [])
+
+
 class TestGeneratorAuth:
     def test_employee_forbidden(self, enabled, employee_client, db):
         plan = _plan(db)

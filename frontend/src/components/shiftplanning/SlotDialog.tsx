@@ -34,6 +34,8 @@ interface SlotDialogProps {
   onClose: () => void;
   // #322: copy this slot (same workstation/time/min_staff + assignments) to other weekdays.
   onCopy?: (weekdays: number[], fields: SlotInput, userIds: string[]) => Promise<void> | void;
+  // #371: enabled planner weekdays (0=Mo … 6=So). Undefined → all seven.
+  weekdays?: number[];
 }
 
 export default function SlotDialog({
@@ -46,7 +48,10 @@ export default function SlotDialog({
   onDelete,
   onClose,
   onCopy,
+  weekdays,
 }: SlotDialogProps) {
+  // #371: restrict the weekday picker + copy targets to enabled planner days.
+  const enabledWeekdays = weekdays && weekdays.length > 0 ? weekdays : [0, 1, 2, 3, 4, 5, 6];
   const [workstationId, setWorkstationId] = useState(initial.workstation_id);
   const [weekday, setWeekday] = useState(initial.weekday);
   const [start, setStart] = useState(initial.start_time);
@@ -153,9 +158,9 @@ export default function SlotDialog({
             </FormSelect>
 
             <FormSelect label="Wochentag" value={String(weekday)} onChange={(e) => setWeekday(Number(e.target.value))}>
-              {WEEKDAY_LABELS_LONG.map((label, i) => (
+              {enabledWeekdays.map((i) => (
                 <option key={i} value={i}>
-                  {label}
+                  {WEEKDAY_LABELS_LONG[i]}
                 </option>
               ))}
             </FormSelect>
@@ -233,7 +238,7 @@ export default function SlotDialog({
                   Tagen zusätzlich an.
                 </p>
                 <div className="flex flex-wrap gap-1.5 mb-2">
-                  {WEEKDAY_LABELS.map((label, i) =>
+                  {enabledWeekdays.map((i) =>
                     i === weekday ? null : (
                       <button
                         type="button"
@@ -245,7 +250,7 @@ export default function SlotDialog({
                             : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        {label}
+                        {WEEKDAY_LABELS[i]}
                       </button>
                     ),
                   )}

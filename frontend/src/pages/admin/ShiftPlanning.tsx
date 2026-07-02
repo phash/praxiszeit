@@ -31,6 +31,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { useSystemStore } from '../../stores/systemStore';
 import WeekGrid from '../../components/shiftplanning/WeekGrid';
 import SlotDialog, { type SlotDialogInitial, type SlotEmployee } from '../../components/shiftplanning/SlotDialog';
 import LocationManager from '../../components/shiftplanning/LocationManager';
@@ -96,6 +97,8 @@ type SlotDialogState = {
 export default function AdminShiftPlanning() {
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+  // #371: configured planner weekdays — drive the week grid, day picker and slot dialog.
+  const planningWeekdays = useSystemStore((s) => s.getShiftPlanningWeekdays());
 
   const [tab, setTab] = useState<'plans' | 'stations' | 'qualifications'>('plans');
   const [locations, setLocations] = useState<Location[]>([]);
@@ -114,7 +117,8 @@ export default function AdminShiftPlanning() {
   const [duplicating, setDuplicating] = useState(false);
   // #321 Tagesansicht
   const [shiftView, setShiftView] = useState<'week' | 'day'>('week');
-  const [dayWeekday, setDayWeekday] = useState(0);
+  // #371: default the day view to the first enabled weekday.
+  const [dayWeekday, setDayWeekday] = useState(() => planningWeekdays[0] ?? 0);
 
   // #330: zugewiesene Minuten je MA für den aktuell offenen Plan — aktualisiert
   // sich automatisch, sobald sich planDetail (nach Zuweisung) ändert.
@@ -183,6 +187,15 @@ export default function AdminShiftPlanning() {
     if (selectedPlanId) loadPlanDetail(selectedPlanId);
     else setPlanDetail(null);
   }, [selectedPlanId, loadPlanDetail]);
+
+  // #371: if the weekday config resolves/changes after mount and the day-view
+  // weekday is no longer enabled, snap it to the first enabled day so the picker
+  // value can't diverge from its rendered <option>s.
+  useEffect(() => {
+    if (!planningWeekdays.includes(dayWeekday)) {
+      setDayWeekday(planningWeekdays[0] ?? 0);
+    }
+  }, [planningWeekdays, dayWeekday]);
 
   // #340: beim ersten Laden den aktuell aktiven Plan automatisch öffnen (häufigster
   // Use-Case → spart einen Klick). Greift nur einmal (autoOpenedRef) und nur, wenn
@@ -541,7 +554,13 @@ export default function AdminShiftPlanning() {
                     >
                       {planDetail.is_active ? 'Deaktivieren' : 'Aktiv schalten'}
                     </Button>
-                    <Button variant="primary" icon={Plus} onClick={() => openCreateSlot(0)}>
+                    <Button
+                      variant="primary"
+                      icon={Plus}
+                      onClick={() =>
+                        openCreateSlot(shiftView === 'day' ? dayWeekday : (planningWeekdays[0] ?? 0))
+                      }
+                    >
                       Slot
                     </Button>
                     <Button variant="secondary" icon={Wand2} onClick={() => setGenerateOpen(true)}>
@@ -588,8 +607,9 @@ export default function AdminShiftPlanning() {
                       onChange={(e) => setDayWeekday(Number(e.target.value))}
                       className="rounded-lg border-gray-300 text-sm py-1"
                     >
-                      {api.WEEKDAY_LABELS_LONG.map((label, i) => (
-                        <option key={i} value={i}>{label}</option>
+                      {/* #371: only enabled weekdays are selectable */}
+                      {planningWeekdays.map((i) => (
+                        <option key={i} value={i}>{api.WEEKDAY_LABELS_LONG[i]}</option>
                       ))}
                     </select>
                   )}
@@ -602,6 +622,7 @@ export default function AdminShiftPlanning() {
                     onSlotClick={openEditSlot}
                     onEmptyClick={openCreateSlot}
                     singleDay={shiftView === 'day' ? dayWeekday : undefined}
+                    weekdays={planningWeekdays}
                   />
                   <div>
                     <h3 className="text-sm font-semibold text-gray-700 mb-2">Mitarbeiter</h3>
@@ -635,6 +656,7 @@ export default function AdminShiftPlanning() {
           onDelete={slotDialog.mode === 'edit' ? deleteSlot : undefined}
           onCopy={slotDialog.mode === 'edit' ? copySlot : undefined}
           onClose={() => setSlotDialog(null)}
+          weekdays={planningWeekdays}
         />
       )}
 

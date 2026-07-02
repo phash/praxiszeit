@@ -23,6 +23,45 @@ from app.models.shift_planning import (
     WorkstationQualification,
 )
 from app.services.timezone_service import today_local
+from app.services import settings_service
+
+# #371: configurable planning weekdays (0=Mo … 6=So). Default Mo–Fr.
+WEEKDAYS_SETTING_KEY = "shift_planning_weekdays"
+DEFAULT_WEEKDAYS = [0, 1, 2, 3, 4]
+
+
+def parse_weekdays(raw) -> List[int]:
+    """Parse a CSV weekday string ("0,2,4") into a sorted, deduped list of
+    ints in 0..6. Returns ``DEFAULT_WEEKDAYS`` on empty/garbage input so a
+    broken setting never leaves the planner with zero days."""
+    if not raw:
+        return list(DEFAULT_WEEKDAYS)
+    days = set()
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            n = int(part)
+        except ValueError:
+            return list(DEFAULT_WEEKDAYS)
+        if not 0 <= n <= 6:
+            return list(DEFAULT_WEEKDAYS)
+        days.add(n)
+    if not days:
+        return list(DEFAULT_WEEKDAYS)
+    return sorted(days)
+
+
+def get_planning_weekdays(db: Session, tenant_id) -> List[int]:
+    """Configured planning weekdays for the tenant (0=Mo … 6=So), Default Mo–Fr."""
+    raw = settings_service.get_setting(db, WEEKDAYS_SETTING_KEY, tenant_id=tenant_id, default=None)
+    return parse_weekdays(raw)
+
+
+def is_weekday_enabled(db: Session, tenant_id, weekday: int) -> bool:
+    """True if ``weekday`` is an enabled planning day for the tenant."""
+    return weekday in get_planning_weekdays(db, tenant_id)
 
 
 def is_plan_active_on(plan, d) -> bool:
@@ -83,6 +122,11 @@ def get_my_today(db: Session, user) -> dict:
     today = today_local()
     weekday = today.weekday()
     tid = user.tenant_id
+
+    # #371: a weekday switched off in the planner has no shifts — don't surface a
+    # legacy assignment left over from when it was enabled.
+    if not is_weekday_enabled(db, tid, weekday):
+        return {"date": today.isoformat(), "weekday": weekday, "entries": []}
 
     rows = (
         db.query(

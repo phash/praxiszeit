@@ -73,6 +73,13 @@ class TestSystemInfoEndpoint:
         response = client.get("/api/system/info")
         assert response.json().get("beta") is True
 
+    def test_shift_planning_weekdays_default_mon_fri(self, client):
+        # #371: public weekday config for the shift planner; default Mo–Fr so the
+        # frontend can render the correct week-view columns pre-login.
+        response = client.get("/api/system/info")
+        data = response.json()
+        assert data["shift_planning_weekdays"] == [0, 1, 2, 3, 4]
+
     def test_response_does_not_leak_internal_state(self, client, onprem_mode):
         # Intentionally tight schema: no env, no ADMIN_EMAIL, no DB status.
         # onboarding_enabled and shift_planning_enabled are public UI
@@ -86,6 +93,7 @@ class TestSystemInfoEndpoint:
             "beta",
             "onboarding_enabled",
             "shift_planning_enabled",
+            "shift_planning_weekdays",
         }
 
 

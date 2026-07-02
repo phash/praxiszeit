@@ -467,9 +467,12 @@ def list_plans(
         .order_by(ShiftPlan.name)
         .all()
     )
+    # #371: slot_count + is_valid must ignore slots on disabled weekdays (they are
+    # off the plan surface — same filter as _build_plan_detail / the generator).
+    enabled_weekdays = shift_planning_service.get_planning_weekdays(db, tid)
     slots = (
         db.query(ShiftSlot)
-        .filter(ShiftSlot.tenant_id == tid)
+        .filter(ShiftSlot.tenant_id == tid, ShiftSlot.weekday.in_(enabled_weekdays))
         .all()
     )
     counts = _assignment_counts(db, tid, [s.id for s in slots])
@@ -520,9 +523,17 @@ def _plan_or_404(db: Session, tenant_id, plan_id: UUID) -> ShiftPlan:
 def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dict:
     """Full plan detail (slots + assignments + validation). The per-person
     `qualified` / slot `unqualified` flags are included only for admins (#305 M2d)."""
+    # #371: only slots on enabled weekdays are part of the plan surface. A legacy
+    # slot on a since-disabled weekday is invisible in WeekGrid anyway; excluding
+    # it here keeps understaffed/is_valid honest (no phantom, unfixable warning).
+    enabled_weekdays = shift_planning_service.get_planning_weekdays(db, tid)
     slots = (
         db.query(ShiftSlot)
-        .filter(ShiftSlot.tenant_id == tid, ShiftSlot.shift_plan_id == plan.id)
+        .filter(
+            ShiftSlot.tenant_id == tid,
+            ShiftSlot.shift_plan_id == plan.id,
+            ShiftSlot.weekday.in_(enabled_weekdays),
+        )
         .order_by(ShiftSlot.weekday, ShiftSlot.start_time)
         .all()
     )
@@ -849,6 +860,15 @@ def _validate_workstation(db: Session, tenant_id, workstation_id: UUID) -> Works
     return ws
 
 
+def _validate_weekday_enabled(db: Session, tenant_id, weekday: int) -> None:
+    """#371: reject slots on a weekday the tenant has switched off in the planner."""
+    if not shift_planning_service.is_weekday_enabled(db, tenant_id, weekday):
+        raise HTTPException(
+            status_code=400,
+            detail="Dieser Wochentag ist im Schichtplaner deaktiviert.",
+        )
+
+
 def _single_slot_dict(db: Session, tenant_id, slot: ShiftSlot) -> dict:
     ws = db.query(Workstation).filter(
         Workstation.id == slot.workstation_id, Workstation.tenant_id == tenant_id
@@ -883,6 +903,7 @@ def create_slot(
     _plan_or_404(db, tid, plan_id)
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail="Ende muss nach dem Beginn liegen")
+    _validate_weekday_enabled(db, tid, data.weekday)
     _validate_workstation(db, tid, data.workstation_id)
     slot = ShiftSlot(
         tenant_id=tid,
@@ -910,6 +931,7 @@ def update_slot(
     slot = _slot_or_404(db, tid, slot_id)
     if data.end_time <= data.start_time:
         raise HTTPException(status_code=400, detail="Ende muss nach dem Beginn liegen")
+    _validate_weekday_enabled(db, tid, data.weekday)
     _validate_workstation(db, tid, data.workstation_id)
     slot.workstation_id = data.workstation_id
     slot.weekday = data.weekday

@@ -9,7 +9,12 @@ interface SystemInfo {
   beta?: boolean;
   onboarding_enabled?: boolean;
   shift_planning_enabled?: boolean;
+  // #371: configurable planner weekdays (0=Mo … 6=So), Default Mo–Fr.
+  shift_planning_weekdays?: number[];
 }
+
+// #371: default planner weekdays (Mo–Fr) when the config is missing/unloaded.
+export const DEFAULT_SHIFT_WEEKDAYS = [0, 1, 2, 3, 4];
 
 interface SystemState {
   info: SystemInfo | null;
@@ -20,6 +25,7 @@ interface SystemState {
   isBeta: () => boolean;
   isOnboardingEnabled: () => boolean;
   isShiftPlanningEnabled: () => boolean;
+  getShiftPlanningWeekdays: () => number[];
 }
 
 // Conservative default: treat as on-prem until the /api/system/info response
@@ -54,4 +60,10 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   // aktivieren kann. Nur ein explizites true schaltet die UI frei (konservativ,
   // analog isBeta) — solange /system/info nicht geladen ist, bleibt sie aus.
   isShiftPlanningEnabled: () => get().info?.shift_planning_enabled === true,
+  // #371: configured planner weekdays; falls back to Mo–Fr when unset/empty so
+  // the week view always has at least the default columns.
+  getShiftPlanningWeekdays: () => {
+    const wd = get().info?.shift_planning_weekdays;
+    return wd && wd.length > 0 ? [...wd].sort((a, b) => a - b) : DEFAULT_SHIFT_WEEKDAYS;
+  },
 }));
