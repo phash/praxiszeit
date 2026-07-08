@@ -187,6 +187,8 @@ def users_overview(
                 remaining_days=vac["remaining_days"],
             ),
             overtime=YtdOvertime(year=year, **ytd),
+            child_sick_used=float(calculation_service.child_sick_days_used(db, u, year)),  # #376
+            child_sick_cap=calculation_service.child_sick_cap(db, u),  # #376
         ))
     return result
 

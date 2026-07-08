@@ -6,8 +6,8 @@ from calendar import monthrange
 from typing import Dict, List, NamedTuple, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
-from app.services import special_days_service
+from app.models import User, TimeEntry, Absence, AbsenceReason, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
+from app.services import special_days_service, settings_service
 
 
 def get_weekly_hours_for_date(
@@ -1002,6 +1002,35 @@ def absence_days(db: Session, user: User, absences: list) -> Decimal:
             else:
                 total += Decimal('0.5') if a.half_day else Decimal('1')
     return total
+
+
+def child_sick_cap(db: Session, user: User) -> int:
+    """#376 §45 SGB V: persönlicher Kind-krank-Jahresanspruch in Tagen.
+    per-MA-Feld → Tenant-Setting child_sick_days_default → 15."""
+    if user.child_sick_days_per_year is not None:
+        return int(user.child_sick_days_per_year)
+    return settings_service.get_int_setting(db, "child_sick_days_default", user.tenant_id, 15)
+
+
+def child_sick_days_used(db: Session, user: User, year: int) -> Decimal:
+    """#376: tagebasierte Summe (Tagesprinzip) der Kind-krank-Absencen im
+    Kalenderjahr — nur Absencen, deren Grund tracks_child_sick_limit trägt.
+    Beschäftigungsfenster wird respektiert; Zählregel identisch zu absence_days."""
+    rows = (
+        db.query(Absence)
+        .join(AbsenceReason, Absence.reason_id == AbsenceReason.id)
+        .filter(
+            Absence.tenant_id == user.tenant_id,          # F-026
+            Absence.user_id == user.id,
+            AbsenceReason.tenant_id == user.tenant_id,     # F-026 (Join)
+            AbsenceReason.tracks_child_sick_limit.is_(True),
+            Absence.date >= date(year, 1, 1),
+            Absence.date <= date(year, 12, 31),
+        )
+        .all()
+    )
+    windowed = [a for a in rows if _within_employment_window(user, a.date)]
+    return absence_days(db, user, windowed)
 
 
 def get_vacation_account(db: Session, user: User, year: int) -> Dict:

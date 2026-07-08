@@ -622,6 +622,25 @@ def create_absence(
         for absence in created_absences:
             db.refresh(absence)
 
+    # #376: weiche (nicht blockierende) §45-SGB-V-Warnung. Zählt der aufgelöste
+    # Grund gegen das Kind-krank-Limit und überschreitet die Jahres-Summe (inkl.
+    # der eben gebuchten Tage) den persönlichen Cap, hänge einen Hinweis an die
+    # erzeugten Rows. Die Buchung bleibt bestehen — der Fehltag muss erfassbar
+    # sein, auch wenn die Krankenkasse nicht mehr zahlt. Pro distinktem Jahr
+    # (Range kann eine Kalendergrenze überspannen; §45 setzt je Jahr zurück).
+    child_sick_warnings: list = []
+    if reason_id is not None and getattr(reason, "tracks_child_sick_limit", False):
+        cap = calculation_service.child_sick_cap(db, target_user)
+        for yr in sorted({a.date.year for a in created_absences}):
+            used = calculation_service.child_sick_days_used(db, target_user, yr)
+            if used > cap:
+                child_sick_warnings.append(
+                    f"CHILD_SICK_LIMIT: Kind-krank-Anspruch überschritten "
+                    f"({used:.1f} von {cap} Tagen {yr} verbraucht, §45 SGB V)."
+                )
+    for a in created_absences:
+        a.warnings = child_sick_warnings
+
     return created_absences
 
 

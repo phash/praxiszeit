@@ -51,6 +51,7 @@ class UserBase(BaseModel):
     first_work_day: Optional[date] = None  # Erster Arbeitstag
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
+    child_sick_days_per_year: Optional[int] = Field(None, ge=0, le=70)  # #376 §45 SGB V; None = Tenant-Default
     # #201: Soll-Zeitfenster pro Wochentag
     scheduled_start_monday: Optional[time] = None
     scheduled_end_monday: Optional[time] = None
@@ -104,6 +105,7 @@ class UserUpdate(BaseModel):
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
+    child_sick_days_per_year: Optional[int] = Field(None, ge=0, le=70)  # #376
     # #201: Soll-Zeitfenster pro Wochentag
     scheduled_start_monday: Optional[time] = None
     scheduled_end_monday: Optional[time] = None

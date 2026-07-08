@@ -77,6 +77,7 @@ def create_reason(
     r = AbsenceReason(
         tenant_id=current_user.tenant_id, name=name, color=color,
         base_behavior=data.base_behavior.value, sort_order=data.sort_order, is_active=True,
+        tracks_child_sick_limit=data.tracks_child_sick_limit,  # #376
     )
     db.add(r)
     try:

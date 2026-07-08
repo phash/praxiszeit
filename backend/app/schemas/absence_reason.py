@@ -12,6 +12,7 @@ class AbsenceReasonCreate(BaseModel):
     color: Optional[str] = None  # #RRGGBB — validated in the router (→ 400)
     base_behavior: AbsenceReasonBehavior
     sort_order: int = 0
+    tracks_child_sick_limit: bool = False  # #376 §45 SGB V: zählt gegen das Kind-krank-Jahreslimit
 
 
 class AbsenceReasonUpdate(BaseModel):
@@ -32,3 +33,4 @@ class AbsenceReasonResponse(BaseModel):
     base_behavior: str
     is_active: bool
     sort_order: int
+    tracks_child_sick_limit: bool = False  # #376

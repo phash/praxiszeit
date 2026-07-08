@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, date, timedelta
 from app.database import get_db
-from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType, Absence, AbsenceType
+from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType, Absence, AbsenceType, AbsenceReason
 from app.middleware.auth import require_admin
 from app.schemas.change_request import (
     ChangeRequestResponse,
@@ -26,7 +26,7 @@ from app.services.break_validation_service import validate_daily_break
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_weekly_hours_for_date, get_daily_target_for_date, get_vacation_account,
-    get_daily_target,
+    get_daily_target, child_sick_cap, child_sick_days_used,
 )
 from app.services import work_window_service, settings_service
 from app.services.closure_split_service import resplit_year_closures
@@ -772,6 +772,34 @@ def review_change_request(
         db.refresh(cr)
 
     cr_response = _enrich_cr_response(cr, db)
+
+    # #376: weiche Kind-krank-Limit-Warnung (spiegelt create_absence). TOP-LEVEL —
+    # NICHT im ArbZG-Block unten, der bei Ganztags-Absencen (kein proposed_start/
+    # end_time) übersprungen würde. Deckt CREATE UND UPDATE-in-Kind-krank ab
+    # (beide setzen absence.reason_id = cr.proposed_reason_id). Nicht blockierend.
+    if (
+        review.action == "approve"
+        and cr.entry_kind == "absence"
+        and cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE)
+        and cr.proposed_reason_id is not None
+        and cr.proposed_date is not None
+    ):
+        cs_reason = db.query(AbsenceReason).filter(
+            AbsenceReason.id == cr.proposed_reason_id,
+            AbsenceReason.tenant_id == cr.tenant_id,  # F-026
+        ).first()
+        if cs_reason is not None and cs_reason.tracks_child_sick_limit:
+            cs_user = db.query(User).filter(
+                User.id == cr.user_id, User.tenant_id == cr.tenant_id
+            ).first()
+            if cs_user is not None:
+                _cs_cap = child_sick_cap(db, cs_user)
+                _cs_used = child_sick_days_used(db, cs_user, cr.proposed_date.year)
+                if _cs_used > _cs_cap:
+                    cr_response.warnings.append(
+                        f"CHILD_SICK_LIMIT: Kind-krank-Anspruch überschritten "
+                        f"({_cs_used:.1f} von {_cs_cap} Tagen {cr.proposed_date.year} verbraucht, §45 SGB V)."
+                    )
 
     # NOTE: ArbZG warnings are informational and calculated post-commit.
     # Hard limits (§3 daily max, §4 breaks) are enforced at CR creation time.
