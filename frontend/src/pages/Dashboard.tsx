@@ -47,6 +47,7 @@ interface OvertimeHistory {
 interface OvertimeAccount {
   current_balance: number;
   history: OvertimeHistory[];
+  milog_warnings?: string[]; // #377 §2 Abs.2 MiLoG (self-scoped)
 }
 
 interface YearlyAbsenceSummary {
@@ -537,6 +538,16 @@ export default function Dashboard() {
               >
                 {overtimeAccount.current_balance >= 0 ? '+' : ''}{formatHoursHM(overtimeAccount.current_balance)} h
               </p>
+              {/* #377 §2 Abs.2 MiLoG: weiche Arbeitszeitkonto-Hinweise (Minijob) */}
+              {(overtimeAccount.milog_warnings ?? []).length > 0 && (
+                <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-2">
+                  {overtimeAccount.milog_warnings!.map((w, i) => (
+                    <p key={i} className="text-xs text-amber-800">
+                      {w.replace(/^[A-Z_]+:\s*/, '')}
+                    </p>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>

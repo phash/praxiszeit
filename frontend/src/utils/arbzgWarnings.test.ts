@@ -47,6 +47,22 @@ describe('showArbzgWarnings', () => {
     expect(toast.warning.mock.calls[0][0]).toMatch(/Nachtarbeitnehmer/);
   });
 
+  it('#377 shows MILOG_ACCOUNT_50 detail without the code prefix', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, [
+      'MILOG_ACCOUNT_50: Konto-Plusstunden dieses Monats (20.0h) über 50 % der vereinbarten Monatszeit (Grenze 16.5h, § 2 Abs. 2 MiLoG; sofern zur Mindestlohnhöhe vergütet).',
+    ]);
+    const msg = toast.warning.mock.calls[0][0];
+    expect(msg).toContain('§ 2 Abs. 2 MiLoG');
+    expect(msg).not.toContain('MILOG_ACCOUNT_50');
+  });
+
+  it('#377 maps MILOG_SETTLEMENT_DUE', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, ['MILOG_SETTLEMENT_DUE: Konto-Stunden aus 01/2025 (9.0h) überfällig — Ausgleich binnen 12 Monaten (§ 2 Abs. 2 MiLoG).']);
+    expect(toast.warning.mock.calls[0][0]).toContain('überfällig');
+  });
+
   it('#376 strips the code prefix for CHILD_SICK_LIMIT and shows the detail', () => {
     const toast = mockToast();
     showArbzgWarnings(toast, [

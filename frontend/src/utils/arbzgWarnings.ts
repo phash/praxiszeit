@@ -99,6 +99,14 @@ export function showArbzgWarnings(
         // #376 §45 SGB V: weiche Warnung — die Buchung ist durchgegangen.
         toast.warning(detail ?? 'Kind-krank-Jahresanspruch überschritten (§45 SGB V).');
         break;
+      case 'MILOG_ACCOUNT_50':
+        // #377 §2 Abs.2 MiLoG: Arbeitszeitkonto — 50-%-Grenze (weich, nicht blockierend).
+        toast.warning(detail ?? 'Arbeitszeitkonto: 50-%-Grenze überschritten (§ 2 Abs. 2 MiLoG).');
+        break;
+      case 'MILOG_SETTLEMENT_DUE':
+        // #377 §2 Abs.2 MiLoG: 12-Monats-Ausgleichsfrist.
+        toast.warning(detail ?? 'Arbeitszeitkonto: 12-Monats-Ausgleichsfrist beachten (§ 2 Abs. 2 MiLoG).');
+        break;
       default:
         toast.warning(raw);
     }
