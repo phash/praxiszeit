@@ -38,7 +38,7 @@ interface AbsenceItem {
 interface JournalDay {
   date: string;
   weekday: string;
-  type: 'work' | 'vacation' | 'sick' | 'overtime' | 'training' | 'other' | 'holiday' | 'weekend' | 'empty' | 'mixed';
+  type: 'work' | 'vacation' | 'sick' | 'overtime' | 'training' | 'other' | 'paid_leave' | 'absent' | 'holiday' | 'weekend' | 'empty' | 'mixed';
   is_holiday: boolean;
   holiday_name: string | null;
   time_entries: TimeEntryItem[];
@@ -75,6 +75,8 @@ const TYPE_LABELS: Record<string, string> = {
   overtime: 'Überstundenausgleich',
   training: 'Fortbildung',
   other: 'Sonstiges',
+  paid_leave: 'Bezahlte Freistellung',
+  absent: 'Abwesend',
   holiday: 'Feiertag',
   weekend: '',
   empty: '–',
@@ -88,6 +90,8 @@ const TYPE_COLORS: Record<string, string> = {
   overtime: 'text-purple-600',
   training: 'text-green-600',
   other: 'text-gray-600',
+  paid_leave: 'text-teal-600',
+  absent: 'text-gray-500',
   holiday: 'text-red-600',
   weekend: 'text-gray-400',
   empty: 'text-gray-400',

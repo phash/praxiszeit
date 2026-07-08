@@ -328,7 +328,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 if show_note and absence.note:
                     note_parts.append(absence.note)
                 abw_parts.append(f"{type_name} ({float(absence.hours)}h)")
-            sheet.cell(row=row, column=9).value = " | ".join(abw_parts)
+            sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(" | ".join(abw_parts))  # custom-reason label = user text → neutralisieren
             if note_parts:
                 sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(" | ".join(note_parts))
         else:
@@ -507,18 +507,16 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         # Vacation account
         vacation_account = calculation_service.get_vacation_account(db, user, year)
 
-        # Sick days (uses current daily target for hours-to-days conversion — approximate)
-        daily_target = calculation_service.get_daily_target(user)
-        if daily_target == 0:
-            daily_target = Decimal('8.0')
-
+        # Krankheitstage TAGEBASIERT (GLOSSAR-Tagesprinzip) — identisch zum
+        # Abwesenheiten-Sheet; NICHT die frühere naive Σh÷Tagessoll-Methode
+        # (falsch bei Tagesplan/Halbtagen/track_hours=False). F-026: tenant-Filter.
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == user.tenant_id,
             Absence.type == AbsenceType.SICK,
             date_in_year(Absence.date, year)
         ).all()
-        sick_hours = sum(float(a.hours) for a in sick_absences)
-        sick_days = sick_hours / float(daily_target)
+        sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
         # Write data
         sheet.cell(row=row, column=1).value = neutralize_spreadsheet_formula(f"{user.last_name}, {user.first_name}")
@@ -834,7 +832,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 if show_note and absence.note:
                     note_parts.append(absence.note)
                 abw_parts.append(f"{type_name} ({float(absence.hours)}h)")
-            sheet.cell(row=row, column=9).value = " | ".join(abw_parts)
+            sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(" | ".join(abw_parts))  # custom-reason label = user text → neutralisieren
             if note_parts:
                 sheet.cell(row=row, column=10).value = neutralize_spreadsheet_formula(" | ".join(note_parts))
         else:

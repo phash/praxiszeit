@@ -241,3 +241,24 @@ class TestAbsencesOverviewDayBased:
         acc_b = calculation_service.get_vacation_account(db, user_b, 2026)
         assert b_vac == round(float(acc_b["used_days"]), 1)
         assert b_rest == round(float(acc_b["remaining_days"]), 1)
+
+
+class TestOdsMultiAbsenceDay:
+    def test_monthly_renders_both_absences_on_multitype_day(self, db, test_user):
+        # Regression: die ODS-Detailsheets keyten Absences per date-dict → der 2.
+        # Eintrag eines Misch-Tags (½ Urlaub + ½ Sonstiges) ging verloren.
+        import zipfile
+        _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.VACATION, hours=4)
+        _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.OTHER, hours=4)
+        out = generate_monthly_report(db, test_user, 2026, 3, include_health_data=True)
+        with zipfile.ZipFile(out) as zf:
+            content = zf.read("content.xml").decode("utf-8", errors="replace")
+        assert "Urlaub" in content and "Sonstiges" in content
+
+    def test_classic_has_overtime_column(self, db, test_user):
+        import zipfile
+        _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.OVERTIME, hours=8)
+        out = generate_yearly_report_classic(db, test_user, 2026, include_health_data=True)
+        with zipfile.ZipFile(out) as zf:
+            content = zf.read("content.xml").decode("utf-8", errors="replace")
+        assert "ÜStd.-Ausgleich" in content
