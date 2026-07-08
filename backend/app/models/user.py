@@ -54,6 +54,7 @@ class User(Base):
     token_version = Column(Integer, default=0, nullable=False, server_default='0')  # Increment to invalidate all tokens
     exempt_from_arbzg = Column(Boolean, default=False, nullable=False, server_default='false')  # §18 ArbZG: leitende Angestellte
     is_night_worker = Column(Boolean, default=False, nullable=False, server_default='false')  # §6 Abs. 2 ArbZG: reduziertes Tageslimit 8h
+    milog_working_time_account = Column(Boolean, default=False, nullable=False, server_default='false')  # #377 §2 Abs.2 MiLoG: Arbeitszeitkonto-Prüfungen (opt-in)
     receives_company_closures = Column(Boolean, default=True, nullable=False, server_default='true')  # #189: nimmt an Betriebsferien teil (unabhängig von der Rolle)
     department = Column(String(100), nullable=True)  # #162: Abteilung/Bereich (Freitext, optional)
     totp_secret = Column(String(255), nullable=True)  # F-019: TOTP secret, Fernet-encrypted at-rest (DSGVO Art.32); None if 2FA not set up

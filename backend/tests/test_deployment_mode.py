@@ -94,6 +94,7 @@ class TestSystemInfoEndpoint:
             "onboarding_enabled",
             "shift_planning_enabled",
             "shift_planning_weekdays",
+            "minimum_wage",  # #377: public compliance info (static, no internal state)
         }
 
 

@@ -13,7 +13,7 @@ from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
-from app.services import auth_service, calculation_service
+from app.services import auth_service, calculation_service, milog_service
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -172,6 +172,17 @@ def users_overview(
         # Jahresumfang (spart die per-User-Stichtag-Query). (round-2 N+1-Fix)
         cutoff = calculation_service.get_soll_cutoff_date(db, u) if is_current_year else None
         ytd = calculation_service.get_ytd_summary(db, u, year, cutoff_date=cutoff)
+        # #377 § 2 Abs. 2 MiLoG: weiche Warnungen je MA. Nur in der LAUFENDEN-Jahr-
+        # Ansicht (die Prüfung ist immer aktueller Monat / Aging bis heute).
+        _milog_w: list[str] = []
+        if is_current_year and u.milog_working_time_account:
+            _t = today_local()
+            _chk = milog_service.milog_50_check(db, u, _t.year, _t.month)
+            if _chk:
+                _milog_w.append(milog_service.milog_50_warning_text(_chk))
+            _aging = milog_service.settlement_aging(db, u, _t)
+            if _aging and (_aging["overdue"] or _aging["due_soon"]):
+                _milog_w.append(milog_service.settlement_warning_text(_aging))
         result.append(AdminUserOverview(
             user_id=str(u.id),
             first_name=u.first_name,
@@ -189,6 +200,7 @@ def users_overview(
             overtime=YtdOvertime(year=year, **ytd),
             child_sick_used=float(calculation_service.child_sick_days_used(db, u, year)),  # #376
             child_sick_cap=calculation_service.child_sick_cap(db, u),  # #376
+            milog_warnings=_milog_w,  # #377
         ))
     return result
 
@@ -537,6 +549,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         last_work_day=user_data.last_work_day,
         department=user_data.department,
         child_sick_days_per_year=user_data.child_sick_days_per_year,  # #376
+        milog_working_time_account=user_data.milog_working_time_account,  # #377
         scheduled_start_monday=user_data.scheduled_start_monday,
         scheduled_end_monday=user_data.scheduled_end_monday,
         scheduled_start_tuesday=user_data.scheduled_start_tuesday,

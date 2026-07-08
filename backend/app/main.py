@@ -747,6 +747,10 @@ def system_info():
         onboarding_enabled = True
         shift_planning_enabled = False
         shift_planning_weekdays = [0, 1, 2, 3, 4]
+    # #377: gesetzlicher Mindestlohn (rein statisch, kein DB-Zugriff → nie 500).
+    from app.core import minimum_wage as _mw
+    from app.services.timezone_service import today_local as _today_local
+    minimum_wage = _mw.minimum_wage_info(_today_local())
     return {
         "deployment_mode": settings.DEPLOYMENT_MODE,
         "version": APP_VERSION,
@@ -758,6 +762,8 @@ def system_info():
         "shift_planning_enabled": shift_planning_enabled,
         # shift_planning_weekdays: konfigurierte Planer-Wochentage (Default Mo–Fr).
         "shift_planning_weekdays": shift_planning_weekdays,
+        # minimum_wage (#377): {current, since, next} — für die Compliance-Anzeige.
+        "minimum_wage": minimum_wage,
     }
 
 

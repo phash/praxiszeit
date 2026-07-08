@@ -11,7 +11,7 @@ from app.models import (
     User, TimeEntry, UserRole, TimeEntryAuditLog,
     ChangeRequest, ChangeRequestType, ChangeRequestStatus,
 )
-from app.services import settings_service
+from app.services import settings_service, milog_service
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
@@ -495,6 +495,15 @@ def clock_out(
                 "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
             )
 
+    # #377 § 2 Abs. 2 MiLoG: weiche Warnung, wenn die Konto-Plusstunden dieses
+    # Monats (month-to-date, inkl. des eben geschlossenen Eintrags) 50 % der
+    # vereinbarten Monatszeit reißen. Unabhängig von `exempt` (keine ArbZG-§18-Frage).
+    if current_user.milog_working_time_account:
+        _m = milog_service.milog_50_check(
+            db, current_user, open_entry.date.year, open_entry.date.month, up_to_date=open_entry.date)
+        if _m:
+            clock_out_warnings.append(milog_service.milog_50_warning_text(_m))
+
     response = TimeEntryResponse.model_validate(open_entry)
     _enrich_response(response, open_entry, current_user, db, warnings=clock_out_warnings)
     return response
@@ -787,6 +796,14 @@ def create_time_entry(
     db.commit()
     db.refresh(entry)
 
+    # #377 § 2 Abs. 2 MiLoG: manuell buchende Minijobber erreichen clock_out nie —
+    # daher auch hier die weiche 50-%-Warnung (month-to-date inkl. dieses Eintrags).
+    if current_user.milog_working_time_account:
+        _m = milog_service.milog_50_check(
+            db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
+        if _m:
+            warnings.append(milog_service.milog_50_warning_text(_m))
+
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db, warnings=warnings)
     return response
@@ -1045,6 +1062,13 @@ def update_time_entry(
                 f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({saved_hours:.1f}h). "
                 "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
             )
+
+    # #377 § 2 Abs. 2 MiLoG: auch beim Bearbeiten (verändert die Monatssumme).
+    if current_user.milog_working_time_account:
+        _m = milog_service.milog_50_check(
+            db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
+        if _m:
+            update_warnings.append(milog_service.milog_50_warning_text(_m))
 
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db, warnings=update_warnings)
