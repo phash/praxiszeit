@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
+import { stripWarningCode } from '../../utils/arbzgWarnings';
 import { Plus, Edit2, Key, UserX, UserCheck, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight, LogIn } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useToast } from '../../contexts/ToastContext';
@@ -45,6 +46,7 @@ export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
   const [overtimeInfo, setOvertimeInfo] = useState<Record<string, OvertimeInfo>>({}); // #194
+  const [milogInfo, setMilogInfo] = useState<Record<string, string[]>>({}); // #377 §2 Abs.2 MiLoG
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -83,17 +85,21 @@ export default function Users() {
         });
         const vMap: Record<string, VacationInfo> = {};
         const oMap: Record<string, OvertimeInfo> = {};
+        const mMap: Record<string, string[]> = {};
         overview.data.forEach((row: {
           user_id: string; track_hours: boolean;
           vacation: VacationInfo; overtime: { overtime: number };
+          milog_warnings?: string[]; // #377
         }) => {
           vMap[row.user_id] = row.vacation;
           // Review R3: defensive — a missing overtime object must not throw
           // here and wedge the whole overview into "Lädt…" forever.
           oMap[row.user_id] = { overtime: row.overtime?.overtime ?? 0, track_hours: row.track_hours };
+          mMap[row.user_id] = row.milog_warnings ?? []; // #377
         });
         setVacationInfo(vMap);
         setOvertimeInfo(oMap);
+        setMilogInfo(mMap);
       } catch {
         // overview optional — the user list still renders without it
       }
@@ -527,6 +533,15 @@ export default function Users() {
                         )
                       ) : (
                         <span className="text-gray-400">Lädt...</span>
+                      )}
+                      {/* #377 §2 Abs.2 MiLoG: weiche Arbeitszeitkonto-Warnung */}
+                      {milogInfo[user.id]?.length > 0 && (
+                        <span
+                          className="ml-2 inline-block"
+                          title={milogInfo[user.id].map(stripWarningCode).join('\n')}
+                        >
+                          <Badge variant="warning">MiLoG</Badge>
+                        </span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">

@@ -631,6 +631,17 @@ Das Basis-Verhalten ist **nach dem Anlegen fix**. Gründe lassen sich umbenennen
 
 > **Hinweis:** PraxisZeit bildet die reine Zeiterfassung ab. Die Meldung an Krankenkasse und Lohnbuchhaltung erfolgt außerhalb der Software.
 
+### Minijob / Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) (#377)
+
+Für Minijobber:innen, die **auf Arbeitszeitkonto** geführt werden („sonstige flexible Arbeitszeitregelung"), aktivieren Sie im Benutzerformular die Checkbox **„Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)"**. PraxisZeit prüft dann zwei gesetzliche Grenzen als **weiche Hinweise** (nichts wird blockiert):
+
+- **50-%-Regel:** Die auf das Konto eingestellten Plusstunden dürfen pro Monat **50 % der vertraglich vereinbarten Arbeitszeit** nicht übersteigen. Ohne den (späteren) Monatsstunden-Modus wird die vereinbarte Monatszeit aus den Wochenstunden abgeleitet (× 13/3, z. B. 7,62 h/Woche ≈ 33 h/Monat → max. 16,5 h Konto/Monat). Der Hinweis erscheint beim Buchen/Ausstempeln, im **eigenen Überstundenkonto** der/des MA und in der **Benutzerübersicht**.
+- **12-Monats-Ausgleichsfrist:** Konto-Stunden müssen binnen 12 Kalendermonaten ausgeglichen werden — bei Überfälligkeit ein Hinweis.
+
+Der **aktuelle gesetzliche Mindestlohn** (§ 1 MiLoG) wird unter **Einstellungen → „Gesetzlicher Mindestlohn"** angezeigt.
+
+> **Wichtig:** Die 50-%-Grenze bindet nur die **mindestlohnwirksamen** Stunden. Wird über dem Mindestlohn vergütet, sind mehr Stunden möglich — der Hinweis ist dann ggf. unkritisch, bitte prüfen. PraxisZeit speichert **keine Lohndaten** und prüft daher **nicht** die 603-€-Verdienstgrenze; das bleibt der Lohnbuchhaltung vorbehalten. Ein direkter **Monatsstunden-Modus** (statt Wochenstunden) ist als nächster Ausbauschritt geplant.
+
 ---
 
 ## 14. ArbZG-Compliance-Berichte

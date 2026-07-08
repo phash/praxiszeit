@@ -47,6 +47,7 @@ class UserBase(BaseModel):
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: bool = False  # §18 ArbZG: leitende Angestellte
     is_night_worker: bool = False  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer (8h-Tageslimit)
+    milog_working_time_account: bool = False  # #377 §2 Abs.2 MiLoG: Arbeitszeitkonto-Prüfungen
     receives_company_closures: bool = True  # #189: nimmt an Betriebsferien teil (rollenunabhängig)
     first_work_day: Optional[date] = None  # Erster Arbeitstag
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
@@ -101,6 +102,7 @@ class UserUpdate(BaseModel):
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: Optional[bool] = None  # §18 ArbZG
     is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
+    milog_working_time_account: Optional[bool] = None  # #377 §2 Abs.2 MiLoG
     receives_company_closures: Optional[bool] = None  # #189: Betriebsferien-Teilnahme
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
@@ -168,10 +170,12 @@ class UserListResponse(BaseModel):
     hours_friday: Optional[float] = None
     exempt_from_arbzg: bool = False
     is_night_worker: bool = False
+    milog_working_time_account: bool = False  # #377 §2 Abs.2 MiLoG
     receives_company_closures: bool = True  # #189: Betriebsferien-Teilnahme
     first_work_day: Optional[date] = None
     last_work_day: Optional[date] = None
     department: Optional[str] = None  # #162: Abteilung/Bereich
+    child_sick_days_per_year: Optional[int] = None  # #376 (latenter Bug: fehlte hier → Edit-Reset)
     # #201: Soll-Zeitfenster pro Wochentag
     scheduled_start_monday: Optional[time] = None
     scheduled_end_monday: Optional[time] = None

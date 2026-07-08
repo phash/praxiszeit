@@ -27,6 +27,7 @@ class OvertimeAccount(BaseModel):
     """Complete overtime account."""
     current_balance: float
     history: List[OvertimeHistory]
+    milog_warnings: List[str] = []  # #377 §2 Abs.2 MiLoG (self-scoped; leer wenn Flag aus)
 
 
 class YtdOvertime(BaseModel):
@@ -66,6 +67,7 @@ class AdminUserOverview(BaseModel):
     overtime: YtdOvertime
     child_sick_used: float = 0.0   # #376 §45 SGB V: verbrauchte Kind-krank-Tage im Jahr
     child_sick_cap: int = 15       # #376: persönlicher Cap (MA-Feld → Tenant-Default → 15)
+    milog_warnings: List[str] = [] # #377 §2 Abs.2 MiLoG (leer wenn Flag aus / nichts überschritten)
 
 
 class EmployeeMonthlyReport(BaseModel):

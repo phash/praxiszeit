@@ -11,6 +11,14 @@ interface SystemInfo {
   shift_planning_enabled?: boolean;
   // #371: configurable planner weekdays (0=Mo … 6=So), Default Mo–Fr.
   shift_planning_weekdays?: number[];
+  // #377: gesetzlicher Mindestlohn (€/h) + Gültigkeit + nächste Stufe.
+  minimum_wage?: MinimumWage;
+}
+
+export interface MinimumWage {
+  current: number;
+  since: string; // ISO date
+  next: { value: number; from: string } | null;
 }
 
 // #371: default planner weekdays (Mo–Fr) when the config is missing/unloaded.
@@ -26,6 +34,7 @@ interface SystemState {
   isOnboardingEnabled: () => boolean;
   isShiftPlanningEnabled: () => boolean;
   getShiftPlanningWeekdays: () => number[];
+  getMinimumWage: () => MinimumWage | null;
 }
 
 // Conservative default: treat as on-prem until the /api/system/info response
@@ -66,4 +75,6 @@ export const useSystemStore = create<SystemState>((set, get) => ({
     const wd = get().info?.shift_planning_weekdays;
     return wd && wd.length > 0 ? [...wd].sort((a, b) => a - b) : DEFAULT_SHIFT_WEEKDAYS;
   },
+  // #377: current statutory minimum wage (null until /system/info lands).
+  getMinimumWage: () => get().info?.minimum_wage ?? null,
 }));

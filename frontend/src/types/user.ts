@@ -45,6 +45,7 @@ export interface User {
   suggested_vacation_days?: number;
   department?: string | null;
   child_sick_days_per_year?: number | null; // #376 §45 SGB V; null = Tenant-Default
+  milog_working_time_account?: boolean; // #377 §2 Abs.2 MiLoG: Arbeitszeitkonto-Prüfungen
   profile_picture?: string | null; // aus Login-Response ausgeschlossen (~690 KB)
   onboarding_completed_at?: string | null; // NULL = Onboarding noch nicht gesehen
   vacation_carryover_deadline?: string | null;

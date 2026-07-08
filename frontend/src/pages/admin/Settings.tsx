@@ -74,6 +74,7 @@ function formatGermanDate(iso: string): string {
 
 export default function Settings() {
   const toast = useToast();
+  const minWage = useSystemStore((s) => s.getMinimumWage()); // #377
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [loading, setLoading] = useState(true);
   // L-4: getrennte Busy-Flags, damit das Speichern von Bundesland und
@@ -1188,6 +1189,27 @@ export default function Settings() {
             Speichern
           </button>
         </div>
+      </div>
+
+      {/* Gesetzlicher Mindestlohn (#377 §1 MiLoG) — reine Info */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Gesetzlicher Mindestlohn</h2>
+        {minWage ? (
+          <p className="text-sm text-gray-600">
+            Aktuell <strong>{minWage.current.toFixed(2)} €/h</strong> (seit{' '}
+            {new Date(minWage.since).toLocaleDateString('de-DE')}).
+            {minWage.next && (
+              <> Ab {new Date(minWage.next.from).toLocaleDateString('de-DE')}:{' '}
+                <strong>{minWage.next.value.toFixed(2)} €/h</strong>.</>
+            )}
+          </p>
+        ) : (
+          <p className="text-sm text-gray-500">Mindestlohn wird geladen…</p>
+        )}
+        <p className="text-xs text-gray-400 mt-2">
+          Gesetzlich fixiert (§ 1 MiLoG). Relevant u. a. für Minijob-Arbeitszeitkonten
+          (§ 2 Abs. 2 MiLoG) — pro Mitarbeiter:in im Benutzerformular aktivierbar.
+        </p>
       </div>
 
       {/* Typ-Farben (#157) */}

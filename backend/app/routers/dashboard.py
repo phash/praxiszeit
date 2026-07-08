@@ -8,7 +8,7 @@ from app.models import User, TimeEntry, UserRole
 from app.models.absence import Absence
 from app.middleware.auth import get_current_user
 from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry
-from app.services import calculation_service
+from app.services import calculation_service, milog_service
 from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
 from app.services.timezone_service import today_local, now_local
@@ -210,9 +210,24 @@ def get_overtime_account(
     current_month_detail = history_detail.get((now.year, now.month))
     current_balance = current_month_detail.cumulative if current_month_detail is not None else Decimal('0.00')
 
+    # #377 § 2 Abs. 2 MiLoG: self-scoped weiche Warnungen im EIGENEN Überstundenkonto
+    # (der manuell buchende Minijobber sieht sie hier, unabhängig vom clock_out-Push).
+    # Perf: KEIN zweiter Overtime-Pass — history_detail/current_month_detail sind
+    # oben bereits berechnet (mit cutoff = month-to-date).
+    milog_warnings: list[str] = []
+    if current_user.milog_working_time_account and current_user.track_hours:
+        _actual = current_month_detail.actual if current_month_detail is not None else Decimal('0.00')
+        _chk = milog_service.milog_50_check(db, current_user, now.year, now.month, monthly_actual=_actual)
+        if _chk:
+            milog_warnings.append(milog_service.milog_50_warning_text(_chk))
+        _aging = milog_service.settlement_aging(db, current_user, today_local(), detailed=history_detail)
+        if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
+            milog_warnings.append(milog_service.settlement_warning_text(_aging))
+
     return OvertimeAccount(
         current_balance=current_balance,
-        history=history
+        history=history,
+        milog_warnings=milog_warnings,
     )
 
 

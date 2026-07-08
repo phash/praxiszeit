@@ -35,3 +35,21 @@ describe('systemStore.getShiftPlanningWeekdays (#371)', () => {
     expect(useSystemStore.getState().getShiftPlanningWeekdays()).toEqual([5, 6]);
   });
 });
+
+describe('systemStore.getMinimumWage (#377)', () => {
+  beforeEach(() => {
+    useSystemStore.setState({ info: null, isLoaded: false });
+  });
+
+  it('returns null until system info is loaded', () => {
+    expect(useSystemStore.getState().getMinimumWage()).toBeNull();
+  });
+
+  it('returns the minimum_wage payload once info is present', () => {
+    setInfo({ minimum_wage: { current: 13.9, since: '2026-01-01', next: { value: 14.6, from: '2027-01-01' } } });
+    const mw = useSystemStore.getState().getMinimumWage();
+    expect(mw?.current).toBe(13.9);
+    expect(mw?.since).toBe('2026-01-01');
+    expect(mw?.next?.value).toBe(14.6);
+  });
+});

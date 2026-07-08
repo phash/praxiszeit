@@ -3,6 +3,7 @@ import apiClient from '../../../api/client';
 import { Save } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
+import { useSystemStore } from '../../../stores/systemStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours } from '../../../utils/formatters';
@@ -21,6 +22,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
   const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
   // Guards against double-submit (fast double-click would create duplicate users).
   const [submitting, setSubmitting] = useState(false);
+  const minWage = useSystemStore((s) => s.getMinimumWage()); // #377
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -34,6 +36,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     track_hours: true,
     exempt_from_arbzg: false,
     is_night_worker: false,
+    milog_working_time_account: false, // #377
     receives_company_closures: true,
     calendar_color: DEFAULT_CALENDAR_COLOR,
     first_work_day: '',
@@ -76,6 +79,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         track_hours: editUser.track_hours ?? true,
         exempt_from_arbzg: editUser.exempt_from_arbzg ?? false,
         is_night_worker: editUser.is_night_worker ?? false,
+        milog_working_time_account: editUser.milog_working_time_account ?? false, // #377
         receives_company_closures: editUser.receives_company_closures ?? true,
         calendar_color: editUser.calendar_color || DEFAULT_CALENDAR_COLOR,
         first_work_day: editUser.first_work_day || '',
@@ -445,6 +449,33 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
             <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
             </label>
+          </div>
+
+          {/* #377 Minijob / Arbeitszeitkonto (§2 Abs.2 MiLoG) */}
+          <div className="md:col-span-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="milog_working_time_account"
+                checked={formData.milog_working_time_account ?? false}
+                onChange={(e) => setFormData({ ...formData, milog_working_time_account: e.target.checked })}
+                className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
+              />
+              <label htmlFor="milog_working_time_account" className="text-sm font-medium text-gray-700 cursor-pointer">
+                Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) – 50-%-Prüfung & 12-Monats-Ausgleichsfrist
+              </label>
+            </div>
+            {formData.milog_working_time_account && (
+              <p className="mt-2 text-xs text-amber-800">
+                {minWage
+                  ? `Aktueller Mindestlohn: ${minWage.current.toFixed(2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
+                  : ''}
+                Vereinbarte Monatszeit ≈ {(formData.weekly_hours * 13 / 3).toFixed(1)} h → max. Konto
+                ≈ {(formData.weekly_hours * 13 / 3 / 2).toFixed(1)} h/Monat. Warnung ist weich
+                (nicht blockierend), sofern zur Mindestlohnhöhe vergütet — bei höherer Vergütung ggf.
+                unkritisch, bitte prüfen. Keine Verdienst-/603-€-Prüfung (kein Lohn hinterlegt).
+              </p>
+            )}
           </div>
 
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
