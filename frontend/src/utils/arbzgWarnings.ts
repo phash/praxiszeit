@@ -25,6 +25,16 @@ function splitCodeAndDetail(entry: string): { code: string; detail?: string } {
   };
 }
 
+/**
+ * #376: dedup + flatten the per-row `warnings` of a `POST /absences` response
+ * (List[AbsenceResponse]) into a single string[] for showArbzgWarnings. `data`
+ * is `any` (axios) → typed narrowing happens here so call sites stay clean.
+ */
+export function collectAbsenceWarnings(data: unknown): string[] {
+  const rows = Array.isArray(data) ? (data as Array<{ warnings?: string[] }>) : [];
+  return [...new Set(rows.flatMap((a) => a.warnings ?? []))];
+}
+
 export function showArbzgWarnings(
   toast: WarnToast,
   warnings: string[] | undefined | null,
@@ -84,6 +94,10 @@ export function showArbzgWarnings(
         toast.warning(
           detail ?? 'Du hast vor deinem Soll-Beginn eingestempelt — die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt.',
         );
+        break;
+      case 'CHILD_SICK_LIMIT':
+        // #376 §45 SGB V: weiche Warnung — die Buchung ist durchgegangen.
+        toast.warning(detail ?? 'Kind-krank-Jahresanspruch überschritten (§45 SGB V).');
         break;
       default:
         toast.warning(raw);

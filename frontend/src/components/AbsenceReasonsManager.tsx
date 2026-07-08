@@ -7,7 +7,7 @@ import ConfirmDialog from './ConfirmDialog';
 import * as api from '../api/absenceReasons';
 import type { AbsenceReason, AbsenceReasonBehavior } from '../api/absenceReasons';
 
-const BEHAVIORS: AbsenceReasonBehavior[] = ['worked', 'paid_free', 'overtime_comp'];
+const BEHAVIORS: AbsenceReasonBehavior[] = ['worked', 'paid_free', 'overtime_comp', 'unpaid_free'];
 
 /**
  * #312: Verwaltung eigener Abwesenheitsgründe (Einstellungen). Anlegen
@@ -25,6 +25,7 @@ export default function AbsenceReasonsManager() {
   const [name, setName] = useState('');
   const [behavior, setBehavior] = useState<AbsenceReasonBehavior>('worked');
   const [color, setColor] = useState('#3366cc');
+  const [tracksChildSick, setTracksChildSick] = useState(false); // #376
 
   const load = useCallback(async () => {
     try {
@@ -46,12 +47,34 @@ export default function AbsenceReasonsManager() {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      await api.createReason({ name: name.trim(), base_behavior: behavior, color });
+      await api.createReason({
+        name: name.trim(), base_behavior: behavior, color,
+        tracks_child_sick_limit: behavior === 'unpaid_free' ? tracksChildSick : false, // #376
+      });
       setName('');
+      setTracksChildSick(false);
       toast.success('Abwesenheitsgrund angelegt');
       await load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'Fehler beim Anlegen'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // #376: kuratierte Vorlage per 1-Klick aktivieren (legt einen eigenen Grund an).
+  const activatePreset = async (p: api.AbsenceReasonPreset) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.createReason({
+        name: p.name, color: p.color, base_behavior: p.base_behavior,
+        tracks_child_sick_limit: p.tracks_child_sick_limit,
+      });
+      toast.success(`„${p.name}" aktiviert`);
+      await load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Vorlage konnte nicht aktiviert werden'));
     } finally {
       setBusy(false);
     }
@@ -125,7 +148,36 @@ export default function AbsenceReasonsManager() {
           <Plus size={16} /> Hinzufügen
         </button>
       </form>
+      {behavior === 'unpaid_free' && (
+        <label className="flex items-center gap-2 text-xs text-gray-600 mb-2">
+          <input type="checkbox" checked={tracksChildSick}
+                 onChange={(e) => setTracksChildSick(e.target.checked)} />
+          Gegen das Kind-krank-Jahreslimit zählen (§45 SGB V)
+        </label>
+      )}
       <p className="text-xs text-gray-400 mb-4">{api.BEHAVIOR_HINTS[behavior]}</p>
+
+      {/* #376: Vorlagen zum 1-Klick-Aktivieren (bereits aktivierte per Name ausgeblendet) */}
+      {api.ABSENCE_REASON_PRESETS.some((p) => !reasons.some((r) => r.name === p.name)) && (
+        <div className="mb-4">
+          <p className="text-xs font-medium text-gray-600 mb-1">Vorlagen (1-Klick aktivieren)</p>
+          <div className="flex flex-wrap gap-2">
+            {api.ABSENCE_REASON_PRESETS.filter((p) => !reasons.some((r) => r.name === p.name)).map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                disabled={busy}
+                onClick={() => activatePreset(p)}
+                title={api.BEHAVIOR_HINTS[p.base_behavior]}
+                className="text-xs px-2 py-1 rounded border disabled:opacity-50"
+                style={{ borderColor: p.color, color: p.color }}
+              >
+                + {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-sm text-gray-500">Lädt…</p>

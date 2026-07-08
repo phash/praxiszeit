@@ -46,4 +46,17 @@ describe('showArbzgWarnings', () => {
     showArbzgWarnings(toast, ['§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten']);
     expect(toast.warning.mock.calls[0][0]).toMatch(/Nachtarbeitnehmer/);
   });
+
+  it('#376 strips the code prefix for CHILD_SICK_LIMIT and shows the detail', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, [
+      'CHILD_SICK_LIMIT: Kind-krank-Anspruch überschritten (2.0 von 1 Tagen 2026 verbraucht, §45 SGB V).',
+    ]);
+    expect(toast.warning).toHaveBeenCalledOnce();
+    const msg = toast.warning.mock.calls[0][0];
+    expect(msg).toContain('Kind-krank-Anspruch überschritten');
+    // the raw default branch would keep the "CHILD_SICK_LIMIT:" code prefix — the
+    // dedicated case must strip it (proves the case actually ran).
+    expect(msg).not.toContain('CHILD_SICK_LIMIT');
+  });
 });

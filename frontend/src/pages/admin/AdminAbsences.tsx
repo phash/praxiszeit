@@ -4,6 +4,7 @@ import { de } from 'date-fns/locale';
 import { Plus, X, Trash2, Pencil, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
+import { showArbzgWarnings, collectAbsenceWarnings } from '../../utils/arbzgWarnings';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
@@ -216,7 +217,7 @@ export default function AdminAbsences() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      await apiClient.post('/absences', {
+      const res = await apiClient.post('/absences', {
         user_id: targetId,
         date: formData.date,
         end_date: isDateRange && formData.end_date ? formData.end_date : null,
@@ -226,6 +227,8 @@ export default function AdminAbsences() {
         half_day: !isDateRange && formData.half_day,
         reason_id: selectedReasonId,  // #312: backend maps the type from the reason
       });
+      // #376: weiche Kind-krank-Limit-Warnung (§45 SGB V), non-blocking
+      showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
       toast.success('Abwesenheit erfolgreich eingetragen');
       setShowForm(false);
       setIsDateRange(false);
