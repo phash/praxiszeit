@@ -10,6 +10,40 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-07-kind-krank-absence-reasons-design.md`
 
+## Corrections (verified against the real codebase — OVERRIDE any conflicting detail below)
+
+Ein 9-Lens-Adversarial-Review (Verdict: **architektonisch tragfähig, kein Design-Change**) hat die Anker geprüft. Die Task-Details unten waren teils geraten — **diese realen Werte gelten**:
+
+**Test-Auth (Tasks 4/5/6/7/8/9) — Header-Auth ist FIKTION.** `conftest.py` liefert nur: `db`, `default_tenant`, `test_user` (EMPLOYEE, weekly_hours=40, wd=5, DEFAULT_TENANT), `test_admin`, `public_holiday`, `working_hours_change`. **Keine** `client`/`admin_headers`/`employee_headers`/`tenant_user`/`employee_user`. Muster: lokales `_app()` mit `app.dependency_overrides[get_db]/[get_current_user]/[require_admin]` + headerless `TestClient`, Limiter deaktiviert (siehe `test_absence_reasons.py:20-90` → `_client`/`admin_client`, `ADMIN_BASE='/api/admin/absence-reasons'`; `test_endpoints.py:195-233`). **Alle HTTP-Pfade mit `/api`-Prefix.** Jede neue HTTP-Testdatei baut ihr eigenes `_app()` mit genau den nötigen Routern:
+- Task 5 → `admin.router` · Pfad `PUT /api/admin/settings/child_sick_days_default`
+- Task 7 → `absences.router` + `absence_reasons.admin_router` · `POST /api/absences/`, `POST /api/admin/absence-reasons`
+- Task 8 → + `admin.router` + `change_requests.router` · `POST /api/change-requests/` (trailing slash!), `POST /api/admin/change-requests/{id}/review`, `PUT /api/admin/users/{id}`
+- Task 9 → `admin.router` · `GET /api/admin/users-overview`
+- Task 4 → hängt an `test_absence_reasons.py` an → nutze das vorhandene `admin_client` + `ADMIN_BASE`.
+- Task 6 → **reiner Calc-Test, kein app/client**. `tenant_user` → **`test_user`** (Signaturen `(db, test_user)`).
+
+**Task 2 — Migration:** neuester Head ist `revision = '060_impersonation_sessions'` (Datei `2026_07_01_1000-060_add_impersonation_sessions.py` — Rev-ID ≠ Dateiname-Slug!). Neue Migration: `down_revision = '060_impersonation_sessions'`, `revision = '061_child_sick_fields'`, Datei nach Template **`2026_07_08_HHMM-061_child_sick_fields.py`**. Backend evtl. down → Head aus `revision =` der neuesten versions-Datei lesen statt `alembic heads`.
+
+**Task 6 — calc:** `AbsenceReason` fehlt im Modul-Import → an die `from app.models import ...`-Zeile (Zeile 9) anhängen (`date/Decimal/Session/User/Absence` sind da). `child_sick_days_used`-Join zusätzlich `AbsenceReason.tenant_id == user.tenant_id` (F-026).
+
+**Task 7 — create_absence:** endet mit `return created_absences` bei **Zeile 625**; `reason`/`reason_id` im Scope. **`target_user`** existiert dort — Variablenname im Review prüfen; sonst die MA-Variable des Buchungspfads nutzen. **Jahresgrenze:** Warnung pro distinktem Jahr in `created_absences` rechnen (`set(a.date.year for a in created_absences)`), nicht nur `absence_data.date.year`.
+
+**Task 8 — CR-Pfad (KOMPLETT ersetzt, siehe Task unten):** Block **TOP-LEVEL nach Zeile 774** (`cr_response = _enrich_cr_response(cr, db)`), **NICHT** im ArbZG-`proposed_start_time/end_time`-Block (Z780+ wird bei Ganztags-Absence übersprungen → Warnung feuerte nie). Gate: `review.action=='approve' and cr.entry_kind=='absence' and cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE) and cr.proposed_reason_id is not None` (deckt CREATE **und** UPDATE-in-Kind-krank ab). User frisch holen: `cs_user = db.query(User).filter(User.id==cr.user_id, User.tenant_id==cr.tenant_id).first()`. Datum `cr.proposed_date` (guard). Imports: `AbsenceReason` an `from app.models import` (Zeile 8) + `from app.services import calculation_service`. CR-Create-Payload real: `{"entry_kind":"absence","request_type":"create","proposed_date":"<vergangenheit>","proposed_absence_type":"other","proposed_absence_hours":8,"reason_id":<id>,"reason":"Kind krank"}`; Review-Body `{"action":"approve"}`; **4-Augen:** Autor = MA, Genehmiger = separater Admin.
+
+**Task 10/16 — `frontend/src/api/users.ts` existiert NICHT.** Alle Referenzen streichen (File-Structure, Task 10 Step 3, `git add` in 10 & 16). User-CRUD ist inline in `UserForm.tsx` (`apiClient.post('/admin/users', payload)` L206, `apiClient.put('/admin/users/${id}', updateData)` L193); Feld fließt über den `...userFields`-Spread automatisch. Typ NUR in `frontend/src/types/user.ts`.
+
+**Task 11 — bare `render(<AbsenceReasonsManager/>)` wirft** (`useToast()` L18 ohne Provider) → in `<ToastProvider>` wrappen (`useConfirm` L19 = lokaler Hook, braucht keinen Provider).
+
+**Task 12 — Response wird verworfen + dritte Buchungsstelle fehlt.** `AdminAbsences.tsx:219` + `AbsenceCalendarPage.tsx:241` (in `doSubmit`, NICHT `handleSubmit`) machen `await apiClient.post('/absences', …)` ohne `const res =` → `res.data` binden. **`MonthlyJournal.tsx` ist ein DRITTER Kind-krank-fähiger POST** (`handleSave ~L221`, `handleAdminSave ~L286`, `reason_id` gesetzt, Response verworfen; `showArbzgWarnings` schon importiert L9) → mit aufnehmen. Der arbzg-`default:`-Zweig ist `toast.warning(raw)` → der „rote" Test ist NICHT rot; entweder assert, dass der Toast-Text **nicht** den Prefix `CHILD_SICK_LIMIT:` enthält (Default enthält ihn), oder den neuen `case` als kosmetisches Prefix-Stripping framen.
+
+**Task 13 — State ist `formData`/`setFormData` (nicht `form`/`setForm`).** Feld an **BEIDE** Hydrations-Pfade: initiales `useState({...})` (L24, `child_sick_days_per_year: null`) UND den `if (editUser) setFormData({...})`-Effect (L65-102, `child_sick_days_per_year: editUser.child_sick_days_per_year ?? null`) — sonst gehen Edits still verloren.
+
+**Task 14 — MA-Doku ergänzen:** `read_router GET /api/absence-reasons` liefert aktive Gründe an jeden Nutzer; nur VACATION ist approval-gated → MA können „Kind krank" (OTHER) selbst buchen. Also auch `HANDBUCH-MITARBEITER.md` + `handbuchMitarbeiterSections` in `DocViewer.tsx` pflegen.
+
+**By-design (kein Fix):** `unpaid_free` und `paid_free` sind calc-IDENTISCH (Modell hat keine Lohn-Dimension) → Tests dürfen NIE einen Soll/Ist-Unterschied zwischen beiden asserten, nur das Reporting-Label. `journal_service` (SICK-only-Masking) ist außerhalb #376-Scope.
+
+---
+
 ## Global Constraints
 
 - **Calc-Modell eingefroren:** `Absence.type` treibt ALLE Berechnung; `reason_id` ist nur Label/Farbe. Kein neuer `AbsenceType`.
