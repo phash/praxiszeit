@@ -2,7 +2,7 @@
 
 **Issue:** [#377](https://github.com/phash/praxiszeit/issues/377) — Minijob mit Monatsstunden
 **Datum:** 2026-07-08
-**Status:** Design freigegeben + Härtungs-Review eingearbeitet (siehe § 7)
+**Status:** Implementiert (Branch `feat/377-minijob-milog`) — Backend+Frontend+Doku, Tests grün, Migration 062 verifiziert. Modellentscheidungen § 7 verbindlich; die Pseudocodes in §§ 3.3/3.4 sind durch § 7 + `milog_service.py` ersetzt (dort Source of Truth).
 
 > **§ 7 unten** enthält die verbindlichen Modellentscheidungen aus dem 8-Lens-Adversarial-Review — sie **überschreiben** abweichende Formulierungen in §§ 3.3/3.4.
 **Umfang:** Baustein **1** (Mindestlohn anzeigen) + **3** (§ 2 Abs. 2 MiLoG: 50-%-Prüfung **und** 12-Monats-Ausgleichsfrist). Baustein **2** (Wochen↔Monat-Umschaltung / Monatsmodus) ist **separat/später** und NICHT Teil dieser Spec.
