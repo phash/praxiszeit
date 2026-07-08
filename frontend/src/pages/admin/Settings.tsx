@@ -128,6 +128,11 @@ export default function Settings() {
   const [originalGraceMinutes, setOriginalGraceMinutes] = useState('15');
   const [savingGrace, setSavingGrace] = useState(false);
 
+  // #376 Kind-krank-Standardanspruch (child_sick_days_default)
+  const [childSickDefault, setChildSickDefault] = useState('15');
+  const [originalChildSickDefault, setOriginalChildSickDefault] = useState('15');
+  const [savingChildSick, setSavingChildSick] = useState(false);
+
   // Custom holidays
   const currentYear = new Date().getFullYear();
   const [holidayYear, setHolidayYear] = useState(currentYear);
@@ -223,6 +228,12 @@ export default function Settings() {
       const graceVal = graceSetting?.value ?? '15';
       setGraceMinutes(graceVal);
       setOriginalGraceMinutes(graceVal);
+
+      // #376 Kind-krank-Standardanspruch
+      const childSickSetting = settingsRes.data.find((s) => s.key === 'child_sick_days_default');
+      const childSickVal = childSickSetting?.value ?? '15';
+      setChildSickDefault(childSickVal);
+      setOriginalChildSickDefault(childSickVal);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -423,6 +434,21 @@ export default function Settings() {
       toast.error(getErrorMessage(err));
     } finally {
       setSavingGrace(false);
+    }
+  };
+
+  const saveChildSickDefault = async () => {
+    setSavingChildSick(true);
+    try {
+      await apiClient.put('/admin/settings/child_sick_days_default', {
+        value: String(childSickDefault),
+      });
+      setOriginalChildSickDefault(childSickDefault);
+      toast.success('Kind-krank-Standardanspruch gespeichert.');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingChildSick(false);
     }
   };
 
@@ -1120,6 +1146,42 @@ export default function Settings() {
           <button
             onClick={saveGraceMinutes}
             disabled={savingGrace || graceMinutes === originalGraceMinutes}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Save size={16} />
+            Speichern
+          </button>
+        </div>
+      </div>
+
+      {/* Kind-krank-Standardanspruch (#376 §45 SGB V) */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Kind-krank-Standardanspruch</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Standard-Jahresanspruch an Kind-krank-Tagen (§45 SGB V) für Mitarbeiter ohne
+          individuellen Wert. Wird der Anspruch überschritten, erscheint beim Buchen ein
+          Hinweis — die Abwesenheit wird trotzdem erfasst (nicht blockiert).
+        </p>
+        <div className="flex items-end gap-4">
+          <div>
+            <label
+              htmlFor="child-sick-default"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Standard Kind-krank-Tage/Jahr
+            </label>
+            <input
+              id="child-sick-default"
+              type="number"
+              min="0"
+              value={childSickDefault}
+              onChange={(e) => setChildSickDefault(e.target.value)}
+              className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+            />
+          </div>
+          <button
+            onClick={saveChildSickDefault}
+            disabled={savingChildSick || childSickDefault === originalChildSickDefault}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

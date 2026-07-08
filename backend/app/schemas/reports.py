@@ -64,6 +64,8 @@ class AdminUserOverview(BaseModel):
     track_hours: bool
     vacation: VacationAccount
     overtime: YtdOvertime
+    child_sick_used: float = 0.0   # #376 §45 SGB V: verbrauchte Kind-krank-Tage im Jahr
+    child_sick_cap: int = 15       # #376: persönlicher Cap (MA-Feld → Tenant-Default → 15)
 
 
 class EmployeeMonthlyReport(BaseModel):

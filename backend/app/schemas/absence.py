@@ -36,6 +36,10 @@ class AbsenceResponse(AbsenceBase):
     end_date: Optional[date] = None
     created_at: datetime
     reason_id: Optional[UUID] = None  # #312
+    # #376: weiche, non-blocking Hinweise (z. B. CHILD_SICK_LIMIT). Leer auf GET
+    # (ORM-Row hat kein `warnings`-Attribut → default_factory greift); create_absence
+    # setzt es als transientes Attribut auf die erzeugte Row.
+    warnings: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

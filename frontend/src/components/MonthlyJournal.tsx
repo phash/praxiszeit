@@ -6,7 +6,7 @@ import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { formatHoursHMText, parseHours } from '../utils/formatters';
 import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
-import { showArbzgWarnings } from '../utils/arbzgWarnings';
+import { showArbzgWarnings, collectAbsenceWarnings } from '../utils/arbzgWarnings';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
@@ -218,7 +218,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         });
       } else {
         const hasExistingEntries = day && day.time_entries.length > 0;
-        await apiClient.post('/absences', {
+        const res = await apiClient.post('/absences', {
           user_id: userId,
           date: dateStr,
           type: editState.entryType,
@@ -226,6 +226,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           reason_id: editState.reasonId ?? null, // #312
           keep_time_entries: hasExistingEntries,
         });
+        // #376: weiche Kind-krank-Limit-Warnung (§45 SGB V), non-blocking
+        showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
       }
       toast.success('Eintrag hinzugefügt');
       cancelEdit();
@@ -283,7 +285,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           await apiClient.delete(`/absences/${day.absences[0].id}`);
         }
         const remainingEntries = day.time_entries.filter(e => e.id !== editingEntryId);
-        await apiClient.post('/absences', {
+        const res = await apiClient.post('/absences', {
           user_id: userId,
           date: day.date,
           type: editState.entryType,
@@ -291,6 +293,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           reason_id: editState.reasonId ?? null, // #312
           keep_time_entries: remainingEntries.length > 0,
         });
+        // #376: weiche Kind-krank-Limit-Warnung (§45 SGB V), non-blocking
+        showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
       }
       toast.success('Gespeichert');
       cancelEdit();

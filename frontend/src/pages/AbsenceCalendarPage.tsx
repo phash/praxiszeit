@@ -4,6 +4,7 @@ import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
 import { Plus, X, Trash2, Clock, CheckCircle, XCircle, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { showArbzgWarnings, collectAbsenceWarnings } from '../utils/arbzgWarnings';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
@@ -238,7 +239,9 @@ export default function AbsenceCalendarPage() {
         half_day: !isDateRange && formData.half_day,
         ...(formData.reasonId ? { reason_id: formData.reasonId } : {}), // #312 MA-ABS-03
       };
-      await apiClient.post('/absences', submitData);
+      const res = await apiClient.post('/absences', submitData);
+      // #376: weiche Kind-krank-Limit-Warnung (§45 SGB V), non-blocking
+      showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
       const msg = refundVacation
         ? 'Krankmeldung eingetragen und Urlaubstage zurückerstattet'
         : 'Abwesenheit erfolgreich eingetragen';

@@ -61,6 +61,9 @@ class User(Base):
     last_totp_counter = Column(BigInteger, nullable=True)  # Highest counter value already accepted (replay guard)
     first_work_day = Column(Date, nullable=True)  # Erster Arbeitstag
     last_work_day = Column(Date, nullable=True)   # Letzter Arbeitstag
+    # #376: persönlicher Kind-krank-Jahresanspruch (§45 SGB V). NULL = Tenant-Default
+    # (Setting child_sick_days_default, sonst 15). Speichert KEINE Kinderdaten.
+    child_sick_days_per_year = Column(Integer, nullable=True)
     profile_picture = Column(Text, nullable=True)  # Base64 data URI
     deactivated_at = Column(DateTime(timezone=True), nullable=True)  # Grace-Period-Start bei Deaktivierung
     onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)  # NULL = Onboarding (Erst-Login-Tour) noch nicht gesehen

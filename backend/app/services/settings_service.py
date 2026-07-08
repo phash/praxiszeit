@@ -33,3 +33,14 @@ def get_bool_setting(db: Session, key: str, tenant_id=None, default: bool = Fals
     if raw is None:
         return default
     return raw.strip().lower() == "true"
+
+
+def get_int_setting(db: Session, key: str, tenant_id=None, default: int = 0) -> int:
+    """#376: int-Wert eines Settings; Default bei fehlend/nicht-parsebar."""
+    raw = get_setting(db, key, tenant_id=tenant_id, default=None)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default

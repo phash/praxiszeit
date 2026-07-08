@@ -26,6 +26,7 @@ _ALLOWED_SETTINGS = {
     "shift_planning_enabled",  # #305 Schichtplanung aktivieren (Default aus)
     "shift_planning_weekdays",  # #371 konfigurierbare Wochentage (CSV 0=Mo…6=So, Default Mo–Fr)
     "closure_overtime_after_vacation",  # #314 Betriebsferien > Urlaub → Überstundenabbau (Default aus)
+    "child_sick_days_default",  # #376 Kind-krank-Default-Anspruch/Jahr (int, Default 15)
 } | special_days_service.SETTING_KEYS
 
 # Settings whose value must be a boolean ("true"/"false").
@@ -101,6 +102,14 @@ def update_setting(
                 raise ValueError
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="work_window_grace_minutes muss eine nicht-negative Zahl sein")
+
+    # #376: validate child_sick_days_default as a non-negative integer
+    if key == "child_sick_days_default":
+        try:
+            if int(value) < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="child_sick_days_default muss eine nicht-negative Zahl sein")
 
     # #371: validate + normalise shift_planning_weekdays (CSV of 0..6, 0=Mo).
     # At least one day; unique; stored sorted/deduped. Reject garbage with 400

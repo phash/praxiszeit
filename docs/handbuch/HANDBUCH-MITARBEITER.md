@@ -306,6 +306,8 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 
 > **Eigene Gründe:** Hat Ihre Praxis zusätzliche Abwesenheitsgründe eingerichtet (z. B. „Schule"), erscheinen diese bei der Typ-Auswahl unter **„Eigene Gründe"**. Wählen Sie sie wie einen normalen Typ aus.
 
+> **Kind krank (§45 SGB V):** Ist der Grund **„Kind krank"** eingerichtet, wählen Sie ihn wie einen normalen Typ. Der Tag gilt als **entschuldigt**, es entstehen **keine Minusstunden** und es wird **kein Urlaub** verbraucht – er ist aber **unbezahlt** (die Krankenkasse zahlt ggf. Kinderkrankengeld). Ist Ihr Jahresanspruch aufgebraucht, erscheint beim Buchen ein Hinweis – der Tag wird **trotzdem eingetragen**. Die Meldung an die Krankenkasse erfolgt außerhalb von PraxisZeit.
+
 > **Gut zu wissen – Kranktage und Stundensaldo:** Kranktage werden nach § 3 EntgFG als gearbeitete Stunden angerechnet (Soll-Stunden als Ist), sodass keine Minusstunden entstehen.
 
 ---

@@ -187,6 +187,8 @@ def users_overview(
                 remaining_days=vac["remaining_days"],
             ),
             overtime=YtdOvertime(year=year, **ytd),
+            child_sick_used=float(calculation_service.child_sick_days_used(db, u, year)),  # #376
+            child_sick_cap=calculation_service.child_sick_cap(db, u),  # #376
         ))
     return result
 
@@ -534,6 +536,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         first_work_day=user_data.first_work_day,
         last_work_day=user_data.last_work_day,
         department=user_data.department,
+        child_sick_days_per_year=user_data.child_sick_days_per_year,  # #376
         scheduled_start_monday=user_data.scheduled_start_monday,
         scheduled_end_monday=user_data.scheduled_end_monday,
         scheduled_start_tuesday=user_data.scheduled_start_tuesday,

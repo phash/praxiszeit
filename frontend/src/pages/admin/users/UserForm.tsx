@@ -39,6 +39,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     first_work_day: '',
     last_work_day: '',
     department: '',
+    child_sick_days_per_year: null as number | null, // #376 §45 SGB V; null = Tenant-Default
     use_daily_schedule: false,
     hours_monday: 8,
     hours_tuesday: 8,
@@ -80,6 +81,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         first_work_day: editUser.first_work_day || '',
         last_work_day: editUser.last_work_day || '',
         department: editUser.department || '',
+        child_sick_days_per_year: editUser.child_sick_days_per_year ?? null, // #376
         use_daily_schedule: editUser.use_daily_schedule ?? false,
         hours_monday: editUser.hours_monday ?? 8,
         hours_tuesday: editUser.hours_tuesday ?? 8,
@@ -363,6 +365,27 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                 </button>
               </div>
             )}
+          </div>
+          <div>
+            <label htmlFor="f-child-sick" className="block text-sm font-medium text-gray-700 mb-1">
+              Kind-krank-Tage/Jahr (§45 SGB V)
+            </label>
+            <input
+              id="f-child-sick"
+              type="number"
+              min="0"
+              max="70"
+              value={formData.child_sick_days_per_year ?? ''}
+              placeholder="Standard (Einstellungen)"
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  child_sick_days_per_year: e.target.value === '' ? null : parseInt(e.target.value),
+                })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+            />
+            <p className="mt-1 text-xs text-gray-400">Leer = Standardwert aus den Einstellungen.</p>
           </div>
           {formData.track_hours && (
             <div>

@@ -56,6 +56,7 @@ class AbsenceReasonBehavior(str, enum.Enum):
     WORKED = "worked"            # zählt als gearbeitet (wie Fortbildung, §3) → z. B. Schule/Azubi
     PAID_FREE = "paid_free"      # bezahlt frei (wie PAID_LEAVE: Soll→0, saldo-neutral, kein Urlaub)
     OVERTIME_COMP = "overtime_comp"  # Überstundenabbau (wie OVERTIME)
+    UNPAID_FREE = "unpaid_free"  # #376 entschuldigt UNBEZAHLT (Kind krank, unbez. Sonderurlaub) → OTHER
 
 
 # #312: the single source of truth mapping a reason behaviour to the built-in
@@ -65,6 +66,7 @@ BEHAVIOR_TO_ABSENCE_TYPE = {
     AbsenceReasonBehavior.WORKED: AbsenceType.TRAINING,
     AbsenceReasonBehavior.PAID_FREE: AbsenceType.PAID_LEAVE,
     AbsenceReasonBehavior.OVERTIME_COMP: AbsenceType.OVERTIME,
+    AbsenceReasonBehavior.UNPAID_FREE: AbsenceType.OTHER,  # #376
 }
 
 
@@ -85,6 +87,10 @@ class AbsenceReason(Base):
     base_behavior = Column(String(20), nullable=False)  # AbsenceReasonBehavior value
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    # #376: markiert DEN Kind-krank-Grund → zählt gegen das §45-SGB-V-Jahreslimit.
+    # Generisch (v1 nur von "Kind krank" genutzt); nur ein Label-Flag, die
+    # Calc-Mechanik kommt allein aus base_behavior/type.
+    tracks_child_sick_limit = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
