@@ -2,7 +2,9 @@
 
 **Issue:** [#377](https://github.com/phash/praxiszeit/issues/377) — Minijob mit Monatsstunden
 **Datum:** 2026-07-08
-**Status:** Design freigegeben, Implementierung ausstehend
+**Status:** Design freigegeben + Härtungs-Review eingearbeitet (siehe § 7)
+
+> **§ 7 unten** enthält die verbindlichen Modellentscheidungen aus dem 8-Lens-Adversarial-Review — sie **überschreiben** abweichende Formulierungen in §§ 3.3/3.4.
 **Umfang:** Baustein **1** (Mindestlohn anzeigen) + **3** (§ 2 Abs. 2 MiLoG: 50-%-Prüfung **und** 12-Monats-Ausgleichsfrist). Baustein **2** (Wochen↔Monat-Umschaltung / Monatsmodus) ist **separat/später** und NICHT Teil dieser Spec.
 
 ---
@@ -206,3 +208,25 @@ Keine Lohn-/Verdienstdaten gespeichert (einfache Variante). Flag + Stunden sind 
 **Frontend:** `src/stores/systemStore.ts` (minimum_wage) · `src/utils/arbzgWarnings.ts` (2 Codes) · `src/pages/admin/users/UserForm.tsx` (Checkbox+Info) · `src/types/user.ts` · `src/pages/admin/Settings.tsx` (Compliance-Karte) · Überstundenkonto-/Report-Komponente (Badges).
 
 **Doku:** `docs/handbuch/HANDBUCH-ADMIN.md` + `DocViewer.tsx` (In-App-Hilfe) · `CLAUDE.md` (Regel).
+
+---
+
+## 7. Verbindliche Modellentscheidungen aus dem Härtungs-Review
+
+Ein 8-Lens-Adversarial-Review (Verdict: tragfähig, kein Design-Change) hat die Rechen-/Rechtsmodellierung geprüft. Diese Entscheidungen **gelten** und überschreiben §§ 3.3/3.4:
+
+1. **50-%-Basis = FLAT vereinbarte Monatszeit (nicht der Tages-Soll).** Beide Seiten des Vergleichs nutzen `agreed_monthly = weekly_hours × 13/3`:
+   `account_hours = max(0, get_monthly_actual(y,m,up_to_date) − agreed_monthly)` gegen `cap = agreed_monthly / 2`.
+   **Grund:** Der Tages-Soll (`get_monthly_target`) schwankt mit der Werktagszahl (20–23 Mo–Fr → ±~3 h ≈ 28 % des 16,5-h-Caps) **und** wird durch Abwesenheiten reduziert (ein bezahlter Urlaubstag würde sonst fälschlich Kapazität für Extra-Stunden freigeben). Die flache Monatszahl passt zum Minijob mit **festem Monatsentgelt/33 h** und neutralisiert beides. Der echte Monats-Soll kommt mit **Baustein 2**; bis dahin ist die Ableitung × 13/3 die Vertragsgröße. `milog_50_check` guardet zusätzlich auf `user.track_hours`.
+
+2. **Warn-Wortlaut mit Mindestlohn-Caveat.** § 2 Abs. 2 bindet nur die **mindestlohnwirksamen** Stunden; da PraxisZeit keine Lohndaten hält, over-warnt eine reine Stundenprüfung bei Über-Mindestlohn-Vergütung. Alle 50-%-Warnungen + die UserForm-/Handbuch-Infozeile ergänzen: *„… sofern zur Mindestlohnhöhe vergütet; bei höherer Vergütung ggf. unkritisch — bitte prüfen."*
+
+3. **FIFO-Aging seedet den Carryover.** `get_overtime_history_detailed` startet beim letzten `YearCarryover` und setzt den Saldo dort zurück → der **älteste** (überfällig-verdächtige) Bestand aus Vor-Carryover-Jahren fehlt. `settlement_aging` seedet den Carryover-Öffnungssaldo als ältesten Posten (gestempelt auf den Carryover-Monat); liegt trotzdem ein Reset im Aging-Fenster, kommt der Hinweis *„Konto kann nicht vollständig geprüft werden (älter als Abrechnungsfenster)"* statt eines stillen `None`.
+
+4. **Überfällig-Semantik.** „binnen zwölf Kalendermonaten" → `overdue = age_months > 12`, `due_soon = 11 ≤ age ≤ 12`.
+
+5. **MA-Eigenansicht als Warnfläche (Pflicht, war in §§ 3.3–3.6 genannt, aber im Plan nur admin-seitig).** Der MA sieht die Warnungen im **eigenen Überstundenkonto**: `GET /api/dashboard/overtime` (`OvertimeAccount`) trägt `milog_warnings` (self-scoped), Anzeige in `Dashboard.tsx`. **Push zusätzlich** an den MA-Selfservice-Schreibpfaden `create_time_entry` + `update_time_entry` (nicht nur `clock_out`) — der Ziel-MA bucht typischerweise **manuell**. `clock_in` bleibt ausgeschlossen (offener Eintrag, keine `net_hours`).
+
+6. **`UserListResponse` trägt die neuen Felder.** Das Bearbeiten-Formular bezieht den User aus `GET /api/admin/users` → `List[UserListResponse]` (erbt **nicht** `UserBase`). `milog_working_time_account` **und** das bestehende `child_sick_days_per_year` (#376, latenter Bug) müssen dort ergänzt werden, sonst setzt jedes Speichern im Edit-Formular die Werte still auf Default zurück.
+
+7. **`/admin/reports/monthly`:** bewusst **nicht** angefasst; die Admin-Warnfläche ist `users-overview` (Users.tsx). Deviation hier dokumentiert.

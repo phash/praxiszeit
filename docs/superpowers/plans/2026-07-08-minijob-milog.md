@@ -8,7 +8,37 @@
 
 **Tech Stack:** FastAPI (Python 3.12) + SQLAlchemy + Alembic + PostgreSQL 16, React 18 + TS + Tailwind, pytest / Vitest / Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-07-08-minijob-milog-design.md`
+**Spec:** `docs/superpowers/specs/2026-07-08-minijob-milog-design.md` (§ 7 = verbindliche Modellentscheidungen)
+
+## Corrections (verifiziert im Härtungs-Review — ÜBERSCHREIBEN Abweichendes unten)
+
+**Task 2 — system_info Leak-Guard-Test:** `backend/tests/test_deployment_mode.py:83-97` (`test_response_does_not_leak_internal_state`) macht ein **striktes Exact-Set** `set(data.keys()) == {deployment_mode, version, beta, onboarding_enabled, shift_planning_enabled, shift_planning_weekdays}`. `minimum_wage` dazunehmen → Test in Task 2 mit anpassen (`"minimum_wage"` ins erwartete Set) + Datei in `git add`.
+
+**Task 3 — `UserListResponse` (schemas/user.py:148-190) trägt die Felder:** Das Edit-Formular bezieht den User aus `GET /api/admin/users` → `List[UserListResponse]` (erbt NICHT `UserBase`). `milog_working_time_account: bool = False` **UND** `child_sick_days_per_year: Optional[int] = None` (#376-Latent-Bug!) ergänzen — sonst setzt jeder Edit-Save die Werte still auf Default. `update_user` prüfen: übernimmt es explizit gesendete Felder (dann Flag mit-persistiert).
+
+**Task 4 — 50-%-Basis FLAT (verbindlich, Spec § 7.1):** `account_hours_in_month = max(0, get_monthly_actual(db,user,y,m,up_to_date=…) − agreed_monthly)` gegen `cap = agreed_monthly/2`. NICHT `get_monthly_balance` (der nutzt den werktags-/absenz-schwankenden Tages-Soll → false-fires kurze Monate, verpasst lange). `milog_50_check`-Guard zusätzlich `and user.track_hours`. `get_monthly_actual`-Signatur = `(db, user, year, month, up_to_date=None)`.
+
+**Task 5 — FIFO seedet Carryover (Spec § 7.3):** `get_overtime_history_detailed` (calc:681) startet beim letzten `YearCarryover ≤ first-entry-year` und resettet dort (Zeilen 728-734/798-799); die Deltas summieren zu `cumulative − carryover`, der Carryover fehlt als Posten. FIFO mit dem Carryover-Öffnungssaldo als **ältestem** Deposit seeden (`YearCarryover` laden, gestempelt auf Carryover-Jahr,1); sonst Caveat statt `None`. **Überfällig:** `overdue = age_months > 12`, `due_soon = 11 ≤ age ≤ 12` (Spec § 7.4). Zahl auch: `MonthlyOvertime`-Attribute sind `.target`/`.actual`/`.cumulative` (bestätigt).
+
+**Task 6 — Test-Pointer + stale-entry-Guard:** copy-Vorlage ist `backend/tests/test_work_window_integration.py` (`_create_test_app` mit time_entries+admin.router, Fixtures `db/default_tenant/employee/admin_client`, `test_clock_out_caps_late_end ~231-244`) — **nicht** `test_time_entries*.py` (existiert nicht). `clock_out` wirft **400**, wenn `open_entry.date != today` (time_entries.py:357-365) → im Test entweder live clock-in/out mit „jetzt", ODER offenen Eintrag mit festem Datum + `monkeypatch` von `te._now_local`/`te._today_local`. **Push auch** an `create_time_entry` (warnings-Liste :712, `_enrich_response` :791) und `update_time_entry` (`update_warnings` :987, :1050) — Block wie clock_out (nur bei `milog_working_time_account`), gleicher Kanal.
+
+**NEUE Task 6b — MA-Eigenansicht (Spec § 7.5, HIGH):** `OvertimeAccount` (schemas/reports.py:26) bekommt `milog_warnings: list[str] = []`; `dashboard.get_overtime_account` (routers/dashboard.py:137) rechnet `milog_50_check` + `settlement_aging` für **`current_user`** (self-scoped) und füllt sie; `Dashboard.tsx` rendert ein Warn-Badge im Überstundenkonto-Card über die `showArbzgWarnings`-Codes. Ohne diese Task sieht der manuell buchende Minijobber NIE eine Warnung in der eigenen UI.
+
+**Task 7 — Anker + Jahr-Gate:** `users_overview`-Loop = `admin_users.py:168-192`, `today_local` bereits importiert (:9), `is_current_year` bereits berechnet (:166) → milog-Block mit `if is_current_year:` gaten (sonst zeigt eine Vorjahres-Ansicht aktuelle-Monats-Warnungen). `AdminUserOverview`-Konstruktor um `milog_warnings=_milog_w`. `/admin/reports/monthly` bewusst NICHT angefasst (Spec § 7.7).
+
+**Task 8/10 — Frontend-Anker:** `systemStore.fetch` spreadet die Response (`set({info:data})`) → `minimum_wage` fließt automatisch, sobald `SystemInfo` das Feld hat. Badge-Home = `frontend/src/pages/admin/Users.tsx` (`apiClient.get('/admin/users-overview')` :81, inline-forEach-Row-Typ :86, `overtimeInfo`-State :47, `Badge` importiert :10, Desktop-Zelle ~514, + Mobile-Card) — **kein** `child_sick`-Badge existiert (nie gerendert), also frisch bauen.
+
+**Task 6/7/9/11 — Warn-Wortlaut-Caveat (Spec § 7.2):** alle 50-%-Warnstrings + UserForm-/Handbuch-Infozeile ergänzen: „… sofern zur Mindestlohnhöhe vergütet; bei höherer Vergütung ggf. unkritisch — bitte prüfen."
+
+**Task 4/11 — Absenz-Test + Doku:** ein `milog`-Test mit Urlaubstag im Monat (flache Basis → unverändert); Limitierung (echter Monats-Soll erst mit Baustein 2) in CLAUDE.md + Handbuch.
+
+**Task 12 — E2E-Schwelle:** `users-overview` ruft `milog_50_check` OHNE `up_to_date` → voller Monat. Um `cap ≈ 16,5 h` (bzw. flach) zu reißen: **Ist > ~50 h** buchen (z. B. 7×8 h) via `createTimeEntry`-Fixture → `adminApi.post('/admin/users/{id}/time-entries')` (`admin_create_time_entry`; Self-`create_time_entry` 403t MA an Nicht-heute-Tagen). Dann Flag=false → leer.
+
+**Task 6/7 (low) — weitere Schreibpfade:** `admin_create_time_entry`/`admin_update_time_entry` (admin_time_entries.py:38/:148, eigene warnings-Listen :143/:291) + CR-Genehmigung + XLS-Import mutieren das Konto auch. Auflösung: die **MA-Pull-Fläche (Dashboard, Task 6b)** deckt alle passiv ab; zusätzlich milog an `admin_create/admin_update`-warnings hängen; CR/XLS bewusst nur über Pull (dokumentieren).
+
+**Task 11 — Spec § 3.4 Alt-Pseudocode korrigieren:** der `get_overtime_history(db,user)→[(y,m,delta)]`-Code ist falsch (Signatur `(db,user,up_to_year,up_to_month)`, Wert = kumulativ). Beim Spec-Status-Update den §3.4-Body an Task 5 angleichen (Task 5 = Source of Truth). § 7 ist bereits verbindlich.
+
+---
 
 ## Global Constraints
 
