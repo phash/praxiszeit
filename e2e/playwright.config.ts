@@ -10,7 +10,7 @@ export default defineConfig({
   workers: 2,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
-    baseURL: 'http://localhost',
+    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     locale: 'de-DE',

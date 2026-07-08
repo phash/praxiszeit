@@ -244,6 +244,24 @@ def test_child_sick_warning_in_cr_approval(db, admin, employee):
 # --------------------------------------------------------------------------- #
 # users-overview
 # --------------------------------------------------------------------------- #
+def test_child_sick_cap_persisted_on_user_create(db, admin, default_tenant):
+    # Regression (e2e-gefunden): create_user baut User() feldweise → das neue
+    # Feld muss dort explizit gesetzt sein, sonst greift bei Neuanlage nur der
+    # Default (15) statt des mitgegebenen Caps.
+    client = _client_as(db, admin, admin)
+    r = client.post(USERS, json={
+        "username": "e2eemp", "first_name": "E", "last_name": "E",
+        "password": "E2ePass1234!", "role": "employee",
+        "weekly_hours": 40, "vacation_days": 30, "work_days_per_week": 5,
+        "child_sick_days_per_year": 7,
+    })
+    assert r.status_code == 201, r.text
+    uid = r.json()["user"]["id"]
+    got = client.get(f"{USERS}/{uid}")
+    assert got.json()["child_sick_days_per_year"] == 7
+    app.dependency_overrides.clear()
+
+
 def test_users_overview_includes_child_sick(db, admin, employee):
     client = _client_as(db, admin, admin)
     client.put(f"{USERS}/{employee.id}", json={"child_sick_days_per_year": 12})

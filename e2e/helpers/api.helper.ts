@@ -1,4 +1,6 @@
-const API_BASE = 'http://localhost/api';
+// Default: the frontend nginx /api proxy on :80. Overridable via E2E_API_BASE so
+// the suite can run against an alternate host port when :80 is taken.
+const API_BASE = process.env.E2E_API_BASE ?? 'http://localhost/api';
 
 interface LoginResponse {
   access_token: string;
