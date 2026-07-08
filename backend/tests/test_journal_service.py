@@ -132,3 +132,33 @@ def test_journal_day_actuals_windowed_match_monthly_actual(db, test_user):
     assert mar9["actual_hours"] == 0.0   # out-of-window -> kein Ist
     mar23 = next(d for d in result["days"] if d["date"] == "2026-03-23")
     assert mar23["actual_hours"] == 8.0  # in-window -> zaehlt
+
+
+def test_journal_paid_leave_day_type(db, test_user):
+    # Fix: PAID_LEAVE war nicht in _ABSENCE_TYPE_MAP → wurde als "other" typisiert.
+    _make_absence(db, test_user, date(2026, 3, 4), AbsenceType.PAID_LEAVE)
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(d for d in result["days"] if d["date"] == "2026-03-04")
+    assert day["type"] == "paid_leave"
+
+
+def test_journal_masks_custom_reason_absence_without_health_data(db, test_user):
+    # #312/#376 DSGVO: eine Absence mit reason_id (z. B. Kind krank) muss ohne
+    # angeforderte Gesundheitsdaten maskiert werden (Tagestyp + Label → "absent").
+    from app.models import AbsenceReason
+    r = AbsenceReason(tenant_id=DEFAULT_TENANT_ID, name="Kind krank",
+                      base_behavior="unpaid_free", is_active=True, tracks_child_sick_limit=True)
+    db.add(r); db.commit(); db.refresh(r)
+    a = Absence(tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id, date=date(2026, 3, 5),
+                type=AbsenceType.OTHER, hours=Decimal("8"), reason_id=r.id)
+    db.add(a); db.commit()
+
+    masked = journal_service.get_journal(db, test_user, 2026, 3, include_health_data=False)
+    day_m = next(d for d in masked["days"] if d["date"] == "2026-03-05")
+    assert day_m["type"] == "absent"
+    assert day_m["absences"][0]["type"] == "absent"
+    assert "Kind krank" not in str(day_m)
+
+    shown = journal_service.get_journal(db, test_user, 2026, 3, include_health_data=True)
+    day_s = next(d for d in shown["days"] if d["date"] == "2026-03-05")
+    assert day_s["absences"][0]["type"] == "Kind krank"  # eigener Grund-Name sichtbar

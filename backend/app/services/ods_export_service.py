@@ -20,7 +20,7 @@ from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_month, date_in_year
-from app.services.export_service import neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label
+from app.services.export_service import neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label, _group_by_date
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +76,18 @@ def _int_cell(value: int, style=None) -> TableCell:
     cell = TableCell(valuetype="float", value=str(value), stylename=style)
     cell.addElement(P(text=str(value)))
     return cell
+
+
+def _absence_cell_parts(day_absences, reason_names, include_health_data):
+    """Kombiniertes Label + Note für ALLE Abwesenheiten eines Tages (Misch-Tage
+    mit 2 Typen). Masking/Custom-Reason über _absence_export_label."""
+    labels, notes = [], []
+    for a in day_absences:
+        label, show_note = _absence_export_label(a, ABSENCE_LABELS, reason_names, include_health_data)
+        labels.append(f"{label} ({float(a.hours):.1f}h)")
+        if show_note and a.note:
+            notes.append(a.note)
+    return " | ".join(labels), " | ".join(notes)
 
 
 def _empty_cell() -> TableCell:
@@ -167,13 +179,13 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         date_in_month(TimeEntry.date, year, month),
     ).order_by(TimeEntry.start_time).all():
         entries_by_date.setdefault(e.date, []).append(e)
-    absences_by_date = {
-        a.date: a
-        for a in db.query(Absence).filter(
-            Absence.user_id == user.id,
-            date_in_month(Absence.date, year, month),
-        ).all()
-    }
+    # per-Tag LISTE (nicht dict-by-date) — sonst geht der 2. Eintrag eines
+    # Misch-Tags (z. B. ½ Urlaub + ½ Sonstiges) verloren.
+    absences_by_date = _group_by_date(db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026
+        date_in_month(Absence.date, year, month),
+    ).all())
     holidays_by_date = {
         h.date: h
         for h in db.query(PublicHoliday).filter(
@@ -195,7 +207,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         is_sunday = weekday == 6
         is_weekend = weekday >= 5
         is_holiday = current_date in holidays_by_date
-        absence = absences_by_date.get(current_date)
+        day_absences = absences_by_date.get(current_date, [])
+        absence = day_absences[0] if day_absences else None
         day_entries = entries_by_date.get(current_date, [])
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
@@ -212,7 +225,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
 
         if day_entries:
             first_start = day_entries[0].start_time
-            last_end = day_entries[-1].end_time
+            last_end = max((e.end_time for e in day_entries if e.end_time), default=None)  # §16: echtes Tagesende
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
             tr.addElement(_str_cell(first_start.strftime("%H:%M")))
@@ -276,17 +289,15 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
                 if e.note:
                     bem_parts.append(e.note)
             tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
-        elif absence:
+        elif day_absences:
             target = Decimal("0.00")
-            # DSGVO F-003: mask sick absences unless health data explicitly requested
-            # #312: sick AND custom-reason absences are masked (label + note)
-            # unless health data is explicitly requested — a custom reason can be
-            # health-sensitive. Otherwise a custom reason shows its own name.
-            label, _show_note = _absence_export_label(absence, ABSENCE_LABELS, reason_names, include_health_data)
-            note_str = (absence.note or "") if _show_note else ""
+            # DSGVO F-003 / #312: sick + custom-reason absences maskiert (Label +
+            # Note) außer bei explizit angeforderten Gesundheitsdaten. ALLE
+            # Abwesenheiten des Tages (Misch-Tag) werden gerendert.
+            label, note_str = _absence_cell_parts(day_absences, reason_names, include_health_data)
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
-            tr.addElement(_str_cell(f"{label} ({float(absence.hours):.1f}h)"))
+            tr.addElement(_str_cell(label))
             tr.addElement(_str_cell(note_str))
         else:
             target = daily_target
@@ -482,13 +493,12 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         date_in_year(TimeEntry.date, year),
     ).order_by(TimeEntry.start_time).all():
         entries_by_date.setdefault(e.date, []).append(e)
-    absences_by_date = {
-        a.date: a
-        for a in db.query(Absence).filter(
-            Absence.user_id == user.id,
-            date_in_year(Absence.date, year),
-        ).all()
-    }
+    # per-Tag LISTE (Misch-Tage nicht verlieren) — wie im Monats-Sheet.
+    absences_by_date = _group_by_date(db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026
+        date_in_year(Absence.date, year),
+    ).all())
     holidays_by_date = {
         h.date: h
         for h in db.query(PublicHoliday).filter(
@@ -509,7 +519,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         is_sunday = weekday == 6
         is_weekend = weekday >= 5
         is_holiday = current_date in holidays_by_date
-        absence = absences_by_date.get(current_date)
+        day_absences = absences_by_date.get(current_date, [])
+        absence = day_absences[0] if day_absences else None
         day_entries = entries_by_date.get(current_date, [])
         weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
@@ -531,7 +542,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
 
         if day_entries:
             first_start = day_entries[0].start_time
-            last_end = day_entries[-1].end_time
+            last_end = max((e.end_time for e in day_entries if e.end_time), default=None)  # §16: echtes Tagesende
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(float(e.net_hours) for e in day_entries)
             tr.addElement(_str_cell(first_start.strftime("%H:%M")))
@@ -583,17 +594,13 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
                 if e.note:
                     bem_parts.append(e.note)
             tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
-        elif absence:
-            # DSGVO F-003/Art. 9: mask sick absences (label + note) unless health
-            # data is explicitly requested — mirrors _monthly_sheet.
-            # #312: sick AND custom-reason absences are masked (label + note)
-            # unless health data is explicitly requested — a custom reason can be
-            # health-sensitive. Otherwise a custom reason shows its own name.
-            label, _show_note = _absence_export_label(absence, ABSENCE_LABELS, reason_names, include_health_data)
-            note_str = (absence.note or "") if _show_note else ""
+        elif day_absences:
+            # DSGVO F-003/Art. 9 / #312: sick + custom-reason maskiert außer bei
+            # angeforderten Gesundheitsdaten; ALLE Abwesenheiten des Tages (Misch-Tag).
+            label, note_str = _absence_cell_parts(day_absences, reason_names, include_health_data)
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
-            tr.addElement(_str_cell(f"{label} ({float(absence.hours):.1f}h)"))
+            tr.addElement(_str_cell(label))
             tr.addElement(_str_cell(note_str))
         else:
             target = float(daily_target)
@@ -648,7 +655,8 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
 
     headers = [
         "Monat", "Soll (Std)", "Ist (Std)", "Saldo (Std)",
-        "Urlaub (Std)", "Krank (Std)", "Fortbildung (Std)", "Sonstiges (Std)", "Bez. Freistellung (Std)", "Nachtarbeit-Tage (§6)",
+        "Urlaub (Std)", "Krank (Std)", "Fortbildung (Std)", "ÜStd.-Ausgleich (Std)",
+        "Sonstiges (Std)", "Bez. Freistellung (Std)", "Nachtarbeit-Tage (§6)",
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -657,6 +665,7 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
     total_vac = 0.0
     total_sick = 0.0
     total_train = 0.0
+    total_overtime = 0.0
     total_other = 0.0
     total_paid_leave = 0.0
 
@@ -693,6 +702,7 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
         vac = month_absence_hours(AbsenceType.VACATION)
         sick = month_absence_hours(AbsenceType.SICK)
         train = month_absence_hours(AbsenceType.TRAINING)
+        overtime_comp = month_absence_hours(AbsenceType.OVERTIME)
         other = month_absence_hours(AbsenceType.OTHER)
         paid_leave = month_absence_hours(AbsenceType.PAID_LEAVE)
 
@@ -701,6 +711,7 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
         total_vac += vac
         total_sick += sick
         total_train += train
+        total_overtime += overtime_comp
         total_other += other
         total_paid_leave += paid_leave
 
@@ -716,6 +727,7 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
         # DSGVO F-003: mask sick hours unless health data explicitly requested (Art. 9)
         tr.addElement(_float_cell(sick) if include_health_data else _str_cell("–"))
         tr.addElement(_float_cell(train))
+        tr.addElement(_float_cell(overtime_comp))
         tr.addElement(_float_cell(other))
         tr.addElement(_float_cell(paid_leave))
         tr.addElement(_int_cell(night_days))
@@ -733,6 +745,7 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
     # DSGVO F-003: mask sick total unless health data explicitly requested (Art. 9)
     tr.addElement(_float_cell(total_sick) if include_health_data else _str_cell("–"))
     tr.addElement(_float_cell(total_train))
+    tr.addElement(_float_cell(total_overtime))
     tr.addElement(_float_cell(total_other))
     tr.addElement(_float_cell(total_paid_leave))
     tr.addElement(_int_cell(total_night))

@@ -16,6 +16,7 @@ _ABSENCE_TYPE_MAP = {
     AbsenceType.TRAINING: "training",
     AbsenceType.OVERTIME: "overtime",
     AbsenceType.OTHER: "other",
+    AbsenceType.PAID_LEAVE: "paid_leave",  # Fix: sonst als "other" typisiert
 }
 
 
@@ -32,9 +33,27 @@ def get_journal(
     """
     _, last_day = monthrange(year, month)
 
+    # #312/#376 DSGVO: eigene Abwesenheitsgründe können sensibel sein (z. B.
+    # „Kind krank"/„Reha") — jede Absence mit reason_id wird (wie SICK) maskiert,
+    # wenn keine Gesundheitsdaten angefordert sind. Bei angeforderten Daten zeigt
+    # das Label den eigenen Grund-Namen (Parität zu export_/ods_export_service).
+    reason_names: Dict[str, str] = {}
+    if include_health_data:
+        from app.models import AbsenceReason
+        reason_names = {
+            str(r.id): r.name for r in db.query(AbsenceReason).filter(
+                AbsenceReason.tenant_id == user.tenant_id
+            ).all()
+        }
+
+    def _is_masked(a: Absence) -> bool:
+        return not include_health_data and (a.type == AbsenceType.SICK or a.reason_id is not None)
+
     def _abs_type_label(a: Absence) -> str:
-        if not include_health_data and a.type == AbsenceType.SICK:
+        if _is_masked(a):
             return "absent"
+        if a.reason_id is not None:
+            return reason_names.get(str(a.reason_id)) or a.type.value
         return a.type.value
 
     entries = db.query(TimeEntry).filter(
@@ -97,8 +116,9 @@ def get_journal(
         elif day_entries and day_absences:
             day_type = "mixed"
         elif day_absences:
-            # Fix #6: mask a SICK day type when health data is not requested.
-            if not include_health_data and day_absences[0].type == AbsenceType.SICK:
+            # Fix #6 + #312/#376: mask a SICK OR custom-reason day type when health
+            # data is not requested. Sonst zeigt das Tages-Farb-/Label die base-type.
+            if _is_masked(day_absences[0]):
                 day_type = "absent"
             else:
                 day_type = _ABSENCE_TYPE_MAP.get(day_absences[0].type, "other")
