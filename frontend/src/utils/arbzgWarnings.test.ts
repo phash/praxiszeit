@@ -1,5 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
-import { showArbzgWarnings } from './arbzgWarnings';
+import { showArbzgWarnings, stripWarningCode } from './arbzgWarnings';
+
+describe('#377 stripWarningCode', () => {
+  it('strips codes that contain digits (regression: [A-Z_]+ missed the 50)', () => {
+    expect(stripWarningCode('MILOG_ACCOUNT_50: Konto über Grenze')).toBe('Konto über Grenze');
+  });
+  it('strips codes without digits', () => {
+    expect(stripWarningCode('MILOG_SETTLEMENT_DUE: bald fällig')).toBe('bald fällig');
+  });
+  it('leaves a string without a colon unchanged', () => {
+    expect(stripWarningCode('kein Code hier')).toBe('kein Code hier');
+  });
+});
 
 function mockToast() {
   return { warning: vi.fn() };

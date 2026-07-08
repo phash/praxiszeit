@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
+import { stripWarningCode } from '../../utils/arbzgWarnings';
 import { Plus, Edit2, Key, UserX, UserCheck, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight, LogIn } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useToast } from '../../contexts/ToastContext';
@@ -537,7 +538,7 @@ export default function Users() {
                       {milogInfo[user.id]?.length > 0 && (
                         <span
                           className="ml-2 inline-block"
-                          title={milogInfo[user.id].map((w) => w.replace(/^[A-Z_]+:\s*/, '')).join('\n')}
+                          title={milogInfo[user.id].map(stripWarningCode).join('\n')}
                         >
                           <Badge variant="warning">MiLoG</Badge>
                         </span>

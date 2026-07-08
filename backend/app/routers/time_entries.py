@@ -1064,7 +1064,9 @@ def update_time_entry(
             )
 
     # #377 § 2 Abs. 2 MiLoG: auch beim Bearbeiten (verändert die Monatssumme).
-    if current_user.milog_working_time_account:
+    # Nur bei Selbst-Bearbeitung — die Warnung gilt dem Eintrags-Eigentümer, nicht
+    # einem (evtl. selbst geflaggten) fremd-bearbeitenden Akteur.
+    if entry.user_id == current_user.id and current_user.milog_working_time_account:
         _m = milog_service.milog_50_check(
             db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
         if _m:

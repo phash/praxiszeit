@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { stripWarningCode } from '../utils/arbzgWarnings';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
@@ -543,7 +544,7 @@ export default function Dashboard() {
                 <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-2">
                   {overtimeAccount.milog_warnings!.map((w, i) => (
                     <p key={i} className="text-xs text-amber-800">
-                      {w.replace(/^[A-Z_]+:\s*/, '')}
+                      {stripWarningCode(w)}
                     </p>
                   ))}
                 </div>

@@ -212,13 +212,16 @@ def get_overtime_account(
 
     # #377 § 2 Abs. 2 MiLoG: self-scoped weiche Warnungen im EIGENEN Überstundenkonto
     # (der manuell buchende Minijobber sieht sie hier, unabhängig vom clock_out-Push).
+    # Perf: KEIN zweiter Overtime-Pass — history_detail/current_month_detail sind
+    # oben bereits berechnet (mit cutoff = month-to-date).
     milog_warnings: list[str] = []
-    if current_user.milog_working_time_account:
-        _chk = milog_service.milog_50_check(db, current_user, now.year, now.month, up_to_date=cutoff)
+    if current_user.milog_working_time_account and current_user.track_hours:
+        _actual = current_month_detail.actual if current_month_detail is not None else Decimal('0.00')
+        _chk = milog_service.milog_50_check(db, current_user, now.year, now.month, monthly_actual=_actual)
         if _chk:
             milog_warnings.append(milog_service.milog_50_warning_text(_chk))
-        _aging = milog_service.settlement_aging(db, current_user, today_local())
-        if _aging and (_aging["overdue"] or _aging["due_soon"]):
+        _aging = milog_service.settlement_aging(db, current_user, today_local(), detailed=history_detail)
+        if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
             milog_warnings.append(milog_service.settlement_warning_text(_aging))
 
     return OvertimeAccount(

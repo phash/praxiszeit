@@ -154,17 +154,48 @@ def test_milog_50_check_flat_baseline(db, employee, monkeypatch):
     assert milog_service.milog_50_check(db, employee, 2026, 3) is None
 
 
-def test_flat_baseline_ignores_vacation_day(db, employee, monkeypatch):
-    # Flache Basis: die 33h-Vertragsgröße hängt NICHT am (absenz-reduzierten)
-    # Tages-Soll → ein Urlaubstag verschiebt cap/Basis nicht.
+def test_milog_50_check_at_cap_boundary_returns_none(db, employee, monkeypatch):
+    # Strikt '>' — genau auf dem Cap ist KEINE Warnung. Dynamisch gerechnet, damit
+    # der 7,62h-Fixture-Wert (agreed≈33,02) nicht hart verdrahtet werden muss.
     employee.weekly_hours = Decimal("7.62"); employee.milog_working_time_account = True
     db.commit()
-    # Die vereinbarte Monatszeit (Basis) = 33h, unabhängig vom (absenz-reduzierten)
-    # Tages-Soll — ein Urlaubstag im Monat verschiebt sie nicht.
+    agreed = milog_service.agreed_monthly_hours(db, employee, date(2026, 3, 1))
+    at_cap = agreed + agreed / 2  # surplus == cap
     monkeypatch.setattr(milog_service.calculation_service, "get_monthly_actual",
-                        lambda *a, **k: Decimal("50"))
-    r = milog_service.milog_50_check(db, employee, 2026, 3)
-    assert r["agreed_monthly"] == pytest.approx(33.0, abs=0.6)
+                        lambda *a, **k: at_cap)
+    assert milog_service.milog_50_check(db, employee, 2026, 3) is None
+    monkeypatch.setattr(milog_service.calculation_service, "get_monthly_actual",
+                        lambda *a, **k: at_cap + Decimal("0.1"))  # knapp drüber
+    assert milog_service.milog_50_check(db, employee, 2026, 3) is not None
+
+
+def test_milog_50_check_zero_agreed_returns_none(db, employee, monkeypatch):
+    # weekly_hours 0 → agreed 0 → kein sinnvoller Cap → keine Warnung trotz Ist.
+    employee.weekly_hours = Decimal("0"); employee.milog_working_time_account = True
+    db.commit()
+    monkeypatch.setattr(milog_service.calculation_service, "get_monthly_actual",
+                        lambda *a, **k: Decimal("40"))
+    assert milog_service.milog_50_check(db, employee, 2026, 3) is None
+
+
+def test_flat_baseline_ignores_vacation_day(db, employee):
+    # Flache Basis (Fix): ein VACATION-Tag im Monat darf die Konto-Plusstunden NICHT
+    # erhöhen (unter dem alten balance-basierten Ansatz hätte der reduzierte Soll die
+    # Kapazität aufgebläht). Gegen echte Berechnung, ohne Monkeypatch.
+    from datetime import time as _time
+    from app.models import TimeEntry, Absence, AbsenceType
+    employee.weekly_hours = Decimal("7.62"); employee.milog_working_time_account = True
+    db.commit()
+    for d in (date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4), date(2026, 3, 5), date(2026, 3, 6)):
+        db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, date=d,
+                         start_time=_time(8, 0), end_time=_time(16, 0), break_minutes=0))
+    db.commit()
+    acc_no_vac = milog_service.account_hours_in_month(db, employee, 2026, 3)
+    db.add(Absence(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, date=date(2026, 3, 9),
+                   type=AbsenceType.VACATION, hours=Decimal("8"), half_day=False))
+    db.commit()
+    acc_with_vac = milog_service.account_hours_in_month(db, employee, 2026, 3)
+    assert acc_no_vac == acc_with_vac and acc_no_vac > 0
 
 
 # --------------------------------------------------------------------------- #
@@ -233,6 +264,9 @@ def test_users_overview_milog_warnings(db, admin, employee, monkeypatch):
                         lambda *a, **k: {"account_hours": 20.0, "cap": 16.5,
                                          "agreed_monthly": 33.0, "caveat": "x"})
     monkeypatch.setattr("app.services.milog_service.settlement_aging", lambda *a, **k: None)
+    # users-overview gatet den milog-Block auf non-empty detailed (Perf-Refaktor)
+    monkeypatch.setattr(milog_service.calculation_service,
+                        "get_overtime_history_detailed", lambda *a, **k: {(2025, 1): _MO(0, 0)})
     client = _client_as(db, admin, admin)
     rows = client.get(f"{USERS}-overview").json()
     row = next(r for r in rows if r["user_id"] == str(employee.id))
@@ -261,6 +295,56 @@ def test_dashboard_overtime_milog_warnings(db, admin, employee, monkeypatch):
     app.dependency_overrides.clear()
 
 
+def test_settlement_aging_carries_deficit_overhang(db, employee, monkeypatch):
+    # +5h (2025-01), −12h (2025-03) → Konto net −7h; +10h (2025-08) füllt erst das
+    # Defizit (7h) auf, nur 3h bleiben gebankt (ab 2025-08), NICHT die vollen 10h.
+    employee.milog_working_time_account = True
+    db.commit()
+    hist = {(2025, 1): _MO(0, 5), (2025, 3): _MO(12, 0), (2025, 8): _MO(0, 10)}
+    monkeypatch.setattr(milog_service.calculation_service,
+                        "get_overtime_history_detailed", lambda *a, **k: hist)
+    res = milog_service.settlement_aging(db, employee, date(2026, 1, 1))
+    assert res["oldest_year"] == 2025 and res["oldest_month"] == 8
+    assert abs(res["hours"] - 3.0) < 0.01
+
+
+def test_settlement_aging_incomplete_when_only_seed_carries(db, employee, monkeypatch):
+    # Carryover 2026 = 4h offen, jung (Seed auf Dez 2025); as_of Feb 2026 → age 2,
+    # nicht überfällig → incomplete (wahres Alter der gefalteten Historie unbekannt).
+    employee.milog_working_time_account = True
+    db.commit()
+    db.add(YearCarryover(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, year=2026,
+                         overtime_hours=Decimal("4"), vacation_days=Decimal("0")))
+    db.commit()
+    monkeypatch.setattr(milog_service.calculation_service,
+                        "get_overtime_history_detailed", lambda *a, **k: {(2026, 1): _MO(0, 0)})
+    res = milog_service.settlement_aging(db, employee, date(2026, 2, 1))
+    assert res["incomplete"] is True and res["overdue"] is False
+    assert "nicht vollständig" in milog_service.settlement_warning_text(res)
+
+
+def test_settlement_aging_real_history(db, employee):
+    # Ohne Monkeypatch: echte get_overtime_history_detailed-Integration + echter,
+    # tenant-gefilterter YearCarryover-Query. Ein großer Alt-Carryover (100h) und
+    # last_work_day direkt nach dem Seed-Monat, damit kein späterer Monats-Soll den
+    # Bestand aufzehrt → der geseedete Alt-Bestand bleibt sichtbar + überfällig.
+    from datetime import time as _time
+    from app.models import TimeEntry
+    employee.milog_working_time_account = True
+    employee.first_work_day = date(2024, 1, 1)
+    employee.last_work_day = date(2024, 1, 15)
+    db.commit()
+    db.add(YearCarryover(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, year=2024,
+                         overtime_hours=Decimal("100"), vacation_days=Decimal("0")))
+    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, date=date(2024, 1, 10),
+                     start_time=_time(8, 0), end_time=_time(12, 0), break_minutes=0))
+    db.commit()
+    res = milog_service.settlement_aging(db, employee, date(2026, 6, 1))
+    assert res is not None
+    assert res["oldest_year"] == 2023 and res["oldest_month"] == 12  # Seed = Dez Vorjahr
+    assert res["overdue"] is True and res["hours"] > 50  # ~30 Monate alt, kaum aufgezehrt
+
+
 def test_create_time_entry_emits_milog_for_flagged_user(db, admin, employee, monkeypatch):
     from app.services.timezone_service import today_local
     employee.milog_working_time_account = True
@@ -274,4 +358,62 @@ def test_create_time_entry_emits_milog_for_flagged_user(db, admin, employee, mon
         "date": today, "start_time": "09:00", "end_time": "12:00", "break_minutes": 0})
     assert r.status_code == 201, r.text
     assert any("MILOG_ACCOUNT_50" in w for w in r.json().get("warnings", []))
+    app.dependency_overrides.clear()
+
+
+def test_clock_out_emits_milog_for_flagged_user(db, admin, employee, monkeypatch):
+    employee.milog_working_time_account = True
+    db.commit()
+    monkeypatch.setattr("app.services.milog_service.milog_50_check",
+                        lambda *a, **k: {"account_hours": 20.0, "cap": 16.5,
+                                         "agreed_monthly": 33.0, "caveat": "x"})
+    client = _client_as(db, employee, admin)
+    ci = client.post("/api/time-entries/clock-in", json={})
+    assert ci.status_code == 201, ci.text
+    co = client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
+    assert co.status_code == 200, co.text
+    assert any("MILOG_ACCOUNT_50" in w for w in co.json().get("warnings", []))
+    app.dependency_overrides.clear()
+
+
+def test_update_time_entry_emits_milog_for_flagged_user(db, admin, employee, monkeypatch):
+    from app.services.timezone_service import today_local
+    employee.milog_working_time_account = True
+    db.commit()
+    client = _client_as(db, employee, admin)
+    today = today_local().isoformat()
+    created = client.post("/api/time-entries/", json={
+        "date": today, "start_time": "09:00", "end_time": "12:00", "break_minutes": 0})
+    assert created.status_code == 201, created.text
+    eid = created.json()["id"]
+    monkeypatch.setattr("app.services.milog_service.milog_50_check",
+                        lambda *a, **k: {"account_hours": 20.0, "cap": 16.5,
+                                         "agreed_monthly": 33.0, "caveat": "x"})
+    upd = client.put(f"/api/time-entries/{eid}", json={"end_time": "13:00"})
+    assert upd.status_code == 200, upd.text
+    assert any("MILOG_ACCOUNT_50" in w for w in upd.json().get("warnings", []))
+    app.dependency_overrides.clear()
+
+
+def test_users_overview_settlement_warning_branch(db, admin, employee, monkeypatch):
+    employee.milog_working_time_account = True
+    db.commit()
+    monkeypatch.setattr("app.services.milog_service.milog_50_check", lambda *a, **k: None)
+    # get_overtime_history_detailed muss non-empty sein, sonst wird der Block geskippt
+    monkeypatch.setattr(milog_service.calculation_service,
+                        "get_overtime_history_detailed", lambda *a, **k: {(2025, 1): _MO(0, 0)})
+    monkeypatch.setattr("app.services.milog_service.settlement_aging",
+                        lambda *a, **k: {"oldest_year": 2024, "oldest_month": 1, "age_months": 20,
+                                         "hours": 9.0, "overdue": True, "due_soon": False,
+                                         "incomplete": False})
+    client = _client_as(db, admin, admin)
+    row = next(r for r in client.get(f"{USERS}-overview").json() if r["user_id"] == str(employee.id))
+    assert any("MILOG_SETTLEMENT_DUE" in w for w in row["milog_warnings"])
+    # Nicht fällig (overdue/due_soon/incomplete alle False) → keine Settlement-Warnung
+    monkeypatch.setattr("app.services.milog_service.settlement_aging",
+                        lambda *a, **k: {"oldest_year": 2025, "oldest_month": 12, "age_months": 2,
+                                         "hours": 3.0, "overdue": False, "due_soon": False,
+                                         "incomplete": False})
+    row2 = next(r for r in client.get(f"{USERS}-overview").json() if r["user_id"] == str(employee.id))
+    assert not any("MILOG_SETTLEMENT_DUE" in w for w in row2["milog_warnings"])
     app.dependency_overrides.clear()

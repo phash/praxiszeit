@@ -173,16 +173,21 @@ def users_overview(
         cutoff = calculation_service.get_soll_cutoff_date(db, u) if is_current_year else None
         ytd = calculation_service.get_ytd_summary(db, u, year, cutoff_date=cutoff)
         # #377 § 2 Abs. 2 MiLoG: weiche Warnungen je MA. Nur in der LAUFENDEN-Jahr-
-        # Ansicht (die Prüfung ist immer aktueller Monat / Aging bis heute).
+        # Ansicht (die Prüfung ist immer aktueller Monat / Aging bis heute). Perf:
+        # EIN Overtime-Pass je Flag-MA — beide Signale aus demselben `detailed`.
         _milog_w: list[str] = []
-        if is_current_year and u.milog_working_time_account:
+        if is_current_year and u.milog_working_time_account and u.track_hours:
             _t = today_local()
-            _chk = milog_service.milog_50_check(db, u, _t.year, _t.month)
-            if _chk:
-                _milog_w.append(milog_service.milog_50_warning_text(_chk))
-            _aging = milog_service.settlement_aging(db, u, _t)
-            if _aging and (_aging["overdue"] or _aging["due_soon"]):
-                _milog_w.append(milog_service.settlement_warning_text(_aging))
+            _detailed = calculation_service.get_overtime_history_detailed(db, u, _t.year, _t.month)
+            if _detailed:
+                _cur = _detailed.get((_t.year, _t.month))
+                _actual = _cur.actual if _cur is not None else 0.0
+                _chk = milog_service.milog_50_check(db, u, _t.year, _t.month, monthly_actual=_actual)
+                if _chk:
+                    _milog_w.append(milog_service.milog_50_warning_text(_chk))
+                _aging = milog_service.settlement_aging(db, u, _t, detailed=_detailed)
+                if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
+                    _milog_w.append(milog_service.settlement_warning_text(_aging))
         result.append(AdminUserOverview(
             user_id=str(u.id),
             first_name=u.first_name,

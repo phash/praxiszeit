@@ -30,6 +30,15 @@ function splitCodeAndDetail(entry: string): { code: string; detail?: string } {
  * (List[AbsenceResponse]) into a single string[] for showArbzgWarnings. `data`
  * is `any` (axios) → typed narrowing happens here so call sites stay clean.
  */
+/**
+ * #377: strip a leading stable warning code + colon from a raw warning string
+ * for inline display (e.g. "MILOG_ACCOUNT_50: …" → "…"). Matches everything up
+ * to the first colon so codes with digits are handled too.
+ */
+export function stripWarningCode(raw: string): string {
+  return raw.replace(/^[^:]+:\s*/, '');
+}
+
 export function collectAbsenceWarnings(data: unknown): string[] {
   const rows = Array.isArray(data) ? (data as Array<{ warnings?: string[] }>) : [];
   return [...new Set(rows.flatMap((a) => a.warnings ?? []))];
