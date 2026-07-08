@@ -250,7 +250,7 @@ class TestOdsMultiAbsenceDay:
         import zipfile
         _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.VACATION, hours=4)
         _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.OTHER, hours=4)
-        out = generate_monthly_report(db, test_user, 2026, 3, include_health_data=True)
+        out = generate_monthly_report(db, 2026, 3, include_health_data=True)
         with zipfile.ZipFile(out) as zf:
             content = zf.read("content.xml").decode("utf-8", errors="replace")
         assert "Urlaub" in content and "Sonstiges" in content
@@ -258,7 +258,7 @@ class TestOdsMultiAbsenceDay:
     def test_classic_has_overtime_column(self, db, test_user):
         import zipfile
         _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.OVERTIME, hours=8)
-        out = generate_yearly_report_classic(db, test_user, 2026, include_health_data=True)
+        out = generate_yearly_report_classic(db, 2026, include_health_data=True)
         with zipfile.ZipFile(out) as zf:
             content = zf.read("content.xml").decode("utf-8", errors="replace")
         assert "ÜStd.-Ausgleich" in content
