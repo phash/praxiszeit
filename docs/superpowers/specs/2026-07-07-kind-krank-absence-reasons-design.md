@@ -2,7 +2,7 @@
 
 **Issue:** [#376](https://github.com/phash/praxiszeit/issues/376) — „Kind krank" abbilden
 **Datum:** 2026-07-07
-**Status:** Design freigegeben, Implementierung ausstehend
+**Status:** Implementiert (Branch `feat/376-kind-krank`) — Backend+Frontend+Doku, Tests grün, Migration 061 verifiziert
 **Baut auf:** #312 (Eigene Abwesenheitsgründe / Custom Absence Reasons)
 
 ---

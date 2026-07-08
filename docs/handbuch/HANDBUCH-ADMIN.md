@@ -615,12 +615,21 @@ Im Bereich **„Eigene Abwesenheitsgründe"** legen Sie zusätzliche, frei benan
 | Basis-Verhalten | Wirkung |
 |---|---|
 | **Zählt als gearbeitet** | Die geplanten Stunden werden als Arbeitszeit gutgeschrieben (wie Fortbildung) – passend für **Berufsschule** (Arbeitszeit nach § 15 JArbSchG), es entstehen keine Stundenverluste. |
-| **Bezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug. |
+| **Bezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug – der Arbeitgeber zahlt weiter. |
+| **Unbezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug, aber **unbezahlt** (Lohn gekürzt) – für **Kind krank** (§45 SGB V) oder unbezahlten Sonderurlaub. |
 | **Überstundenabbau** | Das Überstundenkonto sinkt um das Tagessoll. |
 
 Das Basis-Verhalten ist **nach dem Anlegen fix**. Gründe lassen sich umbenennen, umfärben und deaktivieren (deaktivierte stehen beim Buchen nicht mehr zur Auswahl, bleiben aber an bestehenden Abwesenheiten erhalten). Beim Eintragen einer Abwesenheit erscheinen die eigenen Gründe unter **„Eigene Gründe"** in der Typ-Auswahl.
 
 > **Datenschutz:** Da ein eigener Grund sensibel sein kann (z. B. „Reha"), werden Abwesenheiten mit eigenem Grund im Team-Kalender für andere Mitarbeitende nur als **„abwesend"** angezeigt – nur Admins sehen die Bezeichnung.
+
+#### Kind krank & Sonderurlaub-Vorlagen (#376)
+
+Über die Schaltflächen unter **„Vorlagen (1-Klick aktivieren)"** legen Sie gängige Gründe direkt an – **Kind krank** (unbezahlt frei), **Todesfall naher Angehöriger**, **Eigene Hochzeit**, **Geburt eines Kindes**, **Umzug (betrieblich)**, **Arztbesuch**, **Pflege naher Angehöriger**. Das voreingestellte Verhalten (bezahlt/unbezahlt) können Sie je Betrieb frei anpassen – die rechtliche Einordnung (z. B. ob § 616 BGB im Arbeitsvertrag ausgeschlossen ist) liegt bei Ihnen.
+
+**Kind-krank-Jahreslimit (§45 SGB V):** Für den Grund **„Kind krank"** zählt PraxisZeit die genommenen Tage pro Kalenderjahr. Den Standard-Jahresanspruch stellen Sie unter **Einstellungen → „Kind-krank-Standardanspruch"** ein (Voreinstellung 15 Tage); pro Mitarbeiter:in lässt sich im Benutzerformular ein **individueller Wert** hinterlegen (Feld „Kind-krank-Tage/Jahr", leer = Standard). Wird der Anspruch beim Buchen überschritten, erscheint ein **Hinweis** – die Abwesenheit wird **trotzdem erfasst** (nicht blockiert), da der Fehltag dokumentiert werden muss (die Krankenkasse zahlt Kinderkrankengeld ggf. nicht mehr). Den Verbrauch je Mitarbeiter:in sehen Sie in der **Benutzerübersicht**.
+
+> **Hinweis:** PraxisZeit bildet die reine Zeiterfassung ab. Die Meldung an Krankenkasse und Lohnbuchhaltung erfolgt außerhalb der Software.
 
 ---
 
