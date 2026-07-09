@@ -295,7 +295,11 @@ download_with_sha() {
 
     if [ -n "$sha_url" ]; then
         local sha_target="${target}.sha256"
-        if curl -fsSL -o "${sha_target}" "$sha_url" 2>/dev/null; then
+        # --skip-download + bereits gecachte, nicht-leere .sha256 → gegen den
+        # Cache-Sidecar prüfen statt neu zu laden (flaky GitHub-Release-CDN gibt
+        # sporadisch 504 auf die .sha256-URL, was sonst den Build abbricht UND
+        # den gecachten Blob löscht — obwohl beides lokal längst verifiziert ist).
+        if { [ "$SKIP_DOWNLOAD" = true ] && [ -s "${sha_target}" ]; } || curl -fsSL -o "${sha_target}" "$sha_url" 2>/dev/null; then
             local expected
             expected=$(awk '{print $1}' "${sha_target}")
             local actual
