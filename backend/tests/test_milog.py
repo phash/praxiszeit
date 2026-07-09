@@ -345,6 +345,54 @@ def test_settlement_aging_real_history(db, employee):
     assert res["overdue"] is True and res["hours"] > 50  # ~30 Monate alt, kaum aufgezehrt
 
 
+def test_settlement_aging_full_current_month_soll_eats_seed(db, employee, monkeypatch):
+    """#377 Regression (admin-overview Stichtag): der LAUFENDE (unvollständige)
+    Monat darf NICHT mit vollem Monats-Soll gegen einen nur monats-bis-heute-Ist
+    ins Aging fließen — das fabriziert ein Phantom-Defizit, das im FIFO die
+    älteste überfällige Einlage aufzehrt und MILOG_SETTLEMENT_DUE unterdrückt.
+    Der Stichtag-getrimmte Detail-Pass (aktueller Monat ~0) erhält den Bestand."""
+    employee.milog_working_time_account = True
+    db.commit()
+    db.add(YearCarryover(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, year=2025,
+                         overtime_hours=Decimal("8"), vacation_days=Decimal("0")))
+    db.commit()
+    # OHNE Stichtag: laufender Monat (2026,6) trägt volles Soll (40h) gegen 0 Ist
+    # → −40 → verzehrt den 8h-Seed komplett → deposits leer → None (Warnung weg).
+    monkeypatch.setattr(milog_service.calculation_service, "get_overtime_history_detailed",
+                        lambda *a, **k: {(2026, 6): _MO(40, 0)})
+    assert milog_service.settlement_aging(db, employee, date(2026, 6, 15)) is None
+    # MIT Stichtag: laufender Monat auf monats-bis-heute getrimmt (~0 Soll) → Seed
+    # überlebt, sichtbar + überfällig.
+    monkeypatch.setattr(milog_service.calculation_service, "get_overtime_history_detailed",
+                        lambda *a, **k: {(2026, 6): _MO(0, 0)})
+    res = milog_service.settlement_aging(db, employee, date(2026, 6, 15))
+    assert res is not None and res["overdue"] is True and abs(res["hours"] - 8.0) < 0.01
+
+
+def test_users_overview_feeds_settlement_cutoff_trimmed_detail(db, admin, employee, monkeypatch):
+    """#377 Regression: die Admin-Benutzerübersicht MUSS get_overtime_history_detailed
+    MIT dem Saldo-Stichtag aufrufen (Parität zum MA-Dashboard, #313). Ohne cutoff
+    verschwindet die MILOG_SETTLEMENT_DUE-Warnung des laufenden Monats aus der
+    compliance-relevanten Arbeitgeber-Ansicht."""
+    from app.services import calculation_service
+    employee.milog_working_time_account = True
+    db.commit()
+    captured = {}
+
+    def _spy(db_, u, y, m, **kwargs):
+        if u.id == employee.id:
+            captured["cutoff_date"] = kwargs.get("cutoff_date", "MISSING")
+        return {(2025, 1): _MO(0, 0)}
+
+    monkeypatch.setattr(calculation_service, "get_overtime_history_detailed", _spy)
+    client = _client_as(db, admin, admin)
+    client.get(f"{USERS}-overview")
+    expected = calculation_service.get_soll_cutoff_date(db, employee)
+    assert captured.get("cutoff_date") == expected  # Stichtag durchgereicht
+    assert captured["cutoff_date"] is not None       # im laufenden Jahr nie None
+    app.dependency_overrides.clear()
+
+
 def test_create_time_entry_emits_milog_for_flagged_user(db, admin, employee, monkeypatch):
     from app.services.timezone_service import today_local
     employee.milog_working_time_account = True

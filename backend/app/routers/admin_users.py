@@ -8,12 +8,12 @@ from typing import List
 from datetime import datetime, timezone, timedelta
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, TimeEntry, Absence, WorkingHoursChange, ChangeRequest, TimeEntryAuditLog, UserRole
+from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, TimeEntryAuditLog, UserRole
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
-from app.services import auth_service, calculation_service, milog_service
+from app.services import auth_service, calculation_service, milog_service, settings_service
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -164,6 +164,16 @@ def users_overview(
     ).all()
 
     is_current_year = (year == today_local().year)
+    # #376 N+1-Vermeidung: der Tenant-Default wird EINMAL aufgelöst; die
+    # per-User Absence⋈AbsenceReason-Verbrauchsquery entfällt komplett, solange
+    # der Tenant keinen Grund mit tracks_child_sick_limit führt (der Regelfall).
+    _cs_default = settings_service.get_int_setting(
+        db, "child_sick_days_default", current_user.tenant_id, 15
+    )
+    _cs_tenant_tracks = db.query(AbsenceReason.id).filter(
+        AbsenceReason.tenant_id == current_user.tenant_id,  # F-026
+        AbsenceReason.tracks_child_sick_limit.is_(True),
+    ).first() is not None
     result = []
     for u in users:
         vac = calculation_service.get_vacation_account(db, u, year)
@@ -178,7 +188,14 @@ def users_overview(
         _milog_w: list[str] = []
         if is_current_year and u.milog_working_time_account and u.track_hours:
             _t = today_local()
-            _detailed = calculation_service.get_overtime_history_detailed(db, u, _t.year, _t.month)
+            # #313 Saldo-Stichtag: den Stichtag durchreichen (Parität zum
+            # MA-Dashboard, dashboard.py). Ohne cutoff trägt der laufende Monat
+            # ein VOLLES Monats-Soll gegen einen nur monats-bis-heute-Ist → ein
+            # Phantom-Defizit, das im FIFO die älteste (überfällige) Einlage
+            # aufzehrt und die MILOG_SETTLEMENT_DUE-Warnung unterdrückt.
+            _detailed = calculation_service.get_overtime_history_detailed(
+                db, u, _t.year, _t.month, cutoff_date=cutoff
+            )
             if _detailed:
                 _cur = _detailed.get((_t.year, _t.month))
                 _actual = _cur.actual if _cur is not None else 0.0
@@ -203,8 +220,14 @@ def users_overview(
                 remaining_days=vac["remaining_days"],
             ),
             overtime=YtdOvertime(year=year, **ytd),
-            child_sick_used=float(calculation_service.child_sick_days_used(db, u, year)),  # #376
-            child_sick_cap=calculation_service.child_sick_cap(db, u),  # #376
+            child_sick_used=(
+                float(calculation_service.child_sick_days_used(db, u, year))
+                if _cs_tenant_tracks else 0.0
+            ),  # #376
+            child_sick_cap=(
+                int(u.child_sick_days_per_year)
+                if u.child_sick_days_per_year is not None else _cs_default
+            ),  # #376
             milog_warnings=_milog_w,  # #377
         ))
     return result
