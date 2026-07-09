@@ -174,9 +174,13 @@ Frei benannte Gründe (z. B. „Schule" für Azubis) mit Farbe + **Basis-Verhalt
 |-----------------|---------|
 | **zählt als gearbeitet** | Stunden als Arbeitszeit gutgeschrieben (wie Fortbildung) |
 | **bezahlt frei** | Tagessoll 0, **kein** Urlaubsabzug |
+| **unbezahlt frei** | Tagessoll 0, **kein** Urlaubsabzug, aber **unbezahlt** (Lohn gekürzt) – z. B. Kind krank (§45 SGB V) |
 | **Überstundenabbau** | Überstundenkonto sinkt um Tagessoll |
 
 Erscheinen beim Buchen unter „Eigene Gründe". Im Team-Kalender für Kolleg:innen als **„abwesend"** maskiert (Datenschutz); nur Admins sehen die Bezeichnung. Deaktivierbar.
+
+**Kind krank (#376):** Ein „unbezahlt frei"-Grund mit gesetztem **Kind-krank-Limit** zählt gegen den §45-SGB-V-Jahresanspruch (Default 15 Tage, pro MA überschreibbar). Überschreitung → **weiche Warnung** beim Buchen (nie blockierend). Verbrauch je MA in der **Benutzerübersicht**.
+**Minijob/MiLoG (#377):** Opt-in „Arbeitszeitkonto (§2 Abs.2 MiLoG)" je MA → weiche Warnungen bei >50 % Monats-Plus + 12-Monats-Ausgleichsfrist. Mindestlohn 13,90 €/h (2026), 14,60 €/h (2027).
 
 ---
 

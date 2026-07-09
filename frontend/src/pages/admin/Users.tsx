@@ -47,6 +47,7 @@ export default function Users() {
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
   const [overtimeInfo, setOvertimeInfo] = useState<Record<string, OvertimeInfo>>({}); // #194
   const [milogInfo, setMilogInfo] = useState<Record<string, string[]>>({}); // #377 §2 Abs.2 MiLoG
+  const [childSickInfo, setChildSickInfo] = useState<Record<string, { used: number; cap: number }>>({}); // #376 Kind krank §45 SGB V
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -86,20 +87,24 @@ export default function Users() {
         const vMap: Record<string, VacationInfo> = {};
         const oMap: Record<string, OvertimeInfo> = {};
         const mMap: Record<string, string[]> = {};
+        const csMap: Record<string, { used: number; cap: number }> = {};
         overview.data.forEach((row: {
           user_id: string; track_hours: boolean;
           vacation: VacationInfo; overtime: { overtime: number };
           milog_warnings?: string[]; // #377
+          child_sick_used?: number; child_sick_cap?: number; // #376
         }) => {
           vMap[row.user_id] = row.vacation;
           // Review R3: defensive — a missing overtime object must not throw
           // here and wedge the whole overview into "Lädt…" forever.
           oMap[row.user_id] = { overtime: row.overtime?.overtime ?? 0, track_hours: row.track_hours };
           mMap[row.user_id] = row.milog_warnings ?? []; // #377
+          csMap[row.user_id] = { used: row.child_sick_used ?? 0, cap: row.child_sick_cap ?? 0 }; // #376
         });
         setVacationInfo(vMap);
         setOvertimeInfo(oMap);
         setMilogInfo(mMap);
+        setChildSickInfo(csMap);
       } catch {
         // overview optional — the user list still renders without it
       }
@@ -542,6 +547,19 @@ export default function Users() {
                         >
                           <Badge variant="warning">MiLoG</Badge>
                         </span>
+                      )}
+                      {/* #376 Kind krank §45 SGB V: Jahresverbrauch je MA */}
+                      {childSickInfo[user.id]?.used > 0 && (
+                        <div
+                          className={`mt-1 text-xs ${
+                            childSickInfo[user.id].used > childSickInfo[user.id].cap
+                              ? 'text-red-600 font-medium'
+                              : 'text-gray-500'
+                          }`}
+                          title={`Kind krank (§45 SGB V): ${childSickInfo[user.id].used.toFixed(1)} von ${childSickInfo[user.id].cap} Tagen ${new Date().getFullYear()} verbraucht`}
+                        >
+                          Kind krank: {childSickInfo[user.id].used.toFixed(1)}/{childSickInfo[user.id].cap}
+                        </div>
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
