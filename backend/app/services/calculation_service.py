@@ -999,6 +999,22 @@ def get_ytd_summary(
     }
 
 
+def half_special_day_weight(d: date, special_cfg: dict) -> Decimal:
+    """#394: Tage-Kosten-Gewicht EINES Tages für die tagebasierte Urlaubs-/Absenz-
+    Zählung. ``Decimal('0.5')`` wenn ``d`` als „halber Feiertag" (24./31.12.,
+    ``special_day_target_factor == 0,5``) konfiguriert ist, sonst ``Decimal('1')``.
+
+    DIE eine Quelle für alle tagebasierten Urlaubs-/Absenz-Kosten — ``get_vacation_
+    account``, ``absence_days``, ``closure_split_service`` UND die Budget-Pre-Checks
+    (absences/admin_vacations/vacation_requests/admin_change_requests). So kann die
+    #394-Halbtags-Regel nie wieder zwischen den Buchungspfaden divergieren (der
+    Re-Split + die Pre-Checks hatten den Faktor zunächst NICHT — Release-Review 1.14.3).
+    ``special_cfg`` ist die je Jahr geladene ``get_special_day_config``-Map.
+    """
+    f = special_days_service.special_day_target_factor(d, special_cfg)
+    return Decimal('0.5') if (f is not None and f == Decimal('0.5')) else Decimal('1')
+
+
 def absence_days(db: Session, user: User, absences: list,
                  wh_changes: Optional[List[WorkingHoursChange]] = None) -> Decimal:
     """Zähle Abwesenheiten TAGEBASIERT (Tagesprinzip §3 BUrlG, #156/#205) — exakt
@@ -1015,20 +1031,17 @@ def absence_days(db: Session, user: User, absences: list,
     # (halber Arbeitstag). Config lazy je Jahr (Liste kann jahresübergreifend sein).
     _sd_cfg: dict = {}
 
-    def _half_special(d: date) -> bool:
+    def _weight(d: date) -> Decimal:
         cfg = _sd_cfg.get(d.year)
         if cfg is None:
             cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
             _sd_cfg[d.year] = cfg
-        f = special_days_service.special_day_target_factor(d, cfg)
-        return f is not None and f == Decimal('0.5')
+        return half_special_day_weight(d, cfg)
 
     for a in absences:
         if not tracked:
             base = Decimal('0.5') if a.half_day else Decimal('1')
-            if _half_special(a.date):
-                base *= Decimal('0.5')
-            total += base
+            total += base * _weight(a.date)
             continue
         dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date, wh_changes=wh_changes))
         if dt_day > 0:
@@ -1036,9 +1049,7 @@ def absence_days(db: Session, user: User, absences: list,
                 total += Decimal(str(a.hours)) / Decimal(str(dt_day))
             else:
                 base = Decimal('0.5') if a.half_day else Decimal('1')
-                if _half_special(a.date):
-                    base *= Decimal('0.5')
-                total += base
+                total += base * _weight(a.date)
     return total
 
 
@@ -1215,12 +1226,9 @@ def get_vacation_account(
             else:
                 # #205: tagebasiert (Voll-Tag 1,0; Halbtag 0,5) — unabhaengig von
                 # spaeteren Aenderungen des Tagessolls (kein Drift mehr).
+                # #394: × 0,5 an einem Halbtags-Sondertag (zentraler Helper).
                 base = Decimal('0.5') if a.half_day else Decimal('1')
-                # #394: Halbtags-Sondertag → 0,5 × Basis (voller Urlaubstag = 0,5).
-                sd_factor = special_days_service.special_day_target_factor(a.date, special_cfg_vac)
-                if sd_factor is not None and sd_factor == Decimal('0.5'):
-                    base *= Decimal('0.5')
-                used_days += base
+                used_days += base * half_special_day_weight(a.date, special_cfg_vac)
 
     # #146: a special day (24./31.12.) configured as `free` + counts_as_vacation
     # consumes one vacation day too. We account for it non-invasively here
@@ -1249,15 +1257,11 @@ def get_vacation_account(
     # zum 0,5-Vorab-Budgetcheck). Legacy-Rows (half_day=None, vor dem Feld) und
     # Voll-Tage zaehlen 1,0 wie bisher.
     if daily_target <= 0:
-        def _untracked_vac_weight(a):
-            base = Decimal('0.5') if a.half_day else Decimal('1')
-            # #394: halber Feiertag (24./31.12.) → 0,5 (auch für untracked/leitende).
-            f = special_days_service.special_day_target_factor(a.date, special_cfg_vac)
-            if f is not None and f == Decimal('0.5'):
-                base *= Decimal('0.5')
-            return base
+        # #394: halber Feiertag (24./31.12.) → 0,5 (auch für untracked/leitende).
         used_days = sum(
-            (_untracked_vac_weight(a) for a in vacation_absences),
+            ((Decimal('0.5') if a.half_day else Decimal('1'))
+             * half_special_day_weight(a.date, special_cfg_vac)
+             for a in vacation_absences),
             Decimal('0'),
         )
         for d in deduction_dates:

@@ -239,7 +239,13 @@ def review_vacation_request(
                 ]
             else:
                 billable_days = year_dates
-            days_needed = len(billable_days) * (0.5 if vr.half_day else 1.0)
+            # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
+            _base = 0.5 if vr.half_day else 1.0
+            _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
+            days_needed = sum(
+                _base * float(calculation_service.half_special_day_weight(d, _cfg))
+                for d in billable_days
+            )
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

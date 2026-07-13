@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+## [1.14.3] - 2026-07-14
+
+Patch-Release. Kundenreport (#394) + adversarial multi-agent-Release-Review
+(1 Medium + 4 Low gefixt). Keine Migration.
+
+### 🐛 Behoben
+- **Betriebsferien beachten „halbe Feiertage" (24./31.12.) korrekt (#394).** Fiel
+  ein als `half_day` konfigurierter Sondertag in eine Betriebsferien-Schließung,
+  wurde er als **voller** Tag verbucht — voller Überstundenausgleich bzw. ein
+  ganzer Urlaubstag für einen halben Arbeitstag. Jetzt: `0,5 × Tagessoll` gebucht,
+  0,5 Urlaubstage/Split-Budget verbraucht. Die 0,5-Tage-Kosten laufen zentral über
+  `calculation_service.half_special_day_weight()` in `get_vacation_account`,
+  `absence_days`, dem #314-Re-Split **und** allen Urlaubs-Budget-Pre-Checks — byte-
+  identisch für alle Nicht-Halbtags-Sondertage.
+- **Betriebsferien-Abwesenheiten sind Einzeltage (#394).** Jede generierte
+  Abwesenheit trug bisher das Ende der ganzen Schließung als `end_date` — die
+  Abwesenheitsliste zeigte je Zeile die komplette Spanne („24.12 – 31.12"). Jetzt
+  Einzeltag; die Zugehörigkeit steckt weiter in der Notiz „Betriebsferien: …".
+
+## [1.14.2] - 2026-07-13
+
+Patch-Release. Performance + Kundenreport. Eine Migration (064).
+
+### 🐛 Behoben / ⚡ Performance
+- **Benutzerübersicht schneller (#204).** Feiertage und Arbeitszeit-Änderungen
+  werden einmal vorab geladen statt pro Mitarbeiter (N+1 eliminiert); die
+  Berechnung bleibt byte-identisch.
+- **Übertrag Urlaubstage mit 2 Nachkommastellen (#383).** Das Feld akzeptiert nun
+  z. B. 3,33 statt nur 0,5-Schritte (`YearCarryover.vacation_days` → `Numeric(5,2)`,
+  Migration 064).
+
 ## [1.14.1] - 2026-07-13
 
 Feature- und Härtungs-Release, adversarial multi-agent-reviewt (0 High/Medium,
