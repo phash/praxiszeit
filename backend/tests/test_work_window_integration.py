@@ -358,6 +358,25 @@ def test_admin_create_duplicate_start_returns_409(db, employee, admin, admin_cli
     assert "Startzeit" in r2.json()["detail"]
 
 
+def test_admin_update_duplicate_start_returns_409(db, employee, admin, admin_client):
+    """#375-Review: editing an entry's start onto an existing sibling's start
+    returns a clean 409, not a 500 from the UNIQUE constraint. Self-edit (same
+    start) must NOT 409 (id-excluded)."""
+    a = admin_client.post(f"/api/admin/users/{employee.id}/time-entries",
+                          json={"date": "2026-06-02", "start_time": "08:00", "end_time": "10:00", "break_minutes": 0})
+    assert a.status_code == 201, a.text
+    b = admin_client.post(f"/api/admin/users/{employee.id}/time-entries",
+                          json={"date": "2026-06-02", "start_time": "13:00", "end_time": "15:00", "break_minutes": 0})
+    assert b.status_code == 201, b.text
+    bid = b.json()["id"]
+    # Move b's start onto a's start (08:00) → 409.
+    coll = admin_client.put(f"/api/admin/time-entries/{bid}", json={"start_time": "08:00"})
+    assert coll.status_code == 409, coll.text
+    # Self-edit (only end_time) must still succeed (id excluded from the dup check).
+    ok = admin_client.put(f"/api/admin/time-entries/{bid}", json={"end_time": "16:00"})
+    assert ok.status_code == 200, ok.text
+
+
 def test_cr_approval_create_clamps_to_soll_window(db, employee, admin, admin_client):
     """CR-Genehmigung (request_type=create, entry_kind=time_entry) klappt
     start_time ins Soll-Fenster und speichert den Rohwert in raw_start_time.
