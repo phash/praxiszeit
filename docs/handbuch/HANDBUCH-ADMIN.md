@@ -182,6 +182,7 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 | **Individuelle Tagesstunden** | Abweichende Stundenverteilung Mo–Fr statt einheitlich (nur bei aktiver Stundenzählung) |
 | **Abteilung/Bereich** | Optionale Zuordnung (Freitext); ermöglicht Filterung im Abwesenheitskalender |
 | **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein; nur bei aktiver Stundenzählung) |
+| **Übertrag Urlaubstage** | Alt-/Vorjahres-Resturlaub, der dem **Urlaubsbudget des Startjahres** zugerechnet wird (z. B. beim Systemwechsel bei unterjährigem Eintritt der Resturlaub aus den Monaten vor dem Eintritt). Minus und Kommastellen möglich; gilt für **alle** MA (auch ohne Stundenzählung). |
 | **Soll-Arbeitszeiten je Wochentag** | Optionaler Soll-Beginn / Soll-Ende pro Wochentag (Mo–Fr) – siehe eigener Abschnitt „Soll-Arbeitszeiten" unten. |
 
 > **Wichtig – zwei getrennte Einstellungen, bitte nicht verwechseln:**
