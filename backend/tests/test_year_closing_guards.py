@@ -233,3 +233,19 @@ def test_delete_closure_after_closing_returns_stale_warning(db, default_tenant, 
     _app.dependency_overrides.clear()
     assert r.status_code == 200, r.text
     assert "Jahresabschluss 2027" in r.json()["warning"]
+
+
+def test_carryover_vacation_days_two_decimals(db, admin, emp):
+    """#383-Reopen (philvdb): der Urlaubs-Übertrag muss 2 Nachkommastellen halten
+    (krumme Werte, z. B. 3,33). Round-Trip über die Admin-Endpoint + Modell.
+    (Präzision selbst = Numeric(5,2), auf Postgres verifiziert; SQLite ignoriert
+    die Skala, daher hier v. a. Schema-/Flow-Guard.)"""
+    client = _client_as(db, admin)
+    r = client.put(f"/api/admin/users/{emp.id}/carryovers/2026",
+                   json={"overtime_hours": 0.0, "vacation_days": 3.33})
+    assert r.status_code == 200, r.text
+    assert float(r.json()["vacation_days"]) == 3.33
+    lst = client.get(f"/api/admin/users/{emp.id}/carryovers").json()
+    row = next(c for c in lst if c["year"] == 2026)
+    assert float(row["vacation_days"]) == 3.33
+    _app.dependency_overrides.clear()
