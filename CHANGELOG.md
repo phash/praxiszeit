@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-07-13
+
+Feature- und Härtungs-Release, adversarial multi-agent-reviewt (0 High/Medium,
+2 Low gefixt). Eine additive Migration (063).
+
+### ✨ Neu
+- **Abwesenheit/Eintrag für den laufenden Tag (heute) buchen (#375).** Die per-Tag
+  „+"/Bearbeiten-Aktion im Monatsjournal war auf `isPastDay` gegated (strikt vor
+  heute) — meldete sich jemand für HEUTE krank, konnte der Admin das nicht direkt
+  eintragen. `MonthlyJournal.tsx` unterscheidet jetzt `isPastDay`/`isFutureDay`:
+  Admins buchen Vergangenheit **und** heute (Zukunft weiter über den Antragsweg
+  gesperrt); die MA-Eigenansicht bleibt unverändert vergangenheits-only.
+- **„Übertrag Urlaubstage" im UserForm (#383).** Analog zum „Anfangssaldo
+  Überstunden" gibt es in den Mitarbeitereigenschaften ein Feld, das
+  `YearCarryover.vacation_days` des Startjahres setzt. Bei unterjährigem Start
+  („zum Stichtag eingestellt", `first_work_day`) bleibt so Vorjahres-Resturlaub
+  erhalten statt nur anteilig gerechnet zu werden. Reiner Frontend-Change (Backend
+  `upsert_carryover` bestand bereits), keine Migration.
+- **Minijob-Prüfung: vereinbarte Monatsarbeitszeit (#377 Baustein 2a).** Opt-in
+  `User.agreed_monthly_hours` (nullable, Migration 063): ist es gesetzt, nutzt
+  `milog_service.agreed_monthly_hours()` exakt diese Zahl für die 50-%-Prüfung nach
+  § 2 Abs. 2 MiLoG statt der bisherigen flachen Ableitung aus den Wochenstunden
+  (× 13/3). Das Aging bleibt Soll-basiert (unverändert). Ohne Eingabe wie bisher.
+
+### 🐞 Behoben
+- **Whitescreen-Härtung — Render-Crash bei „Etwas ist schiefgelaufen" (#382).**
+  Systemischer Root-Fix: Der Response-Interceptor in `api/client.ts` rejected jetzt
+  jede 200-Antwort mit HTML-String-Body (SPA-`index.html` statt JSON, wie sie im
+  Auth-/Proxy-/SPA-Fallback-Grenzfall nach einer `token_version`-Invalidierung
+  auftreten kann) → Aufrufer landen in ihrem `.catch` statt die App zu
+  white-screenen. Schließt die erreichbare Crash-Klasse überall auf einmal.
+- **Duplicate-Start-Guards für Admin-Schreibpfade (Review-Low, #389/#393).**
+  `admin_create_time_entry` und `admin_update_time_entry` spiegeln jetzt den
+  409-Duplicate-Start-Guard des MA-Pfads (self-excluded beim Edit) → sauberes
+  HTTP 409 statt UNIQUE-Constraint-500, wenn das neue Journal-„+" für heute mit
+  einem offenen Clock-in derselben Startminute kollidiert.
+
+## [1.14.0] - 2026-07-09
+
+Feature-Release (MINOR — inhaltlich das reviewte/getestete 1.13.1, als MINOR
+umbenannt wegen neuer nutzersichtbarer Fläche; #386). Zwei additive Migrationen
+(061, 062).
+
+### ✨ Neu
+- **„Kind krank" + Sonderurlaub-Gründe (#376).** Baut auf den Custom Absence
+  Reasons (#312) auf: neues Verhalten `unpaid_free` → `AbsenceType.OTHER`
+  (entschuldigt unbezahlt), ein Preset-Katalog gängiger Gründe (1-Klick aktivieren,
+  kein DB-Seed) sowie ein „Kind krank"-Zähler je Mitarbeiter:in mit weicher
+  Warnung, wenn die üblichen Grenztage nach § 45 SGB V erreicht sind (per-MA-Cap +
+  Tenant-Default). Migration 061.
+- **Minijob-Compliance: Mindestlohn + § 2 Abs. 2 MiLoG (#377, Baustein 1+3).**
+  Baustein 1 blendet den gültigen gesetzlichen Mindestlohn ein (datumsabhängige
+  Konstante 13,90 € → 14,60 € ab 2027). Baustein 3 prüft für Minijobber auf
+  Arbeitszeitkonto die 50-%-Arbeitszeitgrenze: month-to-date beim Ausstempeln sowie
+  im Monatsreport/Konto, mit 12-Monats-Ausgleichsfrist via FIFO-Aging. Per-User-
+  Opt-in-Flag (Migration 062), weiche Warnungen, keine Lohndaten. Baustein 2
+  (Monatsmodus) folgte in 1.14.1.
+
+### 🐞 Behoben
+- **MiLoG `settlement_aging`-Stichtag-Fix + Review-Härtung (#384).**
+- **Export-Korrektheit + DSGVO-Fixes aus dem Export-Prozess-Review (#380).**
+
 ## [1.13.0] - 2026-07-02
 
 Feature-Release mit zwei Kundenwünschen, je adversarial multi-agent-reviewt
