@@ -78,6 +78,45 @@ describe('#377 UserForm MiLoG checkbox', () => {
     });
     expect((screen.getByLabelText(/Arbeitszeitkonto/i) as HTMLInputElement).checked).toBe(true);
   });
+
+  it('#377 2a: shows the monthly-hours field only when the account flag is on', () => {
+    renderForm();
+    expect(screen.queryByLabelText(/Vereinbarte Monatsarbeitszeit/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
+    expect(screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/i)).toBeInTheDocument();
+  });
+
+  it('#377 2a: prefills agreed_monthly_hours from editUser', () => {
+    renderForm({
+      editUser: {
+        id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
+        weekly_hours: 20, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+        is_active: true, milog_working_time_account: true, agreed_monthly_hours: 33,
+      },
+    });
+    expect((screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/i) as HTMLInputElement).value).toBe('33');
+  });
+
+  it('#377 2a: sends agreed_monthly_hours in the update payload', async () => {
+    getMock.mockResolvedValue({ data: [] });
+    render(
+      <ToastProvider>
+        <UserForm onSaved={() => {}} editUser={{
+          id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
+          weekly_hours: 20, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+          is_active: true, milog_working_time_account: true, agreed_monthly_hours: 33,
+        } as never} />
+      </ToastProvider>,
+    );
+    const field = screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/i);
+    fireEvent.change(field, { target: { value: '40' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
+      expect(call).toBeTruthy();
+      expect(call![1]).toMatchObject({ agreed_monthly_hours: 40 });
+    });
+  });
 });
 
 describe('#383 Übertrag Urlaubstage', () => {
