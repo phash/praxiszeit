@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import date, timedelta
+from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 
@@ -125,6 +126,17 @@ def _create_closure_absences(
     workdays = sorted(workdays)
     affected = 0
 
+    # #394: half-day special days (24./31.12. configured as "halber Feiertag")
+    # have a 0.5 target factor. The closure must book only HALF a day for them —
+    # otherwise a full vacation/overtime day is deducted for a 0.5-Soll day
+    # (customer report philvdb). `free` special days already reduce the target to
+    # 0 and are excluded from `workdays` upstream; only `half_day` reaches here.
+    # Config is per-year, shared across all employees → load once.
+    special_cfg_by_year = {
+        yr: special_days_service.get_special_day_config(db, current_user.tenant_id, yr)
+        for yr in {d.year for d in workdays}
+    }
+
     # #204: Statt ~3 Queries pro (MA × Arbeitstag) — bei z. B. 40 MA × 15 Tagen
     # ~1.800 SELECTs — die Referenzdaten in je EINER Query vorladen und in-memory
     # nachschlagen. Logik unveraendert.
@@ -220,9 +232,21 @@ def _create_closure_absences(
                     )
                     db.delete(entry)
 
+            # #394: a `half_day` special day (24./31.12.) contributes only 0.5×
+            # its target — book a HALF day (half the target hours, half_day flag,
+            # 0.5 budget consumption) instead of a full one.
+            sd_factor = special_days_service.special_day_target_factor(
+                workday, special_cfg_by_year[workday.year]
+            )
+            if sd_factor is not None and sd_factor == Decimal("0"):
+                continue  # `free` day — defensive; already excluded from workdays
+            is_half_special = sd_factor is not None and sd_factor == Decimal("0.5")
+            booked_target = day_target * Decimal("0.5") if is_half_special else day_target
+            day_consumption = 0.5 if is_half_special else 1.0
+
             # #314: decide VACATION vs OVERTIME per day. VACATION while the
-            # remaining budget covers a full day; afterwards OVERTIME (no minus-
-            # vacation). Only positive-target days consume the budget snapshot.
+            # remaining budget covers this day's consumption; afterwards OVERTIME
+            # (no minus-vacation). Only positive-target days consume the snapshot.
             day_type = absence_type
             if emp_split and day_target > 0:
                 yr = workday.year
@@ -237,9 +261,9 @@ def _create_closure_absences(
                     remaining_by_year[yr] = float(
                         calculation_service.get_vacation_account(db, employee, yr)["remaining_days"]
                     )
-                if remaining_by_year[yr] >= 1.0:
+                if remaining_by_year[yr] >= day_consumption:
                     day_type = AbsenceType.VACATION
-                    remaining_by_year[yr] -= 1.0
+                    remaining_by_year[yr] -= day_consumption
                 else:
                     day_type = AbsenceType.OVERTIME
 
@@ -247,13 +271,23 @@ def _create_closure_absences(
                 user_id=employee.id,
                 tenant_id=current_user.tenant_id,
                 date=workday,
-                end_date=closure.end_date,
+                # #394 Teil B: jede generierte Absence ist ein EINZELTAG. Vorher
+                # trug jeder Tag end_date=closure.end_date -> die Abwesenheitsliste
+                # zeigte je Zeile die ganze Closure-Spanne (z. B. "24.12 - 31.12"),
+                # der Schichtplaner las sie als Mehrtages-Span. Die Zugehoerigkeit
+                # zur Schließung steckt in note ("Betriebsferien: ...") + closure_id.
+                end_date=None,
                 type=day_type,
-                hours=float(day_target),
-                # #205-Konsistenz (Review 2026-06-23): Betriebsferien sind immer
-                # volle Tage -> half_day=False, damit get_vacation_account den
-                # tagebasierten (WHChange-stabilen) Pfad nimmt statt der Legacy-
-                # Stundenlogik (die bei spaeterer Stundenaenderung driften wuerde).
+                hours=float(booked_target),
+                # #205-Konsistenz (Review 2026-06-23): Betriebsferien decken den
+                # GANZEN (Arbeits-)Tag ab -> half_day=False (voller Absenz-Tag),
+                # damit get_vacation_account den tagebasierten (WHChange-stabilen)
+                # Pfad nimmt und das Tagessoll voll auf 0 setzt (kein Rest-Defizit).
+                # #394: an einem `half_day`-Sondertag (24./31.12.) ist der Tag nur
+                # ein halber Arbeitstag -> hours=0,5×Soll (oben) + Urlaubs-/Absenz-
+                # KOSTEN 0,5 kommen ueber den Sondertags-Faktor in get_vacation_
+                # account/absence_days, NICHT ueber half_day (das wuerde das Soll
+                # doppelt halbieren -> Phantom-Defizit).
                 half_day=False,
                 note=f"Betriebsferien: {closure.name}",
                 closure_id=closure.id,
@@ -481,7 +515,7 @@ def update_closure(
     ).all()
 
     # Remove absences for days that are no longer covered by the closure;
-    # keep the rest in sync (note on rename, end_date on range change,
+    # keep the rest in sync (note on rename, single-day end_date reset per #394,
     # type on Urlaub<->Freistellung switch, #145). Each covered day holds at
     # most one closure-absence (the create helper skips days with an existing
     # absence), so flipping its type can never collide with the
@@ -495,7 +529,9 @@ def update_closure(
         else:
             if name_changed:
                 absence.note = f"Betriebsferien: {data.name}"
-            absence.end_date = data.end_date
+            # #394 Teil B: Closure-Absencen sind Einzeltage (siehe _create_closure_
+            # absences) — nie die ganze Spanne an jedem Datum.
+            absence.end_date = None
             if type_changed:
                 absence.type = new_absence_type
 
