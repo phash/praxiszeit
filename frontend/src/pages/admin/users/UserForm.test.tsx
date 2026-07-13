@@ -1,13 +1,27 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import { useSystemStore } from '../../../stores/systemStore';
 import UserForm from './UserForm';
 
-// carryover-fetch (nur im Edit-Modus) neutralisieren
+// Exposed mocks so #383 tests can configure the /carryovers fetch and assert on
+// the PUT. Defaults keep the existing tests' carryover-useEffect a no-op.
+const getMock = vi.fn();
+const putMock = vi.fn();
+const postMock = vi.fn();
 vi.mock('../../../api/client', () => ({
-  default: { get: vi.fn().mockResolvedValue({ data: [] }), post: vi.fn(), put: vi.fn() },
+  default: {
+    get: (...a: unknown[]) => getMock(...a),
+    put: (...a: unknown[]) => putMock(...a),
+    post: (...a: unknown[]) => postMock(...a),
+  },
 }));
+
+beforeEach(() => {
+  getMock.mockReset().mockResolvedValue({ data: [] });
+  putMock.mockReset().mockResolvedValue({ data: {} });
+  postMock.mockReset().mockResolvedValue({ data: { user: { id: 'new-user-1' } } });
+});
 
 function renderForm(props: Record<string, unknown> = {}) {
   return render(
@@ -63,5 +77,116 @@ describe('#377 UserForm MiLoG checkbox', () => {
       },
     });
     expect((screen.getByLabelText(/Arbeitszeitkonto/i) as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe('#383 Übertrag Urlaubstage', () => {
+  const editUser2026 = {
+    id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
+    weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+    is_active: true, first_work_day: '2026-06-01',
+  };
+
+  it('renders the field and prefills it from the start-year vacation_days carryover', async () => {
+    getMock.mockResolvedValue({ data: [{ year: 2026, overtime_hours: 5, vacation_days: 8 }] });
+    render(
+      <ToastProvider>
+        <UserForm onSaved={() => {}} editUser={editUser2026 as never} />
+      </ToastProvider>,
+    );
+    const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
+    await waitFor(() => expect((field as HTMLInputElement).value).toBe('8'));
+  });
+
+  it('saves the field value to /carryovers/{startYear} as vacation_days', async () => {
+    getMock.mockResolvedValue({ data: [{ year: 2026, overtime_hours: 5, vacation_days: 8 }] });
+    render(
+      <ToastProvider>
+        <UserForm onSaved={() => {}} editUser={editUser2026 as never} />
+      </ToastProvider>,
+    );
+    const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
+    await waitFor(() => expect((field as HTMLInputElement).value).toBe('8'));
+    fireEvent.change(field, { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
+      expect(call).toBeTruthy();
+      expect(String(call![0])).toContain('/carryovers/2026');
+      expect(call![1]).toMatchObject({ vacation_days: 10 });
+    });
+  });
+
+  it('falls back to the current year when first_work_day is unset', async () => {
+    const y = new Date().getFullYear();
+    getMock.mockResolvedValue({ data: [{ year: y, overtime_hours: 0, vacation_days: 2 }] });
+    render(
+      <ToastProvider>
+        <UserForm onSaved={() => {}} editUser={{ ...editUser2026, first_work_day: undefined } as never} />
+      </ToastProvider>,
+    );
+    const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
+    await waitFor(() => expect((field as HTMLInputElement).value).toBe('2')); // loaded for current year
+    fireEvent.change(field, { target: { value: '3.5' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
+      expect(call).toBeTruthy();
+      expect(String(call![0])).toContain(`/carryovers/${y}`);
+      expect(call![1]).toMatchObject({ vacation_days: 3.5 });
+    });
+  });
+
+  it('does not write a carryover when the prefill load failed (no clobber of an unknown value)', async () => {
+    getMock.mockRejectedValue(new Error('network')); // /carryovers GET fails
+    render(
+      <ToastProvider>
+        <UserForm onSaved={() => {}} editUser={editUser2026 as never} />
+      </ToastProvider>,
+    );
+    const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
+    fireEvent.change(field, { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => expect(putMock).toHaveBeenCalled()); // the user PUT
+    // loadedCarryoverYear stayed null → carryover write is suppressed …
+    expect(putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'))).toBeUndefined();
+    // … and the admin is warned (not silently told "erfolgreich").
+    await waitFor(() =>
+      expect(screen.getByText(/konnte nicht geladen werden und wurde NICHT gesetzt/i)).toBeInTheDocument(),
+    );
+  });
+
+  it('re-prefills the carryover from the NEW start year when first_work_day is changed across a year (M-C1: no clobber)', async () => {
+    getMock.mockResolvedValue({
+      data: [
+        { year: 2026, overtime_hours: 5, vacation_days: 8 },
+        { year: 2027, overtime_hours: 9, vacation_days: 12 },
+      ],
+    });
+    render(
+      <ToastProvider>
+        <UserForm onSaved={() => {}} editUser={editUser2026 as never} />
+      </ToastProvider>,
+    );
+    const vac = await screen.findByLabelText(/Übertrag Urlaubstage/i);
+    await waitFor(() => expect((vac as HTMLInputElement).value).toBe('8')); // 2026 row
+    // Move first_work_day into 2027 → the field must reflect 2027's own carryover
+    // (12), NOT copy 2026's value (8) into 2027 on save.
+    fireEvent.change(screen.getByDisplayValue('2026-06-01'), { target: { value: '2027-03-01' } });
+    await waitFor(() => expect((vac as HTMLInputElement).value).toBe('12'));
+  });
+
+  it('writes NO carryover row for an untouched user (both values 0, none existing)', async () => {
+    getMock.mockResolvedValue({ data: [] }); // no existing carryover
+    render(
+      <ToastProvider>
+        <UserForm onSaved={() => {}} editUser={editUser2026 as never} />
+      </ToastProvider>,
+    );
+    await screen.findByLabelText(/Übertrag Urlaubstage/i);
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => expect(putMock).toHaveBeenCalled()); // the user PUT itself
+    const carryoverCall = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
+    expect(carryoverCall).toBeUndefined();
   });
 });

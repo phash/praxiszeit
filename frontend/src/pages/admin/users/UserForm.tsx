@@ -60,9 +60,16 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     scheduled_start_friday: '',
     scheduled_end_friday: '',
     overtime_carryover: 0, // #158: Anfangssaldo Überstunden (kein User-Feld, separater Carryover-Call)
+    vacation_carryover: 0, // #383: Übertrag Urlaubstage (kein User-Feld, YearCarryover.vacation_days des Startjahres)
   });
   // #158: vorhandener Vortrag zum Startjahr — wird beim Speichern erhalten.
   const [hadCarryover, setHadCarryover] = useState(false);
+  // #383: das Jahr, für das die Carryover-Felder erfolgreich geladen wurden.
+  // Nur wenn es == carryoverYear ist, dürfen die Feldwerte beim Speichern (Edit)
+  // in dieses Jahr geschrieben werden — sonst (Ladefehler oder noch laufender
+  // Re-Fetch nach first_work_day-Wechsel) NICHT schreiben, um kein fremdes/
+  // altes Jahr zu clobbern.
+  const [loadedCarryoverYear, setLoadedCarryoverYear] = useState<number | null>(null);
 
   useEffect(() => {
     if (editUser) {
@@ -103,35 +110,59 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         scheduled_start_friday: editUser.scheduled_start_friday?.substring(0, 5) || '',
         scheduled_end_friday: editUser.scheduled_end_friday?.substring(0, 5) || '',
         overtime_carryover: 0,
+        vacation_carryover: 0,
       });
     }
   }, [editUser]);
 
-  // #158: beim Bearbeiten den Anfangssaldo (Überstunden-Carryover des Startjahres)
-  // laden, damit das Feld den aktuellen Wert zeigt und der Urlaubs-Vortrag erhalten bleibt.
+  // #158/#383: das Carryover-Startjahr leitet sich aus dem LIVE-Formular ab
+  // (nicht aus editUser), damit ein Ändern von „Erster Arbeitstag" das Jahr
+  // mitzieht und die Felder für das neue Jahr neu geladen werden.
+  // String-Slice statt new Date(...).getFullYear() — ein 'YYYY-MM-DD' würde als
+  // UTC-Mitternacht geparst und in Zeitzonen hinter UTC aufs Vorjahr rutschen.
+  const carryoverYear = formData.first_work_day
+    ? parseInt(formData.first_work_day.slice(0, 4), 10)
+    : new Date().getFullYear();
+
+  // #158/#383: beim Bearbeiten den Anfangssaldo (Überstunden + Urlaub) des
+  // Startjahres laden. Kein Row → Felder auf 0 zurücksetzen (M-C1: ein Wechsel
+  // von first_work_day über eine Jahresgrenze darf NIE die Werte des alten
+  // Jahres ins neue Jahr kopieren/clobbern — die Felder spiegeln immer das
+  // aktuelle carryoverYear).
   useEffect(() => {
     if (!editUser) {
       setHadCarryover(false);
+      setLoadedCarryoverYear(null);
       return;
     }
-    const startYear = editUser.first_work_day
-      ? new Date(editUser.first_work_day).getFullYear()
-      : new Date().getFullYear();
+    let cancelled = false;
+    // #383: solange (neu) geladen wird, gilt das Jahr als NICHT geladen — ein
+    // Save in diesem Fenster darf die Feldwerte nicht in carryoverYear schreiben.
+    setLoadedCarryoverYear(null);
     (async () => {
       try {
         const res = await apiClient.get<Array<{ year: number; overtime_hours: number; vacation_days: number }>>(
           `/admin/users/${editUser.id}/carryovers`,
         );
-        const row = res.data.find((c) => c.year === startYear);
-        if (row) {
-          setFormData((prev) => ({ ...prev, overtime_carryover: row.overtime_hours }));
-          setHadCarryover(true);
-        }
+        if (cancelled) return;
+        const row = res.data.find((c) => c.year === carryoverYear);
+        setFormData((prev) => ({
+          ...prev,
+          overtime_carryover: row ? row.overtime_hours : 0,
+          vacation_carryover: row ? row.vacation_days : 0, // #383
+        }));
+        setHadCarryover(!!row);
+        setLoadedCarryoverYear(carryoverYear); // Felder repräsentieren jetzt carryoverYear
       } catch {
         /* Carryover optional — Fehler hier nicht blockierend */
+        if (!cancelled) {
+          setHadCarryover(false);
+          setLoadedCarryoverYear(null); // unbekannter Stand → beim Speichern nicht schreiben
+        }
       }
     })();
-  }, [editUser]);
+    return () => { cancelled = true; };
+  }, [editUser, carryoverYear]);
 
   useEffect(() => {
     if (formData.work_days_per_week > 0) {
@@ -145,9 +176,9 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     if (submitting) return;
     setSubmitting(true);
     try {
-      // #158: overtime_carryover is NOT a user field — it goes to the carryover
-      // endpoint separately. Keep it out of the user payload.
-      const { overtime_carryover, ...userFields } = formData;
+      // #158/#383: overtime_carryover + vacation_carryover are NOT user fields —
+      // they go to the carryover endpoint separately. Keep them out of the payload.
+      const { overtime_carryover, vacation_carryover, ...userFields } = formData;
       const payload = {
         ...userFields,
         first_work_day: formData.first_work_day || null,
@@ -164,28 +195,16 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         scheduled_start_friday: formData.scheduled_start_friday || null,
         scheduled_end_friday: formData.scheduled_end_friday || null,
       };
-      const startYear = formData.first_work_day
-        ? new Date(formData.first_work_day).getFullYear()
-        : new Date().getFullYear();
-
-      // Review M-C1: always preserve the *target year's* own vacation carryover
-      // (fetch it fresh) so editing first_work_day can never copy another year's
-      // value or clobber an existing one.
-      const writeCarryover = async (userId: string) => {
+      // #383: write overtime_hours AND vacation_days straight from the (prefilled)
+      // form. The write TARGET year is passed in — for the edit path it is the
+      // year the fields were actually loaded for (loadedCarryoverYear), NOT the
+      // live-form carryoverYear, so an in-flight re-fetch or a first_work_day
+      // change can never write stale values into a DIFFERENT year's row.
+      const writeCarryover = async (userId: string, year: number) => {
         try {
-          let vacationDays = 0;
-          try {
-            const res = await apiClient.get<Array<{ year: number; vacation_days: number }>>(
-              `/admin/users/${userId}/carryovers`,
-            );
-            const row = res.data.find((c) => c.year === startYear);
-            if (row) vacationDays = row.vacation_days ?? 0;
-          } catch {
-            /* no existing carryover for the target year — keep 0 */
-          }
-          await apiClient.put(`/admin/users/${userId}/carryovers/${startYear}`, {
+          await apiClient.put(`/admin/users/${userId}/carryovers/${year}`, {
             overtime_hours: overtime_carryover,
-            vacation_days: vacationDays,
+            vacation_days: vacation_carryover,
           });
         } catch (e: any) {
           // Primary save succeeded — surface a softer warning, don't abort.
@@ -197,10 +216,25 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         // When editing, send only the fields that can be updated (exclude password)
         const { password, ...updateData } = payload;
         await apiClient.put(`/admin/users/${editUser.id}`, updateData);
-        // #158: nur schreiben, wenn ein Saldo gesetzt ist oder bereits einer existierte
-        // (verhindert leere 0/0-Carryover-Zeilen für unberührte User).
-        if (overtime_carryover !== 0 || hadCarryover) {
-          await writeCarryover(editUser.id);
+        // #158/#383: nur schreiben, wenn (a) die Felder erfolgreich für EIN Jahr
+        // geladen sind (loadedCarryoverYear !== null) — sonst würde ein Ladefehler
+        // die Felder auf 0 clobbern — UND (b) ein Saldo gesetzt ist oder bereits
+        // einer existierte. Ziel ist loadedCarryoverYear (das Jahr, das die Felder
+        // repräsentieren), nie das ggf. voreilige live carryoverYear.
+        if (
+          loadedCarryoverYear !== null &&
+          (overtime_carryover !== 0 || vacation_carryover !== 0 || hadCarryover)
+        ) {
+          await writeCarryover(editUser.id, loadedCarryoverYear);
+        } else if (
+          loadedCarryoverYear === null &&
+          (overtime_carryover !== 0 || vacation_carryover !== 0)
+        ) {
+          // #383: der Save-Skip (loadedCarryoverYear===null) ist die richtige
+          // Clobber-Schutz-Wahl — aber nicht schweigend: sonst glaubt der Admin,
+          // der eingegebene Übertrag sei gespeichert (stiller Datenverlust genau
+          // im Onboarding-Fall). Klar melden.
+          toast.error('Benutzer gespeichert, aber der Übertrag/Anfangssaldo konnte nicht geladen werden und wurde NICHT gesetzt — bitte den Benutzer erneut öffnen und erneut speichern.');
         }
         // If the admin edited themselves, refresh the auth store so Dashboard/Layout update
         if (currentUser && editUser.id === currentUser.id) {
@@ -211,8 +245,9 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
       } else {
         const res = await apiClient.post('/admin/users', payload);
         const newId: string | undefined = res.data?.user?.id;
-        if (newId && overtime_carryover !== 0) {
-          await writeCarryover(newId);
+        // Create: kein bestehender Row zu clobbern → live carryoverYear ist korrekt.
+        if (newId && (overtime_carryover !== 0 || vacation_carryover !== 0)) {
+          await writeCarryover(newId, carryoverYear);
         }
         toast.success('Benutzer erfolgreich erstellt');
       }
@@ -406,11 +441,34 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               />
               <p className="text-xs text-gray-500 mt-1">
                 Übernommener Überstundensaldo zum Startjahr
-                ({formData.first_work_day ? new Date(formData.first_work_day).getFullYear() : new Date().getFullYear()}).
+                ({carryoverYear}).
                 Negativ = Minusstunden.
               </p>
             </div>
           )}
+
+          {/* #383: Übertrag Urlaubstage — gilt für ALLE MA (auch track_hours=false),
+              daher NICHT hinter der Überstunden-track_hours-Gate. */}
+          <div>
+            <label htmlFor="f-vacation-carryover" className="block text-sm font-medium text-gray-700 mb-1">
+              Übertrag Urlaubstage
+            </label>
+            <input
+              id="f-vacation-carryover"
+              type="number"
+              step="0.5"
+              min="-50"
+              max="50"
+              value={formData.vacation_carryover}
+              onChange={(e) => setFormData({ ...formData, vacation_carryover: parseFloat(e.target.value) || 0 })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Alt-/Vorjahres-Resturlaub, der dem Urlaubsbudget des Startjahres
+              ({carryoverYear})
+              zugerechnet wird. Minus und Kommastellen möglich.
+            </p>
+          </div>
 
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
             <input
