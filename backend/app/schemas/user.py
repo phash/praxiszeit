@@ -48,6 +48,7 @@ class UserBase(BaseModel):
     exempt_from_arbzg: bool = False  # §18 ArbZG: leitende Angestellte
     is_night_worker: bool = False  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer (8h-Tageslimit)
     milog_working_time_account: bool = False  # #377 §2 Abs.2 MiLoG: Arbeitszeitkonto-Prüfungen
+    agreed_monthly_hours: Optional[float] = Field(None, gt=0, le=400)  # #377 Baustein 2a: vereinbarte Monatszeit; None = aus weekly_hours
     receives_company_closures: bool = True  # #189: nimmt an Betriebsferien teil (rollenunabhängig)
     first_work_day: Optional[date] = None  # Erster Arbeitstag
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
@@ -103,6 +104,7 @@ class UserUpdate(BaseModel):
     exempt_from_arbzg: Optional[bool] = None  # §18 ArbZG
     is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
     milog_working_time_account: Optional[bool] = None  # #377 §2 Abs.2 MiLoG
+    agreed_monthly_hours: Optional[float] = Field(None, gt=0, le=400)  # #377 Baustein 2a
     receives_company_closures: Optional[bool] = None  # #189: Betriebsferien-Teilnahme
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
@@ -171,6 +173,7 @@ class UserListResponse(BaseModel):
     exempt_from_arbzg: bool = False
     is_night_worker: bool = False
     milog_working_time_account: bool = False  # #377 §2 Abs.2 MiLoG
+    agreed_monthly_hours: Optional[float] = None  # #377 Baustein 2a (wie #376: hier PFLICHT, sonst Edit-Reset)
     receives_company_closures: bool = True  # #189: Betriebsferien-Teilnahme
     first_work_day: Optional[date] = None
     last_work_day: Optional[date] = None

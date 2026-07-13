@@ -52,13 +52,18 @@ außen vor.
   `user.agreed_monthly_hours is not None` → `Decimal(str(user.agreed_monthly_hours))`,
   sonst `weekly × 13/3` (unverändert). Damit nutzt `milog_50_check` automatisch
   die echte Monatszahl.
-- **`settlement_aging`**: die Monats-Delta-Basis wechselt von `actual − target`
-  (Soll) auf **`actual − agreed_monthly_hours(db, user, date(y, m, 1))`**. `detailed`
-  liefert weiter `.actual` je Monat; der `.target` wird für die Delta-Bildung nicht
-  mehr genutzt. Seed (letzter `YearCarryover`), Defizit-Overhang, FIFO,
-  `overdue`/`incomplete` bleiben unverändert. Wirkt für **alle** Konto-MA (§ 2
-  Abs. 2: „eingestellte Stunden" = Ist über der **vereinbarten** Zeit) — im
-  Default (`agreed = weekly × 13/3`) ≈ gleich, exakt bei abweichender Monatszahl.
+- **`settlement_aging`**: bleibt bewusst **SOLL-basiert** (`actual − target`),
+  unverändert zu v1.14.0. **Review-Entscheid (nach adversarialer Multi-Runden-
+  Review):** die zunächst geplante Umstellung auf `actual − agreed` ist fachlich
+  FALSCH — das 12-Monats-Aging akkumuliert die pro Monat gebankten Plusstunden
+  gegen die tatsächliche Monats-Duty (das Soll, das Feiertage, Soll-reduzierende
+  Abwesenheiten wie Urlaub/bezahlte Freistellung, Beschäftigungs-Teilmonate und
+  den Saldo-Stichtag korrekt neutralisiert). Die flache vertragliche `agreed`
+  gegen ein so getrimmtes `actual` erzeugt Phantom-Defizite (Urlaub/Feiertag
+  würden das Arbeitszeitkonto belasten — Urlaub ist KEIN Freizeitausgleich) und
+  unterdrückt `MILOG_SETTLEMENT_DUE`. Die vereinbarte Monatszahl ist die
+  vertragliche Bezugsgröße für die **50-%-Prüfung**, nicht die Monats-Duty für die
+  Akkumulation → `agreed_monthly_hours` fließt ins Aging bewusst **nicht** ein.
 
 ### 3. Frontend (`UserForm.tsx`)
 
@@ -84,12 +89,9 @@ außen vor.
 - `test_milog.py`:
   - `agreed_monthly_hours`: gesetzt → exakt diese Zahl; `None` → `weekly × 13/3`.
   - `milog_50_check` mit expliziter Monatszahl (z. B. 33 → Cap 16,5).
-  - `settlement_aging` mit expliziter Monatszahl (Delta gegen 33, nicht gegen Soll).
-  - **Bestehende `settlement_aging`-Tests umstellen:** die Delta-Basis ist jetzt
-    `agreed`, nicht `target`. Testnutzer bekommen ein explizites
-    `agreed_monthly_hours` (oder passende `weekly_hours`), sodass `agreed` eine
-    runde Zahl ist und die erwarteten FIFO-Ergebnisse erhalten bleiben. Die `_MO`-
-    Fixtures behalten `.actual`; `.target` wird für die MiLoG-Deltas irrelevant.
+  - `settlement_aging` **ignoriert** `agreed_monthly_hours` (bleibt Soll-basiert) —
+    ein Test setzt agreed und prüft, dass das Aging weiter target-basiert rechnet.
+    Bestehende `settlement_aging`-Tests unverändert.
 - `test_user_schema` / `admin_users`: `agreed_monthly_hours` round-trip (Create →
   List → Edit, kein Reset).
 - Migration up→down→up auf Wegwerf-PG 18.

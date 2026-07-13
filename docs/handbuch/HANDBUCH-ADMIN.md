@@ -636,12 +636,12 @@ Das Basis-Verhalten ist **nach dem Anlegen fix**. Gründe lassen sich umbenennen
 
 Für Minijobber:innen, die **auf Arbeitszeitkonto** geführt werden („sonstige flexible Arbeitszeitregelung"), aktivieren Sie im Benutzerformular die Checkbox **„Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)"**. PraxisZeit prüft dann zwei gesetzliche Grenzen als **weiche Hinweise** (nichts wird blockiert):
 
-- **50-%-Regel:** Die auf das Konto eingestellten Plusstunden dürfen pro Monat **50 % der vertraglich vereinbarten Arbeitszeit** nicht übersteigen. Ohne den (späteren) Monatsstunden-Modus wird die vereinbarte Monatszeit aus den Wochenstunden abgeleitet (× 13/3, z. B. 7,62 h/Woche ≈ 33 h/Monat → max. 16,5 h Konto/Monat). Der Hinweis erscheint beim Buchen/Ausstempeln, im **eigenen Überstundenkonto** der/des MA und in der **Benutzerübersicht**.
+- **50-%-Regel:** Die auf das Konto eingestellten Plusstunden dürfen pro Monat **50 % der vertraglich vereinbarten Arbeitszeit** nicht übersteigen. Bei aktivem Arbeitszeitkonto erscheint das Feld **„Vereinbarte Monatsarbeitszeit (h)"** — tragen Sie dort die vereinbarte Monatszahl direkt ein (z. B. **33** → max. 16,5 h Konto/Monat). Bleibt das Feld leer, wird die Monatszeit wie bisher aus den Wochenstunden abgeleitet (× 13/3, z. B. 7,62 h/Woche ≈ 33 h/Monat). Die eingegebene Monatszahl ist die vertragliche Bezugsgröße für die **50-%-Prüfung**. Das **12-Monats-Aging** bleibt bewusst Soll-basiert (rechnet gegen das tatsächliche Monats-Soll, damit Urlaub/Feiertage das Konto nicht belasten). Der Hinweis erscheint beim Buchen/Ausstempeln, im **eigenen Überstundenkonto** der/des MA und in der **Benutzerübersicht**.
 - **12-Monats-Ausgleichsfrist:** Konto-Stunden müssen binnen 12 Kalendermonaten ausgeglichen werden — bei Überfälligkeit ein Hinweis.
 
 Der **aktuelle gesetzliche Mindestlohn** (§ 1 MiLoG) wird unter **Einstellungen → „Gesetzlicher Mindestlohn"** angezeigt.
 
-> **Wichtig:** Die 50-%-Grenze bindet nur die **mindestlohnwirksamen** Stunden. Wird über dem Mindestlohn vergütet, sind mehr Stunden möglich — der Hinweis ist dann ggf. unkritisch, bitte prüfen. PraxisZeit speichert **keine Lohndaten** und prüft daher **nicht** die 603-€-Verdienstgrenze; das bleibt der Lohnbuchhaltung vorbehalten. Ein direkter **Monatsstunden-Modus** (statt Wochenstunden) ist als nächster Ausbauschritt geplant.
+> **Wichtig:** Die 50-%-Grenze bindet nur die **mindestlohnwirksamen** Stunden. Wird über dem Mindestlohn vergütet, sind mehr Stunden möglich — der Hinweis ist dann ggf. unkritisch, bitte prüfen. PraxisZeit speichert **keine Lohndaten** und prüft daher **nicht** die 603-€-Verdienstgrenze; das bleibt der Lohnbuchhaltung vorbehalten. Die vereinbarte **Monatsarbeitszeit** kann im Feld „Vereinbarte Monatsarbeitszeit (h)" direkt eingegeben werden (siehe oben); sie gilt dann für beide MiLoG-Prüfungen.
 
 ---
 

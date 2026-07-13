@@ -128,6 +128,32 @@ def test_agreed_monthly_hours_from_weekly(db, employee):
     assert Decimal("32.5") < got < Decimal("33.5")  # ≈ 33 h/Monat
 
 
+def test_agreed_monthly_hours_explicit_override(db, employee):
+    # #377 Baustein 2a: explizit gesetzte Monatszahl schlägt weekly×13/3.
+    employee.agreed_monthly_hours = Decimal("40")
+    db.commit()
+    assert milog_service.agreed_monthly_hours(db, employee, date(2026, 3, 1)) == Decimal("40")
+    # None → wieder aus den Wochenstunden abgeleitet.
+    employee.agreed_monthly_hours = None
+    db.commit()
+    got = milog_service.agreed_monthly_hours(db, employee, date(2026, 3, 1))
+    assert Decimal("32.5") < got < Decimal("33.5")
+
+
+def test_milog_50_check_uses_explicit_monthly(db, employee):
+    # #377 Baustein 2a: die 50-%-Grenze rechnet gegen die vereinbarte Monatszahl
+    # (33 → Cap 16,5), unabhängig von weekly_hours.
+    employee.milog_working_time_account = True
+    employee.weekly_hours = Decimal("20")  # würde ≈86,7h/Monat ableiten — irrelevant
+    employee.agreed_monthly_hours = Decimal("33")
+    db.commit()
+    chk = milog_service.milog_50_check(db, employee, 2026, 6, monthly_actual=55)
+    assert chk is not None
+    assert abs(chk["agreed_monthly"] - 33.0) < 0.01 and abs(chk["cap"] - 16.5) < 0.01
+    # surplus 45−33 = 12 ≤ 16,5 → keine Warnung
+    assert milog_service.milog_50_check(db, employee, 2026, 6, monthly_actual=45) is None
+
+
 def test_milog_50_check_flat_baseline(db, employee, monkeypatch):
     employee.weekly_hours = Decimal("7.62")
     employee.milog_working_time_account = False
@@ -323,6 +349,24 @@ def test_settlement_aging_incomplete_when_only_seed_carries(db, employee, monkey
     assert "nicht vollständig" in milog_service.settlement_warning_text(res)
 
 
+def test_settlement_aging_ignores_agreed_monthly(db, employee, monkeypatch):
+    # #377 Baustein 2a (Review-Entscheid): das 12-Monats-Aging bleibt SOLL-basiert
+    # und ignoriert agreed_monthly_hours — die vereinbarte Monatszahl steuert nur
+    # die 50-%-Prüfung, NICHT die Konto-Akkumulation (Ist − tatsächliches Monats-
+    # Soll; neutralisiert Urlaub/Feiertage/Teilmonate/Stichtag korrekt).
+    employee.milog_working_time_account = True
+    employee.agreed_monthly_hours = Decimal("40")  # darf das Aging NICHT beeinflussen
+    db.commit()
+    # Soll-basiert: _MO(target, actual) → delta = actual − target. _MO(0, 10) → +10.
+    # (agreed-basiert wäre 10 − 40 = −30 → None.)
+    hist = {(2025, 1): _MO(0, 10)}
+    monkeypatch.setattr(milog_service.calculation_service,
+                        "get_overtime_history_detailed", lambda *a, **k: hist)
+    res = milog_service.settlement_aging(db, employee, date(2026, 3, 1))
+    assert res is not None and abs(res["hours"] - 10.0) < 0.01  # target-basiert, agreed ignoriert
+
+
+
 def test_settlement_aging_real_history(db, employee):
     # Ohne Monkeypatch: echte get_overtime_history_detailed-Integration + echter,
     # tenant-gefilterter YearCarryover-Query. Ein großer Alt-Carryover (100h) und
@@ -464,4 +508,21 @@ def test_users_overview_settlement_warning_branch(db, admin, employee, monkeypat
                                          "incomplete": False})
     row2 = next(r for r in client.get(f"{USERS}-overview").json() if r["user_id"] == str(employee.id))
     assert not any("MILOG_SETTLEMENT_DUE" in w for w in row2["milog_warnings"])
+    app.dependency_overrides.clear()
+
+
+def test_agreed_monthly_hours_survives_create_and_list(db, admin):
+    # #377 Baustein 2a: das Feld muss in UserCreate UND UserListResponse leben,
+    # sonst Edit-Reset (wie #376/#377 latente Bugs).
+    client = _client_as(db, admin, admin)
+    r = client.post(f"{USERS}", json={
+        "username": "mj_monthly", "first_name": "M", "last_name": "J",
+        "role": "employee", "weekly_hours": 20.0, "vacation_days": 30,
+        "work_days_per_week": 5, "password": "MonthlyPass2025!",
+        "milog_working_time_account": True, "agreed_monthly_hours": 33,
+    })
+    assert r.status_code == 201, r.text
+    rows = client.get(f"{USERS}").json()
+    row = next(u for u in rows if u["username"] == "mj_monthly")
+    assert row["agreed_monthly_hours"] == 33.0  # in der Liste → kein Edit-Reset
     app.dependency_overrides.clear()

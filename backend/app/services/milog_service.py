@@ -32,8 +32,12 @@ _WAGE_CAVEAT = ("sofern zur Mindestlohnhöhe vergütet; bei höherer Vergütung 
 
 
 def agreed_monthly_hours(db, user, ref_date: date) -> Decimal:
-    """Vertraglich vereinbarte Monatszeit = Wochenstunden(zum Datum) × 13/3.
-    (Baustein 2 ersetzt das später durch eine direkt vereinbarte Monatszahl.)"""
+    """Vertraglich vereinbarte Monatszeit. #377 Baustein 2a: wenn am MA eine
+    Monatszahl direkt hinterlegt ist (`agreed_monthly_hours`), gilt diese exakt;
+    sonst flach aus den Wochenstunden(zum Datum) abgeleitet (× 13/3)."""
+    explicit = getattr(user, "agreed_monthly_hours", None)
+    if explicit is not None:
+        return Decimal(str(explicit))
     weekly = calculation_service.get_weekly_hours_for_date(db, user, ref_date)
     return Decimal(str(weekly)) * AGREED_MONTHLY_FACTOR
 
@@ -119,6 +123,14 @@ def settlement_aging(db, user, as_of: date, detailed=None):
         elif opening < 0:
             carried_deficit = -opening
 
+    # #377 Baustein 2a bewusst SOLL-basiert (Review-Entscheid): das 12-Monats-
+    # Aging akkumuliert die pro Monat gebankten Plusstunden = Ist − das TATSÄCHLICHE
+    # Monats-Soll dieses Monats. Das Soll neutralisiert Feiertage, Soll-reduzierende
+    # Abwesenheiten (Urlaub/bezahlte Freistellung), Beschäftigungs-Teilmonate und
+    # den Saldo-Stichtag korrekt (Urlaub ist KEIN Freizeitausgleich und darf das
+    # Arbeitszeitkonto nicht belasten). Die vereinbarte Monatszahl (agreed_monthly_
+    # hours) ist die vertragliche Bezugsgröße für die 50-%-PRÜFUNG, nicht die
+    # Monats-Duty für die Akkumulation — daher fließt sie hier bewusst NICHT ein.
     for (y, m) in sorted(detailed.keys()):
         if start_ym is not None and (y, m) < start_ym:
             continue

@@ -37,6 +37,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     exempt_from_arbzg: false,
     is_night_worker: false,
     milog_working_time_account: false, // #377
+    agreed_monthly_hours: null as number | null, // #377 Baustein 2a: null = aus weekly_hours
     receives_company_closures: true,
     calendar_color: DEFAULT_CALENDAR_COLOR,
     first_work_day: '',
@@ -87,6 +88,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         exempt_from_arbzg: editUser.exempt_from_arbzg ?? false,
         is_night_worker: editUser.is_night_worker ?? false,
         milog_working_time_account: editUser.milog_working_time_account ?? false, // #377
+        agreed_monthly_hours: editUser.agreed_monthly_hours ?? null, // #377 Baustein 2a
         receives_company_closures: editUser.receives_company_closures ?? true,
         calendar_color: editUser.calendar_color || DEFAULT_CALENDAR_COLOR,
         first_work_day: editUser.first_work_day || '',
@@ -524,15 +526,44 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               </label>
             </div>
             {formData.milog_working_time_account && (
-              <p className="mt-2 text-xs text-amber-800">
-                {minWage && typeof minWage.current === 'number'
-                  ? `Aktueller Mindestlohn: ${minWage.current.toFixed(2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
-                  : ''}
-                Vereinbarte Monatszeit ≈ {(formData.weekly_hours * 13 / 3).toFixed(1)} h → max. Konto
-                ≈ {(formData.weekly_hours * 13 / 3 / 2).toFixed(1)} h/Monat. Warnung ist weich
-                (nicht blockierend), sofern zur Mindestlohnhöhe vergütet — bei höherer Vergütung ggf.
-                unkritisch, bitte prüfen. Keine Verdienst-/603-€-Prüfung (kein Lohn hinterlegt).
-              </p>
+              <div className="mt-2">
+                {/* #377 Baustein 2a: vereinbarte Monatsarbeitszeit direkt eingeben */}
+                <label htmlFor="f-agreed-monthly" className="block text-sm font-medium text-gray-700 mb-1">
+                  Vereinbarte Monatsarbeitszeit (h)
+                </label>
+                <input
+                  id="f-agreed-monthly"
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="400"
+                  placeholder={`aus Wochenstunden ≈ ${(formData.weekly_hours * 13 / 3).toFixed(1)}`}
+                  value={formData.agreed_monthly_hours ?? ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    // #377 2a: 0/negativ/leer = „keine Monatszahl vereinbart" → null
+                    // (aus Wochenstunden ableiten). Backend akzeptiert nur > 0.
+                    agreed_monthly_hours: parseFloat(e.target.value) > 0 ? parseFloat(e.target.value) : null,
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                />
+                {(() => {
+                  const monthly = formData.agreed_monthly_hours != null
+                    ? formData.agreed_monthly_hours
+                    : formData.weekly_hours * 13 / 3;
+                  return (
+                    <p className="mt-1 text-xs text-amber-800">
+                      {minWage && typeof minWage.current === 'number'
+                        ? `Aktueller Mindestlohn: ${minWage.current.toFixed(2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
+                        : ''}
+                      Leer = automatisch aus den Wochenstunden (≈ {(formData.weekly_hours * 13 / 3).toFixed(1)} h).
+                      Vereinbarte Monatszeit {formData.agreed_monthly_hours != null ? '' : '≈ '}{monthly.toFixed(1)} h
+                      → max. Konto ≈ {(monthly / 2).toFixed(1)} h/Monat (50 %, § 2 Abs. 2 MiLoG). Warnung ist weich
+                      (nicht blockierend), sofern zur Mindestlohnhöhe vergütet. Keine Verdienst-/603-€-Prüfung.
+                    </p>
+                  );
+                })()}
+              </div>
             )}
           </div>
 
