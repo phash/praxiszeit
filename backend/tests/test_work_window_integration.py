@@ -341,6 +341,23 @@ def test_admin_create_caps_both_ends(db, employee, admin, admin_client):
     assert entry.raw_end_time == dt.time(18, 0), f"Expected raw_end 18:00, got {entry.raw_end_time}"
 
 
+def test_admin_create_duplicate_start_returns_409(db, employee, admin, admin_client):
+    """#375-Review: the admin per-day journal add (now available for TODAY) can
+    collide with an existing entry sharing the start minute. A second entry with
+    the same (date, start_time) must return a clean 409 — not the unhandled
+    IntegrityError → HTTP 500 the UNIQUE constraint would raise on Postgres
+    (SQLite ignores the constraint, so the app-level guard is what protects it)."""
+    payload = {"date": "2026-06-02", "start_time": "09:00", "end_time": "12:00", "break_minutes": 0}
+    r1 = admin_client.post(f"/api/admin/users/{employee.id}/time-entries", json=payload)
+    assert r1.status_code == 201, r1.text
+    r2 = admin_client.post(
+        f"/api/admin/users/{employee.id}/time-entries",
+        json={**payload, "end_time": "13:00"},
+    )
+    assert r2.status_code == 409, r2.text
+    assert "Startzeit" in r2.json()["detail"]
+
+
 def test_cr_approval_create_clamps_to_soll_window(db, employee, admin, admin_client):
     """CR-Genehmigung (request_type=create, entry_kind=time_entry) klappt
     start_time ins Soll-Fenster und speichert den Rohwert in raw_start_time.

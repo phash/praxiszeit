@@ -57,6 +57,25 @@ def admin_create_time_entry(
         user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
     )
 
+    # #375-Review: mirror the employee path's duplicate-start guard, BEFORE the
+    # ArbZG aggregate checks. The admin per-day journal add is now available for
+    # TODAY, where a manual entry can collide with an existing/open clock-in
+    # sharing the (clamped) start minute. Without this the (tenant, user, date,
+    # start_time) UNIQUE constraint raises an IntegrityError on commit → HTTP 500;
+    # return a clean 409 instead (SQLite ignores the constraint, so this app-level
+    # check is what actually protects both engines).
+    duplicate = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+        TimeEntry.date == entry_data.date,
+        TimeEntry.start_time == eff_start,
+    ).first()
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum",
+        )
+
     admin_create_warnings: list[str] = []
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False

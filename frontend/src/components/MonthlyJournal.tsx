@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format, parseISO, isBefore, startOfDay } from 'date-fns';
+import { format, parseISO, isBefore, isAfter, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
@@ -143,7 +143,18 @@ function isPastDay(dateStr: unknown): boolean {
   if (typeof dateStr !== 'string') return false; // #382: parseISO v3 throws on non-string
   const d = parseISO(dateStr);
   if (isNaN(d.getTime())) return false; // #382: malformed date → not "past"
-  return isBefore(d, startOfDay(new Date()));
+  return isBefore(startOfDay(d), startOfDay(new Date()));
+}
+
+// #375: a future day is NOT editable in the journal (planned future absences go
+// through the vacation/absence request flow). Admins may edit past AND today
+// (an employee calling in sick today must be bookable immediately); the employee
+// self-view stays past-only (they use clock-in/out for the current day).
+function isFutureDay(dateStr: unknown): boolean {
+  if (typeof dateStr !== 'string') return false; // #382: parseISO v3 throws on non-string
+  const d = parseISO(dateStr);
+  if (isNaN(d.getTime())) return false; // #382: malformed date → treat as not future
+  return isAfter(startOfDay(d), startOfDay(new Date()));
 }
 
 // ---- Main component -------------------------------------------------------
@@ -724,7 +735,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 </button>
                               )}
                             </div>
-                          ) : !isGray && isPastDay(day.date) ? (
+                          ) : !isGray && (isAdminView ? !isFutureDay(day.date) : isPastDay(day.date)) ? (
                             <div className="flex flex-col items-end">
                               {(day.time_entries.length > 0 || day.absences.length > 0) ? (
                                 <div className="space-y-0.5">
