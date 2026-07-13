@@ -18,7 +18,7 @@ from app.middleware.auth import get_current_user, require_admin
 from app.models import User, UserRole, Absence, AbsenceType
 from app.models.tenant import Tenant
 from app.models.system_setting import SystemSetting
-from app.services import auth_service
+from app.services import auth_service, calculation_service
 from tests.conftest import DEFAULT_TENANT_ID, engine, TestingSessionLocal
 
 # Mon–Thu in a clean week (4 workdays), no holidays seeded.
@@ -531,3 +531,76 @@ class TestClosureSpecialDays:
             Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(r.json()["id"])).all()}
         assert date(2025, 12, 24) not in booked, "24.12. (free) darf NICHT gebucht werden"
         assert date(2025, 12, 22) in booked and date(2025, 12, 26) in booked
+
+    def test_closure_half_special_day_books_half_vacation(self, db, default_tenant, admin_client):
+        """#394 Teil A: 24./31.12. als 'halber Feiertag' → die Betriebsferien-Buchung
+        bucht nur einen HALBEN Tag (Sondertags-Faktor 0,5), nicht den vollen Tag.
+        Sonst wird für einen 0,5-Soll-Tag ein voller Urlaubstag abgezogen."""
+        from app.models.system_setting import SystemSetting
+        emp = _make_user(db, "e_half", vacation_days=30)
+        db.add(SystemSetting(key="special_day_dec24_mode", tenant_id=DEFAULT_TENANT_ID, value="half_day"))
+        db.commit()
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "Heiligabend", "start_date": "2025-12-24", "end_date": "2025-12-24",
+            "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        a = db.query(Absence).filter(Absence.user_id == emp.id, Absence.date == date(2025, 12, 24)).one()
+        assert a.type == AbsenceType.VACATION
+        # half_day bleibt False: die Betriebsferien decken den ganzen (halben)
+        # Arbeitstag ab → das Tagessoll wird voll auf 0 gesetzt (KEIN Rest-Defizit).
+        # Die 0,5-Kosten kommen über den Sondertags-Faktor, nicht über half_day.
+        assert a.half_day is False
+        assert abs(float(a.hours) - 4.0) < 0.001, f"halber Tag = 4h, nicht {a.hours}"
+        acct = calculation_service.get_vacation_account(db, emp, 2025)
+        assert abs(float(acct["used_days"]) - 0.5) < 0.001, f"nur 0,5 Urlaubstag, nicht {acct['used_days']}"
+        # kein Phantom-Defizit: der halbe Feiertag ist durch Urlaub voll abgedeckt.
+        assert abs(float(calculation_service.get_overtime_account(db, emp, 2025, 12))) < 0.001, "kein Rest-Soll/Defizit"
+
+    def test_closure_half_special_day_books_half_overtime(self, db, default_tenant, admin_client):
+        """#394 Teil A + #314: erschöpftes Urlaubsbudget → OVERTIME-Buchung eines
+        halben Sondertags zieht nur 4h Überstunden ab (nicht 8h)."""
+        from app.models.system_setting import SystemSetting
+        emp = _make_user(db, "e_half_ot", vacation_days=0)  # kein Budget → OVERTIME
+        _set_toggle(db, True)
+        db.add(SystemSetting(key="special_day_dec24_mode", tenant_id=DEFAULT_TENANT_ID, value="half_day"))
+        db.commit()
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "Heiligabend", "start_date": "2025-12-24", "end_date": "2025-12-24",
+            "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        a = db.query(Absence).filter(Absence.user_id == emp.id, Absence.date == date(2025, 12, 24)).one()
+        assert a.type == AbsenceType.OVERTIME
+        # gebuchte Ausgleichsstunden (Report/Export lesen absence.hours) = halbes
+        # Tagessoll (4h), nicht 8h — genau der Kundenbefund "volle Tage abgezogen".
+        assert abs(float(a.hours) - 4.0) < 0.001, f"halber OT-Tag = 4h, nicht {a.hours}"
+        # das Tages-Soll (= Überstunden-Drawdown-Basis) ist am halben Feiertag 4h.
+        soll = calculation_service.get_range_target(db, emp, date(2025, 12, 24), date(2025, 12, 24))
+        assert abs(float(soll) - 4.0) < 0.001, f"halber Feiertag-Soll = 4h, nicht {soll}"
+
+    def test_closure_absences_are_single_day(self, db, default_tenant, admin_client):
+        """#394 Teil B: jede generierte Betriebsferien-Absence ist ein EINZELTAG
+        (end_date=None), nicht die ganze Closure-Spanne an jedem Datum — was die
+        Abwesenheitsliste je Zeile verwirrend als '10.03 – 13.03' anzeigte."""
+        emp = _make_user(db, "e_span", vacation_days=30)
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "BF", "start_date": MON.isoformat(), "end_date": THU.isoformat(),
+            "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        absences = db.query(Absence).filter(Absence.user_id == emp.id).all()
+        assert len(absences) == 4
+        assert all(a.end_date is None for a in absences), "Closure-Absencen müssen Einzeltage sein"
+
+    def test_update_closure_keeps_single_day(self, db, default_tenant, admin_client):
+        """#394 Teil B: auch ein Re-Save/Umbenennen hält die Absencen als Einzeltage."""
+        emp = _make_user(db, "e_span2", vacation_days=30)
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "BF", "start_date": MON.isoformat(), "end_date": THU.isoformat(),
+            "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        cid = r.json()["id"]
+        r2 = admin_client.put(f"/api/company-closures/{cid}", json={
+            "name": "BF neu", "start_date": MON.isoformat(), "end_date": THU.isoformat(),
+            "counts_as_vacation": True})
+        assert r2.status_code == 200, r2.text
+        absences = db.query(Absence).filter(Absence.user_id == emp.id).all()
+        assert absences and all(a.end_date is None for a in absences)

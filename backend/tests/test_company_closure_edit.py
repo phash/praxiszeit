@@ -205,8 +205,9 @@ class TestPutExtendsRange:
 
         absences = _closure_absences(db, employee, closure["id"])
         assert {a.date for a in absences} == {MON, TUE, WED, THU}
-        # end_date of all linked absences updated to the new range end.
-        assert all(a.end_date == THU for a in absences)
+        # #394 Teil B: jede Closure-Absence ist ein EINZELTAG (end_date=None),
+        # nicht die ganze (neue) Spanne an jedem Datum.
+        assert all(a.end_date is None for a in absences)
 
     def test_extending_into_next_week_skips_weekend(self, db, employee, admin_client):
         """Prüft dass beim Verlängern über das Wochenende nur Werktage Absences bekommen."""

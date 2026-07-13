@@ -218,6 +218,37 @@ def test_free_vacation_on_holiday_no_deduction(db, test_user):
 
 
 # ---------------------------------------------------------------------------
+# half_day special day: a vacation/absence day on it costs 0.5 (#394)
+# ---------------------------------------------------------------------------
+
+def test_half_special_day_vacation_costs_half(db, test_user):
+    """#394: ein Urlaubstag an einem als 'halber Feiertag' konfigurierten Sondertag
+    (24./31.12.) kostet 0,5 Urlaubstage, nicht 1,0 — der Tag ist nur ein halber
+    Arbeitstag (§3 BUrlG Tagesprinzip)."""
+    _set_special_day(db, "special_day_dec24", "half_day")
+    a = Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=DEC24,
+                type=AbsenceType.VACATION, hours=8.0, half_day=False)
+    db.add(a)
+    db.commit()
+
+    acct = calculation_service.get_vacation_account(db, test_user, 2025)
+    assert acct["used_days"] == Decimal("0.5")
+    # absence_days (Report-/Export-Tagezählung) muss identisch 0,5 liefern.
+    assert calculation_service.absence_days(db, test_user, [a]) == Decimal("0.5")
+
+
+def test_normal_day_vacation_still_costs_full(db, test_user):
+    """Kontrolle: an einem NICHT-Sondertag bleibt ein Urlaubstag 1,0 (byte-identisch)."""
+    a = Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 12, 23),
+                type=AbsenceType.VACATION, hours=8.0, half_day=False)
+    db.add(a)
+    db.commit()
+    acct = calculation_service.get_vacation_account(db, test_user, 2025)
+    assert acct["used_days"] == Decimal("1.0")
+    assert calculation_service.absence_days(db, test_user, [a]) == Decimal("1.0")
+
+
+# ---------------------------------------------------------------------------
 # Settings validation surface
 # ---------------------------------------------------------------------------
 
