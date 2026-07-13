@@ -577,6 +577,24 @@ class TestClosureSpecialDays:
         soll = calculation_service.get_range_target(db, emp, date(2025, 12, 24), date(2025, 12, 24))
         assert abs(float(soll) - 4.0) < 0.001, f"halber Feiertag-Soll = 4h, nicht {soll}"
 
+    def test_resplit_respects_half_special_day(self, db, default_tenant, admin_client):
+        """#394 + #314 (Release-Review 1.14.3): der Re-Split (bei aktivem Schalter,
+        läuft NACH _create_closure_absences und überschreibt dessen Klassifizierung)
+        darf einen Halbtags-Sondertag NICHT als vollen Tag verbuchen — sonst kippt
+        ein durch das Budget voll gedeckter halber Feiertag fälschlich auf OVERTIME."""
+        from app.models.system_setting import SystemSetting
+        emp = _make_user(db, "e_resplit_half", vacation_days=0.5)  # Budget genau 0,5 Tage
+        _set_toggle(db, True)
+        db.add(SystemSetting(key="special_day_dec24_mode", tenant_id=DEFAULT_TENANT_ID, value="half_day"))
+        db.commit()
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "Heiligabend", "start_date": "2025-12-24", "end_date": "2025-12-24",
+            "counts_as_vacation": True})
+        assert r.status_code == 201, r.text
+        a = db.query(Absence).filter(Absence.user_id == emp.id, Absence.date == date(2025, 12, 24)).one()
+        assert a.type == AbsenceType.VACATION, \
+            "halber Feiertag (0,5) passt ins 0,5-Budget → VACATION, nicht OVERTIME (Re-Split-Faktor)"
+
     def test_closure_absences_are_single_day(self, db, default_tenant, admin_client):
         """#394 Teil B: jede generierte Betriebsferien-Absence ist ein EINZELTAG
         (end_date=None), nicht die ganze Closure-Spanne an jedem Datum — was die

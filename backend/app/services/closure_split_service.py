@@ -94,6 +94,16 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         db, tenant_id, year, holiday_dates_year
     )
 
+    # #394: ein als „halber Feiertag" (24./31.12.) konfigurierter Sondertag kostet
+    # nur 0,5 Urlaubstage — get_vacation_account/_create_closure_absences wenden den
+    # Faktor an, dieser Re-Split (der ihre Klassifizierung ÜBERSCHREIBT) muss es
+    # ebenso, sonst wird ein Halbtags-Closure-Tag fälschlich auf OVERTIME gekippt
+    # (Release-Review 1.14.3). Config einmal je Jahr laden; `_wt(d)` = 0,5/1,0.
+    special_cfg = special_days_service.get_special_day_config(db, tenant_id, year)
+
+    def _wt(d: date) -> float:
+        return float(calculation_service.half_special_day_weight(d, special_cfg))
+
     for user_id, absences in by_user.items():
         employee = users.get(user_id)
         # Untracked MA: no overtime account → keep legacy VACATION. Missing user
@@ -132,7 +142,8 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             )
             if dt_day <= 0:
                 continue
-            consumed += 0.5 if a.half_day else 1.0
+            # #394: an einem Halbtags-Sondertag kostet der Urlaubstag 0,5.
+            consumed += (0.5 if a.half_day else 1.0) * _wt(a.date)
         for d in deduction_dates:
             if d in private_dates:
                 continue  # already counted via a real VACATION absence
@@ -158,8 +169,11 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         # therefore lands on the latest closure of the year.
         used = 0.0
         for a in sorted(absences, key=lambda x: x.date):
-            if closure_budget - used >= 1.0:
+            # #394: ein Halbtags-Sondertag kostet nur 0,5 Closure-Budget (deckt sich
+            # mit day_consumption in _create_closure_absences + used_days).
+            day_cost = _wt(a.date)
+            if closure_budget - used >= day_cost - 1e-9:
                 a.type = AbsenceType.VACATION
-                used += 1.0
+                used += day_cost
             else:
                 a.type = AbsenceType.OVERTIME

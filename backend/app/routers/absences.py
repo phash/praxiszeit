@@ -490,7 +490,15 @@ def create_absence(
                 ]
             else:
                 billable_days = year_dates
-            days_needed = len(billable_days) * (0.5 if absence_data.half_day else 1.0)
+            # #394: ein Halbtags-Sondertag (24./31.12.) kostet 0,5 — der Pre-Check
+            # muss exakt so viel verlangen wie get_vacation_account nachher zählt,
+            # sonst wird eine 0,5-passende Buchung fälschlich mit 400 abgelehnt.
+            _base = 0.5 if absence_data.half_day else 1.0
+            _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
+            days_needed = sum(
+                _base * float(calculation_service.half_special_day_weight(d, _cfg))
+                for d in billable_days
+            )
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

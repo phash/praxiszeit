@@ -120,7 +120,7 @@ def apply_vacation_request_patch(
             )
 
     if new_absence_type == "vacation":
-        from app.services import calculation_service
+        from app.services import calculation_service, special_days_service
         # Public holidays are excluded from the budget calc to stay
         # consistent with the approve flow (admin_vacations.py:155-180).
         # Without this, PATCH false-positives "insufficient budget" for
@@ -165,7 +165,12 @@ def apply_vacation_request_patch(
                 ]
             else:
                 billable_days = year_dates
-            days_needed = len(billable_days) * day_factor
+            # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
+            _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
+            days_needed = sum(
+                day_factor * float(calculation_service.half_special_day_weight(d, _cfg))
+                for d in billable_days
+            )
             if days_needed > float(account['remaining_days']) + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -270,7 +275,7 @@ def create_vacation_request(
     # 4. vacation budget check — only for the default 'vacation' type
     absence_type = data.absence_type or "vacation"
     if absence_type == "vacation":
-        from app.services import calculation_service
+        from app.services import calculation_service, special_days_service
         # R2-c: exclude public holidays from the budget count — parity with the
         # PATCH path (apply_vacation_request_patch) and the approve flow
         # (admin_vacations.review_vacation_request). Without this the POST
@@ -316,7 +321,12 @@ def create_vacation_request(
                 ]
             else:
                 billable_days = year_dates
-            days_needed = len(billable_days) * day_factor
+            # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
+            _cfg = special_days_service.get_special_day_config(db, current_user.tenant_id, check_year)
+            days_needed = sum(
+                day_factor * float(calculation_service.half_special_day_weight(d, _cfg))
+                for d in billable_days
+            )
             if days_needed > float(account['remaining_days']) + 1e-9:
                 raise HTTPException(
                     status_code=400,

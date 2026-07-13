@@ -76,10 +76,10 @@ verrechnen statt Minus-Urlaub zu erzeugen.
 
 ### Out of Scope / Bekannte Limitierungen
 
-- **`half_day`-Sondertage (24./31.12. = `half_day`):** werden bei der
-  Betriebsferien-Buchung **als voller Tag** behandelt — Halbtags-Split innerhalb
-  eines Closure-Tags ist nicht implementiert (Tech-Debt, dokumentiert in
-  `docs/BACKEND-ARCHITEKTUR.md`).
+- **`half_day`-Sondertage (24./31.12. = `half_day`):** **seit #394 implementiert** —
+  ein Halbtags-Sondertag in einer Schließung kostet 0,5 (Buchung `0,5 × Tagessoll`,
+  Split-Verbrauch 0,5, Tage-Kosten über `calculation_service.half_special_day_weight`
+  auch im Re-Split). Details in `docs/BACKEND-ARCHITEKTUR.md`.
 - **Cap der Pflichturlaubs-Buchung:** wird **bewusst nicht** eingebaut —
   Betriebsferien dürfen über das Budget hinaus buchen (Schalter aus = Minus-
   Urlaub, Schalter an = Überstundenabbau). Die freiwilligen Pfade

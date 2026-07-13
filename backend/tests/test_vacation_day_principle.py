@@ -72,6 +72,20 @@ def _used(db, u):
 MON, TUE = "2026-03-02", "2026-03-03"  # Mo / Di
 
 
+def test_budget_check_half_special_day_costs_half(db, default_tenant):
+    """#394 (Release-Review 1.14.3): eine Ganztags-VACATION an einem als „halber
+    Feiertag" (24./31.12.) konfigurierten Sondertag kostet 0,5 — der Budget-Pre-
+    Check muss das ebenso rechnen, sonst wird die Buchung trotz ausreichendem
+    0,5-Rest fälschlich mit 400 abgelehnt."""
+    from app.models.system_setting import SystemSetting
+    db.add(SystemSetting(key="special_day_dec24_mode", tenant_id=DEFAULT_TENANT_ID, value="half_day"))
+    db.commit()
+    u = _mk(db, vacation_days=0.5)  # Rest genau 0,5 Tage
+    r = _client(db, u).post("/api/absences", json={"date": "2026-12-24", "type": "vacation", "hours": 8})
+    assert r.status_code == 201, f"0,5-Rest deckt den halben Feiertag → 201 erwartet, nicht {r.status_code}: {r.text}"
+    assert calculation_service.get_vacation_account(db, u, 2026)["used_days"] == 0.5
+
+
 def test_fulltime_one_day_is_one_day(db, default_tenant):
     u = _mk(db)  # 40h / 5 Tage
     assert _book(db, u, MON).status_code == 201

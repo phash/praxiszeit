@@ -26,9 +26,9 @@ from app.services.break_validation_service import validate_daily_break
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_weekly_hours_for_date, get_daily_target_for_date, get_vacation_account,
-    get_daily_target, child_sick_cap, child_sick_days_used,
+    get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
 )
-from app.services import work_window_service, settings_service
+from app.services import work_window_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 
@@ -42,12 +42,16 @@ def _vacation_day_contribution(db, user, d, half_day) -> float:
     bzw. 1,0 (voller Tag). ``half_day=None`` (Legacy/CR-Default) zählt als voller
     Tag (ein CR bucht ganztags). Wird für den Netto-Neuverbrauch-Vergleich im
     UPDATE-Budget-Check verwendet."""
+    # #394: an einem Halbtags-Sondertag (24./31.12.) kostet der Urlaubstag 0,5 —
+    # exakt wie get_vacation_account/absence_days (zentraler Helper).
+    _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
+    weight = float(half_special_day_weight(d, _cfg))
     if get_daily_target(user) <= 0:  # untracked / work_days_per_week == 0
-        return 0.5 if half_day else 1.0
+        return (0.5 if half_day else 1.0) * weight
     dt = get_daily_target_for_date(user, d, get_weekly_hours_for_date(db, user, d))
     if dt <= 0:
         return 0.0
-    return 0.5 if half_day else 1.0
+    return (0.5 if half_day else 1.0) * weight
 
 
 def _delete_day_time_entries(db, user_id, tenant_id, target_date, changed_by, cr_id):
@@ -532,7 +536,9 @@ def review_change_request(
                     _bill_day = float(get_daily_target_for_date(cr_user, cr.proposed_date, _bw)) > 0
                 if _bill_day:
                     vacation_account = get_vacation_account(db, cr_user, cr.proposed_date.year)
-                    days_needed = 1.0
+                    # #394: ein Halbtags-Sondertag (24./31.12.) kostet nur 0,5.
+                    _cfg = special_days_service.get_special_day_config(db, cr_user.tenant_id, cr.proposed_date.year)
+                    days_needed = float(half_special_day_weight(cr.proposed_date, _cfg))
                     if days_needed > vacation_account["remaining_days"] + 1e-9:
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
