@@ -214,8 +214,9 @@ def free_special_days_in_range(db: Session, tenant_id, start: date, end: date) -
     ohnehin freier Tag fälschlich einen Urlaubstag und reduzierte das Soll doppelt).
     ``free`` + ``counts_as_vacation``-Tage werden separat in get_vacation_account
     gezählt (vacation_deduction_dates) → der Ausschluss hier bleibt budget-neutral.
-    (``half_day``-Sondertage werden derzeit als voller Tag behandelt — seltener Fall,
-    separater Tech-Debt.)
+    (``half_day``-Sondertage sind KEINE freien Tage und werden NICHT ausgeschlossen;
+    ihre 0,5-Kosten kommen seit #394 über den ``special_day_target_factor`` in
+    get_vacation_account/absence_days + die Betriebsferien-Buchung.)
     """
     result = set()
     for year in range(start.year, end.year + 1):
