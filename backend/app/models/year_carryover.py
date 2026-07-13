@@ -18,7 +18,7 @@ class YearCarryover(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     year = Column(Integer, nullable=False)  # The year these carryovers apply TO
     overtime_hours = Column(Numeric(8, 2), nullable=False, default=0)  # Overtime hours from previous year
-    vacation_days = Column(Numeric(4, 1), nullable=False, default=0)  # Vacation days from previous year
+    vacation_days = Column(Numeric(5, 2), nullable=False, default=0)  # #383: 2 Nachkommastellen (krumme Übertragswerte)
     # Fix #7: provenance — 'year_closing' (created/updated by create_year_closing,
     # removable via delete_year_closing) vs 'manual' (admin-entered via
     # upsert_carryover, must survive delete_year_closing).

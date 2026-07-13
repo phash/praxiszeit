@@ -458,7 +458,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
             <input
               id="f-vacation-carryover"
               type="number"
-              step="0.5"
+              step="0.01"
               min="-50"
               max="50"
               value={formData.vacation_carryover}
