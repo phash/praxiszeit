@@ -8,7 +8,8 @@ from typing import List
 from datetime import datetime, timezone, timedelta
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, TimeEntryAuditLog, UserRole
+from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, TimeEntryAuditLog, UserRole, PublicHoliday
+from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
@@ -174,14 +175,30 @@ def users_overview(
         AbsenceReason.tenant_id == current_user.tenant_id,  # F-026
         AbsenceReason.tracks_child_sick_limit.is_(True),
     ).first() is not None
+    # #204: Referenzdaten EINMAL vorladen statt pro User (× ~9 Queries) — Feiertage
+    # (tenant+year, geteilt) + alle WorkingHoursChange (tenant, nach user_id
+    # gruppiert) → an die Calc-Helfer durchreichen (Default-None-Pfad byte-identisch).
+    # date_in_year (DATE-basiert, wie get_vacation_account/get_ytd_summary intern)
+    # statt PublicHoliday.year — garantiert byte-identisch, unabhängig von der
+    # year-Spalte.
+    _holidays = {h.date for h in db.query(PublicHoliday).filter(
+        PublicHoliday.tenant_id == current_user.tenant_id,  # F-026
+        date_in_year(PublicHoliday.date, year),
+    ).all()}
+    _wh_by_user: dict = {}
+    for _c in db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).all():
+        _wh_by_user.setdefault(_c.user_id, []).append(_c)
     result = []
     for u in users:
-        vac = calculation_service.get_vacation_account(db, u, year)
+        _uwh = _wh_by_user.get(u.id, [])
+        vac = calculation_service.get_vacation_account(db, u, year, holidays=_holidays, wh_changes=_uwh)
         # #313: YTD-Überstunden bis zum letzten abgeschlossenen Arbeitstag — der
         # Stichtag ist nur im LAUFENDEN Jahr relevant; für vergangene Jahre voller
         # Jahresumfang (spart die per-User-Stichtag-Query). (round-2 N+1-Fix)
         cutoff = calculation_service.get_soll_cutoff_date(db, u) if is_current_year else None
-        ytd = calculation_service.get_ytd_summary(db, u, year, cutoff_date=cutoff)
+        ytd = calculation_service.get_ytd_summary(db, u, year, cutoff_date=cutoff, holidays=_holidays, wh_changes=_uwh)
         # #377 § 2 Abs. 2 MiLoG: weiche Warnungen je MA. Nur in der LAUFENDEN-Jahr-
         # Ansicht (die Prüfung ist immer aktueller Monat / Aging bis heute). Perf:
         # EIN Overtime-Pass je Flag-MA — beide Signale aus demselben `detailed`.
@@ -221,7 +238,7 @@ def users_overview(
             ),
             overtime=YtdOvertime(year=year, **ytd),
             child_sick_used=(
-                float(calculation_service.child_sick_days_used(db, u, year))
+                float(calculation_service.child_sick_days_used(db, u, year, wh_changes=_uwh))
                 if _cs_tenant_tracks else 0.0
             ),  # #376
             child_sick_cap=(

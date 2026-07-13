@@ -859,9 +859,22 @@ def get_overtime_history(
     }
 
 
-def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date = None) -> Dict:
+def get_ytd_summary(
+    db: Session,
+    user: User,
+    year: int = None,
+    cutoff_date: date = None,
+    holidays: Optional[set] = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Dict:
     """
     Calculate year-to-date summary from Jan 1 to today.
+
+    #204: ``holidays`` (tenant+year-Set) und ``wh_changes`` (dieses Users) sind
+    optionale Preloads für den users-overview-Hot-Loop; Default ``None`` = wie
+    bisher querien (byte-identisch, Test ``test_calc_preload``). Der YTD-Range
+    liegt immer im Jahr ``year`` → das Jahres-Holiday-Set ist ein deckungsgleicher
+    Superset für die Membership-Tests.
 
     Sums daily targets and actual hours for all working days from Jan 1
     of the given year up to and including today.
@@ -894,13 +907,17 @@ def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date
     if start > end:
         return {"target_hours": 0.0, "actual_hours": 0.0, "overtime": 0.0}
 
-    # Fetch holidays in range
-    holidays = db.query(PublicHoliday).filter(
-        PublicHoliday.date >= start,
-        PublicHoliday.date <= end,
-        PublicHoliday.tenant_id == user.tenant_id,
-    ).all()
-    holiday_dates: set = {h.date for h in holidays}
+    # Fetch holidays in range (#204: use the preloaded tenant+year set if given).
+    if holidays is not None:
+        holiday_dates: set = holidays
+    else:
+        holiday_dates = {
+            h.date for h in db.query(PublicHoliday).filter(
+                PublicHoliday.date >= start,
+                PublicHoliday.date <= end,
+                PublicHoliday.tenant_id == user.tenant_id,
+            ).all()
+        }
 
     # Fetch absences in range (exclude TRAINING, SICK, OVERTIME - same as
     # get_monthly_target). PAID_LEAVE (#145) is treated like OTHER and falls
@@ -915,10 +932,12 @@ def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date
     absence_half_map: Dict[date, bool] = _soll_reducing_absence_half_map(absences)
 
     # Fetch working hours changes (pre-loaded for the per-day loop).
-    # F-027: routed through get_weekly_hours_for_date() with in-memory path
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    # F-027: routed through get_weekly_hours_for_date() with in-memory path.
+    # #204: use the passed-in list if given (users-overview preload).
+    if wh_changes is None:
+        wh_changes = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+        ).order_by(WorkingHoursChange.effective_from).all()
 
     # #146: special-day config for the YTD year (24./31.12. always fall in
     # the same `year`, so a single lookup suffices).
@@ -980,7 +999,8 @@ def get_ytd_summary(db: Session, user: User, year: int = None, cutoff_date: date
     }
 
 
-def absence_days(db: Session, user: User, absences: list) -> Decimal:
+def absence_days(db: Session, user: User, absences: list,
+                 wh_changes: Optional[List[WorkingHoursChange]] = None) -> Decimal:
     """Zähle Abwesenheiten TAGEBASIERT (Tagesprinzip §3 BUrlG, #156/#205) — exakt
     nach derselben Regel wie ``used_days`` in ``get_vacation_account``: voller Tag
     = 1,0, ``half_day=True`` = 0,5, Legacy-Row (``half_day=None``) = Stunden ÷
@@ -995,7 +1015,7 @@ def absence_days(db: Session, user: User, absences: list) -> Decimal:
         if not tracked:
             total += Decimal('0.5') if a.half_day else Decimal('1')
             continue
-        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date))
+        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date, wh_changes=wh_changes))
         if dt_day > 0:
             if a.half_day is None:
                 total += Decimal(str(a.hours)) / Decimal(str(dt_day))
@@ -1012,7 +1032,8 @@ def child_sick_cap(db: Session, user: User) -> int:
     return settings_service.get_int_setting(db, "child_sick_days_default", user.tenant_id, 15)
 
 
-def child_sick_days_used(db: Session, user: User, year: int) -> Decimal:
+def child_sick_days_used(db: Session, user: User, year: int,
+                         wh_changes: Optional[List[WorkingHoursChange]] = None) -> Decimal:
     """#376: tagebasierte Summe (Tagesprinzip) der Kind-krank-Absencen im
     Kalenderjahr — nur Absencen, deren Grund tracks_child_sick_limit trägt.
     Beschäftigungsfenster wird respektiert; Zählregel identisch zu absence_days."""
@@ -1030,12 +1051,23 @@ def child_sick_days_used(db: Session, user: User, year: int) -> Decimal:
         .all()
     )
     windowed = [a for a in rows if _within_employment_window(user, a.date)]
-    return absence_days(db, user, windowed)
+    return absence_days(db, user, windowed, wh_changes=wh_changes)
 
 
-def get_vacation_account(db: Session, user: User, year: int) -> Dict:
+def get_vacation_account(
+    db: Session,
+    user: User,
+    year: int,
+    holidays: Optional[set] = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Dict:
     """
     Calculate vacation account for a given year.
+
+    #204: ``holidays`` (das tenant+year-PublicHoliday-Datumsset) und ``wh_changes``
+    (die WorkingHoursChange-Liste DIESES Users) sind optionale Preloads für den
+    users-overview-Hot-Loop. Default ``None`` = wie bisher pro Aufruf querien →
+    byte-identische Ergebnisse (Test ``test_calc_preload``).
 
     Returns:
         budget_hours: Total vacation budget in hours (vacation_days × daily_target)
@@ -1145,7 +1177,7 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     for a in vacation_absences:
         h = Decimal(str(a.hours))
         used_hours += h
-        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date))
+        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date, wh_changes=wh_changes))
         # §3 BUrlG / Tagesprinzip: Urlaub an einem NICHT-Arbeitstag des MA
         # (dt_day == 0, z. B. Di/Do bei einer Mo/Mi/Fr-Kraft) verbraucht 0 Urlaubs-
         # tage — das Überspringen ist gewollt, KEIN Buchungsverlust (Funktions-
@@ -1169,7 +1201,7 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
     # unless the employee already has a real VACATION absence on that day
     # (already counted above) or it falls outside their employment window.
     # Weekends / existing holidays are excluded inside the helper.
-    holiday_dates_year = {
+    holiday_dates_year = holidays if holidays is not None else {
         h.date for h in db.query(PublicHoliday).filter(
             date_in_year(PublicHoliday.date, year),
             PublicHoliday.tenant_id == user.tenant_id,
@@ -1219,7 +1251,7 @@ def get_vacation_account(db: Session, user: User, year: int) -> Dict:
             continue
         if user.last_work_day and d > user.last_work_day:
             continue
-        weekly_hours = get_weekly_hours_for_date(db, user, d)
+        weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
         dt_day = get_daily_target_for_date(user, d, weekly_hours)
         if dt_day <= 0:
             continue
