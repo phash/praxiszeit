@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { format } from 'date-fns';
 import MonthlyJournal, { isJournalData } from './MonthlyJournal';
 
 // #382: clicking a user opens the journal. A non-journal 200 body (e.g. an HTML
@@ -103,6 +104,33 @@ describe('<MonthlyJournal /> malformed-response hardening (#382)', () => {
     render(<MonthlyJournal userId="u1" isAdminView />);
     // Renders the raw date fallback rather than throwing RangeError from format().
     await waitFor(() => expect(screen.getByText('not-a-date')).toBeInTheDocument());
+  });
+
+  it('#375: admin can add an entry/absence for TODAY (not only past days), future stays excluded', async () => {
+    // Local calendar date (match the component's startOfDay(new Date()) notion of
+    // "today"); toISOString() would be UTC and flake in the Berlin post-midnight window.
+    const localToday = format(new Date(), 'yyyy-MM-dd');
+    const past = { ...validDay, date: '2020-01-06', type: 'empty' as const };
+    const today = { ...validDay, date: localToday, type: 'empty' as const };
+    const future = { ...validDay, date: '2099-01-06', type: 'empty' as const };
+    const journal = { ...validJournal, days: [past, today, future] };
+    getMock.mockImplementation((url: string) =>
+      url.includes('/journal')
+        ? Promise.resolve({ data: journal })
+        : Promise.resolve({ data: [] }),
+    );
+    const { unmount } = render(<MonthlyJournal userId="u1" isAdminView />);
+    await waitFor(() =>
+      expect(screen.getAllByTitle('Weiteren Eintrag hinzufügen').length).toBe(2),
+    );
+    // past + today offer the add "+", the future day does not.
+    unmount();
+
+    // Employee self-view stays past-only (today not editable — they use clock-in/out).
+    render(<MonthlyJournal userId="u1" />);
+    await waitFor(() =>
+      expect(screen.getAllByTitle('Eintrag anlegen').length).toBe(1),
+    );
   });
 
   it('does not crash when a day.date is null (date-fns v3 parseISO throws on non-string)', async () => {
