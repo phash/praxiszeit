@@ -169,7 +169,9 @@ export default function AdminDashboard() {
         : `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`;
       const response = await apiClient.get(url);
       if (seq !== reportSeq.current) return;
-      setReport(response.data);
+      // #382: guard against a non-array 200 body (auth/proxy edge) — the render
+      // calls report.filter/.map unconditionally and would white-screen.
+      setReport(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       if (seq === reportSeq.current) toast.error('Fehler beim Laden des Berichts');
     } finally {
@@ -185,7 +187,8 @@ export default function AdminDashboard() {
       const hp = showHealthData ? '&include_health_data=true' : '';
       const response = await apiClient.get(`/admin/reports/yearly-absences?year=${currentYear}${hp}`);
       if (seq !== yearlySeq.current) return;
-      setYearlyAbsences(response.data);
+      // #382: same guard — yearlyAbsences.filter/.map run unconditionally in render.
+      setYearlyAbsences(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       if (seq === yearlySeq.current) toast.error('Fehler beim Laden der Jahresübersicht');
     } finally {
@@ -270,7 +273,7 @@ export default function AdminDashboard() {
         }
       });
       if (seq !== detailSeq.current) return;
-      setEmployeeTimeEntries(entriesResponse.data);
+      setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
 
       // Fetch absences
       const absencesResponse = await apiClient.get('/absences', {
@@ -280,7 +283,7 @@ export default function AdminDashboard() {
         }
       });
       if (seq !== detailSeq.current) return;
-      setEmployeeAbsences(absencesResponse.data);
+      setEmployeeAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []); // #382
 
       // Fetch audit log
       fetchAuditForUser(employee.user_id);
@@ -309,7 +312,7 @@ export default function AdminDashboard() {
       // change log — access/system events (e.g. DSGVO read-access markers written
       // on every open) otherwise piled up here, rendered as phantom "Gelöscht".
       const response = await apiClient.get(`/admin/audit-log?user_id=${userId}&month=${currentMonth}&changes_only=true`);
-      setAuditLog(response.data);
+      setAuditLog(Array.isArray(response.data) ? response.data : []); // #382
     } catch (error) {
       toast.error('Fehler beim Laden des Audit-Logs');
     } finally {
@@ -368,12 +371,12 @@ export default function AdminDashboard() {
       const entriesResponse = await apiClient.get('/time-entries', {
         params: { user_id: selectedEmployee.user_id, month: currentMonth }
       });
-      setEmployeeTimeEntries(entriesResponse.data);
+      setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
       // Refresh absences
       const absencesResponse = await apiClient.get('/absences', {
         params: { user_id: selectedEmployee.user_id, year: currentMonth.split('-')[0] }
       });
-      setEmployeeAbsences(absencesResponse.data);
+      setEmployeeAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []); // #382
       fetchAuditForUser(selectedEmployee.user_id);
       // C-2: Monatsbericht (Ist, Saldo, Urlaub/Krank) + Jahresübersicht aktualisieren,
       // damit die Zusammenfassung sofort die Mutation widerspiegelt.
@@ -398,7 +401,7 @@ export default function AdminDashboard() {
             const entriesResponse = await apiClient.get('/time-entries', {
               params: { user_id: selectedEmployee.user_id, month: currentMonth }
             });
-            setEmployeeTimeEntries(entriesResponse.data);
+            setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
             fetchAuditForUser(selectedEmployee.user_id);
           }
           // C-2: Monatsbericht + Jahresübersicht aktualisieren.

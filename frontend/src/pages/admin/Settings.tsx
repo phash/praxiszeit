@@ -1196,9 +1196,10 @@ export default function Settings() {
         <h2 className="text-lg font-semibold text-gray-900 mb-2">Gesetzlicher Mindestlohn</h2>
         {minWage ? (
           <p className="text-sm text-gray-600">
-            Aktuell <strong>{minWage.current.toFixed(2)} €/h</strong> (seit{' '}
+            {/* #382: guard against a truthy-but-malformed minimum_wage (no numeric current). */}
+            Aktuell <strong>{typeof minWage.current === 'number' ? minWage.current.toFixed(2) : '—'} €/h</strong> (seit{' '}
             {new Date(minWage.since).toLocaleDateString('de-DE')}).
-            {minWage.next && (
+            {minWage.next && typeof minWage.next.value === 'number' && (
               <> Ab {new Date(minWage.next.from).toLocaleDateString('de-DE')}:{' '}
                 <strong>{minWage.next.value.toFixed(2)} €/h</strong>.</>
             )}

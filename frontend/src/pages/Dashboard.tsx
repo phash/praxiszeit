@@ -564,7 +564,7 @@ export default function Dashboard() {
             <>
               <p className="text-xs text-gray-500 mb-2">Resturlaub {vacationAccount.year}</p>
               <p className="text-3xl font-bold text-primary">
-                {vacationAccount.remaining_days.toFixed(1)} Tage
+                {(vacationAccount.remaining_days ?? 0).toFixed(1)} Tage
               </p>
               <div className="mt-4 space-y-1 text-sm">
                 <div className="flex justify-between">
@@ -573,7 +573,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Genommen:</span>
-                  <span className="font-medium">{vacationAccount.used_days.toFixed(1)} Tage</span>
+                  <span className="font-medium">{(vacationAccount.used_days ?? 0).toFixed(1)} Tage</span>
                 </div>
               </div>
               <p className="mt-2 text-xs text-gray-400">
@@ -582,7 +582,7 @@ export default function Dashboard() {
               {vacationAccount.has_carryover_warning && vacationAccount.carryover_deadline && (
                 <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                   <p className="text-xs text-amber-800 font-medium">
-                    ⚠️ Noch {vacationAccount.remaining_days.toFixed(1)} Urlaubstage offen!
+                    ⚠️ Noch {(vacationAccount.remaining_days ?? 0).toFixed(1)} Urlaubstage offen!
                   </p>
                   <p className="text-xs text-amber-700 mt-0.5">
                     Bis {new Date(vacationAccount.carryover_deadline + 'T00:00:00').toLocaleDateString('de-DE')} nehmen oder verfällt.

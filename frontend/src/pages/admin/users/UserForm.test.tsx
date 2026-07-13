@@ -40,6 +40,20 @@ describe('#377 UserForm MiLoG checkbox', () => {
     expect(screen.getByText(/max\. Konto/)).toBeInTheDocument();
   });
 
+  it('#382: does not crash if minimum_wage is present but has no numeric current', () => {
+    // A malformed /system/info minimum_wage object used to throw
+    // `minWage.current.toFixed(2)` → ErrorBoundary white-screen for milog users.
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', minimum_wage: {} },
+      isLoaded: true,
+    } as never);
+    renderForm();
+    fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
+    // Renders the rest of the info line; the Mindestlohn prefix is simply omitted.
+    expect(screen.getByText(/max\. Konto/)).toBeInTheDocument();
+    expect(screen.queryByText(/Aktueller Mindestlohn/)).not.toBeInTheDocument();
+  });
+
   it('prefills the checkbox from editUser', () => {
     renderForm({
       editUser: {

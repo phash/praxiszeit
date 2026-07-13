@@ -467,7 +467,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
             </div>
             {formData.milog_working_time_account && (
               <p className="mt-2 text-xs text-amber-800">
-                {minWage
+                {minWage && typeof minWage.current === 'number'
                   ? `Aktueller Mindestlohn: ${minWage.current.toFixed(2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
                   : ''}
                 Vereinbarte Monatszeit ≈ {(formData.weekly_hours * 13 / 3).toFixed(1)} h → max. Konto
