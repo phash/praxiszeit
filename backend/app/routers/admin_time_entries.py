@@ -209,6 +209,23 @@ def admin_update_time_entry(
     else:
         eff_start, eff_end, raw_start, raw_end = update_start_time, update_end_time, None, None
 
+    # #375-Review: mirror the create-path duplicate-start guard (exclude self) —
+    # editing start_time/date onto an existing sibling entry would otherwise hit
+    # the (tenant, user, date, start_time) UNIQUE constraint → IntegrityError →
+    # HTTP 500 on Postgres. Return a clean 409 instead.
+    dup = db.query(TimeEntry).filter(
+        TimeEntry.user_id == entry.user_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+        TimeEntry.date == update_date,
+        TimeEntry.start_time == eff_start,
+        TimeEntry.id != entry.id,
+    ).first()
+    if dup:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum",
+        )
+
     admin_update_warnings: list[str] = []
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
