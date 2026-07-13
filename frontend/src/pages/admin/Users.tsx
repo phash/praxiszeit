@@ -478,7 +478,7 @@ export default function Users() {
                           <div className="flex items-center space-x-2">
                             <span className="text-gray-600">Genommen:</span>
                             <span className="font-medium text-orange-600">
-                              {vacationInfo[user.id].used_days.toFixed(1)} Tage
+                              {(vacationInfo[user.id].used_days ?? 0).toFixed(1)} Tage
                             </span>
                           </div>
                           <div className="flex items-center space-x-2">
@@ -490,7 +490,7 @@ export default function Users() {
                                 ? 'text-yellow-600'
                                 : 'text-red-600'
                             }`}>
-                              {vacationInfo[user.id].remaining_days.toFixed(1)} Tage
+                              {(vacationInfo[user.id].remaining_days ?? 0).toFixed(1)} Tage
                             </span>
                           </div>
                           {/* Progress bar */}
@@ -767,7 +767,7 @@ export default function Users() {
                               ? 'text-yellow-600'
                               : 'text-red-600'
                           }`}>
-                            {vacationInfo[user.id].remaining_days.toFixed(1)} Tage
+                            {(vacationInfo[user.id].remaining_days ?? 0).toFixed(1)} Tage
                           </span>
                         </div>
                       </div>

@@ -39,7 +39,7 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
   const fetchCarryovers = async () => {
     try {
       const res = await apiClient.get(`/admin/users/${userId}/carryovers`);
-      setCarryovers(res.data);
+      setCarryovers(Array.isArray(res.data) ? res.data : []); // #382
 
       // Pre-fill form with current year's carryover if it exists
       const currentYear = new Date().getFullYear();
@@ -79,7 +79,7 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
       toast.success(`Übernahme für ${formData.year} gespeichert`);
       // Refresh list
       const res = await apiClient.get(`/admin/users/${userId}/carryovers`);
-      setCarryovers(res.data);
+      setCarryovers(Array.isArray(res.data) ? res.data : []); // #382
       onSaved();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));

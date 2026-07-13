@@ -44,7 +44,7 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   const fetchHoursChanges = async () => {
     try {
       const response = await apiClient.get(`/admin/users/${userId}/working-hours-changes`);
-      setHoursChanges(response.data);
+      setHoursChanges(Array.isArray(response.data) ? response.data : []); // #382
     } catch (error) {
       toast.error('Fehler beim Laden der Stundenhistorie');
     }

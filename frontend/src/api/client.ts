@@ -80,9 +80,28 @@ async function performRefresh(): Promise<string> {
   return access_token;
 }
 
+// #382: systemic guard against a poisoned 200 body. In an auth/proxy/SPA-fallback
+// edge, an /api call can resolve HTTP 200 with the SPA's index.html (a string)
+// instead of JSON. Downstream code assumes JSON and does res.data.map/.toFixed/
+// .length during render → a synchronous throw caught by the app ErrorBoundary →
+// full-screen "Etwas ist schiefgelaufen". Convert such a response into a normal
+// rejection so callers hit their existing .catch/error path instead of crashing
+// the whole app. (Per-view shape guards remain as belt-and-suspenders for
+// wrong-shape *JSON* bodies, which this cannot detect.)
+function looksLikeHtml(data: unknown): boolean {
+  return typeof data === 'string' && /^\s*(<!doctype html|<html[\s>])/i.test(data);
+}
+
 // Response interceptor: Handle 401 errors with automatic token refresh
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (looksLikeHtml(response.data)) {
+      return Promise.reject(
+        new Error('Unerwartete Server-Antwort (kein JSON) — bitte neu anmelden.'),
+      );
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 

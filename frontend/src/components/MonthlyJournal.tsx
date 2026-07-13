@@ -57,6 +57,35 @@ interface JournalData {
   yearly_overtime: number;
 }
 
+// #382: the journal fetch can, in an auth/proxy edge, resolve HTTP 200 with a
+// body that is NOT a journal (e.g. an HTML login page served after a
+// token_version-invalidated 401 → silent-refresh → retry churn). Feeding that
+// straight into `setData` used to reach `data.days.map(...)` and throw during
+// render → caught by ErrorBoundary → full-screen "Etwas ist schiefgelaufen".
+// Validate the shape at the fetch boundary so a malformed body degrades to the
+// normal inline error instead of white-screening the whole app.
+export function isJournalData(x: unknown): x is JournalData {
+  if (!x || typeof x !== 'object') return false;
+  const d = x as Partial<JournalData>;
+  return (
+    Array.isArray(d.days) &&
+    !!d.monthly_summary &&
+    typeof d.monthly_summary === 'object' &&
+    typeof d.yearly_overtime === 'number'
+  );
+}
+
+// date-fns format() throws RangeError on an Invalid Date. And in date-fns v3
+// parseISO() itself THROWS on a non-string (it calls dateString.split(...)
+// unconditionally) — so guard the input type BEFORE parseISO, then the isNaN
+// check catches malformed strings ('', 'not-a-date'). One bad day.date must not
+// crash the table.
+function safeParseISO(dateStr: unknown): Date | null {
+  if (typeof dateStr !== 'string') return null;
+  const d = parseISO(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 interface EditState {
   startTime: string;    // "HH:mm"
   endTime: string;      // "HH:mm"
@@ -110,8 +139,11 @@ function formatHoursSimple(h: number): string {
   return formatHoursHMText(h, { dashForZero: true });
 }
 
-function isPastDay(dateStr: string): boolean {
-  return isBefore(parseISO(dateStr), startOfDay(new Date()));
+function isPastDay(dateStr: unknown): boolean {
+  if (typeof dateStr !== 'string') return false; // #382: parseISO v3 throws on non-string
+  const d = parseISO(dateStr);
+  if (isNaN(d.getTime())) return false; // #382: malformed date → not "past"
+  return isBefore(d, startOfDay(new Date()));
 }
 
 // ---- Main component -------------------------------------------------------
@@ -155,7 +187,31 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
     apiClient
       .get(url, { signal: controller.signal })
-      .then((res) => setData(res.data))
+      .then((res) => {
+        if (!isJournalData(res.data)) {
+          // #382: non-journal 200 body → show the inline error, never crash.
+          setData(null);
+          setError('Journal konnte nicht geladen werden.');
+          return;
+        }
+        // Belt-and-suspenders: a valid `days` array whose per-day entry/absence
+        // lists are null (serialization anomaly) would trip the many `.map` /
+        // `.length` sites below. Normalize to empty arrays once, here.
+        setData({
+          ...res.data,
+          days: res.data.days.map((d) => ({
+            ...d,
+            // Coerce to arrays AND drop null/non-object elements so the many
+            // downstream e.start_time / a.type derefs can't throw on a bad element.
+            time_entries: (Array.isArray(d.time_entries) ? d.time_entries : []).filter(
+              (e): e is TimeEntryItem => !!e && typeof e === 'object',
+            ),
+            absences: (Array.isArray(d.absences) ? d.absences : []).filter(
+              (a): a is AbsenceItem => !!a && typeof a === 'object',
+            ),
+          })),
+        });
+      })
       .catch((err) => {
         if (err?.code === 'ERR_CANCELED') return;
         setError(getErrorMessage(err, 'Journal konnte nicht geladen werden.'));
@@ -466,7 +522,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {data.days.map((day) => {
-                  const dateObj = parseISO(day.date);
+                  const dateObj = safeParseISO(day.date);
                   const isGray = isNonWorkDay(day);
 
                   const rowClass = isGray
@@ -486,10 +542,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                     <React.Fragment key={day.date}>
                       <tr className={`${rowClass} hover:bg-gray-50 transition-colors`}>
                         <td className="px-3 py-2 font-medium whitespace-nowrap">
-                          {format(dateObj, 'dd.MM.', { locale: de })}
+                          {dateObj ? format(dateObj, 'dd.MM.', { locale: de }) : day.date}
                         </td>
                         <td className="px-3 py-2 hidden sm:table-cell">
-                          {format(dateObj, 'EEE', { locale: de })}
+                          {dateObj ? format(dateObj, 'EEE', { locale: de }) : ''}
                         </td>
                         <td className={`px-3 py-2 ${TYPE_COLORS[day.type]}`}>
                           {editingDate === day.date && isAdminView ? (

@@ -196,6 +196,29 @@ describe('impersonation 401 handling (#370)', () => {
   });
 });
 
+describe('#382 non-JSON (HTML) 200-body guard', () => {
+  it('rejects a 200 response whose body is an HTML page (SPA/auth-proxy edge)', async () => {
+    // A misrouted /api call resolving 200 with the SPA index.html used to reach
+    // res.data.map/.toFixed downstream → render crash → ErrorBoundary. The
+    // interceptor now converts it into a rejection so callers hit .catch.
+    apiClient.defaults.adapter = (config) =>
+      reply(config, 200, '<!doctype html><html><body>login</body></html>');
+    await expect(apiClient.get('/admin/users/1/journal')).rejects.toBeTruthy();
+  });
+
+  it('passes a normal JSON array body through untouched', async () => {
+    apiClient.defaults.adapter = (config) => reply(config, 200, [{ id: 1 }]);
+    const res = await apiClient.get('/data');
+    expect(res.data).toEqual([{ id: 1 }]);
+  });
+
+  it('passes a normal JSON object body through untouched', async () => {
+    apiClient.defaults.adapter = (config) => reply(config, 200, { days: [] });
+    const res = await apiClient.get('/data');
+    expect(res.data).toEqual({ days: [] });
+  });
+});
+
 describe('tryRefreshSession', () => {
   it('returns the new token on success', async () => {
     vi.spyOn(axios, 'post').mockResolvedValue({
