@@ -361,20 +361,35 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.cell(row=row, column=1).value = "Zusammenfassung"
     sheet.cell(row=row, column=1).font = Font(bold=True, size=12)
 
+    # #377 Baustein 2b (Finding 1, Whole-Branch-Review): für Fix-Modus-MA
+    # (use_fixed_monthly_target) MUSS die Monats-Summary mit dem modus-
+    # bewussten get_monthly_target/get_monthly_actual übereinstimmen — sonst
+    # widerspricht sich das §16-Dokument selbst gegen "Überstunden kumuliert"
+    # weiter unten (get_overtime_account, bereits modus-bewusst). Die Per-Tag-
+    # Detailzeilen oben bleiben unverändert (informativ: geplante Anwesenheit/
+    # reale Erfassung, keine Tages-Soll-Zerlegung des festen Monats-Solls).
+    # Nicht-Modus-MA bleiben exakt auf der alten Per-Tag-Summe (byte-identisch).
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        summary_target = calculation_service.get_monthly_target(db, user, year, month)
+        summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
+    else:
+        summary_target = total_target
+        summary_actual = total_net
+
     row += 1
     sheet.cell(row=row, column=1).value = "Soll-Stunden Monat:"
-    sheet.cell(row=row, column=2).value = float(total_target)
+    sheet.cell(row=row, column=2).value = float(summary_target)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
     sheet.cell(row=row, column=1).value = "Ist-Stunden Monat:"
-    sheet.cell(row=row, column=2).value = float(total_net)
+    sheet.cell(row=row, column=2).value = float(summary_actual)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
-    monthly_balance = total_net - total_target
+    monthly_balance = summary_actual - summary_target
     sheet.cell(row=row, column=1).value = "Saldo Monat:"
     sheet.cell(row=row, column=2).value = float(monthly_balance)
     sheet.cell(row=row, column=2).number_format = '0.00'
@@ -868,20 +883,42 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.cell(row=row, column=1).value = "Jahressumme"
     sheet.cell(row=row, column=1).font = Font(bold=True, size=12)
 
+    # #377 Baustein 2b (Follow-up zu Finding 1, Whole-Branch-Review): für
+    # Fix-Modus-MA (use_fixed_monthly_target) MUSS die Jahres-Summary mit dem
+    # modus-bewussten Σ get_monthly_target/get_monthly_actual übereinstimmen —
+    # exakt derselbe Fix wie im Monatsexport (2ae1c6e0), sonst widerspricht
+    # sich das §16-Jahresdokument selbst gegen die bereits modus-bewusste
+    # Jahresübersicht (_create_yearly_overview_sheet) und "Überstunden
+    # kumuliert" darunter (get_overtime_account, bereits modus-bewusst). Die
+    # Per-Tag-Detailzeilen oben bleiben unverändert. Nicht-Modus-MA bleiben
+    # exakt auf der alten Per-Tag-Summe (byte-identisch).
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        summary_target = sum(
+            (calculation_service.get_monthly_target(db, user, year, m) for m in range(1, 13)),
+            start=Decimal('0'),
+        )
+        summary_actual = sum(
+            (calculation_service.get_monthly_actual(db, user, year, m) for m in range(1, 13)),
+            start=Decimal('0'),
+        )
+    else:
+        summary_target = total_target
+        summary_actual = total_net
+
     row += 1
     sheet.cell(row=row, column=1).value = "Soll-Stunden Jahr:"
-    sheet.cell(row=row, column=2).value = float(total_target)
+    sheet.cell(row=row, column=2).value = float(summary_target)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
     sheet.cell(row=row, column=1).value = "Ist-Stunden Jahr:"
-    sheet.cell(row=row, column=2).value = float(total_net)
+    sheet.cell(row=row, column=2).value = float(summary_actual)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
-    yearly_balance = total_net - total_target
+    yearly_balance = summary_actual - summary_target
     sheet.cell(row=row, column=1).value = "Saldo Jahr:"
     sheet.cell(row=row, column=2).value = float(yearly_balance)
     sheet.cell(row=row, column=2).number_format = '0.00'
@@ -969,6 +1006,14 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     """
     Create classic yearly overview sheet for one employee.
     Format: Months as columns, compact overview with running balances.
+
+    #377 Baustein 2b — bekannte Grenze: dieser klassische Kompaktbericht baut auf
+    dem Brutto-Soll-Modell ({Arbeit, Krank, Urlaub} pro Monat, Per-Tag-Soll) auf
+    und ist für `use_fixed_monthly_target`-MA NICHT modus-korrekt (das feste
+    Monats-Soll + die Feiertags-/Fehltags-Gutschrift passen nicht in dieses
+    Layout). Für Minijob-Konten mit festem Monats-Soll den Standard-Export
+    (`generate_yearly_report`/`_yearly_employee_sheet`) nutzen — der ist
+    modus-korrekt. Eine Anpassung des Legacy-Formats ist bewusst offen.
     """
     sheet = wb.create_sheet(title=f"{user.last_name}")
 

@@ -81,9 +81,9 @@ describe('#377 UserForm MiLoG checkbox', () => {
 
   it('#377 2a: shows the monthly-hours field only when the account flag is on', () => {
     renderForm();
-    expect(screen.queryByLabelText(/Vereinbarte Monatsarbeitszeit/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
-    expect(screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i)).toBeInTheDocument();
   });
 
   it('#377 2a: prefills agreed_monthly_hours from editUser', () => {
@@ -94,7 +94,7 @@ describe('#377 UserForm MiLoG checkbox', () => {
         is_active: true, milog_working_time_account: true, agreed_monthly_hours: 33,
       },
     });
-    expect((screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/i) as HTMLInputElement).value).toBe('33');
+    expect((screen.getByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i) as HTMLInputElement).value).toBe('33');
   });
 
   it('#377 2a: sends agreed_monthly_hours in the update payload', async () => {
@@ -108,7 +108,7 @@ describe('#377 UserForm MiLoG checkbox', () => {
         } as never} />
       </ToastProvider>,
     );
-    const field = screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/i);
+    const field = screen.getByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i);
     fireEvent.change(field, { target: { value: '40' } });
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
     await waitFor(() => {

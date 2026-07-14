@@ -643,6 +643,22 @@ Der **aktuelle gesetzliche Mindestlohn** (§ 1 MiLoG) wird unter **Einstellungen
 
 > **Wichtig:** Die 50-%-Grenze bindet nur die **mindestlohnwirksamen** Stunden. Wird über dem Mindestlohn vergütet, sind mehr Stunden möglich — der Hinweis ist dann ggf. unkritisch, bitte prüfen. PraxisZeit speichert **keine Lohndaten** und prüft daher **nicht** die 603-€-Verdienstgrenze; das bleibt der Lohnbuchhaltung vorbehalten. Die vereinbarte **Monatsarbeitszeit** kann im Feld „Vereinbarte Monatsarbeitszeit (h)" direkt eingegeben werden (siehe oben); sie ist die vertragliche Bezugsgröße für die **50-%-Prüfung**. Das **12-Monats-Aging** bleibt bewusst Soll-basiert (siehe oben) und ändert sich dadurch nicht.
 
+#### Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b)
+
+Für Minijobber:innen mit einer **fest vereinbarten Monatsarbeitszeit**, die jeden Monat **gleich** sein soll (statt aus Wochenstunden/Arbeitstagen zu schwanken), aktivieren Sie zusätzlich zum Arbeitszeitkonto die Checkbox **„Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)"**. Sie erscheint nur, wenn „Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)" bereits aktiv ist, und macht das Feld „Vereinbarte Monatsarbeitszeit (h)" zur **Pflichtangabe**.
+
+Mit aktivem Modus gilt:
+
+- **Monats-Soll ist fix:** Statt der Tagessoll-Summe über die Arbeitstage des Monats zählt jeden Monat exakt die vereinbarte Monatsarbeitszeit als Soll — egal ob der Monat 4 oder 5 Montage hat. Bei unterjährigem Ein-/Austritt wird das Soll **anteilig nach Kalendertagen** des Beschäftigungsfensters im Monat berechnet.
+- **Individuelle Tagesstunden werden zur geplanten Anwesenheit:** Die Tagesstunden-Matrix (Mo–Fr, unter „Individuelle Tagesstunden") heißt in diesem Modus „Geplante Anwesenheit" und steuert **nicht mehr das Soll**, sondern nur noch, wie viele Stunden an Feiertags-/Fehltagen gutgeschrieben werden. Sie darf frei bzw. lückenhaft gesetzt sein (z. B. nur Montag und Mittwoch).
+- **Feiertag, Urlaub oder bezahlte Freistellung auf einem geplanten Tag** schreiben die geplanten Stunden dieses Wochentags dem **Ist** gut, als wäre gearbeitet worden (Konto-Wirkung: neutral statt Minus). Krankheit und Fortbildung waren bereits vorher als Ist gutgeschrieben und ändern sich nicht.
+- **Unbezahlt entschuldigte Tage** (Typ „Sonstiges", z. B. ein „unbezahlt frei"-Grund wie Kind krank) **mindern stattdessen das feste Monats-Soll** um die geplanten Stunden — es gibt keine Vergütungspflicht, also auch keine Ist-Gutschrift.
+- Übersteigt das erfasste Monats-Ist (inkl. Gutschriften) die vereinbarte Monatsarbeitszeit, erscheint eine **weiche Warnung** (nicht blockierend) — beim Buchen, im eigenen Überstundenkonto und in der Benutzerübersicht, wie die übrigen MiLoG-Hinweise.
+
+> **⚠️ Bekannte Grenze — volle Fehlmonate:** Liegen die geplanten Tagesstunden deutlich **unter** der vereinbarten Monatszeit (weil ein Teil der Zeit flexibel, ohne festen Plan, gearbeitet wird), deckt die automatische Gutschrift bei einem **einzelnen** Fehltag (Feiertag, ein Urlaubstag) korrekt den geplanten Anteil ab. Fällt jedoch ein **kompletter Monat** durch Urlaub oder Krankheit ganz aus, wird nur der geplante Anteil gutgeschrieben — der **flexible Rest** bleibt als Konto-Defizit stehen. In diesem seltenen Fall ist eine **manuelle Korrektur** durch den Betrieb nötig (z. B. über das Überstundenkonto oder den Jahresübertrag). Für den Regelfall einzelner Fehltage ist die Berechnung vollautomatisch korrekt.
+
+Ist der Modus **nicht** aktiviert, bleibt das Verhalten für alle Mitarbeitenden unverändert (das bestehende Tages-Soll-Modell).
+
 ---
 
 ## 14. ArbZG-Compliance-Berichte
@@ -909,6 +925,7 @@ Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
 - **Rückwirkende Stundenänderung:** alte Monate rechnen mit dem damals gültigen Wochensoll (Stundenhistorie / Wirkungsdatum).
 - **Betriebsferien:** je nach Verrechnung Urlaubsabzug oder bezahlte Freistellung; bei aktivem Schalter „Überzählige Betriebsferien als Überstundenabbau" zuerst Urlaub, dann Überstundenausgleich (kein Minus-Urlaub) – Details in [Abschnitt 11](#11-betriebsferien-verwalten).
+- **Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b):** für MA mit aktiviertem Modus gilt statt 18.4/18.5 ein **festes** Monats-Soll (= vereinbarte Monatsarbeitszeit, kalendertag-pro-rata bei Ein-/Austritt); Feiertag/Urlaub/bezahlte Freistellung auf einem geplanten Tag schreiben die geplanten Stunden dem Ist gut, unbezahlte Fehltage mindern stattdessen das feste Soll. Details, Voraussetzungen und die bekannte Fehlmonat-Grenze in [Abschnitt 13 → „Feste Monatsarbeitszeit"](#13-einstellungen).
 
 ### 18.9 Durchgerechnetes Beispiel (Vollzeit)
 

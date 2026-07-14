@@ -522,6 +522,11 @@ def clock_out(
             db, current_user, open_entry.date.year, open_entry.date.month, up_to_date=open_entry.date)
         if _m:
             clock_out_warnings.append(milog_service.milog_50_warning_text(_m))
+        # #377 Baustein 2b: weiche Plausibilitäts-Warnung für Fix-Modus-MA.
+        _mx = milog_service.monthly_exceeded_check(
+            db, current_user, open_entry.date.year, open_entry.date.month, up_to_date=open_entry.date)
+        if _mx:
+            clock_out_warnings.append(milog_service.monthly_exceeded_warning_text(_mx))
 
     response = TimeEntryResponse.model_validate(open_entry)
     _enrich_response(response, open_entry, current_user, db, warnings=clock_out_warnings)
@@ -822,6 +827,11 @@ def create_time_entry(
             db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
         if _m:
             warnings.append(milog_service.milog_50_warning_text(_m))
+        # #377 Baustein 2b: weiche Plausibilitäts-Warnung für Fix-Modus-MA.
+        _mx = milog_service.monthly_exceeded_check(
+            db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
+        if _mx:
+            warnings.append(milog_service.monthly_exceeded_warning_text(_mx))
 
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db, warnings=warnings)
@@ -1090,6 +1100,11 @@ def update_time_entry(
             db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
         if _m:
             update_warnings.append(milog_service.milog_50_warning_text(_m))
+        # #377 Baustein 2b: weiche Plausibilitäts-Warnung für Fix-Modus-MA.
+        _mx = milog_service.monthly_exceeded_check(
+            db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
+        if _mx:
+            update_warnings.append(milog_service.monthly_exceeded_warning_text(_mx))
 
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db, warnings=update_warnings)

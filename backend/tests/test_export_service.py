@@ -1,6 +1,7 @@
 """Tests for export service (monthly Excel report generation)."""
 import zipfile
 from datetime import date, time
+from decimal import Decimal
 from io import BytesIO
 
 import pytest
@@ -197,6 +198,156 @@ class TestClassicReportSaldo:
         # Brutto-Modell: das Brutto-Soll enthält den Urlaubstag, das bereinigte
         # Soll nicht → Differenz ≈ 8h (der eine Urlaubstag).
         assert abs((gross - adjusted) - 8.0) < 0.01, f"gross {gross} - adjusted {adjusted}"
+
+
+class TestFixedModeMonthlySummary:
+    """Finding 1 (Whole-Branch-Review, #377 Baustein 2b): die Monats-Summary
+    (Soll-Stunden Monat / Ist-Stunden Monat / Saldo Monat) im XLSX-Detailblatt
+    MUSS für Fix-Modus-MA (use_fixed_monthly_target) mit dem modus-bewussten
+    get_monthly_target/get_monthly_actual übereinstimmen — sonst widerspricht
+    sich das §16-Dokument selbst gegen "Überstunden kumuliert" (bereits
+    modus-bewusst über get_overtime_account)."""
+
+    def test_monthly_summary_matches_monthly_target_fixed_mode(self, db, default_tenant):
+        from app.services import calculation_service as cs
+        from tests.test_fixed_monthly_target import _mk
+
+        u = _mk(db)  # agreed=40h fix, Mo+Mi geplant à 3h
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                         start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+        db.commit()
+
+        expected_target = cs.get_monthly_target(db, u, 2025, 3)
+        expected_actual = cs.get_monthly_actual(db, u, 2025, 3)
+        expected_balance = expected_actual - expected_target
+        expected_overtime = cs.get_overtime_account(db, u, 2025, 3)
+        # Sanity: für einen einzelnen vergangenen Monat ohne Carryover müssen
+        # Saldo Monat und "Überstunden kumuliert" ohnehin übereinstimmen.
+        assert expected_balance == expected_overtime
+
+        result = generate_monthly_report(db, 2025, 3, tenant_id=DEFAULT_TENANT_ID)
+        wb, _ = _load_xlsx(result)
+        ws = next((wb[n] for n in wb.sheetnames if u.last_name in n), wb[wb.sheetnames[0]])
+        rows = {
+            row[0].value: row[1].value
+            for row in ws.iter_rows(values_only=False)
+            if row[0].value in (
+                "Soll-Stunden Monat:", "Ist-Stunden Monat:", "Saldo Monat:",
+                "Überstunden kumuliert:",
+            )
+        }
+        assert rows["Soll-Stunden Monat:"] == pytest.approx(float(expected_target))
+        assert rows["Ist-Stunden Monat:"] == pytest.approx(float(expected_actual))
+        assert rows["Saldo Monat:"] == pytest.approx(float(expected_balance))
+        # Selbst-Konsistenz: "Saldo Monat" darf "Überstunden kumuliert" NICHT
+        # widersprechen (das war der Kern des Findings).
+        assert rows["Saldo Monat:"] == pytest.approx(rows["Überstunden kumuliert:"])
+
+    def test_monthly_summary_non_mode_byte_identical(self, db, test_user):
+        """Regressions-Anker: ein Nicht-Modus-MA behält die alte Per-Tag-Summe
+        (die auf OVERTIME-Tagen legitim von get_monthly_target abweichen darf
+        — ein wholesale-Swap würde das brechen)."""
+        from app.services import calculation_service as cs
+
+        _make_time_entry(db, test_user, date(2026, 1, 5), 8, 17, 30)
+        result = generate_monthly_report(db, 2026, 1, tenant_id=DEFAULT_TENANT_ID)
+        wb, _ = _load_xlsx(result)
+        ws = next((wb[n] for n in wb.sheetnames if test_user.last_name in n), wb[wb.sheetnames[0]])
+        rows = {
+            row[0].value: row[1].value
+            for row in ws.iter_rows(values_only=False)
+            if row[0].value in ("Soll-Stunden Monat:", "Ist-Stunden Monat:", "Saldo Monat:")
+        }
+        expected_target = cs.get_monthly_target(db, test_user, 2026, 1)
+        expected_actual = cs.get_monthly_actual(db, test_user, 2026, 1)
+        assert rows["Soll-Stunden Monat:"] == pytest.approx(float(expected_target))
+        assert rows["Ist-Stunden Monat:"] == pytest.approx(float(expected_actual))
+        assert rows["Saldo Monat:"] == pytest.approx(float(expected_actual - expected_target))
+
+
+class TestFixedModeYearlySummary:
+    """Follow-up to Finding 1 (Whole-Branch-Review, #377 Baustein 2b): die
+    YEARLY employee detail sheet hatte dasselbe Self-Contradiction-Problem wie
+    der Monatsexport (dort in 2ae1c6e0 gefixt) — "Soll-Stunden Jahr / Ist-
+    Stunden Jahr / Saldo Jahr" wurden per-Tag inline akkumuliert statt
+    modus-bewusst über get_monthly_target/get_monthly_actual, während die
+    bereits modus-bewusste Jahresübersicht (_create_yearly_overview_sheet)
+    und "Überstunden kumuliert" darunter divergierten."""
+
+    def test_yearly_summary_matches_monthly_target_sum_fixed_mode(self, db, default_tenant):
+        from app.services import calculation_service as cs
+        from app.services.export_service import generate_yearly_report
+        from tests.test_fixed_monthly_target import _mk
+
+        u = _mk(db)  # agreed=40h fix, Mo+Mi geplant à 3h
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                         start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+        db.commit()
+
+        expected_target = sum(
+            (cs.get_monthly_target(db, u, 2025, m) for m in range(1, 13)),
+            start=Decimal("0"),
+        )
+        expected_actual = sum(
+            (cs.get_monthly_actual(db, u, 2025, m) for m in range(1, 13)),
+            start=Decimal("0"),
+        )
+        expected_balance = expected_actual - expected_target
+
+        result = generate_yearly_report(db, 2025, tenant_id=DEFAULT_TENANT_ID)
+        wb, _ = _load_xlsx(result)
+        ws = next((wb[n] for n in wb.sheetnames if u.last_name in n and n not in ("Jahresübersicht", "Abwesenheiten")), None)
+        assert ws is not None, f"employee sheet not found in {wb.sheetnames}"
+        rows = {
+            row[0].value: row[1].value
+            for row in ws.iter_rows(values_only=False)
+            if row[0].value in ("Soll-Stunden Jahr:", "Ist-Stunden Jahr:", "Saldo Jahr:")
+        }
+        assert rows["Soll-Stunden Jahr:"] == pytest.approx(float(expected_target))
+        assert rows["Ist-Stunden Jahr:"] == pytest.approx(float(expected_actual))
+        assert rows["Saldo Jahr:"] == pytest.approx(float(expected_balance))
+
+        # Selbst-Konsistenz: die (bereits modus-bewusste, unveränderte)
+        # Jahresübersicht-Zeile für denselben MA darf dem Detailblatt NICHT
+        # widersprechen (das war der Kern des Findings — vorher hatte das
+        # Detailblatt eine per-Tag-Summe, die Übersicht schon Σ get_monthly_*).
+        overview = wb["Jahresübersicht"]
+        overview_row = next(
+            r for r in overview.iter_rows(min_row=4, values_only=False)
+            if r[0].value == f"{u.last_name}, {u.first_name}"
+        )
+        assert overview_row[2].value == pytest.approx(rows["Soll-Stunden Jahr:"])   # Spalte 3: Soll (Jahr)
+        assert overview_row[3].value == pytest.approx(rows["Ist-Stunden Jahr:"])    # Spalte 4: Ist (Jahr)
+        assert overview_row[4].value == pytest.approx(rows["Saldo Jahr:"])          # Spalte 5: Saldo (Jahr)
+
+    def test_yearly_summary_non_mode_byte_identical(self, db, test_user):
+        """Regressions-Anker: ein Nicht-Modus-MA behält die alte Per-Tag-Summe
+        (die auf OVERTIME-Tagen legitim von get_monthly_target abweichen darf
+        — ein wholesale-Swap würde das brechen)."""
+        from app.services import calculation_service as cs
+        from app.services.export_service import generate_yearly_report
+
+        _make_time_entry(db, test_user, date(2026, 1, 5), 8, 17, 30)
+        result = generate_yearly_report(db, 2026, tenant_id=DEFAULT_TENANT_ID)
+        wb, _ = _load_xlsx(result)
+        ws = next((wb[n] for n in wb.sheetnames if test_user.last_name in n and n not in ("Jahresübersicht", "Abwesenheiten")), None)
+        assert ws is not None, f"employee sheet not found in {wb.sheetnames}"
+        rows = {
+            row[0].value: row[1].value
+            for row in ws.iter_rows(values_only=False)
+            if row[0].value in ("Soll-Stunden Jahr:", "Ist-Stunden Jahr:", "Saldo Jahr:")
+        }
+        expected_target = sum(
+            (cs.get_monthly_target(db, test_user, 2026, m) for m in range(1, 13)),
+            start=Decimal("0"),
+        )
+        expected_actual = sum(
+            (cs.get_monthly_actual(db, test_user, 2026, m) for m in range(1, 13)),
+            start=Decimal("0"),
+        )
+        assert rows["Soll-Stunden Jahr:"] == pytest.approx(float(expected_target))
+        assert rows["Ist-Stunden Jahr:"] == pytest.approx(float(expected_actual))
+        assert rows["Saldo Jahr:"] == pytest.approx(float(expected_actual - expected_target))
 
 
 class TestPdfMarkupEscaping:

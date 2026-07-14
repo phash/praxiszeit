@@ -162,3 +162,31 @@ def test_journal_masks_custom_reason_absence_without_health_data(db, test_user):
     shown = journal_service.get_journal(db, test_user, 2026, 3, include_health_data=True)
     day_s = next(d for d in shown["days"] if d["date"] == "2026-03-05")
     assert day_s["absences"][0]["type"] == "Kind krank"  # eigener Grund-Name sichtbar
+
+
+def test_journal_renders_without_error_for_fixed_mode_user(db, default_tenant):
+    """Finding 3 (Whole-Branch-Review, #377 Baustein 2b): ein Fix-Modus-MA
+    (use_fixed_monthly_target) darf im Journal weder crashen noch eine
+    irreführende Kumulierung zeigen. Die Tageszeilen bleiben bewusst die
+    GEPLANTE Anwesenheit (kein Per-Tag-Zerlegen des flachen Monats-Solls,
+    siehe Kommentar bei _eff_daily_target) — die maßgebliche Soll/Ist/Saldo-
+    Zahl ist monthly_summary (modus-bewusst über get_monthly_target/actual)."""
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)  # agreed=40h fix, Mo+Mi geplant à 3h
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                     start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+
+    result = journal_service.get_journal(db, u, 2025, 3)  # no crash
+    assert len(result["days"]) == 31
+
+    expected_target = calculation_service.get_monthly_target(db, u, 2025, 3)
+    expected_actual = calculation_service.get_monthly_actual(db, u, 2025, 3)
+    assert result["monthly_summary"]["target_hours"] == pytest.approx(float(expected_target))
+    assert result["monthly_summary"]["actual_hours"] == pytest.approx(float(expected_actual))
+    assert result["monthly_summary"]["balance"] == pytest.approx(
+        float(expected_actual - expected_target))
+
+    # Bewusst KEINE Assertion, dass Σ(day["target_hours"]) == monthly_summary
+    # (Finding 3: erwartete Divergenz bei fixem Monats-Soll, kein Bug).

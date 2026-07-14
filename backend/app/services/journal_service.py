@@ -87,6 +87,18 @@ def get_journal(
     # (24./31.12.) and employment-window guard as get_monthly_target — otherwise
     # the day rows do not sum to monthly_summary.target_hours (a half-day 24.12.
     # showed the full Tagessoll; days before first_work_day showed full target).
+    #
+    # Finding 3 (Whole-Branch-Review, #377 Baustein 2b): for a
+    # use_fixed_monthly_target user, this deliberately stays a per-day PLANNED
+    # attendance figure (get_daily_target_for_date's use_daily_schedule
+    # fallback), NOT a decomposition of the flat monthly Soll — a flat
+    # agreed_monthly_hours target has no per-day home, and the "flexible
+    # remainder" (see design spec §5 Bekannte Grenze) is intentionally not
+    # smeared across days. The day rows will therefore NOT sum to
+    # monthly_summary.target_hours for a fixed-mode user; that summary block
+    # (below, via get_monthly_target/get_overtime_account) stays the
+    # authoritative Soll. Do not "fix" the day rows to reconcile — see Finding 1
+    # for why the summary, not the days, is the source of truth here.
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
     def _eff_daily_target(d: date) -> Decimal:

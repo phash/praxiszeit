@@ -222,6 +222,11 @@ def users_overview(
                 _aging = milog_service.settlement_aging(db, u, _t, detailed=_detailed)
                 if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
                     _milog_w.append(milog_service.settlement_warning_text(_aging))
+            # #377 Baustein 2b: weiche Plausibilitäts-Warnung für Fix-Modus-MA
+            # (gleicher Saldo-Stichtag wie oben, #313-Parität zum MA-Dashboard).
+            _exceeded = milog_service.monthly_exceeded_check(db, u, _t.year, _t.month, up_to_date=cutoff)
+            if _exceeded:
+                _milog_w.append(milog_service.monthly_exceeded_warning_text(_exceeded))
         result.append(AdminUserOverview(
             user_id=str(u.id),
             first_name=u.first_name,
@@ -594,6 +599,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         child_sick_days_per_year=user_data.child_sick_days_per_year,  # #376
         milog_working_time_account=user_data.milog_working_time_account,  # #377
         agreed_monthly_hours=user_data.agreed_monthly_hours,  # #377 Baustein 2a
+        use_fixed_monthly_target=user_data.use_fixed_monthly_target,  # #377 Baustein 2b
         scheduled_start_monday=user_data.scheduled_start_monday,
         scheduled_end_monday=user_data.scheduled_end_monday,
         scheduled_start_tuesday=user_data.scheduled_start_tuesday,

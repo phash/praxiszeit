@@ -84,6 +84,32 @@ def milog_50_warning_text(chk: dict) -> str:
     )
 
 
+def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = None):
+    """#377 Baustein 2b: weiche Plausibilitäts-Warnung, wenn das Monats-Ist
+    (inkl. Gutschriften) die vereinbarte Monatsarbeitszeit eines Fix-Modus-MA
+    übersteigt. None, wenn der Modus aus ist / kein Stundentracking / keine
+    vereinbarte Monatszahl hinterlegt / Ist ≤ agreed. Unabhängig vom
+    MiLoG-Konto-Flag (`milog_working_time_account`) — reine Fix-Soll-
+    Plausibilität, kein 50-%-/Aging-Bezug."""
+    if not getattr(user, "use_fixed_monthly_target", False) or not getattr(user, "track_hours", False):
+        return None
+    agreed = getattr(user, "agreed_monthly_hours", None)
+    if not agreed:
+        return None
+    agreed = Decimal(str(agreed))
+    actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date)
+    if actual > agreed:
+        return {"month_actual": float(actual), "agreed": float(agreed), "year": year, "month": month}
+    return None
+
+
+def monthly_exceeded_warning_text(chk: dict) -> str:
+    """Stabiler Warncode + Detailtext (wie milog_50_warning_text)."""
+    return (f"MILOG_MONTHLY_EXCEEDED: Erfasste Stunden {chk['month_actual']:.1f}h im "
+            f"{chk['month']:02d}/{chk['year']} übersteigen die vereinbarte Monatsarbeitszeit "
+            f"({chk['agreed']:.1f}h). Bitte prüfen (sofern zur Mindestlohnhöhe vergütet).")
+
+
 def settlement_aging(db, user, as_of: date, detailed=None):
     """12-Monats-Ausgleichsfrist (§ 2 Abs. 2 S. 2 MiLoG). FIFO über die Monats-
     Deltas (Ist − Soll) des Kontos: Plus = Einzahlung (monatsstamped), Minus =

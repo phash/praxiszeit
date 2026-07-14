@@ -223,6 +223,11 @@ def get_overtime_account(
         _aging = milog_service.settlement_aging(db, current_user, today_local(), detailed=history_detail)
         if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
             milog_warnings.append(milog_service.settlement_warning_text(_aging))
+        # #377 Baustein 2b: weiche Plausibilitäts-Warnung, wenn ein Fix-Modus-MA
+        # sein Monats-Ist über der vereinbarten Monatszeit erfasst hat.
+        _exceeded = milog_service.monthly_exceeded_check(db, current_user, now.year, now.month, up_to_date=cutoff)
+        if _exceeded:
+            milog_warnings.append(milog_service.monthly_exceeded_warning_text(_exceeded))
 
     return OvertimeAccount(
         current_balance=current_balance,
