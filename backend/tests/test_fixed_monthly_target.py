@@ -170,3 +170,29 @@ def test_overtime_account_non_mode_byte_identical(db, default_tenant):
     db.commit()
     # Soll = Σ 8h über 21 Werktage im März 2025 = 168; Ist = 10h → Konto = 10 − 168
     assert cs.get_overtime_account(db, u, 2025, 3) == Decimal("10.00") - Decimal("168.00")
+
+
+def test_ytd_summary_fixed_mode(db, default_tenant):
+    """#377 Baustein 2b: get_ytd_summary muss im Fix-Modus das FESTE Monats-Soll
+    (40h) je Monat summieren, nicht die Per-Tag-Summe. Jahr 2026 = aktuelles
+    Jahr (Testlauf), damit cutoff_date (#313) tatsächlich als YTD-Grenze
+    greift (Vorjahre laufen sonst immer bis 31.12.). Ohne Einträge: YTD-Soll
+    bis 31.03. = 3×40 = 120 (Jan+Feb+Mär), Ist = Gutschriften (hier 0)."""
+    u = _mk(db)
+    r = cs.get_ytd_summary(db, u, 2026, cutoff_date=date(2026, 3, 31))
+    assert r["target_hours"] == 120.00
+
+
+def test_ytd_summary_non_mode_byte_identical(db, default_tenant):
+    """Nicht-Modus-MA müssen weiterhin die Per-Tag-Summe/Inline-Schleife nutzen
+    (unverändert) — Regressionsanker für den Modus-Branch."""
+    u = _mk(db, use_fixed_monthly_target=False, weekly_hours=Decimal("40"), work_days_per_week=5,
+            use_daily_schedule=False, agreed_monthly_hours=None)
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 5),
+                     start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+    r = cs.get_ytd_summary(db, u, 2026, cutoff_date=date(2026, 3, 31))
+    # Soll = Σ 8h über die Werktage Jan-Mär 2026 bis 31.03.; Ist = 10h.
+    expected_target = (cs.get_range_target(db, u, date(2026, 1, 1), date(2026, 3, 31)))
+    assert Decimal(str(r["target_hours"])) == expected_target
+    assert Decimal(str(r["actual_hours"])) == Decimal("10.00")

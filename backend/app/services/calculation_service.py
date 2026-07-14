@@ -1093,6 +1093,36 @@ def get_ytd_summary(
     if start > end:
         return {"target_hours": 0.0, "actual_hours": 0.0, "overtime": 0.0}
 
+    # #377 Baustein 2b: fest-Monats-Soll-Modus — analog Task 5 (get_overtime_
+    # account) an die bereits modus-korrekten Wrapper (Tasks 3+4) delegieren,
+    # statt die Per-Tag-Schleife unten (_day_soll_contribution + Inline-Ist)
+    # zu duplizieren. `end` (oben aus year/today/cutoff_date hergeleitet)
+    # ist bereits die korrekte YTD-Obergrenze für BEIDE Fälle (laufendes Jahr
+    # mit/ohne #313-cutoff, oder Vorjahr = 31.12.) — get_monthly_target/
+    # get_monthly_actual clampen intern selbst gegen das jeweilige Monatsende
+    # (min(Monatsende, up_to_date)), daher hier unverändert durchreichen.
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        total_target = Decimal('0')
+        total_actual = Decimal('0')
+        for m in range(1, end.month + 1):
+            total_target += get_monthly_target(db, user, year, m, up_to_date=end)
+            total_actual += get_monthly_actual(db, user, year, m, up_to_date=end)
+
+        carryover = db.query(YearCarryover).filter(
+            YearCarryover.user_id == user.id,
+            YearCarryover.year == year,
+        ).first()
+        carryover_hours = Decimal(str(carryover.overtime_hours)) if carryover else Decimal('0')
+
+        overtime = total_actual - total_target + carryover_hours
+
+        return {
+            "target_hours": float(total_target.quantize(Decimal('0.01'))),
+            "actual_hours": float(total_actual.quantize(Decimal('0.01'))),
+            "overtime": float(overtime.quantize(Decimal('0.01'))),
+            "carryover_hours": float(carryover_hours.quantize(Decimal('0.01'))),
+        }
+
     # Fetch holidays in range (#204: use the preloaded tenant+year set if given).
     if holidays is not None:
         holiday_dates: set = holidays
