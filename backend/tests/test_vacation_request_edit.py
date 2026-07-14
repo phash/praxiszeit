@@ -572,6 +572,73 @@ class TestPostBudgetExcludesHolidays:
         assert resp.status_code == 201, resp.text
 
 
+# ===========================================================================
+# Finding 10: POST + PATCH Budget-Check müssen 'free'-Sondertage (24./31.12.)
+# genau wie Feiertage ausschließen — AC-11-Parität mit
+# admin_vacations.review_vacation_request (holidays |=
+# special_days_service.free_special_days_in_range(...)). Ohne den Ausschluss
+# zählt ein soll-freier Sondertag fälschlich als verbrauchter Urlaubstag und
+# ein Antrag über einen Bereich mit 24./31.12. wird false-positiv als
+# "nicht genügend Urlaubstage" abgelehnt.
+# ===========================================================================
+
+def _set_special_day_free(db, key_prefix="special_day_dec24", counts_as_vacation="false"):
+    from app.models.system_setting import SystemSetting
+    db.add(SystemSetting(key=f"{key_prefix}_mode", tenant_id=DEFAULT_TENANT_ID, value="free"))
+    db.add(SystemSetting(
+        key=f"{key_prefix}_counts_as_vacation", tenant_id=DEFAULT_TENANT_ID,
+        value=counts_as_vacation,
+    ))
+    db.commit()
+
+
+class TestPostBudgetExcludesFreeSpecialDay:
+    """F-10 (POST): Budget = 4 Tage, Bereich Mo 21.12.–Fr 25.12.2026 = 5
+    Wochentage, davon 24.12. als 'free' konfiguriert → 4 billable Tage.
+    Ohne den Ausschluss zählt der Check 5 > 4 → 400 (false positive)."""
+
+    def test_request_spanning_free_day_fits_budget(self, db, default_tenant):
+        _enable_approval(db)
+        user = _user_custom(db, "budgetfree", vacation_days=4)
+        client_gen = _make_client(db, user)
+        client = next(client_gen)
+        _set_special_day_free(db)
+
+        resp = client.post("/api/vacation-requests/", json={
+            "date": "2026-12-21",
+            "end_date": "2026-12-25",
+            "hours": 8.0,
+            "absence_type": "vacation",
+        })
+        # Mit Free-Sondertag-Ausschluss: 4 ≤ 4 → 201. Ohne: 5 > 4 → 400.
+        assert resp.status_code == 201, resp.text
+
+
+class TestEditBudgetExcludesFreeSpecialDay:
+    """F-10 (PATCH): dasselbe Szenario über den Edit-Budget-Check
+    (apply_vacation_request_patch) — muss identisch mit dem POST-Pfad
+    rechnen."""
+
+    def test_edit_spanning_free_day_fits_budget(self, db, default_tenant):
+        user = _user_custom(db, "editbudgetfree", vacation_days=4)
+        vr = _vr(db, user, start=date(2026, 12, 21))
+        _set_special_day_free(db)
+
+        def override_db():
+            yield db
+        _app.dependency_overrides[get_db] = override_db
+        _app.dependency_overrides[get_current_user] = lambda: user
+        try:
+            resp = TestClient(_app).patch(
+                f"/api/vacation-requests/{vr.id}",
+                json={"end_date": date(2026, 12, 25).isoformat()},
+            )
+        finally:
+            _app.dependency_overrides.clear()
+        # Mit Free-Sondertag-Ausschluss: 4 ≤ 4 → 200. Ohne: 5 > 4 → 400.
+        assert resp.status_code == 200, resp.text
+
+
 class TestVacationSelfApproval:
     """Audit A01 (4-Augen-Prinzip): ein Admin darf seinen EIGENEN Urlaubsantrag
     nur dann selbst genehmigen, wenn KEIN weiterer aktiver Admin existiert
