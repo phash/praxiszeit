@@ -243,6 +243,80 @@ class TestAbsencesOverviewDayBased:
         assert b_rest == round(float(acc_b["remaining_days"]), 1)
 
 
+class TestYearlyOverviewDayBased:
+    """Finding 9 (Review 2026-07-14): die ODS-Jahresübersicht ('Jahresübersicht'-
+    Sheet, generate_yearly_report) muss Urlaub/Krank TAGEBASIERT zählen — exakt
+    wie das 'Abwesenheiten'-Sheet im selben Workbook (absence_days /
+    get_vacation_account['used_days']) — statt Σ(Absence.hours). Die naive
+    Stundensumme liefert für track_hours=False-MA (Stunden bleiben 0, s. GLOSSAR)
+    fälschlich 0 Urlaubs-/Krankheitstage trotz genommener Tage."""
+
+    def _untracked_user(self, db):
+        from app.models import User, UserRole
+        from app.services import auth_service
+        u = User(
+            username="ods_yov_untracked", email="ods_yov_untracked@example.com",
+            password_hash=auth_service.hash_password("x12345678"),
+            first_name="Lei", last_name="Tendya", role=UserRole.EMPLOYEE,
+            weekly_hours=40.0, work_days_per_week=5, vacation_days=30,
+            is_active=True, tenant_id=DEFAULT_TENANT_ID, track_hours=False,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u
+
+    def _absence(self, db, user, d, typ, hours, half_day=False):
+        a = Absence(
+            user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+            type=typ, hours=hours, half_day=half_day,
+        )
+        db.add(a)
+        db.commit()
+        return a
+
+    def _overview_cell(self, doc, last_name):
+        """(Urlaub, Krank) aus der 'Jahresübersicht'-Tabelle für die Datenzeile
+        des MA (Spalte 7 = Urlaub, Spalte 8 = Krank, 0-indexed cells[6]/[7])."""
+        from odf.table import Table, TableRow, TableCell
+        from odf.teletype import extractText
+        table = [t for t in doc.spreadsheet.getElementsByType(Table)
+                 if t.getAttribute("name") == "Jahresübersicht"][0]
+        for row in table.getElementsByType(TableRow):
+            cells = row.getElementsByType(TableCell)
+            if cells and last_name in extractText(cells[0]):
+                return (float(cells[6].getAttribute("value")),
+                        float(cells[7].getAttribute("value")))
+        raise AssertionError(f"keine Zeile für {last_name}")
+
+    def test_overview_vacation_sick_are_day_based_for_untracked_user(self, db, default_tenant):
+        from app.services import calculation_service
+        from app.services.ods_export_service import _yearly_overview_sheet, _doc_with_styles
+
+        user = self._untracked_user(db)
+        # track_hours=False → gebuchte Absence.hours sind 0 (GLOSSAR), aber es
+        # SIND echte Tage: 1 voller Urlaubstag + 1 halber Urlaubstag + 1 voller
+        # Krankheitstag.
+        self._absence(db, user, date(2026, 1, 12), AbsenceType.VACATION, 0)
+        self._absence(db, user, date(2026, 1, 13), AbsenceType.VACATION, 0, half_day=True)
+        self._absence(db, user, date(2026, 1, 14), AbsenceType.SICK, 0)
+
+        doc, bold, _normal = _doc_with_styles()
+        _yearly_overview_sheet(doc, db, [user], 2026, bold, include_health_data=True)
+
+        vac, sick = self._overview_cell(doc, "Tendya")
+
+        acc = calculation_service.get_vacation_account(db, user, 2026)
+        assert vac == round(float(acc["used_days"]), 1) == 1.5, (
+            f"Urlaub-Spalte muss tagebasiert sein (1,5 Tage wie das Abwesenheiten-"
+            f"Sheet/get_vacation_account), nicht Σh (0h für track_hours=False); bekam {vac}"
+        )
+        assert sick == 1.0, (
+            f"Krank-Spalte muss tagebasiert sein (1 Tag wie absence_days), nicht "
+            f"Σh (0h für track_hours=False); bekam {sick}"
+        )
+
+
 class TestOdsMultiAbsenceDay:
     def test_monthly_renders_both_absences_on_multitype_day(self, db, test_user):
         # Regression: die ODS-Detailsheets keyten Absences per date-dict → der 2.
