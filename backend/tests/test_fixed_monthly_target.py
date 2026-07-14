@@ -69,3 +69,16 @@ def test_unpaid_other_reduces_soll(db, default_tenant):
                    type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))  # Mi geplant
     db.commit()
     assert cs.fixed_month_unpaid_reduction(db, u, 2025, 3) == Decimal("3.00")
+
+
+def test_credit_mixed_half_day_vacation_and_paid_leave_same_date(db, default_tenant):
+    """Misch-Tag: ½ VACATION + ½ PAID_LEAVE am selben geplanten Mi (3h Soll)
+    müssen zusammen den VOLLEN Tag (3.00) gutschreiben, nicht nur die 2. Hälfte
+    (1.50) — {date: a}-Dict würde den 1. Eintrag beim Überschreiben verlieren."""
+    u = _mk(db)
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                   type=AbsenceType.VACATION, hours=Decimal("1.5"), half_day=True))  # Mi geplant
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                   type=AbsenceType.PAID_LEAVE, hours=Decimal("1.5"), half_day=True))  # gleicher Tag
+    db.commit()
+    assert cs.fixed_month_credit(db, u, 2025, 3) == Decimal("3.00")

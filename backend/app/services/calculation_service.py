@@ -190,11 +190,13 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
             date_in_month(PublicHoliday.date, year, month),
             PublicHoliday.tenant_id == user.tenant_id,
         ).all()}
-    absences = {a.date: a for a in db.query(Absence).filter(
+    by_date = {}
+    for a in db.query(Absence).filter(
         Absence.user_id == user.id, Absence.tenant_id == user.tenant_id,
         date_in_month(Absence.date, year, month),
         Absence.type.in_(list(types)), Absence.start_time.is_(None),  # nur ganztägig
-    ).all()}
+    ).all():
+        by_date.setdefault(a.date, []).append(a)  # Liste: Misch-Tag ½+½ nicht verlieren
     entry_dates = {e.date for e in db.query(TimeEntry.date).filter(
         TimeEntry.user_id == user.id, TimeEntry.tenant_id == user.tenant_id,
         date_in_month(TimeEntry.date, year, month),
@@ -208,14 +210,14 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
             continue
         if d in entry_dates:
             continue  # reale Erfassung gewinnt
-        a = absences.get(d)
-        is_holiday = include_holidays and d in holiday_dates
-        if not a and not is_holiday:
+        coverage = Decimal('1') if (include_holidays and d in holiday_dates) else Decimal('0')
+        for a in by_date.get(d, []):
+            coverage += Decimal('0.5') if a.half_day else Decimal('1')
+        coverage = min(coverage, Decimal('1'))  # nie mehr als ein voller Tag gutschreiben
+        if coverage <= 0:
             continue
         planned = _fixed_planned_hours(db, user, d, cfg)
-        if a is not None and a.half_day:
-            planned = planned * Decimal('0.5')
-        total += planned
+        total += planned * coverage
     return total.quantize(Decimal('0.01'))
 
 
