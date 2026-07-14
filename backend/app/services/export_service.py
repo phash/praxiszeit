@@ -876,20 +876,42 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.cell(row=row, column=1).value = "Jahressumme"
     sheet.cell(row=row, column=1).font = Font(bold=True, size=12)
 
+    # #377 Baustein 2b (Follow-up zu Finding 1, Whole-Branch-Review): für
+    # Fix-Modus-MA (use_fixed_monthly_target) MUSS die Jahres-Summary mit dem
+    # modus-bewussten Σ get_monthly_target/get_monthly_actual übereinstimmen —
+    # exakt derselbe Fix wie im Monatsexport (2ae1c6e0), sonst widerspricht
+    # sich das §16-Jahresdokument selbst gegen die bereits modus-bewusste
+    # Jahresübersicht (_create_yearly_overview_sheet) und "Überstunden
+    # kumuliert" darunter (get_overtime_account, bereits modus-bewusst). Die
+    # Per-Tag-Detailzeilen oben bleiben unverändert. Nicht-Modus-MA bleiben
+    # exakt auf der alten Per-Tag-Summe (byte-identisch).
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        summary_target = sum(
+            (calculation_service.get_monthly_target(db, user, year, m) for m in range(1, 13)),
+            start=Decimal('0'),
+        )
+        summary_actual = sum(
+            (calculation_service.get_monthly_actual(db, user, year, m) for m in range(1, 13)),
+            start=Decimal('0'),
+        )
+    else:
+        summary_target = total_target
+        summary_actual = total_net
+
     row += 1
     sheet.cell(row=row, column=1).value = "Soll-Stunden Jahr:"
-    sheet.cell(row=row, column=2).value = float(total_target)
+    sheet.cell(row=row, column=2).value = float(summary_target)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
     sheet.cell(row=row, column=1).value = "Ist-Stunden Jahr:"
-    sheet.cell(row=row, column=2).value = float(total_net)
+    sheet.cell(row=row, column=2).value = float(summary_actual)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
-    yearly_balance = total_net - total_target
+    yearly_balance = summary_actual - summary_target
     sheet.cell(row=row, column=1).value = "Saldo Jahr:"
     sheet.cell(row=row, column=2).value = float(yearly_balance)
     sheet.cell(row=row, column=2).number_format = '0.00'
