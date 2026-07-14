@@ -107,6 +107,23 @@ class TestGenerateYearlyClassicOdsReport:
         out = generate_yearly_report_classic(db, 2026)
         assert out.read()[:2] == ODS_PK_MAGIC
 
+    def test_holiday_tenant_scoped(self, db, test_user):
+        """Holidays in the tenant's own set must appear; others must not
+        leak into the export (regression test for the tenant_id-filter fix)."""
+        # Holiday for the current tenant
+        h_own = PublicHoliday(
+            date=date(2026, 5, 1),
+            name="Tag der Arbeit (eigene)",
+            year=2026,
+            tenant_id=DEFAULT_TENANT_ID,
+        )
+        db.add(h_own)
+        db.commit()
+
+        out = generate_yearly_report_classic(db, 2026)
+        data = out.read()
+        assert data[:2] == ODS_PK_MAGIC
+
 
 def _summary_value(doc, sheet_name, label):
     """Liefert den Float-Wert der Summary-Zeile ``label`` im Blatt
@@ -174,23 +191,6 @@ class TestFixedModeMonthlySummary:
         assert _summary_value(doc, sheet_name, "Ist-Stunden Monat:") == pytest.approx(float(expected_actual))
         assert _summary_value(doc, sheet_name, "Saldo Monat:") == pytest.approx(
             float(expected_actual - expected_target))
-
-    def test_holiday_tenant_scoped(self, db, test_user):
-        """Holidays in the tenant's own set must appear; others must not
-        leak into the export (regression test for the tenant_id-filter fix)."""
-        # Holiday for the current tenant
-        h_own = PublicHoliday(
-            date=date(2026, 5, 1),
-            name="Tag der Arbeit (eigene)",
-            year=2026,
-            tenant_id=DEFAULT_TENANT_ID,
-        )
-        db.add(h_own)
-        db.commit()
-
-        out = generate_yearly_report_classic(db, 2026)
-        data = out.read()
-        assert data[:2] == ODS_PK_MAGIC
 
 
 class TestFormulaInjection:
