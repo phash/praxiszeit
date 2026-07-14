@@ -122,3 +122,28 @@ def test_credit_mixed_half_day_vacation_and_paid_leave_same_date(db, default_ten
                    type=AbsenceType.PAID_LEAVE, hours=Decimal("1.5"), half_day=True))  # gleicher Tag
     db.commit()
     assert cs.fixed_month_credit(db, u, 2025, 3) == Decimal("3.00")
+
+
+def test_monthly_actual_credits_holiday(db, default_tenant):
+    u = _mk(db)
+    db.add(PublicHoliday(date=date(2025, 3, 3), name="X", year=2025, tenant_id=DEFAULT_TENANT_ID))  # Mo
+    db.commit()
+    # kein TimeEntry → Ist = 0 + Gutschrift 3 (geplante Mo-Stunden)
+    assert cs.get_monthly_actual(db, u, 2025, 3) == Decimal("3.00")
+
+
+def test_range_actual_credit_not_smeared_across_weeks(db, default_tenant):
+    """Analog zu Task 3 (get_range_target): eine Feiertags-Gutschrift in Woche A
+    darf nicht in die Ist-Abfrage einer ANDEREN Woche desselben Monats
+    durchsickern — from_date muss den Monats-Credit range-genau begrenzen."""
+    u = _mk(db)
+    db.add(PublicHoliday(date=date(2025, 3, 3), name="X", year=2025, tenant_id=DEFAULT_TENANT_ID))  # Mo, Woche A
+    db.commit()
+
+    week_a = cs.get_range_actual(db, u, date(2025, 3, 3), date(2025, 3, 9))
+    week_b = cs.get_range_actual(db, u, date(2025, 3, 10), date(2025, 3, 16))
+    assert week_a == Decimal("3.00")
+    assert week_b == Decimal("0.00")
+
+    # Ganzer Monat trägt weiterhin die volle Gutschrift.
+    assert cs.get_monthly_actual(db, u, 2025, 3) == Decimal("3.00")

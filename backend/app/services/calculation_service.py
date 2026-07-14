@@ -528,7 +528,28 @@ def get_range_actual(
                           if _within_employment_window(user, a.date)
                           and (up_to_date is None or a.date <= up_to_date)), Decimal('0'))
 
-    return (Decimal(str(total)) + credited_hours).quantize(Decimal('0.01'))
+    # #377 Baustein 2b: fester Monats-Soll-Modus — Feiertage/VACATION/PAID_LEAVE
+    # auf geplanten Tagen schreiben dem Ist die geplanten Stunden gut (statt
+    # Ist=0 auf einem bezahlten Fehltag). Monatsweise, da fixed_month_credit
+    # monatsweise arbeitet; from_date=month_start hält es range-genau (mirror
+    # von get_range_target — eine Gutschrift in Woche A darf nicht in eine
+    # Abfrage für Woche B desselben Monats durchsickern).
+    fixed_credit = Decimal('0')
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        y, m = start.year, start.month
+        while (y, m) <= (end.year, end.month):
+            first = date(y, m, 1)
+            last = date(y, m, monthrange(y, m)[1])
+            month_start = max(first, start)
+            month_end = min(last, end if up_to_date is None else min(end, up_to_date))
+            if month_end >= month_start:
+                fixed_credit += fixed_month_credit(db, user, y, m, from_date=month_start, up_to_date=month_end)
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+
+    return (Decimal(str(total)) + credited_hours + fixed_credit).quantize(Decimal('0.01'))
 
 
 def get_monthly_target(
