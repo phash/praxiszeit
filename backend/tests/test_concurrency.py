@@ -12,11 +12,10 @@ from __future__ import annotations
 import os
 import threading
 import uuid
-from datetime import date, time, timezone, datetime
+from datetime import date, time, datetime
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
 
 APP_DB_URL = os.environ.get("APP_DB_URL") or os.environ.get("DATABASE_URL")
 ADMIN_DB_URL = os.environ.get("ADMIN_DB_URL") or os.environ.get("DATABASE_URL_MIGRATIONS")
@@ -30,8 +29,21 @@ if not APP_DB_URL or not ADMIN_DB_URL:
 # F-Review (wrong-test finding): exercise the REAL locking/read code from
 # app/routers/time_entries.py instead of a hand-rolled raw-SQL reimplementation
 # that diverged from it (and silently omitted the F-026 tenant filter).
-from app.models import TimeEntry
-from app.routers.time_entries import _get_open_entry
+#
+# Review 2026-07-14 (fix-A6c): go one step further and call the REAL
+# `clock_in()` endpoint function itself (not just `_get_open_entry`), so the
+# test exercises the User-row anchor lock added in front of it. A bare
+# `SELECT ... FOR UPDATE` on zero matching rows locks nothing under READ
+# COMMITTED — see the long comment in `clock_in` — so calling only
+# `_get_open_entry` would never prove the anchor lock does anything.
+from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
+
+from app.database import SessionLocal, set_tenant_context
+from app.models import User
+from app.routers import time_entries
+from app.schemas.time_entry import ClockInRequest
+from app.services.timezone_service import LOCAL_TZ
 
 
 TENANT_ID = uuid.UUID("ccccccc1-0000-4000-8000-000000000001")
@@ -87,102 +99,121 @@ def concurrency_seed(admin_engine):
     conn.close()
 
 
+# fix-A6c: fixed "today" for both threads, but a DIFFERENT clock-in minute
+# per thread. This deliberately keeps `uq_tenant_user_date_start` (tenant,
+# user, date, start_time) from being able to catch a duplicate — the two
+# inserts have different `start_time` values — so the ONLY thing that can
+# still prevent a double-clock-in here is the User-row anchor lock in
+# `clock_in`. A same-minute race would let the unique constraint mask a
+# missing/removed anchor lock (see fix-A6b-report.md); this test must not
+# depend on that safety net if it is to have teeth against a regression.
+_FAKE_TODAY = date(2099, 6, 1)
+_fake_time_by_thread: dict = {}
+
+
+def _fake_now_local():
+    t = _fake_time_by_thread[threading.get_ident()]
+    return datetime.combine(_FAKE_TODAY, t, tzinfo=LOCAL_TZ)
+
+
+def _fake_today_local():
+    return _FAKE_TODAY
+
+
 def _run_clock_in_attempt(
-    app_engine,
     results: list,
     idx: int,
     barrier: threading.Barrier,
-    with_lock: bool = True,
+    fake_time,
 ):
-    """Run the REAL clock-in read from app/routers/time_entries.py.
+    """Call the REAL `app.routers.time_entries.clock_in()` endpoint function
+    directly (not a reimplementation) so the test exercises everything the
+    endpoint does, including the User-row anchor lock added in front of
+    `_get_open_entry`. `time_entries._now_local`/`_today_local` are
+    monkeypatched module-wide by the test (before threads start) to
+    `_fake_now_local`/`_fake_today_local`; this thread registers its own
+    fixed `fake_time` under its thread-id so both threads land on the same
+    fake "today" but a different minute (see module comment above).
 
-    Calls the actual `_get_open_entry(db, user_id, with_lock=…, tenant_id=…)`
-    used by the `clock_in` endpoint (not a raw-SQL reimplementation), then —
-    mirroring what `clock_in` does on a miss — inserts a new open TimeEntry
-    via the ORM. Both threads use the SAME `start_time`, mirroring the real
-    endpoint's `now().time().replace(second=0, microsecond=0)` truncation:
-    two clock-in attempts racing within the same wall-clock minute (the
-    realistic double-click/retry scenario `VULN-009` targets) compute an
-    identical `start_time`.
-
-    `with_lock` is a test-only knob (default True = the real production call
-    shape). NOTE (verified empirically against real Postgres 18, see
-    fix-A6b-report.md): for this "insert into a possibly-empty table" shape,
-    PostgreSQL's row lock cannot serialize a phantom insert — `FOR UPDATE`
-    only locks rows a query *returns*, and neither racing thread's SELECT
-    ever returns a row here regardless of `with_lock`. The guarantee this
-    test observes (never more than one surviving open entry for a same-
-    minute race) is actually provided by the `uq_tenant_user_date_start`
-    unique constraint, not by `_get_open_entry`'s lock. Flipping `with_lock`
-    does not change this test's outcome — that is expected, not a bug in the
-    test; see the report for the full analysis and the resulting concern.
+    Uses `app.database.SessionLocal` + `set_tenant_context` (the REAL
+    production wiring, not a raw `SET LOCAL` on an ad-hoc sessionmaker):
+    `clock_in` does `db.refresh(entry)` AFTER `db.commit()`, which starts a
+    new transaction, and plain `SET LOCAL` is transaction-scoped — only
+    `SessionLocal`'s `after_begin` event listener (registered in
+    app/database.py) re-applies `app.tenant_id` on that new transaction, so
+    the post-commit refresh still passes RLS.
     """
-    Session = sessionmaker(bind=app_engine)
-    session = Session()
+    session = SessionLocal()
     try:
-        session.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
-        # Align the two threads so they enter the critical section at nearly
-        # the same instant.
+        set_tenant_context(session, TENANT_ID)
+        current_user = session.query(User).filter(User.id == USER_ID).first()
+        _fake_time_by_thread[threading.get_ident()] = fake_time
+
+        # Align the two threads so they enter clock_in() at nearly the same
+        # instant — this is the actual concurrency being tested.
         barrier.wait(timeout=5)
 
-        # The REAL locking read used by app.routers.time_entries.clock_in.
-        open_entry = _get_open_entry(
-            session, USER_ID, with_lock=with_lock, tenant_id=TENANT_ID,
+        time_entries.clock_in(
+            body=ClockInRequest(note=None), db=session, current_user=current_user,
         )
-
-        if open_entry is not None:
-            # Another thread already opened a row and committed — reject
-            results.append(("rejected", idx))
-            session.rollback()
-            return
-
-        # No open entry, insert one — same as clock_in's TimeEntry(...) + add.
-        entry = TimeEntry(
-            id=uuid.uuid4(),
-            tenant_id=TENANT_ID,
-            user_id=USER_ID,
-            date=date(2099, 6, 1),
-            start_time=time(9, 0),  # same for both threads, see docstring
-            end_time=None,
-            break_minutes=0,
-        )
-        session.add(entry)
-        session.commit()
         results.append(("inserted", idx))
+    except HTTPException as e:
+        # "Bereits eingestempelt" — the expected loser outcome when the
+        # anchor lock correctly serializes the two attempts.
+        session.rollback()
+        results.append(("rejected", idx, e.status_code))
+    except IntegrityError as e:
+        session.rollback()
+        results.append(("error", idx, "IntegrityError"))
     except Exception as e:  # pragma: no cover — surface the failure
         session.rollback()
         results.append(("error", idx, type(e).__name__))
     finally:
+        del _fake_time_by_thread[threading.get_ident()]
         session.close()
 
 
-def test_parallel_clock_in_serializes(app_engine, concurrency_seed, admin_engine):
+def test_parallel_clock_in_serializes(app_engine, concurrency_seed, admin_engine, monkeypatch):
     """
-    Two threads race the REAL `_get_open_entry(..., with_lock=True)` read from
-    app/routers/time_entries.py (not a raw-SQL reimplementation), then insert
-    a new open TimeEntry on a miss — mirroring `clock_in` exactly, including
-    its F-026 tenant filter and its minute-truncated `start_time`. Only ONE
-    of the two racing attempts may survive as an open entry — otherwise the
-    user ends up with two overlapping open entries.
+    Two threads race the REAL `clock_in()` endpoint function from
+    app/routers/time_entries.py (not a raw-SQL reimplementation) for the SAME
+    user, at nearly the same instant, on the same fake "today" but different
+    minutes (so the `uq_tenant_user_date_start` unique constraint cannot mask
+    a broken/missing anchor lock — see module comment above). Only ONE of the
+    two racing attempts may survive as an open entry — otherwise the user
+    ends up with two overlapping open entries, which is exactly the §16
+    double-clock-in gap this test guards against.
+
+    Regression coverage: commenting out the `db.query(User)...with_for_update()`
+    anchor lock in `clock_in` (VULN-009 / review 2026-07-14 fix) makes this
+    test fail with 2 inserted/open entries instead of 1 — verified manually
+    against Postgres 18 as part of the fix, see fix-A6c-report.md.
     """
     # Ensure the user has no open entry before the race starts
     admin = admin_engine.connect()
     admin.execute(text("DELETE FROM time_entries WHERE user_id = :u"), {"u": str(USER_ID)})
     admin.close()
 
+    monkeypatch.setattr(time_entries, "_now_local", _fake_now_local)
+    monkeypatch.setattr(time_entries, "_today_local", _fake_today_local)
+
     results: list = []
     barrier = threading.Barrier(2)
-    t1 = threading.Thread(target=_run_clock_in_attempt, args=(app_engine, results, 1, barrier))
-    t2 = threading.Thread(target=_run_clock_in_attempt, args=(app_engine, results, 2, barrier))
+    t1 = threading.Thread(
+        target=_run_clock_in_attempt, args=(results, 1, barrier, time(9, 0)),
+    )
+    t2 = threading.Thread(
+        target=_run_clock_in_attempt, args=(results, 2, barrier, time(9, 1)),
+    )
     t1.start(); t2.start(); t1.join(); t2.join()
 
     outcomes = [r[0] for r in results]
     inserted = outcomes.count("inserted")
     errored = [r for r in results if r[0] == "error"]
-    # The loser must be rejected either by the application-level open-entry
-    # check (outcome "rejected") or by the DB's uq_tenant_user_date_start
-    # unique constraint (outcome "error" / IntegrityError) — never a silent
-    # duplicate and never an unrelated crash.
+    # The loser must be rejected either by the application-level "Bereits
+    # eingestempelt" check (outcome "rejected") or, as a defense-in-depth
+    # backstop, by a DB-level unique/exclusion violation (outcome "error" /
+    # IntegrityError) — never a silent duplicate and never an unrelated crash.
     for r in errored:
         assert r[2] == "IntegrityError", f"Unexpected error type on loser thread: {r}"
     assert inserted == 1, f"Expected exactly 1 insert, got outcomes={outcomes}"
