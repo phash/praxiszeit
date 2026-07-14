@@ -21,6 +21,7 @@ Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
 - ✅ **Benutzerverwaltung** mit Rollenverwaltung
 - ✅ **Arbeitszeiten-Historie** (Stundenänderungen nachverfolgen)
 - ✅ **Individuelle Tagesplanung** (Stunden je Wochentag konfigurierbar)
+- ✅ **Minijob / MiLoG-Arbeitszeitkonto** (§2 Abs.2): vereinbarte Monatsarbeitszeit, weiche 50-%-Plausibilität + 12-Monats-Ausgleichsfrist; optionaler Modus **„feste Monatsarbeitszeit"** — festes Monats-Soll statt schwankender Wochenstunden-Summe, mit Feiertags-/Fehltags-Gutschrift (#377)
 - ✅ **Urlaubsübersicht** (Budget, Verbrauch, Resturlaub pro MA)
 - ✅ **Eigene Abwesenheitsgründe** (Name, Farbe, Grundverhalten als Label-Overlay; #312)
 - ✅ **Betriebsferien** – verordnete Schließtage, optional als Urlaub und/oder Überstundenausgleich (#314)
@@ -235,6 +236,12 @@ docker compose exec backend alembic revision --autogenerate -m "description"
 - `057` - change_requests.proposed_reason_id (eigener Grund im Änderungsantrag, #312)
 - `058` - year_carryovers.source (`manual` vs. `year_closing`, #314)
 - `059` - change_requests.absence_id → ON DELETE SET NULL (entsperrt Antrags-Genehmigung & DSGVO-Löschung, #359)
+- `060` - impersonation_sessions (read-only „Login als …", #370)
+- `061` - Kind-krank-Limit + child_sick_days_per_year (§45 SGB V, #376)
+- `062` - milog_working_time_account (§2 Abs.2 MiLoG-Arbeitszeitkonto, #377)
+- `063` - agreed_monthly_hours (vereinbarte Monatsarbeitszeit, #377 Baustein 2a)
+- `064` - year_carryovers.vacation_days Numeric(4,1) → Numeric(5,2) (#383)
+- `065` - use_fixed_monthly_target (fester Monats-Soll für Minijobs, #377 Baustein 2b)
 
 ## Entwicklung
 
