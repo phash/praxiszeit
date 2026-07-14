@@ -29,6 +29,7 @@ Das ist **Baustein 2b**: das feste Monats-Soll treibt Balance/Überstundenkonto.
 - Kein Lohn-/603-€-Check (keine Lohndaten gespeichert — wie #377).
 - Keine automatische Ableitung der Monatszeit aus Tagesstunden (die Tagesstunden sind bewusst < Monatszeit).
 - Volle Fehlmonate (ganzer Monat Urlaub/Krank) mit flexiblem Rest-Anteil werden **nicht** vollautomatisch glattgezogen (siehe §5 „Bekannte Grenze").
+- Der **klassische Jahresbericht** (`/export-yearly-classic`, Kompakt-Layout, Brutto-Soll-Modell {Arbeit, Krank, Urlaub}) wird **nicht** modus-korrekt gemacht — er ist strukturell inkompatibel mit dem festen Monats-Soll + Gutschrift. Für Fix-Modus-MA ist der **Standard-Export** (Monats-/Jahres-Detailsheets XLSX/ODS) maßgeblich und modus-korrekt. (Es gibt keinen separaten PDF-Export-Service.)
 
 ## 3 · Datenmodell
 

@@ -999,6 +999,14 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     """
     Create classic yearly overview sheet for one employee.
     Format: Months as columns, compact overview with running balances.
+
+    #377 Baustein 2b — bekannte Grenze: dieser klassische Kompaktbericht baut auf
+    dem Brutto-Soll-Modell ({Arbeit, Krank, Urlaub} pro Monat, Per-Tag-Soll) auf
+    und ist für `use_fixed_monthly_target`-MA NICHT modus-korrekt (das feste
+    Monats-Soll + die Feiertags-/Fehltags-Gutschrift passen nicht in dieses
+    Layout). Für Minijob-Konten mit festem Monats-Soll den Standard-Export
+    (`generate_yearly_report`/`_yearly_employee_sheet`) nutzen — der ist
+    modus-korrekt. Eine Anpassung des Legacy-Formats ist bewusst offen.
     """
     sheet = wb.create_sheet(title=f"{user.last_name}")
 
