@@ -984,6 +984,34 @@ def get_overtime_history_detailed(
         if cm == 1 and cy in carryovers and (cy, cm) != (start_year, start_month):
             total_balance = carryovers[cy]
 
+        # #377 Baustein 2b (Task 8): fest-Monats-Soll-Modus — wie im Task-5-Branch
+        # von get_overtime_account an die bereits modus-korrekten Wrapper
+        # (get_monthly_target/get_monthly_actual, Tasks 3+4) delegieren statt die
+        # Per-Tag-Summe unten neu zu rekonstruieren. Das hält die in der
+        # MonthlyOvertime-Docstring gepinnte Invariante
+        # (detailed[(y,m)].target == get_monthly_target(...) / .actual ==
+        # get_monthly_actual(...)) auch für Modus-MA — und macht die von
+        # settlement_aging konsumierten Monats-Deltas (actual − target)
+        # modus-korrekt (kein Phantom-Defizit durch gutgeschriebene
+        # Feiertage/Urlaub). `cutoff_date` unveraendert durchreichen (wie
+        # Task 5) — get_range_target/get_range_actual clampen intern selbst
+        # gegen das jeweilige Monatsende.
+        if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+            monthly_target = get_monthly_target(db, user, cy, cm, up_to_date=cutoff_date)
+            monthly_actual = get_monthly_actual(db, user, cy, cm, up_to_date=cutoff_date)
+            total_balance += (monthly_actual - monthly_target)
+            history[(cy, cm)] = MonthlyOvertime(
+                target=monthly_target.quantize(Decimal('0.01')),
+                actual=monthly_actual.quantize(Decimal('0.01')),
+                cumulative=total_balance.quantize(Decimal('0.01')),
+            )
+            if cm == 12:
+                cm = 1
+                cy += 1
+            else:
+                cm += 1
+            continue
+
         _, last_day = monthrange(cy, cm)
         cfg = _cfg(cy)
         monthly_target = Decimal('0')

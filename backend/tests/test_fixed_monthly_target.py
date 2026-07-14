@@ -339,3 +339,89 @@ def test_ytd_summary_fixed_mode_folds_in_carryover(db, default_tenant):
     expected_overtime = Decimal("10.00") - Decimal("120.00") + Decimal("5.00")
     assert expected_overtime == Decimal("-105.00")
     assert Decimal(str(ytd["overtime"])) == expected_overtime
+
+
+# --- Task 8: get_overtime_history_detailed / settlement_aging-Kohärenz ------
+#
+# get_overtime_history_detailed baute Soll/Ist bislang PER-TAG inline nach (wie
+# get_overtime_account vor Task 5) — für einen Modus-MA divergierte das vom
+# (jetzt modus-korrekten) get_monthly_target/get_monthly_actual und verletzte
+# damit die eigene gepinnte Invariante (Docstring). settlement_aging (milog_
+# service) konsumiert genau diese Monats-Deltas (actual − target) für das
+# 12-Monats-FIFO-Aging — eine Divergenz dort fabriziert Phantom-Defizite aus
+# gutgeschriebenen Feiertagen/Urlaub.
+
+def test_history_detailed_matches_wrappers_fixed_mode(db, default_tenant):
+    """Gepinnte Invariante (MonthlyOvertime-Docstring) für einen Modus-MA über
+    einen Jan-Mär-Mix (reale TimeEntries, 1 Feiertag, 1 VACATION, 1 OTHER —
+    dieselben Zahlen wie test_parallel_paths_consistent, Task 7)."""
+    u = _mk(db)  # agreed=40/Monat, Mo+Mi geplant à 3h, Fenster offen
+    for d in (5, 19):  # Jan: 2 reale Mo-Einträge, je 10h netto (8-19h, 60min Pause)
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, d),
+                         start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.add(PublicHoliday(date=date(2026, 2, 2), name="X", year=2026, tenant_id=DEFAULT_TENANT_ID))  # Mo
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 4),  # Mi
+                   type=AbsenceType.VACATION, hours=Decimal("3"), half_day=False))
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 2),  # Mo
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))
+    db.commit()
+
+    detailed = cs.get_overtime_history_detailed(db, u, 2026, 3)
+    for m in (1, 2, 3):
+        assert detailed[(2026, m)].target == cs.get_monthly_target(db, u, 2026, m)
+        assert detailed[(2026, m)].actual == cs.get_monthly_actual(db, u, 2026, m)
+    assert detailed[(2026, 3)].cumulative == cs.get_overtime_account(db, u, 2026, 3)
+
+
+def test_history_detailed_non_mode_byte_identical(db, default_tenant):
+    """Regressionsanker: ein NICHT-Modus-MA muss get_overtime_history_detailed
+    weiterhin unverändert (Per-Tag-Inline) liefern — der neue Modus-Branch
+    darf den Nicht-Modus-Pfad nirgends berühren."""
+    u = _mk(db, use_fixed_monthly_target=False, weekly_hours=Decimal("40"), work_days_per_week=5,
+            use_daily_schedule=False, agreed_monthly_hours=None)
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 4),
+                     start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+
+    detailed = cs.get_overtime_history_detailed(db, u, 2026, 3)
+    assert detailed[(2026, 3)].target == Decimal("176.00")  # 22 Werktage × 8h
+    assert detailed[(2026, 3)].actual == Decimal("10.00")
+    assert detailed[(2026, 3)].cumulative == cs.get_overtime_account(db, u, 2026, 3)
+
+
+def test_settlement_aging_no_phantom_deficit_fixed_mode(db, default_tenant):
+    """#377 Baustein 2b (Task 8): ein Modus-MA mit EINEM Feiertag auf einem
+    geplanten Tag in einem sonst leeren ("Nur-Feiertag") Monat darf im
+    12-Monats-FIFO-Aging (settlement_aging) KEIN Defizit erzeugen — der
+    Feiertag ist gutgeschrieben (fixed_month_credit), also target == actual
+    für diesen Monat (agreed extra klein gewählt = genau die Feiertags-
+    Gutschrift, damit das ohne weitere Arbeitstage exakt aufgeht).
+
+    ``first_work_day=2025-03-01`` grenzt das Beschäftigungsfenster auf genau
+    den betrachteten Monat ein, damit Jan/Feb (außerhalb des Fensters, Soll
+    UND Ist beide 0) keine unabhängigen Hintergrund-Deltas beisteuern — der
+    Test isoliert so exakt den Feiertags-Effekt. ``YearCarryover(0)`` dient
+    NUR als Anker, damit get_overtime_history_detailed einen Startpunkt hat
+    (ohne TimeEntry/Carryover bricht die Funktion mit einem leeren Dict ab)."""
+    from app.services import milog_service
+    u = _mk(db, agreed_monthly_hours=Decimal("3"), milog_working_time_account=True,
+            first_work_day=date(2025, 3, 1))
+    db.add(PublicHoliday(date=date(2025, 3, 3), name="X", year=2025,
+                         tenant_id=DEFAULT_TENANT_ID))  # Montag, geplant (3h)
+    db.add(YearCarryover(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, year=2025,
+                         overtime_hours=Decimal("0"), vacation_days=Decimal("0")))
+    db.commit()
+
+    # Pinned invariant zuerst: kein Phantom-Delta im Detail-Pass.
+    detailed = cs.get_overtime_history_detailed(db, u, 2025, 3)
+    assert detailed[(2025, 1)].target == Decimal("0.00")  # außerhalb des Fensters
+    assert detailed[(2025, 1)].actual == Decimal("0.00")
+    assert detailed[(2025, 2)].target == Decimal("0.00")
+    assert detailed[(2025, 2)].actual == Decimal("0.00")
+    assert detailed[(2025, 3)].target == Decimal("3.00")
+    assert detailed[(2025, 3)].actual == Decimal("3.00")
+
+    aging = milog_service.settlement_aging(db, u, date(2025, 3, 31))
+    # Kein Monats-Delta ≠ 0 in der Historie → keine Einlage → kein offener
+    # Posten → None (KEIN Phantom-Defizit / keine Überfälligkeits-Warnung).
+    assert aging is None
