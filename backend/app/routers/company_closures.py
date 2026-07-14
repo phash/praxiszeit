@@ -6,12 +6,10 @@ from typing import List
 from datetime import date, timedelta
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
-from uuid import UUID
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry, WorkingHoursChange
-from app.schemas.absence import AbsenceResponse
 from app.services import calculation_service, settings_service, special_days_service
 # Fix #3: the year re-split lives in a service module so the private-vacation
 # write paths can call it without importing this router (circular-import safe).

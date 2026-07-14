@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month, parse_year_month
-from sqlalchemy import extract
 from typing import List, Optional
 from datetime import timedelta, date
 from app.services.timezone_service import today_local

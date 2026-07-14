@@ -12,18 +12,14 @@ The update flow:
 """
 
 import base64
-import hashlib
 import json
 import logging
 import platform
-import shutil
-import tempfile
 import urllib.request
 import urllib.error
 import ssl
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -220,7 +216,7 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
         return None
 
     download_url = data.get("download_url", "")
-    # Verify host allowlist before we ever hand this URL to download_update().
+    # Verify host allowlist before caching the download URL for later use.
     try:
         _verify_download_host(download_url)
     except ValueError as e:
@@ -243,64 +239,6 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
         logger.info(f"Update available: {latest}")
 
     return _cached_update
-
-
-def download_update(update: UpdateInfo, target_dir: Path) -> Path:
-    """
-    Download an update package and verify its checksum.
-
-    Args:
-        update: UpdateInfo with download URL and checksum
-        target_dir: Directory to save the downloaded package
-
-    Returns:
-        Path to the downloaded file
-
-    Raises:
-        ValueError: If checksum verification fails
-        urllib.error.URLError: If download fails
-    """
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    # F-036: defense-in-depth — re-verify the download URL before opening it.
-    # (check_for_updates already did this when populating UpdateInfo, but the
-    # object could have been constructed by other code paths in the future.)
-    _verify_download_host(update.download_url)
-
-    filename = f"praxiszeit-{update.latest_version}-{platform.system().lower()}.tar.gz"
-    target_path = target_dir / filename
-
-    logger.info(f"Downloading update {update.latest_version} ({update.size_mb} MB)...")
-
-    ctx = ssl.create_default_context()
-    req = urllib.request.Request(
-        update.download_url,
-        headers={"User-Agent": f"PraxisZeit/{APP_VERSION}"},
-    )
-
-    hasher = hashlib.sha256()
-    with urllib.request.urlopen(req, context=ctx, timeout=300) as resp:
-        with open(target_path, "wb") as f:
-            while True:
-                chunk = resp.read(8192)
-                if not chunk:
-                    break
-                f.write(chunk)
-                hasher.update(chunk)
-
-    # Verify checksum
-    if update.checksum_sha256:
-        actual = hasher.hexdigest()
-        if actual != update.checksum_sha256:
-            target_path.unlink()
-            raise ValueError(
-                f"Checksum mismatch! Expected {update.checksum_sha256[:16]}..., "
-                f"got {actual[:16]}..."
-            )
-        logger.info("Checksum verified")
-
-    logger.info(f"Update downloaded: {target_path}")
-    return target_path
 
 
 def get_update_status() -> dict:

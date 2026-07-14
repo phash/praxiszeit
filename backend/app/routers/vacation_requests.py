@@ -137,6 +137,12 @@ def apply_vacation_request_patch(
                 PublicHoliday.tenant_id == vr.tenant_id,
             ).all():
                 holiday_dates.add(h.date)
+        # F-10 / AC-11: 'free'-Sondertage (24./31.12.) sind ebenfalls soll-frei
+        # und dürfen genau wie Feiertage nicht als verbrauchter Urlaubstag
+        # zählen — Parität mit admin_vacations.review_vacation_request.
+        holiday_dates |= special_days_service.free_special_days_in_range(
+            db, vr.tenant_id, new_date, effective_end
+        )
 
         dates_by_year: dict[int, list] = {}
         d = new_date
@@ -293,6 +299,13 @@ def create_vacation_request(
                 PublicHoliday.tenant_id == current_user.tenant_id,
             ).all():
                 holiday_dates.add(h.date)
+        # F-10 / AC-11: 'free'-Sondertage (24./31.12.) sind ebenfalls soll-frei
+        # und dürfen genau wie Feiertage nicht als verbrauchter Urlaubstag
+        # zählen — Parität mit dem PATCH-Pfad und
+        # admin_vacations.review_vacation_request.
+        holiday_dates |= special_days_service.free_special_days_in_range(
+            db, current_user.tenant_id, start_date, end_date
+        )
 
         dates_by_year: dict[int, list] = {}
         d = start_date

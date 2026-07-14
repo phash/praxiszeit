@@ -70,3 +70,50 @@ def test_whchange_ok_for_normal_user(db, default_tenant):
     assert float(result.weekly_hours) == 20.0
     n = db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == emp.id).count()
     assert n == 1
+
+
+# ---------------------------------------------------------------------------
+# Finding 4 (HIGH, Review 2026-07-14): die Session ist autoflush=False. Ohne ein
+# db.flush() nach db.add(change) UND VOR der Most-Recent-Selbstabfrage sieht
+# diese Abfrage die gerade hinzugefügte Zeile nicht → user.weekly_hours bleibt
+# beim ersten rückwirkenden Antrag unverändert bzw. übernimmt bei einer
+# zweiten, überholenden Änderung den VORHERIGEN statt den neuen Wert.
+# ---------------------------------------------------------------------------
+
+def test_whchange_first_past_dated_change_updates_weekly_hours(db, default_tenant):
+    """Die allererste rückwirkende (effective_from <= heute) Stundenänderung muss
+    user.weekly_hours SOFORT auf den neuen Wert setzen."""
+    admin = _admin(db)
+    emp = _make_user(db, "wh_first", weekly_hours=40.0)
+    result = create_working_hours_change(
+        user_id=str(emp.id),
+        change_data=WorkingHoursChangeCreate(
+            effective_from=date(2020, 1, 1), weekly_hours=20.0,
+        ),
+        db=db, current_user=admin,
+    )
+    assert float(result.weekly_hours) == 20.0
+    assert float(emp.weekly_hours) == 20.0
+
+
+def test_whchange_second_superseding_change_updates_to_new_value(db, default_tenant):
+    """Eine zweite, spätere rückwirkende Änderung muss user.weekly_hours auf
+    IHREN Wert setzen — nicht auf den der ersten (bereits committeten) Änderung."""
+    admin = _admin(db)
+    emp = _make_user(db, "wh_second", weekly_hours=40.0)
+    create_working_hours_change(
+        user_id=str(emp.id),
+        change_data=WorkingHoursChangeCreate(
+            effective_from=date(2020, 1, 1), weekly_hours=20.0,
+        ),
+        db=db, current_user=admin,
+    )
+    result = create_working_hours_change(
+        user_id=str(emp.id),
+        change_data=WorkingHoursChangeCreate(
+            effective_from=date(2020, 6, 1), weekly_hours=30.0,
+        ),
+        db=db, current_user=admin,
+    )
+    assert float(result.weekly_hours) == 30.0
+    assert float(emp.weekly_hours) == 30.0

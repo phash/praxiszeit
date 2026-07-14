@@ -7,6 +7,7 @@ re-split WITHOUT importing the router — which would risk a circular import.
 ``_resplit_year_closures`` so its existing call sites keep working.
 """
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -101,8 +102,8 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
     # (Release-Review 1.14.3). Config einmal je Jahr laden; `_wt(d)` = 0,5/1,0.
     special_cfg = special_days_service.get_special_day_config(db, tenant_id, year)
 
-    def _wt(d: date) -> float:
-        return float(calculation_service.half_special_day_weight(d, special_cfg))
+    def _wt(d: date) -> Decimal:
+        return calculation_service.half_special_day_weight(d, special_cfg)
 
     for user_id, absences in by_user.items():
         employee = users.get(user_id)
@@ -112,9 +113,11 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             continue
 
         # Gross annual budget (pro-rata + carryover), independent of bookings.
-        budget = float(
+        # Decimal (L2, review 2026-07-14): the walk gate below then compares
+        # exactly, no epsilon needed.
+        budget = Decimal(str(
             calculation_service.get_vacation_account(db, employee, year)["budget_days"]
-        )
+        ))
 
         # Non-closure vacation consumption (private vacation + free special days)
         # is ALL deducted up front, so the closure days only ever take the
@@ -129,7 +132,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             Absence.date <= year_end,
         ).all()
         private_dates = {a.date for a in private}
-        consumed = 0.0
+        consumed = Decimal('0')
         for a in private:
             # Fix #3: skip days with Tagessoll 0 (e.g. a use_daily_schedule MA's
             # free weekday) exactly like get_vacation_account's used_days loop —
@@ -142,8 +145,18 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             )
             if dt_day <= 0:
                 continue
-            # #394: an einem Halbtags-Sondertag kostet der Urlaubstag 0,5.
-            consumed += (0.5 if a.half_day else 1.0) * _wt(a.date)
+            # Finding 1 (review 2026-07-14): mirror calculation_service's
+            # three-way branch (get_vacation_account / absence_days) exactly.
+            # ``None`` is falsy, so the old ``(0.5 if a.half_day else 1.0)``
+            # fell into the ``else`` branch and charged a FULL day for a
+            # legacy (pre-migration-052, half_day IS NULL) hours-based row —
+            # only an explicit True/False half_day uses the 0.5/1.0 × special-
+            # day-weight shortcut.
+            if a.half_day is None:
+                consumed += Decimal(str(a.hours)) / Decimal(str(dt_day))
+            else:
+                # #394: an einem Halbtags-Sondertag kostet der Urlaubstag 0,5.
+                consumed += (Decimal('0.5') if a.half_day else Decimal('1')) * _wt(a.date)
         for d in deduction_dates:
             if d in private_dates:
                 continue  # already counted via a real VACATION absence
@@ -160,19 +173,20 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             )
             if dt_day <= 0:
                 continue
-            consumed += 1.0
+            consumed += Decimal('1')
 
         closure_budget = budget - consumed
 
         # Walk the closure days in CALENDAR order: VACATION while the remaining
         # closure budget covers a full day, OVERTIME afterwards. The surplus
         # therefore lands on the latest closure of the year.
-        used = 0.0
+        used = Decimal('0')
         for a in sorted(absences, key=lambda x: x.date):
             # #394: ein Halbtags-Sondertag kostet nur 0,5 Closure-Budget (deckt sich
             # mit day_consumption in _create_closure_absences + used_days).
             day_cost = _wt(a.date)
-            if closure_budget - used >= day_cost - 1e-9:
+            # L2 (review 2026-07-14): exact Decimal compare, no epsilon needed.
+            if closure_budget - used >= day_cost:
                 a.type = AbsenceType.VACATION
                 used += day_cost
             else:

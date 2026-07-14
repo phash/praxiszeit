@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
-from sqlalchemy import extract
 from typing import List, Optional
 from datetime import datetime, date, time, timezone
 from app.services.timezone_service import LOCAL_TZ, now_local as _now_local, today_local as _today_local
@@ -19,7 +18,7 @@ from app.schemas.time_entry import (
 )
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break
-from app.services.arbzg_utils import is_night_work, NIGHT_THRESHOLD_MINUTES
+from app.services.arbzg_utils import is_night_work
 from app.routers.admin_helpers import _create_audit_log
 from uuid import UUID as UUIDType
 
@@ -247,7 +246,27 @@ def clock_in(
     current_user: User = Depends(get_current_user),
 ):
     """Clock in: create a time entry with start_time=now, end_time=NULL."""
-    # VULN-009: use SELECT FOR UPDATE to prevent race condition on concurrent clock-in
+    # VULN-009 / Review 2026-07-14: unter READ COMMITTED sperrt ein
+    # `SELECT ... FOR UPDATE` auf NULL Treffer (die typische Lage vor dem
+    # ERSTEN Einstempeln des Tages) gar nichts — man kann keine Phantomzeile
+    # sperren. Zwei echt-gleichzeitige clock-in-Requests sehen dann BEIDE
+    # "kein offener Eintrag" und legen beide eine neue Zeile an; bisher wurde
+    # das nur zufällig durch `uq_tenant_user_date_start` aufgefangen (weil
+    # start_time auf die Minute gerundet wird), nicht durch den Lock unten.
+    # Serialize concurrent clock-ins for THIS user: FOR UPDATE on the (existing) User
+    # row actually locks (unlike FOR UPDATE on the not-yet-existing open TimeEntry),
+    # so a truly-concurrent second clock-in blocks here, then sees the first's committed
+    # open entry via _get_open_entry and returns the "already clocked in" path instead
+    # of inserting a duplicate. (Same pattern as absences.py's User-row anchor lock.)
+    db.query(User).filter(
+        User.id == current_user.id, User.tenant_id == current_user.tenant_id
+    ).with_for_update().first()
+
+    # `_get_open_entry(with_lock=True)` bleibt als defense-in-depth: sobald die
+    # Zeile existiert (Stale-Entry von gestern, s.u.), sperrt FOR UPDATE hier
+    # echt und verhindert eine parallele Änderung/Auto-Close-Race auf genau
+    # dieser Zeile. Für clock_out (existierende offene Zeile) ist genau dieser
+    # Lock bereits ausreichend — dort gibt es keine Cold-Start-Lücke.
     open_entry = _get_open_entry(db, current_user.id, with_lock=True, tenant_id=current_user.tenant_id)
     if open_entry:
         if open_entry.date != _today_local():

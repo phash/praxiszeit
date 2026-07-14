@@ -12,7 +12,6 @@ from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
 from app.config import settings
-from sqlalchemy import extract
 
 
 # M-SEC1: spreadsheet formula / CSV injection guard. A cell whose text starts
@@ -173,8 +172,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     _, last_day = monthrange(year, month)
 
     # Get all time entries for the month (list-based: multiple entries per day)
+    # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
     time_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,
         date_in_month(TimeEntry.date, year, month)
     ).order_by(TimeEntry.start_time).all()
     entries_by_date = _group_by_date(time_entries)  # #219: shared
@@ -184,8 +185,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # (date, type) — z. B. ein halber Tag Urlaub + ein halber Tag Sonstiges).
     # Daher pro Tag eine LISTE statt einer einzelnen Absence, sonst verschluckt
     # die Anzeige die zweite stillschweigend.
+    # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,
         date_in_month(Absence.date, year, month)
     ).all()
     absences_by_date = _group_by_date(absences)  # #219: shared
@@ -673,16 +676,20 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         cell.alignment = Alignment(horizontal="center")
 
     # Get all time entries for the year (list-based: multiple entries per day)
+    # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
     time_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,
         date_in_year(TimeEntry.date, year)
     ).order_by(TimeEntry.start_time).all()
     entries_by_date = _group_by_date(time_entries)  # #219: shared
 
     # Get all absences for the year.
     # I-1: pro Tag eine LISTE (mehrere Absences je Tag möglich, s. _create_employee_sheet).
+    # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,
         date_in_year(Absence.date, year)
     ).all()
     absences_by_date = _group_by_date(absences)  # #219: shared
@@ -1064,8 +1071,10 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=7, column=col).alignment = right_align
 
         # Row 8: Sick hours
+        # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
         sick_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == user.tenant_id,
             Absence.type == AbsenceType.SICK,
             date_in_month(Absence.date, year, month)
         ).all()
@@ -1084,8 +1093,10 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=8, column=col).alignment = right_align
 
         # Row 9: Vacation hours
+        # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
         vacation_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == user.tenant_id,
             Absence.type == AbsenceType.VACATION,
             date_in_month(Absence.date, year, month)
         ).all()
@@ -1167,8 +1178,10 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=15, column=col).alignment = right_align
 
         # Row 16: Night work days per month (§6 ArbZG)
+        # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
         month_entries = db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == user.tenant_id,
             date_in_month(TimeEntry.date, year, month),
             TimeEntry.end_time.isnot(None),
         ).all()
@@ -1283,8 +1296,10 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         # ── Fetch data ──
         _, last_day = monthrange(year, month)
 
+        # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
         time_entries = db.query(TimeEntry).filter(
             TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == user.tenant_id,
             date_in_month(TimeEntry.date, year, month),
         ).order_by(TimeEntry.start_time).all()
         entries_by_date: dict = {}
@@ -1293,6 +1308,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
         absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == user.tenant_id,
             date_in_month(Absence.date, year, month),
         ).all()
         # I-1: pro Tag eine LISTE (mehrere Absences je Tag möglich, s. _create_employee_sheet).

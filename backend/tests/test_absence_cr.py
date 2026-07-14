@@ -349,3 +349,84 @@ class TestAbsenceCRValidationNoReason:
         with pytest.raises(HTTPException) as exc:
             create_change_request(data=data, db=db, current_user=test_user)
         assert exc.value.status_code == 400
+
+
+class TestAbsenceCRFreeSpecialDay:
+    """AC-11 / F-5: die CR-Genehmigung ist ein PARALLELER Buchungspfad zu
+    create_absence/review_vacation_request und muss denselben 'free'-Sondertag-
+    Ausschluss spiegeln — ein 24./31.12. im Modus 'free' ist soll-frei und darf
+    KEINEN vollen Urlaubstag kosten (half_special_day_weight kennt nur half_day=0,5,
+    nicht free=0 → ohne den Fix wurde ein counts_as_vacation=False-Freitag
+    fälschlich als 1,0 Urlaubstage abgerechnet)."""
+
+    def _admin(self, db):
+        return _make_user(db, username="cr_admin_free", email="adminfree@test.de", role=UserRole.ADMIN)
+
+    def _set_free(self, db):
+        from app.models.system_setting import SystemSetting
+        db.add(SystemSetting(
+            key="special_day_dec24_mode", tenant_id=DEFAULT_TENANT_ID, value="free",
+        ))
+        db.add(SystemSetting(
+            key="special_day_dec24_counts_as_vacation", tenant_id=DEFAULT_TENANT_ID, value="false",
+        ))
+        db.commit()
+
+    def test_create_cr_vacation_on_free_day_rejected(self, db):
+        from fastapi import HTTPException
+        from app.routers.admin_change_requests import review_change_request
+        from app.schemas.change_request import ChangeRequestReview
+
+        emp = _make_user(db, username="free_emp_create", email="freeemp1@test.de")
+        admin = self._admin(db)
+        self._set_free(db)
+        d = date(2026, 12, 24)  # Donnerstag, als 'free' konfiguriert
+        cr = _make_absence_cr(
+            db, emp, request_type=ChangeRequestType.CREATE,
+            proposed_date=d, proposed_absence_type="vacation",
+            proposed_absence_hours=8.0,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            review_change_request(
+                request_id=str(cr.id),
+                review=ChangeRequestReview(action="approve"),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400
+
+        # Kein Urlaubstag verbraucht, keine Absence angelegt.
+        acc = calculation_service.get_vacation_account(db, emp, 2026)
+        assert float(acc['used_days']) == 0.0, acc['used_days']
+        assert db.query(Absence).filter(Absence.user_id == emp.id, Absence.date == d).count() == 0
+
+    def test_update_cr_moves_vacation_onto_free_day_rejected(self, db):
+        from fastapi import HTTPException
+        from app.routers.admin_change_requests import review_change_request
+        from app.schemas.change_request import ChangeRequestReview
+
+        emp = _make_user(db, username="free_emp_update", email="freeemp2@test.de")
+        admin = self._admin(db)
+        self._set_free(db)
+        orig_date = date(2026, 12, 23)  # Mittwoch, normaler Arbeitstag
+        free_date = date(2026, 12, 24)  # Donnerstag, 'free'
+        absence = _make_absence(db, emp, orig_date, AbsenceType.VACATION, 8.0)
+
+        cr = _make_absence_cr(
+            db, emp, request_type=ChangeRequestType.UPDATE,
+            absence_id=absence.id,
+            proposed_date=free_date, proposed_absence_type="vacation",
+            proposed_absence_hours=8.0,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            review_change_request(
+                request_id=str(cr.id),
+                review=ChangeRequestReview(action="approve"),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400
+
+        # Absence unverändert am Ursprungsdatum, keine Urlaubs-Umbuchung.
+        db.refresh(absence)
+        assert absence.date == orig_date

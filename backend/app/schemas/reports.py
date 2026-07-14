@@ -85,6 +85,7 @@ class EmployeeMonthlyReport(BaseModel):
     sick_hours: float
     sick_days: float            # 0 ohne include_health_data (DSGVO Art. 9)
     exempt_from_arbzg: bool = False  # #159: leitende Angestellte (§18) — Filter im Dashboard-Schnitt
+    track_hours: bool = True    # Finding 14: #191-untracked MA aus "Ø Saldo" ausschließbar
 
 
 class PublicHolidayResponse(BaseModel):

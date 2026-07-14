@@ -530,6 +530,21 @@ def review_change_request(
                 and cr.proposed_absence_type == AbsenceType.VACATION.value
                 and cr.proposed_date
             ):
+                # AC-11 / F-5: 'free'-Sondertage (24./31.12.) sind soll-frei —
+                # sie dürfen keine VACATION-Absence bekommen (mirrors
+                # create_absence/review_vacation_request, wo der Tag komplett
+                # aus dates_to_create ausgeschlossen wird). half_special_day_weight
+                # kennt nur half_day=0,5, NICHT free=0 (free läuft separat über
+                # vacation_deduction_dates in get_vacation_account) — ohne diesen
+                # Ausschluss lud der Check hier fälschlich 1,0 Tage für einen
+                # counts_as_vacation=False-Freitag.
+                if cr.proposed_date in special_days_service.free_special_days_in_range(
+                    db, cr_user.tenant_id, cr.proposed_date, cr.proposed_date
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Kein gültiger Arbeitstag (soll-freier Sondertag) — es kann kein Urlaubstag gebucht werden.",
+                    )
                 _bill_day = True
                 if getattr(cr_user, "use_daily_schedule", False) and cr_user.track_hours:
                     _bw = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
@@ -643,6 +658,16 @@ def review_change_request(
             )
             _target_date = cr.proposed_date or absence.date
             if _bud_user and _target_type == AbsenceType.VACATION and _target_date:
+                # AC-11 / F-5: dasselbe Free-Sondertag-Verbot wie im CREATE-Branch —
+                # ein UPDATE darf einen Urlaubstag nicht auf einen soll-freien
+                # 24./31.12. verschieben (oder ihn als VACATION dort belassen).
+                if _target_date in special_days_service.free_special_days_in_range(
+                    db, _bud_user.tenant_id, _target_date, _target_date
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Kein gültiger Arbeitstag (soll-freier Sondertag) — es kann kein Urlaubstag gebucht werden.",
+                    )
                 _target_year = _target_date.year
                 _post_days = _vacation_day_contribution(
                     db, _bud_user, _target_date, absence.half_day
