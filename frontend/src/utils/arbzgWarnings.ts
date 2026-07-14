@@ -116,6 +116,10 @@ export function showArbzgWarnings(
         // #377 §2 Abs.2 MiLoG: 12-Monats-Ausgleichsfrist.
         toast.warning(detail ?? 'Arbeitszeitkonto: 12-Monats-Ausgleichsfrist beachten (§ 2 Abs. 2 MiLoG).');
         break;
+      case 'MILOG_MONTHLY_EXCEEDED':
+        // #377 Baustein 2b §2 Abs.2 MiLoG: Monatsarbeitszeit überschritten (weich, nicht blockierend).
+        toast.warning(detail ?? 'Arbeitszeitkonto: vereinbarte Monatsarbeitszeit überschritten (§ 2 Abs. 2 MiLoG).');
+        break;
       default:
         toast.warning(raw);
     }

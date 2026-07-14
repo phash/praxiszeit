@@ -75,6 +75,16 @@ describe('showArbzgWarnings', () => {
     expect(toast.warning.mock.calls[0][0]).toContain('überfällig');
   });
 
+  it('#377 Baustein 2b shows MILOG_MONTHLY_EXCEEDED detail without the code prefix', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, [
+      'MILOG_MONTHLY_EXCEEDED: Monatsarbeitszeit (60.0h) übersteigt die vereinbarte Monatszeit (Grenze 55.0h, § 2 Abs. 2 MiLoG).',
+    ]);
+    const msg = toast.warning.mock.calls[0][0];
+    expect(msg).toContain('§ 2 Abs. 2 MiLoG');
+    expect(msg).not.toContain('MILOG_MONTHLY_EXCEEDED');
+  });
+
   it('#376 strips the code prefix for CHILD_SICK_LIMIT and shows the detail', () => {
     const toast = mockToast();
     showArbzgWarnings(toast, [
