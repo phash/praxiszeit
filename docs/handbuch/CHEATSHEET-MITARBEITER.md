@@ -133,6 +133,8 @@ Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, si
 
 **Grüner Saldo (+)** = Überstunden · **Roter Saldo (–)** = Fehlstunden
 
+*Monatssaldo und Überstunden zählen nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus am 1.).*
+
 ---
 
 ## Ohne Stundenzählung
@@ -173,6 +175,7 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 | Eintrag lässt sich nicht bearbeiten | Zu alt → Änderungsantrag stellen |
 | „angerechnet ab HH:MM" beim Eintrag | Soll-Zeit-Fenster: nur bis Puffer angerechnet (echte Zeit bleibt) |
 | Stunden-/Überstundenkacheln fehlen | Kein Fehler – bei Ihnen ohne Stundenzählung |
+| Gelber Hinweis unter „Überstundenkonto" | Minijob-Arbeitszeitkonto (§ 2 Abs. 2 MiLoG): Konto zu weit im Plus oder Ausgleichsfrist läuft bald ab – kein Fehler, im Zweifel mit Admin klären |
 | Passwort vergessen | Administrator kontaktieren |
 
 ---

@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.5 | Stand: Juni 2026 (für PraxisZeit 1.11.0)**
+**Version 2.6 | Stand: Juli 2026 (für PraxisZeit 1.15.0)**
 
 ---
 
@@ -93,7 +93,7 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 **Soll-Basis umschalten (#313):** Über das Dropdown **„Soll: bis heute / Monatsende"** in der Monatsübersicht steuern Sie, wie das Monats-**Soll** gezählt wird:
 - **bis heute** (Standard): nur bis zum **letzten abgeschlossenen Arbeitstag** des laufenden Monats — so startet der Saldo nicht mit einem Monatsanfangs-Minus.
 - **Monatsende**: der **volle** Monat.
-Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/admin/reports/monthly` nimmt den Parameter `soll_basis=bis_heute|monatsende`.) Die heruntergeladenen §16-Exporte bleiben bewusst voll-Monat.
+Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/admin/reports/monthly` nimmt den Parameter `soll_basis=bis_heute|monatsende`.) Der Stichtag betrifft **ausschließlich** diese Live-Übersichten (MA-Dashboard, Admin-Team-Tabelle, Benutzerübersicht, Überstundenkonto samt Diagramm, Jahres-bis-heute-Summe). Die heruntergeladenen §16-Exporte, das **Monatsjournal** und der **Jahresabschluss** (Carryover) rechnen bewusst immer den **vollen** Monat bzw. das volle Jahr – das sind Rechtsbelege, die sich nicht rückwirkend ändern sollen, je nachdem, an welchem Tag man sie sich ansieht.
 
 **Suche:** Nutzen Sie das Suchfeld, um nach einem bestimmten Mitarbeiter zu filtern.
 
@@ -843,7 +843,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.9.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.15.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -1016,4 +1016,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juni 2026 (für PraxisZeit 1.11.0)*
+*Stand: Juli 2026 (für PraxisZeit 1.15.0)*

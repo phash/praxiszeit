@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.3 · **Stand:** Juni 2026 (PraxisZeit 1.9.0)
+**Version:** 2.5 · **Stand:** Juli 2026 (PraxisZeit 1.15.0)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -65,11 +65,13 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 | **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
 
-> **Monatssaldo nur bis zum letzten Arbeitstag:** Im **laufenden** Monat wird das Soll nur bis zum **letzten abgeschlossenen Arbeitstag** gezählt – Sie starten den Monat also **nicht** mit einem dicken Minus, sondern der Saldo baut sich Tag für Tag auf. Der heutige Tag zählt mit, sobald Sie **ausgestempelt** haben. Für **abgeschlossene** Monate entspricht der Saldo wie gewohnt dem vollen Monat.
+> **Monatssaldo nur bis zum letzten Arbeitstag:** Im **laufenden** Monat wird das Soll nur bis zum **letzten abgeschlossenen Arbeitstag** gezählt – Sie starten den Monat also **nicht** mit einem dicken Minus, sondern der Saldo baut sich Tag für Tag auf. Der heutige Tag zählt mit, sobald Sie **ausgestempelt** haben. Für **abgeschlossene** Monate entspricht der Saldo wie gewohnt dem vollen Monat. Das **Überstundenkonto** übernimmt für den laufenden Monat denselben Stichtag – auch hier entsteht am Monatsanfang kein künstliches Minus.
 
 > **Zeitanzeige:** Stunden werden im Format H:MM angezeigt (z. B. „8:30" für 8 Stunden 30 Minuten). Negative Salden werden mit einem Minus-Zeichen dargestellt (z. B. „-2:15").
 
 > **Hinweis:** Falls Ihre Praxis für Sie **keine Stundenzählung** führt, fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto** – das ist bei Ihnen so eingestellt und kein Fehler. Ihr **Urlaubskonto** wird trotzdem geführt. Mehr dazu in [Abschnitt 6](#6-wenn-für-sie-keine-stunden-gezählt-werden).
+
+> **Minijob mit festem Monats-Soll:** Führt Ihre Praxis Sie als Minijob-Kraft mit einer **festen vereinbarten Monatsarbeitszeit** (statt eines aus Wochenstunden berechneten Solls), zeigt Ihr **Monatssaldo** jeden Monat dasselbe feste Soll (bei unterjährigem Ein-/Austritt anteilig gekürzt). Feiertage sowie Urlaub oder bezahlte Freistellung an einem für Sie geplanten Arbeitstag werden Ihnen dabei automatisch mit den geplanten Stunden gutgeschrieben; unbezahlt freie Tage mindern das Monatssoll entsprechend. Unter dem **Überstundenkonto** kann in diesem Fall ein gelber Hinweis erscheinen, wenn die vereinbarte Zeit deutlich überschritten wird oder ein Zeitguthaben zu lange nicht ausgeglichen wurde (§ 2 Abs. 2 MiLoG) – das ist eine reine Information und blockiert nichts. Ob dieses Modell für Sie gilt, legt Ihre Praxisleitung fest.
 
 ### Monatsübersicht (Tabelle)
 
@@ -80,7 +82,7 @@ Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenko
 
 ### Jahresübersicht
 
-Zeigt die Abwesenheitstage des laufenden Jahres nach Typ (Urlaub, Krank, Fortbildung, Sonstiges).
+Zeigt die Abwesenheitstage des laufenden Jahres nach Typ (Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges).
 
 ### Geplante Abwesenheiten im Team
 
@@ -276,6 +278,8 @@ Die Seite zeigt zwei Tabs:
 
 > **Sondertage 24./31.12.:** Hat Ihre Praxis Heiligabend oder Silvester als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert (grau „Heiligabend (frei)" bzw. „Silvester (½ Tag)") – ähnlich einem Feiertag.
 
+> **Datenschutz bei Kollegen-Abwesenheiten:** Im Team-Kalender sehen Sie bei **Kolleginnen und Kollegen** nur Urlaub und Fortbildung mit ihrem echten Typ. Krankheit, bezahlte Freistellung, Sonstiges und alle eigenen (individuellen) Abwesenheitsgründe werden bei anderen Personen neutral als **„Abwesend"** angezeigt. Ihre **eigenen** Abwesenheiten sehen Sie natürlich immer mit dem echten Typ, ebenso Administratorinnen und Administratoren.
+
 ---
 
 ### 4.1 Abwesenheit eintragen
@@ -288,9 +292,11 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 
 1. **Datum** – Beginn der Abwesenheit
 2. **Zeitraum** – Aktivieren Sie diese Option für mehrere Tage; Wochenenden und Feiertage werden automatisch ausgeschlossen
-3. **Typ** – Urlaub / Krank / Fortbildung / Sonstiges
-4. **Notiz** – Optional
-5. **Speichern**
+3. **Halber Tag** – Nur bei einzelnen Tagen wählbar (nicht bei Zeitraum, nicht bei Krank oder Überstundenausgleich); lässt den Tag nur zur Hälfte zählen (**0,5 statt 1,0 Tag**)
+4. **Typ** – Urlaub / Krank / Fortbildung / Überstundenausgleich / Sonstiges
+5. **Stunden** – Bei Urlaub, Krank, Fortbildung und Sonstigem ist das Feld vorausgefüllt und wird ohnehin durch Ihr Tagessoll ersetzt; nur bei **Überstundenausgleich** zählt der hier eingetragene Wert – er wird von Ihrem Überstundenkonto abgezogen
+6. **Notiz** – Optional
+7. **Speichern**
 
 > **Hinweis zu Urlaubstagen:**
 > Das System berechnet automatisch, wie viele Urlaubstage eingetragen werden und zieht diese von Ihrem Budget ab.
@@ -302,6 +308,7 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 | **Urlaub** | Genehmigter Erholungsurlaub |
 | **Krank** | Krankheitstage – Krankmeldung nach Praxisregelung einreichen |
 | **Fortbildung** | Externe Schulungen, Seminare, Pflichtfortbildungen |
+| **Überstundenausgleich** | Abbau angesammelter Überstunden – Ihr Soll bleibt bestehen, das Überstundenkonto sinkt um die eingetragenen Stunden |
 | **Sonstiges** | Arzttermine, Behördengänge, sonstige Freistellungen |
 
 > **Eigene Gründe:** Hat Ihre Praxis zusätzliche Abwesenheitsgründe eingerichtet (z. B. „Schule"), erscheinen diese bei der Typ-Auswahl unter **„Eigene Gründe"**. Wählen Sie sie wie einen normalen Typ aus.
@@ -350,6 +357,7 @@ In der Listenansicht Ihrer Abwesenheiten befindet sich der Button **Löschen**. 
 PraxisZeit führt Urlaub **nach Arbeitstagen** (Tagesprinzip nach § 3 BUrlG) – **nicht** nach Stunden:
 
 - **Ein freier Arbeitstag = genau 1 Urlaubstag**, unabhängig davon, wie viele Stunden Sie an diesem Tag arbeiten würden. Ein 9-Stunden-Tag kostet genauso viel Urlaub wie ein 4-Stunden-Tag: **einen Tag**.
+- **Ein halber Tag zählt 0,5 Urlaubstage.** Aktivieren Sie beim Eintragen (nur bei einzelnen Tagen) die Option **Halber Tag** – siehe [Abschnitt 4.1](#41-abwesenheit-eintragen).
 - Eine **freie Woche** kostet so viele Urlaubstage, wie Sie Arbeitstage in der Woche haben (5-Tage-Woche → 5 Tage, 3-Tage-Woche → 3 Tage).
 - Ihr **Jahresanspruch** richtet sich nach der Zahl Ihrer Arbeitstage pro Woche (z. B. 5 Tage → 30 Tage, 3 Tage → anteilig 18 Tage). Den genauen Wert legt Ihr Administrator fest.
 - Das **Urlaubskonto** auf dem Dashboard zeigt jederzeit Budget, genommene und verbleibende Tage.
@@ -364,6 +372,10 @@ Wie sich das auf Ihr Konto auswirkt, legt Ihre Praxisleitung fest:
 
 - **Als bezahlte Freistellung:** Es wird **kein** Urlaubstag abgezogen, Ihr Überstundenkonto bleibt unberührt (wie ein Feiertag).
 - **Als Urlaub:** Jeder Schließtag wird Ihrem **Urlaubskonto** als Urlaubstag abgezogen. Reicht Ihr Resturlaub nicht für die gesamte Schließung, wird – je nach Einstellung Ihrer Praxis – zunächst Ihr Urlaub aufgebraucht und die restlichen Schließtage als **Überstundenabbau** gebucht: Ihr **Überstundenkonto sinkt** (es kann dabei auch ins Minus gehen), aber es entsteht **kein Minus-Urlaub**. Ist diese Einstellung nicht aktiv, können bei längerer Schließung **Minus-Urlaubstage** entstehen.
+
+> Fällt in Ihre Betriebsferien ein als „halber Feiertag" eingestellter Sondertag (z. B. Heiligabend als ½-Tag), wird dafür nur ein **halber** Urlaubs- bzw. Überstundentag verrechnet – passend zum halben Tagessoll dieses Tages.
+
+> Betriebsferien werden bewusst **ohne Budget-Grenze** gebucht: Anders als bei einer selbst eingetragenen Urlaubsbuchung oder einem Urlaubsantrag (die bei zu wenig Resturlaub jeweils abgelehnt werden) kann Ihre Praxisleitung Betriebsferien auch dann anordnen, wenn Ihr Resturlaub dafür nicht reicht.
 
 > Bei Fragen zur konkreten Verrechnung Ihrer Betriebsferien wenden Sie sich an Ihre Praxisleitung.
 
@@ -399,6 +411,8 @@ Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit: **(Ende − Beginn) − 
 | **Fortbildung** | zählt wie Arbeitszeit |
 | **Bezahlte Freistellung / Sonstiges** | Soll des Tages entfällt, **kein** Urlaubsabzug |
 | **Überstundenausgleich** | Soll bleibt, der Tag zählt als 0 Stunden → Ihr Überstundenkonto sinkt |
+
+> **Eigene Abwesenheitsgründe** (z. B. „Kind krank", „Schule") sind nur ein Etikett mit eigenem Namen und eigener Farbe – rechnerisch verhalten sie sich wie eine der obigen Zeilen, je nachdem wie Ihre Praxis den Grund eingerichtet hat. „Kind krank" verhält sich z. B. wie „Sonstiges" (Soll entfällt, kein Urlaubsabzug), ist aber – anders als eine bezahlte Freistellung – **unbezahlt**. Details in [Abschnitt 4.1](#41-abwesenheit-eintragen).
 
 > **Betriebsferien** wirken je nach Einstellung Ihrer Praxis als Urlaub oder als bezahlte Freistellung – Details in [Abschnitt 4.5](#45-betriebsferien-praxisschließung).
 
@@ -537,7 +551,13 @@ A: Tragen Sie im Feld **Pause (Min.)** ein, wie viele Minuten Sie heute Pause ge
 A: Ihre Praxis hat für diesen Wochentag eine Soll-Arbeitszeit hinterlegt. Wenn Sie deutlich vor dem Soll-Beginn ein- oder nach dem Soll-Ende ausstempeln, wird nur bis zu einem kleinen Puffer (Standard 15 Min.) angerechnet. Ihre tatsächliche Stempelzeit bleibt aber gespeichert. Siehe [Abschnitt 3.3](#33-soll-arbeitszeiten-und-anrechnung).
 
 **F: Wie berechnet sich mein Urlaubsanspruch?**
-A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet. Verbraucht wird **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag (siehe [Abschnitt 4.4](#44-so-wird-ihr-urlaub-berechnet)).
+A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet. Verbraucht wird **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag, ein halber Tag = 0,5 Urlaubstage (siehe [Abschnitt 4.4](#44-so-wird-ihr-urlaub-berechnet)).
+
+**F: Ich kann beim Eintragen einer Abwesenheit den Typ „Überstundenausgleich" wählen – was passiert dabei?**
+A: Damit bauen Sie angesammelte Überstunden ab. Ihr Soll für den Tag bleibt bestehen, der Tag zählt aber mit 0 Ist-Stunden – die von Ihnen im Feld **Stunden** eingetragene Zahl wird direkt von Ihrem Überstundenkonto abgezogen. Es entsteht **kein** Urlaubsabzug.
+
+**F: Was bewirkt die Option „Halber Tag" beim Eintragen einer Abwesenheit?**
+A: Sie ist nur bei einzelnen Tagen wählbar (nicht bei Zeitraum, Krank oder Überstundenausgleich) und lässt den Tag nur zur Hälfte zählen – bei Urlaub also **0,5** statt 1,0 Tage, z. B. für einen Arzttermin am Vormittag, an dem Sie nachmittags arbeiten.
 
 **F: Bei mir fehlen die Stunden- und Überstundenkacheln. Ist das kaputt?**
 A: Nein. Für manche Mitarbeitende führt die Praxis keine Stundenzählung. Dann entfallen Soll/Ist, Überstunden und der Stempel-Button; Urlaub und Krankheit werden weiter tagebasiert geführt. Mehr dazu in [Abschnitt 6](#6-wenn-für-sie-keine-stunden-gezählt-werden).
@@ -546,7 +566,7 @@ A: Nein. Für manche Mitarbeitende führt die Praxis keine Stundenzählung. Dann
 A: Ein negativer Wert bedeutet, dass Sie weniger gearbeitet haben als Ihre Sollstunden.
 
 **F: Kann ich eine Abwesenheit für mehrere Tage eintragen?**
-A: Ja. Im Abwesenheitsformular aktivieren Sie die Option **Zeitraum** und geben Start- und Enddatum ein. Das System trägt nur Werktage (Mo–Fr) ein und überspringt Wochenenden und Feiertage.
+A: Ja. Im Abwesenheitsformular aktivieren Sie die Option **Zeitraum** und geben Start- und Enddatum ein. Das System trägt nur Werktage (Mo–Fr) ein und überspringt Wochenenden, Feiertage sowie als arbeitsfrei eingestellte Sondertage (z. B. Heiligabend).
 
 **F: Wie stelle ich einen Korrekturantrag für einen alten Eintrag?**
 A: Navigieren Sie zu **Zeiterfassung → Tab „Einträge"**, suchen Sie den betroffenen Eintrag und klicken Sie auf den **Änderungsantrag**-Button in der Aktionsspalte. Bei entsperrten Einträgen nutzen Sie direkt den **Bearbeiten**-Button.
@@ -574,6 +594,8 @@ PraxisZeit unterstützt die Einhaltung des **Arbeitszeitgesetzes (ArbZG)**:
 
 Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)
 
+> **Minijob-Arbeitszeitkonto:** Für Mitarbeitende mit einem Minijob-Arbeitszeitkonto unterstützt PraxisZeit zusätzlich die Vorgaben aus **§ 2 Abs. 2 MiLoG** (Mindestlohngesetz) mit weichen Hinweisen am Überstundenkonto – siehe [Abschnitt 2](#2-dashboard--die-übersicht).
+
 ---
 
 ## Schichtplan (falls Ihre Praxis ihn nutzt)
@@ -592,4 +614,4 @@ legt Ihr Administrator fest.
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.4 | Juni 2026 (PraxisZeit 1.11.0)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.5 | Juli 2026 (PraxisZeit 1.15.0)*
