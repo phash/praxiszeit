@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-07-14
+
+Minor-Release. Neues Minijob-Feature (#377 Baustein 2b) + projektweiter
+Multi-Agent-Review-Durchgang (23 Findings ≤ Low gefixt). Eine Migration (065).
+Beide Änderungssätze einzeln erschöpfend reviewt, gemergt und als Ganzes erneut
+review-geprüft (Merge-Komposition sauber).
+
+### ✨ Neu
+- **Minijob-Modus „feste Monatsarbeitszeit" (#377 Baustein 2b).** Opt-in je
+  Mitarbeiter (`use_fixed_monthly_target`, Migration 065): das Monats-Soll ist
+  fest die vereinbarte Monatsarbeitszeit (`agreed_monthly_hours`) statt der aus
+  Wochenstunden × Arbeitstagen schwankenden Summe. Individuelle Tagesstunden
+  sind ein reines Anwesenheitsmuster; bezahlte Fehltage (Feiertag/Urlaub/bez.
+  Freistellung) auf geplanten Tagen werden dem Konto gutgeschrieben, unbezahlte
+  entschuldigte Tage mindern das feste Soll. Weiche `MILOG_MONTHLY_EXCEEDED`-
+  Warnung bei Monats-Ist > vereinbarter Zeit. Für alle Nicht-Modus-Mitarbeiter
+  byte-identisch (§16-Berechnung unverändert).
+
+### 🐛 Behoben / 🔒 Härtung (Projekt-Review)
+- **Doppelklick beim Einstempeln wirklich abgesichert.** Der bisherige
+  `SELECT … FOR UPDATE` sperrte den Race gar nicht (Sperre auf einer noch nicht
+  existierenden Zeile); jetzt zusätzlich ein User-Zeilen-Anker-Lock — zwei
+  gleichzeitige Stempelversuche erzeugen garantiert nur einen offenen Eintrag.
+- **Betriebsferien-Umbuchung** zählte historische Halbtags-Urlaube (vor dem
+  `half_day`-Feld) falsch als vollen Tag → konnte einen Betriebsferien-Tag zu
+  Unrecht auf Überstundenausgleich statt Urlaub kippen. Korrigiert.
+- **Jahres-Abwesenheitsübersicht** zählte Krank/Fortbildung/Sonstiges u. a.
+  stundenbasiert (0 Tage bei Personen ohne Stundenzählung) → jetzt tagebasiert.
+- **Arbeitszeit-Änderung** aktualisierte die zwischengespeicherten Wochenstunden
+  nicht sofort (fehlender Flush) → korrigiert (wirkt auf §16-Export/Self-Export).
+- **Urlaub auf 24./31.12. („frei")** wurde in Änderungsanträgen und der
+  Antrags-Budgetprüfung fälschlich belastet bzw. abgelehnt → soll-freie
+  Sondertage jetzt in allen Buchungspfaden korrekt ausgeschlossen.
+- **Kein Startabbruch mehr** bei fehlerhaftem Demo-Ablaufdatum (Read-Only statt
+  Prozess-Exit); CORS-Header liegen jetzt auch auf 403/413-Kurzschlussantworten.
+- Diverse F-026-Mandantenfilter ergänzt, tote Code-/Import-Stellen entfernt,
+  mehrere schwache/irreführende Tests inhaltlich verschärft.
+
 ## [1.14.3] - 2026-07-14
 
 Patch-Release. Kundenreport (#394) + adversarial multi-agent-Release-Review
