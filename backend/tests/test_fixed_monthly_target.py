@@ -2,7 +2,7 @@
 from datetime import date, time
 from decimal import Decimal
 import pytest
-from app.models import User, UserRole, Absence, AbsenceType, PublicHoliday, TimeEntry
+from app.models import User, UserRole, Absence, AbsenceType, PublicHoliday, TimeEntry, YearCarryover
 from app.services import calculation_service as cs
 from tests.conftest import DEFAULT_TENANT_ID
 
@@ -196,3 +196,146 @@ def test_ytd_summary_non_mode_byte_identical(db, default_tenant):
     expected_target = (cs.get_range_target(db, u, date(2026, 1, 1), date(2026, 3, 31)))
     assert Decimal(str(r["target_hours"])) == expected_target
     assert Decimal(str(r["actual_hours"])) == Decimal("10.00")
+
+
+# --- Task 7: Parallelpfad-Konsistenz + Byte-Identität + cutoff/carryover ---
+#
+# Jahr 2026 statt der im Task-Brief illustrierten 2025: get_ytd_summary
+# behandelt nur das "laufende" Jahr (year == today.year) cutoff-sensitiv
+# (sonst end := 31.12., der cutoff wird ignoriert — siehe #313-Kommentar im
+# Service). Da der reale Testlauf-"heute" inzwischen in 2026 liegt (wie schon
+# test_ytd_summary_fixed_mode/_non_mode_byte_identical oben dokumentieren),
+# muss 2026 verwendet werden, damit cutoff_date tatsächlich als YTD-Grenze
+# greift — sonst würde die YTD-Summe stillschweigend über alle 12 Monate
+# laufen und nicht mit dem auf März begrenzten Konto übereinstimmen.
+
+def test_parallel_paths_consistent(db, default_tenant):
+    """#377 Baustein 2b (Haupttest, Task 7): get_overtime_account() (Task 5)
+    und die davon UNABHÄNGIG aufgebaute Σ(get_monthly_actual − get_monthly_
+    target)-Rekonstruktion dürfen für einen Modus-MA mit gemischtem Jan-Mär
+    (reale TimeEntries, 1 Feiertag, 1 VACATION, 1 OTHER — je auf einem
+    geplanten Mo/Mi) NIE auseinanderlaufen. Genau diese Klasse von
+    Parallelpfad-Divergenz traf Release 1.14.3.
+
+    Handberechnung (agreed=40/Monat fix, Mo+Mi geplant à 3h):
+      Jan: 2× TimeEntry (Mo 05.01./19.01., je 10h netto) → Ist 20.00,
+           kein Feiertag/Abwesenheit → Soll 40.00 (flach)          Δ -20.00
+      Feb: 1 Feiertag auf geplantem Mo (02.02.), kein TimeEntry →
+           Ist = Gutschrift der geplanten Mo-Stunden = 3.00,
+           Soll unverändert 40.00 (Feiertag mindert NICHT das Soll,
+           er wird nur dem Ist gutgeschrieben)                     Δ -37.00
+      Mär: VACATION auf geplantem Mi (04.03., 3h, ganztägig) →
+           Ist-Gutschrift 3.00; OTHER (unbezahlt) auf geplantem Mo
+           (02.03., 3h, ganztägig) mindert das Soll auf 37.00      Δ -34.00
+      Σ Δ = -20.00 -37.00 -34.00 = -91.00
+    """
+    u = _mk(db)  # agreed=40/Monat, Mo+Mi geplant à 3h, Fenster offen
+    for d in (5, 19):  # Jan: 2 reale Mo-Einträge, je 10h netto (8-19h, 60min Pause)
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 1, d),
+                         start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.add(PublicHoliday(date=date(2026, 2, 2), name="X", year=2026, tenant_id=DEFAULT_TENANT_ID))  # Mo
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 4),  # Mi
+                   type=AbsenceType.VACATION, hours=Decimal("3"), half_day=False))
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 2),  # Mo
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))
+    db.commit()
+
+    expected_target = {1: Decimal("40.00"), 2: Decimal("40.00"), 3: Decimal("37.00")}
+    expected_actual = {1: Decimal("20.00"), 2: Decimal("3.00"), 3: Decimal("3.00")}
+    for m in (1, 2, 3):
+        assert cs.get_monthly_target(db, u, 2026, m) == expected_target[m]
+        assert cs.get_monthly_actual(db, u, 2026, m) == expected_actual[m]
+
+    manual = sum((expected_actual[m] - expected_target[m] for m in (1, 2, 3)), Decimal("0"))
+    assert manual == Decimal("-91.00")
+
+    acc = cs.get_overtime_account(db, u, 2026, 3)
+    assert acc == manual.quantize(Decimal("0.01"))
+
+    ytd = cs.get_ytd_summary(db, u, 2026, cutoff_date=date(2026, 3, 31))
+    assert Decimal(str(ytd["overtime"])) == acc  # Carryover 0 in diesem Test
+
+
+def test_byte_identity_non_mode_all_four_surfaces(db, default_tenant):
+    """Task 7 Nr. 2: ein NICHT-Modus-MA muss über ALLE VIER Soll/Ist-
+    Oberflächen (get_monthly_target, get_monthly_actual, get_overtime_account,
+    get_ytd_summary) unverändert die alte (modus-freie) Per-Tag-Rechnung
+    liefern — Regressionsanker, dass die #377-Modus-Zweige den Nicht-Modus-
+    Pfad nirgends berühren.
+
+    Referenz (handgezählt via calendar.monthrange, 8h/Werktag = 40h/5 Tage):
+      Werktage 2026: Jan=22, Feb=20, Mär=22 → Jan-Mär gesamt 64.
+      TimeEntry am 04.03.2026 (Mi), 8-19h minus 60min Pause = 10h netto.
+    """
+    u = _mk(db, use_fixed_monthly_target=False, weekly_hours=Decimal("40"), work_days_per_week=5,
+            use_daily_schedule=False, agreed_monthly_hours=None)
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 4),
+                     start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+
+    assert cs.get_monthly_target(db, u, 2026, 3) == Decimal("176.00")  # 22 Werktage × 8h
+    assert cs.get_monthly_actual(db, u, 2026, 3) == Decimal("10.00")
+    assert cs.get_overtime_account(db, u, 2026, 3) == Decimal("10.00") - Decimal("176.00")
+
+    ytd = cs.get_ytd_summary(db, u, 2026, cutoff_date=date(2026, 3, 31))
+    assert Decimal(str(ytd["target_hours"])) == Decimal("512.00")  # 64 Werktage × 8h (Jan+Feb+Mär)
+    assert Decimal(str(ytd["actual_hours"])) == Decimal("10.00")
+    assert Decimal(str(ytd["overtime"])) == Decimal("10.00") - Decimal("512.00")
+
+
+def test_overtime_account_cutoff_uses_prorata_target(db, default_tenant):
+    """#377 Baustein 2b / Task 5 (deferred minor, Task 7 Nr. 3): get_overtime_
+    account mit einem MITTEN-im-Monat-cutoff_date (#313-Dashboard-Pfad) MUSS
+    für einen Modus-MA das ANTEILIGE (pro-rata) Monats-Soll nutzen, nicht das
+    volle Fix-Soll — sonst zeigt der laufende Monat ein Phantom-Defizit in
+    Höhe der noch nicht abgelaufenen Resttage.
+
+    Ein TimeEntry NACH dem Cutoff dient nur als Konto-Startpunkt
+    (get_overtime_account leitet start_year/start_month vom ersten TimeEntry
+    des Users ab) und wird durch den Cutoff selbst aus dem Ist ausgeschlossen
+    → Ist=0 im betrachteten Fenster ("no entries"-Fall aus dem Task-Brief).
+
+    Cutoff = 15.03.2026 (15 von 31 Kalendertagen, Beschäftigungsfenster
+    durchgehend offen, keine unbezahlte Abwesenheit) → erwartetes Pro-rata-
+    Soll = 40 × 15/31 = 19.35, unabhängig von get_monthly_target per
+    Dezimal-Arithmetik handberechnet (NICHT durch einen zweiten SUT-Aufruf)."""
+    u = _mk(db)  # agreed=40
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 20),  # nach dem Cutoff
+                     start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+
+    expected_target = (Decimal("40") * 15 / 31).quantize(Decimal("0.01"))
+    assert expected_target == Decimal("19.35")
+
+    acc = cs.get_overtime_account(db, u, 2026, 3, cutoff_date=date(2026, 3, 15))
+    assert acc == -expected_target
+
+
+def test_ytd_summary_fixed_mode_folds_in_carryover(db, default_tenant):
+    """#377 Baustein 2b / Task 6 (deferred minor, Task 7 Nr. 4): get_ytd_
+    summary muss im Fix-Modus einen vorhandenen YearCarryover GENAUSO in
+    ``overtime`` einfalten wie der Nicht-Modus-Pfad
+    (``overtime = total_actual − total_target + carryover_hours``).
+
+    Handberechnung (agreed=40/Monat fix, cutoff 31.03.2026 → Jan+Feb+Mär):
+      Jan: Soll 40.00, Ist 0.00 (keine Einträge)
+      Feb: Soll 40.00, Ist 0.00 (keine Einträge)
+      Mär: Soll 40.00, Ist 10.00 (1× TimeEntry, 8-19h minus 60min Pause)
+      Σ Soll = 120.00, Σ Ist = 10.00, Carryover = 5.00
+      overtime = 10.00 − 120.00 + 5.00 = −105.00
+    """
+    u = _mk(db)  # agreed=40
+    db.add(YearCarryover(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, year=2026,
+                         overtime_hours=Decimal("5"), vacation_days=Decimal("0")))
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 3, 4),
+                     start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+
+    ytd = cs.get_ytd_summary(db, u, 2026, cutoff_date=date(2026, 3, 31))
+    assert Decimal(str(ytd["target_hours"])) == Decimal("120.00")
+    assert Decimal(str(ytd["actual_hours"])) == Decimal("10.00")
+    assert Decimal(str(ytd["carryover_hours"])) == Decimal("5.00")
+
+    expected_overtime = Decimal("10.00") - Decimal("120.00") + Decimal("5.00")
+    assert expected_overtime == Decimal("-105.00")
+    assert Decimal(str(ytd["overtime"])) == expected_overtime
