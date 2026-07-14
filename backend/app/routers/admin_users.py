@@ -222,6 +222,11 @@ def users_overview(
                 _aging = milog_service.settlement_aging(db, u, _t, detailed=_detailed)
                 if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
                     _milog_w.append(milog_service.settlement_warning_text(_aging))
+            # #377 Baustein 2b: weiche Plausibilitäts-Warnung für Fix-Modus-MA
+            # (gleicher Saldo-Stichtag wie oben, #313-Parität zum MA-Dashboard).
+            _exceeded = milog_service.monthly_exceeded_check(db, u, _t.year, _t.month, up_to_date=cutoff)
+            if _exceeded:
+                _milog_w.append(milog_service.monthly_exceeded_warning_text(_exceeded))
         result.append(AdminUserOverview(
             user_id=str(u.id),
             first_name=u.first_name,

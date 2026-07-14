@@ -425,3 +425,45 @@ def test_settlement_aging_no_phantom_deficit_fixed_mode(db, default_tenant):
     # Kein Monats-Delta ≠ 0 in der Historie → keine Einlage → kein offener
     # Posten → None (KEIN Phantom-Defizit / keine Überfälligkeits-Warnung).
     assert aging is None
+
+
+# --- Task 9: MILOG_MONTHLY_EXCEEDED weiche Plausibilitäts-Warnung ----------
+
+def test_monthly_exceeded_warning(db, default_tenant):
+    """agreed=40h, 45h real erfasst im März 2025 → Warnung mit month_actual >
+    agreed (5× 9h-Einträge, 8-18h minus 60min Pause = 45.00h netto)."""
+    from app.services import milog_service
+    u = _mk(db, agreed_monthly_hours=Decimal("40"))
+    for d in (3, 4, 5, 6, 7):
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, d),
+                         start_time=time(8, 0), end_time=time(18, 0), break_minutes=60))
+    db.commit()
+    chk = milog_service.monthly_exceeded_check(db, u, 2025, 3)
+    assert chk is not None and chk["month_actual"] > chk["agreed"]
+    assert chk["month_actual"] == 45.00
+    assert chk["agreed"] == 40.00
+    text = milog_service.monthly_exceeded_warning_text(chk)
+    assert "MILOG_MONTHLY_EXCEEDED" in text
+    assert "sofern zur Mindestlohnhöhe vergütet" in text
+
+
+def test_monthly_exceeded_none_when_ist_not_over_agreed(db, default_tenant):
+    """9h erfasst ≤ 40h agreed → keine Warnung."""
+    from app.services import milog_service
+    u = _mk(db, agreed_monthly_hours=Decimal("40"))
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 3),
+                     start_time=time(8, 0), end_time=time(18, 0), break_minutes=60))
+    db.commit()
+    assert milog_service.monthly_exceeded_check(db, u, 2025, 3) is None
+
+
+def test_monthly_exceeded_none_when_mode_off(db, default_tenant):
+    """Fix-Modus aus → None, auch bei viel erfasster Zeit."""
+    from app.services import milog_service
+    u = _mk(db, use_fixed_monthly_target=False, agreed_monthly_hours=None,
+            weekly_hours=Decimal("40"), work_days_per_week=5, use_daily_schedule=False)
+    for d in (3, 4, 5, 6, 7):
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, d),
+                         start_time=time(8, 0), end_time=time(18, 0), break_minutes=60))
+    db.commit()
+    assert milog_service.monthly_exceeded_check(db, u, 2025, 3) is None
