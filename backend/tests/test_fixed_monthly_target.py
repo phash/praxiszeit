@@ -1,8 +1,8 @@
 """#377 Baustein 2b: zentrale Fix-Monats-Soll-Helper."""
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 import pytest
-from app.models import User, UserRole, Absence, AbsenceType, PublicHoliday
+from app.models import User, UserRole, Absence, AbsenceType, PublicHoliday, TimeEntry
 from app.services import calculation_service as cs
 from tests.conftest import DEFAULT_TENANT_ID
 
@@ -147,3 +147,26 @@ def test_range_actual_credit_not_smeared_across_weeks(db, default_tenant):
 
     # Ganzer Monat trägt weiterhin die volle Gutschrift.
     assert cs.get_monthly_actual(db, u, 2025, 3) == Decimal("3.00")
+
+
+def test_overtime_account_fixed_mode(db, default_tenant):
+    """#377 Baustein 2b: get_overtime_account muss im Fix-Modus das FESTE
+    Monats-Soll (40h) nutzen, nicht die schwankende Per-Tag-Summe (2 Tage/Woche
+    à 3h). 30h real erfasst → Konto = 30 − 40 = −10.00."""
+    u = _mk(db)  # agreed 40/Monat
+    for d in (5, 12, 19):  # 3× 10h netto (8:00-19:00 minus 60min Pause) = 30h
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, d),
+                         start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+    assert cs.get_overtime_account(db, u, 2025, 3) == Decimal("-10.00")
+
+
+def test_overtime_account_non_mode_byte_identical(db, default_tenant):
+    """Nicht-Modus-MA müssen weiterhin die Per-Tag-Summe nutzen (unverändert)."""
+    u = _mk(db, use_fixed_monthly_target=False, weekly_hours=Decimal("40"), work_days_per_week=5,
+            use_daily_schedule=False, agreed_monthly_hours=None)
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                     start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+    db.commit()
+    # Soll = Σ 8h über 21 Werktage im März 2025 = 168; Ist = 10h → Konto = 10 − 168
+    assert cs.get_overtime_account(db, u, 2025, 3) == Decimal("10.00") - Decimal("168.00")

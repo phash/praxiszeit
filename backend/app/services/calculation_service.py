@@ -794,6 +794,28 @@ def get_overtime_account(
     while (current_year < up_to_year) or (current_year == up_to_year and current_month <= up_to_month):
         key = (current_year, current_month)
 
+        # #377 Baustein 2b: fest-Monats-Soll-Modus — statt die per-Tag-Summe
+        # unten neu zu rekonstruieren (Risiko, die SICK/TRAINING-Gutschrift +
+        # den unbezahlt-Abzug/Fix-Credit zu vergessen/zu duplizieren), an die
+        # bereits modus-korrekten Wrapper (Tasks 3+4) delegieren — Single
+        # Source of Truth. `cutoff_date` (#313, "bis heute") ist derselbe Wert,
+        # den der nicht-modus-Pfad unten pro Tag gegen `d` prüft; get_range_target/
+        # get_range_actual clampen intern selbst gegen das jeweilige Monatsende
+        # (`min(end, up_to_date)`), daher hier unverändert durchreichen — NICHT
+        # die oben berechnete `up_to_date` (= Monatsende des ANGEFRAGTEN
+        # up_to_year/up_to_month, nur für den Bulk-Fetch-Query-Bound gedacht).
+        if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+            monthly_target = get_monthly_target(db, user, current_year, current_month, up_to_date=cutoff_date)
+            monthly_actual = get_monthly_actual(db, user, current_year, current_month, up_to_date=cutoff_date)
+            total_balance += (monthly_actual - monthly_target)
+
+            if current_month == 12:
+                current_month = 1
+                current_year += 1
+            else:
+                current_month += 1
+            continue
+
         # Monthly target (mirrors get_monthly_target logic)
         _, last_day = monthrange(current_year, current_month)
         cfg = _special_day_config(current_year)
