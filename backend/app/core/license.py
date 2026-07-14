@@ -256,12 +256,14 @@ def set_license_state(license_info: Optional[LicenseInfo], read_only: bool = Fal
 
 def require_writable():
     """
-    FastAPI dependency that blocks write operations when license is expired.
-    Use in POST/PUT/DELETE endpoints that create or modify data.
+    FastAPI dependency that raises 403 while the license is in read-only mode.
 
-    Usage:
-        @router.post("/api/time-entries", dependencies=[Depends(require_writable)])
-        def create_entry(...): ...
+    NOT attached to any route as a ``Depends`` — write enforcement is done
+    globally by ``LicenseReadOnlyMiddleware`` (see ``app/middleware/license.py``),
+    which covers every write endpoint by default instead of relying on each
+    new one remembering to add this dependency. Kept as a small, directly
+    testable unit (see ``test_read_only_guard`` in ``test_native_mode.py``)
+    for the read-only-state check itself.
     """
     from fastapi import HTTPException
     if _license_read_only:

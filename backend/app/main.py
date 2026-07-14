@@ -323,29 +323,39 @@ async def lifespan(app: FastAPI):
         # keine Kundenangaben), aber die License-Middleware respektiert
         # den read_only-Flag.
         from app.core.license import set_license_state
-        try:
-            from datetime import date as _date
-            demo_until = _date.fromisoformat(settings.LICENSE_DEMO_EXPIRES_AT.strip())
-        except ValueError:
-            print(f"LICENSE ERROR: ungueltiges LICENSE_DEMO_EXPIRES_AT "
-                  f"'{settings.LICENSE_DEMO_EXPIRES_AT}' (erwartet YYYY-MM-DD)")
-            sys.exit(1)
         from datetime import date
-        today = date.today()
-        if today > demo_until:
-            print(f"WARNING: Demo-Lizenz abgelaufen am {demo_until.isoformat()}.")
+        try:
+            demo_until = date.fromisoformat(settings.LICENSE_DEMO_EXPIRES_AT.strip())
+        except ValueError:
+            # Ein kaputtes/unparsebares Datum darf den Dienst NICHT abschiessen
+            # (dasselbe Prinzip wie bei LicenseError oben: read-only statt
+            # sys.exit(1) -> Crash-Loop/Totalausfall, niemand kommt rein).
+            # Konservativ wie eine abgelaufene Demo behandeln.
+            print(f"LICENSE ERROR: ungueltiges LICENSE_DEMO_EXPIRES_AT "
+                  f"'{settings.LICENSE_DEMO_EXPIRES_AT}' (erwartet YYYY-MM-DD).")
             print("App running in READ-ONLY mode.")
             set_license_state(None, read_only=True)
             # M6: structured audit-log fuer DSGVO Art. 32 / ArbZG §16
             audit_license_readonly_event(
-                reason="Demo-Frist überschritten",
+                reason="Ungültiges LICENSE_DEMO_EXPIRES_AT",
                 default_tenant_id=default_tenant_id,
             )
         else:
-            days_left = (demo_until - today).days
-            print(f"License: 30-Tage-Demo (laeuft am {demo_until.isoformat()} "
-                  f"ab, noch {days_left} Tage)")
-            set_license_state(None, read_only=False)
+            today = date.today()
+            if today > demo_until:
+                print(f"WARNING: Demo-Lizenz abgelaufen am {demo_until.isoformat()}.")
+                print("App running in READ-ONLY mode.")
+                set_license_state(None, read_only=True)
+                # M6: structured audit-log fuer DSGVO Art. 32 / ArbZG §16
+                audit_license_readonly_event(
+                    reason="Demo-Frist überschritten",
+                    default_tenant_id=default_tenant_id,
+                )
+            else:
+                days_left = (demo_until - today).days
+                print(f"License: 30-Tage-Demo (laeuft am {demo_until.isoformat()} "
+                      f"ab, noch {days_left} Tage)")
+                set_license_state(None, read_only=False)
 
     # Configuration sanity checks
     if settings.COOKIE_SECURE and settings.ENVIRONMENT != "production":
@@ -395,25 +405,10 @@ _instrumentator.instrument(app)
 if not settings.SERVE_FRONTEND:
     _instrumentator.expose(app)
 
-# Configure CORS
-cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
-_cors_is_wildcard = cors_origins == ["*"]
-# F-024 audit: ``Cookie`` is a forbidden header name in browsers (JS cannot
-# set it), so listing it in allow_headers is both pointless and misleading.
-# ``X-CSRF-Token`` is the double-submit header the frontend mirrors the
-# csrf_token cookie into — it must be allowlisted for cross-origin use.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=not _cors_is_wildcard,  # Disable credentials with wildcard origins
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
-    expose_headers=["X-Requires-TOTP"],
-)
-
 # F-024: CSRF double-submit cookie enforcement on unsafe methods.
-# Must be added AFTER CORSMiddleware so that preflight requests handled by
-# CORS are still processed (OPTIONS is not an unsafe method anyway).
+# NOTE: CORSMiddleware is registered further down (after TrustedHostMiddleware),
+# not here — see the comment at its registration site for why (Finding 11,
+# CORS must be the OUTERMOST middleware).
 app.add_middleware(CSRFMiddleware)
 
 # License read-only enforcement for native installs (no-op when no license
@@ -471,11 +466,39 @@ def _allowed_hosts() -> list[str]:
 
 
 # Vuln-3 / CVE-2026-48710 "BadHost": validate the Host header against an
-# operator-configured allowlist. Added last → outermost → runs before the
-# path-based middlewares (CSRF exemption, license, SPA routing) that a Host
-# desync on an unpatched Starlette could otherwise confuse. No-op while
-# ALLOWED_HOSTS="*" (the default).
+# operator-configured allowlist. Runs before the path-based middlewares
+# (CSRF exemption, license, SPA routing) that a Host desync on an unpatched
+# Starlette could otherwise confuse. No-op while ALLOWED_HOSTS="*" (the
+# default). CORSMiddleware (below) wraps it too, but CORS never routes on
+# the Host header, so TrustedHost still gets to reject a bad Host before any
+# app logic runs.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
+
+# Configure CORS. Registered LAST (Finding 11) so Starlette makes it the
+# OUTERMOST middleware — in Starlette, ``add_middleware`` builds the stack
+# such that the most-recently-added middleware wraps everything added
+# before it. CORS was previously added FIRST (innermost), so any
+# short-circuited response from a middleware added after it — the CSRF/
+# License/Impersonation 403s, the RequestSizeLimit 413, the TrustedHost 400
+# — never passed back through CORSMiddleware and reached the browser with
+# NO Access-Control-Allow-Origin header. The browser then reports a generic
+# CORS/network error, hiding the real 403/413 from the frontend. Outermost
+# CORS guarantees every response, including short-circuits, gets the
+# correct CORS headers.
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+_cors_is_wildcard = cors_origins == ["*"]
+# F-024 audit: ``Cookie`` is a forbidden header name in browsers (JS cannot
+# set it), so listing it in allow_headers is both pointless and misleading.
+# ``X-CSRF-Token`` is the double-submit header the frontend mirrors the
+# csrf_token cookie into — it must be allowlisted for cross-origin use.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=not _cors_is_wildcard,  # Disable credentials with wildcard origins
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+    expose_headers=["X-Requires-TOTP"],
+)
 
 # Attach DB error logging handler (captures WARNING+ logs to error_logs table)
 # DSGVO F-007: sqlalchemy.engine intentionally NOT attached (SQL queries can contain PII)

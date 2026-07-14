@@ -187,3 +187,29 @@ def test_booking_private_vacation_runs_resplit_no_spurious_flip(db, default_tena
     db.expire_all()
     # Budget 6, closure 4 + private 1 = 5 ≤ 6 → closure stays all VACATION.
     assert set(_closure_types(db, emp, c["id"]).values()) == {AbsenceType.VACATION}
+
+
+def test_legacy_half_day_none_private_vacation_consumes_hours_over_daily_target(db, default_tenant, admin):
+    """FINDING 1 (review 2026-07-14): a legacy pre-migration-052 private VACATION
+    row (``half_day IS NULL``) must consume ``hours / dt_day`` of the annual
+    budget — exactly like ``calculation_service.get_vacation_account``'s
+    three-way branch — NOT a full day. ``None`` is falsy, so the buggy
+    ``(0.5 if a.half_day else 1.0)`` fell into the ``else`` branch and charged
+    a full day for a half-day-worth legacy booking.
+
+    Budget 3.5, legacy row books 4h of an 8h-Soll day → correct consumption is
+    0.5, leaving 3.0 for the 4-workday closure (3 VACATION + 1 OVERTIME). The
+    pre-fix bug consumes a full day (1.0), leaving only 2.5 (2 VACATION + 2
+    OVERTIME) — wrongly flipping the 3rd, boundary closure day to OVERTIME.
+    """
+    emp2 = _make_user(db, "emp_legacy", vacation_days=3.5)
+    db.add(Absence(user_id=emp2.id, tenant_id=DEFAULT_TENANT_ID, date=date(2027, 1, 5),
+                   type=AbsenceType.VACATION, hours=4.0, half_day=None))
+    db.commit()
+    _set_toggle(db, True)
+    c = _create_closure(_client_as(db, admin))
+    _app.dependency_overrides.clear()
+
+    types = list(_closure_types(db, emp2, c["id"]).values())
+    assert types.count(AbsenceType.VACATION) == 3
+    assert types.count(AbsenceType.OVERTIME) == 1

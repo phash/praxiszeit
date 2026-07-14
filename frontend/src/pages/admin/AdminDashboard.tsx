@@ -29,6 +29,7 @@ interface EmployeeReport {
   sick_hours: number;
   sick_days: number;
   exempt_from_arbzg?: boolean;
+  track_hours?: boolean;
 }
 
 interface TimeEntry {
@@ -455,8 +456,14 @@ export default function AdminDashboard() {
   const totalEmployees = report.length;
   // #159: Ø Saldo wahlweise ohne leitende Angestellte (Default) — verhindert
   // dass wenige MA mit vielen Stunden den Schnitt verzerren.
+  // Finding 14 (Review 2026-07-14): track_hours=false-MA (#191, kein Soll/Ist)
+  // haben immer Saldo 0 → IMMER aus dem Schnitt ausschließen (unabhängig vom
+  // "Leitende MA einrechnen"-Toggle, der nur exempt_from_arbzg steuert), sonst
+  // verwässern sie den Durchschnitt Richtung 0.
   const exemptCount = report.filter((emp) => emp.exempt_from_arbzg).length;
-  const avgRows = includeExemptInAvg ? report : report.filter((emp) => !emp.exempt_from_arbzg);
+  const avgRows = report.filter(
+    (emp) => emp.track_hours !== false && (includeExemptInAvg || !emp.exempt_from_arbzg)
+  );
   const avgBalance = avgRows.length > 0
     ? avgRows.reduce((sum, emp) => sum + emp.balance, 0) / avgRows.length
     : 0;

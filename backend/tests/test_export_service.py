@@ -498,3 +498,47 @@ class TestAbsencesOverviewDayBased:
         self._absence(db, user_b, date(2026, 1, 12), AbsenceType.VACATION, 0)
         wb, data = _load_xlsx(generate_yearly_report(db, 2026))
         assert "Abwesenheiten" in wb.sheetnames
+
+
+class TestXlsxMultiAbsenceDay:
+    """Finding 13 (Export-Review 2026-07-14): parity with
+    TestOdsMultiAbsenceDay (test_ods_export_service.py) — the XLSX detail
+    sheet must also render BOTH absences of a mixed day (½ Urlaub + ½
+    Sonstiges), not just the first. `_create_employee_sheet` groups Absences
+    per date into a LIST (I-1/#219) precisely to avoid this; this test would
+    catch a regression to the old date-dict keying on the XLSX side too."""
+
+    def test_monthly_renders_both_absences_on_multitype_day(self, db, test_user):
+        from datetime import datetime as _dt
+        from app.models import Absence, AbsenceType
+
+        db.add(Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                       date=date(2026, 3, 4), type=AbsenceType.VACATION, hours=4))
+        db.add(Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                       date=date(2026, 3, 4), type=AbsenceType.OTHER, hours=4))
+        db.commit()
+
+        result = generate_monthly_report(db, 2026, 3, include_health_data=True)
+        wb, _ = _load_xlsx(result)
+        ws = next(
+            (wb[name] for name in wb.sheetnames if test_user.last_name in name),
+            wb[wb.sheetnames[0]],
+        )
+
+        # Locate the 2026-03-04 row by content (robust against row-offset
+        # drift) rather than a whole-sheet substring search — the sheet's own
+        # "Urlaub genommen (Std):" summary row would satisfy a naive
+        # "Urlaub" in flat-text check regardless of the day-row's content.
+        target_row = None
+        for row in ws.iter_rows(values_only=False):
+            cell0 = row[0].value
+            cell0_date = cell0.date() if isinstance(cell0, _dt) else cell0
+            if cell0_date == date(2026, 3, 4):
+                target_row = row
+                break
+        assert target_row is not None, "no row found for 2026-03-04"
+
+        abwesenheit_cell = target_row[8].value or ""  # Spalte 9 (0-indexed 8) = Abwesenheit
+        assert "Urlaub" in abwesenheit_cell and "Sonstiges" in abwesenheit_cell, (
+            f"mixed-day row must show BOTH absence labels, got: {abwesenheit_cell!r}"
+        )

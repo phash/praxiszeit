@@ -125,7 +125,17 @@ def settlement_aging(db, user, as_of: date, detailed=None):
     if not user.milog_working_time_account or not user.track_hours:
         return None
     if detailed is None:
-        detailed = calculation_service.get_overtime_history_detailed(db, user, as_of.year, as_of.month)
+        # Finding 8 (review 2026-07-14): a direct call (no pre-computed
+        # ``detailed``) MUST apply the #313 Saldo-Stichtag itself — mirrors the
+        # push-callers (dashboard.py / admin_users.py), which always compute
+        # this cutoff before calling get_overtime_history_detailed. Without it
+        # the running, unfinished month is compared against a FULL month-Soll
+        # while only month-to-date Ist exists, fabricating a phantom deficit
+        # that eats the FIFO seed and silently drops MILOG_SETTLEMENT_DUE.
+        cutoff = calculation_service.get_soll_cutoff_date(db, user, today=as_of)
+        detailed = calculation_service.get_overtime_history_detailed(
+            db, user, as_of.year, as_of.month, cutoff_date=cutoff
+        )
     if not detailed:
         return None
 

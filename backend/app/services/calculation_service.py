@@ -42,6 +42,7 @@ def get_weekly_hours_for_date(
         # Classic path: one DB query, always correct.
         change = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
             WorkingHoursChange.effective_from <= target_date
         ).order_by(WorkingHoursChange.effective_from.desc()).first()
     else:
@@ -781,6 +782,7 @@ def get_overtime_account(
     # directly" without paying the per-day DB-query cost.
     wh_changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
     ).order_by(WorkingHoursChange.effective_from).all()
 
     # #146: special-day configs are per-year; cache them across the month loop
@@ -971,6 +973,7 @@ def get_overtime_history_detailed(
 
     wh_changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
     ).order_by(WorkingHoursChange.effective_from).all()
 
     special_day_configs: Dict[int, dict] = {}
@@ -1188,6 +1191,7 @@ def get_ytd_summary(
     if wh_changes is None:
         wh_changes = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
         ).order_by(WorkingHoursChange.effective_from).all()
 
     # #146: special-day config for the YTD year (24./31.12. always fall in

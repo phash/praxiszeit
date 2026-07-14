@@ -10,7 +10,6 @@ from decimal import Decimal
 from typing import List
 
 from sqlalchemy.orm import Session
-from sqlalchemy import extract
 from odf.opendocument import OpenDocumentSpreadsheet
 from odf.style import Style, TextProperties, TableColumnProperties, TableCellProperties
 from odf.text import P
@@ -176,6 +175,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     entries_by_date: dict = {}
     for e in db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         date_in_month(TimeEntry.date, year, month),
     ).order_by(TimeEntry.start_time).all():
         entries_by_date.setdefault(e.date, []).append(e)
@@ -380,7 +380,7 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
     headers = [
         "Mitarbeiter", "Wochenstunden",
         "Soll (Std)", "Ist (Std)", "Saldo (Std)",
-        "Überstunden kum.", "Urlaub (Std)", "Krank (Std)",
+        "Überstunden kum.", "Urlaub (Tage)", "Krank (Tage)",
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -395,22 +395,21 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
         )
         overtime = float(calculation_service.get_overtime_account(db, user, year, 12))
 
-        vac_h = sum(
-            float(a.hours)
-            for a in db.query(Absence).filter(
-                Absence.user_id == user.id,
-                Absence.type == AbsenceType.VACATION,
-                date_in_year(Absence.date, year),
-            ).all()
-        )
-        sick_h = sum(
-            float(a.hours)
-            for a in db.query(Absence).filter(
-                Absence.user_id == user.id,
-                Absence.type == AbsenceType.SICK,
-                date_in_year(Absence.date, year),
-            ).all()
-        )
+        # Finding 9 (Review 2026-07-14): Tagesprinzip (§3 BUrlG, #156/#205) — die
+        # TAGE tagebasiert zählen, identisch zum 'Abwesenheiten'-Sheet weiter
+        # unten (absence_days / get_vacation_account), NICHT als Σ(Absence.hours).
+        # Die naive Stundensumme liefert für track_hours=False-MA (Stunden bleiben
+        # 0, s. GLOSSAR) 0 Urlaubs-/Krankheitstage trotz genommener Tage.
+        vac_acc = calculation_service.get_vacation_account(db, user, year)
+        vac_days = round(float(vac_acc["used_days"]), 1)
+
+        sick_absences = db.query(Absence).filter(
+            Absence.user_id == user.id,
+            Absence.tenant_id == user.tenant_id,  # F-026
+            Absence.type == AbsenceType.SICK,
+            date_in_year(Absence.date, year),
+        ).all()
+        sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
         tr = TableRow()
         tr.addElement(_str_cell(f"{user.last_name}, {user.first_name}"))
@@ -419,9 +418,9 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
         tr.addElement(_float_cell(actual))
         tr.addElement(_float_cell(actual - target))
         tr.addElement(_float_cell(overtime))
-        tr.addElement(_float_cell(vac_h))
-        # DSGVO F-003: mask sick hours unless health data explicitly requested (Art. 9)
-        tr.addElement(_float_cell(sick_h) if include_health_data else _str_cell("–"))
+        tr.addElement(_float_cell(vac_days))
+        # DSGVO F-003: mask sick days unless health data explicitly requested (Art. 9)
+        tr.addElement(_float_cell(sick_days) if include_health_data else _str_cell("–"))
         table.addElement(tr)
 
 
@@ -504,6 +503,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     entries_by_date: dict = {}
     for e in db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         date_in_year(TimeEntry.date, year),
     ).order_by(TimeEntry.start_time).all():
         entries_by_date.setdefault(e.date, []).append(e)
@@ -687,8 +687,10 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
     # 5 Typ-Queries × 12 Monate plus 12 Monats-Nacht-Queries. In dicts gruppieren;
     # die Monatsschleife schlägt nur noch nach. Identische Werte: pro (Monat, Typ)
     # werden dieselben float(a.hours) summiert; Nacht-Tage bleiben ein Date-Set.
+    # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
     year_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,
         date_in_year(Absence.date, year),
     ).all()
     absence_hours_by_month_type: dict = {}
@@ -698,6 +700,7 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
 
     year_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,
         date_in_year(TimeEntry.date, year),
         TimeEntry.end_time.isnot(None),
     ).all()
