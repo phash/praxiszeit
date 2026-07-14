@@ -140,6 +140,103 @@ def get_daily_target_for_date(user: User, target_date: date, weekly_hours: Decim
     return get_daily_target(user, weekly_hours)
 
 
+def fixed_monthly_target(user: User, year: int, month: int) -> Decimal:
+    """#377 Baustein 2b: festes Monats-Soll = agreed_monthly_hours, anteilig bei
+    Eintritt/Austritt (Kalendertag-Bruchteil des Beschäftigungsfensters im Monat).
+    Gibt 0, wenn der Modus aus ist oder agreed fehlt (Caller → wie Modus aus)."""
+    agreed = getattr(user, "agreed_monthly_hours", None)
+    if not getattr(user, "use_fixed_monthly_target", False) or not agreed or Decimal(str(agreed)) <= 0:
+        return Decimal('0')
+    agreed = Decimal(str(agreed))
+    days_in_month = monthrange(year, month)[1]
+    in_window = sum(
+        1 for day in range(1, days_in_month + 1)
+        if _within_employment_window(user, date(year, month, day))
+    )
+    if in_window == 0:
+        return Decimal('0')
+    if in_window == days_in_month:
+        return agreed.quantize(Decimal('0.01'))
+    return (agreed * Decimal(in_window) / Decimal(days_in_month)).quantize(Decimal('0.01'))
+
+
+# #377 Baustein 2b: bezahlte Fehltag-Typen, die im Fix-Modus geplante Stunden dem
+# Ist gutschreiben. SICK/TRAINING NICHT hier — die laufen über credited_absences
+# (get_range_actual); erneut addieren wäre Doppelgutschrift.
+_FIXED_PAID_CREDIT_TYPES = frozenset({AbsenceType.VACATION, AbsenceType.PAID_LEAVE})
+# unbezahlt entschuldigt → mindert das feste Soll.
+_FIXED_UNPAID_TYPES = frozenset({AbsenceType.OTHER})
+
+
+def _fixed_planned_hours(db: Session, user: User, d: date, special_cfg: dict) -> Decimal:
+    """Geplante Tagesstunden an ``d`` (0 an ungeplanten Tagen/Wochenende), inkl.
+    #394-Sondertags-/Halbtags-Faktor. Nur im use_daily_schedule-Sinn sinnvoll."""
+    weekly = get_weekly_hours_for_date(db, user, d)
+    planned = get_daily_target_for_date(user, d, weekly)
+    if planned <= 0:
+        return Decimal('0')
+    return (planned * half_special_day_weight(d, special_cfg))
+
+
+def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include_holidays):
+    """Gemeinsame Schleife: Σ geplante Stunden für Tage mit einem passenden
+    ganztägigen Absence-Typ (bzw. Feiertag, wenn include_holidays), im Fenster,
+    ≤ up_to_date, ohne konkurrierenden TimeEntry (reale Erfassung gewinnt)."""
+    days_in_month = monthrange(year, month)[1]
+    cfg = special_days_service.get_special_day_config(db, user.tenant_id, year)
+    holiday_dates = set()
+    if include_holidays:
+        holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
+            date_in_month(PublicHoliday.date, year, month),
+            PublicHoliday.tenant_id == user.tenant_id,
+        ).all()}
+    absences = {a.date: a for a in db.query(Absence).filter(
+        Absence.user_id == user.id, Absence.tenant_id == user.tenant_id,
+        date_in_month(Absence.date, year, month),
+        Absence.type.in_(list(types)), Absence.start_time.is_(None),  # nur ganztägig
+    ).all()}
+    entry_dates = {e.date for e in db.query(TimeEntry.date).filter(
+        TimeEntry.user_id == user.id, TimeEntry.tenant_id == user.tenant_id,
+        date_in_month(TimeEntry.date, year, month),
+    ).all()}
+    total = Decimal('0')
+    for day in range(1, days_in_month + 1):
+        d = date(year, month, day)
+        if up_to_date is not None and d > up_to_date:
+            continue
+        if not _within_employment_window(user, d):
+            continue
+        if d in entry_dates:
+            continue  # reale Erfassung gewinnt
+        a = absences.get(d)
+        is_holiday = include_holidays and d in holiday_dates
+        if not a and not is_holiday:
+            continue
+        planned = _fixed_planned_hours(db, user, d, cfg)
+        if a is not None and a.half_day:
+            planned = planned * Decimal('0.5')
+        total += planned
+    return total.quantize(Decimal('0.01'))
+
+
+def fixed_month_credit(db: Session, user: User, year: int, month: int, up_to_date: date = None) -> Decimal:
+    """#377 Baustein 2b: geplante Stunden, die BEZAHLTE Fehltage (Feiertag +
+    VACATION/PAID_LEAVE) dem Ist gutschreiben. SICK/TRAINING NICHT (Doppelguard)."""
+    if not getattr(user, "use_fixed_monthly_target", False):
+        return Decimal('0')
+    return _fixed_month_absence_hours(db, user, year, month, _FIXED_PAID_CREDIT_TYPES,
+                                      up_to_date, include_holidays=True)
+
+
+def fixed_month_unpaid_reduction(db: Session, user: User, year: int, month: int, up_to_date: date = None) -> Decimal:
+    """#377 Baustein 2b: geplante Stunden UNBEZAHLTER Fehltage (OTHER), die das
+    feste Monats-Soll mindern (statt Ist+)."""
+    if not getattr(user, "use_fixed_monthly_target", False):
+        return Decimal('0')
+    return _fixed_month_absence_hours(db, user, year, month, _FIXED_UNPAID_TYPES,
+                                      up_to_date, include_holidays=False)
+
+
 def get_working_days_in_month(db: Session, year: int, month: int) -> int:
     """
     Calculate number of working days (Mon-Fri) in a month.
