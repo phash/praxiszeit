@@ -38,6 +38,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
     is_night_worker: false,
     milog_working_time_account: false, // #377
     agreed_monthly_hours: null as number | null, // #377 Baustein 2a: null = aus weekly_hours
+    use_fixed_monthly_target: false, // #377 Baustein 2b: festes Monats-Soll = agreed_monthly_hours
     receives_company_closures: true,
     calendar_color: DEFAULT_CALENDAR_COLOR,
     first_work_day: '',
@@ -89,6 +90,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
         is_night_worker: editUser.is_night_worker ?? false,
         milog_working_time_account: editUser.milog_working_time_account ?? false, // #377
         agreed_monthly_hours: editUser.agreed_monthly_hours ?? null, // #377 Baustein 2a
+        use_fixed_monthly_target: editUser.use_fixed_monthly_target ?? false, // #377 Baustein 2b
         receives_company_closures: editUser.receives_company_closures ?? true,
         calendar_color: editUser.calendar_color || DEFAULT_CALENDAR_COLOR,
         first_work_day: editUser.first_work_day || '',
@@ -356,12 +358,19 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               max="60"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
-            {editUser && (
+            {editUser && !formData.use_fixed_monthly_target && (
               <p className="mt-1 text-xs text-amber-600">
                 ⚠️ Eine Änderung hier wirkt <strong>rückwirkend</strong> auf das Soll aller
                 Zeiträume ohne eigenen Stundenhistorie-Eintrag. Für eine stichtagsgenaue
                 Änderung ab einem Datum stattdessen die <strong>Stundenhistorie</strong>
                 (Wochenstunden-Verlauf) nutzen.
+              </p>
+            )}
+            {formData.use_fixed_monthly_target && (
+              <p className="mt-1 text-xs text-gray-500">
+                ℹ️ Feste Monatsarbeitszeit aktiv: Nur noch Basisangabe — das Monats-Soll
+                kommt aus der vereinbarten Monatsarbeitszeit (siehe Arbeitszeitkonto unten),
+                nicht mehr aus den Wochenstunden.
               </p>
             )}
           </div>
@@ -529,7 +538,7 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               <div className="mt-2">
                 {/* #377 Baustein 2a: vereinbarte Monatsarbeitszeit direkt eingeben */}
                 <label htmlFor="f-agreed-monthly" className="block text-sm font-medium text-gray-700 mb-1">
-                  Vereinbarte Monatsarbeitszeit (h)
+                  Vereinbarte Monatsarbeitszeit (h){formData.use_fixed_monthly_target ? ' *' : ''}
                 </label>
                 <input
                   id="f-agreed-monthly"
@@ -537,7 +546,11 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                   step="0.5"
                   min="0"
                   max="400"
-                  placeholder={`aus Wochenstunden ≈ ${(formData.weekly_hours * 13 / 3).toFixed(1)}`}
+                  placeholder={
+                    formData.use_fixed_monthly_target
+                      ? 'Pflichtfeld – festes Monats-Soll'
+                      : `aus Wochenstunden ≈ ${(formData.weekly_hours * 13 / 3).toFixed(1)}`
+                  }
                   value={formData.agreed_monthly_hours ?? ''}
                   onChange={(e) => setFormData({
                     ...formData,
@@ -545,7 +558,10 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                     // (aus Wochenstunden ableiten). Backend akzeptiert nur > 0.
                     agreed_monthly_hours: parseFloat(e.target.value) > 0 ? parseFloat(e.target.value) : null,
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  required={formData.use_fixed_monthly_target}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
+                    formData.use_fixed_monthly_target ? 'border-amber-400' : 'border-gray-300'
+                  }`}
                 />
                 {(() => {
                   const monthly = formData.agreed_monthly_hours != null
@@ -563,6 +579,28 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                     </p>
                   );
                 })()}
+
+                {/* #377 Baustein 2b: festes Monats-Soll statt Wochenstunden×Arbeitstage */}
+                <div className="mt-3 pt-3 border-t border-amber-200">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="use_fixed_monthly_target"
+                      checked={formData.use_fixed_monthly_target}
+                      onChange={(e) => setFormData({ ...formData, use_fixed_monthly_target: e.target.checked })}
+                      className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
+                    />
+                    <label htmlFor="use_fixed_monthly_target" className="text-sm font-medium text-gray-700 cursor-pointer">
+                      Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)
+                    </label>
+                  </div>
+                  <p className="mt-1 text-xs text-amber-800">
+                    Statt aus Wochenstunden/Arbeitstagen/Kalendertagen wird das Monats-Soll fest auf die oben
+                    vereinbarte Monatsarbeitszeit gesetzt (Minijob-typisch bei schwankenden Einsatzplänen).
+                    Erfordert Stundenzählung und ein gesetztes Feld oben. Wochenstunden bleiben als Basisangabe
+                    bestehen, wirken sich in diesem Modus aber nicht mehr auf das Soll aus.
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -665,9 +703,18 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
                   className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
                 />
                 <label htmlFor="use_daily_schedule" className="text-sm font-medium text-gray-700 cursor-pointer">
-                  Individuelle Tagesstunden (statt einheitlich {(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)
+                  {formData.use_fixed_monthly_target
+                    ? 'Geplante Anwesenheit (für Feiertags-/Fehltags-Gutschrift, statt einheitlich '
+                      + (formData.weekly_hours / formData.work_days_per_week).toFixed(1) + 'h/Tag)'
+                    : `Individuelle Tagesstunden (statt einheitlich ${(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)`}
                 </label>
               </div>
+              {formData.use_fixed_monthly_target && !formData.use_daily_schedule && (
+                <p className="text-xs text-amber-600 mb-2">
+                  Empfehlung bei fester Monatsarbeitszeit: hier die geplante Anwesenheit hinterlegen, damit
+                  Feiertage/Fehltage korrekt gutgeschrieben werden (das Monats-Soll selbst bleibt fest).
+                </p>
+              )}
               {formData.use_daily_schedule && (
                 <div className="grid grid-cols-5 gap-2">
                   {(['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const).map((day, idx) => {
