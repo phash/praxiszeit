@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
-from sqlalchemy import extract
 from typing import List, Optional
 from datetime import datetime, date, time, timezone
 from app.services.timezone_service import LOCAL_TZ, now_local as _now_local, today_local as _today_local
@@ -19,7 +18,7 @@ from app.schemas.time_entry import (
 )
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break
-from app.services.arbzg_utils import is_night_work, NIGHT_THRESHOLD_MINUTES
+from app.services.arbzg_utils import is_night_work
 from app.routers.admin_helpers import _create_audit_log
 from uuid import UUID as UUIDType
 
