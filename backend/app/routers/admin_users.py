@@ -651,6 +651,37 @@ def update_user(
     update_data = user_data.model_dump(exclude_unset=True)
     update_data.pop('is_active', None)  # Prevent bypassing the dedicated deactivate endpoint
 
+    # #377 Baustein 2b (Release-Review 1.15.0): the UserUpdate schema validator
+    # (check_fixed_monthly_target_requirements) only sees THIS payload, not the
+    # persisted row — a partial PUT that isolates e.g.
+    # {"milog_working_time_account": false} leaves use_fixed_monthly_target
+    # absent from the payload (None → skipped by the schema validator) while
+    # the DB row still has it True. That silently produces an INVALID row
+    # (fixed Soll active but its prerequisites off), so we must check the
+    # EFFECTIVE post-update state here (payload value if present, else the
+    # current DB value) — mirrors the schema validator's requirement logic 1:1
+    # so create and update agree.
+    eff_fixed = update_data.get('use_fixed_monthly_target', user.use_fixed_monthly_target)
+    if eff_fixed:
+        eff_milog = update_data.get('milog_working_time_account', user.milog_working_time_account)
+        eff_track_hours = update_data.get('track_hours', user.track_hours)
+        eff_agreed = update_data.get('agreed_monthly_hours', user.agreed_monthly_hours)
+        if not eff_agreed or eff_agreed <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0)."
+            )
+        if eff_track_hours is not True:
+            raise HTTPException(
+                status_code=400,
+                detail="Fester Monats-Soll setzt Stundenzählung (track_hours) voraus."
+            )
+        if eff_milog is not True:
+            raise HTTPException(
+                status_code=400,
+                detail="Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
+            )
+
     # VULN-010: invalidate existing JWTs when role is changed
     role_changed = 'role' in update_data and update_data['role'] != user.role
     # #290: did this update turn closure participation ON? Then enrol below.

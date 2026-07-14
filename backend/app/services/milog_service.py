@@ -88,9 +88,20 @@ def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = N
     """#377 Baustein 2b: weiche Plausibilitäts-Warnung, wenn das Monats-Ist
     (inkl. Gutschriften) die vereinbarte Monatsarbeitszeit eines Fix-Modus-MA
     übersteigt. None, wenn der Modus aus ist / kein Stundentracking / keine
-    vereinbarte Monatszahl hinterlegt / Ist ≤ agreed. Unabhängig vom
-    MiLoG-Konto-Flag (`milog_working_time_account`) — reine Fix-Soll-
-    Plausibilität, kein 50-%-/Aging-Bezug."""
+    vereinbarte Monatszahl hinterlegt / Ist ≤ agreed. Prüft hier bewusst NUR
+    `use_fixed_monthly_target` + `track_hours` (nicht `milog_working_time_
+    account`) — reine Fix-Soll-Plausibilität, kein 50-%-/Aging-Bezug. Das ist
+    trotzdem KONSISTENT mit den anderen #377-Warnungen: `use_fixed_monthly_
+    target=True` setzt `milog_working_time_account=True` zwingend voraus
+    (Schema-Invariante, erzwungen bei Create UND Update — siehe
+    `UserBase.check_fixed_monthly_target_requirements` +
+    `UserUpdate.check_fixed_monthly_target_requirements` + der
+    Effective-State-Guard in `admin_users.update_user` gegen isolierte
+    Teil-Updates), also ist bei jedem gültigen Fix-Modus-MA das Konto-Flag
+    ohnehin an. Alle 5 Call-Sites (dashboard.py, admin_users.py,
+    time_entries.py) rufen diese Funktion folglich nur innerhalb von
+    `if user.milog_working_time_account:` auf — das ist KEINE zusätzliche
+    Einschränkung, sondern deckt sich mit der Invariante."""
     if not getattr(user, "use_fixed_monthly_target", False) or not getattr(user, "track_hours", False):
         return None
     agreed = getattr(user, "agreed_monthly_hours", None)

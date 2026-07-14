@@ -233,6 +233,75 @@ def test_update_unrelated_field_without_flag_unaffected(db, admin, default_tenan
 
 
 # --------------------------------------------------------------------------- #
+# Release-Review 1.15.0 (#377 Baustein 2b): partial updates that turn OFF a
+# prerequisite while use_fixed_monthly_target is NOT in the payload. The
+# UserUpdate schema validator only sees this payload (not the DB row), so it
+# skips (flag absent → falsy → no check). Without a router-level effective-
+# state guard this silently persists an INVALID row (use_fixed_monthly_target
+# still True in the DB, but milog/track_hours off) — the plausibility warning
+# goes dark and the design invariant is broken.
+# --------------------------------------------------------------------------- #
+def _create_fixed_target_user(client, username):
+    resp = client.post(USERS, json={
+        **BASE_PAYLOAD,
+        "username": username,
+        "use_fixed_monthly_target": True,
+        "agreed_monthly_hours": 173.3,
+        "track_hours": True,
+        "milog_working_time_account": True,
+    })
+    assert resp.status_code == 201, resp.text
+    return resp.json()["user"]["id"]
+
+
+def test_update_isolated_milog_off_on_fixed_target_user_fails(db, admin, default_tenant):
+    client = _client_as(db, admin, admin)
+    uid = _create_fixed_target_user(client, "iso1")
+    resp = client.put(f"{USERS}/{uid}", json={"milog_working_time_account": False})
+    assert resp.status_code == 400, resp.text
+    # DB row must remain untouched/consistent — the invariant-breaking update
+    # must not have been persisted.
+    row = next(r for r in client.get(USERS).json() if r["id"] == uid)
+    assert row["use_fixed_monthly_target"] is True
+    assert row["milog_working_time_account"] is True
+    app.dependency_overrides.clear()
+
+
+def test_update_isolated_track_hours_off_on_fixed_target_user_fails(db, admin, default_tenant):
+    client = _client_as(db, admin, admin)
+    uid = _create_fixed_target_user(client, "iso2")
+    resp = client.put(f"{USERS}/{uid}", json={"track_hours": False})
+    assert resp.status_code == 400, resp.text
+    row = next(r for r in client.get(USERS).json() if r["id"] == uid)
+    assert row["use_fixed_monthly_target"] is True
+    assert row["track_hours"] is True
+    app.dependency_overrides.clear()
+
+
+def test_update_normal_field_on_fixed_target_user_still_ok(db, admin, default_tenant):
+    # Sanity: a normal update on an existing fixed-target user that does not
+    # touch any of the four invariant fields must keep working (200).
+    client = _client_as(db, admin, admin)
+    uid = _create_fixed_target_user(client, "iso3")
+    resp = client.put(f"{USERS}/{uid}", json={"first_name": "Changed"})
+    assert resp.status_code == 200, resp.text
+    app.dependency_overrides.clear()
+
+
+def test_update_disable_fixed_target_and_milog_together_ok(db, admin, default_tenant):
+    # Turning the flag itself off in the same payload is the documented,
+    # correct way to leave fixed mode — must stay allowed.
+    client = _client_as(db, admin, admin)
+    uid = _create_fixed_target_user(client, "iso4")
+    resp = client.put(f"{USERS}/{uid}", json={
+        "use_fixed_monthly_target": False,
+        "milog_working_time_account": False,
+    })
+    assert resp.status_code == 200, resp.text
+    app.dependency_overrides.clear()
+
+
+# --------------------------------------------------------------------------- #
 # UserListResponse round-trip
 # --------------------------------------------------------------------------- #
 def test_userlist_carries_use_fixed_monthly_target(db, admin, default_tenant):
