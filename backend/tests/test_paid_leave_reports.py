@@ -96,6 +96,98 @@ def test_yearly_absences_endpoint_includes_paid_leave(db, test_user, test_admin)
     assert row["total_days"] == pytest.approx(5.0)
 
 
+# ---------------------------------------------------------------------------
+# Finding 2 (HIGH, Review 2026-07-14): yearly-absences zählte SICK/TRAINING/
+# OVERTIME/OTHER/PAID_LEAVE naiv Σh ÷ Ø-Tagessoll statt tagebasiert wie
+# absence_days/get_vacation_account. Das war für track_hours=False-MA (Stunden
+# immer 0 → immer 0.0 Tage trotz gebuchter Abwesenheit) und für ungleichmäßige
+# Tagespläne (Drift ggü. dem tatsächlichen Tagesprinzip §3 BUrlG) falsch.
+# ---------------------------------------------------------------------------
+
+def test_yearly_absences_sick_days_track_hours_false(db, test_admin):
+    """Ein track_hours=False-MA (z. B. leitender Angestellter, #191) hat
+    Absence.hours == 0 (keine Stundenzählung). Trotzdem müssen 2 gebuchte
+    SICK-Tage als 2.0 Tage erscheinen — nicht 0.0 (naive Σ0h ÷ Tagessoll)."""
+    import uuid as _uuid
+    from app.models import User, UserRole
+    from app.services import auth_service as _auth
+
+    untracked = User(
+        id=_uuid.uuid4(), username="untracked_sick", email="untracked_sick@t.local",
+        password_hash=_auth.hash_password("Test2025!Password"),
+        first_name="Chef", last_name="Ohne", role=UserRole.EMPLOYEE,
+        weekly_hours=40.0, vacation_days=30, work_days_per_week=5,
+        is_active=True, tenant_id=DEFAULT_TENANT_ID, track_hours=False,
+    )
+    db.add(untracked)
+    db.commit()
+
+    _mk_absence(db, untracked, date(YEAR, 3, 2), AbsenceType.SICK, hours=0.0)
+    _mk_absence(db, untracked, date(YEAR, 3, 3), AbsenceType.SICK, hours=0.0)
+
+    def override_db():
+        yield db
+
+    _app.dependency_overrides[get_db] = override_db
+    _app.dependency_overrides[get_current_user] = lambda: test_admin
+    _app.dependency_overrides[require_admin] = lambda: test_admin
+    try:
+        client = TestClient(_app)
+        resp = client.get(
+            f"/api/admin/reports/yearly-absences?year={YEAR}&include_health_data=true"
+        )
+        assert resp.status_code == 200, resp.text
+        rows = resp.json()
+    finally:
+        _app.dependency_overrides.clear()
+
+    row = next(r for r in rows if r["user_id"] == str(untracked.id))
+    assert row["sick_days"] == pytest.approx(2.0)
+
+
+def test_yearly_absences_sick_days_uneven_schedule_no_drift(db, test_admin):
+    """Ein MA mit ungleichmäßigem Tagesplan (Mo 8h, Di–Fr 3h, use_daily_schedule)
+    hat einen abweichenden Ø-Tagessoll (20h/5=4h). Ein Montag-Krank-Tag (8h) muss
+    GENAU 1,0 Tag zählen (Tagesprinzip) — die naive Methode teilt 8h ÷ 4h und
+    liefert fälschlich 2,0."""
+    import uuid as _uuid
+    from app.models import User, UserRole
+    from app.services import auth_service as _auth
+
+    uneven = User(
+        id=_uuid.uuid4(), username="uneven_sick", email="uneven_sick@t.local",
+        password_hash=_auth.hash_password("Test2025!Password"),
+        first_name="Uneven", last_name="Schedule", role=UserRole.EMPLOYEE,
+        weekly_hours=20.0, vacation_days=30, work_days_per_week=5,
+        is_active=True, tenant_id=DEFAULT_TENANT_ID, track_hours=True,
+        use_daily_schedule=True,
+        hours_monday=8, hours_tuesday=3, hours_wednesday=3, hours_thursday=3, hours_friday=3,
+    )
+    db.add(uneven)
+    db.commit()
+
+    _mk_absence(db, uneven, date(YEAR, 3, 2), AbsenceType.SICK, hours=8.0)  # Montag
+
+    def override_db():
+        yield db
+
+    _app.dependency_overrides[get_db] = override_db
+    _app.dependency_overrides[get_current_user] = lambda: test_admin
+    _app.dependency_overrides[require_admin] = lambda: test_admin
+    try:
+        client = TestClient(_app)
+        resp = client.get(
+            f"/api/admin/reports/yearly-absences?year={YEAR}&include_health_data=true"
+        )
+        assert resp.status_code == 200, resp.text
+        rows = resp.json()
+    finally:
+        _app.dependency_overrides.clear()
+
+    row = next(r for r in rows if r["user_id"] == str(uneven.id))
+    assert row["sick_days"] == pytest.approx(1.0)
+
+
 def test_monthly_report_reports_vacation_and_sick_in_days(db, test_user, test_admin):
     """Bug-Fix: die Monatsübersicht muss Urlaub/Krank auch in TAGEN liefern (nicht
     nur in Stunden), damit die Anzeige Tage zeigen kann. Krank ist ohne

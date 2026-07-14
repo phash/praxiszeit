@@ -325,9 +325,8 @@ def anonymize_user(
     current_user: User = Depends(require_admin),
 ):
     """DSGVO Art. 17: Anonymize an inactive user in-place. Keeps time entries (ArbZG SS16 -- 2-year retention), deletes absences."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     if user.is_active:
         raise HTTPException(status_code=400, detail="Benutzer muss zuerst deaktiviert werden (Art. 17 DSGVO)")
     if user.username.startswith("deleted_"):
@@ -385,9 +384,8 @@ def purge_user(
     current_user: User = Depends(require_admin),
 ):
     """DSGVO Art. 17: Permanently delete a user and all data. Only allowed after ArbZG SS16 retention period (730 days)."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     if user.is_active:
         raise HTTPException(status_code=400, detail="Benutzer muss zuerst deaktiviert werden")
 
@@ -631,9 +629,8 @@ def update_user(
     current_user: User = Depends(require_admin)
 ):
     """Update user data (admin only)."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     if user_data.username and user_data.username.lower() != user.username.lower():
         # F-026: scope the uniqueness probe to the tenant (parity with
@@ -682,9 +679,8 @@ def set_password(
     current_user: User = Depends(require_admin),
 ):
     """Set a new password for a user (admin only)."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.password_hash = auth_service.hash_password(body.password)
     user.token_version += 1  # Invalidate all existing tokens
@@ -699,9 +695,8 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     if str(current_user.id) == user_id:
         raise HTTPException(status_code=400, detail="Sie können sich nicht selbst deaktivieren")
 
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.is_active = False
     user.deactivated_at = datetime.now(timezone.utc)
@@ -713,9 +708,8 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
 @router.post("/users/{user_id}/reactivate", response_model=UserResponse)
 def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Reactivate a previously deactivated user (admin only)."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     # Seat-limit enforcement: a reactivation is logically a seat add.
     from app.models.tenant import Tenant
@@ -734,9 +728,8 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
 @router.post("/users/{user_id}/toggle-hidden", response_model=UserResponse)
 def toggle_hidden_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Toggle the is_hidden flag for a user (admin only)."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     user.is_hidden = not user.is_hidden
     db.commit()
@@ -753,9 +746,8 @@ def list_working_hours_changes(
     current_user: User = Depends(require_admin)
 ):
     """Get working hours change history for a user (admin only)."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
@@ -772,9 +764,8 @@ def create_working_hours_change(
     current_user: User = Depends(require_admin)
 ):
     """Create a new working hours change for a user (admin only)."""
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     # Fix #2: a WorkingHoursChange only feeds get_weekly_hours_for_date, which
     # get_daily_target_for_date IGNORES when use_daily_schedule=True (it reads
@@ -812,6 +803,15 @@ def create_working_hours_change(
         note=change_data.note
     )
     db.add(change)
+    # Finding 4 (Review 2026-07-14): the session is autoflush=False. Without an
+    # explicit flush here, the most-recent self-query below (which also filters
+    # on WorkingHoursChange) would not see the row just added — the first
+    # past-dated change would leave user.weekly_hours unchanged, and a second,
+    # superseding past-dated change would pick up the PREVIOUS committed row
+    # instead of itself. delete_working_hours_change already commits before its
+    # analogous re-query; flush gives create the same guarantee without an
+    # early partial commit.
+    db.flush()
 
     if change_data.effective_from <= today_local():
         most_recent = db.query(WorkingHoursChange).filter(

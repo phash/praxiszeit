@@ -2,7 +2,6 @@ import logging
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import extract
 from starlette.requests import Request
 from typing import List
 from decimal import Decimal
@@ -141,6 +140,7 @@ def get_monthly_report(
             sick_hours=sick_hours if include_health_data else 0.0,
             sick_days=sick_days if include_health_data else 0.0,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
+            track_hours=bool(user.track_hours),
         ))
 
     # L-2: Report erfolgreich gebaut -> jetzt erst den (ggf. oben geflushten)
@@ -262,6 +262,7 @@ def get_weekly_report(
             sick_hours=sick_hours if include_health_data else 0.0,
             sick_days=sick_days if include_health_data else 0.0,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
+            track_hours=bool(user.track_hours),
         ))
 
     if include_health_data:
@@ -306,49 +307,39 @@ def get_yearly_absences(
     results = []
 
     for user in users:
-        # Uses current daily target for hours-to-days conversion — approximate for display.
-        # The hour totals are always exact; only the "days" column is an approximation
-        # when weekly_hours changed during the year.
-        daily_target = calculation_service.get_daily_target(user)
-
-        # If daily_target is 0, we can't calculate days
-        if daily_target == 0:
-            daily_target = Decimal('8.0')  # Use default 8h for calculation
-
         # F-033 + Sprint 3.4: fetch all absences for this user+year in ONE
         # query, group by type in Python. Previous code issued 5 separate
         # queries per user (one per type).
         all_absences = db.query(Absence).filter(
             Absence.user_id == user.id,
+            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
             date_in_year(Absence.date, year),
         ).all()
-        hours_by_type: dict = {}
+        absences_by_type: dict = {}
         for a in all_absences:
-            hours_by_type[a.type] = hours_by_type.get(a.type, 0.0) + float(a.hours)
+            absences_by_type.setdefault(a.type, []).append(a)
 
-        # Vacation is reported DAY-BASED (Tagesprinzip §3 BUrlG) from the same
-        # source as remaining below — so "budget − genommen == Rest" holds in the
-        # same response. The hours/Ø-target approximation (used by the other
-        # columns, documented above) diverges from the day principle for
-        # use_daily_schedule employees; vacation is the maßgebliche value and
-        # must not contradict the vacation account.
+        # Finding 2 (Review 2026-07-14): ALL day columns — including vacation —
+        # are TAGEBASIERT (Tagesprinzip §3 BUrlG) via calculation_service.
+        # absence_days(), exactly the helper /monthly + /weekly already use.
+        # The former naive Σh ÷ Ø-Tagessoll approximation always returned 0.0
+        # for track_hours=False employees (Absence.hours is always 0 for them)
+        # and drifted for uneven per-weekday schedules (use_daily_schedule).
         vacation_account = calculation_service.get_vacation_account(db, user, year)
         vacation_days = float(vacation_account['used_days'])
 
-        sick_hours = hours_by_type.get(AbsenceType.SICK, 0.0)
-        sick_days = sick_hours / float(daily_target)
+        def _days(absence_type) -> float:
+            return float(
+                calculation_service.absence_days(
+                    db, user, absences_by_type.get(absence_type, [])
+                ).quantize(Decimal('0.1'))
+            )
 
-        training_hours = hours_by_type.get(AbsenceType.TRAINING, 0.0)
-        training_days = training_hours / float(daily_target)
-
-        overtime_comp_hours = hours_by_type.get(AbsenceType.OVERTIME, 0.0)
-        overtime_comp_days = overtime_comp_hours / float(daily_target)
-
-        other_hours = hours_by_type.get(AbsenceType.OTHER, 0.0)
-        other_days = other_hours / float(daily_target)
-
-        paid_leave_hours = hours_by_type.get(AbsenceType.PAID_LEAVE, 0.0)
-        paid_leave_days = paid_leave_hours / float(daily_target)
+        sick_days = _days(AbsenceType.SICK)
+        training_days = _days(AbsenceType.TRAINING)
+        overtime_comp_days = _days(AbsenceType.OVERTIME)
+        other_days = _days(AbsenceType.OTHER)
+        paid_leave_days = _days(AbsenceType.PAID_LEAVE)
 
         effective_sick_days = sick_days if include_health_data else 0.0
         total_days = vacation_days + effective_sick_days + training_days + overtime_comp_days + other_days + paid_leave_days
@@ -978,6 +969,7 @@ def get_24_week_averaging_period(
             a.date
             for a in db.query(Absence).filter(
                 Absence.user_id == user.id,
+                Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
                 Absence.date >= start_date,
                 Absence.date <= end_date,
                 Absence.type.notin_([
