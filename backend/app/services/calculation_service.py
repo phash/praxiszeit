@@ -383,6 +383,34 @@ def get_range_target(
     if not user.track_hours or end < start:
         return Decimal('0')
 
+    # #377 Baustein 2b: fester Monats-Soll-Modus — statt der Per-Tag-Summe die
+    # (pro-rata + unpaid-geminderten) festen Monats-Solls über die Range summieren.
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        total_fixed = Decimal('0')
+        y, m = start.year, start.month
+        while (y, m) <= (end.year, end.month):
+            first = date(y, m, 1)
+            last = date(y, m, monthrange(y, m)[1])
+            month_start = max(first, start)
+            month_end = min(last, end if up_to_date is None else min(end, up_to_date))
+            if month_end >= month_start:
+                mt = fixed_monthly_target(user, y, m)
+                mt -= fixed_month_unpaid_reduction(db, user, y, m, up_to_date=month_end)
+                # Range-/cutoff-Skalierung: Anteil der in [month_start,month_end] ∩ Fenster
+                # liegenden Kalendertage an den Fenster-Tagen des Monats.
+                win_days = sum(1 for dd in range(1, monthrange(y, m)[1] + 1)
+                               if _within_employment_window(user, date(y, m, dd)))
+                in_days = sum(1 for dd in range(month_start.day, month_end.day + 1)
+                              if _within_employment_window(user, date(y, m, dd)))
+                if win_days > 0 and in_days < win_days:
+                    mt = (mt * Decimal(in_days) / Decimal(win_days))
+                total_fixed += mt
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+        return total_fixed.quantize(Decimal('0.01'))
+
     # F-033: sargable date range.
     holidays = db.query(PublicHoliday).filter(
         date_in_range(PublicHoliday.date, start, end),

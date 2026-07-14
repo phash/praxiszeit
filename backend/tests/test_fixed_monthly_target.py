@@ -71,6 +71,27 @@ def test_unpaid_other_reduces_soll(db, default_tenant):
     assert cs.fixed_month_unpaid_reduction(db, u, 2025, 3) == Decimal("3.00")
 
 
+def test_monthly_target_fixed_mode(db, default_tenant):
+    u = _mk(db)
+    assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("40.00")  # nicht Σ Tagesstunden
+    assert cs.get_monthly_target(db, u, 2025, 2) == Decimal("40.00")
+
+
+def test_monthly_target_unpaid_reduces(db, default_tenant):
+    u = _mk(db)
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))
+    db.commit()
+    assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("37.00")  # 40 − 3 unbezahlt
+
+
+def test_range_target_non_mode_byte_identical(db, default_tenant):
+    u = _mk(db, use_fixed_monthly_target=False, weekly_hours=Decimal("40"), work_days_per_week=5,
+            use_daily_schedule=False, agreed_monthly_hours=None)
+    # Referenzwert: Σ 8h über die Werktage im März 2025 (21 Werktage) = 168
+    assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("168.00")
+
+
 def test_credit_mixed_half_day_vacation_and_paid_leave_same_date(db, default_tenant):
     """Misch-Tag: ½ VACATION + ½ PAID_LEAVE am selben geplanten Mi (3h Soll)
     müssen zusammen den VOLLEN Tag (3.00) gutschreiben, nicht nur die 2. Hälfte
