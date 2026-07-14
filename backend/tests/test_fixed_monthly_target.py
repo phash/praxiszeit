@@ -467,7 +467,13 @@ def test_settlement_aging_no_phantom_deficit_fixed_mode(db, default_tenant):
     assert detailed[(2025, 3)].target == Decimal("3.00")
     assert detailed[(2025, 3)].actual == Decimal("3.00")
 
-    aging = milog_service.settlement_aging(db, u, date(2025, 3, 31))
+    # Das oben gepinnte (vollmonatige) `detailed` übergeben — exakt wie die Prod-
+    # Caller (dashboard.py / admin_users.py) es vor-berechnet durchreichen. So
+    # prüft der Test die Fixed-Mode-Kohärenz (target==actual → delta 0 → keine
+    # Einlage → None), nicht den #404-Direkt-self-fetch-Pfad (der wendet den #313-
+    # Stichtag an und hat seinen eigenen Test in test_milog.py; im laufenden Monat
+    # ergäbe der Stichtag ein winziges, nicht-überfälliges, warnungs-freies Delta).
+    aging = milog_service.settlement_aging(db, u, date(2025, 3, 31), detailed=detailed)
     # Kein Monats-Delta ≠ 0 in der Historie → keine Einlage → kein offener
     # Posten → None (KEIN Phantom-Defizit / keine Überfälligkeits-Warnung).
     assert aging is None
