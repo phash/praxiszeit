@@ -178,10 +178,12 @@ def _fixed_planned_hours(db: Session, user: User, d: date, special_cfg: dict) ->
     return (planned * half_special_day_weight(d, special_cfg))
 
 
-def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include_holidays):
+def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include_holidays,
+                                from_date=None):
     """Gemeinsame Schleife: Σ geplante Stunden für Tage mit einem passenden
     ganztägigen Absence-Typ (bzw. Feiertag, wenn include_holidays), im Fenster,
-    ≤ up_to_date, ohne konkurrierenden TimeEntry (reale Erfassung gewinnt)."""
+    ≥ from_date (falls gesetzt) und ≤ up_to_date, ohne konkurrierenden TimeEntry
+    (reale Erfassung gewinnt)."""
     days_in_month = monthrange(year, month)[1]
     cfg = special_days_service.get_special_day_config(db, user.tenant_id, year)
     holiday_dates = set()
@@ -206,6 +208,8 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
         d = date(year, month, day)
         if up_to_date is not None and d > up_to_date:
             continue
+        if from_date is not None and d < from_date:
+            continue
         if not _within_employment_window(user, d):
             continue
         if d in entry_dates:
@@ -221,22 +225,28 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
     return total.quantize(Decimal('0.01'))
 
 
-def fixed_month_credit(db: Session, user: User, year: int, month: int, up_to_date: date = None) -> Decimal:
+def fixed_month_credit(db: Session, user: User, year: int, month: int, up_to_date: date = None,
+                        from_date: date = None) -> Decimal:
     """#377 Baustein 2b: geplante Stunden, die BEZAHLTE Fehltage (Feiertag +
-    VACATION/PAID_LEAVE) dem Ist gutschreiben. SICK/TRAINING NICHT (Doppelguard)."""
+    VACATION/PAID_LEAVE) dem Ist gutschreiben. SICK/TRAINING NICHT (Doppelguard).
+    ``from_date`` (Review-Medium): optionale Untergrenze für Range-genaue Aufrufe
+    — None (Default) = ganzer Monat, unverändertes Verhalten."""
     if not getattr(user, "use_fixed_monthly_target", False):
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_PAID_CREDIT_TYPES,
-                                      up_to_date, include_holidays=True)
+                                      up_to_date, include_holidays=True, from_date=from_date)
 
 
-def fixed_month_unpaid_reduction(db: Session, user: User, year: int, month: int, up_to_date: date = None) -> Decimal:
+def fixed_month_unpaid_reduction(db: Session, user: User, year: int, month: int, up_to_date: date = None,
+                                  from_date: date = None) -> Decimal:
     """#377 Baustein 2b: geplante Stunden UNBEZAHLTER Fehltage (OTHER), die das
-    feste Monats-Soll mindern (statt Ist+)."""
+    feste Monats-Soll mindern (statt Ist+). ``from_date`` (Review-Medium):
+    optionale Untergrenze für Range-genaue Aufrufe — None (Default) = ganzer
+    Monat, unverändertes Verhalten."""
     if not getattr(user, "use_fixed_monthly_target", False):
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_UNPAID_TYPES,
-                                      up_to_date, include_holidays=False)
+                                      up_to_date, include_holidays=False, from_date=from_date)
 
 
 def get_working_days_in_month(db: Session, year: int, month: int) -> int:
@@ -394,8 +404,12 @@ def get_range_target(
             month_start = max(first, start)
             month_end = min(last, end if up_to_date is None else min(end, up_to_date))
             if month_end >= month_start:
+                # Review-Medium: NUR das Ziel wird über den Range-Anteil skaliert;
+                # die unbezahlte Reduktion wird direkt für [month_start,month_end]
+                # ermittelt (from_date=month_start) statt whole-month-dann-skaliert
+                # — sonst "smeart" eine einzelne Abwesenheit über jede Woche des
+                # Monats, auch Wochen, die den Abwesenheitstag gar nicht enthalten.
                 mt = fixed_monthly_target(user, y, m)
-                mt -= fixed_month_unpaid_reduction(db, user, y, m, up_to_date=month_end)
                 # Range-/cutoff-Skalierung: Anteil der in [month_start,month_end] ∩ Fenster
                 # liegenden Kalendertage an den Fenster-Tagen des Monats.
                 win_days = sum(1 for dd in range(1, monthrange(y, m)[1] + 1)
@@ -404,6 +418,8 @@ def get_range_target(
                               if _within_employment_window(user, date(y, m, dd)))
                 if win_days > 0 and in_days < win_days:
                     mt = (mt * Decimal(in_days) / Decimal(win_days))
+                mt -= fixed_month_unpaid_reduction(db, user, y, m,
+                                                   from_date=month_start, up_to_date=month_end)
                 total_fixed += mt
             m += 1
             if m > 12:

@@ -92,6 +92,25 @@ def test_range_target_non_mode_byte_identical(db, default_tenant):
     assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("168.00")
 
 
+def test_range_target_unpaid_absence_not_smeared_across_weeks(db, default_tenant):
+    """Review-Medium: eine unbezahlte Abwesenheit an EINEM Tag darf nur die Woche
+    mindern, die diesen Tag enthält — nicht gleichmäßig über alle Wochen des
+    Monats verteilt werden ("smearing"). Absence: Mo 2025-03-03 (geplant, 3h).
+    Testwoche 10.-16.03. enthält den 03.03. NICHT → darf keine Reduktion sehen."""
+    u_with = _mk(db)
+    db.add(Absence(user_id=u_with.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 3),
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))  # Mo geplant
+    db.commit()
+    u_without = _mk(db, username="fx2", email="fx2@t.l")
+
+    week_with = cs.get_range_target(db, u_with, date(2025, 3, 10), date(2025, 3, 16))
+    week_without = cs.get_range_target(db, u_without, date(2025, 3, 10), date(2025, 3, 16))
+    assert week_with == week_without
+
+    # Whole-month Soll still counts the unpaid reduction (37 = 40 − 3).
+    assert cs.get_monthly_target(db, u_with, 2025, 3) == Decimal("37.00")
+
+
 def test_credit_mixed_half_day_vacation_and_paid_leave_same_date(db, default_tenant):
     """Misch-Tag: ½ VACATION + ½ PAID_LEAVE am selben geplanten Mi (3h Soll)
     müssen zusammen den VOLLEN Tag (3.00) gutschreiben, nicht nur die 2. Hälfte
