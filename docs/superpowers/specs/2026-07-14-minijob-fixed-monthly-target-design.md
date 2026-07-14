@@ -134,7 +134,7 @@ Feiertag **und** Krank **und** Urlaub (und Fortbildung) auf einem **geplanten** 
 - **Eintritt/Austritt im Monat:** Soll = `agreed × Kalendertag-Bruchteil` (§4.1). Ist-Gutschrift nur für in-window-Tage.
 - **`agreed_monthly_hours` NULL bei aktivem Flag:** 400 beim Speichern (Pflicht-Validierung); defensiv im Calc: Flag ohne agreed → wie Modus AUS behandeln (kein Crash).
 - **Halbtags-Sondertag (24./31.12., #394):** die Gutschrift nutzt `get_daily_target_for_date` × Sondertags-/Halbtags-Faktor konsistent (der `half_special_day_weight`-Gedanke greift analog; Feiertags-Gutschrift an einem Halbtags-Sondertag = 0,5 × geplante Stunden). In den Tests mit abdecken.
-- **`use_daily_schedule = False` im Modus:** dann gibt es kein Planungsmuster → Gutschrift-Basis 0 (Feiertag/Urlaub schreiben nichts gut, Soll bleibt fix). UI weist darauf hin, dass für die Gutschrift Tagesstunden gesetzt sein müssen.
+- **`use_daily_schedule = False` im Modus (Korrektur, Whole-Branch-Review Finding 4):** entgegen einer früheren Annahme dieses Dokuments fällt die Gutschrift-Basis dann NICHT auf 0 zurück. `get_daily_target_for_date` fällt bei `use_daily_schedule=False` auf `get_daily_target()` zurück (`weekly_hours ÷ work_days_per_week`, der flache Tagesdurchschnitt) — Feiertag/Urlaub schreiben also diesen Durchschnittswert gut, nicht 0. Nur ein explizit auf 0 gesetzter Wochentag (bei aktivem `use_daily_schedule=True`) liefert 0. UI weist trotzdem darauf hin, dass ein individuelles Tagesmuster für eine präzise Gutschrift sinnvoll ist.
 
 ## 9 · Tests
 

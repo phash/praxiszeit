@@ -107,6 +107,74 @@ class TestGenerateYearlyClassicOdsReport:
         out = generate_yearly_report_classic(db, 2026)
         assert out.read()[:2] == ODS_PK_MAGIC
 
+
+def _summary_value(doc, sheet_name, label):
+    """Liefert den Float-Wert der Summary-Zeile ``label`` im Blatt
+    ``sheet_name`` (Spalte 2). Analog zu TestOdsAbsenceOverviewDayBased._vac_cell."""
+    from odf.table import Table, TableRow, TableCell
+    from odf.teletype import extractText
+    table = [t for t in doc.spreadsheet.getElementsByType(Table)
+             if t.getAttribute("name") == sheet_name][0]
+    for row in table.getElementsByType(TableRow):
+        cells = row.getElementsByType(TableCell)
+        if cells and extractText(cells[0]) == label:
+            return float(cells[1].getAttribute("value"))
+    raise AssertionError(f"row {label!r} not found on sheet {sheet_name!r}")
+
+
+class TestFixedModeMonthlySummary:
+    """Finding 1 (Whole-Branch-Review, #377 Baustein 2b): die ODS-Monats-
+    Summary muss für Fix-Modus-MA mit get_monthly_target/get_monthly_actual
+    übereinstimmen — identisches Finding wie im XLSX-Export
+    (test_export_service.TestFixedModeMonthlySummary)."""
+
+    def test_monthly_summary_matches_monthly_target_fixed_mode(self, db, default_tenant):
+        from app.services import calculation_service as cs
+        from app.services.ods_export_service import _doc_with_styles, _monthly_sheet
+        from tests.test_fixed_monthly_target import _mk
+
+        u = _mk(db)  # agreed=40h fix, Mo+Mi geplant à 3h
+        db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                         start_time=time(8, 0), end_time=time(19, 0), break_minutes=60))
+        db.commit()
+
+        expected_target = cs.get_monthly_target(db, u, 2025, 3)
+        expected_actual = cs.get_monthly_actual(db, u, 2025, 3)
+        expected_balance = expected_actual - expected_target
+        expected_overtime = cs.get_overtime_account(db, u, 2025, 3)
+        assert expected_balance == expected_overtime
+
+        doc, bold, normal = _doc_with_styles()
+        _monthly_sheet(doc, db, u, 2025, 3, bold, normal)
+        sheet_name = f"{u.last_name} {u.first_name}"[:31]
+
+        soll = _summary_value(doc, sheet_name, "Soll-Stunden Monat:")
+        ist = _summary_value(doc, sheet_name, "Ist-Stunden Monat:")
+        saldo = _summary_value(doc, sheet_name, "Saldo Monat:")
+        kumuliert = _summary_value(doc, sheet_name, "Überstunden kumuliert:")
+
+        assert soll == pytest.approx(float(expected_target))
+        assert ist == pytest.approx(float(expected_actual))
+        assert saldo == pytest.approx(float(expected_balance))
+        assert saldo == pytest.approx(kumuliert)
+
+    def test_monthly_summary_non_mode_byte_identical(self, db, test_user):
+        """Regressions-Anker: Nicht-Modus-MA behält die alte Per-Tag-Summe."""
+        from app.services import calculation_service as cs
+        from app.services.ods_export_service import _doc_with_styles, _monthly_sheet
+
+        _mk_entry(db, test_user, date(2026, 1, 5), 8, 17, 30)
+        doc, bold, normal = _doc_with_styles()
+        _monthly_sheet(doc, db, test_user, 2026, 1, bold, normal)
+        sheet_name = f"{test_user.last_name} {test_user.first_name}"[:31]
+
+        expected_target = cs.get_monthly_target(db, test_user, 2026, 1)
+        expected_actual = cs.get_monthly_actual(db, test_user, 2026, 1)
+        assert _summary_value(doc, sheet_name, "Soll-Stunden Monat:") == pytest.approx(float(expected_target))
+        assert _summary_value(doc, sheet_name, "Ist-Stunden Monat:") == pytest.approx(float(expected_actual))
+        assert _summary_value(doc, sheet_name, "Saldo Monat:") == pytest.approx(
+            float(expected_actual - expected_target))
+
     def test_holiday_tenant_scoped(self, db, test_user):
         """Holidays in the tenant's own set must appear; others must not
         leak into the export (regression test for the tenant_id-filter fix)."""

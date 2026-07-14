@@ -186,12 +186,17 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
     (reale Erfassung gewinnt)."""
     days_in_month = monthrange(year, month)[1]
     cfg = special_days_service.get_special_day_config(db, user.tenant_id, year)
-    holiday_dates = set()
-    if include_holidays:
-        holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
-            date_in_month(PublicHoliday.date, year, month),
-            PublicHoliday.tenant_id == user.tenant_id,
-        ).all()}
+    # Finding 2 (Whole-Branch-Review, cross-set double-count guard): holiday
+    # dates are needed on BOTH paths now — on the paid-credit path to grant the
+    # credit (unchanged), on the unpaid path to SKIP a day that is already
+    # handled by the credit side. Without this, a day that is both a public
+    # holiday and carries a full-day OTHER/UNPAID_FREE absence would get
+    # +planned (holiday credit) AND −planned (unpaid reduction) = +2×planned
+    # net balance movement instead of the correct +1×planned.
+    holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
+        date_in_month(PublicHoliday.date, year, month),
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).all()}
     by_date = {}
     for a in db.query(Absence).filter(
         Absence.user_id == user.id, Absence.tenant_id == user.tenant_id,
@@ -214,6 +219,8 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
             continue
         if d in entry_dates:
             continue  # reale Erfassung gewinnt
+        if not include_holidays and d in holiday_dates:
+            continue  # Finding 2: Feiertag bereits über die Credit-Seite abgedeckt
         coverage = Decimal('1') if (include_holidays and d in holiday_dates) else Decimal('0')
         for a in by_date.get(d, []):
             coverage += Decimal('0.5') if a.half_day else Decimal('1')

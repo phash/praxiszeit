@@ -327,9 +327,23 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         tr.addElement(_int_cell(value))
         return tr
 
-    table.addElement(summary_row("Soll-Stunden Monat:", float(total_target)))
-    table.addElement(summary_row("Ist-Stunden Monat:", float(total_net)))
-    table.addElement(summary_row("Saldo Monat:", float(total_net - total_target)))
+    # #377 Baustein 2b (Finding 1, Whole-Branch-Review): für Fix-Modus-MA
+    # (use_fixed_monthly_target) MUSS die Monats-Summary mit dem modus-
+    # bewussten get_monthly_target/get_monthly_actual übereinstimmen — sonst
+    # widerspricht sich das §16-Dokument selbst gegen "Überstunden kumuliert"
+    # (get_overtime_account, bereits modus-bewusst). Die Per-Tag-Detailzeilen
+    # oben bleiben unverändert. Nicht-Modus-MA bleiben exakt auf der alten
+    # Per-Tag-Summe (byte-identisch).
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        summary_target = calculation_service.get_monthly_target(db, user, year, month)
+        summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
+    else:
+        summary_target = total_target
+        summary_actual = total_net
+
+    table.addElement(summary_row("Soll-Stunden Monat:", float(summary_target)))
+    table.addElement(summary_row("Ist-Stunden Monat:", float(summary_actual)))
+    table.addElement(summary_row("Saldo Monat:", float(summary_actual - summary_target)))
 
     overtime = calculation_service.get_overtime_account(db, user, year, month)
     table.addElement(summary_row("Überstunden kumuliert:", float(overtime)))

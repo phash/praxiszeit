@@ -71,6 +71,52 @@ def test_unpaid_other_reduces_soll(db, default_tenant):
     assert cs.fixed_month_unpaid_reduction(db, u, 2025, 3) == Decimal("3.00")
 
 
+def test_unpaid_reduction_skips_holiday_day_no_double_count(db, default_tenant):
+    """Finding 2 (Whole-Branch-Review, cross-set double-count guard): ein Tag,
+    der GLEICHZEITIG Feiertag ist UND eine ganztägige OTHER-Abwesenheit trägt,
+    darf das Konto nur EINMAL um die geplanten Stunden bewegen (Gutschrift über
+    fixed_month_credit), NICHT zusätzlich über fixed_month_unpaid_reduction
+    mindern (sonst +2× planned statt +1×) — der Feiertag ist bereits über die
+    Credit-Seite abgedeckt."""
+    u = _mk(db)
+    db.add(PublicHoliday(date=date(2025, 3, 3), name="X", year=2025, tenant_id=DEFAULT_TENANT_ID))  # Montag, geplant 3h
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 3),
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))
+    db.commit()
+
+    # Unpaid-Pfad muss den Feiertags-Tag ÜBERSPRINGEN — der wird schon über die
+    # Credit-Seite gutgeschrieben.
+    assert cs.fixed_month_unpaid_reduction(db, u, 2025, 3) == Decimal("0.00")
+    # Credit-Seite unverändert: Feiertag auf geplantem Mo → +3.
+    assert cs.fixed_month_credit(db, u, 2025, 3) == Decimal("3.00")
+
+    # Monats-Soll bleibt fix (nicht gemindert), Ist trägt genau EINE Gutschrift.
+    assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("40.00")
+    assert cs.get_monthly_actual(db, u, 2025, 3) == Decimal("3.00")
+
+    # Ein zweiter MA mit NUR dem (tenant-weiten) Feiertag, aber OHNE die
+    # zusätzliche OTHER-Absence an demselben Tag, muss EXAKT dasselbe Soll/Ist
+    # zeigen — die OTHER-Absence auf einem Feiertag darf das Konto NICHT
+    # zusätzlich bewegen (das wäre der Doppelzähl-Fehler: +2× statt +1×
+    # planned). Bewusst kein "ganz ohne Feiertag"-Baseline, da PublicHoliday
+    # tenant-weit gilt und beide MA im selben Tenant sitzen.
+    holiday_only = _mk(db, username="fx-holiday-only", email="fxho@t.l")
+    assert cs.get_monthly_target(db, holiday_only, 2025, 3) == cs.get_monthly_target(db, u, 2025, 3)
+    assert cs.get_monthly_actual(db, holiday_only, 2025, 3) == cs.get_monthly_actual(db, u, 2025, 3)
+
+
+def test_unpaid_reduction_still_applies_on_non_holiday(db, default_tenant):
+    """Regressions-Anker zu Finding 2: der neue Holiday-Skip darf die normale
+    (Nicht-Feiertags-)Reduktion nicht kaputt machen — bereits von
+    test_unpaid_other_reduces_soll abgedeckt, hier zusätzlich explizit
+    gegengeprüft, dass KEIN Feiertag am selben Tag liegt."""
+    u = _mk(db)
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))  # Mi geplant, kein Feiertag
+    db.commit()
+    assert cs.fixed_month_unpaid_reduction(db, u, 2025, 3) == Decimal("3.00")
+
+
 def test_monthly_target_fixed_mode(db, default_tenant):
     u = _mk(db)
     assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("40.00")  # nicht Σ Tagesstunden

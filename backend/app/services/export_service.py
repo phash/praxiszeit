@@ -358,20 +358,35 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.cell(row=row, column=1).value = "Zusammenfassung"
     sheet.cell(row=row, column=1).font = Font(bold=True, size=12)
 
+    # #377 Baustein 2b (Finding 1, Whole-Branch-Review): für Fix-Modus-MA
+    # (use_fixed_monthly_target) MUSS die Monats-Summary mit dem modus-
+    # bewussten get_monthly_target/get_monthly_actual übereinstimmen — sonst
+    # widerspricht sich das §16-Dokument selbst gegen "Überstunden kumuliert"
+    # weiter unten (get_overtime_account, bereits modus-bewusst). Die Per-Tag-
+    # Detailzeilen oben bleiben unverändert (informativ: geplante Anwesenheit/
+    # reale Erfassung, keine Tages-Soll-Zerlegung des festen Monats-Solls).
+    # Nicht-Modus-MA bleiben exakt auf der alten Per-Tag-Summe (byte-identisch).
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        summary_target = calculation_service.get_monthly_target(db, user, year, month)
+        summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
+    else:
+        summary_target = total_target
+        summary_actual = total_net
+
     row += 1
     sheet.cell(row=row, column=1).value = "Soll-Stunden Monat:"
-    sheet.cell(row=row, column=2).value = float(total_target)
+    sheet.cell(row=row, column=2).value = float(summary_target)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
     sheet.cell(row=row, column=1).value = "Ist-Stunden Monat:"
-    sheet.cell(row=row, column=2).value = float(total_net)
+    sheet.cell(row=row, column=2).value = float(summary_actual)
     sheet.cell(row=row, column=2).number_format = '0.00'
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
     row += 1
-    monthly_balance = total_net - total_target
+    monthly_balance = summary_actual - summary_target
     sheet.cell(row=row, column=1).value = "Saldo Monat:"
     sheet.cell(row=row, column=2).value = float(monthly_balance)
     sheet.cell(row=row, column=2).number_format = '0.00'
