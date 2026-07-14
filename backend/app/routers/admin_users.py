@@ -601,6 +601,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         child_sick_days_per_year=user_data.child_sick_days_per_year,  # #376
         milog_working_time_account=user_data.milog_working_time_account,  # #377
         agreed_monthly_hours=user_data.agreed_monthly_hours,  # #377 Baustein 2a
+        use_fixed_monthly_target=user_data.use_fixed_monthly_target,  # #377 Baustein 2b
         scheduled_start_monday=user_data.scheduled_start_monday,
         scheduled_end_monday=user_data.scheduled_end_monday,
         scheduled_start_tuesday=user_data.scheduled_start_tuesday,
