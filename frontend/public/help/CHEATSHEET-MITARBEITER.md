@@ -23,6 +23,14 @@ Benutzernamen + Passwort eingeben → **Anmelden**
 **Dashboard → Einstempeln** startet die Zeit live; später **Ausstempeln** beendet
 sie und speichert den Eintrag automatisch. Alternativ Zeiten manuell erfassen:
 
+### Pause beim Ausstempeln
+Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
+- Bei **mehr als 6 h** verlangt das Gesetz eine Pause (§4 ArbZG).
+- Reicht die Pause nicht → gelber Hinweis. Zwei Wege:
+  1. **Pause nachtragen** (Minuten korrigieren), oder
+  2. **kurz begründen**, warum keine Pause möglich war (z. B. „Notfall, keine Vertretung") → **dokumentierte Ausnahme**
+- Erst danach ist das Ausstempeln fertig (flüchtiger Hinweis reicht nicht mehr).
+
 ### Neuen Zeiteintrag erstellen
 **Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag**
 - Datum, Startzeit (Von), Endzeit (Bis)
@@ -45,7 +53,13 @@ Aktionsspalte in der Einträge-Tabelle:
 
 ### Tagesgrenze (§3 ArbZG)
 - Warnung ab **8 Stunden** Nettoarbeitszeit
-- Gesperrt ab **10 Stunden** Nettoarbeitszeit
+- Ab **10 Stunden** netto: manuelle Eingabe gesperrt; Live-Ausstempeln nur Warnung (Zeit ist bereits geleistet)
+
+### Soll-Arbeitszeit-Fenster
+*Nur aktiv, wenn die Praxis für Sie Soll-Zeiten hinterlegt hat – sonst zählt alles wie gewohnt.*
+- Zu früh ein- / zu spät ausgestempelt → angerechnet wird nur bis zum **Puffer** (Std. 15 Min.).
+- Hinweis z. B. *„gestempelt 07:30 · angerechnet ab 07:45"*.
+- Ihre **echte Stempelzeit bleibt gespeichert** (§16 ArbZG); fürs Stundenkonto zählt nur die angerechnete Zeit.
 
 ---
 
@@ -59,6 +73,8 @@ Wenn ein Eintrag gesperrt / zu alt ist:
 3. **Antrag stellen**
 
 Für Löschung: **Löschantrag**-Button → Begründung → Bestätigen
+
+**Pflicht-Pause nicht möglich?** Erfüllen die korrigierten Zeiten die Pausenregel nicht, wird der Antrag nicht abgelehnt: Zusatzfeld **„Begründung"** ausfüllen (z. B. „Notfall, keine Vertretung") → **Mit dokumentierter Ausnahme senden**. Die Abweichung geht zur Genehmigung an den Admin.
 
 ---
 
@@ -88,12 +104,21 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 | Zeitraum | Checkbox „Zeitraum" + Enddatum |
 | Speichern | Wochenenden/Feiertage werden übersprungen |
 
+> **Eigene Gründe:** Richtet Ihre Praxis weitere Gründe ein (z. B. „Schule"), erscheinen sie bei „Typ wählen" unter **„Eigene Gründe"**.
+
 **Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol
+
+### Sondertage 24./31.12.
+Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, sind diese im Kalender markiert (z. B. „Heiligabend (frei)" / „Silvester (½ Tag)") – wie ein Feiertag.
 
 ### Bei aktiver Urlaubsgenehmigungspflicht
 - Urlaub-Speichern → **Antrag** (kein direkter Eintrag)
 - Tab **„Meine Anträge"** zeigt Status
 - Offene Anträge können zurückgezogen werden
+
+### Urlaubsberechnung
+- **1 freier Arbeitstag = 1 Urlaubstag** (egal wie viele Stunden der Tag hat)
+- Freie Woche = Anzahl Ihrer Arbeitstage; Konto zeigt Resttage
 
 ---
 
@@ -108,6 +133,17 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 **Grüner Saldo (+)** = Überstunden · **Roter Saldo (–)** = Fehlstunden
 
+*Monatssaldo und Überstunden zählen nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus am 1.).*
+
+---
+
+## Ohne Stundenzählung
+
+Für manche Mitarbeitende führt die Praxis **keine Stundenzählung**:
+- Kein Soll/Ist, keine Überstunden, kein Stempel-Button → Kacheln Tagessaldo / Monatssaldo / Überstunden fehlen.
+- **Urlaub & Krank werden trotzdem geführt** – tagebasiert (1 freier Arbeitstag = 1 Tag). Urlaubskonto bleibt sichtbar.
+- Das ist eine bewusste Einstellung Ihrer Praxis, **kein Fehler**.
+
 ---
 
 ## Passwort ändern
@@ -119,13 +155,27 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 ---
 
+## Zwei-Faktor-Authentifizierung (2FA)
+
+Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy).
+
+**Aktivieren:** Profil → Karte „Zwei-Faktor-Authentifizierung" → **2FA aktivieren** → QR-Code scannen (oder Schlüssel manuell eintragen) → 6-stelligen Code eingeben → **Bestätigen**
+**Login:** Benutzername + Passwort → danach **6-stelligen Code** aus der App
+**Deaktivieren:** **2FA deaktivieren** → aktuelles **Passwort** bestätigen
+> App/Handy verloren? → Administrator kontaktieren
+
+---
+
 ## Häufige Probleme
 
 | Problem | Lösung |
 |---------|--------|
-| Eintrag nicht speicherbar | Pause prüfen (§4 ArbZG Pflicht!) |
+| Pause zu kurz beim Ausstempeln | Pause nachtragen **oder** kurz begründen (dokumentierte Ausnahme) |
 | Zeiteintrag zu lang | Max. 10h netto (§3 ArbZG) |
 | Eintrag lässt sich nicht bearbeiten | Zu alt → Änderungsantrag stellen |
+| „angerechnet ab HH:MM" beim Eintrag | Soll-Zeit-Fenster: nur bis Puffer angerechnet (echte Zeit bleibt) |
+| Stunden-/Überstundenkacheln fehlen | Kein Fehler – bei Ihnen ohne Stundenzählung |
+| Gelber Hinweis unter „Überstundenkonto" | Minijob-Arbeitszeitkonto (§ 2 Abs. 2 MiLoG): Konto zu weit im Plus oder Ausgleichsfrist läuft bald ab – kein Fehler, im Zweifel mit Admin klären |
 | Passwort vergessen | Administrator kontaktieren |
 
 ---
@@ -135,6 +185,14 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 **Name:** ____________________________
 
 **E-Mail / Telefon:** ____________________________
+
+---
+
+## Schichtplan (falls aktiv)
+
+- Menü **Schichtplan**: aktive Wochenpläne ansehen (wer wann wo).
+- **Dashboard → „Deine Einteilung heute"**: Ihre heutigen Einsätze mit Zeit.
+- Nur Planung – ändert **nicht** Ihre Arbeitszeiten/Urlaub/Überstunden. Einteilung macht der Admin.
 
 ---
 

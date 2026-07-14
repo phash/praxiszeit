@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.4 | Stand: Juni 2026 (für PraxisZeit 1.8.2)**
+**Version 2.6 | Stand: Juli 2026 (für PraxisZeit 1.15.0)**
 
 ---
 
@@ -30,6 +30,7 @@
 16. [Änderungsanträge für Abwesenheiten](#16-änderungsanträge-für-abwesenheiten)
 17. [Rechtliche Grundlagen](#17-rechtliche-grundlagen)
 18. [Berechnungsgrundlagen (Anhang)](#18-berechnungsgrundlagen-anhang)
+19. [Datensicherung (Backup & Restore)](#19-datensicherung-backup--restore)
 
 ---
 
@@ -76,7 +77,7 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 | **Ist** | Tatsächlich geleistete Stunden |
 | **Saldo** | Differenz Ist – Soll (H:MM, + = Überstunden, – = Fehlstunden) |
 | **Übersto. Kum.** | Kumulierter Jahressaldo |
-| **Urlaub** | Verbleibende Urlaubsstunden (Ampelfarbe) |
+| **Urlaub** | Verbleibende Urlaubstage (Ampelfarbe) |
 | **Krank** | Kranktage im aktuellen Monat |
 
 ### Statistiken (oben)
@@ -86,6 +87,13 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 - **Monat:** Aktuell angezeigter Monat
 
 **Monat wechseln:** Mit den Pfeilen `<` und `>` wechseln Sie den angezeigten Monat.
+
+**Monat ↔ Woche umschalten (#329):** Über den Umschalter **„Monat / Woche"** oben neben dem Zeitraum wechseln Sie zwischen der Monats- und einer **Wochenansicht**. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche, z. B. **„22.–28.06.2026 (KW 26)"**; mit den Pfeilen blättern Sie wochenweise. Die Spalten sind dieselben wie im Monat. So erhalten Sie eine schnelle Plausibilitätsübersicht, wer zu viel oder zu wenig gearbeitet hat. Ihre Auswahl (Monat oder Woche) bleibt **pro Browser/Gerät** gespeichert. In der Wochenansicht heißt die zweite Option der Soll-Basis entsprechend **„volle Woche"** statt „Monatsende".
+
+**Soll-Basis umschalten (#313):** Über das Dropdown **„Soll: bis heute / Monatsende"** in der Monatsübersicht steuern Sie, wie das Monats-**Soll** gezählt wird:
+- **bis heute** (Standard): nur bis zum **letzten abgeschlossenen Arbeitstag** des laufenden Monats — so startet der Saldo nicht mit einem Monatsanfangs-Minus.
+- **Monatsende**: der **volle** Monat.
+Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/admin/reports/monthly` nimmt den Parameter `soll_basis=bis_heute|monatsende`.) Der Stichtag betrifft **ausschließlich** diese Live-Übersichten (MA-Dashboard, Admin-Team-Tabelle, Benutzerübersicht, Überstundenkonto samt Diagramm, Jahres-bis-heute-Summe). Die heruntergeladenen §16-Exporte, das **Monatsjournal** und der **Jahresabschluss** (Carryover) rechnen bewusst immer den **vollen** Monat bzw. das volle Jahr – das sind Rechtsbelege, die sich nicht rückwirkend ändern sollen, je nachdem, an welchem Tag man sie sich ansieht.
 
 **Suche:** Nutzen Sie das Suchfeld, um nach einem bestimmten Mitarbeiter zu filtern.
 
@@ -139,6 +147,12 @@ Die Liste zeigt alle aktiven Mitarbeiter mit:
 
 **Filter:** Aktivieren Sie **„Inaktive anzeigen"** oder **„Ausgeblendete anzeigen"** um deaktivierte Mitarbeiter einzublenden.
 
+**Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird.
+
+**„Login als …" – Ansicht als Mitarbeiter:in (#370):** Über das Anmelde-Symbol in der Aktionsspalte (nur bei **aktiven Mitarbeitenden**, nicht bei Admins) öffnen Sie die Anwendung aus der Perspektive dieser Person – praktisch, um das individuelle Dashboard zu beurteilen oder ein gemeldetes Problem nachzustellen. Die Ansicht ist **ausschließlich lesend**: Stempeln, Anträge stellen und jegliche Änderungen sind gesperrt (der Server weist Schreibversuche ab). Ein dauerhaftes Hinweisbanner am oberen Rand zeigt **„Sie sehen PraxisZeit als … – nur Lesen"**; über **„Zurück zu Admin"** kehren Sie jederzeit zu Ihrem eigenen Konto zurück.
+
+> **Datenschutz:** Jede „Login als"-Sitzung wird protokolliert (welcher Admin, welche Person, Beginn und Ende) – Rechenschaftspflicht nach Art. 5 Abs. 2 DSGVO. Da keine Änderungen möglich sind, kann keine Aktion fälschlich der/dem Mitarbeitenden zugerechnet werden (§ 16 ArbZG).
+
 ### Neuen Mitarbeiter anlegen
 
 ![Neuen Benutzer anlegen](screenshots/16-admin-benutzer-formular.png)
@@ -168,6 +182,7 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 | **Individuelle Tagesstunden** | Abweichende Stundenverteilung Mo–Fr statt einheitlich (nur bei aktiver Stundenzählung) |
 | **Abteilung/Bereich** | Optionale Zuordnung (Freitext); ermöglicht Filterung im Abwesenheitskalender |
 | **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein; nur bei aktiver Stundenzählung) |
+| **Übertrag Urlaubstage** | Alt-/Vorjahres-Resturlaub, der dem **Urlaubsbudget des Startjahres** zugerechnet wird (z. B. beim Systemwechsel bei unterjährigem Eintritt der Resturlaub aus den Monaten vor dem Eintritt). Minus und Kommastellen möglich; gilt für **alle** MA (auch ohne Stundenzählung). |
 | **Soll-Arbeitszeiten je Wochentag** | Optionaler Soll-Beginn / Soll-Ende pro Wochentag (Mo–Fr) – siehe eigener Abschnitt „Soll-Arbeitszeiten" unten. |
 
 > **Wichtig – zwei getrennte Einstellungen, bitte nicht verwechseln:**
@@ -189,7 +204,7 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 **Was sich ändert, wenn die Stundenzählung deaktiviert ist:**
 - **Keine Soll-/Ist-Stundenberechnung** und **keine Überstundenberechnung.** In der Benutzerübersicht erscheint in der Spalte „Überstunden (JTD)" ein „—".
 - Die Felder „Anfangssaldo Überstunden", „Individuelle Tagesstunden" und das Soll-/Ist-Dashboard entfallen für diese Person.
-- **Urlaub und Krankheit werden trotzdem geführt** – und zwar **tagebasiert**: 1 genommener freier Arbeitstag = 1 Urlaubstag (Sondertage wie Heiligabend zählen ebenfalls als 1 Tag). Der Urlaubsanspruch bleibt anteilig nach Arbeitstagen und behält die Vorjahresübernahme.
+- **Urlaub und Krankheit werden trotzdem geführt** – und zwar **tagebasiert**: 1 genommener freier Arbeitstag = 1 Urlaubstag. Ein „Frei + zählt als Urlaub"-Sondertag (z. B. Heiligabend) zählt 1 Tag; ein als **„halber Feiertag"** konfigurierter Sondertag (24./31.12.) zählt **0,5 Tage** (seit #394). Der Urlaubsanspruch bleibt anteilig nach Arbeitstagen und behält die Vorjahresübernahme.
 
 **Wofür gedacht:** z. B. Personen, deren Arbeitszeit nicht erfasst, deren Urlaub aber dennoch verwaltet werden soll.
 
@@ -231,6 +246,27 @@ Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich
 
 > **Rechtlicher Hinweis (§16 ArbZG):** Arbeitszeitaufzeichnungen müssen **mindestens 2 Jahre** aufbewahrt werden. Löschen Sie daher niemals Mitarbeiterdaten – deaktivieren Sie die Konten.
 
+### DSGVO: Anonymisierung & endgültige Löschung (Art. 17)
+
+Für das **Recht auf Löschung** (Art. 17 DSGVO) gibt es zwei Stufen, die das gesetzliche Spannungsfeld zwischen Löschpflicht und der **Aufbewahrungspflicht** für Arbeitszeitaufzeichnungen (§16 ArbZG) auflösen. Beide setzen voraus, dass das Konto **zuvor deaktiviert** wurde.
+
+**Ablauf in Kürze:**
+
+1. **Deaktivieren** Sie den/die Mitarbeiter:in (Status „Inaktiv"). Damit startet eine **14-tägige Sperrfrist**.
+2. Nach Ablauf der Sperrfrist kann **anonymisiert** werden.
+3. **Endgültig löschen** lässt sich ein Datensatz erst, wenn die **730-tägige (2-Jahre-)Aufbewahrungsfrist** abgelaufen ist.
+
+| Aktion | Was passiert | Voraussetzung |
+|--------|--------------|---------------|
+| **Anonymisieren** | Personenbezogene Daten werden entfernt (Name → „Gelöschter Benutzer", Benutzername/E-Mail, Lichtbild, Abteilung, 2FA-Geheimnis). Die **Zeiteinträge bleiben** erhalten (Pflicht nach §16 ArbZG), Abwesenheiten werden gelöscht. Der Datensatz selbst und die Aufzeichnungen bleiben bestehen. | Konto deaktiviert **und** 14-tägige Sperrfrist abgelaufen |
+| **Endgültig löschen (Purge)** | **Vollständige, unwiderrufliche Löschung** des Benutzers samt aller zugehörigen Daten (Zeiteinträge, Abwesenheiten, Anträge). | Konto deaktiviert **und** die jüngste aufbewahrungspflichtige Aufzeichnung (Zeiteintrag oder Abwesenheit) ist **mindestens 730 Tage** alt |
+
+- Die **Anonymisierung** ist der Regelweg, wenn die Aufbewahrungsfrist noch läuft: Die Person wird anonymisiert, die gesetzlich aufzubewahrenden Aufzeichnungen bleiben aber erhalten.
+- Die **endgültige Löschung** wird vom System blockiert, solange noch aufbewahrungspflichtige Aufzeichnungen jünger als 730 Tage existieren. Ein anonymisierter Benutzer kann also **erst nach Ablauf der 730 Tage** endgültig gelöscht werden.
+- Beide Vorgänge werden im **Änderungsprotokoll** dokumentiert (DSGVO-Rechenschaftspflicht, Art. 5 Abs. 2).
+
+> **Wo?** Blenden Sie über **„Inaktive anzeigen"** die deaktivierten Konten ein. Das System zeigt je Konto die verbleibende Sperrfrist sowie an, ob eine Anonymisierung bzw. endgültige Löschung bereits möglich ist.
+
 ---
 
 ## 5. Abwesenheitskalender
@@ -239,7 +275,7 @@ Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich
 
 ### Kalenderansicht
 
-Abwesenheiten werden farbcodiert nach Typ dargestellt (z. B. Urlaub, Krankheit, Fortbildung, Überstundenausgleich, Sonstiges). Die genauen Farben sind unter **Einstellungen → „Farben"** je Typ frei konfigurierbar (→ [Abschnitt 13](#farben)). Jeder Mitarbeitende hat zusätzlich eine **eigene Kalenderfarbe**, die er im eigenen Profil wählt.
+Abwesenheiten werden farbcodiert nach Typ dargestellt (z. B. Urlaub, Krankheit, Fortbildung, Überstundenausgleich, Sonstiges). Die genauen Farben sind unter **Einstellungen → „Farben"** je Typ frei konfigurierbar (→ [Abschnitt 13](#farben)). Jeder Mitarbeitende hat zusätzlich eine **eigene Kalenderfarbe** im Teamkalender. Diese kann der Mitarbeiter selbst unter **Profil → Kalenderfarbe** wählen oder der Administrator im **Benutzerformular** (Feld **Kalenderfarbe**) für ihn vorgeben.
 
 **Sondertage und Feiertage im Kalender:**
 - **Gesetzliche Feiertage** und arbeitsfreie **Sondertage** (24./31.12. im Modus „Frei") werden **grau** hinterlegt und sind nicht buchbar.
@@ -267,14 +303,14 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 ### Monatsreport
 
 - **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
-- **Format:** Excel (.xlsx) oder CSV
+- **Format:** Excel (.xlsx), ODS (.ods) oder PDF (.pdf)
 - **Details pro Mitarbeiter:** Datum, Wochentag, Start, Ende, Pause, Ist-Stunden, Soll-Stunden, Abwesenheitstyp, Monatssaldo
 
 **Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
 
 ### Jahresreport Classic
 
-- **Format:** Excel (.xlsx) oder CSV, ca. 17 KB
+- **Format:** Excel (.xlsx) oder ODS (.ods)
 - **Inhalt:** Pro Mitarbeiter eine Zeile pro Monat
 - **Details:** Soll, Ist, Saldo, Urlaubstage, Krankheitstage, Fortbildungstage
 
@@ -282,18 +318,20 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 ### Jahresreport Detailliert
 
-- **Format:** Excel (.xlsx) oder CSV, ca. 108 KB
+- **Format:** Excel (.xlsx) oder ODS (.ods)
 - **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter
 - **Hinweis:** Generierungszeit 3–5 Sekunden
 
 **Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung
 
+> **Hinweis:** Das **PDF**-Format gibt es nur für den **Monatsreport**. Die Jahresreports stehen als **Excel** und **ODS** zur Verfügung.
+
 ### Bericht erstellen
 
 1. Wählen Sie den **Berichtstyp**
 2. Wählen Sie **Monat** oder **Jahr**
-3. Optional: **„Krankheiten einstellen"** – legt fest, ab welchem Datum § 3 EntgFG (Kranktage als gearbeitete Zeit) gilt
-4. Klicken Sie auf **Excel** oder **CSV**
+3. Optional: **„Krankheitsdaten einschließen" (Art. 9 DSGVO)** – nimmt Krankheitsstunden bzw. -tage in den Export auf. Krankheitsdaten sind besondere Kategorien personenbezogener Daten (Art. 9 DSGVO); jeder Export mit dieser Option wird im **Änderungsprotokoll** vermerkt.
+4. Klicken Sie auf das gewünschte Format – **Excel (.xlsx)**, **ODS (.ods)** oder (beim Monatsreport) **PDF (.pdf)**
 5. Die Datei wird automatisch heruntergeladen
 
 > **Rechtlicher Hinweis (§16 ArbZG):** Exportieren Sie regelmäßig (mindestens jährlich) und sichern Sie die Dateien sicher für **2 Jahre**.
@@ -321,7 +359,14 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 2. Klicken Sie auf **„Genehmigen"** (grüner Button)
 3. Das System trägt automatisch Abwesenheiten für alle Werktage ein (Wochenenden und Feiertage ausgeschlossen)
 
-> **Achtung:** Eine Genehmigung ist unwiderruflich. Zum Stornieren müssen die erstellten Abwesenheitseinträge manuell gelöscht werden.
+### Genehmigten Antrag stornieren
+
+Eine Genehmigung lässt sich rückgängig machen, solange der Urlaubszeitraum **noch nicht begonnen hat** (Beginn in der Zukunft). Wechseln Sie dazu in den Filter **„Genehmigt"**, öffnen Sie den Antrag und klicken Sie auf **„Urlaub stornieren"**.
+
+- Die durch die Genehmigung erzeugten **Abwesenheitseinträge werden automatisch entfernt** – ein manuelles Löschen ist nicht nötig.
+- Der Antrag wird auf **„Zurückgezogen"** gesetzt und bleibt für die Nachvollziehbarkeit im Änderungsprotokoll erhalten.
+
+> **Hinweis:** Bereits begonnene oder vergangene Urlaube können nicht storniert werden. Offene Anträge können vor der Entscheidung jederzeit storniert werden.
 
 ### Antrag ablehnen
 
@@ -424,14 +469,44 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 
 1. **Bezeichnung** (z. B. „Weihnachtsschließzeit 2026")
 2. **Von** (Startdatum) und **Bis** (Enddatum)
-3. Speichern
+3. **Verrechnung** wählen (siehe nächster Abschnitt)
+4. Speichern
 
 **Was passiert automatisch:**
-- Alle aktiven Mitarbeiter **mit der Option „Nimmt an Betriebsferien teil"** (Standard) erhalten für jeden Werktag Abwesenheitseinträge – unabhängig von der Rolle, also auch Admins, die zugleich als Mitarbeiter geführt werden. Reine Verwaltungs-Accounts können die Option in der Benutzerverwaltung abwählen.
-- Urlaubstage werden **nicht** verbraucht
-- Wochenenden und gesetzliche Feiertage werden übersprungen
+- Alle aktiven Mitarbeiter **mit der Option „Nimmt an Betriebsferien teil"** (Standard) erhalten für jeden ihrer **tatsächlichen Arbeitstage** im Zeitraum einen Abwesenheitseintrag – unabhängig von der Rolle, also auch Admins, die zugleich als Mitarbeiter geführt werden. Reine Verwaltungs-Accounts können die Option in der Benutzerverwaltung abwählen.
+- Vorhandene Arbeitszeit-Einträge an diesen Tagen werden ersetzt (im Änderungsprotokoll dokumentiert).
 
-> **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option bei einem Mitarbeiter erst nach dem Anlegen der Betriebsferien, **speichern Sie die betreffenden Betriebsferien einmal erneut** (Bearbeiten → Speichern) – die Abwesenheiten werden dann für die nun berechtigten Personen nachgetragen.
+**Es wird _kein_ Eintrag gebucht an:**
+- Wochenenden und gesetzlichen **Feiertagen**
+- **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0)
+- als **„Frei" konfigurierten Sondertagen** (24./31.12.)
+- Tagen **außerhalb des Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
+- Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben)
+
+### Verrechnung: Urlaub oder bezahlte Freistellung
+
+Beim Anlegen legen Sie unter **„Verrechnung"** fest, wie die Schließtage verbucht werden:
+
+| Auswahl | Wirkung |
+|---|---|
+| **Als Urlaub werten** (Standard) | Jeder gebuchte Schließtag wird vom **Urlaubskonto** der Mitarbeiter abgezogen (1 Tag pro Arbeitstag, Tagesprinzip). |
+| **Bezahlte Freistellung** | Wie ein Feiertag: das Tagessoll entfällt, es wird **kein** Urlaubstag abgezogen und das **Überstundenkonto** bleibt unberührt (saldoneutral). |
+
+> **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option „Nimmt an Betriebsferien teil" bei einem Mitarbeiter und speichern Sie die Benutzer-Änderung. Die Abwesenheiten werden **automatisch** für alle laufenden und künftigen Betriebsferien nachgetragen – ein erneutes Speichern der Betriebsferien ist nicht mehr nötig, und bereits erfasste Arbeitszeiten bleiben erhalten. (Bereits abgelaufene Betriebsferien werden bewusst nicht rückwirkend ergänzt.)
+
+### Betriebsferien länger als der Jahresurlaub (#314)
+
+Sind die **als Urlaub** zählenden Betriebsferien länger als das **Resturlaub-Budget** einer Mitarbeiterin, hängt das Verhalten vom globalen Schalter **„Überzählige Betriebsferien als Überstundenabbau"** ab (unter **Einstellungen → „Betriebsferien & Urlaub"**, standardmäßig **aus**):
+
+- **Schalter AUS (Standard):** Alle Schließtage zählen als Urlaub. Übersteigen die Betriebsferien den Resturlaub, entstehen **Minus-Urlaubstage** (Pflichturlaub – die Schließung wird zwingend gebucht).
+- **Schalter AN:** Pro Mitarbeiter wird **erst der Urlaub aufgezehrt, dann auf Überstundenabbau** umgestellt. Die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Soll bleibt, der Tag zählt als 0 Stunden → das Überstundenkonto sinkt um das Tagessoll und **darf ins Minus gehen**). So entsteht **nie Minus-Urlaub**.
+
+Wenn der Schalter aktiv ist, gilt zusätzlich:
+
+- **Kalenderreihenfolge:** Der Jahresurlaub wird den Betriebsferien **chronologisch nach Datum** zugeteilt (frühere Schließung zuerst) – **unabhängig davon, in welcher Reihenfolge Sie die Betriebsferien eingegeben haben**. Die Überstunden-Tage landen damit immer auf der **letzten** Schließung des Jahres.
+- **Privater Urlaub** im selben Jahr reduziert den für die Betriebsferien verfügbaren Urlaub mit – auch wenn er erst später im Jahr (z. B. im Sommer) gebucht ist. Urlaub wird also immer **zuerst** verbraucht, die Betriebsferien greifen nur auf den verbleibenden Rest zu.
+
+> **Wichtig – nachträglich aktivierter Schalter:** Der Schalter wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien. Für **bereits eingetragene** Betriebsferien öffnen Sie diese einmal unter „Betriebsferien" und **speichern erneut** – dann werden die Tage nach derselben Regel neu berechnet (Urlaub zuerst, danach Überstundenabbau).
 
 ### Betriebsferien löschen
 
@@ -441,11 +516,20 @@ Klicken Sie auf das Löschen-Symbol. Die Abwesenheitseinträge werden bei allen 
 
 ## 12. Import
 
-Unter **Import** können Sie Zeiteinträge oder Abwesenheitsdaten aus externen Quellen (z. B. CSV-Dateien) in das System importieren.
+Unter **Import** übernehmen Sie historische **Zeiteinträge** aus einer **TimeRec-Datei im `.xls`-Format**. Der Bereich ist für die einmalige Datenübernahme bei der Einführung von PraxisZeit gedacht (z. B. Altdaten aus der bisherigen Zeiterfassung).
 
-Dieser Bereich ist für die initiale Datenübernahme oder die Massenbefüllung bei der Einführung von PraxisZeit vorgesehen.
+> **Wichtig:** Importiert werden **ausschließlich Zeiteinträge** (Arbeitszeiten). **Abwesenheiten** (Urlaub, Krank usw.) werden **nicht** importiert. Es gibt **keine** Vorlagendatei zum Herunterladen und es werden **keine** CSV- oder `.xlsx`-Dateien unterstützt – nur das echte `.xls`-Format (BIFF) mit einem Tabellenblatt namens **„Zeiterfassung"**.
 
-**Vorgehensweise:** Laden Sie die Vorlagendatei herunter, befüllen Sie sie gemäß der Vorgaben und laden Sie die Datei wieder hoch.
+**Anforderungen an die Datei:**
+
+- Format **`.xls`** (TimeRec-Export), maximal **5 MB**
+- Tabellenblatt **„Zeiterfassung"** mit den Spalten Datum, Tag, Total, Ein, Aus, Tagesnotiz
+
+**Vorgehensweise (Assistent in drei Schritten):**
+
+1. **Hochladen:** Wählen Sie den/die **Mitarbeiter:in** aus, dem/der die Einträge zugeordnet werden, und laden Sie die `.xls`-Datei hoch (Drag & Drop oder Klick). Klicken Sie auf **„Datei analysieren"**.
+2. **Vorschau:** Das System zeigt alle gefundenen Einträge in einer Tabelle mit Datum, Von/Bis, Pause und Netto-Stunden. **Konflikte** (bereits vorhandene Einträge am selben Tag) werden rot, **ArbZG-Warnungen** (z. B. Ruhezeit, Höchstarbeitszeit) gelb markiert. Über die Option **„Konflikte überschreiben"** entscheiden Sie, ob vorhandene Einträge ersetzt werden – andernfalls werden sie übersprungen. Klicken Sie auf **„Import bestätigen"**.
+3. **Ergebnis:** Sie sehen, wie viele Einträge importiert, überschrieben oder übersprungen wurden sowie die ArbZG-Warnungen. Der Import wird im **Änderungsprotokoll** dokumentiert.
 
 ---
 
@@ -494,6 +578,16 @@ Der Schalter **„Genehmigung erforderlich"** steuert, ob Urlaubsanträge von ei
 
 Diese Einstellung lässt sich alternativ auch direkt im Bereich „Abwesenheitsanträge" umschalten.
 
+<a id="betriebsferien-urlaub"></a>
+### Betriebsferien & Urlaub
+
+Der Schalter **„Überzählige Betriebsferien als Überstundenabbau"** steuert, was passiert, wenn als Urlaub zählende Betriebsferien länger sind als der Resturlaub einer Mitarbeiterin (Standard: **aus**):
+
+- **Aus:** Alle Schließtage zählen als Urlaub. Reicht der Resturlaub nicht, entstehen **Minus-Urlaubstage**.
+- **Ein:** Zuerst wird der Urlaub aufgezehrt, die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Überstundenkonto darf ins Minus gehen) – statt Minus-Urlaub.
+
+Die Option ist **global** und gilt nur für Betriebsferien, die als Urlaub gewertet werden. Sie wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien; bereits eingetragene Betriebsferien aktualisieren Sie durch erneutes Speichern (→ [Abschnitt 11](#11-betriebsferien-verwalten)).
+
 <a id="pflicht-pause-ausnahme"></a>
 ### Pflicht-Pause-Ausnahme
 
@@ -514,6 +608,56 @@ Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für S
 ### Farben
 
 Im Bereich **„Farben"** legen Sie für jeden Anwesenheits- und Abwesenheitstyp eine eigene Farbe fest (Arbeit/Anwesenheit, Fortbildung, Urlaub, Krank, Überstundenausgleich, Sonstiges, Bezahlte Freistellung). Die Farben werden im Kalender, in den Übersichten und bei der Zeiterfassung verwendet. Eine kleine „Aa"-Vorschau zeigt, ob die Schrift auf der gewählten Farbe lesbar bleibt.
+
+### Eigene Abwesenheitsgründe (#312)
+
+Im Bereich **„Eigene Abwesenheitsgründe"** legen Sie zusätzliche, frei benannte Gründe an (z. B. **„Schule"** für Auszubildende mit Berufsschultagen) – mit eigener Farbe. Jeder Grund hat ein **Basis-Verhalten**, das die Berechnung bestimmt:
+
+| Basis-Verhalten | Wirkung |
+|---|---|
+| **Zählt als gearbeitet** | Die geplanten Stunden werden als Arbeitszeit gutgeschrieben (wie Fortbildung) – passend für **Berufsschule** (Arbeitszeit nach § 15 JArbSchG), es entstehen keine Stundenverluste. |
+| **Bezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug – der Arbeitgeber zahlt weiter. |
+| **Unbezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug, aber **unbezahlt** (Lohn gekürzt) – für **Kind krank** (§45 SGB V) oder unbezahlten Sonderurlaub. |
+| **Überstundenabbau** | Das Überstundenkonto sinkt um das Tagessoll. |
+
+Das Basis-Verhalten ist **nach dem Anlegen fix**. Gründe lassen sich umbenennen, umfärben und deaktivieren (deaktivierte stehen beim Buchen nicht mehr zur Auswahl, bleiben aber an bestehenden Abwesenheiten erhalten). Beim Eintragen einer Abwesenheit erscheinen die eigenen Gründe unter **„Eigene Gründe"** in der Typ-Auswahl.
+
+> **Datenschutz:** Da ein eigener Grund sensibel sein kann (z. B. „Reha"), werden Abwesenheiten mit eigenem Grund im Team-Kalender für andere Mitarbeitende nur als **„abwesend"** angezeigt – nur Admins sehen die Bezeichnung.
+
+#### Kind krank & Sonderurlaub-Vorlagen (#376)
+
+Über die Schaltflächen unter **„Vorlagen (1-Klick aktivieren)"** legen Sie gängige Gründe direkt an – **Kind krank** (unbezahlt frei), **Todesfall naher Angehöriger**, **Eigene Hochzeit**, **Geburt eines Kindes**, **Umzug (betrieblich)**, **Arztbesuch**, **Pflege naher Angehöriger**. Das voreingestellte Verhalten (bezahlt/unbezahlt) können Sie je Betrieb frei anpassen – die rechtliche Einordnung (z. B. ob § 616 BGB im Arbeitsvertrag ausgeschlossen ist) liegt bei Ihnen.
+
+**Kind-krank-Jahreslimit (§45 SGB V):** Für den Grund **„Kind krank"** zählt PraxisZeit die genommenen Tage pro Kalenderjahr. Den Standard-Jahresanspruch stellen Sie unter **Einstellungen → „Kind-krank-Standardanspruch"** ein (Voreinstellung 15 Tage); pro Mitarbeiter:in lässt sich im Benutzerformular ein **individueller Wert** hinterlegen (Feld „Kind-krank-Tage/Jahr", leer = Standard). Wird der Anspruch beim Buchen überschritten, erscheint ein **Hinweis** – die Abwesenheit wird **trotzdem erfasst** (nicht blockiert), da der Fehltag dokumentiert werden muss (die Krankenkasse zahlt Kinderkrankengeld ggf. nicht mehr). Den Verbrauch je Mitarbeiter:in sehen Sie in der **Benutzerübersicht**.
+
+> **Hinweis:** PraxisZeit bildet die reine Zeiterfassung ab. Die Meldung an Krankenkasse und Lohnbuchhaltung erfolgt außerhalb der Software.
+
+### Minijob / Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) (#377)
+
+Für Minijobber:innen, die **auf Arbeitszeitkonto** geführt werden („sonstige flexible Arbeitszeitregelung"), aktivieren Sie im Benutzerformular die Checkbox **„Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)"**. PraxisZeit prüft dann zwei gesetzliche Grenzen als **weiche Hinweise** (nichts wird blockiert):
+
+- **50-%-Regel:** Die auf das Konto eingestellten Plusstunden dürfen pro Monat **50 % der vertraglich vereinbarten Arbeitszeit** nicht übersteigen. Bei aktivem Arbeitszeitkonto erscheint das Feld **„Vereinbarte Monatsarbeitszeit (h)"** — tragen Sie dort die vereinbarte Monatszahl direkt ein (z. B. **33** → max. 16,5 h Konto/Monat). Bleibt das Feld leer, wird die Monatszeit wie bisher aus den Wochenstunden abgeleitet (× 13/3, z. B. 7,62 h/Woche ≈ 33 h/Monat). Die eingegebene Monatszahl ist die vertragliche Bezugsgröße für die **50-%-Prüfung**. Das **12-Monats-Aging** bleibt bewusst Soll-basiert (rechnet gegen das tatsächliche Monats-Soll, damit Urlaub/Feiertage das Konto nicht belasten). Der Hinweis erscheint beim Buchen/Ausstempeln, im **eigenen Überstundenkonto** der/des MA und in der **Benutzerübersicht**.
+- **12-Monats-Ausgleichsfrist:** Konto-Stunden müssen binnen 12 Kalendermonaten ausgeglichen werden — bei Überfälligkeit ein Hinweis.
+
+Der **aktuelle gesetzliche Mindestlohn** (§ 1 MiLoG) wird unter **Einstellungen → „Gesetzlicher Mindestlohn"** angezeigt.
+
+> **Wichtig:** Die 50-%-Grenze bindet nur die **mindestlohnwirksamen** Stunden. Wird über dem Mindestlohn vergütet, sind mehr Stunden möglich — der Hinweis ist dann ggf. unkritisch, bitte prüfen. PraxisZeit speichert **keine Lohndaten** und prüft daher **nicht** die 603-€-Verdienstgrenze; das bleibt der Lohnbuchhaltung vorbehalten. Die vereinbarte **Monatsarbeitszeit** kann im Feld „Vereinbarte Monatsarbeitszeit (h)" direkt eingegeben werden (siehe oben); sie ist die vertragliche Bezugsgröße für die **50-%-Prüfung**. Das **12-Monats-Aging** bleibt bewusst Soll-basiert (siehe oben) und ändert sich dadurch nicht.
+
+#### Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b)
+
+Für Minijobber:innen mit einer **fest vereinbarten Monatsarbeitszeit**, die jeden Monat **gleich** sein soll (statt aus Wochenstunden/Arbeitstagen zu schwanken), aktivieren Sie zusätzlich zum Arbeitszeitkonto die Checkbox **„Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)"**. Sie erscheint nur, wenn „Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)" bereits aktiv ist, und macht das Feld „Vereinbarte Monatsarbeitszeit (h)" zur **Pflichtangabe**.
+
+Mit aktivem Modus gilt:
+
+- **Monats-Soll ist fix:** Statt der Tagessoll-Summe über die Arbeitstage des Monats zählt jeden Monat exakt die vereinbarte Monatsarbeitszeit als Soll — egal ob der Monat 4 oder 5 Montage hat. Bei unterjährigem Ein-/Austritt wird das Soll **anteilig nach Kalendertagen** des Beschäftigungsfensters im Monat berechnet.
+- **Individuelle Tagesstunden werden zur geplanten Anwesenheit:** Die Tagesstunden-Matrix (Mo–Fr, unter „Individuelle Tagesstunden") heißt in diesem Modus „Geplante Anwesenheit" und steuert **nicht mehr das Soll**, sondern nur noch, wie viele Stunden an Feiertags-/Fehltagen gutgeschrieben werden. Sie darf frei bzw. lückenhaft gesetzt sein (z. B. nur Montag und Mittwoch).
+- **Feiertag, Urlaub oder bezahlte Freistellung auf einem geplanten Tag** schreiben die geplanten Stunden dieses Wochentags dem **Ist** gut, als wäre gearbeitet worden (Konto-Wirkung: neutral statt Minus). Krankheit und Fortbildung waren bereits vorher als Ist gutgeschrieben und ändern sich nicht.
+- **Unbezahlt entschuldigte Tage** (Typ „Sonstiges", z. B. ein „unbezahlt frei"-Grund wie Kind krank) **mindern stattdessen das feste Monats-Soll** um die geplanten Stunden — es gibt keine Vergütungspflicht, also auch keine Ist-Gutschrift.
+- Übersteigt das erfasste Monats-Ist (inkl. Gutschriften) die vereinbarte Monatsarbeitszeit, erscheint eine **weiche Warnung** (nicht blockierend) — beim Buchen, im eigenen Überstundenkonto und in der Benutzerübersicht, wie die übrigen MiLoG-Hinweise.
+
+> **⚠️ Bekannte Grenze — volle Fehlmonate:** Liegen die geplanten Tagesstunden deutlich **unter** der vereinbarten Monatszeit (weil ein Teil der Zeit flexibel, ohne festen Plan, gearbeitet wird), deckt die automatische Gutschrift bei einem **einzelnen** Fehltag (Feiertag, ein Urlaubstag) korrekt den geplanten Anteil ab. Fällt jedoch ein **kompletter Monat** durch Urlaub oder Krankheit ganz aus, wird nur der geplante Anteil gutgeschrieben — der **flexible Rest** bleibt als Konto-Defizit stehen. In diesem seltenen Fall ist eine **manuelle Korrektur** durch den Betrieb nötig (z. B. über das Überstundenkonto oder den Jahresübertrag). Für den Regelfall einzelner Fehltage ist die Berechnung vollautomatisch korrekt.
+
+Ist der Modus **nicht** aktiviert, bleibt das Verhalten für alle Mitarbeitenden unverändert (das bestehende Tages-Soll-Modell).
 
 ---
 
@@ -699,7 +843,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.8.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.15.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -758,17 +902,30 @@ PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll –
 
 ### 18.7 Urlaubskonto (Tagesprinzip)
 
-- **Budget** = Jahresanspruch in Tagen (anteilig bei unterjährigem Eintritt/Austritt) + Resturlaub-Carryover.
-- **Verbrauch:** Nur Urlaub belastet das Budget. Jeder freie Arbeitstag kostet **1 Tag** (Halbtag 0,5) – unabhängig von der Stundenzahl des Tages.
+Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip § 3 BUrlG). **Resturlaub = Anspruch − Verbrauch.**
+
+**Anspruch (Budget):**
+- **Jahresanspruch in Tagen** + Resturlaub-Vortrag (Carryover) aus dem Jahresabschluss.
+- **Anteilig (pro rata)** bei unterjährigem Eintritt/Austritt – nach den tatsächlichen Beschäftigungsmonaten.
+- **Teilzeit nach Arbeitstagen/Woche:** Anspruch = `30 × Arbeitstage pro Woche ÷ 5`. Wer weniger Tage pro Woche arbeitet, hat anteilig weniger Urlaubstage; wer 5 (kürzere) Tage arbeitet, behält den vollen Tagesanspruch von 30. Beispielwerte: 5 Tage → 30; 4 Tage → 24; 3 Tage → 18. Der Wert ist beim Anlegen **überschreibbar**.
+
+**Verbrauch:**
+- Nur **Urlaub** belastet das Budget (bezahlte Freistellung, Krank, Fortbildung **nicht**). Jeder freie Arbeitstag kostet **1 Tag** (Halbtag 0,5) – unabhängig von der Stundenzahl des Tages.
+- Als **„Frei" + „zählt als Urlaub"** konfigurierte **Sondertage 24./31.12.** kosten je **1 Urlaubstag** – auch ohne eigenen Abwesenheitseintrag.
 - **Budget-Check** beim Antrag zählt **buchbare Arbeitstage** (Tagessoll > 0). Eine ganze Urlaubswoche kostet einen 3-Tage-Mitarbeiter nur 3 Tage.
-- Jahresanspruch-Vorschlag: `30 × Arbeitstage ÷ 5` (5 Tage → 30; 3 Tage → 18), überschreibbar.
+
+**Beschäftigungsfenster:** Vor dem ersten / nach dem letzten Arbeitstag entstehen **weder Anspruch noch Verbrauch**.
+
+**Live-Anzeige:** Die Konto-Anzeigen rechnen „bis heute" (Stichtag, siehe Abschnitt 18.6); rechtsverbindliche Datei-Exporte rechnen den vollen Zeitraum.
 
 ### 18.8 Sonderfälle
 
-- **Mitarbeiter ohne Stundenzählung (leitende Angestellte):** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (jeder Urlaubs-/Sondertag = 1 Tag).
+- **Mitarbeiter ohne Stundenzählung (leitende Angestellte):** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394).
 - **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
 - **Rückwirkende Stundenänderung:** alte Monate rechnen mit dem damals gültigen Wochensoll (Stundenhistorie / Wirkungsdatum).
+- **Betriebsferien:** je nach Verrechnung Urlaubsabzug oder bezahlte Freistellung; bei aktivem Schalter „Überzählige Betriebsferien als Überstundenabbau" zuerst Urlaub, dann Überstundenausgleich (kein Minus-Urlaub) – Details in [Abschnitt 11](#11-betriebsferien-verwalten).
+- **Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b):** für MA mit aktiviertem Modus gilt statt 18.4/18.5 ein **festes** Monats-Soll (= vereinbarte Monatsarbeitszeit, kalendertag-pro-rata bei Ein-/Austritt); Feiertag/Urlaub/bezahlte Freistellung auf einem geplanten Tag schreiben die geplanten Stunden dem Ist gut, unbezahlte Fehltage mindern stattdessen das feste Soll. Details, Voraussetzungen und die bekannte Fehlmonat-Grenze in [Abschnitt 13 → „Feste Monatsarbeitszeit"](#13-einstellungen).
 
 ### 18.9 Durchgerechnetes Beispiel (Vollzeit)
 
@@ -786,5 +943,77 @@ Urlaubskonto = 30 − 4                     = 26 Tage übrig
 
 ---
 
+## 19. Datensicherung (Backup & Restore)
+
+Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne Kommandozeile — in der Docker- **und** der nativen Installation:
+
+- **Jetzt sichern** — erstellt umgehend ein vollständiges, komprimiertes Backup (`praxiszeit_<Zeitstempel>.sql.gz`, Plain-SQL mit `--clean --if-exists`).
+- **Geplante Sicherung** — tägliche automatische Sicherung zur eingestellten Stunde aktivieren, mit Aufbewahrungsdauer (Tage) und optionalem Speicherort.
+- **Liste** — vorhandene Sicherungen **herunterladen** (für eine externe Kopie) oder löschen.
+
+**Wo:** Docker im Volume `praxiszeit_backups`, native im `data/backups/`-Verzeichnis.
+
+**§16 ArbZG:** Zeitaufzeichnungen mindestens **2 Jahre** aufbewahren — Aufbewahrungsdauer entsprechend setzen, eine Kopie **außerhalb** des Servers vorhalten und vor jedem Update zusätzlich sichern.
+
+> **Native:** Die *geplante* Sicherung läuft weiterhin über den OS-Timer (systemd/launchd/Task); der *manuelle* Trigger und die Liste funktionieren überall.
+
+**Wiederherstellung** (idempotent dank `--clean --if-exists`, kein manuelles Leeren der DB nötig) und alle Kommandozeilen-Varianten: siehe [`docs/BACKUP.md`](../BACKUP.md).
+
+---
+
+## Schichtplanung (optional, standardmäßig deaktiviert)
+
+Mit der **Schichtplanung** erstellen Sie wöchentliche Einsatzpläne (wer steht
+wann an welchem Arbeitsplatz). Sie ist ein **reines Planungswerkzeug** und
+verändert **nicht** Zeiterfassung, Soll/Ist-Stunden, ArbZG-Prüfungen, Urlaub
+oder Überstunden.
+
+**Aktivieren:** **Einstellungen → Schichtplanung → „Schichtplanung aktivieren"
+→ Speichern.** Das Modul ist nach der Installation **aus**; nur Admins können es
+einschalten. Erst danach erscheinen die Menüpunkte und das Dashboard-Widget.
+
+**Geplante Wochentage (#371):** Direkt darunter (nur bei aktiver Schichtplanung)
+legen Sie fest, **welche Wochentage** der Planer anzeigt und plant – Standard
+**Mo–Fr**. Samstag/Sonntag oder ein Schließtag (z. B. Donnerstag) lassen sich
+einzeln zu-/abschalten (mindestens ein Tag muss aktiv bleiben). Ein abgeschalteter
+Tag verschwindet aus der Wochenansicht, nimmt keine neuen Slots auf und wird von
+der Auto-Generierung übersprungen; bereits angelegte Slots bleiben erhalten und
+kehren beim Reaktivieren des Tages zurück.
+
+**Stammdaten:** **Standorte** (optional) und **Arbeitsplätze** (Tresen, Labor,
+Springer … mit Farbe) anlegen. **Schichtpläne:** beliebig viele benannte
+Wochenpläne („Normalzustand", „Azubis Schulferien" …). Im **Wochen-Editor**
+Zeitslots per **Drag & Drop** oder Klick-Dialog über die Woche verteilen,
+**Mitarbeitende** per Drag auf einen Slot ziehen, optional eine
+**Mindestbesetzung** setzen (unterbesetzte Slots werden markiert – weiche
+Warnung, blockiert nicht).
+
+**Aktiv schalten** macht einen Plan für alle sichtbar; **mehrere Pläne können
+gleichzeitig aktiv** sein. Mitarbeitende sehen ihre heutige Einteilung im
+Dashboard.
+
+Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
+fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
+eingewiesenen Person erscheint die weiche Warnung „nicht eingewiesen" (blockiert
+nicht); Mitarbeitende sehen ihre Einweisungen im Profil.
+
+Über **Bearbeiten** setzen Sie pro Plan optional ein **Aktiv-Datums-Fenster**
+(„von/bis"), in dem der Plan automatisch aktiv wird (Jahresübersicht als
+Zeitstrahl). **Automatisch füllen** verteilt eingewiesene, verfügbare
+Mitarbeitende greedy auf die Slots (Zielwoche wählbar, ausgewogen nach
+Auslastung/Überstunden) — als Entwurf zum Review, ohne den Plan zu aktivieren.
+
+Mit dem **Woche/Tag**-Umschalter im Editor zeigen Sie wahlweise die ganze Woche
+oder einen einzelnen Wochentag in voller Breite an (#321). Beim **Bearbeiten**
+eines Slots kopiert **„Auf Wochentage kopieren"** die Schicht inkl. Zuweisungen
+auf weitere Wochentage – praktisch für wiederkehrende Schichten (#322). In der
+Mitarbeiterliste des Editors steht unter jedem Namen die **Auslastung** der
+zugewiesenen Schichtstunden zur Wochenarbeitszeit (z. B. **„15,25 / 17 h"**):
+grün bei ±30 Minuten zur Vertragszeit, gelb bei ±1 Stunde, sonst rot – das
+erleichtert eine ausgewogene Einteilung (#330).
+Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
+
+---
+
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juni 2026 (Version 2.4, für PraxisZeit 1.8.2)*
+*Stand: Juli 2026 (für PraxisZeit 1.15.0)*
