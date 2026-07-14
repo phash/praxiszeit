@@ -413,6 +413,44 @@ def test_settlement_aging_full_current_month_soll_eats_seed(db, employee, monkey
     assert res is not None and res["overdue"] is True and abs(res["hours"] - 8.0) < 0.01
 
 
+def test_settlement_aging_direct_call_applies_313_cutoff(db, employee):
+    """FINDING 8 (review 2026-07-14): a DIRECT ``settlement_aging`` call (no
+    ``detailed`` passed by the caller) must apply the #313 Saldo-Stichtag
+    itself — otherwise the running, unfinished month is compared against a
+    FULL month-Soll while only month-to-date Ist exists, fabricating a phantom
+    deficit that eats the FIFO seed and silently drops MILOG_SETTLEMENT_DUE.
+    Real integration (NO monkeypatch of get_overtime_history_detailed): the
+    employee is only employed from 2026-06-01, has an 8h carryover seed
+    (year=2025 → dated 2024-12, age 18 months → overdue), and has clocked
+    exactly the daily target on every workday from 2026-06-01 up to (but not
+    including) 2026-06-15 — i.e. Soll==Ist up to the #313 cutoff (2026-06-14).
+    Without the cutoff, the FULL June Soll (through 06-30) is compared against
+    the partial Ist → a deficit > 8h wipes the seed → None.
+    """
+    from datetime import time as _time, timedelta
+    from app.models import TimeEntry
+
+    employee.milog_working_time_account = True
+    employee.weekly_hours = Decimal("40")
+    employee.work_days_per_week = 5
+    employee.first_work_day = date(2026, 6, 1)
+    db.commit()
+    db.add(YearCarryover(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, year=2025,
+                         overtime_hours=Decimal("8"), vacation_days=Decimal("0")))
+    d = date(2026, 6, 1)
+    while d < date(2026, 6, 15):
+        if d.weekday() < 5:
+            db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee.id, date=d,
+                             start_time=_time(8, 0), end_time=_time(16, 0), break_minutes=0))
+        d += timedelta(days=1)
+    db.commit()
+
+    res = milog_service.settlement_aging(db, employee, date(2026, 6, 15))
+    assert res is not None, "phantom deficit from the untrimmed running month ate the FIFO seed"
+    assert res["overdue"] is True
+    assert abs(res["hours"] - 8.0) < 0.01
+
+
 def test_users_overview_feeds_settlement_cutoff_trimmed_detail(db, admin, employee, monkeypatch):
     """#377 Regression: die Admin-Benutzerübersicht MUSS get_overtime_history_detailed
     MIT dem Saldo-Stichtag aufrufen (Parität zum MA-Dashboard, #313). Ohne cutoff
