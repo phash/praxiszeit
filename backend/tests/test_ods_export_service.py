@@ -46,6 +46,23 @@ def _mk_absence(db, user, d, typ=AbsenceType.VACATION, hours=8):
     return a
 
 
+def _find_row_cells(doc, table_name, first_cell_text):
+    """Load a specific TableRow by its literal first-cell text (e.g. a
+    "DD.MM.YYYY" date string) from a named Table inside a parsed ODS `doc`
+    and return all its cell texts. Row-precise counterpart to whole-content
+    substring search — a day-row assertion must not be satisfiable by an
+    unrelated summary row that happens to contain the same words."""
+    from odf.table import Table, TableRow, TableCell
+    from odf.teletype import extractText
+    table = [t for t in doc.spreadsheet.getElementsByType(Table)
+             if t.getAttribute("name") == table_name][0]
+    for row in table.getElementsByType(TableRow):
+        cells = row.getElementsByType(TableCell)
+        if cells and extractText(cells[0]) == first_cell_text:
+            return [extractText(c) for c in cells]
+    raise AssertionError(f"no row with first cell {first_cell_text!r} in table {table_name!r}")
+
+
 class TestGenerateMonthlyOdsReport:
 
     def test_returns_bytesio_with_ods_magic(self, db, test_user):
@@ -73,18 +90,73 @@ class TestGenerateMonthlyOdsReport:
         assert data[:2] == ODS_PK_MAGIC
 
     def test_include_health_data_emits_sick_hours(self, db, test_user):
+        """DSGVO Art. 9 positive case: with include_health_data=True the sick
+        absence must be IDENTIFIABLE — label "Krank" + hours must actually
+        appear in content.xml, not just a valid zip envelope."""
+        import zipfile
         _mk_absence(db, test_user, date(2026, 1, 8), AbsenceType.SICK, 8)
-        # include_health_data=True should not crash
         out = generate_monthly_report(db, 2026, 1, include_health_data=True)
-        assert out.read()[:2] == ODS_PK_MAGIC
+        data = out.read()
+        assert data[:2] == ODS_PK_MAGIC
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            content = zf.read("content.xml").decode("utf-8", errors="replace")
+        assert "Krank (8.0h)" in content, (
+            "sick label+hours missing from content.xml despite include_health_data=True"
+        )
 
     def test_excludes_sick_leaks_when_health_data_false(self, db, test_user):
         """DSGVO Art. 9: sick absences must not be identifiable by type when
         the admin did not opt into health-data disclosure."""
+        import zipfile
         _mk_absence(db, test_user, date(2026, 1, 8), AbsenceType.SICK, 8)
         out = generate_monthly_report(db, 2026, 1, include_health_data=False)
         data = out.read()
         assert data[:2] == ODS_PK_MAGIC
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            content = zf.read("content.xml").decode("utf-8", errors="replace")
+        assert "Krank" not in content, (
+            "sick type leaked into content.xml despite include_health_data=False"
+        )
+        assert "Abwesenheit (8.0h)" in content, (
+            "masked label 'Abwesenheit (8.0h)' missing from content.xml"
+        )
+
+    def test_holiday_tenant_scoped(self, db, test_user):
+        """Holidays in the tenant's own set must appear; others must not
+        leak into the export (regression test for the tenant_id-filter fix).
+
+        Uses generate_monthly_report — NOT generate_yearly_report_classic,
+        which never renders a holiday NAME at all (only _monthly_sheet /
+        _yearly_employee_sheet put `holiday.name` into the Abwesenheit
+        column); testing tenant-scoping against the classic report would
+        assert against a function that structurally can't leak the name."""
+        import zipfile
+        from app.models.tenant import Tenant
+
+        other_tenant = Tenant(name="Andere Praxis", slug="andere-praxis-ods-holiday")
+        db.add(other_tenant)
+        db.commit()
+        db.refresh(other_tenant)
+
+        # Holiday for the current tenant
+        db.add(PublicHoliday(
+            date=date(2026, 5, 1), name="Tag der Arbeit (eigene)",
+            year=2026, tenant_id=DEFAULT_TENANT_ID,
+        ))
+        # Same date, a DIFFERENT tenant's holiday with a distinguishable name.
+        db.add(PublicHoliday(
+            date=date(2026, 5, 1), name="Fremdfeiertag XYZ",
+            year=2026, tenant_id=other_tenant.id,
+        ))
+        db.commit()
+
+        out = generate_monthly_report(db, 2026, 5)
+        data = out.read()
+        assert data[:2] == ODS_PK_MAGIC
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            content = zf.read("content.xml").decode("utf-8", errors="replace")
+        assert "Tag der Arbeit (eigene)" in content, "own tenant's holiday missing from export"
+        assert "Fremdfeiertag XYZ" not in content, "other tenant's holiday leaked into export"
 
 
 class TestGenerateYearlyOdsReport:
@@ -106,23 +178,6 @@ class TestGenerateYearlyClassicOdsReport:
     def test_returns_valid_ods(self, db, test_user):
         out = generate_yearly_report_classic(db, 2026)
         assert out.read()[:2] == ODS_PK_MAGIC
-
-    def test_holiday_tenant_scoped(self, db, test_user):
-        """Holidays in the tenant's own set must appear; others must not
-        leak into the export (regression test for the tenant_id-filter fix)."""
-        # Holiday for the current tenant
-        h_own = PublicHoliday(
-            date=date(2026, 5, 1),
-            name="Tag der Arbeit (eigene)",
-            year=2026,
-            tenant_id=DEFAULT_TENANT_ID,
-        )
-        db.add(h_own)
-        db.commit()
-
-        out = generate_yearly_report_classic(db, 2026)
-        data = out.read()
-        assert data[:2] == ODS_PK_MAGIC
 
 
 class TestFormulaInjection:
@@ -321,13 +376,43 @@ class TestOdsMultiAbsenceDay:
     def test_monthly_renders_both_absences_on_multitype_day(self, db, test_user):
         # Regression: die ODS-Detailsheets keyten Absences per date-dict → der 2.
         # Eintrag eines Misch-Tags (½ Urlaub + ½ Sonstiges) ging verloren.
-        import zipfile
+        #
+        # A whole-content substring search ("Urlaub" in content and "Sonstiges"
+        # in content) is defeated by the sheet's own unconditional summary rows
+        # ("Urlaub genommen (Std):" / "Urlaub Rest (Std):" always contain
+        # "Urlaub" regardless of whether the day-row itself renders it) — so it
+        # would stay green even if the 2nd absence of the mixed day were lost
+        # again. Locate the SPECIFIC day-row instead and assert both labels are
+        # in ITS Abwesenheit cell.
+        from odf.opendocument import load
         _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.VACATION, hours=4)
         _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.OTHER, hours=4)
         out = generate_monthly_report(db, 2026, 3, include_health_data=True)
-        with zipfile.ZipFile(out) as zf:
-            content = zf.read("content.xml").decode("utf-8", errors="replace")
-        assert "Urlaub" in content and "Sonstiges" in content
+        doc = load(out)
+        table_name = f"{test_user.last_name} {test_user.first_name}"[:31]
+        cells = _find_row_cells(doc, table_name, "04.03.2026")
+        abwesenheit_cell = cells[8]  # Spalte 9 (0-indexed 8) = Abwesenheit
+        assert "Urlaub" in abwesenheit_cell and "Sonstiges" in abwesenheit_cell, (
+            f"mixed-day row must show BOTH absence labels, got: {abwesenheit_cell!r}"
+        )
+
+    def test_yearly_employee_sheet_renders_both_absences_on_multitype_day(self, db, test_user):
+        """Finding 13 parity: the ODS yearly-employee day-grid
+        (_yearly_employee_sheet, used by generate_yearly_report) must render
+        BOTH absences of a mixed day too — same bug class/fix as the monthly
+        sheet above, but a separate code path (own day-loop, own
+        _absence_cell_parts call)."""
+        from odf.opendocument import load
+        _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.VACATION, hours=4)
+        _mk_absence(db, test_user, date(2026, 3, 4), AbsenceType.OTHER, hours=4)
+        out = generate_yearly_report(db, 2026, include_health_data=True)
+        doc = load(out)
+        table_name = f"{test_user.last_name} {test_user.first_name}"[:31]
+        cells = _find_row_cells(doc, table_name, "04.03.2026")
+        abwesenheit_cell = cells[8]
+        assert "Urlaub" in abwesenheit_cell and "Sonstiges" in abwesenheit_cell, (
+            f"mixed-day row must show BOTH absence labels, got: {abwesenheit_cell!r}"
+        )
 
     def test_classic_has_overtime_column(self, db, test_user):
         import zipfile
