@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-07-15
+
+Patch-Release. Behebt einen Weißbild-Absturz (#382) in der Admin-Dashboard-
+Detailansicht und liefert die auf 1.15.0-Stand gebrachte Nutzer-Doku samt
+In-App-Hilfe aus. Kein Backend-/Berechnungs-Code geändert, keine Migration,
+keine neuen Abhängigkeiten, keine Installer-Änderungen.
+
+### 🐛 Behoben
+- **Weißbild „Etwas ist schiefgelaufen" beim Klick auf einen eingestempelten
+  Mitarbeiter (#382).** Ein laufender (eingestempelter, noch nicht
+  ausgestempelter) Zeiteintrag hat `end_time = null`. Die Zeiteintrags-Tabelle
+  der Admin-Dashboard-Detailansicht rief `end_time.substring(…)` ungeguardet
+  auf → Render-Absturz (ErrorBoundary) für jeden Mitarbeiter, der gerade
+  eingestempelt ist. Neuer null-sicherer Helper `formatClockTime` (offener
+  Eintrag → „offen"); der lokale `TimeEntry`-Typ deklariert `end_time` jetzt
+  korrekt als nullbar (Compile-Time-Schutznetz gegen erneutes Auftreten).
+  Anders als der Teil-Fix in 1.14.1 (#388, der nur den 200-mit-HTML-Body-Fall
+  abfing) ist dies ein Render-Crash auf validen Daten.
+
+### 📖 Dokumentation
+- **Berechnungsdoku, Handbücher, Cheat-Sheets & In-App-Hilfe auf 1.15.0-Stand.**
+  `docs/BERECHNUNGEN.md` deutlich erweitert (Betriebsferien inkl. #314/#394,
+  Minijob/MiLoG inkl. festem Monats-Soll, Saldo-Stichtag #313, eigene
+  Abwesenheitsgründe/Kind krank, tagebasierte Zählung); Admin-/Mitarbeiter-
+  Handbücher + Cheat-Sheets, In-App-Hilfe (`DocViewer` + downloadbarer
+  `/help/*.md`-Mirror) synchron nachgezogen. Faktengeprüft gegen den
+  Berechnungs-Code.
+
 ## [1.15.0] - 2026-07-14
 
 Minor-Release. Neues Minijob-Feature (#377 Baustein 2b) + projektweiter

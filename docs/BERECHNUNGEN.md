@@ -228,7 +228,7 @@ einem `unpaid_free`-`OTHER`-Tag.
 Für „Kind krank" gilt zusätzlich ein weiches **§45-SGB-V-Limit**: `child_sick_cap()` liefert
 den Jahresanspruch in Tagen (`User.child_sick_days_per_year`, sonst Tenant-Setting
 `child_sick_days_default`, Default 15); `child_sick_days_used()` zählt **tagebasiert** (wie
-§6.2/§8.2) die Absenzen eines als `tracks_child_sick_limit` markierten Grundes. Wird das
+§8.2) die Absenzen eines als `tracks_child_sick_limit` markierten Grundes. Wird das
 Limit überschritten, erscheint die weiche Warnung `CHILD_SICK_LIMIT` — sie blockiert die
 Buchung **nie**.
 

@@ -36,7 +36,7 @@ interface TimeEntry {
   id: string;
   date: string;
   start_time: string;
-  end_time: string;
+  end_time: string | null; // #382: null bei offenem (eingestempeltem) Eintrag — Deref nur über formatClockTime
   break_minutes: number;
   note?: string;
 }
