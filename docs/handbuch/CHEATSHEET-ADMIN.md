@@ -126,7 +126,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 - Bezeichnung + Von–Bis + **Verrechnung** → Speichern
 - → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Einträge an ihren **Arbeitstagen** – rollenunabhängig (auch Admins, die MA sind)
 - **Nicht gebucht:** Wochenende, Feiertage, freie Wochentage (Teilzeit), „Frei"-Sondertage (24./31.12.), außerhalb des Beschäftigungszeitraums (Eintritt/Austritt), Tage mit vorhandener Abwesenheit
-- **Verrechnung:** *Als Urlaub werten* (**Standard**, zieht 1 Urlaubstag je Tag) **oder** *Bezahlte Freistellung* (kein Urlaubsabzug, saldoneutral)
+- **Verrechnung:** *Als Urlaub werten* (**Standard**, zieht 1 Urlaubstag je Tag, an einem Halbtags-Sondertag 24./31.12. nur 0,5, #394) **oder** *Bezahlte Freistellung* (kein Urlaubsabzug, saldoneutral)
 - Nachträglich Berechtigte: Option setzen → Einträge werden **automatisch** für laufende und künftige Betriebsferien nachgetragen (Neu-Speichern nicht nötig)
 - Löschen: Einträge werden bei allen MA automatisch entfernt
 
@@ -181,7 +181,7 @@ Erscheinen beim Buchen unter „Eigene Gründe". Im Team-Kalender für Kolleg:in
 
 **Kind krank (#376):** Ein „unbezahlt frei"-Grund mit gesetztem **Kind-krank-Limit** zählt gegen den §45-SGB-V-Jahresanspruch (Default 15 Tage, pro MA überschreibbar). Überschreitung → **weiche Warnung** beim Buchen (nie blockierend). Verbrauch je MA in der **Benutzerübersicht**.
 **Minijob/MiLoG (#377):** Opt-in „Arbeitszeitkonto (§2 Abs.2 MiLoG)" je MA → weiche Warnungen bei >50 % Monats-Plus + 12-Monats-Ausgleichsfrist. Mindestlohn 13,90 €/h (2026), 14,60 €/h (2027).
-**Feste Monatsarbeitszeit (#377 Baustein 2b):** zusätzliches Opt-in je MA (nur bei aktivem Arbeitszeitkonto, „Vereinbarte Monatsarbeitszeit" wird Pflicht) → Monats-Soll fix = vereinbarte Monatszeit (pro-rata bei Ein-/Austritt) statt Tagessoll-Summe. Geplante Tagesstunden = reine Gutschrift-Basis: Feiertag/Urlaub/bez. Freistellung auf geplantem Tag → Ist-Gutschrift; unbezahlt (Sonstiges) → Soll-Minderung. Weiche Warnung bei Ist > vereinbart. **Grenze:** ganze Fehlmonate bei deutlich unter der Monatszeit liegenden Tagesstunden gleicht die Automatik nur teilweise aus (Rest = manuelle Korrektur); einzelne Fehltage sind korrekt.
+**Feste Monatsarbeitszeit (#377 Baustein 2b):** zusätzliches Opt-in je MA (nur bei aktivem Arbeitszeitkonto **+** Stundenzählung, „Vereinbarte Monatsarbeitszeit" wird Pflicht) → Monats-Soll fix = vereinbarte Monatszeit (kalendertag-anteilig bei Ein-/Austritt) statt Tagessoll-Summe. Geplante Tagesstunden = reine Gutschrift-Basis: Feiertag/Urlaub/bez. Freistellung auf geplantem Tag → Ist-Gutschrift (Krank/Fortbildung laufen separat, keine Doppelgutschrift); unbezahlt (Sonstiges) → Soll-Minderung. Weiche Warnung bei Ist > vereinbart. **Grenze:** ganze Fehlmonate bei deutlich unter der Monatszeit liegenden Tagesstunden gleicht die Automatik nur teilweise aus (Rest = manuelle Korrektur); einzelne Fehltage sind korrekt.
 
 ---
 

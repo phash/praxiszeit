@@ -279,7 +279,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Das Dashboard zeigt Ihren <strong>Tagessaldo</strong> (heute: Ist vs. Tagessoll), den <strong>Monatssaldo</strong> (Ist – Soll in H:MM), den kumulierten Jahressaldo und das Urlaubskonto.</p>
-        <p>Im <strong>laufenden Monat</strong> zählt das Soll nur bis zum <strong>letzten abgeschlossenen Arbeitstag</strong> – Sie starten den Monat also nicht mit einem dicken Minus; der heutige Tag zählt mit, sobald Sie <strong>ausgestempelt</strong> haben. Abgeschlossene Monate entsprechen dem vollen Monat.</p>
+        <p>Im <strong>laufenden Monat</strong> zählt das Soll nur bis zum <strong>letzten abgeschlossenen Arbeitstag</strong> – Sie starten den Monat also nicht mit einem dicken Minus; der heutige Tag zählt mit, sobald Sie <strong>ausgestempelt</strong> haben. Abgeschlossene Monate entsprechen dem vollen Monat. Das <strong>Überstundenkonto</strong> folgt für den laufenden Monat demselben Stichtag – auch hier entsteht am Monatsanfang kein künstliches Minus.</p>
         <p>Grüner Saldo = Überstunden, roter Saldo = Fehlstunden. Auf mobilen Geräten wird die untere Tab-Leiste zur Navigation genutzt.</p>
       </div>
     ),
@@ -332,13 +332,13 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '7. Abwesenheiten eintragen',
     content: (
       <div className="space-y-2">
-        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Sonstiges) und das Datum. Hat Ihre Praxis zusätzliche Gründe eingerichtet (z. B. „Schule"), erscheinen diese in der Typ-Auswahl unter <strong>„Eigene Gründe"</strong>.</p>
+        <p>Navigieren Sie zu <strong>Abwesenheiten</strong> und klicken Sie auf <strong>+ Abwesenheit eintragen</strong>. Wählen Sie den Typ (Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges) und das Datum. Hat Ihre Praxis zusätzliche Gründe eingerichtet (z. B. „Schule"), erscheinen diese in der Typ-Auswahl unter <strong>„Eigene Gründe"</strong>.</p>
         <p className="text-gray-700"><strong>Kind krank (§45 SGB V):</strong> Ist der Grund „Kind krank" eingerichtet, wählen Sie ihn wie einen normalen Typ. Der Tag gilt als <strong>entschuldigt</strong> – keine Minusstunden, <strong>kein</strong> Urlaubsabzug, aber <strong>unbezahlt</strong> (die Krankenkasse zahlt ggf. Kinderkrankengeld). Ist Ihr Jahresanspruch aufgebraucht, erscheint ein Hinweis – der Tag wird <strong>trotzdem eingetragen</strong>.</p>
         <p>Für Zeiträume aktivieren Sie die Checkbox <strong>„Zeitraum"</strong> und geben ein Enddatum an. Wochenenden und Feiertage werden automatisch ausgeschlossen.</p>
         <p>Hat Ihre Praxis <strong>Heiligabend (24.12.)</strong> oder <strong>Silvester (31.12.)</strong> als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert: grau „Heiligabend (frei)" bzw. amber „Silvester (½ Tag)" – ähnlich einem Feiertag.</p>
         <p>Wenn Urlaubsgenehmigungspflicht aktiv ist, wechselt die App nach dem Absenden automatisch zum Tab <strong>„Meine Anträge"</strong>.</p>
         <p className="text-gray-700"><strong>So wird Urlaub berechnet:</strong> nach dem Tagesprinzip (§3 BUrlG) – <strong>ein freier Arbeitstag = genau 1 Urlaubstag</strong>, egal wie viele Stunden Sie an dem Tag arbeiten. Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage haben. Ihr Urlaubskonto zeigt die verbleibenden Tage.</p>
-        <p className="text-gray-700"><strong>Betriebsferien (Praxisschließung):</strong> Bei Betriebsferien trägt die App Ihre Abwesenheiten an Ihren Arbeitstagen <strong>automatisch</strong> ein – Sie müssen nichts selbst buchen. Je nach Einstellung Ihrer Praxis zählen die Tage als <strong>bezahlte Freistellung</strong> (kein Urlaubsabzug) oder als <strong>Urlaub</strong>. Reicht Ihr Urlaub für die Schließung nicht, wird – wenn Ihre Praxis das so eingestellt hat – zuerst Ihr Urlaub verbraucht und der Rest als <strong>Überstundenabbau</strong> gebucht (Ihr Überstundenkonto sinkt und kann ins Minus gehen), sodass kein Minus-Urlaub entsteht. Die genaue Verrechnung legt die Praxisleitung fest.</p>
+        <p className="text-gray-700"><strong>Betriebsferien (Praxisschließung):</strong> Bei Betriebsferien trägt die App Ihre Abwesenheiten an Ihren Arbeitstagen <strong>automatisch</strong> ein – Sie müssen nichts selbst buchen. Je nach Einstellung Ihrer Praxis zählen die Tage als <strong>bezahlte Freistellung</strong> (kein Urlaubsabzug) oder als <strong>Urlaub</strong>. Reicht Ihr Urlaub für die Schließung nicht, wird – wenn Ihre Praxis das so eingestellt hat – zuerst Ihr Urlaub verbraucht und der Rest als <strong>Überstundenabbau</strong> gebucht (Ihr Überstundenkonto sinkt und kann ins Minus gehen), sodass kein Minus-Urlaub entsteht. Die genaue Verrechnung legt die Praxisleitung fest. Fällt ein als „halber Feiertag" eingestellter Sondertag (24./31.12.) in die Schließung, wird dafür nur ein <strong>halber</strong> Urlaubs- bzw. Überstundentag verrechnet. Anders als bei einer selbst eingetragenen Urlaubsbuchung gibt es bei Betriebsferien <strong>keine Budget-Grenze</strong> – Ihre Praxisleitung kann die Schließung auch anordnen, wenn Ihr Resturlaub dafür nicht reicht.</p>
       </div>
     ),
   },
@@ -351,6 +351,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
         <p><strong>Saldo</strong> = Ist − Soll (grün = Mehrarbeit, rot = Minusstunden). Das <strong>Überstundenkonto</strong> summiert die Salden seit Jahresbeginn inkl. Vorjahresübertrag.</p>
         <p><strong>Überstundenausgleich:</strong> Das Soll bleibt, der Tag zählt als 0 Stunden → Ihr Überstundenkonto sinkt.</p>
         <p className="text-gray-700"><strong>Urlaub (Tagesprinzip, §3 BUrlG):</strong> 1 freier Arbeitstag = 1 Urlaubstag, egal wie lang der Tag ist (Halbtag = 0,5).</p>
+        <p className="text-gray-700"><strong>Minijob mit fester Monatsarbeitszeit:</strong> Führt Ihre Praxis Sie mit einer <strong>festen vereinbarten Monatsarbeitszeit</strong> statt des obigen, aus Wochenstunden berechneten Solls, zeigt Ihr Monatssaldo jeden Monat dasselbe feste Soll (anteilig bei unterjährigem Ein-/Austritt). Feiertage sowie Urlaub oder bezahlte Freistellung an einem für Sie geplanten Arbeitstag werden dabei automatisch mit den geplanten Stunden gutgeschrieben; unbezahlt freie Tage mindern stattdessen das Monatssoll. Am Überstundenkonto kann dann ein weicher, nicht blockierender Hinweis erscheinen (§ 2 Abs. 2 MiLoG). Ob dieses Modell für Sie gilt, legt Ihre Praxisleitung fest.</p>
       </div>
     ),
   },
@@ -407,6 +408,7 @@ export const handbuchAdminSections: AccordionItem[] = [
         <p><strong>Erster/Letzter Arbeitstag</strong> begrenzen die Soll-Berechnung: vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll. Die Übersicht zeigt je MA Urlaubskonto <strong>und</strong> Überstundensaldo (Jahr bis heute; „—" ohne Stundenzählung).</p>
         <p className="text-amber-700">⚠️ Bei <strong>unterjährigem Eintritt</strong> (nicht seit 1. Januar im System) den „Ersten Arbeitstag" unbedingt setzen – sonst zählt das Soll auch Tage vor dem Eintritt und es entstehen Phantom-Minusstunden.</p>
         <p><strong>Soll-Arbeitszeiten (Arbeitszeit-Fenster):</strong> Im Benutzerformular können Sie pro MA und Wochentag Soll-Beginn und Soll-Ende hinterlegen. Zeiten außerhalb des Fensters (abzüglich Puffer) werden nicht angerechnet; der gestempelte Rohwert bleibt gespeichert (§16). Der systemweite Puffer (Standard 15 Min.) ist unter <strong>Einstellungen → Arbeitszeit-Fenster Puffer</strong> konfigurierbar. Opt-in: ohne Soll-Zeiten kein Eingriff. MA mit deaktivierter Stundenzählung sind ausgenommen.</p>
+        <p><strong>Minijob / Arbeitszeitkonto (§ 2 Abs. 2 MiLoG):</strong> Für Minijobber:innen auf Arbeitszeitkonto aktivieren Sie im Formular die Checkbox „Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)" und tragen optional die „Vereinbarte Monatsarbeitszeit (h)" ein (leer = automatisch aus Wochenstunden × 13/3). Zusätzlich aktivierbar: „<strong>Feste Monatsarbeitszeit</strong>" – dann ist das Monats-Soll jeden Monat fix die vereinbarte Monatszeit, statt aus Wochenstunden/Arbeitstagen zu schwanken (setzt das Arbeitszeitkonto und eine eingetragene Monatszeit voraus). Details zu den weichen MiLoG-Warnungen und zur festen Monatsarbeitszeit: Abschnitt „Eigene Abwesenheitsgründe, Kind krank &amp; Minijob".</p>
         <p><strong>Kalenderfarbe:</strong> Im Benutzerformular können Sie die Kalenderfarbe aus einer Palette für jede:n Mitarbeiter:in vorgeben (Badge-Ring im Teamkalender); der/die Mitarbeiter:in kann sie auch selbst im Profil ändern.</p>
         <p><strong>Monatsjournal:</strong> Das Buch-Symbol in der Aktionsspalte öffnet das Monatsjournal des/der Mitarbeitenden. Die Überschrift trägt den Namen – <strong>„Monatsjournal: Vorname Nachname"</strong> –, damit beim Wechsel zwischen Personen sofort klar ist, wessen Journal angezeigt wird.</p>
         <p><strong>Login als … (Ansicht als Mitarbeiter:in):</strong> Das Anmelde-Symbol in der Aktionsspalte (nur bei aktiven Mitarbeitenden) öffnet die App aus deren Sicht – nützlich, um das Mitarbeiter-Dashboard zu prüfen oder ein Problem nachzustellen. Die Ansicht ist <strong>ausschließlich lesend</strong>: Stempeln, Anträge und alle Änderungen sind gesperrt. Ein Hinweisbanner oben zeigt dauerhaft „Sie sehen PraxisZeit als … – nur Lesen"; über <strong>„Zurück zu Admin"</strong> kehren Sie zu Ihrem Konto zurück. Jede solche Sitzung wird protokolliert (wer, wen, wann – DSGVO-Rechenschaftspflicht).</p>
@@ -474,7 +476,19 @@ export const handbuchAdminSections: AccordionItem[] = [
     ),
   },
   {
-    title: '8. ArbZG-Berichte & Compliance',
+    title: '8. Eigene Abwesenheitsgründe, Kind krank & Minijob',
+    content: (
+      <div className="space-y-2">
+        <p><strong>Eigene Abwesenheitsgründe (#312):</strong> Unter <strong>Einstellungen → „Eigene Abwesenheitsgründe"</strong> legen Sie zusätzliche, frei benannte Gründe an (z. B. „Schule" für Auszubildende) – mit eigener Farbe und einem fixen <strong>Basis-Verhalten</strong>: <em>„Zählt als gearbeitet"</em> (wie Fortbildung, z. B. Berufsschule), <em>„Bezahlt frei"</em> (Tagessoll → 0, saldoneutral, kein Urlaubsabzug), <em>„Unbezahlt frei"</em> (wie „Bezahlt frei", aber Lohn gekürzt – für Kind krank oder unbezahlten Sonderurlaub) oder <em>„Überstundenabbau"</em> (Überstundenkonto sinkt um das Tagessoll). Das Basis-Verhalten ist nach dem Anlegen fix; Gründe lassen sich umbenennen, umfärben und deaktivieren. Sie erscheinen beim Buchen unter „Eigene Gründe".</p>
+        <p className="text-gray-700"><strong>Datenschutz:</strong> Da ein eigener Grund sensibel sein kann (z. B. „Reha"), zeigt der Team-Kalender Abwesenheiten mit eigenem Grund für andere Mitarbeitende nur als <strong>„abwesend"</strong> – nur Admins sehen die Bezeichnung.</p>
+        <p><strong>Kind krank &amp; Sonderurlaub-Vorlagen (#376):</strong> Unter „Vorlagen (1-Klick aktivieren)" legen Sie gängige Gründe direkt an – Kind krank, Todesfall, Hochzeit, Geburt, Umzug, Arztbesuch, Pflege. <strong>Kind krank</strong> (§45 SGB V) ist „unbezahlt frei" und wird pro Kalenderjahr gezählt: Standardanspruch unter <strong>Einstellungen → „Kind-krank-Standardanspruch"</strong> (Voreinstellung 15 Tage), pro Mitarbeiter:in im Benutzerformular überschreibbar. Bei Überschreitung erscheint beim Buchen ein <strong>Hinweis</strong> – die Abwesenheit wird trotzdem erfasst, nicht blockiert. Verbrauch je Person in der Benutzerübersicht.</p>
+        <p><strong>Minijob / Arbeitszeitkonto (§ 2 Abs. 2 MiLoG, #377):</strong> Für Minijobber:innen auf Arbeitszeitkonto aktivieren Sie im Benutzerformular „Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)". PraxisZeit warnt dann <strong>weich</strong> (nichts wird blockiert): bei <strong>&gt; 50 %</strong> Konto-Plusstunden der vereinbarten Monatsarbeitszeit und bei überfälligem <strong>12-Monats-Ausgleich</strong>. Die vereinbarte Monatsarbeitszeit tragen Sie im Feld „Vereinbarte Monatsarbeitszeit (h)" ein (leer = automatisch Wochenstunden × 13/3); der aktuelle gesetzliche Mindestlohn steht unter <strong>Einstellungen → „Gesetzlicher Mindestlohn"</strong>. Die Grenze bindet nur mindestlohnwirksame Stunden; PraxisZeit speichert keine Lohndaten und prüft daher nicht die 603-€-Grenze.</p>
+        <p className="text-gray-700"><strong>Feste Monatsarbeitszeit (Baustein 2b):</strong> Bei aktivem Arbeitszeitkonto zusätzlich aktivierbar: „Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)". Statt der Tagessoll-Summe zählt dann jeden Monat exakt die vereinbarte Monatszeit als Soll (anteilig bei unterjährigem Ein-/Austritt). Feiertag, Urlaub oder bezahlte Freistellung an einem geplanten Tag schreiben die geplanten Stunden dem Ist gut; ein unbezahlt entschuldigter Tag mindert stattdessen das feste Soll. Weiche Warnung, wenn das Monats-Ist die vereinbarte Zeit übersteigt. Bekannte Grenze: Fällt ein <strong>ganzer</strong> Monat durch Urlaub/Krankheit aus und liegen die geplanten Tagesstunden deutlich unter der Monatszeit, deckt die Gutschrift nur den geplanten Anteil ab – der flexible Rest bleibt Konto-Defizit und braucht eine manuelle Korrektur. Details in Abschnitt „Berechnungsgrundlagen".</p>
+      </div>
+    ),
+  },
+  {
+    title: '9. ArbZG-Berichte & Compliance',
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Berichte</strong> (nach unten scrollen) finden Sie: <strong>§5 Ruhezeitverstöße</strong> (&lt;11h zwischen Arbeitstagen), <strong>§6 Nachtarbeit</strong> (≥48 Nachtarbeitstage/Jahr), <strong>§11 Sonntagsarbeit</strong> (max. 37/Jahr) und <strong>§11 Ersatzruhetag</strong> (Fristen überwachen). Erfasste Pflicht-Pause-Ausnahmen samt Begründung sind ebenfalls einsehbar.</p>
@@ -484,7 +498,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     ),
   },
   {
-    title: '9. Audit-Log & Fehler-Monitoring',
+    title: '10. Audit-Log & Fehler-Monitoring',
     content: (
       <div className="space-y-2">
         <p>Das <strong>Änderungsprotokoll</strong> zeichnet alle Aktionen unveränderlich auf (Login, Zeiteinträge, Abwesenheiten, Benutzerverwaltung, Korrekturanträge). Dient als Nachweis gem. §16 ArbZG bei Betriebsprüfungen.</p>
@@ -493,7 +507,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     ),
   },
   {
-    title: '10. Berechnungsgrundlagen (Soll, Ist, Überstunden, Urlaub)',
+    title: '11. Berechnungsgrundlagen (Soll, Ist, Überstunden, Urlaub)',
     content: (
       <div className="space-y-2">
         <p><strong>Tagessoll</strong> = Wochenstunden ÷ Arbeitstage pro Woche – der Divisor ist <strong>nicht</strong> fix 5 (24 h auf 3 Tage = 8 h/Tag). Individuelle Tagesstunden je Wochentag sind möglich; Wochenende/Feiertag/außerhalb des Beschäftigungszeitraums = 0.</p>
@@ -501,13 +515,13 @@ export const handbuchAdminSections: AccordionItem[] = [
         <p><strong>Abwesenheiten:</strong> Urlaub, bezahlte Freistellung &amp; Sonstige senken das Soll; Krank &amp; Fortbildung füllen das Ist auf (saldo-neutral); der Überstundenausgleich lässt das Soll stehen (Ist 0 h) und baut Überstunden ab.</p>
         <p><strong>Überstundenkonto</strong> = fortlaufende Summe der Monatssalden ab dem Jahresübertrag. Die Spalte „Überstunden (JTD)" zeigt 1. Januar bis heute zzgl. Carryover.</p>
         <p><strong>Urlaub (Tagesprinzip §3 BUrlG):</strong> 1 freier Arbeitstag = 1 Tag (Halbtag 0,5), unabhängig von der Stundenzahl. Anspruch <code>30 × Arbeitstage ÷ 5</code>, anteilig bei unterjährigem Eintritt/Austritt, zzgl. Resturlaub-Vortrag (Carryover). Nur Urlaub belastet das Budget; ein als „Frei + zählt als Urlaub" konfigurierter Sondertag (24./31.12.) kostet ebenfalls 1 Tag. Vor Eintritt/nach Austritt: kein Anspruch und kein Verbrauch.</p>
-        <p><strong>Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b):</strong> Für MA mit diesem Opt-in gilt statt der obigen Tagessoll-Summe ein <strong>festes</strong> Monats-Soll (= vereinbarte Monatsarbeitszeit, kalendertag-pro-rata bei Ein-/Austritt); Feiertag/Urlaub/bezahlte Freistellung an geplanten Tagen schreiben die geplanten Stunden dem Ist gut statt das Soll zu senken, unbezahlte Fehltage (Sonstiges) mindern stattdessen das feste Soll. Details in Abschnitt 13 „Einstellungen".</p>
+        <p><strong>Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b):</strong> Für MA mit diesem Opt-in gilt statt der obigen Tagessoll-Summe ein <strong>festes</strong> Monats-Soll (= vereinbarte Monatsarbeitszeit, kalendertag-pro-rata bei Ein-/Austritt); Feiertag/Urlaub/bezahlte Freistellung an geplanten Tagen schreiben die geplanten Stunden dem Ist gut statt das Soll zu senken, unbezahlte Fehltage (Sonstiges) mindern stattdessen das feste Soll. Details in Abschnitt 8 „Eigene Abwesenheitsgründe, Kind krank & Minijob".</p>
         <p className="text-gray-500">Vollständige Formeln und durchgerechnete Beispiele: <code>docs/BERECHNUNGEN.md</code> bzw. Admin-Handbuch-Anhang „Berechnungsgrundlagen".</p>
       </div>
     ),
   },
   {
-    title: '11. Datensicherung (Backup & Restore)',
+    title: '12. Datensicherung (Backup & Restore)',
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Datensicherung</strong> erstellen Sie jederzeit eine vollständige, komprimierte Sicherung der Datenbank (<strong>Jetzt sichern</strong>) oder aktivieren eine <strong>tägliche automatische Sicherung</strong> mit Aufbewahrungsdauer und optionalem Speicherort.</p>
@@ -518,7 +532,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     ),
   },
   {
-    title: '12. Schichtplanung (optional)',
+    title: '13. Schichtplanung (optional)',
     content: (
       <div className="space-y-2">
         <p>Die <strong>Schichtplanung</strong> ist <strong>standardmäßig deaktiviert</strong>. Sie aktivieren sie unter <strong>Einstellungen → Schichtplanung</strong>. Erst danach erscheinen die Menüpunkte <strong>Schichtplanung</strong> (Admin) und <strong>Schichtplan</strong> (alle) und das Dashboard-Widget.</p>
