@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, formatHoursHMText, parseHours } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -72,5 +72,21 @@ describe('parseHours', () => {
   it('returns 0 for empty/invalid input', () => {
     expect(parseHours('')).toBe(0);
     expect(parseHours('abc')).toBe(0);
+  });
+});
+
+describe('formatClockTime', () => {
+  it('truncates a "HH:MM:SS" backend time to "HH:MM"', () => {
+    expect(formatClockTime('08:30:00')).toBe('08:30');
+    expect(formatClockTime('17:05')).toBe('17:05');
+  });
+
+  it('#382: null/undefined end_time (open, running entry) does NOT throw and uses the fallback', () => {
+    // A clocked-in entry has end_time=null; `null.substring()` used to crash the
+    // Admin-Dashboard detail view (ErrorBoundary "Etwas ist schiefgelaufen").
+    expect(formatClockTime(null)).toBe('–');
+    expect(formatClockTime(undefined)).toBe('–');
+    expect(formatClockTime(null, 'offen')).toBe('offen');
+    expect(formatClockTime(undefined, '17:00')).toBe('17:00');
   });
 });
