@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { formatHoursHM, parseHours } from '../../utils/formatters';
+import { formatHoursHM, parseHours, formatClockTime } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
@@ -326,8 +326,8 @@ export default function AdminDashboard() {
     setShowNewEntryForm(false);
     setEntryForm({
       date: entry.date,
-      start_time: entry.start_time.substring(0, 5),
-      end_time: entry.end_time.substring(0, 5),
+      start_time: formatClockTime(entry.start_time, '08:00'),
+      end_time: formatClockTime(entry.end_time, '17:00'),
       break_minutes: entry.break_minutes,
       note: entry.note || '',
       entry_type: 'work',
@@ -1405,8 +1405,8 @@ export default function AdminDashboard() {
                             {employeeTimeEntries.map((entry) => (
                               <tr key={entry.id} className="hover:bg-gray-50">
                                 <td className="px-4 py-2 text-sm">{format(new Date(entry.date), 'dd.MM.yyyy')}</td>
-                                <td className="px-4 py-2 text-sm">{entry.start_time.substring(0, 5)}</td>
-                                <td className="px-4 py-2 text-sm">{entry.end_time.substring(0, 5)}</td>
+                                <td className="px-4 py-2 text-sm">{formatClockTime(entry.start_time)}</td>
+                                <td className="px-4 py-2 text-sm">{formatClockTime(entry.end_time, 'offen')}</td>
                                 <td className="px-4 py-2 text-sm">{entry.break_minutes} min</td>
                                 <td className="px-4 py-2 text-sm text-gray-500">{entry.note || '-'}</td>
                                 <td className="px-4 py-2 text-right text-sm space-x-1">

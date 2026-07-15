@@ -52,3 +52,19 @@ export function parseHours(value: string): number {
   const n = parseFloat(value);
   return Number.isFinite(n) ? n : 0;
 }
+
+/**
+ * #382: Null-safe "HH:MM" from a backend time string ("HH:MM:SS").
+ *
+ * A clocked-in (running) TimeEntry has `end_time === null` (the column is
+ * nullable). Calling `entry.end_time.substring(0, 5)` on such a row threw
+ * `Cannot read properties of null` in the Admin-Dashboard detail view →
+ * ErrorBoundary white-screen ("Etwas ist schiefgelaufen") for any employee
+ * currently clocked in. This returns `fallback` for null/undefined instead.
+ */
+export function formatClockTime(
+  value: string | null | undefined,
+  fallback = '–',
+): string {
+  return value ? value.substring(0, 5) : fallback;
+}
