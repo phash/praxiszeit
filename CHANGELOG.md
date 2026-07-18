@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.15.2] - 2026-07-18
+
+Patch-Release. Ein neues, klein umrissenes Feature (#408) + der als Folge nötige
+DSGVO-Export-Fix. Eine Migration (066). Kein weiterer Backend-/Berechnungs-Code.
+
 ### ✨ Neu
 - **Jahresurlaubsanspruch mit Nachkommastelle (#408).** `User.vacation_days` ist
   jetzt dezimal (Migration 066, `Numeric(4,1)`): eine 3-Tage-Teilzeitkraft kann
@@ -9,6 +14,13 @@
   gerundet zu werden (das erzeugte 0,2 Tage Ungerechtigkeit vs. Kolleg:innen mit
   unterjährigem Eintritt). Eingabefeld akzeptiert 0,1-Schritte. Die Berechnung
   war bereits dezimalfähig (`Decimal`); nur Speicher/Schema/Eingabe blockierten.
+
+### 🐛 Behoben
+- **DSGVO-Export lief nach der #408-Umstellung in einen 500-Fehler.** Zwei rohe
+  `json.dumps`-Export-Pfade (Art.-15-Selbstauskunft + Admin-Tenant-Export sowie
+  Art.-20-Datenübertragbarkeit `/me/export`) schrieben `vacation_days` als
+  `Decimal` → „Object of type Decimal is not JSON serializable". Beide casten
+  jetzt `float(...)` (wie das benachbarte `weekly_hours`).
 
 ## [1.15.1] - 2026-07-15
 
