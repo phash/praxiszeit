@@ -312,7 +312,10 @@ def _user_dict(u: User) -> dict[str, Any]:
         "last_name": u.last_name,
         "role": u.role.value if hasattr(u.role, "value") else str(u.role),
         "weekly_hours": float(u.weekly_hours) if u.weekly_hours is not None else None,
-        "vacation_days": u.vacation_days,
+        # #408: vacation_days ist jetzt Numeric(4,1) → Decimal. json.dumps (unten,
+        # export_as_json_bytes) kann Decimal nicht serialisieren → float casten
+        # (wie weekly_hours darüber). Vorher Integer, daher kein Cast nötig.
+        "vacation_days": float(u.vacation_days) if u.vacation_days is not None else None,
         "work_days_per_week": u.work_days_per_week,
         "track_hours": u.track_hours,
         "calendar_color": u.calendar_color,

@@ -396,10 +396,11 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
               id="f-vacation"
               type="number"
               value={formData.vacation_days}
-              onChange={(e) => setFormData({ ...formData, vacation_days: parseInt(e.target.value) || 0 })}
+              onChange={(e) => setFormData({ ...formData, vacation_days: parseFloat(e.target.value) || 0 })}
               required
               min="0"
               max="50"
+              step="0.1"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
             {suggestedVacation !== null && formData.vacation_days !== suggestedVacation && (
