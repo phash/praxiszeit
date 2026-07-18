@@ -35,7 +35,7 @@ class UserBase(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     weekly_hours: float = Field(..., ge=0, le=60)
-    vacation_days: int = Field(..., ge=0, le=50)
+    vacation_days: float = Field(..., ge=0, le=50)  # #408: Dezimal (z. B. 16,8 für 3-Tage-Teilzeit)
     work_days_per_week: int = Field(default=5, ge=1, le=7)
     track_hours: bool = True
     calendar_color: str = Field(default='#93C5FD', pattern=r'^#[0-9A-Fa-f]{6}$')
@@ -103,7 +103,7 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     weekly_hours: Optional[float] = Field(None, ge=0, le=60)
-    vacation_days: Optional[int] = Field(None, ge=0, le=50)
+    vacation_days: Optional[float] = Field(None, ge=0, le=50)  # #408: Dezimal
     work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
     track_hours: Optional[bool] = None
     is_active: Optional[bool] = None
@@ -192,7 +192,7 @@ class UserListResponse(BaseModel):
     last_name: str
     email: Optional[str] = None
     weekly_hours: float
-    vacation_days: int
+    vacation_days: float  # #408: Dezimal
     work_days_per_week: int
     track_hours: bool
     is_active: bool

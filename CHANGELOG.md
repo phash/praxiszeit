@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### ✨ Neu
+- **Jahresurlaubsanspruch mit Nachkommastelle (#408).** `User.vacation_days` ist
+  jetzt dezimal (Migration 066, `Numeric(4,1)`): eine 3-Tage-Teilzeitkraft kann
+  z. B. **16,8** Urlaubstage (28×3/5) exakt eingetragen bekommen, statt auf 17
+  gerundet zu werden (das erzeugte 0,2 Tage Ungerechtigkeit vs. Kolleg:innen mit
+  unterjährigem Eintritt). Eingabefeld akzeptiert 0,1-Schritte. Die Berechnung
+  war bereits dezimalfähig (`Decimal`); nur Speicher/Schema/Eingabe blockierten.
+
 ## [1.15.1] - 2026-07-15
 
 Patch-Release. Behebt einen Weißbild-Absturz (#382) in der Admin-Dashboard-

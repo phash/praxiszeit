@@ -537,7 +537,7 @@ def export_my_data(
             "email": current_user.email,
             "role": current_user.role.value,
             "weekly_hours": float(current_user.weekly_hours),
-            "vacation_days": current_user.vacation_days,
+            "vacation_days": float(current_user.vacation_days),  # #408: Numeric(4,1)→Decimal; JSONResponse/json.dumps kann Decimal nicht serialisieren
             "is_active": current_user.is_active,
             "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
         },
