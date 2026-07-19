@@ -380,6 +380,75 @@ def get_soll_cutoff_date(db: Session, user: User, today: date = None) -> date:
     return today if has_completed_today else today - timedelta(days=1)
 
 
+def future_freizeitausgleich_impact(
+    db: Session, user: User, *, cutoff_date: date = None, today: date = None
+) -> Decimal:
+    """#402: Σ Tages-Soll der bereits FESTSTEHENDEN künftigen Freizeitausgleich-Tage.
+
+    Summiert das Tages-Soll aller OVERTIME-Abwesenheiten ab dem Tag NACH dem
+    Saldo-Stichtag (#313) bis zum 31.12. des laufenden Jahres — im Beschäftigungs-
+    fenster, ohne Wochenende/Feiertag. Genau um diesen Betrag wird das Über-
+    stundenkonto durch die schon geplanten Freizeitausgleich-Tage noch sinken
+    (bei OVERTIME bleibt das Soll stehen, das Ist ist 0 → Konto −= Tages-Soll).
+
+    Bewusst **Soll-basiert** (dieselbe Quelle `_day_soll_contribution` wie
+    `get_overtime_account`), NICHT das `hours`-Feld — so wird die Projektion im
+    Dezember bitgleich zum dann tatsächlich gebuchten Saldo. `> cutoff_date`
+    verhindert Doppelzählung mit dem aktuellen (bis-heute-)Saldo.
+    """
+    if not user.track_hours:
+        return Decimal('0')
+    if today is None:
+        today = today_local()
+    if cutoff_date is None:
+        cutoff_date = get_soll_cutoff_date(db, user, today)
+    year_end = date(today.year, 12, 31)
+    if cutoff_date >= year_end:
+        return Decimal('0')
+
+    overtime_abs = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
+        Absence.type == AbsenceType.OVERTIME,
+        Absence.date > cutoff_date,
+        Absence.date <= year_end,
+    ).all()
+    if not overtime_abs:
+        return Decimal('0')
+
+    holiday_dates = {
+        h.date for h in db.query(PublicHoliday).filter(
+            PublicHoliday.tenant_id == user.tenant_id,
+            PublicHoliday.date > cutoff_date,
+            PublicHoliday.date <= year_end,
+        ).all()
+    }
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+    special_cfg = special_days_service.get_special_day_config(db, user.tenant_id, today.year)
+
+    total = Decimal('0')
+    for a in overtime_abs:
+        d = a.date
+        if d.weekday() >= 5:  # Wochenende → 0 Soll
+            continue
+        if not _within_employment_window(user, d):
+            continue
+        # OVERTIME ist NICHT soll-reduzierend → leere half_map → volles Tages-Soll
+        # (× #146-Sondertag-Faktor). Exakt der Betrag, um den dieser Tag später
+        # den Saldo senkt.
+        total += _day_soll_contribution(
+            db, user, d,
+            holiday_dates=holiday_dates,
+            absence_half_map={},
+            wh_changes=wh_changes,
+            special_cfg=special_cfg,
+        )
+    return total.quantize(Decimal('0.01'))
+
+
 def get_range_target(
     db: Session, user: User, start: date, end: date, up_to_date: date = None
 ) -> Decimal:

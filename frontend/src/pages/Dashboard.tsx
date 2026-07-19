@@ -49,6 +49,8 @@ interface OvertimeAccount {
   current_balance: number;
   history: OvertimeHistory[];
   milog_warnings?: string[]; // #377 §2 Abs.2 MiLoG (self-scoped)
+  future_comp_hours?: number; // #402: bereits feststehender künftiger Freizeitausgleich
+  projected_year_end?: number | null; // #402: projizierter Saldo am 31.12. (null = kein künftiger Ausgleich)
 }
 
 interface YearlyAbsenceSummary {
@@ -539,6 +541,19 @@ export default function Dashboard() {
               >
                 {overtimeAccount.current_balance >= 0 ? '+' : ''}{formatHoursHM(overtimeAccount.current_balance)} h
               </p>
+              {/* #402: projizierter Saldo zum Jahresende (aktueller Saldo − bereits
+                  feststehender künftiger Freizeitausgleich). Nur wenn künftiger
+                  Ausgleich existiert. Bewusst grau (auch bei Minus, Motivations-
+                  gründe – Kundenwunsch). */}
+              {overtimeAccount.projected_year_end != null && (
+                <div className="mt-3">
+                  <p className="text-xs text-gray-500">Voraussichtl. Überstunden zum Jahresende</p>
+                  <p className="text-lg font-semibold tabular-nums text-gray-500">
+                    {overtimeAccount.projected_year_end >= 0 ? '+' : ''}{formatHoursHM(overtimeAccount.projected_year_end)} h
+                  </p>
+                  <p className="text-[11px] text-gray-400">nach bereits geplantem Freizeitausgleich</p>
+                </div>
+              )}
               {/* #377 §2 Abs.2 MiLoG: weiche Arbeitszeitkonto-Hinweise (Minijob) */}
               {(overtimeAccount.milog_warnings ?? []).length > 0 && (
                 <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-2">

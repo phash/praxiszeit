@@ -14,7 +14,9 @@ from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
+from app.services.timezone_service import now_local
 from app.services.arbzg_utils import is_night_work
+import calendar
 from app.services.date_filters import date_in_year, date_in_month, date_in_range, parse_year_month
 from app.core.limiter import limiter
 
@@ -86,6 +88,7 @@ def get_monthly_report(
     users = _get_active_visible_users(db, current_user.tenant_id)
 
     reports = []
+    _now = now_local()  # #402: Gate für die Jahresende-Projektion (nur aktueller Monat)
 
     for user in users:
         # #313: per-user cutoff (each user's last finished workday) unless the
@@ -97,6 +100,17 @@ def get_monthly_report(
         # beide pro User redundant neu laden. Identisch zu dessen (actual-target).quantize.
         balance = (actual - target).quantize(Decimal('0.01'))
         overtime = calculation_service.get_overtime_account(db, user, year, month_num, cutoff_date=cutoff)
+
+        # #402: projizierter Jahresende-Saldo — nur im AKTUELLEN Monat sinnvoll
+        # (Projektion „von jetzt bis 31.12."). Boundary = derselbe wie bei overtime:
+        # bis_heute→cutoff, monatsende→Monatsende (verhindert Doppelzählung künftiger
+        # Freizeitausgleich-Tage im laufenden Monat).
+        _future_comp = Decimal('0'); _projected = None
+        if year == _now.year and month_num == _now.month and user.track_hours:
+            _boundary = cutoff if cutoff is not None else date(year, month_num, calendar.monthrange(year, month_num)[1])
+            _future_comp = calculation_service.future_freizeitausgleich_impact(db, user, cutoff_date=_boundary)
+            if _future_comp > 0:
+                _projected = float(overtime) - float(_future_comp)
 
         # Get vacation and sick hours for the month (F-033: sargable)
         vacation_absences = db.query(Absence).filter(
@@ -135,6 +149,8 @@ def get_monthly_report(
             actual_hours=float(actual),
             balance=float(balance),
             overtime_cumulative=float(overtime),
+            future_comp_hours=float(_future_comp),
+            projected_year_end_overtime=_projected,
             vacation_used_hours=vacation_hours,
             vacation_used_days=vacation_days,
             sick_hours=sick_hours if include_health_data else 0.0,
@@ -203,6 +219,7 @@ def get_weekly_report(
     users = _get_active_visible_users(db, current_user.tenant_id)
 
     reports = []
+    _now = now_local()  # #402: Gate für die Jahresende-Projektion (nur aktuelle Woche)
 
     for user in users:
         # #313: per-user cutoff (last finished workday) unless run on the full basis.
@@ -216,6 +233,15 @@ def get_weekly_report(
         overtime = calculation_service.get_overtime_account(
             db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff
         )
+
+        # #402: projizierter Jahresende-Saldo — nur in der AKTUELLEN Woche sinnvoll.
+        # Boundary = ot_cutoff (Wochenende bzw. bis_heute-Cutoff), damit künftige
+        # Freizeitausgleich-Tage nicht doppelt zählen.
+        _future_comp = Decimal('0'); _projected = None
+        if wk_end.year == _now.year and wk_start <= _now.date() <= wk_end and user.track_hours:
+            _future_comp = calculation_service.future_freizeitausgleich_impact(db, user, cutoff_date=ot_cutoff)
+            if _future_comp > 0:
+                _projected = float(overtime) - float(_future_comp)
 
         # Urlaub/Krank in der Woche (F-033: sargable range). Bei soll_basis=bis_heute
         # denselben Cutoff wie Soll/Ist anwenden, damit die Tage-Spalten nicht eine
@@ -257,6 +283,8 @@ def get_weekly_report(
             actual_hours=float(actual),
             balance=float(balance),
             overtime_cumulative=float(overtime),
+            future_comp_hours=float(_future_comp),
+            projected_year_end_overtime=_projected,
             vacation_used_hours=vacation_hours,
             vacation_used_days=vacation_days,
             sick_hours=sick_hours if include_health_data else 0.0,
