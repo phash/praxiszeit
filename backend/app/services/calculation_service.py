@@ -398,6 +398,14 @@ def future_freizeitausgleich_impact(
     """
     if not user.track_hours:
         return Decimal('0')
+    # #377 Baustein 2b: im festen Monats-Soll-Modus bewegt eine OVERTIME-Abwesenheit
+    # das Überstundenkonto NICHT — OVERTIME ist in keinem _FIXED_*_TYPES, hat also
+    # weder Soll- noch Ist-Effekt (get_overtime_account delegiert für diese MA an das
+    # Fix-Modell). Es gibt daher keinen künftigen Freizeitausgleich zu projizieren.
+    # (Fünfter Parallelpfad — Modus-Branch wie in get_range_target/get_overtime_account/
+    # get_ytd_summary/get_overtime_history_detailed, siehe CLAUDE.md #377.)
+    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        return Decimal('0')
     if today is None:
         today = today_local()
     if cutoff_date is None:

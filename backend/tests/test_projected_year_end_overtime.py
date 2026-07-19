@@ -85,3 +85,17 @@ def test_weekend_overtime_skipped(db):
     _overtime(db, u, date(2026, 12, 5))  # Samstag → 0 Soll
     impact = calculation_service.future_freizeitausgleich_impact(db, u, cutoff_date=CUTOFF, today=TODAY)
     assert float(impact) == 0.0
+
+
+def test_fixed_monthly_target_user_zero(db):
+    """#377 Baustein 2b: im Fix-Soll-Modus bewegt OVERTIME das Konto NICHT
+    (OVERTIME ∉ _FIXED_*_TYPES) → kein künftiger Freizeitausgleich-Impact, sonst
+    wäre die Projektion im Dezember nicht bitgleich zum dann tatsächlichen Saldo."""
+    u = _user(db)
+    u.milog_working_time_account = True
+    u.agreed_monthly_hours = 80
+    u.use_fixed_monthly_target = True
+    db.commit()
+    _overtime(db, u, date(2026, 12, 1))  # würde ohne Modus-Branch 8h liefern
+    impact = calculation_service.future_freizeitausgleich_impact(db, u, cutoff_date=CUTOFF, today=TODAY)
+    assert float(impact) == 0.0
