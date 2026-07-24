@@ -24,6 +24,8 @@ interface EmployeeReport {
   actual_hours: number;
   balance: number;
   overtime_cumulative: number;
+  future_comp_hours?: number; // #402
+  projected_year_end_overtime?: number | null; // #402: proj. Saldo 31.12. (null = kein künftiger Ausgleich)
   vacation_used_hours: number;
   vacation_used_days: number;
   sick_hours: number;
@@ -453,6 +455,12 @@ export default function AdminDashboard() {
       return sortDirection === 'asc' ? comparison : -comparison;
     });
 
+  // #402: Spalte „Überstd. Jahresende" nur zeigen, wenn mind. ein MA künftigen
+  // Freizeitausgleich hat (Kundenwunsch: optional, sonst kein zusätzliches Rauschen).
+  const showYearEndCol = filteredAndSortedReport.some(
+    (e) => e.projected_year_end_overtime != null,
+  );
+
   const totalEmployees = report.length;
   // #159: Ø Saldo wahlweise ohne leitende Angestellte (Default) — verhindert
   // dass wenige MA mit vielen Stunden den Schnitt verzerren.
@@ -690,6 +698,15 @@ export default function AdminDashboard() {
                     )}
                   </div>
                 </th>
+                {/* #402: projizierter Saldo zum Jahresende (nur wenn künftiger Freizeitausgleich existiert) */}
+                {showYearEndCol && (
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase"
+                    title="Voraussichtlicher Überstundensaldo am 31.12. = Überstd. kum. abzüglich bereits feststehenden künftigen Freizeitausgleichs"
+                  >
+                    Überstd. Jahresende
+                  </th>
+                )}
                 <th
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 transition"
                   onClick={() => handleSort('vacation_used_days')}
@@ -757,6 +774,19 @@ export default function AdminDashboard() {
                         {formatHoursHM(emp.overtime_cumulative)}
                       </span>
                     </td>
+                    {/* #402: proj. Jahresende-Saldo, grau (auch bei Minus – Kundenwunsch); „—" wenn kein künftiger Ausgleich */}
+                    {showYearEndCol && (
+                      <td className="px-6 py-4 text-sm">
+                        {emp.projected_year_end_overtime != null ? (
+                          <span className="text-gray-500">
+                            {emp.projected_year_end_overtime >= 0 ? '+' : ''}
+                            {formatHoursHM(emp.projected_year_end_overtime)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-sm text-gray-900">{emp.vacation_used_days.toFixed(1)}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{showHealthData ? emp.sick_days.toFixed(1) : '—'}</td>
                     <td className="px-6 py-4 text-right">

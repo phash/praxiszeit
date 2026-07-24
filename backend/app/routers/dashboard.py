@@ -229,10 +229,20 @@ def get_overtime_account(
         if _exceeded:
             milog_warnings.append(milog_service.monthly_exceeded_warning_text(_exceeded))
 
+    # #402: bereits feststehender künftiger Freizeitausgleich + projizierter
+    # Jahresende-Saldo. projected nur setzen, wenn künftiger Ausgleich existiert
+    # (sonst None → Frontend blendet die Zeile aus).
+    future_comp = calculation_service.future_freizeitausgleich_impact(
+        db, current_user, cutoff_date=cutoff
+    )
+    projected = float(current_balance) - float(future_comp) if future_comp > 0 else None
+
     return OvertimeAccount(
         current_balance=current_balance,
         history=history,
         milog_warnings=milog_warnings,
+        future_comp_hours=float(future_comp),
+        projected_year_end=projected,
     )
 
 

@@ -28,6 +28,12 @@ class OvertimeAccount(BaseModel):
     current_balance: float
     history: List[OvertimeHistory]
     milog_warnings: List[str] = []  # #377 §2 Abs.2 MiLoG (self-scoped; leer wenn Flag aus)
+    # #402: bereits feststehender künftiger Freizeitausgleich (Σ Tages-Soll der
+    # OVERTIME-Abwesenheiten bis 31.12.) + projizierter Saldo am Jahresende.
+    # projected_year_end ist None, wenn kein künftiger Freizeitausgleich existiert
+    # (Frontend blendet die Zeile dann aus).
+    future_comp_hours: float = 0.0
+    projected_year_end: Optional[float] = None
 
 
 class YtdOvertime(BaseModel):
@@ -80,6 +86,11 @@ class EmployeeMonthlyReport(BaseModel):
     actual_hours: float
     balance: float
     overtime_cumulative: float
+    # #402: projizierter Überstundensaldo am 31.12. = overtime_cumulative − bereits
+    # feststehender künftiger Freizeitausgleich. None, wenn kein künftiger
+    # Freizeitausgleich existiert (Admin-Spalte zeigt dann „—").
+    future_comp_hours: float = 0.0
+    projected_year_end_overtime: Optional[float] = None
     vacation_used_hours: float
     vacation_used_days: float   # Tagesprinzip: Stunden ÷ Tagessoll (für die Anzeige)
     sick_hours: float
