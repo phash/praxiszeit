@@ -648,12 +648,33 @@ if not settings.SERVE_FRONTEND:
         return response
 
 
+def _public_license_state() -> Optional[dict]:
+    """Security-Audit 2026-07-25 (F3): der Lizenz-Block fuer den PUBLIC,
+    nicht authentifizierten ``/api/settings``-Endpoint.
+
+    Bewusst OHNE jede Identitaet: ``customer_name`` (= der Praxisname),
+    ``max_employees``, ``days_until_expiry`` und ``is_expired`` haben dort
+    frueher jedem Unauthentifizierten verraten, WER die Instanz betreibt, wie
+    gross die Praxis ist und wann sie im Ablauf-/Read-Only-Fenster steht —
+    brauchbar fuer gezieltes Social Engineering und Angriffs-Timing.
+
+    Uebrig bleibt nur ``read_only``: nicht identifizierend, aber noetig, damit
+    die UI vor dem Login erklaeren kann, warum Schreibvorgaenge scheitern.
+    Die vollstaendigen Lizenzdaten liefert die Admin-Sicht (authentifiziert).
+
+    Returns None, wenn keine Lizenz geladen ist (Beta / Docker / SaaS).
+    """
+    from app.core import license as _license
+    if _license.get_current_license() is None:
+        return None
+    return {"read_only": _license.is_read_only()}
+
+
 @app.get("/api/settings")
 def get_public_settings():
     """Public endpoint returning runtime-configurable UI settings (no auth required)."""
     from app.models.system_setting import SystemSetting
     from app.database import set_superadmin_context as _set_sa
-    from app.core.license import get_current_license, is_read_only
     from app.services import special_days_service
     _default_tid = uuid.UUID("00000000-0000-0000-0000-000000000001")
     db = SessionLocal()
@@ -675,16 +696,11 @@ def get_public_settings():
             "special_days": special_days_service.get_special_day_settings(db, _default_tid),
         }
 
-        # License info (for native installations)
-        license_info = get_current_license()
-        if license_info is not None:
-            result["license"] = {
-                "customer_name": license_info.customer_name,
-                "max_employees": license_info.max_employees,
-                "days_until_expiry": license_info.days_until_expiry,
-                "is_expired": license_info.is_expired,
-                "read_only": is_read_only(),
-            }
+        # License state (native installations). Nur das nicht-identifizierende
+        # read_only-Flag — siehe _public_license_state (Security-Audit F3).
+        license_state = _public_license_state()
+        if license_state is not None:
+            result["license"] = license_state
 
         return result
     finally:
