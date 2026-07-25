@@ -14,8 +14,9 @@ import secrets
 from collections import OrderedDict
 from app.database import get_db, set_superadmin_context
 from app.middleware.csrf import CSRF_COOKIE_NAME
-from app.models import User, TimeEntry, Absence, TimeEntryAuditLog
+from app.models import User, TimeEntry, Absence, TimeEntryAuditLog, ImpersonationSession
 from app.models.tenant import Tenant
+from app.services.timezone_service import now_local
 
 # Audit A09 (OWASP Security Logging Failures): security-relevant auth events
 # are emitted as structured application-log records on a dedicated logger.
@@ -43,7 +44,7 @@ _LOCKOUT_WINDOW = timedelta(minutes=15)
 from app.schemas.user import (
     LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
     ChangePasswordRequest, UpdateCalendarColorRequest,
-    TotpSetupResponse, TotpVerifyRequest, TotpDisableRequest,
+    TotpSetupRequest, TotpSetupResponse, TotpVerifyRequest, TotpDisableRequest,
 )
 from app.services import auth_service
 from app.middleware.auth import get_current_user
@@ -369,8 +370,27 @@ def logout(
 ):
     """
     Logout: invalidates all tokens (increments token_version) and clears the refresh cookie.
+
+    Security-Audit 2026-07-25 (F2): the token_version bump now also kills any
+    outstanding impersonation token (they carry ``imp_tv``). We additionally
+    close the open ``impersonation_sessions`` rows so the DSGVO Art. 5(2)
+    accountability log has an ``ended_at`` instead of dangling open forever
+    when an admin logs out without pressing "Zurück zu Admin".
     """
     current_user.token_version = (current_user.token_version or 0) + 1
+
+    open_sessions = (
+        db.query(ImpersonationSession)
+        .filter(
+            ImpersonationSession.impersonator_id == current_user.id,
+            ImpersonationSession.tenant_id == current_user.tenant_id,
+            ImpersonationSession.ended_at.is_(None),
+        )
+        .all()
+    )
+    for session in open_sessions:
+        session.ended_at = now_local()
+
     db.commit()
     _delete_refresh_cookie(response)
     _delete_csrf_cookie(response)
@@ -631,6 +651,7 @@ def delete_profile_picture(
 @limiter.limit("3/minute")
 def totp_setup(
     request: Request,
+    setup_data: TotpSetupRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -639,13 +660,38 @@ def totp_setup(
     Generates a new secret and saves it on the user (totp_enabled stays False
     until the user verifies with a valid code via /totp/verify).
     Returns the otpauth:// URI for QR rendering and the raw secret for manual entry.
+
+    Security-Audit 2026-07-25 (F1): requires the current password. Without it,
+    anyone holding a valid access token (stolen token, unattended session) could
+    (a) overwrite an ACTIVE enrollment — the victim's authenticator stops working
+    while the attacker's starts — or (b) switch 2FA on for an account that had
+    none, locking the owner out for good the moment they change their password.
+    ``/totp/disable`` already required the password; this closes the weaker path
+    that bypassed it.
     """
+    if not auth_service.verify_password(setup_data.password, current_user.password_hash):
+        security_logger.warning(
+            "AUTH totp_setup_failed user=%s reason=%s",
+            current_user.username, "wrong_password",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwort ist falsch"
+        )
+
     secret = auth_service.generate_totp_secret()
     current_user.totp_secret = totp_crypto.encrypt_secret(secret)
     # M-1: Counter mit dem neuen Secret zurücksetzen, sonst kann ein Setup direkt
     # nach einem Login im selben 30s-Fenster nicht bestätigt werden (Replay-Guard).
     current_user.last_totp_counter = None
     db.commit()
+
+    # A09: eine Neu-Einrichtung bei bereits aktivem 2FA ersetzt den zweiten
+    # Faktor — das gehoert in die Security-Spur (Konto-Uebernahme-Indikator).
+    security_logger.warning(
+        "AUTH totp_secret_issued user=%s was_enabled=%s",
+        current_user.username, bool(current_user.totp_enabled),
+    )
 
     return TotpSetupResponse(
         otpauth_uri=auth_service.get_totp_uri(current_user.username, secret),

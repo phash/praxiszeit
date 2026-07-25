@@ -38,6 +38,10 @@ export default function Profile() {
   const [totpEnabled, setTotpEnabled] = useState(user?.totp_enabled ?? false);
   const [showTotpSetup, setShowTotpSetup] = useState(false);
   const [totpSetupData, setTotpSetupData] = useState<{ otpauth_uri: string; secret: string } | null>(null);
+  // Security-Audit 2026-07-25 (F1): das Backend verlangt fuer /totp/setup das
+  // aktuelle Passwort (symmetrisch zum Deaktivieren) — vorgeschalteter Schritt 0.
+  const [showTotpPasswordPrompt, setShowTotpPasswordPrompt] = useState(false);
+  const [totpSetupPassword, setTotpSetupPassword] = useState('');
   const [totpVerifyCode, setTotpVerifyCode] = useState('');
   const [showTotpDisable, setShowTotpDisable] = useState(false);
   const [totpDisablePassword, setTotpDisablePassword] = useState('');
@@ -189,16 +193,30 @@ export default function Profile() {
 
   // ── F-019: TOTP handlers ──────────────────────────────────────────────────
 
-  const handleTotpSetup = async () => {
+  const handleTotpSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
     setTotpError('');
     setTotpMessage('');
     try {
-      const response = await apiClient.post('/auth/totp/setup');
+      const response = await apiClient.post('/auth/totp/setup', {
+        password: totpSetupPassword,
+      });
       setTotpSetupData(response.data);
+      setShowTotpPasswordPrompt(false);
+      setTotpSetupPassword('');
       setShowTotpSetup(true);
     } catch (err: any) {
       setTotpError(getErrorMessage(err, 'Fehler beim Starten der 2FA-Einrichtung'));
     }
+  };
+
+  const cancelTotpSetup = () => {
+    setShowTotpPasswordPrompt(false);
+    setShowTotpSetup(false);
+    setTotpSetupPassword('');
+    setTotpSetupData(null);
+    setTotpVerifyCode('');
+    setTotpError('');
   };
 
   const handleTotpVerify = async (e: React.FormEvent) => {
@@ -536,9 +554,9 @@ export default function Profile() {
                   )}
                 </div>
 
-                {!totpEnabled && !showTotpSetup && (
+                {!totpEnabled && !showTotpSetup && !showTotpPasswordPrompt && (
                   <button
-                    onClick={handleTotpSetup}
+                    onClick={() => { setShowTotpPasswordPrompt(true); setTotpError(''); setTotpMessage(''); }}
                     className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium"
                   >
                     <ShieldCheck size={15} />
@@ -555,6 +573,41 @@ export default function Profile() {
                   </button>
                 )}
               </div>
+
+              {/* Schritt 0: Passwort bestätigen (Security-Audit F1) */}
+              {showTotpPasswordPrompt && (
+                <div className="border border-blue-200 bg-blue-50 rounded-xl p-5 space-y-3">
+                  <p className="text-sm font-medium text-blue-800">
+                    Bitte bestätigen Sie Ihr Passwort, um 2FA einzurichten:
+                  </p>
+                  <form onSubmit={handleTotpSetup} className="space-y-3">
+                    <PasswordInput
+                      value={totpSetupPassword}
+                      onChange={(e) => setTotpSetupPassword(e.target.value)}
+                      required
+                      autoFocus
+                      placeholder="Ihr aktuelles Passwort"
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-primary"
+                    />
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        disabled={!totpSetupPassword}
+                        className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Weiter
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelTotpSetup}
+                        className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
+                      >
+                        Abbrechen
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
 
               {/* Setup wizard */}
               {showTotpSetup && totpSetupData && (
@@ -612,7 +665,7 @@ export default function Profile() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setShowTotpSetup(false); setTotpSetupData(null); setTotpVerifyCode(''); setTotpError(''); }}
+                        onClick={cancelTotpSetup}
                         className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
                       >
                         Abbrechen

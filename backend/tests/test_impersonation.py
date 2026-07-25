@@ -301,36 +301,40 @@ class TestEndImpersonation:
 
 
 class TestValidateImpersonator:
+    # Security-Audit 2026-07-25 (F2): validate_impersonator prüft zusätzlich die
+    # token_version des Admins (``imp_tv``-Claim) — die Aufrufe geben sie mit.
+    # Die Fälle "stale/fehlende imp_tv" liegen in
+    # tests/test_security_audit_2026_07_25.py.
     def test_valid_admin_same_tenant_ok(self, db, test_admin):
         from app.middleware.auth import validate_impersonator
         # no exception
-        validate_impersonator(test_admin, test_admin.tenant_id)
+        validate_impersonator(test_admin, test_admin.tenant_id, test_admin.token_version or 0)
 
     def test_none_rejected(self):
         from app.middleware.auth import validate_impersonator
         from fastapi import HTTPException
         with pytest.raises(HTTPException) as exc:
-            validate_impersonator(None, DEFAULT_TENANT_ID)
+            validate_impersonator(None, DEFAULT_TENANT_ID, 0)
         assert exc.value.status_code == 401
 
     def test_employee_rejected(self, db, test_user):
         from app.middleware.auth import validate_impersonator
         from fastapi import HTTPException
         with pytest.raises(HTTPException):
-            validate_impersonator(test_user, test_user.tenant_id)
+            validate_impersonator(test_user, test_user.tenant_id, test_user.token_version or 0)
 
     def test_inactive_admin_rejected(self, db):
         from app.middleware.auth import validate_impersonator
         from fastapi import HTTPException
         inactive_admin = _mk_user(db, "inactive_admin", role=UserRole.ADMIN, active=False)
         with pytest.raises(HTTPException):
-            validate_impersonator(inactive_admin, DEFAULT_TENANT_ID)
+            validate_impersonator(inactive_admin, DEFAULT_TENANT_ID, inactive_admin.token_version or 0)
 
     def test_wrong_tenant_rejected(self, db, test_admin):
         from app.middleware.auth import validate_impersonator
         from fastapi import HTTPException
         with pytest.raises(HTTPException):
-            validate_impersonator(test_admin, uuid.uuid4())
+            validate_impersonator(test_admin, uuid.uuid4(), test_admin.token_version or 0)
 
 
 # ─── session revocation on end (unit) ────────────────────────────────

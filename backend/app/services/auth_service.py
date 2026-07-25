@@ -152,6 +152,7 @@ def create_access_token(
     tenant_id: str = None,
     impersonator_id: str = None,
     impersonation_session_id: str = None,
+    impersonator_token_version: int = None,
 ) -> str:
     """
     Create JWT access token with 30 minutes expiry.
@@ -165,6 +166,11 @@ def create_access_token(
             ``sub`` is the impersonated employee, ``imp`` records the real admin.
         impersonation_session_id: #370 — id of the impersonation_sessions row, for
             end-of-session logging (``imp_sid`` claim).
+        impersonator_token_version: Security-Audit 2026-07-25 (F2) — the admin's
+            ``token_version`` at issue time (``imp_tv`` claim). The regular ``tv``
+            check validates the IMPERSONATED employee, so without this the admin's
+            own logout / password reset / role change did not revoke an
+            outstanding impersonation token.
 
     Returns:
         Encoded JWT token
@@ -183,6 +189,8 @@ def create_access_token(
         payload["imp"] = impersonator_id
     if impersonation_session_id is not None:
         payload["imp_sid"] = impersonation_session_id
+    if impersonator_token_version is not None:
+        payload["imp_tv"] = impersonator_token_version
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 

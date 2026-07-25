@@ -286,6 +286,17 @@ class UpdateCalendarColorRequest(BaseModel):
 
 # F-019: TOTP 2FA schemas
 
+class TotpSetupRequest(BaseModel):
+    """Security-Audit 2026-07-25 (F1): das Setup verlangt das aktuelle Passwort.
+
+    Symmetrisch zu ``TotpDisableRequest`` — wer 2FA aktivieren/neu einrichten
+    kann, aendert den zweiten Faktor genauso folgenreich wie beim Abschalten.
+    Ohne diesen Nachweis konnte jeder mit einem gueltigen Access-Token das
+    Secret ueberschreiben und den Kontoinhaber aussperren.
+    """
+    password: str = Field(..., min_length=1)
+
+
 class TotpSetupResponse(BaseModel):
     otpauth_uri: str
     secret: str

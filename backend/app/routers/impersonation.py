@@ -81,6 +81,10 @@ def start_impersonation(
         tenant_id=tenant_id_str,
         impersonator_id=str(current_user.id),
         impersonation_session_id=str(session.id),
+        # Security-Audit 2026-07-25 (F2): bindet das Token an die Admin-Session.
+        # Logout / set-password / Rollenwechsel des Admins bumpen token_version
+        # und entwerten damit auch das Impersonation-Token sofort.
+        impersonator_token_version=current_user.token_version or 0,
     )
     return {
         "access_token": token,

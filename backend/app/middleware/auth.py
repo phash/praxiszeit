@@ -100,7 +100,7 @@ def get_current_user(
     imp = payload.get("imp")
     if imp:
         impersonator = db.query(User).filter(User.id == imp).first()
-        validate_impersonator(impersonator, user.tenant_id)
+        validate_impersonator(impersonator, user.tenant_id, payload.get("imp_tv"))
         # #370: "Zurück zu Admin" sets ended_at → the (memory-only) impersonation
         # token is revoked server-side from that point, not just dropped client-side.
         imp_sid = payload.get("imp_sid")
@@ -124,14 +124,26 @@ def get_current_user(
     return user
 
 
-def validate_impersonator(impersonator, target_tenant_id) -> None:
+def validate_impersonator(impersonator, target_tenant_id, imp_token_version=None) -> None:
     """#370: an impersonation token is only valid if ``imp`` names an active admin
-    of the impersonated employee's own tenant. Raises 401 otherwise."""
+    of the impersonated employee's own tenant. Raises 401 otherwise.
+
+    Security-Audit 2026-07-25 (F2): additionally binds the token to the admin's
+    ``token_version``. The regular ``tv`` check above validates the token's
+    ``sub`` — which is the IMPERSONATED EMPLOYEE — so the admin's own logout,
+    admin-set-password or role change previously did NOT revoke an outstanding
+    impersonation token; it stayed usable for up to the full access-token
+    lifetime. A missing ``imp_tv`` is rejected as well (fail closed): tokens
+    minted before this change are at most one access-token lifetime old, and
+    they are read-only by construction.
+    """
     if (
         not impersonator
         or not impersonator.is_active
         or impersonator.role != UserRole.ADMIN
         or impersonator.tenant_id != target_tenant_id
+        or imp_token_version is None
+        or imp_token_version != (impersonator.token_version or 0)
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
