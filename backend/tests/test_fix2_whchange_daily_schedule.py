@@ -68,8 +68,21 @@ def test_whchange_ok_for_normal_user(db, default_tenant):
         db=db, current_user=admin,
     )
     assert float(result.weekly_hours) == 20.0
-    n = db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == emp.id).count()
-    assert n == 1
+    # Release-Review 1.16.0: die ERSTE Änderung legt zusätzlich eine Basis-Zeile mit
+    # dem bisherigen Vertragswert an. Ohne sie fiele `get_weekly_hours_for_date` für
+    # die gesamte Vergangenheit auf `user.weekly_hours` zurück — das gerade auf den
+    # NEUEN Wert gesetzt wird —, wodurch sich das Soll bereits abgeschlossener
+    # Monate rückwirkend verschoben hätte.
+    rows = (
+        db.query(WorkingHoursChange)
+        .filter(WorkingHoursChange.user_id == emp.id)
+        .order_by(WorkingHoursChange.effective_from)
+        .all()
+    )
+    assert len(rows) == 2
+    assert float(rows[0].weekly_hours) == 40.0, "Ausgangswert eingefroren"
+    assert rows[0].effective_from < date(2026, 1, 1)
+    assert float(rows[1].weekly_hours) == 20.0
 
 
 # ---------------------------------------------------------------------------

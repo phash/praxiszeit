@@ -9,13 +9,44 @@ from pydantic import BaseModel, ConfigDict
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry, WorkingHoursChange
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, TimeEntry, WorkingHoursChange, TimeEntryAuditLog
 from app.services import calculation_service, settings_service, special_days_service
 # Fix #3: the year re-split lives in a service module so the private-vacation
 # write paths can call it without importing this router (circular-import safe).
 # Re-exported as _resplit_year_closures to keep the existing call sites intact.
 from app.services.closure_split_service import resplit_year_closures as _resplit_year_closures
 from app.routers.admin_helpers import _create_audit_log
+
+
+# Release-Review 1.16.0: Betriebsferien löschen Abwesenheiten (beim Umspeichern und
+# beim Entfernen der Schließung) — bisher spurlos, während `absences.delete_absence`
+# vor jeder Löschung einen Audit-Eintrag schreibt. Für DSGVO Art. 5 Abs. 2 und §16
+# ArbZG muss nachvollziehbar bleiben, wer wann wie viele generierte Abwesenheiten
+# entfernt hat. Eine Summenzeile pro Vorgang statt einer pro Abwesenheit: die
+# Zuordnung steckt in `closure_id`/Note, und ein Voll-Jahr-Umspeichern würde die
+# Audit-Tabelle sonst mit hunderten Zeilen fluten.
+# Marker < 40 Zeichen (time_entry_audit_logs.source ist varchar(40)).
+CLOSURE_AUDIT_SOURCE = "company_closure"  # 15 Zeichen
+
+
+def _audit_closure_absence_deletion(db, current_user, closure, count: int, reason: str) -> None:
+    """Summen-Audit für gelöschte Betriebsferien-Abwesenheiten (No-op bei 0)."""
+    if not count:
+        return
+    db.add(TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=current_user.id,
+        changed_by=current_user.id,
+        action="delete",
+        source=CLOSURE_AUDIT_SOURCE,
+        old_note=(
+            f"Betriebsferien '{closure.name}' "
+            f"({closure.start_date.isoformat()}–{closure.end_date.isoformat()}): "
+            f"{count} generierte Abwesenheit(en) gelöscht — {reason}"
+        ),
+        tenant_id=current_user.tenant_id,
+    ))
+
 
 router = APIRouter(prefix="/api/company-closures", tags=["company-closures"])
 
@@ -518,12 +549,32 @@ def update_closure(
     # most one closure-absence (the create helper skips days with an existing
     # absence), so flipping its type can never collide with the
     # (tenant_id, user_id, date, type) unique constraint.
+    # Release-Review 1.16.0: Wen der Create-Helper unten überhaupt wieder bucht,
+    # muss VOR dem Löschen feststehen. Er bucht nur für aktive Teilnehmer — eine
+    # ausgeschiedene (`is_active=False`) oder abgewählte
+    # (`receives_company_closures=False`) Person bekam ihre Closure-Absencen also
+    # gelöscht und nie zurück. Das traf ausgerechnet den in CLAUDE.md
+    # dokumentierten Migrationsweg „Toggle nachträglich aktivieren → Schließung neu
+    # speichern": ein reines Umbenennen genügte, um bei aktivem #314-Split den
+    # genommenen Urlaub eines Ausgeschiedenen rückwirkend verschwinden zu lassen
+    # (Urlaubskonto, Abgeltungsbasis, §16-Beleg — ohne jede Spur).
+    employees = db.query(User).filter(
+        User.is_active == True,
+        User.receives_company_closures == True,
+        User.tenant_id == current_user.tenant_id,
+    ).all()
+    _rebookable_user_ids = {e.id for e in employees}
+
+    _deleted_out_of_range = 0
+    _deleted_for_resplit = 0
     for absence in linked:
         if absence.date not in workday_set:
             db.delete(absence)
-        elif split_active:
+            _deleted_out_of_range += 1
+        elif split_active and absence.user_id in _rebookable_user_ids:
             # delete → re-created + re-split by the create helper below
             db.delete(absence)
+            _deleted_for_resplit += 1
         else:
             if name_changed:
                 absence.note = f"Betriebsferien: {data.name}"
@@ -532,6 +583,15 @@ def update_closure(
             absence.end_date = None
             if type_changed:
                 absence.type = new_absence_type
+
+    _audit_closure_absence_deletion(
+        db, current_user, closure, _deleted_out_of_range,
+        "Tag nicht mehr vom Zeitraum abgedeckt",
+    )
+    _audit_closure_absence_deletion(
+        db, current_user, closure, _deleted_for_resplit,
+        "Neuaufteilung Urlaub/Überstundenausgleich (#314), werden neu gebucht",
+    )
 
     # L-3: die obigen Deletes/Updates in die DB schreiben, BEVOR der Create-Helper
     # seine existing_keys-Vorabfrage stellt — sonst sähe er die behaltenen Tage
@@ -542,11 +602,7 @@ def update_closure(
     # Add absences for newly covered workdays. Reuse the create-time helper,
     # which already skips days where the employee has ANY existing absence
     # (foreign absences stay untouched, and days we kept above are skipped).
-    employees = db.query(User).filter(
-        User.is_active == True,
-        User.receives_company_closures == True,
-        User.tenant_id == current_user.tenant_id,
-    ).all()
+    # (employees wurde oben geladen — der Löschzweig braucht die Menge bereits.)
     # #290: re-save must NOT delete logged work. delete_time_entries=False →
     # days where a participant already logged real time are left intact (no
     # closure-absence booked over them). New participants still get absences on
@@ -614,6 +670,13 @@ def delete_closure(
 
     # Delete the generated absences via FK (robust against renames / manual
     # note edits) — tenant_id filter kept as belt-and-suspenders (F-026).
+    _to_delete = db.query(Absence).filter(
+        Absence.closure_id == closure.id,
+        Absence.tenant_id == current_user.tenant_id,
+    ).count()
+    _audit_closure_absence_deletion(
+        db, current_user, closure, _to_delete, "Betriebsferien gelöscht",
+    )
     db.query(Absence).filter(
         Absence.closure_id == closure.id,
         Absence.tenant_id == current_user.tenant_id,

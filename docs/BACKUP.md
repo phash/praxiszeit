@@ -94,7 +94,7 @@ docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit \
 täglich 02:00 + 30-Tage-Rotation:
 
 ```cron
-0 2 * * * cd /pfad/zu/praxiszeit && docker compose exec -T db pg_dump -U praxiszeit praxiszeit | gzip > ~/praxiszeit-backups/pz_$(date +\%F).sql.gz && find ~/praxiszeit-backups -name 'pz_*.sql.gz' -mtime +30 -delete
+0 2 * * * cd /pfad/zu/praxiszeit && docker compose exec -T db pg_dump --clean --if-exists -U praxiszeit praxiszeit | gzip > ~/praxiszeit-backups/pz_$(date +\%F).sql.gz && find ~/praxiszeit-backups -name 'pz_*.sql.gz' -mtime +30 -delete
 ```
 
 (Backup-Verzeichnis vorher anlegen: `mkdir -p ~/praxiszeit-backups`.)
@@ -146,7 +146,7 @@ Restore idempotent (vorhandene Objekte werden gedroppt und neu angelegt) — ein
 manuelles Leeren der DB ist **nicht** nötig:
 
 ```bash
-gunzip -c backup.sql.gz | docker compose exec -T db psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+gunzip -c backup.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
 ```
 
 ---

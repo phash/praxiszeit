@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from calendar import monthrange
 from decimal import Decimal
 from typing import List
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -39,6 +40,88 @@ def neutralize_spreadsheet_formula(value):
     if isinstance(value, str) and value and value[0] in _FORMULA_PREFIXES:
         return "'" + value
     return value
+
+
+def export_users(db, tenant_id, period_start: date, period_end: date) -> List[User]:
+    """Mitarbeiter, die in einen §16-Beleg für ``[period_start, period_end]`` gehören.
+
+    Release-Review 1.16.0: die Exporte filterten hart auf ``is_active == True``.
+    Das Handbuch weist Admins aber ausdrücklich an, ausgeschiedene Mitarbeiter auf
+    „Inaktiv" zu setzen statt zu löschen (§16 ArbZG: 2 Jahre Aufbewahrung) — genau
+    diese Personen fielen danach ersatzlos aus jedem Monats- und Jahresbericht,
+    auch für Zeiträume, in denen sie noch gearbeitet hatten. Bei einer Prüfung
+    fehlten damit die Nachweise, ohne dass irgendwo ein Hinweis erschien.
+
+    Deshalb: aktive Mitarbeiter wie bisher, PLUS inaktive, die im Zeitraum
+    tatsächlich Daten haben (Zeiteintrag oder Abwesenheit). Ausgeblendete
+    (``is_hidden``) bleiben ausgeblendet — das ist eine bewusste Sichtbarkeits-
+    entscheidung des Admins, keine Ausscheidens-Markierung. Ein Zeitraum ohne
+    Daten des Ausgeschiedenen erzeugt weiterhin kein leeres Blatt.
+    """
+    base = db.query(User).filter(User.is_hidden == False)  # noqa: E712
+    if tenant_id is not None:
+        base = base.filter(User.tenant_id == tenant_id)
+
+    te = db.query(TimeEntry.user_id).filter(
+        TimeEntry.date >= period_start, TimeEntry.date <= period_end
+    )
+    ab = db.query(Absence.user_id).filter(
+        Absence.date >= period_start, Absence.date <= period_end
+    )
+    if tenant_id is not None:
+        te = te.filter(TimeEntry.tenant_id == tenant_id)
+        ab = ab.filter(Absence.tenant_id == tenant_id)
+
+    users = base.filter(User.is_active == True).all()  # noqa: E712
+    users += base.filter(
+        User.is_active == False,  # noqa: E712
+        or_(User.id.in_(te.scalar_subquery()), User.id.in_(ab.scalar_subquery())),
+    ).all()
+    return sorted(users, key=lambda u: ((u.last_name or "").lower(), (u.first_name or "").lower()))
+
+
+def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg, wh_changes=None):
+    """Release-Review 1.16.0: Tages-Soll an einem Tag MIT Abwesenheit.
+
+    Alle Datei-Exporte setzten hier pauschal ``Decimal('0.00')`` — „irgendeine
+    Abwesenheit ⇒ kein Soll". Das ist an drei Stellen falsch und ließ die
+    Summenzeilen desselben §16-Belegs seinem eigenen „Überstunden kumuliert"
+    widersprechen:
+
+    * **Halbtag** (``half_day=True``): nur 0,5 × Tagessoll fällt weg. Ein halber
+      Urlaubstag plus vier gestempelte Stunden ergab im Export Soll 0 / Ist 4 →
+      +4 h Überstunden statt 0.
+    * **SICK/TRAINING**: nicht soll-reduzierend — das Soll bleibt stehen (die
+      Gutschrift läuft über ``credited_absences``).
+    * **OVERTIME**: Soll bleibt, Ist = 0 (docs/BERECHNUNGEN.md §6). Der Export
+      zeigte 0/0 und verschluckte damit den Konto-Abbau.
+
+    Delegiert an ``calculation_service._day_soll_contribution`` — dieselbe Quelle,
+    die ``get_monthly_target`` und ``get_overtime_account`` nutzen. Damit können
+    Bildschirm und Datei nicht mehr auseinanderlaufen. Wochenende, Beschäftigungs-
+    fenster und Stichtag bleiben Sache des Aufrufers (wie beim Helper selbst);
+    Feiertage behandeln die Exporte in einem eigenen Zweig davor.
+    """
+    # ``_soll_reducing_absence_half_map`` filtert NICHT selbst nach Typ — im
+    # calculation_service übernimmt das die Query (``type.notin_([TRAINING, SICK,
+    # OVERTIME])``). Hier kommen die Absencen aus dem Export-Grouping, also muss der
+    # Filter an dieser Stelle stehen: TRAINING/SICK/OVERTIME lassen das Soll stehen.
+    soll_reducing = [
+        a for a in day_absences
+        if a.type not in (
+            calculation_service.AbsenceType.TRAINING,
+            calculation_service.AbsenceType.SICK,
+            calculation_service.AbsenceType.OVERTIME,
+        )
+    ]
+    half_map = calculation_service._soll_reducing_absence_half_map(soll_reducing)
+    return calculation_service._day_soll_contribution(
+        db, user, d,
+        holiday_dates=holiday_dates,
+        absence_half_map=half_map,
+        wh_changes=wh_changes,
+        special_cfg=special_cfg,
+    )
 
 
 def _de_hours(value) -> str:
@@ -106,10 +189,8 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
     wb.remove(wb.active)
 
     # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
-    q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
-    if tenant_id is not None:
-        q = q.filter(User.tenant_id == tenant_id)
-    users = q.order_by(User.last_name, User.first_name).all()
+    users = export_users(db, tenant_id, date(year, month, 1),
+                         date(year, month, monthrange(year, month)[1]))
 
     for user in users:
         _create_employee_sheet(wb, db, user, year, month, include_health_data)
@@ -345,7 +426,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
-            target = Decimal('0.00')
+            # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
             absence_type_map = {
                 "vacation": "Urlaub",
                 "sick": "Krank",
@@ -494,10 +576,7 @@ def generate_yearly_report(db: Session, year: int, include_health_data: bool = F
     wb.remove(wb.active)
 
     # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
-    q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
-    if tenant_id is not None:
-        q = q.filter(User.tenant_id == tenant_id)
-    users = q.order_by(User.last_name, User.first_name).all()
+    users = export_users(db, tenant_id, date(year, 1, 1), date(year, 12, 31))
 
     # Create overview sheet
     _create_yearly_overview_sheet(wb, db, users, year, include_health_data)
@@ -892,7 +971,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             for col in range(1, 11):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
-            target = Decimal('0.00')
+            # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
             absence_type_map = {
                 "vacation": "Urlaub",
                 "sick": "Krank",
@@ -1043,10 +1123,7 @@ def generate_yearly_report_classic(db: Session, year: int, include_health_data: 
     wb.remove(wb.active)
 
     # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
-    q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
-    if tenant_id is not None:
-        q = q.filter(User.tenant_id == tenant_id)
-    users = q.order_by(User.last_name, User.first_name).all()
+    users = export_users(db, tenant_id, date(year, 1, 1), date(year, 12, 31))
 
     for user in users:
         _create_employee_classic_sheet(wb, db, user, year, include_health_data)
@@ -1363,10 +1440,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
     # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
-    _q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
-    if tenant_id is not None:
-        _q = _q.filter(User.tenant_id == tenant_id)
-    users = _q.order_by(User.last_name, User.first_name).all()
+    users = export_users(db, tenant_id, date(year, month, 1),
+                         date(year, month, monthrange(year, month)[1]))
 
     # Landscape A4: 297mm − 30mm margins = 267mm usable
     col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 16*mm, 14*mm, 16*mm, 74*mm, 74*mm]
@@ -1511,7 +1586,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                     abw += ' | Nachtarbeit'
                 bg = colors.HexColor('#FFFFCC')
             elif day_absences:
-                target = Decimal('0.00')
+                # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
+                target = absence_day_target(db, user, cur, day_absences, set(holidays_by_date), special_day_config)
                 # I-1: ALLE Absences des Tages zeigen; DSGVO F-003: Krank ohne
                 # Health-Flag maskieren (Label 'Abwesenheit', Notiz unterdrückt).
                 abw_parts = []
@@ -1577,7 +1653,18 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
         # ── Summary ──
         story.append(Spacer(1, 4 * mm))
-        monthly_balance = total_net - total_target
+        # Release-Review 1.16.0: #377 Baustein 2b — der Fixmodus-Branch fehlte hier
+        # als einziger der drei Monats-Exportflächen (XLSX Z.439, ODS-Monat), sodass
+        # dieselbe §16-Auskunft je Dateiformat unterschiedliche Soll-Zahlen trug und
+        # das PDF sich gegen sein eigenes „Überstunden kumuliert" (bereits
+        # modus-bewusst) stellte. Nicht-Modus-MA bleiben auf der Per-Tag-Summe.
+        if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+            summary_target = calculation_service.get_monthly_target(db, user, year, month)
+            summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
+        else:
+            summary_target = total_target
+            summary_actual = total_net
+        monthly_balance = summary_actual - summary_target
         overtime_account = calculation_service.get_overtime_account(db, user, year, month)
         vacation_account = calculation_service.get_vacation_account(db, user, year)
 
@@ -1586,8 +1673,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
         summary_rows = [
             [Paragraph('Zusammenfassung', ParagraphStyle('st', fontName='Helvetica-Bold', fontSize=8, leading=10)), ''],
-            [Paragraph('Soll-Stunden:', s_sum_lbl), Paragraph(f"{float(total_target):.2f} h", s_sum_val)],
-            [Paragraph('Ist-Stunden:', s_sum_lbl), Paragraph(f"{float(total_net):.2f} h", s_sum_val)],
+            [Paragraph('Soll-Stunden:', s_sum_lbl), Paragraph(f"{float(summary_target):.2f} h", s_sum_val)],
+            [Paragraph('Ist-Stunden:', s_sum_lbl), Paragraph(f"{float(summary_actual):.2f} h", s_sum_val)],
             [Paragraph('Saldo Monat:', s_sum_lbl),
              Paragraph(f"{float(monthly_balance):+.2f} h",
                        ParagraphStyle('sb', fontName='Helvetica-Bold', fontSize=7.5,

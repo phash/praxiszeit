@@ -259,7 +259,7 @@ docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit |
 crontab -e
 
 # Diese Zeile hinzufuegen (Backup taeglich um 2:00 Uhr):
-0 2 * * * cd ~/praxiszeit && docker compose exec -T db pg_dump -U praxiszeit praxiszeit | gzip > ~/backups/praxiszeit_$(date +\%Y\%m\%d).sql.gz && find ~/backups -name "praxiszeit_*.sql.gz" -mtime +30 -delete
+0 2 * * * cd ~/praxiszeit && docker compose exec -T db pg_dump --clean --if-exists -U praxiszeit praxiszeit | gzip > ~/backups/praxiszeit_$(date +\%Y\%m\%d).sql.gz && find ~/backups -name "praxiszeit_*.sql.gz" -mtime +30 -delete
 ```
 
 Backup-Ordner vorher anlegen:

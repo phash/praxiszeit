@@ -13,7 +13,11 @@ from app.schemas.validators import (
 class VacationRequestCreate(BaseModel):
     date: date
     end_date: Optional[date] = None
-    hours: float
+    # Release-Review 1.16.0: Grenzen wie in VacationRequestUpdate und AbsenceBase.
+    # Ohne sie ergab `hours: 1000` beim COMMIT einen numeric-Overflow der
+    # numeric(5,2)-Spalte → HTTP 500 statt 422, und `hours: -8` legte einen Antrag
+    # an, den die Genehmigung unverändert als negative Absence-Stunden buchte.
+    hours: float = Field(..., ge=0, le=24)
     note: Optional[str] = None
     absence_type: Optional[str] = "vacation"
     half_day: bool = False  # #167: halber Urlaubstag

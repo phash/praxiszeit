@@ -234,7 +234,7 @@ export function CheatsheetAdmin() {
       <section>
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">📅 Betriebsferien</h3>
         <p className="text-sm text-gray-600">Abwesenheiten → Neue Betriebsferien → Bezeichnung + Von–Bis → Speichern</p>
-        <p className="text-sm text-gray-500 mt-1">Alle MA mit „Nimmt an Betriebsferien teil" (Standard) erhalten automatisch Einträge – rollenunabhängig, keine Urlaubstage. Nachträglich Berechtigte: Option setzen – Einträge werden automatisch für laufende und künftige Betriebsferien nachgetragen.</p>
+        <p className="text-sm text-gray-500 mt-1">Alle MA mit „Nimmt an Betriebsferien teil" (Standard) erhalten automatisch Einträge – rollenunabhängig. Die <strong>Verrechnung</strong> wählen Sie beim Anlegen: „Als Urlaub werten" (Standard – 1 Urlaubstag je Schließ-Arbeitstag) oder „Bezahlte Freistellung" (saldoneutral, kostet keinen Urlaub). Nachträglich Berechtigte: Option setzen – Einträge werden automatisch für laufende und künftige Betriebsferien nachgetragen.</p>
         <p className="text-sm text-gray-500 mt-1">Sind die (urlaubszählenden) Betriebsferien länger als das Resturlaub-Budget, lässt sich unter <strong>Einstellungen → „Betriebsferien &amp; Urlaub"</strong> die Option „Überzählige Betriebsferien als Überstundenabbau" aktivieren: erst Urlaub, dann Überstunden (Konto darf ins Minus) – statt Minus-Urlaub. Global, Standard aus.</p>
       </section>
 
@@ -370,7 +370,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Profil</strong> sehen Sie Ihre persönlichen Daten. Über <strong>Passwort ändern → Ändern</strong> setzen Sie ein neues Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer).</p>
-        <p><strong>Zwei-Faktor-Authentifizierung (2FA):</strong> Schützen Sie Ihr Konto zusätzlich mit einem Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy). <strong>Aktivieren:</strong> Karte „Zwei-Faktor-Authentifizierung" → „2FA aktivieren" → QR-Code scannen (oder Schlüssel manuell eintragen) → 6-stelligen Code bestätigen. <strong>Login:</strong> nach Benutzername + Passwort wird der 6-stellige Code abgefragt. <strong>Deaktivieren:</strong> „2FA deaktivieren" → aktuelles Passwort bestätigen. Bei verlorenem Zugang zur App hilft Ihr Administrator.</p>
+        <p><strong>Zwei-Faktor-Authentifizierung (2FA):</strong> Schützen Sie Ihr Konto zusätzlich mit einem Einmal-Code aus einer Authenticator-App (z. B. Google Authenticator, Authy). <strong>Aktivieren:</strong> Karte „Zwei-Faktor-Authentifizierung" → „2FA aktivieren" → aktuelles Passwort bestätigen → QR-Code scannen (oder Schlüssel manuell eintragen) → 6-stelligen Code bestätigen. <strong>Login:</strong> nach Benutzername + Passwort wird der 6-stellige Code abgefragt. <strong>Deaktivieren:</strong> „2FA deaktivieren" → aktuelles Passwort bestätigen. Bei verlorenem Zugang zur App hilft Ihr Administrator.</p>
         <p>Persönliche Daten wie Name und Wochenstunden können nur vom Administrator geändert werden. Unter <strong>Weitere Einstellungen</strong> finden Sie optionale Darstellungsoptionen.</p>
       </div>
     ),

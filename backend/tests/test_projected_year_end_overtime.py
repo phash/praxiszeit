@@ -87,15 +87,47 @@ def test_weekend_overtime_skipped(db):
     assert float(impact) == 0.0
 
 
-def test_fixed_monthly_target_user_zero(db):
-    """#377 Baustein 2b: im Fix-Soll-Modus bewegt OVERTIME das Konto NICHT
-    (OVERTIME ∉ _FIXED_*_TYPES) → kein künftiger Freizeitausgleich-Impact, sonst
-    wäre die Projektion im Dezember nicht bitgleich zum dann tatsächlichen Saldo."""
+def test_fixed_monthly_target_user_counts_planned_hours(db):
+    """#377 Baustein 2b — Release-Review 1.16.0: korrigiert die frühere Annahme.
+
+    Dass OVERTIME in KEINEM der _FIXED_*_TYPES steht, bedeutet gerade nicht, dass
+    das Konto unbewegt bliebe: es gibt weder eine Ist-Gutschrift (fixed_month_credit)
+    noch eine Soll-Minderung (fixed_month_unpaid_reduction). Das Soll bleibt also das
+    volle flache agreed_monthly_hours, das Ist zählt für den Ausgleichstag 0 — der
+    Saldo sinkt um die GEPLANTEN Stunden des Tages. Die Projektion muss das zeigen,
+    sonst ist sie ausgerechnet für die MiLoG-Konto-Gruppe dunkel (§ 2 Abs. 2 MiLoG:
+    Ausgleich binnen 12 Monaten).
+    """
     u = _user(db)
     u.milog_working_time_account = True
     u.agreed_monthly_hours = 80
     u.use_fixed_monthly_target = True
+    u.use_daily_schedule = True
+    u.hours_monday = 4
+    u.hours_tuesday = 0
+    u.hours_wednesday = 0
+    u.hours_thursday = 0
+    u.hours_friday = 0
     db.commit()
-    _overtime(db, u, date(2026, 12, 1))  # würde ohne Modus-Branch 8h liefern
+    _overtime(db, u, date(2026, 12, 7))  # ein Montag → 4 geplante Stunden
+    impact = calculation_service.future_freizeitausgleich_impact(db, u, cutoff_date=CUTOFF, today=TODAY)
+    assert float(impact) == 4.0
+
+
+def test_fixed_monthly_target_unplanned_day_is_zero(db):
+    """Ein Ausgleichstag an einem ungeplanten Wochentag senkt im Fix-Modus nichts —
+    dort war ohnehin keine Arbeitszeit vorgesehen."""
+    u = _user(db)
+    u.milog_working_time_account = True
+    u.agreed_monthly_hours = 80
+    u.use_fixed_monthly_target = True
+    u.use_daily_schedule = True
+    u.hours_monday = 4
+    u.hours_tuesday = 0
+    u.hours_wednesday = 0
+    u.hours_thursday = 0
+    u.hours_friday = 0
+    db.commit()
+    _overtime(db, u, date(2026, 12, 8))  # Dienstag → nicht geplant
     impact = calculation_service.future_freizeitausgleich_impact(db, u, cutoff_date=CUTOFF, today=TODAY)
     assert float(impact) == 0.0

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, date, timedelta
 from app.database import get_db
-from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType, Absence, AbsenceType, AbsenceReason
+from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType, Absence, AbsenceType, AbsenceReason, PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.change_request import (
     ChangeRequestResponse,
@@ -511,6 +511,31 @@ def review_change_request(
             # genehmigter Urlaub die 8h und verbrauchte bei Teilzeit (4h/Tag)
             # doppelten Urlaub (8/4 = 2 Tage statt 1).
             cr_user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
+
+            # Release-Review 1.16.0: gesetzliche Feiertage ausschließen. Von den vier
+            # Buchungspfaden war dies der einzige ohne Feiertags-Guard — create_absence
+            # (absences.py), review_vacation_request und _create_closure_absences
+            # nehmen Feiertage über ihre _get_workdays-/holidays-Mengen heraus. Ein
+            # Feiertag hat bereits 0 Soll; eine Absence darauf kostet je nach Typ einen
+            # Urlaubstag für einen ohnehin freien Tag bzw. verfälscht die Abwesenheits-
+            # tage in Reports und §16-Exporten. Wochenenden sind nicht geprüft — die
+            # tragen ebenfalls 0 Soll und werden von den anderen Pfaden über
+            # `weekday() < 5` ausgeschlossen, hier aber bewusst zugelassen (Praxen mit
+            # Samstagsdienst buchen dort reale Abwesenheiten).
+            if cr.proposed_date and cr_user:
+                _is_holiday = db.query(PublicHoliday).filter(
+                    PublicHoliday.date == cr.proposed_date,
+                    PublicHoliday.tenant_id == cr_tenant_id,  # F-026
+                ).first()
+                if _is_holiday:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"{cr.proposed_date.strftime('%d.%m.%Y')} ist ein Feiertag "
+                            f"({_is_holiday.name}) — dort kann keine Abwesenheit gebucht werden."
+                        ),
+                    )
+
             _is_overtime = cr.proposed_absence_type == AbsenceType.OVERTIME.value
             if cr_user and (not _is_overtime or getattr(cr_user, "use_daily_schedule", False)):
                 weekly = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
@@ -569,6 +594,15 @@ def review_change_request(
                 date=cr.proposed_date,
                 type=AbsenceType(cr.proposed_absence_type),
                 hours=hours,
+                # Release-Review 1.16.0: half_day MUSS gesetzt werden. Die Spalte ist
+                # nullable ohne Default; NULL bedeutet laut #205 „Legacy-Row vor dem
+                # Feld" und schaltet get_vacation_account/absence_days auf die
+                # stunden-basierte Zählung um — die den #394-Halbtags-Sondertagsfaktor
+                # NICHT anwendet und nach einer rückwirkenden WorkingHoursChange
+                # driftet (8h-Urlaub kostet nach Rückstufung auf 4h/Tag plötzlich 2,0
+                # Tage). Der Änderungsantrag kennt kein Halbtags-Konzept und bucht
+                # immer ganztags → False, analog _create_closure_absences.
+                half_day=False,
                 start_time=cr.proposed_start_time,
                 end_time=cr.proposed_end_time,
                 reason_id=cr.proposed_reason_id,  # #312: carry the custom reason through
@@ -724,7 +758,13 @@ def review_change_request(
             _upd_is_overtime = absence.type == AbsenceType.OVERTIME
             if _upd_user and (not _upd_is_overtime or getattr(_upd_user, "use_daily_schedule", False)):
                 _upd_weekly = get_weekly_hours_for_date(db, _upd_user, _upd_date)
-                absence.hours = float(get_daily_target_for_date(_upd_user, _upd_date, _upd_weekly))
+                _upd_target = float(get_daily_target_for_date(_upd_user, _upd_date, _upd_weekly))
+                # Release-Review 1.16.0: half_day mitziehen. Ohne die Halbierung
+                # bläht ein reiner Zeit-Edit an einer halbtägigen Abwesenheit die
+                # Stunden auf das VOLLE Tagessoll auf — bei SICK/TRAINING wird das
+                # als Ist gutgeschrieben, sodass ein halber Krank-Tag plus halber
+                # Arbeitstag plötzlich 12 statt 8 Ist-Stunden ergibt.
+                absence.hours = round(_upd_target / 2, 2) if absence.half_day else _upd_target
             elif cr.proposed_absence_hours is not None:
                 absence.hours = float(cr.proposed_absence_hours)
             if cr.proposed_date:

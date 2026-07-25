@@ -469,8 +469,9 @@ Sie können Ihr Konto zusätzlich mit einem Einmal-Code aus einer **Authenticato
 **2FA aktivieren** (Karte **Zwei-Faktor-Authentifizierung** im Profil):
 
 1. Klicken Sie auf **„2FA aktivieren"**.
-2. **Scannen Sie den angezeigten QR-Code** mit Ihrer Authenticator-App – alternativ tragen Sie den angezeigten Schlüssel manuell ein.
-3. Geben Sie den **6-stelligen Code** aus der App ein und bestätigen Sie mit **„Bestätigen & 2FA aktivieren"**.
+2. **Bestätigen Sie Ihr aktuelles Passwort** – zur Sicherheit, damit niemand mit einer offenen Sitzung Ihren zweiten Faktor austauschen kann.
+3. **Scannen Sie den angezeigten QR-Code** mit Ihrer Authenticator-App – alternativ tragen Sie den angezeigten Schlüssel manuell ein.
+4. Geben Sie den **6-stelligen Code** aus der App ein und bestätigen Sie mit **„Bestätigen & 2FA aktivieren"**.
 
 **Login mit aktiver 2FA:** Geben Sie wie gewohnt Benutzername und Passwort ein. Anschließend werden Sie nach dem **6-stelligen Code** aus Ihrer Authenticator-App gefragt.
 
