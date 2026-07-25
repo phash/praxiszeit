@@ -19,7 +19,10 @@ from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_month, date_in_year
-from app.services.export_service import neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label, _group_by_date
+from app.services.export_service import (
+    neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label, _group_by_date,
+    format_weekly_hours_history,  # #415
+)
 
 
 # ---------------------------------------------------------------------------
@@ -144,9 +147,15 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     meta1.addElement(_str_cell("Mitarbeiter:", style=bold))
     meta1.addElement(_str_cell(f"{user.first_name} {user.last_name}"))
     meta1.addElement(_empty_cell())
+    # #415: Wochenstunden zum Monatsbeginn (nicht der aktuelle Vertragswert) +
+    # die Änderungen im Monat — Parität zum XLSX-Exporter.
+    _wh_segments = calculation_service.weekly_hours_segments(
+        db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1])
+    )
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
-    meta1.addElement(_float_cell(float(user.weekly_hours)))
-    meta1.addElement(_empty_cell())
+    meta1.addElement(_float_cell(float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)))
+    _wh_history = format_weekly_hours_history(_wh_segments)
+    meta1.addElement(_str_cell(_wh_history) if _wh_history else _empty_cell())
     meta1.addElement(_str_cell("Monat:", style=bold))
     meta1.addElement(_str_cell(f"{month:02d}/{year}"))
     table.addElement(meta1)
@@ -381,6 +390,7 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
         "Mitarbeiter", "Wochenstunden",
         "Soll (Std)", "Ist (Std)", "Saldo (Std)",
         "Überstunden kum.", "Urlaub (Tage)", "Krank (Tage)",
+        "Stundenänderungen",  # #415 — angehängt, keine Spaltenverschiebung
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -411,9 +421,14 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
         ).all()
         sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
+        # #415: Wochenstunden zum Jahresbeginn + Änderungen (Parität zu XLSX)
+        wh_segments = calculation_service.weekly_hours_segments(
+            db, user, date(year, 1, 1), date(year, 12, 31)
+        )
+
         tr = TableRow()
         tr.addElement(_str_cell(f"{user.last_name}, {user.first_name}"))
-        tr.addElement(_float_cell(float(user.weekly_hours)))
+        tr.addElement(_float_cell(float(wh_segments[0][2]) if wh_segments else float(user.weekly_hours)))
         tr.addElement(_float_cell(target))
         tr.addElement(_float_cell(actual))
         tr.addElement(_float_cell(actual - target))
@@ -421,6 +436,7 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
         tr.addElement(_float_cell(vac_days))
         # DSGVO F-003: mask sick days unless health data explicitly requested (Art. 9)
         tr.addElement(_float_cell(sick_days) if include_health_data else _str_cell("–"))
+        tr.addElement(_str_cell(format_weekly_hours_history(wh_segments)))
         table.addElement(tr)
 
 
@@ -491,6 +507,16 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     meta1.addElement(_str_cell("Nachtarbeitnehmer (§6 Abs. 2 ArbZG):", style=bold))
     # DSGVO F-006: is_night_worker nur bei include_health_data zeigen (s. _monthly_sheet).
     meta1.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
+    # #415: Wochenstunden zum Jahresbeginn + Änderungen im Jahr
+    _wh_segments = calculation_service.weekly_hours_segments(
+        db, user, date(year, 1, 1), date(year, 12, 31)
+    )
+    meta1.addElement(_empty_cell())
+    meta1.addElement(_str_cell("Wochenstunden:", style=bold))
+    meta1.addElement(_float_cell(float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)))
+    _wh_history = format_weekly_hours_history(_wh_segments)
+    if _wh_history:
+        meta1.addElement(_str_cell(_wh_history))
     table.addElement(meta1)
     table.addElement(TableRow())  # blank
 

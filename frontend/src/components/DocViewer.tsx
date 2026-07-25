@@ -193,6 +193,7 @@ export function CheatsheetAdmin() {
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Stundenänderung</p>
             <p className="text-sm text-gray-600">Benutzer bearbeiten → neue Wochenstunden + Wirkungsdatum → historische Salden bleiben korrekt.</p>
+            <p className="text-sm text-gray-600">Monats- und Jahresbericht zeigen die zu Zeitraumsbeginn gültigen Wochenstunden plus den Hinweis „ab 15.03.2026: 20,0 Std/Woche" — im Dashboard wie in Excel/ODS/PDF (Jahresübersicht: eigene Spalte „Stundenänderungen").</p>
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-sm p-2">
             <p className="text-sm text-amber-800">⚠️ Niemals löschen! Status auf „Inaktiv" setzen. 2 Jahre Aufbewahrung (§16 ArbZG).</p>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -88,5 +88,36 @@ describe('formatClockTime', () => {
     expect(formatClockTime(undefined)).toBe('–');
     expect(formatClockTime(null, 'offen')).toBe('offen');
     expect(formatClockTime(undefined, '17:00')).toBe('17:00');
+  });
+});
+
+describe('formatWeeklyHoursChanges (#415)', () => {
+  it('renders nothing when the weekly hours did not change in the period', () => {
+    // Unveränderte Berichte müssen exakt so aussehen wie vor #415.
+    expect(formatWeeklyHoursChanges([])).toBe('');
+    expect(formatWeeklyHoursChanges(undefined)).toBe('');
+    expect(formatWeeklyHoursChanges(null)).toBe('');
+  });
+
+  it('names date and new value in German format', () => {
+    expect(
+      formatWeeklyHoursChanges([{ effective_from: '2026-03-15', weekly_hours: 20 }]),
+    ).toBe('ab 15.03.2026: 20,0 Std/Woche');
+  });
+
+  it('joins multiple changes in order', () => {
+    expect(
+      formatWeeklyHoursChanges([
+        { effective_from: '2026-03-10', weekly_hours: 30 },
+        { effective_from: '2026-09-01', weekly_hours: 20.5 },
+      ]),
+    ).toBe('ab 10.03.2026: 30,0 Std/Woche; ab 01.09.2026: 20,5 Std/Woche');
+  });
+
+  it('matches the wording the file exports use, so screen and export agree', () => {
+    // Muss byte-identisch zu export_service.format_weekly_hours_history sein.
+    expect(
+      formatWeeklyHoursChanges([{ effective_from: '2026-03-15', weekly_hours: 30 }]),
+    ).toBe('ab 15.03.2026: 30,0 Std/Woche');
   });
 });

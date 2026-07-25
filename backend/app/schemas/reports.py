@@ -76,6 +76,13 @@ class AdminUserOverview(BaseModel):
     milog_warnings: List[str] = [] # #377 §2 Abs.2 MiLoG (leer wenn Flag aus / nichts überschritten)
 
 
+class WeeklyHoursChangeInPeriod(BaseModel):
+    """#415: eine Wochenstunden-Änderung, die INNERHALB des Berichtszeitraums
+    wirksam wird. Änderungen davor stecken bereits im Startwert."""
+    effective_from: date
+    weekly_hours: float
+
+
 class EmployeeMonthlyReport(BaseModel):
     """Monthly report for a single employee."""
     user_id: str
@@ -97,6 +104,10 @@ class EmployeeMonthlyReport(BaseModel):
     sick_days: float            # 0 ohne include_health_data (DSGVO Art. 9)
     exempt_from_arbzg: bool = False  # #159: leitende Angestellte (§18) — Filter im Dashboard-Schnitt
     track_hours: bool = True    # Finding 14: #191-untracked MA aus "Ø Saldo" ausschließbar
+    # #415: Stundenänderungen INNERHALB des Berichtsmonats. `weekly_hours` oben ist
+    # der zum Monatsbeginn gültige Wert; ohne diese Liste zeigt die UI eine
+    # Wochenstundenzahl, die für den halben Monat nicht galt.
+    weekly_hours_changes: List["WeeklyHoursChangeInPeriod"] = []
 
 
 class PublicHolidayResponse(BaseModel):

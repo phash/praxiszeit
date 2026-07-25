@@ -64,6 +64,66 @@ def get_weekly_hours_for_date(
     return Decimal(str(user.weekly_hours))
 
 
+def weekly_hours_segments(
+    db: Session,
+    user: User,
+    start: date,
+    end: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> List[tuple]:
+    """#415: die Wochenstunden-Historie eines Zeitraums als zusammenhaengende
+    Segmente ``[(von, bis, wochenstunden), …]``, lueckenlos ueber ``[start, end]``.
+
+    DIE eine Quelle fuer die Darstellung von Stundenaenderungen in Berichten und
+    Exporten. Vorher zeigten die Kopfzeilen/Spalten „Wochenstunden" den
+    AKTUELLEN Vertragswert (``user.weekly_hours``), waehrend die Tageszeilen
+    darunter historisch korrekt ueber ``get_weekly_hours_for_date`` rechneten —
+    ein in sich widerspruechlicher §16-Beleg.
+
+    Semantik:
+
+    * Aenderungen VOR ``start`` gelten fuer den gesamten Zeitraum (ein Segment).
+    * Aenderungen NACH ``end`` sind unsichtbar.
+    * Eine Aenderung auf denselben Wert erzeugt KEIN neues Segment — sie ist
+      im Bericht keine sichtbare Aenderung.
+    * ``start > end`` → ``[]``.
+
+    Die Stundenwerte kommen ausschliesslich aus ``get_weekly_hours_for_date``,
+    damit Darstellung und Berechnung nie auseinanderlaufen koennen. ``wh_changes``
+    ist der Preload fuer Hot-Loops (identische Semantik, keine Query) und muss —
+    wie dort — bereits auf diesen User gefiltert sein.
+    """
+    if start > end:
+        return []
+
+    if wh_changes is None:
+        wh_changes = (
+            db.query(WorkingHoursChange)
+            .filter(
+                WorkingHoursChange.user_id == user.id,
+                WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+            )
+            .order_by(WorkingHoursChange.effective_from)
+            .all()
+        )
+
+    boundaries = [start]
+    for change in sorted(wh_changes, key=lambda c: c.effective_from):
+        if start < change.effective_from <= end and change.effective_from not in boundaries:
+            boundaries.append(change.effective_from)
+
+    segments: List[tuple] = []
+    for i, boundary in enumerate(boundaries):
+        seg_end = boundaries[i + 1] - timedelta(days=1) if i + 1 < len(boundaries) else end
+        hours = get_weekly_hours_for_date(db, user, boundary, wh_changes=wh_changes)
+        if segments and segments[-1][2] == hours:
+            # Gleicher Wert → mit dem Vorgaenger verschmelzen.
+            segments[-1] = (segments[-1][0], seg_end, hours)
+        else:
+            segments.append((boundary, seg_end, hours))
+    return segments
+
+
 def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     """
     Calculate daily target hours based on weekly hours and work days.

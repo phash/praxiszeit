@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { formatHoursHM, parseHours, formatClockTime } from '../../utils/formatters';
+import { formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
@@ -32,6 +32,10 @@ interface EmployeeReport {
   sick_days: number;
   exempt_from_arbzg?: boolean;
   track_hours?: boolean;
+  // #415: Stundenänderungen INNERHALB des Berichtszeitraums. `weekly_hours` ist
+  // der zu Zeitraumsbeginn gültige Wert — ohne diese Liste sähe der Admin eine
+  // Wochenstundenzahl, die für den halben Monat gar nicht galt.
+  weekly_hours_changes?: { effective_from: string; weekly_hours: number }[];
 }
 
 interface TimeEntry {
@@ -759,7 +763,17 @@ export default function AdminDashboard() {
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {emp.last_name}, {emp.first_name}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{emp.weekly_hours}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {emp.weekly_hours}
+                      {formatWeeklyHoursChanges(emp.weekly_hours_changes) && (
+                        <span
+                          className="block text-xs text-amber-700"
+                          title="Die Wochenstunden haben sich im Berichtszeitraum geändert"
+                        >
+                          {formatWeeklyHoursChanges(emp.weekly_hours_changes)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.target_hours)}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(emp.actual_hours)}</td>
                     <td className="px-6 py-4 text-sm">
@@ -827,6 +841,11 @@ export default function AdminDashboard() {
                         {emp.last_name}, {emp.first_name}
                       </p>
                       <p className="text-sm text-gray-500">{emp.weekly_hours} Std./Woche</p>
+                      {formatWeeklyHoursChanges(emp.weekly_hours_changes) && (
+                        <p className="text-xs text-amber-700">
+                          {formatWeeklyHoursChanges(emp.weekly_hours_changes)}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center space-x-2">
                       <span className={`text-lg font-bold ${
@@ -1242,6 +1261,11 @@ export default function AdminDashboard() {
                         <div>
                           <p className="text-gray-500 mb-1">Wochenstunden</p>
                           <p className="text-gray-900">{selectedEmployee.weekly_hours} Std.</p>
+                          {formatWeeklyHoursChanges(selectedEmployee.weekly_hours_changes) && (
+                            <p className="text-xs text-amber-700 mt-0.5">
+                              {formatWeeklyHoursChanges(selectedEmployee.weekly_hours_changes)}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <p className="text-gray-500 mb-1">Urlaubstage (Budget)</p>

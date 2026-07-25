@@ -54,6 +54,33 @@ export function parseHours(value: string): number {
 }
 
 /**
+ * #415: Wochenstunden-Änderungen eines Berichtszeitraums als Klartext.
+ *
+ * Der Bericht zeigt als Zahl den zu Zeitraumsbeginn gültigen Wert; wechselt die
+ * Stundenzahl mitten im Monat, gilt diese Zahl nur für die erste Hälfte. Diese
+ * Funktion rendert den Rest ("ab 15.03.2026: 20,0 Std/Woche") — Wortlaut und
+ * Format identisch zu `export_service.format_weekly_hours_history`, damit
+ * Bildschirm und Datei-Export dasselbe sagen.
+ *
+ * Leerstring, wenn es im Zeitraum keine Änderung gab → die Aufrufer rendern
+ * dann gar nichts und unveränderte Berichte sehen aus wie vorher.
+ */
+export function formatWeeklyHoursChanges(
+  changes?: { effective_from: string; weekly_hours: number }[] | null,
+): string {
+  if (!changes || changes.length === 0) return '';
+  return changes
+    .map((c) => {
+      const [y, m, d] = c.effective_from.split('-');
+      const hours = Number.isFinite(c.weekly_hours)
+        ? c.weekly_hours.toFixed(1).replace('.', ',')
+        : '?';
+      return `ab ${d}.${m}.${y}: ${hours} Std/Woche`;
+    })
+    .join('; ');
+}
+
+/**
  * #382: Null-safe "HH:MM" from a backend time string ("HH:MM:SS").
  *
  * A clocked-in (running) TimeEntry has `end_time === null` (the column is

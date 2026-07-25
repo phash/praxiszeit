@@ -7,12 +7,13 @@ from typing import List
 from decimal import Decimal
 from io import BytesIO
 from datetime import date, timedelta
+from calendar import monthrange
 from urllib.parse import quote
 from app.database import get_db
 from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
-from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences
+from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
 from app.services.timezone_service import now_local
 from app.services.arbzg_utils import is_night_work
@@ -136,9 +137,15 @@ def get_monthly_report(
         vacation_days = float(calculation_service.absence_days(db, user, vacation_absences).quantize(Decimal('0.1')))
         sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
-        # Use weekly_hours valid at start of report month, not current value
+        # Use weekly_hours valid at start of report month, not current value.
+        # #415: zusätzlich die Änderungen INNERHALB des Monats mitliefern, sonst
+        # zeigt die UI einen Wert, der für den halben Monat nicht galt.
         report_date = date(year, month_num, 1)
-        hist_weekly = calculation_service.get_weekly_hours_for_date(db, user, report_date)
+        wh_segments = calculation_service.weekly_hours_segments(
+            db, user, report_date, date(year, month_num, monthrange(year, month_num)[1])
+        )
+        hist_weekly = wh_segments[0][2] if wh_segments else \
+            calculation_service.get_weekly_hours_for_date(db, user, report_date)
 
         reports.append(EmployeeMonthlyReport(
             user_id=str(user.id),
@@ -157,6 +164,10 @@ def get_monthly_report(
             sick_days=sick_days if include_health_data else 0.0,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
+            weekly_hours_changes=[
+                WeeklyHoursChangeInPeriod(effective_from=seg_start, weekly_hours=float(hours))
+                for seg_start, _seg_end, hours in wh_segments[1:]
+            ],
         ))
 
     # L-2: Report erfolgreich gebaut -> jetzt erst den (ggf. oben geflushten)
@@ -272,7 +283,10 @@ def get_weekly_report(
         sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
         # weekly_hours valid at the week's Monday (mirrors /monthly's report_date).
-        hist_weekly = calculation_service.get_weekly_hours_for_date(db, user, wk_start)
+        # #415: Änderungen innerhalb der Woche werden mitgeliefert.
+        wk_segments = calculation_service.weekly_hours_segments(db, user, wk_start, wk_end)
+        hist_weekly = wk_segments[0][2] if wk_segments else \
+            calculation_service.get_weekly_hours_for_date(db, user, wk_start)
 
         reports.append(EmployeeMonthlyReport(
             user_id=str(user.id),
@@ -291,6 +305,10 @@ def get_weekly_report(
             sick_days=sick_days if include_health_data else 0.0,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
+            weekly_hours_changes=[
+                WeeklyHoursChangeInPeriod(effective_from=seg_start, weekly_hours=float(hours))
+                for seg_start, _seg_end, hours in wk_segments[1:]
+            ],
         ))
 
     if include_health_data:
