@@ -74,9 +74,26 @@ def log_error(
     fingerprint = _make_fingerprint(level, logger_name, message, path)
     now = datetime.now(timezone.utc)
 
+    # Security-Review 2026-07-25: die Dedup-Suche MUSS tenant-gescoped sein.
+    # log_error läuft bewusst im Superadmin-RLS-Kontext (die Middleware schreibt
+    # auch Fehler unauthentifizierter Requests) — RLS filtert hier also NICHT.
+    # Ohne diesen Filter fasste der Fingerprint (level+logger+message+path, ohne
+    # Tenant) dieselbe Exception aus zwei Mandanten zu EINER Zeile zusammen: der
+    # zweite überschrieb Traceback + last_seen des ersten, dessen Admin über das
+    # (seit #127 tenant-gefilterte) GET /api/admin/errors dann einen fremden
+    # Traceback las — während die eigenen Fehler unter fremder tenant_id
+    # unsichtbar blieben.
+    #
+    # Bewusst über den Filter statt über die Fingerprint-Formel gelöst: der
+    # Fingerprint bleibt stabil, bestehende Zeilen aggregieren also weiter (kein
+    # UNIQUE auf fingerprint, mehrere Tenants dürfen denselben Wert tragen).
+    # tenant_id IS NULL (Infrastruktur-/Anonym-Fehler) bildet einen eigenen
+    # Aggregations-Topf — `is_(None)` statt `== None`, damit SQL IS NULL und
+    # nicht `= NULL` (immer unbekannt) entsteht.
     existing = db.query(ErrorLog).filter(
         ErrorLog.fingerprint == fingerprint,
-        ErrorLog.status.in_(['open', 'ignored'])
+        ErrorLog.status.in_(['open', 'ignored']),
+        ErrorLog.tenant_id == tenant_id if tenant_id is not None else ErrorLog.tenant_id.is_(None),
     ).first()
 
     if existing:

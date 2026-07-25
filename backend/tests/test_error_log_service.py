@@ -142,3 +142,71 @@ class TestScrubPath:
         )
         assert uid not in (entry.path or "")
         assert "<id>" in entry.path
+
+
+class TestTenantScopedDeduplication:
+    """Security-Review 2026-07-25: die Fehler-Deduplizierung darf NICHT über
+    Tenant-Grenzen hinweg zusammenfassen.
+
+    ``log_error`` läuft bewusst im Superadmin-RLS-Kontext (die Middleware muss
+    auch Fehler unauthentifizierter Requests schreiben können) — RLS schützt die
+    Dedup-Suche also NICHT. Ohne expliziten Tenant-Filter fasste der Fingerprint
+    (level+logger+message+path, ohne Tenant) die gleiche Exception aus zwei
+    Mandanten zu EINER Zeile zusammen: der zweite Mandant überschrieb Traceback
+    und last_seen des ersten und erhöhte dessen count, während seine eigenen
+    Fehler unter dem fremden tenant_id unsichtbar blieben. Der Tenant-Admin sah
+    dann über GET /api/admin/errors (seit #127 tenant-gefiltert) einen Traceback
+    aus einem fremden Mandanten.
+    """
+
+    def _log(self, db, tenant_id, message="boom", traceback_str=None):
+        from app.services.error_log_service import log_error
+        return log_error(
+            db=db, level="error", logger_name="http", message=message,
+            traceback_str=traceback_str, path="/api/x", method="GET",
+            status_code=500, tenant_id=tenant_id,
+        )
+
+    def test_same_error_in_two_tenants_stays_separate(self, db, default_tenant):
+        import uuid
+        from app.models import ErrorLog
+        other_tenant = uuid.uuid4()
+
+        a = self._log(db, default_tenant.id, traceback_str="Traceback A")
+        b = self._log(db, other_tenant, traceback_str="Traceback B")
+
+        assert a.id != b.id, "Fehler zweier Mandanten wurden zu einer Zeile zusammengefasst"
+        assert str(a.tenant_id) == str(default_tenant.id)
+        assert str(b.tenant_id) == str(other_tenant)
+        assert a.count == 1 and b.count == 1
+        assert db.query(ErrorLog).count() == 2
+
+    def test_foreign_traceback_never_overwrites(self, db, default_tenant):
+        import uuid
+        a = self._log(db, default_tenant.id, traceback_str="Traceback A")
+        self._log(db, uuid.uuid4(), traceback_str="Traceback B")
+        db.refresh(a)
+        assert a.traceback == "Traceback A"
+
+    def test_repeat_within_the_same_tenant_still_aggregates(self, db, default_tenant):
+        from app.models import ErrorLog
+        first = self._log(db, default_tenant.id)
+        again = self._log(db, default_tenant.id)
+        assert first.id == again.id
+        assert again.count == 2
+        assert db.query(ErrorLog).count() == 1
+
+    def test_infrastructure_errors_without_tenant_aggregate_among_themselves(self, db):
+        from app.models import ErrorLog
+        first = self._log(db, None)
+        again = self._log(db, None)
+        assert first.id == again.id and again.count == 2
+        assert db.query(ErrorLog).count() == 1
+
+    def test_tenantless_error_does_not_merge_into_a_tenant_row(self, db, default_tenant):
+        from app.models import ErrorLog
+        tenant_row = self._log(db, default_tenant.id)
+        infra_row = self._log(db, None)
+        assert tenant_row.id != infra_row.id
+        assert infra_row.tenant_id is None
+        assert db.query(ErrorLog).count() == 2
