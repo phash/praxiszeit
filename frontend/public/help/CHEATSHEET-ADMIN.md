@@ -52,6 +52,7 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 ### Stundenänderung (Teilzeit etc.)
 **Benutzer öffnen** → neue Wochenstunden + **Wirkungsdatum** eintragen
 → Historische Salden bleiben korrekt!
+→ Berichte zeigen den zu Zeitraumsbeginn gültigen Wert + „ab TT.MM.JJJJ: X Std/Woche" (Dashboard, Excel, ODS, PDF)
 
 ### Mitarbeiter deaktivieren (niemals löschen!)
 **Benutzer öffnen** → Status „Inaktiv"

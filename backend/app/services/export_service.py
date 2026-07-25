@@ -41,6 +41,31 @@ def neutralize_spreadsheet_formula(value):
     return value
 
 
+def _de_hours(value) -> str:
+    """'30,0' — deutsche Dezimaldarstellung fuer eine Stundenzahl."""
+    return f"{float(value):.1f}".replace(".", ",")
+
+
+def format_weekly_hours_history(segments) -> str:
+    """#415: die Stundenaenderungen eines Zeitraums als Klartext.
+
+    ``segments`` ist die Ausgabe von
+    :func:`calculation_service.weekly_hours_segments`. Das ERSTE Segment ist der
+    zum Zeitraumsbeginn gueltige Wert und steht bereits als Zahl in der
+    Kopfzeile/Spalte — hier interessieren nur die Aenderungen danach.
+
+    Leerstring, wenn sich im Zeitraum nichts geaendert hat: die Aufrufer
+    schreiben die Zelle dann gar nicht erst, sodass unveraenderte Berichte
+    exakt so aussehen wie vorher.
+    """
+    if len(segments) < 2:
+        return ""
+    return "; ".join(
+        f"ab {seg_start.strftime('%d.%m.%Y')}: {_de_hours(hours)} Std/Woche"
+        for seg_start, _seg_end, hours in segments[1:]
+    )
+
+
 def escape_pdf_text(value):
     """Escape user-controlled text before it is placed into a reportlab
     ``Paragraph``.
@@ -145,9 +170,18 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.cell(row=1, column=1).value = "Mitarbeiter:"
     sheet.cell(row=1, column=1).font = Font(bold=True)
     sheet.cell(row=1, column=2).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name}")
+    # #415: der zum MONATSBEGINN gueltige Vertragswert — nicht der aktuelle.
+    # Sonst widerspricht die Kopfzeile den historisch gerechneten Tageszeilen.
+    _last_day = monthrange(year, month)[1]
+    _wh_segments = calculation_service.weekly_hours_segments(
+        db, user, date(year, month, 1), date(year, month, _last_day)
+    )
     sheet.cell(row=1, column=4).value = "Wochenstunden:"
     sheet.cell(row=1, column=4).font = Font(bold=True)
-    sheet.cell(row=1, column=5).value = float(user.weekly_hours)
+    sheet.cell(row=1, column=5).value = float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)
+    _wh_history = format_weekly_hours_history(_wh_segments)
+    if _wh_history:
+        sheet.cell(row=1, column=6).value = _wh_history
     sheet.cell(row=1, column=7).value = "Monat:"
     sheet.cell(row=1, column=7).font = Font(bold=True)
     sheet.cell(row=1, column=8).value = f"{month:02d}/{year}"
@@ -490,14 +524,17 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
     # Title
     sheet.cell(row=1, column=1).value = f"Jahresübersicht {year}"
     sheet.cell(row=1, column=1).font = Font(bold=True, size=14)
-    sheet.merge_cells('A1:J1')
+    sheet.merge_cells('A1:K1')  # #415: inkl. der angehängten Spalte "Stundenänderungen"
 
     # Headers
     headers = [
         "Name", "Wochenstunden", "Soll (Jahr)", "Ist (Jahr)",
         "Saldo (Jahr)", "Überstunden kum.",
         "Urlaub Budget", "Urlaub genommen", "Urlaub Rest",
-        "Krankheitstage"
+        "Krankheitstage",
+        # #415: ANGEHAENGT, nicht eingeschoben — bestehende Spaltenpositionen
+        # (und damit Kundenauswertungen auf dieser Datei) bleiben unveraendert.
+        "Stundenänderungen",
     ]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=3, column=col_num)
@@ -536,9 +573,17 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         ).all()
         sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
+        # #415: Wochenstunden zum JAHRESBEGINN + die Änderungen als eigene
+        # (angehängte) Spalte — die Jahres-Soll/Ist-Werte daneben rechnen
+        # historisch, die Spalte muss dazu passen.
+        wh_segments = calculation_service.weekly_hours_segments(
+            db, user, date(year, 1, 1), date(year, 12, 31)
+        )
+
         # Write data
         sheet.cell(row=row, column=1).value = neutralize_spreadsheet_formula(f"{user.last_name}, {user.first_name}")
-        sheet.cell(row=row, column=2).value = float(user.weekly_hours)
+        sheet.cell(row=row, column=2).value = float(wh_segments[0][2]) if wh_segments else float(user.weekly_hours)
+        sheet.cell(row=row, column=11).value = format_weekly_hours_history(wh_segments) or None
         sheet.cell(row=row, column=3).value = float(yearly_target)
         sheet.cell(row=row, column=3).number_format = '0.00'
         sheet.cell(row=row, column=4).value = float(yearly_actual)
@@ -577,9 +622,10 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         # Mark the column header to indicate data is protected
         sheet.cell(row=3, column=10).value = "Krankheitstage (geschützt)"
 
-    # Adjust column widths
+    # Adjust column widths (#415: Spalte 11 = Stundenänderungen, breiter Freitext)
     for col in range(1, 11):
         sheet.column_dimensions[get_column_letter(col)].width = 14
+    sheet.column_dimensions[get_column_letter(11)].width = 34
 
 
 def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User], year: int, include_health_data: bool = False):
@@ -680,6 +726,17 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.cell(row=2, column=4).value = "Nachtarbeitnehmer (§6 Abs. 2 ArbZG):"
     sheet.cell(row=2, column=4).font = Font(bold=True)
     sheet.cell(row=2, column=5).value = ("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"
+
+    # #415: Wochenstunden zum Jahresbeginn + Änderungen im Jahr
+    _wh_segments = calculation_service.weekly_hours_segments(
+        db, user, date(year, 1, 1), date(year, 12, 31)
+    )
+    sheet.cell(row=2, column=7).value = "Wochenstunden:"
+    sheet.cell(row=2, column=7).font = Font(bold=True)
+    sheet.cell(row=2, column=8).value = float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)
+    _wh_history = format_weekly_hours_history(_wh_segments)
+    if _wh_history:
+        sheet.cell(row=2, column=9).value = _wh_history
 
     # Row 3: Column headers
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung"]
@@ -1333,7 +1390,14 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         # ── Employee meta ──
         arbzg_flag = " | \u00a718-befreit" if user.exempt_from_arbzg else ""
         night_flag = " | Nachtarbeitnehmer (\u00a76)" if user.is_night_worker else ""
-        meta_label = f"{user.first_name} {user.last_name}  \u2013  {float(user.weekly_hours):.1f}h/Woche{arbzg_flag}{night_flag}"
+        # #415: Wochenstunden zum Monatsbeginn + \u00c4nderungen im Monat.
+        _wh_segments = calculation_service.weekly_hours_segments(
+            db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1])
+        )
+        _wh_start = _wh_segments[0][2] if _wh_segments else user.weekly_hours
+        _wh_history = format_weekly_hours_history(_wh_segments)
+        _wh_flag = f" | Stunden\u00e4nderung: {_wh_history}" if _wh_history else ""
+        meta_label = f"{user.first_name} {user.last_name}  \u2013  {float(_wh_start):.1f}h/Woche{_wh_flag}{arbzg_flag}{night_flag}"
         story.append(Paragraph(escape_pdf_text(meta_label), ParagraphStyle('meta', fontName='Helvetica', fontSize=8, leading=10,
                                                            textColor=colors.HexColor('#374151'))))
         story.append(Spacer(1, 2 * mm))

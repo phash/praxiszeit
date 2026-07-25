@@ -236,6 +236,8 @@ Klicken Sie in der Benutzerliste auf den Namen des Mitarbeiters.
 **Stundenänderungen:**
 Wenn Sie die Wochenstunden ändern (z. B. bei Teilzeitumstellung), wird ein Eintrag in der **Stundenhistorie** erstellt. Frühere Monate werden weiterhin mit den damals gültigen Stunden berechnet.
 
+Die Änderung ist auch in den Berichten sichtbar: Monats- und Jahresbericht zeigen als Wochenstunden den **zu Zeitraumsbeginn** gültigen Wert und daneben den Hinweis „ab 15.03.2026: 20,0 Std/Woche". Das gilt für die Tabelle im Admin-Dashboard ebenso wie für die Excel-, ODS- und PDF-Exporte (in der Jahresübersicht als eigene Spalte **Stundenänderungen**). So passt die ausgewiesene Wochenstundenzahl immer zu den darunter historisch gerechneten Tageszeilen.
+
 1. Name/Kürzel des Mitarbeiters öffnen
 2. Neue Wochenstunden eintragen
 3. **Wirkungsdatum** angeben (ab wann gelten die neuen Stunden)

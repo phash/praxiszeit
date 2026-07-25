@@ -850,6 +850,24 @@ März-Soll     → 4 h/Tag   (neuer Wert)
 `get_weekly_hours_for_date` liefert pro Tag automatisch den damals gültigen Wert — kein
 manuelles Nachrechnen alter Monate nötig.
 
+**Darstellung im Bericht (#415).** Wechselt die Stundenzahl *innerhalb* eines
+Berichtszeitraums, gibt es keine einzelne richtige Wochenstundenzahl mehr. Berichte weisen
+deshalb den **zu Zeitraumsbeginn** gültigen Wert aus und nennen die Änderung daneben:
+
+```
+Wochenstunden: 40,0      ab 01.03.2026: 20,0 Std/Woche
+```
+
+Die Segmente liefert `calculation_service.weekly_hours_segments(db, user, von, bis)` —
+dieselbe Quelle für Bildschirm (Admin-Dashboard) und Datei-Export (Excel, ODS, PDF; in der
+Jahresübersicht als angehängte Spalte „Stundenänderungen"). Eine Änderung *vor* dem
+Zeitraum steckt bereits im Startwert, eine Änderung auf denselben Wert wird nicht
+ausgewiesen.
+
+⚠️ `user.weekly_hours` ist zugleich der aktuelle Vertragswert **und** der Rückfallwert für
+alle Tage *vor* der ersten erfassten Änderung. Wer das Feld direkt bearbeitet, statt eine
+Änderung mit Wirkungsdatum anzulegen, verschiebt damit auch die Vergangenheit.
+
 ---
 
 ## 15. Worked Example – Minijob (MiLoG-Fixmodus)
