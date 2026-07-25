@@ -199,6 +199,21 @@ def admin_update_time_entry(
     update_end_time = entry_data.end_time if entry_data.end_time is not None else entry.end_time
     update_break_minutes = entry_data.break_minutes if entry_data.break_minutes is not None else entry.break_minutes
 
+    # Release-Review 1.16.0: die Reihenfolge des GEMERGTEN Paars prüfen.
+    # `TimeEntryUpdate.validate_end_after_start` sieht nur den Payload — ein PUT mit
+    # ausschliesslich `end_time` kommt daran vorbei, und der Router schrieb bisher
+    # end < start durch; `net_hours` fiel dann still über den max(0,…)-Floor auf 0
+    # und der Tag verschwand aus Saldo und §16-Beleg.
+    if (
+        update_start_time is not None
+        and update_end_time is not None
+        and update_end_time <= update_start_time
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Endzeit muss nach Startzeit liegen",
+        )
+
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
@@ -299,12 +314,19 @@ def admin_update_time_entry(
         tenant_id=current_user.tenant_id,
     )
 
-    # Apply only provided updates (always write clamped effective times)
+    # Apply only provided updates (always write clamped effective times).
+    # Release-Review 1.16.0: ein Datumswechsel ändert das Soll-Fenster des Tages und
+    # damit das Kappungsergebnis, auch wenn keine Zeit mitgeschickt wurde. Vorher
+    # wurden Validierung, Duplikatsprüfung und Audit-Log mit den NEU gekappten Zeiten
+    # gefahren, in die DB aber die alten geschrieben — der Audit-Eintrag behauptete
+    # eine Zeit, die nie gespeichert wurde, und das #201-Arbeitszeitfenster liess
+    # sich per reinem Datums-PUT umgehen.
+    _times_affected = entry_data.date is not None
     if entry_data.date is not None:
         entry.date = entry_data.date
-    if entry_data.start_time is not None:
+    if entry_data.start_time is not None or _times_affected:
         entry.start_time = eff_start
-    if entry_data.end_time is not None:
+    if entry_data.end_time is not None or _times_affected:
         entry.end_time = eff_end
     if entry_data.break_minutes is not None:
         entry.break_minutes = entry_data.break_minutes
@@ -315,9 +337,9 @@ def admin_update_time_entry(
         entry.break_waiver_reason = waiver_reason
     # #201: raw_* — reset to None when not capped, set when capped.
     # Only update raw_* when start_time or end_time was explicitly provided in the request.
-    if entry_data.start_time is not None:
+    if entry_data.start_time is not None or _times_affected:
         entry.raw_start_time = raw_start
-    if entry_data.end_time is not None:
+    if entry_data.end_time is not None or _times_affected:
         entry.raw_end_time = raw_end
 
     db.commit()

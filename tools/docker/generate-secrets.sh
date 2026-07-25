@@ -10,6 +10,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Release-Review 1.16.0: Im Docker-Bundle liegt das Skript neben der .env.example,
+# im Quellcode-Repo aber unter tools/docker/ — die .env.example nur im Root. Der
+# in INSTALL-DOCKER.md und INSTALLATION.md dokumentierte Aufruf
+# `bash tools/docker/generate-secrets.sh` brach dadurch IMMER mit
+# "FEHLER: .env.example nicht gefunden" ab. Gleicher Fallback wie in
+# backup.sh/restore.sh, damit die .env im Root landet (dort sucht compose sie).
+if [ ! -f .env.example ] && [ -f ../../.env.example ]; then cd ../../; fi
+
 if [ ! -f .env.example ]; then
     echo "FEHLER: .env.example nicht gefunden. Dieses Skript aus dem Verzeichnis mit" >&2
     echo "        der docker-compose.yml / .env.example heraus aufrufen." >&2

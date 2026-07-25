@@ -20,6 +20,8 @@ from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_month, date_in_year
 from app.services.export_service import (
+    absence_day_target,  # Release-Review 1.16.0
+    export_users,  # Release-Review 1.16.0
     neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label, _group_by_date,
     format_weekly_hours_history,  # #415
 )
@@ -110,9 +112,16 @@ def _save(doc: OpenDocumentSpreadsheet) -> BytesIO:
     return buf
 
 
-def _get_active_users(db: Session, tenant_id=None) -> List[User]:
-    """Return active, non-hidden users. F-026: apply explicit tenant filter
-    (belt-and-suspenders on top of RLS) when tenant_id is provided."""
+def _get_active_users(db: Session, tenant_id=None, period=None) -> List[User]:
+    """Mitarbeiter für den Export. F-026: expliziter Tenant-Filter zusätzlich zu RLS.
+
+    Release-Review 1.16.0: mit ``period`` (start, end) delegiert die Auswahl an
+    ``export_service.export_users`` — aktive plus ausgeschiedene MA, die im Zeitraum
+    Daten haben. Ohne ``period`` bleibt das alte Verhalten (nur aktive), damit
+    Aufrufer ohne Zeitraumbezug unverändert funktionieren.
+    """
+    if period is not None:
+        return export_users(db, tenant_id, period[0], period[1])
     q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
     if tenant_id is not None:
         q = q.filter(User.tenant_id == tenant_id)
@@ -129,7 +138,8 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
     F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db, tenant_id)
+    users = _get_active_users(db, tenant_id, period=(
+        date(year, month, 1), date(year, month, monthrange(year, month)[1])))
     for user in users:
         _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data)
 
@@ -299,13 +309,16 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
                     bem_parts.append(e.note)
             tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif day_absences:
-            target = Decimal("0.00")
+            # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0
+            # (Halbtag/SICK/TRAINING/OVERTIME behalten Soll) — Parität zu XLSX.
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
             # DSGVO F-003 / #312: sick + custom-reason absences maskiert (Label +
             # Note) außer bei explizit angeforderten Gesundheitsdaten. ALLE
             # Abwesenheiten des Tages (Misch-Tag) werden gerendert.
             label, note_str = _absence_cell_parts(day_absences, reason_names, include_health_data)
-            tr.addElement(_float_cell(0.0))
-            tr.addElement(_float_cell(0.0))
+            tr.addElement(_float_cell(float(target)))
+            # net ist hier Decimal (vgl. else-Zweig) — beide Seiten Decimal halten.
+            tr.addElement(_float_cell(float(net - target)))
             tr.addElement(_str_cell(label))
             tr.addElement(_str_cell(note_str))
         else:
@@ -373,7 +386,7 @@ def generate_yearly_report(db: Session, year: int, include_health_data: bool = F
     F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db, tenant_id)
+    users = _get_active_users(db, tenant_id, period=(date(year, 1, 1), date(year, 12, 31)))
     _yearly_overview_sheet(doc, db, users, year, bold, include_health_data)
     _absences_overview_sheet(doc, db, users, year, bold, include_health_data)
     for user in users:
@@ -638,8 +651,10 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             # DSGVO F-003/Art. 9 / #312: sick + custom-reason maskiert außer bei
             # angeforderten Gesundheitsdaten; ALLE Abwesenheiten des Tages (Misch-Tag).
             label, note_str = _absence_cell_parts(day_absences, reason_names, include_health_data)
-            tr.addElement(_float_cell(0.0))
-            tr.addElement(_float_cell(0.0))
+            # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
+            target = float(absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config))
+            tr.addElement(_float_cell(target))
+            tr.addElement(_float_cell(net - target))
             tr.addElement(_str_cell(label))
             tr.addElement(_str_cell(note_str))
         else:
@@ -665,7 +680,7 @@ def generate_yearly_report_classic(db: Session, year: int, include_health_data: 
     F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db, tenant_id)
+    users = _get_active_users(db, tenant_id, period=(date(year, 1, 1), date(year, 12, 31)))
     for user in users:
         _classic_sheet(doc, db, user, year, bold, include_health_data)
 

@@ -204,6 +204,10 @@ check_enabled = true
 server_url = "https://updates.mr-development.de"
 
 [backup]
+# Hinweis: `enabled` und `schedule` werden derzeit NICHT ausgewertet.
+# Der Zeitplan steckt im systemd-Timer (Linux, 02:00), im launchd-Job (macOS)
+# bzw. in der Aufgabenplanung (Windows) — dort aendern. Ausgewertet wird nur
+# `retention_days`.
 enabled = true
 schedule = "02:00"
 retention_days = 31

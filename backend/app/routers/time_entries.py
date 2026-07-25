@@ -631,22 +631,6 @@ def create_time_entry(
     if current_user.last_work_day and entry_data.date > current_user.last_work_day:
         raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
 
-    # Check for overlapping entries on the same date
-    existing = db.query(TimeEntry).filter(
-        TimeEntry.user_id == current_user.id,
-        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
-        TimeEntry.date == entry_data.date,
-        TimeEntry.start_time == entry_data.start_time
-    ).first()
-
-    if existing:
-        # B-L4: duplicate entry is a conflict, not a bad request — align with
-        # the 409 used by the CR-approval and absence duplicate paths.
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum"
-        )
-
     exempt = current_user.exempt_from_arbzg
 
     # #201: clamp start/end to [soll − grace, soll + grace] BEFORE all §4/§3
@@ -657,6 +641,27 @@ def create_time_entry(
     eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
         current_user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
     )
+
+    # Duplikatsprüfung NACH dem Kappen (Release-Review 1.16.0). Gespeichert wird
+    # `eff_start`, geprüft wurde vorher die ROHE `entry_data.start_time` — zwei
+    # verschiedene Rohzeiten innerhalb des Puffers werden aber auf dieselbe
+    # Startzeit gekappt. Die Sonde lief dann ins Leere und erst der UNIQUE-Index
+    # `uq_tenant_user_date_start` schlug zu: HTTP 500 statt des gemeinten 409.
+    # `admin_time_entries` prüft bereits gegen die gekappte Zeit.
+    existing = db.query(TimeEntry).filter(
+        TimeEntry.user_id == current_user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+        TimeEntry.date == entry_data.date,
+        TimeEntry.start_time == eff_start,
+    ).first()
+
+    if existing:
+        # B-L4: duplicate entry is a conflict, not a bad request — align with
+        # the 409 used by the CR-approval and absence duplicate paths.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum"
+        )
 
     # §3 ArbZG: daily hours hard cap – skipped for exempt users.
     # MUST run BEFORE the §4 break-waiver / approval branch below: a >10h day is
@@ -908,9 +913,23 @@ def update_time_entry(
     # #201: clamp start/end to [soll − grace, soll + grace] BEFORE all §4/§3
     # checks so compliance is assessed on credited time.
     from app.services import work_window_service
+    # Release-Review 1.16.0: gegen den EIGENTÜMER des Eintrags kappen und prüfen,
+    # nicht gegen den Aufrufer. Diese Route lässt Admins fremde Einträge bearbeiten
+    # (Ownership-Check weiter oben) — mit `current_user` las der Code dann das
+    # Arbeitszeitfenster, `exempt_from_arbzg` und `is_night_worker` des ADMINS.
+    # Ein §18-befreiter Praxisinhaber konnte so für eine nicht befreite MFA einen
+    # 12-Stunden-Tag ohne Pause speichern, weil die §3-Hartgrenze übersprungen
+    # wurde. `admin_time_entries.admin_update_time_entry` macht es bereits richtig.
+    _entry_owner = (
+        current_user if entry.user_id == current_user.id
+        else db.query(User).filter(
+            User.id == entry.user_id,
+            User.tenant_id == current_user.tenant_id,  # F-026
+        ).first() or current_user
+    )
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
-        current_user, entry.date, entry.start_time, entry.end_time, _grace,
+        _entry_owner, entry.date, entry.start_time, entry.end_time, _grace,
     )
     # Fix #2: only overwrite start/end + raw_* when the respective time was
     # actually part of this partial update — mirrors the admin path
@@ -925,7 +944,7 @@ def update_time_entry(
         entry.end_time = _eff_end
         entry.raw_end_time = _raw_end
 
-    exempt = current_user.exempt_from_arbzg
+    exempt = _entry_owner.exempt_from_arbzg
 
     # §3 ArbZG: daily hours hard cap – skipped for exempt users.
     # MUST run BEFORE the §4 break-waiver / approval branch below: a >10h day is
@@ -1083,7 +1102,7 @@ def update_time_entry(
             update_warnings.append("HOLIDAY_WORK")
         if (
             entry.end_time is not None
-            and current_user.is_night_worker
+            and _entry_owner.is_night_worker
             and is_night_work(entry.start_time, entry.end_time)
             and saved_hours > MAX_NIGHT_WORKER_DAILY_WARN
         ):

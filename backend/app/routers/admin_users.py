@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, TimeEntryAuditLog, UserRole, PublicHoliday
@@ -682,6 +683,33 @@ def update_user(
                 detail="Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
             )
 
+    # Release-Review 1.16.0: Beschäftigungsfenster und Soll-Zeit-Fenster ebenfalls
+    # gegen den EFFEKTIVEN Zustand prüfen, nicht nur gegen den Payload.
+    # `validate_employment_and_window_order` im Schema sieht nur die mitgeschickten
+    # Felder: ein Partial-PUT mit ausschliesslich `last_work_day` kommt an ihm vorbei
+    # (first_work_day ist dort None) und schreibt first > last in die DB. Danach
+    # wirft der `UserResponse`-Validator beim SERIALISIEREN — also erst in der
+    # Antwort und anschliessend bei jedem weiteren Endpoint, der den Nutzer
+    # ausliefert (500, Benutzerliste unbenutzbar). Gleiches Muster wie beim
+    # eff_fixed-Block oben.
+    _eff = lambda name: update_data.get(name, getattr(user, name, None))  # noqa: E731
+    _eff_first, _eff_last = _eff('first_work_day'), _eff('last_work_day')
+    if _eff_first and _eff_last and _eff_first > _eff_last:
+        raise HTTPException(
+            status_code=400,
+            detail="Erster Arbeitstag darf nicht nach dem letzten Arbeitstag liegen.",
+        )
+    for _wd, _label in (
+        ('monday', 'Montag'), ('tuesday', 'Dienstag'), ('wednesday', 'Mittwoch'),
+        ('thursday', 'Donnerstag'), ('friday', 'Freitag'),
+    ):
+        _s, _e = _eff(f'scheduled_start_{_wd}'), _eff(f'scheduled_end_{_wd}')
+        if _s and _e and _s >= _e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{_label}: Soll-Beginn muss vor dem Soll-Ende liegen.",
+            )
+
     # VULN-010: invalidate existing JWTs when role is changed
     role_changed = 'role' in update_data and update_data['role'] != user.role
     # #290: did this update turn closure participation ON? Then enrol below.
@@ -831,6 +859,44 @@ def create_working_hours_change(
             status_code=400,
             detail=f"Eine Stundenänderung für den {change_data.effective_from.strftime('%d.%m.%Y')} existiert bereits"
         )
+
+    # Release-Review 1.16.0 (#415-Folgefund): Bevor die ERSTE Änderung eines
+    # Mitarbeiters gespeichert wird, den bisherigen Vertragswert als Basis-Zeile
+    # festhalten.
+    #
+    # Hintergrund: `get_weekly_hours_for_date` fällt für jeden Tag VOR der ersten
+    # erfassten Änderung auf `user.weekly_hours` zurück. Genau dieses Feld wird
+    # weiter unten überschrieben, sobald das Wirkungsdatum <= heute liegt — und
+    # das ist der Default des Stundenverlauf-Dialogs. Ohne Basis-Zeile galt der
+    # NEUE Wert damit rückwirkend für die gesamte Vergangenheit: das Per-Tag-Soll
+    # bereits abgeschlossener Monate verschob sich still, und #415 konnte die
+    # Änderung nicht ausweisen (beide Segmente trugen denselben Wert und wurden
+    # verschmolzen). Die Basis-Zeile friert die Vergangenheit auf dem alten Wert
+    # ein und macht die Änderung im Bericht sichtbar.
+    #
+    # Datum: `first_work_day`, sonst ein Tag vor der ersten Änderung — Hauptsache
+    # vor jeder erfassbaren Buchung. Nur wenn sich der Wert tatsächlich ändert
+    # (sonst entstünde eine Pseudo-Änderung, die weekly_hours_segments ohnehin
+    # wieder verschmelzen würde).
+    _has_history = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user_id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+    ).first() is not None
+    if (
+        not _has_history
+        and user.weekly_hours is not None
+        and Decimal(str(user.weekly_hours)) != Decimal(str(change_data.weekly_hours))
+    ):
+        _baseline_date = user.first_work_day or (change_data.effective_from - timedelta(days=1))
+        if _baseline_date >= change_data.effective_from:
+            _baseline_date = change_data.effective_from - timedelta(days=1)
+        db.add(WorkingHoursChange(
+            user_id=user_id,
+            tenant_id=current_user.tenant_id,
+            effective_from=_baseline_date,
+            weekly_hours=user.weekly_hours,
+            note="Automatisch erfasster Ausgangswert vor der ersten Stundenänderung",
+        ))
 
     change = WorkingHoursChange(
         user_id=user_id,

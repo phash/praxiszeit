@@ -458,14 +458,23 @@ def future_freizeitausgleich_impact(
     """
     if not user.track_hours:
         return Decimal('0')
-    # #377 Baustein 2b: im festen Monats-Soll-Modus bewegt eine OVERTIME-Abwesenheit
-    # das Überstundenkonto NICHT — OVERTIME ist in keinem _FIXED_*_TYPES, hat also
-    # weder Soll- noch Ist-Effekt (get_overtime_account delegiert für diese MA an das
-    # Fix-Modell). Es gibt daher keinen künftigen Freizeitausgleich zu projizieren.
-    # (Fünfter Parallelpfad — Modus-Branch wie in get_range_target/get_overtime_account/
-    # get_ytd_summary/get_overtime_history_detailed, siehe CLAUDE.md #377.)
-    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-        return Decimal('0')
+    # #377 Baustein 2b — Fix-Soll-Modus. Release-Review 1.16.0: die frühere
+    # Begründung („OVERTIME steht in keinem _FIXED_*_TYPES, bewegt das Konto also
+    # nicht") war genau verkehrt herum. Dass OVERTIME weder in
+    # _FIXED_PAID_CREDIT_TYPES noch in _FIXED_UNPAID_TYPES steht, heißt: es gibt
+    # (a) KEINE Ist-Gutschrift über fixed_month_credit und (b) KEINE Soll-Minderung
+    # über fixed_month_unpaid_reduction. Das Soll bleibt das volle flache
+    # agreed_monthly_hours, das Ist zählt für den Ausgleichstag 0 — der Saldo sinkt
+    # also um exakt die GEPLANTEN Stunden des Tages, genau wie im Tages-Modell.
+    # Die Projektion war damit ausgerechnet für die Gruppe dunkel, deren Konto nach
+    # § 2 Abs. 2 MiLoG binnen 12 Monaten ausgeglichen sein muss.
+    #
+    # Im Fix-Modus ist die maßgebliche Größe die geplante Tagesarbeitszeit
+    # (_fixed_planned_hours), nicht das aus den Wochenstunden abgeleitete Tages-Soll.
+    _fixed_mode = bool(
+        getattr(user, "use_fixed_monthly_target", False)
+        and getattr(user, "agreed_monthly_hours", None)
+    )
     if today is None:
         today = today_local()
     if cutoff_date is None:
@@ -503,6 +512,15 @@ def future_freizeitausgleich_impact(
         if d.weekday() >= 5:  # Wochenende → 0 Soll
             continue
         if not _within_employment_window(user, d):
+            continue
+        if _fixed_mode:
+            # Fix-Soll: das Monats-Soll ist flach und wird von einem OVERTIME-Tag
+            # nicht gemindert; das Ist bekommt für ihn nichts gutgeschrieben. Der
+            # Saldo sinkt also um die GEPLANTEN Stunden dieses Tages. An einem
+            # Feiertag ist die geplante Zeit ohnehin nicht zu leisten → 0.
+            if d in holiday_dates:
+                continue
+            total += _fixed_planned_hours(db, user, d, special_cfg)
             continue
         # OVERTIME ist NICHT soll-reduzierend → leere half_map → volles Tages-Soll
         # (× #146-Sondertag-Faktor). Exakt der Betrag, um den dieser Tag später
