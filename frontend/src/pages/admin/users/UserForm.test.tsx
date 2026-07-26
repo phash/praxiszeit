@@ -229,3 +229,62 @@ describe('#383 Übertrag Urlaubstage', () => {
     expect(carryoverCall).toBeUndefined();
   });
 });
+
+describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpassen)', () => {
+  const baseEditUser = {
+    id: 'u1', username: 'jd', first_name: 'Jane', last_name: 'Doe', role: 'employee',
+    weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+    is_active: true, use_daily_schedule: false,
+  };
+
+  it('zeigt beim Bearbeiten ein read-only-Feld plus Button (kein Eingabefeld)', () => {
+    renderForm({ editUser: baseEditUser });
+    expect(screen.getByText('40,0 h/Woche')).toBeInTheDocument();
+    expect(document.getElementById('f-weekly-hours')?.tagName).not.toBe('INPUT');
+    expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeInTheDocument();
+  });
+
+  it('zeigt beim Anlegen ein Eingabefeld (kein Button)', () => {
+    renderForm();
+    expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');
+    expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
+  });
+
+  it('sendet weekly_hours beim Update NICHT mit (Backend lehnt es sonst mit 400 ab)', async () => {
+    renderForm({ editUser: baseEditUser });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
+      expect(call).toBeTruthy();
+      expect(call![1]).not.toHaveProperty('weekly_hours');
+    });
+  });
+
+  it('sendet weekly_hours beim Anlegen mit (kein Verlauf vorhanden, Startwert nötig)', async () => {
+    renderForm();
+    fireEvent.change(screen.getByLabelText(/Benutzername/i), { target: { value: 'newemployee' } });
+    // Exact text: /Passwort/i also matches the show/hide-toggle button's
+    // aria-label ("Passwort anzeigen") and would otherwise be ambiguous.
+    fireEvent.change(screen.getByLabelText('Passwort *'), { target: { value: 'TestPass123!' } });
+    fireEvent.change(screen.getByLabelText('Vorname'), { target: { value: 'New' } });
+    fireEvent.change(screen.getByLabelText('Nachname'), { target: { value: 'User' } });
+    fireEvent.change(document.getElementById('f-weekly-hours') as HTMLInputElement, { target: { value: '32' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      expect(postMock).toHaveBeenCalled();
+      expect(postMock.mock.calls[0][1]).toMatchObject({ weekly_hours: 32 });
+    });
+  });
+
+  it('Button ist bei individuellem Tagesplan deaktiviert (Backend lehnt diese Nutzer ohnehin ab)', () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
+    expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeDisabled();
+  });
+
+  it('öffnet den Wochenstunden-Dialog für den bearbeiteten Nutzer', () => {
+    const onOpenHoursHistory = vi.fn();
+    renderForm({ editUser: baseEditUser, onOpenHoursHistory });
+    fireEvent.click(screen.getByRole('button', { name: /Wochenstunden anpassen/i }));
+    expect(onOpenHoursHistory).toHaveBeenCalledWith(baseEditUser);
+  });
+});

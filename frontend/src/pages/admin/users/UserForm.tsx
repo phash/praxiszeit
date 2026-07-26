@@ -14,9 +14,15 @@ import type { User } from '../../../types/user';
 interface UserFormProps {
   editUser: User | null;
   onSaved: () => void;
+  // Task 6 (#Wochenstunden-anpassen): Wochenstunden sind beim Bearbeiten nur
+  // noch Anzeige — die Änderung läuft über den Wochenstunden-Dialog, der in
+  // Users.tsx lebt (dort auch über das Uhr-Symbol in der Liste erreichbar).
+  // Optional, damit bestehende Render-Aufrufe/Tests ohne den Callback nicht
+  // brechen; ohne ihn ist der Button praktisch ein No-op.
+  onOpenHoursHistory?: (user: User) => void;
 }
 
-export default function UserForm({ editUser, onSaved }: UserFormProps) {
+export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
   const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
@@ -217,8 +223,13 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
       };
 
       if (editUser) {
-        // When editing, send only the fields that can be updated (exclude password)
-        const { password, ...updateData } = payload;
+        // When editing, send only the fields that can be updated (exclude password).
+        // Task 6 (#Wochenstunden-anpassen): weekly_hours is edit-only via the
+        // Wochenstunden-Dialog now — the backend PUT rejects it outright (a
+        // direct-edit here would silently rewrite the historical fallback
+        // value for the whole past, which is exactly the bug this redesign
+        // fixes). NEVER add it back into updateData.
+        const { password, weekly_hours, ...updateData } = payload;
         await apiClient.put(`/admin/users/${editUser.id}`, updateData);
         // #158/#383: nur schreiben, wenn (a) die Felder erfolgreich für EIN Jahr
         // geladen sind (loadedCarryoverYear !== null) — sonst würde ein Ladefehler
@@ -347,23 +358,53 @@ export default function UserForm({ editUser, onSaved }: UserFormProps) {
           </div>
           <div>
             <label htmlFor="f-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">Wochenstunden</label>
-            <input
-              id="f-weekly-hours"
-              type="number"
-              step="0.5"
-              value={formData.weekly_hours}
-              onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
-              required
-              min="0"
-              max="60"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-            />
-            {editUser && !formData.use_fixed_monthly_target && (
-              <p className="mt-1 text-xs text-amber-600">
-                ⚠️ Eine Änderung hier wirkt <strong>rückwirkend</strong> auf das Soll aller
-                Zeiträume ohne eigenen Stundenhistorie-Eintrag. Für eine stichtagsgenaue
-                Änderung ab einem Datum stattdessen die <strong>Stundenhistorie</strong>
-                (Wochenstunden-Verlauf) nutzen.
+            {editUser ? (
+              // Task 6 (#Wochenstunden-anpassen): reine Anzeige beim Bearbeiten.
+              // Der frühere direkte Eingabe-Feld überschrieb still den
+              // Rückfallwert für die gesamte Vergangenheit — Änderungen laufen
+              // jetzt ausschließlich über den Wochenstunden-Dialog (Wirkungsdatum
+              // + Vorschau), den der Button daneben öffnet.
+              <div className="flex items-center gap-2">
+                <div
+                  id="f-weekly-hours"
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
+                >
+                  {formData.weekly_hours.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} h/Woche
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenHoursHistory?.(editUser)}
+                  disabled={formData.use_daily_schedule}
+                  title={
+                    formData.use_daily_schedule
+                      ? 'Bei individuellem Tagesplan werden die Stunden über die Tagesstunden weiter unten gepflegt'
+                      : undefined
+                  }
+                  className="shrink-0 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-primary hover:bg-primary/5 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent"
+                >
+                  Wochenstunden anpassen…
+                </button>
+              </div>
+            ) : (
+              // Beim Anlegen: normales Eingabefeld — es gibt noch keine Historie,
+              // der Startwert muss direkt gesetzt werden können.
+              <input
+                id="f-weekly-hours"
+                type="number"
+                step="0.5"
+                value={formData.weekly_hours}
+                onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
+                required
+                min="0"
+                max="60"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              />
+            )}
+            {editUser && formData.use_daily_schedule && (
+              <p className="mt-1 text-xs text-gray-500">
+                ℹ️ Individueller Tagesplan aktiv — die Stunden werden über die
+                <strong> Tagesstunden</strong> weiter unten gepflegt, nicht über
+                die Wochenstunden-Historie.
               </p>
             )}
             {formData.use_fixed_monthly_target && (
