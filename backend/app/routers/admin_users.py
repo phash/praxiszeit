@@ -925,8 +925,55 @@ def create_working_hours_change(
         if most_recent:
             user.weekly_hours = most_recent.weekly_hours
 
+    # Task 3 (#Wochenstunden-Dialog): eine rückwirkende Änderung muss die bereits
+    # gebuchten Abwesenheits-Stunden mitziehen — sonst schreibt z. B. ein
+    # Krankentag weiterhin die ALTEN Stunden dem Ist gut, während das Soll
+    # desselben Tages sich durch die eben gespeicherte Änderung schon verschoben
+    # hat. retarget_absence_hours ist DIE eine Stelle dafür (siehe dortige
+    # Docstring-Begründung) — kein zweiter Rechenpfad hier.
+    #
+    # retarget_absence_hours liest das neue Tagessoll über
+    # get_weekly_hours_for_date, die ihrerseits die WorkingHoursChange-Zeile aus
+    # der DB liest — der `db.flush()` weiter oben macht die eben angelegte Zeile
+    # (und ggf. die Basis-Zeile) für diese Abfrage sichtbar, bevor hier
+    # gerechnet wird. Nur rückwirkend (effective_from < heute); ein Datum ab
+    # heute betrifft ausschließlich künftige, noch nicht gebuchte Tage.
+    adjusted_absences = 0
+    warning = None
+    if change_data.effective_from < today_local():
+        period_end = today_local()
+        adjusted_absences = calculation_service.retarget_absence_hours(
+            db, user, change_data.effective_from, period_end
+        )
+        if adjusted_absences:
+            db.add(TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=user.id,
+                changed_by=current_user.id,
+                action="update",
+                source="wh_change",  # 9 Zeichen, varchar(40) — CLAUDE.md-Limit
+                new_note=(
+                    f"Wochenstunden-Änderung zum "
+                    f"{change_data.effective_from.isoformat()}: "
+                    f"{adjusted_absences} Abwesenheit(en) im Zeitraum "
+                    f"{change_data.effective_from.isoformat()}–{period_end.isoformat()} "
+                    "auf neues Tagessoll nachgezogen"
+                ),
+                tenant_id=current_user.tenant_id,
+            ))
+        # Fix #5-Warnung (nicht-blockierend): berührt das Nachziehen ein Jahr,
+        # dessen Jahresabschluss bereits lief, ist der eingefrorene Carryover
+        # des Folgejahres jetzt veraltet — wir rechnen ihn NICHT automatisch neu
+        # (könnte manuelle Anpassungen überschreiben), sondern melden es nur.
+        warning = calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id,
+            range(change_data.effective_from.year, period_end.year + 1),
+        )
+
     db.commit()
     db.refresh(change)
+    change.adjusted_absences = adjusted_absences
+    change.warning = warning
     return change
 
 

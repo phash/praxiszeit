@@ -19,6 +19,13 @@ class WorkingHoursChangeResponse(WorkingHoursChangeBase):
     id: UUID
     user_id: UUID
     created_at: datetime
+    # Task 3 (#Wochenstunden-Dialog): Rückrechnungs-Summary einer rückwirkenden
+    # Änderung. Default 0/None fürs GET-Listing (die ORM-Row hat dort kein
+    # solches Attribut -> die Defaults greifen, analog AbsenceResponse.warnings).
+    # create_working_hours_change setzt beide als transientes Attribut auf die
+    # erzeugte Row, BEVOR sie zurückgegeben wird.
+    adjusted_absences: int = 0
+    warning: Optional[str] = None
 
     @field_serializer('id', 'user_id')
     def serialize_uuid(self, value: UUID) -> str:
