@@ -18,6 +18,30 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
+# #423 (Review 1.17.0): Bricht das Skript zwischen "Dienst fuer Update gestoppt"
+# und dem einzigen abschliessenden "systemctl start" (s.u.) ab — z. B. einer der
+# vier PG-Major-Upgrade-Exits, ein fehlschlagendes cp/chown/systemctl enable —
+# blieb PraxisZeit bisher dauerhaft unten, ohne jeden Hinweis auf den noetigen
+# Neustart. EXIT-Trap faengt jeden nicht-0-Abbruch ab, solange der Dienst fuer
+# dieses Update tatsaechlich gestoppt wurde, und startet ihn automatisch neu.
+# `exit "$rc"` am Ende erzwingt den urspruenglichen Exit-Code unabhaengig davon,
+# was systemctl im Trap zurueckliefert (sonst wuerde ein erfolgreicher Neustart
+# den echten Fehler-Exitcode ueberschreiben und den Abbruch verschleiern).
+SERVICE_WAS_RUNNING=0
+_restart_on_abort() {
+    local rc=$?
+    if [ "$rc" -ne 0 ] && [ "${SERVICE_WAS_RUNNING:-0}" = "1" ]; then
+        error "Installation abgebrochen — Dienst wurde fuer das Update gestoppt und wird jetzt automatisch wieder gestartet..."
+        if systemctl start "${SERVICE_NAME}" 2>/dev/null; then
+            info "Dienst '${SERVICE_NAME}' laeuft wieder."
+        else
+            error "Automatischer Neustart fehlgeschlagen — bitte manuell ausfuehren: systemctl start ${SERVICE_NAME}"
+        fi
+    fi
+    exit "$rc"
+}
+trap _restart_on_abort EXIT
+
 # --- Pre-flight checks ---
 
 if [ "$EUID" -ne 0 ]; then
@@ -184,11 +208,37 @@ if [ "$UPDATE_MODE" = "1" ]; then
     ADMIN_EMAIL=$(conf_value email)
     PORT=$(conf_value port)
     PORT=${PORT:-443}
-    # Zertifikat nur neu erzeugen, wenn die bestehende Installation ueberhaupt
-    # SSL nutzt UND das Zertifikat fehlt (sonst bleibt es unangetastet).
-    if [ -n "$(conf_value ssl_cert)" ] && [ ! -f "${INSTALL_DIR}/config/ssl/cert.pem" ]; then
-        GEN_SSL="J"
+    # #423: Port aus einer bestehenden praxiszeit.conf war bisher ungeprueft.
+    # Ein von Hand ergaenzter Inline-Kommentar (von den eigenen Docs empfohlenes
+    # Format, z. B. setup-anleitung.md: "port = 443   # 443 mit SSL, 80 ohne SSL")
+    # liesse die spaetere arithmetische Pruefung `[ "$PORT" -lt 1024 ]` mit
+    # "Ganzzahl erwartet" scheitern; set -e greift bei if-Bedingungen NICHT ->
+    # stiller Fallback auf CapabilityBoundingSet= OHNE CAP_NET_BIND_SERVICE ->
+    # Bind auf einen privilegierten Port (z. B. 443) scheitert nach dem Update.
+    # Fuehrenden Zahlenwert extrahieren (ignoriert Trailing-Kommentar/Whitespace) —
+    # NICHT alle Nicht-Ziffern global entfernen: der Docs-Kommentartext selbst
+    # enthaelt Ziffern ("443 mit SSL, 80 ohne SSL"), ein globales Strippen wuerde
+    # sie faelschlich an den echten Port anhaengen.
+    PORT_RAW="${PORT}"
+    PORT=$(printf '%s' "$PORT" | sed -E 's/^[[:space:]]*([0-9]+).*/\1/')
+    if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+        error "Port '${PORT_RAW}' aus ${INSTALL_DIR}/config/praxiszeit.conf ist ungueltig — Abbruch."
+        exit 1
+    fi
+    # SSL-Status separat erfassen: GEN_SSL bedeutet hier nur "Zertifikat fehlt und
+    # muss neu erzeugt werden", NICHT "SSL ist aktiv" — wird unten fuer den
+    # Health-Check + die Abschluss-URL gebraucht (#423, Fund 4).
+    if [ -n "$(conf_value ssl_cert)" ]; then
+        SSL_ACTIVE=1
+        # Zertifikat nur neu erzeugen, wenn die bestehende Installation ueberhaupt
+        # SSL nutzt UND das Zertifikat fehlt (sonst bleibt es unangetastet).
+        if [ ! -f "${INSTALL_DIR}/config/ssl/cert.pem" ]; then
+            GEN_SSL="J"
+        else
+            GEN_SSL="n"
+        fi
     else
+        SSL_ACTIVE=0
         GEN_SSL="n"
     fi
 else
@@ -267,6 +317,11 @@ fi
 
 read -rp "Selbstsigniertes SSL-Zertifikat generieren? [J/n]: " GEN_SSL
 GEN_SSL=${GEN_SSL:-J}
+if [ "${GEN_SSL,,}" = "j" ]; then
+    SSL_ACTIVE=1
+else
+    SSL_ACTIVE=0
+fi
 
 fi   # Ende des Erstinstallations-Zweigs (#421)
 
@@ -328,6 +383,9 @@ mkdir -p "${INSTALL_DIR}"/{bin,app,data/db,data/backups,config/ssl,logs}
 if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
     info "Bestehender Dienst '${SERVICE_NAME}' laeuft — wird fuer das Update gestoppt..."
     systemctl stop "${SERVICE_NAME}"
+    # #423: Ab hier greift der EXIT-Trap (s.o.) — jeder Abbruch bis zum
+    # abschliessenden systemctl start startet den Dienst automatisch wieder.
+    SERVICE_WAS_RUNNING=1
     # Kurze Pause: das als Kind laufende postgres gibt die gemappten Binaries
     # erst nach dem Cgroup-Stop frei (sonst vereinzelt weiter "Text file busy").
     sleep 2
@@ -653,24 +711,62 @@ systemctl enable --now "${SERVICE_NAME}-backup.timer"
 
 info "Starte PraxisZeit..."
 systemctl start "${SERVICE_NAME}"
+# #423: Ab hier ist der Dienst wieder aktiv — der Fund-2-Trap (oben) muss ab hier
+# nicht mehr eingreifen. Ein anschliessend fehlschlagender Health-Check (unten)
+# ist ein anderes Problem (Fund 4: Migration/Absturz NACH dem Start) als "Dienst
+# wurde fuer das Update gestoppt und nie wieder hochgefahren" — ohne den Reset
+# wuerde der Trap bei einem Health-Check-Fehlschlag faelschlich melden, der
+# Dienst werde wegen des gestoppten Updates neu gestartet, obwohl er laeuft.
+SERVICE_WAS_RUNNING=0
 
-# Wait for startup
+# #423: Schema fuer Health-Check + Abschluss-URL aus dem tatsaechlichen
+# SSL-Zustand ableiten statt hart https anzunehmen. GEN_SSL bedeutet im
+# Update-Zweig nur "Zertifikat fehlt und wird neu erzeugt", NICHT "SSL ist
+# aktiv" — SSL_ACTIVE (oben gesetzt) ist die eine Quelle dafuer. Ohne SSL
+# spricht der Server Klartext-HTTP; eine hart auf https verdrahtete Probe
+# wuerde auf einem voellig gesunden System 30x fehlschlagen.
+PROTO="http"
+[ "${SSL_ACTIVE}" = "1" ] && PROTO="https"
+
+# Wait for startup. Ergebnis wird jetzt ausgewertet (vorher: $i/Loop-Ausgang
+# verworfen, Erfolgsmeldung erschien unbedingt — auch wenn eine fehlgeschlagene
+# Migration oder ein PG-Restore-Fehler den frisch gestarteten Dienst Sekunden
+# spaeter wieder abstuerzen liess).
+HEALTHY=0
 for i in $(seq 1 30); do
     # Here-String statt `curl | grep -q`: grep -q beendet bei Treffer frueh ->
     # curl SIGPIPE -> mit pipefail wuerde die Bedingung nie wahr (Wait liefe
     # immer volle 30s). So bricht der Wait korrekt ab, sobald healthy.
-    if grep -q "healthy" <<<"$(curl -sk "https://localhost:${PORT}/api/health" 2>/dev/null || true)"; then
+    if grep -q "healthy" <<<"$(curl -sk "${PROTO}://localhost:${PORT}/api/health" 2>/dev/null || true)"; then
+        HEALTHY=1
         break
     fi
     sleep 1
 done
+
+SERVER_IP_SUMMARY=$(hostname -I | awk '{print $1}')
+
+if [ "${HEALTHY}" != "1" ]; then
+    echo ""
+    echo "=============================================="
+    echo -e "  ${YELLOW}PraxisZeit wurde installiert, meldet sich aber nicht${NC}"
+    echo "=============================================="
+    echo ""
+    error "Der Dienst hat innerhalb von 30s keinen 'healthy'-Status unter"
+    error "${PROTO}://localhost:${PORT}/api/health gemeldet."
+    echo "  Bitte pruefen:"
+    echo "    systemctl status ${SERVICE_NAME}"
+    echo "    ${INSTALL_DIR}/logs/"
+    echo ""
+    exit 1
+fi
 
 echo ""
 echo "=============================================="
 echo -e "  ${GREEN}PraxisZeit erfolgreich installiert!${NC}"
 echo "=============================================="
 echo ""
-echo "  URL:       https://$(hostname -I | awk '{print $1}'):${PORT}"
+echo "  URL:       ${PROTO}://${SERVER_IP_SUMMARY}:${PORT}"
 echo "  Admin:     ${ADMIN_USERNAME}"
 echo "  Service:   systemctl {start|stop|status} ${SERVICE_NAME}"
 echo "  Logs:      ${INSTALL_DIR}/logs/"
