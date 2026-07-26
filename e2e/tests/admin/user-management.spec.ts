@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
+import { daysFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin User Management', () => {
   test('user list is visible', async ({ adminPage }) => {
@@ -42,7 +43,12 @@ test.describe('Admin User Management', () => {
     } catch { /* best effort cleanup */ }
   });
 
-  test('edit user weekly hours', async ({ adminPage, testEmployee }) => {
+  // #Wochenstunden-anpassen (Task 6+7): Wochenstunden sind im Formular nur
+  // noch Anzeige (das Feld überschrieb früher still den Rückfallwert für die
+  // gesamte Vergangenheit — genau der Bug, den diese Umstellung behebt). Die
+  // Änderung läuft jetzt ausschließlich über den Wochenstunden-Dialog mit
+  // Wirkungsdatum, den der "Wochenstunden anpassen…"-Button im Formular öffnet.
+  test('edit user weekly hours via Wochenstunden-Dialog', async ({ adminPage, testEmployee }) => {
     await adminPage.goto('/admin/users');
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
 
@@ -55,18 +61,28 @@ test.describe('Admin User Management', () => {
     await expect(editButton).toBeVisible({ timeout: 5000 });
     await editButton.click();
 
-    // Change weekly hours
-    const weeklyHoursInput = adminPage.locator('#f-weekly-hours');
-    await expect(weeklyHoursInput).toBeVisible({ timeout: 5000 });
-    await weeklyHoursInput.fill('38');
+    // The weekly-hours field itself is read-only now — open the dialog.
+    const openHoursButton = adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' });
+    await expect(openHoursButton).toBeVisible({ timeout: 5000 });
+    await openHoursButton.click();
 
-    // Save
-    await adminPage.getByRole('button', { name: 'Speichern' }).click();
+    const dialog = adminPage.getByRole('dialog', { name: /Stundenverlauf/i });
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+
+    // A future date needs no retroactive preview/confirmation — keep this a
+    // straightforward "add a change" smoke test. Far enough out to avoid
+    // colliding with an existing change on the same date.
+    await dialog.getByLabel('Gültig ab').fill(daysFromNow(120));
+    await dialog.getByLabel('Wochenstunden').fill('38');
+
+    await dialog.getByRole('button', { name: 'Hinzufügen' }).click();
 
     // Check for success toast
     await expect(
-      adminPage.locator('[role="alert"]').filter({ hasText: 'aktualisiert' })
+      adminPage.locator('[role="alert"]').filter({ hasText: 'hinzugefügt' })
     ).toBeVisible({ timeout: 10000 });
+
+    await dialog.getByRole('button', { name: /schließen/i }).click();
   });
 
   test('deactivate user', async ({ adminPage, adminApi }) => {
