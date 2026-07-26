@@ -151,6 +151,8 @@ def retarget_absence_hours(
     * Wochenenden, Feiertage und Tage ohne Soll (freier Wochentag im Tagesplan)
       — sie werden uebersprungen, NICHT auf 0 gesetzt.
     * Tage ausserhalb des Beschaeftigungsfensters (#193).
+    * ``half_day IS NULL`` (Legacy-Zeilen von vor #205) — siehe Begruendung in
+      der Schleife.
 
     ``half_day`` halbiert, der #146/#394-Sondertagsfaktor (24./31.12.) wird
     angewandt. Die Abwesenheits-TAGE aendern sich dadurch nie — die sind
@@ -196,6 +198,21 @@ def retarget_absence_hours(
         if d.weekday() >= 5 or d in holidays:
             continue
         if not _within_employment_window(user, d):
+            continue
+        # C1 (Abschluss-Review): Legacy-Zeilen ohne Halbtags-Information
+        # (``half_day IS NULL``, gebucht vor #205) NIE anfassen. Genau fuer
+        # diese Zeilen zaehlen ``get_vacation_account`` und ``absence_days``
+        # die TAGE stundenbasiert (``hours / Tagessoll``) — ein Retarget auf
+        # das volle Tagessoll wuerde also den Urlaubs-TAGE-Verbrauch
+        # verschieben (ein Legacy-Halbtag: 0,5 -> 1,0) und dabei die einzige
+        # verbliebene Spur davon, dass es ein halber Tag war (die ``hours``
+        # selbst), unwiederbringlich ueberschreiben — auch das Loeschen der
+        # Aenderung stellt sie nicht wieder her. Die tagebasierte Invariante
+        # (§3 BUrlG) ist unantastbar; dieselbe Begruendung wie das bewusste
+        # "kein unzuverlaessiges Raten" in ``get_vacation_account``.
+        # Alle vier heutigen Buchungspfade setzen ``half_day`` explizit — es
+        # entstehen keine neuen NULL-Zeilen, der Ausschluss laeuft aus.
+        if a.half_day is None:
             continue
 
         weekly = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)

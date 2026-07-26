@@ -569,6 +569,87 @@ class TestDeleteEarliestRowRejected:
         )
 
 
+class TestLegacyHalfDayAbsencesSurvive:
+    """C1 (Abschluss-Review): ``Absence.half_day`` ist nullable — Zeilen von vor
+    #205 tragen NULL, und genau fuer die zaehlen ``get_vacation_account`` /
+    ``absence_days`` die TAGE stundenbasiert (``hours / Tagessoll``). Wuerde die
+    Rueckrechnung dort das volle Tagessoll schreiben, aenderte sich der
+    Urlaubs-TAGE-Verbrauch (0,5 -> 1,0) und die einzige Spur des Halbtags waere
+    weg: auch das Loeschen der Aenderung stellt die urspruenglichen Stunden
+    nicht wieder her. Die tagebasierte Invariante (§3 BUrlG) ist unantastbar."""
+
+    def _legacy_half_day(self, db):
+        """20 h/Woche (4 h/Tag) + eine Legacy-Halbtags-Abwesenheit mit 2 h."""
+        admin = _admin(db, "wh_legacy_admin")
+        start = _last_monday(before_days=90)
+        emp = _make_user(db, "wh_legacy_emp", weekly_hours=20.0, first_work_day=start)
+        mon = _last_monday(before_days=30)
+        a = _absence(db, emp, mon, AbsenceType.VACATION, 2.0, half_day=None)
+        return admin, emp, mon, a
+
+    def test_create_leaves_legacy_half_day_untouched(self, db, default_tenant):
+        admin, emp, mon, a = self._legacy_half_day(db)
+
+        result = create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(a)
+        assert float(a.hours) == 2.0, "Legacy-Halbtag unveraendert (nicht 8.0)"
+        assert result.adjusted_absences == 0
+
+    def test_create_then_delete_restores_nothing_because_nothing_changed(self, db, default_tenant):
+        """Nicht ruecknehmbar waere der eigentliche Schaden: nach create+delete
+        stuende ohne den Fix 4.0 statt der urspruenglichen 2.0."""
+        admin, emp, mon, a = self._legacy_half_day(db)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0),
+            db=db, current_user=admin,
+        )
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == mon,
+        ).first()
+        assert change is not None
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(a)
+        assert float(a.hours) == 2.0, "auch nach create+delete unveraendert"
+
+    def test_vacation_days_unchanged_across_create_and_delete(self, db, default_tenant):
+        admin, emp, mon, a = self._legacy_half_day(db)
+        from app.services import calculation_service as _calc
+
+        db.expire_all()
+        before = _calc.get_vacation_account(db, emp, mon.year)["used_days"]
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0),
+            db=db, current_user=admin,
+        )
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == mon,
+        ).first()
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        db.expire_all()
+        after = _calc.get_vacation_account(db, emp, mon.year)["used_days"]
+        assert float(after) == float(before), "Urlaubs-TAGE unveraendert"
+
+
 class TestPutRejectsWeeklyHours:
     """Task 5: ``user.weekly_hours`` ist zugleich der Rückfallwert für alle
     Tage vor der ersten erfassten ``WorkingHoursChange`` — ein direktes PUT

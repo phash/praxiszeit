@@ -173,6 +173,35 @@ class TestLeavesAloneWhatItShould:
         db.refresh(a)
         assert float(a.hours) == 8.0
 
+    def test_legacy_null_half_day_is_untouched(self, db, test_user):
+        """C1: ``half_day IS NULL`` (Legacy-Zeile von vor #205) darf nicht
+        angefasst werden. Fuer genau diese Zeilen zaehlen get_vacation_account
+        und absence_days die TAGE stundenbasiert (hours / Tagessoll) — ein
+        Retarget auf das volle Tagessoll wuerde den Tage-Verbrauch bewegen und
+        die Information "war ein halber Tag" unwiederbringlich loeschen."""
+        # 2 h auf einem 8-h-Tag: nach der Halbierung waere das volle Tagessoll
+        # 4 h — ohne den Fix wuerde die Zeile also auf 4.0 umgeschrieben.
+        a = _absence(db, test_user, MON, AbsenceType.VACATION, 2.0, half_day=None)
+        _halve_hours(db, test_user)  # 8 h -> 4 h Tagessoll
+
+        assert _run(db, test_user) == 0
+        db.refresh(a)
+        assert float(a.hours) == 2.0, "Legacy-Halbtag unveraendert"
+
+    def test_legacy_null_half_day_keeps_the_day_count(self, db, test_user):
+        """Die Invariante selbst: die Rueckrechnung darf den Urlaubs-TAGE-
+        Verbrauch einer Legacy-Zeile nicht bewegen. Ohne den Fix schriebe sie
+        das volle Tagessoll und used_days spraenge (0,5 -> 1,0)."""
+        _absence(db, test_user, MON, AbsenceType.VACATION, 2.0, half_day=None)
+        _halve_hours(db, test_user)
+        db.expire_all()
+        before = calculation_service.get_vacation_account(db, test_user, 2026)["used_days"]
+
+        _run(db, test_user)
+        db.expire_all()
+        after = calculation_service.get_vacation_account(db, test_user, 2026)["used_days"]
+        assert float(after) == float(before)
+
     def test_already_correct_hours_are_not_counted(self, db, test_user):
         """Idempotenz: ein zweiter Lauf darf nichts mehr melden."""
         _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
