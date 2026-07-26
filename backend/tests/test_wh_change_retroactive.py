@@ -10,16 +10,17 @@ schreibt bei tatsächlich angepassten Zeilen einen Audit-Eintrag
 ``adjusted_absences``/``warning`` (Jahresabschluss-Hinweis für abgeschlossene,
 berührte Jahre).
 """
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 
 import pytest
 from fastapi import HTTPException
 
 from app.models import (
-    Absence, AbsenceType, TimeEntryAuditLog, User, UserRole,
+    Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, User, UserRole,
     WorkingHoursChange, YearCarryover,
 )
+from app.services import calculation_service
 from app.routers.admin_users import (
     create_user, create_working_hours_change, delete_working_hours_change, update_user,
 )
@@ -149,6 +150,71 @@ class TestBaselineRowStillCreated:
         assert float(rows[0].weekly_hours) == 40.0, "Ausgangswert eingefroren"
         assert rows[0].effective_from < mon
         assert float(rows[1].weekly_hours) == 20.0
+
+    def test_baseline_covers_whole_past_without_first_work_day(self, db, default_tenant):
+        """I5 (Abschluss-Review): ``first_work_day`` ist nullable und in der
+        Praxis oft leer. Vorher lag die Basis-Zeile dann auf
+        ``effective_from - 1 Tag`` und deckte GENAU EINEN Tag ab — alles davor
+        fiel auf ``user.weekly_hours`` zurück, das derselbe Request gerade auf
+        den NEUEN Wert setzt. Das Soll aller früheren Monate verschob sich
+        still."""
+        admin = _admin(db, "wh_base_admin")
+        emp = _make_user(db, "wh_base_emp", weekly_hours=40.0)  # first_work_day = None
+        assert emp.first_work_day is None
+        long_ago = _last_monday(before_days=400)
+        _absence(db, emp, long_ago, AbsenceType.VACATION, 8.0)
+        mon = _last_monday(before_days=30)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+
+        rows = (
+            db.query(WorkingHoursChange)
+            .filter(WorkingHoursChange.user_id == emp.id)
+            .order_by(WorkingHoursChange.effective_from)
+            .all()
+        )
+        assert len(rows) == 2
+        assert rows[0].effective_from <= long_ago, "Basis-Zeile deckt die älteste Buchung ab"
+        db.expire_all()
+        emp = db.query(User).filter(User.username == "wh_base_emp").first()
+        weekly_then = calculation_service.get_weekly_hours_for_date(db, emp, long_ago)
+        assert float(weekly_then) == 40.0, "Soll weit in der Vergangenheit unverändert"
+
+    def test_baseline_covers_oldest_time_entry(self, db, default_tenant):
+        """Auch eine reine Zeitbuchung (ohne Abwesenheit, ohne first_work_day)
+        muss von der Basis-Zeile abgedeckt sein."""
+        admin = _admin(db, "wh_base2_admin")
+        emp = _make_user(db, "wh_base2_emp", weekly_hours=40.0)
+        long_ago = _last_monday(before_days=400)
+        db.add(TimeEntry(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=long_ago,
+            start_time=time(9, 0), end_time=time(17, 0), break_minutes=30,
+        ))
+        db.commit()
+        mon = _last_monday(before_days=30)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+
+        earliest = (
+            db.query(WorkingHoursChange)
+            .filter(WorkingHoursChange.user_id == emp.id)
+            .order_by(WorkingHoursChange.effective_from)
+            .first()
+        )
+        assert earliest.effective_from <= long_ago
+        db.expire_all()
+        emp = db.query(User).filter(User.username == "wh_base2_emp").first()
+        assert float(
+            calculation_service.get_weekly_hours_for_date(db, emp, long_ago)
+        ) == 40.0
 
 
 class TestAuditLog:
@@ -664,10 +730,9 @@ class TestLegacyHalfDayAbsencesSurvive:
 
     def test_vacation_days_unchanged_across_create_and_delete(self, db, default_tenant):
         admin, emp, mon, a = self._legacy_half_day(db)
-        from app.services import calculation_service as _calc
 
         db.expire_all()
-        before = _calc.get_vacation_account(db, emp, mon.year)["used_days"]
+        before = calculation_service.get_vacation_account(db, emp, mon.year)["used_days"]
 
         create_working_hours_change(
             user_id=str(emp.id),
@@ -684,7 +749,7 @@ class TestLegacyHalfDayAbsencesSurvive:
         )
 
         db.expire_all()
-        after = _calc.get_vacation_account(db, emp, mon.year)["used_days"]
+        after = calculation_service.get_vacation_account(db, emp, mon.year)["used_days"]
         assert float(after) == float(before), "Urlaubs-TAGE unveraendert"
 
 

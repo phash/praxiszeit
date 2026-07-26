@@ -936,10 +936,21 @@ def create_working_hours_change(
     # verschmolzen). Die Basis-Zeile friert die Vergangenheit auf dem alten Wert
     # ein und macht die Änderung im Bericht sichtbar.
     #
-    # Datum: `first_work_day`, sonst ein Tag vor der ersten Änderung — Hauptsache
-    # vor jeder erfassbaren Buchung. Nur wenn sich der Wert tatsächlich ändert
-    # (sonst entstünde eine Pseudo-Änderung, die weekly_hours_segments ohnehin
-    # wieder verschmelzen würde).
+    # Datum: das FRÜHESTE aus `first_work_day`, der ältesten vorhandenen
+    # Buchung (TimeEntry/Absence) und dem Vortag der Änderung — die Basis-Zeile
+    # muss die gesamte erfassbare Vergangenheit abdecken.
+    #
+    # I5 (Abschluss-Review): vorher stand hier nur
+    # `first_work_day or (effective_from - 1 Tag)`. `first_work_day` ist nullable
+    # und in der Praxis oft leer — dann deckte die Basis-Zeile GENAU EINEN Tag
+    # ab, und alles davor fiel wieder auf `user.weekly_hours` zurück, das
+    # derselbe Request gleich darunter auf den NEUEN Wert setzt. Das Soll aller
+    # früheren Monate verschob sich damit still: exakt der Bug, den die
+    # Basis-Zeile verhindern soll.
+    #
+    # Nur wenn sich der Wert tatsächlich ändert (sonst entstünde eine
+    # Pseudo-Änderung, die weekly_hours_segments ohnehin wieder verschmelzen
+    # würde).
     _has_history = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
         WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
@@ -949,9 +960,24 @@ def create_working_hours_change(
         and user.weekly_hours is not None
         and Decimal(str(user.weekly_hours)) != Decimal(str(change_data.weekly_hours))
     ):
-        _baseline_date = user.first_work_day or (change_data.effective_from - timedelta(days=1))
-        if _baseline_date >= change_data.effective_from:
-            _baseline_date = change_data.effective_from - timedelta(days=1)
+        # Der Vortag ist immer dabei → das Ergebnis liegt garantiert VOR
+        # `effective_from` (die frühere Zusatz-Klemme ist damit überflüssig).
+        _baseline_candidates = [change_data.effective_from - timedelta(days=1)]
+        if user.first_work_day:
+            _baseline_candidates.append(user.first_work_day)
+        _oldest_entry = db.query(func.min(TimeEntry.date)).filter(
+            TimeEntry.user_id == user_id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+        ).scalar()
+        if _oldest_entry:
+            _baseline_candidates.append(_oldest_entry)
+        _oldest_absence = db.query(func.min(Absence.date)).filter(
+            Absence.user_id == user_id,
+            Absence.tenant_id == current_user.tenant_id,  # F-026
+        ).scalar()
+        if _oldest_absence:
+            _baseline_candidates.append(_oldest_absence)
+        _baseline_date = min(_baseline_candidates)
         db.add(WorkingHoursChange(
             user_id=user_id,
             tenant_id=current_user.tenant_id,
