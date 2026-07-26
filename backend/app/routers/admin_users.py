@@ -1105,8 +1105,16 @@ def delete_working_hours_change(
         raise HTTPException(status_code=404, detail="Stundenänderung nicht gefunden")
 
     user = _get_user_in_tenant(db, user_id, current_user)
+    # Capture before delete/expire — the ORM instance is expired after the
+    # flush below, and any attribute access on a deleted, expired row would
+    # try to re-SELECT it and fail.
+    deleted_effective_from = change.effective_from
     db.delete(change)
-    db.commit()
+    # Task 4: flush (not commit) so the following re-queries within THIS
+    # transaction already see the row as gone — retarget_absence_hours below
+    # must compute against the remaining valid value, not the one just
+    # deleted (same reasoning as the flush() in create_working_hours_change).
+    db.flush()
 
     most_recent = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
@@ -1116,6 +1124,41 @@ def delete_working_hours_change(
 
     if most_recent:
         user.weekly_hours = most_recent.weekly_hours
-        db.commit()
 
+    # Task 4 (Wochenstunden-Änderung löschen rechnet zurück): removing a
+    # change makes the previously-valid value apply to its window again —
+    # the absence hours that create_working_hours_change adjusted forward
+    # must be pulled back the same way. retarget_absence_hours is DIE eine
+    # Stelle dafür (kein zweiter Rechenpfad); it reads the new/remaining
+    # daily target via get_weekly_hours_for_date, which in turn sees the
+    # just-deleted row (and the just-updated user.weekly_hours) because of
+    # the flush above.
+    #
+    # Only retroactive: a change whose effective_from lies in the future
+    # never touched any already-booked absence, so there is nothing to
+    # unwind.
+    adjusted_absences = 0
+    if deleted_effective_from <= today_local():
+        period_end = today_local()
+        adjusted_absences = calculation_service.retarget_absence_hours(
+            db, user, deleted_effective_from, period_end
+        )
+        if adjusted_absences:
+            db.add(TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=user.id,
+                changed_by=current_user.id,
+                action="update",
+                source="wh_change",  # 9 Zeichen, varchar(40) — CLAUDE.md-Limit
+                new_note=(
+                    f"Löschung der Wochenstunden-Änderung zum "
+                    f"{deleted_effective_from.isoformat()}: "
+                    f"{adjusted_absences} Abwesenheit(en) im Zeitraum "
+                    f"{deleted_effective_from.isoformat()}–{period_end.isoformat()} "
+                    "auf den davor gültigen Wert zurückgerechnet"
+                ),
+                tenant_id=current_user.tenant_id,
+            ))
+
+    db.commit()
     return None

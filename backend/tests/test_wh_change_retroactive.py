@@ -20,7 +20,7 @@ from app.models import (
     Absence, AbsenceType, TimeEntryAuditLog, User, UserRole,
     WorkingHoursChange, YearCarryover,
 )
-from app.routers.admin_users import create_working_hours_change
+from app.routers.admin_users import create_working_hours_change, delete_working_hours_change
 from app.schemas.working_hours_change import WorkingHoursChangeCreate
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
@@ -285,3 +285,140 @@ class TestStillRejectedCases:
         assert float(rows[0].weekly_hours) == 30.0
         db.refresh(a)
         assert float(a.hours) == 8.0
+
+
+class TestDeleteRestoresAbsenceHours:
+    """Task 4: Löschen einer Wochenstunden-Änderung muss die beim Anlegen
+    nachgezogenen Abwesenheits-Stunden zurückrechnen — sonst bleibt nach einer
+    versehentlich angelegten und wieder entfernten Änderung ein falscher Stand
+    stehen. ``delete_working_hours_change`` ruft dafür (nach dem bestehenden
+    Nachführen von ``user.weekly_hours``) erneut ``retarget_absence_hours``
+    auf, jetzt gegen den verbliebenen gültigen Wert."""
+
+    def test_delete_restores_absence_hours(self, db, default_tenant):
+        admin = _admin(db, "wh_del_admin")
+        emp = _make_user(db, "wh_del_emp", weekly_hours=40.0)
+        mon = _last_monday()
+        a = _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+        db.refresh(a)
+        assert float(a.hours) == 4.0, "Vorbedingung: Anlegen hat die Stunden angepasst"
+
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == mon,
+        ).first()
+        assert change is not None
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(a)
+        assert float(a.hours) == 8.0, "wieder auf dem ursprünglichen Wert (40h/Woche)"
+        db.refresh(emp)
+        assert float(emp.weekly_hours) == 40.0, "Basis-Zeile (Ausgangswert) greift wieder"
+
+    def test_delete_of_future_change_adjusts_nothing(self, db, default_tenant):
+        """Ein Wirkungsdatum in der Zukunft hat beim Anlegen keine Abwesenheit
+        berührt — die Löschung darf dann ebenfalls nichts zurückrechnen."""
+        admin = _admin(db, "wh_delfut_admin")
+        emp = _make_user(db, "wh_delfut_emp", weekly_hours=40.0)
+        future = today_local() + timedelta(days=14)
+        # Eine Abwesenheit HEUTE — läge (fälschlich) im Fenster, würde die
+        # Implementierung period_end statt effective_from als Startpunkt
+        # nehmen oder den Zukunfts-Guard vergessen.
+        a = _absence(db, emp, today_local(), AbsenceType.VACATION, 8.0)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=future, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == future,
+        ).first()
+        assert change is not None
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(a)
+        assert float(a.hours) == 8.0, "unverändert"
+        count = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.source == "wh_change",
+        ).count()
+        assert count == 0
+
+
+class TestDeleteAuditLog:
+    def test_delete_writes_audit_row_when_adjusted(self, db, default_tenant):
+        admin = _admin(db, "wh_delaudit_admin")
+        emp = _make_user(db, "wh_delaudit_emp", weekly_hours=40.0)
+        mon = _last_monday()
+        _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == mon,
+        ).first()
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        logs = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.tenant_id == DEFAULT_TENANT_ID,
+            TimeEntryAuditLog.source == "wh_change",
+            TimeEntryAuditLog.new_note.like("Löschung%"),
+        ).all()
+        assert len(logs) == 1
+        log = logs[0]
+        assert log.action == "update"
+        assert len(log.source) <= 40
+        assert log.user_id == emp.id
+        assert log.changed_by == admin.id
+
+    def test_delete_writes_no_audit_row_when_nothing_adjusted(self, db, default_tenant):
+        """Kein angepasstes Absence (kein Absence im Fenster) -> keine
+        Audit-Zeile für die Löschung."""
+        admin = _admin(db, "wh_delnoaudit_admin")
+        emp = _make_user(db, "wh_delnoaudit_emp", weekly_hours=40.0)
+        mon = _last_monday()
+        # Keine Abwesenheit im Fenster.
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == mon,
+        ).first()
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        count = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.source == "wh_change",
+            TimeEntryAuditLog.new_note.like("Löschung%"),
+        ).count()
+        assert count == 0
