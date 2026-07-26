@@ -30,6 +30,25 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # --- Konfiguration abfragen ---
 
+# #421: Bei einem Update bleibt die bestehende praxiszeit.conf erhalten (siehe
+# unten) — inklusive Admin-Konto, Passwort und Sicherheitsschluessel. Danach zu
+# fragen ist irrefuehrend: der Betreiber tippt ein Passwort ein, das nirgends
+# ankommt, und kann sich anschliessend nicht damit anmelden. Im Update-Fall
+# also gar nicht erst fragen. Parität zum Linux-Installer.
+UPDATE_MODE=0
+if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
+    UPDATE_MODE=1
+fi
+
+if [ "$UPDATE_MODE" = "1" ]; then
+    info "Bestehende Installation in ${INSTALL_DIR} erkannt -> UPDATE."
+    echo "  Konfiguration und Zugangsdaten bleiben unveraendert (Admin-Konto,"
+    echo "  Passwort, Port, Sicherheitsschluessel). Ihr bisheriges Admin-Passwort"
+    echo "  gilt weiter. Eingespielt werden nur Code und Datenbank-Migrationen."
+    PORT=$(sed -n 's/^[[:space:]]*port[[:space:]]*=[[:space:]]*//p' "${INSTALL_DIR}/config/praxiszeit.conf" 2>/dev/null | head -1 | tr -d '"')
+    PORT=${PORT:-8443}
+else
+
 read -rp "Praxis-Name [Testpraxis]: " PRACTICE_NAME
 PRACTICE_NAME=${PRACTICE_NAME:-Testpraxis}
 
@@ -44,6 +63,8 @@ done
 
 read -rp "Port [8443]: " PORT
 PORT=${PORT:-8443}
+
+fi   # Ende des Erstinstallations-Zweigs (#421)
 
 echo ""
 info "Installiere nach ${INSTALL_DIR}..."
