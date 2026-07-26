@@ -133,6 +133,66 @@ echo ""
 
 # --- Interactive configuration ---
 
+# #421: Lizenz-Erkennung MUSS vor der Update-Verzweigung stehen. Sie lag frueher
+# im Abfrage-Block und wurde damit im Update-Fall uebersprungen -> LICENSE_FILE
+# ungesetzt -> `set -u` brach den Installer nach der Zusammenfassung ab.
+# Eine license.key neben dem Installer gilt in BEIDEN Faellen.
+_PKG_DIR="$(cd "$(dirname "$0")" && pwd)"
+LICENSE_FILE=""
+if [ -f "${_PKG_DIR}/license.key" ]; then
+    LICENSE_FILE="${_PKG_DIR}/license.key"
+fi
+
+# #421: Das Zielverzeichnis MUSS vor allen anderen Abfragen feststehen, denn es
+# entscheidet, ob dies eine Erstinstallation oder ein Update ist. Frueher wurde
+# es erst nach dem Admin-Passwort erfragt — der Betreiber tippte im Update-Lauf
+# Praxisdaten und ein Admin-Passwort ein, die der Installer anschliessend
+# stillschweigend verwarf (die bestehende praxiszeit.conf bleibt erhalten, siehe
+# unten). Wer sich danach mit dem gerade eingegebenen Passwort anmelden wollte,
+# bekam ein 401 und musste annehmen, das Update habe sein Konto zerstoert.
+read -rp "Installationsverzeichnis [${INSTALL_DIR}]: " CUSTOM_DIR
+INSTALL_DIR=${CUSTOM_DIR:-$INSTALL_DIR}
+
+UPDATE_MODE=0
+if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
+    UPDATE_MODE=1
+fi
+
+# Werte aus einer bestehenden praxiszeit.conf lesen (nur fuer Anzeige + die
+# wenigen Stellen, die sie ausserhalb des Config-Schreibens brauchen: PORT fuer
+# CAP_NET_BIND_SERVICE, GEN_SSL fuer die Zertifikatsfrage).
+conf_value() {
+    sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "${INSTALL_DIR}/config/praxiszeit.conf" 2>/dev/null \
+        | head -1 | sed 's/^"//; s/"$//'
+}
+
+if [ "$UPDATE_MODE" = "1" ]; then
+    echo ""
+    info "Bestehende Installation in ${INSTALL_DIR} erkannt -> UPDATE."
+    echo ""
+    echo "  Konfiguration und Zugangsdaten bleiben unveraendert:"
+    echo "  Praxisdaten, Admin-Konto und -Passwort, Port, SSL und der"
+    echo "  Sicherheitsschluessel werden NICHT neu abgefragt und NICHT ueberschrieben."
+    echo "  Eingespielt werden ausschliesslich Programmcode und Datenbank-Migrationen."
+    echo ""
+    echo "  Ihr bisheriges Admin-Passwort gilt unveraendert weiter."
+    echo ""
+
+    PRACTICE_NAME=$(conf_value name)
+    HOLIDAY_STATE=$(conf_value holiday_state)
+    ADMIN_USERNAME=$(conf_value username)
+    ADMIN_EMAIL=$(conf_value email)
+    PORT=$(conf_value port)
+    PORT=${PORT:-443}
+    # Zertifikat nur neu erzeugen, wenn die bestehende Installation ueberhaupt
+    # SSL nutzt UND das Zertifikat fehlt (sonst bleibt es unangetastet).
+    if [ -n "$(conf_value ssl_cert)" ] && [ ! -f "${INSTALL_DIR}/config/ssl/cert.pem" ]; then
+        GEN_SSL="J"
+    else
+        GEN_SSL="n"
+    fi
+else
+
 read -rp "Praxis-Name: " PRACTICE_NAME
 if [ -z "$PRACTICE_NAME" ]; then
     error "Praxis-Name darf nicht leer sein."
@@ -196,11 +256,6 @@ done
 # Installer oder aus einer früheren Installation) wird STILL übernommen, damit
 # sie für eine spätere Reaktivierung erhalten bleibt; es wird aber nicht danach
 # gefragt und nichts dazu angezeigt.
-_PKG_DIR="$(cd "$(dirname "$0")" && pwd)"
-LICENSE_FILE=""
-if [ -f "${_PKG_DIR}/license.key" ]; then
-    LICENSE_FILE="${_PKG_DIR}/license.key"
-fi
 
 echo ""
 read -rp "HTTPS-Port [443]: " PORT
@@ -213,9 +268,7 @@ fi
 read -rp "Selbstsigniertes SSL-Zertifikat generieren? [J/n]: " GEN_SSL
 GEN_SSL=${GEN_SSL:-J}
 
-echo ""
-read -rp "Installationsverzeichnis [${INSTALL_DIR}]: " CUSTOM_DIR
-INSTALL_DIR=${CUSTOM_DIR:-$INSTALL_DIR}
+fi   # Ende des Erstinstallations-Zweigs (#421)
 
 # Bestehende Lizenz aus einer früheren Installation übernehmen, wenn keine neue
 # Datei angegeben wurde (Reinstall/Upgrade in dasselbe Verzeichnis) — dann wird
@@ -232,12 +285,20 @@ echo ""
 echo "=============================================="
 echo "  Installationszusammenfassung"
 echo "=============================================="
+if [ "$UPDATE_MODE" = "1" ]; then
+echo "  Modus:       UPDATE (Konfiguration + Zugangsdaten bleiben unveraendert)"
+echo "  Praxis:      ${PRACTICE_NAME:-(aus bestehender Konfiguration)}"
+echo "  Admin:       ${ADMIN_USERNAME:-(unveraendert)} — Passwort unveraendert"
+echo "  Port:        ${PORT}"
+echo "  Verzeichnis: ${INSTALL_DIR}"
+else
 echo "  Praxis:      ${PRACTICE_NAME}"
 echo "  Bundesland:  ${HOLIDAY_STATE}"
 echo "  Admin:       ${ADMIN_USERNAME} <${ADMIN_EMAIL}>"
 echo "  Port:        ${PORT}"
 echo "  SSL:         $([ "${GEN_SSL,,}" = "j" ] && echo 'Ja (selbstsigniert)' || echo 'Nein')"
 echo "  Verzeichnis: ${INSTALL_DIR}"
+fi
 echo "=============================================="
 echo ""
 read -rp "Installation starten? [J/n]: " CONFIRM
@@ -356,11 +417,6 @@ SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(64))" 2>/dev/nu
 # \" / \\ beim Lesen wieder zurueck -> Passwort/Name round-trippen korrekt.
 # Backslash zuerst ersetzen, dann das doppelte Anfuehrungszeichen.
 toml_escape() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
-PRACTICE_NAME_ESC=$(toml_escape "$PRACTICE_NAME")
-ADMIN_USERNAME_ESC=$(toml_escape "$ADMIN_USERNAME")
-ADMIN_EMAIL_ESC=$(toml_escape "$ADMIN_EMAIL")
-ADMIN_PASSWORD_ESC=$(toml_escape "$ADMIN_PASSWORD")
-
 if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
     # Reinstall/Update: bestehende Konfiguration NICHT ueberschreiben. Ein neu
     # generierter secret_key wuerde sonst alle Sessions ungueltig machen UND alle
@@ -370,6 +426,13 @@ if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
     info "Bestehende config/praxiszeit.conf erkannt -> wird beibehalten (Reinstall/Update)."
 else
 info "Schreibe Konfiguration..."
+# #421: Die TOML-Escapes erst HIER — im Update-Fall sind PRACTICE_NAME/ADMIN_*
+# gar nicht abgefragt worden, und `set -u` liess den Installer sonst nach der
+# Zusammenfassung abbrechen (Dienst blieb gestoppt).
+PRACTICE_NAME_ESC=$(toml_escape "$PRACTICE_NAME")
+ADMIN_USERNAME_ESC=$(toml_escape "$ADMIN_USERNAME")
+ADMIN_EMAIL_ESC=$(toml_escape "$ADMIN_EMAIL")
+ADMIN_PASSWORD_ESC=$(toml_escape "$ADMIN_PASSWORD")
 cat > "${INSTALL_DIR}/config/praxiszeit.conf" << TOMLEOF
 [server]
 port = ${PORT}
