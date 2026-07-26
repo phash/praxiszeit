@@ -165,6 +165,7 @@ Der Installer ist **vollständig interaktiv** und fragt der Reihe nach ab:
 
 | Frage | Beispiel-Eingabe | Hinweis |
 |---|---|---|
+| `Installationsverzeichnis [/opt/praxiszeit]:` | leer = Default | **Kommt zuerst** — daran erkennt der Installer, ob es eine Erst­installation oder ein Update ist |
 | `Praxis-Name:` | `Praxis Dr. Müller` | Pflicht, nicht leer |
 | `Bundesland [2]:` | `2` (Bayern) | Auswahl 1–16 (Liste wird gezeigt) |
 | `Admin-Benutzername [admin]:` | `admin` | Default ist `admin` |
@@ -173,9 +174,14 @@ Der Installer ist **vollständig interaktiv** und fragt der Reihe nach ab:
 | `Passwort wiederholen:` | `********` | Muss übereinstimmen |
 | `HTTPS-Port [443]:` | `443` | Default-Port ist HTTPS:443 |
 | `Selbstsigniertes SSL-Zertifikat generieren? [J/n]:` | `J` | Erzeugt sofort ein selbstsigniertes **RSA-2048-Server-Zertifikat** (10 Jahre, Hostname/IP im SAN) |
-| `Installationsverzeichnis [/opt/praxiszeit]:` | leer = Default | Frei wählbar |
 
 Anschließend wird eine **Zusammenfassung** angezeigt und mit `J/n` bestätigt.
+
+> **Beim Update entfallen alle Abfragen außer dem Verzeichnis und der Bestätigung.**
+> Findet der Installer unter dem angegebenen Pfad eine `config/praxiszeit.conf`,
+> behandelt er den Lauf als Update: Praxisdaten, Admin-Konto samt Passwort, Port,
+> SSL und der Sicherheitsschlüssel werden weder erneut abgefragt noch überschrieben.
+> Eingespielt werden Programmcode und Datenbank-Migrationen.
 
 ### 4.3 Was der Installer tut
 
