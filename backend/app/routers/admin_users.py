@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 from app.services.timezone_service import today_local
 from app.database import get_db
@@ -13,7 +13,7 @@ from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChan
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
-from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
+from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse, WorkingHoursChangePreview
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import auth_service, calculation_service, milog_service, settings_service
 from app.core.license import check_employee_limit
@@ -928,6 +928,102 @@ def create_working_hours_change(
     db.commit()
     db.refresh(change)
     return change
+
+
+@router.get("/users/{user_id}/working-hours-changes/preview", response_model=WorkingHoursChangePreview)
+def preview_working_hours_change(
+    user_id: str,
+    effective_from: date,
+    weekly_hours: float = Query(..., ge=0, le=60),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Task 2 (#Wochenstunden-Dialog): strikt lesende Vorschau VOR dem Speichern
+    einer Wochenstunden-Änderung — zeigt Zeitraum, altes/neues Tagessoll,
+    Anzahl betroffener Abwesenheiten und ob ein abgeschlossenes Jahr berührt
+    wird. Kennt zusätzlich die Ablehnungsgründe des POST-Endpoints
+    (individueller Tagesplan, Datum bereits belegt), damit der Dialog den
+    Nutzer nicht erst in einen 400 laufen lässt.
+
+    Schreibt NICHTS — kein ``db.commit()``. Um ``retarget_absence_hours``
+    (die einzige Stelle, die die Rückrechnung kennt) für den noch gar nicht
+    gespeicherten neuen Wert befragen zu können, wird die hypothetische
+    Änderung nur in der laufenden Transaktion ge-flusht (damit die interne
+    ``get_weekly_hours_for_date``-Abfrage sie sieht) und danach IMMER per
+    ``db.rollback()`` verworfen — auch im Fehlerfall.
+    """
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
+    user = _get_user_in_tenant(db, user_id, current_user)
+
+    today = today_local()
+    is_retroactive = effective_from < today
+    period_start = effective_from
+    period_end = today if is_retroactive else effective_from
+
+    current_weekly = calculation_service.get_weekly_hours_for_date(db, user, effective_from)
+    current_daily_target = calculation_service.get_daily_target_for_date(
+        user, effective_from, current_weekly
+    )
+    new_daily_target = calculation_service.get_daily_target_for_date(
+        user, effective_from, Decimal(str(weekly_hours))
+    )
+
+    # Gleiche Ablehnungsgründe wie create_working_hours_change (Fix #2 dort):
+    # individueller Tagesplan zuerst, dann Datum bereits belegt.
+    blocked_reason = None
+    if getattr(user, "use_daily_schedule", False):
+        blocked_reason = (
+            "Für Mitarbeitende mit individuellem Tagesplan wird die "
+            "Stunden-Historie nicht unterstützt — bitte die Tagesstunden "
+            "direkt im Mitarbeiter-Profil ändern."
+        )
+    else:
+        existing = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user_id,
+            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+            WorkingHoursChange.effective_from == effective_from
+        ).first()
+        if existing:
+            blocked_reason = (
+                f"Eine Stundenänderung für den {effective_from.strftime('%d.%m.%Y')} "
+                "existiert bereits"
+            )
+
+    affected_absences = 0
+    if is_retroactive:
+        # Die hypothetische Änderung nur temporär in die laufende Transaktion
+        # flushen (NICHT committen), damit retarget_absence_hours' eigene
+        # WorkingHoursChange-Abfrage sie berücksichtigt — danach immer
+        # zurückrollen, egal ob die Berechnung erfolgreich war.
+        temp_change = WorkingHoursChange(
+            user_id=user.id,
+            tenant_id=current_user.tenant_id,
+            effective_from=effective_from,
+            weekly_hours=weekly_hours,
+        )
+        db.add(temp_change)
+        db.flush()
+        try:
+            affected_absences = calculation_service.retarget_absence_hours(
+                db, user, period_start, period_end, dry_run=True
+            )
+        finally:
+            db.rollback()
+
+    closed_year_warning = calculation_service.stale_year_closing_warning(
+        db, current_user.tenant_id, range(period_start.year, period_end.year + 1)
+    )
+
+    return WorkingHoursChangePreview(
+        is_retroactive=is_retroactive,
+        period_start=period_start,
+        period_end=period_end,
+        current_daily_target=float(current_daily_target),
+        new_daily_target=float(new_daily_target),
+        affected_absences=affected_absences,
+        blocked_reason=blocked_reason,
+        closed_year_warning=closed_year_warning,
+    )
 
 
 @router.delete("/users/{user_id}/working-hours-changes/{change_id}", status_code=status.HTTP_204_NO_CONTENT)

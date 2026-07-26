@@ -25,3 +25,21 @@ class WorkingHoursChangeResponse(WorkingHoursChangeBase):
         return str(value)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class WorkingHoursChangePreview(BaseModel):
+    """Strikt lesende Vorschau vor dem Speichern einer Wochenstunden-Änderung.
+
+    Zeigt, was eine (ggf. rückwirkende) Änderung anfassen WÜRDE — ohne selbst
+    etwas zu schreiben. ``blocked_reason``/``closed_year_warning`` == None
+    heißt „kein Problem"; ist ``blocked_reason`` gesetzt, würde der
+    schreibende POST-Endpoint mit HTTP 400 ablehnen.
+    """
+    is_retroactive: bool
+    period_start: date
+    period_end: date
+    current_daily_target: float
+    new_daily_target: float
+    affected_absences: int
+    blocked_reason: Optional[str] = None
+    closed_year_warning: Optional[str] = None
