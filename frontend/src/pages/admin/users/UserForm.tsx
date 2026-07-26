@@ -20,9 +20,17 @@ interface UserFormProps {
   // Optional, damit bestehende Render-Aufrufe/Tests ohne den Callback nicht
   // brechen; ohne ihn ist der Button praktisch ein No-op.
   onOpenHoursHistory?: (user: User) => void;
+  // Release-Review 1.17.0 (Fund 2): der aktuelle Wochenstunden-Wert des
+  // bearbeiteten Nutzers, unabhängig von `editUser` nachgeführt (Users.tsx
+  // liest ihn live aus `users`). NUR für die read-only-Anzeige unten —
+  // `formData.weekly_hours` (und damit alles, was der Admin sonst im
+  // Formular eingegeben hat) bleibt davon unberührt. Fehlt der Wert (Anlegen,
+  // kein Treffer mehr in `users`), fällt die Anzeige auf `formData.weekly_hours`
+  // zurück.
+  displayWeeklyHours?: number;
 }
 
-export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: UserFormProps) {
+export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displayWeeklyHours }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
   const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
@@ -378,7 +386,7 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: User
                   id="f-weekly-hours"
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
                 >
-                  {formData.weekly_hours.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} h/Woche
+                  {(displayWeeklyHours ?? formData.weekly_hours).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} h/Woche
                 </div>
                 <button
                   type="button"
