@@ -990,10 +990,16 @@ def preview_working_hours_change(
             )
 
     affected_absences = 0
-    if is_retroactive:
-        # Die hypothetische Änderung nur temporär in die laufende Transaktion
-        # flushen (NICHT committen), damit retarget_absence_hours' eigene
-        # WorkingHoursChange-Abfrage sie berücksichtigt — danach immer
+    if is_retroactive and not blocked_reason:
+        # Wäre die Änderung ohnehin blockiert (z. B. Duplikat-Datum), gibt es
+        # nichts zu zählen — UND ein Insert würde eine zweite Zeile mit
+        # identischem effective_from erzeugen. get_weekly_hours_for_date hat
+        # keine Sekundärsortierung und würde dann reproduzierbar die
+        # BESTEHENDE Zeile wählen, nicht die hypothetische — die Zählung liefe
+        # gegen den falschen Wochenstunden-Wert. Also nur bei nicht-blockierten
+        # Änderungen: die hypothetische Änderung nur temporär in die laufende
+        # Transaktion flushen (NICHT committen), damit retarget_absence_hours'
+        # eigene WorkingHoursChange-Abfrage sie berücksichtigt — danach immer
         # zurückrollen, egal ob die Berechnung erfolgreich war.
         temp_change = WorkingHoursChange(
             user_id=user.id,
@@ -1010,9 +1016,14 @@ def preview_working_hours_change(
         finally:
             db.rollback()
 
-    closed_year_warning = calculation_service.stale_year_closing_warning(
+    # closed_years: ALLE im Zeitraum berührten abgeschlossenen Jahre (Spec:
+    # docs/superpowers/specs/2026-07-26-wochenstunden-anpassen-design.md), nicht
+    # nur das früheste — closed_year_warning bleibt der fertige Anzeigetext für
+    # das früheste (gleiche Definition, eine Query statt zwei).
+    closed_years = calculation_service.closed_years_in_range(
         db, current_user.tenant_id, range(period_start.year, period_end.year + 1)
     )
+    closed_year_warning = calculation_service.closed_year_warning_text(closed_years)
 
     return WorkingHoursChangePreview(
         is_retroactive=is_retroactive,
@@ -1022,6 +1033,7 @@ def preview_working_hours_change(
         new_daily_target=float(new_daily_target),
         affected_absences=affected_absences,
         blocked_reason=blocked_reason,
+        closed_years=closed_years,
         closed_year_warning=closed_year_warning,
     )
 

@@ -132,6 +132,29 @@ class TestBlockedReasons:
     def test_normal_case_is_not_blocked(self, client, test_user):
         assert client.get(_url(test_user.id, _last_monday())).json()["blocked_reason"] is None
 
+    def test_duplicate_date_reports_zero_affected_absences(self, client, db, test_user):
+        """Regression: blockiert wegen Duplikat-Datum -> KEIN Dry-Run-Insert, also
+        affected_absences bleibt 0.
+
+        Ohne das `not blocked_reason`-Gate würde der Endpoint trotzdem eine
+        temporäre WorkingHoursChange-Zeile mit demselben effective_from einfügen
+        und flushen. get_weekly_hours_for_date hat keine Sekundärsortierung und
+        wählt reproduzierbar die BESTEHENDE Zeile — die Zählung liefe dann gegen
+        den falschen Wochenstunden-Wert. Mit zwei Abwesenheiten im Zeitraum würde
+        das ohne den Fix affected_absences == 2 statt 0 liefern.
+        """
+        eff = _last_monday()
+        db.add(WorkingHoursChange(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=eff, weekly_hours=Decimal("30.0"),
+        ))
+        db.commit()
+        _absence(db, test_user, eff)
+        _absence(db, test_user, eff + timedelta(days=1))
+        body = client.get(_url(test_user.id, eff)).json()
+        assert body["blocked_reason"] is not None
+        assert body["affected_absences"] == 0
+
 
 class TestClosedYears:
     def test_closed_year_is_reported(self, client, db, test_user):
@@ -145,10 +168,34 @@ class TestClosedYears:
         db.commit()
         r = client.get(_url(test_user.id, date(last_year, 6, 1)))
         assert r.status_code == 200, r.text
-        assert r.json()["closed_year_warning"] is not None
+        body = r.json()
+        assert body["closed_year_warning"] is not None
+        assert body["closed_years"] == [last_year]
 
     def test_open_year_has_no_warning(self, client, test_user):
-        assert client.get(_url(test_user.id, _last_monday())).json()["closed_year_warning"] is None
+        body = client.get(_url(test_user.id, _last_monday())).json()
+        assert body["closed_year_warning"] is None
+        assert body["closed_years"] == []
+
+    def test_multiple_closed_years_are_all_reported(self, client, db, test_user):
+        """Ein Zeitraum über ZWEI abgeschlossene Jahre -> beide in closed_years,
+        nicht nur das früheste (closed_year_warning bleibt bewusst auf das
+        früheste beschränkt — reiner Anzeigetext)."""
+        first_year = today_local().year - 2
+        second_year = today_local().year - 1
+        for y in (first_year, second_year):
+            db.add(YearCarryover(
+                user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+                year=y + 1, overtime_hours=Decimal("0"),
+                vacation_days=Decimal("0"), source="year_closing",
+            ))
+        db.commit()
+        r = client.get(_url(test_user.id, date(first_year, 6, 1)))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["closed_years"] == [first_year, second_year]
+        assert body["closed_year_warning"] is not None
+        assert str(first_year) in body["closed_year_warning"]
 
 
 class TestAuthorization:
