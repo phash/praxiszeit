@@ -231,6 +231,59 @@ describe('Löschen einer Stundenänderung', () => {
     expect(await screen.findByText(/2025 ist bereits abgeschlossen/)).toBeInTheDocument();
   });
 
+  it('zeigt die Backend-Begründung statt einer pauschalen Fehlermeldung', async () => {
+    // I4: Der Grund („…verankert den davor gültigen Wert…") wurde von einer
+    // hardcodierten Meldung verschluckt.
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'c1', effective_from: '2026-06-01', weekly_hours: 30 },
+      ]));
+    });
+    deleteMock.mockRejectedValue({
+      response: { data: { detail: 'Dies ist die früheste erfasste Stundenänderung dieses Mitarbeiters.' } },
+    });
+    renderModal();
+    await screen.findByText(/Ab 01\.06\.2026/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
+
+    expect(await screen.findByText(/früheste erfasste Stundenänderung/)).toBeInTheDocument();
+  });
+
+  it('deaktiviert den Löschen-Button der frühesten Zeile, solange spätere existieren', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'c2', effective_from: '2026-03-01', weekly_hours: 40 },
+        { id: 'c1', effective_from: '2026-01-01', weekly_hours: 30 },
+      ]));
+    });
+    renderModal();
+    await screen.findByText(/Ab 01\.01\.2026/);
+
+    const locked = screen.getByRole('button', { name: /Löschen nicht möglich/ });
+    expect(locked).toBeDisabled();
+    // Die spätere Zeile bleibt löschbar — genau ein aktiver Löschen-Button.
+    expect(screen.getAllByRole('button', { name: 'Löschen' })).toHaveLength(1);
+  });
+
+  it('bietet das Löschen der EINZIGEN Zeile weiterhin an', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'c1', effective_from: '2026-01-01', weekly_hours: 30 },
+      ]));
+    });
+    renderModal();
+    await screen.findByText(/Ab 01\.01\.2026/);
+
+    expect(screen.getByRole('button', { name: 'Löschen' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /Löschen nicht möglich/ })).not.toBeInTheDocument();
+  });
+
   it('zeigt keine Warnung bei der leeren 204-Antwort', async () => {
     getMock.mockImplementation((url: string) => {
       if (String(url).includes('/preview')) return Promise.resolve(previewResponse());

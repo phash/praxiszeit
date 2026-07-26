@@ -139,6 +139,21 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
     return map;
   }, [hoursChanges]);
 
+  // I4: Das Backend lehnt das Löschen der FRÜHESTEN Zeile ab, solange spätere
+  // existieren — sie verankert den davor gültigen Wert, der sonst nirgends
+  // mehr gespeichert ist. Verbieten und trotzdem anbieten ist schlechte
+  // Führung: der Löschen-Button ist dort deaktiviert und nennt den Grund.
+  // Ist es die EINZIGE Zeile, bleibt das Löschen erlaubt (Backend genauso).
+  const lockedEarliestId = useMemo(() => {
+    if (hoursChanges.length < 2) return null;
+    const asc = [...hoursChanges].sort((a, b) => a.effective_from.localeCompare(b.effective_from));
+    return asc[0].id;
+  }, [hoursChanges]);
+
+  const LOCKED_EARLIEST_HINT =
+    'Die früheste erfasste Stundenänderung verankert den davor gültigen Wert — '
+    + 'bitte zuerst die späteren Änderungen löschen.';
+
   const blockedReason = isRetroactive ? preview?.blocked_reason ?? null : null;
   // Solange die Vorschau für ein rückwirkendes Datum noch lädt/fehlt, blockiert
   // oder noch nicht bestätigt ist, bleibt „Hinzufügen" gesperrt — der Nutzer
@@ -201,8 +216,11 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
           if (warning) {
             toast.warning(warning);
           }
-        } catch (error) {
-          toast.error('Fehler beim Löschen der Stundenänderung');
+        } catch (error: unknown) {
+          // I4: Der Grund kommt vom Backend (z. B. „…verankert den davor
+          // gültigen Wert… bitte zuerst die späteren Änderungen löschen") —
+          // eine hardcodierte Meldung verschluckte ihn. Parität zum Anlegen.
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen der Stundenänderung'));
         }
       },
     });
@@ -388,13 +406,29 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                               })}
                             </p>
                           </div>
-                          <button
-                            onClick={() => handleDeleteHoursChange(change.id)}
-                            className="text-red-600 hover:text-red-800"
-                            title="Löschen"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          {change.id === lockedEarliestId ? (
+                            // Der Titel sitzt am umschließenden <span>: ein
+                            // disabled <button> feuert keine Hover-Events, der
+                            // Tooltip käme dort nie an.
+                            <span title={LOCKED_EARLIEST_HINT} className="shrink-0">
+                              <button
+                                type="button"
+                                disabled
+                                aria-label="Löschen nicht möglich – früheste Stundenänderung"
+                                className="text-gray-300 cursor-not-allowed"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleDeleteHoursChange(change.id)}
+                              className="text-red-600 hover:text-red-800"
+                              title="Löschen"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
                         </div>
                       );
                     })}
