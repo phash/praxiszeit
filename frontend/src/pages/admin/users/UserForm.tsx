@@ -228,8 +228,17 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: User
         // Wochenstunden-Dialog now — the backend PUT rejects it outright (a
         // direct-edit here would silently rewrite the historical fallback
         // value for the whole past, which is exactly the bug this redesign
-        // fixes). NEVER add it back into updateData.
-        const { password, weekly_hours, ...updateData } = payload;
+        // fixes). NEVER add it back into updateData for these users.
+        //
+        // I2 (Abschluss-Review): the ONE exception is a user with an individual
+        // daily schedule. The change endpoint refuses that group (400), so the
+        // dialog does not exist for them — the direct field is their only write
+        // path, and weekly_hours drives no Soll for them anyway
+        // (get_daily_target_for_date reads hours_monday…friday). The backend
+        // allows the direct PUT for exactly this case, gated on the EFFECTIVE
+        // post-update flag — which is what formData carries here.
+        const { password, weekly_hours, ...rest } = payload;
+        const updateData = formData.use_daily_schedule ? { ...rest, weekly_hours } : rest;
         await apiClient.put(`/admin/users/${editUser.id}`, updateData);
         // #158/#383: nur schreiben, wenn (a) die Felder erfolgreich für EIN Jahr
         // geladen sind (loadedCarryoverYear !== null) — sonst würde ein Ladefehler
@@ -358,7 +367,7 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: User
           </div>
           <div>
             <label htmlFor="f-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">Wochenstunden</label>
-            {editUser ? (
+            {editUser && !formData.use_daily_schedule ? (
               // Task 6 (#Wochenstunden-anpassen): reine Anzeige beim Bearbeiten.
               // Der frühere direkte Eingabe-Feld überschrieb still den
               // Rückfallwert für die gesamte Vergangenheit — Änderungen laufen
@@ -374,13 +383,7 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: User
                 <button
                   type="button"
                   onClick={() => onOpenHoursHistory?.(editUser)}
-                  disabled={formData.use_daily_schedule}
-                  title={
-                    formData.use_daily_schedule
-                      ? 'Bei individuellem Tagesplan werden die Stunden über die Tagesstunden weiter unten gepflegt'
-                      : undefined
-                  }
-                  className="shrink-0 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-primary hover:bg-primary/5 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent"
+                  className="shrink-0 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-primary hover:bg-primary/5 transition"
                 >
                   Wochenstunden anpassen…
                 </button>
@@ -388,6 +391,15 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: User
             ) : (
               // Beim Anlegen: normales Eingabefeld — es gibt noch keine Historie,
               // der Startwert muss direkt gesetzt werden können.
+              //
+              // I2 (Abschluss-Review): ebenso beim BEARBEITEN eines Mitarbeiters
+              // mit individuellem Tagesplan. Für die gibt es keinen
+              // Wochenstunden-Dialog (der Endpoint lehnt sie mit 400 ab), das
+              // Feld war aber read-only — ihre Wochenstunden waren damit gar
+              // nicht mehr änderbar, während die Tagesstunden-Summe unten
+              // weiterhin „bitte anpassen!" verlangte. Ihr Tagessoll kommt aus
+              // den Tagesstunden, `weekly_hours` treibt bei ihnen kein Soll;
+              // das Backend erlaubt den direkten PUT für genau diese Gruppe.
               <input
                 id="f-weekly-hours"
                 type="number"
@@ -402,9 +414,10 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory }: User
             )}
             {editUser && formData.use_daily_schedule && (
               <p className="mt-1 text-xs text-gray-500">
-                ℹ️ Individueller Tagesplan aktiv — die Stunden werden über die
-                <strong> Tagesstunden</strong> weiter unten gepflegt, nicht über
-                die Wochenstunden-Historie.
+                ℹ️ Individueller Tagesplan aktiv — das Tagessoll kommt aus den
+                <strong> Tagesstunden</strong> weiter unten. Die Wochenstunden
+                sind hier nur die Vertragsangabe (Berichtsköpfe, Auswertungen)
+                und werden direkt gepflegt, nicht über die Wochenstunden-Historie.
               </p>
             )}
             {formData.use_fixed_monthly_target && (

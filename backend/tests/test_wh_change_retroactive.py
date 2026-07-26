@@ -859,6 +859,52 @@ class TestPutRejectsWeeklyHours:
         assert emp.first_name == "Geändert"
         assert float(emp.weekly_hours) == 40.0, "unberührt"
 
+    def test_put_weekly_hours_allowed_for_daily_schedule_user(self, db, default_tenant):
+        """I2 (Abschluss-Review): Für Tagesplan-MA ist der Änderungs-Endpoint
+        gesperrt (400) — die PUT-Sperre fror ihre Wochenstunden damit dauerhaft
+        ein, obwohl das Formular weiter „bitte anpassen!" verlangt und der
+        falsche Wert in §16-Berichtsköpfe, die MiLoG-Ableitung (×13/3), die
+        Schichtplanung und die Benutzerliste fließt. Ihr Tagessoll kommt aus
+        hours_monday…friday, weekly_hours treibt bei ihnen kein Soll."""
+        admin = _admin(db, "wh_putds_admin")
+        emp = _make_user(
+            db, "wh_putds_emp", weekly_hours=40.0, use_daily_schedule=True,
+            hours_monday=6.0, hours_tuesday=6.0, hours_wednesday=6.0,
+            hours_thursday=6.0, hours_friday=6.0,
+        )
+
+        result = update_user(
+            user_id=str(emp.id),
+            user_data=UserUpdate(weekly_hours=30.0),
+            db=db, current_user=admin,
+        )
+
+        assert float(result.weekly_hours) == 30.0
+        db.refresh(emp)
+        assert float(emp.weekly_hours) == 30.0
+
+    def test_put_weekly_hours_rejected_when_daily_schedule_is_switched_off(self, db, default_tenant):
+        """Gegenrichtung: Wer den Tagesplan im selben PUT ABschaltet, faellt
+        wieder unter die Sperre — danach traebe weekly_hours das Soll."""
+        admin = _admin(db, "wh_putds2_admin")
+        emp = _make_user(
+            db, "wh_putds2_emp", weekly_hours=40.0, use_daily_schedule=True,
+            hours_monday=6.0, hours_tuesday=6.0, hours_wednesday=6.0,
+            hours_thursday=6.0, hours_friday=6.0,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            update_user(
+                user_id=str(emp.id),
+                user_data=UserUpdate(weekly_hours=30.0, use_daily_schedule=False),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400
+
+        db.refresh(emp)
+        assert float(emp.weekly_hours) == 40.0, "Nutzer in der DB unveraendert"
+        assert emp.use_daily_schedule is True
+
     def test_post_user_with_weekly_hours_still_works(self, db, default_tenant):
         admin = _admin(db, "wh_post_admin")
 

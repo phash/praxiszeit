@@ -276,9 +276,25 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     });
   });
 
-  it('Button ist bei individuellem Tagesplan deaktiviert (Backend lehnt diese Nutzer ohnehin ab)', () => {
+  // I2 (Abschluss-Review): Für Mitarbeitende mit individuellem Tagesplan lehnt
+  // der Änderungs-Endpoint ab (400) — der Dialog existiert für sie also nicht.
+  // Wäre das Feld hier zusätzlich read-only, hätten sie GAR KEINEN Schreibweg
+  // mehr, während die Tagesstunden-Summe weiter „bitte anpassen!" verlangt.
+  it('bleibt bei individuellem Tagesplan ein Eingabefeld (kein Dialog-Button)', () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
-    expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeDisabled();
+    expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');
+    expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
+  });
+
+  it('sendet weekly_hours beim Update MIT, wenn ein individueller Tagesplan aktiv ist', async () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
+    fireEvent.change(document.getElementById('f-weekly-hours') as HTMLInputElement, { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
+      expect(call).toBeTruthy();
+      expect(call![1]).toMatchObject({ weekly_hours: 30, use_daily_schedule: true });
+    });
   });
 
   it('öffnet den Wochenstunden-Dialog für den bearbeiteten Nutzer', () => {

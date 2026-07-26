@@ -693,15 +693,34 @@ def update_user(
     # Schreibzugriff greifen (kein setattr, kein commit vorher) — deshalb hier,
     # ganz am Anfang. POST /api/admin/users (create_user) bleibt unverändert:
     # dort existiert noch keine Historie, die verletzt werden könnte.
+    #
+    # I2 (Abschluss-Review): AUSGENOMMEN sind Mitarbeitende mit individuellem
+    # Tagesplan. Für sie ist der Änderungs-Endpoint gesperrt (400) und der
+    # Dialog gar nicht erreichbar — die Sperre hier hätte ihre Wochenstunden
+    # damit dauerhaft eingefroren, obwohl das Formular weiterhin „bitte
+    # anpassen!" verlangt und der falsche Wert in §16-Berichtsköpfe, die
+    # MiLoG-Ableitung (×13/3), die Schichtplanung und die Benutzerliste fließt.
+    # Das Schutzargument („Historie und Vergangenheit") trifft auf sie nicht zu:
+    # ihr Tagessoll kommt aus hours_monday…friday, `weekly_hours` treibt bei
+    # ihnen kein Soll und es gibt keine Historie, die verletzt werden könnte.
+    #
+    # Geprüft wird der EFFEKTIVE Zustand NACH dem Update (Payload-Wert, sonst
+    # DB-Wert) — dasselbe Muster wie der eff_fixed-Block weiter unten. Wer den
+    # Tagesplan im selben PUT ABschaltet, fällt damit wieder unter die Sperre:
+    # danach würde `weekly_hours` das Soll treiben und gehört in den Dialog.
     if 'weekly_hours' in update_data:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Wochenstunden werden über „Wochenstunden anpassen“ mit "
-                "Wirkungsdatum geändert, damit Historie und Soll vergangener "
-                "Monate korrekt bleiben."
-            ),
+        _eff_daily_schedule = update_data.get(
+            'use_daily_schedule', getattr(user, 'use_daily_schedule', False)
         )
+        if not _eff_daily_schedule:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Wochenstunden werden über „Wochenstunden anpassen“ mit "
+                    "Wirkungsdatum geändert, damit Historie und Soll vergangener "
+                    "Monate korrekt bleiben."
+                ),
+            )
 
     if user_data.username and user_data.username.lower() != user.username.lower():
         # F-026: scope the uniqueness probe to the tenant (parity with

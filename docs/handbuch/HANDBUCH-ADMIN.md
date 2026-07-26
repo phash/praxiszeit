@@ -252,7 +252,7 @@ Beim Speichern einer rückwirkenden Änderung werden die **Stunden bereits gebuc
 
 Wird eine Stundenänderung wieder **gelöscht**, rechnet das System die Abwesenheits-Stunden im betroffenen Zeitraum ebenso zurück. Die **früheste** erfasste Änderung eines Mitarbeiters lässt sich dabei nicht löschen, solange spätere Änderungen bestehen – sie hält den davor gültigen Wert fest. Soll die Historie komplett zurückgesetzt werden, zuerst die späteren Einträge löschen.
 
-> **Individueller Tagesplan:** Bei Mitarbeitenden mit individuellen Tagesstunden je Wochentag ist der Button „Wochenstunden anpassen…" deaktiviert – hier werden die Stunden direkt über die Tagesstunden im Formular gepflegt.
+> **Individueller Tagesplan:** Bei Mitarbeitenden mit individuellen Tagesstunden je Wochentag gibt es keinen Stundenverlauf – ihr Tagessoll kommt direkt aus den Tagesstunden. Das Feld **Wochenstunden** bleibt für sie deshalb ein normales Eingabefeld (statt Anzeige + Button): es ist bei ihnen nur die Vertragsangabe für Berichtsköpfe und Auswertungen und wird zusammen mit den Tagesstunden gepflegt. Das Löschen einer noch vorhandenen Alt-Stundenänderung rechnet bei ihnen entsprechend nichts um.
 
 Die Änderung ist auch in den Berichten sichtbar: Monats- und Jahresbericht zeigen als Wochenstunden den **zu Zeitraumsbeginn** gültigen Wert und daneben den Hinweis „ab 15.03.2026: 20,0 Std/Woche". Das gilt für die Tabelle im Admin-Dashboard ebenso wie für die Excel-, ODS- und PDF-Exporte (in der Jahresübersicht als eigene Spalte **Stundenänderungen**). So passt die ausgewiesene Wochenstundenzahl immer zu den darunter historisch gerechneten Tageszeilen.
 

@@ -55,7 +55,7 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 → Historische Salden bleiben korrekt! Verlauf zeigt „ab … bis …"; Berichte zeigen den zu Zeitraumsbeginn gültigen Wert + „ab TT.MM.JJJJ: X Std/Woche" (Dashboard, Excel, ODS, PDF)
 → **Rückwirkendes Datum:** Dialog zeigt vorab Zeitraum + altes/neues Tagessoll + betroffene Abwesenheiten – nach Bestätigung werden deren Stunden umgerechnet (Urlaubs**tage** bleiben unverändert, Tagesprinzip); abgeschlossenes Jahr wird nur gemeldet, nicht neu berechnet
 → Löschen einer Änderung rechnet zurück; **früheste** Änderung erst löschbar, wenn keine späteren mehr bestehen
-→ Individueller Tagesplan: Button deaktiviert, Pflege über Tagesstunden
+→ Individueller Tagesplan: kein Verlauf – Wochenstunden bleiben dort ein normales Eingabefeld (nur Vertragsangabe), Tagessoll kommt aus den Tagesstunden
 
 ### Mitarbeiter deaktivieren (niemals löschen!)
 **Benutzer öffnen** → Status „Inaktiv"
