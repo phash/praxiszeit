@@ -36,6 +36,25 @@ def enabled(db, default_tenant):
     _enable_flag(db)
 
 
+@pytest.fixture
+def all_weekdays(db, enabled, default_tenant):
+    """Alle sieben Wochentage im Planer freischalten.
+
+    Die ``my-today``-Tests bauen ihren Slot auf ``today_local().weekday()`` — sie
+    muessen also an jedem Kalendertag laufen, an dem die Suite laeuft. Seit #371
+    sind im Planer standardmaessig nur Mo–Fr freigeschaltet, ein Slot fuer Samstag
+    oder Sonntag scheitert deshalb mit 400 ("Dieser Wochentag ist im Schichtplaner
+    deaktiviert."). Ohne diese Fixture ist die Suite an jedem Wochenende rot und
+    taugt als Release-Gate nichts.
+
+    Die Sperre selbst bleibt abgedeckt — dafuer gibt es test_shift_weekdays.py.
+    """
+    db.add(SystemSetting(
+        key="shift_planning_weekdays", tenant_id=DEFAULT_TENANT_ID, value="0,1,2,3,4,5,6",
+    ))
+    db.commit()
+
+
 def _client(db, user, *, admin=False):
     def _override_db():
         yield db
@@ -393,7 +412,7 @@ class TestReviewFixes:
 
 
 class TestMyToday:
-    def test_union_over_active_plans_for_today(self, enabled, admin_client, employee_client, test_user):
+    def test_union_over_active_plans_for_today(self, all_weekdays, admin_client, employee_client, test_user):
         wd = today_local().weekday()
         ws = _mk_workstation(admin_client, "Tresen")
         # active plan with a slot today, user assigned
@@ -419,7 +438,7 @@ class TestMyToday:
         assert ("14:00", "18:00") not in times  # inactive plan excluded
         assert ("20:00", "22:00") not in times  # wrong weekday excluded
 
-    def test_only_own_assignments(self, enabled, admin_client, employee_client, test_user):
+    def test_only_own_assignments(self, all_weekdays, admin_client, employee_client, test_user):
         # admin creates a slot today assigned to ADMIN only; employee sees nothing
         wd = today_local().weekday()
         ws = _mk_workstation(admin_client)

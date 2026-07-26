@@ -20,6 +20,23 @@ def enabled(db, default_tenant):
     db.commit()
 
 
+@pytest.fixture
+def all_weekdays(db, enabled, default_tenant):
+    """Alle sieben Wochentage im Planer freischalten.
+
+    ``_today_slot_for`` legt den Slot auf ``today_local().weekday()`` — die Tests
+    muessen also an jedem Kalendertag laufen. Seit #371 sind im Planer nur Mo–Fr
+    voreingestellt, ein Slot am Wochenende scheitert mit 400. Ohne diese Fixture
+    ist die Suite jedes Wochenende rot.
+
+    Die Sperre selbst bleibt abgedeckt — siehe test_shift_weekdays.py.
+    """
+    db.add(SystemSetting(
+        key="shift_planning_weekdays", tenant_id=DEFAULT_TENANT_ID, value="0,1,2,3,4,5,6",
+    ))
+    db.commit()
+
+
 def _client(db, user, *, admin=False):
     def _override_db():
         yield db
@@ -93,7 +110,7 @@ class TestDateWindowApi:
 
 
 class TestMyTodayResolution:
-    def test_window_covering_today_is_active(self, enabled, admin_client, employee_client, test_user):
+    def test_window_covering_today_is_active(self, all_weekdays, admin_client, employee_client, test_user):
         pid = _mk_plan(admin_client, "Windowed")
         _today_slot_for(admin_client, pid, str(test_user.id))
         today = today_local()
@@ -104,7 +121,7 @@ class TestMyTodayResolution:
         data = employee_client.get(f"{BASE}/my-today").json()
         assert len(data["entries"]) == 1
 
-    def test_window_in_past_is_inactive(self, enabled, admin_client, employee_client, test_user):
+    def test_window_in_past_is_inactive(self, all_weekdays, admin_client, employee_client, test_user):
         pid = _mk_plan(admin_client, "Past")
         _today_slot_for(admin_client, pid, str(test_user.id))
         today = today_local()
@@ -113,7 +130,7 @@ class TestMyTodayResolution:
                     (today - timedelta(days=10)).isoformat(), name="Past")
         assert employee_client.get(f"{BASE}/my-today").json()["entries"] == []
 
-    def test_open_ended_windows(self, enabled, admin_client, employee_client, test_user):
+    def test_open_ended_windows(self, all_weekdays, admin_client, employee_client, test_user):
         pid = _mk_plan(admin_client, "OpenEnd")
         _today_slot_for(admin_client, pid, str(test_user.id))
         today = today_local()
@@ -124,7 +141,7 @@ class TestMyTodayResolution:
         _set_window(admin_client, pid, None, (today + timedelta(days=1)).isoformat(), name="OpenEnd")
         assert len(employee_client.get(f"{BASE}/my-today").json()["entries"]) == 1
 
-    def test_no_window_no_active_flag_is_inactive(self, enabled, admin_client, employee_client, test_user):
+    def test_no_window_no_active_flag_is_inactive(self, all_weekdays, admin_client, employee_client, test_user):
         pid = _mk_plan(admin_client, "Neither")
         _today_slot_for(admin_client, pid, str(test_user.id))
         # no is_active, no window → not active
