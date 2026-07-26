@@ -102,6 +102,7 @@ Antwort:
   "new_daily_target": 4.0,
   "affected_absences": 12,
   "closed_years": [2025],
+  "closed_year_warning": "Das Jahr 2025 ist bereits abgeschlossen …",
   "blocked_reason": null
 }
 ```
