@@ -206,6 +206,53 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
   });
 });
 
+describe('M1: "heute" ist das LOKALE Datum, nicht das UTC-Datum', () => {
+  // Zwischen 00:00 und 02:00 Berliner Zeit lag das UTC-Datum einen Tag zurück:
+  // der Dialog hielt das gestrige Datum für "heute" → keine Vorschau, keine
+  // Bestätigungspflicht, während das Backend (today_local()) es als
+  // rückwirkend behandelte und retargetete.
+  //
+  // `process.env.TZ` lässt sich im vitest-Worker-Thread nicht mehr umstellen
+  // (die V8-Zeitzone steht dort fest), deshalb wird die lokale Sicht direkt
+  // über die Date-Getter simuliert: Systemzeit 26.07. 22:30 UTC, lokal
+  // 27.07. — genau die Konstellation, in der die beiden Datumsformen
+  // auseinanderfallen.
+  const AROUND_MIDNIGHT_BERLIN = new Date('2026-07-26T22:30:00Z');
+
+  function mockLocalDate(y: number, m: number, d: number) {
+    vi.spyOn(Date.prototype, 'getFullYear').mockReturnValue(y);
+    vi.spyOn(Date.prototype, 'getMonth').mockReturnValue(m - 1);
+    vi.spyOn(Date.prototype, 'getDate').mockReturnValue(d);
+  }
+
+  beforeEach(() => {
+    vi.setSystemTime(AROUND_MIDNIGHT_BERLIN);
+    mockLocalDate(2026, 7, 27);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('setzt das Vorgabe-Datum auf den lokalen Tag', async () => {
+    expect(new Date().toISOString().split('T')[0]).toBe('2026-07-26'); // UTC-Sicht
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    expect((screen.getByLabelText('Gültig ab') as HTMLInputElement).value).toBe('2026-07-27');
+  });
+
+  it('behandelt den lokalen Vortag als rückwirkend (Bestätigung wird erzwungen)', async () => {
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    // 26.07. ist lokal GESTERN — vorher hielt der Dialog es für "heute" und
+    // liess ohne Vorschau und ohne Bestätigung speichern.
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-07-26' } });
+    await flushDebounce();
+    await screen.findByText(/Abwesenheit\(en\) betroffen/);
+    expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
+  });
+});
+
 describe('Löschen einer Stundenänderung', () => {
   // I3: Das Backend antwortet beim Löschen mit 200 + {warning}, wenn die
   // Rückrechnung ein bereits abgeschlossenes Jahr berührt (sonst 204 ohne Body).

@@ -55,8 +55,22 @@ function dayBefore(iso: string): string {
   return d.toISOString().split('T')[0];
 }
 
+// „Heute" in der LOKALEN Zeitzone des Browsers (= die des Praxis-Rechners,
+// faktisch Europe/Berlin) als YYYY-MM-DD.
+//
+// M1 (Abschluss-Review): NICHT `toISOString()` — das liefert UTC. Zwischen
+// 00:00 und 02:00 Berliner Zeit hielt der Dialog damit das GESTRIGE Datum für
+// „heute": keine Vorschau, keine Bestätigungspflicht — während das Backend
+// (`today_local()`, Europe/Berlin) dasselbe Datum als rückwirkend behandelt und
+// die Abwesenheits-Stunden retargetet. Die laut Spezifikation zwingende
+// ausdrückliche Bestätigung war damit umgehbar.
+//
+// (`dayBefore` rechnet weiterhin bewusst in UTC — dort geht es um reine
+// Tagesarithmetik auf einem bereits feststehenden Datum, ohne DST-Rollover.)
 function todayIso(): string {
-  return new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // Debounce (ms), bevor die rein lesende Vorschau abgerufen wird, während der
