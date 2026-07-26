@@ -763,7 +763,11 @@ fi
 
 echo ""
 echo "=============================================="
-echo -e "  ${GREEN}PraxisZeit erfolgreich installiert!${NC}"
+if [ "$UPDATE_MODE" = "1" ]; then
+    echo -e "  ${GREEN}PraxisZeit erfolgreich aktualisiert!${NC}"
+else
+    echo -e "  ${GREEN}PraxisZeit erfolgreich installiert!${NC}"
+fi
 echo "=============================================="
 echo ""
 echo "  URL:       ${PROTO}://${SERVER_IP_SUMMARY}:${PORT}"
@@ -772,6 +776,15 @@ echo "  Service:   systemctl {start|stop|status} ${SERVICE_NAME}"
 echo "  Logs:      ${INSTALL_DIR}/logs/"
 echo "  Backups:   ${INSTALL_DIR}/data/backups/"
 echo ""
-echo "  WICHTIG: Aendern Sie das Admin-Passwort nach dem"
-echo "  ersten Login ueber die Benutzerverwaltung!"
+# Der Passwort-Hinweis gilt nur der Erstinstallation — bei einem Update wurde
+# gerade kein Passwort gesetzt, und einen "ersten Login" gibt es dort nicht.
+# Die Meldung stehenzulassen hiess dem Betreiber etwas zu erzaehlen, das nicht
+# passiert ist (Release-Review 1.17.0: die Zusammenfassung muss die Wahrheit
+# ueber den tatsaechlichen Ablauf sagen).
+if [ "$UPDATE_MODE" = "1" ]; then
+    echo "  Konfiguration und Zugangsdaten sind unveraendert geblieben."
+else
+    echo "  WICHTIG: Aendern Sie das Admin-Passwort nach dem"
+    echo "  ersten Login ueber die Benutzerverwaltung!"
+fi
 echo ""

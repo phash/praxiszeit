@@ -388,11 +388,18 @@ launchctl load /Library/LaunchDaemons/de.praxiszeit.backup.plist
 
 echo ""
 echo "=============================================="
-echo -e "  ${GREEN}PraxisZeit installiert!${NC}"
+if [ "$UPDATE_MODE" = "1" ]; then
+    echo -e "  ${GREEN}PraxisZeit aktualisiert!${NC}"
+else
+    echo -e "  ${GREEN}PraxisZeit installiert!${NC}"
+fi
 echo "=============================================="
 echo ""
 echo "  URL:      http://localhost:${PORT}"
 echo "  Login:    admin / (Ihr Passwort)"
+if [ "$UPDATE_MODE" = "1" ]; then
+    echo "            Konfiguration und Zugangsdaten sind unveraendert geblieben."
+fi
 echo ""
 echo "  Starten:  sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist"
 echo "  Stoppen:  sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist"
