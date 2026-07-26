@@ -2,6 +2,7 @@
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
@@ -1281,6 +1282,7 @@ def delete_working_hours_change(
     # nichts zurück (es gibt auch nichts zurückzurechnen).
     _uses_daily_schedule = bool(getattr(user, "use_daily_schedule", False))
     adjusted_absences = 0
+    warning = None
     if not _uses_daily_schedule and deleted_effective_from < today_local():
         period_end = today_local()
         adjusted_absences = calculation_service.retarget_absence_hours(
@@ -1293,6 +1295,19 @@ def delete_working_hours_change(
             prefix="Löschung der Wochenstunden-Änderung",
             suffix="auf den davor gültigen Wert zurückgerechnet",
         )
+        # I3 (Abschluss-Review): Das Anlegen liefert diesen Hinweis bereits; das
+        # Löschen rechnet dasselbe Fenster zurück und kann denselben
+        # eingefrorenen Carryover entwerten, meldete aber nichts. Fix #5 gilt
+        # hier genauso: NICHT automatisch neu rechnen (überschriebe manuelle
+        # Carryover-Anpassungen), nur melden.
+        warning = calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id,
+            range(deleted_effective_from.year, period_end.year + 1),
+        )
 
     db.commit()
+    # Muster von delete_closure / cancel_vacation_request_as_admin: mit Warnung
+    # 200 + Body, ohne Warnung weiterhin 204 No Content.
+    if warning:
+        return JSONResponse(status_code=200, content={"warning": warning})
     return None

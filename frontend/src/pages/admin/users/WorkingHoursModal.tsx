@@ -188,10 +188,19 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/admin/users/${userId}/working-hours-changes/${changeId}`);
+          const res = await apiClient.delete(`/admin/users/${userId}/working-hours-changes/${changeId}`);
           await fetchHoursChanges();
           onChanged();
           toast.success('Stundenänderung erfolgreich gelöscht');
+          // I3: Berührt die Rückrechnung ein bereits abgeschlossenes Jahr,
+          // antwortet das Backend mit 200 + {warning} statt 204 ohne Body
+          // (Muster von delete_closure / Urlaubs-Storno). Bei 204 setzt axios
+          // data auf '' — der Objekt-Check fängt das ab.
+          const body = res?.data;
+          const warning = body && typeof body === 'object' ? (body as { warning?: string }).warning : undefined;
+          if (warning) {
+            toast.warning(warning);
+          }
         } catch (error) {
           toast.error('Fehler beim Löschen der Stundenänderung');
         }

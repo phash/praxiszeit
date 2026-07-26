@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import WorkingHoursModal from './WorkingHoursModal';
@@ -203,5 +203,52 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect(await screen.findByText(/3 Abwesenheit\(en\) auf das neue Tagessoll umgerechnet/)).toBeInTheDocument();
     expect(await screen.findByText(/Das Jahr 2026 ist bereits abgeschlossen\./)).toBeInTheDocument();
+  });
+});
+
+describe('Löschen einer Stundenänderung', () => {
+  // I3: Das Backend antwortet beim Löschen mit 200 + {warning}, wenn die
+  // Rückrechnung ein bereits abgeschlossenes Jahr berührt (sonst 204 ohne Body).
+  it('zeigt die Jahresabschluss-Warnung aus der 200-Antwort', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'c1', effective_from: '2025-06-01', weekly_hours: 30 },
+      ]));
+    });
+    deleteMock.mockResolvedValue({
+      status: 200,
+      data: { warning: 'Das Jahr 2025 ist bereits abgeschlossen — der Carryover 2026 könnte veraltet sein.' },
+    });
+    renderModal();
+    await screen.findByText(/Ab 01\.06\.2025/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
+
+    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
+    expect(await screen.findByText(/2025 ist bereits abgeschlossen/)).toBeInTheDocument();
+  });
+
+  it('zeigt keine Warnung bei der leeren 204-Antwort', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'c1', effective_from: '2026-06-01', weekly_hours: 30 },
+      ]));
+    });
+    // axios liefert bei 204 data === '' — darf nicht als Warnung durchgehen.
+    deleteMock.mockResolvedValue({ status: 204, data: '' });
+    renderModal();
+    await screen.findByText(/Ab 01\.06\.2026/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
+
+    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
+    expect(await screen.findByText(/erfolgreich gelöscht/)).toBeInTheDocument();
+    expect(screen.queryByText(/abgeschlossen/)).not.toBeInTheDocument();
   });
 });

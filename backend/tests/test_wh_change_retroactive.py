@@ -10,6 +10,7 @@ schreibt bei tatsächlich angepassten Zeilen einen Audit-Eintrag
 ``adjusted_absences``/``warning`` (Jahresabschluss-Hinweis für abgeschlossene,
 berührte Jahre).
 """
+import json
 from datetime import date, time, timedelta
 from decimal import Decimal
 
@@ -297,6 +298,72 @@ class TestClosedYearWarning:
         )
 
         assert result.warning is None
+
+    def test_delete_of_closed_year_returns_200_with_warning(self, db, default_tenant):
+        """I3 (Abschluss-Review): Das Löschen rechnet dasselbe Fenster zurück
+        wie das Anlegen und kann denselben eingefrorenen Carryover entwerten —
+        es muss den Hinweis genauso melden. Muster von ``delete_closure`` /
+        ``cancel_vacation_request_as_admin``: 200 + ``{"warning": …}``."""
+        admin = _admin(db, "wh_delwarn_admin")
+        last_year = today_local().year - 1
+        emp = _make_user(
+            db, "wh_delwarn_emp", weekly_hours=40.0,
+            first_work_day=date(last_year, 1, 1),
+        )
+        db.add(YearCarryover(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            year=last_year + 1, overtime_hours=Decimal("0"),
+            vacation_days=Decimal("0"), source="year_closing",
+        ))
+        db.commit()
+        # Eine Abwesenheit im abgeschlossenen Jahr, damit die Rückrechnung
+        # tatsächlich etwas anfasst (2026-06-01 ist ein Montag).
+        _absence(db, emp, date(last_year, 6, 1), AbsenceType.VACATION, 8.0)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(
+                effective_from=date(last_year, 6, 1), weekly_hours=20.0,
+            ),
+            db=db, current_user=admin,
+        )
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == date(last_year, 6, 1),
+        ).first()
+        assert change is not None
+
+        response = delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        assert response is not None, "mit Warnung: 200 + Body statt 204"
+        assert response.status_code == 200
+        body = json.loads(response.body)
+        assert str(last_year) in body["warning"]
+
+    def test_delete_without_closed_year_still_204(self, db, default_tenant):
+        admin = _admin(db, "wh_delnowarn_admin")
+        emp = _make_user(db, "wh_delnowarn_emp", weekly_hours=40.0)
+        mon = _last_monday()
+        _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+        change = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id,
+            WorkingHoursChange.effective_from == mon,
+        ).first()
+
+        response = delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+        assert response is None, "ohne Warnung weiterhin 204 No Content"
 
 
 class TestStillRejectedCases:
