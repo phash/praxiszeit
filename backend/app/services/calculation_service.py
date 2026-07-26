@@ -124,6 +124,104 @@ def weekly_hours_segments(
     return segments
 
 
+def retarget_absence_hours(
+    db: Session,
+    user: User,
+    start: date,
+    end: date,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Setzt ``Absence.hours`` im Fenster ``[start, end]`` auf das Tagessoll des
+    jeweiligen Tages. Gibt die Anzahl tatsaechlich abweichender Zeilen zurueck.
+
+    Warum es das braucht: das SOLL rechnet datumsbasiert automatisch neu
+    (``get_weekly_hours_for_date``), die beim Buchen festgeschriebenen ``hours``
+    einer Abwesenheit tun das NICHT. Nach einer rueckwirkenden Wochenstunden-
+    Aenderung von 40 auf 20 h/Woche schriebe ein Krankentag weiterhin 8 h dem Ist
+    gut, waehrend das Soll desselben Tages nur noch 4 h betraegt — Soll und Ist
+    widersprechen sich dann im selben Monat und im selben §16-Beleg.
+
+    Bewusst ausgenommen:
+
+    * ``OVERTIME`` — Freizeitausgleich traegt explizit beantragte Stunden, kein
+      abgeleitetes Tagessoll (CLAUDE.md: Soll bleibt, Ist = 0).
+    * ``track_hours = False`` — dort zaehlt ausschliesslich die Tageszaehlung;
+      die Stunden zu bewegen erzeugt nur Rauschen in den Belegen.
+    * Wochenenden, Feiertage und Tage ohne Soll (freier Wochentag im Tagesplan)
+      — sie werden uebersprungen, NICHT auf 0 gesetzt.
+    * Tage ausserhalb des Beschaeftigungsfensters (#193).
+
+    ``half_day`` halbiert, der #146/#394-Sondertagsfaktor (24./31.12.) wird
+    angewandt. Die Abwesenheits-TAGE aendern sich dadurch nie — die sind
+    tagebasiert (§3 BUrlG) und haengen nicht an ``hours``.
+
+    ``dry_run=True`` zaehlt nur (fuer die Vorschau vor dem Speichern).
+
+    DIE eine Stelle, die Abwesenheits-Stunden nachzieht — Anlegen, Loeschen und
+    Vorschau rufen alle hier hinein.
+    """
+    if start > end or not user.track_hours:
+        return 0
+
+    holidays = {
+        h.date for h in db.query(PublicHoliday).filter(
+            PublicHoliday.tenant_id == user.tenant_id,  # F-026
+            PublicHoliday.date >= start,
+            PublicHoliday.date <= end,
+        ).all()
+    }
+    # Sondertags-Konfiguration je betroffenem Jahr (das Fenster kann eine
+    # Jahresgrenze ueberspannen).
+    special_cfgs = {
+        y: special_days_service.get_special_day_config(db, user.tenant_id, y)
+        for y in range(start.year, end.year + 1)
+    }
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+    absences = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026
+        Absence.date >= start,
+        Absence.date <= end,
+        Absence.type != AbsenceType.OVERTIME,
+    ).all()
+
+    changed = 0
+    for a in absences:
+        d = a.date
+        if d.weekday() >= 5 or d in holidays:
+            continue
+        if not _within_employment_window(user, d):
+            continue
+
+        weekly = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
+        target = get_daily_target_for_date(user, d, weekly)
+        # None = keine Sondertagsregel (normaler Tag). Gleiche Behandlung wie in
+        # _day_soll_contribution: Faktor NUR anwenden, wenn es einen gibt.
+        factor = special_days_service.special_day_target_factor(d, special_cfgs[d.year])
+        if factor is not None:
+            target = target * factor
+        if target <= 0:
+            continue
+
+        new_hours = (target / 2) if a.half_day else target
+        new_hours = Decimal(str(new_hours)).quantize(Decimal('0.01'))
+        if Decimal(str(a.hours)).quantize(Decimal('0.01')) == new_hours:
+            continue
+
+        changed += 1
+        if not dry_run:
+            a.hours = float(new_hours)
+
+    if changed and not dry_run:
+        db.flush()
+    return changed
+
+
 def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     """
     Calculate daily target hours based on weekly hours and work days.
