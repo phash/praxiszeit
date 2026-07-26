@@ -639,6 +639,28 @@ def update_user(
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
+    update_data = user_data.model_dump(exclude_unset=True)
+
+    # Task 5 (Wochenstunden-Anpassen): weekly_hours hat genau EINEN Schreibweg
+    # — "Wochenstunden anpassen" mit Wirkungsdatum (create_working_hours_change),
+    # das eine Historie-Zeile anlegt. user.weekly_hours ist zugleich der
+    # Rückfallwert für ALLE Tage vor der ersten erfassten Änderung
+    # (get_weekly_hours_for_date); ein direktes PUT würde das Feld still
+    # überschreiben und damit rückwirkend das Soll bereits abgeschlossener
+    # Monate verschieben, ohne Historie/Absence-Retarget. Muss VOR jedem
+    # Schreibzugriff greifen (kein setattr, kein commit vorher) — deshalb hier,
+    # ganz am Anfang. POST /api/admin/users (create_user) bleibt unverändert:
+    # dort existiert noch keine Historie, die verletzt werden könnte.
+    if 'weekly_hours' in update_data:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Wochenstunden werden über „Wochenstunden anpassen“ mit "
+                "Wirkungsdatum geändert, damit Historie und Soll vergangener "
+                "Monate korrekt bleiben."
+            ),
+        )
+
     if user_data.username and user_data.username.lower() != user.username.lower():
         # F-026: scope the uniqueness probe to the tenant (parity with
         # create_user) — usernames are unique per tenant, not globally.
@@ -649,7 +671,6 @@ def update_user(
         if existing:
             raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
-    update_data = user_data.model_dump(exclude_unset=True)
     update_data.pop('is_active', None)  # Prevent bypassing the dedicated deactivate endpoint
 
     # #377 Baustein 2b (Release-Review 1.15.0): the UserUpdate schema validator

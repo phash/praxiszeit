@@ -20,7 +20,10 @@ from app.models import (
     Absence, AbsenceType, TimeEntryAuditLog, User, UserRole,
     WorkingHoursChange, YearCarryover,
 )
-from app.routers.admin_users import create_working_hours_change, delete_working_hours_change
+from app.routers.admin_users import (
+    create_user, create_working_hours_change, delete_working_hours_change, update_user,
+)
+from app.schemas.user import UserCreate, UserUpdate
 from app.schemas.working_hours_change import WorkingHoursChangeCreate
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
@@ -422,3 +425,60 @@ class TestDeleteAuditLog:
             TimeEntryAuditLog.new_note.like("Löschung%"),
         ).count()
         assert count == 0
+
+
+class TestPutRejectsWeeklyHours:
+    """Task 5: ``user.weekly_hours`` ist zugleich der Rückfallwert für alle
+    Tage vor der ersten erfassten ``WorkingHoursChange`` — ein direktes PUT
+    würde das Feld still überschreiben und damit rückwirkend das Soll bereits
+    abgeschlossener Monate verschieben, ohne Historie-Zeile und ohne
+    Absence-Retarget. ``update_user`` lehnt ``weekly_hours`` im Payload daher
+    mit 400 ab, BEVOR irgendetwas geschrieben wird. ``create_user`` (POST)
+    bleibt unverändert — dort existiert noch keine Historie."""
+
+    def test_put_user_with_weekly_hours_is_rejected(self, db, default_tenant):
+        admin = _admin(db, "wh_put_admin")
+        emp = _make_user(db, "wh_put_emp", weekly_hours=40.0)
+
+        with pytest.raises(HTTPException) as exc:
+            update_user(
+                user_id=str(emp.id),
+                user_data=UserUpdate(weekly_hours=30.0),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400
+
+        db.refresh(emp)
+        assert float(emp.weekly_hours) == 40.0, "Nutzer in der DB unverändert"
+
+    def test_put_user_without_weekly_hours_succeeds(self, db, default_tenant):
+        admin = _admin(db, "wh_put2_admin")
+        emp = _make_user(db, "wh_put2_emp", weekly_hours=40.0)
+
+        result = update_user(
+            user_id=str(emp.id),
+            user_data=UserUpdate(first_name="Geändert"),
+            db=db, current_user=admin,
+        )
+
+        assert result.first_name == "Geändert"
+        db.refresh(emp)
+        assert emp.first_name == "Geändert"
+        assert float(emp.weekly_hours) == 40.0, "unberührt"
+
+    def test_post_user_with_weekly_hours_still_works(self, db, default_tenant):
+        admin = _admin(db, "wh_post_admin")
+
+        result = create_user(
+            user_data=UserCreate(
+                username="wh_post_new_emp", first_name="Neu", last_name="User",
+                weekly_hours=32.0, vacation_days=30, work_days_per_week=5,
+                password="Neu" + "Pass" + "2025" + "!",
+            ),
+            db=db, current_user=admin,
+        )
+
+        assert result.user.weekly_hours == 32.0
+        created = db.query(User).filter(User.username == "wh_post_new_emp").first()
+        assert created is not None
+        assert float(created.weekly_hours) == 32.0
