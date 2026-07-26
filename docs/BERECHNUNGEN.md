@@ -864,9 +864,69 @@ Jahresübersicht als angehängte Spalte „Stundenänderungen"). Eine Änderung 
 Zeitraum steckt bereits im Startwert, eine Änderung auf denselben Wert wird nicht
 ausgewiesen.
 
+**Rückrechnung bereits gebuchter Abwesenheiten.** Ist `effective_from` rückwirkend (vor
+heute), zieht `calculation_service.retarget_absence_hours(db, user, start, end)` die
+**gespeicherten `hours`** bereits gebuchter `Absence`-Zeilen im Fenster
+`[effective_from, heute]` auf das neue Tagessoll des jeweiligen Tages nach — sonst
+widerspräche das alte `hours` (z. B. ein Krankentag mit 8 h) dem neuen Tagessoll (4 h) im
+selben §16-Beleg. Beispiel: Ein Krankentag am 10.03. trug bislang `hours = 8` (altes
+Tagessoll). Nach der Änderung auf 20 h/Woche (4 h/Tag) wird er auf `hours = 4` umgestellt.
+
+Bewusst ausgenommen:
+
+* `OVERTIME` — Freizeitausgleich trägt explizit beantragte Stunden, kein abgeleitetes
+  Tagessoll.
+* `track_hours = False` — dort zählt ausschließlich die Tageszählung.
+* Wochenenden, Feiertage und Tage ohne Soll (freier Wochentag im Tagesplan) — sie werden
+  übersprungen, nicht auf 0 gesetzt.
+* Tage außerhalb des Beschäftigungsfensters (#193).
+* Alt-Zeilen ohne Halbtags-Information (`half_day IS NULL`, gebucht vor #205) — für sie
+  zählen `get_vacation_account`/`absence_days` die Tage stundenbasiert (`hours ÷ Tagessoll`),
+  ein Umschreiben der Stunden würde also den Tage-Verbrauch verschieben und die einzige
+  verbliebene Spur des Halbtags löschen.
+
+`half_day` halbiert die Umrechnung, der #146/#394-Sondertagsfaktor (24./31.12.) wird über
+`special_days_service.special_day_target_factor` angewandt — dieselbe, **stundenbasierte**
+Quelle wie `_day_soll_contribution` (nicht der tagebasierte
+`half_special_day_weight`-Helper, der die Urlaubs*tage* gewichtet).
+**Die Abwesenheits-TAGE ändern sich dadurch nie** —
+Urlaub (und jede tagebasierte Zählung) hängt an `absence_days`/`get_vacation_account`,
+nicht an `hours` (§3 BUrlG, Tagesprinzip, s. o.).
+
+Berührt das Fenster ein bereits abgeschlossenes Jahr (`YearCarryover` existiert für das
+Folgejahr), wird **nicht** automatisch neu gerechnet — nur eine Warnung zurückgegeben
+(`stale_year_closing_warning`, Fix #5). Löschen einer `WorkingHoursChange` rechnet
+dasselbe Fenster mit dem dann gültigen Wert zurück (derselbe Helper, jetzt gegen den
+vorherigen Wert) und **meldet denselben Jahresabschluss-Hinweis** — mit Warnung `200` +
+`{"warning": …}`, ohne Warnung `204` (Muster von `delete_closure` /
+`cancel_vacation_request_as_admin`). Mitarbeitende mit individuellem Tagesplan sind vom
+Zurückrechnen ausgenommen: ihr Tagessoll kommt aus `hours_monday…friday`, eine
+`WorkingHoursChange` kann es weder setzen noch verschieben — es gibt nichts
+zurückzurechnen. Die **früheste** Änderung eines Mitarbeiters lässt sich nicht löschen,
+solange spätere existieren — sie ist die einzige Stelle, an der der davor gültige Wert
+noch steht; ohne sie hätte `retarget_absence_hours` beim Löschen einer späteren Änderung
+keinen validen Rückfallwert mehr zum Zurückrechnen.
+
 ⚠️ `user.weekly_hours` ist zugleich der aktuelle Vertragswert **und** der Rückfallwert für
-alle Tage *vor* der ersten erfassten Änderung. Wer das Feld direkt bearbeitet, statt eine
-Änderung mit Wirkungsdatum anzulegen, verschiebt damit auch die Vergangenheit.
+alle Tage *vor* der ersten erfassten Änderung — das Feld ist beim Bearbeiten aber nicht
+mehr direkt änderbar: `PUT /admin/users/{id}` lehnt `weekly_hours` im Payload mit 400 ab.
+Der einzige Schreibweg ist `POST .../working-hours-changes` mit `effective_from` (s. o.);
+`POST /admin/users` (Anlegen) darf `weekly_hours` weiterhin setzen — dort gibt es noch
+keine Historie, der Startwert muss direkt gesetzt werden können.
+
+Ausgenommen von der PUT-Sperre sind Mitarbeitende mit **individuellem Tagesplan**
+(`use_daily_schedule = true`): für sie lehnt `POST .../working-hours-changes` ab, es gibt
+also gar keine Historie — und `weekly_hours` treibt bei ihnen kein Soll (das kommt aus
+`hours_monday…friday`), sondern ist reine Vertragsangabe für Berichtsköpfe, MiLoG-Ableitung
+und Auswertungen. Sie bleibt für sie direkt editierbar. Geprüft wird der **effektive**
+Zustand nach dem Update: wer den Tagesplan im selben `PUT` abschaltet, fällt wieder unter
+die Sperre.
+
+Die automatische **Basis-Zeile** vor der allerersten Änderung (sie friert den bis dahin
+gültigen Wert ein) datiert auf das Früheste aus `first_work_day`, der ältesten vorhandenen
+Buchung (`TimeEntry`/`Absence`) und dem Vortag der Änderung. `first_work_day` allein
+genügt nicht — es ist nullable, und ohne die anderen Kandidaten deckte die Basis-Zeile nur
+einen einzigen Tag ab.
 
 ---
 

@@ -2,10 +2,11 @@
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 from app.services.timezone_service import today_local
 from app.database import get_db
@@ -13,7 +14,7 @@ from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChan
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
-from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse
+from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse, WorkingHoursChangePreview
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import auth_service, calculation_service, milog_service, settings_service
 from app.core.license import check_employee_limit
@@ -42,6 +43,47 @@ def _get_user_in_tenant(db: Session, user_id: str, current_user: User) -> User:
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     return user
+
+
+def _log_wh_change_retarget(
+    db: Session,
+    *,
+    user: User,
+    admin: User,
+    tenant_id,
+    effective_from: date,
+    period_end: date,
+    adjusted_absences: int,
+    prefix: str,
+    suffix: str,
+) -> None:
+    """Minor 1 (Review-Fund): shared ``TimeEntryAuditLog`` builder for the two
+    ``retarget_absence_hours``-triggered audit rows in
+    ``create_working_hours_change`` and ``delete_working_hours_change`` — the
+    two call sites only differ in the German note wording (``prefix``/
+    ``suffix``), everything else (action, source, actor/subject wiring) was
+    duplicated near-verbatim before. No-op when nothing was actually
+    adjusted, so callers can call this unconditionally without an
+    ``if adjusted_absences:`` guard of their own.
+
+    ``source="wh_change"`` is 9 characters, well under the
+    ``varchar(40)`` column limit (CLAUDE.md).
+    """
+    if not adjusted_absences:
+        return
+    db.add(TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=user.id,
+        changed_by=admin.id,
+        action="update",
+        source="wh_change",
+        new_note=(
+            f"{prefix} zum {effective_from.isoformat()}: "
+            f"{adjusted_absences} Abwesenheit(en) im Zeitraum "
+            f"{effective_from.isoformat()}–{period_end.isoformat()} {suffix}"
+        ),
+        tenant_id=tenant_id,
+    ))
 
 
 def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -> None:
@@ -85,6 +127,14 @@ def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -
                 _create_closure_absences(
                     db, closure, workdays, [user], current_user, delete_time_entries=False
                 )
+                # Nach JEDER Schliessung flushen: `_create_closure_absences` laedt die
+                # bereits belegten Tage per Query. Ohne Flush sieht der naechste
+                # Durchlauf die eben angelegten Zeilen nicht, und bei zwei
+                # UEBERLAPPENDEN Betriebsferien landeten zwei VACATION-Zeilen auf
+                # demselben Tag im selben Insert-Batch -> uq_tenant_user_date_type
+                # -> HTTP 500 beim Anlegen eines Mitarbeiters. Reproduzierbar von der
+                # E2E-Suite ausgeloest, die mehrere ueberlappende Schliessungen anlegt.
+                db.flush()
     except Exception:  # noqa: BLE001
         db.rollback()
         logger.warning("closure auto-enrollment failed for user %s", user.id, exc_info=True)
@@ -639,6 +689,47 @@ def update_user(
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
+    update_data = user_data.model_dump(exclude_unset=True)
+
+    # Task 5 (Wochenstunden-Anpassen): weekly_hours hat genau EINEN Schreibweg
+    # — "Wochenstunden anpassen" mit Wirkungsdatum (create_working_hours_change),
+    # das eine Historie-Zeile anlegt. user.weekly_hours ist zugleich der
+    # Rückfallwert für ALLE Tage vor der ersten erfassten Änderung
+    # (get_weekly_hours_for_date); ein direktes PUT würde das Feld still
+    # überschreiben und damit rückwirkend das Soll bereits abgeschlossener
+    # Monate verschieben, ohne Historie/Absence-Retarget. Muss VOR jedem
+    # Schreibzugriff greifen (kein setattr, kein commit vorher) — deshalb hier,
+    # ganz am Anfang. POST /api/admin/users (create_user) bleibt unverändert:
+    # dort existiert noch keine Historie, die verletzt werden könnte.
+    #
+    # I2 (Abschluss-Review): AUSGENOMMEN sind Mitarbeitende mit individuellem
+    # Tagesplan. Für sie ist der Änderungs-Endpoint gesperrt (400) und der
+    # Dialog gar nicht erreichbar — die Sperre hier hätte ihre Wochenstunden
+    # damit dauerhaft eingefroren, obwohl das Formular weiterhin „bitte
+    # anpassen!" verlangt und der falsche Wert in §16-Berichtsköpfe, die
+    # MiLoG-Ableitung (×13/3), die Schichtplanung und die Benutzerliste fließt.
+    # Das Schutzargument („Historie und Vergangenheit") trifft auf sie nicht zu:
+    # ihr Tagessoll kommt aus hours_monday…friday, `weekly_hours` treibt bei
+    # ihnen kein Soll und es gibt keine Historie, die verletzt werden könnte.
+    #
+    # Geprüft wird der EFFEKTIVE Zustand NACH dem Update (Payload-Wert, sonst
+    # DB-Wert) — dasselbe Muster wie der eff_fixed-Block weiter unten. Wer den
+    # Tagesplan im selben PUT ABschaltet, fällt damit wieder unter die Sperre:
+    # danach würde `weekly_hours` das Soll treiben und gehört in den Dialog.
+    if 'weekly_hours' in update_data:
+        _eff_daily_schedule = update_data.get(
+            'use_daily_schedule', getattr(user, 'use_daily_schedule', False)
+        )
+        if not _eff_daily_schedule:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Wochenstunden werden über „Wochenstunden anpassen“ mit "
+                    "Wirkungsdatum geändert, damit Historie und Soll vergangener "
+                    "Monate korrekt bleiben."
+                ),
+            )
+
     if user_data.username and user_data.username.lower() != user.username.lower():
         # F-026: scope the uniqueness probe to the tenant (parity with
         # create_user) — usernames are unique per tenant, not globally.
@@ -649,7 +740,6 @@ def update_user(
         if existing:
             raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
 
-    update_data = user_data.model_dump(exclude_unset=True)
     update_data.pop('is_active', None)  # Prevent bypassing the dedicated deactivate endpoint
 
     # #377 Baustein 2b (Release-Review 1.15.0): the UserUpdate schema validator
@@ -874,10 +964,21 @@ def create_working_hours_change(
     # verschmolzen). Die Basis-Zeile friert die Vergangenheit auf dem alten Wert
     # ein und macht die Änderung im Bericht sichtbar.
     #
-    # Datum: `first_work_day`, sonst ein Tag vor der ersten Änderung — Hauptsache
-    # vor jeder erfassbaren Buchung. Nur wenn sich der Wert tatsächlich ändert
-    # (sonst entstünde eine Pseudo-Änderung, die weekly_hours_segments ohnehin
-    # wieder verschmelzen würde).
+    # Datum: das FRÜHESTE aus `first_work_day`, der ältesten vorhandenen
+    # Buchung (TimeEntry/Absence) und dem Vortag der Änderung — die Basis-Zeile
+    # muss die gesamte erfassbare Vergangenheit abdecken.
+    #
+    # I5 (Abschluss-Review): vorher stand hier nur
+    # `first_work_day or (effective_from - 1 Tag)`. `first_work_day` ist nullable
+    # und in der Praxis oft leer — dann deckte die Basis-Zeile GENAU EINEN Tag
+    # ab, und alles davor fiel wieder auf `user.weekly_hours` zurück, das
+    # derselbe Request gleich darunter auf den NEUEN Wert setzt. Das Soll aller
+    # früheren Monate verschob sich damit still: exakt der Bug, den die
+    # Basis-Zeile verhindern soll.
+    #
+    # Nur wenn sich der Wert tatsächlich ändert (sonst entstünde eine
+    # Pseudo-Änderung, die weekly_hours_segments ohnehin wieder verschmelzen
+    # würde).
     _has_history = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
         WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
@@ -887,9 +988,24 @@ def create_working_hours_change(
         and user.weekly_hours is not None
         and Decimal(str(user.weekly_hours)) != Decimal(str(change_data.weekly_hours))
     ):
-        _baseline_date = user.first_work_day or (change_data.effective_from - timedelta(days=1))
-        if _baseline_date >= change_data.effective_from:
-            _baseline_date = change_data.effective_from - timedelta(days=1)
+        # Der Vortag ist immer dabei → das Ergebnis liegt garantiert VOR
+        # `effective_from` (die frühere Zusatz-Klemme ist damit überflüssig).
+        _baseline_candidates = [change_data.effective_from - timedelta(days=1)]
+        if user.first_work_day:
+            _baseline_candidates.append(user.first_work_day)
+        _oldest_entry = db.query(func.min(TimeEntry.date)).filter(
+            TimeEntry.user_id == user_id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+        ).scalar()
+        if _oldest_entry:
+            _baseline_candidates.append(_oldest_entry)
+        _oldest_absence = db.query(func.min(Absence.date)).filter(
+            Absence.user_id == user_id,
+            Absence.tenant_id == current_user.tenant_id,  # F-026
+        ).scalar()
+        if _oldest_absence:
+            _baseline_candidates.append(_oldest_absence)
+        _baseline_date = min(_baseline_candidates)
         db.add(WorkingHoursChange(
             user_id=user_id,
             tenant_id=current_user.tenant_id,
@@ -925,9 +1041,155 @@ def create_working_hours_change(
         if most_recent:
             user.weekly_hours = most_recent.weekly_hours
 
+    # Task 3 (#Wochenstunden-Dialog): eine rückwirkende Änderung muss die bereits
+    # gebuchten Abwesenheits-Stunden mitziehen — sonst schreibt z. B. ein
+    # Krankentag weiterhin die ALTEN Stunden dem Ist gut, während das Soll
+    # desselben Tages sich durch die eben gespeicherte Änderung schon verschoben
+    # hat. retarget_absence_hours ist DIE eine Stelle dafür (siehe dortige
+    # Docstring-Begründung) — kein zweiter Rechenpfad hier.
+    #
+    # retarget_absence_hours liest das neue Tagessoll über
+    # get_weekly_hours_for_date, die ihrerseits die WorkingHoursChange-Zeile aus
+    # der DB liest — der `db.flush()` weiter oben macht die eben angelegte Zeile
+    # (und ggf. die Basis-Zeile) für diese Abfrage sichtbar, bevor hier
+    # gerechnet wird. Nur rückwirkend (effective_from < heute); ein Datum ab
+    # heute betrifft ausschließlich künftige, noch nicht gebuchte Tage.
+    adjusted_absences = 0
+    warning = None
+    if change_data.effective_from < today_local():
+        period_end = today_local()
+        adjusted_absences = calculation_service.retarget_absence_hours(
+            db, user, change_data.effective_from, period_end
+        )
+        _log_wh_change_retarget(
+            db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
+            effective_from=change_data.effective_from, period_end=period_end,
+            adjusted_absences=adjusted_absences,
+            prefix="Wochenstunden-Änderung",
+            suffix="auf neues Tagessoll nachgezogen",
+        )
+        # Fix #5-Warnung (nicht-blockierend): berührt das Nachziehen ein Jahr,
+        # dessen Jahresabschluss bereits lief, ist der eingefrorene Carryover
+        # des Folgejahres jetzt veraltet — wir rechnen ihn NICHT automatisch neu
+        # (könnte manuelle Anpassungen überschreiben), sondern melden es nur.
+        warning = calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id,
+            range(change_data.effective_from.year, period_end.year + 1),
+        )
+
     db.commit()
     db.refresh(change)
+    change.adjusted_absences = adjusted_absences
+    change.warning = warning
     return change
+
+
+@router.get("/users/{user_id}/working-hours-changes/preview", response_model=WorkingHoursChangePreview)
+def preview_working_hours_change(
+    user_id: str,
+    effective_from: date,
+    weekly_hours: float = Query(..., ge=0, le=60),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Task 2 (#Wochenstunden-Dialog): strikt lesende Vorschau VOR dem Speichern
+    einer Wochenstunden-Änderung — zeigt Zeitraum, altes/neues Tagessoll,
+    Anzahl betroffener Abwesenheiten und ob ein abgeschlossenes Jahr berührt
+    wird. Kennt zusätzlich die Ablehnungsgründe des POST-Endpoints
+    (individueller Tagesplan, Datum bereits belegt), damit der Dialog den
+    Nutzer nicht erst in einen 400 laufen lässt.
+
+    Schreibt NICHTS — kein ``db.commit()``. Um ``retarget_absence_hours``
+    (die einzige Stelle, die die Rückrechnung kennt) für den noch gar nicht
+    gespeicherten neuen Wert befragen zu können, wird die hypothetische
+    Änderung nur in der laufenden Transaktion ge-flusht (damit die interne
+    ``get_weekly_hours_for_date``-Abfrage sie sieht) und danach IMMER per
+    ``db.rollback()`` verworfen — auch im Fehlerfall.
+    """
+    # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
+    user = _get_user_in_tenant(db, user_id, current_user)
+
+    today = today_local()
+    is_retroactive = effective_from < today
+    period_start = effective_from
+    period_end = today if is_retroactive else effective_from
+
+    current_weekly = calculation_service.get_weekly_hours_for_date(db, user, effective_from)
+    current_daily_target = calculation_service.get_daily_target_for_date(
+        user, effective_from, current_weekly
+    )
+    new_daily_target = calculation_service.get_daily_target_for_date(
+        user, effective_from, Decimal(str(weekly_hours))
+    )
+
+    # Gleiche Ablehnungsgründe wie create_working_hours_change (Fix #2 dort):
+    # individueller Tagesplan zuerst, dann Datum bereits belegt.
+    blocked_reason = None
+    if getattr(user, "use_daily_schedule", False):
+        blocked_reason = (
+            "Für Mitarbeitende mit individuellem Tagesplan wird die "
+            "Stunden-Historie nicht unterstützt — bitte die Tagesstunden "
+            "direkt im Mitarbeiter-Profil ändern."
+        )
+    else:
+        existing = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user_id,
+            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+            WorkingHoursChange.effective_from == effective_from
+        ).first()
+        if existing:
+            blocked_reason = (
+                f"Eine Stundenänderung für den {effective_from.strftime('%d.%m.%Y')} "
+                "existiert bereits"
+            )
+
+    affected_absences = 0
+    if is_retroactive and not blocked_reason:
+        # Wäre die Änderung ohnehin blockiert (z. B. Duplikat-Datum), gibt es
+        # nichts zu zählen — UND ein Insert würde eine zweite Zeile mit
+        # identischem effective_from erzeugen. get_weekly_hours_for_date hat
+        # keine Sekundärsortierung und würde dann reproduzierbar die
+        # BESTEHENDE Zeile wählen, nicht die hypothetische — die Zählung liefe
+        # gegen den falschen Wochenstunden-Wert. Also nur bei nicht-blockierten
+        # Änderungen: die hypothetische Änderung nur temporär in die laufende
+        # Transaktion flushen (NICHT committen), damit retarget_absence_hours'
+        # eigene WorkingHoursChange-Abfrage sie berücksichtigt — danach immer
+        # zurückrollen, egal ob die Berechnung erfolgreich war.
+        temp_change = WorkingHoursChange(
+            user_id=user.id,
+            tenant_id=current_user.tenant_id,
+            effective_from=effective_from,
+            weekly_hours=weekly_hours,
+        )
+        db.add(temp_change)
+        db.flush()
+        try:
+            affected_absences = calculation_service.retarget_absence_hours(
+                db, user, period_start, period_end, dry_run=True
+            )
+        finally:
+            db.rollback()
+
+    # closed_years: ALLE im Zeitraum berührten abgeschlossenen Jahre (Spec:
+    # docs/superpowers/specs/2026-07-26-wochenstunden-anpassen-design.md), nicht
+    # nur das früheste — closed_year_warning bleibt der fertige Anzeigetext für
+    # das früheste (gleiche Definition, eine Query statt zwei).
+    closed_years = calculation_service.closed_years_in_range(
+        db, current_user.tenant_id, range(period_start.year, period_end.year + 1)
+    )
+    closed_year_warning = calculation_service.closed_year_warning_text(closed_years)
+
+    return WorkingHoursChangePreview(
+        is_retroactive=is_retroactive,
+        period_start=period_start,
+        period_end=period_end,
+        current_daily_target=float(current_daily_target),
+        new_daily_target=float(new_daily_target),
+        affected_absences=affected_absences,
+        blocked_reason=blocked_reason,
+        closed_years=closed_years,
+        closed_year_warning=closed_year_warning,
+    )
 
 
 @router.delete("/users/{user_id}/working-hours-changes/{change_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -950,8 +1212,54 @@ def delete_working_hours_change(
         raise HTTPException(status_code=404, detail="Stundenänderung nicht gefunden")
 
     user = _get_user_in_tenant(db, user_id, current_user)
+
+    # Critical fix (Review-Fund): reject deleting the EARLIEST row while later
+    # rows still exist. That earliest row is the only place the value that
+    # applied BEFORE the very first recorded change lives — it is either the
+    # #415 auto-baseline or the admin's first-ever manual entry. Delete it and
+    # get_weekly_hours_for_date has nothing left to fall back to for any date
+    # before the (now-earliest) remaining row except user.weekly_hours — which
+    # the resync a few lines below is about to overwrite with a LATER row's
+    # value. The result: retarget_absence_hours would silently recompute
+    # already-booked absences before that window against the WRONG daily
+    # target (a real incident: a 40h baseline + a later 20h change, deleting
+    # the baseline resynced weekly_hours to 20h and then halved an absence
+    # that was correctly booked at 8h under the old 40h contract). There is no
+    # way to recompute this correctly once the row is gone — reject instead of
+    # guessing. Deleting the ONLY row is still fine (user.weekly_hours is then
+    # the sole source of truth again, nothing else to fall back to), and
+    # deleting any non-earliest row is unaffected.
+    _sibling_count = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user_id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+    ).count()
+    if _sibling_count > 1:
+        _earliest = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user_id,
+            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+        ).order_by(WorkingHoursChange.effective_from.asc()).first()
+        if _earliest is not None and _earliest.id == change.id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Dies ist die früheste erfasste Stundenänderung dieses "
+                    "Mitarbeiters — sie verankert den davor gültigen Wert, der "
+                    "sonst nirgends mehr gespeichert ist. Bitte zuerst die "
+                    "späteren Änderungen löschen, wenn die Historie komplett "
+                    "zurückgesetzt werden soll."
+                ),
+            )
+
+    # Capture before delete/expire — the ORM instance is expired after the
+    # flush below, and any attribute access on a deleted, expired row would
+    # try to re-SELECT it and fail.
+    deleted_effective_from = change.effective_from
     db.delete(change)
-    db.commit()
+    # Task 4: flush (not commit) so the following re-queries within THIS
+    # transaction already see the row as gone — retarget_absence_hours below
+    # must compute against the remaining valid value, not the one just
+    # deleted (same reasoning as the flush() in create_working_hours_change).
+    db.flush()
 
     most_recent = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
@@ -961,6 +1269,72 @@ def delete_working_hours_change(
 
     if most_recent:
         user.weekly_hours = most_recent.weekly_hours
-        db.commit()
 
+    # Task 4 (Wochenstunden-Änderung löschen rechnet zurück): removing a
+    # change makes the previously-valid value apply to its window again —
+    # the absence hours that create_working_hours_change adjusted forward
+    # must be pulled back the same way. retarget_absence_hours is DIE eine
+    # Stelle dafür (kein zweiter Rechenpfad); it reads the new/remaining
+    # daily target via get_weekly_hours_for_date, which in turn sees the
+    # just-deleted row (and the just-updated user.weekly_hours) because of
+    # the flush above.
+    #
+    # Only retroactive: a change whose effective_from lies in the future
+    # never touched any already-booked absence, so there is nothing to
+    # unwind.
+    #
+    # Minor 2 (Review-Fund): strict `<`, unified with create_working_hours_change's
+    # retarget trigger. "Today" is the day still in progress — like a
+    # future-dated change, it is treated as not-yet-fully-booked history, so
+    # deleting a change effective today does not rewind anything either.
+    # (Previously this used `<=` here vs `<` in create; harmless in practice
+    # because retarget_absence_hours is idempotent and only counts real
+    # deltas, but inconsistent.)
+    #
+    # I1 (Abschluss-Review): Mitarbeitende mit individuellem Tagesplan sind vom
+    # Retarget AUSGENOMMEN. Ihr Tagessoll kommt aus hours_monday…friday —
+    # get_daily_target_for_date liest bei use_daily_schedule=True gar keine
+    # Wochenstunden, eine WorkingHoursChange kann ihr Soll also weder setzen
+    # noch beim Löschen verschieben. Das Retarget schrieb ihnen trotzdem die
+    # gebuchten Absence-Stunden auf das Tagesplan-Soll um (real: 8 h → 6 h) —
+    # eine stille Änderung an §16-Belegen, die mit der ausgelösten Aktion
+    # nichts zu tun hat, bei einer Personengruppe, für die dieses Feature
+    # ausdrücklich nicht zuständig ist (create/preview lehnen sie mit 400 bzw.
+    # blocked_reason ab).
+    #
+    # Bewusst ÜBERSPRINGEN statt (wie beim Anlegen) mit 400 ABLEHNEN: eine
+    # Ablehnung machte Alt-Zeilen aus der Zeit vor der Tagesplan-Umstellung
+    # unlöschbar — sie sind fürs Soll wirkungslos, aber der Admin bekäme sie
+    # nie mehr aus der Historie. Löschen bleibt also möglich, es rechnet nur
+    # nichts zurück (es gibt auch nichts zurückzurechnen).
+    _uses_daily_schedule = bool(getattr(user, "use_daily_schedule", False))
+    adjusted_absences = 0
+    warning = None
+    if not _uses_daily_schedule and deleted_effective_from < today_local():
+        period_end = today_local()
+        adjusted_absences = calculation_service.retarget_absence_hours(
+            db, user, deleted_effective_from, period_end
+        )
+        _log_wh_change_retarget(
+            db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
+            effective_from=deleted_effective_from, period_end=period_end,
+            adjusted_absences=adjusted_absences,
+            prefix="Löschung der Wochenstunden-Änderung",
+            suffix="auf den davor gültigen Wert zurückgerechnet",
+        )
+        # I3 (Abschluss-Review): Das Anlegen liefert diesen Hinweis bereits; das
+        # Löschen rechnet dasselbe Fenster zurück und kann denselben
+        # eingefrorenen Carryover entwerten, meldete aber nichts. Fix #5 gilt
+        # hier genauso: NICHT automatisch neu rechnen (überschriebe manuelle
+        # Carryover-Anpassungen), nur melden.
+        warning = calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id,
+            range(deleted_effective_from.year, period_end.year + 1),
+        )
+
+    db.commit()
+    # Muster von delete_closure / cancel_vacation_request_as_admin: mit Warnung
+    # 200 + Body, ohne Warnung weiterhin 204 No Content.
+    if warning:
+        return JSONResponse(status_code=200, content={"warning": warning})
     return None

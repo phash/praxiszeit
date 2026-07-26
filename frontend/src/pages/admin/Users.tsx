@@ -131,6 +131,27 @@ export default function Users() {
     setEditingUser(null);
   };
 
+  // Task 6 (#Wochenstunden-anpassen): UserForm's "Wochenstunden anpassen…"
+  // button opens the SAME modal instance as the clock icon in the table below
+  // — one Wochenstunden-UI, reachable from two places.
+  const handleOpenHoursHistory = (user: User) => {
+    setHoursModalUser(user);
+  };
+
+  // Keep the open form's editingUser in sync after the Wochenstunden-Dialog
+  // changes weekly_hours (fetchUsers refreshes `users`, but editingUser is a
+  // separate snapshot taken when the form opened) — otherwise the read-only
+  // display in UserForm would keep showing the pre-change value until the
+  // admin closes and reopens the form.
+  useEffect(() => {
+    if (!editingUser) return;
+    const fresh = users.find((u) => u.id === editingUser.id);
+    if (fresh && fresh !== editingUser) {
+      setEditingUser(fresh);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
+
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
   };
@@ -338,6 +359,7 @@ export default function Users() {
         <UserForm
           editUser={editingUser}
           onSaved={handleFormSaved}
+          onOpenHoursHistory={handleOpenHoursHistory}
         />
       )}
 

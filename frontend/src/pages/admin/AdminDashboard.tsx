@@ -802,7 +802,11 @@ export default function AdminDashboard() {
                       </td>
                     )}
                     <td className="px-6 py-4 text-sm text-gray-900">{emp.vacation_used_days.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{showHealthData ? emp.sick_days.toFixed(1) : '—'}</td>
+                    {/* data-testid: die Krank-Spalte wird per E2E auf die DSGVO-Maskierung
+                        geprüft. Über die Spaltenposition war das zweimal brüchig — zuletzt,
+                        als 1.16.0 die Spalte "Jahresende (proj.)" ergänzte, die für
+                        Mitarbeitende ohne künftigen Freizeitausgleich ebenfalls "—" rendert. */}
+                    <td data-testid="sick-days-cell" className="px-6 py-4 text-sm text-gray-900">{showHealthData ? emp.sick_days.toFixed(1) : '—'}</td>
                     <td className="px-6 py-4 text-right">
                       <ChevronRight size={20} className="text-gray-400 inline" />
                     </td>
