@@ -427,6 +427,148 @@ class TestDeleteAuditLog:
         assert count == 0
 
 
+class TestDeleteEarliestRowRejected:
+    """Critical fix (Review-Fund): deleting the EARLIEST ``WorkingHoursChange``
+    row while later rows still exist must be rejected with 400. That row is
+    the only place the value that applied BEFORE the very first recorded
+    change is stored (either the #415 auto-baseline or the admin's
+    first-ever manual entry). Without the guard, deleting it silently
+    resynced ``user.weekly_hours`` to a LATER row's value and
+    ``retarget_absence_hours`` then recomputed an already-correct absence
+    against the WRONG daily target — a real reported incident (40h baseline
+    + later 20h change; deleting the baseline halved an absence that was
+    correctly booked at 8h under the old 40h contract)."""
+
+    def test_delete_earliest_of_two_rejected_with_400(self, db, default_tenant):
+        admin = _admin(db, "wh_delfirst_admin")
+        mon = _last_monday()
+        # first_work_day pins the auto-baseline's effective_from to a known,
+        # deterministic WEEKDAY (Friday before `mon`) instead of the
+        # `effective_from - 1 day` fallback, which would land on a Sunday
+        # (daily target 0 there regardless of weekly_hours — unsuitable to
+        # demonstrate the bug).
+        friday_before = mon - timedelta(days=3)
+        emp = _make_user(db, "wh_delfirst_emp", weekly_hours=40.0, first_work_day=friday_before)
+
+        # Abwesenheit VOR dem Wirkungsdatum der ersten Aenderung — traegt
+        # korrekt 8h (40h/Woche, 5 Tage).
+        a = _absence(db, emp, friday_before, AbsenceType.VACATION, 8.0)
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+
+        rows = (
+            db.query(WorkingHoursChange)
+            .filter(WorkingHoursChange.user_id == emp.id)
+            .order_by(WorkingHoursChange.effective_from)
+            .all()
+        )
+        assert len(rows) == 2, "Basis-Zeile (automatisch) + echte Aenderung"
+        earliest = rows[0]
+        assert earliest.effective_from == friday_before
+        assert float(earliest.weekly_hours) == 40.0
+
+        db.refresh(a)
+        assert float(a.hours) == 8.0, (
+            "Vorbedingung: die Basis-Zeile liegt vor dem Wirkungsdatum, die "
+            "Erst-Anlage beruehrt diesen Tag nicht"
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            delete_working_hours_change(
+                user_id=str(emp.id), change_id=str(earliest.id),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400
+
+        # Nichts veraendert: die Zeile existiert noch, die
+        # Abwesenheits-Stunden stehen unveraendert.
+        rows_after = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id
+        ).all()
+        assert len(rows_after) == 2
+        db.refresh(a)
+        assert float(a.hours) == 8.0
+        db.refresh(emp)
+        assert float(emp.weekly_hours) == 20.0, "unveraendert (durch die Erst-Anlage gesetzt)"
+
+    def test_delete_only_row_still_succeeds(self, db, default_tenant):
+        """Erlaubt: die einzige vorhandene Zeile darf geloescht werden — dann
+        greift ``user.weekly_hours`` wieder als einzige Wahrheit, es gibt
+        nichts, worauf noch zurueckgefallen werden koennte."""
+        admin = _admin(db, "wh_delonly_admin")
+        emp = _make_user(db, "wh_delonly_emp", weekly_hours=40.0)
+        mon = _last_monday()
+        change = WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=mon, weekly_hours=Decimal("20.0"),
+        )
+        db.add(change)
+        db.commit()
+        db.refresh(change)
+
+        assert db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id
+        ).count() == 1
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        assert db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id
+        ).count() == 0
+
+    def test_delete_later_of_two_still_succeeds_and_falls_back_to_earlier(self, db, default_tenant):
+        """Erlaubt: die NICHT-frueheste Zeile darf jederzeit geloescht werden.
+        Die Rueckrechnung muss danach korrekt auf das Tagessoll der
+        verbleibenden (frueheren) Zeile zurueckfallen."""
+        admin = _admin(db, "wh_dellater_admin")
+        early = _last_monday(before_days=60)
+        later = _last_monday(before_days=30)
+        emp = _make_user(db, "wh_dellater_emp", weekly_hours=20.0, first_work_day=early)
+
+        earliest_row = WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=early, weekly_hours=Decimal("40.0"),
+            note="Basis",
+        )
+        later_row = WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=later, weekly_hours=Decimal("20.0"),
+        )
+        db.add(earliest_row)
+        db.add(later_row)
+        db.commit()
+        db.refresh(later_row)
+
+        # Abwesenheit am Tag der SPAETEREN Zeile, mit dem zu dieser Zeit
+        # gueltigen 20h/Woche-Tagessoll (4h) gebucht.
+        a = _absence(db, emp, later, AbsenceType.VACATION, 4.0)
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(later_row.id),
+            db=db, current_user=admin,
+        )
+
+        rows = db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == emp.id).all()
+        assert len(rows) == 1
+        assert rows[0].id == earliest_row.id, "fruehere Zeile bleibt bestehen"
+
+        db.refresh(emp)
+        assert float(emp.weekly_hours) == 40.0, "user.weekly_hours faellt auf die fruehere Zeile zurueck"
+
+        db.refresh(a)
+        assert float(a.hours) == 8.0, (
+            "Rueckrechnung greift korrekt auf das Tagessoll der frueheren "
+            "Zeile (40h/Woche)"
+        )
+
+
 class TestPutRejectsWeeklyHours:
     """Task 5: ``user.weekly_hours`` ist zugleich der Rückfallwert für alle
     Tage vor der ersten erfassten ``WorkingHoursChange`` — ein direktes PUT
