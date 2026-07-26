@@ -77,6 +77,24 @@ function todayIso(): string {
 // Admin Datum/Stunden noch anpasst.
 const PREVIEW_DEBOUNCE_MS = 400;
 
+// Fund 3 (Release-Review 1.17.0): der aktuell gültige Wochenstunden-Wert wird
+// NICHT aus der `currentWeeklyHours`-Prop übernommen (die ist ein Snapshot von
+// vor dem Öffnen des Dialogs und wird von Users.tsx nach dem Speichern nicht
+// nachgezogen — der Dialog bleibt nach dem Anlegen offen), sondern aus dem
+// gerade geladenen Verlauf abgeleitet: der jüngste Eintrag mit
+// `effective_from <= heute` ist der aktive. Das macht die Kopfzeile UND den
+// Formular-Reset nach dem Speichern unabhängig von der Prop-Aktualität.
+function activeWeeklyHoursFromHistory(changes: WorkingHoursChange[], fallback: number): number {
+  const today = todayIso();
+  let latest: WorkingHoursChange | null = null;
+  for (const c of changes) {
+    if (c.effective_from <= today && (!latest || c.effective_from > latest.effective_from)) {
+      latest = c;
+    }
+  }
+  return latest ? latest.weekly_hours : fallback;
+}
+
 export default function WorkingHoursModal({ userId, userName, currentWeeklyHours, onClose, onChanged }: WorkingHoursModalProps) {
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
@@ -94,11 +112,25 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   // GET .../working-hours-changes/preview.
   const [preview, setPreview] = useState<WorkingHoursChangePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // Fund 4 (Release-Review 1.17.0): scheitert die Vorschau (Netzwerk, 5xx, ein
+  // getipptes weekly_hours > 60 → 422 …), zeigte der Dialog bisher einen leeren
+  // amber Kasten und ein gesperrtes „Hinzufügen" ohne jede Begründung. Jetzt
+  // wird der Fehler festgehalten und angezeigt, plus eine Möglichkeit, die
+  // Vorschau erneut anzustoßen, ohne Datum/Stunden ändern zu müssen.
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewRetryToken, setPreviewRetryToken] = useState(0);
   // Der Kern des Verständnisproblems: eine rückwirkende Änderung darf erst
   // nach ausdrücklicher Bestätigung der Vorschau gespeichert werden.
   const [confirmedRetroactive, setConfirmedRetroactive] = useState(false);
 
   const isRetroactive = formData.effective_from < todayIso();
+
+  // Fund 3: die Kopfzeile UND der Reset-Wert nach dem Speichern hängen an
+  // diesem abgeleiteten Wert statt an der (nicht nachgezogenen) Prop.
+  const displayWeeklyHours = useMemo(
+    () => activeWeeklyHoursFromHistory(hoursChanges, currentWeeklyHours),
+    [hoursChanges, currentWeeklyHours],
+  );
 
   useEffect(() => {
     fetchHoursChanges();
@@ -106,37 +138,74 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   }, [userId]);
 
   // Jede Änderung an Datum/Stunden entwertet eine zuvor gegebene Bestätigung
-  // — der Admin muss die (ggf. neue) Vorschau erneut bestätigen. Nur bei
-  // einem Datum in der Vergangenheit wird überhaupt eine Vorschau geladen;
-  // ein zukünftiges Datum betrifft ausschließlich noch nicht gebuchte Tage
-  // und zeigt deshalb keinen Warnblock.
+  // — der Admin muss die (ggf. neue) Vorschau erneut bestätigen.
+  //
+  // Release-Review 1.17.0: Die Vorschau wird jetzt für JEDES Wirkungsdatum
+  // geladen, nicht nur für ein rückwirkendes. Hier stand vorher „ein
+  // zukünftiges Datum betrifft ausschließlich noch nicht gebuchte Tage" —
+  // das stimmt nicht: genehmigte Urlaubsanträge, Betriebsferien und geplante
+  // Fortbildungen sind längst gebucht und werden vom Speichern auf das neue
+  // Tagessoll umgeschrieben. Ohne Vorschau passierte das still. Ob ein
+  // Warnblock erscheint, entscheidet deshalb nicht mehr das Datum allein,
+  // sondern `affected_absences` (siehe `showImpactBox`).
   useEffect(() => {
     setConfirmedRetroactive(false);
-    if (!isRetroactive) {
-      setPreview(null);
-      setPreviewLoading(false);
-      return;
-    }
     setPreviewLoading(true);
+    setPreviewError(null);
+    // Fund 1 (Release-Review 1.17.0): `cancelled` is the same guard UserForm.tsx
+    // uses for its carryover fetch (:148/:157). Without it, last-RESPONSE-wins
+    // instead of last-REQUEST-wins: a slow answer for a date/hours combination
+    // the admin has since navigated away from could still land in `setPreview`
+    // after a newer, faster request already resolved — showing a period/
+    // Tagessoll/Abwesenheits-Anzahl that doesn't match the change actually
+    // about to be saved, right under the mandatory confirmation checkbox.
+    // Setting `cancelled = true` in the cleanup (which React runs for the
+    // PREVIOUS effect invocation before running the next one, i.e. on EVERY
+    // dependency change) discards a stale response regardless of arrival
+    // order — out-of-order (B-before-A) is covered exactly like the more
+    // common late-A-after-B case.
+    let cancelled = false;
     const handle = setTimeout(() => {
       apiClient
         .get(`/admin/users/${userId}/working-hours-changes/preview`, {
           params: { effective_from: formData.effective_from, weekly_hours: formData.weekly_hours },
         })
-        .then((res) => setPreview(res.data))
-        .catch(() => setPreview(null))
-        .finally(() => setPreviewLoading(false));
+        .then((res) => {
+          if (cancelled) return;
+          setPreview(res.data);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setPreview(null);
+          // Fund 4: surface WHY the preview is unavailable instead of leaving
+          // an unexplained empty box + a disabled save button.
+          setPreviewError(getErrorMessage(error, 'Auswirkungen konnten nicht geprüft werden'));
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setPreviewLoading(false);
+        });
     }, PREVIEW_DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, formData.effective_from, formData.weekly_hours]);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [userId, formData.effective_from, formData.weekly_hours, previewRetryToken]);
 
-  const fetchHoursChanges = async () => {
+  // Fund 3: gibt die frisch geladene Liste zurück (nicht nur über State), damit
+  // handleAddHoursChange den soeben aktualisierten aktiven Wert SOFORT für den
+  // Formular-Reset verwenden kann — auf `hoursChanges` selbst wartend würde
+  // noch der Wert von vor dem Re-Fetch im Closure stehen (State-Updates sind
+  // nicht synchron).
+  const fetchHoursChanges = async (): Promise<WorkingHoursChange[]> => {
     try {
       const response = await apiClient.get(`/admin/users/${userId}/working-hours-changes`);
-      setHoursChanges(Array.isArray(response.data) ? response.data : []); // #382
+      const list: WorkingHoursChange[] = Array.isArray(response.data) ? response.data : []; // #382
+      setHoursChanges(list);
+      return list;
     } catch (error) {
       toast.error('Fehler beim Laden der Stundenhistorie');
+      return hoursChanges;
     }
   };
 
@@ -168,14 +237,35 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
     'Die früheste erfasste Stundenänderung verankert den davor gültigen Wert — '
     + 'bitte zuerst die späteren Änderungen löschen.';
 
-  const blockedReason = isRetroactive ? preview?.blocked_reason ?? null : null;
+  // Release-Review 1.17.0, Nachtrag: `blocked_reason` galt nur für rückwirkende
+  // Daten — ein Rest aus der Zeit, als die Vorschau ausschließlich dafür geladen
+  // wurde. Jetzt kennt der Dialog auch bei einem Datum ab heute die Fälle, in
+  // denen der POST mit 400 abweist (individueller Tagesplan, bereits belegtes
+  // Wirkungsdatum). Genau dafür wurde der Mechanismus gebaut: den Grund vorher
+  // zeigen, statt den Admin in den 400 laufen zu lassen.
+  const blockedReason = preview?.blocked_reason ?? null;
+  // Release-Review 1.17.0: Der eigentliche Grund für die Bestätigungspflicht ist
+  // nicht „das Datum liegt in der Vergangenheit", sondern „das Speichern
+  // schreibt bereits gebuchte, §16-relevante Zeilen um". Das kann ein
+  // zukünftiges Wirkungsdatum genauso (bereits genehmigter Urlaub,
+  // Betriebsferien, geplante Fortbildung ab diesem Datum) — dann muss der
+  // Dialog es anzeigen und bestätigen lassen, statt still zu korrigieren.
+  const affectsBookedAbsences = !!preview && !preview.blocked_reason && preview.affected_absences > 0;
+  const showImpactBox = isRetroactive || affectsBookedAbsences || !!blockedReason;
   // Solange die Vorschau für ein rückwirkendes Datum noch lädt/fehlt, blockiert
   // oder noch nicht bestätigt ist, bleibt „Hinzufügen" gesperrt — der Nutzer
   // soll nicht ungeprüft in einen 400 laufen (blocked_reason) oder eine
   // rückwirkende Änderung ohne die Vorschau gesehen zu haben speichern.
+  //
+  // Für ein Datum ab heute hängt die Sperre AUSSCHLIESSLICH an einem positiven
+  // Vorschau-Befund — bewusst nicht an `previewLoading`/`!preview`: fällt die
+  // Vorschau aus (Netzwerk, 5xx), bleibt das Anlegen einer normalen
+  // zukunftsdatierten Änderung wie bisher möglich, statt dauerhaft zu blockieren.
   const saveDisabled =
     submitting ||
-    (isRetroactive && (previewLoading || !preview || !!preview.blocked_reason || !confirmedRetroactive));
+    !!blockedReason ||
+    (isRetroactive && (previewLoading || !preview || !confirmedRetroactive)) ||
+    (!isRetroactive && affectsBookedAbsences && !confirmedRetroactive);
 
   const handleAddHoursChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,11 +273,17 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
     setSubmitting(true);
     try {
       const res = await apiClient.post(`/admin/users/${userId}/working-hours-changes`, formData);
-      await fetchHoursChanges();
+      const freshChanges = await fetchHoursChanges();
       onChanged();
+      // Fund 3: das neue aktive Tagessoll steht jetzt in `freshChanges` (die
+      // gerade gespeicherte Änderung eingeschlossen) — NICHT in der
+      // `currentWeeklyHours`-Prop, die Users.tsx erst beim nächsten Öffnen des
+      // Dialogs neu übergibt. Ohne das sprang das Feld nach dem Speichern auf
+      // den ALTEN Wert zurück, obwohl der Verlauf darunter schon den neuen
+      // zeigte.
       setFormData({
         effective_from: todayIso(),
-        weekly_hours: currentWeeklyHours,
+        weekly_hours: activeWeeklyHoursFromHistory(freshChanges, currentWeeklyHours),
         note: '',
       });
       setPreview(null);
@@ -273,7 +369,7 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
               <div>
                 <h2 id="hours-modal-title" className="text-2xl font-bold text-gray-900">Stundenverlauf</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {userName} • Aktuell: {currentWeeklyHours} Std/Woche
+                  {userName} • Aktuell: {displayWeeklyHours} Std/Woche
                 </p>
               </div>
               <button
@@ -333,15 +429,17 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                     />
                   </div>
 
-                  {/* Task 7: rückwirkender Hinweis — VOR dem Speichern zeigen, was
+                  {/* Task 7: Auswirkungs-Hinweis — VOR dem Speichern zeigen, was
                       die Änderung anfasst (Zeitraum, altes → neues Tagessoll,
                       betroffene Abwesenheiten, abgeschlossenes Jahr), plus
-                      Blockade-Grund bzw. Bestätigungspflicht. */}
-                  {isRetroactive && (
+                      Blockade-Grund bzw. Bestätigungspflicht.
+                      Release-Review 1.17.0: auch bei einem Datum AB heute, sobald
+                      die Vorschau bereits gebuchte Abwesenheiten meldet. */}
+                  {showImpactBox && (
                     <div
                       role="status"
                       className={`md:col-span-3 rounded-lg border p-3 text-sm ${
-                        blockedReason ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
+                        blockedReason || previewError ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
                       }`}
                     >
                       {previewLoading ? (
@@ -349,7 +447,8 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                       ) : preview ? (
                         <>
                           <p className="font-semibold text-amber-900">
-                            Rückwirkende Änderung: {formatDate(preview.period_start)} – {formatDate(preview.period_end)}
+                            {isRetroactive ? 'Rückwirkende Änderung' : 'Betrifft bereits gebuchte Abwesenheiten'}:{' '}
+                            {formatDate(preview.period_start)} – {formatDate(preview.period_end)}
                           </p>
                           <p className="text-amber-800 mt-1">
                             Tagessoll {preview.current_daily_target.toFixed(1)}h → {preview.new_daily_target.toFixed(1)}h.{' '}
@@ -371,6 +470,20 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                               Ich habe die Auswirkungen geprüft und möchte trotzdem speichern
                             </label>
                           )}
+                        </>
+                      ) : previewError ? (
+                        // Fund 4 (Release-Review 1.17.0): vorher `: null` — ein
+                        // sichtbar leerer Kasten neben einem gesperrten
+                        // „Hinzufügen"-Button, ohne jede Begründung.
+                        <>
+                          <p className="text-red-700 font-medium">{previewError}</p>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewRetryToken((t) => t + 1)}
+                            className="mt-2 text-sm font-medium text-red-700 underline hover:no-underline"
+                          >
+                            Erneut prüfen
+                          </button>
                         </>
                       ) : null}
                     </div>

@@ -15,6 +15,29 @@ info()  { echo -e "${GREEN}>>>${NC} $*"; }
 warn()  { echo -e "${YELLOW}>>>${NC} $*"; }
 error() { echo -e "${RED}>>>${NC} $*" >&2; }
 
+# #423 (Review 1.17.0, Paritaet zu installer/linux/install.sh): Wird der Dienst
+# fuer ein Update gestoppt (s.u., vor dem Kopieren der gebuendelten Binaries) und
+# bricht das Skript danach ab (cp/pip/plist-Schreiben schlaegt fehl), blieb
+# PraxisZeit bisher dauerhaft unten. EXIT-Trap laedt den Daemon automatisch
+# wieder, sobald er fuer dieses Update tatsaechlich entladen wurde. `exit "$rc"`
+# erzwingt den urspruenglichen Exit-Code, egal was launchctl im Trap liefert.
+SERVICE_WAS_RUNNING=0
+_restart_on_abort() {
+    local rc=$?
+    if [ "$rc" -ne 0 ] && [ "${SERVICE_WAS_RUNNING:-0}" = "1" ]; then
+        error "Installation abgebrochen — Dienst wird zur Sicherheit wieder geladen..."
+        launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null || true
+        if launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null; then
+            info "Dienst laeuft wieder."
+        else
+            error "Automatischer Neustart fehlgeschlagen — bitte manuell:"
+            error "  sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist"
+        fi
+    fi
+    exit "$rc"
+}
+trap _restart_on_abort EXIT
+
 echo ""
 echo "=============================================="
 echo "  PraxisZeit Installer v${VERSION} (macOS)"
@@ -55,10 +78,22 @@ PRACTICE_NAME=${PRACTICE_NAME:-Testpraxis}
 read -rp "Admin-E-Mail [admin@local.test]: " ADMIN_EMAIL
 ADMIN_EMAIL=${ADMIN_EMAIL:-admin@local.test}
 
+# Paritaet zum Linux-Installer (install.sh:238-252): -srp statt -rp (kein
+# Klartext-Passwort auf Bildschirm/Scrollback) + Wiederholungsabfrage.
 while true; do
-    read -rp "Admin-Passwort (min. 12 Zeichen): " ADMIN_PASSWORD
-    [ ${#ADMIN_PASSWORD} -ge 12 ] && break
-    warn "Passwort zu kurz."
+    read -srp "Admin-Passwort (min. 12 Zeichen): " ADMIN_PASSWORD
+    echo ""
+    if [ ${#ADMIN_PASSWORD} -lt 12 ]; then
+        warn "Passwort zu kurz."
+        continue
+    fi
+    read -srp "Passwort wiederholen: " ADMIN_PASSWORD2
+    echo ""
+    if [ "$ADMIN_PASSWORD" != "$ADMIN_PASSWORD2" ]; then
+        warn "Passwoerter stimmen nicht ueberein."
+        continue
+    fi
+    break
 done
 
 read -rp "Port [8443]: " PORT
@@ -166,6 +201,21 @@ fi
 
 info "Kopiere Anwendungsdateien..."
 mkdir -p "${INSTALL_DIR}"/{data/db,data/backups,config/ssl,logs}
+
+# Issue #217 (Paritaet Linux, install.sh:323-334): Bei einem Update ueber eine
+# LAUFENDE Instanz sind die gebuendelten Binaries (python3, postgres) gemappt ->
+# das folgende cp -R scheitert mit ETXTBSY. Selbst wenn es durchliefe, wuerde der
+# laufende Python-Prozess ohne Neuladen weiter den ALTEN Code benutzen, obwohl
+# der #421-Update-Hinweis oben verspricht, Code+Migrationen wuerden eingespielt.
+# Daher den Daemon VOR dem Kopieren stoppen (unten neu geladen, s. launchctl load).
+if launchctl list de.praxiszeit.server >/dev/null 2>&1; then
+    info "Bestehender Dienst laeuft — wird fuer das Update gestoppt..."
+    launchctl bootout system/de.praxiszeit.server 2>/dev/null \
+        || launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null || true
+    SERVICE_WAS_RUNNING=1
+    sleep 2
+fi
+
 cp -R "${SCRIPT_DIR}/bin" "${INSTALL_DIR}/"
 cp -R "${SCRIPT_DIR}/app" "${INSTALL_DIR}/"
 cp "${SCRIPT_DIR}/praxiszeit-server.py" "${INSTALL_DIR}/"
@@ -173,6 +223,14 @@ cp "${SCRIPT_DIR}/praxiszeit-server.py" "${INSTALL_DIR}/"
 # --- Konfiguration schreiben ---
 
 SECRET_KEY=$("${INSTALL_DIR}/bin/python/bin/python3" -c "import secrets; print(secrets.token_hex(64))")
+
+# TOML-Werte escapen: Praxis-Name, E-Mail und Passwort sind freie Nutzereingaben.
+# Ein " oder \ darin wuerde die praxiszeit.conf syntaktisch zerstoeren
+# (load_config()->tomllib->TOMLDecodeError -> launchd startet dank KeepAlive=true
+# in eine Restart-Schleife) oder zusaetzliche TOML-Keys injizieren. tomllib
+# entschluesselt \" / \\ beim Lesen zurueck -> Passwort/Name round-trippen
+# korrekt. Paritaet zum Linux-Installer (install.sh:419).
+toml_escape() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
 
 if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
     # Reinstall/Update: bestehende Konfiguration NICHT ueberschreiben. Ein neu
@@ -182,6 +240,9 @@ if [ -f "${INSTALL_DIR}/config/praxiszeit.conf" ]; then
     info "Bestehende config/praxiszeit.conf erkannt -> wird beibehalten (Reinstall/Update)."
 else
 info "Schreibe Konfiguration..."
+PRACTICE_NAME_ESC=$(toml_escape "$PRACTICE_NAME")
+ADMIN_EMAIL_ESC=$(toml_escape "$ADMIN_EMAIL")
+ADMIN_PASSWORD_ESC=$(toml_escape "$ADMIN_PASSWORD")
 cat > "${INSTALL_DIR}/config/praxiszeit.conf" << CONFEOF
 [server]
 port = ${PORT}
@@ -194,13 +255,13 @@ superuser = "praxiszeit"
 app_user = "praxiszeit_app"
 
 [practice]
-name = "${PRACTICE_NAME}"
+name = "${PRACTICE_NAME_ESC}"
 holiday_state = "Bayern"
 
 [admin]
 username = "admin"
-email = "${ADMIN_EMAIL}"
-password = "${ADMIN_PASSWORD}"
+email = "${ADMIN_EMAIL_ESC}"
+password = "${ADMIN_PASSWORD_ESC}"
 
 [security]
 secret_key = "${SECRET_KEY}"
@@ -220,6 +281,12 @@ retention_days = 31
 CONFEOF
 fi
 chmod 600 "${INSTALL_DIR}/config/praxiszeit.conf"
+
+# Passwort nicht laenger als noetig im Shell-Environment des Installers halten
+# (Paritaet zu install.sh:476-479 — auf macOS gibt es kein /proc/self/environ,
+# aber dieselbe Hygiene: kein Klartext-Passwort mehr in der Prozessumgebung,
+# nachdem es escaped in der 0600-conf steht).
+unset ADMIN_PASSWORD ADMIN_PASSWORD2 ADMIN_PASSWORD_ESC
 
 # --- Service-User ---
 
@@ -272,7 +339,16 @@ cat > /Library/LaunchDaemons/de.praxiszeit.server.plist << PLISTEOF
 </plist>
 PLISTEOF
 
+# #423: Unload-vor-Load macht den Aufruf idempotent — beim Update ist der
+# Daemon durch den Stop oben bereits entladen (No-Op), bei einer Erstinstallation
+# ist ohnehin nichts geladen (No-Op); ohne das wuerde ein Update auf ein bereits
+# geladenes Plist mit "Load failed: 5" abbrechen, BEVOR die Erfolgsmeldung kommt
+# UND ohne dass der neue Code je aktiv wird (Kernbefund der #422-Review).
+launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null || true
 launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
+# Ab hier laeuft der Dienst wieder — der Trap oben muss bei einem spaeteren
+# Fehler (Backup-Plist, Abschlussausgabe) nicht mehr eingreifen.
+SERVICE_WAS_RUNNING=0
 
 info "Richte taegliches Backup ein (launchd, 03:00)..."
 cat > /Library/LaunchDaemons/de.praxiszeit.backup.plist << BKPLISTEOF
@@ -305,17 +381,25 @@ cat > /Library/LaunchDaemons/de.praxiszeit.backup.plist << BKPLISTEOF
 </plist>
 BKPLISTEOF
 
+launchctl unload /Library/LaunchDaemons/de.praxiszeit.backup.plist 2>/dev/null || true
 launchctl load /Library/LaunchDaemons/de.praxiszeit.backup.plist
 
 # --- Fertig ---
 
 echo ""
 echo "=============================================="
-echo -e "  ${GREEN}PraxisZeit installiert!${NC}"
+if [ "$UPDATE_MODE" = "1" ]; then
+    echo -e "  ${GREEN}PraxisZeit aktualisiert!${NC}"
+else
+    echo -e "  ${GREEN}PraxisZeit installiert!${NC}"
+fi
 echo "=============================================="
 echo ""
 echo "  URL:      http://localhost:${PORT}"
 echo "  Login:    admin / (Ihr Passwort)"
+if [ "$UPDATE_MODE" = "1" ]; then
+    echo "            Konfiguration und Zugangsdaten sind unveraendert geblieben."
+fi
 echo ""
 echo "  Starten:  sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist"
 echo "  Stoppen:  sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist"

@@ -138,19 +138,22 @@ export default function Users() {
     setHoursModalUser(user);
   };
 
-  // Keep the open form's editingUser in sync after the Wochenstunden-Dialog
-  // changes weekly_hours (fetchUsers refreshes `users`, but editingUser is a
-  // separate snapshot taken when the form opened) — otherwise the read-only
-  // display in UserForm would keep showing the pre-change value until the
-  // admin closes and reopens the form.
-  useEffect(() => {
-    if (!editingUser) return;
-    const fresh = users.find((u) => u.id === editingUser.id);
-    if (fresh && fresh !== editingUser) {
-      setEditingUser(fresh);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [users]);
+  // Release-Review 1.17.0 (Fund 2, MEDIUM): a PREVIOUS version of this file
+  // replaced `editingUser` wholesale with the fresh object from `users` after
+  // every fetchUsers() (incl. the Wochenstunden-/Carryover-Dialogs' onChanged,
+  // which fire WHILE the form is still open). Since axios returns new object
+  // references on every refetch, that swap fired on EVERY refetch and, via
+  // UserForm's `useEffect(..., [editUser])`, rebuilt `formData` from scratch —
+  // silently discarding whatever the admin had typed but not yet saved
+  // (incl. resetting overtime_carryover/vacation_carryover to 0). Fixed by NOT
+  // replacing `editingUser` at all while the form is open (its reference now
+  // stays stable, exactly like before the Wochenstunden-Dialog existed) and
+  // instead feeding UserForm's read-only weekly-hours display the fresh value
+  // through the narrow `displayWeeklyHours` prop below — that value alone can
+  // go stale without wiping the rest of the form.
+  const displayWeeklyHours = editingUser
+    ? users.find((u) => u.id === editingUser.id)?.weekly_hours
+    : undefined;
 
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
@@ -360,6 +363,7 @@ export default function Users() {
           editUser={editingUser}
           onSaved={handleFormSaved}
           onOpenHoursHistory={handleOpenHoursHistory}
+          displayWeeklyHours={displayWeeklyHours}
         />
       )}
 

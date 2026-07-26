@@ -1,7 +1,7 @@
 {
   "name": "praxiszeit-frontend",
   "private": true,
-  "version": "1.16.0",
+  "version": "1.17.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -32,7 +32,9 @@
     "brace-expansion": ">=5.0.7",
     "lodash": ">=4.18.0",
     "follow-redirects": ">=1.16.0",
-    "undici": ">=7.28.0"
+    "undici": ">=7.28.0",
+    "js-yaml": ">=4.3.0",
+    "fast-uri": ">=3.1.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -49,7 +51,7 @@
     "eslint-plugin-react-refresh": "^0.4.26",
     "globals": "^15.15.0",
     "jsdom": "^29.1.1",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.18",
     "tailwindcss": "^4.3.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.61.1",

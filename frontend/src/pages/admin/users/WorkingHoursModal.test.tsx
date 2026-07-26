@@ -103,15 +103,61 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     expect(screen.getByText(/Ab 01\.03\.2026 bis heute: 40 Std\/Woche/)).toBeInTheDocument();
   });
 
-  it('zukünftiges Datum zeigt keinen rückwirkenden Hinweis', async () => {
+  it('zukünftiges Datum OHNE betroffene Abwesenheiten zeigt keinen Hinweis', async () => {
+    // Release-Review 1.17.0: hieß früher „zukünftiges Datum zeigt keinen
+    // rückwirkenden Hinweis" und prüfte zusätzlich, dass für ein Datum ab heute
+    // GAR KEINE Vorschau abgerufen wird. Genau das war der Fehler: auch ein
+    // zukünftiges Wirkungsdatum schreibt bereits gebuchte Abwesenheiten um
+    // (genehmigter Urlaub, Betriebsferien, geplante Fortbildung). Die Vorschau
+    // läuft jetzt immer; ohne Befund bleibt der Dialog aber unverändert still.
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse({
+          is_retroactive: false,
+          period_start: '2026-12-31',
+          period_end: '2026-12-31',
+          affected_absences: 0,
+        }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
     renderModal();
     await screen.findByText('Keine Änderungen vorhanden');
     fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-12-31' } });
     await flushDebounce();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Hinzufügen/i })).not.toBeDisabled();
-    // No preview request should even have been made for a future date.
-    expect(getMock.mock.calls.some((c) => String(c[0]).includes('/preview'))).toBe(false);
+  });
+
+  it('zukünftiges Datum MIT bereits gebuchten Abwesenheiten warnt und verlangt eine Bestätigung', async () => {
+    // Der Regelfall des Dialogs („ab dem 1.9. arbeitet sie 20 Stunden") schrieb
+    // bereits genehmigte Urlaubs-/Fortbildungstage still auf das neue Tagessoll
+    // um — ohne dass der Dialog das je angekündigt hätte.
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse({
+          is_retroactive: false,
+          period_start: '2026-09-01',
+          period_end: '2026-09-18',
+          affected_absences: 3,
+        }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    await flushDebounce();
+
+    expect(await screen.findByText(/3 Abwesenheit\(en\) betroffen/)).toBeInTheDocument();
+    expect(screen.getByText(/01\.09\.2026.*18\.09\.2026/)).toBeInTheDocument();
+    // Kein „Rückwirkende Änderung" — das Datum liegt in der Zukunft.
+    expect(screen.queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
+
+    const submit = screen.getByRole('button', { name: /Hinzufügen/i });
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(submit).not.toBeDisabled();
   });
 
   it('rückwirkendes Datum löst die Vorschau aus und zeigt Zeitraum, Tagessoll und Anzahl', async () => {
@@ -184,6 +230,34 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
     // No confirmation checkbox is offered for a blocked change — there is
     // nothing to confirm your way past.
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('blocked_reason greift auch bei einem Datum in der ZUKUNFT', async () => {
+    // Regression (Release-Review 1.17.0, Nachtrag): `blockedReason` war auf
+    // `isRetroactive` gegattert — ein Rest aus der Zeit, als die Vorschau nur
+    // für rückwirkende Daten geladen wurde. Der POST weist aber unabhängig vom
+    // Datum mit 400 ab (individueller Tagesplan, bereits belegtes
+    // Wirkungsdatum). Ohne den Fix zeigte der Dialog bei einem Zukunftsdatum
+    // weder den Grund noch sperrte er — der Admin lief sehenden Auges in den
+    // Fehler, den `blocked_reason` gerade verhindern soll.
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse({
+          is_retroactive: false,
+          affected_absences: 0,
+          blocked_reason: 'Für dieses Datum existiert bereits eine Änderung.',
+        }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    await flushDebounce();
+
+    await screen.findByText(/existiert bereits eine Änderung/);
+    expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
@@ -350,5 +424,120 @@ describe('Löschen einer Stundenänderung', () => {
     await waitFor(() => expect(deleteMock).toHaveBeenCalled());
     expect(await screen.findByText(/erfolgreich gelöscht/)).toBeInTheDocument();
     expect(screen.queryByText(/abgeschlossen/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Fund 1 (Release-Review 1.17.0): Sequenz-Guard gegen veraltete Vorschau-Antworten', () => {
+  // Vorher fehlte jeder Cancel-Mechanismus (weder `cancelled`-Flag noch
+  // AbortController) — eine spät eintreffende Antwort auf ein DATUM, das der
+  // Admin längst verlassen hat, überschrieb unbedingt `preview`. Das ist genau
+  // die Vorschau, unter der die Pflicht-Bestätigungs-Checkbox für eine
+  // rückwirkende Änderung hängt.
+  it('verwirft eine verspätete Antwort auf ein bereits verlassenes Datum, statt sie anzuzeigen', async () => {
+    let resolveStale: (value: unknown) => void = () => {};
+    const stale = new Promise((resolve) => {
+      resolveStale = resolve;
+    });
+    let previewCallCount = 0;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) {
+        previewCallCount += 1;
+        // Request A (older date, issued first) hangs until resolved manually.
+        if (previewCallCount === 1) return stale;
+        // Request B (the date the admin actually settles on) resolves fast.
+        return Promise.resolve(previewResponse({ affected_absences: 9 }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+
+    // Admin picks an older retroactive date first — request A goes out …
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2025-06-01' } });
+    await flushDebounce();
+
+    // … but before it resolves, the admin moves to a DIFFERENT retroactive
+    // date. Request B fires and resolves immediately.
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    await flushDebounce();
+    await screen.findByText(/9 Abwesenheit\(en\) betroffen/);
+
+    // A finally resolves LATE, for a period/Tagessoll that belongs to the
+    // date the admin left minutes ago. It must be discarded, not displayed.
+    resolveStale(previewResponse({ affected_absences: 2 }));
+    await flushDebounce(50);
+
+    expect(screen.getByText(/9 Abwesenheit\(en\) betroffen/)).toBeInTheDocument();
+    expect(screen.queryByText(/2 Abwesenheit\(en\) betroffen/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Fund 3 (Release-Review 1.17.0): Kopfzeile + Formular ziehen nach dem Speichern nach', () => {
+  // `currentWeeklyHours` ist ein Snapshot von VOR dem Öffnen des Dialogs und
+  // wird vom Elternteil nicht nachgezogen (der Dialog bleibt nach dem
+  // Speichern offen) — die Kopfzeile und das Eingabefeld müssen daher aus dem
+  // frisch geladenen Verlauf abgeleitet werden, nicht aus der Prop.
+  it('zeigt nach dem Speichern das NEUE Wochenstunden im Kopf und im Eingabefeld, nicht die stale Prop', async () => {
+    let historyRows: Array<{ id: string; effective_from: string; weekly_hours: number }> = [];
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse(historyRows));
+    });
+    postMock.mockImplementation(async () => {
+      // Simulates the backend having created the row the GET below now returns.
+      historyRows = [{ id: 'c-new', effective_from: '2026-07-26', weekly_hours: 20 }];
+      return { data: { id: 'c-new', adjusted_absences: 0, warning: null } };
+    });
+
+    renderModal({ currentWeeklyHours: 40 });
+    await screen.findByText('Keine Änderungen vorhanden');
+    expect(screen.getByText(/Aktuell: 40 Std\/Woche/)).toBeInTheDocument();
+
+    // Today's date (not retroactive) — no preview/confirmation needed, keeps
+    // this test focused on the post-save refresh.
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    fireEvent.click(screen.getByRole('button', { name: /Hinzufügen/i }));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    await screen.findByText(/erfolgreich hinzugefügt/);
+
+    // Header must reflect the NEW value — not the stale `currentWeeklyHours` prop.
+    await waitFor(() => expect(screen.getByText(/Aktuell: 20 Std\/Woche/)).toBeInTheDocument());
+    // The input must also be prefilled with the new value, not reset to 40.
+    expect((screen.getByLabelText('Wochenstunden') as HTMLInputElement).value).toBe('20');
+  });
+});
+
+describe('Fund 4 (Release-Review 1.17.0): Vorschau-Fehler wird sichtbar gemacht', () => {
+  // Vorher: `.catch(() => setPreview(null))` ohne jede Rückmeldung → ein
+  // sichtbar leerer amber Kasten neben einem gesperrten „Hinzufügen"-Button.
+  it('zeigt eine Fehlermeldung statt eines leeren Kastens und erlaubt erneutes Prüfen', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) {
+        return Promise.reject({ response: { data: { detail: 'Netzwerkfehler' } } });
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    await flushDebounce();
+
+    expect(await screen.findByText('Netzwerkfehler')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
+    // No silently empty box — an explicit retry affordance is offered instead.
+    const retry = screen.getByRole('button', { name: /Erneut prüfen/i });
+
+    // The retry succeeds without the admin having to touch date/hours again.
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([]));
+    });
+    fireEvent.click(retry);
+    await flushDebounce();
+
+    await screen.findByText(/Abwesenheit\(en\) betroffen/);
+    expect(screen.queryByText('Netzwerkfehler')).not.toBeInTheDocument();
   });
 });
