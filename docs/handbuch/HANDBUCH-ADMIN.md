@@ -234,14 +234,27 @@ Eingehängt ist die Kappung an **allen** Schreibpfaden: Ein-/Ausstempeln, manuel
 Klicken Sie in der Benutzerliste auf den Namen des Mitarbeiters.
 
 **Stundenänderungen:**
-Wenn Sie die Wochenstunden ändern (z. B. bei Teilzeitumstellung), wird ein Eintrag in der **Stundenhistorie** erstellt. Frühere Monate werden weiterhin mit den damals gültigen Stunden berechnet.
+Die Wochenstundenzahl wird im Bearbeiten-Formular nur noch **angezeigt** – ein direktes Überschreiben ist hier nicht mehr möglich. Daneben steht der Button **„Wochenstunden anpassen…"**. Er öffnet denselben Dialog wie das Uhr-Symbol in der Benutzerliste.
 
-Die Änderung ist auch in den Berichten sichtbar: Monats- und Jahresbericht zeigen als Wochenstunden den **zu Zeitraumsbeginn** gültigen Wert und daneben den Hinweis „ab 15.03.2026: 20,0 Std/Woche". Das gilt für die Tabelle im Admin-Dashboard ebenso wie für die Excel-, ODS- und PDF-Exporte (in der Jahresübersicht als eigene Spalte **Stundenänderungen**). So passt die ausgewiesene Wochenstundenzahl immer zu den darunter historisch gerechneten Tageszeilen.
+So ändern Sie die Wochenstunden (z. B. bei einer Teilzeitumstellung):
 
 1. Name/Kürzel des Mitarbeiters öffnen
-2. Neue Wochenstunden eintragen
-3. **Wirkungsdatum** angeben (ab wann gelten die neuen Stunden)
-4. Speichern
+2. Button **„Wochenstunden anpassen…"** klicken (alternativ: Uhr-Symbol in der Benutzerliste)
+3. Neue Wochenstundenzahl eintragen
+4. **„Gültig ab"**-Datum angeben (ab wann gelten die neuen Stunden)
+5. Speichern
+
+Der Verlauf im Dialog zeigt jeden Eintrag als **„ab … bis …"**: Die vorherige Stundenzahl endet automatisch am Vortag des neuen Gültigkeitsdatums, der aktuellste Eintrag läuft „bis heute". So ist auf einen Blick erkennbar, in welchem Zeitraum welche Stundenzahl galt.
+
+**Liegt das gewählte Datum in der Vergangenheit**, zeigt der Dialog vor dem Speichern einen Hinweis mit dem betroffenen Zeitraum, dem alten und dem neuen Tagessoll sowie der Anzahl betroffener Abwesenheiten. Gespeichert wird erst nach ausdrücklicher Bestätigung dieses Hinweises. Berührt der Zeitraum ein bereits **abgeschlossenes Jahr**, weist der Dialog zusätzlich darauf hin – der eingefrorene Jahresabschluss wird dadurch **nicht** automatisch neu berechnet, sondern nur gemeldet; eine eventuelle Anpassung des Übertrags muss manuell geprüft werden.
+
+Beim Speichern einer rückwirkenden Änderung werden die **Stunden bereits gebuchter Abwesenheiten** in diesem Zeitraum auf das neue Tagessoll umgestellt (ein Halbtag entsprechend zur Hälfte). Ausgenommen davon sind **Überstundenausgleich** (dort zählen die beantragten Stunden weiter) und **Mitarbeitende ohne Stundenzählung**. Die **Urlaubstage selbst ändern sich dabei nie** – Urlaub wird nach dem Tagesprinzip geführt (1 freier Arbeitstag = 1 Urlaubstag), nicht nach Stunden.
+
+Wird eine Stundenänderung wieder **gelöscht**, rechnet das System die Abwesenheits-Stunden im betroffenen Zeitraum ebenso zurück. Die **früheste** erfasste Änderung eines Mitarbeiters lässt sich dabei nicht löschen, solange spätere Änderungen bestehen – sie hält den davor gültigen Wert fest. Soll die Historie komplett zurückgesetzt werden, zuerst die späteren Einträge löschen.
+
+> **Individueller Tagesplan:** Bei Mitarbeitenden mit individuellen Tagesstunden je Wochentag ist der Button „Wochenstunden anpassen…" deaktiviert – hier werden die Stunden direkt über die Tagesstunden im Formular gepflegt.
+
+Die Änderung ist auch in den Berichten sichtbar: Monats- und Jahresbericht zeigen als Wochenstunden den **zu Zeitraumsbeginn** gültigen Wert und daneben den Hinweis „ab 15.03.2026: 20,0 Std/Woche". Das gilt für die Tabelle im Admin-Dashboard ebenso wie für die Excel-, ODS- und PDF-Exporte (in der Jahresübersicht als eigene Spalte **Stundenänderungen**). So passt die ausgewiesene Wochenstundenzahl immer zu den darunter historisch gerechneten Tageszeilen.
 
 **Mitarbeiter deaktivieren:**
 Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich nicht mehr einloggen, historische Daten bleiben erhalten.

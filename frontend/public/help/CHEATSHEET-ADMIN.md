@@ -50,9 +50,12 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 - Greift an allen Schreibpfaden (Stempeln, manuell, Admin-Korrektur, Import, CR-Genehmigung).
 
 ### Stundenänderung (Teilzeit etc.)
-**Benutzer öffnen** → neue Wochenstunden + **Wirkungsdatum** eintragen
-→ Historische Salden bleiben korrekt!
-→ Berichte zeigen den zu Zeitraumsbeginn gültigen Wert + „ab TT.MM.JJJJ: X Std/Woche" (Dashboard, Excel, ODS, PDF)
+**Benutzer öffnen** → Button **„Wochenstunden anpassen…"** (oder Uhr-Symbol in der Benutzerliste) → neue Wochenstunden + **„Gültig ab"**-Datum eintragen
+→ Wochenstunden sind im Bearbeiten-Formular nur noch Anzeige, keine Direkteingabe mehr
+→ Historische Salden bleiben korrekt! Verlauf zeigt „ab … bis …"; Berichte zeigen den zu Zeitraumsbeginn gültigen Wert + „ab TT.MM.JJJJ: X Std/Woche" (Dashboard, Excel, ODS, PDF)
+→ **Rückwirkendes Datum:** Dialog zeigt vorab Zeitraum + altes/neues Tagessoll + betroffene Abwesenheiten – nach Bestätigung werden deren Stunden umgerechnet (Urlaubs**tage** bleiben unverändert, Tagesprinzip); abgeschlossenes Jahr wird nur gemeldet, nicht neu berechnet
+→ Löschen einer Änderung rechnet zurück; **früheste** Änderung erst löschbar, wenn keine späteren mehr bestehen
+→ Individueller Tagesplan: Button deaktiviert, Pflege über Tagesstunden
 
 ### Mitarbeiter deaktivieren (niemals löschen!)
 **Benutzer öffnen** → Status „Inaktiv"
