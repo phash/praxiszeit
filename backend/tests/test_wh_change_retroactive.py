@@ -74,6 +74,14 @@ def _last_monday(before_days=30):
     return d
 
 
+def _next_monday(after_days=14):
+    """Ein Montag in der Zukunft — vermeidet Wochenend-Sonderfälle."""
+    d = today_local() + timedelta(days=after_days)
+    while d.weekday() != 0:
+        d += timedelta(days=1)
+    return d
+
+
 class TestRetroactiveAdjustsAbsences:
     def test_retroactive_change_adjusts_absences(self, db, default_tenant):
         admin = _admin(db)
@@ -91,15 +99,32 @@ class TestRetroactiveAdjustsAbsences:
         assert float(a.hours) == 4.0, "Tagessoll halbiert (40->20h/Woche, 5 Tage)"
         assert result.adjusted_absences == 1
 
-    def test_future_change_adjusts_nothing(self, db, default_tenant):
-        """Ein Wirkungsdatum in der Zukunft betrifft nur noch nicht gebuchte Tage
-        — retarget_absence_hours darf gar nicht erst aufgerufen werden."""
+    def test_future_change_adjusts_only_absences_from_its_effective_date(self, db, default_tenant):
+        """Hieß früher ``test_future_change_adjusts_nothing`` und zementierte die
+        Annahme, ein Wirkungsdatum in der Zukunft betreffe „ausschließlich
+        künftige, noch nicht gebuchte Tage".
+
+        Die Annahme ist falsch (Release-Review 1.17.0): ``create_absence`` hat
+        keinerlei Zukunftssperre — genehmigte Urlaubsanträge, Betriebsferien und
+        geplante Fortbildungen werden routinemäßig im Voraus gebucht, mit
+        ``hours`` = Tagessoll ZUM BUCHUNGSZEITPUNKT. Das Soll dieser Tage folgt
+        der neuen Wochenstundenzahl datumsbasiert automatisch, die gespeicherten
+        Stunden nicht. Und das Wirkungsdatum in der Zukunft ist der REGELFALL des
+        Dialogs („ab dem 1.9. arbeitet sie 20 Stunden").
+
+        Neue Erwartung: alles VOR dem Wirkungsdatum bleibt unangetastet (das war
+        und bleibt richtig — genau das prüft die Abwesenheit von heute), alles AB
+        dem Wirkungsdatum wird nachgezogen.
+        """
         admin = _admin(db)
         emp = _make_user(db, "wh_future_emp", weekly_hours=40.0)
-        future = today_local() + timedelta(days=14)
-        # Eine Abwesenheit HEUTE — läge (fälschlich) im Fenster, wenn die
-        # Implementierung period_end statt effective_from als Startpunkt nähme.
-        a = _absence(db, emp, today_local(), AbsenceType.VACATION, 8.0)
+        future = _next_monday(after_days=14)
+        # Eine Abwesenheit HEUTE — liegt VOR dem Wirkungsdatum und darf nicht
+        # angefasst werden (läge fälschlich im Fenster, wenn die Implementierung
+        # period_end statt effective_from als Startpunkt nähme).
+        before = _absence(db, emp, today_local(), AbsenceType.VACATION, 8.0)
+        # Bereits gebuchte Fortbildung NACH dem Wirkungsdatum.
+        after = _absence(db, emp, future + timedelta(days=1), AbsenceType.TRAINING, 8.0)
 
         result = create_working_hours_change(
             user_id=str(emp.id),
@@ -107,9 +132,11 @@ class TestRetroactiveAdjustsAbsences:
             db=db, current_user=admin,
         )
 
-        db.refresh(a)
-        assert float(a.hours) == 8.0, "unverändert"
-        assert result.adjusted_absences == 0
+        db.refresh(before)
+        db.refresh(after)
+        assert float(before.hours) == 8.0, "vor dem Wirkungsdatum: unverändert"
+        assert float(after.hours) == 4.0, "ab dem Wirkungsdatum: auf das neue Tagessoll"
+        assert result.adjusted_absences == 1
         assert result.warning is None
 
     def test_adjusted_absences_matches_actual_count(self, db, default_tenant):
@@ -132,6 +159,120 @@ class TestRetroactiveAdjustsAbsences:
         assert float(rows[0].hours) == 4.0
         assert float(rows[1].hours) == 4.0
         assert float(rows[2].hours) == 8.0, "OVERTIME bleibt unangetastet"
+
+
+class TestEffectWindow:
+    """Release-Review 1.17.0: Das Retarget-Fenster ist der WIRKUNGSBEREICH der
+    geänderten Zeile — von ``effective_from`` bis zum Tag vor der nächsten
+    ``WorkingHoursChange``, sonst offen (praktisch begrenzt auf die späteste
+    gebuchte Abwesenheit). NICHT bis „heute": bereits gebuchte zukünftige
+    Abwesenheiten (genehmigter Urlaub, Betriebsferien, geplante Fortbildung)
+    tragen sonst dauerhaft die Stunden des ALTEN Vertrags, während das Soll
+    desselben Tages schon dem neuen folgt.
+    """
+
+    def test_retroactive_change_also_reaches_future_absences(self, db, default_tenant):
+        """Auch bei einer RÜCKWIRKENDEN Änderung endete das Fenster bei heute —
+        eine für nächste Woche bereits erfasste Fortbildung blieb stehen."""
+        admin = _admin(db, "wh_win1_admin")
+        emp = _make_user(db, "wh_win1_emp", weekly_hours=40.0)
+        past = _last_monday(before_days=30)
+        soon = _next_monday(after_days=7)
+        past_a = _absence(db, emp, past, AbsenceType.SICK, 8.0)
+        future_a = _absence(db, emp, soon, AbsenceType.TRAINING, 8.0)
+
+        result = create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=past, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(past_a)
+        db.refresh(future_a)
+        assert float(past_a.hours) == 4.0
+        assert float(future_a.hours) == 4.0, "auch die zukünftige Zeile wird nachgezogen"
+        assert result.adjusted_absences == 2
+
+    def test_window_ends_before_the_next_change(self, db, default_tenant):
+        """Der Wirkungsbereich einer Zeile endet am Tag VOR der nächsten
+        Änderung — was danach liegt, gehört bereits einem anderen Vertragswert
+        und darf nicht mit umgeschrieben werden."""
+        admin = _admin(db, "wh_win2_admin")
+        emp = _make_user(db, "wh_win2_emp", weekly_hours=40.0)
+        first = _next_monday(after_days=7)
+        second = first + timedelta(days=28)
+        # Die SPÄTERE Zeile existiert bereits (direkt angelegt, damit keine
+        # Basis-Zeile entsteht und die Reihenfolge deterministisch ist).
+        db.add(WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=second, weekly_hours=Decimal("40.0"),
+        ))
+        db.commit()
+        inside = _absence(db, emp, first + timedelta(days=1), AbsenceType.TRAINING, 8.0)
+        outside = _absence(db, emp, second + timedelta(days=1), AbsenceType.TRAINING, 8.0)
+
+        result = create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=first, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(inside)
+        db.refresh(outside)
+        assert float(inside.hours) == 4.0, "im Wirkungsbereich der neuen Zeile"
+        assert float(outside.hours) == 8.0, "hinter der nächsten Änderung: unangetastet"
+        assert result.adjusted_absences == 1
+
+    def test_no_absence_in_window_means_no_retarget_and_no_audit_row(self, db, default_tenant):
+        """Auslöser ist „es gibt eine betroffene Abwesenheit", nicht das Datum.
+        Ohne Abwesenheit im Wirkungsbereich passiert nichts — kein Retarget,
+        keine Audit-Zeile, keine Warnung."""
+        admin = _admin(db, "wh_win3_admin")
+        emp = _make_user(db, "wh_win3_emp", weekly_hours=40.0)
+        future = _next_monday(after_days=14)
+        # Abwesenheit NUR vor dem Wirkungsdatum.
+        earlier = _absence(db, emp, _last_monday(), AbsenceType.VACATION, 8.0)
+
+        result = create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=future, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(earlier)
+        assert float(earlier.hours) == 8.0
+        assert result.adjusted_absences == 0
+        assert result.warning is None
+        assert db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.source == "wh_change",
+        ).count() == 0
+
+    def test_future_vacation_hours_move_but_days_do_not(self, db, default_tenant):
+        """Tagesprinzip (§3 BUrlG): der Urlaubs-TAGE-Verbrauch hängt nicht an
+        ``hours`` und darf sich durch das Nachziehen NIE bewegen — auch nicht
+        für einen bereits genehmigten künftigen Urlaub."""
+        admin = _admin(db, "wh_win4_admin")
+        emp = _make_user(db, "wh_win4_emp", weekly_hours=40.0)
+        future = _next_monday(after_days=21)
+        a = _absence(db, emp, future + timedelta(days=1), AbsenceType.VACATION, 8.0)
+
+        db.expire_all()
+        emp = db.query(User).filter(User.username == "wh_win4_emp").first()
+        before_days = calculation_service.get_vacation_account(db, emp, future.year)["used_days"]
+        assert float(before_days) > 0, "Vorbedingung: der künftige Urlaub zählt bereits"
+
+        create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(effective_from=future, weekly_hours=20.0),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(a)
+        assert float(a.hours) == 4.0, "Stunden folgen dem neuen Tagessoll"
+        db.expire_all()
+        emp = db.query(User).filter(User.username == "wh_win4_emp").first()
+        after_days = calculation_service.get_vacation_account(db, emp, future.year)["used_days"]
+        assert float(after_days) == float(before_days), "Urlaubs-TAGE unverändert"
 
 
 class TestBaselineRowStillCreated:
@@ -507,22 +648,32 @@ class TestDeleteRestoresAbsenceHours:
         db.refresh(emp)
         assert float(emp.weekly_hours) == 40.0, "Basis-Zeile (Ausgangswert) greift wieder"
 
-    def test_delete_of_future_change_adjusts_nothing(self, db, default_tenant):
-        """Ein Wirkungsdatum in der Zukunft hat beim Anlegen keine Abwesenheit
-        berührt — die Löschung darf dann ebenfalls nichts zurückrechnen."""
+    def test_delete_of_future_change_rewinds_absences_from_its_effective_date(self, db, default_tenant):
+        """Hieß früher ``test_delete_of_future_change_adjusts_nothing``.
+
+        Seit das Anlegen einer zukunftsdatierten Änderung die bereits gebuchten
+        Abwesenheiten AB dem Wirkungsdatum nachzieht (Release-Review 1.17.0),
+        muss das Löschen symmetrisch zurückrechnen — sonst bliebe nach einer
+        versehentlich angelegten und wieder entfernten Änderung ein falscher
+        Stand stehen. Was VOR dem Wirkungsdatum liegt, bleibt weiterhin
+        unangetastet.
+        """
         admin = _admin(db, "wh_delfut_admin")
         emp = _make_user(db, "wh_delfut_emp", weekly_hours=40.0)
-        future = today_local() + timedelta(days=14)
+        future = _next_monday(after_days=14)
         # Eine Abwesenheit HEUTE — läge (fälschlich) im Fenster, würde die
-        # Implementierung period_end statt effective_from als Startpunkt
-        # nehmen oder den Zukunfts-Guard vergessen.
-        a = _absence(db, emp, today_local(), AbsenceType.VACATION, 8.0)
+        # Implementierung period_end statt effective_from als Startpunkt nehmen.
+        before = _absence(db, emp, today_local(), AbsenceType.VACATION, 8.0)
+        after = _absence(db, emp, future + timedelta(days=1), AbsenceType.TRAINING, 8.0)
 
         create_working_hours_change(
             user_id=str(emp.id),
             change_data=WorkingHoursChangeCreate(effective_from=future, weekly_hours=20.0),
             db=db, current_user=admin,
         )
+        db.refresh(after)
+        assert float(after.hours) == 4.0, "Vorbedingung: Anlegen hat nachgezogen"
+
         change = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == emp.id,
             WorkingHoursChange.effective_from == future,
@@ -534,12 +685,51 @@ class TestDeleteRestoresAbsenceHours:
             db=db, current_user=admin,
         )
 
-        db.refresh(a)
-        assert float(a.hours) == 8.0, "unverändert"
-        count = db.query(TimeEntryAuditLog).filter(
-            TimeEntryAuditLog.source == "wh_change",
-        ).count()
-        assert count == 0
+        db.refresh(before)
+        db.refresh(after)
+        assert float(before.hours) == 8.0, "vor dem Wirkungsdatum: nie angefasst"
+        assert float(after.hours) == 8.0, "zurück auf den davor gültigen Wert"
+
+    def test_delete_window_ends_before_the_next_change(self, db, default_tenant):
+        """Auch beim Zurückrechnen endet der Wirkungsbereich am Tag vor der
+        nächsten Änderung."""
+        admin = _admin(db, "wh_delwin_admin")
+        emp = _make_user(db, "wh_delwin_emp", weekly_hours=20.0)
+        base = _last_monday(before_days=60)
+        first = _next_monday(after_days=7)
+        second = first + timedelta(days=28)
+        # Basis-Zeile in der Vergangenheit: sonst wäre `first` die FRÜHESTE
+        # Zeile und das Löschen mit 400 abgelehnt (sie verankert den davor
+        # gültigen Wert).
+        db.add(WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=base, weekly_hours=Decimal("20.0"), note="Basis",
+        ))
+        first_row = WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=first, weekly_hours=Decimal("40.0"),
+        )
+        db.add(first_row)
+        db.add(WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=second, weekly_hours=Decimal("40.0"),
+        ))
+        db.commit()
+        db.refresh(first_row)
+        # Im Wirkungsbereich der zu löschenden Zeile, mit deren Tagessoll (8 h).
+        inside = _absence(db, emp, first + timedelta(days=1), AbsenceType.TRAINING, 8.0)
+        # Hinter der nächsten Änderung — gehört ihr, nicht der gelöschten.
+        outside = _absence(db, emp, second + timedelta(days=1), AbsenceType.TRAINING, 8.0)
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(first_row.id),
+            db=db, current_user=admin,
+        )
+
+        db.refresh(inside)
+        db.refresh(outside)
+        assert float(inside.hours) == 4.0, "fällt auf user.weekly_hours (20 h) zurück"
+        assert float(outside.hours) == 8.0, "hinter der nächsten Änderung: unangetastet"
 
 
 class TestDeleteAuditLog:

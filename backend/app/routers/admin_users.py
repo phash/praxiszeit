@@ -1041,41 +1041,51 @@ def create_working_hours_change(
         if most_recent:
             user.weekly_hours = most_recent.weekly_hours
 
-    # Task 3 (#Wochenstunden-Dialog): eine rückwirkende Änderung muss die bereits
-    # gebuchten Abwesenheits-Stunden mitziehen — sonst schreibt z. B. ein
-    # Krankentag weiterhin die ALTEN Stunden dem Ist gut, während das Soll
-    # desselben Tages sich durch die eben gespeicherte Änderung schon verschoben
-    # hat. retarget_absence_hours ist DIE eine Stelle dafür (siehe dortige
-    # Docstring-Begründung) — kein zweiter Rechenpfad hier.
+    # Task 3 (#Wochenstunden-Dialog): eine Änderung muss die bereits gebuchten
+    # Abwesenheits-Stunden mitziehen — sonst schreibt z. B. ein Krankentag
+    # weiterhin die ALTEN Stunden dem Ist gut, während das Soll desselben Tages
+    # sich durch die eben gespeicherte Änderung schon verschoben hat.
+    # retarget_absence_hours ist DIE eine Stelle dafür (siehe dortige
+    # Docstring-Begründung), retarget_window DIE eine Stelle für das Fenster —
+    # kein zweiter Rechenpfad hier.
     #
     # retarget_absence_hours liest das neue Tagessoll über
     # get_weekly_hours_for_date, die ihrerseits die WorkingHoursChange-Zeile aus
     # der DB liest — der `db.flush()` weiter oben macht die eben angelegte Zeile
     # (und ggf. die Basis-Zeile) für diese Abfrage sichtbar, bevor hier
-    # gerechnet wird. Nur rückwirkend (effective_from < heute); ein Datum ab
-    # heute betrifft ausschließlich künftige, noch nicht gebuchte Tage.
+    # gerechnet wird.
+    #
+    # Release-Review 1.17.0: Hier stand früher „nur rückwirkend (effective_from
+    # < heute); ein Datum ab heute betrifft ausschließlich künftige, noch nicht
+    # gebuchte Tage." Das war sachlich FALSCH — `create_absence` hat keine
+    # Zukunftssperre, genehmigte Urlaubsanträge, Betriebsferien und geplante
+    # Fortbildungen werden routinemäßig im Voraus gebucht, und ein Wirkungsdatum
+    # in der Zukunft ist der Regelfall dieses Dialogs. Auslöser ist deshalb
+    # nicht mehr das Datum, sondern „es gibt eine betroffene Abwesenheit im
+    # Wirkungsbereich".
+    window = calculation_service.retarget_window(db, user, change_data.effective_from)
     adjusted_absences = 0
-    warning = None
-    if change_data.effective_from < today_local():
-        period_end = today_local()
+    if window.has_absences:
         adjusted_absences = calculation_service.retarget_absence_hours(
-            db, user, change_data.effective_from, period_end
+            db, user, window.start, window.end
         )
         _log_wh_change_retarget(
             db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
-            effective_from=change_data.effective_from, period_end=period_end,
+            effective_from=window.start, period_end=window.end,
             adjusted_absences=adjusted_absences,
             prefix="Wochenstunden-Änderung",
             suffix="auf neues Tagessoll nachgezogen",
         )
-        # Fix #5-Warnung (nicht-blockierend): berührt das Nachziehen ein Jahr,
-        # dessen Jahresabschluss bereits lief, ist der eingefrorene Carryover
-        # des Folgejahres jetzt veraltet — wir rechnen ihn NICHT automatisch neu
-        # (könnte manuelle Anpassungen überschreiben), sondern melden es nur.
-        warning = calculation_service.stale_year_closing_warning(
-            db, current_user.tenant_id,
-            range(change_data.effective_from.year, period_end.year + 1),
-        )
+    # Fix #5-Warnung (nicht-blockierend): berührt der Wirkungsbereich ein Jahr,
+    # dessen Jahresabschluss bereits lief, ist der eingefrorene Carryover des
+    # Folgejahres jetzt veraltet — wir rechnen ihn NICHT automatisch neu (könnte
+    # manuelle Anpassungen überschreiben), sondern melden es nur. Bewusst
+    # UNABHÄNGIG vom Retarget: die Änderung verschiebt das Per-Tag-SOLL jedes
+    # Arbeitstags im Wirkungsbereich, nicht nur das der Abwesenheitstage.
+    warning = calculation_service.stale_year_closing_warning(
+        db, current_user.tenant_id,
+        range(window.start.year, window.end.year + 1),
+    )
 
     db.commit()
     db.refresh(change)
@@ -1110,16 +1120,36 @@ def preview_working_hours_change(
     user = _get_user_in_tenant(db, user_id, current_user)
 
     today = today_local()
+    # Bedeutung unverändert: „das Wirkungsdatum liegt VOR heute" — genau die
+    # Aussage, die der Admin im Warnhinweis liest. Der ZEITRAUM
+    # (period_start/period_end) und affected_absences bilden dagegen den echten
+    # Wirkungsbereich ab, der auch in der Zukunft liegen kann (Release-Review
+    # 1.17.0): sonst korrigiert das Speichern still Daten, die die Vorschau nie
+    # angekündigt hat.
     is_retroactive = effective_from < today
-    period_start = effective_from
-    period_end = today if is_retroactive else effective_from
+    window = calculation_service.retarget_window(db, user, effective_from)
+    period_start = window.start
+    period_end = window.end
+
+    # Fund 3 (Release-Review 1.17.0): das Tagessoll für einen repräsentativen
+    # ARBEITSTAG ausweisen, nicht für den Stichtag selbst.
+    # get_daily_target_for_date liefert am Wochenende hart 0 — und das
+    # Wirkungsdatum ist typischerweise ein Monatserster (4 der 12 Monatsersten
+    # 2026 fallen auf ein Wochenende). Der Dialog zeigte dann „Tagessoll 0.0h →
+    # 0.0h" NEBEN „N Abwesenheit(en) betroffen": zwei Zahlen, die sich
+    # widersprechen, als einziger quantitativer Beleg vor einer §16-relevanten
+    # Freigabe. Die Zählung selbst war nie betroffen (das Retarget rechnet pro
+    # Tag), es ist reine Anzeige.
+    representative_day = effective_from
+    while representative_day.weekday() >= 5:
+        representative_day += timedelta(days=1)
 
     current_weekly = calculation_service.get_weekly_hours_for_date(db, user, effective_from)
     current_daily_target = calculation_service.get_daily_target_for_date(
-        user, effective_from, current_weekly
+        user, representative_day, current_weekly
     )
     new_daily_target = calculation_service.get_daily_target_for_date(
-        user, effective_from, Decimal(str(weekly_hours))
+        user, representative_day, Decimal(str(weekly_hours))
     )
 
     # Gleiche Ablehnungsgründe wie create_working_hours_change (Fix #2 dort):
@@ -1144,7 +1174,7 @@ def preview_working_hours_change(
             )
 
     affected_absences = 0
-    if is_retroactive and not blocked_reason:
+    if window.has_absences and not blocked_reason:
         # Wäre die Änderung ohnehin blockiert (z. B. Duplikat-Datum), gibt es
         # nichts zu zählen — UND ein Insert würde eine zweite Zeile mit
         # identischem effective_from erzeugen. get_weekly_hours_for_date hat
@@ -1279,17 +1309,15 @@ def delete_working_hours_change(
     # just-deleted row (and the just-updated user.weekly_hours) because of
     # the flush above.
     #
-    # Only retroactive: a change whose effective_from lies in the future
-    # never touched any already-booked absence, so there is nothing to
-    # unwind.
-    #
-    # Minor 2 (Review-Fund): strict `<`, unified with create_working_hours_change's
-    # retarget trigger. "Today" is the day still in progress — like a
-    # future-dated change, it is treated as not-yet-fully-booked history, so
-    # deleting a change effective today does not rewind anything either.
-    # (Previously this used `<=` here vs `<` in create; harmless in practice
-    # because retarget_absence_hours is idempotent and only counts real
-    # deltas, but inconsistent.)
+    # Release-Review 1.17.0: Hier stand früher „only retroactive: a change whose
+    # effective_from lies in the future never touched any already-booked
+    # absence". Das stimmte nicht — Abwesenheiten werden routinemäßig im Voraus
+    # gebucht (genehmigter Urlaub, Betriebsferien, geplante Fortbildung), und
+    # seit das Anlegen sie auch bei zukunftsdatiertem Wirkungsdatum nachzieht,
+    # MUSS das Löschen symmetrisch zurückrechnen. Fenster und Auslöser kommen
+    # aus derselben Quelle wie beim Anlegen: calculation_service.retarget_window
+    # (bis zum Tag vor der nächsten Änderung, sonst offen) plus „es gibt eine
+    # betroffene Abwesenheit".
     #
     # I1 (Abschluss-Review): Mitarbeitende mit individuellem Tagesplan sind vom
     # Retarget AUSGENOMMEN. Ihr Tagessoll kommt aus hours_monday…friday —
@@ -1310,26 +1338,30 @@ def delete_working_hours_change(
     _uses_daily_schedule = bool(getattr(user, "use_daily_schedule", False))
     adjusted_absences = 0
     warning = None
-    if not _uses_daily_schedule and deleted_effective_from < today_local():
-        period_end = today_local()
-        adjusted_absences = calculation_service.retarget_absence_hours(
-            db, user, deleted_effective_from, period_end
-        )
-        _log_wh_change_retarget(
-            db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
-            effective_from=deleted_effective_from, period_end=period_end,
-            adjusted_absences=adjusted_absences,
-            prefix="Löschung der Wochenstunden-Änderung",
-            suffix="auf den davor gültigen Wert zurückgerechnet",
-        )
+    if not _uses_daily_schedule:
+        window = calculation_service.retarget_window(db, user, deleted_effective_from)
+        if window.has_absences:
+            adjusted_absences = calculation_service.retarget_absence_hours(
+                db, user, window.start, window.end
+            )
+            _log_wh_change_retarget(
+                db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
+                effective_from=window.start, period_end=window.end,
+                adjusted_absences=adjusted_absences,
+                prefix="Löschung der Wochenstunden-Änderung",
+                suffix="auf den davor gültigen Wert zurückgerechnet",
+            )
         # I3 (Abschluss-Review): Das Anlegen liefert diesen Hinweis bereits; das
         # Löschen rechnet dasselbe Fenster zurück und kann denselben
         # eingefrorenen Carryover entwerten, meldete aber nichts. Fix #5 gilt
         # hier genauso: NICHT automatisch neu rechnen (überschriebe manuelle
-        # Carryover-Anpassungen), nur melden.
+        # Carryover-Anpassungen), nur melden. Wie beim Anlegen unabhängig vom
+        # Retarget: die Rücknahme verschiebt das Per-Tag-Soll jedes Arbeitstags
+        # im Wirkungsbereich. Für Tagesplan-MA bleibt beides aus — dort treibt
+        # weekly_hours gar kein Soll (siehe Begründung oben).
         warning = calculation_service.stale_year_closing_warning(
             db, current_user.tenant_id,
-            range(deleted_effective_from.year, period_end.year + 1),
+            range(window.start.year, window.end.year + 1),
         )
 
     db.commit()

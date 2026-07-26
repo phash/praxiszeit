@@ -59,6 +59,22 @@ def _last_monday(before_days=30):
     return d
 
 
+def _next_monday(after_days=14):
+    """Ein Montag in der Zukunft — vermeidet Wochenend-Sonderfälle."""
+    d = today_local() + timedelta(days=after_days)
+    while d.weekday() != 0:
+        d += timedelta(days=1)
+    return d
+
+
+def _last_sunday(before_days=30):
+    """Ein SONNTAG in der Vergangenheit — für den Wochenend-Stichtag."""
+    d = today_local() - timedelta(days=before_days)
+    while d.weekday() != 6:
+        d -= timedelta(days=1)
+    return d
+
+
 class TestRetroactiveDetection:
     def test_future_date_is_not_retroactive(self, client, test_user):
         r = client.get(_url(test_user.id, today_local() + timedelta(days=7)))
@@ -98,6 +114,26 @@ class TestNumbers:
         assert body["current_daily_target"] == 8.0
         assert body["new_daily_target"] == 4.0
 
+    def test_weekend_effective_date_still_reports_the_contract_targets(self, client, db, test_user):
+        """Fund 3 (Release-Review 1.17.0): Das Wirkungsdatum ist typischerweise
+        ein Monatserster — 4 der 12 Monatsersten 2026 fallen auf ein Wochenende.
+        Die Vorschau berechnete beide Tagessoll-Werte für GENAU diesen Stichtag,
+        und ``get_daily_target_for_date`` liefert am Wochenende hart 0 → der
+        Dialog zeigte „Tagessoll 0.0h → 0.0h. N Abwesenheit(en) betroffen." Die
+        beiden Zahlen widersprachen sich, und der einzige quantitative Beleg vor
+        einer §16-relevanten Freigabe war wertlos."""
+        sunday = _last_sunday()
+        assert sunday.weekday() >= 5, "Vorbedingung: Stichtag ist ein Wochenendtag"
+        # Eine Abwesenheit an einem WERKTAG im Zeitraum: affected_absences > 0,
+        # während die Tagessoll-Anzeige 0.0 → 0.0 behauptete.
+        _absence(db, test_user, sunday + timedelta(days=1))
+
+        body = client.get(_url(test_user.id, sunday, hours=20.0)).json()
+
+        assert body["current_daily_target"] == 8.0
+        assert body["new_daily_target"] == 4.0
+        assert body["affected_absences"] == 1
+
     def test_preview_changes_nothing(self, client, db, test_user):
         """Strikt lesend — weder Abwesenheit noch Historie darf sich bewegen."""
         mon = _last_monday()
@@ -108,6 +144,58 @@ class TestNumbers:
         assert db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == test_user.id
         ).count() == 0
+
+
+class TestEffectWindow:
+    """Release-Review 1.17.0: ``period_end``/``affected_absences`` bilden den
+    WIRKUNGSBEREICH der Änderung ab (bis zum Tag vor der nächsten Änderung,
+    sonst offen — praktisch bis zur spätesten gebuchten Abwesenheit), nicht
+    „bis heute". Sonst korrigiert das Speichern still Daten, die die Vorschau
+    dem Admin nie angekündigt hat.
+
+    ``is_retroactive`` behält bewusst seine Bedeutung: „Datum liegt vor heute" —
+    genau die Aussage, die der Admin im Warnhinweis liest.
+    """
+
+    def test_future_date_with_booked_absence_is_counted(self, client, db, test_user):
+        eff = _next_monday(after_days=14)
+        absence_day = eff + timedelta(days=1)
+        _absence(db, test_user, absence_day, AbsenceType.TRAINING)
+
+        body = client.get(_url(test_user.id, eff)).json()
+
+        assert body["is_retroactive"] is False, "Bedeutung unverändert: Datum ab heute"
+        assert body["affected_absences"] == 1, "die bereits gebuchte Zeile wird angefasst"
+        assert body["period_start"] == eff.isoformat()
+        assert body["period_end"] == absence_day.isoformat()
+
+    def test_period_end_stops_before_the_next_change(self, client, db, test_user):
+        first = _next_monday(after_days=7)
+        second = first + timedelta(days=28)
+        db.add(WorkingHoursChange(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=second, weekly_hours=Decimal("40.0"),
+        ))
+        db.commit()
+        _absence(db, test_user, first + timedelta(days=1), AbsenceType.TRAINING)
+        _absence(db, test_user, second + timedelta(days=1), AbsenceType.TRAINING)
+
+        body = client.get(_url(test_user.id, first)).json()
+
+        assert body["period_end"] == (second - timedelta(days=1)).isoformat()
+        assert body["affected_absences"] == 1, "nur die Zeile im eigenen Wirkungsbereich"
+
+    def test_retroactive_period_end_extends_to_a_future_absence(self, client, db, test_user):
+        mon = _last_monday()
+        future_day = _next_monday(after_days=7) + timedelta(days=1)
+        _absence(db, test_user, mon)
+        _absence(db, test_user, future_day, AbsenceType.TRAINING)
+
+        body = client.get(_url(test_user.id, mon)).json()
+
+        assert body["is_retroactive"] is True
+        assert body["period_end"] == future_day.isoformat()
+        assert body["affected_absences"] == 2
 
 
 class TestBlockedReasons:

@@ -46,6 +46,26 @@ class WorkingHoursChangePreview(BaseModel):
     (aufsteigend) gemäß Spec; ``closed_year_warning`` bleibt zusätzlich der
     fertige, auf das früheste Jahr bezogene Anzeigetext — beide Felder nutzen
     dieselbe "abgeschlossen"-Definition (``calculation_service.closed_years_in_range``).
+
+    Feldbedeutungen (Release-Review 1.17.0 präzisiert, unverändert im Typ):
+
+    * ``is_retroactive`` — „das Wirkungsdatum liegt VOR heute". Genau die
+      Aussage, die der Admin im Warnhinweis liest. NICHT „es wird etwas
+      umgeschrieben": auch ein Datum in der Zukunft kann bereits gebuchte
+      Abwesenheiten anfassen (genehmigter Urlaub, Betriebsferien, geplante
+      Fortbildung).
+    * ``period_start``/``period_end`` — der WIRKUNGSBEREICH der Änderung
+      (``calculation_service.retarget_window``): ab dem Wirkungsdatum bis zum
+      Tag vor der nächsten Stundenänderung, sonst offen und praktisch bis zur
+      spätesten gebuchten Abwesenheit (mindestens bis heute). Früher hart auf
+      „heute" geklemmt — das verschwieg genau die künftigen Abwesenheiten, die
+      das Speichern trotzdem umschreibt.
+    * ``affected_absences`` — Zeilen in diesem Bereich, deren ``hours`` sich
+      tatsächlich ändern würden (> 0 ⇒ das Speichern schreibt §16-relevante
+      Daten um, egal ob das Datum rückwirkend ist).
+    * ``current_daily_target``/``new_daily_target`` — vertragliches Tagessoll
+      für einen repräsentativen ARBEITSTAG ab dem Wirkungsdatum (nicht für den
+      Stichtag selbst: fällt der auf ein Wochenende, wäre beides hart 0).
     """
     is_retroactive: bool
     period_start: date

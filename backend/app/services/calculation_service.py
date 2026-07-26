@@ -124,6 +124,86 @@ def weekly_hours_segments(
     return segments
 
 
+class RetargetWindow(NamedTuple):
+    """Der WIRKUNGSBEREICH einer ``WorkingHoursChange`` — siehe
+    ``retarget_window``."""
+
+    start: date
+    """``effective_from`` der betrachteten Aenderung."""
+
+    end: date
+    """Letzter Tag des Wirkungsbereichs (immer konkret, nie offen)."""
+
+    last_absence: Optional[date]
+    """Spaetestes Abwesenheitsdatum im Bereich; ``None`` = keine vorhanden."""
+
+    @property
+    def has_absences(self) -> bool:
+        """Der AUSLOESER fuer das Nachziehen: gibt es ueberhaupt eine bereits
+        gebuchte Abwesenheit im Wirkungsbereich? (NICHT „liegt das Datum in der
+        Vergangenheit" — siehe ``retarget_window``.)"""
+        return self.last_absence is not None
+
+
+def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWindow:
+    """Bestimmt den Wirkungsbereich einer ``WorkingHoursChange`` zum
+    ``effective_from``: ab diesem Tag bis zum Tag VOR der naechsten Aenderung
+    mit groesserem ``effective_from`` — gibt es keine, ist der Bereich offen und
+    wird praktisch auf die spaeteste bereits gebuchte Abwesenheit (mindestens
+    aber heute bzw. das Wirkungsdatum selbst) begrenzt.
+
+    DIE eine Stelle, die dieses Fenster kennt — Anlegen, Loeschen und Vorschau
+    fragen alle hier (Release-Review 1.17.0; vorher klemmte jeder Aufrufer das
+    Fenster selbst auf ``[effective_from, heute]``).
+
+    Warum NICHT „bis heute": ``create_absence`` hat keinerlei Zukunftssperre.
+    Genehmigte Urlaubsantraege, Betriebsferien und geplante Fortbildungen werden
+    routinemaessig im Voraus gebucht — mit ``hours`` = Tagessoll ZUM
+    Buchungszeitpunkt. Das Soll dieser Tage folgt einer spaeteren
+    Wochenstunden-Aenderung datumsbasiert automatisch, die gespeicherten Stunden
+    nicht. Bei ``SICK``/``TRAINING`` ist das ein direkter Saldo-Fehler (die
+    ``hours`` sind dort die Ist-Gutschrift), bei ``VACATION``/``PAID_LEAVE``/
+    ``OTHER`` ein in sich widerspruechlicher §16-Beleg. Und der REGELFALL des
+    Dialogs ist ein Wirkungsdatum in der ZUKUNFT („ab dem 1.9. arbeitet sie 20
+    Stunden") — dort griffe ein „nur rueckwirkend"-Trigger nie.
+
+    Warum die Obergrenze an der naechsten Aenderung: was danach liegt, gehoert
+    bereits einem anderen Vertragswert. Diese Zeile darf es nicht mit
+    umschreiben.
+
+    ``OVERTIME`` bleibt bei der Abwesenheits-Suche aussen vor — genau wie in
+    ``retarget_absence_hours``, damit der Ausloeser nicht fuer Zeilen feuert,
+    die ohnehin nie angefasst wuerden.
+    """
+    next_change = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+        WorkingHoursChange.effective_from > effective_from,
+    ).order_by(WorkingHoursChange.effective_from.asc()).first()
+    hard_end = (next_change.effective_from - timedelta(days=1)) if next_change else None
+
+    absence_q = db.query(func.max(Absence.date)).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026
+        Absence.date >= effective_from,
+        Absence.type != AbsenceType.OVERTIME,
+    )
+    if hard_end is not None:
+        absence_q = absence_q.filter(Absence.date <= hard_end)
+    last_absence = absence_q.scalar()
+
+    if hard_end is not None:
+        end = hard_end
+    else:
+        # Offener Bereich: praktisch bis zur spaetesten gebuchten Abwesenheit —
+        # weiter zu laufen brauechte niemand. Mindestens bis heute (bzw. bis zum
+        # Wirkungsdatum, wenn das in der Zukunft liegt), damit das Fenster auch
+        # ohne Abwesenheiten einen sinnvollen Anzeigewert hat.
+        end = max(d for d in (effective_from, today_local(), last_absence) if d is not None)
+
+    return RetargetWindow(start=effective_from, end=end, last_absence=last_absence)
+
+
 def retarget_absence_hours(
     db: Session,
     user: User,
@@ -134,13 +214,19 @@ def retarget_absence_hours(
 ) -> int:
     """Setzt ``Absence.hours`` im Fenster ``[start, end]`` auf das Tagessoll des
     jeweiligen Tages. Gibt die Anzahl tatsaechlich abweichender Zeilen zurueck.
+    Das Fenster liefert ``retarget_window`` (DIE eine Stelle dafuer).
 
     Warum es das braucht: das SOLL rechnet datumsbasiert automatisch neu
     (``get_weekly_hours_for_date``), die beim Buchen festgeschriebenen ``hours``
-    einer Abwesenheit tun das NICHT. Nach einer rueckwirkenden Wochenstunden-
-    Aenderung von 40 auf 20 h/Woche schriebe ein Krankentag weiterhin 8 h dem Ist
-    gut, waehrend das Soll desselben Tages nur noch 4 h betraegt — Soll und Ist
-    widersprechen sich dann im selben Monat und im selben §16-Beleg.
+    einer Abwesenheit tun das NICHT. Nach einer Wochenstunden-Aenderung von 40
+    auf 20 h/Woche schriebe ein Krankentag weiterhin 8 h dem Ist gut, waehrend
+    das Soll desselben Tages nur noch 4 h betraegt — Soll und Ist widersprechen
+    sich dann im selben Monat und im selben §16-Beleg.
+
+    Das gilt fuer rueckwirkende UND fuer zukunftsdatierte Aenderungen: bereits
+    gebuchte kuenftige Abwesenheiten (genehmigter Urlaub, Betriebsferien,
+    geplante Fortbildung) tragen die Stunden des alten Vertrags. Der Auf- und
+    Abbau des Fensters gehoert deshalb ausschliesslich ``retarget_window``.
 
     Bewusst ausgenommen:
 
