@@ -1236,8 +1236,26 @@ def delete_working_hours_change(
     # (Previously this used `<=` here vs `<` in create; harmless in practice
     # because retarget_absence_hours is idempotent and only counts real
     # deltas, but inconsistent.)
+    #
+    # I1 (Abschluss-Review): Mitarbeitende mit individuellem Tagesplan sind vom
+    # Retarget AUSGENOMMEN. Ihr Tagessoll kommt aus hours_monday…friday —
+    # get_daily_target_for_date liest bei use_daily_schedule=True gar keine
+    # Wochenstunden, eine WorkingHoursChange kann ihr Soll also weder setzen
+    # noch beim Löschen verschieben. Das Retarget schrieb ihnen trotzdem die
+    # gebuchten Absence-Stunden auf das Tagesplan-Soll um (real: 8 h → 6 h) —
+    # eine stille Änderung an §16-Belegen, die mit der ausgelösten Aktion
+    # nichts zu tun hat, bei einer Personengruppe, für die dieses Feature
+    # ausdrücklich nicht zuständig ist (create/preview lehnen sie mit 400 bzw.
+    # blocked_reason ab).
+    #
+    # Bewusst ÜBERSPRINGEN statt (wie beim Anlegen) mit 400 ABLEHNEN: eine
+    # Ablehnung machte Alt-Zeilen aus der Zeit vor der Tagesplan-Umstellung
+    # unlöschbar — sie sind fürs Soll wirkungslos, aber der Admin bekäme sie
+    # nie mehr aus der Historie. Löschen bleibt also möglich, es rechnet nur
+    # nichts zurück (es gibt auch nichts zurückzurechnen).
+    _uses_daily_schedule = bool(getattr(user, "use_daily_schedule", False))
     adjusted_absences = 0
-    if deleted_effective_from < today_local():
+    if not _uses_daily_schedule and deleted_effective_from < today_local():
         period_end = today_local()
         adjusted_absences = calculation_service.retarget_absence_hours(
             db, user, deleted_effective_from, period_end

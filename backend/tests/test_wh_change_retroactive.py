@@ -259,6 +259,44 @@ class TestStillRejectedCases:
         db.refresh(a)
         assert float(a.hours) == 8.0
 
+    def test_delete_does_not_retarget_daily_schedule_user(self, db, default_tenant):
+        """I1 (Abschluss-Review): Anlegen lehnt Tagesplan-MA mit 400 ab, das
+        Löschen rief ``retarget_absence_hours`` trotzdem ungefiltert auf und
+        schrieb ihre gebuchten Abwesenheits-Stunden auf das Tagesplan-Soll um
+        (8 h → 6 h) — eine stille §16-Änderung ohne Bezug zur Aktion. Löschen
+        bleibt erlaubt (sonst wären Alt-Zeilen unlöschbar), rechnet aber
+        nichts mehr zurück."""
+        admin = _admin(db, "wh_dsdel_admin")
+        mon = _last_monday()
+        emp = _make_user(
+            db, "wh_dsdel_emp", use_daily_schedule=True,
+            hours_monday=6.0, hours_tuesday=6.0, hours_wednesday=6.0,
+            hours_thursday=6.0, hours_friday=6.0,
+        )
+        # Bereits gebuchte Abwesenheit mit 8 h (aus der Zeit vor der
+        # Tagesplan-Umstellung).
+        a = _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
+        # Alt-Zeile aus derselben Zeit — direkt angelegt, da create sie heute
+        # mit 400 ablehnen würde.
+        change = WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=mon, weekly_hours=Decimal("20.0"),
+        )
+        db.add(change)
+        db.commit()
+        db.refresh(change)
+
+        delete_working_hours_change(
+            user_id=str(emp.id), change_id=str(change.id),
+            db=db, current_user=admin,
+        )
+
+        assert db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == emp.id
+        ).count() == 0, "Löschen bleibt möglich"
+        db.refresh(a)
+        assert float(a.hours) == 8.0, "Abwesenheits-Stunden unangetastet (nicht 6.0)"
+
     def test_duplicate_date_still_400(self, db, default_tenant):
         admin = _admin(db, "wh_dup_admin")
         emp = _make_user(db, "wh_dup_emp", weekly_hours=40.0)
