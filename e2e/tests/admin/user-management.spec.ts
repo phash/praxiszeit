@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { daysFromNow } from '../../helpers/date.helper';
+import { daysFromNow, weekdayFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin User Management', () => {
   test('user list is visible', async ({ adminPage }) => {
@@ -81,6 +81,62 @@ test.describe('Admin User Management', () => {
     await expect(
       adminPage.locator('[role="alert"]').filter({ hasText: 'hinzugefügt' })
     ).toBeVisible({ timeout: 10000 });
+
+    await dialog.getByRole('button', { name: /schließen/i }).click();
+  });
+
+  // Der rückwirkende Pfad ist der eigentliche Kern des Features: er zeigt vor
+  // dem Speichern, was er anfasst, verlangt eine ausdrückliche Bestätigung und
+  // rechnet danach die gespeicherten Stunden bestehender Abwesenheiten nach.
+  // Der Test oben deckt bewusst nur ein Zukunftsdatum ab — ohne diesen hier
+  // wäre die riskanteste Hälfte des Features E2E ungeprüft.
+  test('rückwirkende Stundenänderung warnt und verlangt Bestätigung', async ({
+    adminPage,
+    testEmployee,
+  }) => {
+    await adminPage.goto('/admin/users');
+    await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
+
+    await adminPage
+      .getByPlaceholder('Suche nach Name oder Benutzername...')
+      .fill(testEmployee.last_name);
+
+    const editButton = adminPage.locator('button[title="Bearbeiten"]').first();
+    await expect(editButton).toBeVisible({ timeout: 5000 });
+    await editButton.click();
+
+    await adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' }).click();
+    const dialog = adminPage.getByRole('dialog', { name: /Stundenverlauf/i });
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+
+    // Datum in der Vergangenheit -> die Vorschau muss anspringen.
+    await dialog.getByLabel('Gültig ab').fill(weekdayFromNow(-45));
+    await dialog.getByLabel('Wochenstunden').fill('20');
+
+    // Der Warnblock nennt Zeitraum, altes/neues Tagessoll und die Zahl der
+    // betroffenen Abwesenheiten. Er erscheint erst nach der Vorschau-Antwort.
+    await expect(dialog.getByText(/^Rückwirkende Änderung:/)).toBeVisible({ timeout: 10000 });
+    await expect(dialog.getByText(/Tagessoll .*h → .*h/)).toBeVisible();
+    await expect(dialog.getByText(/Abwesenheit\(en\) betroffen/)).toBeVisible();
+
+    // Ohne Bestätigung darf nicht gespeichert werden können.
+    const submit = dialog.getByRole('button', { name: 'Hinzufügen' });
+    await expect(submit).toBeDisabled();
+
+    // Bestätigen -> Speichern wird frei.
+    await dialog
+      .getByLabel('Ich habe die Auswirkungen geprüft und möchte trotzdem speichern')
+      .check();
+    await expect(submit).toBeEnabled();
+
+    await submit.click();
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: 'hinzugefügt' })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Der Verlauf zeigt den Gültigkeitszeitraum, nicht nur das Startdatum —
+    // das implizite Ende am Vortag war der Kern des Verständnisproblems.
+    await expect(dialog.getByText(/bis heute:/i).first()).toBeVisible({ timeout: 5000 });
 
     await dialog.getByRole('button', { name: /schließen/i }).click();
   });

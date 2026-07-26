@@ -127,6 +127,14 @@ def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -
                 _create_closure_absences(
                     db, closure, workdays, [user], current_user, delete_time_entries=False
                 )
+                # Nach JEDER Schliessung flushen: `_create_closure_absences` laedt die
+                # bereits belegten Tage per Query. Ohne Flush sieht der naechste
+                # Durchlauf die eben angelegten Zeilen nicht, und bei zwei
+                # UEBERLAPPENDEN Betriebsferien landeten zwei VACATION-Zeilen auf
+                # demselben Tag im selben Insert-Batch -> uq_tenant_user_date_type
+                # -> HTTP 500 beim Anlegen eines Mitarbeiters. Reproduzierbar von der
+                # E2E-Suite ausgeloest, die mehrere ueberlappende Schliessungen anlegt.
+                db.flush()
     except Exception:  # noqa: BLE001
         db.rollback()
         logger.warning("closure auto-enrollment failed for user %s", user.id, exc_info=True)

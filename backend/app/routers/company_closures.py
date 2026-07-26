@@ -322,6 +322,13 @@ def _create_closure_absences(
                 closure_id=closure.id,
             )
             db.add(absence)
+            # Innerhalb DIESES Aufrufs gebuchte Tage sofort mitzaehlen. `existing_keys`
+            # stammt aus einer EINMALIGEN Vorab-Query; ohne diese Zeile sieht der
+            # Duplikat-Check weiter unten die gerade angelegte, noch nicht geflushte
+            # Abwesenheit nicht — bei ueberlappenden Betriebsferien entstuenden zwei
+            # VACATION-Zeilen auf demselben Tag und der Insert-Batch scheiterte am
+            # uq_tenant_user_date_type-Constraint (HTTP 500).
+            existing_keys.add((employee.id, workday))
             created_for_employee = True
         if created_for_employee:
             affected += 1

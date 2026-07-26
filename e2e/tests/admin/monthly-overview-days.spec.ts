@@ -27,13 +27,19 @@ test.describe('Admin-Monatsübersicht: Tage statt Stunden + Krank-Opt-in (#281)'
     await expect(toggle).toBeVisible();
     await expect(toggle).not.toBeChecked();
 
-    // Default maskiert: in der Krank-Spalte steht der Platzhalter "—"
-    const desktopTable = adminPage.locator('main table').first();
-    const rowCount = await desktopTable.locator('tbody tr').count();
+    // Default maskiert: die Krank-Spalte zeigt den Platzhalter "—".
+    //
+    // Adressiert über data-testid statt über die Spaltenposition. Die
+    // Positions-Variante war zweimal brüchig: zuletzt, als 1.16.0 die Spalte
+    // "Jahresende (proj.)" ergänzte, die für Mitarbeitende ohne künftigen
+    // Freizeitausgleich ebenfalls "—" rendert — die frühere tabellenweite
+    // Prüfung "nirgends mehr ein —" schlug seitdem fehl, obwohl die
+    // DSGVO-Maskierung selbst korrekt arbeitet.
+    const sickCells = adminPage.getByTestId('sick-days-cell');
+    const rowCount = await sickCells.count();
 
     if (rowCount > 0) {
-      // mindestens eine Zelle zeigt den Masken-Platzhalter
-      await expect(desktopTable.getByText('—', { exact: true }).first()).toBeVisible();
+      await expect(sickCells.first()).toHaveText('—');
     }
 
     // Opt-in aktivieren -> Re-Fetch mit include_health_data, Krank wird eingeblendet
@@ -41,8 +47,9 @@ test.describe('Admin-Monatsübersicht: Tage statt Stunden + Krank-Opt-in (#281)'
     await expect(toggle).toBeChecked();
 
     if (rowCount > 0) {
-      // nach dem Opt-in keine "—"-Maske mehr in der Krank-Spalte (Tage-Wert sichtbar)
-      await expect(desktopTable.getByText('—', { exact: true })).toHaveCount(0);
+      // Kein Platzhalter mehr in der Krank-Spalte, stattdessen ein Tage-Wert.
+      await expect(sickCells.filter({ hasText: /^—$/ })).toHaveCount(0);
+      await expect(sickCells.first()).toHaveText(/^\d+[.,]\d$/);
     }
   });
 });
