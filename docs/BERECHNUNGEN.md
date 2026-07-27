@@ -1,6 +1,6 @@
 # Stunden- und Urlaubsberechnung – PraxisZeit
 
-> **Stand: Juli 2026 · App-Version 1.15.0**
+> **Stand: Juli 2026 · App-Version 1.17.0**
 > Diese Doku beschreibt **exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und
 > Urlaubswerte berechnet. Alle Formeln sind aus
 > [`backend/app/services/calculation_service.py`](../backend/app/services/calculation_service.py)
@@ -309,6 +309,29 @@ Stichtag identisch aus.
 > `get_monthly_target`/`get_monthly_actual`/`get_overtime_account` **ohne** `cutoff_date` —
 > diese Dokumente bleiben unverändert nach der vollen Monatslogik, damit ein §16-Beleg nicht
 > von einer Live-Anzeige abweicht.
+
+### 7.5 Voraussichtlicher Saldo zum Jahresende (#402)
+
+```
+Prognose = Saldo bis heute − future_freizeitausgleich_impact(db, user)
+```
+
+`calculation_service.future_freizeitausgleich_impact` summiert das **Tages-Soll aller
+bereits gebuchten künftigen `OVERTIME`-Abwesenheiten** ab dem Tag NACH dem Saldo-Stichtag
+(§7.4) bis zum 31.12. des laufenden Jahres — genau der Betrag, um den ein Ausgleichstag das
+Konto später senkt (bei `OVERTIME` bleibt das Soll stehen, das Ist ist 0 → Konto −=
+Tages-Soll). Angezeigt im MA-Dashboard und in der Admin-Benutzerübersicht.
+
+* Bewusst **Soll-basiert** über dieselbe Quelle `_day_soll_contribution` wie
+  `get_overtime_account`, **nicht** über das `hours`-Feld — so ist die Projektion im
+  Dezember bitgleich zum dann tatsächlich gebuchten Saldo.
+* `> cutoff_date` verhindert die Doppelzählung mit dem aktuellen (bis-heute-)Saldo.
+* Wochenenden, Feiertage (im Fix-Modus) und Tage außerhalb des Beschäftigungsfensters
+  zählen nicht; ohne `track_hours` ist die Prognose 0.
+* Im **festen Monats-Soll-Modus** (#377 Baustein 2b, §10) zählt statt des abgeleiteten
+  Tages-Solls die geplante Tagesarbeitszeit (`_fixed_planned_hours`): dort mindert ein
+  `OVERTIME`-Tag das flache Monats-Soll nicht und bringt kein Ist — der Saldo sinkt um die
+  geplanten Stunden des Tages.
 
 ---
 
@@ -864,13 +887,39 @@ Jahresübersicht als angehängte Spalte „Stundenänderungen"). Eine Änderung 
 Zeitraum steckt bereits im Startwert, eine Änderung auf denselben Wert wird nicht
 ausgewiesen.
 
-**Rückrechnung bereits gebuchter Abwesenheiten.** Ist `effective_from` rückwirkend (vor
-heute), zieht `calculation_service.retarget_absence_hours(db, user, start, end)` die
-**gespeicherten `hours`** bereits gebuchter `Absence`-Zeilen im Fenster
-`[effective_from, heute]` auf das neue Tagessoll des jeweiligen Tages nach — sonst
-widerspräche das alte `hours` (z. B. ein Krankentag mit 8 h) dem neuen Tagessoll (4 h) im
-selben §16-Beleg. Beispiel: Ein Krankentag am 10.03. trug bislang `hours = 8` (altes
-Tagessoll). Nach der Änderung auf 20 h/Woche (4 h/Tag) wird er auf `hours = 4` umgestellt.
+**Rückrechnung bereits gebuchter Abwesenheiten.** `calculation_service.retarget_absence_hours(db, user, start, end)`
+zieht die **gespeicherten `hours`** bereits gebuchter `Absence`-Zeilen im Wirkungsbereich
+der Änderung auf das neue Tagessoll des jeweiligen Tages nach — sonst widerspräche das
+alte `hours` (z. B. ein Krankentag mit 8 h) dem neuen Tagessoll (4 h) im selben
+§16-Beleg. Beispiel: Ein Krankentag am 10.03. trug bislang `hours = 8` (altes Tagessoll).
+Nach der Änderung auf 20 h/Woche (4 h/Tag) wird er auf `hours = 4` umgestellt.
+
+⚠️ **Ausgelöst wird das nicht vom Datum, sondern von den Buchungen** (Release-Review
+1.17.0; bis dahin klemmte jeder Aufrufer das Fenster selbst auf `[effective_from, heute]`
+und feuerte nur bei rückwirkendem Datum). `create_absence` hat keinerlei Zukunftssperre:
+genehmigte Urlaubsanträge, Betriebsferien und geplante Fortbildungen werden routinemäßig
+im Voraus gebucht — mit `hours` = Tagessoll ZUM Buchungszeitpunkt. Das Soll dieser Tage
+folgt einer späteren Wochenstunden-Änderung datumsbasiert automatisch, die gespeicherten
+Stunden nicht. Bei `SICK`/`TRAINING` ist das ein direkter Saldo-Fehler (dort sind die
+`hours` die Ist-Gutschrift), bei `VACATION`/`PAID_LEAVE`/`OTHER` ein in sich
+widersprüchlicher §16-Beleg. Und der REGELFALL des Dialogs ist ein Wirkungsdatum in der
+ZUKUNFT („ab dem 1.9. arbeitet sie 20 Stunden") — dort griffe ein „nur rückwirkend"-
+Trigger nie.
+
+**Der Wirkungsbereich** kommt aus `calculation_service.retarget_window(db, user, effective_from)`
+— DIE eine Stelle dafür, die Anlegen, Löschen und Vorschau gemeinsam nutzen:
+
+* **Start** = `effective_from`.
+* **Ende** = Tag VOR der nächsten Änderung mit größerem `effective_from` (was danach
+  liegt, gehört bereits einem anderen Vertragswert und darf nicht mit umgeschrieben
+  werden).
+* Gibt es keine spätere Änderung, ist der Bereich offen und wird praktisch auf die
+  **späteste bereits gebuchte Abwesenheit** begrenzt, mindestens aber auf heute bzw. auf
+  das Wirkungsdatum selbst (damit das Fenster auch ohne Abwesenheiten einen sinnvollen
+  Anzeigewert hat).
+* `RetargetWindow.has_absences` (= es existiert eine Abwesenheit ≠ `OVERTIME` im Bereich)
+  ist der Auslöser. `OVERTIME` bleibt schon bei der Suche außen vor, damit der Trigger
+  nicht für Zeilen feuert, die ohnehin nie angefasst würden.
 
 Bewusst ausgenommen:
 
