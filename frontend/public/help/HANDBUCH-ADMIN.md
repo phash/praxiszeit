@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.6 | Stand: Juli 2026 (für PraxisZeit 1.15.0)**
+**Version 2.6 | Stand: Juli 2026 (für PraxisZeit 1.17.0)**
 
 ---
 
@@ -246,9 +246,9 @@ So ändern Sie die Wochenstunden (z. B. bei einer Teilzeitumstellung):
 
 Der Verlauf im Dialog zeigt jeden Eintrag als **„ab … bis …"**: Die vorherige Stundenzahl endet automatisch am Vortag des neuen Gültigkeitsdatums, der aktuellste Eintrag läuft „bis heute". So ist auf einen Blick erkennbar, in welchem Zeitraum welche Stundenzahl galt.
 
-**Liegt das gewählte Datum in der Vergangenheit**, zeigt der Dialog vor dem Speichern einen Hinweis mit dem betroffenen Zeitraum, dem alten und dem neuen Tagessoll sowie der Anzahl betroffener Abwesenheiten. Gespeichert wird erst nach ausdrücklicher Bestätigung dieses Hinweises. Berührt der Zeitraum ein bereits **abgeschlossenes Jahr**, weist der Dialog zusätzlich darauf hin – der eingefrorene Jahresabschluss wird dadurch **nicht** automatisch neu berechnet, sondern nur gemeldet; eine eventuelle Anpassung des Übertrags muss manuell geprüft werden.
+**Liegt das gewählte Datum in der Vergangenheit** – oder sind im Wirkungszeitraum bereits Abwesenheiten gebucht –, zeigt der Dialog vor dem Speichern einen Hinweis mit dem betroffenen Zeitraum, dem alten und dem neuen Tagessoll sowie der Anzahl betroffener Abwesenheiten. Gespeichert wird erst nach ausdrücklicher Bestätigung dieses Hinweises. Berührt der Zeitraum ein bereits **abgeschlossenes Jahr**, weist der Dialog zusätzlich darauf hin – der eingefrorene Jahresabschluss wird dadurch **nicht** automatisch neu berechnet, sondern nur gemeldet; eine eventuelle Anpassung des Übertrags muss manuell geprüft werden.
 
-Beim Speichern einer rückwirkenden Änderung werden die **Stunden bereits gebuchter Abwesenheiten** in diesem Zeitraum auf das neue Tagessoll umgestellt (ein Halbtag entsprechend zur Hälfte). Ausgenommen davon sind **Überstundenausgleich** (dort zählen die beantragten Stunden weiter) und **Mitarbeitende ohne Stundenzählung**. Die **Urlaubstage selbst ändern sich dabei nie** – Urlaub wird nach dem Tagesprinzip geführt (1 freier Arbeitstag = 1 Urlaubstag), nicht nach Stunden.
+Beim Speichern werden die **Stunden bereits gebuchter Abwesenheiten** im Wirkungszeitraum auf das neue Tagessoll umgestellt (ein Halbtag entsprechend zur Hälfte). Das gilt für rückwirkende **und** für zukunftsdatierte Änderungen: Genehmigter Urlaub, Betriebsferien und geplante Fortbildungen sind typischerweise im Voraus gebucht und tragen die Stunden des alten Vertrags – ausschlaggebend ist also nicht das Datum, sondern ob im Zeitraum überhaupt etwas gebucht ist. Der Wirkungszeitraum reicht vom Gültig-ab-Datum bis zum Tag vor der nächsten Stundenänderung; gibt es keine spätere Änderung, bis zur letzten gebuchten Abwesenheit (mindestens bis heute). Ausgenommen sind **Überstundenausgleich** (dort zählen die beantragten Stunden weiter) und **Mitarbeitende ohne Stundenzählung**. Die **Urlaubstage selbst ändern sich dabei nie** – Urlaub wird nach dem Tagesprinzip geführt (1 freier Arbeitstag = 1 Urlaubstag), nicht nach Stunden.
 
 Wird eine Stundenänderung wieder **gelöscht**, rechnet das System die Abwesenheits-Stunden im betroffenen Zeitraum ebenso zurück. Die **früheste** erfasste Änderung eines Mitarbeiters lässt sich dabei nicht löschen, solange spätere Änderungen bestehen – sie hält den davor gültigen Wert fest. Soll die Historie komplett zurückgesetzt werden, zuerst die späteren Einträge löschen.
 
@@ -858,7 +858,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.15.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.17.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -915,6 +915,8 @@ PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll –
 
 **Monatssaldo = Monats-Ist − Monats-Soll.** Das kumulierte Überstundenkonto summiert die Monatssalden fortlaufend und startet beim **Jahresübertrag** (Carryover) des Jahres. Die Spalte „Überstunden (JTD)" in der Benutzerübersicht zeigt den Saldo vom 1. Januar bis heute zzgl. Carryover.
 
+**Voraussichtlicher Saldo zum Jahresende:** Daneben steht, wie das Konto zum 31.12. voraussichtlich aussieht – der Saldo bis heute abzüglich der Stunden aller bereits gebuchten künftigen **Überstundenausgleich**-Tage. Nur Ausgleichstage senken das Konto; Urlaub, Krankheit und Fortbildung sind saldo-neutral und fließen deshalb nicht in die Vorschau ein. Dieselbe Kennzahl sehen Mitarbeitende auf ihrem Dashboard.
+
 ### 18.7 Urlaubskonto (Tagesprinzip)
 
 Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip § 3 BUrlG). **Resturlaub = Anspruch − Verbrauch.**
@@ -938,7 +940,7 @@ Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip
 - **Mitarbeiter ohne Stundenzählung (leitende Angestellte):** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394).
 - **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
-- **Rückwirkende Stundenänderung:** alte Monate rechnen mit dem damals gültigen Wochensoll (Stundenhistorie / Wirkungsdatum).
+- **Stundenänderung (rückwirkend oder zukunftsdatiert):** alte Monate rechnen mit dem damals gültigen Wochensoll (Stundenhistorie / Gültig-ab-Datum). Zusätzlich werden die Stunden bereits gebuchter Abwesenheiten im Wirkungszeitraum auf das neue Tagessoll umgestellt – auch bei einem Datum in der Zukunft (Ausnahme: Überstundenausgleich, MA ohne Stundenzählung); Urlaubs**tage** bleiben unberührt. Details in [Abschnitt 6 → „Stundenänderungen"](#6-benutzer-verwalten).
 - **Betriebsferien:** je nach Verrechnung Urlaubsabzug oder bezahlte Freistellung; bei aktivem Schalter „Überzählige Betriebsferien als Überstundenabbau" zuerst Urlaub, dann Überstundenausgleich (kein Minus-Urlaub) – Details in [Abschnitt 11](#11-betriebsferien-verwalten).
 - **Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b):** für MA mit aktiviertem Modus gilt statt 18.4/18.5 ein **festes** Monats-Soll (= vereinbarte Monatsarbeitszeit, kalendertag-pro-rata bei Ein-/Austritt); Feiertag/Urlaub/bezahlte Freistellung auf einem geplanten Tag schreiben die geplanten Stunden dem Ist gut, unbezahlte Fehltage mindern stattdessen das feste Soll. Details, Voraussetzungen und die bekannte Fehlmonat-Grenze in [Abschnitt 13 → „Feste Monatsarbeitszeit"](#13-einstellungen).
 
@@ -1031,4 +1033,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juli 2026 (für PraxisZeit 1.15.0)*
+*Stand: Juli 2026 (für PraxisZeit 1.17.0)*
