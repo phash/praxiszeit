@@ -13,6 +13,7 @@ from app.services.calculation_service import get_weekly_hours_for_date, get_dail
 from app.services.holiday_service import is_holiday
 from app.services.timezone_service import today_local, now_local
 from sqlalchemy import extract, and_
+from app.services.settings_service import SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD, get_bool_setting
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -232,10 +233,28 @@ def get_overtime_account(
     # #402: bereits feststehender künftiger Freizeitausgleich + projizierter
     # Jahresende-Saldo. projected nur setzen, wenn künftiger Ausgleich existiert
     # (sonst None → Frontend blendet die Zeile aus).
-    future_comp = calculation_service.future_freizeitausgleich_impact(
-        db, current_user, cutoff_date=cutoff
+    
+    # Die Berechnung und Anzeige der Jahresende-Projektion kann der Tenant
+    # für das Mitarbeiter-Dashboard deaktivieren.
+    show_year_end_projection = get_bool_setting(
+        db,
+        current_user.tenant_id,
+        SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD,
+        default=True,
     )
-    projected = float(current_balance) - float(future_comp) if future_comp > 0 else None
+
+    future_comp = Decimal("0")
+    projected = None
+
+    if show_year_end_projection:
+        future_comp = calculation_service.future_freizeitausgleich_impact(
+            db,
+            current_user,
+            cutoff_date=cutoff,
+        )
+
+        if future_comp > 0:
+            projected = float(current_balance) - float(future_comp)
 
     return OvertimeAccount(
         current_balance=current_balance,

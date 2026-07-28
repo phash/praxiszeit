@@ -9,6 +9,10 @@ from app.middleware.auth import require_admin
 from app.routers.admin_helpers import SettingUpdate
 from app.services import special_days_service, type_colors_service
 from typing import Dict
+from app.services.settings_service import (
+    SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD,
+    SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -27,10 +31,12 @@ _ALLOWED_SETTINGS = {
     "shift_planning_weekdays",  # #371 konfigurierbare Wochentage (CSV 0=Mo…6=So, Default Mo–Fr)
     "closure_overtime_after_vacation",  # #314 Betriebsferien > Urlaub → Überstundenabbau (Default aus)
     "child_sick_days_default",  # #376 Kind-krank-Default-Anspruch/Jahr (int, Default 15)
+    SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD,
+    SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD,
 } | special_days_service.SETTING_KEYS
 
 # Settings whose value must be a boolean ("true"/"false").
-_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "onboarding_enabled", "shift_planning_enabled", "closure_overtime_after_vacation"}
+_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "onboarding_enabled", "shift_planning_enabled", "closure_overtime_after_vacation", SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, }
 
 
 @router.get("/settings")
