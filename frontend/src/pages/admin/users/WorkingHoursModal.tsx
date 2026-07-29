@@ -829,7 +829,10 @@ export default function WorkingHoursModal({
                                   <th scope="col" className="text-left font-medium">Auswirkung</th>
                                   <th scope="col" className="text-right font-medium">bisher</th>
                                   <th scope="col" className="text-right font-medium">neu</th>
-                                  <th scope="col" className="text-right font-medium">Δ</th>
+                                  <th scope="col" className="text-right font-medium">
+                                    <span aria-hidden="true">Δ</span>
+                                    <span className="sr-only">Änderung</span>
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody>
