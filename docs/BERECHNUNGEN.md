@@ -54,10 +54,10 @@ Diese Felder am `User` steuern die gesamte Berechnung:
 
 | Feld | Bedeutung | Beispiel VZ | Beispiel TZ |
 |------|-----------|-------------|-------------|
-| `weekly_hours` | Wochensoll in Stunden | `40` | `20` |
-| `work_days_per_week` | Arbeitstage/Woche (Divisor fürs Tagessoll!) | `5` | `3` |
-| `use_daily_schedule` | individueller Tagesplan statt gleichmäßiger Verteilung | `false` | `true` |
-| `hours_monday … hours_friday` | Stunden je Wochentag (nur bei `use_daily_schedule`) | – | `8/8/8/0/0` |
+| `weekly_hours` | Wochensoll in Stunden (historisiert, s. u.) | `40` | `20` |
+| `work_days_per_week` | Arbeitstage/Woche (Divisor fürs Tagessoll bei gleichmäßiger Verteilung; historisiert, s. u.) | `5` | `3` |
+| `use_daily_schedule` | individueller Tagesplan statt gleichmäßiger Verteilung (historisiert, s. u.) | `false` | `true` |
+| `hours_monday … hours_friday` | Stunden je Wochentag (nur bei `use_daily_schedule`; historisiert, s. u.) | – | `8/8/8/0/0` |
 | `vacation_days` | Jahres-Urlaubsanspruch in **Tagen** | `30` | `18` |
 | `track_hours` | Soll/Ist-Zählung aktiv? (`false` = leitende Angestellte) | `true` | `true` |
 | `first_work_day` / `last_work_day` | Eintritt/Austritt (Soll/Urlaub anteilig) | optional | optional |
@@ -68,9 +68,15 @@ Diese Felder am `User` steuern die gesamte Berechnung:
 | `use_fixed_monthly_target` | Festes Monats-Soll statt Tages-Summe (Minijob-Baustein 2b, §10.5, Default `false`) | `false` | `false` |
 | `child_sick_days_per_year` | Persönlicher Kind-krank-Jahresanspruch (§45 SGB V, überschreibt den Tenant-Default) | – | – |
 
-> **Historie:** Ändert sich das Wochensoll mitten im Jahr (Teilzeit-Wechsel), wird ein
-> `WorkingHoursChange` mit `effective_from` angelegt. `get_weekly_hours_for_date` liefert für
-> jeden Tag den damals gültigen Wert — alte Monate bleiben korrekt, neue rechnen mit dem neuen Soll.
+> **Historie (#415/#431):** Ändert sich der Vertragszustand mitten im Jahr — Wochenstunden,
+> Arbeitstage/Woche, der Wechsel zwischen gleichmäßiger Verteilung und individuellem
+> Tagesplan, oder die Tagesstunden selbst —, wird ein `WorkingHoursChange` mit
+> `effective_from` angelegt. Seit #431 trägt diese eine Zeile den **vollständigen
+> Vertrags-Snapshot** (alle vier Felder gemeinsam), nicht mehr nur `weekly_hours`.
+> `get_schedule_for_date(db, user, datum)` liefert für jeden Tag den damals gültigen
+> Snapshot — `get_weekly_hours_for_date` ist seither ein dünner Wrapper darüber. Alte
+> Monate bleiben korrekt, neue rechnen mit dem neuen Vertragszustand — gleichermaßen für
+> gleichmäßige Verteilung **und** individuellen Tagesplan.
 
 ---
 
@@ -94,12 +100,19 @@ Tagessoll = weekly_hours / work_days_per_week
 
 ### 3.2 Individueller Tagesplan (`use_daily_schedule = true`)
 
-`get_daily_target_for_date(user, datum)` liest die für diesen **Wochentag** konfigurierten
-Stunden (`hours_monday … hours_friday`). Beispiel `8/8/8/0/0`:
+`get_daily_target_for_date(user, datum, schedule)` liest aus dem übergebenen
+**Vertrags-Snapshot** (`schedule`, aufgelöst über `get_schedule_for_date(db, user, datum)`,
+#431) die für diesen **Wochentag** konfigurierten Stunden (`hours_monday … hours_friday`).
+Der Snapshot ist ein Pflichtparameter — er liefert für vergangene Daten den damals
+gültigen Tagesplan, nicht den heute hinterlegten. Beispiel `8/8/8/0/0`:
 
 | Wochentag | Mo | Di | Mi | Do | Fr | Sa/So |
 |---|---|---|---|---|---|---|
 | Tagessoll | 8 | 8 | 8 | 0 | 0 | 0 |
+
+> Wie die gleichmäßige Verteilung (§3.1) lässt sich auch dieser Tagesplan über
+> „Wochenstunden anpassen…" mit Wirkungsdatum historisch ändern — inkl. Rückrechnung
+> bereits gebuchter Abwesenheiten. Siehe TZ-F in §14.
 
 ### 3.3 Allgemeine Regeln
 
@@ -429,7 +442,8 @@ per Flag abwählen).
 
 - Wochenenden
 - gesetzlichen Feiertagen
-- individuell freien Wochentagen (Teilzeit-Tagesplan, Tagessoll an diesem Wochentag = 0)
+- individuell freien Wochentagen (Teilzeit-Tagesplan, Tagessoll an diesem Wochentag = 0 —
+  zum Datum der Schließung historisch aufgelöst, #431)
 - als `free` konfigurierten Sondertagen (24./31.12. — ein soll-freier Tag darf keinen
   Urlaubstag kosten)
 - Tagen außerhalb `[first_work_day, last_work_day]` (#298 — künftige oder bereits
@@ -849,6 +863,9 @@ used_hours (informativ) = 10 + 4 = 14,00 h
 > Lehre: **Tage sind maßgeblich, Stunden nur informativ.** Bei ungleichmäßigem Tagesplan kann
 > `used_hours` von `Tage × Ø-Tagessoll` abweichen — das ist gewollt (Tagesprinzip §3 BUrlG).
 
+> Seit #431 lässt sich auch dieser Tagesplan datiert ändern (Wirkungsdatum, mit
+> Rückrechnung gebuchter Abwesenheiten je Wochentag) — siehe TZ-F.
+
 ### TZ-D: Unterjähriger Eintritt (Pro-rata-Budget)
 
 TZ-B-Profil (`vacation_days = 18`), Eintritt **15.04.**:
@@ -886,6 +903,17 @@ dieselbe Quelle für Bildschirm (Admin-Dashboard) und Datei-Export (Excel, ODS, 
 Jahresübersicht als angehängte Spalte „Stundenänderungen"). Eine Änderung *vor* dem
 Zeitraum steckt bereits im Startwert, eine Änderung auf denselben Wert wird nicht
 ausgewiesen.
+
+> ⚠️ **Fallstrick — eine reine Arbeitstage-Änderung ist im Bericht unsichtbar.** Seit #431
+> lässt sich im Dialog bei gleichmäßiger Verteilung auch **„Arbeitstage pro Woche"** mit
+> Wirkungsdatum ändern, unabhängig von den Wochenstunden. Bleiben die Wochenstunden dabei
+> gleich (z. B. 40 h auf 5 Tage → 40 h auf 4 Tage), zeigt der Bericht denselben Text wie
+> vorher — „ab 01.03.2026: 40,0 Std/Woche" nennt nur die Wochenstunden, keine
+> Arbeitstage-Zahl. Das **Tagessoll** verschiebt sich dabei trotzdem still (8 h/Tag →
+> 10 h/Tag), weil `Tagessoll = weekly_hours ÷ work_days_per_week` (§3.1). Verlassen Sie
+> sich beim Prüfen einer Änderung deshalb **nicht** auf den Wochenstunden-Text allein,
+> sondern auf die Tagessoll-Vorschau im Dialog (§ „Wochenstunden anpassen…", zeigt
+> Mo–Fr alt→neu).
 
 **Rückrechnung bereits gebuchter Abwesenheiten.** `calculation_service.retarget_absence_hours(db, user, start, end)`
 zieht die **gespeicherten `hours`** bereits gebuchter `Absence`-Zeilen im Wirkungsbereich
@@ -948,10 +976,14 @@ Folgejahr), wird **nicht** automatisch neu gerechnet — nur eine Warnung zurüc
 dasselbe Fenster mit dem dann gültigen Wert zurück (derselbe Helper, jetzt gegen den
 vorherigen Wert) und **meldet denselben Jahresabschluss-Hinweis** — mit Warnung `200` +
 `{"warning": …}`, ohne Warnung `204` (Muster von `delete_closure` /
-`cancel_vacation_request_as_admin`). Mitarbeitende mit individuellem Tagesplan sind vom
-Zurückrechnen ausgenommen: ihr Tagessoll kommt aus `hours_monday…friday`, eine
-`WorkingHoursChange` kann es weder setzen noch verschieben — es gibt nichts
-zurückzurechnen. Die **früheste** Änderung eines Mitarbeiters lässt sich nicht löschen,
+`cancel_vacation_request_as_admin`). Mitarbeitende mit individuellem Tagesplan sind seit
+#431 **nicht mehr** vom Zurückrechnen ausgenommen: ihr Tagessoll kommt jetzt ebenfalls aus
+der Historien-Zeile (`get_schedule_for_date`), eine `WorkingHoursChange` setzt und
+verschiebt es also genauso wie bei gleichmäßiger Verteilung. Ändert eine Änderung nur
+einen einzelnen Wochentag (z. B. nur den Mittwochswert), überspringt die
+Gleichheitsprüfung in `retarget_absence_hours` die übrigen Wochentage von selbst — es
+braucht dafür keinen eigenen Wochentagsfilter, nur Mittwochs-Abwesenheiten im Fenster
+werden umgerechnet. Die **früheste** Änderung eines Mitarbeiters lässt sich nicht löschen,
 solange spätere existieren — sie ist die einzige Stelle, an der der davor gültige Wert
 noch steht; ohne sie hätte `retarget_absence_hours` beim Löschen einer späteren Änderung
 keinen validen Rückfallwert mehr zum Zurückrechnen.
@@ -963,19 +995,60 @@ Der einzige Schreibweg ist `POST .../working-hours-changes` mit `effective_from`
 `POST /admin/users` (Anlegen) darf `weekly_hours` weiterhin setzen — dort gibt es noch
 keine Historie, der Startwert muss direkt gesetzt werden können.
 
-Ausgenommen von der PUT-Sperre sind Mitarbeitende mit **individuellem Tagesplan**
-(`use_daily_schedule = true`): für sie lehnt `POST .../working-hours-changes` ab, es gibt
-also gar keine Historie — und `weekly_hours` treibt bei ihnen kein Soll (das kommt aus
-`hours_monday…friday`), sondern ist reine Vertragsangabe für Berichtsköpfe, MiLoG-Ableitung
-und Auswertungen. Sie bleibt für sie direkt editierbar. Geprüft wird der **effektive**
-Zustand nach dem Update: wer den Tagesplan im selben `PUT` abschaltet, fällt wieder unter
-die Sperre.
+Seit #431 gilt dieselbe Sperre für **alle acht** historisierten Felder, ohne Ausnahme:
+`weekly_hours`, `use_daily_schedule`, `work_days_per_week` und `hours_monday … hours_friday`.
+`PUT /admin/users/{id}` lehnt den Request mit 400 ab, sobald **eines** dieser Felder im
+Payload steckt. Bis 1.17.0 lehnte der Stundenverlauf-Endpoint eine Zeile für Mitarbeitende
+mit individuellem Tagesplan ab (`use_daily_schedule = true`) — für sie gab es also gar
+keine Historie, und die PUT-Sperre machte deshalb eine Ausnahme: `weekly_hours` blieb bei
+ihnen direkt editierbar, weil es keinen anderen Schreibweg gab. Seit #431 nimmt der
+Stundenverlauf-Endpoint auch ihre Änderungen an (vollständiger Vertrags-Snapshot statt
+Einzelfeld), also entfällt die Ausnahme ersatzlos — Tagesplan-Mitarbeitende ändern ihren
+Modus, ihre Tageswerte, ihre Arbeitstage und ihre Wochenstunden jetzt genauso über
+„Wochenstunden anpassen…" mit Wirkungsdatum wie alle anderen.
 
 Die automatische **Basis-Zeile** vor der allerersten Änderung (sie friert den bis dahin
 gültigen Wert ein) datiert auf das Früheste aus `first_work_day`, der ältesten vorhandenen
 Buchung (`TimeEntry`/`Absence`) und dem Vortag der Änderung. `first_work_day` allein
 genügt nicht — es ist nullable, und ohne die anderen Kandidaten deckte die Basis-Zeile nur
 einen einzigen Tag ab.
+
+### TZ-F: Rückwirkende Tagesplan-Änderung (#431)
+
+MA mit individuellem Tagesplan **Mo 8 h · Di 8 h · Mi 8 h · Do 0 · Fr 0** (24 h auf
+3 Arbeitstage) hat am Mittwoch, den 04.03.2026, einen ganzen Krankheitstag gebucht
+(`hours = 8,00`, Tagessoll an dem Tag zum Buchungszeitpunkt).
+
+Am 15.03.2026 ändert die Praxis **nur den Mittwochswert** auf 4 h (Mo/Di bleiben 8 h,
+Do/Fr bleiben 0):
+
+```
+Alter Tagesplan (bis 14.03.2026): Mo 8 / Di 8 / Mi 8 / Do 0 / Fr 0 = 24,0 h/Woche
+Neuer Tagesplan (ab 15.03.2026):  Mo 8 / Di 8 / Mi 4 / Do 0 / Fr 0 = 20,0 h/Woche
+```
+
+Weil der Krankentag am 04.03.2026 **vor** dem Wirkungsdatum liegt, bleibt sein Tagessoll
+bei 8 h — die Änderung wirkt hier nicht (das Fenster beginnt am 15.03.2026). Ein zweiter
+Krankheitstag am **18.03.2026** (ebenfalls Mittwoch, im Wirkungsbereich) trug bislang
+ebenfalls `hours = 8,00`. Nach der Änderung wird **nur er** auf `hours = 4,00`
+umgerechnet — ein Montags- oder Dienstags-Krankheitstag im selben Fenster bliebe
+unangetastet, weil sich deren Tagessoll (8 h) nicht geändert hat. `retarget_absence_hours`
+prüft pro gebuchtem Tag, ob sich **sein** historisch aufgelöstes Tagessoll geändert hat —
+ein eigener Wochentagsfilter ist dafür nicht nötig, die bestehende Gleichheitsprüfung
+überspringt unveränderte Tage von selbst.
+
+> ⚠️ **Fallstrick — eine Arbeitstage-Verschiebung ändert den Urlaubsverbrauch, nicht immer
+> das Tagessoll.** Verschiebt eine Änderung Stunden von einem Wochentag auf einen anderen,
+> ohne die Wochensumme zu ändern (z. B. Mo 8 / Di 8 / Mi 8 / Do 0 / Fr 0 → Mo 8 / Di 8 /
+> Mi 0 / Do 8 / Fr 0, weiterhin 24 h auf 3 Arbeitstage), bleibt das Tagessoll von Montag
+> und Dienstag unverändert. War am (jetzt wegfallenden) Mittwoch bereits ein ganzer
+> Urlaubstag gebucht, zählt dieser Tag rückwirkend **nicht mehr als Urlaubsverbrauch** —
+> sein Tagessoll ist ab dem Wirkungsdatum 0, und `absence_days`/`get_vacation_account`
+> zählen nur Tage mit Tagessoll > 0 (§14 TZ-B/TZ-C). Der bereits gespeicherte
+> `Absence.hours`-Wert bleibt dabei unverändert stehen (`retarget_absence_hours`
+> überspringt Tage mit neuem Tagessoll 0, statt sie auf 0 zu setzen) — nur der
+> **Urlaubsverbrauch** ändert sich, nicht die Stundenzahl. Genau das zeigt die
+> „Urlaub {Jahr}: bisher/neu"-Zeile der Vorschau vor dem Speichern.
 
 ---
 
@@ -1030,7 +1103,8 @@ Lohndaten in PraxisZeit).
 
 | Funktion | Datei |
 |---|---|
-| `get_weekly_hours_for_date`, `get_daily_target(_for_date)` | `services/calculation_service.py` |
+| `get_schedule_for_date` (Vertrags-Snapshot, #431), `get_weekly_hours_for_date`, `get_daily_target(_for_date)` | `services/calculation_service.py` |
+| `retarget_window`, `retarget_absence_hours` (Rückrechnung gebuchter Abwesenheiten, #415/#431) | `services/calculation_service.py` |
 | `get_range_target`/`_actual`, `get_monthly_target` / `_actual` / `_balance` | `services/calculation_service.py` |
 | `get_soll_cutoff_date` (#313 Saldo-Stichtag) | `services/calculation_service.py` |
 | `get_overtime_account`, `get_overtime_history[_detailed]`, `get_ytd_summary` | `services/calculation_service.py` |

@@ -984,8 +984,11 @@ export default function WorkingHoursModal({
               <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
                   <strong>Hinweis:</strong> Die Berechnungen von Soll-Stunden berücksichtigen automatisch die
-                  historischen Werte. Wenn z.B. jemand ab 15.03. von 20h auf 30h wechselt, werden für den
-                  März die ersten 14 Tage mit 20h und ab dem 15. mit 30h berechnet.
+                  historischen Werte — bei „Gleichmäßig" <strong>und</strong> bei „Nach Tagen", auch über einen
+                  Moduswechsel hinweg. Wenn z.B. jemand ab 15.03. von 20h auf 30h wechselt, werden für den März
+                  die ersten 14 Tage mit 20h und ab dem 15. mit 30h berechnet. Bei „Nach Tagen" gilt das pro
+                  Wochentag: Ändert sich nur der Mittwochswert, rechnen nur die Mittwoch-Zeilen mit dem neuen
+                  Wert.
                 </p>
               </div>
             </div>
