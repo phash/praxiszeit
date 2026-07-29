@@ -127,16 +127,11 @@ def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg, wh
 def _de_hours(value) -> str:
     """'30,0' — deutsche Dezimaldarstellung fuer eine Stundenzahl.
 
-    ACHTUNG, bekannte Grenze (seit #415, NICHT in #431 entstanden und bewusst
-    nicht mitgeaendert, weil die Formulierung woertlich eingefroren ist): eine
-    Nachkommastelle rundet, und Python rundet ``%.1f`` half-even, waehrend der
-    Frontend-Zwilling ``toFixed(1)`` kaufmaennisch rundet. Bei einem Wert auf
-    ``.25`` (z. B. 38,25 h) schreibt die Datei „38,2", der Bildschirm „38,3".
-    Erreichbar wurde das erst, seit ``working_hours_changes.weekly_hours``
-    ``Numeric(4,2)`` ist. Der Tagesplan-Zweig umgeht das ueber
-    :func:`_de_hours_exact` (zwei Nachkommastellen ⇒ es wird gar nicht mehr
-    gerundet); den gleichmaessigen Zweig ebenfalls darauf umzustellen waere die
-    saubere Loesung, aendert aber den Wortlaut bestehender Berichte.
+    NICHT mehr fuer die #415-Historie verwendet (dort steht :func:`_de_hours_exact`),
+    aber weiterhin fuer andere Stundenausgaben. Achtung beim Wiederverwenden: eine
+    Nachkommastelle rundet, und Python rundet ``%.1f`` half-even, waehrend
+    JavaScript ``toFixed(1)`` kaufmaennisch rundet — jeder Wert auf ``.25`` faellt
+    zwischen Backend und Frontend auseinander (38,25 → „38,2" hier, „38,3" dort).
     """
     return f"{float(value):.1f}".replace(".", ",")
 
@@ -144,18 +139,24 @@ def _de_hours(value) -> str:
 def _de_hours_exact(value) -> str:
     """'8,0' / '8,5' / '8,25' — Stundenwert in DE-Schreibweise, verlustfrei.
 
-    Die Tagesstunden und die daraus gebildete Wochensumme sind ``Numeric(4,2)``
-    (#431 hat den Spaltentyp genau dafuer verbreitert): 8,25 h ist ein realer
-    Vertragswert. ``_de_hours`` (eine Nachkommastelle) machte daraus „8,2",
-    waehrend der Frontend-Zwilling (``toFixed(1)``, kaufmaennisch statt
-    half-even) „8,3" schriebe — Bildschirm und Datei wuerden sich widersprechen.
-    Bei zwei Nachkommastellen rundet fuer diesen Spaltentyp gar nichts mehr, die
-    beiden Seiten koennen also nicht auseinanderlaufen. Eine belanglose zweite
-    Null faellt weg ('8,00' → '8,0').
+    DIE Zahlformatierung der #415/#431-Vertragshistorie, in BEIDEN Modi.
 
-    Bewusst NUR im Tagesplan-Zweig verwendet: die #415-Formulierung fuer
-    Mitarbeitende ohne Tagesplan bleibt woertlich (und damit auch ihre
-    Rundung) unveraendert.
+    Die Tagesstunden und die daraus gebildete Wochensumme sind ``Numeric(4,2)``
+    (#431 hat den Spaltentyp genau dafuer verbreitert, und
+    ``WorkingHoursChangeCreate`` begrenzt nur ``0..60`` ohne Nachkommastellen-
+    Limit): 8,25 h ist ein realer Vertragswert. Mit einer Nachkommastelle
+    (:func:`_de_hours`) schriebe die Datei „8,2", der Frontend-Zwilling
+    ``toFixed(1)`` dagegen „8,3" — Bildschirm und Datei wuerden sich
+    widersprechen. Bei zwei Nachkommastellen rundet fuer diesen Spaltentyp gar
+    nichts mehr, die beiden Seiten koennen also nicht auseinanderlaufen.
+    Eine belanglose zweite Null faellt weg ('8,00' → '8,0').
+
+    Byte-Identitaet zu #415: fuer JEDEN Wert mit hoechstens einer Nachkommastelle
+    — also jeden, den ``Numeric(4,1)`` vor diesem Branch ueberhaupt speichern
+    konnte — liefert diese Funktion exakt dieselbe Zeichenkette wie
+    :func:`_de_hours`. Der Wechsel aendert nur die Werte, die vorher falsch
+    (bzw. zwischen den beiden Seiten uneinig) waren. Nachgewiesen in
+    ``test_415_working_hours_history_reports.py::TestDeHoursExactIsAByteIdenticalUpgrade``.
     """
     text = f"{float(value):.2f}"
     if text.endswith("0"):
@@ -229,7 +230,12 @@ def _format_segment_change(segment, compact: bool = False) -> str:
             return f"{prefix}{plan} = {total(segment.weekly_hours)} h/Woche"
         # Kein einziger Tageswert → auf die gleichmaessige Formulierung
         # zurueckfallen, statt einen leeren Satz zu schreiben.
-    return f"{prefix}{_de_hours(segment.weekly_hours)} Std/Woche"
+    # Auch der gleichmaessige Zweig formatiert verlustfrei (`_de_hours_exact`):
+    # fuer jeden vor diesem Branch speicherbaren Wert ist das zeichengleich zu
+    # #415, und nur so sagen Datei und Bildschirm bei 38,25 h dasselbe.
+    # `compact` wirkt hier NICHT — die #415-Formulierung bleibt in der PDF-Meta
+    # woertlich (`_de_hours_exact`, nicht `_de_hours_compact`).
+    return f"{prefix}{_de_hours_exact(segment.weekly_hours)} Std/Woche"
 
 
 def escape_pdf_text(value):
@@ -1563,7 +1569,12 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         # #415-Formulierung fuer alle uebrigen Mitarbeitenden bleibt woertlich.
         _wh_history = format_weekly_hours_history(_wh_segments, compact=True)
         _wh_flag = f" | Stunden\u00e4nderung: {_wh_history}" if _wh_history else ""
-        meta_label = f"{user.first_name} {user.last_name}  \u2013  {float(_wh_start):.1f}h/Woche{_wh_flag}{arbzg_flag}{night_flag}"
+        # #431: der Startwert lief bis hierher ueber `f"{\u2026:.1f}"` \u2014 mit
+        # Dezimal-PUNKT und gerundet. Bei einer Tagesplan-Summe von 17,75 stand
+        # dann \u201e\u2026 17.8h/Woche | Stundenaenderung: \u2026 = 17,75 h/Woche" in EINEM
+        # Satz: zwei Schreibweisen und zwei Werte fuer dieselbe Zahl. Jetzt
+        # dieselbe verlustfreie deutsche Formatierung wie der Rest der Zeile.
+        meta_label = f"{user.first_name} {user.last_name}  \u2013  {_de_hours_exact(_wh_start)}h/Woche{_wh_flag}{arbzg_flag}{night_flag}"
         story.append(Paragraph(escape_pdf_text(meta_label), ParagraphStyle('meta', fontName='Helvetica', fontSize=8, leading=10,
                                                            textColor=colors.HexColor('#374151'))))
         story.append(Spacer(1, 2 * mm))

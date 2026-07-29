@@ -72,13 +72,18 @@ const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
 
 /**
  * #431: '8,0' / '8,5' / '8,25' — verlustfreie DE-Schreibweise eines
- * Stundenwerts. Zwilling von `export_service._de_hours_exact`.
+ * Stundenwerts. Zwilling von `export_service._de_hours_exact`, und die
+ * Zahlformatierung der Vertragshistorie in BEIDEN Modi.
  *
- * Tagesstunden und ihre Summe sind `Numeric(4,2)`: 8,25 h ist ein realer
+ * Wochen- und Tagesstunden sind `Numeric(4,2)`: 8,25 h ist ein realer
  * Vertragswert. Auf eine Nachkommastelle gerundet stünde hier '8,3', im Backend
  * dagegen '8,2' (Python rundet `%.1f` half-even, `toFixed` kaufmännisch) —
  * Bildschirm und Datei sagten Verschiedenes. Bei zwei Nachkommastellen rundet
  * für diesen Spaltentyp gar nichts mehr.
+ *
+ * Für jeden Wert mit höchstens einer Nachkommastelle — also jeden, den die
+ * Spalte vor #431 überhaupt speichern konnte — ist das Ergebnis zeichengleich
+ * zur früheren `toFixed(1)`-Fassung.
  */
 function deHoursExact(value: number): string {
   if (!Number.isFinite(value)) return '?';
@@ -133,10 +138,10 @@ export function formatWeeklyHoursChanges(
         if (plan) return `${prefix}${plan} = ${deHoursExact(c.weekly_hours)} h/Woche`;
         // Kein einziger Tageswert → gleichmäßige Formulierung statt leerem Satz.
       }
-      const hours = Number.isFinite(c.weekly_hours)
-        ? c.weekly_hours.toFixed(1).replace('.', ',')
-        : '?';
-      return `${prefix}${hours} Std/Woche`;
+      // Auch hier verlustfrei (nicht `toFixed(1)`): für jeden vor #431
+      // speicherbaren Wert zeichengleich zu #415, und nur so sagt der
+      // Bildschirm bei 38,25 h dasselbe wie der Datei-Export.
+      return `${prefix}${deHoursExact(c.weekly_hours)} Std/Woche`;
     })
     .join('; ');
 }

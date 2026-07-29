@@ -121,6 +121,29 @@ describe('formatWeeklyHoursChanges (#415)', () => {
     ).toBe('ab 15.03.2026: 30,0 Std/Woche');
   });
 
+  it('keeps quarter hours in the uniform wording, too', () => {
+    // Zwilling: TestDeHoursExactIsAByteIdenticalUpgrade::test_uniform_history_keeps_the_full_value.
+    // `working_hours_changes.weekly_hours` ist seit #431 Numeric(4,2), 38,25 h
+    // also speicherbar. Mit dem früheren toFixed(1) stünde hier "38,3",
+    // während der Datei-Export "38,2" schrieb (Python rundet half-even).
+    expect(
+      formatWeeklyHoursChanges([{ effective_from: '2026-03-01', weekly_hours: 38.25 }]),
+    ).toBe('ab 01.03.2026: 38,25 Std/Woche');
+  });
+
+  it('renders every value the old column could hold exactly as before', () => {
+    // Zwilling: TestDeHoursExactIsAByteIdenticalUpgrade::test_identical_for_every_value_the_old_column_could_hold.
+    // Vor #431 war die Spalte Numeric(4,1) → 0,0 bis 60,0 in Zehntelschritten.
+    // Für jeden dieser Werte muss die neue Formatierung zeichengleich zur
+    // früheren toFixed(1)-Fassung sein.
+    for (let i = 0; i <= 600; i++) {
+      const value = i / 10;
+      expect(
+        formatWeeklyHoursChanges([{ effective_from: '2026-03-01', weekly_hours: value }]),
+      ).toBe(`ab 01.03.2026: ${value.toFixed(1).replace('.', ',')} Std/Woche`);
+    }
+  });
+
   // ── #431: Tagesplan ────────────────────────────────────────────────
   //
   // Jede Erwartung hier hat ihren wortgleichen Zwilling in

@@ -268,6 +268,114 @@ class TestSegmentsCarryTheFullSnapshot:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Zahlformatierung: der Wechsel auf zwei Nachkommastellen ist auf allen
+# Bestandsdaten ein No-op
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestDeHoursExactIsAByteIdenticalUpgrade:
+    """Belegt, dass ``_de_hours_exact`` die #415-Ausgabe NICHT veraendert, wo sie
+    vor #431 ueberhaupt entstehen konnte — und sie genau dort korrigiert, wo
+    Datei und Bildschirm auseinanderliefen."""
+
+    def test_identical_for_every_value_the_old_column_could_hold(self):
+        """``working_hours_changes.weekly_hours`` war ``Numeric(4,1)``: 0,0 bis
+        60,0 in Zehntelschritten. Fuer JEDEN dieser 601 Werte liefern alte und
+        neue Formatierung dieselbe Zeichenkette."""
+        from app.services.export_service import _de_hours, _de_hours_exact
+        divergent = [
+            v for v in (Decimal(i) / 10 for i in range(0, 601))
+            if _de_hours(v) != _de_hours_exact(v)
+        ]
+        assert divergent == []
+
+    def test_quarter_hour_values_are_where_the_old_pair_disagreed(self):
+        """Erst ``Numeric(4,2)`` (Migration 067) macht 38,25 h speicherbar. Die
+        alte Formatierung rundet dort auf eine Stelle — Python half-even („38,2"),
+        der Frontend-Zwilling ``toFixed(1)`` kaufmaennisch („38,3"). Die neue
+        rundet gar nicht."""
+        from app.services.export_service import _de_hours, _de_hours_exact
+        assert _de_hours(Decimal("38.25")) == "38,2"      # alt, half-even
+        assert _de_hours_exact(Decimal("38.25")) == "38,25"  # neu, verlustfrei
+
+    def test_uniform_history_keeps_the_full_value(self):
+        """Zwilling zu ``formatters.test.ts`` („keeps quarter hours in the
+        uniform wording, too")."""
+        text = format_weekly_hours_history([
+            _seg(date(2026, 1, 1), date(2026, 2, 28), 40),
+            _seg(date(2026, 3, 1), date(2026, 12, 31), Decimal("38.25")),
+        ])
+        assert text == "ab 01.03.2026: 38,25 Std/Woche"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Invariante: weekly_hours == Summe der Tageswerte
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestWeeklyHoursMustMatchTheDayPlanSum:
+    """Die Darstellung ist der Zeile TREU — sie rechnet die Wochensumme NIE neu.
+
+    Damit ist ``weekly_hours == Σ(hours_*)`` im Tagesplan-Modus eine Invariante,
+    die die Schreibpfade halten muessen:
+
+    * ``WorkingHoursChangeCreate.check_mode`` setzt sie beim Anlegen,
+    * Migration 067 zieht sie beim Backfill nach.
+
+    Die Tests hier nageln fest, was passiert, wenn eine Zeile sie VERLETZT —
+    genau das war der Fund der Task-9-Review: der Backfill stempelte den heutigen
+    Tagesplan auf Alt-Zeilen, liess ``weekly_hours`` aber auf dem historischen
+    Skalar stehen.
+    """
+
+    def test_a_broken_row_prints_a_self_contradicting_sentence(self, db, test_user):
+        """Der Formatter summiert die Tage NICHT selbst — er druckt, was in der
+        Zeile steht. Eine Zeile mit Plan 8/5/4 und Skalar 30 erzeugt deshalb
+        „= 30,0 h/Woche" neben Tagen, die 17 ergeben. Deshalb muss die
+        Invariante an der QUELLE stehen, nicht im Formatter."""
+        _mk_day_plan_change(
+            db, test_user, date(2026, 3, 15), (8, 5, 4, None, None), weekly_hours=30
+        )
+        segs = calculation_service.weekly_hours_segments(
+            db, test_user, date(2026, 3, 1), date(2026, 3, 31)
+        )
+        assert format_weekly_hours_history(segs) == (
+            "ab 15.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 30,0 h/Woche"
+        )
+
+    def test_two_broken_rows_with_the_same_plan_do_not_merge(self, db, test_user):
+        """Zweite Haelfte des Fundes: gleicher Tagesplan, verschiedene Skalare →
+        die Segmente verschmelzen nicht (``weekly_hours`` ist Teil des
+        Vergleichs), der Bericht behauptet also eine Planaenderung, die es nie
+        gab. Mit korrektem Skalar verschmelzen sie."""
+        _mk_day_plan_change(
+            db, test_user, date(2026, 3, 1), (8, 5, 4, None, None), weekly_hours=30
+        )
+        _mk_day_plan_change(
+            db, test_user, date(2026, 7, 1), (8, 5, 4, None, None), weekly_hours=20
+        )
+        broken = calculation_service.weekly_hours_segments(
+            db, test_user, date(2026, 1, 1), date(2026, 12, 31)
+        )
+        assert len(broken) == 3  # Basis + zwei Pseudo-Aenderungen
+
+        # Invariante hergestellt (= was Migration 067 jetzt tut) → ein Segment
+        # ab dem ersten Wirkungsdatum, keine Pseudo-Aenderung mehr.
+        for row in db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == test_user.id
+        ).all():
+            row.weekly_hours = Decimal("17")
+        db.commit()
+        fixed = calculation_service.weekly_hours_segments(
+            db, test_user, date(2026, 1, 1), date(2026, 12, 31)
+        )
+        assert len(fixed) == 2
+        assert format_weekly_hours_history(fixed) == (
+            "ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
 # #431: Textdarstellung des Tagesplans
 # ─────────────────────────────────────────────────────────────────────
 
@@ -477,6 +585,23 @@ class TestSurfacesShowTheDayPlan:
         wb = _load_xlsx(generate_monthly_report(db, 2026, 3))
         sheet = wb[f"{test_user.last_name} {test_user.first_name}"[:31]]
         assert sheet.cell(row=1, column=6).value == self.EXPECTED
+
+    def test_xlsx_monthly_header_number_cell_is_the_day_plan_sum(self, db, day_plan_user):
+        """Die Kopf-ZAHLzelle (nicht nur der Aenderungstext) muss fuer einen
+        Tagesplan-Mitarbeitenden die Wochensumme seines Plans zeigen — 8+5+4."""
+        from app.services.export_service import generate_monthly_report
+        wb = _load_xlsx(generate_monthly_report(db, 2026, 3))
+        sheet = wb[f"{day_plan_user.last_name} {day_plan_user.first_name}"[:31]]
+        assert sheet.cell(row=1, column=5).value == 17.0
+        assert not sheet.cell(row=1, column=6).value  # keine Aenderung im Monat
+
+    def test_xlsx_yearly_overview_number_cell_is_the_day_plan_sum(self, db, day_plan_user):
+        from app.services.export_service import generate_yearly_report
+        wb = _load_xlsx(generate_yearly_report(db, 2026))
+        sheet = wb["Jahresübersicht"]
+        names = [sheet.cell(row=r, column=1).value for r in range(4, 12)]
+        row = 4 + names.index(f"{day_plan_user.last_name}, {day_plan_user.first_name}")
+        assert sheet.cell(row=row, column=2).value == 17.0
 
     def test_xlsx_yearly_overview_column(self, db, test_user):
         from app.services.export_service import generate_yearly_report
