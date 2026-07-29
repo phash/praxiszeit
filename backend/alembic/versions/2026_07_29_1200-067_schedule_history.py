@@ -10,6 +10,12 @@ bleibt das Verhalten nach der Migration byte-identisch — insbesondere im
 Mischfall (Tagesplan-MA mit Alt-Zeilen aus der Zeit davor: diese Zeilen sind
 heute wirkungslos und wuerden ohne Backfill schlagartig als gleichmaessige
 Zeilen scharf geschaltet).
+
+KEIN neuer Index: der Resolver-Zugriff (juengste Zeile eines Users bis zu einem
+Datum, ``ORDER BY effective_from DESC LIMIT 1``) laeuft ueber
+``(user_id, effective_from)`` — genau diese Spaltenkombination deckt
+``ix_wh_changes_user_effective_from`` aus Migration 031 bereits ab. Ein zweiter,
+deckungsgleicher Index kostet Schreiblast und Platz, ohne je gewaehlt zu werden.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -54,14 +60,8 @@ def upgrade():
         WHERE w.user_id = u.id
     """)
 
-    op.create_index(
-        "ix_whc_user_effective_from",
-        "working_hours_changes", ["user_id", "effective_from"],
-    )
-
 
 def downgrade():
-    op.drop_index("ix_whc_user_effective_from", table_name="working_hours_changes")
     op.drop_column("working_hours_changes", "work_days_per_week")
     for day in ("friday", "thursday", "wednesday", "tuesday", "monday"):
         op.drop_column("working_hours_changes", f"hours_{day}")
