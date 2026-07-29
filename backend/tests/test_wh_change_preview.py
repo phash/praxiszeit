@@ -246,6 +246,27 @@ class TestBlockedReasons:
         assert body["blocked_reason"] is not None
         assert "Wochenstunden" in body["blocked_reason"]
 
+    def test_value_above_the_limit_is_blocked_not_422(self, client, test_user):
+        """Review-Fund 2: Die Zahlengrenzen leben ausschließlich im Schema, nicht
+        zusätzlich an den Query-Parametern. Wer auf dem Weg zu „44,4" kurz „444"
+        stehen hat, bekommt einen Hinweis — kein hartes 422 mitten im Tippen (der
+        Endpoint feuert debounced bei jeder Eingabe)."""
+        r = _preview(client, test_user, today_local(), weekly_hours=444)
+        assert r.status_code == 200, r.text
+        assert "60" in r.json()["blocked_reason"]
+
+    def test_day_value_above_the_limit_is_blocked(self, client, day_plan_user):
+        r = _preview(client, day_plan_user, today_local(), use_daily_schedule=True,
+                     hours_monday=48, work_days_per_week=3)
+        assert r.status_code == 200, r.text
+        assert "24" in r.json()["blocked_reason"]
+
+    def test_work_days_below_the_limit_is_blocked(self, client, test_user):
+        r = _preview(client, test_user, today_local(),
+                     weekly_hours=20.0, work_days_per_week=0)
+        assert r.status_code == 200, r.text
+        assert "Arbeitstage" in r.json()["blocked_reason"]
+
     def test_duplicate_date_is_blocked(self, client, db, test_user):
         eff = _last_monday()
         db.add(WorkingHoursChange(
@@ -347,6 +368,100 @@ class TestDayPlanAndAccounts:
         db.expire_all()
         assert db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == day_plan_user.id).count() == before
+
+    def test_unchanged_snapshot_runs_no_simulation(self, client, db, test_user):
+        """Review-Fund 1: Der Dialog ist mit den geltenden Werten vorbefüllt und
+        feuert die Vorschau schon beim Öffnen — der unveränderte Snapshot ist der
+        häufigste Fall überhaupt. Dann darf die Simulation gar nicht erst laufen:
+        sie nimmt Zeilen-Schreibsperren auf die Abwesenheiten des Wirkungsfensters
+        und hält sie über zwei volle Kontodurchrechnungen.
+
+        Die abgedriftete Stundenzahl (6 h statt 8 h Tagessoll) macht das messbar:
+        ein Retarget würde sie sofort anfassen und als ``affected_absences``
+        auftauchen."""
+        mon = _last_monday()
+        _absence(db, test_user, mon, AbsenceType.VACATION, hours=6.0)
+
+        same = client.get(_url(test_user.id, mon, hours=40.0)).json()
+        assert same["blocked_reason"] is None
+        assert same["affected_absences"] == 0, "keine Simulation, also nichts gezählt"
+        assert same["overtime_after"] == same["overtime_before"]
+        assert same["vacation_days_after"] == same["vacation_days_before"]
+        assert same["day_targets_new"] == same["day_targets_current"]
+
+        # Gegenprobe: dieselbe Ausgangslage mit ABWEICHENDEN Wochenstunden
+        # simuliert sehr wohl — sonst wäre die Assertion oben wertlos.
+        changed = client.get(_url(test_user.id, mon, hours=20.0)).json()
+        assert changed["affected_absences"] == 1
+
+    def test_unchanged_day_plan_runs_no_simulation(self, client, db, day_plan_user):
+        """Derselbe Ausstieg im Tagesplan-Modus — der Vergleich läuft über
+        ``_comparable_snapshot``, also über alle vier Snapshot-Werte."""
+        mon = _last_monday()
+        _absence(db, day_plan_user, mon, AbsenceType.VACATION, hours=6.0)
+        body = _preview(client, day_plan_user, mon, use_daily_schedule=True,
+                        hours_monday=8.0, hours_tuesday=5.0, hours_wednesday=4.0,
+                        work_days_per_week=3).json()
+        assert body["blocked_reason"] is None
+        assert body["affected_absences"] == 0
+        assert body["day_targets_new"] == body["day_targets_current"] == [8.0, 5.0, 4.0, 0.0, 0.0]
+
+    def test_overtime_month_bound_matches_the_live_views(self, client, db, test_user, monkeypatch):
+        """Review-Fund 4: Die Monatsobergrenze von ``get_overtime_account`` ist
+        HEUTE, nicht der Saldo-Stichtag — genau wie in ``dashboard.get_overtime_account``
+        und ``users_overview`` (``now.year, now.month`` + ``cutoff_date=cutoff``).
+
+        Am 1. Januar vor dem ersten Ausstempeln liegt der Stichtag im Vorjahr.
+        ``get_overtime_account`` wählt seinen Startpunkt über
+        ``YearCarryover.year <= up_to_year``; mit der Vorjahres-Obergrenze fände
+        es den Carryover des laufenden Jahres NICHT und lieferte einen anderen
+        Wert als das Dashboard, gegen das der Admin den Dialog vergleicht.
+
+        Hier nachgestellt: Stichtag ins Vorjahr gezogen, Carryover 99 h im
+        laufenden Jahr. Obergrenze „heute" ⇒ 99.0; Obergrenze „Stichtag" ⇒ 0.0.
+        """
+        year = today_local().year
+        db.add(YearCarryover(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, year=year,
+            overtime_hours=Decimal("99"), vacation_days=Decimal("0"), source="manual",
+        ))
+        db.commit()
+        monkeypatch.setattr(
+            "app.services.calculation_service.get_soll_cutoff_date",
+            lambda _db, _user, today=None: date(year - 1, 12, 31),
+        )
+
+        body = client.get(_url(test_user.id, date(year, 1, 1), hours=20.0)).json()
+
+        assert body["overtime_before"] == 99.0
+
+    def test_rollback_holds_even_if_the_flush_raises(self, client, db, test_user, monkeypatch):
+        """Review-Fund 3: ``db.add``/``db.flush`` liegen MIT im ``try``. Wirft
+        schon der Flush (z. B. ein Race zwischen Duplikat-Prüfung und Insert),
+        darf es keinen Ausstiegspfad an der Rollback-Garantie vorbei geben.
+
+        Beobachtbar ist das an der SESSION, nicht an der Datenbank: ohne den
+        Rollback bleibt die hypothetische Zeile als ``pending`` in der Session
+        hängen und würde von einem späteren ``commit()` auf derselben Session
+        mitgeschrieben. (In Produktion stirbt die Session am Requestende, der
+        Schaden bleibt dort theoretisch — die Garantie des Docstrings soll
+        trotzdem lückenlos gelten.)"""
+        mon = _last_monday()
+        _absence(db, test_user, mon)
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("simulierter Flush-Fehler")
+
+        monkeypatch.setattr(db, "flush", boom)
+        with pytest.raises(RuntimeError):
+            client.get(_url(test_user.id, mon))
+        monkeypatch.undo()
+
+        assert not [o for o in db.new if isinstance(o, WorkingHoursChange)], \
+            "die hypothetische Zeile hängt nach dem Fehler noch als pending in der Session"
+        db.commit()
+        assert db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == test_user.id).count() == 0
 
     def test_simulated_retarget_is_rolled_back(self, client, db, day_plan_user):
         """Der Saldo „nachher" muss gegen die NACHGEZOGENEN Abwesenheits-Stunden

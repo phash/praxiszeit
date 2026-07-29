@@ -124,8 +124,14 @@ class WorkingHoursChangePreview(BaseModel):
       ``period_start``, jeweils im Ist-Zustand und im simulierten Zustand NACH
       dem Speichern. Beide „nachher"-Werte stammen aus DEMSELBEN, wieder
       zurückgerollten Dry-Run wie ``affected_absences`` — ein Flush, ein
-      Rollback, kein zweiter Rechenpfad. Bei gesetztem ``blocked_reason`` sind
-      sie identisch mit den „vorher"-Werten (es gibt nichts zu simulieren).
+      Rollback, kein zweiter Rechenpfad.
+
+      Der Dry-Run entfällt (und „nachher" == „vorher", ``affected_absences``
+      == 0) in zwei Fällen: bei gesetztem ``blocked_reason`` (es gibt nichts zu
+      simulieren) und wenn der eingegebene Snapshot dem aktuell gültigen
+      entspricht — dann verschiebt die Änderung im gesamten Wirkungsbereich
+      kein Tagessoll, das Ergebnis ist also exakt und nicht genähert. Dieser
+      zweite Fall ist der Normalzustand des vorbefüllten Dialogs.
     """
     is_retroactive: bool
     period_start: date

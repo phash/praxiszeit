@@ -1272,32 +1272,75 @@ def _planned_day_mean(day_targets: List[float]) -> float:
     return round(sum(planned) / len(planned), 2)
 
 
-def _schedule_input_error(exc: ValidationError) -> str:
-    """Die Meldung des ``check_mode``-Validators als Klartext für
-    ``blocked_reason`` (Pydantic stellt ``Value error, `` voran).
+_SCHEDULE_FIELD_LABELS = {
+    "weekly_hours": "Die Wochenstunden",
+    "hours_monday": "Die Stunden für Montag",
+    "hours_tuesday": "Die Stunden für Dienstag",
+    "hours_wednesday": "Die Stunden für Mittwoch",
+    "hours_thursday": "Die Stunden für Donnerstag",
+    "hours_friday": "Die Stunden für Freitag",
+    "work_days_per_week": "Die Arbeitstage pro Woche",
+}
 
-    Der Fallback ist kein toter Code-Schmuck: dieser Endpoint läuft bei JEDER
-    Eingabe im Dialog (debounced), ein IndexError hier wäre ein HTTP 500 mitten
-    im Tippen.
+
+def _schedule_input_error(exc: ValidationError) -> str:
+    """Ein Verstoß gegen die Snapshot-Regeln als deutscher Klartext für
+    ``blocked_reason``.
+
+    Deckt BEIDE Regel-Ebenen von ``WorkingHoursChangeCreate`` ab: die
+    Feldgrenzen aus ``WorkingHoursChangeBase`` (``ge``/``le``) und den
+    ``check_mode``-Validator (dessen Meldung schon ein fertiger deutscher Satz
+    ist, dem Pydantic nur ``Value error, `` voranstellt).
+
+    Review-Fund 2 (Fix-Runde 1): Die Grenzen standen zusätzlich an den
+    ``Query(...)``-Parametern der Vorschau. Das war doppelt gepflegt (Drift
+    sobald eine Grenze im Schema wandert — genau die Fehlerklasse, gegen die der
+    gemeinsame Pfad gebaut ist) UND es unterlief die Entscheidung „blocked_reason
+    statt 4xx": FastAPI lehnte vor dem Handler mit 422 ab, und der Admin, der auf
+    dem Weg zu „44,4" kurz „444" stehen hat, bekam mitten im Tippen einen harten
+    Fehler statt eines Hinweises. Die Grenzen leben jetzt nur noch im Schema.
+
+    Der Leer-Fallback ist kein toter Code-Schmuck: dieser Endpoint läuft bei
+    JEDER Eingabe im Dialog (debounced), ein IndexError hier wäre ein HTTP 500
+    mitten im Tippen.
     """
     errors = exc.errors()
     if not errors:
-        return "Ungültige Eingabe"
-    return str(errors[0].get("msg", "Ungültige Eingabe")).removeprefix("Value error, ")
+        return "Ungültige Eingabe."
+    err = errors[0]
+    if err.get("type") == "value_error":
+        return str(err.get("msg", "Ungültige Eingabe.")).removeprefix("Value error, ")
+    label = next(
+        (_SCHEDULE_FIELD_LABELS[p] for p in (err.get("loc") or ())
+         if p in _SCHEDULE_FIELD_LABELS),
+        None,
+    )
+    if label is None:
+        return "Ungültige Eingabe."
+    ctx = err.get("ctx") or {}
+    if "le" in ctx:
+        return f"{label} dürfen höchstens {ctx['le']} betragen."
+    if "ge" in ctx:
+        return f"{label} dürfen nicht kleiner als {ctx['ge']} sein."
+    return f"{label} sind kein gültiger Wert."
 
 
 @router.get("/users/{user_id}/working-hours-changes/preview", response_model=WorkingHoursChangePreview)
 def preview_working_hours_change(
     user_id: str,
     effective_from: date,
-    weekly_hours: Optional[float] = Query(None, ge=0, le=60),
+    # BEWUSST ohne ge/le: die Zahlengrenzen leben ausschliesslich im Schema
+    # (WorkingHoursChangeBase) und melden sich als blocked_reason — siehe
+    # _schedule_input_error. Query-Grenzen waeren eine zweite Pflegestelle und
+    # wuerden mitten im Tippen ein hartes 422 erzeugen.
+    weekly_hours: Optional[float] = Query(None),
     use_daily_schedule: bool = Query(False),
-    hours_monday: Optional[float] = Query(None, ge=0, le=24),
-    hours_tuesday: Optional[float] = Query(None, ge=0, le=24),
-    hours_wednesday: Optional[float] = Query(None, ge=0, le=24),
-    hours_thursday: Optional[float] = Query(None, ge=0, le=24),
-    hours_friday: Optional[float] = Query(None, ge=0, le=24),
-    work_days_per_week: Optional[int] = Query(None, ge=1, le=7),
+    hours_monday: Optional[float] = Query(None),
+    hours_tuesday: Optional[float] = Query(None),
+    hours_wednesday: Optional[float] = Query(None),
+    hours_thursday: Optional[float] = Query(None),
+    hours_friday: Optional[float] = Query(None),
+    work_days_per_week: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -1420,48 +1463,90 @@ def preview_working_hours_change(
                 "existiert bereits"
             )
 
+    # Review-Fund 1 (Fix-Runde 1): Ändert der eingegebene Snapshot nichts am
+    # aktuell gültigen, gibt es NICHTS zu simulieren — und die Simulation ist
+    # der teure, sperrende Teil dieses Endpoints (siehe unten). Genau dieser
+    # Fall ist der HÄUFIGSTE: der Dialog ist mit den aktuellen Werten
+    # vorbefüllt, feuert die Vorschau schon beim Öffnen, und jeder
+    # Tipp-Zwischenschritt, der wieder auf dem alten Wert landet, trifft ihn
+    # erneut.
+    #
+    # `_comparable_snapshot` ist DIE eine Vergleichsdefinition (dieselbe, die im
+    # Schreibpfad über die Basis-Zeile entscheidet) — sie blendet u. a. die im
+    # gleichmäßigen Modus inerten Tageswerte aus.
+    #
+    # Das ist keine bloße Optimierung, sondern auch fachlich exakt: eine Zeile
+    # mit identischem Snapshot zum `effective_from` verschiebt im gesamten
+    # Wirkungsbereich (der spätestens am Tag vor der nächsten Änderung endet)
+    # kein einziges Tagessoll. `affected_absences = 0` und „nachher == vorher"
+    # sind also das korrekte Ergebnis, nicht eine Näherung.
+    snapshot_unchanged = norm is not None and _comparable_snapshot(
+        current_schedule.weekly_hours, current_schedule.use_daily_schedule,
+        current_schedule.day_hours, current_schedule.work_days_per_week,
+    ) == _comparable_snapshot(
+        norm.weekly_hours, norm.use_daily_schedule,
+        norm.day_hours, norm.work_days_per_week,
+    )
+
     # #431: Saldo und Urlaub im IST-Zustand — vor dem Dry-Run, damit sie die
     # hypothetische Zeile garantiert nicht sehen. Der Stichtag ist derselbe wie
     # in allen Live-Anzeigen (#313, `get_soll_cutoff_date`); das Urlaubsjahr ist
     # das von `period_start` — das Jahr, dessen Budget die Änderung bewegt.
+    #
+    # Review-Fund 4 (Fix-Runde 1): die Monatsobergrenze ist `today`, NICHT der
+    # Stichtag — exakt wie in `dashboard.get_overtime_account` und
+    # `admin_users.users_overview` (`now.year, now.month` + `cutoff_date=cutoff`).
+    # Am 1. Januar vor dem ersten Ausstempeln liegt der Stichtag im VORJAHR;
+    # `get_overtime_account` wählt seinen Startpunkt über
+    # `YearCarryover.year <= up_to_year` und käme dann auf einen anderen
+    # Carryover als die Live-Anzeigen. Der Admin vergleicht „Saldo vorher" im
+    # Dialog aber gegen den Dashboard-Wert — beide Flächen müssen dasselbe
+    # sagen. Getrimmt wird ohnehin über `cutoff_date`.
     cutoff = calculation_service.get_soll_cutoff_date(db, user)
     vacation_year = period_start.year
     overtime_before = float(calculation_service.get_overtime_account(
-        db, user, cutoff.year, cutoff.month, cutoff_date=cutoff))
+        db, user, today.year, today.month, cutoff_date=cutoff))
     vacation_before = float(
         calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
     overtime_after, vacation_after = overtime_before, vacation_before
 
     affected_absences = 0
-    if not blocked_reason:
+    if not blocked_reason and not snapshot_unchanged:
         # Wäre die Änderung ohnehin blockiert (z. B. Duplikat-Datum), gibt es
         # nichts zu simulieren — UND ein Insert würde eine zweite Zeile mit
         # identischem effective_from erzeugen. Die Snapshot-Auflösung hat keine
         # Sekundärsortierung und würde dann reproduzierbar die BESTEHENDE Zeile
         # wählen, nicht die hypothetische — gerechnet würde gegen den falschen
-        # Vertrag. Also nur bei nicht-blockierten Änderungen.
+        # Vertrag. Also nur bei nicht-blockierten, tatsächlich abweichenden
+        # Änderungen.
         #
         # EIN Flush, EIN Rollback für alles: die hypothetische Zeile geht nur in
         # die laufende Transaktion (NICHT committen), damit die
         # WorkingHoursChange-Abfragen von retarget_absence_hours,
         # get_overtime_account und get_vacation_account sie sehen — danach immer
         # zurückrollen, egal ob die Berechnung erfolgreich war.
-        temp_change = WorkingHoursChange(
-            user_id=user.id,
-            tenant_id=current_user.tenant_id,
-            effective_from=effective_from,
-            weekly_hours=norm.weekly_hours,
-            use_daily_schedule=norm.use_daily_schedule,
-            hours_monday=norm.day_hours[0],
-            hours_tuesday=norm.day_hours[1],
-            hours_wednesday=norm.day_hours[2],
-            hours_thursday=norm.day_hours[3],
-            hours_friday=norm.day_hours[4],
-            work_days_per_week=norm.work_days_per_week,
-        )
-        db.add(temp_change)
-        db.flush()
+        #
+        # Review-Fund 3 (Fix-Runde 1): `db.add`/`db.flush` liegen MIT im `try`.
+        # Wirft schon der Flush (z. B. ein Race zwischen der Duplikat-Prüfung
+        # oben und dem Insert), hinterlässt zwar auch dann nichts Persistentes —
+        # aber der Ausstiegspfad umginge die Rollback-Garantie, die der
+        # Docstring dieses Endpoints gibt. Es gibt keinen Pfad an ihr vorbei.
         try:
+            temp_change = WorkingHoursChange(
+                user_id=user.id,
+                tenant_id=current_user.tenant_id,
+                effective_from=effective_from,
+                weekly_hours=norm.weekly_hours,
+                use_daily_schedule=norm.use_daily_schedule,
+                hours_monday=norm.day_hours[0],
+                hours_tuesday=norm.day_hours[1],
+                hours_wednesday=norm.day_hours[2],
+                hours_thursday=norm.day_hours[3],
+                hours_friday=norm.day_hours[4],
+                work_days_per_week=norm.work_days_per_week,
+            )
+            db.add(temp_change)
+            db.flush()
             # Das Retarget läuft hier BEWUSST nicht im dry_run: der Saldo
             # „nachher" muss gegen die nachgezogenen Abwesenheits-Stunden
             # gerechnet werden. Sonst schriebe ein Krankentag im Fenster
@@ -1472,6 +1557,11 @@ def preview_working_hours_change(
             # nichts: retarget_absence_hours flusht nur, der Rollback unten
             # verwirft beides (Test test_simulated_retarget_is_rolled_back).
             # Der Rückgabewert ist derselbe wie mit dry_run=True.
+            #
+            # Preis dafür sind Zeilen-Schreibsperren auf den Abwesenheiten des
+            # Wirkungsfensters bis zum Rollback (Review-Fund 1). Der
+            # Vorab-Ausstieg oben hält den häufigsten Fall — unveränderter
+            # Snapshot — komplett aus diesem Block heraus.
             if window.has_absences:
                 affected_absences = calculation_service.retarget_absence_hours(
                     db, user, period_start, period_end
@@ -1479,7 +1569,7 @@ def preview_working_hours_change(
             # Kein wh_changes-Preload durchreichen — die Funktionen müssen die
             # eben geflushte Zeile selbst nachladen.
             overtime_after = float(calculation_service.get_overtime_account(
-                db, user, cutoff.year, cutoff.month, cutoff_date=cutoff))
+                db, user, today.year, today.month, cutoff_date=cutoff))
             vacation_after = float(
                 calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
         finally:
