@@ -515,8 +515,19 @@ class TestClosedYearWarning:
         assert response is None, "ohne Warnung weiterhin 204 No Content"
 
 
-class TestStillRejectedCases:
-    def test_daily_schedule_still_400(self, db, default_tenant):
+class TestDailyScheduleNoLongerRejected:
+    """#431: die Tagesplan-Sperre im Anlege-Pfad ist entfallen (der Löschpfad
+    zieht als eigener Schritt nach — siehe TestStillRejectedCases)."""
+
+    def test_daily_schedule_is_accepted_and_retargets(self, db, default_tenant):
+        """Früher „still 400": eine Historien-Zeile war für Tagesplan-MA
+        wirkungslos (das Tagessoll las live hours_mon…fri) und hätte nur einen
+        stillen §16-Widerspruch erzeugt — deshalb die Sperre.
+
+        Seit #431 trägt die Zeile den vollen Vertrags-Snapshot und treibt das
+        Soll dieser Gruppe. Sie wird angenommen UND zieht die gebuchten
+        Abwesenheits-Stunden mit (8 h → 4 h), genau wie bei jedem anderen MA.
+        """
         admin = _admin(db, "wh_ds_admin")
         emp = _make_user(
             db, "wh_ds_emp", use_daily_schedule=True,
@@ -526,21 +537,33 @@ class TestStillRejectedCases:
         mon = _last_monday()
         a = _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
 
-        with pytest.raises(HTTPException) as exc:
-            create_working_hours_change(
-                user_id=str(emp.id),
-                change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=20.0),
-                db=db, current_user=admin,
-            )
-        assert exc.value.status_code == 400
+        result = create_working_hours_change(
+            user_id=str(emp.id),
+            change_data=WorkingHoursChangeCreate(
+                effective_from=mon,
+                use_daily_schedule=True,
+                hours_monday=4.0, hours_tuesday=4.0, hours_wednesday=4.0,
+                hours_thursday=4.0, hours_friday=4.0,
+                work_days_per_week=5,
+            ),
+            db=db, current_user=admin,
+        )
+        assert result.use_daily_schedule is True
+        assert float(result.weekly_hours) == 20.0
 
-        # Nichts geändert: weder WorkingHoursChange noch Absence-Stunden.
-        assert db.query(WorkingHoursChange).filter(
+        # Neue Zeile + Basis-Zeile mit dem bisherigen Tagesplan.
+        rows = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == emp.id
-        ).count() == 0
-        db.refresh(a)
-        assert float(a.hours) == 8.0
+        ).order_by(WorkingHoursChange.effective_from).all()
+        assert len(rows) == 2
+        assert float(rows[0].hours_monday) == 8.0
 
+        db.refresh(a)
+        assert float(a.hours) == 4.0, "Abwesenheits-Stunden aufs neue Tagessoll nachgezogen"
+        assert result.adjusted_absences == 1
+
+
+class TestStillRejectedCases:
     def test_delete_does_not_retarget_daily_schedule_user(self, db, default_tenant):
         """I1 (Abschluss-Review): Anlegen lehnt Tagesplan-MA mit 400 ab, das
         Löschen rief ``retarget_absence_hours`` trotzdem ungefiltert auf und

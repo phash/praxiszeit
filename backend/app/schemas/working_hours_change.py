@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from typing import List, Optional
 from datetime import date, datetime
 from decimal import Decimal
@@ -6,13 +6,54 @@ from uuid import UUID
 
 
 class WorkingHoursChangeBase(BaseModel):
+    """#431: die Zeile ist ein vollstaendiger Vertrags-Snapshot ab
+    ``effective_from`` — Modus, Tageswerte, Arbeitstage und Wochenstunden.
+
+    ``weekly_hours`` ist deshalb Optional: im Tagesplan-Modus schickt der Client
+    keinen eigenen Wert, der Server setzt ihn als Summe der Tageswerte (siehe
+    ``WorkingHoursChangeCreate.check_mode``). Persistiert ist er immer.
+    """
     effective_from: date
-    weekly_hours: float = Field(..., ge=0, le=60)
+    weekly_hours: Optional[float] = Field(None, ge=0, le=60)
+    use_daily_schedule: bool = False
+    hours_monday: Optional[float] = Field(None, ge=0, le=24)
+    hours_tuesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_wednesday: Optional[float] = Field(None, ge=0, le=24)
+    hours_thursday: Optional[float] = Field(None, ge=0, le=24)
+    hours_friday: Optional[float] = Field(None, ge=0, le=24)
+    work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
     note: Optional[str] = None
 
 
 class WorkingHoursChangeCreate(WorkingHoursChangeBase):
-    pass
+    @model_validator(mode='after')
+    def check_mode(self):
+        """Die beiden Modi schliessen einander aus — und der jeweils andere
+        Satz Felder waere inert.
+
+        Bewusst NUR am Create-Schema, nicht an ``WorkingHoursChangeBase``: ein
+        ``mode='after'``-Validator wuerde sonst auch beim LESEN
+        (``from_attributes``) laufen und dort (a) eine Bestandszeile mit
+        inerten Werten in einen HTTP 500 verwandeln und (b) ``weekly_hours``
+        aus den Tageswerten neu berechnen — also einen anderen Wert anzeigen,
+        als in der §16-relevanten Zeile steht.
+        """
+        days = [self.hours_monday, self.hours_tuesday, self.hours_wednesday,
+                self.hours_thursday, self.hours_friday]
+        if self.use_daily_schedule:
+            if not any(d for d in days if d):
+                raise ValueError("Im Tagesplan-Modus muss mindestens ein Wochentag Stunden haben.")
+            total = sum(d or 0 for d in days)
+            if total > 60:
+                raise ValueError("Die Summe der Tagesstunden darf 60 nicht überschreiten.")
+            self.weekly_hours = round(total, 2)
+        else:
+            if self.weekly_hours is None:
+                raise ValueError("Wochenstunden sind im gleichmäßigen Modus Pflicht.")
+            for d in days:
+                if d is not None:
+                    raise ValueError("Tagesstunden gehören zum Tagesplan-Modus.")
+        return self
 
 
 class WorkingHoursChangeResponse(WorkingHoursChangeBase):

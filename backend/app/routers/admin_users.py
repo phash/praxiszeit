@@ -86,6 +86,31 @@ def _log_wh_change_retarget(
     ))
 
 
+def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_per_week):
+    """#431: der Vertrags-Snapshot als vergleichbares Tupel.
+
+    Verglichen wird, was das SOLL treibt. Im gleichmaessigen Modus sind die
+    Tageswerte inert — ``get_daily_target_for_date`` liest sie dort gar nicht.
+    Sie werden deshalb ausgeblendet: ``update_user`` raeumt sie beim Abschalten
+    des Tagesplans nicht ab, und ein solcher Rest darf keine Basis-Zeile
+    ausloesen, wo vor #431 keine entstanden waere (Byte-Identitaet fuer
+    Mitarbeitende ohne Tagesplan).
+
+    ``work_days_per_week`` bleibt immer im Vergleich: es treibt im
+    gleichmaessigen Modus das Tagessoll und in beiden Modi den
+    Urlaubsanspruch.
+    """
+    use_daily_schedule = bool(use_daily_schedule)
+    return (
+        Decimal(str(weekly_hours)),
+        use_daily_schedule,
+        tuple(
+            None if v is None else Decimal(str(v)) for v in day_hours
+        ) if use_daily_schedule else (None,) * 5,
+        int(work_days_per_week),
+    )
+
+
 def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -> None:
     """#290: fold a newly participating employee into CURRENT + FUTURE company
     closures so admins never have to re-save a closure (the re-save was the
@@ -922,34 +947,22 @@ def create_working_hours_change(
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
-    # Fix #2 — Begruendung seit #431 GEAENDERT, die Sperre bleibt (vorerst):
+    # Fix #2 — die frueher hier stehende 400-Sperre fuer Tagesplan-Mitarbeitende
+    # ist mit #431 ENTFALLEN.
     #
-    # Frueher galt: eine WorkingHoursChange speist nur get_weekly_hours_for_date,
-    # und das Tagessoll ignorierte die bei use_daily_schedule=True komplett (es
-    # las live hours_monday…friday). Die Zeile war fuers Soll wirkungslos,
-    # waehrend die UI den neuen Wert zeigte → still falscher §16-Beleg.
+    # Sie existierte, weil eine WorkingHoursChange nur get_weekly_hours_for_date
+    # speiste und das Tagessoll die bei use_daily_schedule=True komplett
+    # ignorierte (es las live hours_monday…friday): die Zeile war fuers Soll
+    # wirkungslos, waehrend die UI den neuen Wert zeigte → still falscher
+    # §16-Beleg. Lieber gar keine Historie als eine wirkungslose.
     #
     # Seit #431 traegt die Zeile den VOLLSTAENDIGEN Vertrags-Snapshot
-    # (use_daily_schedule + hours_monday…friday + work_days_per_week) und treibt
-    # das Soll auch fuer Tagesplan-Mitarbeitende. Die Sperre steht jetzt aus
-    # einem anderen Grund: dieser Schreibpfad setzt die Snapshot-Spalten noch
-    # NICHT. Eine hier angelegte Zeile bekaeme use_daily_schedule=False
-    # (Column-Default) und work_days_per_week=NULL — sie kippte den
-    # Mitarbeitenden ab ihrem Wirkungsdatum still in den Wochenstunden-Modus.
-    #
-    # Die Sperre faellt, sobald der Schreibpfad (Dialog + Schema + dieser
-    # Endpoint) den Snapshot mitschreibt. Wer sie aufhebt, MUSS zugleich den
-    # Retarget-Skip in delete_working_hours_change entfernen (siehe dort) —
-    # sonst rechnet das Loeschen fuer diese Gruppe nicht zurueck.
-    if getattr(user, "use_daily_schedule", False):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Für Mitarbeitende mit individuellem Tagesplan wird die "
-                "Stunden-Historie nicht unterstützt — bitte die Tagesstunden "
-                "direkt im Mitarbeiter-Profil ändern."
-            ),
-        )
+    # (use_daily_schedule + hours_monday…friday + work_days_per_week), dieser
+    # Endpoint schreibt ihn (siehe unten), und get_daily_target_for_date rechnet
+    # gegen den datumsaufgeloesten Snapshot — die Zeile verschiebt das Soll
+    # dieser Gruppe also nachweislich (Test
+    # test_wh_change_day_plan_create.py::test_change_actually_moves_the_daily_target).
+    # Damit ist die Begruendung der Sperre weg.
 
     existing = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
@@ -992,14 +1005,33 @@ def create_working_hours_change(
     # Nur wenn sich der Wert tatsächlich ändert (sonst entstünde eine
     # Pseudo-Änderung, die weekly_hours_segments ohnehin wieder verschmelzen
     # würde).
+    #
+    # #431: verglichen wird der VOLLSTÄNDIGE Snapshot, nicht mehr nur
+    # `weekly_hours`. Bei einem Tagesplan-Mitarbeitenden kann die Wochensumme
+    # gleich bleiben, während sich die Verteilung über die Wochentage (oder der
+    # Modus selbst) ändert — ohne Basis-Zeile gälte die neue Verteilung
+    # rückwirkend für die gesamte Vergangenheit.
     _has_history = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user_id,
         WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
     ).first() is not None
-    if (
-        not _has_history
-        and user.weekly_hours is not None
-        and Decimal(str(user.weekly_hours)) != Decimal(str(change_data.weekly_hours))
+    _current = None
+    if not _has_history:
+        # Ohne Historie liefert der Resolver zwangslaeufig die User-Felder —
+        # wir gehen trotzdem ueber ihn, damit die eingefrorene Vergangenheit
+        # per Konstruktion das ist, was er selbst aufloesen wuerde.
+        _current = calculation_service.get_schedule_for_date(
+            db, user, change_data.effective_from - timedelta(days=1)
+        )
+    if _current is not None and _comparable_snapshot(
+        _current.weekly_hours, _current.use_daily_schedule,
+        _current.day_hours, _current.work_days_per_week,
+    ) != _comparable_snapshot(
+        change_data.weekly_hours, change_data.use_daily_schedule,
+        (change_data.hours_monday, change_data.hours_tuesday,
+         change_data.hours_wednesday, change_data.hours_thursday,
+         change_data.hours_friday),
+        change_data.work_days_per_week or user.work_days_per_week,
     ):
         # Der Vortag ist immer dabei → das Ergebnis liegt garantiert VOR
         # `effective_from` (die frühere Zusatz-Klemme ist damit überflüssig).
@@ -1019,11 +1051,21 @@ def create_working_hours_change(
         if _oldest_absence:
             _baseline_candidates.append(_oldest_absence)
         _baseline_date = min(_baseline_candidates)
+        # Die Basis-Zeile schreibt `_current` UNVERÄNDERT fort — also exakt das,
+        # was `get_schedule_for_date` für die Vergangenheit bisher aufgelöst hat.
+        # Nur so bleibt die Vergangenheit byte-identisch eingefroren.
         db.add(WorkingHoursChange(
             user_id=user_id,
             tenant_id=current_user.tenant_id,
             effective_from=_baseline_date,
-            weekly_hours=user.weekly_hours,
+            weekly_hours=_current.weekly_hours,
+            use_daily_schedule=_current.use_daily_schedule,
+            hours_monday=_current.day_hours[0],
+            hours_tuesday=_current.day_hours[1],
+            hours_wednesday=_current.day_hours[2],
+            hours_thursday=_current.day_hours[3],
+            hours_friday=_current.day_hours[4],
+            work_days_per_week=_current.work_days_per_week,
             note="Automatisch erfasster Ausgangswert vor der ersten Stundenänderung",
         ))
 
@@ -1032,6 +1074,16 @@ def create_working_hours_change(
         tenant_id=current_user.tenant_id,
         effective_from=change_data.effective_from,
         weekly_hours=change_data.weekly_hours,
+        use_daily_schedule=change_data.use_daily_schedule,
+        hours_monday=change_data.hours_monday,
+        hours_tuesday=change_data.hours_tuesday,
+        hours_wednesday=change_data.hours_wednesday,
+        hours_thursday=change_data.hours_thursday,
+        hours_friday=change_data.hours_friday,
+        # NULL hieße „Rückfall auf die (jederzeit änderbare) User-Zeile" — das
+        # Modell verlangt für neue Zeilen einen gesetzten Wert, damit der
+        # Snapshot vollständig ist.
+        work_days_per_week=change_data.work_days_per_week or user.work_days_per_week,
         note=change_data.note
     )
     db.add(change)
@@ -1052,7 +1104,25 @@ def create_working_hours_change(
             WorkingHoursChange.effective_from <= today_local()
         ).order_by(WorkingHoursChange.effective_from.desc()).first()
         if most_recent:
+            # #431: der VOLLSTÄNDIGE Snapshot wandert zurück auf die User-Zeile.
+            # Nur `weekly_hours` nachzuziehen kippte den Mitarbeitenden still in
+            # den jeweils anderen Modus: eine Tagesplan-Zeile ließe
+            # `use_daily_schedule=False` stehen (Soll käme aus
+            # weekly_hours/work_days_per_week statt aus den Wochentagen), eine
+            # gleichmäßige Zeile ließe die alten Tageswerte stehen (Soll käme
+            # weiter aus ihnen). Beim Wechsel in den gleichmäßigen Modus müssen
+            # die Tageswerte deshalb auf NULL zurück.
             user.weekly_hours = most_recent.weekly_hours
+            user.use_daily_schedule = bool(most_recent.use_daily_schedule)
+            user.hours_monday = most_recent.hours_monday
+            user.hours_tuesday = most_recent.hours_tuesday
+            user.hours_wednesday = most_recent.hours_wednesday
+            user.hours_thursday = most_recent.hours_thursday
+            user.hours_friday = most_recent.hours_friday
+            # Bestandszeilen von vor #431 können hier NULL tragen —
+            # `users.work_days_per_week` ist NOT NULL und darf das nicht erben.
+            if most_recent.work_days_per_week is not None:
+                user.work_days_per_week = most_recent.work_days_per_week
 
     # Task 3 (#Wochenstunden-Dialog): eine Änderung muss die bereits gebuchten
     # Abwesenheits-Stunden mitziehen — sonst schreibt z. B. ein Krankentag
