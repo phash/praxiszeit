@@ -25,7 +25,7 @@ from app.routers.time_entries import (
 from app.services.break_validation_service import validate_daily_break
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
-    get_weekly_hours_for_date, get_daily_target_for_date, get_vacation_account,
+    get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
     get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
 )
 from app.services import work_window_service, settings_service, special_days_service
@@ -48,7 +48,7 @@ def _vacation_day_contribution(db, user, d, half_day) -> float:
     weight = float(half_special_day_weight(d, _cfg))
     if get_daily_target(user) <= 0:  # untracked / work_days_per_week == 0
         return (0.5 if half_day else 1.0) * weight
-    dt = get_daily_target_for_date(user, d, get_weekly_hours_for_date(db, user, d))
+    dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d))
     if dt <= 0:
         return 0.0
     return (0.5 if half_day else 1.0) * weight
@@ -538,8 +538,8 @@ def review_change_request(
 
             _is_overtime = cr.proposed_absence_type == AbsenceType.OVERTIME.value
             if cr_user and (not _is_overtime or getattr(cr_user, "use_daily_schedule", False)):
-                weekly = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
-                hours = float(get_daily_target_for_date(cr_user, cr.proposed_date, weekly))
+                schedule = get_schedule_for_date(db, cr_user, cr.proposed_date)
+                hours = float(get_daily_target_for_date(cr_user, cr.proposed_date, schedule))
             else:
                 hours = float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0
 
@@ -572,8 +572,8 @@ def review_change_request(
                     )
                 _bill_day = True
                 if getattr(cr_user, "use_daily_schedule", False) and cr_user.track_hours:
-                    _bw = get_weekly_hours_for_date(db, cr_user, cr.proposed_date)
-                    _bill_day = float(get_daily_target_for_date(cr_user, cr.proposed_date, _bw)) > 0
+                    _bs = get_schedule_for_date(db, cr_user, cr.proposed_date)
+                    _bill_day = float(get_daily_target_for_date(cr_user, cr.proposed_date, _bs)) > 0
                 if _bill_day:
                     vacation_account = get_vacation_account(db, cr_user, cr.proposed_date.year)
                     # #394: ein Halbtags-Sondertag (24./31.12.) kostet nur 0,5.
@@ -757,8 +757,8 @@ def review_change_request(
             _upd_date = cr.proposed_date or absence.date
             _upd_is_overtime = absence.type == AbsenceType.OVERTIME
             if _upd_user and (not _upd_is_overtime or getattr(_upd_user, "use_daily_schedule", False)):
-                _upd_weekly = get_weekly_hours_for_date(db, _upd_user, _upd_date)
-                _upd_target = float(get_daily_target_for_date(_upd_user, _upd_date, _upd_weekly))
+                _upd_schedule = get_schedule_for_date(db, _upd_user, _upd_date)
+                _upd_target = float(get_daily_target_for_date(_upd_user, _upd_date, _upd_schedule))
                 # Release-Review 1.16.0: half_day mitziehen. Ohne die Halbierung
                 # bläht ein reiner Zeit-Edit an einer halbtägigen Abwesenheit die
                 # Stunden auf das VOLLE Tagessoll auf — bei SICK/TRAINING wird das

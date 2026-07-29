@@ -217,13 +217,14 @@ def _create_closure_absences(
             if not calculation_service._within_employment_window(employee, workday):
                 continue
 
-            # F-027/#204: authoritative weekly_hours lookup (get_daily_target_for_date
-            # must never fall back to user.weekly_hours; wh_changes vorgeladen).
-            weekly_hours = calculation_service.get_weekly_hours_for_date(
+            # F-027/#204 + #431: authoritative Vertrags-Snapshot je Datum
+            # (get_daily_target_for_date darf NIE auf die aktuellen User-Felder
+            # zurückfallen; wh_changes ist vorgeladen).
+            schedule = calculation_service.get_schedule_for_date(
                 db, employee, workday, wh_changes=emp_wh
             )
             day_target = calculation_service.get_daily_target_for_date(
-                employee, workday, weekly_hours=weekly_hours
+                employee, workday, schedule
             )
             # #314 (philvdb): an einem Nicht-Arbeitstag eines use_daily_schedule-
             # Teilzeitlers (Tagessoll 0 an diesem Wochentag) gibt es nichts zu

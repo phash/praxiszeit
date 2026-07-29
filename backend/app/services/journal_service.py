@@ -104,8 +104,8 @@ def get_journal(
     def _eff_daily_target(d: date) -> Decimal:
         if not calculation_service._within_employment_window(user, d):
             return Decimal("0")
-        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
-        dt = calculation_service.get_daily_target_for_date(user, d, weekly_hours)
+        schedule = calculation_service.get_schedule_for_date(db, user, d)
+        dt = calculation_service.get_daily_target_for_date(user, d, schedule)
         factor = special_days_service.special_day_target_factor(d, special_day_config)
         if factor is not None:
             dt = dt * factor

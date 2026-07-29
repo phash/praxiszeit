@@ -141,7 +141,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             # wrongly fell to OVERTIME.
             dt_day = calculation_service.get_daily_target_for_date(
                 employee, a.date,
-                weekly_hours=calculation_service.get_weekly_hours_for_date(db, employee, a.date),
+                calculation_service.get_schedule_for_date(db, employee, a.date),
             )
             if dt_day <= 0:
                 continue
@@ -169,7 +169,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             # weekday costs no vacation, so it must not reduce closure_budget.
             dt_day = calculation_service.get_daily_target_for_date(
                 employee, d,
-                weekly_hours=calculation_service.get_weekly_hours_for_date(db, employee, d),
+                calculation_service.get_schedule_for_date(db, employee, d),
             )
             if dt_day <= 0:
                 continue

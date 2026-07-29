@@ -1030,8 +1030,8 @@ def get_24_week_averaging_period(
         d = start_date
         while d <= end_date:
             if d.weekday() < 5 and d not in holiday_dates and d not in absence_dates:
-                weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
-                if calculation_service.get_daily_target_for_date(user, d, weekly_hours) > 0:
+                schedule = calculation_service.get_schedule_for_date(db, user, d)
+                if calculation_service.get_daily_target_for_date(user, d, schedule) > 0:
                     scheduled_days += 1
             d += timedelta(days=1)
 

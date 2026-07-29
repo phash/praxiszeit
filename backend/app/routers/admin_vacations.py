@@ -234,7 +234,7 @@ def review_vacation_request(
                     d for d in year_dates
                     if float(calculation_service.get_daily_target_for_date(
                         target_user, d,
-                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                        calculation_service.get_schedule_for_date(db, target_user, d),
                     )) > 0
                 ]
             else:
@@ -270,7 +270,7 @@ def review_vacation_request(
 
     # Create absence entries
     for d in dates_to_create:
-        weekly = calculation_service.get_weekly_hours_for_date(db, target_user, d)
+        schedule = calculation_service.get_schedule_for_date(db, target_user, d)
         # #156/T1 + #167: Voll-Tag-Typen werden immer mit dem Tagessoll des Tages
         # gebucht (Tagesprinzip), nicht mit vr.hours (das den 8h-Default tragen
         # kann). Halber Tag = 0,5 × Tagessoll. NUR der Überstundenausgleich
@@ -280,7 +280,7 @@ def review_vacation_request(
         # Antrag genehmigter Ausgleich buchte das Tagessoll statt der beantragten
         # Stunden; rechnerisch neutral, aber falsch in Anzeige/Reports).
         if absence_type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
-            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, weekly_hours=weekly))
+            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, schedule))
             # Review R3 (HIGH): only skip genuine 0h days for TRACKED users. For
             # track_hours=False the daily target is always 0; skipping would book
             # nothing, leaving the approved request with no absence rows and the

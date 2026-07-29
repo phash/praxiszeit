@@ -124,7 +124,8 @@ def test_daily_target_monday_standard(db, test_user):
     """Prüft Tagessoll am Montag — Werktag muss 8h ergeben bei 40h/5-Tage-Woche."""
     monday = date(2026, 3, 9)
     assert monday.weekday() == 0
-    result = calculation_service.get_daily_target_for_date(test_user, monday)
+    result = calculation_service.get_daily_target_for_date(
+        test_user, monday, calculation_service.get_schedule_for_date(db, test_user, monday))
     assert result == Decimal('8.00')
 
 
@@ -132,7 +133,8 @@ def test_daily_target_friday_standard(db, test_user):
     """Prüft Tagessoll am Freitag — letzter Werktag muss identisch zu Montag sein."""
     friday = date(2026, 3, 13)
     assert friday.weekday() == 4
-    result = calculation_service.get_daily_target_for_date(test_user, friday)
+    result = calculation_service.get_daily_target_for_date(
+        test_user, friday, calculation_service.get_schedule_for_date(db, test_user, friday))
     assert result == Decimal('8.00')
 
 
@@ -140,7 +142,8 @@ def test_daily_target_saturday_is_zero(db, test_user):
     """Prüft dass Samstag kein Soll hat — Wochenende darf Überstunden nicht verfälschen."""
     saturday = date(2026, 3, 14)
     assert saturday.weekday() == 5
-    result = calculation_service.get_daily_target_for_date(test_user, saturday)
+    result = calculation_service.get_daily_target_for_date(
+        test_user, saturday, calculation_service.get_schedule_for_date(db, test_user, saturday))
     assert result == Decimal('0')
 
 
@@ -148,7 +151,8 @@ def test_daily_target_sunday_is_zero(db, test_user):
     """Prüft dass Sonntag kein Soll hat — analog zu Samstag."""
     sunday = date(2026, 3, 15)
     assert sunday.weekday() == 6
-    result = calculation_service.get_daily_target_for_date(test_user, sunday)
+    result = calculation_service.get_daily_target_for_date(
+        test_user, sunday, calculation_service.get_schedule_for_date(db, test_user, sunday))
     assert result == Decimal('0')
 
 
@@ -166,7 +170,8 @@ def test_daily_target_with_daily_schedule_monday(db):
         hours_friday=4.0,
     )
     monday = date(2026, 3, 9)
-    result = calculation_service.get_daily_target_for_date(user, monday)
+    result = calculation_service.get_daily_target_for_date(
+        user, monday, calculation_service.get_schedule_for_date(db, user, monday))
     assert result == Decimal('4.00')
 
 
@@ -184,7 +189,8 @@ def test_daily_target_with_daily_schedule_wednesday(db):
         hours_friday=4.0,
     )
     wednesday = date(2026, 3, 11)
-    result = calculation_service.get_daily_target_for_date(user, wednesday)
+    result = calculation_service.get_daily_target_for_date(
+        user, wednesday, calculation_service.get_schedule_for_date(db, user, wednesday))
     assert result == Decimal('8.00')
 
 

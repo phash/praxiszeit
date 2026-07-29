@@ -34,8 +34,8 @@ def get_daily_target_for_date_endpoint(
     current_user: User = Depends(get_current_user)
 ):
     """Get daily target hours for a specific date (for pre-filling absence forms)."""
-    weekly = calculation_service.get_weekly_hours_for_date(db, current_user, target_date)
-    daily = calculation_service.get_daily_target_for_date(current_user, target_date, weekly_hours=weekly)
+    schedule = calculation_service.get_schedule_for_date(db, current_user, target_date)
+    daily = calculation_service.get_daily_target_for_date(current_user, target_date, schedule)
     return {"date": str(target_date), "hours": float(daily)}
 
 
@@ -484,7 +484,7 @@ def create_absence(
                     d for d in year_dates
                     if float(calculation_service.get_daily_target_for_date(
                         target_user, d,
-                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
+                        calculation_service.get_schedule_for_date(db, target_user, d),
                     )) > 0
                 ]
             else:
@@ -566,8 +566,8 @@ def create_absence(
         # Only OVERTIME compensation keeps its explicit hours (the amount of
         # overtime being drawn down), unless a per-weekday schedule applies.
         if absence_data.type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
-            weekly = calculation_service.get_weekly_hours_for_date(db, target_user, date)
-            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, weekly_hours=weekly))
+            schedule = calculation_service.get_schedule_for_date(db, target_user, date)
+            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, schedule))
             # Review R3 (HIGH): only skip genuine 0h days for TRACKED users (e.g.
             # a Mo/Mi/Fr part-timer's Tue/Thu). For track_hours=False the daily
             # target is ALWAYS 0 — skipping here would create NO absence at all,

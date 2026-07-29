@@ -166,7 +166,7 @@ def apply_vacation_request_patch(
                     dd for dd in year_dates
                     if float(calculation_service.get_daily_target_for_date(
                         target_user, dd,
-                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, dd),
+                        calculation_service.get_schedule_for_date(db, target_user, dd),
                     )) > 0
                 ]
             else:
@@ -329,7 +329,7 @@ def create_vacation_request(
                     dd for dd in year_dates
                     if float(calculation_service.get_daily_target_for_date(
                         current_user, dd,
-                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, current_user, dd),
+                        calculation_service.get_schedule_for_date(db, current_user, dd),
                     )) > 0
                 ]
             else:

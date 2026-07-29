@@ -260,9 +260,9 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(0.0))
             net = Decimal("0.00")
 
-        # Per-day target using historical weekly hours
-        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
-        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        # Per-day target using the historical contract snapshot (#431)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
             daily_target = daily_target * _sd_factor
@@ -575,8 +575,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         day_absences = absences_by_date.get(current_date, [])
         absence = day_absences[0] if day_absences else None
         day_entries = entries_by_date.get(current_date, [])
-        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
-        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
             daily_target = daily_target * _sd_factor

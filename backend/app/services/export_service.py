@@ -389,9 +389,9 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             sheet.cell(row=row, column=6).value = 0.00
             sheet.cell(row=row, column=6).number_format = '0.00'
 
-        # Per-day target using historical weekly hours
-        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
-        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        # Per-day target using the historical contract snapshot (#431)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         # #146: apply the special-day factor (only the working-day branch below
         # consumes daily_target; the weekend/holiday/absence branches hardcode 0).
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
@@ -938,8 +938,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             sheet.cell(row=row, column=6).value = 0.00
             sheet.cell(row=row, column=6).number_format = '0.00'
 
-        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
-        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
             daily_target = daily_target * _sd_factor
@@ -1560,9 +1560,9 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 netto_val = 0.0
                 net = Decimal('0.00')
 
-            # Per-day target using historical weekly hours
-            weekly_h = calculation_service.get_weekly_hours_for_date(db, user, cur)
-            daily_target = calculation_service.get_daily_target_for_date(user, cur, weekly_hours=weekly_h)
+            # Per-day target using the historical contract snapshot (#431)
+            schedule = calculation_service.get_schedule_for_date(db, user, cur)
+            daily_target = calculation_service.get_daily_target_for_date(user, cur, schedule)
             _sd_factor = special_days_service.special_day_target_factor(cur, special_day_config)
             if _sd_factor is not None:
                 daily_target = daily_target * _sd_factor

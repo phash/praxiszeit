@@ -1144,12 +1144,16 @@ def preview_working_hours_change(
     while representative_day.weekday() >= 5:
         representative_day += timedelta(days=1)
 
-    current_weekly = calculation_service.get_weekly_hours_for_date(db, user, effective_from)
+    # #431: der aktuelle Snapshot zum Wirkungsdatum; die "neu"-Zeile ist genau
+    # derselbe Snapshot mit den geplanten Wochenstunden (nur die aendern sich —
+    # Modus/Tageswerte/Arbeitstage bleiben, was der Dialog nicht anfasst).
+    current_schedule = calculation_service.get_schedule_for_date(db, user, effective_from)
     current_daily_target = calculation_service.get_daily_target_for_date(
-        user, representative_day, current_weekly
+        user, representative_day, current_schedule
     )
     new_daily_target = calculation_service.get_daily_target_for_date(
-        user, representative_day, Decimal(str(weekly_hours))
+        user, representative_day,
+        current_schedule._replace(weekly_hours=Decimal(str(weekly_hours))),
     )
 
     # Gleiche Ablehnungsgründe wie create_working_hours_change (Fix #2 dort):
