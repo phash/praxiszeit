@@ -311,6 +311,10 @@ def retarget_absence_hours(
     * Tage ausserhalb des Beschaeftigungsfensters (#193).
     * ``half_day IS NULL`` (Legacy-Zeilen von vor #205) — siehe Begruendung in
       der Schleife.
+    * #431: Tagesplan-Mitarbeitende sind NICHT mehr ausgenommen. Ihr Tagessoll
+      kommt jetzt ebenfalls aus der Historien-Zeile; aendert eine Aenderung nur
+      einen Wochentag, ueberspringt die Gleichheitspruefung die uebrigen Tage
+      von selbst — es braucht keinen Wochentagsfilter.
 
     ``half_day`` halbiert, der #146/#394-Sondertagsfaktor (24./31.12.) wird
     angewandt. Die Abwesenheits-TAGE aendern sich dadurch nie — die sind
