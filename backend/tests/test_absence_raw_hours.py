@@ -22,11 +22,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import event
 
 from app.models import (
     Absence, AbsenceType, ChangeRequest, ChangeRequestStatus, ChangeRequestType,
     TimeEntryAuditLog, User, UserRole, WorkingHoursChange,
 )
+from app.routers import admin_users
 from app.routers.admin_users import (
     create_working_hours_change, delete_working_hours_change,
     preview_working_hours_change,
@@ -331,27 +333,73 @@ class TestPreviewWritesNoAuditRow:
     darf KEIN Protokoll schreiben, sonst protokolliert jeder Tastendruck im
     Dialog eine Aenderung, die nie stattfand."""
 
-    def test_preview_leaves_the_audit_log_untouched(self, db, default_tenant):
-        admin = _admin(db, "raw_prev_admin")
-        emp = _make_user(db, "raw_prev_emp", weekly_hours=40.0)
-        mon = _last_monday()
-        _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
-
-        before = db.query(TimeEntryAuditLog).count()
+    def _run_preview(self, db, admin, emp, mon):
         # Direktaufruf: die ``Query(...)``-Defaults der Signatur sind ausserhalb
         # von FastAPI keine Werte, sondern Query-Objekte — alle Parameter
         # explizit setzen.
-        result = preview_working_hours_change(
+        return preview_working_hours_change(
             user_id=str(emp.id), effective_from=mon, weekly_hours=20.0,
             use_daily_schedule=False, hours_monday=None, hours_tuesday=None,
             hours_wednesday=None, hours_thursday=None, hours_friday=None,
             work_days_per_week=None,
             db=db, current_user=admin,
         )
-        after = db.query(TimeEntryAuditLog).count()
+
+    def test_preview_never_calls_the_audit_writer(self, db, default_tenant, monkeypatch):
+        """Geprueft wird die STRUKTURELLE Zusage („die Vorschau ruft den
+        Protokoll-Schreiber nicht auf"), nicht ihr Nebeneffekt.
+
+        Ein reiner Zeilenzaehler vorher/nachher koennte fuer sein eigenes
+        Fehlerbild nie rot werden: die Vorschau rollt im ``finally`` zurueck.
+        Wanderte das Protokollieren spaeter in ``retarget_absence_hours`` —
+        genau die Regression, gegen die dieser Test steht —, wuerden die Zeilen
+        im try-Block geschrieben und vom Rollback wieder verworfen; der Zaehler
+        bliebe gleich, der Test gruen. Deshalb der Monkeypatch.
+        """
+        admin = _admin(db, "raw_prev_admin")
+        emp = _make_user(db, "raw_prev_emp", weekly_hours=40.0)
+        mon = _last_monday()
+        _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
+
+        calls = []
+        monkeypatch.setattr(
+            admin_users, "_log_wh_change_retarget",
+            lambda *a, **kw: calls.append(kw),
+        )
+
+        result = self._run_preview(db, admin, emp, mon)
 
         assert result.affected_absences == 1, "Vorbedingung: die Vorschau sieht die Zeile"
-        assert after == before, "die Vorschau schreibt keine Audit-Zeile"
+        assert calls == [], "die Vorschau darf den Protokoll-Schreiber nicht aufrufen"
+
+    def test_preview_creates_no_audit_row_even_before_the_rollback(self, db, default_tenant):
+        """Deckt auch einen Schreiber ab, der NICHT ueber
+        ``_log_wh_change_retarget`` laeuft (z. B. ein spaeter in den Service
+        gewanderter ``db.add``).
+
+        Gezaehlt wird per ``before_insert``-Listener, also zum Zeitpunkt des
+        Flush — VOR dem ``db.rollback()`` der Vorschau. Ein Zeilenzaehler
+        vorher/nachher saehe an dieser Stelle nichts, weil der Rollback die
+        Zeilen wieder wegnimmt.
+        """
+        admin = _admin(db, "raw_prev2_admin")
+        emp = _make_user(db, "raw_prev2_emp", weekly_hours=40.0)
+        mon = _last_monday()
+        _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
+
+        seen = []
+
+        def _spy(mapper, connection, target):
+            seen.append(target)
+
+        event.listen(TimeEntryAuditLog, "before_insert", _spy)
+        try:
+            result = self._run_preview(db, admin, emp, mon)
+        finally:
+            event.remove(TimeEntryAuditLog, "before_insert", _spy)
+
+        assert result.affected_absences == 1, "Vorbedingung: die Vorschau sieht die Zeile"
+        assert seen == [], "die Vorschau darf keine Audit-Zeile erzeugen — auch keine, die der Rollback wieder verwirft"
 
 
 class TestDsgvoExport:

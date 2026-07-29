@@ -5,6 +5,9 @@ import { ScrollText, ArrowRight } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import MonthSelector from '../../components/MonthSelector';
 import LoadingSpinner from '../../components/LoadingSpinner';
+// Geteilt mit dem Detail-Modal des Admin-Dashboards — beide Ansichten rendern
+// dieselben Audit-Zeilen und dürfen sich nicht auseinanderentwickeln.
+import AuditValues, { auditPillText, formatAuditNote } from '../../components/AuditValues';
 
 interface AuditEntry {
   id: string;
@@ -81,39 +84,6 @@ const sourceLabels: Record<string, string> = {
   license_startup: 'Lizenz',
   wh_change: 'Stundenänderung',
 };
-
-/**
- * Eine „Alte Werte"/„Neue Werte"-Zelle des Protokolls.
- *
- * Nicht jede Audit-Zeile ist ein Zeiteintrag. Die Zeilen der
- * Wochenstunden-Rückrechnung (`source="wh_change"`) tragen ihren Inhalt im
- * Freitext: die Sammelzeile ganz ohne Datum/Zeiten, die Einzelzeile je
- * nachgezogener Abwesenheit mit Datum, aber ohne Von/Bis und ohne Pause.
- * Vorher rendete die Zelle stur „Datum / Von–Bis / Pause: X min" — für diese
- * Zeilen also ein leeres „ - " plus „Pause:  min", während der eigentliche
- * Text (der ja die Änderung beschreibt) gar nicht angezeigt wurde. Jede
- * Teilangabe erscheint jetzt nur, wenn es sie gibt; der Freitext immer.
- */
-function AuditValues({ date, start, end, breakMinutes, note }: {
-  date?: string;
-  start?: string;
-  end?: string;
-  breakMinutes?: number;
-  note?: string;
-}) {
-  const hasTimes = Boolean(start || end);
-  if (!date && !hasTimes && breakMinutes == null && !note) {
-    return <span className="text-gray-400">-</span>;
-  }
-  return (
-    <div>
-      {date && <p>{date}</p>}
-      {hasTimes && <p>{start?.substring(0, 5)} - {end?.substring(0, 5)}</p>}
-      {breakMinutes != null && <p>Pause: {breakMinutes} min</p>}
-      {note && <p className="text-gray-500 break-words">{note}</p>}
-    </div>
-  );
-}
 
 export default function AuditLog() {
   const toast = useToast();
@@ -292,25 +262,39 @@ export default function AuditLog() {
                   <div className="text-xs text-gray-500">
                     {format(new Date(entry.created_at), 'dd.MM.yyyy HH:mm')} | von {entry.changed_by_first_name} {entry.changed_by_last_name} | {sourceLabels[entry.source] || entry.source}
                   </div>
-                  <div className="flex items-center space-x-2 text-xs">
-                    {entry.old_date && (
-                      <span className="bg-gray-100 px-2 py-1 rounded-sm">
-                        {entry.old_date} {entry.old_start_time?.substring(0, 5)}-{entry.old_end_time?.substring(0, 5)}
-                      </span>
-                    )}
-                    {entry.old_date && entry.new_date && <ArrowRight size={12} className="text-gray-400" />}
-                    {entry.new_date && (
-                      <span className="bg-amber-100 px-2 py-1 rounded-sm">
-                        {entry.new_date} {entry.new_start_time?.substring(0, 5)}-{entry.new_end_time?.substring(0, 5)}
-                      </span>
-                    )}
-                  </div>
+                  {/* Datums-Pillen. Der Pfeil steht für „von → nach" und darf
+                      deshalb NUR erscheinen, wenn sich die beiden Seiten
+                      tatsächlich unterscheiden: die Zeilen der
+                      Stundenrückrechnung tragen bewusst auf beiden Seiten
+                      DASSELBE Datum (die Rückrechnung verschiebt nie den Tag) —
+                      ein Pfeil dazwischen behauptete eine Verschiebung, die es
+                      nicht gab. `auditPillText` lässt zudem den hängenden
+                      Bindestrich weg, wenn es gar keine Zeiten gibt. */}
+                  {(() => {
+                    const oldPill = auditPillText(entry.old_date, entry.old_start_time, entry.old_end_time);
+                    const newPill = auditPillText(entry.new_date, entry.new_start_time, entry.new_end_time);
+                    if (!oldPill && !newPill) return null;
+                    const identical = Boolean(oldPill) && oldPill === newPill;
+                    return (
+                      <div className="flex items-center space-x-2 text-xs">
+                        {oldPill && (
+                          <span className="bg-gray-100 px-2 py-1 rounded-sm">{oldPill}</span>
+                        )}
+                        {!identical && oldPill && newPill && <ArrowRight size={12} className="text-gray-400" />}
+                        {!identical && newPill && (
+                          <span className="bg-amber-100 px-2 py-1 rounded-sm">{newPill}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* Freitext (u. a. die Stundenänderungs-Zeilen, die nur hier
-                      ihren Inhalt tragen) — auf der Karte unter den Datums-Pillen. */}
+                      ihren Inhalt tragen) — auf der Karte unter den Datums-Pillen.
+                      Marker wie `absence:sick:8.0h` werden dabei in Klartext
+                      übersetzt (formatAuditNote). */}
                   {(entry.old_note || entry.new_note) && (
                     <div className="text-xs text-gray-500 break-words">
-                      {entry.old_note && <p>{entry.old_note}</p>}
-                      {entry.new_note && <p>{entry.new_note}</p>}
+                      {entry.old_note && <p>{formatAuditNote(entry.old_note)}</p>}
+                      {entry.new_note && <p>{formatAuditNote(entry.new_note)}</p>}
                     </div>
                   )}
                 </div>

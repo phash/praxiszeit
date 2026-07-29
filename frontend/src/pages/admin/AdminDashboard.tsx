@@ -15,6 +15,9 @@ import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
+// Geteilt mit dem Änderungsprotokoll (`admin/AuditLog.tsx`) — dieselben
+// Audit-Zeilen, dieselbe Darstellung.
+import AuditValues from '../../components/AuditValues';
 
 interface EmployeeReport {
   user_id: string;
@@ -1584,12 +1587,23 @@ export default function AdminDashboard() {
                                   {log.source === 'change_request' && ' (Antrag)'}
                                 </span>
                               </div>
-                              {log.old_date && (
-                                <p className="text-gray-400 mt-1">Alt: {log.old_date} {log.old_start_time?.substring(0, 5)}-{log.old_end_time?.substring(0, 5)} P:{log.old_break_minutes}min</p>
-                              )}
-                              {log.new_date && (
-                                <p className="text-gray-600">Neu: {log.new_date} {log.new_start_time?.substring(0, 5)}-{log.new_end_time?.substring(0, 5)} P:{log.new_break_minutes}min</p>
-                              )}
+                              {/* Dieselbe Darstellung wie im Änderungsprotokoll
+                                  (`admin/AuditLog.tsx`) — beide Ansichten zeigen
+                                  dieselben Zeilen. Ohne den gemeinsamen Baustein
+                                  standen hier Zeit- und Pausenangaben auch dann,
+                                  wenn es keine gibt („- P:min"), und der Freitext
+                                  — bei den Zeilen der Stundenrückrechnung der
+                                  GANZE Inhalt — fehlte ganz. */}
+                              <AuditValues
+                                prefix="Alt" className="text-gray-400 mt-1"
+                                date={log.old_date} start={log.old_start_time} end={log.old_end_time}
+                                breakMinutes={log.old_break_minutes} note={log.old_note}
+                              />
+                              <AuditValues
+                                prefix="Neu" className="text-gray-600"
+                                date={log.new_date} start={log.new_start_time} end={log.new_end_time}
+                                breakMinutes={log.new_break_minutes} note={log.new_note}
+                              />
                             </div>
                           ))}
                         </div>
