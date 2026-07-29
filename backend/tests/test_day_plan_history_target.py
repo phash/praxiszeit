@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
-from app.models import WorkingHoursChange
+from app.models import PublicHoliday, WorkingHoursChange
 from app.services import calculation_service as cs
 
 
@@ -85,6 +85,17 @@ def test_monthly_target_follows_historical_day_plan(db, test_user):
         hours_wednesday=Decimal("2.0"), work_days_per_week=2,
     ))
     db.commit()
+
+    # Die Erwartungswerte unten zaehlen reine Wochentage. Das gilt NUR, solange
+    # keine Feiertage geseedet sind — April 2026 enthaelt Ostermontag (06.04.,
+    # ein Montag): mit Feiertagen waeren es 22,00 statt 26,00. Die Annahme wird
+    # hier zugesichert, damit ein spaeterer Feiertags-Seed diesen Test mit
+    # klarer Ursache scheitern laesst statt mit einer raetselhaften Zahl.
+    assert db.query(PublicHoliday).filter(
+        PublicHoliday.tenant_id == test_user.tenant_id,
+        PublicHoliday.date >= date(2026, 2, 1),
+        PublicHoliday.date <= date(2026, 4, 30),
+    ).count() == 0, "Test setzt einen feiertagsfreien Zeitraum voraus"
 
     # Februar 2026: 4 Mo, 4 Di, 4 Mi → 4×8 + 4×5 + 4×4 = 68 h (alter Plan).
     # Mit dem HEUTIGEN Plan waeren es 4×4 + 4×2 = 24 h gewesen.

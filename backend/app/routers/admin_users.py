@@ -922,12 +922,25 @@ def create_working_hours_change(
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
-    # Fix #2: a WorkingHoursChange only feeds get_weekly_hours_for_date, which
-    # get_daily_target_for_date IGNORES when use_daily_schedule=True (it reads
-    # hours_monday…friday instead). Writing such a row would have NO effect on
-    # the Soll while the UI still showed the new value → silently wrong §16
-    # records. Reject it instead of historising the per-weekday columns (which
-    # would be a separate, larger feature).
+    # Fix #2 — Begruendung seit #431 GEAENDERT, die Sperre bleibt (vorerst):
+    #
+    # Frueher galt: eine WorkingHoursChange speist nur get_weekly_hours_for_date,
+    # und das Tagessoll ignorierte die bei use_daily_schedule=True komplett (es
+    # las live hours_monday…friday). Die Zeile war fuers Soll wirkungslos,
+    # waehrend die UI den neuen Wert zeigte → still falscher §16-Beleg.
+    #
+    # Seit #431 traegt die Zeile den VOLLSTAENDIGEN Vertrags-Snapshot
+    # (use_daily_schedule + hours_monday…friday + work_days_per_week) und treibt
+    # das Soll auch fuer Tagesplan-Mitarbeitende. Die Sperre steht jetzt aus
+    # einem anderen Grund: dieser Schreibpfad setzt die Snapshot-Spalten noch
+    # NICHT. Eine hier angelegte Zeile bekaeme use_daily_schedule=False
+    # (Column-Default) und work_days_per_week=NULL — sie kippte den
+    # Mitarbeitenden ab ihrem Wirkungsdatum still in den Wochenstunden-Modus.
+    #
+    # Die Sperre faellt, sobald der Schreibpfad (Dialog + Schema + dieser
+    # Endpoint) den Snapshot mitschreibt. Wer sie aufhebt, MUSS zugleich den
+    # Retarget-Skip in delete_working_hours_change entfernen (siehe dort) —
+    # sonst rechnet das Loeschen fuer diese Gruppe nicht zurueck.
     if getattr(user, "use_daily_schedule", False):
         raise HTTPException(
             status_code=400,
@@ -1324,21 +1337,33 @@ def delete_working_hours_change(
     # betroffene Abwesenheit".
     #
     # I1 (Abschluss-Review): Mitarbeitende mit individuellem Tagesplan sind vom
-    # Retarget AUSGENOMMEN. Ihr Tagessoll kommt aus hours_monday…friday —
-    # get_daily_target_for_date liest bei use_daily_schedule=True gar keine
-    # Wochenstunden, eine WorkingHoursChange kann ihr Soll also weder setzen
-    # noch beim Löschen verschieben. Das Retarget schrieb ihnen trotzdem die
-    # gebuchten Absence-Stunden auf das Tagesplan-Soll um (real: 8 h → 6 h) —
-    # eine stille Änderung an §16-Belegen, die mit der ausgelösten Aktion
-    # nichts zu tun hat, bei einer Personengruppe, für die dieses Feature
-    # ausdrücklich nicht zuständig ist (create/preview lehnen sie mit 400 bzw.
-    # blocked_reason ab).
+    # Retarget AUSGENOMMEN. Ursprüngliche Begründung: ihr Tagessoll kam aus den
+    # LIVE-Feldern hours_monday…friday, eine WorkingHoursChange konnte es weder
+    # setzen noch beim Löschen verschieben — das Retarget schrieb ihnen trotzdem
+    # die gebuchten Absence-Stunden auf das Tagesplan-Soll um (real: 8 h → 6 h),
+    # eine stille Änderung an §16-Belegen ohne Bezug zur ausgelösten Aktion.
+    #
+    # ⚠️ #431 HAT DIESE BEGRÜNDUNG AUFGEHOBEN — DIESER SKIP IST JETZT BEFRISTET.
+    # Die Zeile trägt seit #431 den vollständigen Vertrags-Snapshot
+    # (use_daily_schedule + hours_monday…friday + work_days_per_week) und treibt
+    # das Soll auch für Tagesplan-Mitarbeitende. Ihr Löschen VERSCHIEBT deren
+    # Soll also sehr wohl. Folgenlos ist das heute nur, weil
+    #   (a) der 067-Backfill jeder Bestandszeile exakt den heutigen Plan gab
+    #       (Löschen ändert also nichts), und
+    #   (b) create_working_hours_change Tagesplan-Mitarbeitende noch mit 400
+    #       ablehnt, es also keine abweichenden Zeilen geben KANN.
+    # Sobald diese 400-Sperre fällt (der Schreibpfad setzt die Snapshot-Spalten
+    # noch nicht — siehe create_working_hours_change), MUSS dieser Skip WEG:
+    # sonst verschiebt das Löschen einer Zeile das Tagesplan-Soll, ohne die
+    # Abwesenheitsstunden zurückzurechnen und ohne stale_year_closing_warning zu
+    # melden → stille §16-Drift. Skip und Sperre fallen zusammen, in EINEM
+    # Schritt; die eine ohne die andere zu ändern ist ein Fehler.
     #
     # Bewusst ÜBERSPRINGEN statt (wie beim Anlegen) mit 400 ABLEHNEN: eine
     # Ablehnung machte Alt-Zeilen aus der Zeit vor der Tagesplan-Umstellung
-    # unlöschbar — sie sind fürs Soll wirkungslos, aber der Admin bekäme sie
-    # nie mehr aus der Historie. Löschen bleibt also möglich, es rechnet nur
-    # nichts zurück (es gibt auch nichts zurückzurechnen).
+    # unlöschbar — für sie gilt (a), sie sind fürs Soll folgenlos, aber der
+    # Admin bekäme sie nie mehr aus der Historie. Löschen bleibt also möglich,
+    # es rechnet (solange (a)+(b) gelten) nur nichts zurück.
     _uses_daily_schedule = bool(getattr(user, "use_daily_schedule", False))
     adjusted_absences = 0
     warning = None
