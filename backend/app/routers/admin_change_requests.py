@@ -765,8 +765,14 @@ def review_change_request(
                 # als Ist gutgeschrieben, sodass ein halber Krank-Tag plus halber
                 # Arbeitstag plötzlich 12 statt 8 Ist-Stunden ergibt.
                 absence.hours = round(_upd_target / 2, 2) if absence.half_day else _upd_target
+                # Task 15: eine genehmigte Änderung ist eine NEUBUCHUNG durch
+                # einen Menschen — hier IST der neue Wert der gebuchte, also
+                # wandert er auch in den Rohwert. Nur die gerechnete
+                # Rückrechnung (retarget_absence_hours) lässt ihn stehen.
+                absence.raw_hours = absence.hours
             elif cr.proposed_absence_hours is not None:
                 absence.hours = float(cr.proposed_absence_hours)
+                absence.raw_hours = absence.hours
             if cr.proposed_date:
                 absence.date = cr.proposed_date
             absence.start_time = cr.proposed_start_time

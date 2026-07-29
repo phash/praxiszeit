@@ -18,6 +18,9 @@ from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateRes
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse, WorkingHoursChangePreview
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import auth_service, calculation_service, milog_service, settings_service
+# Task 15: dieselbe Zahl- und Label-Schreibweise wie die §16-Exporte — das
+# Aenderungsprotokoll darf die Stunden nicht anders schreiben als der Beleg.
+from app.services.export_service import ABSENCE_TYPE_LABELS_DE, format_hours_de
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -54,7 +57,7 @@ def _log_wh_change_retarget(
     tenant_id,
     effective_from: date,
     period_end: date,
-    adjusted_absences: int,
+    adjusted: List[calculation_service.AbsenceRetarget],
     prefix: str,
     suffix: str,
 ) -> None:
@@ -65,12 +68,34 @@ def _log_wh_change_retarget(
     ``suffix``), everything else (action, source, actor/subject wiring) was
     duplicated near-verbatim before. No-op when nothing was actually
     adjusted, so callers can call this unconditionally without an
-    ``if adjusted_absences:`` guard of their own.
+    ``if adjusted:`` guard of their own.
+
+    Task 15: geschrieben werden ZWEI Ebenen —
+
+    * die **Sammelzeile** (unveraendert, ``old_date``/``new_date`` leer): sie
+      fasst den Vorgang zusammen.
+    * je tatsaechlich geaenderter Abwesenheit eine **Einzelzeile** mit dem Datum
+      in ``old_date``/``new_date`` (maschinell auswertbar) und den Stunden im
+      Klartext in ``old_note``/``new_note``. Vorher stand nur die Summe im
+      Protokoll — WELCHE Zeile von WELCHEM Wert auf WELCHEN ging, war nirgends
+      nachlesbar, und genau das braucht man, wenn sich eine Rueckrechnung als
+      falsch herausstellt.
+
+    Bewusst KEINE stille Obergrenze (CLAUDE.md „no silent caps"): beruehrt ein
+    Vorgang 300 Abwesenheiten, stehen 300 Zeilen im Protokoll.
+
+    Die Zeilen entstehen hier im ROUTER, nicht in ``retarget_absence_hours``:
+    die Vorschau ruft dieselbe Rueckrechnung und rollt danach zurueck — sie darf
+    nichts protokollieren, sonst schriebe jeder Tastendruck im Dialog eine
+    Aenderung fest, die nie stattfand.
+
+    Alle Audit-Zeilen entstehen per ORM (``db.add``), damit der
+    ``before_insert``-Hook den ``row_hash`` (#121) berechnet.
 
     ``source="wh_change"`` is 9 characters, well under the
     ``varchar(40)`` column limit (CLAUDE.md).
     """
-    if not adjusted_absences:
+    if not adjusted:
         return
     db.add(TimeEntryAuditLog(
         time_entry_id=None,
@@ -80,11 +105,37 @@ def _log_wh_change_retarget(
         source="wh_change",
         new_note=(
             f"{prefix} zum {effective_from.isoformat()}: "
-            f"{adjusted_absences} Abwesenheit(en) im Zeitraum "
+            f"{len(adjusted)} Abwesenheit(en) im Zeitraum "
             f"{effective_from.isoformat()}–{period_end.isoformat()} {suffix}"
         ),
         tenant_id=tenant_id,
     ))
+
+    # Der Ausloeser im Klartext, identisch auf jeder Einzelzeile.
+    trigger = f"{prefix} ab {effective_from.strftime('%d.%m.%Y')}"
+    for rec in adjusted:
+        # Nur der eingebaute TYP, nie der Name eines eigenen Grundes (#312):
+        # der kann gesundheitsbezogen sein ("Reha"), und den Typ treibt ohnehin
+        # die Berechnung, um die es hier geht.
+        label = ABSENCE_TYPE_LABELS_DE.get(
+            rec.absence_type.value, rec.absence_type.value
+        )
+        db.add(TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=user.id,
+            changed_by=admin.id,
+            action="update",
+            source="wh_change",
+            # Das Datum der Abwesenheit — auf beiden Seiten gleich (die
+            # Rueckrechnung verschiebt nie den Tag, nur die Stunden), damit die
+            # Zeile in der Vorher/Nachher-Darstellung des Protokolls nicht wie
+            # eine Verschiebung aussieht.
+            old_date=rec.date,
+            new_date=rec.date,
+            old_note=f"{label} {format_hours_de(rec.old_hours)} h",
+            new_note=f"{label} {format_hours_de(rec.new_hours)} h — {trigger}",
+            tenant_id=tenant_id,
+        ))
 
 
 def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_per_week):
@@ -1227,15 +1278,15 @@ def create_working_hours_change(
     # nicht mehr das Datum, sondern „es gibt eine betroffene Abwesenheit im
     # Wirkungsbereich".
     window = calculation_service.retarget_window(db, user, change_data.effective_from)
-    adjusted_absences = 0
+    adjusted = []
     if window.has_absences:
-        adjusted_absences = calculation_service.retarget_absence_hours(
+        adjusted = calculation_service.retarget_absence_hours(
             db, user, window.start, window.end
         )
         _log_wh_change_retarget(
             db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
             effective_from=window.start, period_end=window.end,
-            adjusted_absences=adjusted_absences,
+            adjusted=adjusted,
             prefix="Wochenstunden-Änderung",
             suffix="auf neues Tagessoll nachgezogen",
         )
@@ -1252,7 +1303,9 @@ def create_working_hours_change(
 
     db.commit()
     db.refresh(change)
-    change.adjusted_absences = adjusted_absences
+    # Die API-Zusage bleibt eine ZAHL — die Einzelheiten stehen im Protokoll,
+    # nicht in der Antwort des Dialogs.
+    change.adjusted_absences = len(adjusted)
     change.warning = warning
     return change
 
@@ -1563,9 +1616,14 @@ def preview_working_hours_change(
             # Vorab-Ausstieg oben hält den häufigsten Fall — unveränderter
             # Snapshot — komplett aus diesem Block heraus.
             if window.has_absences:
-                affected_absences = calculation_service.retarget_absence_hours(
+                # Task 15: die Vorschau nimmt bewusst nur die ANZAHL ab und ruft
+                # `_log_wh_change_retarget` NIE. Sie simuliert eine Änderung, die
+                # noch gar nicht beschlossen ist und gleich zurückgerollt wird —
+                # ein Protokolleintrag hier hieße, dass jeder Tastendruck im
+                # Dialog eine Änderung festschreibt, die nie stattfand.
+                affected_absences = len(calculation_service.retarget_absence_hours(
                     db, user, period_start, period_end
-                )
+                ))
             # Kein wh_changes-Preload durchreichen — die Funktionen müssen die
             # eben geflushte Zeile selbst nachladen.
             overtime_after = float(calculation_service.get_overtime_account(
@@ -1721,16 +1779,15 @@ def delete_working_hours_change(
     # zurückzuziehen und ohne stale_year_closing_warning zu melden — dieselbe
     # stille §16-Drift, nur andersherum.
     window = calculation_service.retarget_window(db, user, deleted_effective_from)
-    adjusted_absences = 0
     warning = None
     if window.has_absences:
-        adjusted_absences = calculation_service.retarget_absence_hours(
+        adjusted = calculation_service.retarget_absence_hours(
             db, user, window.start, window.end
         )
         _log_wh_change_retarget(
             db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
             effective_from=window.start, period_end=window.end,
-            adjusted_absences=adjusted_absences,
+            adjusted=adjusted,
             prefix="Löschung der Wochenstunden-Änderung",
             suffix="auf den davor gültigen Wert zurückgerechnet",
         )

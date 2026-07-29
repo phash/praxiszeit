@@ -38,7 +38,7 @@ def test_only_changed_weekday_is_retargeted(db, test_user):
 
     rows = {a.date: Decimal(str(a.hours)) for a in db.query(Absence).filter(
         Absence.user_id == test_user.id).all()}
-    assert changed == 1
+    assert len(changed) == 1
     assert rows[mon] == Decimal("8.00")   # unveraendert
     assert rows[wed] == Decimal("6.00")   # nachgezogen
 
@@ -57,5 +57,5 @@ def test_free_weekday_is_skipped_not_zeroed(db, test_user):
     changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31))
     row = db.query(Absence).filter(Absence.date == fri).first()
 
-    assert changed == 0
+    assert len(changed) == 0
     assert Decimal(str(row.hours)) == Decimal("3.0")

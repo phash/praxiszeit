@@ -3,7 +3,7 @@ from app.services.timezone_service import today_local
 from app.services.date_filters import date_in_year, date_in_month, date_in_range
 from decimal import Decimal
 from calendar import monthrange
-from typing import Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 from app.models import User, TimeEntry, Absence, AbsenceReason, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
@@ -318,6 +318,27 @@ def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWi
     return RetargetWindow(start=effective_from, end=end, last_absence=last_absence)
 
 
+class AbsenceRetarget(NamedTuple):
+    """Task 15: EINE tatsaechlich nachgezogene Abwesenheit.
+
+    ``retarget_absence_hours`` gab frueher nur die ANZAHL zurueck — welche Zeile
+    von welchem Wert auf welchen ging, wusste danach niemand mehr, obwohl genau
+    das der Weg zurueck ist, wenn sich eine Berechnung als falsch herausstellt.
+    Der Aufrufer schreibt daraus das Einzelprotokoll (die Audit-Zeilen gehoeren
+    in den Router, nicht hierher: die Vorschau ruft dieselbe Funktion und rollt
+    danach zurueck — sie darf nichts protokollieren).
+
+    ``absence_type`` ist mit dabei, damit der Router das deutsche Klartext-Label
+    bilden kann, ohne die eben gelesenen Zeilen ein zweites Mal zu holen.
+    """
+
+    absence_id: Any           # UUID (auf SQLite ggf. str — nie selbst parsen)
+    date: date
+    old_hours: Decimal
+    new_hours: Decimal
+    absence_type: AbsenceType
+
+
 def retarget_absence_hours(
     db: Session,
     user: User,
@@ -325,9 +346,10 @@ def retarget_absence_hours(
     end: date,
     *,
     dry_run: bool = False,
-) -> int:
+) -> List[AbsenceRetarget]:
     """Setzt ``Absence.hours`` im Fenster ``[start, end]`` auf das Tagessoll des
-    jeweiligen Tages. Gibt die Anzahl tatsaechlich abweichender Zeilen zurueck.
+    jeweiligen Tages. Gibt die tatsaechlich abweichenden Zeilen zurueck (die
+    frueher zurueckgegebene Anzahl ist ``len(...)``).
     Das Fenster liefert ``retarget_window`` (DIE eine Stelle dafuer).
 
     Warum es das braucht: das SOLL rechnet datumsbasiert automatisch neu
@@ -362,13 +384,19 @@ def retarget_absence_hours(
     angewandt. Die Abwesenheits-TAGE aendern sich dadurch nie — die sind
     tagebasiert (§3 BUrlG) und haengen nicht an ``hours``.
 
-    ``dry_run=True`` zaehlt nur (fuer die Vorschau vor dem Speichern).
+    ``Absence.raw_hours`` bleibt BEWUSST unberuehrt (Task 15): das ist der beim
+    Buchen festgeschriebene Wert und damit die einzige Rueckversicherung, falls
+    sich diese Rechnung als falsch herausstellt. Diese Funktion ist der einzige
+    ``hours``-Schreiber, der ihn nicht mitzieht — jeder menschliche Schreiber
+    setzt beide. Siehe den Kommentar an ``Absence.raw_hours``.
+
+    ``dry_run=True`` ermittelt nur (fuer die Vorschau vor dem Speichern).
 
     DIE eine Stelle, die Abwesenheits-Stunden nachzieht — Anlegen, Loeschen und
     Vorschau rufen alle hier hinein.
     """
     if start > end or not user.track_hours:
-        return 0
+        return []
 
     holidays = {
         h.date for h in db.query(PublicHoliday).filter(
@@ -396,7 +424,7 @@ def retarget_absence_hours(
         Absence.type != AbsenceType.OVERTIME,
     ).all()
 
-    changed = 0
+    changed: List[AbsenceRetarget] = []
     for a in absences:
         d = a.date
         if d.weekday() >= 5 or d in holidays:
@@ -431,11 +459,19 @@ def retarget_absence_hours(
 
         new_hours = (target / 2) if a.half_day else target
         new_hours = Decimal(str(new_hours)).quantize(Decimal('0.01'))
-        if Decimal(str(a.hours)).quantize(Decimal('0.01')) == new_hours:
+        old_hours = Decimal(str(a.hours)).quantize(Decimal('0.01'))
+        if old_hours == new_hours:
             continue
 
-        changed += 1
+        # KEINE stille Obergrenze (CLAUDE.md „no silent caps"): beruehrt ein
+        # Vorgang viele Zeilen, stehen sie alle in der Liste — und damit alle im
+        # Protokoll.
+        changed.append(AbsenceRetarget(
+            absence_id=a.id, date=d, old_hours=old_hours,
+            new_hours=new_hours, absence_type=a.type,
+        ))
         if not dry_run:
+            # NUR ``hours``. ``raw_hours`` bleibt stehen — siehe Docstring.
             a.hours = float(new_hours)
 
     if changed and not dry_run:

@@ -414,6 +414,13 @@ def _absence_dict(a: Absence) -> dict[str, Any]:
         # #312: eigener Abwesenheitsgrund (Klartextname via reason_names im Payload).
         "reason_id": str(a.reason_id) if getattr(a, "reason_id", None) else None,
         "hours": float(a.hours) if a.hours is not None else None,
+        # Task 15: der beim Buchen festgeschriebene Rohwert (Art. 15 —
+        # Auskunft ueber ALLE gespeicherten Daten). ``float()``-Cast wie
+        # ``hours``: die Spalte ist ``Numeric`` und liefert beim Lesen
+        # ``Decimal``, und dieser Export laeuft ueber rohes ``json.dumps``
+        # (Fehlerklasse #383/#408 — dort war es ein HTTP 500 fuer JEDEN Nutzer).
+        # Bestandszeilen vor Migration 068 koennen NULL tragen.
+        "raw_hours": float(a.raw_hours) if getattr(a, "raw_hours", None) is not None else None,
         "start_time": str(a.start_time) if getattr(a, "start_time", None) else None,
         "end_time": str(a.end_time) if getattr(a, "end_time", None) else None,
         "note": getattr(a, "note", None),

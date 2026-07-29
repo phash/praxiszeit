@@ -46,6 +46,9 @@ def _halve_hours(db, user, effective_from=date(2026, 3, 1), weekly=20.0):
 
 
 def _run(db, user, dry_run=False):
+    """Task 15: der Rückgabewert ist eine LISTE der geänderten Zeilen
+    (``AbsenceRetarget``), nicht mehr die nackte Anzahl — der bisherige Zähler
+    ist ``len(...)``. Aus dieser Liste baut der Router das Einzelprotokoll."""
     return calculation_service.retarget_absence_hours(
         db, user, WINDOW[0], WINDOW[1], dry_run=dry_run
     )
@@ -56,7 +59,7 @@ class TestAdjustsWhatItShould:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 1
+        assert len(_run(db, test_user)) == 1
         db.refresh(a)
         assert float(a.hours) == 4.0
 
@@ -79,7 +82,7 @@ class TestAdjustsWhatItShould:
         training = _absence(db, test_user, TUE, AbsenceType.TRAINING, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 2
+        assert len(_run(db, test_user)) == 2
         db.refresh(sick); db.refresh(training)
         assert float(sick.hours) == 4.0
         assert float(training.hours) == 4.0
@@ -88,7 +91,7 @@ class TestAdjustsWhatItShould:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 4.0, half_day=True)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 1
+        assert len(_run(db, test_user)) == 1
         db.refresh(a)
         assert float(a.hours) == 2.0
 
@@ -97,7 +100,7 @@ class TestAdjustsWhatItShould:
         other = _absence(db, test_user, TUE, AbsenceType.OTHER, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 2
+        assert len(_run(db, test_user)) == 2
         db.refresh(pl); db.refresh(other)
         assert float(pl.hours) == 4.0 and float(other.hours) == 4.0
 
@@ -109,7 +112,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, MON, AbsenceType.OVERTIME, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
@@ -121,7 +124,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
@@ -129,7 +132,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, SAT, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
@@ -141,7 +144,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, WED, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
@@ -151,7 +154,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
@@ -161,7 +164,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
@@ -169,7 +172,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, date(2026, 2, 9), AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user, effective_from=date(2026, 1, 1))
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
@@ -184,7 +187,7 @@ class TestLeavesAloneWhatItShould:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 2.0, half_day=None)
         _halve_hours(db, test_user)  # 8 h -> 4 h Tagessoll
 
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
         assert float(a.hours) == 2.0, "Legacy-Halbtag unveraendert"
 
@@ -207,8 +210,8 @@ class TestLeavesAloneWhatItShould:
         _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user) == 1
-        assert _run(db, test_user) == 0
+        assert len(_run(db, test_user)) == 1
+        assert len(_run(db, test_user)) == 0
 
 
 class TestDryRun:
@@ -216,14 +219,14 @@ class TestDryRun:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert _run(db, test_user, dry_run=True) == 1
+        assert len(_run(db, test_user, dry_run=True)) == 1
         db.refresh(a)
         assert float(a.hours) == 8.0, "dry_run darf nicht schreiben"
 
     def test_empty_window_returns_zero(self, db, test_user):
         assert calculation_service.retarget_absence_hours(
             db, test_user, date(2026, 3, 31), date(2026, 3, 1)
-        ) == 0
+        ) == []
 
 
 class TestSpecialDays:
@@ -249,6 +252,6 @@ class TestSpecialDays:
         changed = calculation_service.retarget_absence_hours(
             db, test_user, date(2026, 12, 1), date(2026, 12, 31)
         )
-        assert changed == 1
+        assert len(changed) == 1
         db.refresh(a)
         assert float(a.hours) == 2.0, "4 h Tagessoll × 0,5 Sondertagsfaktor"

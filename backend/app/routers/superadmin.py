@@ -93,6 +93,13 @@ def _absence_dict(a: Absence) -> dict:
         # gehört aber zur vollständigen §16-Aufzeichnung.
         "reason_id": str(a.reason_id) if getattr(a, "reason_id", None) else None,
         "hours": float(a.hours) if a.hours is not None else None,
+        # Task 15: der beim Buchen festgeschriebene Rohwert. Gehoert in den
+        # §16-Notfall-Export, weil er zeigt, was urspruenglich gebucht wurde —
+        # `hours` kann seither von der Rueckrechnung nach einer
+        # Wochenstunden-Aenderung nachgezogen worden sein. ``float()``-Cast wie
+        # bei ``hours``: ``Numeric`` liefert ``Decimal``, dieser Payload geht
+        # roh in die JSON-Serialisierung (Fehlerklasse #383/#408).
+        "raw_hours": float(a.raw_hours) if getattr(a, "raw_hours", None) is not None else None,
         "start_time": _iso(a.start_time),
         "end_time": _iso(a.end_time),
     }

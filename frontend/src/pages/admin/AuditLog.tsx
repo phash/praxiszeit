@@ -79,7 +79,41 @@ const sourceLabels: Record<string, string> = {
   break_waiver: 'Pausen-Verzicht',
   vacation_request_cancel: 'Urlaub storniert',
   license_startup: 'Lizenz',
+  wh_change: 'Stundenänderung',
 };
+
+/**
+ * Eine „Alte Werte"/„Neue Werte"-Zelle des Protokolls.
+ *
+ * Nicht jede Audit-Zeile ist ein Zeiteintrag. Die Zeilen der
+ * Wochenstunden-Rückrechnung (`source="wh_change"`) tragen ihren Inhalt im
+ * Freitext: die Sammelzeile ganz ohne Datum/Zeiten, die Einzelzeile je
+ * nachgezogener Abwesenheit mit Datum, aber ohne Von/Bis und ohne Pause.
+ * Vorher rendete die Zelle stur „Datum / Von–Bis / Pause: X min" — für diese
+ * Zeilen also ein leeres „ - " plus „Pause:  min", während der eigentliche
+ * Text (der ja die Änderung beschreibt) gar nicht angezeigt wurde. Jede
+ * Teilangabe erscheint jetzt nur, wenn es sie gibt; der Freitext immer.
+ */
+function AuditValues({ date, start, end, breakMinutes, note }: {
+  date?: string;
+  start?: string;
+  end?: string;
+  breakMinutes?: number;
+  note?: string;
+}) {
+  const hasTimes = Boolean(start || end);
+  if (!date && !hasTimes && breakMinutes == null && !note) {
+    return <span className="text-gray-400">-</span>;
+  }
+  return (
+    <div>
+      {date && <p>{date}</p>}
+      {hasTimes && <p>{start?.substring(0, 5)} - {end?.substring(0, 5)}</p>}
+      {breakMinutes != null && <p>Pause: {breakMinutes} min</p>}
+      {note && <p className="text-gray-500 break-words">{note}</p>}
+    </div>
+  );
+}
 
 export default function AuditLog() {
   const toast = useToast();
@@ -211,26 +245,22 @@ export default function AuditLog() {
                       {sourceLabels[entry.source] || entry.source}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600">
-                      {entry.old_date ? (
-                        <div>
-                          <p>{entry.old_date}</p>
-                          <p>{entry.old_start_time?.substring(0, 5)} - {entry.old_end_time?.substring(0, 5)}</p>
-                          <p>Pause: {entry.old_break_minutes} min</p>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
+                      <AuditValues
+                        date={entry.old_date}
+                        start={entry.old_start_time}
+                        end={entry.old_end_time}
+                        breakMinutes={entry.old_break_minutes}
+                        note={entry.old_note}
+                      />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600">
-                      {entry.new_date ? (
-                        <div>
-                          <p>{entry.new_date}</p>
-                          <p>{entry.new_start_time?.substring(0, 5)} - {entry.new_end_time?.substring(0, 5)}</p>
-                          <p>Pause: {entry.new_break_minutes} min</p>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
+                      <AuditValues
+                        date={entry.new_date}
+                        start={entry.new_start_time}
+                        end={entry.new_end_time}
+                        breakMinutes={entry.new_break_minutes}
+                        note={entry.new_note}
+                      />
                     </td>
                   </tr>
                 ))
@@ -275,6 +305,14 @@ export default function AuditLog() {
                       </span>
                     )}
                   </div>
+                  {/* Freitext (u. a. die Stundenänderungs-Zeilen, die nur hier
+                      ihren Inhalt tragen) — auf der Karte unter den Datums-Pillen. */}
+                  {(entry.old_note || entry.new_note) && (
+                    <div className="text-xs text-gray-500 break-words">
+                      {entry.old_note && <p>{entry.old_note}</p>}
+                      {entry.new_note && <p>{entry.new_note}</p>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

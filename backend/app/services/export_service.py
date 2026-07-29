@@ -171,6 +171,35 @@ def _de_hours_compact(value) -> str:
     return text[:-2] if text.endswith(",0") else text
 
 
+def format_hours_de(value) -> str:
+    """Oeffentlicher Name von :func:`_de_hours_exact` — dieselbe Regel, nicht
+    eine zweite.
+
+    Gibt es, damit Flaechen AUSSERHALB der Dateiexporte (Task 15: die
+    Klartext-Stunden im Aenderungsprotokoll) dieselbe verlustfreie deutsche
+    Schreibweise benutzen, ohne einen privaten Namen quer durch die Module zu
+    importieren oder — schlimmer — ein zweites ``f"{x:.2f}".replace(...)``
+    aufzumachen, das dann irgendwann anders rundet.
+    """
+    return _de_hours_exact(value)
+
+
+# Deutsche Klartext-Labels der eingebauten Abwesenheitstypen. EINE Definition
+# fuer dieses Modul (vorher stand derselbe Dict dreimal woertlich in den
+# Detail-Grids) — plus Task 15: das Aenderungsprotokoll benennt die
+# nachgezogene Abwesenheit im selben Vokabular wie der §16-Export.
+# ``ods_export_service.ABSENCE_LABELS`` ist die eigenstaendige, inhaltsgleiche
+# Konstante des ODS-Zwillings.
+ABSENCE_TYPE_LABELS_DE = {
+    "vacation": "Urlaub",
+    "sick": "Krank",
+    "training": "Fortbildung",
+    "overtime": "Überstundenausgleich",
+    "other": "Sonstiges",
+    "paid_leave": "Bez. Freistellung",
+}
+
+
 _WEEKDAY_LABELS = ("Mo", "Di", "Mi", "Do", "Fr")
 
 
@@ -517,14 +546,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
             target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
-            absence_type_map = {
-                "vacation": "Urlaub",
-                "sick": "Krank",
-                "training": "Fortbildung",
-                "overtime": "Überstundenausgleich",
-                "other": "Sonstiges",
-                "paid_leave": "Bez. Freistellung"
-            }
+            absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen (Label in Spalte 9 verbinden,
             # Notizen in Spalte 10). DSGVO F-003: Krank ohne Health-Flag maskieren
             # (Label "Abwesenheit", Notiz unterdrückt — kann Diagnose enthalten).
@@ -1066,14 +1088,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
             target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
-            absence_type_map = {
-                "vacation": "Urlaub",
-                "sick": "Krank",
-                "training": "Fortbildung",
-                "overtime": "Überstundenausgleich",
-                "other": "Sonstiges",
-                "paid_leave": "Bez. Freistellung"
-            }
+            absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen; DSGVO F-003: Krank ohne
             # Health-Flag maskieren (Label "Abwesenheit", Notiz unterdrückt).
             abw_parts = []
@@ -1539,7 +1554,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     # Landscape A4: 297mm − 30mm margins = 267mm usable
     col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 16*mm, 14*mm, 16*mm, 74*mm, 74*mm]
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-    absence_type_map = {"vacation": "Urlaub", "sick": "Krank", "training": "Fortbildung", "overtime": "Überstundenausgleich", "other": "Sonstiges", "paid_leave": "Bez. Freistellung"}
+    absence_type_map = ABSENCE_TYPE_LABELS_DE
 
     story = []
 

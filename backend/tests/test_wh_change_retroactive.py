@@ -407,9 +407,14 @@ class TestAuditLog:
             db=db, current_user=admin,
         )
 
+        # Task 15: seither schreibt derselbe Vorgang ZWEI Ebenen —
+        # die Sammelzeile (ohne Datum) und je geänderter Abwesenheit eine
+        # Einzelzeile (mit Datum). Hier geht es um die Sammelzeile; die
+        # Einzelzeilen prüft ``test_absence_raw_hours.py``.
         logs = db.query(TimeEntryAuditLog).filter(
             TimeEntryAuditLog.tenant_id == DEFAULT_TENANT_ID,
             TimeEntryAuditLog.source == "wh_change",
+            TimeEntryAuditLog.new_date.is_(None),
         ).all()
         assert len(logs) == 1
         log = logs[0]
@@ -816,10 +821,13 @@ class TestDeleteAuditLog:
             db=db, current_user=admin,
         )
 
+        # Task 15: nur die Sammelzeile (ohne Datum) — die Einzelzeilen je
+        # Abwesenheit prüft ``test_absence_raw_hours.py``.
         logs = db.query(TimeEntryAuditLog).filter(
             TimeEntryAuditLog.tenant_id == DEFAULT_TENANT_ID,
             TimeEntryAuditLog.source == "wh_change",
             TimeEntryAuditLog.new_note.like("Löschung%"),
+            TimeEntryAuditLog.new_date.is_(None),
         ).all()
         assert len(logs) == 1
         log = logs[0]

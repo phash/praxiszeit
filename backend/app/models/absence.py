@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint, Boolean, String, Integer
+from sqlalchemy import Column, Date, Time, Text, DateTime, Numeric, ForeignKey, Enum, UniqueConstraint, Boolean, String, Integer, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -113,6 +113,32 @@ class Absence(Base):
     end_date = Column(Date, nullable=True, index=True)  # End date for date ranges (NULL for single day)
     type = Column(Enum(AbsenceType), nullable=False)
     hours = Column(Numeric(4, 2), nullable=False)  # Hours absent per day
+    # Task 15: der beim BUCHEN festgeschriebene Stundenwert — die
+    # Rueckversicherung gegen eine falsche Rueckrechnung, im selben Geist wie
+    # ``TimeEntry.raw_start_time``/``raw_end_time`` (#201): dort bleiben die
+    # Rohstempel erhalten, gekappt wird nur der gerechnete Wert.
+    #
+    # Die Regel, an der alles haengt:
+    #
+    # * ``calculation_service.retarget_absence_hours`` ist der EINZIGE Schreiber
+    #   von ``hours``, der ``raw_hours`` NICHT anfasst. Nur so bleibt der
+    #   Ursprungszustand rekonstruierbar, egal wie oft nachgerechnet wurde.
+    # * Jeder andere Schreiber (Neu-Buchung, menschliche Korrektur,
+    #   Aenderungsantrag-Genehmigung) setzt beide Werte gleich — dort IST der
+    #   neue Wert der gebuchte.
+    # * Beim Anlegen erledigt das der ``before_insert``-Listener unten, damit
+    #   die vielen Buchungspfade (Direkt-Buchung, Antrags-Genehmigung,
+    #   CR-Genehmigung, Betriebsferien, Re-Split, Import …) und auch kuenftige
+    #   automatisch mitgedeckt sind.
+    # * Es gibt BEWUSST KEINEN ``before_update``-Listener: der wuerde die
+    #   Rueckrechnung mitnehmen und das Feld genau dann entwerten, wenn man es
+    #   braucht.
+    #
+    # ``raw_hours`` fliesst in KEINE Berechnung ein (Soll/Ist/Urlaub bleiben
+    # unveraendert) — es ist reine Rueckversicherung. Nullable: vor der
+    # Migration 068 geschriebene Rows haetten sonst keinen Wert; die Migration
+    # backfillt sie mit ``hours`` (der bestmoegliche bekannte Ursprungswert).
+    raw_hours = Column(Numeric(4, 2), nullable=True)
     start_time = Column(Time, nullable=True)  # NULL = ganzer Tag
     end_time = Column(Time, nullable=True)    # NULL = ganzer Tag
     # #205: halber Urlaubstag (0,5). NULLABLE — vor #205 geschriebene Rows sind
@@ -148,3 +174,22 @@ class Absence(Base):
 
     def __repr__(self):
         return f"<Absence(id={self.id}, user_id={self.user_id}, date={self.date}, type={self.type}, hours={self.hours})>"
+
+
+@event.listens_for(Absence, "before_insert")
+def _absence_set_raw_hours(mapper, connection, target):
+    """Task 15: beim Anlegen ``raw_hours`` aus ``hours`` uebernehmen.
+
+    Zentral hier statt an den Buchungspfaden (``absences.create_absence``,
+    ``admin_vacations.review_vacation_request``,
+    ``admin_change_requests.review_change_request``,
+    ``company_closures._create_closure_absences``, XLS-Import …): ein Listener
+    deckt alle ab, auch kuenftige. Muster: der ``before_insert``-Hook auf
+    ``TimeEntryAuditLog`` (#121).
+
+    Ein explizit gesetzter Wert bleibt stehen — der Listener ergaenzt nur, was
+    fehlt. Ein ``before_update``-Gegenstueck gibt es BEWUSST nicht (siehe den
+    Kommentar an der Spalte).
+    """
+    if target.raw_hours is None:
+        target.raw_hours = target.hours
