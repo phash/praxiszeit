@@ -6,7 +6,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useSystemStore } from '../../../stores/systemStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
 
 import type { User } from '../../../types/user';
@@ -295,6 +295,28 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
     }
   };
 
+  // Task 11 (#431): Anzeigetext der read-only Wochenstunden-Box beim
+  // Bearbeiten. Bei individuellem Tagesplan der Tagesbreakdown + Summe
+  // (`formatDayPlan`/`deHoursExact`, dieselben Helfer wie Dialog-Verlauf und
+  // Berichte — Bildschirm sagt hier dasselbe wie Datei-Export/#415), sonst
+  // nur die Summe. `displayWeeklyHours` (Release-Review 1.17.0, Fund 2) hält
+  // nur die Summe frisch, nicht die einzelnen Tageswerte — nach einer
+  // Dialog-Änderung am geöffneten Formular kann der Tagesbreakdown daher bis
+  // zum nächsten Öffnen des Formulars den alten Stand zeigen, während die
+  // Summe schon aktuell ist. Aus dem Scope dieser Task (nur UserForm.tsx)
+  // bewusst nicht behoben — siehe Task-11-Bericht.
+  const weeklyHoursTotal = deHoursExact(displayWeeklyHours ?? formData.weekly_hours);
+  const dayPlanText = formatDayPlan([
+    formData.hours_monday,
+    formData.hours_tuesday,
+    formData.hours_wednesday,
+    formData.hours_thursday,
+    formData.hours_friday,
+  ]);
+  const weeklyHoursDisplay = formData.use_daily_schedule && dayPlanText
+    ? `${dayPlanText} = ${weeklyHoursTotal} h/Woche`
+    : `${weeklyHoursTotal} h/Woche`;
+
   return (
     <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
       <h3 className="text-lg font-semibold mb-4">
@@ -379,18 +401,19 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
           </div>
           <div>
             <label htmlFor="f-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">Wochenstunden</label>
-            {editUser && !formData.use_daily_schedule ? (
-              // Task 6 (#Wochenstunden-anpassen): reine Anzeige beim Bearbeiten.
-              // Der frühere direkte Eingabe-Feld überschrieb still den
-              // Rückfallwert für die gesamte Vergangenheit — Änderungen laufen
-              // jetzt ausschließlich über den Wochenstunden-Dialog (Wirkungsdatum
-              // + Vorschau), den der Button daneben öffnet.
+            {editUser ? (
+              // Task 6+11 (#431/#Wochenstunden-anpassen): reine Anzeige beim
+              // Bearbeiten — für ALLE Mitarbeitenden, auch mit individuellem
+              // Tagesplan (Task 6 gab ihnen einen vollwertigen Schreibweg über
+              // denselben Dialog; ein direktes Feld hier würde still verworfen,
+              // siehe Task 7). Bei Tagesplan zeigt die Box den Tagesbreakdown
+              // (`weeklyHoursDisplay`), sonst nur die Summe.
               <div className="flex items-center gap-2">
                 <div
                   id="f-weekly-hours"
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
                 >
-                  {(displayWeeklyHours ?? formData.weekly_hours).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} h/Woche
+                  {weeklyHoursDisplay}
                 </div>
                 <button
                   type="button"
@@ -403,15 +426,6 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
             ) : (
               // Beim Anlegen: normales Eingabefeld — es gibt noch keine Historie,
               // der Startwert muss direkt gesetzt werden können.
-              //
-              // I2 (Abschluss-Review): ebenso beim BEARBEITEN eines Mitarbeiters
-              // mit individuellem Tagesplan. Für die gibt es keinen
-              // Wochenstunden-Dialog (der Endpoint lehnt sie mit 400 ab), das
-              // Feld war aber read-only — ihre Wochenstunden waren damit gar
-              // nicht mehr änderbar, während die Tagesstunden-Summe unten
-              // weiterhin „bitte anpassen!" verlangte. Ihr Tagessoll kommt aus
-              // den Tagesstunden, `weekly_hours` treibt bei ihnen kein Soll;
-              // das Backend erlaubt den direkten PUT für genau diese Gruppe.
               <input
                 id="f-weekly-hours"
                 type="number"
@@ -424,14 +438,6 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
             )}
-            {editUser && formData.use_daily_schedule && (
-              <p className="mt-1 text-xs text-gray-500">
-                ℹ️ Individueller Tagesplan aktiv — das Tagessoll kommt aus den
-                <strong> Tagesstunden</strong> weiter unten. Die Wochenstunden
-                sind hier nur die Vertragsangabe (Berichtsköpfe, Auswertungen)
-                und werden direkt gepflegt, nicht über die Wochenstunden-Historie.
-              </p>
-            )}
             {formData.use_fixed_monthly_target && (
               <p className="mt-1 text-xs text-gray-500">
                 ℹ️ Feste Monatsarbeitszeit aktiv: Nur noch Basisangabe — das Monats-Soll
@@ -442,18 +448,36 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
           </div>
           <div>
             <label htmlFor="f-work-days" className="block text-sm font-medium text-gray-700 mb-1">Arbeitstage pro Woche</label>
-            <input
-              id="f-work-days"
-              type="number"
-              value={formData.work_days_per_week}
-              onChange={(e) => setFormData({ ...formData, work_days_per_week: parseInt(e.target.value) || 5 })}
-              required
-              min="1"
-              max="7"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-            />
+            {editUser ? (
+              // Task 11 (#431): historisiertes Feld — der Update-PUT lehnt es
+              // wie weekly_hours ab (Task 7). Änderung nur noch über den
+              // Wochenstunden-Dialog; bei Tagesplan leitet der Dialog den Wert
+              // aus der Zahl der belegten Wochentage ab, das verschweigt der
+              // Hinweis hier nicht.
+              <div
+                id="f-work-days"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
+              >
+                {formData.work_days_per_week}
+              </div>
+            ) : (
+              <input
+                id="f-work-days"
+                type="number"
+                value={formData.work_days_per_week}
+                onChange={(e) => setFormData({ ...formData, work_days_per_week: parseInt(e.target.value) || 5 })}
+                required
+                min="1"
+                max="7"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              />
+            )}
             <p className="text-xs text-gray-500 mt-1">
-              Anzahl der Arbeitstage pro Woche (1-7)
+              {editUser
+                ? (formData.use_daily_schedule
+                  ? 'Wird aus der Zahl der belegten Wochentage im Tagesplan abgeleitet. Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.'
+                  : 'Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.')
+                : 'Anzahl der Arbeitstage pro Woche (1-7)'}
             </p>
           </div>
           <div>
@@ -761,58 +785,81 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
           {/* Daily Schedule Toggle */}
           {formData.track_hours && (
             <div className="md:col-span-2 border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center space-x-2 mb-3">
-                <input
-                  type="checkbox"
-                  id="use_daily_schedule"
-                  checked={formData.use_daily_schedule}
-                  onChange={(e) => setFormData({ ...formData, use_daily_schedule: e.target.checked })}
-                  className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
-                />
-                <label htmlFor="use_daily_schedule" className="text-sm font-medium text-gray-700 cursor-pointer">
-                  {formData.use_fixed_monthly_target
-                    ? 'Geplante Anwesenheit (für Feiertags-/Fehltags-Gutschrift, statt einheitlich '
-                      + (formData.weekly_hours / formData.work_days_per_week).toFixed(1) + 'h/Tag)'
-                    : `Individuelle Tagesstunden (statt einheitlich ${(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)`}
-                </label>
-              </div>
-              {formData.use_fixed_monthly_target && !formData.use_daily_schedule && (
-                <p className="text-xs text-amber-600 mb-2">
-                  Empfehlung bei fester Monatsarbeitszeit: hier die geplante Anwesenheit hinterlegen, damit
-                  Feiertage/Fehltage korrekt gutgeschrieben werden (das Monats-Soll selbst bleibt fest).
-                </p>
-              )}
-              {formData.use_daily_schedule && (
-                <div className="grid grid-cols-5 gap-2">
-                  {(['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const).map((day, idx) => {
-                    const keys = ['hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday'] as const;
-                    const key = keys[idx];
-                    return (
-                      <div key={day} className="text-center">
-                        <label htmlFor={`f-hours-${key}`} className="block text-xs font-medium text-gray-600 mb-1">{day}</label>
-                        <input
-                          id={`f-hours-${key}`}
-                          type="number"
-                          step="0.25"
-                          min="0"
-                          max="24"
-                          value={formData[key]}
-                          onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
-                          aria-label={`Stunden ${day}`}
-                          className="w-full px-2 py-1 text-center border border-gray-300 rounded-sm focus:ring-2 focus:ring-primary text-sm"
-                        />
-                      </div>
-                    );
-                  })}
-                  <div className="col-span-5 text-xs text-gray-500 mt-1">
-                    Summe: {(formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday).toFixed(1)}h/Woche
-                    {formData.weekly_hours > 0 && (formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday) !== formData.weekly_hours && (
-                      <span className="text-amber-600 ml-2">
-                        (Gesamtwochenstunden: {formData.weekly_hours}h – bitte anpassen!)
-                      </span>
-                    )}
+              {editUser ? (
+                // Task 11 (#431): Haken UND Tagesstunden sind historisierte
+                // Felder wie weekly_hours/work_days_per_week — der Update-PUT
+                // verwirft sie ohnehin (Task 7), ein editierbarer Haken hier
+                // hätte dem Admin also eine Wirkung vorgetäuscht, die nie
+                // eintritt. Reine Anzeige, Änderung nur über den Dialog; der
+                // Tagesbreakdown selbst steht schon oben in der
+                // Wochenstunden-Box (`weeklyHoursDisplay`), hier nur der
+                // Modus-Status, um ihn nicht zu duplizieren.
+                <>
+                  <p className="text-sm font-medium text-gray-700">
+                    {formData.use_daily_schedule
+                      ? (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
+                      : (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center space-x-2 mb-3">
+                    <input
+                      type="checkbox"
+                      id="use_daily_schedule"
+                      checked={formData.use_daily_schedule}
+                      onChange={(e) => setFormData({ ...formData, use_daily_schedule: e.target.checked })}
+                      className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
+                    />
+                    <label htmlFor="use_daily_schedule" className="text-sm font-medium text-gray-700 cursor-pointer">
+                      {formData.use_fixed_monthly_target
+                        ? 'Geplante Anwesenheit (für Feiertags-/Fehltags-Gutschrift, statt einheitlich '
+                          + (formData.weekly_hours / formData.work_days_per_week).toFixed(1) + 'h/Tag)'
+                        : `Individuelle Tagesstunden (statt einheitlich ${(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)`}
+                    </label>
                   </div>
-                </div>
+                  {formData.use_fixed_monthly_target && !formData.use_daily_schedule && (
+                    <p className="text-xs text-amber-600 mb-2">
+                      Empfehlung bei fester Monatsarbeitszeit: hier die geplante Anwesenheit hinterlegen, damit
+                      Feiertage/Fehltage korrekt gutgeschrieben werden (das Monats-Soll selbst bleibt fest).
+                    </p>
+                  )}
+                  {formData.use_daily_schedule && (
+                    <div className="grid grid-cols-5 gap-2">
+                      {(['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const).map((day, idx) => {
+                        const keys = ['hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday'] as const;
+                        const key = keys[idx];
+                        return (
+                          <div key={day} className="text-center">
+                            <label htmlFor={`f-hours-${key}`} className="block text-xs font-medium text-gray-600 mb-1">{day}</label>
+                            <input
+                              id={`f-hours-${key}`}
+                              type="number"
+                              step="0.25"
+                              min="0"
+                              max="24"
+                              value={formData[key]}
+                              onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
+                              aria-label={`Stunden ${day}`}
+                              className="w-full px-2 py-1 text-center border border-gray-300 rounded-sm focus:ring-2 focus:ring-primary text-sm"
+                            />
+                          </div>
+                        );
+                      })}
+                      <div className="col-span-5 text-xs text-gray-500 mt-1">
+                        Summe: {(formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday).toFixed(1)}h/Woche
+                        {formData.weekly_hours > 0 && (formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday) !== formData.weekly_hours && (
+                          <span className="text-amber-600 ml-2">
+                            (Gesamtwochenstunden: {formData.weekly_hours}h – bitte anpassen!)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

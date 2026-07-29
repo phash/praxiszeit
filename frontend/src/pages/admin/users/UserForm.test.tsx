@@ -230,7 +230,7 @@ describe('#383 Übertrag Urlaubstage', () => {
   });
 });
 
-describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpassen)', () => {
+describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)', () => {
   const baseEditUser = {
     id: 'u1', username: 'jd', first_name: 'Jane', last_name: 'Doe', role: 'employee',
     weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
@@ -283,22 +283,52 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     });
   });
 
-  // Task 7 (#431): die I2-Ausnahme ("Eingabefeld ist der einzige Schreibweg
-  // für Tagesplan-Mitarbeitende, weil der Änderungs-Endpoint sie ablehnt")
-  // entfällt ersatzlos — Task 6 gab ihnen einen vollwertigen Stundenverlauf-
-  // Schreibweg, der Backend-PUT sperrt sie seither wie jeden anderen. Das
-  // Eingabefeld bleibt hier trotzdem sichtbar (Task 7 rührt NUR den
-  // Update-Payload an, nicht die Anzeige — die Anzeigeumbau ist Task 11),
-  // aber jede Eingabe wird beim Speichern jetzt verworfen statt gesendet.
-  it('bleibt bei individuellem Tagesplan (noch) ein Eingabefeld (kein Dialog-Button)', () => {
+  // Task 11 (#431): der Button fehlte bisher genau für die Gruppe, die ihn am
+  // dringendsten braucht — Task 7 sperrte den Update-Payload für
+  // Tagesplan-Mitarbeitende bereits, aber das Formular zeigte ihnen
+  // weiterhin ein Eingabefeld, dessen Eingabe beim Speichern kommentarlos
+  // verworfen wurde (Important-Fund #2 im Task-7-Review). Jetzt bekommen
+  // auch sie den Dialog-Button — er ist der einzige verbliebene Schreibweg.
+  it('zeigt den Button auch bei individuellem Tagesplan', () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
-    expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');
-    expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeInTheDocument();
+    expect(document.getElementById('f-weekly-hours')?.tagName).not.toBe('INPUT');
+  });
+
+  it('zeigt Tagesstunden beim Bearbeiten nur als Anzeige (Tagesbreakdown in der Wochenstunden-Box, kein Eingabefeld je Wochentag)', () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true, hours_monday: 8 } });
+    // Aria-Label der (früheren) Mo-Fr-Eingabefelder ist `Stunden ${Mo|Di|...}`
+    // — keins davon darf im Bearbeiten-Modus noch existieren.
+    expect(screen.queryByLabelText('Stunden Mo')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Stunden Di')).not.toBeInTheDocument();
+    expect(screen.getByText(/Mo 8,0/)).toBeInTheDocument();
+  });
+
+  it('zeigt "Arbeitstage pro Woche" beim Bearbeiten nur als Anzeige mit Verweis auf den Dialog', () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true, work_days_per_week: 3 } });
+    const workDaysEl = document.getElementById('f-work-days');
+    expect(workDaysEl?.tagName).not.toBe('INPUT');
+    expect(workDaysEl?.textContent).toBe('3');
+    expect(screen.getByText(/belegten Wochentage im Tagesplan abgeleitet/)).toBeInTheDocument();
+  });
+
+  it('zeigt den "Individuelle Tagesstunden"-Haken beim Bearbeiten nur als Status-Anzeige (nicht klickbar)', () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
+    expect(document.getElementById('use_daily_schedule')).not.toBeInTheDocument();
+    expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
+  });
+
+  it('erlaubt Arbeitstage/Tagesstunden-Haken/Tagesstunden weiterhin uneingeschränkt beim Anlegen', () => {
+    renderForm();
+    expect(document.getElementById('f-work-days')?.tagName).toBe('INPUT');
+    const dailyScheduleCheckbox = document.getElementById('use_daily_schedule') as HTMLInputElement;
+    expect(dailyScheduleCheckbox.tagName).toBe('INPUT');
+    fireEvent.click(dailyScheduleCheckbox);
+    expect(screen.getByLabelText('Stunden Mo')).toBeEnabled();
   });
 
   it('sendet weekly_hours/Tagesplan-Felder beim Update NICHT mit, auch wenn ein individueller Tagesplan aktiv ist (I2-Ausnahme entfaellt seit #431)', async () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
-    fireEvent.change(document.getElementById('f-weekly-hours') as HTMLInputElement, { target: { value: '30' } });
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
@@ -317,5 +347,10 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     renderForm({ editUser: baseEditUser, onOpenHoursHistory });
     fireEvent.click(screen.getByRole('button', { name: /Wochenstunden anpassen/i }));
     expect(onOpenHoursHistory).toHaveBeenCalledWith(baseEditUser);
+  });
+
+  it('erlaubt alle Felder beim Anlegen', () => {
+    renderForm({ editUser: null });
+    expect(screen.getByLabelText('Wochenstunden')).toBeEnabled();
   });
 });
