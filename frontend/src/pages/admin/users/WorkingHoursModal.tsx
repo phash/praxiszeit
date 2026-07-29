@@ -6,13 +6,25 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../hooks/useConfirm';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
 
+// #431: Eine Zeile der Historie ist ein vollstaendiger Vertrags-Snapshot ab
+// `effective_from` — Modus, Tageswerte, Arbeitstage und Wochenstunden. Die
+// Snapshot-Felder sind optional typisiert, weil eine ganz alte Antwort (oder
+// ein Testdouble) sie nicht tragen muss; aufgeloest wird ueber
+// `scheduleFromChange`.
 interface WorkingHoursChange {
   id: string;
   user_id: string;
   effective_from: string;
   weekly_hours: number;
+  use_daily_schedule?: boolean;
+  hours_monday?: number | null;
+  hours_tuesday?: number | null;
+  hours_wednesday?: number | null;
+  hours_thursday?: number | null;
+  hours_friday?: number | null;
+  work_days_per_week?: number | null;
   note?: string;
   created_at: string;
 }
@@ -25,6 +37,17 @@ interface WorkingHoursChangePreview {
   period_end: string;
   current_daily_target: number;
   new_daily_target: number;
+  // #431: Tagessoll je Wochentag (Mo…Fr, immer fuenf Eintraege) vor und nach
+  // der Aenderung. Ein Skalar bildet einen individuellen Tagesplan nicht ab.
+  day_targets_current: number[];
+  day_targets_new: number[];
+  // #431: Ueberstundensaldo (Stichtag #313) und verbrauchte Urlaubstage des
+  // Jahres von `period_start` — im Ist-Zustand und im simulierten Zustand nach
+  // dem Speichern.
+  overtime_before: number;
+  overtime_after: number;
+  vacation_days_before: number;
+  vacation_days_after: number;
   affected_absences: number;
   blocked_reason: string | null;
   closed_years: number[];
@@ -35,8 +58,143 @@ interface WorkingHoursModalProps {
   userId: string;
   userName: string;
   currentWeeklyHours: number;
+  // #431: der Rest des aktuell gueltigen Snapshots. Optional mit Defaults, weil
+  // sie nur der RUECKFALL fuer den (seltenen) Fall „noch keine Historie" sind —
+  // sobald der Verlauf geladen ist, gewinnt er (siehe `scheduleAt`).
+  currentUseDailySchedule?: boolean;
+  currentDayHours?: (number | null)[];
+  currentWorkDays?: number;
   onClose: () => void;
   onChanged: () => void;
+}
+
+// #431: Die fuenf Wochentagsfelder an EINER Stelle — Feldname (= API-Feld),
+// Beschriftung des Eingabefelds und Kurzform fuer Verlauf/Vorschau.
+const DAY_FIELDS = [
+  { key: 'hours_monday', label: 'Montag', short: 'Mo' },
+  { key: 'hours_tuesday', label: 'Dienstag', short: 'Di' },
+  { key: 'hours_wednesday', label: 'Mittwoch', short: 'Mi' },
+  { key: 'hours_thursday', label: 'Donnerstag', short: 'Do' },
+  { key: 'hours_friday', label: 'Freitag', short: 'Fr' },
+] as const;
+
+type DayFieldKey = typeof DAY_FIELDS[number]['key'];
+
+const NO_DAY_HOURS: (number | null)[] = [null, null, null, null, null];
+
+// U+2212 MINUS SIGN — nicht der Bindestrich: „−47,5 h" steht in einer Spalte
+// neben „+41,5 h", da muss das Vorzeichen auf einen Blick lesbar sein.
+const MINUS_SIGN = '−';
+
+/** #431: der Vertrags-Snapshot, wie ihn Dialog und Backend gleichermaßen sehen. */
+interface ScheduleSnapshot {
+  weekly_hours: number;
+  use_daily_schedule: boolean;
+  /** Fünf Werte, Index 0 = Montag. 0 = kein geplanter Arbeitstag (wie `null`). */
+  day_hours: number[];
+  work_days_per_week: number;
+}
+
+interface FormState {
+  effective_from: string;
+  weekly_hours: number;
+  use_daily_schedule: boolean;
+  hours_monday: number;
+  hours_tuesday: number;
+  hours_wednesday: number;
+  hours_thursday: number;
+  hours_friday: number;
+  work_days_per_week: number;
+  note: string;
+}
+
+function round2(value: number): number {
+  return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+}
+
+function normaliseDayHours(values: (number | null | undefined)[]): number[] {
+  return DAY_FIELDS.map((_, i) => {
+    const v = values[i];
+    return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  });
+}
+
+/** Die fünf Tageswerte eines Snapshots als Formularfelder. */
+function dayFieldsFromSnapshot(dayHours: number[]): Record<DayFieldKey, number> {
+  return {
+    hours_monday: dayHours[0],
+    hours_tuesday: dayHours[1],
+    hours_wednesday: dayHours[2],
+    hours_thursday: dayHours[3],
+    hours_friday: dayHours[4],
+  };
+}
+
+function scheduleFromChange(change: WorkingHoursChange, fallbackWorkDays: number): ScheduleSnapshot {
+  return {
+    weekly_hours: change.weekly_hours,
+    use_daily_schedule: !!change.use_daily_schedule,
+    day_hours: normaliseDayHours([
+      change.hours_monday, change.hours_tuesday, change.hours_wednesday,
+      change.hours_thursday, change.hours_friday,
+    ]),
+    // NULL heißt beim Backend „Rückfall auf die User-Zeile" (Bestandszeilen vor
+    // #431) — hier ist das die Prop.
+    work_days_per_week: change.work_days_per_week ?? fallbackWorkDays,
+  };
+}
+
+// Fund 3 (Release-Review 1.17.0), #431 erweitert: der zu einem Datum gültige
+// Snapshot wird NICHT aus den Props übernommen (die sind ein Stand von vor dem
+// Öffnen des Dialogs und werden von Users.tsx nach dem Speichern nicht
+// nachgezogen — der Dialog bleibt offen), sondern aus dem gerade geladenen
+// Verlauf abgeleitet: die jüngste Zeile mit `effective_from <= datum` gilt.
+// Genau die Auflösung, die `calculation_service.get_schedule_for_date`
+// backendseitig macht.
+function scheduleAt(
+  changes: WorkingHoursChange[], iso: string, fallback: ScheduleSnapshot,
+): ScheduleSnapshot {
+  let latest: WorkingHoursChange | null = null;
+  for (const c of changes) {
+    if (c.effective_from <= iso && (!latest || c.effective_from > latest.effective_from)) {
+      latest = c;
+    }
+  }
+  return latest ? scheduleFromChange(latest, fallback.work_days_per_week) : fallback;
+}
+
+/**
+ * #431: Der Snapshot als Klartext — für die Kopfzeile und jede Verlaufszeile.
+ *
+ * Formuliert wie der Datei-Export (`export_service.format_weekly_hours_history`
+ * / `utils/formatters.ts::formatWeeklyHoursChanges`): Bildschirm und §16-Beleg
+ * müssen denselben Satz schreiben.
+ */
+function describeSchedule(s: ScheduleSnapshot): string {
+  const days = `${s.work_days_per_week} Tage/Woche`;
+  if (s.use_daily_schedule) {
+    const plan = formatDayPlan(s.day_hours);
+    // Kein einziger Tageswert → gleichmäßige Formulierung statt leerem Satz.
+    if (plan) return `${plan} = ${deHoursExact(s.weekly_hours)} Std/Woche · ${days}`;
+  }
+  return `${deHoursExact(s.weekly_hours)} Std/Woche · ${days}`;
+}
+
+/**
+ * #431: Vergleichsform des Snapshots — DIE eine Definition von „hat sich
+ * etwas geändert" im Dialog, gebaut wie `admin_users._comparable_snapshot`.
+ *
+ * Im gleichmäßigen Modus sind die Tageswerte inert (das Tagessoll liest sie
+ * dort nicht) und werden ausgeblendet, sonst würde ein Rest aus einer früheren
+ * Tagesplan-Phase eine Änderung vortäuschen.
+ */
+function comparableSnapshot(s: ScheduleSnapshot): string {
+  return JSON.stringify([
+    round2(s.weekly_hours),
+    s.use_daily_schedule,
+    s.use_daily_schedule ? s.day_hours.map(round2) : [0, 0, 0, 0, 0],
+    s.work_days_per_week,
+  ]);
 }
 
 function formatDate(iso: string): string {
@@ -45,6 +203,15 @@ function formatDate(iso: string): string {
     month: '2-digit',
     year: 'numeric',
   });
+}
+
+/** #431: '+41,5' / '−47,5' / '0,0' — Vorzeichen vor der DE-Schreibweise. */
+function signed(value: number): string {
+  const v = round2(value);
+  const text = deHoursExact(Math.abs(v));
+  if (v > 0) return `+${text}`;
+  if (v < 0) return `${MINUS_SIGN}${text}`;
+  return text;
 }
 
 // Kalendertag VOR dem übergebenen ISO-Datum (YYYY-MM-DD) — UTC-basiert, um
@@ -77,35 +244,39 @@ function todayIso(): string {
 // Admin Datum/Stunden noch anpasst.
 const PREVIEW_DEBOUNCE_MS = 400;
 
-// Fund 3 (Release-Review 1.17.0): der aktuell gültige Wochenstunden-Wert wird
-// NICHT aus der `currentWeeklyHours`-Prop übernommen (die ist ein Snapshot von
-// vor dem Öffnen des Dialogs und wird von Users.tsx nach dem Speichern nicht
-// nachgezogen — der Dialog bleibt nach dem Anlegen offen), sondern aus dem
-// gerade geladenen Verlauf abgeleitet: der jüngste Eintrag mit
-// `effective_from <= heute` ist der aktive. Das macht die Kopfzeile UND den
-// Formular-Reset nach dem Speichern unabhängig von der Prop-Aktualität.
-function activeWeeklyHoursFromHistory(changes: WorkingHoursChange[], fallback: number): number {
-  const today = todayIso();
-  let latest: WorkingHoursChange | null = null;
-  for (const c of changes) {
-    if (c.effective_from <= today && (!latest || c.effective_from > latest.effective_from)) {
-      latest = c;
-    }
-  }
-  return latest ? latest.weekly_hours : fallback;
-}
-
-export default function WorkingHoursModal({ userId, userName, currentWeeklyHours, onClose, onChanged }: WorkingHoursModalProps) {
+export default function WorkingHoursModal({
+  userId,
+  userName,
+  currentWeeklyHours,
+  currentUseDailySchedule = false,
+  currentDayHours = NO_DAY_HOURS,
+  currentWorkDays = 5,
+  onClose,
+  onChanged,
+}: WorkingHoursModalProps) {
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
   // Guards against double-submit (fast double-click would add duplicate hours changes).
   const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    effective_from: todayIso(),
+
+  // Der Snapshot aus den Props — Rückfall, solange (oder falls) es keine
+  // Historie gibt.
+  const propsSchedule = useMemo<ScheduleSnapshot>(() => ({
     weekly_hours: currentWeeklyHours,
+    use_daily_schedule: currentUseDailySchedule,
+    day_hours: normaliseDayHours(currentDayHours),
+    work_days_per_week: currentWorkDays,
+  }), [currentWeeklyHours, currentUseDailySchedule, currentDayHours, currentWorkDays]);
+
+  const [formData, setFormData] = useState<FormState>(() => ({
+    effective_from: todayIso(),
     note: '',
-  });
+    weekly_hours: currentWeeklyHours,
+    use_daily_schedule: currentUseDailySchedule,
+    ...dayFieldsFromSnapshot(normaliseDayHours(currentDayHours)),
+    work_days_per_week: currentWorkDays,
+  }));
 
   // Task 7: rückwirkende Vorschau (Zeitraum, altes/neues Tagessoll, betroffene
   // Abwesenheiten, abgeschlossene Jahre, Blockade-Grund) — siehe Backend
@@ -125,12 +296,53 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
 
   const isRetroactive = formData.effective_from < todayIso();
 
-  // Fund 3: die Kopfzeile UND der Reset-Wert nach dem Speichern hängen an
-  // diesem abgeleiteten Wert statt an der (nicht nachgezogenen) Prop.
-  const displayWeeklyHours = useMemo(
-    () => activeWeeklyHoursFromHistory(hoursChanges, currentWeeklyHours),
-    [hoursChanges, currentWeeklyHours],
+  const dayValues = DAY_FIELDS.map((f) => formData[f.key]);
+  const daySum = round2(dayValues.reduce((sum, h) => sum + h, 0));
+  const plannedDays = dayValues.filter((h) => h > 0).length;
+
+  // Fund 3: die Kopfzeile hängt an diesem abgeleiteten Wert statt an der (nicht
+  // nachgezogenen) Prop.
+  const displaySchedule = useMemo(
+    () => scheduleAt(hoursChanges, todayIso(), propsSchedule),
+    [hoursChanges, propsSchedule],
   );
+
+  // #431: Die Vorschau-Parameter UND der POST-Body kommen aus derselben
+  // Funktion — zwei Formulierungen desselben Payloads laufen garantiert
+  // auseinander, und die beiden Modi schließen einander serverseitig hart aus
+  // (Tageswerte im gleichmäßigen Modus → HTTP 400).
+  //
+  // Bewusst nur PRIMITIVE Abhängigkeiten: dieses Objekt hängt im
+  // Dependency-Array des Vorschau-Effekts. Eine bei jedem Rendern neu erzeugte
+  // Identität (z. B. über ein Array wie `dayValues`) würde bei JEDEM Rendern
+  // einen Request auslösen.
+  const scheduleParams = useMemo<Record<string, string | number | boolean>>(() => {
+    if (formData.use_daily_schedule) {
+      const days = [
+        formData.hours_monday, formData.hours_tuesday, formData.hours_wednesday,
+        formData.hours_thursday, formData.hours_friday,
+      ];
+      const planned = days.filter((h) => h > 0).length;
+      const params: Record<string, string | number | boolean> = { use_daily_schedule: true };
+      DAY_FIELDS.forEach((f, i) => { params[f.key] = days[i]; });
+      // Die Wochensumme setzt der Server (`check_mode`) — ein eigener Wert des
+      // Clients könnte ihr widersprechen. Die Arbeitstage ergeben sich aus den
+      // Tagen MIT Stunden; ohne einen einzigen bleibt der Rückfall auf die
+      // User-Zeile (die Eingabe ist dann ohnehin ungültig und kommt als
+      // `blocked_reason` zurück).
+      if (planned > 0) params.work_days_per_week = planned;
+      return params;
+    }
+    return {
+      use_daily_schedule: false,
+      weekly_hours: formData.weekly_hours,
+      work_days_per_week: formData.work_days_per_week,
+    };
+  }, [
+    formData.use_daily_schedule, formData.weekly_hours, formData.work_days_per_week,
+    formData.hours_monday, formData.hours_tuesday, formData.hours_wednesday,
+    formData.hours_thursday, formData.hours_friday,
+  ]);
 
   useEffect(() => {
     fetchHoursChanges();
@@ -148,6 +360,12 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   // Tagessoll umgeschrieben. Ohne Vorschau passierte das still. Ob ein
   // Warnblock erscheint, entscheidet deshalb nicht mehr das Datum allein,
   // sondern `affected_absences` (siehe `showImpactBox`).
+  //
+  // #431: Der Effekt hängt jetzt an bis zu acht Formularwerten (Datum, Modus,
+  // fünf Tageswerte, Wochenstunden, Arbeitstage) — gebündelt in
+  // `scheduleParams`. Der 400-ms-Debounce plus das Aufräumen unten sorgen
+  // dafür, dass daraus trotzdem EIN Request je Eingabepause wird und nicht
+  // acht parallele.
   useEffect(() => {
     setConfirmedRetroactive(false);
     setPreviewLoading(true);
@@ -168,7 +386,7 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
     const handle = setTimeout(() => {
       apiClient
         .get(`/admin/users/${userId}/working-hours-changes/preview`, {
-          params: { effective_from: formData.effective_from, weekly_hours: formData.weekly_hours },
+          params: { effective_from: formData.effective_from, ...scheduleParams },
         })
         .then((res) => {
           if (cancelled) return;
@@ -190,7 +408,7 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [userId, formData.effective_from, formData.weekly_hours, previewRetryToken]);
+  }, [userId, formData.effective_from, scheduleParams, previewRetryToken]);
 
   // Fund 3: gibt die frisch geladene Liste zurück (nicht nur über State), damit
   // handleAddHoursChange den soeben aktualisierten aktiven Wert SOFORT für den
@@ -240,7 +458,7 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   // Release-Review 1.17.0, Nachtrag: `blocked_reason` galt nur für rückwirkende
   // Daten — ein Rest aus der Zeit, als die Vorschau ausschließlich dafür geladen
   // wurde. Jetzt kennt der Dialog auch bei einem Datum ab heute die Fälle, in
-  // denen der POST mit 400 abweist (individueller Tagesplan, bereits belegtes
+  // denen der POST mit 400 abweist (unvollständiger Tagesplan, bereits belegtes
   // Wirkungsdatum). Genau dafür wurde der Mechanismus gebaut: den Grund vorher
   // zeigen, statt den Admin in den 400 laufen zu lassen.
   const blockedReason = preview?.blocked_reason ?? null;
@@ -252,6 +470,26 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   // Dialog es anzeigen und bestätigen lassen, statt still zu korrigieren.
   const affectsBookedAbsences = !!preview && !preview.blocked_reason && preview.affected_absences > 0;
   const showImpactBox = isRetroactive || affectsBookedAbsences || !!blockedReason;
+
+  // #431: Was der Admin eingegeben hat — und was zum Wirkungsdatum ohnehin
+  // gilt. Sind beide gleich, gibt es nichts zu speichern (das Backend rechnet
+  // für diesen Fall bewusst nicht einmal eine Simulation).
+  //
+  // Verglichen wird gegen den Stand AM WIRKUNGSDATUM, nicht gegen den von
+  // heute: „ab 01.03. gelten 20 h" kann eine echte Änderung sein, obwohl heute
+  // längst 20 h gelten. Dieselbe Auflösung nutzt der Schreibpfad.
+  const inputSchedule: ScheduleSnapshot = {
+    weekly_hours: formData.use_daily_schedule ? daySum : formData.weekly_hours,
+    use_daily_schedule: formData.use_daily_schedule,
+    day_hours: dayValues,
+    work_days_per_week: formData.use_daily_schedule
+      ? (plannedDays || formData.work_days_per_week)
+      : formData.work_days_per_week,
+  };
+  const baselineSchedule = scheduleAt(hoursChanges, formData.effective_from, propsSchedule);
+  const snapshotUnchanged =
+    comparableSnapshot(inputSchedule) === comparableSnapshot(baselineSchedule);
+
   // Solange die Vorschau für ein rückwirkendes Datum noch lädt/fehlt, blockiert
   // oder noch nicht bestätigt ist, bleibt „Hinzufügen" gesperrt — der Nutzer
   // soll nicht ungeprüft in einen 400 laufen (blocked_reason) oder eine
@@ -264,27 +502,39 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
   const saveDisabled =
     submitting ||
     !!blockedReason ||
+    snapshotUnchanged ||
     (isRetroactive && (previewLoading || !preview || !confirmedRetroactive)) ||
     (!isRetroactive && affectsBookedAbsences && !confirmedRetroactive);
+
+  const setDayHours = (key: DayFieldKey, value: string) => {
+    setFormData((prev) => ({ ...prev, [key]: parseHours(value) }));
+  };
 
   const handleAddHoursChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saveDisabled) return;
     setSubmitting(true);
     try {
-      const res = await apiClient.post(`/admin/users/${userId}/working-hours-changes`, formData);
+      const res = await apiClient.post(`/admin/users/${userId}/working-hours-changes`, {
+        effective_from: formData.effective_from,
+        note: formData.note,
+        ...scheduleParams,
+      });
       const freshChanges = await fetchHoursChanges();
       onChanged();
-      // Fund 3: das neue aktive Tagessoll steht jetzt in `freshChanges` (die
-      // gerade gespeicherte Änderung eingeschlossen) — NICHT in der
-      // `currentWeeklyHours`-Prop, die Users.tsx erst beim nächsten Öffnen des
-      // Dialogs neu übergibt. Ohne das sprang das Feld nach dem Speichern auf
-      // den ALTEN Wert zurück, obwohl der Verlauf darunter schon den neuen
-      // zeigte.
+      // Fund 3: der neue aktive Snapshot steht jetzt in `freshChanges` (die
+      // gerade gespeicherte Änderung eingeschlossen) — NICHT in den Props, die
+      // Users.tsx erst beim nächsten Öffnen des Dialogs neu übergibt. Ohne das
+      // sprang das Feld nach dem Speichern auf den ALTEN Wert zurück, obwohl
+      // der Verlauf darunter schon den neuen zeigte.
+      const active = scheduleAt(freshChanges, todayIso(), propsSchedule);
       setFormData({
         effective_from: todayIso(),
-        weekly_hours: activeWeeklyHoursFromHistory(freshChanges, currentWeeklyHours),
         note: '',
+        weekly_hours: active.weekly_hours,
+        use_daily_schedule: active.use_daily_schedule,
+        ...dayFieldsFromSnapshot(active.day_hours),
+        work_days_per_week: active.work_days_per_week,
       });
       setPreview(null);
       setConfirmedRetroactive(false);
@@ -336,6 +586,34 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
     });
   };
 
+  // #431: Tagessoll je Wochentag aus der Vorschau. Nur Tage, an denen VOR oder
+  // NACH der Änderung ein Soll steht — ein durchgehend freier Freitag sagt
+  // nichts. Bewusst nicht als „geplante Arbeitstage" beschriftet: im
+  // gleichmäßigen Modus trägt jeder der fünf Wochentage denselben Wert, so
+  // rechnet die Engine.
+  const dayTargetText = (() => {
+    const before = preview?.day_targets_current;
+    const after = preview?.day_targets_new;
+    if (!Array.isArray(before) || !Array.isArray(after)) return '';
+    const parts = DAY_FIELDS.map((f, i) => {
+      const cur = before[i] ?? 0;
+      const next = after[i] ?? 0;
+      if (cur <= 0 && next <= 0) return null;
+      return `${f.short} ${deHoursExact(cur)} → ${deHoursExact(next)}`;
+    }).filter((p): p is string => p !== null);
+    return parts.length ? `Tagessoll je Wochentag: ${parts.join(' · ')}` : '';
+  })();
+
+  const overtimeDelta = preview ? round2(preview.overtime_after - preview.overtime_before) : 0;
+  const vacationDelta = preview ? round2(preview.vacation_days_after - preview.vacation_days_before) : 0;
+  // Ein zukunftsdatierter Wechsel liefert oft „12,5 → 12,5". Das ist korrekt —
+  // der Saldo-Stichtag (#313) liegt vor dem Wirkungsfenster — darf aber nicht
+  // als „keine Auswirkung" gelesen werden, während unten Abwesenheiten
+  // umgeschrieben werden.
+  const balanceUnchangedAhead =
+    !!preview && !isRetroactive && overtimeDelta === 0 && vacationDelta === 0;
+  const vacationYear = preview ? preview.period_start.slice(0, 4) : '';
+
   return (
     <>
       <ConfirmDialog
@@ -367,15 +645,17 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
           >
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <div>
-                <h2 id="hours-modal-title" className="text-2xl font-bold text-gray-900">Stundenverlauf</h2>
+                <h2 id="hours-modal-title" className="text-2xl font-bold text-gray-900">
+                  Wochenstunden &amp; Tagesplan
+                </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {userName} • Aktuell: {displayWeeklyHours} Std/Woche
+                  {userName} • Aktuell: {describeSchedule(displaySchedule)}
                 </p>
               </div>
               <button
                 onClick={onClose}
                 className="text-gray-500 hover:text-gray-700"
-                aria-label={`Stundenverlauf für ${userName} schließen`}
+                aria-label={`Wochenstunden & Tagesplan für ${userName} schließen`}
               >
                 <X size={24} />
               </button>
@@ -385,60 +665,146 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
               {/* Add New Change Form */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <h3 className="font-semibold text-blue-900 mb-3">Neue Stundenänderung</h3>
-                <form onSubmit={handleAddHoursChange} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label htmlFor="wh-effective-from" className="block text-sm font-medium text-gray-700 mb-1">
-                      Gültig ab
-                    </label>
-                    <input
-                      id="wh-effective-from"
-                      type="date"
-                      value={formData.effective_from}
-                      onChange={(e) => setFormData({ ...formData, effective_from: e.target.value })}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="wh-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">
-                      Wochenstunden
-                    </label>
-                    <input
-                      id="wh-weekly-hours"
-                      type="number"
-                      step="0.5"
-                      value={formData.weekly_hours}
-                      onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
-                      required
-                      min="0"
-                      max="60"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="wh-note" className="block text-sm font-medium text-gray-700 mb-1">
-                      Notiz (optional)
-                    </label>
-                    <input
-                      id="wh-note"
-                      type="text"
-                      value={formData.note}
-                      onChange={(e) => setFormData({ ...formData, note: e.target.value })}
-                      placeholder="z.B. Teilzeitänderung"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                    />
+                <form onSubmit={handleAddHoursChange} className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label htmlFor="wh-effective-from" className="block text-sm font-medium text-gray-700 mb-1">
+                        Gültig ab
+                      </label>
+                      <input
+                        id="wh-effective-from"
+                        type="date"
+                        value={formData.effective_from}
+                        onChange={(e) => setFormData({ ...formData, effective_from: e.target.value })}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label htmlFor="wh-note" className="block text-sm font-medium text-gray-700 mb-1">
+                        Notiz (optional)
+                      </label>
+                      <input
+                        id="wh-note"
+                        type="text"
+                        value={formData.note}
+                        onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                        placeholder="z.B. Teilzeitänderung"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
                   </div>
 
+                  {/* #431: Modus-Umschalter. Der Wechsel selbst ist eine
+                      Vertragsänderung mit Wirkungsdatum — deshalb steht er
+                      hier und nicht mehr als Haken im Bearbeiten-Formular. */}
+                  <fieldset className="border border-blue-200 rounded-lg p-3 bg-white">
+                    <legend className="px-1 text-sm font-medium text-gray-700">
+                      Ab diesem Datum gilt
+                    </legend>
+                    <div className="flex flex-wrap gap-4 mb-3">
+                      <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="wh-mode"
+                          checked={!formData.use_daily_schedule}
+                          onChange={() => setFormData((prev) => ({ ...prev, use_daily_schedule: false }))}
+                          className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                        />
+                        Gleichmäßig
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="wh-mode"
+                          checked={formData.use_daily_schedule}
+                          onChange={() => setFormData((prev) => ({ ...prev, use_daily_schedule: true }))}
+                          className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                        />
+                        Nach Tagen
+                      </label>
+                    </div>
+
+                    {formData.use_daily_schedule ? (
+                      <div className="grid grid-cols-5 gap-2">
+                        {DAY_FIELDS.map((f) => (
+                          <div key={f.key}>
+                            <label htmlFor={`wh-${f.key}`} className="block text-xs font-medium text-gray-600 mb-1">
+                              {f.label}
+                            </label>
+                            <input
+                              id={`wh-${f.key}`}
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              max="24"
+                              value={formData[f.key]}
+                              onChange={(e) => setDayHours(f.key, e.target.value)}
+                              className="w-full px-2 py-1 text-center border border-gray-300 rounded-sm focus:ring-2 focus:ring-primary text-sm"
+                            />
+                          </div>
+                        ))}
+                        {/* Die Wochensumme rechnet der Server aus denselben
+                            Werten (`check_mode`) — hier steht sie in derselben
+                            Schreibweise, damit Bildschirm und gespeicherte
+                            Zeile nie verschiedene Zahlen nennen. */}
+                        <p className="col-span-5 text-sm text-gray-700 mt-1">
+                          → {deHoursExact(daySum)} h/Woche · {plannedDays}{' '}
+                          {plannedDays === 1 ? 'Arbeitstag' : 'Arbeitstage'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="wh-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">
+                            Wochenstunden
+                          </label>
+                          <input
+                            id="wh-weekly-hours"
+                            type="number"
+                            step="0.5"
+                            value={formData.weekly_hours}
+                            onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
+                            required
+                            min="0"
+                            max="60"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="wh-work-days" className="block text-sm font-medium text-gray-700 mb-1">
+                            Arbeitstage pro Woche
+                          </label>
+                          <input
+                            id="wh-work-days"
+                            type="number"
+                            step="1"
+                            min="1"
+                            max="7"
+                            value={formData.work_days_per_week}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              work_days_per_week: Math.round(parseHours(e.target.value)),
+                            })}
+                            required
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </fieldset>
+
                   {/* Task 7: Auswirkungs-Hinweis — VOR dem Speichern zeigen, was
-                      die Änderung anfasst (Zeitraum, altes → neues Tagessoll,
-                      betroffene Abwesenheiten, abgeschlossenes Jahr), plus
-                      Blockade-Grund bzw. Bestätigungspflicht.
+                      die Änderung anfasst (Zeitraum, Tagessoll je Wochentag,
+                      betroffene Abwesenheiten, Saldo/Urlaub vorher-nachher,
+                      abgeschlossenes Jahr), plus Blockade-Grund bzw.
+                      Bestätigungspflicht.
                       Release-Review 1.17.0: auch bei einem Datum AB heute, sobald
                       die Vorschau bereits gebuchte Abwesenheiten meldet. */}
                   {showImpactBox && (
                     <div
                       role="status"
-                      className={`md:col-span-3 rounded-lg border p-3 text-sm ${
+                      className={`rounded-lg border p-3 text-sm ${
                         blockedReason || previewError ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
                       }`}
                     >
@@ -450,10 +816,48 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                             {isRetroactive ? 'Rückwirkende Änderung' : 'Betrifft bereits gebuchte Abwesenheiten'}:{' '}
                             {formatDate(preview.period_start)} – {formatDate(preview.period_end)}
                           </p>
-                          <p className="text-amber-800 mt-1">
-                            Tagessoll {preview.current_daily_target.toFixed(1)}h → {preview.new_daily_target.toFixed(1)}h.{' '}
+                          {dayTargetText && (
+                            <p className="text-amber-800 mt-1">{dayTargetText}</p>
+                          )}
+                          <p className="text-amber-800">
                             {preview.affected_absences} Abwesenheit(en) betroffen.
                           </p>
+                          {!blockedReason && (
+                            <table className="mt-2 w-full text-amber-900">
+                              <thead>
+                                <tr className="text-xs uppercase text-amber-700">
+                                  <th scope="col" className="text-left font-medium">Auswirkung</th>
+                                  <th scope="col" className="text-right font-medium">bisher</th>
+                                  <th scope="col" className="text-right font-medium">neu</th>
+                                  <th scope="col" className="text-right font-medium">Δ</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <th scope="row" className="text-left font-medium">Überstunden</th>
+                                  <td className="text-right">{`${signed(preview.overtime_before)} h`}</td>
+                                  <td className="text-right">{`${signed(preview.overtime_after)} h`}</td>
+                                  <td className="text-right font-medium">{`${signed(overtimeDelta)} h`}</td>
+                                </tr>
+                                <tr>
+                                  {/* Die Urlaubszahlen gehören zum Jahr des
+                                      Wirkungszeitraums — ohne Jahreszahl liest
+                                      man sie als „dieses Jahr". */}
+                                  <th scope="row" className="text-left font-medium">{`Urlaub ${vacationYear}`}</th>
+                                  <td className="text-right">{`${deHoursExact(preview.vacation_days_before)} Tage`}</td>
+                                  <td className="text-right">{`${deHoursExact(preview.vacation_days_after)} Tage`}</td>
+                                  <td className="text-right font-medium">{`${signed(vacationDelta)} Tage`}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          )}
+                          {balanceUnchangedAhead && (
+                            <p className="text-amber-800 mt-1">
+                              Saldo und Urlaub stehen auf dem Stand von heute — die Änderung
+                              wirkt erst ab dem {formatDate(formData.effective_from)}. Die oben
+                              genannten Abwesenheiten werden trotzdem umgeschrieben.
+                            </p>
+                          )}
                           {preview.closed_year_warning && (
                             <p className="text-amber-900 font-medium mt-1">{preview.closed_year_warning}</p>
                           )}
@@ -489,7 +893,17 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                     </div>
                   )}
 
-                  <div className="md:col-span-3">
+                  {/* Ein gesperrter Button ohne Begründung ist genau der
+                      Fund-4-Fehler — der häufigste Grund ist der frisch
+                      geöffnete, mit dem aktuellen Stand vorbefüllte Dialog. */}
+                  {snapshotUnchanged && !blockedReason && (
+                    <p className="text-sm text-gray-600">
+                      Noch nichts zu speichern — die Eingabe entspricht dem Stand, der
+                      am {formatDate(formData.effective_from)} ohnehin gilt.
+                    </p>
+                  )}
+
+                  <div>
                     <button
                       type="submit"
                       disabled={saveDisabled}
@@ -518,7 +932,8 @@ export default function WorkingHoursModal({ userId, userName, currentWeeklyHours
                         >
                           <div>
                             <p className="font-medium text-gray-900">
-                              Ab {formatDate(change.effective_from)} bis {end ? formatDate(end) : 'heute'}: {change.weekly_hours} Std/Woche
+                              Ab {formatDate(change.effective_from)} bis {end ? formatDate(end) : 'heute'}:{' '}
+                              {describeSchedule(scheduleFromChange(change, propsSchedule.work_days_per_week))}
                             </p>
                             {change.note && (
                               <p className="text-sm text-gray-600 mt-1">{change.note}</p>

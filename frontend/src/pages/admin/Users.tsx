@@ -639,7 +639,8 @@ export default function Users() {
                       <button
                         onClick={() => setHoursModalUser(user)}
                         className="text-blue-600 hover:text-blue-800"
-                        title="Stundenverlauf"
+                        title="Wochenstunden & Tagesplan"
+                        aria-label={`Wochenstunden & Tagesplan für ${user.first_name} ${user.last_name}`}
                       >
                         <Clock size={16} />
                       </button>
@@ -820,8 +821,8 @@ export default function Users() {
                     <button
                       onClick={() => setHoursModalUser(user)}
                       className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
-                      aria-label="Stundenverlauf anzeigen"
-                      title="Stundenverlauf"
+                      aria-label="Wochenstunden & Tagesplan anzeigen"
+                      title="Wochenstunden & Tagesplan"
                     >
                       <Clock size={16} />
                     </button>
@@ -912,6 +913,18 @@ export default function Users() {
           userId={hoursModalUser.id}
           userName={`${hoursModalUser.first_name} ${hoursModalUser.last_name}`}
           currentWeeklyHours={hoursModalUser.weekly_hours}
+          // #431: der Dialog ändert den VOLLSTÄNDIGEN Vertrags-Snapshot
+          // (Modus, Tageswerte, Arbeitstage) — er braucht ihn deshalb auch als
+          // Ausgangsstand, solange es noch keine Historie gibt.
+          currentUseDailySchedule={hoursModalUser.use_daily_schedule}
+          currentDayHours={[
+            hoursModalUser.hours_monday,
+            hoursModalUser.hours_tuesday,
+            hoursModalUser.hours_wednesday,
+            hoursModalUser.hours_thursday,
+            hoursModalUser.hours_friday,
+          ]}
+          currentWorkDays={hoursModalUser.work_days_per_week}
           onClose={() => setHoursModalUser(null)}
           onChanged={fetchUsers}
         />

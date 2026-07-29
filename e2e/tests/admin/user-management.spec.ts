@@ -66,14 +66,14 @@ test.describe('Admin User Management', () => {
     await expect(openHoursButton).toBeVisible({ timeout: 5000 });
     await openHoursButton.click();
 
-    const dialog = adminPage.getByRole('dialog', { name: /Stundenverlauf/i });
+    const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
     await expect(dialog).toBeVisible({ timeout: 5000 });
 
     // A future date needs no retroactive preview/confirmation — keep this a
     // straightforward "add a change" smoke test. Far enough out to avoid
     // colliding with an existing change on the same date.
     await dialog.getByLabel('Gültig ab').fill(daysFromNow(120));
-    await dialog.getByLabel('Wochenstunden').fill('38');
+    await dialog.getByLabel('Wochenstunden', { exact: true }).fill('38');
 
     await dialog.getByRole('button', { name: 'Hinzufügen' }).click();
 
@@ -106,17 +106,17 @@ test.describe('Admin User Management', () => {
     await editButton.click();
 
     await adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' }).click();
-    const dialog = adminPage.getByRole('dialog', { name: /Stundenverlauf/i });
+    const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
     await expect(dialog).toBeVisible({ timeout: 5000 });
 
     // Datum in der Vergangenheit -> die Vorschau muss anspringen.
     await dialog.getByLabel('Gültig ab').fill(weekdayFromNow(-45));
-    await dialog.getByLabel('Wochenstunden').fill('20');
+    await dialog.getByLabel('Wochenstunden', { exact: true }).fill('20');
 
-    // Der Warnblock nennt Zeitraum, altes/neues Tagessoll und die Zahl der
+    // Der Warnblock nennt Zeitraum, Tagessoll je Wochentag und die Zahl der
     // betroffenen Abwesenheiten. Er erscheint erst nach der Vorschau-Antwort.
     await expect(dialog.getByText(/^Rückwirkende Änderung:/)).toBeVisible({ timeout: 10000 });
-    await expect(dialog.getByText(/Tagessoll .*h → .*h/)).toBeVisible();
+    await expect(dialog.getByText(/Tagessoll je Wochentag:/)).toBeVisible();
     await expect(dialog.getByText(/Abwesenheit\(en\) betroffen/)).toBeVisible();
 
     // Ohne Bestätigung darf nicht gespeichert werden können.

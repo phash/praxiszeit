@@ -84,8 +84,13 @@ const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
  * Für jeden Wert mit höchstens einer Nachkommastelle — also jeden, den die
  * Spalte vor #431 überhaupt speichern konnte — ist das Ergebnis zeichengleich
  * zur früheren `toFixed(1)`-Fassung.
+ *
+ * Exportiert, weil auch der Wochenstunden-&-Tagesplan-Dialog jede Stundenzahl
+ * so schreiben muss: er zeigt die Wochensumme, die der Server aus denselben
+ * Tageswerten berechnet — eine zweite Rundungsregel dort hiesse, dass
+ * Bildschirm und gespeicherte Zeile verschiedene Zahlen nennen.
  */
-function deHoursExact(value: number): string {
+export function deHoursExact(value: number): string {
   if (!Number.isFinite(value)) return '?';
   let text = value.toFixed(2);
   if (text.endsWith('0')) text = text.slice(0, -1);
@@ -98,8 +103,12 @@ function deHoursExact(value: number): string {
  *
  * Wochentage ohne Stunden stehen nicht drin (weder `null` noch 0): ein Tag ohne
  * Soll ist kein Arbeitstag.
+ *
+ * Exportiert für den Wochenstunden-&-Tagesplan-Dialog (Kopfzeile + Verlauf):
+ * die Verlaufszeile im Dialog und die Vertragshistorie im Bericht müssen
+ * denselben Satz schreiben.
  */
-function formatDayPlan(dayHours?: (number | null)[] | null): string {
+export function formatDayPlan(dayHours?: (number | null)[] | null): string {
   if (!dayHours) return '';
   return WEEKDAY_LABELS.map((label, i) => {
     const hours = dayHours[i];
