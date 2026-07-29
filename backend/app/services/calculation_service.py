@@ -10,6 +10,98 @@ from app.models import User, TimeEntry, Absence, AbsenceReason, PublicHoliday, A
 from app.services import special_days_service, settings_service
 
 
+class Schedule(NamedTuple):
+    """#431: der vollstaendige Vertrags-Snapshot fuer EIN Datum.
+
+    Aufgeloest aus der jeweils juengsten ``WorkingHoursChange`` mit
+    ``effective_from <= target_date``; gibt es keine, aus den aktuellen
+    User-Feldern (der Rueckfallwert fuer die Zeit vor der ersten erfassten
+    Aenderung — dieselbe Semantik wie ``user.weekly_hours`` seit #415).
+    """
+
+    weekly_hours: Decimal
+    use_daily_schedule: bool
+    day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[Decimal]
+    work_days_per_week: int
+
+
+def _latest_change(
+    db: Session,
+    user: User,
+    target_date: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Optional[WorkingHoursChange]:
+    """Juengste Aenderung mit ``effective_from <= target_date``. Query-Pfad und
+    In-Memory-Pfad mit identischer Semantik (``ORDER BY effective_from DESC
+    LIMIT 1``)."""
+    if wh_changes is None:
+        return db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+            WorkingHoursChange.effective_from <= target_date,
+        ).order_by(WorkingHoursChange.effective_from.desc()).first()
+    change = None
+    for c in wh_changes:
+        if c.effective_from <= target_date and (
+            change is None or c.effective_from > change.effective_from
+        ):
+            change = c
+    return change
+
+
+def _dec_or_none(value) -> Optional[Decimal]:
+    return None if value is None else Decimal(str(value))
+
+
+def get_schedule_for_date(
+    db: Session,
+    user: User,
+    target_date: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Schedule:
+    """#431: DIE eine Aufloesung des Vertragszustands zu einem Datum.
+
+    Vor #431 war nur ``weekly_hours`` historisiert; Modus, Tageswerte und
+    Arbeitstage kamen live von der User-Zeile — jede Aenderung verschob damit
+    still das Soll der gesamten Vergangenheit. Alle vier Werte stecken jetzt in
+    derselben Snapshot-Zeile, deshalb genuegt EIN Lookup (und der bereits
+    vorhandene ``wh_changes``-Preload der Hot-Loops).
+    """
+    change = _latest_change(db, user, target_date, wh_changes)
+    if change is not None:
+        return Schedule(
+            weekly_hours=Decimal(str(change.weekly_hours)),
+            use_daily_schedule=bool(change.use_daily_schedule),
+            day_hours=(
+                _dec_or_none(change.hours_monday),
+                _dec_or_none(change.hours_tuesday),
+                _dec_or_none(change.hours_wednesday),
+                _dec_or_none(change.hours_thursday),
+                _dec_or_none(change.hours_friday),
+            ),
+            work_days_per_week=int(
+                change.work_days_per_week
+                if change.work_days_per_week is not None
+                else user.work_days_per_week
+            ),
+        )
+    # Kein Eintrag → aktuelle User-Felder. Dies ist die EINZIGE Stelle im Code,
+    # die user.weekly_hours / user.hours_* / user.work_days_per_week direkt
+    # lesen darf.
+    return Schedule(
+        weekly_hours=Decimal(str(user.weekly_hours)),
+        use_daily_schedule=bool(getattr(user, 'use_daily_schedule', False)),
+        day_hours=(
+            _dec_or_none(user.hours_monday),
+            _dec_or_none(user.hours_tuesday),
+            _dec_or_none(user.hours_wednesday),
+            _dec_or_none(user.hours_thursday),
+            _dec_or_none(user.hours_friday),
+        ),
+        work_days_per_week=int(user.work_days_per_week),
+    )
+
+
 def get_weekly_hours_for_date(
     db: Session,
     user: User,
@@ -37,31 +129,11 @@ def get_weekly_hours_for_date(
 
     Returns:
         Weekly hours as Decimal
+
+    #431: thin wrapper around ``get_schedule_for_date`` — the resolver above
+    is now the single place that reads ``user.weekly_hours`` directly.
     """
-    if wh_changes is None:
-        # Classic path: one DB query, always correct.
-        change = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
-            WorkingHoursChange.effective_from <= target_date
-        ).order_by(WorkingHoursChange.effective_from.desc()).first()
-    else:
-        # In-memory path: scan the pre-loaded list. We mirror the SQL
-        # ``ORDER BY effective_from DESC LIMIT 1`` semantics exactly.
-        change = None
-        for c in wh_changes:
-            if c.effective_from <= target_date and (
-                change is None or c.effective_from > change.effective_from
-            ):
-                change = c
-
-    if change:
-        return Decimal(str(change.weekly_hours))
-
-    # No historical change found — fall back to the current user value.
-    # This is the ONLY place in the codebase that may read user.weekly_hours
-    # directly; everything else must route through this helper.
-    return Decimal(str(user.weekly_hours))
+    return get_schedule_for_date(db, user, target_date, wh_changes).weekly_hours
 
 
 def weekly_hours_segments(
