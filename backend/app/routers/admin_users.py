@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List
+from typing import List, NamedTuple, Optional
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
+from pydantic import ValidationError
 from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, TimeEntryAuditLog, UserRole, PublicHoliday
@@ -108,6 +109,54 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
             None if v is None else Decimal(str(v)) for v in day_hours
         ) if use_daily_schedule else (None,) * 5,
         int(work_days_per_week),
+    )
+
+
+class _NormalisedSchedule(NamedTuple):
+    """#431: die fertig normalisierte Snapshot-Eingabe — genau die vier Werte,
+    die eine ``WorkingHoursChange``-Zeile ausmachen."""
+
+    weekly_hours: float
+    use_daily_schedule: bool
+    day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[float]
+    work_days_per_week: int
+
+
+def _normalise_schedule_input(
+    change_data: WorkingHoursChangeCreate, user: User
+) -> _NormalisedSchedule:
+    """#431: DIE eine Normalisierung der Snapshot-Eingabe — genutzt vom
+    Schreibpfad ``create_working_hours_change`` UND von der Vorschau.
+
+    Die fachliche REGEL selbst (Modi schließen einander aus, im Tagesplan-Modus
+    ist ``weekly_hours`` die Summe der Tageswerte) lebt unverändert in
+    ``WorkingHoursChangeCreate.check_mode`` — deshalb nimmt dieser Helfer ein
+    bereits validiertes Create-Schema entgegen. Die Vorschau baut sich eins aus
+    ihren Query-Parametern, statt die Regel ein zweites Mal zu formulieren: zwei
+    Implementierungen derselben Regel divergieren garantiert (#394/1.14.3 hat
+    dieses Projekt genau diese Fehlerklasse schon einmal gekostet — dort wich
+    ein Vorab-Check von der Buchung ab und lehnte gültige Eingaben mit 400 ab).
+
+    Hier lebt der eine Teil, den das Schema NICHT abdecken kann, weil er den
+    Mitarbeitenden kennen muss: der Rückfall von ``work_days_per_week`` auf die
+    User-Zeile. NULL hieße „Rückfall auf die (jederzeit änderbare) User-Zeile" —
+    der Snapshot wäre dann unvollständig. Vorher stand dieser Rückfall zweimal
+    wörtlich im Schreibpfad und hätte in der Vorschau ein drittes Mal
+    entstehen müssen.
+    """
+    return _NormalisedSchedule(
+        weekly_hours=change_data.weekly_hours,
+        use_daily_schedule=bool(change_data.use_daily_schedule),
+        day_hours=(
+            change_data.hours_monday,
+            change_data.hours_tuesday,
+            change_data.hours_wednesday,
+            change_data.hours_thursday,
+            change_data.hours_friday,
+        ),
+        work_days_per_week=int(
+            change_data.work_days_per_week or user.work_days_per_week
+        ),
     )
 
 
@@ -1015,6 +1064,12 @@ def create_working_hours_change(
             detail=f"Eine Stundenänderung für den {change_data.effective_from.strftime('%d.%m.%Y')} existiert bereits"
         )
 
+    # #431: die Eingabe wird ab hier ausschliesslich ueber `norm` gelesen —
+    # dieselbe Normalisierung, die auch die Vorschau benutzt. Sonst muesste der
+    # `work_days_per_week`-Rueckfall an drei Stellen wortgleich stehen (zweimal
+    # hier, einmal dort) und wuerde irgendwann auseinanderlaufen.
+    norm = _normalise_schedule_input(change_data, user)
+
     # Release-Review 1.16.0 (#415-Folgefund): Bevor die ERSTE Änderung eines
     # Mitarbeiters gespeichert wird, den bisherigen Vertragswert als Basis-Zeile
     # festhalten.
@@ -1066,11 +1121,8 @@ def create_working_hours_change(
         _current.weekly_hours, _current.use_daily_schedule,
         _current.day_hours, _current.work_days_per_week,
     ) != _comparable_snapshot(
-        change_data.weekly_hours, change_data.use_daily_schedule,
-        (change_data.hours_monday, change_data.hours_tuesday,
-         change_data.hours_wednesday, change_data.hours_thursday,
-         change_data.hours_friday),
-        change_data.work_days_per_week or user.work_days_per_week,
+        norm.weekly_hours, norm.use_daily_schedule,
+        norm.day_hours, norm.work_days_per_week,
     ):
         # Der Vortag ist immer dabei → das Ergebnis liegt garantiert VOR
         # `effective_from` (die frühere Zusatz-Klemme ist damit überflüssig).
@@ -1112,17 +1164,18 @@ def create_working_hours_change(
         user_id=user_id,
         tenant_id=current_user.tenant_id,
         effective_from=change_data.effective_from,
-        weekly_hours=change_data.weekly_hours,
-        use_daily_schedule=change_data.use_daily_schedule,
-        hours_monday=change_data.hours_monday,
-        hours_tuesday=change_data.hours_tuesday,
-        hours_wednesday=change_data.hours_wednesday,
-        hours_thursday=change_data.hours_thursday,
-        hours_friday=change_data.hours_friday,
+        weekly_hours=norm.weekly_hours,
+        use_daily_schedule=norm.use_daily_schedule,
+        hours_monday=norm.day_hours[0],
+        hours_tuesday=norm.day_hours[1],
+        hours_wednesday=norm.day_hours[2],
+        hours_thursday=norm.day_hours[3],
+        hours_friday=norm.day_hours[4],
         # NULL hieße „Rückfall auf die (jederzeit änderbare) User-Zeile" — das
         # Modell verlangt für neue Zeilen einen gesetzten Wert, damit der
-        # Snapshot vollständig ist.
-        work_days_per_week=change_data.work_days_per_week or user.work_days_per_week,
+        # Snapshot vollständig ist (der Rückfall steckt in
+        # _normalise_schedule_input, gemeinsam mit der Vorschau).
+        work_days_per_week=norm.work_days_per_week,
         note=change_data.note
     )
     db.add(change)
@@ -1204,27 +1257,70 @@ def create_working_hours_change(
     return change
 
 
+def _planned_day_mean(day_targets: List[float]) -> float:
+    """#431: Mittel der Tage mit Soll > 0 (``0.0``, wenn keiner).
+
+    Der eine Skalar bleibt Teil der API (``current_daily_target`` /
+    ``new_daily_target``). Bewusst NICHT der Mittelwert über alle fünf
+    Wochentage: bei einem Tagesplan Mo 8 / Di 5 / Mi 4 zöge ein freier
+    Donnerstag/Freitag die Zahl auf 3,4 h herunter — ein Wert, den kein
+    Arbeitstag dieser Woche hat.
+    """
+    planned = [t for t in day_targets if t > 0]
+    if not planned:
+        return 0.0
+    return round(sum(planned) / len(planned), 2)
+
+
+def _schedule_input_error(exc: ValidationError) -> str:
+    """Die Meldung des ``check_mode``-Validators als Klartext für
+    ``blocked_reason`` (Pydantic stellt ``Value error, `` voran).
+
+    Der Fallback ist kein toter Code-Schmuck: dieser Endpoint läuft bei JEDER
+    Eingabe im Dialog (debounced), ein IndexError hier wäre ein HTTP 500 mitten
+    im Tippen.
+    """
+    errors = exc.errors()
+    if not errors:
+        return "Ungültige Eingabe"
+    return str(errors[0].get("msg", "Ungültige Eingabe")).removeprefix("Value error, ")
+
+
 @router.get("/users/{user_id}/working-hours-changes/preview", response_model=WorkingHoursChangePreview)
 def preview_working_hours_change(
     user_id: str,
     effective_from: date,
-    weekly_hours: float = Query(..., ge=0, le=60),
+    weekly_hours: Optional[float] = Query(None, ge=0, le=60),
+    use_daily_schedule: bool = Query(False),
+    hours_monday: Optional[float] = Query(None, ge=0, le=24),
+    hours_tuesday: Optional[float] = Query(None, ge=0, le=24),
+    hours_wednesday: Optional[float] = Query(None, ge=0, le=24),
+    hours_thursday: Optional[float] = Query(None, ge=0, le=24),
+    hours_friday: Optional[float] = Query(None, ge=0, le=24),
+    work_days_per_week: Optional[int] = Query(None, ge=1, le=7),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
     """Task 2 (#Wochenstunden-Dialog): strikt lesende Vorschau VOR dem Speichern
-    einer Wochenstunden-Änderung — zeigt Zeitraum, altes/neues Tagessoll,
-    Anzahl betroffener Abwesenheiten und ob ein abgeschlossenes Jahr berührt
-    wird. Kennt zusätzlich die Ablehnungsgründe des POST-Endpoints
-    (individueller Tagesplan, Datum bereits belegt), damit der Dialog den
-    Nutzer nicht erst in einen 400 laufen lässt.
+    einer Wochenstunden-Änderung — zeigt Zeitraum, Tagessoll je Wochentag,
+    Anzahl betroffener Abwesenheiten, Saldo und Urlaub vorher/nachher und ob ein
+    abgeschlossenes Jahr berührt wird. Kennt zusätzlich die Ablehnungsgründe des
+    POST-Endpoints (Eingabe verletzt die Modus-Regel, Datum bereits belegt),
+    damit der Dialog den Nutzer nicht erst in einen 400 laufen lässt.
 
-    Schreibt NICHTS — kein ``db.commit()``. Um ``retarget_absence_hours``
-    (die einzige Stelle, die die Rückrechnung kennt) für den noch gar nicht
-    gespeicherten neuen Wert befragen zu können, wird die hypothetische
-    Änderung nur in der laufenden Transaktion ge-flusht (damit die interne
-    ``get_weekly_hours_for_date``-Abfrage sie sieht) und danach IMMER per
-    ``db.rollback()`` verworfen — auch im Fehlerfall.
+    #431: Die Eingabe ist der VOLLSTÄNDIGE Snapshot (Modus, fünf Tageswerte,
+    Arbeitstage), nicht mehr nur ``weekly_hours`` — genau das, was der POST seit
+    Task 5 annimmt. Die Normalisierung (Summe als ``weekly_hours``,
+    ``work_days_per_week``-Rückfall) läuft über dieselbe Regel wie dort:
+    ``WorkingHoursChangeCreate.check_mode`` + ``_normalise_schedule_input``.
+    Der frühere Tagesplan-Ablehnungsgrund ist damit weg — er widerspräche dem
+    Schreibpfad.
+
+    Schreibt NICHTS — kein ``db.commit()``. Um ``retarget_absence_hours`` und
+    die Konto-Funktionen für den noch gar nicht gespeicherten Snapshot befragen
+    zu können, wird die hypothetische Änderung in der laufenden Transaktion
+    ge-flusht (damit deren eigene ``WorkingHoursChange``-Abfragen sie sehen) und
+    danach IMMER per ``db.rollback()`` verworfen — auch im Fehlerfall.
     """
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
@@ -1241,41 +1337,78 @@ def preview_working_hours_change(
     period_start = window.start
     period_end = window.end
 
-    # Fund 3 (Release-Review 1.17.0): das Tagessoll für einen repräsentativen
-    # ARBEITSTAG ausweisen, nicht für den Stichtag selbst.
-    # get_daily_target_for_date liefert am Wochenende hart 0 — und das
-    # Wirkungsdatum ist typischerweise ein Monatserster (4 der 12 Monatsersten
-    # 2026 fallen auf ein Wochenende). Der Dialog zeigte dann „Tagessoll 0.0h →
-    # 0.0h" NEBEN „N Abwesenheit(en) betroffen": zwei Zahlen, die sich
-    # widersprechen, als einziger quantitativer Beleg vor einer §16-relevanten
-    # Freigabe. Die Zählung selbst war nie betroffen (das Retarget rechnet pro
-    # Tag), es ist reine Anzeige.
-    representative_day = effective_from
-    while representative_day.weekday() >= 5:
-        representative_day += timedelta(days=1)
-
-    # #431: der aktuelle Snapshot zum Wirkungsdatum; die "neu"-Zeile ist genau
-    # derselbe Snapshot mit den geplanten Wochenstunden (nur die aendern sich —
-    # Modus/Tageswerte/Arbeitstage bleiben, was der Dialog nicht anfasst).
+    # #431: die Eingabe durch DIESELBE Regel schicken wie der Schreibpfad —
+    # `check_mode` (Modi schließen einander aus; im Tagesplan-Modus ist
+    # weekly_hours die Summe der Tageswerte) plus `_normalise_schedule_input`
+    # (work_days_per_week-Rückfall auf die User-Zeile). Eine zweite Formulierung
+    # derselben Regel würde divergieren — #394/1.14.3 ist genau daran
+    # aufgelaufen (ein Vorab-Check wich von der Buchung ab).
+    #
+    # Verletzt die Eingabe die Regel, gibt es keinen Snapshot, den man
+    # vorrechnen könnte: das wird ein blocked_reason (der POST lehnte dieselbe
+    # Eingabe ab), und „neu" bleibt gleich „aktuell" — lieber gar keine Änderung
+    # anzeigen als eine erfundene.
     current_schedule = calculation_service.get_schedule_for_date(db, user, effective_from)
-    current_daily_target = calculation_service.get_daily_target_for_date(
-        user, representative_day, current_schedule
-    )
-    new_daily_target = calculation_service.get_daily_target_for_date(
-        user, representative_day,
-        current_schedule._replace(weekly_hours=Decimal(str(weekly_hours))),
-    )
-
-    # Gleiche Ablehnungsgründe wie create_working_hours_change (Fix #2 dort):
-    # individueller Tagesplan zuerst, dann Datum bereits belegt.
-    blocked_reason = None
-    if getattr(user, "use_daily_schedule", False):
-        blocked_reason = (
-            "Für Mitarbeitende mit individuellem Tagesplan wird die "
-            "Stunden-Historie nicht unterstützt — bitte die Tagesstunden "
-            "direkt im Mitarbeiter-Profil ändern."
+    input_error = None
+    try:
+        norm = _normalise_schedule_input(
+            WorkingHoursChangeCreate(
+                effective_from=effective_from,
+                weekly_hours=weekly_hours,
+                use_daily_schedule=use_daily_schedule,
+                hours_monday=hours_monday,
+                hours_tuesday=hours_tuesday,
+                hours_wednesday=hours_wednesday,
+                hours_thursday=hours_thursday,
+                hours_friday=hours_friday,
+                work_days_per_week=work_days_per_week,
+            ),
+            user,
         )
-    else:
+        new_schedule = calculation_service.Schedule(
+            weekly_hours=Decimal(str(norm.weekly_hours)),
+            use_daily_schedule=norm.use_daily_schedule,
+            day_hours=tuple(
+                None if v is None else Decimal(str(v)) for v in norm.day_hours
+            ),
+            work_days_per_week=norm.work_days_per_week,
+        )
+    except ValidationError as exc:
+        input_error = _schedule_input_error(exc)
+        norm = None
+        new_schedule = current_schedule
+
+    # Fund 3 (Release-Review 1.17.0), #431 erweitert: das Tagessoll je WOCHENTAG
+    # ausweisen, nicht für den Stichtag.
+    #
+    # Zwei Gründe. (1) get_daily_target_for_date liefert am Wochenende hart 0 —
+    # und das Wirkungsdatum ist typischerweise ein Monatserster (4 der 12
+    # Monatsersten 2026 fallen auf ein Wochenende). Der Dialog zeigte dann
+    # „Tagessoll 0.0h → 0.0h" NEBEN „N Abwesenheit(en) betroffen": zwei Zahlen,
+    # die sich widersprechen. (2) Ein einzelner Wert bildet einen individuellen
+    # Tagesplan überhaupt nicht ab (Mo 8 / Di 0 / Mi 4). Die Zählung war nie
+    # betroffen (das Retarget rechnet pro Tag), es ist reine Anzeige.
+    #
+    # Nur der WOCHENTAG des Datums geht in die Rechnung ein (die Snapshots sind
+    # explizit übergeben) — deshalb genügt der Montag der Woche des
+    # Wirkungsdatums als Träger für Mo…Fr.
+    week_monday = effective_from - timedelta(days=effective_from.weekday())
+    day_targets_current = [
+        float(calculation_service.get_daily_target_for_date(
+            user, week_monday + timedelta(days=i), current_schedule))
+        for i in range(5)
+    ]
+    day_targets_new = [
+        float(calculation_service.get_daily_target_for_date(
+            user, week_monday + timedelta(days=i), new_schedule))
+        for i in range(5)
+    ]
+
+    # Gleiche Ablehnungsgründe wie create_working_hours_change: ungültige
+    # Eingabe zuerst (ohne gültigen Snapshot gibt es nichts zu prüfen), dann
+    # Datum bereits belegt. Der frühere Tagesplan-Zweig ist mit Task 5 entfallen.
+    blocked_reason = input_error
+    if not blocked_reason:
         existing = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == user_id,
             WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
@@ -1287,30 +1420,68 @@ def preview_working_hours_change(
                 "existiert bereits"
             )
 
+    # #431: Saldo und Urlaub im IST-Zustand — vor dem Dry-Run, damit sie die
+    # hypothetische Zeile garantiert nicht sehen. Der Stichtag ist derselbe wie
+    # in allen Live-Anzeigen (#313, `get_soll_cutoff_date`); das Urlaubsjahr ist
+    # das von `period_start` — das Jahr, dessen Budget die Änderung bewegt.
+    cutoff = calculation_service.get_soll_cutoff_date(db, user)
+    vacation_year = period_start.year
+    overtime_before = float(calculation_service.get_overtime_account(
+        db, user, cutoff.year, cutoff.month, cutoff_date=cutoff))
+    vacation_before = float(
+        calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
+    overtime_after, vacation_after = overtime_before, vacation_before
+
     affected_absences = 0
-    if window.has_absences and not blocked_reason:
+    if not blocked_reason:
         # Wäre die Änderung ohnehin blockiert (z. B. Duplikat-Datum), gibt es
-        # nichts zu zählen — UND ein Insert würde eine zweite Zeile mit
-        # identischem effective_from erzeugen. get_weekly_hours_for_date hat
-        # keine Sekundärsortierung und würde dann reproduzierbar die
-        # BESTEHENDE Zeile wählen, nicht die hypothetische — die Zählung liefe
-        # gegen den falschen Wochenstunden-Wert. Also nur bei nicht-blockierten
-        # Änderungen: die hypothetische Änderung nur temporär in die laufende
-        # Transaktion flushen (NICHT committen), damit retarget_absence_hours'
-        # eigene WorkingHoursChange-Abfrage sie berücksichtigt — danach immer
+        # nichts zu simulieren — UND ein Insert würde eine zweite Zeile mit
+        # identischem effective_from erzeugen. Die Snapshot-Auflösung hat keine
+        # Sekundärsortierung und würde dann reproduzierbar die BESTEHENDE Zeile
+        # wählen, nicht die hypothetische — gerechnet würde gegen den falschen
+        # Vertrag. Also nur bei nicht-blockierten Änderungen.
+        #
+        # EIN Flush, EIN Rollback für alles: die hypothetische Zeile geht nur in
+        # die laufende Transaktion (NICHT committen), damit die
+        # WorkingHoursChange-Abfragen von retarget_absence_hours,
+        # get_overtime_account und get_vacation_account sie sehen — danach immer
         # zurückrollen, egal ob die Berechnung erfolgreich war.
         temp_change = WorkingHoursChange(
             user_id=user.id,
             tenant_id=current_user.tenant_id,
             effective_from=effective_from,
-            weekly_hours=weekly_hours,
+            weekly_hours=norm.weekly_hours,
+            use_daily_schedule=norm.use_daily_schedule,
+            hours_monday=norm.day_hours[0],
+            hours_tuesday=norm.day_hours[1],
+            hours_wednesday=norm.day_hours[2],
+            hours_thursday=norm.day_hours[3],
+            hours_friday=norm.day_hours[4],
+            work_days_per_week=norm.work_days_per_week,
         )
         db.add(temp_change)
         db.flush()
         try:
-            affected_absences = calculation_service.retarget_absence_hours(
-                db, user, period_start, period_end, dry_run=True
-            )
+            # Das Retarget läuft hier BEWUSST nicht im dry_run: der Saldo
+            # „nachher" muss gegen die nachgezogenen Abwesenheits-Stunden
+            # gerechnet werden. Sonst schriebe ein Krankentag im Fenster
+            # weiterhin die ALTEN Stunden dem Ist gut, während das Soll
+            # desselben Tages schon der neuen Zeile folgt — ein Phantom-Plus,
+            # das nach dem Speichern wieder verschwindet. Genau diese Zahl steht
+            # im Dialog über der Bestätigungs-Checkbox. Geschrieben wird dabei
+            # nichts: retarget_absence_hours flusht nur, der Rollback unten
+            # verwirft beides (Test test_simulated_retarget_is_rolled_back).
+            # Der Rückgabewert ist derselbe wie mit dry_run=True.
+            if window.has_absences:
+                affected_absences = calculation_service.retarget_absence_hours(
+                    db, user, period_start, period_end
+                )
+            # Kein wh_changes-Preload durchreichen — die Funktionen müssen die
+            # eben geflushte Zeile selbst nachladen.
+            overtime_after = float(calculation_service.get_overtime_account(
+                db, user, cutoff.year, cutoff.month, cutoff_date=cutoff))
+            vacation_after = float(
+                calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
         finally:
             db.rollback()
 
@@ -1327,8 +1498,14 @@ def preview_working_hours_change(
         is_retroactive=is_retroactive,
         period_start=period_start,
         period_end=period_end,
-        current_daily_target=float(current_daily_target),
-        new_daily_target=float(new_daily_target),
+        current_daily_target=_planned_day_mean(day_targets_current),
+        new_daily_target=_planned_day_mean(day_targets_new),
+        day_targets_current=day_targets_current,
+        day_targets_new=day_targets_new,
+        overtime_before=overtime_before,
+        overtime_after=overtime_after,
+        vacation_days_before=vacation_before,
+        vacation_days_after=vacation_after,
         affected_absences=affected_absences,
         blocked_reason=blocked_reason,
         closed_years=closed_years,

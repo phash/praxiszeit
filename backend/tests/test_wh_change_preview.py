@@ -8,7 +8,7 @@ der Schreib-Endpoint ablehnen würde, damit der Nutzer nicht in einen 400 läuft
 Der Endpoint ist strikt lesend.
 """
 import uuid
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import Absence, AbsenceType, User, UserRole, WorkingHoursChange, YearCarryover
+from app.models import (Absence, AbsenceType, TimeEntry, User, UserRole,
+                        WorkingHoursChange, YearCarryover)
 from app.services import auth_service
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
@@ -73,6 +74,24 @@ def _last_sunday(before_days=30):
     while d.weekday() != 6:
         d -= timedelta(days=1)
     return d
+
+
+def _first_monday_of_year():
+    """Erster Montag des LAUFENDEN Jahres — liegt garantiert im selben Jahr wie
+    ``date(today.year, 1, 1)`` (``_last_monday()`` kippt Anfang Januar ins
+    Vorjahr und damit aus dem Urlaubsjahr der Vorschau heraus)."""
+    d = date(today_local().year, 1, 1)
+    while d.weekday() != 0:
+        d += timedelta(days=1)
+    return d
+
+
+def _preview(client, user, eff, **params):
+    """Vorschau mit beliebigen Snapshot-Parametern (Tagesplan-Modus)."""
+    return client.get(
+        f"/api/admin/users/{user.id}/working-hours-changes/preview",
+        params={"effective_from": eff.isoformat(), **params},
+    )
 
 
 class TestRetroactiveDetection:
@@ -199,12 +218,33 @@ class TestEffectWindow:
 
 
 class TestBlockedReasons:
-    def test_daily_schedule_user_is_blocked(self, client, db, test_user):
-        test_user.use_daily_schedule = True
-        db.commit()
-        body = client.get(_url(test_user.id, _last_monday())).json()
+    def test_daily_schedule_user_is_not_blocked_anymore(self, client, day_plan_user):
+        """#431: Der Tagesplan-Zweig ist weg — seit Task 5 nimmt der POST solche
+        Änderungen an, die Vorschau darf sie also nicht mehr als aussichtslos
+        melden. Hier zusätzlich der Modus-WECHSEL Tagesplan → gleichmäßig:
+        20 h auf 3 Arbeitstage = 6,67 h an jedem Wochentag."""
+        body = client.get(_url(day_plan_user.id, _last_monday(), hours=20.0)).json()
+        assert body["blocked_reason"] is None
+        assert body["day_targets_current"] == [8.0, 5.0, 4.0, 0.0, 0.0]
+        assert body["day_targets_new"] == [6.67] * 5
+
+    def test_empty_day_plan_is_blocked(self, client, day_plan_user):
+        """Tagesplan-Modus ohne einen einzigen Wochentag: der POST lehnte das mit
+        derselben Begründung ab (``check_mode``) — die Vorschau meldet sie, statt
+        den Dialog in einen Fehler laufen zu lassen, und zeigt KEINE erfundene
+        Änderung an."""
+        body = _preview(client, day_plan_user, today_local(),
+                        use_daily_schedule=True, work_days_per_week=3).json()
         assert body["blocked_reason"] is not None
-        assert "Tagesplan" in body["blocked_reason"]
+        assert "Wochentag" in body["blocked_reason"]
+        assert body["day_targets_new"] == body["day_targets_current"]
+        assert body["overtime_after"] == body["overtime_before"]
+
+    def test_missing_weekly_hours_is_blocked(self, client, test_user):
+        """Gleichmäßiger Modus ohne Wochenstunden — dieselbe Regel, andere Seite."""
+        body = _preview(client, test_user, today_local()).json()
+        assert body["blocked_reason"] is not None
+        assert "Wochenstunden" in body["blocked_reason"]
 
     def test_duplicate_date_is_blocked(self, client, db, test_user):
         eff = _last_monday()
@@ -242,6 +282,88 @@ class TestBlockedReasons:
         body = client.get(_url(test_user.id, eff)).json()
         assert body["blocked_reason"] is not None
         assert body["affected_absences"] == 0
+
+
+class TestDayPlanAndAccounts:
+    """#431: Ein einzelner Skalar bildet einen Tagesplan nicht ab (Mo 8 / Di 0 /
+    Mi 4), und die Bestätigungs-Checkbox stand bisher unter einer Zahl, die den
+    Vorgang nicht beschreibt. Die Vorschau weist deshalb fünf Tagessoll-Paare
+    sowie Saldo und Urlaub vorher/nachher aus."""
+
+    def test_returns_five_day_pairs_for_day_plan(self, client, day_plan_user):
+        r = _preview(client, day_plan_user, today_local(),
+                     use_daily_schedule=True,
+                     hours_monday=4.0, hours_tuesday=5.0, hours_wednesday=4.0,
+                     work_days_per_week=3)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["blocked_reason"] is None          # frueher: Tagesplan-Sperre
+        assert body["day_targets_current"] == [8.0, 5.0, 4.0, 0.0, 0.0]
+        assert body["day_targets_new"] == [4.0, 5.0, 4.0, 0.0, 0.0]
+        assert "overtime_before" in body and "overtime_after" in body
+        assert "vacation_days_before" in body and "vacation_days_after" in body
+
+    def test_scalar_daily_targets_are_the_mean_of_the_planned_days(self, client, day_plan_user):
+        """``current_daily_target``/``new_daily_target`` bleiben Teil der API —
+        als Mittel der Tage mit Soll > 0 (nicht über alle fünf Wochentage, sonst
+        zöge ein freier Do/Fr den Wert künstlich nach unten)."""
+        body = _preview(client, day_plan_user, today_local(),
+                        use_daily_schedule=True,
+                        hours_monday=4.0, hours_tuesday=5.0, hours_wednesday=4.0,
+                        work_days_per_week=3).json()
+        assert body["current_daily_target"] == 5.67   # (8+5+4)/3
+        assert body["new_daily_target"] == 4.33       # (4+5+4)/3
+
+    def test_overtime_reflects_the_hypothetical_change(self, client, db, day_plan_user):
+        """Halbiertes Montags-Soll rueckwirkend => hoeherer Ueberstundensaldo."""
+        mon = _last_monday()
+        db.add(TimeEntry(user_id=day_plan_user.id, tenant_id=DEFAULT_TENANT_ID,
+                         date=mon, start_time=time(8, 0), end_time=time(16, 0),
+                         break_minutes=0))
+        db.commit()
+        body = _preview(client, day_plan_user, mon.replace(day=1),
+                        use_daily_schedule=True,
+                        hours_monday=4.0, hours_tuesday=5.0, hours_wednesday=4.0,
+                        work_days_per_week=3).json()
+        assert body["overtime_after"] > body["overtime_before"]
+
+    def test_vacation_days_reflect_a_dropped_workday(self, client, db, day_plan_user):
+        """Fällt der Montag aus dem Tagesplan, kostet ein Montags-Urlaub keinen
+        Urlaubstag mehr (§3 BUrlG, tagebasiert) — genau das muss der Admin VOR
+        dem Speichern sehen."""
+        _absence(db, day_plan_user, _first_monday_of_year(), AbsenceType.VACATION)
+        body = _preview(client, day_plan_user, date(today_local().year, 1, 1),
+                        use_daily_schedule=True,
+                        hours_monday=0, hours_tuesday=5.0, hours_wednesday=4.0,
+                        work_days_per_week=2).json()
+        assert body["vacation_days_before"] == 1.0
+        assert body["vacation_days_after"] == 0.0
+
+    def test_preview_writes_nothing(self, client, db, day_plan_user):
+        before = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == day_plan_user.id).count()
+        _preview(client, day_plan_user, today_local(),
+                 use_daily_schedule=True, hours_monday=4.0, work_days_per_week=1)
+        db.expire_all()
+        assert db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == day_plan_user.id).count() == before
+
+    def test_simulated_retarget_is_rolled_back(self, client, db, day_plan_user):
+        """Der Saldo „nachher" muss gegen die NACHGEZOGENEN Abwesenheits-Stunden
+        gerechnet werden (sonst schriebe ein Krankentag weiterhin die alten 8 h
+        dem Ist gut, waehrend das Soll schon auf 4 h steht — ein Phantom-Plus,
+        das nach dem Speichern verschwindet). Genau diese Simulation darf aber
+        nichts hinterlassen."""
+        mon = _last_monday()
+        a = _absence(db, day_plan_user, mon, AbsenceType.SICK, hours=8.0)
+        body = _preview(client, day_plan_user, mon,
+                        use_daily_schedule=True,
+                        hours_monday=4.0, hours_tuesday=5.0, hours_wednesday=4.0,
+                        work_days_per_week=3).json()
+        assert body["affected_absences"] == 1
+        db.expire_all()
+        db.refresh(a)
+        assert float(a.hours) == 8.0, "die Simulation darf die Stunden nicht persistieren"
 
 
 class TestClosedYears:
