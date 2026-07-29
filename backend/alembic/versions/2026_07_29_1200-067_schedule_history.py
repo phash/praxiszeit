@@ -21,6 +21,17 @@ depends_on = None
 
 
 def upgrade():
+    # weekly_hours ist im Tagesplan-Modus die ABGELEITETE Summe der fuenf
+    # Tageswerte (je Numeric(4,2)). Mit nur einer Nachkommastelle rundete
+    # Postgres 8,25 + 5,00 + 4,50 = 17,75 auf 17,8 — der gespeicherte Wert
+    # widerspraeche damit den Tageswerten derselben Zeile. Bestehende Werte
+    # sind API-seitig seit jeher auf 0..60 begrenzt und passen unveraendert in
+    # numeric(4,2); die Verbreiterung der Skala ist verlustfrei.
+    op.alter_column(
+        "working_hours_changes", "weekly_hours",
+        existing_type=sa.Numeric(4, 1), type_=sa.Numeric(4, 2),
+        existing_nullable=False,
+    )
     op.add_column("working_hours_changes", sa.Column(
         "use_daily_schedule", sa.Boolean(), nullable=False, server_default="false"))
     for day in ("monday", "tuesday", "wednesday", "thursday", "friday"):
@@ -55,3 +66,10 @@ def downgrade():
     for day in ("friday", "thursday", "wednesday", "tuesday", "monday"):
         op.drop_column("working_hours_changes", f"hours_{day}")
     op.drop_column("working_hours_changes", "use_daily_schedule")
+    # Zurueck auf eine Nachkommastelle. Krumme Summen (17,75) runden dabei auf
+    # 17,8 — ohne die Tageswerte gibt es sie im Alt-Modell ohnehin nicht.
+    op.alter_column(
+        "working_hours_changes", "weekly_hours",
+        existing_type=sa.Numeric(4, 2), type_=sa.Numeric(4, 1),
+        existing_nullable=False,
+    )

@@ -1112,6 +1112,17 @@ def create_working_hours_change(
             # gleichmäßige Zeile ließe die alten Tageswerte stehen (Soll käme
             # weiter aus ihnen). Beim Wechsel in den gleichmäßigen Modus müssen
             # die Tageswerte deshalb auf NULL zurück.
+            #
+            # Die Spiegelung ist BEWUSST bedingungslos — auch bei einem
+            # Mitarbeitenden, der nie einen Tagesplan hatte. `update_user` räumt
+            # `hours_*` beim Abschalten des Tagesplans nicht ab, solche Reste
+            # sind im gleichmäßigen Modus rechnerisch inert (das Tagessoll liest
+            # sie dort nicht), aber sie widersprechen dem Snapshot der aktuell
+            # gültigen Zeile. Eine „nur im Tagesplan-Modus schreiben"-Variante
+            # ließe die User-Zeile in einem Zustand zurück, den keine
+            # Historien-Zeile deckt — und genau daraus entstand der #431-Bug.
+            # Der Vergleich für die Basis-Zeile ignoriert die Reste trotzdem
+            # (_comparable_snapshot), damit hier keine Pseudo-Änderung entsteht.
             user.weekly_hours = most_recent.weekly_hours
             user.use_daily_schedule = bool(most_recent.use_daily_schedule)
             user.hours_monday = most_recent.hours_monday

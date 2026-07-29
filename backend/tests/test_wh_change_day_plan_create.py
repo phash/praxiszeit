@@ -53,6 +53,14 @@ def _next_monday(after_days=14):
     return d
 
 
+def _last_monday(before_days=30):
+    """Ein Montag in der Vergangenheit — vermeidet Wochenend-Sonderfälle."""
+    d = today_local() - timedelta(days=before_days)
+    while d.weekday() != 0:
+        d -= timedelta(days=1)
+    return d
+
+
 def _rows(db, user):
     return (
         db.query(WorkingHoursChange)
@@ -117,8 +125,20 @@ class TestDayPlanRowIsCreated:
         """Der ursprüngliche Grund für die 400-Sperre: eine Historien-Zeile war
         für diese Gruppe wirkungslos. Genau das muss jetzt nachweisbar anders
         sein — vor dem Wirkungsdatum gilt der alte Montag (8 h), ab dem
-        Wirkungsdatum der neue (4 h)."""
-        eff = _next_monday()
+        Wirkungsdatum der neue (4 h).
+
+        Bewusst RÜCKWIRKEND mit gesetztem ``first_work_day``: nur so ist die
+        „vorher"-Assertion aussagekräftig. Der Resync hat die User-Zeile
+        bereits auf 4 h gezogen, und die Basis-Zeile reicht bis zum
+        Eintrittsdatum zurück — die 8 h können also ausschließlich aus der
+        Basis-Zeile kommen. Bei einem zukunftsdatierten Wirkungsdatum liefe der
+        Resync gar nicht und die Assertion wäre schon durch den unveränderten
+        User-Row-Fallback erfüllt, also wertlos.
+        """
+        day_plan_user.first_work_day = today_local() - timedelta(days=365)
+        db.commit()
+
+        eff = _last_monday()
         r = client.post(
             _url(day_plan_user.id),
             json={
@@ -132,6 +152,10 @@ class TestDayPlanRowIsCreated:
 
         db.expire_all()
         emp = db.query(User).filter(User.id == day_plan_user.id).first()
+        assert Decimal(str(emp.hours_monday)) == Decimal("4.00"), (
+            "Vorbedingung: die User-Zeile trägt den NEUEN Plan — die 8 h unten "
+            "können damit nur aus der Basis-Zeile stammen"
+        )
 
         before = eff - timedelta(days=7)
         assert calculation_service.get_daily_target_for_date(
@@ -142,6 +166,33 @@ class TestDayPlanRowIsCreated:
             emp, eff,
             calculation_service.get_schedule_for_date(db, emp, eff),
         ) == Decimal("4.00"), "ab dem Wirkungsdatum der neue Tagesplan"
+
+    def test_derived_weekly_hours_keeps_quarter_hours(self, client, db, day_plan_user):
+        """8,25 + 5,00 + 4,50 = 17,75 muss unverändert ankommen. Vor der
+        Verbreiterung auf ``Numeric(4,2)`` rundete Postgres auf 17,8 — der
+        gespeicherte Wert widersprach den Tageswerten derselben Zeile, tauchte
+        so in der #415-Berichtsspalte auf und ließ den Snapshot-Vergleich beim
+        nächsten Speichern eine überflüssige Basis-Zeile anlegen.
+
+        SQLite versteckt Numeric-Präzision — dieser Test ist hier eine
+        Absichtserklärung, scharf wird er gegen Postgres (siehe
+        test_schedule_history_model.py::test_weekly_hours_keeps_two_decimals).
+        """
+        eff = _next_monday()
+        r = client.post(
+            _url(day_plan_user.id),
+            json={
+                "effective_from": str(eff),
+                "use_daily_schedule": True,
+                "hours_monday": 8.25, "hours_tuesday": 5.0, "hours_wednesday": 4.5,
+                "work_days_per_week": 3,
+            },
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["weekly_hours"] == 17.75
+
+        row = [c for c in _rows(db, day_plan_user) if c.effective_from == eff][0]
+        assert Decimal(str(row.weekly_hours)) == Decimal("17.75")
 
 
 class TestSchemaValidation:
@@ -297,6 +348,35 @@ class TestUserRowResync:
         assert Decimal(str(test_user.hours_monday)) == Decimal("6.00")
         assert Decimal(str(test_user.weekly_hours)) == Decimal("18.0")
         assert test_user.work_days_per_week == 3
+
+    def test_resync_clears_inert_leftover_day_hours(self, client, db, test_user):
+        """Bewusste Entscheidung, hier festgenagelt: der Resync spiegelt den
+        Snapshot BEDINGUNGSLOS — auch bei einem MA, der nie einen Tagesplan
+        hatte. Inerte ``hours_*``-Reste (``update_user`` räumt sie beim
+        Abschalten des Tagesplans nicht ab) werden dabei auf NULL gesetzt.
+
+        Alternative wäre gewesen, sie im gleichmäßigen Modus stehen zu lassen.
+        Dagegen spricht, dass die User-Zeile dann einen Zustand trüge, den keine
+        Historien-Zeile deckt — genau die Divergenz zwischen User-Zeile und
+        Historie, aus der der #431-Bug entstand. Rechnerisch ist beides
+        identisch (das Tagessoll liest die Reste im gleichmäßigen Modus nicht),
+        deshalb ist es keine Verhaltens-, sondern eine Aufräum-Entscheidung.
+        """
+        test_user.hours_monday = 8.0
+        test_user.hours_tuesday = 8.0
+        db.commit()
+
+        r = client.post(
+            _url(test_user.id),
+            json={"effective_from": str(today_local()), "weekly_hours": 30.0},
+        )
+        assert r.status_code == 201, r.text
+
+        db.refresh(test_user)
+        assert test_user.hours_monday is None
+        assert test_user.hours_tuesday is None
+        assert test_user.use_daily_schedule is False
+        assert Decimal(str(test_user.weekly_hours)) == Decimal("30.0")
 
     def test_future_dated_change_leaves_user_row_alone(self, client, db, day_plan_user):
         """Unverändert: erst ab dem Wirkungsdatum zieht die User-Zeile nach."""
