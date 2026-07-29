@@ -120,4 +120,91 @@ describe('formatWeeklyHoursChanges (#415)', () => {
       formatWeeklyHoursChanges([{ effective_from: '2026-03-15', weekly_hours: 30 }]),
     ).toBe('ab 15.03.2026: 30,0 Std/Woche');
   });
+
+  // ── #431: Tagesplan ────────────────────────────────────────────────
+  //
+  // Jede Erwartung hier hat ihren wortgleichen Zwilling in
+  // backend/tests/test_415_working_hours_history_reports.py
+  // (TestFormatDayPlanHistory) — Bildschirm und Datei müssen denselben Satz
+  // sagen.
+
+  it('names the weekdays when the employee has an individual day plan', () => {
+    // Zwilling: TestFormatDayPlanHistory::test_format_names_the_weekdays
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-01',
+          weekly_hours: 17,
+          use_daily_schedule: true,
+          day_hours: [8, 5, 4, null, null],
+          work_days_per_week: 3,
+        },
+      ]),
+    ).toBe('ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche');
+  });
+
+  it('leaves out weekdays without hours', () => {
+    // Zwilling: TestFormatDayPlanHistory::test_weekdays_without_hours_are_left_out
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-01',
+          weekly_hours: 13,
+          use_daily_schedule: true,
+          day_hours: [8, 0, 5, null, 0],
+          work_days_per_week: 2,
+        },
+      ]),
+    ).toBe('ab 01.03.2026: Mo 8,0 / Mi 5,0 = 13,0 h/Woche');
+  });
+
+  it('shows quarter hours exactly, like the file export does', () => {
+    // Zwilling: TestFormatDayPlanHistory::test_quarter_hours_are_shown_exactly.
+    // Mit toFixed(1) stünde hier "8,3", im Backend dagegen "8,2" — Bildschirm
+    // und Datei würden sich widersprechen.
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-01',
+          weekly_hours: 17.75,
+          use_daily_schedule: true,
+          day_hours: [8.25, 5.5, 4, null, null],
+          work_days_per_week: 3,
+        },
+      ]),
+    ).toBe('ab 01.03.2026: Mo 8,25 / Di 5,5 / Mi 4,0 = 17,75 h/Woche');
+  });
+
+  it('joins both wordings in one history', () => {
+    // Zwilling: TestFormatDayPlanHistory::test_mixed_history_joins_both_wordings
+    expect(
+      formatWeeklyHoursChanges([
+        { effective_from: '2026-03-01', weekly_hours: 20 },
+        {
+          effective_from: '2026-07-01',
+          weekly_hours: 17,
+          use_daily_schedule: true,
+          day_hours: [8, 5, 4, null, null],
+          work_days_per_week: 3,
+        },
+      ]),
+    ).toBe(
+      'ab 01.03.2026: 20,0 Std/Woche; ab 01.07.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche',
+    );
+  });
+
+  it('falls back to the uniform wording when no weekday carries hours', () => {
+    // Zwilling: TestFormatDayPlanHistory::test_day_plan_without_any_hours_falls_back_to_the_weekly_sum
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-01',
+          weekly_hours: 0,
+          use_daily_schedule: true,
+          day_hours: [null, null, null, null, null],
+          work_days_per_week: 3,
+        },
+      ]),
+    ).toBe('ab 01.03.2026: 0,0 Std/Woche');
+  });
 });

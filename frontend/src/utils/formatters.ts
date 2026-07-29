@@ -54,28 +54,89 @@ export function parseHours(value: string): number {
 }
 
 /**
- * #415: Wochenstunden-Änderungen eines Berichtszeitraums als Klartext.
+ * #415/#431: eine Vertragsänderung innerhalb eines Berichtszeitraums, so wie
+ * `/admin/reports/monthly|weekly` sie liefert (Backend-Zwilling:
+ * `schemas/reports.py::WeeklyHoursChangeInPeriod`).
+ */
+export interface WeeklyHoursChangeInPeriod {
+  effective_from: string;
+  weekly_hours: number;
+  /** #431: Tagesplan-Modus — dann treiben `day_hours` das Tagessoll, nicht `weekly_hours`. */
+  use_daily_schedule?: boolean;
+  /** Fünf Einträge, Index 0 = Montag; `null` = kein geplanter Arbeitstag. */
+  day_hours?: (number | null)[] | null;
+  work_days_per_week?: number | null;
+}
+
+const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
+
+/**
+ * #431: '8,0' / '8,5' / '8,25' — verlustfreie DE-Schreibweise eines
+ * Stundenwerts. Zwilling von `export_service._de_hours_exact`.
+ *
+ * Tagesstunden und ihre Summe sind `Numeric(4,2)`: 8,25 h ist ein realer
+ * Vertragswert. Auf eine Nachkommastelle gerundet stünde hier '8,3', im Backend
+ * dagegen '8,2' (Python rundet `%.1f` half-even, `toFixed` kaufmännisch) —
+ * Bildschirm und Datei sagten Verschiedenes. Bei zwei Nachkommastellen rundet
+ * für diesen Spaltentyp gar nichts mehr.
+ */
+function deHoursExact(value: number): string {
+  if (!Number.isFinite(value)) return '?';
+  let text = value.toFixed(2);
+  if (text.endsWith('0')) text = text.slice(0, -1);
+  return text.replace('.', ',');
+}
+
+/**
+ * #431: der Tagesplan als Klartext — 'Mo 8,0 / Di 5,0 / Mi 4,0'. Zwilling von
+ * `export_service.format_day_plan`.
+ *
+ * Wochentage ohne Stunden stehen nicht drin (weder `null` noch 0): ein Tag ohne
+ * Soll ist kein Arbeitstag.
+ */
+function formatDayPlan(dayHours?: (number | null)[] | null): string {
+  if (!dayHours) return '';
+  return WEEKDAY_LABELS.map((label, i) => {
+    const hours = dayHours[i];
+    if (typeof hours !== 'number' || !Number.isFinite(hours) || hours <= 0) return null;
+    return `${label} ${deHoursExact(hours)}`;
+  })
+    .filter((part): part is string => part !== null)
+    .join(' / ');
+}
+
+/**
+ * #415: Vertragsänderungen eines Berichtszeitraums als Klartext.
  *
  * Der Bericht zeigt als Zahl den zu Zeitraumsbeginn gültigen Wert; wechselt die
  * Stundenzahl mitten im Monat, gilt diese Zahl nur für die erste Hälfte. Diese
- * Funktion rendert den Rest ("ab 15.03.2026: 20,0 Std/Woche") — Wortlaut und
- * Format identisch zu `export_service.format_weekly_hours_history`, damit
- * Bildschirm und Datei-Export dasselbe sagen.
+ * Funktion rendert den Rest — Wortlaut und Format identisch zu
+ * `export_service.format_weekly_hours_history`, damit Bildschirm und
+ * Datei-Export dasselbe sagen:
+ *
+ * - gleichmäßig: `ab 15.03.2026: 20,0 Std/Woche`
+ * - Tagesplan (#431): `ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche`
  *
  * Leerstring, wenn es im Zeitraum keine Änderung gab → die Aufrufer rendern
  * dann gar nichts und unveränderte Berichte sehen aus wie vorher.
  */
 export function formatWeeklyHoursChanges(
-  changes?: { effective_from: string; weekly_hours: number }[] | null,
+  changes?: WeeklyHoursChangeInPeriod[] | null,
 ): string {
   if (!changes || changes.length === 0) return '';
   return changes
     .map((c) => {
       const [y, m, d] = c.effective_from.split('-');
+      const prefix = `ab ${d}.${m}.${y}: `;
+      if (c.use_daily_schedule) {
+        const plan = formatDayPlan(c.day_hours);
+        if (plan) return `${prefix}${plan} = ${deHoursExact(c.weekly_hours)} h/Woche`;
+        // Kein einziger Tageswert → gleichmäßige Formulierung statt leerem Satz.
+      }
       const hours = Number.isFinite(c.weekly_hours)
         ? c.weekly_hours.toFixed(1).replace('.', ',')
         : '?';
-      return `ab ${d}.${m}.${y}: ${hours} Std/Woche`;
+      return `${prefix}${hours} Std/Woche`;
     })
     .join('; ');
 }

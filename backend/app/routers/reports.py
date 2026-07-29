@@ -144,7 +144,7 @@ def get_monthly_report(
         wh_segments = calculation_service.weekly_hours_segments(
             db, user, report_date, date(year, month_num, monthrange(year, month_num)[1])
         )
-        hist_weekly = wh_segments[0][2] if wh_segments else \
+        hist_weekly = wh_segments[0].weekly_hours if wh_segments else \
             calculation_service.get_weekly_hours_for_date(db, user, report_date)
 
         reports.append(EmployeeMonthlyReport(
@@ -165,8 +165,7 @@ def get_monthly_report(
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
             weekly_hours_changes=[
-                WeeklyHoursChangeInPeriod(effective_from=seg_start, weekly_hours=float(hours))
-                for seg_start, _seg_end, hours in wh_segments[1:]
+                WeeklyHoursChangeInPeriod.from_segment(seg) for seg in wh_segments[1:]
             ],
         ))
 
@@ -285,7 +284,7 @@ def get_weekly_report(
         # weekly_hours valid at the week's Monday (mirrors /monthly's report_date).
         # #415: Änderungen innerhalb der Woche werden mitgeliefert.
         wk_segments = calculation_service.weekly_hours_segments(db, user, wk_start, wk_end)
-        hist_weekly = wk_segments[0][2] if wk_segments else \
+        hist_weekly = wk_segments[0].weekly_hours if wk_segments else \
             calculation_service.get_weekly_hours_for_date(db, user, wk_start)
 
         reports.append(EmployeeMonthlyReport(
@@ -306,8 +305,7 @@ def get_weekly_report(
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
             weekly_hours_changes=[
-                WeeklyHoursChangeInPeriod(effective_from=seg_start, weekly_hours=float(hours))
-                for seg_start, _seg_end, hours in wk_segments[1:]
+                WeeklyHoursChangeInPeriod.from_segment(seg) for seg in wk_segments[1:]
             ],
         ))
 

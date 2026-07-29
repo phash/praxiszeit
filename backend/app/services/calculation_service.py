@@ -136,15 +136,43 @@ def get_weekly_hours_for_date(
     return get_schedule_for_date(db, user, target_date, wh_changes).weekly_hours
 
 
+class ScheduleSegment(NamedTuple):
+    """#415/#431: ein zusammenhaengender Zeitraum KONSTANTEN Vertragszustands.
+
+    Bis #431 war das ein 3er-Tupel ``(von, bis, wochenstunden)``. Fuer
+    Mitarbeitende mit individuellem Tagesplan sagte das nichts Brauchbares:
+    ``weekly_hours`` ist dort nur die Summe der fuenf Tageswerte und steuert kein
+    einziges Tagessoll — die sechs §16-Flaechen zeigten eine Zahl ohne Bezug zu
+    ihren eigenen Soll-Spalten. Und zwei Zeilen mit gleicher Wochensumme, aber
+    verschobenem Tagesplan (Mo 8/Di 5/Mi 4 → Mo 4/Di 5/Mi 8) verschmolzen zu
+    EINEM Segment: der Bericht behauptete „keine Aenderung", obwohl sich jedes
+    Tagessoll verschoben hatte.
+
+    ``day_hours`` ist im gleichmaessigen Modus IMMER ``(None,) * 5``, auch wenn
+    die Zeile Reste traegt: ``get_daily_target_for_date`` liest die Tageswerte
+    dort gar nicht, und ``update_user`` raeumt sie beim Abschalten des Tagesplans
+    nicht ab. Solche inerten Reste duerfen weder eine Pseudo-Aenderung erzeugen
+    noch in einem Bericht auftauchen — dieselbe Maskierung wie in
+    ``admin_users._comparable_snapshot``.
+    """
+
+    start: date
+    end: date
+    weekly_hours: Decimal
+    use_daily_schedule: bool
+    day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[Decimal]
+    work_days_per_week: int
+
+
 def weekly_hours_segments(
     db: Session,
     user: User,
     start: date,
     end: date,
     wh_changes: Optional[List[WorkingHoursChange]] = None,
-) -> List[tuple]:
-    """#415: die Wochenstunden-Historie eines Zeitraums als zusammenhaengende
-    Segmente ``[(von, bis, wochenstunden), …]``, lueckenlos ueber ``[start, end]``.
+) -> List[ScheduleSegment]:
+    """#415: die Vertragshistorie eines Zeitraums als zusammenhaengende
+    :class:`ScheduleSegment`, lueckenlos ueber ``[start, end]``.
 
     DIE eine Quelle fuer die Darstellung von Stundenaenderungen in Berichten und
     Exporten. Vorher zeigten die Kopfzeilen/Spalten „Wochenstunden" den
@@ -156,14 +184,19 @@ def weekly_hours_segments(
 
     * Aenderungen VOR ``start`` gelten fuer den gesamten Zeitraum (ein Segment).
     * Aenderungen NACH ``end`` sind unsichtbar.
-    * Eine Aenderung auf denselben Wert erzeugt KEIN neues Segment — sie ist
-      im Bericht keine sichtbare Aenderung.
+    * Eine Aenderung, die am Vertragszustand nichts aendert, erzeugt KEIN neues
+      Segment — sie ist im Bericht keine sichtbare Aenderung.
     * ``start > end`` → ``[]``.
 
-    Die Stundenwerte kommen ausschliesslich aus ``get_weekly_hours_for_date``,
-    damit Darstellung und Berechnung nie auseinanderlaufen koennen. ``wh_changes``
-    ist der Preload fuer Hot-Loops (identische Semantik, keine Query) und muss —
-    wie dort — bereits auf diesen User gefiltert sein.
+    Verglichen wird der VOLLSTAENDIGE Snapshot (Wochenstunden, Modus, Tageswerte,
+    Arbeitstage), nicht mehr nur ``weekly_hours``: sonst bliebe genau der
+    Tagesplan-Fall unsichtbar, fuer den #431 die Historie ueberhaupt erweitert
+    hat (gleiche Wochensumme, anderes Tagessoll).
+
+    Die Werte kommen ausschliesslich aus ``get_schedule_for_date``, damit
+    Darstellung und Berechnung nie auseinanderlaufen koennen. ``wh_changes`` ist
+    der Preload fuer Hot-Loops (identische Semantik, keine Query) und muss — wie
+    dort — bereits auf diesen User gefiltert sein.
     """
     if start > end:
         return []
@@ -184,15 +217,24 @@ def weekly_hours_segments(
         if start < change.effective_from <= end and change.effective_from not in boundaries:
             boundaries.append(change.effective_from)
 
-    segments: List[tuple] = []
+    segments: List[ScheduleSegment] = []
     for i, boundary in enumerate(boundaries):
         seg_end = boundaries[i + 1] - timedelta(days=1) if i + 1 < len(boundaries) else end
-        hours = get_weekly_hours_for_date(db, user, boundary, wh_changes=wh_changes)
-        if segments and segments[-1][2] == hours:
-            # Gleicher Wert → mit dem Vorgaenger verschmelzen.
-            segments[-1] = (segments[-1][0], seg_end, hours)
+        schedule = get_schedule_for_date(db, user, boundary, wh_changes=wh_changes)
+        segment = ScheduleSegment(
+            start=boundary,
+            end=seg_end,
+            weekly_hours=schedule.weekly_hours,
+            use_daily_schedule=schedule.use_daily_schedule,
+            day_hours=schedule.day_hours if schedule.use_daily_schedule else (None,) * 5,
+            work_days_per_week=schedule.work_days_per_week,
+        )
+        # Ab Feld 2 stehen genau die Snapshot-Werte — der Vergleich deckt damit
+        # automatisch jedes kuenftige Feld mit ab.
+        if segments and segments[-1][2:] == segment[2:]:
+            segments[-1] = segments[-1]._replace(end=seg_end)
         else:
-            segments.append((boundary, seg_end, hours))
+            segments.append(segment)
     return segments
 
 

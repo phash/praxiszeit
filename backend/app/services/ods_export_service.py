@@ -163,7 +163,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1])
     )
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
-    meta1.addElement(_float_cell(float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)))
+    meta1.addElement(_float_cell(float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)))
     _wh_history = format_weekly_hours_history(_wh_segments)
     meta1.addElement(_str_cell(_wh_history) if _wh_history else _empty_cell())
     meta1.addElement(_str_cell("Monat:", style=bold))
@@ -441,7 +441,7 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
 
         tr = TableRow()
         tr.addElement(_str_cell(f"{user.last_name}, {user.first_name}"))
-        tr.addElement(_float_cell(float(wh_segments[0][2]) if wh_segments else float(user.weekly_hours)))
+        tr.addElement(_float_cell(float(wh_segments[0].weekly_hours) if wh_segments else float(user.weekly_hours)))
         tr.addElement(_float_cell(target))
         tr.addElement(_float_cell(actual))
         tr.addElement(_float_cell(actual - target))
@@ -526,7 +526,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     )
     meta1.addElement(_empty_cell())
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
-    meta1.addElement(_float_cell(float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)))
+    meta1.addElement(_float_cell(float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)))
     _wh_history = format_weekly_hours_history(_wh_segments)
     if _wh_history:
         meta1.addElement(_str_cell(_wh_history))

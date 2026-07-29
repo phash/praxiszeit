@@ -11,6 +11,7 @@ import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges } from '../../utils/formatters';
+import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
@@ -35,7 +36,9 @@ interface EmployeeReport {
   // #415: Stundenänderungen INNERHALB des Berichtszeitraums. `weekly_hours` ist
   // der zu Zeitraumsbeginn gültige Wert — ohne diese Liste sähe der Admin eine
   // Wochenstundenzahl, die für den halben Monat gar nicht galt.
-  weekly_hours_changes?: { effective_from: string; weekly_hours: number }[];
+  // #431: die Einträge tragen den vollständigen Vertrags-Snapshot, damit
+  // formatWeeklyHoursChanges bei Tagesplan-Mitarbeitenden den Plan nennen kann.
+  weekly_hours_changes?: WeeklyHoursChangeInPeriod[];
 }
 
 interface TimeEntry {
@@ -768,7 +771,10 @@ export default function AdminDashboard() {
                       {formatWeeklyHoursChanges(emp.weekly_hours_changes) && (
                         <span
                           className="block text-xs text-amber-700"
-                          title="Die Wochenstunden haben sich im Berichtszeitraum geändert"
+                          // #431: nicht mehr nur „die Wochenstunden" — bei einem
+                          // individuellen Tagesplan kann sich das Tagessoll bei
+                          // gleicher Wochensumme verschoben haben.
+                          title="Die vereinbarte Arbeitszeit hat sich im Berichtszeitraum geändert"
                         >
                           {formatWeeklyHoursChanges(emp.weekly_hours_changes)}
                         </span>

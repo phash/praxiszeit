@@ -125,28 +125,111 @@ def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg, wh
 
 
 def _de_hours(value) -> str:
-    """'30,0' — deutsche Dezimaldarstellung fuer eine Stundenzahl."""
+    """'30,0' — deutsche Dezimaldarstellung fuer eine Stundenzahl.
+
+    ACHTUNG, bekannte Grenze (seit #415, NICHT in #431 entstanden und bewusst
+    nicht mitgeaendert, weil die Formulierung woertlich eingefroren ist): eine
+    Nachkommastelle rundet, und Python rundet ``%.1f`` half-even, waehrend der
+    Frontend-Zwilling ``toFixed(1)`` kaufmaennisch rundet. Bei einem Wert auf
+    ``.25`` (z. B. 38,25 h) schreibt die Datei „38,2", der Bildschirm „38,3".
+    Erreichbar wurde das erst, seit ``working_hours_changes.weekly_hours``
+    ``Numeric(4,2)`` ist. Der Tagesplan-Zweig umgeht das ueber
+    :func:`_de_hours_exact` (zwei Nachkommastellen ⇒ es wird gar nicht mehr
+    gerundet); den gleichmaessigen Zweig ebenfalls darauf umzustellen waere die
+    saubere Loesung, aendert aber den Wortlaut bestehender Berichte.
+    """
     return f"{float(value):.1f}".replace(".", ",")
 
 
-def format_weekly_hours_history(segments) -> str:
-    """#415: die Stundenaenderungen eines Zeitraums als Klartext.
+def _de_hours_exact(value) -> str:
+    """'8,0' / '8,5' / '8,25' — Stundenwert in DE-Schreibweise, verlustfrei.
+
+    Die Tagesstunden und die daraus gebildete Wochensumme sind ``Numeric(4,2)``
+    (#431 hat den Spaltentyp genau dafuer verbreitert): 8,25 h ist ein realer
+    Vertragswert. ``_de_hours`` (eine Nachkommastelle) machte daraus „8,2",
+    waehrend der Frontend-Zwilling (``toFixed(1)``, kaufmaennisch statt
+    half-even) „8,3" schriebe — Bildschirm und Datei wuerden sich widersprechen.
+    Bei zwei Nachkommastellen rundet fuer diesen Spaltentyp gar nichts mehr, die
+    beiden Seiten koennen also nicht auseinanderlaufen. Eine belanglose zweite
+    Null faellt weg ('8,00' → '8,0').
+
+    Bewusst NUR im Tagesplan-Zweig verwendet: die #415-Formulierung fuer
+    Mitarbeitende ohne Tagesplan bleibt woertlich (und damit auch ihre
+    Rundung) unveraendert.
+    """
+    text = f"{float(value):.2f}"
+    if text.endswith("0"):
+        text = text[:-1]
+    return text.replace(".", ",")
+
+
+def _de_hours_compact(value) -> str:
+    """Wie :func:`_de_hours_exact`, ohne die belanglose Nachkommastelle:
+    '8' statt '8,0' ('8,25' bleibt '8,25')."""
+    text = _de_hours_exact(value)
+    return text[:-2] if text.endswith(",0") else text
+
+
+_WEEKDAY_LABELS = ("Mo", "Di", "Mi", "Do", "Fr")
+
+
+def format_day_plan(day_hours, compact: bool = False) -> str:
+    """#431: der Tagesplan als Klartext — ``'Mo 8,0 / Di 5,0 / Mi 4,0'``.
+
+    Wochentage ohne Stunden stehen NICHT drin, weder ``None`` noch ``0``: ein Tag
+    ohne Soll ist kein Arbeitstag (er zaehlt auch nicht in die Arbeitstage), und
+    ein angehaengtes „Do 0,0 / Fr 0,0" blaeht jede Kopfzeile auf, ohne etwas zu
+    sagen. Leerstring, wenn kein einziger Tag Stunden traegt (per Schema
+    unmoeglich, aber Bestandszeilen sind nicht garantiert).
+
+    ``compact`` ist die Kurzform fuer die PDF-Meta (Inline-Absatz, Schriftgroesse
+    8, Querformat).
+    """
+    fmt = _de_hours_compact if compact else _de_hours_exact
+    return " / ".join(
+        f"{label} {fmt(hours)}"
+        for label, hours in zip(_WEEKDAY_LABELS, day_hours or ())
+        if hours is not None and float(hours) > 0
+    )
+
+
+def format_weekly_hours_history(segments, compact: bool = False) -> str:
+    """#415: die Vertragsaenderungen eines Zeitraums als Klartext.
 
     ``segments`` ist die Ausgabe von
     :func:`calculation_service.weekly_hours_segments`. Das ERSTE Segment ist der
-    zum Zeitraumsbeginn gueltige Wert und steht bereits als Zahl in der
+    zum Zeitraumsbeginn gueltige Zustand und steht bereits als Zahl in der
     Kopfzeile/Spalte — hier interessieren nur die Aenderungen danach.
 
     Leerstring, wenn sich im Zeitraum nichts geaendert hat: die Aufrufer
     schreiben die Zelle dann gar nicht erst, sodass unveraenderte Berichte
     exakt so aussehen wie vorher.
+
+    Zwei Formulierungen, je nach Modus des Segments:
+
+    * gleichmaessig — ``ab 15.03.2026: 30,0 Std/Woche`` (woertlich wie seit #415)
+    * Tagesplan (#431) — ``ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche``
+
+    Der Frontend-Zwilling ``utils/formatters.ts::formatWeeklyHoursChanges`` muss
+    WORTGLEICH bleiben — Bildschirm und Datei duerfen nicht verschiedene Saetze
+    sagen.
     """
     if len(segments) < 2:
         return ""
-    return "; ".join(
-        f"ab {seg_start.strftime('%d.%m.%Y')}: {_de_hours(hours)} Std/Woche"
-        for seg_start, _seg_end, hours in segments[1:]
-    )
+    return "; ".join(_format_segment_change(seg, compact=compact) for seg in segments[1:])
+
+
+def _format_segment_change(segment, compact: bool = False) -> str:
+    """Ein Segment als „ab <Datum>: <Zustand>"."""
+    prefix = f"ab {segment.start.strftime('%d.%m.%Y')}: "
+    if segment.use_daily_schedule:
+        plan = format_day_plan(segment.day_hours, compact=compact)
+        if plan:
+            total = _de_hours_compact if compact else _de_hours_exact
+            return f"{prefix}{plan} = {total(segment.weekly_hours)} h/Woche"
+        # Kein einziger Tageswert → auf die gleichmaessige Formulierung
+        # zurueckfallen, statt einen leeren Satz zu schreiben.
+    return f"{prefix}{_de_hours(segment.weekly_hours)} Std/Woche"
 
 
 def escape_pdf_text(value):
@@ -259,7 +342,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     )
     sheet.cell(row=1, column=4).value = "Wochenstunden:"
     sheet.cell(row=1, column=4).font = Font(bold=True)
-    sheet.cell(row=1, column=5).value = float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)
+    sheet.cell(row=1, column=5).value = float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)
     _wh_history = format_weekly_hours_history(_wh_segments)
     if _wh_history:
         sheet.cell(row=1, column=6).value = _wh_history
@@ -661,7 +744,7 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
 
         # Write data
         sheet.cell(row=row, column=1).value = neutralize_spreadsheet_formula(f"{user.last_name}, {user.first_name}")
-        sheet.cell(row=row, column=2).value = float(wh_segments[0][2]) if wh_segments else float(user.weekly_hours)
+        sheet.cell(row=row, column=2).value = float(wh_segments[0].weekly_hours) if wh_segments else float(user.weekly_hours)
         sheet.cell(row=row, column=11).value = format_weekly_hours_history(wh_segments) or None
         sheet.cell(row=row, column=3).value = float(yearly_target)
         sheet.cell(row=row, column=3).number_format = '0.00'
@@ -704,7 +787,11 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
     # Adjust column widths (#415: Spalte 11 = Stundenänderungen, breiter Freitext)
     for col in range(1, 11):
         sheet.column_dimensions[get_column_letter(col)].width = 14
-    sheet.column_dimensions[get_column_letter(11)].width = 34
+    # #431: ein Tagesplan-Satz („ab 15.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 =
+    # 17,0 h/Woche") ist rund 53 Zeichen lang und passte in die auf den
+    # #415-Satz zugeschnittenen 34 nicht mehr. Nur die Breite, keine neue
+    # oder verschobene Spalte.
+    sheet.column_dimensions[get_column_letter(11)].width = 54
 
 
 def _create_absences_overview_sheet(wb: Workbook, db: Session, users: List[User], year: int, include_health_data: bool = False):
@@ -812,7 +899,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     )
     sheet.cell(row=2, column=7).value = "Wochenstunden:"
     sheet.cell(row=2, column=7).font = Font(bold=True)
-    sheet.cell(row=2, column=8).value = float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)
+    sheet.cell(row=2, column=8).value = float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)
     _wh_history = format_weekly_hours_history(_wh_segments)
     if _wh_history:
         sheet.cell(row=2, column=9).value = _wh_history
@@ -1469,8 +1556,12 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         _wh_segments = calculation_service.weekly_hours_segments(
             db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1])
         )
-        _wh_start = _wh_segments[0][2] if _wh_segments else user.weekly_hours
-        _wh_history = format_weekly_hours_history(_wh_segments)
+        _wh_start = _wh_segments[0].weekly_hours if _wh_segments else user.weekly_hours
+        # #431: `compact` — die Meta ist ein Inline-Absatz in Schriftgroesse 8 auf
+        # Querformat; ein ausgeschriebener Tagesplan („Mo 8,0 / Di 5,0 / …")
+        # sprengt die Zeile. Der Schalter wirkt NUR im Tagesplan-Zweig, die
+        # #415-Formulierung fuer alle uebrigen Mitarbeitenden bleibt woertlich.
+        _wh_history = format_weekly_hours_history(_wh_segments, compact=True)
         _wh_flag = f" | Stunden\u00e4nderung: {_wh_history}" if _wh_history else ""
         meta_label = f"{user.first_name} {user.last_name}  \u2013  {float(_wh_start):.1f}h/Woche{_wh_flag}{arbzg_flag}{night_flag}"
         story.append(Paragraph(escape_pdf_text(meta_label), ParagraphStyle('meta', fontName='Helvetica', fontSize=8, leading=10,

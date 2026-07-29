@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional
@@ -77,10 +77,44 @@ class AdminUserOverview(BaseModel):
 
 
 class WeeklyHoursChangeInPeriod(BaseModel):
-    """#415: eine Wochenstunden-Änderung, die INNERHALB des Berichtszeitraums
-    wirksam wird. Änderungen davor stecken bereits im Startwert."""
+    """#415: eine Vertragsänderung, die INNERHALB des Berichtszeitraums wirksam
+    wird. Änderungen davor stecken bereits im Startwert.
+
+    #431: die Zeile trägt den vollständigen Snapshot. Für Mitarbeitende mit
+    individuellem Tagesplan ist `weekly_hours` nur die Summe der Tageswerte und
+    steuert kein einziges Tagessoll — ohne `day_hours` könnte die Oberfläche
+    dieselbe nichtssagende Zahl zeigen wie vor #431, und eine Umverteilung bei
+    gleicher Wochensumme sähe aus wie „keine Änderung".
+
+    `work_days_per_week` wird derzeit von keiner Anzeige gerendert (die
+    #415-Formulierung für den gleichmäßigen Modus ist wortgleich eingefroren),
+    ist aber Teil des Snapshots und deshalb hier: eine Änderung von
+    40 h/5 Tage auf 40 h/4 Tage verschiebt das Tagessoll und erzeugt genau
+    deshalb ein eigenes Segment.
+    """
     effective_from: date
     weekly_hours: float
+    use_daily_schedule: bool = False
+    # Immer fünf Einträge, Index 0 = Montag; `None` = kein geplanter Arbeitstag.
+    # Im gleichmäßigen Modus durchgehend `None` (dort sind die Tageswerte inert).
+    day_hours: List[Optional[float]] = Field(default_factory=lambda: [None] * 5)
+    work_days_per_week: Optional[int] = None
+
+    @classmethod
+    def from_segment(cls, segment) -> "WeeklyHoursChangeInPeriod":
+        """DIE eine Übersetzung eines `calculation_service.ScheduleSegment` in die
+        API-Form — genutzt vom Monats- UND vom Wochenbericht. Zwei getrennte
+        Umwandlungen wären zwei Stellen, die auseinanderlaufen können.
+
+        `float`-Cast wie überall bei Response-Schemas (CLAUDE.md: `float` statt
+        `Decimal`)."""
+        return cls(
+            effective_from=segment.start,
+            weekly_hours=float(segment.weekly_hours),
+            use_daily_schedule=bool(segment.use_daily_schedule),
+            day_hours=[None if h is None else float(h) for h in segment.day_hours],
+            work_days_per_week=segment.work_days_per_week,
+        )
 
 
 class EmployeeMonthlyReport(BaseModel):
