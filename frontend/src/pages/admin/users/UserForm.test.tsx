@@ -250,13 +250,20 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
   });
 
-  it('sendet weekly_hours beim Update NICHT mit (Backend lehnt es sonst mit 400 ab)', async () => {
+  it('sendet weekly_hours/Tagesplan-Felder beim Update NICHT mit (Backend lehnt sie sonst mit 400 ab)', async () => {
+    // Task 7 (#431): nicht nur weekly_hours — alle acht historisierten
+    // Felder (Modus, Tagesstunden, Arbeitstage) sind seit Task 7 gesperrt.
     renderForm({ editUser: baseEditUser });
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
       expect(call).toBeTruthy();
-      expect(call![1]).not.toHaveProperty('weekly_hours');
+      for (const field of [
+        'weekly_hours', 'use_daily_schedule', 'work_days_per_week',
+        'hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday',
+      ]) {
+        expect(call![1]).not.toHaveProperty(field);
+      }
     });
   });
 
@@ -276,24 +283,32 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     });
   });
 
-  // I2 (Abschluss-Review): Für Mitarbeitende mit individuellem Tagesplan lehnt
-  // der Änderungs-Endpoint ab (400) — der Dialog existiert für sie also nicht.
-  // Wäre das Feld hier zusätzlich read-only, hätten sie GAR KEINEN Schreibweg
-  // mehr, während die Tagesstunden-Summe weiter „bitte anpassen!" verlangt.
-  it('bleibt bei individuellem Tagesplan ein Eingabefeld (kein Dialog-Button)', () => {
+  // Task 7 (#431): die I2-Ausnahme ("Eingabefeld ist der einzige Schreibweg
+  // für Tagesplan-Mitarbeitende, weil der Änderungs-Endpoint sie ablehnt")
+  // entfällt ersatzlos — Task 6 gab ihnen einen vollwertigen Stundenverlauf-
+  // Schreibweg, der Backend-PUT sperrt sie seither wie jeden anderen. Das
+  // Eingabefeld bleibt hier trotzdem sichtbar (Task 7 rührt NUR den
+  // Update-Payload an, nicht die Anzeige — die Anzeigeumbau ist Task 11),
+  // aber jede Eingabe wird beim Speichern jetzt verworfen statt gesendet.
+  it('bleibt bei individuellem Tagesplan (noch) ein Eingabefeld (kein Dialog-Button)', () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
     expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');
     expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
   });
 
-  it('sendet weekly_hours beim Update MIT, wenn ein individueller Tagesplan aktiv ist', async () => {
+  it('sendet weekly_hours/Tagesplan-Felder beim Update NICHT mit, auch wenn ein individueller Tagesplan aktiv ist (I2-Ausnahme entfaellt seit #431)', async () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
     fireEvent.change(document.getElementById('f-weekly-hours') as HTMLInputElement, { target: { value: '30' } });
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
       expect(call).toBeTruthy();
-      expect(call![1]).toMatchObject({ weekly_hours: 30, use_daily_schedule: true });
+      for (const field of [
+        'weekly_hours', 'use_daily_schedule', 'work_days_per_week',
+        'hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday',
+      ]) {
+        expect(call![1]).not.toHaveProperty(field);
+      }
     });
   });
 

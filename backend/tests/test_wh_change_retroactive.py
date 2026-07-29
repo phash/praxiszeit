@@ -16,7 +16,10 @@ from decimal import Decimal
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
+from app.database import get_db
+from app.middleware.auth import get_current_user, require_admin
 from app.models import (
     Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, User, UserRole,
     WorkingHoursChange, YearCarryover,
@@ -29,6 +32,30 @@ from app.schemas.user import UserCreate, UserUpdate
 from app.schemas.working_hours_change import WorkingHoursChangeCreate
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.test_endpoints import test_app
+
+
+# Task 7 (#431): die neuen PUT-Sperre-Tests fahren bewusst ueber HTTP
+# (``TestClient``), wie ``test_wh_change_day_plan_create.py`` /
+# ``test_wh_change_day_plan_delete.py`` — nur so wird auch die
+# FastAPI-Fehlerantwort (400 + ``detail``) end-to-end geprueft, nicht nur der
+# direkte Funktionsaufruf. ``admin_headers`` ist wegen der ueberschriebenen
+# Auth-Dependencies inert, bleibt aber im Signaturbild, das der Rest der
+# Suite fuer admin-authentifizierte Requests verwendet.
+@pytest.fixture
+def client(db, test_admin):
+    def _override_db():
+        yield db
+    test_app.dependency_overrides[get_db] = _override_db
+    test_app.dependency_overrides[get_current_user] = lambda: test_admin
+    test_app.dependency_overrides[require_admin] = lambda: test_admin
+    yield TestClient(test_app)
+    test_app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def admin_headers():
+    return {"Authorization": "Bearer test"}
 
 
 # Wegwerf-Passwort fuer die Testnutzer-Anlage. Aus Teilen zusammengesetzt, weil
@@ -1053,14 +1080,26 @@ class TestLegacyHalfDayAbsencesSurvive:
         assert float(after) == float(before), "Urlaubs-TAGE unveraendert"
 
 
-class TestPutRejectsWeeklyHours:
-    """Task 5: ``user.weekly_hours`` ist zugleich der Rückfallwert für alle
-    Tage vor der ersten erfassten ``WorkingHoursChange`` — ein direktes PUT
-    würde das Feld still überschreiben und damit rückwirkend das Soll bereits
-    abgeschlossener Monate verschieben, ohne Historie-Zeile und ohne
-    Absence-Retarget. ``update_user`` lehnt ``weekly_hours`` im Payload daher
-    mit 400 ab, BEVOR irgendetwas geschrieben wird. ``create_user`` (POST)
-    bleibt unverändert — dort existiert noch keine Historie."""
+class TestPutRejectsHistorisedFields:
+    """Task 5+7 (#431): ALLE Soll-Treiber — Wochenstunden, Tagesplan-Modus,
+    Tagesstunden und Arbeitstage — laufen über den Stundenverlauf mit
+    Wirkungsdatum, nicht mehr über das generische PUT. ``user.weekly_hours``
+    (und im Tagesplan-Modus die Tageswerte) sind zugleich der Rückfallwert
+    für alle Tage vor der ersten erfassten ``WorkingHoursChange`` — ein
+    direktes PUT würde die Felder still überschreiben und damit rückwirkend
+    das Soll bereits abgeschlossener Monate verschieben, ohne Historie-Zeile
+    und ohne Absence-Retarget. ``update_user`` lehnt sie im Payload daher mit
+    400 ab, BEVOR irgendetwas geschrieben wird.
+
+    Task 5 sperrte zunächst nur ``weekly_hours`` — mit einer Ausnahme (I2)
+    für Mitarbeitende mit individuellem Tagesplan, weil es für sie damals
+    keinen anderen Schreibweg gab. Seit Task 6 nimmt der Stundenverlauf-
+    Endpoint auch Tagesplan-Änderungen an (vollständiger Vertrags-Snapshot),
+    also entfällt die Ausnahme ersatzlos: Task 7 sperrt zusätzlich
+    ``use_daily_schedule``, ``work_days_per_week`` und alle fünf
+    ``hours_*``-Felder, OHNE Ausnahme für irgendeine Mitarbeitergruppe.
+    ``create_user`` (POST) bleibt unverändert — dort existiert noch keine
+    Historie, die verletzt werden könnte."""
 
     def test_put_user_with_weekly_hours_is_rejected(self, db, default_tenant):
         admin = _admin(db, "wh_put_admin")
@@ -1092,13 +1131,11 @@ class TestPutRejectsWeeklyHours:
         assert emp.first_name == "Geändert"
         assert float(emp.weekly_hours) == 40.0, "unberührt"
 
-    def test_put_weekly_hours_allowed_for_daily_schedule_user(self, db, default_tenant):
-        """I2 (Abschluss-Review): Für Tagesplan-MA ist der Änderungs-Endpoint
-        gesperrt (400) — die PUT-Sperre fror ihre Wochenstunden damit dauerhaft
-        ein, obwohl das Formular weiter „bitte anpassen!" verlangt und der
-        falsche Wert in §16-Berichtsköpfe, die MiLoG-Ableitung (×13/3), die
-        Schichtplanung und die Benutzerliste fließt. Ihr Tagessoll kommt aus
-        hours_monday…friday, weekly_hours treibt bei ihnen kein Soll."""
+    def test_put_weekly_hours_rejected_for_daily_schedule_user_too(self, db, default_tenant):
+        """I2 entfällt (Task 7): früher war GENAU DAS hier die Ausnahme (400
+        wurde NICHT geworfen) — jetzt gilt für Tagesplan-Mitarbeitende
+        dieselbe Sperre wie für alle anderen, weil der Stundenverlauf
+        (Task 6) ihren einzigen Schreibweg übernommen hat."""
         admin = _admin(db, "wh_putds_admin")
         emp = _make_user(
             db, "wh_putds_emp", weekly_hours=40.0, use_daily_schedule=True,
@@ -1106,19 +1143,22 @@ class TestPutRejectsWeeklyHours:
             hours_thursday=6.0, hours_friday=6.0,
         )
 
-        result = update_user(
-            user_id=str(emp.id),
-            user_data=UserUpdate(weekly_hours=30.0),
-            db=db, current_user=admin,
-        )
+        with pytest.raises(HTTPException) as exc:
+            update_user(
+                user_id=str(emp.id),
+                user_data=UserUpdate(weekly_hours=30.0),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400
 
-        assert float(result.weekly_hours) == 30.0
         db.refresh(emp)
-        assert float(emp.weekly_hours) == 30.0
+        assert float(emp.weekly_hours) == 40.0, "Nutzer in der DB unveraendert"
 
     def test_put_weekly_hours_rejected_when_daily_schedule_is_switched_off(self, db, default_tenant):
-        """Gegenrichtung: Wer den Tagesplan im selben PUT ABschaltet, faellt
-        wieder unter die Sperre — danach traebe weekly_hours das Soll."""
+        """Gegenrichtung: weiterhin abgelehnt, wenn der Tagesplan im selben
+        PUT abgeschaltet wird — deckt sich jetzt mit der generellen Sperre
+        auf ``use_daily_schedule`` selbst (nicht mehr nur mit dem
+        weekly_hours-Spezialfall von vorher)."""
         admin = _admin(db, "wh_putds2_admin")
         emp = _make_user(
             db, "wh_putds2_emp", weekly_hours=40.0, use_daily_schedule=True,
@@ -1138,6 +1178,30 @@ class TestPutRejectsWeeklyHours:
         assert float(emp.weekly_hours) == 40.0, "Nutzer in der DB unveraendert"
         assert emp.use_daily_schedule is True
 
+    @pytest.mark.parametrize("kwargs", [
+        dict(use_daily_schedule=False),
+        dict(work_days_per_week=4),
+        dict(hours_monday=6.0),
+        dict(hours_tuesday=6.0),
+        dict(hours_wednesday=6.0),
+        dict(hours_thursday=6.0),
+        dict(hours_friday=6.0),
+    ])
+    def test_put_rejects_each_historised_field_individually(self, db, default_tenant, kwargs):
+        """Unit-level Pendant zu ``test_put_rejects_day_plan_fields`` (HTTP,
+        unten): deckt ALLE sieben übrigen Felder aus ``_HISTORISED_FIELDS``
+        ab (``weekly_hours`` ist oben schon einzeln geprüft), damit ein
+        Tippfehler im Tupel sofort an der passenden Stelle auffällt."""
+        admin = _admin(db, "wh_putf_admin")
+        emp = _make_user(db, f"wh_putf_{list(kwargs)[0]}", weekly_hours=40.0)
+
+        with pytest.raises(HTTPException) as exc:
+            update_user(
+                user_id=str(emp.id), user_data=UserUpdate(**kwargs),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400, kwargs
+
     def test_post_user_with_weekly_hours_still_works(self, db, default_tenant):
         admin = _admin(db, "wh_post_admin")
 
@@ -1154,3 +1218,92 @@ class TestPutRejectsWeeklyHours:
         created = db.query(User).filter(User.username == "wh_post_new_emp").first()
         assert created is not None
         assert float(created.weekly_hours) == 32.0
+
+
+def test_put_rejects_day_plan_fields(client, admin_headers, day_plan_user):
+    """Task 7 (#431): HTTP-Ebene, mit dem ``day_plan_user``-Fixture — genau
+    die Gruppe, die vor Task 7 über die I2-Ausnahme noch direkt schreiben
+    durfte. ``work_days_per_week`` gehört mit dazu, obwohl es kein
+    ``hours_*``-Feld ist: die Arbeitstage/Woche gehen genauso in die
+    Historie wie die Stundenverteilung."""
+    for payload in (
+        {"hours_monday": 6.0},
+        {"use_daily_schedule": False},
+        {"work_days_per_week": 4},
+    ):
+        r = client.put(f"/api/admin/users/{day_plan_user.id}",
+                       headers=admin_headers, json=payload)
+        assert r.status_code == 400, f"{payload} -> {r.status_code}"
+        assert "Wirkungsdatum" in r.json()["detail"]
+
+
+def test_put_still_allows_unrelated_fields(client, admin_headers, day_plan_user):
+    r = client.put(f"/api/admin/users/{day_plan_user.id}",
+                   headers=admin_headers, json={"first_name": "Neu"})
+    assert r.status_code == 200, r.text
+
+
+def test_put_lock_prevents_stale_most_recent_data_loss(client, admin_headers, db):
+    """Regressionstest für den im Task-5-Review gefundenen Datenverlust-Pfad
+    (Grund, warum die PUT-Sperre vor dem Merge landen musste):
+
+    Ohne diese Sperre könnte ein Admin einen Mitarbeiter per PUT in den
+    Tagesplan-Modus schalten, OHNE dass dabei eine Historien-Zeile entsteht.
+    Legte er DANACH eine rückwirkende gleichmäßige Änderung an, deren
+    ``effective_from`` vor einer bestehenden (näher an heute liegenden)
+    Zeile liegt, bliebe ``most_recent`` beim Resync die NÄHERE Zeile — die
+    den Zustand VOR dem PUT trägt (z. B. den 067-Backfill-Snapshot eines
+    Bestandsnutzers: kein Tagesplan). Der Resync (``_sync_user_from_change``)
+    kippt ``use_daily_schedule`` dadurch still zurück auf False und nullt
+    alle Tageswerte — der Tagesplan wäre weg, ohne dass irgendjemand ihn
+    absichtlich abgeschaltet hätte.
+
+    Mit der Sperre kann der auslösende erste Schritt gar nicht mehr
+    passieren: der PUT, der den Tagesplan OHNE Historien-Zeile eingeschaltet
+    hätte, schlägt jetzt mit 400 fehl — der Nutzer bleibt im
+    Nicht-Tagesplan-Zustand. Es entsteht also gar keine „verwaiste"
+    Live-Konfiguration, die ein späterer Resync zerstören könnte, und die
+    anschließende (legitime) rückwirkende Änderung bleibt folgenlos für den
+    Modus.
+    """
+    plain = _make_user(db, "wh_orphan_emp", weekly_hours=40.0,
+                        use_daily_schedule=False, work_days_per_week=5)
+    # Bestehende Zeile trägt den ALTEN (Nicht-Tagesplan-)Zustand, wie ihn
+    # z. B. der 067-Backfill für einen Bestandsnutzer gestempelt hätte.
+    older = _last_monday(400)
+    db.add(WorkingHoursChange(
+        user_id=plain.id, tenant_id=plain.tenant_id, effective_from=older,
+        weekly_hours=Decimal("40.0"), use_daily_schedule=False,
+        work_days_per_week=5,
+    ))
+    db.commit()
+
+    # Schritt 1 des Bug-Szenarios: Admin versucht, den Mitarbeiter per PUT
+    # (ohne Wirkungsdatum, ohne Historien-Zeile) in den Tagesplan-Modus zu
+    # schalten. Mit der Sperre schlägt genau das fehl.
+    r = client.put(f"/api/admin/users/{plain.id}", headers=admin_headers, json={
+        "use_daily_schedule": True, "hours_monday": 8.0, "hours_tuesday": 5.0,
+        "hours_wednesday": 4.0, "work_days_per_week": 3,
+    })
+    assert r.status_code == 400
+    db.refresh(plain)
+    assert plain.use_daily_schedule is False, "kein verwaister Live-Zustand ohne Historien-Zeile"
+
+    # Schritt 2 (wäre im Bug-Szenario der Auslöser): eine rückwirkende
+    # gleichmäßige Änderung, deren effective_from VOR der bestehenden
+    # (näheren) Zeile liegt.
+    earlier = older - timedelta(days=100)
+    r2 = client.post(
+        f"/api/admin/users/{plain.id}/working-hours-changes",
+        headers=admin_headers,
+        json={"effective_from": str(earlier), "weekly_hours": 35.0})
+    assert r2.status_code == 201, r2.text
+
+    # most_recent bleibt die naehere Zeile (`older`) -- der Nutzer bleibt
+    # unveraendert im gleichmaessigen Modus, weil er (dank der Sperre) nie
+    # ohne Historien-Zeile in den Tagesplan-Modus gewechselt ist. Ohne die
+    # PUT-Sperre haette Schritt 2 genau den (hier gar nicht erst
+    # entstandenen) Tagesplan-Zustand stillschweigend ueberschrieben.
+    db.refresh(plain)
+    assert plain.use_daily_schedule is False
+    assert float(plain.weekly_hours) == 40.0, "most_recent bleibt die naehere Zeile (aelter als `earlier`, naeher an heute)"

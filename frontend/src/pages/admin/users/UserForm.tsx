@@ -232,21 +232,25 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
 
       if (editUser) {
         // When editing, send only the fields that can be updated (exclude password).
-        // Task 6 (#Wochenstunden-anpassen): weekly_hours is edit-only via the
-        // Wochenstunden-Dialog now — the backend PUT rejects it outright (a
-        // direct-edit here would silently rewrite the historical fallback
-        // value for the whole past, which is exactly the bug this redesign
-        // fixes). NEVER add it back into updateData for these users.
+        // Task 5+7 (#431): ALL Soll-driving fields — weekly_hours, the daily-
+        // schedule mode/values and work_days_per_week — are edit-only via the
+        // Wochenstunden-Dialog now (with an effective date). The backend PUT
+        // rejects every one of them outright (400): a direct edit here would
+        // silently rewrite the historical fallback for the whole past, which
+        // is exactly the bug this redesign fixes. NEVER add them back into
+        // updateData.
         //
-        // I2 (Abschluss-Review): the ONE exception is a user with an individual
-        // daily schedule. The change endpoint refuses that group (400), so the
-        // dialog does not exist for them — the direct field is their only write
-        // path, and weekly_hours drives no Soll for them anyway
-        // (get_daily_target_for_date reads hours_monday…friday). The backend
-        // allows the direct PUT for exactly this case, gated on the EFFECTIVE
-        // post-update flag — which is what formData carries here.
-        const { password, weekly_hours, ...rest } = payload;
-        const updateData = formData.use_daily_schedule ? { ...rest, weekly_hours } : rest;
+        // Task 7: the former I2 exception ("weekly_hours allowed via PUT when
+        // use_daily_schedule") is gone. It only existed because the change
+        // endpoint refused daily-schedule users until Task 6 gave them a
+        // proper write path — that write path now covers them like everyone
+        // else, so the direct field is excluded unconditionally.
+        const {
+          password, weekly_hours, use_daily_schedule, work_days_per_week,
+          hours_monday, hours_tuesday, hours_wednesday, hours_thursday, hours_friday,
+          ...rest
+        } = payload;
+        const updateData = rest;
         await apiClient.put(`/admin/users/${editUser.id}`, updateData);
         // #158/#383: nur schreiben, wenn (a) die Felder erfolgreich für EIN Jahr
         // geladen sind (loadedCarryoverYear !== null) — sonst würde ein Ladefehler

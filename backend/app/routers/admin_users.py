@@ -752,6 +752,13 @@ def update_user(
 
     update_data = user_data.model_dump(exclude_unset=True)
 
+    # #431: ALLE Soll-Treiber laufen ueber den Stundenverlauf mit Wirkungsdatum.
+    # Frueher war nur `weekly_hours` gesperrt (und selbst das mit einer Ausnahme
+    # fuer Tagesplan-Mitarbeitende, weil es fuer sie keinen Schreibweg gab).
+    # Tagesplan, Modus und Arbeitstage waren dagegen voellig offen — jede
+    # Aenderung verschob still das Soll der gesamten Vergangenheit. Genau diese
+    # Luecke ist #431.
+    #
     # Task 5 (Wochenstunden-Anpassen): weekly_hours hat genau EINEN Schreibweg
     # — "Wochenstunden anpassen" mit Wirkungsdatum (create_working_hours_change),
     # das eine Historie-Zeile anlegt. user.weekly_hours ist zugleich der
@@ -763,33 +770,29 @@ def update_user(
     # ganz am Anfang. POST /api/admin/users (create_user) bleibt unverändert:
     # dort existiert noch keine Historie, die verletzt werden könnte.
     #
-    # I2 (Abschluss-Review): AUSGENOMMEN sind Mitarbeitende mit individuellem
-    # Tagesplan. Für sie ist der Änderungs-Endpoint gesperrt (400) und der
-    # Dialog gar nicht erreichbar — die Sperre hier hätte ihre Wochenstunden
-    # damit dauerhaft eingefroren, obwohl das Formular weiterhin „bitte
-    # anpassen!" verlangt und der falsche Wert in §16-Berichtsköpfe, die
-    # MiLoG-Ableitung (×13/3), die Schichtplanung und die Benutzerliste fließt.
-    # Das Schutzargument („Historie und Vergangenheit") trifft auf sie nicht zu:
-    # ihr Tagessoll kommt aus hours_monday…friday, `weekly_hours` treibt bei
-    # ihnen kein Soll und es gibt keine Historie, die verletzt werden könnte.
-    #
-    # Geprüft wird der EFFEKTIVE Zustand NACH dem Update (Payload-Wert, sonst
-    # DB-Wert) — dasselbe Muster wie der eff_fixed-Block weiter unten. Wer den
-    # Tagesplan im selben PUT ABschaltet, fällt damit wieder unter die Sperre:
-    # danach würde `weekly_hours` das Soll treiben und gehört in den Dialog.
-    if 'weekly_hours' in update_data:
-        _eff_daily_schedule = update_data.get(
-            'use_daily_schedule', getattr(user, 'use_daily_schedule', False)
+    # Task 7: die I2-Ausnahme ("weekly_hours per PUT erlaubt, wenn
+    # use_daily_schedule") entfällt ersatzlos. Sie existierte nur, weil es für
+    # Tagesplan-Mitarbeitende bis Task 6 keinen anderen Schreibweg gab — seit
+    # Task 6 nimmt der Stundenverlauf-Endpoint auch ihre Änderungen an
+    # (vollständiger Vertrags-Snapshot). Damit gilt für sie dieselbe Sperre wie
+    # für alle anderen, und die Sperre wird auf die übrigen sieben
+    # historisierten Felder ausgeweitet (use_daily_schedule, work_days_per_week,
+    # hours_monday…friday) — sonst kippte ein PUT still den Modus oder die
+    # Tagesverteilung, ohne Historien-Zeile und ohne Absence-Retarget.
+    _HISTORISED_FIELDS = (
+        'weekly_hours', 'use_daily_schedule', 'work_days_per_week',
+        'hours_monday', 'hours_tuesday', 'hours_wednesday',
+        'hours_thursday', 'hours_friday',
+    )
+    if any(f in update_data for f in _HISTORISED_FIELDS):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Wochenstunden, Tagesstunden und Arbeitstage werden über "
+                "„Wochenstunden anpassen“ mit Wirkungsdatum geändert, damit "
+                "Historie und Soll vergangener Monate korrekt bleiben."
+            ),
         )
-        if not _eff_daily_schedule:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Wochenstunden werden über „Wochenstunden anpassen“ mit "
-                    "Wirkungsdatum geändert, damit Historie und Soll vergangener "
-                    "Monate korrekt bleiben."
-                ),
-            )
 
     if user_data.username and user_data.username.lower() != user.username.lower():
         # F-026: scope the uniqueness probe to the tenant (parity with
