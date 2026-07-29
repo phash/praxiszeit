@@ -43,6 +43,7 @@ from app.models import (
     User,
     UserRole,
     VacationRequest,
+    WorkingHoursChange,
 )
 from app.models.tenant import Tenant
 
@@ -276,7 +277,7 @@ def build_tenant_export_payload(db: Session, tenant: Tenant, *, requester: User)
             "is_active": tenant.is_active,
             "mode": tenant.mode,
         },
-        "users": [_user_dict(u) for u in users],
+        "users": [_user_dict(db, u) for u in users],
         "time_entries": [_time_entry_dict(t) for t in time_entries],
         "absences": [_absence_dict(a) for a in absences],
         "change_requests": [
@@ -299,11 +300,26 @@ def build_tenant_export_payload(db: Session, tenant: Tenant, *, requester: User)
     }
 
 
-def _user_dict(u: User) -> dict[str, Any]:
+def _user_dict(db: Session, u: User) -> dict[str, Any]:
     # DSGVO Art. 15: vollstaendige Auskunft. Whitelist (statt Blacklist) — neue
     # Felder im User-Model erscheinen nicht automatisch im Export, das ist Absicht
     # (verhindert versehentliches Leaken von z.B. password_hash, totp_secret,
     # last_totp_counter).
+    #
+    # #431: die Stundenhistorie ist ein vollstaendiger Vertrags-Snapshot je
+    # Wirkungsdatum (Soll-relevant) und gehoert damit in den Art.-15-Export.
+    # F-026 (belt-and-suspenders, RLS greift hier zusaetzlich): tenant_id
+    # explizit mitfiltern. Chronologisch aufsteigend wie die anderen
+    # Sammlungen in diesem Export (time_entries/absences/change_requests).
+    history = (
+        db.query(WorkingHoursChange)
+        .filter(
+            WorkingHoursChange.user_id == u.id,
+            WorkingHoursChange.tenant_id == u.tenant_id,
+        )
+        .order_by(WorkingHoursChange.effective_from.asc())
+        .all()
+    )
     return {
         "id": str(u.id),
         "username": u.username,
@@ -344,6 +360,26 @@ def _user_dict(u: User) -> dict[str, Any]:
         "deactivated_at": u.deactivated_at.isoformat() if u.deactivated_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
         "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+        # #431: Vertrags-Snapshots ueber die Zeit — Numeric(4,2)-Felder MUESSEN
+        # float()-gecastet werden (Decimal-Leak-Klasse #383/#408: dieser Export
+        # laeuft ueber rohes json.dumps, nicht jsonable_encoder).
+        "working_hours_changes": [
+            {
+                "id": str(h.id),
+                "effective_from": h.effective_from.isoformat() if h.effective_from else None,
+                "weekly_hours": float(h.weekly_hours) if h.weekly_hours is not None else None,
+                "use_daily_schedule": h.use_daily_schedule,
+                "hours_monday": float(h.hours_monday) if h.hours_monday is not None else None,
+                "hours_tuesday": float(h.hours_tuesday) if h.hours_tuesday is not None else None,
+                "hours_wednesday": float(h.hours_wednesday) if h.hours_wednesday is not None else None,
+                "hours_thursday": float(h.hours_thursday) if h.hours_thursday is not None else None,
+                "hours_friday": float(h.hours_friday) if h.hours_friday is not None else None,
+                "work_days_per_week": h.work_days_per_week,
+                "note": h.note,
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+            }
+            for h in history
+        ],
     }
 
 
@@ -529,7 +565,7 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         # zur Datenkopie (Abs. 3) geliefert. Texte basieren auf dem VVT
         # (docs/specs/dsgvo/verarbeitungsverzeichnis.md).
         "art15_meta": _build_art15_meta(),
-        "subject": _user_dict(user),
+        "subject": _user_dict(db, user),
         "time_entries": [_time_entry_dict(t) for t in own_entries],
         "absences": [_absence_dict(a) for a in own_absences],
         # #312: id → Klartextname für reason_id in 'absences' (Art. 12).
