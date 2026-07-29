@@ -304,6 +304,31 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
     expect(screen.getByText(/Mo 8,0/)).toBeInTheDocument();
   });
 
+  // Task-11-Review Fix-Runde 1 (Important): vorher kombinierte die Box einen
+  // FRISCHEN `displayWeeklyHours`-Total mit einem beim Formular-Öffnen
+  // EINGEFRORENEN `formData.hours_*`-Breakdown — nach „Dialog öffnen →
+  // Tagesplan ändern → speichern" bei weiterhin offenem Formular zeigte die
+  // Box z. B. „Mo 8,0 / Di 5,0 / Mi 4,0 = 20,0 h/Woche" (Summanden ergeben
+  // 17, nicht 20). `displayDayHours` (Users.tsx, analog zu
+  // `displayWeeklyHours`) hält jetzt auch den Breakdown frisch, sodass beide
+  // Zahlen wieder zusammenpassen.
+  it('zeigt Aufschlüsselung und Summe konsistent, wenn frische Tageswerte über displayDayHours ankommen (statt der eingefrorenen formData-Werte)', () => {
+    renderForm({
+      editUser: {
+        ...baseEditUser, use_daily_schedule: true,
+        hours_monday: 8, hours_tuesday: 5, hours_wednesday: 4, hours_thursday: 0, hours_friday: 0,
+      },
+      // Simuliert: der Dialog hat Di 5→8 geändert und gespeichert, Users.tsx
+      // hat refetcht — die Summe UND der Breakdown sind jetzt beide frisch.
+      displayWeeklyHours: 20,
+      displayDayHours: [8, 8, 4, 0, 0],
+    });
+    // Der widersprüchliche alte Text darf nirgends auftauchen …
+    expect(screen.queryByText(/Di 5,0/)).not.toBeInTheDocument();
+    // … stattdessen zeigt die Box den frischen Breakdown mit der frischen Summe zusammen.
+    expect(screen.getByText('Mo 8,0 / Di 8,0 / Mi 4,0 = 20,0 h/Woche')).toBeInTheDocument();
+  });
+
   it('zeigt "Arbeitstage pro Woche" beim Bearbeiten nur als Anzeige mit Verweis auf den Dialog', () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true, work_days_per_week: 3 } });
     const workDaysEl = document.getElementById('f-work-days');

@@ -151,8 +151,25 @@ export default function Users() {
   // instead feeding UserForm's read-only weekly-hours display the fresh value
   // through the narrow `displayWeeklyHours` prop below — that value alone can
   // go stale without wiping the rest of the form.
-  const displayWeeklyHours = editingUser
-    ? users.find((u) => u.id === editingUser.id)?.weekly_hours
+  const freshEditingUser = editingUser ? users.find((u) => u.id === editingUser.id) : undefined;
+  const displayWeeklyHours = freshEditingUser?.weekly_hours;
+
+  // Task-11-Review Fix-Runde 1 (Important): dasselbe Muster für die fünf
+  // Tageswerte des Tagesplans — UserForm's read-only Wochenstunden-Box (#431)
+  // zeigt bei individuellem Tagesplan Tagesbreakdown + Summe zusammen; ohne
+  // einen ebenso frischen Breakdown widersprach sich die Box nach „Dialog
+  // öffnen → Tagesplan ändern → speichern" bei weiterhin offenem Formular
+  // (Summe frisch über displayWeeklyHours, Aufschlüsselung eingefroren aus
+  // dem beim Öffnen gesetzten formData). `editingUser` bleibt weiterhin
+  // unangetastet — nur diese schmalen Werte werden nachgeführt.
+  const displayDayHours = freshEditingUser
+    ? [
+      freshEditingUser.hours_monday,
+      freshEditingUser.hours_tuesday,
+      freshEditingUser.hours_wednesday,
+      freshEditingUser.hours_thursday,
+      freshEditingUser.hours_friday,
+    ]
     : undefined;
 
   const handleSetPassword = (userId: string, name: string) => {
@@ -364,6 +381,7 @@ export default function Users() {
           onSaved={handleFormSaved}
           onOpenHoursHistory={handleOpenHoursHistory}
           displayWeeklyHours={displayWeeklyHours}
+          displayDayHours={displayDayHours}
         />
       )}
 

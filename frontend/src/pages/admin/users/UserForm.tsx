@@ -28,9 +28,21 @@ interface UserFormProps {
   // kein Treffer mehr in `users`), fällt die Anzeige auf `formData.weekly_hours`
   // zurück.
   displayWeeklyHours?: number;
+  // Task-11-Review Fix-Runde 1 (Important): dasselbe Muster wie
+  // `displayWeeklyHours`, aber für die fünf Tageswerte. Ohne das kombinierte
+  // die read-only-Box (Task 11) einen frischen `displayWeeklyHours`-Total mit
+  // einem beim Formular-Öffnen eingefrorenen `formData.hours_*`-Breakdown —
+  // nach „Dialog öffnen → Tagesplan ändern → speichern" bei weiterhin
+  // offenem Formular widersprachen sich Summe und Aufschlüsselung sichtbar
+  // (genau die Klasse, gegen die #415 steht). NUR für die read-only-Anzeige;
+  // `formData.hours_*` bleibt unberührt. Fehlt der Wert, fällt die Anzeige
+  // auf `formData.hours_*` zurück.
+  displayDayHours?: (number | null)[];
 }
 
-export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displayWeeklyHours }: UserFormProps) {
+export default function UserForm({
+  editUser, onSaved, onOpenHoursHistory, displayWeeklyHours, displayDayHours,
+}: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
   const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
@@ -299,14 +311,15 @@ export default function UserForm({ editUser, onSaved, onOpenHoursHistory, displa
   // Bearbeiten. Bei individuellem Tagesplan der Tagesbreakdown + Summe
   // (`formatDayPlan`/`deHoursExact`, dieselben Helfer wie Dialog-Verlauf und
   // Berichte — Bildschirm sagt hier dasselbe wie Datei-Export/#415), sonst
-  // nur die Summe. `displayWeeklyHours` (Release-Review 1.17.0, Fund 2) hält
-  // nur die Summe frisch, nicht die einzelnen Tageswerte — nach einer
-  // Dialog-Änderung am geöffneten Formular kann der Tagesbreakdown daher bis
-  // zum nächsten Öffnen des Formulars den alten Stand zeigen, während die
-  // Summe schon aktuell ist. Aus dem Scope dieser Task (nur UserForm.tsx)
-  // bewusst nicht behoben — siehe Task-11-Bericht.
+  // nur die Summe. Fix-Runde 1 (Task-11-Review, Important): Summe UND
+  // Breakdown kommen beide vorrangig aus den `display*`-Props (Users.tsx
+  // hält sie nach jedem `fetchUsers()` frisch, auch während das Formular
+  // offen bleibt) — sonst könnte die frische Summe einem eingefrorenen
+  // `formData.hours_*`-Breakdown widersprechen (Regression, die dieser
+  // Task erst eingeführt hätte: vorher zeigte die Box nur eine nackte,
+  // ggf. veraltete Summe, nie eine in sich widersprüchliche Kombination).
   const weeklyHoursTotal = deHoursExact(displayWeeklyHours ?? formData.weekly_hours);
-  const dayPlanText = formatDayPlan([
+  const dayPlanText = formatDayPlan(displayDayHours ?? [
     formData.hours_monday,
     formData.hours_tuesday,
     formData.hours_wednesday,
