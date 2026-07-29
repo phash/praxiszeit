@@ -111,6 +111,42 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
     )
 
 
+def _sync_user_from_change(user: User, most_recent: WorkingHoursChange) -> None:
+    """#431: den VOLLSTÄNDIGEN Vertrags-Snapshot einer ``WorkingHoursChange``
+    auf die User-Zeile zurückspiegeln.
+
+    Gemeinsam genutzt von ``create_working_hours_change`` (nach dem Anlegen
+    der neuen Zeile) und ``delete_working_hours_change`` (Task 6, nach dem
+    Entfernen einer Zeile): beide Schreibpfade müssen denselben vollständigen
+    Snapshot zurückschreiben. Nur `weekly_hours` nachzuziehen kippte den
+    Mitarbeitenden still in den jeweils anderen Modus: eine Tagesplan-Zeile
+    ließe `use_daily_schedule=False` stehen (Soll käme aus
+    weekly_hours/work_days_per_week statt aus den Wochentagen), eine
+    gleichmäßige Zeile ließe die alten Tageswerte stehen (Soll käme weiter aus
+    ihnen).
+
+    Die Spiegelung ist BEWUSST bedingungslos — auch bei einem Mitarbeitenden,
+    der nie einen Tagesplan hatte. `update_user` räumt `hours_*` beim
+    Abschalten des Tagesplans nicht ab, solche Reste sind im gleichmäßigen
+    Modus rechnerisch inert (das Tagessoll liest sie dort nicht), aber sie
+    widersprechen dem Snapshot der aktuell gültigen Zeile. Eine „nur im
+    Tagesplan-Modus schreiben"-Variante ließe die User-Zeile in einem Zustand
+    zurück, den keine Historien-Zeile deckt — und genau daraus entstand der
+    #431-Bug.
+    """
+    user.weekly_hours = most_recent.weekly_hours
+    user.use_daily_schedule = bool(most_recent.use_daily_schedule)
+    user.hours_monday = most_recent.hours_monday
+    user.hours_tuesday = most_recent.hours_tuesday
+    user.hours_wednesday = most_recent.hours_wednesday
+    user.hours_thursday = most_recent.hours_thursday
+    user.hours_friday = most_recent.hours_friday
+    # Bestandszeilen von vor #431 können hier NULL tragen —
+    # `users.work_days_per_week` ist NOT NULL und darf das nicht erben.
+    if most_recent.work_days_per_week is not None:
+        user.work_days_per_week = most_recent.work_days_per_week
+
+
 def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -> None:
     """#290: fold a newly participating employee into CURRENT + FUTURE company
     closures so admins never have to re-save a closure (the re-save was the
@@ -1104,36 +1140,13 @@ def create_working_hours_change(
             WorkingHoursChange.effective_from <= today_local()
         ).order_by(WorkingHoursChange.effective_from.desc()).first()
         if most_recent:
-            # #431: der VOLLSTÄNDIGE Snapshot wandert zurück auf die User-Zeile.
-            # Nur `weekly_hours` nachzuziehen kippte den Mitarbeitenden still in
-            # den jeweils anderen Modus: eine Tagesplan-Zeile ließe
-            # `use_daily_schedule=False` stehen (Soll käme aus
-            # weekly_hours/work_days_per_week statt aus den Wochentagen), eine
-            # gleichmäßige Zeile ließe die alten Tageswerte stehen (Soll käme
-            # weiter aus ihnen). Beim Wechsel in den gleichmäßigen Modus müssen
-            # die Tageswerte deshalb auf NULL zurück.
-            #
-            # Die Spiegelung ist BEWUSST bedingungslos — auch bei einem
-            # Mitarbeitenden, der nie einen Tagesplan hatte. `update_user` räumt
-            # `hours_*` beim Abschalten des Tagesplans nicht ab, solche Reste
-            # sind im gleichmäßigen Modus rechnerisch inert (das Tagessoll liest
-            # sie dort nicht), aber sie widersprechen dem Snapshot der aktuell
-            # gültigen Zeile. Eine „nur im Tagesplan-Modus schreiben"-Variante
-            # ließe die User-Zeile in einem Zustand zurück, den keine
-            # Historien-Zeile deckt — und genau daraus entstand der #431-Bug.
-            # Der Vergleich für die Basis-Zeile ignoriert die Reste trotzdem
-            # (_comparable_snapshot), damit hier keine Pseudo-Änderung entsteht.
-            user.weekly_hours = most_recent.weekly_hours
-            user.use_daily_schedule = bool(most_recent.use_daily_schedule)
-            user.hours_monday = most_recent.hours_monday
-            user.hours_tuesday = most_recent.hours_tuesday
-            user.hours_wednesday = most_recent.hours_wednesday
-            user.hours_thursday = most_recent.hours_thursday
-            user.hours_friday = most_recent.hours_friday
-            # Bestandszeilen von vor #431 können hier NULL tragen —
-            # `users.work_days_per_week` ist NOT NULL und darf das nicht erben.
-            if most_recent.work_days_per_week is not None:
-                user.work_days_per_week = most_recent.work_days_per_week
+            # #431: der VOLLSTÄNDIGE Snapshot wandert zurück auf die User-Zeile
+            # — _sync_user_from_change (dort ausführlich begründet) ist DIE eine
+            # Stelle dafür, damit create und delete garantiert denselben
+            # Zustand herstellen. Der Vergleich für die Basis-Zeile ignoriert
+            # etwaige Tagesplan-Reste trotzdem (_comparable_snapshot), damit
+            # hier keine Pseudo-Änderung entsteht.
+            _sync_user_from_change(user, most_recent)
 
     # Task 3 (#Wochenstunden-Dialog): eine Änderung muss die bereits gebuchten
     # Abwesenheits-Stunden mitziehen — sonst schreibt z. B. ein Krankentag
@@ -1396,7 +1409,14 @@ def delete_working_hours_change(
     ).order_by(WorkingHoursChange.effective_from.desc()).first()
 
     if most_recent:
-        user.weekly_hours = most_recent.weekly_hours
+        # #431 (Task 6): derselbe vollständige Snapshot-Resync wie beim
+        # Anlegen — _sync_user_from_change ist DIE eine Stelle dafür. Nur
+        # `weekly_hours` zurückzuschreiben ließe nach dem Löschen einer
+        # Modus-Wechsel-Zeile einen halb aktualisierten Zustand auf der
+        # User-Zeile stehen (z. B. `use_daily_schedule` weiter auf dem Wert
+        # der gerade gelöschten Zeile, während `weekly_hours` schon den
+        # davor gültigen Wert trägt).
+        _sync_user_from_change(user, most_recent)
 
     # Task 4 (Wochenstunden-Änderung löschen rechnet zurück): removing a
     # change makes the previously-valid value apply to its window again —
@@ -1417,62 +1437,43 @@ def delete_working_hours_change(
     # (bis zum Tag vor der nächsten Änderung, sonst offen) plus „es gibt eine
     # betroffene Abwesenheit".
     #
-    # I1 (Abschluss-Review): Mitarbeitende mit individuellem Tagesplan sind vom
-    # Retarget AUSGENOMMEN. Ursprüngliche Begründung: ihr Tagessoll kam aus den
-    # LIVE-Feldern hours_monday…friday, eine WorkingHoursChange konnte es weder
-    # setzen noch beim Löschen verschieben — das Retarget schrieb ihnen trotzdem
-    # die gebuchten Absence-Stunden auf das Tagesplan-Soll um (real: 8 h → 6 h),
+    # #431 (Task 6): Mitarbeitende mit individuellem Tagesplan sind NICHT mehr
+    # ausgenommen. Ihr Tagessoll kommt jetzt ebenfalls aus dieser Zeile — das
+    # Löschen muss deshalb genauso symmetrisch zurückrechnen wie bei
+    # gleichmäßigen Wochenstunden. Der früher hier stehende Skip (I1) hatte den
+    # umgekehrten Grund: damals konnte eine solche Zeile ihr Soll gar nicht
+    # setzen (die LIVE-Felder hours_monday…friday trieben es), das Retarget
+    # schrieb ihnen aber trotzdem die gebuchten Stunden um (real: 8 h → 6 h) —
     # eine stille Änderung an §16-Belegen ohne Bezug zur ausgelösten Aktion.
-    #
-    # ⚠️ #431 HAT DIESE BEGRÜNDUNG AUFGEHOBEN — DIESER SKIP IST JETZT BEFRISTET.
-    # Die Zeile trägt seit #431 den vollständigen Vertrags-Snapshot
-    # (use_daily_schedule + hours_monday…friday + work_days_per_week) und treibt
-    # das Soll auch für Tagesplan-Mitarbeitende. Ihr Löschen VERSCHIEBT deren
-    # Soll also sehr wohl. Folgenlos ist das heute nur, weil
-    #   (a) der 067-Backfill jeder Bestandszeile exakt den heutigen Plan gab
-    #       (Löschen ändert also nichts), und
-    #   (b) create_working_hours_change Tagesplan-Mitarbeitende noch mit 400
-    #       ablehnt, es also keine abweichenden Zeilen geben KANN.
-    # Sobald diese 400-Sperre fällt (der Schreibpfad setzt die Snapshot-Spalten
-    # noch nicht — siehe create_working_hours_change), MUSS dieser Skip WEG:
-    # sonst verschiebt das Löschen einer Zeile das Tagesplan-Soll, ohne die
-    # Abwesenheitsstunden zurückzurechnen und ohne stale_year_closing_warning zu
-    # melden → stille §16-Drift. Skip und Sperre fallen zusammen, in EINEM
-    # Schritt; die eine ohne die andere zu ändern ist ein Fehler.
-    #
-    # Bewusst ÜBERSPRINGEN statt (wie beim Anlegen) mit 400 ABLEHNEN: eine
-    # Ablehnung machte Alt-Zeilen aus der Zeit vor der Tagesplan-Umstellung
-    # unlöschbar — für sie gilt (a), sie sind fürs Soll folgenlos, aber der
-    # Admin bekäme sie nie mehr aus der Historie. Löschen bleibt also möglich,
-    # es rechnet (solange (a)+(b) gelten) nur nichts zurück.
-    _uses_daily_schedule = bool(getattr(user, "use_daily_schedule", False))
+    # Seit die Zeile den vollständigen Vertrags-Snapshot trägt und das Soll
+    # dieser Gruppe tatsächlich treibt, gilt das Gegenteil: OHNE Rückrechnung
+    # verschöbe das Löschen das Tagesplan-Soll, ohne die Abwesenheitsstunden
+    # zurückzuziehen und ohne stale_year_closing_warning zu melden — dieselbe
+    # stille §16-Drift, nur andersherum.
+    window = calculation_service.retarget_window(db, user, deleted_effective_from)
     adjusted_absences = 0
     warning = None
-    if not _uses_daily_schedule:
-        window = calculation_service.retarget_window(db, user, deleted_effective_from)
-        if window.has_absences:
-            adjusted_absences = calculation_service.retarget_absence_hours(
-                db, user, window.start, window.end
-            )
-            _log_wh_change_retarget(
-                db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
-                effective_from=window.start, period_end=window.end,
-                adjusted_absences=adjusted_absences,
-                prefix="Löschung der Wochenstunden-Änderung",
-                suffix="auf den davor gültigen Wert zurückgerechnet",
-            )
-        # I3 (Abschluss-Review): Das Anlegen liefert diesen Hinweis bereits; das
-        # Löschen rechnet dasselbe Fenster zurück und kann denselben
-        # eingefrorenen Carryover entwerten, meldete aber nichts. Fix #5 gilt
-        # hier genauso: NICHT automatisch neu rechnen (überschriebe manuelle
-        # Carryover-Anpassungen), nur melden. Wie beim Anlegen unabhängig vom
-        # Retarget: die Rücknahme verschiebt das Per-Tag-Soll jedes Arbeitstags
-        # im Wirkungsbereich. Für Tagesplan-MA bleibt beides aus — dort treibt
-        # weekly_hours gar kein Soll (siehe Begründung oben).
-        warning = calculation_service.stale_year_closing_warning(
-            db, current_user.tenant_id,
-            range(window.start.year, window.end.year + 1),
+    if window.has_absences:
+        adjusted_absences = calculation_service.retarget_absence_hours(
+            db, user, window.start, window.end
         )
+        _log_wh_change_retarget(
+            db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
+            effective_from=window.start, period_end=window.end,
+            adjusted_absences=adjusted_absences,
+            prefix="Löschung der Wochenstunden-Änderung",
+            suffix="auf den davor gültigen Wert zurückgerechnet",
+        )
+    # I3 (Abschluss-Review): Das Anlegen liefert diesen Hinweis bereits; das
+    # Löschen rechnet dasselbe Fenster zurück und kann denselben eingefrorenen
+    # Carryover entwerten, meldete aber nichts. Fix #5 gilt hier genauso: NICHT
+    # automatisch neu rechnen (überschriebe manuelle Carryover-Anpassungen),
+    # nur melden. Wie beim Anlegen unabhängig vom Retarget: die Rücknahme
+    # verschiebt das Per-Tag-Soll jedes Arbeitstags im Wirkungsbereich.
+    warning = calculation_service.stale_year_closing_warning(
+        db, current_user.tenant_id,
+        range(window.start.year, window.end.year + 1),
+    )
 
     db.commit()
     # Muster von delete_closure / cancel_vacation_request_as_admin: mit Warnung

@@ -516,8 +516,9 @@ class TestClosedYearWarning:
 
 
 class TestDailyScheduleNoLongerRejected:
-    """#431: die Tagesplan-Sperre im Anlege-Pfad ist entfallen (der Löschpfad
-    zieht als eigener Schritt nach — siehe TestStillRejectedCases)."""
+    """#431: die Tagesplan-Sperre im Anlege-Pfad ist entfallen (Task 5) UND der
+    Löschpfad rechnet seither symmetrisch zurück (Task 6) — beide Schreibpfade
+    behandeln Tagesplan-Mitarbeitende jetzt wie jeden anderen."""
 
     def test_daily_schedule_is_accepted_and_retargets(self, db, default_tenant):
         """Früher „still 400": eine Historien-Zeile war für Tagesplan-MA
@@ -562,15 +563,21 @@ class TestDailyScheduleNoLongerRejected:
         assert float(a.hours) == 4.0, "Abwesenheits-Stunden aufs neue Tagessoll nachgezogen"
         assert result.adjusted_absences == 1
 
+    def test_delete_now_retargets_daily_schedule_user(self, db, default_tenant):
+        """I1-Umkehr (Task 6, #431): früher lehnte das Anlegen Tagesplan-MA mit
+        400 ab, während das Löschen ``retarget_absence_hours`` trotzdem
+        ungefiltert aufrief — das schrieb ihre gebuchten Abwesenheits-Stunden
+        auf das Tagesplan-Soll um (8 h → 6 h), eine stille §16-Änderung ohne
+        Bezug zur Aktion. Der damalige Fix war ein Skip: Löschen blieb
+        erlaubt, rechnete aber nichts zurück.
 
-class TestStillRejectedCases:
-    def test_delete_does_not_retarget_daily_schedule_user(self, db, default_tenant):
-        """I1 (Abschluss-Review): Anlegen lehnt Tagesplan-MA mit 400 ab, das
-        Löschen rief ``retarget_absence_hours`` trotzdem ungefiltert auf und
-        schrieb ihre gebuchten Abwesenheits-Stunden auf das Tagesplan-Soll um
-        (8 h → 6 h) — eine stille §16-Änderung ohne Bezug zur Aktion. Löschen
-        bleibt erlaubt (sonst wären Alt-Zeilen unlöschbar), rechnet aber
-        nichts mehr zurück."""
+        Seit #431 die Sperre im Anlege-Pfad aufgehoben hat, treibt die Zeile
+        das Soll auch für Tagesplan-Mitarbeitende — der Skip hätte jetzt den
+        umgekehrten Fehler: eine echte Soll-Verschiebung, deren
+        Abwesenheits-Stunden NICHT zurückgerechnet würden. Deshalb ist die
+        Erwartung genau umgedreht: das Löschen zieht die Stunden jetzt auf das
+        davor gültige Tagesplan-Soll nach (8 h → 6 h), exakt wie bei
+        gleichmäßigen Wochenstunden."""
         admin = _admin(db, "wh_dsdel_admin")
         mon = _last_monday()
         emp = _make_user(
@@ -581,8 +588,11 @@ class TestStillRejectedCases:
         # Bereits gebuchte Abwesenheit mit 8 h (aus der Zeit vor der
         # Tagesplan-Umstellung).
         a = _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
-        # Alt-Zeile aus derselben Zeit — direkt angelegt, da create sie heute
-        # mit 400 ablehnen würde.
+        # Alt-Zeile aus derselben Zeit — vor #431 wäre sie ein reiner
+        # weekly_hours-Snapshot ohne Tagesplan-Felder gewesen (direkt
+        # angelegt, da create sie damals mit 400 abgelehnt hätte). Nach ihrem
+        # Löschen bleibt keine WorkingHoursChange-Zeile übrig, das Tagessoll
+        # fällt auf den aktuellen Tagesplan des Users zurück (6 h).
         change = WorkingHoursChange(
             user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
             effective_from=mon, weekly_hours=Decimal("20.0"),
@@ -600,8 +610,10 @@ class TestStillRejectedCases:
             WorkingHoursChange.user_id == emp.id
         ).count() == 0, "Löschen bleibt möglich"
         db.refresh(a)
-        assert float(a.hours) == 8.0, "Abwesenheits-Stunden unangetastet (nicht 6.0)"
+        assert float(a.hours) == 6.0, "Auf den davor gültigen Tagesplan (6 h) zurückgerechnet"
 
+
+class TestStillRejectedCases:
     def test_duplicate_date_still_400(self, db, default_tenant):
         admin = _admin(db, "wh_dup_admin")
         emp = _make_user(db, "wh_dup_emp", weekly_hours=40.0)
