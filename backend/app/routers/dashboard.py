@@ -238,8 +238,8 @@ def get_overtime_account(
     # für das Mitarbeiter-Dashboard deaktivieren.
     show_year_end_projection = get_bool_setting(
         db,
-        current_user.tenant_id,
         SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD,
+        tenant_id=current_user.tenant_id,
         default=True,
     )
 

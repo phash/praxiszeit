@@ -54,37 +54,3 @@ SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD = (
     "show_year_end_overtime_admin_dashboard"
 )
 
-
-def get_bool_setting(
-    db: Session,
-    tenant_id,
-    key: str,
-    *,
-    default: bool = False,
-) -> bool:
-    """Liest eine boolesche Tenant-Einstellung.
-
-    Fehlende oder ungültige Werte fallen auf ``default`` zurück.
-    """
-
-    value = (
-        db.query(SystemSetting.value)
-        .filter(
-            SystemSetting.key == key,
-            SystemSetting.tenant_id == tenant_id,
-        )
-        .scalar()
-    )
-
-    if value is None:
-        return default
-
-    normalized = str(value).strip().lower()
-
-    if normalized == "true":
-        return True
-
-    if normalized == "false":
-        return False
-
-    return default

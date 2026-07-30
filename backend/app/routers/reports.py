@@ -88,7 +88,7 @@ def get_monthly_report(
 
     users = _get_active_visible_users(db, current_user.tenant_id)
 
-    show_year_end_projection = get_bool_setting(db, current_user.tenant_id, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, default=True)
+    show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
 
     reports = []
     _now = now_local()  # #402: Gate für die Jahresende-Projektion (nur aktueller Monat)
@@ -221,7 +221,7 @@ def get_weekly_report(
 
     users = _get_active_visible_users(db, current_user.tenant_id)
 
-    show_year_end_projection = get_bool_setting(db, current_user.tenant_id, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, default=True, )
+    show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
 
     reports = []
     _now = now_local()  # #402: Gate für die Jahresende-Projektion (nur aktuelle Woche)
