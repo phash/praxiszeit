@@ -267,6 +267,10 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         if is_night_wrk:
             night_work_count += 1
 
+        # F2 (1.18.0): Beschäftigungsfenster — siehe export_service (Parität).
+        # Rohstempel bleiben sichtbar (§16), Soll und Ist zählen 0.
+        in_window = calculation_service._within_employment_window(user, current_date)
+
         tr = TableRow()
         tr.addElement(_str_cell(current_date.strftime("%d.%m.%Y")))
         tr.addElement(_str_cell(WEEKDAY_NAMES[weekday]))
@@ -276,6 +280,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             last_end = max((e.end_time for e in day_entries if e.end_time), default=None)  # §16: echtes Tagesende
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
+            if not in_window:
+                total_day_net = Decimal("0.00")
             tr.addElement(_str_cell(first_start.strftime("%H:%M")))
             tr.addElement(_str_cell(last_end.strftime("%H:%M") if last_end else "offen"))
             tr.addElement(_int_cell(total_break))
@@ -297,7 +303,13 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             daily_target = daily_target * _sd_factor
 
         # Soll + Abwesenheit + Bemerkung
-        if is_weekend:
+        if not in_window:
+            target = Decimal("0.00")  # F2: kein Soll außerhalb der Beschäftigung
+            tr.addElement(_float_cell(0.0))
+            tr.addElement(_float_cell(0.0))
+            tr.addElement(_str_cell("Außerhalb des Beschäftigungszeitraums"))
+            tr.addElement(_str_cell(""))
+        elif is_weekend:
             target = Decimal("0.00")
             if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
@@ -618,6 +630,10 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         if is_night_wrk:
             night_work_count += 1
 
+        # F2 (1.18.0): Beschäftigungsfenster — siehe export_service (Parität).
+        # Rohstempel bleiben sichtbar (§16), Soll und Ist zählen 0.
+        in_window = calculation_service._within_employment_window(user, current_date)
+
         tr = TableRow()
         tr.addElement(_str_cell(current_date.strftime("%d.%m.%Y")))
         tr.addElement(_str_cell(WEEKDAY_NAMES[weekday]))
@@ -627,6 +643,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             last_end = max((e.end_time for e in day_entries if e.end_time), default=None)  # §16: echtes Tagesende
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(float(e.net_hours) for e in day_entries)
+            if not in_window:
+                total_day_net = 0.0
             tr.addElement(_str_cell(first_start.strftime("%H:%M")))
             tr.addElement(_str_cell(last_end.strftime("%H:%M") if last_end else "offen"))
             tr.addElement(_int_cell(total_break))
@@ -639,7 +657,12 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             tr.addElement(_float_cell(0.0))
             net = 0.0
 
-        if is_weekend:
+        if not in_window:
+            tr.addElement(_float_cell(0.0))  # F2: kein Soll außerhalb der Beschäftigung
+            tr.addElement(_float_cell(0.0))
+            tr.addElement(_str_cell("Außerhalb des Beschäftigungszeitraums"))
+            tr.addElement(_str_cell(""))
+        elif is_weekend:
             if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
             elif is_sunday:

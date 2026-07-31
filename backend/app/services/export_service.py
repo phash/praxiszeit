@@ -562,6 +562,14 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
 
         # Get time entries if exist (may be multiple per day)
         day_entries = entries_by_date.get(current_date, [])
+        # F2 (1.18.0): Tage außerhalb des Beschäftigungsfensters (vor
+        # first_work_day / nach last_work_day) tragen weder Soll noch Ist —
+        # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
+        # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
+        # im selben Blatt und die Jahresübersicht im selben Workbook bereits
+        # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+        # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
+        in_window = calculation_service._within_employment_window(user, current_date)
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = any(
@@ -579,6 +587,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             last_end = max((e.end_time for e in day_entries if e.end_time), default=None)
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
+            if not in_window:
+                total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
             sheet.cell(row=row, column=5).value = total_break
@@ -610,7 +620,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             daily_target = daily_target * _sd_factor
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
-        if is_weekend:
+        if not in_window:
+            target = Decimal('0.00')  # F2: kein Soll außerhalb der Beschäftigung
+            sheet.cell(row=row, column=9).value = "Außerhalb des Beschäftigungszeitraums"
+        elif is_weekend:
             target = Decimal('0.00')
             if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
@@ -1108,6 +1121,14 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         sheet.cell(row=row, column=2).value = weekday_name
 
         day_entries = entries_by_date.get(current_date, [])
+        # F2 (1.18.0): Tage außerhalb des Beschäftigungsfensters (vor
+        # first_work_day / nach last_work_day) tragen weder Soll noch Ist —
+        # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
+        # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
+        # im selben Blatt und die Jahresübersicht im selben Workbook bereits
+        # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+        # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
+        in_window = calculation_service._within_employment_window(user, current_date)
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = any(
@@ -1125,6 +1146,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             last_end = max((e.end_time for e in day_entries if e.end_time), default=None)
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
+            if not in_window:
+                total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
             sheet.cell(row=row, column=5).value = total_break
@@ -1153,7 +1176,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             daily_target = daily_target * _sd_factor
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
-        if is_weekend:
+        if not in_window:
+            target = Decimal('0.00')  # F2: kein Soll außerhalb der Beschäftigung
+            sheet.cell(row=row, column=9).value = "Außerhalb des Beschäftigungszeitraums"
+        elif is_weekend:
             target = Decimal('0.00')
             if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
@@ -1777,6 +1803,14 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             is_holiday = cur in holidays_by_date
             day_absences = absences_by_date.get(cur, [])  # I-1: alle Absences des Tages
             day_entries = entries_by_date.get(cur, [])
+        # F2 (1.18.0): Tage außerhalb des Beschäftigungsfensters (vor
+            # first_work_day / nach last_work_day) tragen weder Soll noch Ist —
+            # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
+            # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
+            # im selben Blatt und die Jahresübersicht im selben Workbook bereits
+            # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+            # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
+            in_window = calculation_service._within_employment_window(user, cur)
 
             is_night = any(
                 e.end_time is not None and is_night_work(e.start_time, e.end_time)
@@ -1794,6 +1828,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 bis = last_end.strftime('%H:%M') if last_end else 'offen'
                 pause_str = str(sum(e.break_minutes or 0 for e in day_entries))
                 total_day_net = sum(e.net_hours for e in day_entries)
+                if not in_window:
+                    total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
                 netto_val = float(total_day_net)
                 net = total_day_net
                 total_net += net
@@ -1816,7 +1852,11 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             if _sd_factor is not None:
                 daily_target = daily_target * _sd_factor
 
-            if is_weekend:
+            if not in_window:
+                target = Decimal('0.00')  # F2: kein Soll außerhalb der Beschäftigung
+                abw = "Außerhalb des Beschäftigungszeitraums"
+                bg = None
+            elif is_weekend:
                 target = Decimal('0.00')
                 if is_sunday and day_entries:
                     abw = 'Sonntagsarbeit (\u00a79/\u00a710)'
