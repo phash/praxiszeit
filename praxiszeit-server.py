@@ -720,8 +720,15 @@ def _restrict_file_permissions(file_path: Path):
     cmds.append(["icacls", str(file_path), "/inheritance:r"])  # last: keeps explicit grants
     for cmd in cmds:
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            # errors="replace": the service runs with PYTHONUTF8=1, icacls
+            # answers in the OEM codepage (cp850 on a German Windows). A strict
+            # decode would raise UnicodeDecodeError right past the except clause
+            # below and take the whole service start down over a cosmetic
+            # message.
+            subprocess.run(
+                cmd, check=True, capture_output=True, text=True, errors="replace",
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
             logger.warning(
                 f"icacls step failed on {file_path.name} ({' '.join(cmd[2:])}): {exc}"
             )
@@ -743,8 +750,11 @@ def _windows_acl_is_inherited(file_path: Path) -> bool:
     if not IS_WINDOWS:
         return False
     try:
+        # errors="replace" — siehe _restrict_file_permissions: PYTHONUTF8=1 vs.
+        # OEM-Codepage darf hier keinen Ausnahmefehler erzeugen.
         result = subprocess.run(
-            ["icacls", str(file_path)], capture_output=True, text=True,
+            ["icacls", str(file_path)],
+            capture_output=True, text=True, errors="replace",
         )
     except (OSError, subprocess.SubprocessError):
         return True
