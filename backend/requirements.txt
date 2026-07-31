@@ -27,7 +27,12 @@ python-multipart>=0.0.18,<0.1  # Floor >=0.0.18 (DoS-Fix, security-Audit M-02), 
 # Feiertage: python-holidays (aktiv gepflegt) — ersetzt das seit 2023 unmaintained
 # workalendar (#175). Bildet aktuelle Bundesland-Feiertage korrekt ab (z. B. MV
 # Frauentag seit 2023). Nur zur Sync-Zeit genutzt (seedet PublicHoliday-Rows).
-holidays==0.99
+# 2026-07-31 (Abhaengigkeits-Audit): 0.99 -> 0.101. Vor/nach-Vergleich ueber
+# holiday_service._german_holidays (inkl. BY-catholic-Kategorie und der
+# Namens-Normalisierung) fuer ALLE 16 Bundeslaender und die Jahre 2025/2026/2027:
+# 526 Feiertagseintraege, Datum und Name byte-identisch, SHA256 je Bundesland
+# gleich. Kein Verhaltenswechsel beim Seeden der public_holidays.
+holidays==0.101
 openpyxl==3.1.*
 odfpy==1.4.*
 reportlab==4.*
