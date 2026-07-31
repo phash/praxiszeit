@@ -436,12 +436,9 @@ def retarget_absence_hours(
             PublicHoliday.date <= end,
         ).all()
     }
-    # Sondertags-Konfiguration je betroffenem Jahr (das Fenster kann eine
-    # Jahresgrenze ueberspannen).
-    special_cfgs = {
-        y: special_days_service.get_special_day_config(db, user.tenant_id, y)
-        for y in range(start.year, end.year + 1)
-    }
+    # Die Sondertags-Konfiguration wird hier NICHT geladen — siehe die
+    # Begruendung an ``target`` in der Schleife (Fund A): der Faktor gehoert auf
+    # die Leseseite, nicht in den gespeicherten Wert.
     wh_changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
@@ -479,12 +476,23 @@ def retarget_absence_hours(
             continue
 
         schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        # Audit 2026-07-31 (Fund A): BEWUSST das UNGEWICHTETE Tagessoll — der
+        # #146/#394-Sondertagsfaktor (24./31.12.) gehoert NICHT in den
+        # gespeicherten Wert. ``Absence.hours`` traegt in dieser Anwendung das
+        # volle Tagessoll des Tages; der Faktor lebt auf der LESESEITE
+        # (``_day_soll_contribution`` fuers Soll, :func:`credit_day_weight` fuers
+        # Ist, :func:`half_special_day_weight` fuer die Urlaubstage) — genau so
+        # buchen auch die beiden menschlichen Schreiber
+        # (``absences.create_absence``, ``admin_change_requests``).
+        #
+        # Solange die Leseseite den Faktor nicht anwandte, war das Hineinrechnen
+        # hier zufaellig richtig. Seit ``credit_day_weight`` (Fund K) ist es
+        # doppelt: ein halber 24.12. mit Krankmeldung stand danach mit 2,00 Soll
+        # gegen 1,00 Ist — ein stilles Defizit an einem Tag, der nach § 3 EntgFG
+        # saldo-neutral sein MUSS. Verschaerfend wich der gespeicherte Wert am
+        # Sondertag dadurch IMMER vom neu berechneten ab, sodass die
+        # Gleichheitspruefung unten bei JEDEM Lauf ansprang (nicht idempotent).
         target = get_daily_target_for_date(user, d, schedule)
-        # None = keine Sondertagsregel (normaler Tag). Gleiche Behandlung wie in
-        # _day_soll_contribution: Faktor NUR anwenden, wenn es einen gibt.
-        factor = special_days_service.special_day_target_factor(d, special_cfgs[d.year])
-        if factor is not None:
-            target = target * factor
         if target <= 0:
             continue
 
