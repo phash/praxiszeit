@@ -654,6 +654,25 @@ def create_absence(
         db.add(absence)
         created_absences.append(absence)
 
+    # Audit 2026-07-31 (U1, Serverseite): eine Buchung, die NICHTS bucht, ist ein
+    # Fehler — keine 201 mit leerer Liste. Erreichbar, wenn die Schleife oben
+    # jeden Zieltag als 0-Stunden-Tag uebersprungen hat (Tagesplan-MA mit
+    # ``track_hours``, z. B. Di/Do frei). Der Aufrufer bekam bisher eine
+    # Erfolgsantwort ohne Inhalt; das Monatsjournal meldete daraufhin
+    # „Gespeichert", obwohl nichts entstand (und hatte den vorherigen Eintrag
+    # bereits geloescht). Der Rollback der bis hier vorgemerkten Aenderungen
+    # (Urlaubsrueckgabe, geloeschte Zeiteintraege) passiert implizit: es wurde
+    # noch nicht committet, die Session wird am Request-Ende geschlossen.
+    if not created_absences:
+        _days = ", ".join(d.strftime("%d.%m.%Y") for d in dates_to_create[:5])
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Für {_days} sind 0 Stunden geplant — an einem Tag ohne "
+                f"geplante Arbeitszeit kann keine Abwesenheit gebucht werden."
+            ),
+        )
+
     # Audit 2026-07-31 (A2): letzte Verteidigungslinie. Die Existenz-Sonde oben
     # laeuft unter der Anker-Sperre, aber eine parallele Sitzung kann ihre Zeile
     # bereits eingefuegt und noch nicht committed haben (die Sonde sieht sie dann
@@ -760,6 +779,23 @@ def delete_absence(
         tenant_id=current_user.tenant_id,
     )
     db.add(audit)
+
+    # Audit 2026-07-31 (uebernommen aus Welle C): Anker-Sperre auf der
+    # Benutzerzeile VOR dem Anfassen der abhaengigen Zeilen. Die Sperrreihenfolge
+    # ist im ganzen Projekt Benutzer -> Antrag/Abwesenheit (create_absence,
+    # review_change_request, Betriebsferien). Der Loeschpfad wich als einziger ab:
+    # die Session ist ``autoflush=False``, der oben per ``db.add`` vorgemerkte
+    # Audit-Log-INSERT (der ueber seinen Fremdschluessel implizit ein
+    # ``FOR KEY SHARE`` auf ``users`` nimmt) wird erst beim ``flush()`` unten
+    # ausgefuehrt — die ChangeRequest-Zeile wurde also ZUERST gesperrt. Damit
+    # konnten ein Loeschen und eine gleichzeitige Antrags-Genehmigung ueber Kreuz
+    # aufeinander warten (ABBA); Postgres schoss einen der beiden mit
+    # ``deadlock detected`` ab (HTTP 500 fuer den Anwender).
+    # F-026: der Lock-Read wird zusaetzlich am Mandanten gefiltert.
+    db.query(User).filter(
+        User.id == absence.user_id,
+        User.tenant_id == current_user.tenant_id,
+    ).with_for_update().first()
 
     # Fix #1 (belt-and-suspenders): null any ChangeRequest referencing this
     # absence so the delete cannot FK-violate (500) on a not-yet-migrated DB

@@ -276,3 +276,74 @@ def test_journal_day_rows_sum_to_monthly_summary(db, test_user):
     sum_actual = round(sum(d["actual_hours"] for d in result["days"]), 2)
     assert sum_target == pytest.approx(result["monthly_summary"]["target_hours"])
     assert sum_actual == pytest.approx(result["monthly_summary"]["actual_hours"])
+
+
+# --- Audit 2026-07-31 / uebernommen aus Welle B ------------------------------
+# Feiertag MIT Krank-/Fortbildungs-Abwesenheit: die Tageszeile zaehlte die
+# gutgeschriebenen Stunden nicht ins Ist, waehrend get_monthly_actual sie zaehlt
+# (credited_absences ohne Feiertags-Ausnahme). Die Tageszeile widersprach damit
+# dem Summary im SELBEN Response.
+
+def test_journal_holiday_with_sick_credits_actual_like_calculation(db, test_user):
+    """Krank an einem Feiertag: Ist = gutgeschriebene Stunden (wie
+    get_monthly_actual), Soll bleibt 0 (Feiertag)."""
+    d = date(2026, 3, 11)  # Mittwoch
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    _make_absence(db, test_user, d, AbsenceType.SICK, hours=8.0)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["target_hours"] == 0.0
+    assert day["actual_hours"] == 8.0
+    assert day["balance"] == 8.0
+
+    expected_actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
+    assert round(sum(x["actual_hours"] for x in result["days"]), 2) == pytest.approx(
+        float(expected_actual))
+    assert result["monthly_summary"]["actual_hours"] == pytest.approx(float(expected_actual))
+
+
+def test_journal_holiday_with_training_credits_actual(db, test_user):
+    """Dieselbe Regel fuer Fortbildung (der zweite ist-gutgeschriebene Typ)."""
+    d = date(2026, 3, 11)
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    _make_absence(db, test_user, d, AbsenceType.TRAINING, hours=6.0)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 6.0
+
+
+def test_journal_holiday_without_absence_unchanged(db, test_user):
+    """Kontrolltest (Byte-Identitaet): ein Feiertag ohne Abwesenheit und ein
+    Feiertag, an dem gearbeitet wurde, bleiben unveraendert."""
+    d = date(2026, 3, 11)
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 0.0
+    assert day["target_hours"] == 0.0
+
+    _make_entry(db, test_user, d, 9, 13)  # 4h am Feiertag gearbeitet
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 4.0
+    assert day["target_hours"] == 0.0
+
+
+def test_journal_holiday_with_vacation_stays_zero(db, test_user):
+    """Kontrolltest: ein NICHT ist-gutgeschriebener Typ (Urlaub) am Feiertag
+    aendert nichts — 0/0/0, genau wie get_monthly_actual ihn nicht zaehlt."""
+    d = date(2026, 3, 11)
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    _make_absence(db, test_user, d, AbsenceType.VACATION, hours=8.0)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 0.0
+    assert day["target_hours"] == 0.0

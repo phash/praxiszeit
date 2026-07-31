@@ -194,7 +194,17 @@ def get_journal(
         )))
 
         if is_weekend or is_holiday_day:
-            actual_hours = time_hours
+            # Audit 2026-07-31 (uebernommen aus Welle B): auch hier zaehlen die
+            # ist-gutgeschriebenen Stunden (TRAINING/SICK) mit — ``get_range_actual``
+            # summiert seine ``credited_absences`` OHNE Feiertags-/Wochenend-
+            # Ausnahme. Ohne diesen Summanden widersprach die Tageszeile dem
+            # monthly_summary im SELBEN Response, sobald an einem Feiertag eine
+            # Krank- oder Fortbildungs-Abwesenheit lag (Feiertag + Krankmeldung
+            # ueber mehrere Tage ist der Regelfall). ``credited_sum`` ist 0, wenn
+            # kein solcher Eintrag existiert → alle uebrigen Wochenend-/
+            # Feiertagszeilen bleiben unveraendert. Das Soll bleibt 0 (Feiertage
+            # fallen auch aus ``get_range_target``).
+            actual_hours = time_hours + credited_sum
             target_hours = Decimal("0")
         elif day_absences:
             # L2 + L3 (Audit 2026-07-31): EINE Quelle fuer Soll und Ist der

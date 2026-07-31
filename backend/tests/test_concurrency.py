@@ -499,3 +499,117 @@ def test_same_type_double_booking_never_raises_integrity_error(
             {"u": str(USER_ID), "d": _ABS_DAY2},
         ).scalar()
     assert n == 1, n
+
+
+# --- Übernommen aus Welle C: delete_absence ohne Anker-Sperre ----------------
+
+
+def _seed_absence_with_cr() -> tuple:
+    """Eine Abwesenheit + einen Änderungsantrag, der sie referenziert."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        ab = Absence(
+            user_id=USER_ID, tenant_id=TENANT_ID, date=_ABS_DAY,
+            type=AbsenceType.SICK, hours=8.0, half_day=False,
+        )
+        session.add(ab)
+        session.flush()
+        cr = ChangeRequest(
+            tenant_id=TENANT_ID,
+            user_id=USER_ID,
+            request_type=ChangeRequestType.UPDATE,
+            status=ChangeRequestStatus.PENDING,
+            entry_kind="absence",
+            absence_id=ab.id,
+            proposed_date=_ABS_DAY,
+            reason="Audit-Test 2026-07-31 (Welle C)",
+        )
+        session.add(cr)
+        session.commit()
+        return ab.id, cr.id
+    finally:
+        session.close()
+
+
+def _run_delete_absence(results: list, absence_id):
+    """Ruft die ECHTE Endpoint-Funktion `delete_absence` auf."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        me = session.query(User).filter(User.id == USER_ID).first()
+        absences_router.delete_absence(
+            absence_id=str(absence_id), db=session, current_user=me,
+        )
+        results.append(("deleted",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+def test_delete_absence_locks_the_user_row_before_the_change_request(
+    concurrency_seed, clean_absence_state, app_engine,
+):
+    """Löschen einer Abwesenheit muss dieselbe Sperrreihenfolge nutzen wie die
+    Antrags-Genehmigung: Benutzerzeile ZUERST, dann die abhängige Zeile.
+
+    ``delete_absence`` setzte referenzierende ``change_requests``-Zeilen auf
+    NULL (= Sperre auf der Antragszeile), bevor es überhaupt die Benutzerzeile
+    berührte — die Session ist ``autoflush=False``, der zuvor per ``db.add``
+    vorgemerkte Audit-Log-INSERT (der über den Fremdschlüssel implizit ein
+    ``FOR KEY SHARE`` auf ``users`` nimmt) wird erst beim späteren ``flush()``
+    ausgeführt. ``review_change_request`` sperrt umgekehrt erst die
+    Benutzerzeile (``FOR UPDATE``) und dann die Antragszeile — klassisches
+    ABBA: beide Vorgänge blockieren sich gegenseitig, Postgres schießt einen
+    von beiden mit ``deadlock detected`` ab (HTTP 500 für den Anwender).
+
+    Ablauf: Sitzung A macht Schritt 1 der Genehmigung (Anker auf ``users``).
+    Der Thread ruft ``delete_absence``. Danach macht A Schritt 2 (Antragszeile).
+    Ohne den Anker in ``delete_absence`` hält der Thread zu diesem Zeitpunkt
+    bereits die Antragszeile und wartet auf ``users`` → Deadlock. Mit dem Anker
+    wartet er VOR der Antragszeile, A kommt durch, danach der Thread.
+    """
+    absence_id, cr_id = _seed_absence_with_cr()
+
+    reviewer = SessionLocal()
+    set_tenant_context(reviewer, TENANT_ID)
+    # Schritt 1 von review_change_request: Anker auf der Benutzerzeile.
+    assert reviewer.query(User).filter(
+        User.id == USER_ID, User.tenant_id == TENANT_ID,
+    ).with_for_update().first() is not None
+
+    results: list = []
+    t = threading.Thread(target=_run_delete_absence, args=(results, absence_id))
+    t.start()
+    time_module.sleep(1.5)
+    assert not results, (
+        f"Das Löschen lief trotz gehaltener Anker-Sperre durch: {results}"
+    )
+
+    # Schritt 2 von review_change_request: die Antragszeile. Ohne den Anker im
+    # Löschpfad hält der Thread sie bereits → deadlock detected.
+    locked_cr = reviewer.query(ChangeRequest).filter(
+        ChangeRequest.id == cr_id, ChangeRequest.tenant_id == TENANT_ID,
+    ).with_for_update().first()
+    assert locked_cr is not None
+    reviewer.commit()
+    reviewer.close()
+
+    t.join(timeout=20)
+    assert results == [("deleted",)], results
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        n = conn.execute(
+            text("SELECT COUNT(*) FROM absences WHERE id = :a"), {"a": str(absence_id)},
+        ).scalar()
+        ref = conn.execute(
+            text("SELECT absence_id FROM change_requests WHERE id = :c"), {"c": str(cr_id)},
+        ).scalar()
+    assert n == 0
+    assert ref is None

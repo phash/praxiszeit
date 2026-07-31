@@ -896,6 +896,32 @@ def update_time_entry(
     if entry.end_time is not None and entry.end_time <= entry.start_time:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
+    # Audit 2026-07-31 (U2): einen LAUFENDEN Eintrag (bisher ohne Ende) darf
+    # dieser Pfad nicht mit einer noch nicht erreichten Uhrzeit schliessen. Das
+    # Bearbeiten-Formular belegte „Bis" mit dem festen Wert 17:00 vor und schickte
+    # es immer mit — wer mittags eine Notiz nachtrug, schloss damit unbemerkt
+    # seinen laufenden Eintrag auf 17:00. Beim naechsten Einstempeln entstand eine
+    # zweite, ueberlappende Zeile (eine Ueberschneidungspruefung gibt es nicht),
+    # und §4 meldete eine verwirrende Pausenverletzung fuer nie gearbeitete Zeit.
+    # Fuer §16 ist eine Endzeit in der Zukunft eine erfundene Zeit.
+    #
+    # Bewusst eng: der Anlege-Pfad laesst fuer HEUTE weiterhin eine spaetere
+    # Uhrzeit zu (nur das Datum ist auf „nicht in der Zukunft" begrenzt, siehe
+    # TimeEntryBase.validate_not_future). Eine Sperre auch fuer bereits
+    # geschlossene Eintraege waere dazu asymmetrisch (loeschen + neu anlegen
+    # umginge sie) und gehoert an beide Pfade gemeinsam — siehe Bericht.
+    if (orig_snapshot["end_time"] is None
+            and update_data.get("end_time") is not None
+            and entry.date == _today_local()
+            and update_data["end_time"] > _now_local().time()):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Das Ende darf nicht in der Zukunft liegen — der Eintrag läuft "
+                "noch. Bitte die tatsächliche Endzeit eintragen oder ausstempeln."
+            ),
+        )
+
     # §16/#201: snapshot the employee's intended RAW times BEFORE the clamp below
     # overwrites entry.start/end with credited time. An approval-required waiver
     # CR (further down) must carry these raw values so the clamp at approval can
