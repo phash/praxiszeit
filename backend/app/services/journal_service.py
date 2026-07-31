@@ -111,6 +111,52 @@ def get_journal(
             dt = dt * factor
         return dt
 
+    def _absence_day_target(d: date, day_absences: List[Absence], worked: Decimal) -> Decimal:
+        """L2 + L3 (Audit 2026-07-31): Tages-Soll an einem Tag MIT Abwesenheit —
+        aus DERSELBEN Quelle wie die Berechnung (``get_monthly_target``) und die
+        §16-Datei (``export_service.absence_day_target``):
+        ``calculation_service._day_soll_contribution``.
+
+        Vorher standen hier zwei Einzelpflaster nebeneinander, die beide von der
+        maßgeblichen Rechnung abwichen:
+
+        * **L2** (Regression 1.18.0): die Klemmung des soll-reduzierenden Anteils
+          auf ``max(0, Tagessoll − gearbeitet)`` wurde auch auf HALBTAGE
+          angewandt. ``_day_soll_contribution`` klemmt bewusst nur ganztägige
+          Abwesenheiten (``half is False``); ein Halbtag behält immer
+          0,5 × Tagessoll. Bei einem Halbtag mit mehr Arbeit als der nicht freien
+          Hälfte zeigte die Tageszeile 6/6/0, während die Berechnung im SELBEN
+          Response 4/6/+2 sagte (und die §16-Datei ebenfalls 4/6).
+        * **L3**: bei einer Abwesenheit OHNE Zeiteintrag wurde
+          ``actual = target = Σ absence.hours`` gesetzt. Bei einem Halbtag schrieb
+          das die offene Arbeitshälfte als ERBRACHTES Ist gut (4/4/0 statt
+          4/0/−4) und färbte ausgerechnet die Zeile grün, in der eine fehlende
+          Erfassung auffallen soll.
+
+        Ist-Seite: ``gearbeitete Stunden + gutgeschriebene TRAINING/SICK-Stunden``
+        — dieselbe Regel wie ``get_range_actual``. TRAINING/SICK/OVERTIME sind
+        nicht soll-reduzierend und fallen daher aus der Half-Map heraus (wie im
+        Export-Zwilling; im calculation_service erledigt das die Query).
+
+        Ganztagsfälle bleiben byte-identisch: ohne Zeiteintrag 0 (der Tag fällt
+        auch aus ``get_monthly_target``), mit behaltenem Zeiteintrag
+        ``min(Tagessoll, gearbeitet)`` — genau die 1.18.0-F1-Klemmung.
+        """
+        soll_reducing = [
+            a for a in day_absences
+            if a.type not in (AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME)
+        ]
+        half_map = calculation_service._soll_reducing_absence_half_map(soll_reducing)
+        return calculation_service._day_soll_contribution(
+            db, user, d,
+            # Feiertage sind oben schon in einen eigenen Zweig abgebogen.
+            holiday_dates=set(),
+            absence_half_map=half_map,
+            wh_changes=None,
+            special_cfg=special_day_config,
+            worked_map={d: worked},
+        )
+
     days = []
     for day_num in range(1, last_day + 1):
         d = date(year, month, day_num)
@@ -140,7 +186,6 @@ def get_journal(
             day_type = "empty"
 
         time_hours = Decimal(str(sum(e.net_hours for e in day_entries)))
-        absence_sum = Decimal(str(sum(float(a.hours) for a in day_absences))) if day_absences else Decimal("0")
 
         # Credited absence hours (TRAINING, SICK count as worked)
         credited_sum = Decimal(str(sum(
@@ -151,44 +196,17 @@ def get_journal(
         if is_weekend or is_holiday_day:
             actual_hours = time_hours
             target_hours = Decimal("0")
-        elif day_absences and not day_entries:
-            daily_target = _eff_daily_target(d)
-            if day_absences[0].type == AbsenceType.TRAINING:
-                actual_hours = absence_sum
-                target_hours = daily_target
-            elif day_absences[0].type == AbsenceType.SICK:
-                actual_hours = absence_sum
-                target_hours = daily_target
-            elif day_absences[0].type == AbsenceType.OVERTIME:
-                actual_hours = Decimal("0")
-                target_hours = daily_target
-            else:
-                # Vacation / other: balance = 0
-                actual_hours = absence_sum
-                target_hours = absence_sum
-        elif day_entries and day_absences:
-            # Mixed day: time entries + absences (e.g. half-day work + half-day sick/training)
-            daily_target = _eff_daily_target(d)
+        elif day_absences:
+            # L2 + L3 (Audit 2026-07-31): EINE Quelle fuer Soll und Ist der
+            # Abwesenheits-Tageszeile — identisch zu get_monthly_target/
+            # get_monthly_actual und zum §16-Dateiexport. Deckt den frueheren
+            # "nur Abwesenheit"- und den "Misch-Tag"-Zweig gemeinsam ab:
+            # TRAINING/SICK werden ueber credited_sum dem Ist gutgeschrieben
+            # (bei reiner Abwesenheit ist time_hours 0, das Ergebnis also
+            # unveraendert deren Stundensumme), OVERTIME zaehlt 0 Ist und laesst
+            # das Soll stehen.
             actual_hours = time_hours + credited_sum
-            # VACATION/OTHER reduzieren das Soll auf Misch-Tagen. OVERTIME NICHT
-            # (Review 2026-06-23): get_monthly_target schliesst OVERTIME explizit
-            # von der Soll-Reduktion aus (Soll bleibt, Tag zaehlt als 0h Ist) — die
-            # Journal-Tageszeile muss dieselbe Regel nutzen, sonst weicht der
-            # Tages-Saldo vom Monats-Summary ab.
-            target_reducing_sum = Decimal(str(sum(
-                float(a.hours) for a in day_absences
-                if a.type not in (AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME)
-            )))
-            # F1 (1.18.0): eine soll-reduzierende Abwesenheit darf hoechstens den
-            # NICHT gearbeiteten Teil des Tages streichen — sonst zeigt die
-            # Journal-Zeile bei einer Ganztags-Buchung auf einem Tag mit
-            # behaltenem Zeiteintrag Soll 0 neben Ist 4 (+4 h Phantom-Saldo).
-            # Deckungsgleich mit calculation_service._day_soll_contribution
-            # (dort min(Tagessoll, gearbeitete Stunden) als Rest-Soll).
-            target_reducing_sum = min(
-                target_reducing_sum, max(Decimal("0"), daily_target - time_hours)
-            )
-            target_hours = daily_target - target_reducing_sum
+            target_hours = _absence_day_target(d, day_absences, time_hours)
         else:
             actual_hours = time_hours
             target_hours = _eff_daily_target(d)
@@ -199,9 +217,10 @@ def get_journal(
         # Summe der Tageszeilen vom angezeigten Monats-Ist ab, sobald ein TimeEntry/
         # SICK ausserhalb des Fensters liegt (Rehire/Import/Datumskorrektur). Die
         # Roh-Eintraege bleiben sichtbar (§16), zaehlen aber 0. target_hours wird
-        # ebenfalls genullt: auf einem out-of-window MISCH-Tag (Eintrag+Absence)
-        # waere target = _eff_daily_target(0) − reducing_sum negativ -> sonst ein
-        # phantom-positiver Tages-Saldo (Review 2026-06-23).
+        # ebenfalls genullt (der Helper selbst kennt das Fenster nicht — er
+        # bekaeme fuer einen out-of-window Misch-Tag min(Tagessoll, gearbeitet)
+        # und erzeugte damit einen phantom-positiven Tages-Saldo neben dem auf 0
+        # gesetzten Ist; Review 2026-06-23).
         if not calculation_service._within_employment_window(user, d):
             actual_hours = Decimal("0")
             target_hours = Decimal("0")

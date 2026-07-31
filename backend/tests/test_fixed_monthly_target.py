@@ -519,3 +519,146 @@ def test_monthly_exceeded_none_when_mode_off(db, default_tenant):
                          start_time=time(8, 0), end_time=time(18, 0), break_minutes=60))
     db.commit()
     assert milog_service.monthly_exceeded_check(db, u, 2025, 3) is None
+
+
+# --- Audit 2026-07-31 / L1: Arbeit an einem bezahlten Fehltag darf das Ist ---
+# NIE senken.
+#
+# `_fixed_month_absence_hours` strich die KOMPLETTE Gutschrift bzw. die komplette
+# unbezahlte Soll-Minderung, sobald am Tag IRGENDEIN TimeEntry lag ("reale
+# Erfassung gewinnt"). Das Soll bleibt aber flach `agreed_monthly_hours` — wer an
+# einem Feiertag zwei Stunden arbeitet, hatte damit am Monatsende WENIGER Ist als
+# wer gar nicht arbeitet. Das Defizit floss in settlement_aging und unterdrueckte
+# dort die Faelligkeitswarnung. Erreichbar ueber den „+"-Knopf im Monatsjournal
+# (keep_time_entries) UND ueber normales Stempeln an einem Feiertag/Urlaubstag.
+
+def test_credit_holiday_with_work_is_clamped_not_dropped(db, default_tenant):
+    """L1: 2 h gearbeitet an einem Feiertag mit 3 h Planzeit → Gutschrift 1,00
+    (der NICHT gearbeitete Rest), nicht 0,00. Ist bleibt 3,00 = Planzeit."""
+    u = _mk(db)
+    db.add(PublicHoliday(date=date(2025, 3, 3), name="X", year=2025,
+                         tenant_id=DEFAULT_TENANT_ID))  # Montag, geplant 3h
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 3),
+                     start_time=time(8, 0), end_time=time(10, 0), break_minutes=0))  # 2h netto
+    db.commit()
+
+    assert cs.fixed_month_credit(db, u, 2025, 3) == Decimal("1.00")
+    assert cs.get_monthly_actual(db, u, 2025, 3) == Decimal("3.00")  # 2 erfasst + 1 Gutschrift
+
+
+def test_work_on_paid_absence_day_never_lowers_ist(db, default_tenant):
+    """L1 (Kernsymptom): mehr Arbeit darf nie weniger Ist ergeben. Zwei MA im
+    selben Tenant, derselbe Feiertag auf einem geplanten Montag — nur einer
+    arbeitet 2 h. Vor dem Fix: 2,00 (arbeitend) < 3,00 (nicht arbeitend)."""
+    u_idle = _mk(db)
+    u_worked = _mk(db, username="fx-worked", email="fxw@t.l")
+    db.add(PublicHoliday(date=date(2025, 3, 3), name="X", year=2025,
+                         tenant_id=DEFAULT_TENANT_ID))  # tenant-weit → beide MA
+    db.add(TimeEntry(user_id=u_worked.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 3),
+                     start_time=time(8, 0), end_time=time(10, 0), break_minutes=0))  # 2h netto
+    db.commit()
+
+    idle = cs.get_monthly_actual(db, u_idle, 2025, 3)
+    worked = cs.get_monthly_actual(db, u_worked, 2025, 3)
+    assert idle == Decimal("3.00")
+    assert worked >= idle
+
+
+def test_unpaid_reduction_with_work_is_clamped_not_dropped(db, default_tenant):
+    """L1 symmetrisch: ein unbezahlt-freier Tag mit BEHALTENEM Zeiteintrag liess
+    das volle Soll stehen. Richtig: nur der nicht gearbeitete Teil faellt weg."""
+    u = _mk(db)
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))  # Mi, geplant 3h
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                     start_time=time(8, 0), end_time=time(10, 0), break_minutes=0))  # 2h netto
+    db.commit()
+
+    assert cs.fixed_month_unpaid_reduction(db, u, 2025, 3) == Decimal("1.00")
+    assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("39.00")  # 40 − 1
+
+
+def test_credit_clamp_byte_identical_without_entry_and_when_fully_worked(db, default_tenant):
+    """L1 Kontrolltest (Byte-Identitaet): OHNE Zeiteintrag bleibt die Gutschrift
+    unveraendert voll; ist mindestens die Planzeit gearbeitet, bleibt sie
+    unveraendert 0 — genau wie unter dem alten `d in entry_dates`-Skip."""
+    u_none = _mk(db)
+    u_full = _mk(db, username="fx-full", email="fxf@t.l")
+    db.add(PublicHoliday(date=date(2025, 3, 3), name="X", year=2025,
+                         tenant_id=DEFAULT_TENANT_ID))  # Montag, geplant 3h
+    db.add(TimeEntry(user_id=u_full.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 3),
+                     start_time=time(8, 0), end_time=time(11, 30), break_minutes=0))  # 3,5h > 3h
+    db.commit()
+
+    assert cs.fixed_month_credit(db, u_none, 2025, 3) == Decimal("3.00")
+    assert cs.fixed_month_credit(db, u_full, 2025, 3) == Decimal("0.00")
+    assert cs.get_monthly_actual(db, u_full, 2025, 3) == Decimal("3.50")
+
+
+def test_credit_half_day_vacation_with_work_on_the_other_half(db, default_tenant):
+    """L1 bei TEILWEISER Abdeckung: ½ Urlaub (1,5 h von 3 h Planzeit) + 1,5 h
+    gearbeitet. Die gearbeitete Zeit deckt zuerst den NICHT von der Abwesenheit
+    abgedeckten Teil des Tages — die Gutschrift der Urlaubshaelfte bleibt daher
+    voll erhalten (1,50), Ist = 1,5 erfasst + 1,5 Gutschrift = Planzeit."""
+    u = _mk(db)
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                   type=AbsenceType.VACATION, hours=Decimal("1.5"), half_day=True))  # Mi
+    db.add(TimeEntry(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                     start_time=time(8, 0), end_time=time(9, 30), break_minutes=0))  # 1,5h netto
+    db.commit()
+
+    assert cs.fixed_month_credit(db, u, 2025, 3) == Decimal("1.50")
+    assert cs.get_monthly_actual(db, u, 2025, 3) == Decimal("3.00")
+
+
+# --- Audit 2026-07-31 / L4: das feste Monats-Soll darf nicht negativ werden ---
+#
+# `get_range_target` zog die unbezahlte Minderung ohne Untergrenze vom festen
+# Monats-Soll ab. Beide Groessen haben unterschiedliche Basen (kalendertag-
+# anteiliges `agreed` gegen die Summe der PLANSTUNDEN der Fehltage) — ein Monat
+# mit mehr Planstunden als `agreed` (Monate mit 22 Werktagen sind 4,4 Wochen,
+# mehr als die 13/3 der Ableitung) ergab bei durchgehender unbezahlter
+# Abwesenheit ein NEGATIVES Soll und damit Phantom-Ueberstunden.
+
+_MARCH_2025_PLANNED = (3, 5, 10, 12, 17, 19, 24, 26, 31)  # 5 Mo + 4 Mi
+
+
+def _unpaid_whole_month(db, u):
+    for day in _MARCH_2025_PLANNED:
+        db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, day),
+                       type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))
+    db.commit()
+
+
+def test_fixed_target_never_negative_when_unpaid_exceeds_agreed(db, default_tenant):
+    """L4: 6 h/Woche → agreed = 6 × 13/3 = 26 h; Maerz 2025 hat aber 9 geplante
+    Tage à 3 h = 27 h. Ein voller Monat unbezahlt frei ergab Soll −1,00 und
+    damit +1,00 h Phantom-Ueberstunden. Richtig: Soll 0,00, Saldo 0,00."""
+    u = _mk(db, weekly_hours=Decimal("6"), agreed_monthly_hours=Decimal("26"))
+    _unpaid_whole_month(db, u)
+
+    assert cs.fixed_month_unpaid_reduction(db, u, 2025, 3) == Decimal("27.00")
+    assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("0.00")
+    assert cs.get_monthly_actual(db, u, 2025, 3) == Decimal("0.00")
+    assert cs.get_monthly_actual(db, u, 2025, 3) - cs.get_monthly_target(db, u, 2025, 3) == Decimal("0.00")
+
+
+def test_range_target_week_slice_never_negative(db, default_tenant):
+    """L4 auf der Wochen-Scheibe (reports.py): anteiliges Ziel der Woche
+    03.–09.03.2025 = 26 × 7/31 = 5,87 h gegen 6 h unbezahlte Planzeit (Mo+Mi)
+    → −0,13 ohne Klemmung."""
+    u = _mk(db, weekly_hours=Decimal("6"), agreed_monthly_hours=Decimal("26"))
+    _unpaid_whole_month(db, u)
+
+    assert cs.get_range_target(db, u, date(2025, 3, 3), date(2025, 3, 9)) == Decimal("0.00")
+
+
+def test_fixed_target_unpaid_below_agreed_unchanged(db, default_tenant):
+    """L4 Kontrolltest (Byte-Identitaet): solange die Minderung das anteilige
+    Ziel nicht uebersteigt, rechnet die Klemmung unveraendert (26 − 3 = 23)."""
+    u = _mk(db, weekly_hours=Decimal("6"), agreed_monthly_hours=Decimal("26"))
+    db.add(Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 3, 5),
+                   type=AbsenceType.OTHER, hours=Decimal("3"), half_day=False))  # Mi
+    db.commit()
+
+    assert cs.get_monthly_target(db, u, 2025, 3) == Decimal("23.00")

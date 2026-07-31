@@ -671,8 +671,30 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
                                 from_date=None):
     """Gemeinsame Schleife: Σ geplante Stunden für Tage mit einem passenden
     ganztägigen Absence-Typ (bzw. Feiertag, wenn include_holidays), im Fenster,
-    ≥ from_date (falls gesetzt) und ≤ up_to_date, ohne konkurrierenden TimeEntry
-    (reale Erfassung gewinnt)."""
+    ≥ from_date (falls gesetzt) und ≤ up_to_date.
+
+    L1 (Audit 2026-07-31): Ein TimeEntry am selben Tag ließ den Tag früher
+    KOMPLETT ausfallen („reale Erfassung gewinnt"). Das feste Monats-Soll bleibt
+    aber flach ``agreed_monthly_hours`` — wer an einem Feiertag zwei Stunden
+    arbeitete, hatte am Monatsende WENIGER Ist als wer gar nicht arbeitete
+    (2,00 statt 3,00 Planstunden), und das Phantom-Defizit zehrte im FIFO von
+    ``milog_service.settlement_aging`` die älteste Einlage auf und unterdrückte
+    ``MILOG_SETTLEMENT_DUE``. Erreichbar über den „+"-Knopf im Monatsjournal
+    (``keep_time_entries``, seit 1.18.0 der Regelweg) UND über normales Stempeln
+    an einem Feiertag/Urlaubstag (dort gibt es keinen Guard).
+
+    Statt des Skips wird jetzt geklemmt — deckungsgleich mit
+    :func:`_day_soll_contribution` (dort bleibt ``min(Tagessoll, gearbeitete
+    Stunden)`` als Rest-Soll stehen): die erfassten Stunden füllen zuerst den von
+    der Abwesenheit NICHT abgedeckten Teil des Tages, nur der Überhang zehrt an
+    der Gutschrift bzw. an der unbezahlten Minderung. Bei voller Abdeckung
+    (``coverage == 1``, der beschriebene Fall) ist das exakt
+    ``max(0, geplant − gearbeitet)``; bei einem Halbtag bleibt die Gutschrift der
+    freien Hälfte erhalten, wenn nur die Arbeitshälfte gestempelt wurde (sonst
+    wäre der Halbtag dieselbe Falle in klein).
+
+    Byte-identisch für alle Tage OHNE Zeiteintrag (``worked == 0``) und für
+    ``gearbeitet ≥ geplant`` (dort war der Skip schon das richtige Ergebnis)."""
     days_in_month = monthrange(year, month)[1]
     cfg = special_days_service.get_special_day_config(db, user.tenant_id, year)
     # Finding 2 (Whole-Branch-Review, cross-set double-count guard): holiday
@@ -693,10 +715,13 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
         Absence.type.in_(list(types)), Absence.start_time.is_(None),  # nur ganztägig
     ).all():
         by_date.setdefault(a.date, []).append(a)  # Liste: Misch-Tag ½+½ nicht verlieren
-    entry_dates = {e.date for e in db.query(TimeEntry.date).filter(
+    # L1: die erfassten Netto-Stunden je Tag (nicht mehr nur „hat einen Eintrag").
+    worked_by_date: Dict[date, Decimal] = {}
+    for e in db.query(TimeEntry).filter(
         TimeEntry.user_id == user.id, TimeEntry.tenant_id == user.tenant_id,
         date_in_month(TimeEntry.date, year, month),
-    ).all()}
+    ).all():
+        worked_by_date[e.date] = worked_by_date.get(e.date, Decimal('0')) + e.net_hours
     # #431: EIN Preload für die ganze Monatsschleife statt einer Query je Tag —
     # _fixed_planned_hours löst den Vertrags-Snapshot jetzt pro Datum auf.
     wh_changes = db.query(WorkingHoursChange).filter(
@@ -712,8 +737,6 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
             continue
         if not _within_employment_window(user, d):
             continue
-        if d in entry_dates:
-            continue  # reale Erfassung gewinnt
         if not include_holidays and d in holiday_dates:
             continue  # Finding 2: Feiertag bereits über die Credit-Seite abgedeckt
         coverage = Decimal('1') if (include_holidays and d in holiday_dates) else Decimal('0')
@@ -723,7 +746,14 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
         if coverage <= 0:
             continue
         planned = _fixed_planned_hours(db, user, d, cfg, wh_changes=wh_changes)
-        total += planned * coverage
+        covered = planned * coverage
+        # L1: reale Erfassung geht zuerst gegen den NICHT abgedeckten Teil des
+        # Tages; erst der Überhang zehrt an der Gutschrift/Minderung.
+        worked = worked_by_date.get(d, Decimal('0'))
+        if worked > 0:
+            worked = max(Decimal('0'), worked - (planned - covered))
+            covered = max(Decimal('0'), covered - worked)
+        total += covered
     return total.quantize(Decimal('0.01'))
 
 
@@ -1061,8 +1091,19 @@ def get_range_target(
                               if _within_employment_window(user, date(y, m, dd)))
                 if win_days > 0 and in_days < win_days:
                     mt = (mt * Decimal(in_days) / Decimal(win_days))
-                mt -= fixed_month_unpaid_reduction(db, user, y, m,
-                                                   from_date=month_start, up_to_date=month_end)
+                # L4 (Audit 2026-07-31): Untergrenze 0 je Monatsscheibe. Ziel und
+                # Minderung haben unterschiedliche Basen — das Ziel ist
+                # KALENDERTAG-anteilig (agreed × Fenstertage), die Minderung ist
+                # die Summe der PLANSTUNDEN der unbezahlten Fehltage. Ein Monat
+                # kann mehr Planstunden tragen als `agreed` (22 Werktage sind
+                # 4,4 Wochen, mehr als die 13/3 der Ableitung), ebenso eine
+                # Wochenscheibe mehr als ihr Kalendertag-Anteil. Ohne Klemmung
+                # ergab ein voller Monat unbezahlt frei ein NEGATIVES Soll und
+                # damit Phantom-Überstunden in genau dieser Höhe (Monat −2,00 h,
+                # Wochenbericht −0,65 h). Mehr als das ganze Soll kann eine
+                # unbezahlte Freistellung nie streichen.
+                mt = max(Decimal('0'), mt - fixed_month_unpaid_reduction(
+                    db, user, y, m, from_date=month_start, up_to_date=month_end))
                 total_fixed += mt
             m += 1
             if m > 12:
