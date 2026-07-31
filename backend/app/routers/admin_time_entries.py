@@ -19,6 +19,8 @@ from app.routers.time_entries import (
 )
 from app.services.arbzg_utils import is_night_work
 from app.services import work_window_service
+from app.routers.absences import _MASKED_ABSENCE_TYPES
+from app.services.export_service import ABSENCE_TYPE_LABELS_DE
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -30,6 +32,33 @@ router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(re
 # UI rendered as a phantom "Gelöscht". The dedicated compliance audit page keeps
 # full visibility (changes_only=False).
 _CHANGE_ACTIONS = ("create", "update", "delete")
+
+# #431 / Art. 5(2) + Art. 9 DSGVO: Marker der Zugriffsvermerke dieser Fläche.
+# `action` ist varchar(40) (Migration 044) — beide Werte bleiben deutlich darunter.
+_AUDIT_READ_ACTIONS = ("health_data_read", "audit_log_read")
+
+# Welche Audit-Notiz trägt einen gesundheitsbezogenen Abwesenheitstyp?
+# Zwei Notiz-Formate können einen Typ führen:
+#   * maschinell  ``absence:<typ>:<stunden>h``   (Buchung/Storno/CR-Genehmigung)
+#   * Klartext    ``Krank 8,0 h — <Auslöser>``   (#431 Rückrechnung, _wh_change_audit)
+# Beide Muster werden aus DERSELBEN Quelle abgeleitet wie die Maskierung der
+# Kollegen-Feeds (``absences._MASKED_ABSENCE_TYPES``) — kommt dort ein Typ hinzu,
+# greift er hier automatisch mit, statt still zu divergieren.
+_SENSITIVE_NOTE_TOKENS = tuple(
+    f"absence:{t.value}:" for t in _MASKED_ABSENCE_TYPES
+) + tuple(
+    ABSENCE_TYPE_LABELS_DE[t.value] + " "
+    for t in _MASKED_ABSENCE_TYPES
+    if t.value in ABSENCE_TYPE_LABELS_DE
+)
+
+
+def _audit_note_is_health_sensitive(log: TimeEntryAuditLog) -> bool:
+    """True, wenn ``old_note``/``new_note`` einen maskierten Abwesenheitstyp nennt."""
+    for note in (log.old_note, log.new_note):
+        if note and any(token in note for token in _SENSITIVE_NOTE_TOKENS):
+            return True
+    return False
 
 
 # ── Admin Time Entry Management ─────────────────────────────────────────
@@ -487,6 +516,34 @@ def list_audit_log(
             .limit(limit)
             .all()
         )
+
+    # #431 / Art. 5(2) + Art. 9: JEDEN gezielten Admin-Lesezugriff auf das
+    # Protokoll einer FREMDEN Person vermerken — eine Zeile pro Request, exakt
+    # nach dem Muster von ``absences.list_absences``. Diese Fläche zeigt seit
+    # #431 ``old_note``/``new_note`` an, und die Rückrechnung nach einer
+    # Wochenstunden-Änderung schreibt dort je nachgezogener Abwesenheit
+    # deutschen Klartext („Krank 8,0 h"). Damit sieht ein Admin hier dieselben
+    # Gesundheitsdaten wie über Abwesenheitsliste, Journal und Berichte — die
+    # alle protokollieren; nur diese Fläche tat es nicht.
+    #
+    # Wie in absences.py hängt die Spur am ZUGRIFF, nicht am Ergebnis: eine
+    # gezielte Abfrage, die (noch) nichts findet, wird ebenfalls vermerkt.
+    # Die ungefilterte Gesamtliste ist die Verwaltungsansicht und bleibt außen
+    # vor — auch das identisch zur Abwesenheitsliste.
+    if user_id and str(user_id) != str(current_user.id):
+        sensitive = any(_audit_note_is_health_sensitive(log) for log in logs)
+        db.add(TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=user_id,
+            changed_by=current_user.id,
+            action="health_data_read" if sensitive else "audit_log_read",
+            new_note=("Admin-Lesezugriff auf fremdes Änderungsprotokoll "
+                      + ("inkl. Gesundheitsdaten" if sensitive else "ohne Gesundheitsdaten")),
+            source="dsgvo",
+            tenant_id=current_user.tenant_id,
+        ))
+        db.commit()
+
     return _enrich_audit_responses(logs, db)
 
 
