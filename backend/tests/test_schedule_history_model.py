@@ -76,3 +76,27 @@ def test_defaults_are_weekly_mode(db, test_user):
     assert row.use_daily_schedule is False
     assert row.hours_monday is None
     assert row.work_days_per_week is None
+
+
+def test_user_weekly_hours_matches_history_precision():
+    """#431 (Migration 069): ``users.weekly_hours`` MUSS dieselbe Genauigkeit
+    tragen wie ``working_hours_changes.weekly_hours``.
+
+    ``_sync_user_from_change`` spiegelt den Snapshot nach jedem Anlegen/Loeschen
+    einer Historien-Zeile auf die User-Zeile zurueck. War die User-Spalte
+    schmaler (``Numeric(4,1)``), rundete Postgres beim Schreiben still — aus
+    17,75 wurde 17,8 — und Benutzerliste/Art.-15-Export widersprachen danach
+    Historie und Soll-Berechnung.
+
+    SQLite ignoriert Numeric-Precision komplett, dieser Test kann die Rundung
+    also nicht selbst provozieren (Fehlerklasse #383/#408; der Round-Trip ist
+    gegen ein echtes Postgres verifiziert). Er haelt aber die MODELL-Zusage
+    fest, sodass ein Zurueckdrehen der Spaltenbreite auffliegt.
+    """
+    from app.models import User
+
+    user_col = User.__table__.c.weekly_hours.type
+    hist_col = WorkingHoursChange.__table__.c.weekly_hours.type
+
+    assert (user_col.precision, user_col.scale) == (hist_col.precision, hist_col.scale)
+    assert (user_col.precision, user_col.scale) == (4, 2)
