@@ -810,3 +810,120 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     expect(previewCalls()).toBe(afterMount + 1);
   });
 });
+
+describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Saldo-/Urlaubswirkung', () => {
+  // Der Kasten hing an „rückwirkend ODER Abwesenheits-Stunden werden
+  // umgeschrieben ODER blockiert". Eine ZUKUNFTSdatierte Änderung, die einen
+  // Wochentag wegfallen lässt, ändert aber den Urlaubsverbrauch, ohne eine
+  // einzige Abwesenheits-Stunde umzuschreiben: `retarget_absence_hours`
+  // überspringt Tage, deren neues Tagessoll 0 ist. `affected_absences = 0`,
+  // `is_retroactive = false` → der ganze Kasten blieb aus, obwohl
+  // `vacation_days_after` um 1 niedriger war. Handbuch und In-App-Hilfe fordern
+  // ausdrücklich auf, genau diese Zeile zu prüfen.
+
+  it('zeigt den Kasten, wenn nur die Urlaubstage sich ändern (Mittwoch fällt weg)', async () => {
+    mockPreview({
+      is_retroactive: false,
+      period_start: '2026-09-01',
+      period_end: '2026-09-30',
+      overtime_before: 12.5, overtime_after: 12.5,
+      vacation_days_before: 12, vacation_days_after: 11,
+      affected_absences: 0,
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '24' } });
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/Urlaub 2026/)).toBeInTheDocument();
+    expect(within(box).getByText('12,0 Tage')).toBeInTheDocument();
+    expect(within(box).getByText('11,0 Tage')).toBeInTheDocument();
+    // Nicht als „betrifft gebuchte Abwesenheiten" überschreiben — es sind null.
+    expect(within(box).queryByText(/Betrifft bereits gebuchte Abwesenheiten/)).not.toBeInTheDocument();
+    expect(within(box).queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
+  });
+
+  it('verlangt für diese Auswirkung dieselbe ausdrückliche Bestätigung', async () => {
+    mockPreview({
+      is_retroactive: false,
+      period_start: '2026-09-01',
+      period_end: '2026-09-30',
+      overtime_before: 12.5, overtime_after: 12.5,
+      vacation_days_before: 12, vacation_days_after: 11,
+      affected_absences: 0,
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '24' } });
+    await flushDebounce();
+    await screen.findByRole('status');
+
+    const submit = screen.getByRole('button', { name: /Hinzufügen/i });
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(submit).not.toBeDisabled();
+  });
+
+  it('zeigt den Kasten auch, wenn nur der Überstundensaldo sich ändert', async () => {
+    mockPreview({
+      is_retroactive: false,
+      period_start: '2026-09-01',
+      period_end: '2026-09-30',
+      overtime_before: 12.5, overtime_after: 8.5,
+      vacation_days_before: 12, vacation_days_after: 12,
+      affected_absences: 0,
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '24' } });
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText('−4,0 h')).toBeInTheDocument();
+  });
+
+  it('bleibt still, wenn sich Saldo und Urlaub nicht unterscheiden', async () => {
+    // Die Gegenprobe: bei unverändertem Snapshot steigt die Vorschau
+    // serverseitig VOR der Simulation aus und liefert „nachher == vorher".
+    // Dieser Fall darf nicht plötzlich einen Warnkasten erzeugen.
+    mockPreview({
+      is_retroactive: false,
+      period_start: '2026-09-01',
+      period_end: '2026-09-30',
+      overtime_before: 12.5, overtime_after: 12.5,
+      vacation_days_before: 12, vacation_days_after: 12,
+      affected_absences: 0,
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '24' } });
+    await flushDebounce();
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Hinzufügen/i })).not.toBeDisabled();
+  });
+
+  it('bleibt still bei Rundungsrauschen unterhalb der angezeigten Genauigkeit', async () => {
+    // Kein exakter Float-Vergleich: 12,500000000000002 h ist derselbe Saldo.
+    mockPreview({
+      is_retroactive: false,
+      period_start: '2026-09-01',
+      period_end: '2026-09-30',
+      overtime_before: 12.5, overtime_after: 12.500000000000002,
+      vacation_days_before: 12, vacation_days_after: 11.999999999999998,
+      affected_absences: 0,
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '24' } });
+    await flushDebounce();
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});

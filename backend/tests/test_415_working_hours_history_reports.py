@@ -497,6 +497,138 @@ class TestFormatWeeklyHoursHistory:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Abschluss-Review #431, Fund 1: Arbeitstage-Wechsel benennen
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestWorkDaysChangeIsNamed:
+    """Eine Aenderung, die die Wochensumme unberuehrt laesst, aber die
+    ARBEITSTAGE verschiebt, erzeugte eine Aenderungszeile, die zeichengleich zur
+    Kopfzeile war — waehrend das Tagessoll derselben Tageszeilen sprang."""
+
+    def test_work_days_change_at_equal_weekly_hours_is_named(self):
+        """Der gemeldete Fall: 40 h auf 5 Tage → 40 h auf 4 Tage. Vorher stand
+        hier „ab 16.03.2026: 40,0 Std/Woche" neben einer Kopfzeile „40,0" —
+        zweimal dieselbe Zahl, waehrend das Tagessoll von 8,00 auf 10,00 ging."""
+        text = format_weekly_hours_history([
+            _seg(date(2026, 3, 1), date(2026, 3, 15), 40, work_days_per_week=5),
+            _seg(date(2026, 3, 16), date(2026, 3, 31), 40, work_days_per_week=4),
+        ])
+        assert text == "ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage"
+
+    def test_hours_and_work_days_change_together(self):
+        text = format_weekly_hours_history([
+            _seg(date(2026, 3, 1), date(2026, 3, 15), 40, work_days_per_week=5),
+            _seg(date(2026, 3, 16), date(2026, 3, 31), 20, work_days_per_week=4),
+        ])
+        assert text == "ab 16.03.2026: 20,0 Std/Woche auf 4 Arbeitstage"
+
+    def test_single_work_day_is_singular(self):
+        text = format_weekly_hours_history([
+            _seg(date(2026, 3, 1), date(2026, 3, 15), 8, work_days_per_week=5),
+            _seg(date(2026, 3, 16), date(2026, 3, 31), 8, work_days_per_week=1),
+        ])
+        assert text == "ab 16.03.2026: 8,0 Std/Woche auf 1 Arbeitstag"
+
+    def test_switching_back_from_a_day_plan_names_the_new_work_days(self):
+        """Rueckschalten Tagesplan → gleichmaessig: die Tage kommen aus dem
+        Snapshot beider Segmente, der Vergleich funktioniert ueber den
+        Moduswechsel hinweg."""
+        text = format_weekly_hours_history([
+            _seg(date(2026, 3, 1), date(2026, 3, 15), 40, use_daily_schedule=True,
+                 day_hours=(10, 10, 10, 10, None), work_days_per_week=4),
+            _seg(date(2026, 3, 16), date(2026, 3, 31), 40, work_days_per_week=5),
+        ])
+        assert text == "ab 16.03.2026: 40,0 Std/Woche auf 5 Arbeitstage"
+
+    def test_compact_uses_the_short_wording(self):
+        """PDF-Meta (Schriftgroesse 8, Querformat) — „Tage" statt
+        „Arbeitstage"."""
+        text = format_weekly_hours_history([
+            _seg(date(2026, 3, 1), date(2026, 3, 15), 40, work_days_per_week=5),
+            _seg(date(2026, 3, 16), date(2026, 3, 31), 40, work_days_per_week=4),
+        ], compact=True)
+        assert text == "ab 16.03.2026: 40,0 Std/Woche auf 4 Tage"
+
+    def test_compact_singular(self):
+        text = format_weekly_hours_history([
+            _seg(date(2026, 3, 1), date(2026, 3, 15), 8, work_days_per_week=5),
+            _seg(date(2026, 3, 16), date(2026, 3, 31), 8, work_days_per_week=1),
+        ], compact=True)
+        assert text == "ab 16.03.2026: 8,0 Std/Woche auf 1 Tag"
+
+    def test_unchanged_work_days_keep_the_frozen_415_wording(self):
+        """BYTE-IDENTITAET: vor diesem Branch waren die Arbeitstage nicht
+        historisiert — alle Segmente eines Mitarbeitenden trugen denselben Wert.
+        Fuer JEDEN so darstellbaren Verlauf muss der Satz woertlich der von #415
+        bleiben, in beiden Schreibweisen."""
+        for work_days in range(1, 8):
+            for compact in (False, True):
+                text = format_weekly_hours_history([
+                    _seg(date(2026, 1, 1), date(2026, 3, 9), 40, work_days_per_week=work_days),
+                    _seg(date(2026, 3, 10), date(2026, 8, 31), 30, work_days_per_week=work_days),
+                    _seg(date(2026, 9, 1), date(2026, 12, 31), Decimal("20.5"),
+                         work_days_per_week=work_days),
+                ], compact=compact)
+                assert text == (
+                    "ab 10.03.2026: 30,0 Std/Woche; ab 01.09.2026: 20,5 Std/Woche"
+                ), f"work_days={work_days} compact={compact}"
+
+    def test_only_the_changing_segment_names_the_days(self):
+        """Der Zusatz haftet an der Aenderung, nicht am Zustand: die dritte
+        Zeile behaelt dieselben vier Tage und nennt sie deshalb nicht noch
+        einmal."""
+        text = format_weekly_hours_history([
+            _seg(date(2026, 1, 1), date(2026, 3, 9), 40, work_days_per_week=5),
+            _seg(date(2026, 3, 10), date(2026, 8, 31), 40, work_days_per_week=4),
+            _seg(date(2026, 9, 1), date(2026, 12, 31), 30, work_days_per_week=4),
+        ])
+        assert text == (
+            "ab 10.03.2026: 40,0 Std/Woche auf 4 Arbeitstage; "
+            "ab 01.09.2026: 30,0 Std/Woche"
+        )
+
+    def test_day_plan_wording_is_untouched(self):
+        """Im Tagesplan-Modus stehen die Arbeitstage bereits als benannte
+        Wochentage da — dort kein Zusatz, auch wenn sich ihre Zahl aendert."""
+        text = format_weekly_hours_history([
+            _seg(date(2026, 1, 1), date(2026, 2, 28), 40, work_days_per_week=5),
+            _seg(date(2026, 3, 1), date(2026, 12, 31), 17,
+                 use_daily_schedule=True, day_hours=(8, 5, 4, None, None),
+                 work_days_per_week=3),
+        ])
+        assert text == "ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche"
+
+    def test_work_days_changed_helper_is_the_one_rule(self):
+        a = _seg(date(2026, 1, 1), date(2026, 3, 9), 40, work_days_per_week=5)
+        b = _seg(date(2026, 3, 10), date(2026, 12, 31), 40, work_days_per_week=4)
+        assert calculation_service.work_days_changed(a, b) is True
+        assert calculation_service.work_days_changed(b, b) is False
+        # Ohne Vergleichspunkt wird nichts behauptet.
+        assert calculation_service.work_days_changed(None, b) is False
+
+    def test_end_to_end_in_the_xlsx_monthly_header(self, db, test_user):
+        """Der Seam-Test: alle sechs #415-Flaechen holen den Text aus
+        `format_weekly_hours_history` — eine Datei reicht als Nachweis, dass der
+        Zusatz dort ankommt."""
+        from app.services.export_service import generate_monthly_report
+        # Basis-Zeile: der Zustand vor der Aenderung darf nicht vom (inzwischen
+        # nachgezogenen) User-Rueckfallwert abhaengen — genau dafuer legt der
+        # Schreibpfad sie an.
+        _mk_change(db, test_user, date(2026, 1, 1), 40, work_days=5)
+        _mk_change(db, test_user, date(2026, 3, 16), 40, work_days=4)
+        test_user.work_days_per_week = 4  # aktueller Vertragswert nach dem Wechsel
+        db.commit()
+
+        wb = _load_xlsx(generate_monthly_report(db, 2026, 3))
+        sheet = wb[f"{test_user.last_name} {test_user.first_name}"[:31]]
+        assert sheet.cell(row=1, column=5).value == 40.0
+        assert sheet.cell(row=1, column=6).value == (
+            "ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
 # XLSX
 # ─────────────────────────────────────────────────────────────────────
 
@@ -673,6 +805,10 @@ class TestSurfacesShowTheDayPlan:
                 "use_daily_schedule": True,
                 "day_hours": [8.0, 5.0, 4.0, None, None],
                 "work_days_per_week": 3,
+                # 5 → 3 Arbeitstage; im Tagesplan-Modus rendert der Zwilling den
+                # Befund nicht (die Wochentage stehen dort namentlich da), das
+                # Feld sagt trotzdem die Wahrheit.
+                "work_days_changed": True,
             }]
         finally:
             test_app.dependency_overrides.clear()
@@ -701,6 +837,7 @@ class TestSurfacesShowTheDayPlan:
                 "use_daily_schedule": True,
                 "day_hours": [8.0, 5.0, 4.0, None, None],
                 "work_days_per_week": 3,
+                "work_days_changed": True,  # 5 → 3, wie im Monatsbericht
             }]
         finally:
             test_app.dependency_overrides.clear()
@@ -775,6 +912,46 @@ class TestMonthlyReportApi:
                 "use_daily_schedule": False,
                 "day_hours": [None] * 5,
                 "work_days_per_week": 5,
+                # Abschluss-Review #431, Fund 1: reine Stundenaenderung, die
+                # Arbeitstage bleiben — der Bildschirm schreibt denselben Satz
+                # wie vor diesem Branch.
+                "work_days_changed": False,
+            }]
+        finally:
+            test_app.dependency_overrides.clear()
+
+    def test_report_flags_a_work_days_change_for_the_screen(self, db, test_admin, test_user):
+        """Der Bildschirm sieht nur die Aenderungen (`segments[1:]`), nie das
+        Basissegment davor — der Befund „Arbeitstage geaendert" muss deshalb
+        mitgeliefert werden, sonst kann der Zwilling den Zusatz „auf 4
+        Arbeitstage" fuer die erste Aenderung eines Zeitraums nicht schreiben und
+        Bildschirm und Datei sagen Verschiedenes."""
+        from fastapi.testclient import TestClient
+        from app.database import get_db
+        from app.middleware.auth import get_current_user, require_admin
+        from tests.test_endpoints import test_app
+
+        _mk_change(db, test_user, date(2026, 1, 1), 40, work_days=5)
+        _mk_change(db, test_user, date(2026, 3, 16), 40, work_days=4)
+        test_user.work_days_per_week = 4
+        db.commit()
+
+        def _override_db():
+            yield db
+        test_app.dependency_overrides[get_db] = _override_db
+        test_app.dependency_overrides[get_current_user] = lambda: test_admin
+        test_app.dependency_overrides[require_admin] = lambda: test_admin
+        try:
+            r = TestClient(test_app).get("/api/admin/reports/monthly?month=2026-03")
+            assert r.status_code == 200, r.text
+            row = [x for x in r.json() if x["user_id"] == str(test_user.id)][0]
+            assert row["weekly_hours_changes"] == [{
+                "effective_from": "2026-03-16",
+                "weekly_hours": 40.0,
+                "use_daily_schedule": False,
+                "day_hours": [None] * 5,
+                "work_days_per_week": 4,
+                "work_days_changed": True,
             }]
         finally:
             test_app.dependency_overrides.clear()

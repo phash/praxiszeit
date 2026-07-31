@@ -343,6 +343,67 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
     expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
   });
 
+  // Abschluss-Review #431, Fund 3 (Important): die Fix-Runde davor zog nur
+  // `weekly_hours` und die fünf `hours_*` nach. `work_days_per_week` und
+  // `use_daily_schedule` blieben eingefroren, obwohl der Dialog beide schreibt
+  // und `_sync_user_from_change` sie bei einem Wirkungsdatum ≤ heute auf die
+  // User-Zeile zurückspiegelt — genau die Kombination „frische Summe neben
+  // eingefrorenem Rest", gegen die `displayDayHours` eingeführt wurde.
+
+  it('zieht die Arbeitstage über displayWorkDays nach (frische Summe neben veralteten Arbeitstagen)', () => {
+    renderForm({
+      // Stand beim Öffnen des Formulars: gleichmäßig 40 h auf 5 Tage.
+      editUser: { ...baseEditUser, weekly_hours: 40, work_days_per_week: 5 },
+      // Der Dialog hat „20 h auf 4 Tage, gültig ab heute" gespeichert,
+      // Users.tsx hat refetcht.
+      displayWeeklyHours: 20,
+      displayWorkDays: 4,
+    });
+    expect(screen.getByText('20,0 h/Woche')).toBeInTheDocument();
+    expect(document.getElementById('f-work-days')?.textContent).toBe('4');
+  });
+
+  it('zieht den Modus über displayUseDailySchedule nach', () => {
+    renderForm({
+      editUser: { ...baseEditUser, weekly_hours: 40, work_days_per_week: 5, use_daily_schedule: false },
+      // Der Dialog hat auf „Nach Tagen" umgestellt.
+      displayWeeklyHours: 17,
+      displayDayHours: [8, 5, 4, null, null],
+      displayWorkDays: 3,
+      displayUseDailySchedule: true,
+    });
+    // Der Modus-Status und die Wochenstunden-Box müssen beide den neuen Modus
+    // zeigen — sonst stünde „Einheitliche Tagesstunden" über einem Tagesplan.
+    expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
+    expect(screen.getByText('Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche')).toBeInTheDocument();
+    expect(screen.getByText(/belegten Wochentage im Tagesplan abgeleitet/)).toBeInTheDocument();
+    expect(document.getElementById('f-work-days')?.textContent).toBe('3');
+  });
+
+  it('zieht auch den Weg zurück auf „gleichmäßig" nach', () => {
+    renderForm({
+      editUser: {
+        ...baseEditUser, use_daily_schedule: true,
+        hours_monday: 8, hours_tuesday: 5, hours_wednesday: 4,
+        work_days_per_week: 3,
+      },
+      displayWeeklyHours: 40,
+      displayDayHours: [null, null, null, null, null],
+      displayWorkDays: 5,
+      displayUseDailySchedule: false,
+    });
+    expect(screen.getByText('Einheitliche Tagesstunden (kein individueller Tagesplan)')).toBeInTheDocument();
+    expect(screen.getByText('40,0 h/Woche')).toBeInTheDocument();
+    expect(screen.queryByText(/Mo 8,0/)).not.toBeInTheDocument();
+    expect(document.getElementById('f-work-days')?.textContent).toBe('5');
+  });
+
+  it('fällt ohne die Props auf den Stand des Formulars zurück (Anlegen/kein Treffer)', () => {
+    renderForm({ editUser: { ...baseEditUser, work_days_per_week: 3, use_daily_schedule: true, hours_monday: 8 } });
+    expect(document.getElementById('f-work-days')?.textContent).toBe('3');
+    expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
+  });
+
   it('erlaubt Arbeitstage/Tagesstunden-Haken/Tagesstunden weiterhin uneingeschränkt beim Anlegen', () => {
     renderForm();
     expect(document.getElementById('f-work-days')?.tagName).toBe('INPUT');

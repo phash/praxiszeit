@@ -230,4 +230,112 @@ describe('formatWeeklyHoursChanges (#415)', () => {
       ]),
     ).toBe('ab 01.03.2026: 0,0 Std/Woche');
   });
+
+  // ── Abschluss-Review #431, Fund 1: Arbeitstage-Wechsel ──────────────
+  //
+  // Zwilling: backend/tests/test_415_working_hours_history_reports.py
+  // (TestWorkDaysChangeIsNamed). Der Befund „Arbeitstage geändert" kommt vom
+  // Server (`work_days_changed`), weil die Antwort nur die Änderungen trägt —
+  // das Basissegment davor sieht der Bildschirm nie.
+
+  it('names the work days when they changed at unchanged weekly hours', () => {
+    // Zwilling: test_work_days_change_at_equal_weekly_hours_is_named.
+    // Vorher stand hier „ab 16.03.2026: 40,0 Std/Woche" neben einer Kopfzeile
+    // „40,0" — zweimal dieselbe Zahl, während das Tagessoll von 8,00 auf 10,00
+    // sprang.
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-16',
+          weekly_hours: 40,
+          work_days_per_week: 4,
+          work_days_changed: true,
+        },
+      ]),
+    ).toBe('ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage');
+  });
+
+  it('uses the singular for a single work day', () => {
+    // Zwilling: test_single_work_day_is_singular
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-16',
+          weekly_hours: 8,
+          work_days_per_week: 1,
+          work_days_changed: true,
+        },
+      ]),
+    ).toBe('ab 16.03.2026: 8,0 Std/Woche auf 1 Arbeitstag');
+  });
+
+  it('keeps the frozen #415 wording when the work days did not change', () => {
+    // Zwilling: test_unchanged_work_days_keep_the_frozen_415_wording.
+    // Vor #431 waren die Arbeitstage nicht historisiert — alle Segmente trugen
+    // denselben Wert, der Zusatz kann dort nie erscheinen.
+    for (const workDays of [1, 2, 3, 4, 5, 6, 7]) {
+      expect(
+        formatWeeklyHoursChanges([
+          {
+            effective_from: '2026-03-15',
+            weekly_hours: 30,
+            work_days_per_week: workDays,
+            work_days_changed: false,
+          },
+        ]),
+      ).toBe('ab 15.03.2026: 30,0 Std/Woche');
+    }
+    // Eine Antwort ganz ohne das Feld (Altbestand/Testdouble) behauptet nichts.
+    expect(
+      formatWeeklyHoursChanges([
+        { effective_from: '2026-03-15', weekly_hours: 30, work_days_per_week: 4 },
+      ]),
+    ).toBe('ab 15.03.2026: 30,0 Std/Woche');
+  });
+
+  it('names the work days only on the segment that changes them', () => {
+    // Zwilling: test_only_the_changing_segment_names_the_days
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-10',
+          weekly_hours: 40,
+          work_days_per_week: 4,
+          work_days_changed: true,
+        },
+        {
+          effective_from: '2026-09-01',
+          weekly_hours: 30,
+          work_days_per_week: 4,
+          work_days_changed: false,
+        },
+      ]),
+    ).toBe('ab 10.03.2026: 40,0 Std/Woche auf 4 Arbeitstage; ab 01.09.2026: 30,0 Std/Woche');
+  });
+
+  it('leaves the day-plan wording untouched', () => {
+    // Zwilling: test_day_plan_wording_is_untouched — im Tagesplan stehen die
+    // Arbeitstage bereits als benannte Wochentage da.
+    expect(
+      formatWeeklyHoursChanges([
+        {
+          effective_from: '2026-03-01',
+          weekly_hours: 17,
+          use_daily_schedule: true,
+          day_hours: [8, 5, 4, null, null],
+          work_days_per_week: 3,
+          work_days_changed: true,
+        },
+      ]),
+    ).toBe('ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche');
+  });
+
+  it('stays silent when the flag is set but the count is missing', () => {
+    // Defensiv, Zwilling: `_work_days_suffix` steigt bei `None` aus.
+    expect(
+      formatWeeklyHoursChanges([
+        { effective_from: '2026-03-16', weekly_hours: 40, work_days_changed: true },
+      ]),
+    ).toBe('ab 16.03.2026: 40,0 Std/Woche');
+  });
 });

@@ -172,6 +172,17 @@ export default function Users() {
     ]
     : undefined;
 
+  // Abschluss-Review #431, Fund 3 (Important): dasselbe Muster für die beiden
+  // übrigen soll-treibenden Felder, die der Dialog schreibt. `_sync_user_from_change`
+  // spiegelt sie bei einem Wirkungsdatum ≤ heute auf die User-Zeile zurück —
+  // ohne Nachführung stand „20,0 h/Woche" neben „Arbeitstage pro Woche: 5",
+  // während der Server längst 4 gespeichert hatte (und im Moduswechsel-Fall
+  // „Einheitliche Tagesstunden" über einem frischen Tagesplan). Wieder
+  // ausschließlich als schmale Anzeige-Props: `editingUser`/`formData` bleiben
+  // unangetastet, sonst verwirft der Sync ungespeicherte Eingaben.
+  const displayWorkDays = freshEditingUser?.work_days_per_week;
+  const displayUseDailySchedule = freshEditingUser?.use_daily_schedule;
+
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
   };
@@ -382,6 +393,8 @@ export default function Users() {
           onOpenHoursHistory={handleOpenHoursHistory}
           displayWeeklyHours={displayWeeklyHours}
           displayDayHours={displayDayHours}
+          displayWorkDays={displayWorkDays}
+          displayUseDailySchedule={displayUseDailySchedule}
         />
       )}
 

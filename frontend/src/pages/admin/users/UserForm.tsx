@@ -38,10 +38,20 @@ interface UserFormProps {
   // `formData.hours_*` bleibt unberührt. Fehlt der Wert, fällt die Anzeige
   // auf `formData.hours_*` zurück.
   displayDayHours?: (number | null)[];
+  // Abschluss-Review #431, Fund 3 (Important): dieselbe Bauart für die beiden
+  // übrigen historisierten Felder, die der Dialog schreibt. Ohne sie zeigte das
+  // Formular nach „Dialog öffnen → ändern → speichern" (Formular bleibt offen)
+  // eine frische Wochensumme NEBEN eingefrorenen Arbeitstagen und einem
+  // eingefrorenen Modus — genau die Widerspruchsklasse, gegen die
+  // `displayDayHours` eingeführt wurde. NUR für die read-only-Anzeigen;
+  // `formData` bleibt unberührt. Fehlt der Wert, gilt der Formularstand.
+  displayWorkDays?: number;
+  displayUseDailySchedule?: boolean;
 }
 
 export default function UserForm({
   editUser, onSaved, onOpenHoursHistory, displayWeeklyHours, displayDayHours,
+  displayWorkDays, displayUseDailySchedule,
 }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
@@ -326,7 +336,15 @@ export default function UserForm({
     formData.hours_thursday,
     formData.hours_friday,
   ]);
-  const weeklyHoursDisplay = formData.use_daily_schedule && dayPlanText
+  // Fund 3 (Abschluss-Review #431): Modus und Arbeitstage kommen — wie Summe
+  // und Breakdown — vorrangig aus den `display*`-Props. Sie sind seit #431
+  // historisiert und werden ausschließlich über den Dialog geschrieben; der
+  // liefert nach dem Speichern eine Refetch-Runde, die das Formular offen
+  // lässt. Ohne diese beiden Werte behauptete die Anzeige weiter den Stand von
+  // vor dem Dialog (Arbeitstage 5, obwohl 4 gespeichert wurde).
+  const displayedUseDailySchedule = displayUseDailySchedule ?? formData.use_daily_schedule;
+  const displayedWorkDays = displayWorkDays ?? formData.work_days_per_week;
+  const weeklyHoursDisplay = displayedUseDailySchedule && dayPlanText
     ? `${dayPlanText} = ${weeklyHoursTotal} h/Woche`
     : `${weeklyHoursTotal} h/Woche`;
 
@@ -471,7 +489,9 @@ export default function UserForm({
                 id="f-work-days"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
               >
-                {formData.work_days_per_week}
+                {/* Fund 3: der frisch nachgezogene Wert, nicht der beim Öffnen
+                    des Formulars eingefrorene. */}
+                {displayedWorkDays}
               </div>
             ) : (
               <input
@@ -487,7 +507,7 @@ export default function UserForm({
             )}
             <p className="text-xs text-gray-500 mt-1">
               {editUser
-                ? (formData.use_daily_schedule
+                ? (displayedUseDailySchedule
                   ? 'Wird aus der Zahl der belegten Wochentage im Tagesplan abgeleitet. Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.'
                   : 'Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.')
                 : 'Anzahl der Arbeitstage pro Woche (1-7)'}
@@ -809,7 +829,10 @@ export default function UserForm({
                 // Modus-Status, um ihn nicht zu duplizieren.
                 <>
                   <p className="text-sm font-medium text-gray-700">
-                    {formData.use_daily_schedule
+                    {/* Fund 3: der Modus wird ebenfalls nachgezogen — sonst
+                        stand „Einheitliche Tagesstunden" über einer
+                        Wochenstunden-Box, die längst einen Tagesplan zeigt. */}
+                    {displayedUseDailySchedule
                       ? (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
                       : (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
                   </p>

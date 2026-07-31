@@ -240,31 +240,81 @@ def format_weekly_hours_history(segments, compact: bool = False) -> str:
     * gleichmaessig — ``ab 15.03.2026: 30,0 Std/Woche`` (woertlich wie seit #415)
     * Tagesplan (#431) — ``ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche``
 
+    Aendern sich im gleichmaessigen Modus die ARBEITSTAGE, werden sie zusaetzlich
+    genannt (``ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage``) — siehe
+    :func:`_work_days_suffix`.
+
     Der Frontend-Zwilling ``utils/formatters.ts::formatWeeklyHoursChanges`` muss
     WORTGLEICH bleiben — Bildschirm und Datei duerfen nicht verschiedene Saetze
     sagen.
     """
     if len(segments) < 2:
         return ""
-    return "; ".join(_format_segment_change(seg, compact=compact) for seg in segments[1:])
+    return "; ".join(
+        # Der Vorgaenger ist Teil der Aussage: „auf 4 Arbeitstage" steht nur da,
+        # wo sich die Arbeitstage tatsaechlich geaendert haben.
+        _format_segment_change(seg, previous=segments[i], compact=compact)
+        for i, seg in enumerate(segments[1:])
+    )
 
 
-def _format_segment_change(segment, compact: bool = False) -> str:
-    """Ein Segment als „ab <Datum>: <Zustand>"."""
+def _work_days_suffix(segment, previous, compact: bool = False) -> str:
+    """„ auf 4 Arbeitstage" — aber NUR, wenn dieses Segment die Arbeitstage
+    gegenueber ``previous`` tatsaechlich aendert (Leerstring sonst).
+
+    Grund (Abschluss-Review #431, Fund 1): ``weekly_hours_segments`` splittet auf
+    dem VOLLSTAENDIGEN Snapshot, die #415-Formulierung nannte aber nur die
+    Wochenstunden. „40 h auf 5 Tage" → „40 h auf 4 Tage" erzeugte damit eine
+    Aenderungszeile, die zeichengleich zur Kopfzeile war (zweimal „40,0"),
+    waehrend ``get_daily_target_for_date`` (= Wochenstunden ÷ Arbeitstage) das
+    Tagessoll derselben Tageszeilen von 8,00 h auf 10,00 h hob — genau der
+    selbstwidersprüchliche §16-Beleg, gegen den #415 angetreten ist. Und seit
+    #431 ist der Dialog der EINZIGE Weg, die Arbeitstage zu aendern.
+
+    Die Bedingung „nur bei tatsaechlicher Aenderung" haelt den eingefrorenen
+    #415-Wortlaut fuer JEDEN Fall byte-identisch, der vor diesem Branch moeglich
+    war: die Arbeitstage waren nicht historisiert, alle Segmente eines
+    Mitarbeitenden trugen denselben Wert — der Zusatz kann dort nie erscheinen
+    (Test ``TestWorkDaysChangeIsNamed::test_unchanged_work_days_keep_the_frozen_415_wording``).
+
+    ``compact`` (PDF-Meta, Schriftgroesse 8 im Querformat) kuerzt „Arbeitstage"
+    zu „Tage" — wie die Kurzform der Stundenwerte auch.
+    """
+    if not calculation_service.work_days_changed(previous, segment):
+        return ""
+    days = segment.work_days_per_week
+    if days is None:
+        return ""
+    days = int(days)
+    if compact:
+        return f" auf {days} {'Tag' if days == 1 else 'Tage'}"
+    return f" auf {days} {'Arbeitstag' if days == 1 else 'Arbeitstage'}"
+
+
+def _format_segment_change(segment, previous=None, compact: bool = False) -> str:
+    """Ein Segment als „ab <Datum>: <Zustand>". ``previous`` ist das unmittelbar
+    davor gueltige Segment (``None`` = keins) und entscheidet allein darueber, ob
+    die Arbeitstage genannt werden."""
     prefix = f"ab {segment.start.strftime('%d.%m.%Y')}: "
+    suffix = ""
     if segment.use_daily_schedule:
         plan = format_day_plan(segment.day_hours, compact=compact)
         if plan:
             total = _de_hours_compact if compact else _de_hours_exact
             return f"{prefix}{plan} = {total(segment.weekly_hours)} h/Woche"
         # Kein einziger Tageswert → auf die gleichmaessige Formulierung
-        # zurueckfallen, statt einen leeren Satz zu schreiben.
+        # zurueckfallen, statt einen leeren Satz zu schreiben. Ohne Zusatz: die
+        # Arbeitstage einer (per Schema unmoeglichen) Zeile ohne einen einzigen
+        # Tageswert sagen nichts, und der Satz bleibt so woertlich der bisherige.
+    else:
+        suffix = _work_days_suffix(segment, previous, compact=compact)
     # Auch der gleichmaessige Zweig formatiert verlustfrei (`_de_hours_exact`):
     # fuer jeden vor diesem Branch speicherbaren Wert ist das zeichengleich zu
     # #415, und nur so sagen Datei und Bildschirm bei 38,25 h dasselbe.
-    # `compact` wirkt hier NICHT — die #415-Formulierung bleibt in der PDF-Meta
-    # woertlich (`_de_hours_exact`, nicht `_de_hours_compact`).
-    return f"{prefix}{_de_hours_exact(segment.weekly_hours)} Std/Woche"
+    # `compact` wirkt auf die STUNDENZAHL hier NICHT — die #415-Formulierung
+    # bleibt in der PDF-Meta woertlich (`_de_hours_exact`, nicht
+    # `_de_hours_compact`).
+    return f"{prefix}{_de_hours_exact(segment.weekly_hours)} Std/Woche{suffix}"
 
 
 def escape_pdf_text(value):

@@ -238,6 +238,37 @@ def weekly_hours_segments(
     return segments
 
 
+def work_days_changed(previous, segment) -> bool:
+    """#431: Aendert dieses Segment die ARBEITSTAGE gegenueber dem
+    vorhergehenden?
+
+    DIE eine Definition dieser Frage — genutzt vom Datei-Export
+    (``export_service._format_segment_change``) und vom API-Schema
+    (``schemas.reports.WeeklyHoursChangeInPeriod.from_segment``, das den Befund
+    als ``work_days_changed`` an den Frontend-Zwilling weiterreicht). Der
+    Bildschirm sieht nur die Aenderungen (``segments[1:]``), nicht das
+    Basissegment davor — ohne diesen mitgelieferten Befund koennte er die Frage
+    fuer die ERSTE Aenderung eines Zeitraums gar nicht beantworten und muesste
+    einen anderen Satz schreiben als die Datei.
+
+    Hintergrund: ``weekly_hours_segments`` splittet auf dem VOLLSTAENDIGEN
+    Snapshot, die #415-Formulierung des gleichmaessigen Modus nennt aber nur die
+    Wochenstunden. Ein Wechsel „40 h auf 5 Tage" → „40 h auf 4 Tage" erzeugte so
+    eine Aenderungszeile, die zeichengleich zur Kopfzeile war — waehrend das
+    Tagessoll derselben Tageszeilen von 8,00 h auf 10,00 h sprang.
+
+    ``previous is None`` (das erste Segment, oder eine Altantwort ohne Vorgaenger)
+    → ``False``: ohne Vergleichspunkt wird nichts behauptet.
+    """
+    if previous is None:
+        return False
+    before = getattr(previous, "work_days_per_week", None)
+    after = getattr(segment, "work_days_per_week", None)
+    if before is None or after is None:
+        return False
+    return int(before) != int(after)
+
+
 class RetargetWindow(NamedTuple):
     """Der WIRKUNGSBEREICH einer ``WorkingHoursChange`` — siehe
     ``retarget_window``."""

@@ -66,6 +66,14 @@ export interface WeeklyHoursChangeInPeriod {
   /** Fünf Einträge, Index 0 = Montag; `null` = kein geplanter Arbeitstag. */
   day_hours?: (number | null)[] | null;
   work_days_per_week?: number | null;
+  /**
+   * Abschluss-Review #431, Fund 1: Ändert diese Zeile die ARBEITSTAGE gegenüber
+   * dem unmittelbar davor gültigen Zustand? Kommt vom Server, weil die Antwort
+   * nur die Änderungen trägt — das Basissegment davor sieht der Bildschirm nie
+   * und könnte die Frage für die ERSTE Änderung eines Zeitraums gar nicht
+   * beantworten. Fehlt das Feld (Altbestand), wird nichts behauptet.
+   */
+  work_days_changed?: boolean;
 }
 
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
@@ -120,6 +128,19 @@ export function formatDayPlan(dayHours?: (number | null)[] | null): string {
 }
 
 /**
+ * ' auf 4 Arbeitstage' — aber nur, wenn diese Änderung die Arbeitstage
+ * tatsächlich verschiebt (Leerstring sonst). Zwilling von
+ * `export_service._work_days_suffix`; die Kurzform („4 Tage") gibt es nur in
+ * der PDF-Meta und deshalb nur dort.
+ */
+function workDaysSuffix(change: WeeklyHoursChangeInPeriod): string {
+  if (!change.work_days_changed) return '';
+  const days = change.work_days_per_week;
+  if (typeof days !== 'number' || !Number.isFinite(days)) return '';
+  return ` auf ${days} ${days === 1 ? 'Arbeitstag' : 'Arbeitstage'}`;
+}
+
+/**
  * #415: Vertragsänderungen eines Berichtszeitraums als Klartext.
  *
  * Der Bericht zeigt als Zahl den zu Zeitraumsbeginn gültigen Wert; wechselt die
@@ -130,6 +151,14 @@ export function formatDayPlan(dayHours?: (number | null)[] | null): string {
  *
  * - gleichmäßig: `ab 15.03.2026: 20,0 Std/Woche`
  * - Tagesplan (#431): `ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche`
+ *
+ * Ändern sich im gleichmäßigen Modus die ARBEITSTAGE, werden sie zusätzlich
+ * genannt: `ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage`. Ohne das meldete
+ * die Zeile eine Änderung und nannte zweimal dieselbe Zahl — während das
+ * Tagessoll (Wochenstunden ÷ Arbeitstage) in denselben Tageszeilen von 8,00 auf
+ * 10,00 sprang (Abschluss-Review #431, Fund 1). Nur bei tatsächlicher Änderung,
+ * damit der eingefrorene #415-Wortlaut für jeden vor #431 möglichen Fall
+ * zeichengleich bleibt.
  *
  * Leerstring, wenn es im Zeitraum keine Änderung gab → die Aufrufer rendern
  * dann gar nichts und unveränderte Berichte sehen aus wie vorher.
@@ -142,15 +171,21 @@ export function formatWeeklyHoursChanges(
     .map((c) => {
       const [y, m, d] = c.effective_from.split('-');
       const prefix = `ab ${d}.${m}.${y}: `;
+      let suffix = '';
       if (c.use_daily_schedule) {
         const plan = formatDayPlan(c.day_hours);
         if (plan) return `${prefix}${plan} = ${deHoursExact(c.weekly_hours)} h/Woche`;
-        // Kein einziger Tageswert → gleichmäßige Formulierung statt leerem Satz.
+        // Kein einziger Tageswert → gleichmäßige Formulierung statt leerem
+        // Satz, und ohne Arbeitstage-Zusatz: die Arbeitstage einer Zeile ohne
+        // einen einzigen Tageswert sagen nichts (Zwilling:
+        // `export_service._format_segment_change`).
+      } else {
+        suffix = workDaysSuffix(c);
       }
       // Auch hier verlustfrei (nicht `toFixed(1)`): für jeden vor #431
       // speicherbaren Wert zeichengleich zu #415, und nur so sagt der
       // Bildschirm bei 38,25 h dasselbe wie der Datei-Export.
-      return `${prefix}${deHoursExact(c.weekly_hours)} Std/Woche`;
+      return `${prefix}${deHoursExact(c.weekly_hours)} Std/Woche${suffix}`;
     })
     .join('; ');
 }

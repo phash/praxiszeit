@@ -165,7 +165,10 @@ def get_monthly_report(
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
             weekly_hours_changes=[
-                WeeklyHoursChangeInPeriod.from_segment(seg) for seg in wh_segments[1:]
+                # Der Vorgaenger gehoert dazu: nur er sagt, ob sich die
+                # Arbeitstage geaendert haben (Abschluss-Review #431, Fund 1).
+                WeeklyHoursChangeInPeriod.from_segment(seg, previous=wh_segments[i])
+                for i, seg in enumerate(wh_segments[1:])
             ],
         ))
 
@@ -305,7 +308,10 @@ def get_weekly_report(
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
             weekly_hours_changes=[
-                WeeklyHoursChangeInPeriod.from_segment(seg) for seg in wk_segments[1:]
+                # Wie im Monatsbericht: der Vorgaenger entscheidet ueber
+                # `work_days_changed`.
+                WeeklyHoursChangeInPeriod.from_segment(seg, previous=wk_segments[i])
+                for i, seg in enumerate(wk_segments[1:])
             ],
         ))
 

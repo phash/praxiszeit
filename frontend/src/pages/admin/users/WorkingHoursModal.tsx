@@ -469,7 +469,35 @@ export default function WorkingHoursModal({
   // Betriebsferien, geplante Fortbildung ab diesem Datum) — dann muss der
   // Dialog es anzeigen und bestätigen lassen, statt still zu korrigieren.
   const affectsBookedAbsences = !!preview && !preview.blocked_reason && preview.affected_absences > 0;
-  const showImpactBox = isRetroactive || affectsBookedAbsences || !!blockedReason;
+
+  // #431: Saldo/Urlaub vorher-nachher. Stehen hier, weil `affectsBalance`
+  // (direkt darunter) mit darüber entscheidet, ob der Kasten überhaupt
+  // erscheint — nicht erst, was in ihm steht.
+  //
+  // `round2` ist der Rundungs-, nicht der Gleichheitstest: ein Vergleich auf
+  // exakte Float-Gleichheit meldete 12,500000000000002 h als Änderung. Alles
+  // unterhalb von 0,005 ist unterhalb der angezeigten Genauigkeit und damit
+  // keine Auswirkung.
+  const overtimeDelta = preview ? round2(preview.overtime_after - preview.overtime_before) : 0;
+  const vacationDelta = preview ? round2(preview.vacation_days_after - preview.vacation_days_before) : 0;
+
+  // Abschluss-Review #431, Fund 2: Eine ZUKUNFTSdatierte Änderung, die einen
+  // Wochentag wegfallen lässt, ändert den Urlaubsverbrauch, ohne eine einzige
+  // Abwesenheits-Stunde umzuschreiben — `retarget_absence_hours` überspringt
+  // Tage, deren neues Tagessoll 0 ist. `affected_absences` blieb 0,
+  // `isRetroactive` false, und der ganze Kasten blieb aus, obwohl
+  // `vacation_days_after` um einen Tag niedriger war: ein genehmigter
+  // Urlaubstag zählte nach dem Speichern nicht mehr als Verbrauch. Handbuch und
+  // In-App-Hilfe fordern ausdrücklich auf, „die Zeile ‚Urlaub {Jahr}:
+  // bisher/neu' der Vorschau" zu prüfen — die es in genau diesem Fall nie gab.
+  //
+  // Ein materieller Unterschied in diesen Zahlen ist eine echte Auswirkung und
+  // wird deshalb wie die anderen gezeigt UND bestätigt (siehe `saveDisabled`).
+  // Bei unverändertem Snapshot steigt die Vorschau serverseitig vor der
+  // Simulation aus und liefert „nachher == vorher" — dieser (häufigste) Fall
+  // bleibt damit weiterhin still.
+  const affectsBalance = !!preview && !blockedReason && (overtimeDelta !== 0 || vacationDelta !== 0);
+  const showImpactBox = isRetroactive || affectsBookedAbsences || affectsBalance || !!blockedReason;
 
   // #431: Was der Admin eingegeben hat — und was zum Wirkungsdatum ohnehin
   // gilt. Sind beide gleich, gibt es nichts zu speichern (das Backend rechnet
@@ -504,7 +532,10 @@ export default function WorkingHoursModal({
     !!blockedReason ||
     snapshotUnchanged ||
     (isRetroactive && (previewLoading || !preview || !confirmedRetroactive)) ||
-    (!isRetroactive && affectsBookedAbsences && !confirmedRetroactive);
+    // Fund 2: die Bestätigungspflicht hängt an der AUSWIRKUNG, nicht an ihrer
+    // Bauart — ein verschobener Urlaubsverbrauch wiegt so schwer wie eine
+    // umgeschriebene Abwesenheits-Stunde.
+    (!isRetroactive && (affectsBookedAbsences || affectsBalance) && !confirmedRetroactive);
 
   const setDayHours = (key: DayFieldKey, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: parseHours(value) }));
@@ -604,8 +635,6 @@ export default function WorkingHoursModal({
     return parts.length ? `Tagessoll je Wochentag: ${parts.join(' · ')}` : '';
   })();
 
-  const overtimeDelta = preview ? round2(preview.overtime_after - preview.overtime_before) : 0;
-  const vacationDelta = preview ? round2(preview.vacation_days_after - preview.vacation_days_before) : 0;
   // Ein zukunftsdatierter Wechsel liefert oft „12,5 → 12,5". Das ist korrekt —
   // der Saldo-Stichtag (#313) liegt vor dem Wirkungsfenster — darf aber nicht
   // als „keine Auswirkung" gelesen werden, während unten Abwesenheiten
@@ -813,7 +842,15 @@ export default function WorkingHoursModal({
                       ) : preview ? (
                         <>
                           <p className="font-semibold text-amber-900">
-                            {isRetroactive ? 'Rückwirkende Änderung' : 'Betrifft bereits gebuchte Abwesenheiten'}:{' '}
+                            {/* Fund 2: „Betrifft bereits gebuchte
+                                Abwesenheiten" wäre falsch, wenn keine einzige
+                                umgeschrieben wird — die Auswirkung steckt dann
+                                allein in Saldo/Urlaub. */}
+                            {isRetroactive
+                              ? 'Rückwirkende Änderung'
+                              : affectsBookedAbsences
+                                ? 'Betrifft bereits gebuchte Abwesenheiten'
+                                : 'Ändert Überstunden oder Urlaubsverbrauch'}:{' '}
                             {formatDate(preview.period_start)} – {formatDate(preview.period_end)}
                           </p>
                           {dayTargetText && (

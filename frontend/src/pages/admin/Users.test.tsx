@@ -51,6 +51,10 @@ function FakeUserForm(props: {
   // auch die frischen Tageswerte nach jedem fetchUsers() nachzieht, während
   // das Formular offen bleibt.
   displayDayHours?: (number | null)[];
+  // Abschluss-Review #431, Fund 3: dieselbe Bauart für die beiden übrigen
+  // soll-treibenden Felder, die der Dialog schreibt.
+  displayWorkDays?: number;
+  displayUseDailySchedule?: boolean;
   onOpenHoursHistory?: (u: User) => void;
 }) {
   const [unsavedDept, setUnsavedDept] = useState('');
@@ -66,6 +70,10 @@ function FakeUserForm(props: {
       />
       <span data-testid="display-weekly-hours">{props.displayWeeklyHours ?? ''}</span>
       <span data-testid="display-day-hours">{(props.displayDayHours ?? []).join(',')}</span>
+      <span data-testid="display-work-days">{props.displayWorkDays ?? ''}</span>
+      <span data-testid="display-use-daily-schedule">
+        {props.displayUseDailySchedule === undefined ? '' : String(props.displayUseDailySchedule)}
+      </span>
       <button
         type="button"
         onClick={() => props.editUser && props.onOpenHoursHistory?.(props.editUser)}
@@ -248,5 +256,51 @@ describe('Release-Review 1.17.0 Fund 2: editingUser-Sync darf offene Eingaben ni
     fireEvent.click(screen.getAllByTitle('Bearbeiten')[1]);
     await waitFor(() => expect(screen.getByTestId('display-weekly-hours')).toHaveTextContent('30'));
     expect(screen.getByLabelText('Abteilung (unsaved)')).toHaveValue('');
+  });
+});
+
+describe('Abschluss-Review #431 Fund 3: Arbeitstage und Modus werden mit nachgezogen', () => {
+  it('zieht work_days_per_week und use_daily_schedule in derselben Refetch-Runde nach', async () => {
+    // Der gemeldete Fall: MA gleichmäßig 40 h auf 5 Tage; der Admin öffnet
+    // „Bearbeiten", dann im offenen Formular den Dialog, trägt „20 h auf 4
+    // Tage, gültig ab heute" ein und speichert. Danach zeigte das Formular
+    // „20,0 h/Woche" NEBEN „Arbeitstage pro Woche: 5" — der Server hatte 4.
+    let weekly = 40;
+    let workDays = 5;
+    let daily = false;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({
+          data: [makeUser({
+            weekly_hours: weekly, work_days_per_week: workDays, use_daily_schedule: daily,
+          })],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+
+    fireEvent.click(screen.getAllByTitle('Bearbeiten')[0]);
+    await screen.findByTestId('fake-user-form');
+    expect(screen.getByTestId('display-work-days')).toHaveTextContent('5');
+    expect(screen.getByTestId('display-use-daily-schedule')).toHaveTextContent('false');
+
+    fireEvent.change(screen.getByLabelText('Abteilung (unsaved)'), { target: { value: 'Labor' } });
+    fireEvent.click(screen.getByText('Wochenstunden anpassen…'));
+
+    weekly = 20;
+    workDays = 4;
+    daily = true;
+    fireEvent.click(screen.getByText('Stundenänderung speichern (simuliert)'));
+
+    await waitFor(() => expect(screen.getByTestId('display-weekly-hours')).toHaveTextContent('20'));
+    expect(screen.getByTestId('display-work-days')).toHaveTextContent('4');
+    expect(screen.getByTestId('display-use-daily-schedule')).toHaveTextContent('true');
+    // Und weiterhin ohne die offene Eingabe zu verwerfen — der Grund, warum
+    // hier schmale Props stehen und nicht ein neues `editingUser`.
+    expect(screen.getByLabelText('Abteilung (unsaved)')).toHaveValue('Labor');
   });
 });
