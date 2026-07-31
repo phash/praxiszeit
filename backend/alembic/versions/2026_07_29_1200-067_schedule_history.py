@@ -30,6 +30,27 @@ Datum, ``ORDER BY effective_from DESC LIMIT 1``) laeuft ueber
 ``(user_id, effective_from)`` — genau diese Spaltenkombination deckt
 ``ix_wh_changes_user_effective_from`` aus Migration 031 bereits ab. Ein zweiter,
 deckungsgleicher Index kostet Schreiblast und Platz, ohne je gewaehlt zu werden.
+
+F3 (Release-Gate 1.18.0): der Backfill uebernimmt die Wochensumme NUR, wenn sie
+in den Wertebereich der Zielspalte UND des Lese-Schemas passt (0..60). Bis 1.17.0
+war ein Tagesplan frei setzbar — ``schemas/user.py`` begrenzt nur je Tag auf 24,
+das Formular warnt bloss weich —, es gibt also Bestandsdaten mit einer
+Wochensumme > 60. Ungeklammert uebernommen bricht die Migration selbst ab Ø 20 h/
+Tag mit ``numeric field overflow`` (Zielspalte ``Numeric(4,2)``, max 99,99; auf
+echtem Postgres 18 reproduziert: das Update blieb auf 066 stehen), und schon ab
+> 60 h liefert ``GET /users/{id}/working-hours-changes`` danach einen
+``ResponseValidationError`` → HTTP 500, weil ``WorkingHoursChangeBase.weekly_hours``
+``le=60`` traegt — der Stundenverlauf-Dialog zeigt die Person als historienlos, und
+es gibt keinen API-Rueckweg (``PUT /admin/users`` lehnt weekly_hours mit 400 ab,
+``check_mode`` lehnt > 60 ab).
+
+Betroffene Zeilen behalten deshalb ihren bisherigen Skalar (Modus, Tageswerte und
+Arbeitstage werden trotzdem uebernommen) — bewusst KEIN stilles ``LEAST(Σ, 60)``:
+das schriebe eine Zahl in eine §16-relevante Zeile, die weder der historische
+Skalar noch die Wochensumme des Tagesplans ist. Stattdessen nennt eine
+Guard-Abfrage vor dem Update die betroffenen Konten beim Namen, damit die
+Stammdaten korrigiert werden koennen. Die Migration laeuft danach durch — ein
+Abbruch wuerde das komplette Update eines Kundensystems blockieren.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -38,6 +59,18 @@ revision = "067_schedule_history"
 down_revision = "066_vacation_days_decimal"
 branch_labels = None
 depends_on = None
+
+# F3: Obergrenze des Lese-Schemas (``WorkingHoursChangeBase.weekly_hours``:
+# ``Field(ge=0, le=60)``). Sie ist zugleich die strengere der beiden Grenzen —
+# die Spalte ``Numeric(4,2)`` traegt bis 99,99. Aendert sich das Schema, muss
+# dieser Wert mitwandern.
+_MAX_WEEKLY_HOURS = 60
+
+_WEEK_SUM = (
+    "(COALESCE(u.hours_monday, 0) + COALESCE(u.hours_tuesday, 0)"
+    " + COALESCE(u.hours_wednesday, 0) + COALESCE(u.hours_thursday, 0)"
+    " + COALESCE(u.hours_friday, 0))"
+)
 
 
 def upgrade():
@@ -60,14 +93,41 @@ def upgrade():
     op.add_column("working_hours_changes", sa.Column(
         "work_days_per_week", sa.Integer(), nullable=True))
 
+    # F3: Guard VOR dem Backfill — betroffene Konten beim Namen nennen statt
+    # still zu klemmen (siehe Modul-Docstring). Reine Diagnose, kein Abbruch.
+    conn = op.get_bind()
+    affected = conn.execute(sa.text(f"""
+        SELECT u.username, ROUND({_WEEK_SUM}, 2) AS wochensumme, COUNT(w.id) AS zeilen
+        FROM users AS u
+        JOIN working_hours_changes AS w ON w.user_id = u.id
+        WHERE u.use_daily_schedule
+          AND {_WEEK_SUM} > {_MAX_WEEKLY_HOURS}
+        GROUP BY u.username, {_WEEK_SUM}
+        ORDER BY u.username
+    """)).fetchall()
+    if affected:
+        print(
+            "\n*** WARNUNG (Migration 067) ***\n"
+            f"Die folgenden Konten haben einen Tagesplan mit mehr als "
+            f"{_MAX_WEEKLY_HOURS} Wochenstunden. Ihre Stundenverlaufs-Zeilen "
+            "behalten den bisherigen Wochenstunden-Wert, weil die Summe weder in "
+            "die Spalte noch in die API passt. Bitte den Tagesplan dieser "
+            "Personen in der Benutzerverwaltung korrigieren:"
+        )
+        for row in affected:
+            print(f"  - {row.username}: {row.wochensumme} h/Woche "
+                  f"({row.zeilen} Verlaufszeile(n) betroffen)")
+        print("*** ENDE WARNUNG ***\n")
+
     # Backfill aus der zugehoerigen User-Zeile.
     #
     # `weekly_hours` wird NUR im Tagesplan-Modus und NUR bei einer Summe > 0
     # ueberschrieben (siehe Modul-Docstring): sonst stuende der historische
     # Skalar neben einem fremden Tagesplan und die #415-Kopfzeile widerspraeche
     # den Tageswerten derselben Zeile. Im gleichmaessigen Modus bleibt der Wert
-    # unangetastet — dort treibt er das Tagessoll.
-    op.execute("""
+    # unangetastet — dort treibt er das Tagessoll. F3: eine Summe ueber
+    # `_MAX_WEEKLY_HOURS` wird NICHT uebernommen (Overflow / HTTP 500 beim Lesen).
+    op.execute(f"""
         UPDATE working_hours_changes AS w
         SET use_daily_schedule = u.use_daily_schedule,
             hours_monday = CASE WHEN u.use_daily_schedule THEN u.hours_monday END,
@@ -78,12 +138,9 @@ def upgrade():
             work_days_per_week = u.work_days_per_week,
             weekly_hours = CASE
                 WHEN u.use_daily_schedule
-                 AND (COALESCE(u.hours_monday, 0) + COALESCE(u.hours_tuesday, 0)
-                    + COALESCE(u.hours_wednesday, 0) + COALESCE(u.hours_thursday, 0)
-                    + COALESCE(u.hours_friday, 0)) > 0
-                THEN (COALESCE(u.hours_monday, 0) + COALESCE(u.hours_tuesday, 0)
-                    + COALESCE(u.hours_wednesday, 0) + COALESCE(u.hours_thursday, 0)
-                    + COALESCE(u.hours_friday, 0))
+                 AND {_WEEK_SUM} > 0
+                 AND {_WEEK_SUM} <= {_MAX_WEEKLY_HOURS}
+                THEN {_WEEK_SUM}
                 ELSE w.weekly_hours
             END
         FROM users AS u
