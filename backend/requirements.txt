@@ -5,8 +5,15 @@
 # jetzt (routing.py:57 `if hasattr(route, "path")`), daher ist 0.137+ wieder
 # sicher. Verifiziert end-to-end (Login + included-Router-Endpoints + /metrics +
 # volle Suite). Setzt instrumentator >=8.0.1 voraus (siehe unten).
-fastapi==0.138.*
-uvicorn[standard]==0.49.*
+#
+# 2026-07-31 (Abhaengigkeits-Audit): 0.138 -> 0.141 angehoben, uvicorn 0.49 ->
+# 0.52. Wegen der 1.8.5-1.8.10-Historie NICHT nur Unit-Tests, sondern erneut
+# end-to-end gegen eine laufende Instanz geprueft: echter Login (POST
+# /api/auth/login -> 200 + Token), /metrics (200, Prometheus-Text) und mehrere
+# included-Router-Endpoints (/api/dashboard, /api/absences, /api/holidays,
+# /api/admin/users) -> alle 200, kein 500.
+fastapi==0.141.*
+uvicorn[standard]==0.52.*
 sqlalchemy==2.0.*
 alembic==1.18.*
 psycopg2-binary==2.9.*
