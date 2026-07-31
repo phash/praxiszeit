@@ -38,7 +38,7 @@ if not APP_DB_URL or not ADMIN_DB_URL:
 # COMMITTED — see the long comment in `clock_in` — so calling only
 # `_get_open_entry` would never prove the anchor lock does anything.
 from fastapi import HTTPException
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.database import SessionLocal, set_tenant_context
 from app.models import Absence, AbsenceType, User
@@ -47,6 +47,7 @@ from app.models.change_request import (
 )
 from app.routers import absences as absences_router
 from app.routers import change_requests as change_requests_router
+from app.routers import company_closures as company_closures_router
 from app.routers import time_entries
 from app.schemas.absence import AbsenceCreate
 from app.schemas.time_entry import ClockInRequest
@@ -75,11 +76,12 @@ def app_engine():
 def concurrency_seed(admin_engine):
     """Create the test tenant + user; clean up after module."""
     conn = admin_engine.connect()
-    # Best-effort pre-cleanup
+    # Best-effort pre-cleanup (company_closures VOR users: created_by ist ein FK)
     conn.execute(text("DELETE FROM time_entry_audit_logs WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+    conn.execute(text("DELETE FROM company_closures WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": str(TENANT_ID)})
 
@@ -105,6 +107,7 @@ def concurrency_seed(admin_engine):
     conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+    conn.execute(text("DELETE FROM company_closures WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": str(TENANT_ID)})
     conn.close()
@@ -613,3 +616,357 @@ def test_delete_absence_locks_the_user_row_before_the_change_request(
         ).scalar()
     assert n == 0
     assert ref is None
+
+
+# --- Betriebsferien: Anker-Sperre vor der abhängigen Schließungszeile ---------
+
+_CLOSURE_START = date(2099, 9, 7)  # Montag
+_CLOSURE_END = date(2099, 9, 9)    # Mittwoch
+# Zweiter Admin desselben Mandanten: Betriebsferien sperren ALLE Teilnehmer-
+# Zeilen, also braucht die Kreuz-Konstellation eine zweite Benutzerzeile.
+USER2_ID = uuid.UUID("ccccccc1-0000-4000-8000-000000000101")
+
+
+@pytest.fixture
+def clean_closure_state(admin_engine):
+    """Leert Betriebsferien + Abwesenheiten + Audit-Zeilen des Test-Tenants.
+
+    Legt zusätzlich einen ZWEITEN teilnehmenden Benutzer an (und räumt ihn
+    wieder ab): Betriebsferien sperren die Zeilen aller Teilnehmer, ein
+    Sperr-Zyklus über zwei Zeilen braucht also zwei Teilnehmer.
+    """
+    def _wipe():
+        conn = admin_engine.connect()
+        conn.execute(text("DELETE FROM time_entry_audit_logs WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM company_closures WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM users WHERE id = :u"), {"u": str(USER2_ID)})
+        conn.close()
+
+    _wipe()
+    conn = admin_engine.connect()
+    conn.execute(text("""
+        INSERT INTO users (id, tenant_id, username, email, password_hash,
+                           first_name, last_name, role, weekly_hours,
+                           vacation_days, work_days_per_week, is_active)
+        VALUES (:id, :tid, :u, :e, 'not-real', 'C2', 'Test', 'ADMIN',
+                40, 30, 5, true)
+    """), {
+        "id": str(USER2_ID), "tid": str(TENANT_ID),
+        "u": "concurrency_test_admin2", "e": "concurrency2@test.local",
+    })
+    conn.close()
+    yield
+    _wipe()
+
+
+def _run_create_closure(results: list, acting_user_id=USER_ID, name="Audit-Test Betriebsferien",
+                        barrier: threading.Barrier = None):
+    """Ruft die ECHTE Endpoint-Funktion `create_closure` auf."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        me = session.query(User).filter(User.id == acting_user_id).first()
+        if barrier is not None:
+            barrier.wait(timeout=10)
+        company_closures_router.create_closure(
+            data=company_closures_router.CompanyClosureCreate(
+                name=name,
+                start_date=_CLOSURE_START,
+                end_date=_CLOSURE_END,
+            ),
+            db=session, current_user=me,
+        )
+        results.append(("created",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except OperationalError as e:
+        session.rollback()
+        results.append(
+            ("deadlock",) if "deadlock detected" in str(e).lower()
+            else ("error", "OperationalError")
+        )
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+def test_create_closure_locks_the_user_rows_before_inserting_the_closure(
+    concurrency_seed, clean_closure_state, app_engine, monkeypatch,
+):
+    """Betriebsferien anlegen darf die Schließungszeile NICHT vor dem Anker schreiben.
+
+    ``company_closures.created_by`` ist ein nicht aufschiebbarer Fremdschlüssel
+    auf ``users``: der INSERT der Schließungszeile nimmt auf der Zeile des
+    handelnden Admins ein ``FOR KEY SHARE`` und hält es bis zum Commit. Stand er
+    VOR ``_lock_participant_rows``, verlangte dieselbe Transaktion unmittelbar
+    danach ein ``FOR UPDATE`` auf genau dieser Zeile (der Admin ist über
+    ``receives_company_closures`` per Voreinstellung selbst Teilnehmer) — eine
+    Sperr-Eskalation und damit die Umkehrung der projektweiten Reihenfolge
+    Benutzer → abhängige Zeile. Eine gleichzeitige Sitzung, die den Anker
+    regulär als Erstes greift (zweites ``create_closure``, ``update_closure``,
+    ``absences.create_absence``, Antrags-Genehmigung), stellt sich zwischen
+    beide Schritte: sie wartet auf das ``FOR KEY SHARE``, wir warten auf ihre
+    Tuple-Sperre → ``deadlock detected`` (HTTP 500, voller Rollback).
+
+    Ablauf: ``_get_workdays`` wird für diesen Test verlangsamt, um das Fenster
+    zwischen den beiden Schritten von wenigen Millisekunden auf Sekunden zu
+    dehnen (die Funktion läuft in BEIDEN Varianten zwischen ihnen). Der Thread
+    legt die Betriebsferien an; die Hauptsitzung greift währenddessen den Anker.
+
+    - VOR dem Fix: der Thread hält bereits das ``FOR KEY SHARE`` aus dem INSERT
+      → die Hauptsitzung blockiert, der Thread eskaliert auf ``FOR UPDATE``
+      → Deadlock, ``results == [("deadlock",)]``.
+    - MIT dem Fix: der Thread sperrt erst NACH ``_get_workdays`` und hat noch
+      nichts geschrieben → die Hauptsitzung bekommt den Anker sofort, der Thread
+      wartet brav an der Benutzerzeile und kommt nach dem Commit durch.
+    """
+    real_get_workdays = company_closures_router._get_workdays
+
+    def _slow_get_workdays(start, end, holidays):
+        days = real_get_workdays(start, end, holidays)
+        time_module.sleep(2.0)
+        return days
+
+    monkeypatch.setattr(company_closures_router, "_get_workdays", _slow_get_workdays)
+
+    results: list = []
+    t = threading.Thread(target=_run_create_closure, args=(results,))
+    t.start()
+    # Vor dem Fix ist der INSERT zu diesem Zeitpunkt bereits raus (er steht vor
+    # der verlangsamten Arbeitstags-Ermittlung), mit dem Fix noch nicht.
+    time_module.sleep(1.0)
+
+    rival = SessionLocal()
+    lock_error: list = []
+    blocked_while_locked = False
+    try:
+        set_tenant_context(rival, TENANT_ID)
+        rival.query(User).filter(
+            User.id == USER_ID, User.tenant_id == TENANT_ID,
+        ).with_for_update().first()
+        time_module.sleep(1.5)
+        # Mit dem Fix muss der Thread jetzt an der gehaltenen Anker-Sperre warten.
+        blocked_while_locked = not results
+        rival.commit()
+    except OperationalError as e:
+        rival.rollback()
+        lock_error.append(str(e).splitlines()[0])
+    finally:
+        rival.close()
+
+    t.join(timeout=30)
+
+    assert not lock_error, (
+        f"Die Gegenspieler-Sitzung wurde selbst abgeschossen: {lock_error}"
+    )
+    assert results == [("created",)], (
+        "create_closure schreibt die Schließungszeile vor der Anker-Sperre — "
+        f"Sperr-Eskalation auf der Admin-Zeile: {results}"
+    )
+    assert blocked_while_locked, (
+        "create_closure lief an der gehaltenen Anker-Sperre vorbei — die "
+        "Benutzerzeilen werden offenbar nicht (mehr) vor der Buchung gesperrt."
+    )
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        closures = conn.execute(
+            text("SELECT COUNT(*) FROM company_closures WHERE tenant_id = :t"),
+            {"t": str(TENANT_ID)},
+        ).scalar()
+        absences = conn.execute(
+            text("SELECT COUNT(*) FROM absences WHERE user_id = :u AND date BETWEEN :a AND :b"),
+            {"u": str(USER_ID), "a": _CLOSURE_START, "b": _CLOSURE_END},
+        ).scalar()
+    assert closures == 1, closures
+    assert absences == 3, f"3 Arbeitstage erwartet, gebucht: {absences}"
+
+
+def test_two_parallel_closure_creations_do_not_deadlock(
+    concurrency_seed, clean_closure_state, app_engine, monkeypatch,
+):
+    """Zwei Admins legen gleichzeitig Betriebsferien an — das darf nicht knallen.
+
+    Das ist die Konstellation, die der Abschluss-Review zweimal gegen die
+    laufende Postgres reproduziert hat. Solange die Schließungszeile VOR der
+    Anker-Sperre geschrieben wurde, hielt jede der beiden Transaktionen über
+    ``company_closures.created_by`` ein ``FOR KEY SHARE`` auf der Zeile IHRES
+    Admins und verlangte danach ein ``FOR UPDATE`` auf BEIDE Admin-Zeilen
+    (beide sind Teilnehmer):
+
+        T1: KEY SHARE(A)                T2: KEY SHARE(B)
+        T1: FOR UPDATE(A) ✓, (B) ⏳     T2: FOR UPDATE(A) ⏳
+
+    → Zyklus, ``deadlock detected``, HTTP 500 mit vollem Rollback für den
+    abgeschossenen Vorgang.
+
+    MIT der vorgezogenen Sperre schreibt keine der beiden Transaktionen etwas,
+    bevor sie alle Teilnehmer-Zeilen in EINER nach ``id`` sortierten Anweisung
+    gesperrt hat: die zweite wartet vollständig, läuft danach durch und sieht
+    die bereits gebuchten Abwesenheiten (überspringt sie).
+
+    ``_get_workdays`` wird verlangsamt, damit beide Transaktionen die Phase
+    zwischen den beiden Schritten garantiert überlappen — ohne das Fenster wäre
+    der Zyklus nur ein Millisekunden-Zufall.
+    """
+    real_get_workdays = company_closures_router._get_workdays
+
+    def _slow_get_workdays(start, end, holidays):
+        days = real_get_workdays(start, end, holidays)
+        time_module.sleep(2.0)
+        return days
+
+    monkeypatch.setattr(company_closures_router, "_get_workdays", _slow_get_workdays)
+
+    results: list = []
+    barrier = threading.Barrier(2)
+    t1 = threading.Thread(
+        target=_run_create_closure, args=(results, USER_ID, "Betriebsferien A", barrier),
+    )
+    t2 = threading.Thread(
+        target=_run_create_closure, args=(results, USER2_ID, "Betriebsferien B", barrier),
+    )
+    t1.start(); t2.start()
+    t1.join(timeout=40); t2.join(timeout=40)
+
+    assert results == [("created",), ("created",)], (
+        "Zwei gleichzeitige Betriebsferien liefen in einen Sperr-Zyklus "
+        f"(Schließungszeile vor der Anker-Sperre geschrieben): {results}"
+    )
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        closures = conn.execute(
+            text("SELECT COUNT(*) FROM company_closures WHERE tenant_id = :t"),
+            {"t": str(TENANT_ID)},
+        ).scalar()
+        absences = conn.execute(
+            text("SELECT COUNT(*) FROM absences WHERE tenant_id = :t AND date BETWEEN :a AND :b"),
+            {"t": str(TENANT_ID), "a": _CLOSURE_START, "b": _CLOSURE_END},
+        ).scalar()
+    assert closures == 2, closures
+    # 2 Teilnehmer × 3 Arbeitstage — der Verlierer sieht die bereits gebuchten
+    # Tage unter der Anker-Sperre und überspringt sie (keine Doppelbuchung).
+    assert absences == 6, f"Erwartet 6 Abwesenheiten (2 MA × 3 Tage), gebucht: {absences}"
+
+
+def _run_delete_closure(results: list, closure_id):
+    """Ruft die ECHTE Endpoint-Funktion `delete_closure` auf."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        me = session.query(User).filter(User.id == USER_ID).first()
+        company_closures_router.delete_closure(
+            closure_id=str(closure_id), db=session, current_user=me,
+        )
+        results.append(("deleted",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except OperationalError as e:
+        session.rollback()
+        results.append(
+            ("deadlock",) if "deadlock detected" in str(e).lower()
+            else ("error", "OperationalError")
+        )
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+def test_delete_closure_locks_the_user_rows_before_touching_absences(
+    concurrency_seed, clean_closure_state, app_engine,
+):
+    """Betriebsferien löschen muss dieselbe Reihenfolge nutzen wie Anlegen/Ändern.
+
+    ``delete_closure`` war der einzige der drei Betriebsferien-Pfade ganz ohne
+    Anker: er löschte die generierten Abwesenheiten (Sperren auf ``absences``),
+    schrieb die Summen-Audit-Zeile (``FOR KEY SHARE`` auf der Admin-Zeile) und
+    ließ ggf. den #314-Re-Split weitere Abwesenheiten umschreiben — alles in der
+    Reihenfolge Abwesenheit → Benutzer. Gegen ein gleichzeitiges
+    ``create_closure``/``create_absence`` (Benutzer → Abwesenheit) ist das das
+    bekannte ABBA.
+
+    Ablauf wie bei ``test_delete_absence_locks_the_user_row_before_the_change_request``:
+    Sitzung A macht Schritt 1 eines Buchungspfads (Anker auf der Benutzerzeile),
+    der Thread löscht die Betriebsferien, danach macht A Schritt 2 (Sperre auf
+    den Abwesenheiten des MA).
+
+    - OHNE Anker im Löschpfad hat der Thread die Abwesenheiten zu diesem
+      Zeitpunkt bereits gelöscht (Sperren darauf) und wartet am Commit auf die
+      ``FOR KEY SHARE`` seiner Audit-Zeile — die A per ``FOR UPDATE`` hält.
+      A wartet auf die Abwesenheiten → ``deadlock detected``.
+    - MIT Anker wartet der Thread VOR den Abwesenheiten, A kommt durch, danach
+      der Thread.
+    """
+    session = SessionLocal()
+    set_tenant_context(session, TENANT_ID)
+    me = session.query(User).filter(User.id == USER_ID).first()
+    created = company_closures_router.create_closure(
+        data=company_closures_router.CompanyClosureCreate(
+            name="Zu löschende Betriebsferien",
+            start_date=_CLOSURE_START,
+            end_date=_CLOSURE_END,
+        ),
+        db=session, current_user=me,
+    )
+    closure_id = created.id
+    session.close()
+
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    assert holder.query(User).filter(
+        User.id == USER_ID, User.tenant_id == TENANT_ID,
+    ).with_for_update().first() is not None
+
+    results: list = []
+    t = threading.Thread(target=_run_delete_closure, args=(results, closure_id))
+    t.start()
+    time_module.sleep(1.0)
+    assert not results, (
+        "delete_closure lief an der gehaltenen Anker-Sperre komplett vorbei: "
+        f"{results}"
+    )
+
+    # Schritt 2 der Buchungspfade: die Abwesenheiten des MA sperren. Ohne Anker
+    # im Löschpfad hält der Thread sie bereits → Zyklus.
+    probe_error: list = []
+    try:
+        holder.query(Absence).filter(
+            Absence.user_id == USER_ID, Absence.tenant_id == TENANT_ID,
+        ).with_for_update().all()
+        holder.commit()
+    except OperationalError as e:
+        holder.rollback()
+        probe_error.append(str(e).splitlines()[0])
+    finally:
+        holder.close()
+
+    t.join(timeout=30)
+    assert not probe_error, (
+        f"Die Gegenspieler-Sitzung wurde selbst abgeschossen: {probe_error}"
+    )
+    assert results == [("deleted",)], (
+        "delete_closure fasst die Abwesenheiten vor der Anker-Sperre an "
+        f"(Reihenfolge Abwesenheit → Benutzer): {results}"
+    )
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        closures = conn.execute(
+            text("SELECT COUNT(*) FROM company_closures WHERE tenant_id = :t"),
+            {"t": str(TENANT_ID)},
+        ).scalar()
+        absences = conn.execute(
+            text("SELECT COUNT(*) FROM absences WHERE tenant_id = :t"),
+            {"t": str(TENANT_ID)},
+        ).scalar()
+    assert closures == 0, closures
+    assert absences == 0, absences

@@ -767,19 +767,6 @@ def delete_absence(
         # unbekannte behandelt, kein Existenz-Leak via Response-Code.
         raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
 
-    # DSGVO Art. 5 Abs. 2: Audit-Log vor Löschung
-    audit = TimeEntryAuditLog(
-        time_entry_id=None,
-        user_id=absence.user_id,
-        changed_by=current_user.id,
-        action="delete",
-        old_date=absence.date,
-        old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
-        source="manual",
-        tenant_id=current_user.tenant_id,
-    )
-    db.add(audit)
-
     # Audit 2026-07-31 (uebernommen aus Welle C): Anker-Sperre auf der
     # Benutzerzeile VOR dem Anfassen der abhaengigen Zeilen. Die Sperrreihenfolge
     # ist im ganzen Projekt Benutzer -> Antrag/Abwesenheit (create_absence,
@@ -796,6 +783,27 @@ def delete_absence(
         User.id == absence.user_id,
         User.tenant_id == current_user.tenant_id,
     ).with_for_update().first()
+
+    # DSGVO Art. 5 Abs. 2: Audit-Log vor Löschung.
+    # Abschluss-Review 2026-07-31: steht NACH der Anker-Sperre. Fachlich ist die
+    # Reihenfolge egal (beides landet in derselben Transaktion), fuer die
+    # Sperrreihenfolge nicht: der INSERT nimmt ueber ``user_id``/``changed_by``
+    # ein ``FOR KEY SHARE`` auf ``users``. Vor dem Anker platziert, haengt die
+    # Korrektheit allein daran, dass ``SessionLocal`` mit ``autoflush=False``
+    # laeuft — ein spaeteres Einschalten von autoflush (oder ein
+    # zwischengeschobenes ``db.flush()``) wuerde ihn VOR die Sperre ziehen und
+    # dieselbe Sperr-Eskalation ausloesen wie in ``company_closures``. Nach dem
+    # Anker ist die Reihenfolge unabhaengig von der Session-Konfiguration richtig.
+    db.add(TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=absence.user_id,
+        changed_by=current_user.id,
+        action="delete",
+        old_date=absence.date,
+        old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
+        source="manual",
+        tenant_id=current_user.tenant_id,
+    ))
 
     # Fix #1 (belt-and-suspenders): null any ChangeRequest referencing this
     # absence so the delete cannot FK-violate (500) on a not-yet-migrated DB
