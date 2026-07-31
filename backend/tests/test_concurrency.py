@@ -41,16 +41,17 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.database import SessionLocal, set_tenant_context
-from app.models import Absence, AbsenceType, User
+from app.models import Absence, AbsenceType, TimeEntry, User
 from app.models.change_request import (
     ChangeRequest, ChangeRequestStatus, ChangeRequestType,
 )
 from app.routers import absences as absences_router
+from app.routers import admin_time_entries as admin_time_entries_router
 from app.routers import change_requests as change_requests_router
 from app.routers import company_closures as company_closures_router
 from app.routers import time_entries
 from app.schemas.absence import AbsenceCreate
-from app.schemas.time_entry import ClockInRequest
+from app.schemas.time_entry import ClockInRequest, TimeEntryUpdate
 from app.services.timezone_service import LOCAL_TZ
 
 
@@ -461,14 +462,24 @@ def test_same_type_double_booking_never_raises_integrity_error(
     Unique-Index und scheiterte nach dem Commit von A mit einem ungefangenen
     ``IntegrityError`` → HTTP 500.
 
-    MIT der Anker-Sperre wartet der Thread schon an der Benutzerzeile: Sitzung A
-    hält darauf über den Fremdschlüssel der Abwesenheit implizit ein
-    ``FOR KEY SHARE``, das mit dem ``FOR UPDATE`` des Ankers kollidiert. Nach
-    dem Commit von A sieht die Sonde die Zeile und der Fall endet im
-    regulären, geprüften Zweig — bei gleichem Typ ist das der idempotente
-    Skip (400 „…haben bereits eine Abwesenheit dieses Typs"). Der 409-Übersetzer
-    um ``db.commit()`` bleibt die Rückfallebene; er wird per Fehlerinjektion in
-    ``tests/test_absence_conflict_409.py`` geprüft.
+    Sitzung A ist hier KÜNSTLICH: sie fügt die Abwesenheit ein, ohne vorher den
+    Anker zu greifen — im Produktivcode tut das keiner der vier
+    ``Absence(...)``-Schreibpfade. Sie hält deshalb nur den impliziten
+    ``FOR KEY SHARE`` des Fremdschlüssels.
+
+    Seit der Anker ``FOR NO KEY UPDATE`` ist (Audit 2026-07-31, Restklasse —
+    Begründung im Kopf von ``app/routers/admin_helpers.py``) kollidiert der
+    Thread damit NICHT mehr: er läuft an der Benutzerzeile vorbei, seine
+    Existenz-Sonde sieht die uncommittete Zeile nicht, sein INSERT wartet am
+    Unique-Index und endet nach dem Commit von A im 409-Übersetzer um
+    ``db.commit()``. Genau dafür ist der da. (Vorher endete derselbe Fall im
+    idempotenten Skip mit 400 — deshalb lässt die Zusicherung unten beide
+    Codes zu.)
+
+    Dass zwei ECHTE, jeweils geankerte Buchungen weiterhin an der Benutzerzeile
+    serialisieren, prüft
+    ``test_two_real_absence_bookings_still_serialize_on_the_anchor`` — das ist
+    der produktionsrelevante Fall.
 
     Zusicherung hier: NIE ein ``IntegrityError``/500, immer genau eine Zeile.
     """
@@ -970,3 +981,405 @@ def test_delete_closure_locks_the_user_rows_before_touching_absences(
         ).scalar()
     assert closures == 0, closures
     assert absences == 0, absences
+
+
+# =============================================================================
+# Restklasse aus dem Abschluss-Review: Kreuz-Sperren über eine ZWEITE Zeile
+# =============================================================================
+#
+# Der Abschluss-Review (`.superpowers/sdd/audit-2026-07-31/fix-closure-deadlock.md`,
+# Punkt 7.1/7.2) hat zwei Konstellationen benannt und bewusst offen gelassen:
+#
+#   (1) Ein Buchungspfad sperrt die Zeile der MITARBEITERIN und schreibt danach
+#       eine Audit-Zeile mit dem handelnden ADMIN als Urheber. Deren
+#       Fremdschlüssel nimmt ein ``FOR KEY SHARE`` auf einer ZWEITEN, nicht
+#       geankerten Benutzerzeile. Gegen die sortierte Teilnehmer-Sperre der
+#       Betriebsferien ist das ein Zyklus, sobald die Admin-Zeile VOR der
+#       Mitarbeiterzeile sortiert.
+#   (2) ``admin_time_entries`` nimmt überhaupt nie einen Anker: es sperrt die
+#       ZEITEINTRAGS-Zeile und braucht danach ``FOR KEY SHARE`` auf den
+#       Benutzerzeilen — während die Betriebsferien die Benutzerzeilen halten
+#       und danach genau diesen Zeiteintrag löschen.
+#
+# Beide Zyklen brauchen ZWEI Objekte und ZWEI gleichzeitige Vorgänge; eine
+# Sperr-Eskalation auf EINER Zeile deadlockt nicht.
+#
+# Gemessene Konfliktmatrix von Postgres (eigene Messung gegen die laufende DB,
+# deckt sich mit der Dokumentation):
+#
+#     gehalten \ angefordert   KEY SHARE   SHARE   NO KEY UPDATE   UPDATE
+#     FOR KEY SHARE            frei        frei    frei            KONFLIKT
+#     FOR SHARE                frei        frei    KONFLIKT        KONFLIKT
+#     FOR NO KEY UPDATE        frei        KONFLIKT KONFLIKT       KONFLIKT
+#     FOR UPDATE               KONFLIKT    KONFLIKT KONFLIKT       KONFLIKT
+#
+# Daraus folgt die gewählte Lösung: die Anker gehen auf ``FOR NO KEY UPDATE``.
+# Sie schließen sich weiterhin GEGENSEITIG aus (Zeile 3, Spalte 3) — die
+# Serialisierung aller Buchungspfade pro Mitarbeiterin bleibt also erhalten —,
+# kollidieren aber nicht mehr mit dem impliziten ``FOR KEY SHARE`` jedes
+# Kind-INSERTs (Zeile 3, Spalte 1). Genau diese Kollision war die einzige
+# Wartekante, die die beiden Zyklen oben schließt.
+
+_XLOCK_DAY = _CLOSURE_START  # Montag, liegt in der Betriebsferien-Spanne
+
+# Dritter Benutzer: ein handelnder ADMIN, dessen UUID VOR der des Mitarbeiters
+# sortiert. Die Betriebsferien sperren alle Teilnehmer in EINER nach ``id``
+# sortierten Anweisung — ohne diese Sortierlage greifen sie die Mitarbeiter-
+# zeile zuerst und der Zyklus (1) kommt gar nicht zustande.
+ADMIN_LOW_ID = uuid.UUID("ccccccc1-0000-4000-8000-00000000000a")
+assert str(ADMIN_LOW_ID) < str(USER_ID), "Testvoraussetzung: Admin-UUID sortiert vor der MA-UUID"
+
+
+@pytest.fixture
+def clean_cross_lock_state(admin_engine):
+    """Wie ``clean_closure_state``, zusätzlich mit dem VOR-sortierenden Admin."""
+    def _wipe():
+        conn = admin_engine.connect()
+        conn.execute(text("DELETE FROM time_entry_audit_logs WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM company_closures WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM users WHERE id IN (:u1, :u2)"),
+                     {"u1": str(USER2_ID), "u2": str(ADMIN_LOW_ID)})
+        conn.close()
+
+    _wipe()
+    conn = admin_engine.connect()
+    for uid, uname, mail, first in (
+        (USER2_ID, "concurrency_test_admin2", "concurrency2@test.local", "C2"),
+        (ADMIN_LOW_ID, "concurrency_test_admin_low", "concurrency_low@test.local", "CL"),
+    ):
+        conn.execute(text("""
+            INSERT INTO users (id, tenant_id, username, email, password_hash,
+                               first_name, last_name, role, weekly_hours,
+                               vacation_days, work_days_per_week, is_active)
+            VALUES (:id, :tid, :u, :e, 'not-real', :f, 'Test', 'ADMIN',
+                    40, 30, 5, true)
+        """), {"id": str(uid), "tid": str(TENANT_ID), "u": uname, "e": mail, "f": first})
+    conn.close()
+    yield
+    _wipe()
+
+
+def _seed_time_entry(day=_XLOCK_DAY, user_id=USER_ID) -> uuid.UUID:
+    """Ein abgeschlossener Zeiteintrag am Zieltag (09:00–17:00, 30 min Pause)."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        entry = TimeEntry(
+            user_id=user_id, tenant_id=TENANT_ID, date=day,
+            start_time=time(9, 0), end_time=time(17, 0), break_minutes=30,
+        )
+        session.add(entry)
+        session.commit()
+        session.refresh(entry)
+        return entry.id
+    finally:
+        session.close()
+
+
+def _slow(fn, seconds: float):
+    """Verlangsamt ``fn`` um ``seconds`` VOR dem eigentlichen Aufruf."""
+    def _wrapped(*args, **kwargs):
+        time_module.sleep(seconds)
+        return fn(*args, **kwargs)
+    return _wrapped
+
+
+def _run_create_absence_for(results: list, acting_user_id, target_user_id, day,
+                            absence_type=AbsenceType.SICK, barrier=None):
+    """Ruft die ECHTE ``create_absence``.
+
+    ``target_user_id=None`` = Eigenbuchung (``user_id`` im Payload weglassen —
+    ein Nicht-Admin, der ihn setzt, bekommt 403).
+    """
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        me = session.query(User).filter(User.id == acting_user_id).first()
+        if barrier is not None:
+            barrier.wait(timeout=15)
+        absences_router.create_absence(
+            absence_data=AbsenceCreate(
+                date=day, type=absence_type, hours=8.0,
+                user_id=str(target_user_id) if target_user_id is not None else None,
+            ),
+            db=session, current_user=me,
+        )
+        results.append(("created",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except OperationalError as e:
+        session.rollback()
+        results.append(
+            ("deadlock",) if "deadlock detected" in str(e).lower()
+            else ("error", "OperationalError")
+        )
+    except IntegrityError:
+        session.rollback()
+        results.append(("error", "IntegrityError"))
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+def _run_admin_update_time_entry(results: list, acting_user_id, entry_id, note):
+    """Ruft die ECHTE ``admin_time_entries.admin_update_time_entry``."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        me = session.query(User).filter(User.id == acting_user_id).first()
+        admin_time_entries_router.admin_update_time_entry(
+            entry_id=str(entry_id),
+            entry_data=TimeEntryUpdate(note=note),
+            db=session, current_user=me,
+        )
+        results.append(("updated",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except OperationalError as e:
+        session.rollback()
+        results.append(
+            ("deadlock",) if "deadlock detected" in str(e).lower()
+            else ("error", "OperationalError")
+        )
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+def test_absence_booking_by_an_admin_does_not_deadlock_with_a_parallel_closure(
+    concurrency_seed, clean_cross_lock_state, app_engine, monkeypatch,
+):
+    """Restklasse (1): Buchung sperrt die MA-Zeile, Audit-Zeile greift die ADMIN-Zeile.
+
+    ``create_absence`` sperrt die Zeile der Mitarbeiterin (Anker) und löscht
+    danach die Zeiteinträge des Tages — mit Audit-Zeile, deren ``changed_by``
+    auf den handelnden Admin zeigt. Dieser Fremdschlüssel nimmt ein
+    ``FOR KEY SHARE`` auf einer ZWEITEN Benutzerzeile, die der Anker nicht
+    enthält. Die Betriebsferien sperren umgekehrt ALLE Teilnehmerzeilen in
+    EINER nach ``id`` sortierten Anweisung — und die Admin-Zeile sortiert hier
+    absichtlich VOR der Mitarbeiterzeile:
+
+        T1 (Buchung):  FOR UPDATE(MA) ✓            → KEY SHARE(Admin) ⏳
+        T2 (Ferien):   FOR UPDATE(Admin) ✓         → FOR UPDATE(MA)   ⏳
+                                                   → Zyklus, deadlock detected
+
+    Der Zyklus verschwindet, sobald der Anker ``FOR NO KEY UPDATE`` ist: das
+    ``FOR KEY SHARE`` von T1 kollidiert dann nicht mehr mit der von T2
+    gehaltenen Sperre (gemessene Matrix im Kopf dieses Abschnitts), T1 läuft
+    durch, gibt die MA-Zeile frei und T2 kommt danach dran. Die gegenseitige
+    Ausschlusswirkung der beiden Anker bleibt (NO KEY UPDATE ⊥ NO KEY UPDATE) —
+    T2 wartet weiterhin auf T1.
+
+    Die beiden Verlangsamungen dehnen das Fenster zwischen „Anker" und
+    „abhängiger Schreibzugriff" von Millisekunden auf Sekunden; ohne sie wäre
+    der Zyklus reiner Zeitzufall.
+    """
+    _seed_time_entry()
+
+    monkeypatch.setattr(
+        absences_router, "_create_audit_log",
+        _slow(absences_router._create_audit_log, 2.5),
+    )
+    monkeypatch.setattr(
+        company_closures_router, "_get_workdays",
+        _slow(company_closures_router._get_workdays, 1.0),
+    )
+
+    results: list = []
+    barrier = threading.Barrier(2)
+    t_absence = threading.Thread(
+        target=_run_create_absence_for,
+        args=(results, ADMIN_LOW_ID, USER_ID, _XLOCK_DAY, AbsenceType.SICK, barrier),
+    )
+    t_closure = threading.Thread(
+        target=_run_create_closure,
+        args=(results, USER2_ID, "Kreuzsperren-Betriebsferien", barrier),
+    )
+    t_absence.start(); t_closure.start()
+    t_absence.join(timeout=60); t_closure.join(timeout=60)
+
+    assert ("deadlock",) not in results, (
+        "Sperr-Zyklus über zwei Benutzerzeilen: die Buchung hält die MA-Zeile "
+        "und will die Admin-Zeile (Audit-Fremdschlüssel), die Betriebsferien "
+        f"halten die Admin-Zeile und wollen die MA-Zeile. Ergebnis: {results}"
+    )
+    assert sorted(results) == [("created",), ("created",)], results
+
+
+def test_admin_time_entry_edit_does_not_deadlock_with_a_parallel_closure(
+    concurrency_seed, clean_cross_lock_state, app_engine, monkeypatch,
+):
+    """Restklasse (2): ``admin_time_entries`` nimmt nie einen Anker.
+
+    ``admin_update_time_entry`` sperrt die ZEITEINTRAGS-Zeile (``FOR UPDATE``)
+    und schreibt danach eine Audit-Zeile, deren Fremdschlüssel ``FOR KEY SHARE``
+    auf der Mitarbeiter- UND der Admin-Zeile nehmen. Die Betriebsferien halten
+    genau diese Benutzerzeilen und löschen danach die Zeiteinträge der
+    abgedeckten Tage:
+
+        T1 (Zeitkorrektur): FOR UPDATE(Zeiteintrag) ✓ → KEY SHARE(MA)        ⏳
+        T2 (Ferien):        FOR UPDATE(MA)          ✓ → FOR UPDATE(Zeiteintrag) ⏳
+                                                      → Zyklus, deadlock detected
+
+    Bemerkenswert: dieser Zyklus braucht nur EINE Benutzerzeile — die zweite
+    Ecke ist die Zeiteintrags-Zeile. Er ist damit deutlich leichter erreichbar
+    als (1) und hängt an keiner Sortierlage.
+
+    Auch hier reicht ``FOR NO KEY UPDATE`` am Anker: T1s ``FOR KEY SHARE``
+    kollidiert nicht mehr mit T2s Sperre, T1 kommt durch, gibt die
+    Zeiteintrags-Zeile frei, T2 löscht sie danach. Ein Anker in
+    ``admin_time_entries`` ist dafür NICHT nötig (und wäre teuer: er würde
+    jede Zeitkorrektur zusätzlich auf der Admin-Zeile serialisieren).
+    """
+    entry_id = _seed_time_entry()
+
+    monkeypatch.setattr(
+        admin_time_entries_router, "_create_audit_log",
+        _slow(admin_time_entries_router._create_audit_log, 2.5),
+    )
+    monkeypatch.setattr(
+        company_closures_router, "_get_workdays",
+        _slow(company_closures_router._get_workdays, 1.0),
+    )
+
+    results: list = []
+    t_edit = threading.Thread(
+        target=_run_admin_update_time_entry,
+        args=(results, USER2_ID, entry_id, "Kreuzsperren-Korrektur"),
+    )
+    t_closure = threading.Thread(
+        target=_run_create_closure,
+        args=(results, USER2_ID, "Kreuzsperren-Betriebsferien 2"),
+    )
+    t_edit.start(); t_closure.start()
+    t_edit.join(timeout=60); t_closure.join(timeout=60)
+
+    assert ("deadlock",) not in results, (
+        "Sperr-Zyklus Zeiteintrag ↔ Benutzerzeile: die Zeitkorrektur hält den "
+        "Zeiteintrag und will die Benutzerzeile (Audit-Fremdschlüssel), die "
+        f"Betriebsferien halten die Benutzerzeile und wollen den Zeiteintrag: {results}"
+    )
+    assert sorted(results) == [("created",), ("updated",)], results
+
+
+def test_two_real_absence_bookings_still_serialize_on_the_anchor(
+    concurrency_seed, clean_absence_state, app_engine,
+):
+    """Gegenprobe zur schwächeren Sperrform: die Ausschlusswirkung bleibt.
+
+    ``FOR NO KEY UPDATE`` kollidiert nicht mehr mit dem impliziten
+    ``FOR KEY SHARE`` eines Kind-INSERTs — das ist der Zweck der Änderung. Es
+    kollidiert aber weiterhin mit sich selbst, und JEDER produktive
+    Absence-Schreibpfad greift den Anker (``create_absence``,
+    ``review_vacation_request``, ``review_change_request``, Betriebsferien —
+    die vier ``Absence(...)``-Konstruktionsstellen im Produktivcode). Zwei
+    ECHTE gleichzeitige Buchungen serialisieren also unverändert an der
+    Benutzerzeile: eine legt an, die andere sieht die Zeile danach im
+    geprüften Zweig und wird sauber abgelehnt — kein ``IntegrityError``,
+    keine Doppelbuchung.
+
+    Diese Zusicherung ist genau die, die der Abschluss-Review als Argument
+    GEGEN die schwächere Sperrform angeführt hat (dort belegt über eine
+    künstliche Sitzung, die eine Abwesenheit OHNE Anker einfügt). Hier wird sie
+    über die echten Endpunkt-Funktionen geprüft — der produktionsrelevante
+    Fall.
+    """
+    results: list = []
+    barrier = threading.Barrier(2)
+    threads = [
+        threading.Thread(
+            target=_run_create_absence_for,
+            args=(results, USER_ID, None, _ABS_DAY, AbsenceType.SICK, barrier),
+        )
+        for _ in range(2)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=40)
+
+    assert ("error", "IntegrityError") not in results, results
+    assert sorted(results) == [("created",), ("rejected", 400)], (
+        "Erwartet: eine Buchung legt an, die zweite wird im geprüften Zweig "
+        f"abgelehnt (400). Bekommen: {results}"
+    )
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        n = conn.execute(
+            text("SELECT COUNT(*) FROM absences WHERE user_id = :u AND date = :d"),
+            {"u": str(USER_ID), "d": _ABS_DAY},
+        ).scalar()
+    assert n == 1, f"Doppelbuchung: {n} Abwesenheiten am selben Tag"
+
+
+def test_no_router_locks_user_rows_directly():
+    """Statische Absicherung der Regel: Benutzerzeilen nur über den Helfer sperren.
+
+    Der Fix der Restklasse besteht darin, dass JEDE Anker-Sperre auf ``users``
+    ``FOR NO KEY UPDATE`` ist (siehe Kopf von ``app/routers/admin_helpers.py``).
+    Ein einzelnes neu hinzugefügtes ``db.query(User)…with_for_update()`` in
+    einem Router holt die Deadlock-Klasse vollständig zurück — und zwar
+    unbemerkt, weil es sich nur unter echter Parallelität zeigt.
+
+    Dieser Test ist die Leitplanke: er parst die Router-Quellen und lässt eine
+    ``with_for_update``-Kette über ``query(User)`` ausschließlich in
+    ``admin_helpers`` und nur mit ``key_share=True`` zu. Er braucht keine
+    Datenbank — er liegt hier, weil die Regel hier begründet und belegt wird.
+    """
+    import ast
+    import pathlib
+
+    routers = pathlib.Path(__file__).resolve().parents[1] / "app" / "routers"
+    assert routers.is_dir(), routers
+
+    def _locks_user(call: ast.Call) -> bool:
+        """Läuft die Aufrufkette dieses with_for_update über ``query(User)``?"""
+        node = call.func
+        while True:
+            if isinstance(node, ast.Attribute):
+                node = node.value
+            elif isinstance(node, ast.Call):
+                f = node.func
+                if (isinstance(f, ast.Attribute) and f.attr == "query"
+                        and any(isinstance(a, ast.Name) and a.id == "User"
+                                for a in node.args)):
+                    return True
+                node = f
+            else:
+                return False
+
+    offenders: list = []
+    for path in sorted(routers.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "with_for_update"):
+                continue
+            if not _locks_user(node):
+                continue
+            key_share = any(
+                kw.arg == "key_share"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value is True
+                for kw in node.keywords
+            )
+            if path.name != "admin_helpers.py" or not key_share:
+                offenders.append(f"{path.name}:{node.lineno}")
+
+    assert not offenders, (
+        "Benutzerzeilen werden direkt gesperrt statt über "
+        "`admin_helpers.lock_user_row(s)` — das holt die Kreuz-Sperren-"
+        "Deadlocks zurück (Begründung im Kopf von admin_helpers.py). "
+        f"Fundstellen: {offenders}"
+    )

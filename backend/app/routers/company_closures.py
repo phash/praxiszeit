@@ -15,7 +15,7 @@ from app.services import calculation_service, settings_service, special_days_ser
 # write paths can call it without importing this router (circular-import safe).
 # Re-exported as _resplit_year_closures to keep the existing call sites intact.
 from app.services.closure_split_service import resplit_year_closures as _resplit_year_closures
-from app.routers.admin_helpers import _create_audit_log
+from app.routers.admin_helpers import _create_audit_log, lock_user_rows
 
 
 # Release-Review 1.16.0: Betriebsferien löschen Abwesenheiten (beim Umspeichern und
@@ -120,36 +120,30 @@ def _lock_participant_rows(db: Session, tenant_id, user_ids) -> None:
     ZUSICHERUNG (und ihre Vorbedingung — Abschluss-Review 2026-07-31):
     Zwei gleichzeitige Betriebsferien-Vorgänge können sich nur dann nicht
     verklemmen, wenn beide diese Anweisung absetzen, BEVOR sie irgendetwas
-    schreiben. Grund: ``company_closures.created_by``,
-    ``absences.user_id``, ``time_entry_audit_logs.user_id/changed_by`` sind
-    nicht aufschiebbare Fremdschlüssel auf ``users`` — JEDER dieser INSERTs
-    nimmt auf der referenzierten Benutzerzeile ein ``FOR KEY SHARE``, das bis
-    zum Commit gehalten wird und mit dem ``FOR UPDATE`` hier kollidiert. Wer
-    zuerst schreibt und danach sperrt, eskaliert also auf einer Zeile, die er
-    selbst schon schwach hält:
-
-        T1: KEY SHARE(A)                T2: KEY SHARE(B)
-        T1: FOR UPDATE(A) ✓, (B) ⏳     T2: FOR UPDATE(A) ⏳   → Deadlock
-
-    Genau so lief es bis zum Abschluss-Review in ``create_closure`` (die
-    Schließungszeile wurde vor dem Anker geflusht) — reproduziert in
+    schreiben. Grund: die Anker-Sperren schließen sich gegenseitig aus; wer
+    zuerst einen Teil davon greift und den Rest später nachholt, kann sich mit
+    einem gleichzeitigen Vorgang über Kreuz verklemmen. Genau so lief es bis
+    zum Abschluss-Review in ``create_closure`` (die Schließungszeile wurde vor
+    dem Anker geflusht) — reproduziert in
     ``tests/test_concurrency.py::test_two_parallel_closure_creations_do_not_deadlock``.
     Deshalb gilt für ALLE Aufrufer: erst sperren, dann schreiben, und die
-    Menge muss JEDE Benutzerzeile enthalten, die der Vorgang danach anfasst —
-    einschließlich der Zeile des handelnden Admins (``created_by``), auch wenn
-    er selbst nicht an den Betriebsferien teilnimmt.
+    Menge muss JEDE Benutzerzeile enthalten, die der Vorgang danach EXPLIZIT
+    sperrt.
+
+    Die Zeile des handelnden Admins (``created_by``) bleibt in der Menge der
+    Aufrufer. Seit die Anker ``FOR NO KEY UPDATE`` sind (Audit 2026-07-31,
+    Restklasse — siehe ``admin_helpers.lock_user_rows``), ist sie dafür nicht
+    mehr ZWINGEND: der implizite ``FOR KEY SHARE`` des ``created_by``-INSERTs
+    kollidiert nicht mehr mit einem Anker. Sie bleibt trotzdem drin, weil der
+    Admin über ``receives_company_closures`` in aller Regel ohnehin Teilnehmer
+    ist und die Menge damit ehrlich beschreibt, wessen Buchungen dieser Vorgang
+    serialisiert.
 
     Weil vor Abschluss dieser Anweisung keine Absence-Sperre gehalten wird,
     bleibt zugleich die globale Reihenfolge Benutzer → Abwesenheit gegenüber
     den Einzel-Buchungspfaden gewahrt.
     """
-    ids = sorted({uid for uid in user_ids if uid is not None}, key=str)
-    if not ids:
-        return
-    db.query(User).filter(
-        User.id.in_(ids),
-        User.tenant_id == tenant_id,  # F-026
-    ).order_by(User.id).with_for_update().all()
+    lock_user_rows(db, tenant_id, user_ids)
 
 
 def _create_closure_absences(

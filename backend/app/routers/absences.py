@@ -15,7 +15,7 @@ from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
-from app.routers.admin_helpers import _create_audit_log
+from app.routers.admin_helpers import _create_audit_log, lock_user_row
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
 
@@ -412,11 +412,15 @@ def create_absence(
     # nicht: beide gehen durch, und der Tag traegt danach Soll 0 UND Ist +8 h
     # (und ggf. einen verbrauchten Urlaubstag). Das Fenster ist bei
     # Mehrtages-Buchungen deutlich breiter als bei Einzeltagen.
-    # F-026: der Lock-Read wird zusaetzlich am Mandanten gefiltert.
-    db.query(User).filter(
-        User.id == target_user.id,
-        User.tenant_id == target_user.tenant_id,
-    ).with_for_update().first()
+    #
+    # Audit 2026-07-31 (Restklasse): die Sperre laeuft ueber den gemeinsamen
+    # Helfer und ist damit ``FOR NO KEY UPDATE``. Grund: dieser Pfad schreibt
+    # danach Audit-Zeilen mit ``changed_by = handelnder Admin`` — ein
+    # impliziter ``FOR KEY SHARE`` auf einer ZWEITEN, nicht geankerten
+    # Benutzerzeile, der gegen die sortierte Teilnehmer-Sperre der
+    # Betriebsferien ein Sperr-Zyklus war. Ausfuehrliche Begruendung im Kopf
+    # von ``admin_helpers``. F-026 steckt im Helfer.
+    lock_user_row(db, target_user.tenant_id, target_user.id)
 
     # Check for existing absences (any type — no double-booking allowed).
     # F-028: with_for_update() on the existence probe closes the race window
@@ -778,11 +782,9 @@ def delete_absence(
     # konnten ein Loeschen und eine gleichzeitige Antrags-Genehmigung ueber Kreuz
     # aufeinander warten (ABBA); Postgres schoss einen der beiden mit
     # ``deadlock detected`` ab (HTTP 500 fuer den Anwender).
-    # F-026: der Lock-Read wird zusaetzlich am Mandanten gefiltert.
-    db.query(User).filter(
-        User.id == absence.user_id,
-        User.tenant_id == current_user.tenant_id,
-    ).with_for_update().first()
+    # Audit 2026-07-31 (Restklasse): ueber den gemeinsamen Helfer, also
+    # ``FOR NO KEY UPDATE`` — siehe Kopf von ``admin_helpers``. F-026 im Helfer.
+    lock_user_row(db, current_user.tenant_id, absence.user_id)
 
     # DSGVO Art. 5 Abs. 2: Audit-Log vor Löschung.
     # Abschluss-Review 2026-07-31: steht NACH der Anker-Sperre. Fachlich ist die

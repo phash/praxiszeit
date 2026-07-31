@@ -1,4 +1,4 @@
-"""Shared helpers used by admin sub-routers."""
+"""Shared helpers used by the router layer (admin sub-routers + Buchungspfade)."""
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -8,6 +8,103 @@ from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.schemas.vacation_request import VacationRequestResponse
 from app.services.calculation_service import count_workdays
+
+
+# ── Anker-Sperre auf Benutzerzeilen ──────────────────────────────────────────
+#
+# DIE EINE REGEL (Audit 2026-07-31, Restklasse Kreuz-Sperren):
+#
+#   Jede Sperre auf einer ``users``-Zeile, die als ANKER dient (also nur
+#   serialisieren, nicht die Zeile selbst ändern soll), läuft über
+#   ``lock_user_rows`` / ``lock_user_row`` und ist damit ``FOR NO KEY UPDATE``.
+#   Ein nacktes ``db.query(User)…with_for_update()`` gehört NICHT mehr in einen
+#   Router — ``tests/test_concurrency.py::test_no_router_locks_user_rows_directly``
+#   hält das fest.
+#
+# WARUM NICHT ``FOR UPDATE``:
+#   Jede Zeile mit einem Fremdschlüssel auf ``users`` (``absences.user_id``,
+#   ``time_entries.user_id``, ``company_closures.created_by`` und vor allem
+#   ``time_entry_audit_logs.user_id``/``changed_by``) nimmt beim INSERT über den
+#   RI-Trigger ein ``FOR KEY SHARE`` auf der referenzierten Benutzerzeile —
+#   implizit, bis zum Commit gehalten, und in einer Reihenfolge, die wir NICHT
+#   bestimmen können (mehrere Fremdschlüssel je Zeile, Trigger-Reihenfolge,
+#   Flush-Reihenfolge der Session). Gemessene Konfliktmatrix (Postgres 18,
+#   eigene Messung gegen die Projekt-DB):
+#
+#     gehalten \ angefordert   KEY SHARE  SHARE     NO KEY UPDATE  UPDATE
+#     FOR KEY SHARE            frei       frei      frei           KONFLIKT
+#     FOR SHARE                frei       frei      KONFLIKT       KONFLIKT
+#     FOR NO KEY UPDATE        frei       KONFLIKT  KONFLIKT       KONFLIKT
+#     FOR UPDATE               KONFLIKT   KONFLIKT  KONFLIKT       KONFLIKT
+#
+#   Mit ``FOR UPDATE`` (Zeile 4, Spalte 1) wird also JEDER dieser impliziten
+#   FK-Sperrversuche zu einer möglichen Wartekante gegen einen Anker — und
+#   damit zur Ecke eines Sperr-Zyklus. Zwei real reproduzierte Fälle:
+#
+#     (1) ``create_absence`` hält die MA-Zeile und schreibt eine Audit-Zeile mit
+#         ``changed_by = handelnder Admin`` → ``KEY SHARE`` auf einer ZWEITEN
+#         Benutzerzeile. Die Betriebsferien halten die Admin-Zeile (sortiert
+#         zuerst) und wollen die MA-Zeile → Zyklus.
+#     (2) ``admin_time_entries`` hält die ZEITEINTRAGS-Zeile und will
+#         ``KEY SHARE`` auf der Benutzerzeile; die Betriebsferien halten die
+#         Benutzerzeile und wollen den Zeiteintrag → Zyklus über nur EINE
+#         Benutzerzeile.
+#
+#   ``FOR NO KEY UPDATE`` (Zeile 3) entfernt genau diese Kante (Spalte 1 =
+#   frei) und behält alles, wofür der Anker da ist: er schließt sich weiterhin
+#   gegen sich selbst aus (Spalte 3) sowie gegen ``FOR SHARE``/``FOR UPDATE``
+#   und gegen jedes echte ``UPDATE users`` — alle Buchungspfade serialisieren
+#   also unverändert pro Mitarbeiterin. Aufgegeben wird nur die INZIDENTELLE
+#   Nebenwirkung, auch fremde, nicht geankerte Kind-INSERTs zu blockieren; die
+#   war nie eine Zusicherung, sondern die Ursache der Zyklen.
+#
+# WARUM NICHT „beide Zeilen sperren" (Ziel + Handelnder, sortiert):
+#   Das schließt den Zyklus nur, wenn BEIDE Beteiligten ankern. Zeilen mit
+#   Benutzer-Fremdschlüsseln entstehen aber an ~30 Stellen, darunter reine
+#   Lese-/Protokollpfade ohne jeden Anker (``reports.py``-Exportvermerke,
+#   ``journal.py``, ``me.py``, ``auth.py``, ``superadmin.py``,
+#   ``admin_users.py``, XLS-Import) und der Fehler-Middleware-Pfad, der gar
+#   keine ``FOR UPDATE``-Sperre auf Benutzerzeilen nehmen darf. Mehrere davon
+#   schreiben ZWEI Benutzer-Fremdschlüssel in EINEM INSERT, dessen interne
+#   Sperrreihenfolge nicht steuerbar ist. Zusätzlich würde das Mitsperren der
+#   Admin-Zeile jede Buchung desselben Admins für VERSCHIEDENE Mitarbeiter
+#   gegeneinander serialisieren (die Admin-Zeile wird zum Flaschenhals).
+#
+# Die projektweite Reihenfolge „Benutzerzeile zuerst, dann die abhängige Zeile"
+# bleibt unverändert gültig und ist weiterhin einzuhalten — sie regelt die
+# EXPLIZITEN Sperren. ``FOR NO KEY UPDATE`` macht zusätzlich die IMPLIZITEN,
+# nicht sortierbaren FK-Sperren harmlos.
+
+
+def lock_user_rows(db: Session, tenant_id, user_ids) -> list:
+    """Anker-Sperre auf mehreren Benutzerzeilen — sortiert, in EINER Anweisung.
+
+    Sortiert nach ``User.id``, damit zwei gleichzeitige Vorgänge die Sperren in
+    identischer Reihenfolge erwerben und sich nicht über Kreuz verklemmen.
+    ``FOR NO KEY UPDATE`` statt ``FOR UPDATE`` — Begründung siehe oben.
+
+    F-026: der Lock-Read wird zusätzlich am Mandanten gefiltert.
+    Gibt die gesperrten Zeilen zurück (leer, wenn keine passt).
+    """
+    ids = sorted({uid for uid in user_ids if uid is not None}, key=str)
+    if not ids:
+        return []
+    return (
+        db.query(User)
+        .filter(User.id.in_(ids), User.tenant_id == tenant_id)
+        .order_by(User.id)
+        .with_for_update(key_share=True)
+        .all()
+    )
+
+
+def lock_user_row(db: Session, tenant_id, user_id):
+    """Anker-Sperre auf EINER Benutzerzeile (siehe ``lock_user_rows``).
+
+    Gibt die gesperrte Zeile zurück oder ``None`` (unbekannt / fremder Mandant).
+    """
+    rows = lock_user_rows(db, tenant_id, [user_id])
+    return rows[0] if rows else None
 
 
 def _get_field(entry, field: str):

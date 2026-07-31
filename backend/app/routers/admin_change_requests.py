@@ -15,7 +15,9 @@ from app.schemas.change_request import (
     ChangeRequestBulkReviewResult,
 )
 from app.schemas.time_entry import TimeEntryResponse
-from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response, _enrich_cr_responses
+from app.routers.admin_helpers import (
+    _create_audit_log, _enrich_cr_response, _enrich_cr_responses, lock_user_row,
+)
 from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
@@ -222,10 +224,11 @@ def review_change_request(
         .first()
     )
     if _cr_owner:
-        db.query(User).filter(
-            User.id == _cr_owner[0],
-            User.tenant_id == current_user.tenant_id,  # F-026
-        ).with_for_update().first()
+        # Audit 2026-07-31 (Restklasse): gemeinsamer Anker-Helfer, also
+        # ``FOR NO KEY UPDATE`` — dieser Pfad schreibt danach Audit-Zeilen mit
+        # ``changed_by = handelnder Admin`` (zweite, nicht geankerte
+        # Benutzerzeile). Begruendung im Kopf von ``admin_helpers``.
+        lock_user_row(db, current_user.tenant_id, _cr_owner[0])
 
     # F-028: Lock the CR row for the duration of this transaction so that
     # two concurrent approval requests cannot both pass the status check
