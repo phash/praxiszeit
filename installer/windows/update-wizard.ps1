@@ -423,6 +423,23 @@ $script:SecretFiles = @(
 )
 
 function Repair-SecretFileAcl([string]$file) {
+    # $ErrorActionPreference steht im Skript global auf 'Stop'. In Windows
+    # PowerShell 5.1 wird die per 2>&1 eingesammelte stderr-Ausgabe eines
+    # nativen Programms dann als terminierender NativeCommandError geworfen -
+    # eine einzelne icacls-Meldung wuerde also den ganzen Update-Lauf
+    # abbrechen. Das Haerten der Rechte ist aber eine Zusatzmassnahme und darf
+    # ein Update NIE verhindern. Deshalb lokal auf 'Continue' und Auswertung
+    # ausschliesslich ueber $LASTEXITCODE.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        return Invoke-SecretFileAcl $file
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
+function Invoke-SecretFileAcl([string]$file) {
     # Reihenfolge zwingend: erst die expliziten Rechte vergeben, DANN die
     # Vererbung kappen. Umgekehrt wuerde /inheritance:r eine Datei ohne jeden
     # Eintrag hinterlassen - auch SYSTEM koennte sie dann nicht mehr lesen und
@@ -492,9 +509,13 @@ function Step-ACLFix {
         Set-StepStatus 'acl' 'ok'
         return $true
     } catch {
-        Write-Log "FEHLER bei icacls: $_"
-        Set-StepStatus 'acl' 'fail'
-        return $false
+        # Bewusst KEIN Abbruch: die Rechte-Haertung ist eine Zusatzmassnahme.
+        # Ein Update daran scheitern zu lassen waere schlimmer als eine Datei,
+        # die noch die alten Rechte traegt - der naechste Dienststart holt das
+        # ohnehin nach (praxiszeit-server.py: _ensure_restricted_permissions).
+        Write-Log "WARNUNG: Rechte-Haertung uebersprungen: $_"
+        Set-StepStatus 'acl' 'warn'
+        return $true
     }
 }
 
