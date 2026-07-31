@@ -7,7 +7,7 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from app.core.limiter import limiter
 from app.database import get_db
-from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry, TimeEntryAuditLog
+from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview, VacationRequestUpdate
@@ -222,8 +222,16 @@ def review_vacation_request(
         dates_by_year = {}
         for d in dates_to_create:
             dates_by_year.setdefault(d.year, []).append(d)
+        # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
+        # ``is_vacation_billable_day`` (F-026: tenant-gefiltert).
+        wh_changes = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == target_user.id,
+            WorkingHoursChange.tenant_id == target_user.tenant_id,
+        ).order_by(WorkingHoursChange.effective_from).all()
         for check_year, year_dates in dates_by_year.items():
-            vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
+            vacation_account = calculation_service.get_vacation_account(
+                db, target_user, check_year, wh_changes=wh_changes
+            )
             # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5).
             # R1-3: skip days with 0h target (e.g. Mo/Mi/Fr user — mirrors the
             # creation loop which skips hours_for_day == 0). #431: der Modus wird
@@ -231,7 +239,7 @@ def review_vacation_request(
             # ``is_vacation_billable_day``, dort auch die track_hours=False-Ausnahme).
             billable_days = [
                 d for d in year_dates
-                if calculation_service.is_vacation_billable_day(db, target_user, d)
+                if calculation_service.is_vacation_billable_day(db, target_user, d, wh_changes=wh_changes)
             ]
             # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
             _base = 0.5 if vr.half_day else 1.0

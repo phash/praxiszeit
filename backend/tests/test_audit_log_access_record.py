@@ -8,9 +8,13 @@ ueber diese Flaeche dieselben Gesundheitsdaten wie ueber die
 Abwesenheitsliste, das Journal und die Berichte — die alle einen
 Zugriffsvermerk schreiben. Diese eine tat es nicht.
 
-Muster identisch zu ``absences.list_absences`` (absences.py): EIN Vermerk pro
-Request, nur bei einem GEZIELTEN Zugriff auf eine FREMDE Person, Marker
-``health_data_read`` bzw. ``audit_log_read``, ``source="dsgvo"``.
+Muster angelehnt an ``absences.list_absences`` (absences.py): nur bei einem
+GEZIELTEN Zugriff auf eine FREMDE Person. ANDERS als das Vorbild wird hier
+(Fix-Welle 4 #2) NUR geschrieben, wenn die Antwort tatsächlich sensible
+Inhalte enthält (Marker ``health_data_read``, ``source="dsgvo"``) — sonst
+liefe der Vermerk in dieselbe Tabelle ein, die dieser Endpoint auflistet
+(Feedback-Loop). ``audit_log_read`` ist nur noch ein Bestandsmarker aus
+Zeilen von vor diesem Fix.
 """
 from datetime import date
 
@@ -133,29 +137,28 @@ def test_machine_readable_absence_note_also_counts(db, default_tenant, admin, em
     assert [x.action for x in _access_records(db)] == ["health_data_read"]
 
 
-def test_non_sensitive_read_records_plain_marker(db, default_tenant, admin, emp):
-    """Urlaub ist kein Gesundheitsdatum — der Zugriff wird trotzdem vermerkt
-    (die Spur haengt am ZUGRIFF, nicht am Inhalt), aber ohne den
-    Gesundheits-Marker."""
+def test_non_sensitive_read_records_no_marker(db, default_tenant, admin, emp):
+    """Urlaub ist kein Gesundheitsdatum. ANDERS als absences.py (Vorbild) wird
+    hier KEIN Vermerk geschrieben: die Zeile liefe in dieselbe Tabelle ein,
+    die dieser Endpoint selbst auflistet (Feedback-Loop, Fix-Welle 4 #2) —
+    ohne sensiblen Inhalt in der Antwort besteht kein Art.-5(2)-Nachweisbedarf."""
     _seed_row(db, emp, admin, old_note="Urlaub 8,0 h", new_note="Urlaub 4,0 h — x")
 
     r = _client_as(db, admin).get(f"/api/admin/audit-log?user_id={emp.id}")
     _app.dependency_overrides.clear()
     assert r.status_code == 200, r.text
 
-    records = _access_records(db)
-    assert len(records) == 1
-    assert records[0].action == "audit_log_read"
-    assert "ohne Gesundheitsdaten" in records[0].new_note
+    assert _access_records(db) == []
 
 
-def test_empty_result_is_still_recorded(db, default_tenant, admin, emp):
-    """Wie in absences.py: eine gezielte Suche, die (noch) nichts findet, bleibt
-    protokollpflichtig — sonst haengt die Spur am Inhalt."""
+def test_empty_result_is_not_recorded(db, default_tenant, admin, emp):
+    """ANDERS als absences.py: eine gezielte Suche, die (noch) nichts findet,
+    enthaelt keine sensiblen Inhalte in der Antwort -> kein Vermerk (sonst
+    Feedback-Loop in die eigene Liste, Fix-Welle 4 #2)."""
     r = _client_as(db, admin).get(f"/api/admin/audit-log?user_id={emp.id}")
     _app.dependency_overrides.clear()
     assert r.status_code == 200, r.text
-    assert len(_access_records(db)) == 1
+    assert _access_records(db) == []
 
 
 def test_own_log_is_not_recorded(db, default_tenant, admin):

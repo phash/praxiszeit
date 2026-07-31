@@ -48,6 +48,7 @@ const actionLabels: Record<string, string> = {
   profile_update: 'Profil geändert',
   // Zugriffs-/Systemereignisse (keine Änderung — #284: NICHT als „Gelöscht" rendern)
   absence_list_read: 'Abwesenheiten gelesen',
+  audit_log_read: 'Änderungsprotokoll gelesen',
   health_data_read: 'Gesundheitsdaten gelesen',
   health_export: 'Gesundheitsdaten exportiert',
   self_data_export: 'Eigene Daten exportiert',
@@ -67,6 +68,7 @@ const actionColors: Record<string, string> = {
   dsgvo_anonymize: 'bg-red-100 text-red-800',
   dsgvo_purge: 'bg-red-100 text-red-800',
   absence_list_read: 'bg-gray-100 text-gray-700',
+  audit_log_read: 'bg-gray-100 text-gray-700',
   health_data_read: 'bg-amber-100 text-amber-800',
   health_export: 'bg-amber-100 text-amber-800',
   self_data_export: 'bg-gray-100 text-gray-700',

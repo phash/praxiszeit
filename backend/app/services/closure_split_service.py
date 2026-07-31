@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, WorkingHoursChange
 from app.services import calculation_service, settings_service, special_days_service
 
 
@@ -82,6 +82,18 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         ).all()
     }
 
+    # Fix-Welle 4 #3: EINMAL je Tenant/Jahr laden statt je Closure-Absence eine
+    # Query (drei get_schedule_for_date-Aufrufe je durchlaufener Zeile weiter
+    # unten) — bei 30 MA × 10 Schließtagen bisher bis zu 300 zusätzliche
+    # Queries je Re-Split, der aus vielen Urlaubs-Schreibpfaden ausgelöst wird
+    # (#314). Muster wie ``admin_users.users_overview``/``company_closures``.
+    wh_by_user: dict = {}
+    for _c in db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id.in_(list(by_user.keys())),
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).all():
+        wh_by_user.setdefault(_c.user_id, []).append(_c)
+
     # Free special days (24./31.12.) that cost a vacation day this year — same
     # source get_vacation_account uses, so the budget bookkeeping matches.
     holiday_dates_year = {
@@ -112,11 +124,13 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         if employee is None or not employee.track_hours:
             continue
 
+        emp_wh = wh_by_user.get(user_id, [])
+
         # Gross annual budget (pro-rata + carryover), independent of bookings.
         # Decimal (L2, review 2026-07-14): the walk gate below then compares
         # exactly, no epsilon needed.
         budget = Decimal(str(
-            calculation_service.get_vacation_account(db, employee, year)["budget_days"]
+            calculation_service.get_vacation_account(db, employee, year, wh_changes=emp_wh)["budget_days"]
         ))
 
         # Non-closure vacation consumption (private vacation + free special days)
@@ -141,7 +155,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             # wrongly fell to OVERTIME.
             dt_day = calculation_service.get_daily_target_for_date(
                 employee, a.date,
-                calculation_service.get_schedule_for_date(db, employee, a.date),
+                calculation_service.get_schedule_for_date(db, employee, a.date, wh_changes=emp_wh),
             )
             if dt_day <= 0:
                 continue
@@ -169,7 +183,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             # weekday costs no vacation, so it must not reduce closure_budget.
             dt_day = calculation_service.get_daily_target_for_date(
                 employee, d,
-                calculation_service.get_schedule_for_date(db, employee, d),
+                calculation_service.get_schedule_for_date(db, employee, d, wh_changes=emp_wh),
             )
             if dt_day <= 0:
                 continue
@@ -195,7 +209,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             # deren tagebasierter 1-Tag-Verbrauch (#191) bleibt also unberührt.
             if calculation_service.get_daily_target_for_date(
                 employee, a.date,
-                calculation_service.get_schedule_for_date(db, employee, a.date),
+                calculation_service.get_schedule_for_date(db, employee, a.date, wh_changes=emp_wh),
             ) <= 0:
                 # Basistyp der Schließung; ``closures`` ist oben auf
                 # ``counts_as_vacation == True`` gefiltert → immer VACATION.

@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
+    WorkingHoursChange,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
@@ -468,8 +469,18 @@ def create_absence(
         dates_by_year = {}
         for d in dates_to_create:
             dates_by_year.setdefault(d.year, []).append(d)
+        # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
+        # ``is_vacation_billable_day`` (dort ruft es intern get_schedule_for_date
+        # auf) — im gleichmaessigen Modus liefen vorher NULL Queries, jetzt eine.
+        # F-026: tenant-gefiltert, wie die anderen wh_changes-Preloads.
+        wh_changes = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == target_user.id,
+            WorkingHoursChange.tenant_id == target_user.tenant_id,
+        ).order_by(WorkingHoursChange.effective_from).all()
         for check_year, year_dates in dates_by_year.items():
-            vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
+            vacation_account = calculation_service.get_vacation_account(
+                db, target_user, check_year, wh_changes=wh_changes
+            )
             # #156/T2 — Tagesprinzip: each booked working day consumes one vacation
             # day (0,5 for a half day, #167); compare the day COUNT against the
             # remaining DAYS, not hours (hours-based checks mis-block uneven
@@ -482,7 +493,7 @@ def create_absence(
             # Ausnahme in ``is_vacation_billable_day``.
             billable_days = [
                 d for d in year_dates
-                if calculation_service.is_vacation_billable_day(db, target_user, d)
+                if calculation_service.is_vacation_billable_day(db, target_user, d, wh_changes=wh_changes)
             ]
             # #394: ein Halbtags-Sondertag (24./31.12.) kostet 0,5 — der Pre-Check
             # muss exakt so viel verlangen wie get_vacation_account nachher zählt,

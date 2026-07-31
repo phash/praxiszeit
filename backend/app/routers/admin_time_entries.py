@@ -35,6 +35,9 @@ _CHANGE_ACTIONS = ("create", "update", "delete")
 
 # #431 / Art. 5(2) + Art. 9 DSGVO: Marker der Zugriffsvermerke dieser Fläche.
 # `action` ist varchar(40) (Migration 044) — beide Werte bleiben deutlich darunter.
+# ``audit_log_read`` wird seit Fix-Welle 4 (#2) nicht mehr NEU geschrieben
+# (siehe Kommentar in list_audit_log) — bleibt hier für ältere Bestandszeilen
+# und den varchar-Limit-Test erhalten.
 _AUDIT_READ_ACTIONS = ("health_data_read", "audit_log_read")
 
 # Welche Audit-Notiz trägt einen gesundheitsbezogenen Abwesenheitstyp?
@@ -517,32 +520,41 @@ def list_audit_log(
             .all()
         )
 
-    # #431 / Art. 5(2) + Art. 9: JEDEN gezielten Admin-Lesezugriff auf das
-    # Protokoll einer FREMDEN Person vermerken — eine Zeile pro Request, exakt
-    # nach dem Muster von ``absences.list_absences``. Diese Fläche zeigt seit
-    # #431 ``old_note``/``new_note`` an, und die Rückrechnung nach einer
-    # Wochenstunden-Änderung schreibt dort je nachgezogener Abwesenheit
-    # deutschen Klartext („Krank 8,0 h"). Damit sieht ein Admin hier dieselben
-    # Gesundheitsdaten wie über Abwesenheitsliste, Journal und Berichte — die
-    # alle protokollieren; nur diese Fläche tat es nicht.
+    # #431 / Art. 5(2) + Art. 9: Admin-Lesezugriff auf das Protokoll einer
+    # FREMDEN Person vermerken. Diese Fläche zeigt seit #431 ``old_note``/
+    # ``new_note`` an, und die Rückrechnung nach einer Wochenstunden-Änderung
+    # schreibt dort je nachgezogener Abwesenheit deutschen Klartext
+    # („Krank 8,0 h"). Damit sieht ein Admin hier dieselben Gesundheitsdaten
+    # wie über Abwesenheitsliste, Journal und Berichte — die alle
+    # protokollieren; nur diese Fläche tat es nicht.
     #
-    # Wie in absences.py hängt die Spur am ZUGRIFF, nicht am Ergebnis: eine
-    # gezielte Abfrage, die (noch) nichts findet, wird ebenfalls vermerkt.
-    # Die ungefilterte Gesamtliste ist die Verwaltungsansicht und bleibt außen
-    # vor — auch das identisch zur Abwesenheitsliste.
+    # ⚠️ ANDERS als absences.py (Vorbild): dort wird JEDER gezielte Zugriff
+    # vermerkt, weil die Spur am Zugriff hängt und ``Absence`` eine andere
+    # Tabelle als das eigene Protokoll ist — kein Feedback-Loop. Hier läuft
+    # die Vermerk-Zeile in ``time_entry_audit_logs`` ein, also GENAU in die
+    # Tabelle, die dieser Endpoint selbst auflistet: ein Vermerk pro Aufruf
+    # (jeder Seitenaufruf, MA-/Monatswechsel, "Mehr laden") würde beim
+    # nächsten Aufruf oben in derselben Liste stehen und echte Änderungen
+    # Richtung Seitenlimit verdrängen (Fund Fix-Welle 4 #2). Der Zweck des
+    # Vermerks ist der Nachweis „wer hat wann fremde GESUNDHEITSDATEN
+    # eingesehen" — ein Aufruf ohne sensiblen Inhalt in der Antwort ist kein
+    # solcher Zugriff. Deshalb wird NUR geschrieben, wenn ``sensitive`` True
+    # ist (action ist dann immer ``health_data_read``, nie ``audit_log_read``
+    # — der zweite Marker existiert nur für ältere, vor diesem Fix
+    # geschriebene Zeilen). NICHT „konsistent zu absences.py" zurückbauen.
     if user_id and str(user_id) != str(current_user.id):
         sensitive = any(_audit_note_is_health_sensitive(log) for log in logs)
-        db.add(TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=user_id,
-            changed_by=current_user.id,
-            action="health_data_read" if sensitive else "audit_log_read",
-            new_note=("Admin-Lesezugriff auf fremdes Änderungsprotokoll "
-                      + ("inkl. Gesundheitsdaten" if sensitive else "ohne Gesundheitsdaten")),
-            source="dsgvo",
-            tenant_id=current_user.tenant_id,
-        ))
-        db.commit()
+        if sensitive:
+            db.add(TimeEntryAuditLog(
+                time_entry_id=None,
+                user_id=user_id,
+                changed_by=current_user.id,
+                action="health_data_read",
+                new_note="Admin-Lesezugriff auf fremdes Änderungsprotokoll inkl. Gesundheitsdaten",
+                source="dsgvo",
+                tenant_id=current_user.tenant_id,
+            ))
+            db.commit()
 
     return _enrich_audit_responses(logs, db)
 

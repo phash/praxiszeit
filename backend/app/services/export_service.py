@@ -1581,6 +1581,19 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     # (``format_day_plan``, dieselbe Klartext-Funktion wie in den #415/#431-
     # Kopfzeilen der übrigen Exporte) statt eines falschen Mittelwerts. Keine
     # Spalte verschoben — nur der Inhalt dieser einen informativen Ecke.
+    #
+    # Fix-Welle 4 #6 (nur dokumentiert, KEINE Verhaltensänderung): ``user.
+    # use_daily_schedule``/``user.hours_monday…friday`` werden hier bewusst
+    # LIVE von der Mitarbeiter-Zeile gelesen — eine benannte Ausnahme von der
+    # BACKEND-ARCHITEKTUR.md-Regel "nie live lesen, immer get_schedule_for_date"
+    # (#431). Diese Ecke gehört zum klassischen Kompaktbericht (siehe Docstring
+    # oben: ausdrücklich als Legacy-Format geführt, #377-Grenze bereits dort
+    # dokumentiert) und zeigt den HEUTIGEN Vertragszustand, nicht den für das
+    # Berichtsjahr historisch aufgelösten. Bei einem Moduswechsel im
+    # Berichtsjahr zeigt die Ecke also den aktuellen Tagesplan über einem
+    # vergangenen Jahr — akzeptierte Einschränkung eines Legacy-Blatts, kein
+    # Bug. Für den historisch korrekten Wert: ``generate_yearly_report``/
+    # ``_yearly_employee_sheet`` (die #415-Wochenstunden-Historie-Spalte).
     sheet.cell(row=6, column=17).value = "Tagesplan:" if user.use_daily_schedule else "tägl. Std:"
     sheet.cell(row=6, column=17).font = normal_font
     if user.use_daily_schedule:

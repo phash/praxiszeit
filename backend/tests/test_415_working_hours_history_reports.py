@@ -913,6 +913,20 @@ class TestOdsParity:
         # Der Kommentartext steht zusaetzlich zum sichtbaren Zellinhalt drin —
         # beide tragen denselben Satz.
         assert content.count("ab 15.03.2026: 30,0 Std/Woche") >= 2
+        # Fix-Welle 4 #4: das ODF-Inhaltsmodell verlangt office:annotation VOR
+        # den text:p-Kindern von table:table-cell — ein reines "kommt im
+        # content.xml vor"-Assert (wie oben) belegt das NICHT, ein Kommentar
+        # nach dem text:p wuerde denselben String liefern. Deshalb hier
+        # explizit die Reihenfolge INNERHALB der annotierten Zelle pruefen.
+        ann_idx = content.index("<office:annotation")
+        cell_open = content.rindex("<table:table-cell", 0, ann_idx)
+        cell_close = content.index("</table:table-cell>", ann_idx)
+        cell_xml = content[cell_open:cell_close]
+        assert cell_xml.index("<office:annotation") < cell_xml.index("<text:p"), (
+            "office:annotation muss laut ODF-Inhaltsmodell VOR text:p in der "
+            "Zelle stehen (LibreOffice ist beim Import tolerant, andere "
+            "ODF-Consumer nicht)"
+        )
 
     def test_yearly_ods_overview_has_the_changes_column(self, db, test_user):
         import zipfile

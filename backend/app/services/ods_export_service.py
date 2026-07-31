@@ -89,10 +89,17 @@ def _str_cell_with_comment(value: str, style=None) -> TableCell:
     Bildschirm-Metapher UND Begruendung ueber beide Formate hinweg identisch
     bleiben.
     """
-    cell = _str_cell(value, style=style)
+    # Fix-Welle 4 #4: das ODF-Inhaltsmodell fuer table:table-cell verlangt
+    # office:annotation VOR den text:p-Kindern (nicht danach) — LibreOffice ist
+    # beim Import meist tolerant, andere ODF-Consumer/Validatoren sind es nicht.
+    # Deshalb NICHT ``_str_cell`` (haengt die Annotation hinten an) wiederver-
+    # wenden, sondern die Zelle hier in der schema-korrekten Reihenfolge bauen.
+    cell = TableCell(valuetype="string", stylename=style)
     annotation = Annotation()
     annotation.addElement(P(text=neutralize_spreadsheet_formula(str(value))))
     cell.addElement(annotation)
+    text = str(value) if value is not None else ""
+    cell.addElement(P(text=neutralize_spreadsheet_formula(text)))
     return cell
 
 
