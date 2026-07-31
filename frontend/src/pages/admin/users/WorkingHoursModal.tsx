@@ -764,7 +764,16 @@ export default function WorkingHoursModal({
                             <input
                               id={`wh-${f.key}`}
                               type="number"
-                              step="0.5"
+                              // Fund C (Abschluss-Review #431): dieser Dialog ist
+                              // seit diesem Branch der EINZIGE Weg, die
+                              // Tagesstunden eines bestehenden Mitarbeiters zu
+                              // ändern. `step="0.5"` ließ die native
+                              // HTML-Validierung Viertelstunden (8,25) als
+                              // Schrittfehler abweisen — das Anlege-Formular
+                              // (`UserForm.tsx`, `f-hours-*`) erlaubt sie längst,
+                              // `Numeric(4,2)` trägt sie, und Handbuch/In-App-Hilfe
+                              // versprechen sie ausdrücklich.
+                              step="0.25"
                               min="0"
                               max="24"
                               value={formData[f.key]}
@@ -791,7 +800,11 @@ export default function WorkingHoursModal({
                           <input
                             id="wh-weekly-hours"
                             type="number"
-                            step="0.5"
+                            // Fund C: derselbe Schritt wie bei den Tagesfeldern —
+                            // sonst ließe „Gleichmäßig" andere Werte zu als
+                            // „Nach Tagen" (dessen Summe in 0,25er-Schritten
+                            // entsteht).
+                            step="0.25"
                             value={formData.weekly_hours}
                             onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
                             required
@@ -845,12 +858,27 @@ export default function WorkingHoursModal({
                             {/* Fund 2: „Betrifft bereits gebuchte
                                 Abwesenheiten" wäre falsch, wenn keine einzige
                                 umgeschrieben wird — die Auswirkung steckt dann
-                                allein in Saldo/Urlaub. */}
-                            {isRetroactive
-                              ? 'Rückwirkende Änderung'
-                              : affectsBookedAbsences
-                                ? 'Betrifft bereits gebuchte Abwesenheiten'
-                                : 'Ändert Überstunden oder Urlaubsverbrauch'}:{' '}
+                                allein in Saldo/Urlaub.
+                                Fund A (Abschluss-Review #431): `blockedReason`
+                                zeigt den Kasten unabhängig von `isRetroactive`
+                                (auch bei einem Datum AB heute, z. B. Datum
+                                bereits belegt) — und erzwingt dabei
+                                `affected_absences === 0` UND unveränderte
+                                Salden. Die alte Reihenfolge ließ in diesem Fall
+                                „Rückwirkende Änderung" (falsch, wenn das Datum
+                                in der Zukunft liegt) oder „Ändert Überstunden
+                                oder Urlaubsverbrauch" (falsch, weil nichts
+                                gespeichert wird) stehen. `blockedReason` muss
+                                deshalb VOR allen anderen Gründen entscheiden —
+                                der rote Text darunter nennt ohnehin schon den
+                                konkreten Grund. */}
+                            {blockedReason
+                              ? 'Änderung nicht möglich'
+                              : isRetroactive
+                                ? 'Rückwirkende Änderung'
+                                : affectsBookedAbsences
+                                  ? 'Betrifft bereits gebuchte Abwesenheiten'
+                                  : 'Ändert Überstunden oder Urlaubsverbrauch'}:{' '}
                             {formatDate(preview.period_start)} – {formatDate(preview.period_end)}
                           </p>
                           {dayTargetText && (

@@ -244,6 +244,37 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
     expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeInTheDocument();
   });
 
+  // Abschluss-Review #431, Fund B (a11y): im Bearbeiten-Zweig trägt die
+  // Anzeige-Box ein `<div>`, kein labelable Element — `<label for>` assoziiert
+  // sich damit NICHT (nur input/select/textarea/... sind "labelable"). Ohne
+  // Fix landet der Wert namenlos im Accessibility-Tree; `getByLabelText`
+  // findet ihn deshalb NUR über den neuen `aria-labelledby`.
+  it('Fund B: read-only-Anzeigeboxen (Wochenstunden, Arbeitstage) sind über aria-labelledby erreichbar', () => {
+    renderForm({ editUser: { ...baseEditUser, work_days_per_week: 4 } });
+    const weeklyHoursBox = screen.getByLabelText('Wochenstunden');
+    expect(weeklyHoursBox).toBe(document.getElementById('f-weekly-hours'));
+    expect(weeklyHoursBox.tagName).not.toBe('INPUT');
+    expect(weeklyHoursBox).toHaveTextContent('40,0 h/Woche');
+
+    const workDaysBox = screen.getByLabelText('Arbeitstage pro Woche');
+    expect(workDaysBox).toBe(document.getElementById('f-work-days'));
+    expect(workDaysBox.tagName).not.toBe('INPUT');
+    expect(workDaysBox).toHaveTextContent('4');
+  });
+
+  it('Fund B: beim Anlegen bleibt die klassische htmlFor-Assoziation auf den echten Eingabefeldern', () => {
+    // Regressions-Gegenprobe: der Fix darf den Create-Zweig (echte <input>s)
+    // nicht anfassen — `getByLabelText` muss weiterhin auf `htmlFor` treffen.
+    renderForm();
+    const weeklyHoursInput = screen.getByLabelText('Wochenstunden');
+    expect(weeklyHoursInput.tagName).toBe('INPUT');
+    expect(weeklyHoursInput).toBe(document.getElementById('f-weekly-hours'));
+
+    const workDaysInput = screen.getByLabelText('Arbeitstage pro Woche');
+    expect(workDaysInput.tagName).toBe('INPUT');
+    expect(workDaysInput).toBe(document.getElementById('f-work-days'));
+  });
+
   it('zeigt beim Anlegen ein Eingabefeld (kein Button)', () => {
     renderForm();
     expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');

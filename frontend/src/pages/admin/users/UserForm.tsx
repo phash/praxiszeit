@@ -431,7 +431,23 @@ export default function UserForm({
             />
           </div>
           <div>
-            <label htmlFor="f-weekly-hours" className="block text-sm font-medium text-gray-700 mb-1">Wochenstunden</label>
+            {/* Fund B (Abschluss-Review #431): `<label for>` assoziiert nur mit
+                „labelable" Elementen (input/select/textarea/...) — im
+                Bearbeiten-Zweig steht dahinter ein `<div>`, das bekommt also
+                NIE einen Accessible Name über `htmlFor`. Einheitliche Lösung
+                für alle read-only-Anzeigeboxen dieses Formulars: die Anzeige
+                trägt `aria-labelledby` auf eine feste Label-Id, das Label
+                selbst verliert im Anzeige-Zweig sein wirkungsloses `htmlFor`
+                (sonst zeigt es fälschlich eine Assoziation an, die es nicht
+                gibt) — im Eingabe-Zweig bleibt `htmlFor` wie gehabt, da dort
+                ein echtes `<input>` steht. */}
+            <label
+              htmlFor={editUser ? undefined : 'f-weekly-hours'}
+              id={editUser ? 'f-weekly-hours-label' : undefined}
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Wochenstunden
+            </label>
             {editUser ? (
               // Task 6+11 (#431/#Wochenstunden-anpassen): reine Anzeige beim
               // Bearbeiten — für ALLE Mitarbeitenden, auch mit individuellem
@@ -442,6 +458,7 @@ export default function UserForm({
               <div className="flex items-center gap-2">
                 <div
                   id="f-weekly-hours"
+                  aria-labelledby="f-weekly-hours-label"
                   className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
                 >
                   {weeklyHoursDisplay}
@@ -478,7 +495,14 @@ export default function UserForm({
             )}
           </div>
           <div>
-            <label htmlFor="f-work-days" className="block text-sm font-medium text-gray-700 mb-1">Arbeitstage pro Woche</label>
+            {/* Fund B: gleiche aria-labelledby-Lösung wie bei f-weekly-hours. */}
+            <label
+              htmlFor={editUser ? undefined : 'f-work-days'}
+              id={editUser ? 'f-work-days-label' : undefined}
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Arbeitstage pro Woche
+            </label>
             {editUser ? (
               // Task 11 (#431): historisiertes Feld — der Update-PUT lehnt es
               // wie weekly_hours ab (Task 7). Änderung nur noch über den
@@ -487,6 +511,7 @@ export default function UserForm({
               // Hinweis hier nicht.
               <div
                 id="f-work-days"
+                aria-labelledby="f-work-days-label"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
               >
                 {/* Fund 3: der frisch nachgezogene Wert, nicht der beim Öffnen

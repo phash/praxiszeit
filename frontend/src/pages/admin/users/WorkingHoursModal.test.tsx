@@ -322,6 +322,64 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
+  it('Fund A: die Kasten-Überschrift nennt bei blocked_reason weder "Rückwirkende Änderung" noch "Betrifft bereits gebuchte Abwesenheiten"', async () => {
+    // Abschluss-Review #431, Fund A: die Überschrift wurde bisher allein über
+    // `isRetroactive`/`affectsBookedAbsences` gewählt — beide sind hier FALSE
+    // (Zukunftsdatum, `affected_absences` vom Backend im blockierten Fall
+    // garantiert 0), der Kasten erscheint aber ausschließlich wegen
+    // `blocked_reason`. Ohne den Fix fiel die Überschrift auf "Ändert
+    // Überstunden oder Urlaubsverbrauch" — falsch, weil nichts gespeichert
+    // wird (der POST würde ohnehin 400 zurückgeben).
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse({
+          is_retroactive: false,
+          affected_absences: 0,
+          overtime_before: 12.5, overtime_after: 12.5,
+          vacation_days_before: 10, vacation_days_after: 10,
+          blocked_reason: 'Für dieses Datum existiert bereits eine Änderung.',
+        }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/Änderung nicht möglich/)).toBeInTheDocument();
+    expect(within(box).queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
+    expect(within(box).queryByText(/Betrifft bereits gebuchte Abwesenheiten/)).not.toBeInTheDocument();
+    expect(within(box).queryByText(/Ändert Überstunden oder Urlaubsverbrauch/)).not.toBeInTheDocument();
+    expect(within(box).getByText(/existiert bereits eine Änderung/)).toBeInTheDocument();
+  });
+
+  it('Fund A: blocked_reason gewinnt die Überschrift auch dann, wenn das Datum zusätzlich rückwirkend ist', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse({
+          is_retroactive: true,
+          affected_absences: 0,
+          overtime_before: 12.5, overtime_after: 12.5,
+          vacation_days_before: 10, vacation_days_after: 10,
+          blocked_reason: 'Für dieses Datum existiert bereits eine Änderung.',
+        }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/Änderung nicht möglich/)).toBeInTheDocument();
+    expect(within(box).queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
+  });
+
   it('meldet adjusted_absences und warning nach dem Speichern per Toast', async () => {
     postMock.mockResolvedValue({
       data: { id: 'c-x', adjusted_absences: 3, warning: 'Das Jahr 2026 ist bereits abgeschlossen.' },
@@ -614,6 +672,20 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     // Im Tagesplan-Modus gibt es kein eigenes Wochenstunden-Feld: der Wert ist
     // die Summe der Tageswerte und wird serverseitig gesetzt.
     expect(screen.queryByLabelText('Wochenstunden')).not.toBeInTheDocument();
+  });
+
+  it('Fund C: erlaubt Viertelstunden (step 0,25) bei den Tagesfeldern UND dem Wochenstunden-Feld', async () => {
+    // Abschluss-Review #431: dieser Dialog ist seit diesem Branch der EINZIGE
+    // Weg, die Tagesstunden eines bestehenden Mitarbeiters zu ändern.
+    // step="0.5" ließ die native HTML-Validierung 8,25 als Schrittfehler
+    // abweisen — das Anlege-Formular (`f-hours-*`) erlaubt 0,25 längst,
+    // Numeric(4,2) trägt es, und Handbuch/In-App-Hilfe versprechen es.
+    renderModal({ currentUseDailySchedule: true });
+    expect(await screen.findByLabelText('Montag')).toHaveAttribute('step', '0.25');
+    expect(screen.getByLabelText('Freitag')).toHaveAttribute('step', '0.25');
+
+    fireEvent.click(screen.getByRole('radio', { name: /Gleichmäßig/ }));
+    expect(screen.getByLabelText('Wochenstunden')).toHaveAttribute('step', '0.25');
   });
 
   it('berechnet die Wochenstunden als Summe der Tageswerte', async () => {

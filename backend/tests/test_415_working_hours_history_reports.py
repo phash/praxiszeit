@@ -670,6 +670,36 @@ class TestXlsxMonthlyReportShowsHistory:
         assert sheet.cell(row=1, column=5).value == 40.0
         assert not sheet.cell(row=1, column=6).value
 
+    def test_header_note_carries_a_full_text_comment(self, db, test_user):
+        """Fund D (Abschluss-Review #431): G1 ("Monat:") ist nicht leer — Excel
+        ueberlaeuft F1 also NICHT und schneidet den sichtbaren Text ab, ohne
+        das anzuzeigen. Ein Zellkommentar traegt den VOLLEN Satz unabhaengig
+        von der Spaltenbreite/Nachbarzelle."""
+        from app.services.export_service import generate_monthly_report
+        _mk_change(db, test_user, date(2026, 3, 15), 30)
+        wb = _load_xlsx(generate_monthly_report(db, 2026, 3))
+        sheet = wb[f"{test_user.last_name} {test_user.first_name}"[:31]]
+        cell = sheet.cell(row=1, column=6)
+        assert cell.comment is not None
+        assert cell.comment.text == "ab 15.03.2026: 30,0 Std/Woche"
+        # G1 ("Monat:") bleibt unangetastet — der Fix verschiebt keine Spalte.
+        assert sheet.cell(row=1, column=7).value == "Monat:"
+
+    def test_header_note_comment_carries_the_long_multi_segment_sentence_in_full(self, db, test_user):
+        """Der Extremfall aus dem Fund: eine Tagesplan-Zeile mit 53 Zeichen —
+        in Spalte F (Breite 12) neben dem nicht-leeren G1 optisch praktisch
+        unsichtbar, im Kommentar aber vollstaendig vorhanden."""
+        from app.services.export_service import generate_monthly_report
+        _mk_day_plan_change(db, test_user, date(2026, 3, 15), (8, 5, 4, None, None))
+        wb = _load_xlsx(generate_monthly_report(db, 2026, 3))
+        sheet = wb[f"{test_user.last_name} {test_user.first_name}"[:31]]
+        expected = "ab 15.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche"
+        assert len(expected) > 40  # weit ueber Spalte-F-Breite 12 (:662) hinaus
+        cell = sheet.cell(row=1, column=6)
+        assert cell.value == expected
+        assert cell.comment is not None
+        assert cell.comment.text == expected
+
 
 class TestXlsxYearlyReportShowsHistory:
     def test_overview_has_a_changes_column(self, db, test_user):
@@ -868,6 +898,21 @@ class TestOdsParity:
         out.seek(0)
         content = zipfile.ZipFile(out).read("content.xml").decode("utf-8")
         assert "ab 15.03.2026: 30,0 Std/Woche" in content
+
+    def test_monthly_ods_note_carries_an_annotation(self, db, test_user):
+        """Fund D — ODS-Pendant: dieselbe Ueberlauf-Zelle (die Nachbarzelle
+        "Monat:" ist auch hier nicht leer, s. `_monthly_sheet`), derselbe
+        ``office:annotation``-Kommentar statt einer breiteren Spalte."""
+        import zipfile
+        from app.services.ods_export_service import generate_monthly_report
+        _mk_change(db, test_user, date(2026, 3, 15), 30)
+        out = generate_monthly_report(db, 2026, 3)
+        out.seek(0)
+        content = zipfile.ZipFile(out).read("content.xml").decode("utf-8")
+        assert "<office:annotation" in content
+        # Der Kommentartext steht zusaetzlich zum sichtbaren Zellinhalt drin —
+        # beide tragen denselben Satz.
+        assert content.count("ab 15.03.2026: 30,0 Std/Woche") >= 2
 
     def test_yearly_ods_overview_has_the_changes_column(self, db, test_user):
         import zipfile

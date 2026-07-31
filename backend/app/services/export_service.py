@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.comments import Comment
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
@@ -258,6 +259,35 @@ def format_weekly_hours_history(segments, compact: bool = False) -> str:
     )
 
 
+def _attach_overflow_comment(cell, text: str) -> None:
+    """Fund D (Abschluss-Review #431): ein Excel-Kommentar statt eine breitere
+    Spalte oder Zeilenumbruch.
+
+    Die #415-Aenderungszeile (``format_weekly_hours_history``) steht in einer
+    Metadaten-Zelle mit einer NICHT-leeren Nachbarzelle rechts (``G1`` traegt
+    „Monat:") — Excel/LibreOffice ueberlaufen langen Zellinhalt nur in LEERE
+    Nachbarzellen, alles darueber hinaus wird beim Anzeigen abgeschnitten. Bei
+    mehreren Aenderungen im Zeitraum (``"; "``-verkettet) oder einer
+    Tagesplan-Zeile („ab 15.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche",
+    53 Zeichen) ist der Satz in der zwoelf Zeichen breiten Spalte F praktisch
+    unsichtbar, OHNE dass ein Abschneide-Hinweis (z. B. „…") das anzeigt — die
+    Zelle wirkt vollstaendig, ist es aber nicht.
+
+    Eine breitere Spalte F wuerde den Wert JEDER Zeile der „Netto (Std)"-Spalte
+    darunter mitziehen (dieselbe Spalte traegt ab Zeile 4 die taegliche
+    Netto-Stunden-Zahl) — ein 50+ Zeichen breiter Spaltenkopf fuer eine
+    zweistellige Zahl. Ein Zeilenumbruch (``wrap_text``) haette dieselbe
+    Nebenwirkung ueber die Zeilenhoehe von Zeile 1 (dort stehen „Mitarbeiter:"
+    und der Name, die keinen Umbruch brauchen). Ein Kommentar aendert weder
+    Spaltenbreite noch Zeilenhoehe noch die Position einer einzigen bestehenden
+    Spalte — Kundenauswertungen, die auf festen Spalten dieser Dateien laufen,
+    sind unberuehrt. Excel/LibreOffice markieren die Zelle mit einem kleinen
+    Eck-Indikator; der volle Satz steht beim Hovern/Oeffnen des Kommentars,
+    unabhaengig von der Spaltenbreite.
+    """
+    cell.comment = Comment(text, "PraxisZeit")
+
+
 def _work_days_suffix(segment, previous, compact: bool = False) -> str:
     """„ auf 4 Arbeitstage" — aber NUR, wenn dieses Segment die Arbeitstage
     gegenueber ``previous`` tatsaechlich aendert (Leerstring sonst).
@@ -431,6 +461,9 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     _wh_history = format_weekly_hours_history(_wh_segments)
     if _wh_history:
         sheet.cell(row=1, column=6).value = _wh_history
+        # Fund D: F1 hat mit G1 ("Monat:") eine nicht-leere Nachbarzelle — der
+        # Satz laeuft nicht ueber, siehe _attach_overflow_comment.
+        _attach_overflow_comment(sheet.cell(row=1, column=6), _wh_history)
     sheet.cell(row=1, column=7).value = "Monat:"
     sheet.cell(row=1, column=7).font = Font(bold=True)
     sheet.cell(row=1, column=8).value = f"{month:02d}/{year}"
@@ -1527,11 +1560,37 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
         sheet.cell(row=16, column=col).alignment = center_align
 
     # Add daily hours info in corner (current value — informational)
-    sheet.cell(row=6, column=17).value = "tägl. Std:"
+    #
+    # Fund G (Abschluss-Review #431): ``get_daily_target(user)`` war die letzte
+    # verbliebene Bypass-Stelle der Export-Schicht — sie liest
+    # ``user.weekly_hours``/``work_days_per_week`` direkt und kennt laut
+    # eigenem Docstring weder Historie noch Tagesplan.
+    #
+    # Beurteilung (wie vom Fund gefordert), ob dieser klassische Jahresbericht
+    # die Zahl ueberhaupt sinnvoll ausweisen KANN: für eine gleichmässige
+    # Woche ja — die Division bleibt ein einzelner, in sich stimmiger
+    # "aktueller" Tageswert (byte-identisch zu vorher, s. Docstring oben:
+    # dieselbe bewusste Brutto-Legacy-Beschränkung wie beim #377-Fix-Modus).
+    # Für einen TAGESPLAN-MA dagegen nicht: die Division (Summe ÷ Anzahl Tage)
+    # wäre ein arithmetisches Mittel, das mit KEINEM einzelnen Wochentag
+    # übereinstimmt (Mo 8 / Di 5 / Mi 4 → 5,67 h — kein Tag hat 5,67 h) und
+    # der historisch aufgelösten Tagesplan-Zeile widerspräche, die derselbe
+    # Bericht weiter oben (Zeile 7, ``get_gross_monthly_target``) für denselben
+    # Mitarbeitenden zeigt. Ein einzelner Jahres-Skalar kann einen Tagesplan
+    # grundsätzlich nicht abbilden — deshalb hier der Tagesplan-Text
+    # (``format_day_plan``, dieselbe Klartext-Funktion wie in den #415/#431-
+    # Kopfzeilen der übrigen Exporte) statt eines falschen Mittelwerts. Keine
+    # Spalte verschoben — nur der Inhalt dieser einen informativen Ecke.
+    sheet.cell(row=6, column=17).value = "Tagesplan:" if user.use_daily_schedule else "tägl. Std:"
     sheet.cell(row=6, column=17).font = normal_font
-    daily_hours = calculation_service.get_daily_target(user)
-    sheet.cell(row=6, column=18).value = float(daily_hours)
-    sheet.cell(row=6, column=18).number_format = '0.0'
+    if user.use_daily_schedule:
+        day_hours = [user.hours_monday, user.hours_tuesday, user.hours_wednesday,
+                     user.hours_thursday, user.hours_friday]
+        sheet.cell(row=6, column=18).value = format_day_plan(day_hours) or "–"
+    else:
+        daily_hours = calculation_service.get_daily_target(user)
+        sheet.cell(row=6, column=18).value = float(daily_hours)
+        sheet.cell(row=6, column=18).number_format = '0.0'
 
     # Set column widths
     sheet.column_dimensions['A'].width = 28

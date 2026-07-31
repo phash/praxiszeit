@@ -579,6 +579,20 @@ def anonymize_user(
     # Delete absences (no statutory retention requirement)
     db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete()
 
+    # Fund F (Abschluss-Review #431): die #415/#431-Vertragshistorie
+    # (``working_hours_changes``) bleibt bewusst stehen — sie traegt das
+    # historische SOLL fuer die §16-Aufbewahrung, genau wie die TimeEntries
+    # oben im Docstring. Ihr freier ``note``-Text (bis 500 Zeichen, vom
+    # Dialog angeboten und im Verlauf wieder angezeigt) ist aber Admin-
+    # Freitext OHNE Aufbewahrungspflicht — z. B. "Rückkehr nach Elternzeit"
+    # oder ein Klarname in Prosa. Scrubben wie die anderen personenbezogenen
+    # Felder oben (``department`` etc.), NICHT die Zeilen selbst loeschen.
+    db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+        WorkingHoursChange.note.isnot(None),
+    ).update({WorkingHoursChange.note: None}, synchronize_session=False)
+
     log = TimeEntryAuditLog(
         time_entry_id=None,
         user_id=user.id,

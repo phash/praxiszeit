@@ -14,6 +14,7 @@ from odf.opendocument import OpenDocumentSpreadsheet
 from odf.style import Style, TextProperties, TableColumnProperties, TableCellProperties
 from odf.text import P
 from odf.table import Table, TableColumn, TableRow, TableCell
+from odf.office import Annotation
 
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service, special_days_service
@@ -73,6 +74,25 @@ def _str_cell(value: str, style=None) -> TableCell:
 def _float_cell(value: float, style=None) -> TableCell:
     cell = TableCell(valuetype="float", value=str(round(value, 2)), stylename=style)
     cell.addElement(P(text=f"{value:.2f}"))
+    return cell
+
+
+def _str_cell_with_comment(value: str, style=None) -> TableCell:
+    """Fund D (Abschluss-Review #431): ODS-Zwilling zu
+    ``export_service._attach_overflow_comment`` — dieselbe Ueberlauf-Zelle mit
+    NICHT-leerer Nachbarzelle rechts existiert in ``_monthly_sheet`` (das
+    #415-``Stundenaenderung``-Feld vor „Monat:"), ohne dass odfpy hier je eine
+    Spaltenbreite setzt (LibreOffice zeigt Standardbreite — der lange Satz waere
+    ebenso abgeschnitten). Ein ``office:annotation`` ist der ODS-Standard fuer
+    einen Zellkommentar (LibreOffice: kleiner Eck-Indikator, Inhalt beim
+    Anklicken/Hovern) — bewusst dieselbe Loesung wie im XLSX-Pendant, damit
+    Bildschirm-Metapher UND Begruendung ueber beide Formate hinweg identisch
+    bleiben.
+    """
+    cell = _str_cell(value, style=style)
+    annotation = Annotation()
+    annotation.addElement(P(text=neutralize_spreadsheet_formula(str(value))))
+    cell.addElement(annotation)
     return cell
 
 
@@ -165,7 +185,9 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
     meta1.addElement(_float_cell(float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)))
     _wh_history = format_weekly_hours_history(_wh_segments)
-    meta1.addElement(_str_cell(_wh_history) if _wh_history else _empty_cell())
+    # Fund D: die Nachbarzelle rechts ("Monat:") ist nicht leer — der Satz
+    # laeuft nicht ueber, siehe _str_cell_with_comment.
+    meta1.addElement(_str_cell_with_comment(_wh_history) if _wh_history else _empty_cell())
     meta1.addElement(_str_cell("Monat:", style=bold))
     meta1.addElement(_str_cell(f"{month:02d}/{year}"))
     table.addElement(meta1)
