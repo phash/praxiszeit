@@ -279,14 +279,18 @@ def test_journal_day_rows_sum_to_monthly_summary(db, test_user):
 
 
 # --- Audit 2026-07-31 / uebernommen aus Welle B ------------------------------
-# Feiertag MIT Krank-/Fortbildungs-Abwesenheit: die Tageszeile zaehlte die
-# gutgeschriebenen Stunden nicht ins Ist, waehrend get_monthly_actual sie zaehlt
-# (credited_absences ohne Feiertags-Ausnahme). Die Tageszeile widersprach damit
-# dem Summary im SELBEN Response.
+# Feiertag MIT Krank-/Fortbildungs-Abwesenheit. Die zu schuetzende Invariante ist
+# unveraendert: die Tageszeile muss dasselbe sagen wie das ``monthly_summary`` im
+# SELBEN Response. Der erwartete WERT hat sich mit Fund K des Audits 2026-07-31
+# geaendert — die Gutschrift folgt jetzt der Soll-Struktur des Tages
+# (``calculation_service.credit_day_weight``), an einem Feiertag ist sie also 0
+# statt eines vollen Tagessolls Phantom-Ueberstunden. Beide Seiten stehen jetzt
+# auf 0; vorher standen beide (falsch) auf 8.
 
-def test_journal_holiday_with_sick_credits_actual_like_calculation(db, test_user):
-    """Krank an einem Feiertag: Ist = gutgeschriebene Stunden (wie
-    get_monthly_actual), Soll bleibt 0 (Feiertag)."""
+def test_journal_holiday_with_sick_matches_calculation(db, test_user):
+    """Krank an einem Feiertag: Soll 0 (Feiertag) UND Ist 0 (keine Gutschrift an
+    einem Tag ohne Arbeitspflicht) — und beides deckungsgleich mit
+    get_monthly_actual im selben Response."""
     d = date(2026, 3, 11)  # Mittwoch
     db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
     db.commit()
@@ -295,8 +299,8 @@ def test_journal_holiday_with_sick_credits_actual_like_calculation(db, test_user
     result = journal_service.get_journal(db, test_user, 2026, 3)
     day = next(x for x in result["days"] if x["date"] == "2026-03-11")
     assert day["target_hours"] == 0.0
-    assert day["actual_hours"] == 8.0
-    assert day["balance"] == 8.0
+    assert day["actual_hours"] == 0.0
+    assert day["balance"] == 0.0
 
     expected_actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
     assert round(sum(x["actual_hours"] for x in result["days"]), 2) == pytest.approx(
@@ -304,7 +308,7 @@ def test_journal_holiday_with_sick_credits_actual_like_calculation(db, test_user
     assert result["monthly_summary"]["actual_hours"] == pytest.approx(float(expected_actual))
 
 
-def test_journal_holiday_with_training_credits_actual(db, test_user):
+def test_journal_holiday_with_training_matches_calculation(db, test_user):
     """Dieselbe Regel fuer Fortbildung (der zweite ist-gutgeschriebene Typ)."""
     d = date(2026, 3, 11)
     db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
@@ -313,7 +317,10 @@ def test_journal_holiday_with_training_credits_actual(db, test_user):
 
     result = journal_service.get_journal(db, test_user, 2026, 3)
     day = next(x for x in result["days"] if x["date"] == "2026-03-11")
-    assert day["actual_hours"] == 6.0
+    assert day["actual_hours"] == 0.0
+
+    expected_actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
+    assert result["monthly_summary"]["actual_hours"] == pytest.approx(float(expected_actual))
 
 
 def test_journal_holiday_without_absence_unchanged(db, test_user):

@@ -826,6 +826,93 @@ def _within_employment_window(user: User, d: date) -> bool:
     return True
 
 
+def credit_day_weight(d: date, holiday_dates: set, special_cfg: Optional[dict] = None) -> Decimal:
+    """Audit 2026-07-31 (Fund K): Gewicht, mit dem eine ist-gutgeschriebene
+    Abwesenheit (TRAINING/SICK) an ``d`` ins Ist eingeht.
+
+    TRAINING/SICK reduzieren das Soll NICHT — stattdessen bekommt die Ist-Seite
+    die Stunden der Abwesenheit gutgeschrieben (``credited_absences``). Der Sinn
+    dieser Konstruktion ist **Saldo-Neutralitaet**: das Soll des Tages bleibt
+    stehen, die Gutschrift gleicht es aus, der Saldo bewegt sich nicht. Das
+    funktioniert nur, solange die Gutschrift denselben strukturellen Regeln folgt
+    wie das Soll. Genau das tat sie nicht — die vier Gutschrift-Schleifen
+    summierten ``Absence.hours`` roh, waehrend :func:`_day_soll_contribution`
+    daneben Feiertage auf 0 setzt, die Aufrufer Wochenenden ueberspringen und der
+    #146-Sondertagsfaktor das Tagessoll skaliert.
+
+    Diese Funktion ist der **Spiegel** dieser strukturellen Regeln — dieselbe
+    Reihenfolge, dieselben Quellen:
+
+    * **Wochenende / gesetzlicher Feiertag → 0.** An einem Tag ohne
+      Arbeitspflicht kann keine Arbeitspflicht ausfallen; es gibt kein Soll, das
+      auszugleichen waere. Vorher machte die Gutschrift aus einer Krankmeldung
+      ein volles Tagessoll **Ueberstunden** — wer ueber Weihnachten
+      krankgeschrieben war, sammelte je Feiertag +8 h. Auch rechtlich falsch:
+      fuer den Feiertag gilt die Feiertagsverguetung (§ 2 EntgFG), nicht
+      zusaetzlich eine Entgeltfortzahlung wegen Krankheit (§ 3 EntgFG) — § 4
+      Abs. 2 EntgFG ordnet den Feiertag ausdruecklich § 2 zu.
+    * **Sondertag 24./31.12. → derselbe Faktor wie das Soll** (``half_day`` 0,5,
+      ``free`` 0). ``create_absence`` bucht dort das VOLLE Tagessoll als
+      ``hours`` (der Faktor lebt allein auf der Soll-Seite), also standen an
+      einem halben 24.12. 8 h Gutschrift gegen 4 h Soll = +4 h aus dem Nichts.
+      Der Faktor kommt aus ``special_days_service.special_day_target_factor`` —
+      derselben Quelle, die auch ``_day_soll_contribution`` benutzt.
+
+    Bewusst NICHT abgedeckt (die Regel lautet „die Gutschrift folgt der
+    Soll-STRUKTUR des Tages", nicht „Gutschrift = Soll"):
+
+    * ``hours > Tagessoll`` an einem regulaeren Arbeitstag bleibt unangetastet —
+      eine Fortbildung, die laenger dauerte als der Arbeitstag, ist echte
+      Mehrarbeit. Ein Deckel darauf waere eine andere Regel mit anderer
+      fachlicher Begruendung.
+    * Ein **0-Stunden-Wochentag** im Tagesplan-Modus traegt zwar kein Soll,
+      braucht hier aber keinen Zweig: dort bucht ``create_absence`` ``hours=0``,
+      die Gutschrift ist also von sich aus 0 (und eine Buchung, die an allen
+      Zieltagen 0 waere, lehnt der Endpunkt seit 1.18.0 mit 400 ab).
+    * Das **Beschaeftigungsfenster** (#195) filtern alle Aufrufstellen bereits
+      selbst — wie auf der Soll-Seite auch.
+
+    ``special_cfg`` darf ``None``/``{}`` sein, wenn der Aufrufer weiss, dass ``d``
+    kein Sondertag sein kann: ``get_special_day_config`` legt ausschliesslich die
+    Schluessel 24.12. und 31.12. des Jahres an, fuer jedes andere Datum liefert
+    ``special_day_target_factor`` also ohnehin ``None`` (Gewicht 1).
+    """
+    if d.weekday() >= 5 or d in holiday_dates:
+        return Decimal('0')
+    factor = special_days_service.special_day_target_factor(d, special_cfg or {})
+    return Decimal('1') if factor is None else Decimal(str(factor))
+
+
+def _credited_day_context(db: Session, user: User, credited_absences: List[Absence]):
+    """Feiertage + Sondertags-Konfiguration fuer :func:`get_range_actual`.
+
+    Die drei anderen Gutschrift-Stellen laden beides ohnehin schon fuer ihre
+    Soll-Schleife; ``get_range_actual`` (und damit ``get_monthly_actual``) tut das
+    nicht und ist eine heisse Fläche. Deshalb wird hier **nur** geladen, was die
+    vorhandenen Abwesenheiten wirklich brauchen:
+
+    * Feiertage nur an den Werktagen mit einer solchen Abwesenheit,
+    * die Sondertags-Konfiguration nur fuer Jahre, in denen eine solche
+      Abwesenheit tatsaechlich auf den 24. oder 31.12. faellt.
+
+    Ohne TRAINING/SICK-Abwesenheit im Zeitraum (der Regelfall) entsteht **keine**
+    zusaetzliche Query — ``get_monthly_actual`` bleibt unveraendert schnell.
+    """
+    weekday_dates = sorted({a.date for a in credited_absences if a.date.weekday() < 5})
+    if not weekday_dates:
+        return set(), {}
+    holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
+        PublicHoliday.date.in_(weekday_dates),
+        PublicHoliday.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
+    ).all()}
+    special_years = {d.year for d in weekday_dates if (d.month, d.day) in ((12, 24), (12, 31))}
+    special_cfgs = {
+        yr: special_days_service.get_special_day_config(db, user.tenant_id, yr)
+        for yr in special_years
+    }
+    return holiday_dates, special_cfgs
+
+
 def _soll_reducing_absence_half_map(absences: List[Absence]) -> Dict[date, bool]:
     """Fix #1: map each soll-reducing absence (VACATION/OTHER/PAID_LEAVE) date to
     whether it is a HALF day, for the shared per-day Soll helper below.
@@ -1212,7 +1299,14 @@ def get_range_actual(
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
         date_in_range(Absence.date, start, end),
     ).all()
-    credited_hours = sum((Decimal(str(a.hours)) for a in credited_absences
+    # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des Tages
+    # — Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor. Siehe
+    # :func:`credit_day_weight`. Ohne solche Abwesenheit im Zeitraum ist der
+    # Kontext leer und es entsteht keine zusaetzliche Query.
+    credit_holidays, credit_cfgs = _credited_day_context(db, user, credited_absences)
+    credited_hours = sum((Decimal(str(a.hours))
+                          * credit_day_weight(a.date, credit_holidays, credit_cfgs.get(a.date.year))
+                          for a in credited_absences
                           if _within_employment_window(user, a.date)
                           and (up_to_date is None or a.date <= up_to_date)), Decimal('0'))
 
@@ -1425,6 +1519,29 @@ def get_overtime_account(
         key = (e.date.year, e.date.month)
         actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(e.net_hours))
 
+    # All public holidays in range
+    # Audit 2026-07-31 (Fund K): VOR die Gutschrift-Schleife gezogen — die
+    # braucht das Set jetzt ebenfalls (credit_day_weight), nicht mehr nur die
+    # Soll-Schleife weiter unten.
+    holidays = db.query(PublicHoliday).filter(
+        PublicHoliday.date >= start_date,
+        PublicHoliday.date <= up_to_date,
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).all()
+    holiday_dates: set[date] = {h.date for h in holidays}
+
+    # #146: special-day configs are per-year; cache them across the month loop
+    # so a multi-year overtime calculation issues one settings query per year.
+    # Audit 2026-07-31 (Fund K): ebenfalls vorgezogen, aus demselben Grund.
+    special_day_configs: Dict[int, dict] = {}
+
+    def _special_day_config(yr: int) -> dict:
+        cfg = special_day_configs.get(yr)
+        if cfg is None:
+            cfg = special_days_service.get_special_day_config(db, user.tenant_id, yr)
+            special_day_configs[yr] = cfg
+        return cfg
+
     # Training and sick hours count as actual worked hours (§3 EntgFG)
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
@@ -1437,8 +1554,13 @@ def get_overtime_account(
             continue
         if cutoff_date is not None and ca.date > cutoff_date:  # #313
             continue
+        # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des
+        # Tages (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor).
+        weight = credit_day_weight(ca.date, holiday_dates, _special_day_config(ca.date.year))
+        if weight <= 0:
+            continue
         key = (ca.date.year, ca.date.month)
-        actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours))
+        actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours)) * weight
 
     # All absences in range (exclude TRAINING, SICK, OVERTIME — same rule as
     # get_monthly_target). VACATION/OTHER/PAID_LEAVE reduce the target and are
@@ -1456,14 +1578,6 @@ def get_overtime_account(
     # erfasster Arbeitszeit streicht nur den nicht gearbeiteten Teil des Solls.
     worked_map = worked_hours_map(db, user, absence_half_map)
 
-    # All public holidays in range
-    holidays = db.query(PublicHoliday).filter(
-        PublicHoliday.date >= start_date,
-        PublicHoliday.date <= up_to_date,
-        PublicHoliday.tenant_id == user.tenant_id,
-    ).all()
-    holiday_dates: set[date] = {h.date for h in holidays}
-
     # All working-hours changes for this user (pre-loaded for the hot loop).
     # F-027: routed through get_weekly_hours_for_date() with in-memory path
     # to satisfy the CLAUDE.md invariant "never read user.weekly_hours
@@ -1472,17 +1586,6 @@ def get_overtime_account(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
     ).order_by(WorkingHoursChange.effective_from).all()
-
-    # #146: special-day configs are per-year; cache them across the month loop
-    # so a multi-year overtime calculation issues one settings query per year.
-    special_day_configs: Dict[int, dict] = {}
-
-    def _special_day_config(yr: int) -> dict:
-        cfg = special_day_configs.get(yr)
-        if cfg is None:
-            cfg = special_days_service.get_special_day_config(db, user.tenant_id, yr)
-            special_day_configs[yr] = cfg
-        return cfg
 
     # --- iterate months and compute balance in memory ---
     total_balance = initial_balance
@@ -1633,6 +1736,24 @@ def get_overtime_history_detailed(
         k = (e.date.year, e.date.month)
         actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(e.net_hours))
 
+    # Audit 2026-07-31 (Fund K): Feiertags-Set + Sondertags-Cache VOR die
+    # Gutschrift-Schleife gezogen (Parität zu get_overtime_account) — die
+    # Gutschrift folgt jetzt der Soll-Struktur des Tages.
+    holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
+        PublicHoliday.date >= start_date,
+        PublicHoliday.date <= up_to_date,
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).all()}
+
+    special_day_configs: Dict[int, dict] = {}
+
+    def _cfg(yr: int) -> dict:
+        c = special_day_configs.get(yr)
+        if c is None:
+            c = special_days_service.get_special_day_config(db, user.tenant_id, yr)
+            special_day_configs[yr] = c
+        return c
+
     for ca in db.query(Absence).filter(
         Absence.user_id == user.id,
         Absence.date >= start_date,
@@ -1643,8 +1764,11 @@ def get_overtime_history_detailed(
             continue
         if cutoff_date is not None and ca.date > cutoff_date:  # #313
             continue
+        weight = credit_day_weight(ca.date, holiday_dates, _cfg(ca.date.year))
+        if weight <= 0:
+            continue
         k = (ca.date.year, ca.date.month)
-        actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(ca.hours))
+        actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(ca.hours)) * weight
 
     # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
     absence_half_map = _soll_reducing_absence_half_map(db.query(Absence).filter(
@@ -1656,25 +1780,10 @@ def get_overtime_history_detailed(
     # F1 (1.18.0): siehe worked_hours_map.
     worked_map = worked_hours_map(db, user, absence_half_map)
 
-    holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
-        PublicHoliday.date >= start_date,
-        PublicHoliday.date <= up_to_date,
-        PublicHoliday.tenant_id == user.tenant_id,
-    ).all()}
-
     wh_changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
     ).order_by(WorkingHoursChange.effective_from).all()
-
-    special_day_configs: Dict[int, dict] = {}
-
-    def _cfg(yr: int) -> dict:
-        c = special_day_configs.get(yr)
-        if c is None:
-            c = special_days_service.get_special_day_config(db, user.tenant_id, yr)
-            special_day_configs[yr] = c
-        return c
 
     history: Dict[tuple, MonthlyOvertime] = {}
     total_balance = initial_balance
@@ -1930,7 +2039,12 @@ def get_ytd_summary(
         Absence.date <= end,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
-    total_actual += sum((Decimal(str(a.hours)) for a in credited_absences
+    # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des Tages
+    # (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor) — dieselbe
+    # ``holiday_dates``/``special_day_config``-Quelle wie die Soll-Schleife oben.
+    total_actual += sum((Decimal(str(a.hours))
+                         * credit_day_weight(a.date, holiday_dates, special_day_config)
+                         for a in credited_absences
                          if _within_employment_window(user, a.date)), start=Decimal('0'))
 
     # Include overtime carryover for this year

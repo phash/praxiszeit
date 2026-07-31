@@ -82,6 +82,7 @@ def get_journal(
         PublicHoliday.tenant_id == user.tenant_id,
     ).all()
     holiday_map: Dict[date, str] = {h.date: h.name for h in holidays}
+    holiday_dates: set = set(holiday_map)
 
     # #146/#193: the per-day target rows MUST apply the same special-day factor
     # (24./31.12.) and employment-window guard as get_monthly_target — otherwise
@@ -188,22 +189,24 @@ def get_journal(
         time_hours = Decimal(str(sum(e.net_hours for e in day_entries)))
 
         # Credited absence hours (TRAINING, SICK count as worked)
+        # Audit 2026-07-31 (Fund K): mit demselben Tages-Gewicht wie im
+        # calculation_service — an Wochenende/Feiertag 0, am Sondertag 24./31.12.
+        # mit dem #146-Faktor. Damit sagt die Tageszeile dasselbe wie das
+        # ``monthly_summary`` im SELBEN Response (``get_monthly_actual``).
+        # Vorlaeufer: der Vorgaenger-Commit dieses Audits addierte ``credited_sum``
+        # im Wochenend-/Feiertagszweig, weil ``get_range_actual`` sie damals
+        # ungefiltert summierte. Jetzt filtern beide Seiten — der Summand bleibt
+        # stehen, ist an solchen Tagen aber per Gewicht 0.
+        credit_weight = calculation_service.credit_day_weight(
+            d, holiday_dates, special_day_config
+        )
         credited_sum = Decimal(str(sum(
             float(a.hours) for a in day_absences
             if a.type in (AbsenceType.TRAINING, AbsenceType.SICK)
-        )))
+        ))) * credit_weight
 
         if is_weekend or is_holiday_day:
-            # Audit 2026-07-31 (uebernommen aus Welle B): auch hier zaehlen die
-            # ist-gutgeschriebenen Stunden (TRAINING/SICK) mit — ``get_range_actual``
-            # summiert seine ``credited_absences`` OHNE Feiertags-/Wochenend-
-            # Ausnahme. Ohne diesen Summanden widersprach die Tageszeile dem
-            # monthly_summary im SELBEN Response, sobald an einem Feiertag eine
-            # Krank- oder Fortbildungs-Abwesenheit lag (Feiertag + Krankmeldung
-            # ueber mehrere Tage ist der Regelfall). ``credited_sum`` ist 0, wenn
-            # kein solcher Eintrag existiert → alle uebrigen Wochenend-/
-            # Feiertagszeilen bleiben unveraendert. Das Soll bleibt 0 (Feiertage
-            # fallen auch aus ``get_range_target``).
+            # ``credited_sum`` ist hier per Gewicht 0 → Ist = reine Stempelzeit.
             actual_hours = time_hours + credited_sum
             target_hours = Decimal("0")
         elif day_absences:
