@@ -66,14 +66,14 @@ test.describe('Admin User Management', () => {
     await expect(openHoursButton).toBeVisible({ timeout: 5000 });
     await openHoursButton.click();
 
-    const dialog = adminPage.getByRole('dialog', { name: /Stundenverlauf/i });
+    const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
     await expect(dialog).toBeVisible({ timeout: 5000 });
 
     // A future date needs no retroactive preview/confirmation — keep this a
     // straightforward "add a change" smoke test. Far enough out to avoid
     // colliding with an existing change on the same date.
     await dialog.getByLabel('Gültig ab').fill(daysFromNow(120));
-    await dialog.getByLabel('Wochenstunden').fill('38');
+    await dialog.getByLabel('Wochenstunden', { exact: true }).fill('38');
 
     await dialog.getByRole('button', { name: 'Hinzufügen' }).click();
 
@@ -106,17 +106,17 @@ test.describe('Admin User Management', () => {
     await editButton.click();
 
     await adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' }).click();
-    const dialog = adminPage.getByRole('dialog', { name: /Stundenverlauf/i });
+    const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
     await expect(dialog).toBeVisible({ timeout: 5000 });
 
     // Datum in der Vergangenheit -> die Vorschau muss anspringen.
     await dialog.getByLabel('Gültig ab').fill(weekdayFromNow(-45));
-    await dialog.getByLabel('Wochenstunden').fill('20');
+    await dialog.getByLabel('Wochenstunden', { exact: true }).fill('20');
 
-    // Der Warnblock nennt Zeitraum, altes/neues Tagessoll und die Zahl der
+    // Der Warnblock nennt Zeitraum, Tagessoll je Wochentag und die Zahl der
     // betroffenen Abwesenheiten. Er erscheint erst nach der Vorschau-Antwort.
     await expect(dialog.getByText(/^Rückwirkende Änderung:/)).toBeVisible({ timeout: 10000 });
-    await expect(dialog.getByText(/Tagessoll .*h → .*h/)).toBeVisible();
+    await expect(dialog.getByText(/Tagessoll je Wochentag:/)).toBeVisible();
     await expect(dialog.getByText(/Abwesenheit\(en\) betroffen/)).toBeVisible();
 
     // Ohne Bestätigung darf nicht gespeichert werden können.
@@ -139,6 +139,102 @@ test.describe('Admin User Management', () => {
     await expect(dialog.getByText(/bis heute:/i).first()).toBeVisible({ timeout: 5000 });
 
     await dialog.getByRole('button', { name: /schließen/i }).click();
+  });
+
+  // #431: Der Tagesplan (Mo–Fr einzeln) läuft seit dieser Änderung über denselben
+  // Dialog wie die gleichmäßigen Wochenstunden — vorher lehnte das Backend eine
+  // Stundenänderung für diese Gruppe mit 400 ab, weil die Zeile fürs Soll
+  // wirkungslos gewesen wäre. Der Weg „Bearbeiten → Wochenstunden anpassen… →
+  // Nach Tagen → rückwirkend → bestätigen → speichern" ist damit der neue Kern
+  // des Features und muss E2E abgesichert sein.
+  test('Tagesplan rückwirkend über den Dialog ändern', async ({ adminPage, adminApi }) => {
+    // Ein eigener Mitarbeiter mit individuellem Tagesplan — die testEmployee-
+    // Fixture legt bewusst einen gleichmäßigen an, und ein PUT könnte den Plan
+    // seit Task 7 gar nicht mehr umstellen (400 auf allen historisierten Feldern).
+    const lastName = `Tagesplan${Date.now()}`;
+    const created = await adminApi.post('/admin/users', {
+      username: `e2e_dayplan_${Date.now()}`,
+      password: 'TestPass123!',
+      first_name: 'Tages',
+      last_name: lastName,
+      role: 'employee',
+      weekly_hours: 18,
+      work_days_per_week: 3,
+      vacation_days: 30,
+      track_hours: true,
+      use_daily_schedule: true,
+      hours_monday: 8,
+      hours_tuesday: 6,
+      hours_wednesday: 4,
+    });
+    const userId = (created.user ?? created).id;
+
+    try {
+      await adminPage.goto('/admin/users');
+      await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
+
+      await adminPage.getByPlaceholder('Suche nach Name oder Benutzername...').fill(lastName);
+
+      const editButton = adminPage.locator('button[title="Bearbeiten"]').first();
+      await expect(editButton).toBeVisible({ timeout: 5000 });
+      await editButton.click();
+
+      // Die Wochenstunden-Box zeigt beim Bearbeiten den Tagesplan als Klartext,
+      // das Feld selbst ist nur noch Anzeige.
+      await expect(
+        adminPage.locator('#f-weekly-hours')
+      ).toHaveText('Mo 8,0 / Di 6,0 / Mi 4,0 = 18,0 h/Woche');
+
+      await adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' }).click();
+      const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
+      await expect(dialog).toBeVisible({ timeout: 5000 });
+
+      // Der Dialog übernimmt den Modus des Mitarbeiters — für einen Tagesplan-MA
+      // steht er auf "Nach Tagen", ohne dass der Admin etwas umstellen muss.
+      const byDayMode = dialog.getByRole('radio', { name: 'Nach Tagen' });
+      await expect(byDayMode).toBeChecked();
+
+      // Rückwirkend + ein bisher freier Donnerstag bekommt 5 h.
+      await dialog.getByLabel('Gültig ab').fill(weekdayFromNow(-45));
+      await dialog.getByLabel('Donnerstag').fill('5');
+
+      // Die abgeleitete Wochensumme steht im Formular, bevor gespeichert wird.
+      await expect(dialog.getByText('→ 23,0 h/Woche · 4 Arbeitstage')).toBeVisible();
+
+      // Die Auswirkungs-Box nennt das Tagessoll je Wochentag alt → neu. Genau das
+      // kann ein einzelner Skalar bei einem Tagesplan nicht ausdrücken.
+      await expect(dialog.getByText(/^Rückwirkende Änderung:/)).toBeVisible({ timeout: 10000 });
+      await expect(dialog.getByText(/Tagessoll je Wochentag:.*Do 0,0 → 5,0/)).toBeVisible();
+
+      const submit = dialog.getByRole('button', { name: 'Hinzufügen' });
+      await expect(submit).toBeDisabled();
+      await dialog
+        .getByLabel('Ich habe die Auswirkungen geprüft und möchte trotzdem speichern')
+        .check();
+      await expect(submit).toBeEnabled();
+
+      await submit.click();
+      await expect(
+        adminPage.locator('[role="alert"]').filter({ hasText: 'hinzugefügt' })
+      ).toBeVisible({ timeout: 10000 });
+
+      // Die neue Verlaufszeile trägt den vollständigen Tagesplan, nicht nur eine
+      // Wochensumme — der Nachweis, dass die Zeile den Snapshot speichert.
+      await expect(
+        dialog.getByText(/bis heute: Mo 8,0 \/ Di 6,0 \/ Mi 4,0 \/ Do 5,0 = 23,0 Std\/Woche/)
+      ).toBeVisible({ timeout: 5000 });
+
+      // Und die automatisch erfasste Basis-Zeile friert die Vergangenheit auf dem
+      // ALTEN Plan ein (ohne sie würde der neue Donnerstag rückwirkend für die
+      // gesamte Vergangenheit gelten).
+      await expect(
+        dialog.getByText(/Mo 8,0 \/ Di 6,0 \/ Mi 4,0 = 18,0 Std\/Woche/)
+      ).toBeVisible();
+
+      await dialog.getByRole('button', { name: /schließen/i }).click();
+    } finally {
+      try { await adminApi.delete(`/admin/users/${userId}`); } catch { /* best effort */ }
+    }
   });
 
   test('deactivate user', async ({ adminPage, adminApi }) => {

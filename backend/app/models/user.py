@@ -25,7 +25,11 @@ class User(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
-    weekly_hours = Column(Numeric(4, 1), nullable=False)  # e.g., 20.0, 30.0, 38.5
+    # #431 (Migration 069): Numeric(4,2) — dieselbe Genauigkeit wie
+    # working_hours_changes.weekly_hours. Mit Numeric(4,1) rundete der Resync in
+    # _sync_user_from_change eine krumme Tagesplan-Summe (17,75) still auf 17,8
+    # und liess Benutzerliste/Art.-15-Export der Historie widersprechen.
+    weekly_hours = Column(Numeric(4, 2), nullable=False)  # e.g., 20.0, 30.0, 38.5, 17.75
     vacation_days = Column(Numeric(4, 1), nullable=False, default=30)  # #408: Dezimal (z. B. 16,8)
     work_days_per_week = Column(Integer, nullable=False, default=5)
     track_hours = Column(Boolean, default=True, nullable=False)  # Track Soll/Ist hours for this user

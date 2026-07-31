@@ -230,7 +230,7 @@ describe('#383 Übertrag Urlaubstage', () => {
   });
 });
 
-describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpassen)', () => {
+describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)', () => {
   const baseEditUser = {
     id: 'u1', username: 'jd', first_name: 'Jane', last_name: 'Doe', role: 'employee',
     weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
@@ -244,19 +244,57 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeInTheDocument();
   });
 
+  // Abschluss-Review #431, Fund B (a11y): im Bearbeiten-Zweig trägt die
+  // Anzeige-Box ein `<div>`, kein labelable Element — `<label for>` assoziiert
+  // sich damit NICHT (nur input/select/textarea/... sind "labelable"). Ohne
+  // Fix landet der Wert namenlos im Accessibility-Tree; `getByLabelText`
+  // findet ihn deshalb NUR über den neuen `aria-labelledby`.
+  it('Fund B: read-only-Anzeigeboxen (Wochenstunden, Arbeitstage) sind über aria-labelledby erreichbar', () => {
+    renderForm({ editUser: { ...baseEditUser, work_days_per_week: 4 } });
+    const weeklyHoursBox = screen.getByLabelText('Wochenstunden');
+    expect(weeklyHoursBox).toBe(document.getElementById('f-weekly-hours'));
+    expect(weeklyHoursBox.tagName).not.toBe('INPUT');
+    expect(weeklyHoursBox).toHaveTextContent('40,0 h/Woche');
+
+    const workDaysBox = screen.getByLabelText('Arbeitstage pro Woche');
+    expect(workDaysBox).toBe(document.getElementById('f-work-days'));
+    expect(workDaysBox.tagName).not.toBe('INPUT');
+    expect(workDaysBox).toHaveTextContent('4');
+  });
+
+  it('Fund B: beim Anlegen bleibt die klassische htmlFor-Assoziation auf den echten Eingabefeldern', () => {
+    // Regressions-Gegenprobe: der Fix darf den Create-Zweig (echte <input>s)
+    // nicht anfassen — `getByLabelText` muss weiterhin auf `htmlFor` treffen.
+    renderForm();
+    const weeklyHoursInput = screen.getByLabelText('Wochenstunden');
+    expect(weeklyHoursInput.tagName).toBe('INPUT');
+    expect(weeklyHoursInput).toBe(document.getElementById('f-weekly-hours'));
+
+    const workDaysInput = screen.getByLabelText('Arbeitstage pro Woche');
+    expect(workDaysInput.tagName).toBe('INPUT');
+    expect(workDaysInput).toBe(document.getElementById('f-work-days'));
+  });
+
   it('zeigt beim Anlegen ein Eingabefeld (kein Button)', () => {
     renderForm();
     expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');
     expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
   });
 
-  it('sendet weekly_hours beim Update NICHT mit (Backend lehnt es sonst mit 400 ab)', async () => {
+  it('sendet weekly_hours/Tagesplan-Felder beim Update NICHT mit (Backend lehnt sie sonst mit 400 ab)', async () => {
+    // Task 7 (#431): nicht nur weekly_hours — alle acht historisierten
+    // Felder (Modus, Tagesstunden, Arbeitstage) sind seit Task 7 gesperrt.
     renderForm({ editUser: baseEditUser });
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
       expect(call).toBeTruthy();
-      expect(call![1]).not.toHaveProperty('weekly_hours');
+      for (const field of [
+        'weekly_hours', 'use_daily_schedule', 'work_days_per_week',
+        'hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday',
+      ]) {
+        expect(call![1]).not.toHaveProperty(field);
+      }
     });
   });
 
@@ -276,24 +314,148 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     });
   });
 
-  // I2 (Abschluss-Review): Für Mitarbeitende mit individuellem Tagesplan lehnt
-  // der Änderungs-Endpoint ab (400) — der Dialog existiert für sie also nicht.
-  // Wäre das Feld hier zusätzlich read-only, hätten sie GAR KEINEN Schreibweg
-  // mehr, während die Tagesstunden-Summe weiter „bitte anpassen!" verlangt.
-  it('bleibt bei individuellem Tagesplan ein Eingabefeld (kein Dialog-Button)', () => {
+  // Task 11 (#431): der Button fehlte bisher genau für die Gruppe, die ihn am
+  // dringendsten braucht — Task 7 sperrte den Update-Payload für
+  // Tagesplan-Mitarbeitende bereits, aber das Formular zeigte ihnen
+  // weiterhin ein Eingabefeld, dessen Eingabe beim Speichern kommentarlos
+  // verworfen wurde (Important-Fund #2 im Task-7-Review). Jetzt bekommen
+  // auch sie den Dialog-Button — er ist der einzige verbliebene Schreibweg.
+  it('zeigt den Button auch bei individuellem Tagesplan', () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
-    expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');
-    expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeInTheDocument();
+    expect(document.getElementById('f-weekly-hours')?.tagName).not.toBe('INPUT');
   });
 
-  it('sendet weekly_hours beim Update MIT, wenn ein individueller Tagesplan aktiv ist', async () => {
+  it('zeigt Tagesstunden beim Bearbeiten nur als Anzeige (Tagesbreakdown in der Wochenstunden-Box, kein Eingabefeld je Wochentag)', () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true, hours_monday: 8 } });
+    // Aria-Label der (früheren) Mo-Fr-Eingabefelder ist `Stunden ${Mo|Di|...}`
+    // — keins davon darf im Bearbeiten-Modus noch existieren.
+    expect(screen.queryByLabelText('Stunden Mo')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Stunden Di')).not.toBeInTheDocument();
+    expect(screen.getByText(/Mo 8,0/)).toBeInTheDocument();
+  });
+
+  // Task-11-Review Fix-Runde 1 (Important): vorher kombinierte die Box einen
+  // FRISCHEN `displayWeeklyHours`-Total mit einem beim Formular-Öffnen
+  // EINGEFRORENEN `formData.hours_*`-Breakdown — nach „Dialog öffnen →
+  // Tagesplan ändern → speichern" bei weiterhin offenem Formular zeigte die
+  // Box z. B. „Mo 8,0 / Di 5,0 / Mi 4,0 = 20,0 h/Woche" (Summanden ergeben
+  // 17, nicht 20). `displayDayHours` (Users.tsx, analog zu
+  // `displayWeeklyHours`) hält jetzt auch den Breakdown frisch, sodass beide
+  // Zahlen wieder zusammenpassen.
+  it('zeigt Aufschlüsselung und Summe konsistent, wenn frische Tageswerte über displayDayHours ankommen (statt der eingefrorenen formData-Werte)', () => {
+    renderForm({
+      editUser: {
+        ...baseEditUser, use_daily_schedule: true,
+        hours_monday: 8, hours_tuesday: 5, hours_wednesday: 4, hours_thursday: 0, hours_friday: 0,
+      },
+      // Simuliert: der Dialog hat Di 5→8 geändert und gespeichert, Users.tsx
+      // hat refetcht — die Summe UND der Breakdown sind jetzt beide frisch.
+      displayWeeklyHours: 20,
+      displayDayHours: [8, 8, 4, 0, 0],
+    });
+    // Der widersprüchliche alte Text darf nirgends auftauchen …
+    expect(screen.queryByText(/Di 5,0/)).not.toBeInTheDocument();
+    // … stattdessen zeigt die Box den frischen Breakdown mit der frischen Summe zusammen.
+    expect(screen.getByText('Mo 8,0 / Di 8,0 / Mi 4,0 = 20,0 h/Woche')).toBeInTheDocument();
+  });
+
+  it('zeigt "Arbeitstage pro Woche" beim Bearbeiten nur als Anzeige mit Verweis auf den Dialog', () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true, work_days_per_week: 3 } });
+    const workDaysEl = document.getElementById('f-work-days');
+    expect(workDaysEl?.tagName).not.toBe('INPUT');
+    expect(workDaysEl?.textContent).toBe('3');
+    expect(screen.getByText(/belegten Wochentage im Tagesplan abgeleitet/)).toBeInTheDocument();
+  });
+
+  it('zeigt den "Individuelle Tagesstunden"-Haken beim Bearbeiten nur als Status-Anzeige (nicht klickbar)', () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
-    fireEvent.change(document.getElementById('f-weekly-hours') as HTMLInputElement, { target: { value: '30' } });
+    expect(document.getElementById('use_daily_schedule')).not.toBeInTheDocument();
+    expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
+  });
+
+  // Abschluss-Review #431, Fund 3 (Important): die Fix-Runde davor zog nur
+  // `weekly_hours` und die fünf `hours_*` nach. `work_days_per_week` und
+  // `use_daily_schedule` blieben eingefroren, obwohl der Dialog beide schreibt
+  // und `_sync_user_from_change` sie bei einem Wirkungsdatum ≤ heute auf die
+  // User-Zeile zurückspiegelt — genau die Kombination „frische Summe neben
+  // eingefrorenem Rest", gegen die `displayDayHours` eingeführt wurde.
+
+  it('zieht die Arbeitstage über displayWorkDays nach (frische Summe neben veralteten Arbeitstagen)', () => {
+    renderForm({
+      // Stand beim Öffnen des Formulars: gleichmäßig 40 h auf 5 Tage.
+      editUser: { ...baseEditUser, weekly_hours: 40, work_days_per_week: 5 },
+      // Der Dialog hat „20 h auf 4 Tage, gültig ab heute" gespeichert,
+      // Users.tsx hat refetcht.
+      displayWeeklyHours: 20,
+      displayWorkDays: 4,
+    });
+    expect(screen.getByText('20,0 h/Woche')).toBeInTheDocument();
+    expect(document.getElementById('f-work-days')?.textContent).toBe('4');
+  });
+
+  it('zieht den Modus über displayUseDailySchedule nach', () => {
+    renderForm({
+      editUser: { ...baseEditUser, weekly_hours: 40, work_days_per_week: 5, use_daily_schedule: false },
+      // Der Dialog hat auf „Nach Tagen" umgestellt.
+      displayWeeklyHours: 17,
+      displayDayHours: [8, 5, 4, null, null],
+      displayWorkDays: 3,
+      displayUseDailySchedule: true,
+    });
+    // Der Modus-Status und die Wochenstunden-Box müssen beide den neuen Modus
+    // zeigen — sonst stünde „Einheitliche Tagesstunden" über einem Tagesplan.
+    expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
+    expect(screen.getByText('Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche')).toBeInTheDocument();
+    expect(screen.getByText(/belegten Wochentage im Tagesplan abgeleitet/)).toBeInTheDocument();
+    expect(document.getElementById('f-work-days')?.textContent).toBe('3');
+  });
+
+  it('zieht auch den Weg zurück auf „gleichmäßig" nach', () => {
+    renderForm({
+      editUser: {
+        ...baseEditUser, use_daily_schedule: true,
+        hours_monday: 8, hours_tuesday: 5, hours_wednesday: 4,
+        work_days_per_week: 3,
+      },
+      displayWeeklyHours: 40,
+      displayDayHours: [null, null, null, null, null],
+      displayWorkDays: 5,
+      displayUseDailySchedule: false,
+    });
+    expect(screen.getByText('Einheitliche Tagesstunden (kein individueller Tagesplan)')).toBeInTheDocument();
+    expect(screen.getByText('40,0 h/Woche')).toBeInTheDocument();
+    expect(screen.queryByText(/Mo 8,0/)).not.toBeInTheDocument();
+    expect(document.getElementById('f-work-days')?.textContent).toBe('5');
+  });
+
+  it('fällt ohne die Props auf den Stand des Formulars zurück (Anlegen/kein Treffer)', () => {
+    renderForm({ editUser: { ...baseEditUser, work_days_per_week: 3, use_daily_schedule: true, hours_monday: 8 } });
+    expect(document.getElementById('f-work-days')?.textContent).toBe('3');
+    expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
+  });
+
+  it('erlaubt Arbeitstage/Tagesstunden-Haken/Tagesstunden weiterhin uneingeschränkt beim Anlegen', () => {
+    renderForm();
+    expect(document.getElementById('f-work-days')?.tagName).toBe('INPUT');
+    const dailyScheduleCheckbox = document.getElementById('use_daily_schedule') as HTMLInputElement;
+    expect(dailyScheduleCheckbox.tagName).toBe('INPUT');
+    fireEvent.click(dailyScheduleCheckbox);
+    expect(screen.getByLabelText('Stunden Mo')).toBeEnabled();
+  });
+
+  it('sendet weekly_hours/Tagesplan-Felder beim Update NICHT mit, auch wenn ein individueller Tagesplan aktiv ist (I2-Ausnahme entfaellt seit #431)', async () => {
+    renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
       expect(call).toBeTruthy();
-      expect(call![1]).toMatchObject({ weekly_hours: 30, use_daily_schedule: true });
+      for (const field of [
+        'weekly_hours', 'use_daily_schedule', 'work_days_per_week',
+        'hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday',
+      ]) {
+        expect(call![1]).not.toHaveProperty(field);
+      }
     });
   });
 
@@ -302,5 +464,10 @@ describe('Task 6: Wochenstunden nur Anzeige beim Bearbeiten (#Wochenstunden-anpa
     renderForm({ editUser: baseEditUser, onOpenHoursHistory });
     fireEvent.click(screen.getByRole('button', { name: /Wochenstunden anpassen/i }));
     expect(onOpenHoursHistory).toHaveBeenCalledWith(baseEditUser);
+  });
+
+  it('erlaubt alle Felder beim Anlegen', () => {
+    renderForm({ editUser: null });
+    expect(screen.getByLabelText('Wochenstunden')).toBeEnabled();
   });
 });

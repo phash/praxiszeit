@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
+    WorkingHoursChange,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
@@ -34,8 +35,8 @@ def get_daily_target_for_date_endpoint(
     current_user: User = Depends(get_current_user)
 ):
     """Get daily target hours for a specific date (for pre-filling absence forms)."""
-    weekly = calculation_service.get_weekly_hours_for_date(db, current_user, target_date)
-    daily = calculation_service.get_daily_target_for_date(current_user, target_date, weekly_hours=weekly)
+    schedule = calculation_service.get_schedule_for_date(db, current_user, target_date)
+    daily = calculation_service.get_daily_target_for_date(current_user, target_date, schedule)
     return {"date": str(target_date), "hours": float(daily)}
 
 
@@ -468,27 +469,32 @@ def create_absence(
         dates_by_year = {}
         for d in dates_to_create:
             dates_by_year.setdefault(d.year, []).append(d)
+        # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
+        # ``is_vacation_billable_day`` (dort ruft es intern get_schedule_for_date
+        # auf) — im gleichmaessigen Modus liefen vorher NULL Queries, jetzt eine.
+        # F-026: tenant-gefiltert, wie die anderen wh_changes-Preloads.
+        wh_changes = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == target_user.id,
+            WorkingHoursChange.tenant_id == target_user.tenant_id,
+        ).order_by(WorkingHoursChange.effective_from).all()
         for check_year, year_dates in dates_by_year.items():
-            vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
+            vacation_account = calculation_service.get_vacation_account(
+                db, target_user, check_year, wh_changes=wh_changes
+            )
             # #156/T2 — Tagesprinzip: each booked working day consumes one vacation
             # day (0,5 for a half day, #167); compare the day COUNT against the
             # remaining DAYS, not hours (hours-based checks mis-block uneven
             # schedules / part-time).
-            # R1-3: skip days with 0h daily target only when use_daily_schedule=True
-            # (e.g. Mon/Wed/Fri user — Tuesday has 0h and is skipped by the creation
-            # loop too). Only applies when track_hours=True; for track_hours=False users
-            # all weekdays count (pure day-based booking, hours are always 0).
-            # Pre-check must agree with what the booking actually consumes.
-            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
-                billable_days = [
-                    d for d in year_dates
-                    if float(calculation_service.get_daily_target_for_date(
-                        target_user, d,
-                        weekly_hours=calculation_service.get_weekly_hours_for_date(db, target_user, d),
-                    )) > 0
-                ]
-            else:
-                billable_days = year_dates
+            # R1-3: skip days with 0h daily target (e.g. Mon/Wed/Fri user — Tuesday
+            # has 0h and is skipped by the creation loop too). #431: der Modus wird
+            # PRO TAG aufgeloest, nicht am Live-Flag der User-Zeile gelesen —
+            # sonst rechnet eine rueckwirkende Buchung in einen Zeitraum mit
+            # anderem Modus gegen den falschen Zweig. Details + track_hours=False-
+            # Ausnahme in ``is_vacation_billable_day``.
+            billable_days = [
+                d for d in year_dates
+                if calculation_service.is_vacation_billable_day(db, target_user, d, wh_changes=wh_changes)
+            ]
             # #394: ein Halbtags-Sondertag (24./31.12.) kostet 0,5 — der Pre-Check
             # muss exakt so viel verlangen wie get_vacation_account nachher zählt,
             # sonst wird eine 0,5-passende Buchung fälschlich mit 400 abgelehnt.
@@ -565,9 +571,12 @@ def create_absence(
         # daily hours (Teilzeit). §3 EntgFG requires this for SICK anyway.
         # Only OVERTIME compensation keeps its explicit hours (the amount of
         # overtime being drawn down), unless a per-weekday schedule applies.
-        if absence_data.type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
-            weekly = calculation_service.get_weekly_hours_for_date(db, target_user, date)
-            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, weekly_hours=weekly))
+        # #431: der Modus kommt aus dem zum DATUM aufgeloesten Snapshot, nicht vom
+        # Live-Flag — eine rueckwirkende OVERTIME-Buchung in einen Tagesplan-Zeitraum
+        # muss dessen Tagessoll nehmen, nicht das des heutigen Vertrags.
+        schedule = calculation_service.get_schedule_for_date(db, target_user, date)
+        if absence_data.type != AbsenceType.OVERTIME or schedule.use_daily_schedule:
+            hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, schedule))
             # Review R3 (HIGH): only skip genuine 0h days for TRACKED users (e.g.
             # a Mo/Mi/Fr part-timer's Tue/Thu). For track_hours=False the daily
             # target is ALWAYS 0 — skipping here would create NO absence at all,

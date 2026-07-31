@@ -151,9 +151,37 @@ export default function Users() {
   // instead feeding UserForm's read-only weekly-hours display the fresh value
   // through the narrow `displayWeeklyHours` prop below — that value alone can
   // go stale without wiping the rest of the form.
-  const displayWeeklyHours = editingUser
-    ? users.find((u) => u.id === editingUser.id)?.weekly_hours
+  const freshEditingUser = editingUser ? users.find((u) => u.id === editingUser.id) : undefined;
+  const displayWeeklyHours = freshEditingUser?.weekly_hours;
+
+  // Task-11-Review Fix-Runde 1 (Important): dasselbe Muster für die fünf
+  // Tageswerte des Tagesplans — UserForm's read-only Wochenstunden-Box (#431)
+  // zeigt bei individuellem Tagesplan Tagesbreakdown + Summe zusammen; ohne
+  // einen ebenso frischen Breakdown widersprach sich die Box nach „Dialog
+  // öffnen → Tagesplan ändern → speichern" bei weiterhin offenem Formular
+  // (Summe frisch über displayWeeklyHours, Aufschlüsselung eingefroren aus
+  // dem beim Öffnen gesetzten formData). `editingUser` bleibt weiterhin
+  // unangetastet — nur diese schmalen Werte werden nachgeführt.
+  const displayDayHours = freshEditingUser
+    ? [
+      freshEditingUser.hours_monday,
+      freshEditingUser.hours_tuesday,
+      freshEditingUser.hours_wednesday,
+      freshEditingUser.hours_thursday,
+      freshEditingUser.hours_friday,
+    ]
     : undefined;
+
+  // Abschluss-Review #431, Fund 3 (Important): dasselbe Muster für die beiden
+  // übrigen soll-treibenden Felder, die der Dialog schreibt. `_sync_user_from_change`
+  // spiegelt sie bei einem Wirkungsdatum ≤ heute auf die User-Zeile zurück —
+  // ohne Nachführung stand „20,0 h/Woche" neben „Arbeitstage pro Woche: 5",
+  // während der Server längst 4 gespeichert hatte (und im Moduswechsel-Fall
+  // „Einheitliche Tagesstunden" über einem frischen Tagesplan). Wieder
+  // ausschließlich als schmale Anzeige-Props: `editingUser`/`formData` bleiben
+  // unangetastet, sonst verwirft der Sync ungespeicherte Eingaben.
+  const displayWorkDays = freshEditingUser?.work_days_per_week;
+  const displayUseDailySchedule = freshEditingUser?.use_daily_schedule;
 
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
@@ -364,6 +392,9 @@ export default function Users() {
           onSaved={handleFormSaved}
           onOpenHoursHistory={handleOpenHoursHistory}
           displayWeeklyHours={displayWeeklyHours}
+          displayDayHours={displayDayHours}
+          displayWorkDays={displayWorkDays}
+          displayUseDailySchedule={displayUseDailySchedule}
         />
       )}
 
@@ -639,7 +670,8 @@ export default function Users() {
                       <button
                         onClick={() => setHoursModalUser(user)}
                         className="text-blue-600 hover:text-blue-800"
-                        title="Stundenverlauf"
+                        title="Wochenstunden & Tagesplan"
+                        aria-label={`Wochenstunden & Tagesplan für ${user.first_name} ${user.last_name}`}
                       >
                         <Clock size={16} />
                       </button>
@@ -820,8 +852,8 @@ export default function Users() {
                     <button
                       onClick={() => setHoursModalUser(user)}
                       className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
-                      aria-label="Stundenverlauf anzeigen"
-                      title="Stundenverlauf"
+                      aria-label="Wochenstunden & Tagesplan anzeigen"
+                      title="Wochenstunden & Tagesplan"
                     >
                       <Clock size={16} />
                     </button>
@@ -912,6 +944,18 @@ export default function Users() {
           userId={hoursModalUser.id}
           userName={`${hoursModalUser.first_name} ${hoursModalUser.last_name}`}
           currentWeeklyHours={hoursModalUser.weekly_hours}
+          // #431: der Dialog ändert den VOLLSTÄNDIGEN Vertrags-Snapshot
+          // (Modus, Tageswerte, Arbeitstage) — er braucht ihn deshalb auch als
+          // Ausgangsstand, solange es noch keine Historie gibt.
+          currentUseDailySchedule={hoursModalUser.use_daily_schedule}
+          currentDayHours={[
+            hoursModalUser.hours_monday,
+            hoursModalUser.hours_tuesday,
+            hoursModalUser.hours_wednesday,
+            hoursModalUser.hours_thursday,
+            hoursModalUser.hours_friday,
+          ]}
+          currentWorkDays={hoursModalUser.work_days_per_week}
           onClose={() => setHoursModalUser(null)}
           onChanged={fetchUsers}
         />

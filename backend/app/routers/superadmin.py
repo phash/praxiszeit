@@ -28,6 +28,7 @@ from app.models import (
     TimeEntry,
     TimeEntryAuditLog,
     User,
+    WorkingHoursChange,
 )
 from app.models.tenant import Tenant
 
@@ -48,7 +49,15 @@ def _iso(value):
     return str(value)
 
 
-def _user_dict(u: User) -> dict:
+def _num(value):
+    """``Numeric`` → ``float``. Dieser Payload geht durch rohes ``json.dumps``
+    (nicht FastAPIs ``jsonable_encoder``), das ``Decimal`` nicht serialisieren
+    kann — ein ungecastetes Feld reisst den GESAMTEN Notfall-Export auf HTTP 500
+    (Fehlerklasse #383/#408)."""
+    return None if value is None else float(value)
+
+
+def _user_dict(u: User, history: List["WorkingHoursChange"] = ()) -> dict:
     return {
         "id": str(u.id),
         "username": u.username,
@@ -56,12 +65,50 @@ def _user_dict(u: User) -> dict:
         "first_name": u.first_name,
         "last_name": u.last_name,
         "role": u.role.value if hasattr(u.role, "value") else str(u.role),
-        "weekly_hours": float(u.weekly_hours) if u.weekly_hours is not None else None,
+        "weekly_hours": _num(u.weekly_hours),
         "is_active": u.is_active,
         "first_work_day": _iso(u.first_work_day),
         "last_work_day": _iso(u.last_work_day),
         "exempt_from_arbzg": u.exempt_from_arbzg,
         "is_night_worker": u.is_night_worker,
+        # #431: der Vertragszustand der User-Zeile. Er ist der Rueckfallwert fuer
+        # jedes Datum VOR der ersten erfassten Aenderung (siehe
+        # calculation_service.get_schedule_for_date) — ohne ihn bleibt dieser
+        # Zeitraum im §16-Dokument unbestimmt. ``track_hours`` gehoert dazu:
+        # ohne das Flag laesst sich nicht sagen, ob ueberhaupt ein Soll gilt
+        # (leitende Angestellte, #191).
+        "track_hours": u.track_hours,
+        "use_daily_schedule": u.use_daily_schedule,
+        "work_days_per_week": u.work_days_per_week,
+        "hours_monday": _num(u.hours_monday),
+        "hours_tuesday": _num(u.hours_tuesday),
+        "hours_wednesday": _num(u.hours_wednesday),
+        "hours_thursday": _num(u.hours_thursday),
+        "hours_friday": _num(u.hours_friday),
+        # #431: die Vertragssnapshots ueber die Zeit. Seit #431 sind sie die
+        # autoritative Quelle des Tagessolls — ohne sie laesst sich das Soll
+        # vergangener Monate aus dem Dokument nicht mehr herleiten. Bei einem
+        # DEAKTIVIERTEN Tenant ist dieser Export der einzige erreichbare Weg
+        # (/api/tenant/export ist dann gesperrt), also faellt die Luecke hier
+        # besonders hart aus. Parallel zu lifecycle_service (Art. 15) und
+        # auth.py /me/export (Art. 20).
+        "working_hours_changes": [
+            {
+                "id": str(h.id),
+                "effective_from": _iso(h.effective_from),
+                "weekly_hours": _num(h.weekly_hours),
+                "use_daily_schedule": h.use_daily_schedule,
+                "hours_monday": _num(h.hours_monday),
+                "hours_tuesday": _num(h.hours_tuesday),
+                "hours_wednesday": _num(h.hours_wednesday),
+                "hours_thursday": _num(h.hours_thursday),
+                "hours_friday": _num(h.hours_friday),
+                "work_days_per_week": h.work_days_per_week,
+                "note": h.note,
+                "created_at": _iso(h.created_at),
+            }
+            for h in history
+        ],
     }
 
 
@@ -93,6 +140,13 @@ def _absence_dict(a: Absence) -> dict:
         # gehört aber zur vollständigen §16-Aufzeichnung.
         "reason_id": str(a.reason_id) if getattr(a, "reason_id", None) else None,
         "hours": float(a.hours) if a.hours is not None else None,
+        # Task 15: der beim Buchen festgeschriebene Rohwert. Gehoert in den
+        # §16-Notfall-Export, weil er zeigt, was urspruenglich gebucht wurde —
+        # `hours` kann seither von der Rueckrechnung nach einer
+        # Wochenstunden-Aenderung nachgezogen worden sein. ``float()``-Cast wie
+        # bei ``hours``: ``Numeric`` liefert ``Decimal``, dieser Payload geht
+        # roh in die JSON-Serialisierung (Fehlerklasse #383/#408).
+        "raw_hours": float(a.raw_hours) if getattr(a, "raw_hours", None) is not None else None,
         "start_time": _iso(a.start_time),
         "end_time": _iso(a.end_time),
     }
@@ -164,6 +218,19 @@ def export_tenant_arbzg_data(
         raise HTTPException(status_code=404, detail="Tenant nicht gefunden")
 
     users = db.query(User).filter(User.tenant_id == tenant_id).all()
+    # #431: Vertragshistorie in EINEM Query, je MA gruppiert (kein N+1).
+    # Der explizite Tenant-Filter ist hier PFLICHT, nicht Guertel-und-
+    # Hosentraeger: dieser Pfad laeuft unter ``set_superadmin_context``, dort
+    # greift RLS NICHT — ohne den Filter landete die Historie fremder Mandanten
+    # im Export (Security-Review 2026-07-25).
+    wh_by_user: dict = {}
+    for change in (
+        db.query(WorkingHoursChange)
+        .filter(WorkingHoursChange.tenant_id == tenant_id)
+        .order_by(WorkingHoursChange.user_id, WorkingHoursChange.effective_from)
+        .all()
+    ):
+        wh_by_user.setdefault(change.user_id, []).append(change)
     time_entries = db.query(TimeEntry).filter(TimeEntry.tenant_id == tenant_id).all()
     absences = db.query(Absence).filter(Absence.tenant_id == tenant_id).all()
     audit_logs = (
@@ -183,7 +250,7 @@ def export_tenant_arbzg_data(
             "is_active": tenant.is_active,
             "mode": tenant.mode,
         },
-        "users": [_user_dict(u) for u in users],
+        "users": [_user_dict(u, wh_by_user.get(u.id, [])) for u in users],
         "time_entries": [_time_entry_dict(t) for t in time_entries],
         "absences": [_absence_dict(a) for a in absences],
         "audit_logs": [_audit_dict(log) for log in audit_logs],

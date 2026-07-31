@@ -178,6 +178,39 @@ def test_user(db, default_tenant):
 
 
 @pytest.fixture(scope="function")
+def day_plan_user(db, default_tenant):
+    """#431: Mitarbeitende mit individuellem Tagesplan (Mo 8 / Di 5 / Mi 4).
+
+    ``weekly_hours`` traegt die Summe der Tageswerte (17) — genau die Invariante,
+    die der Stundenverlauf-Endpoint im Tagesplan-Modus serverseitig herstellt.
+    Ihr Tagessoll kommt aus ``hours_monday…friday``, nicht aus
+    ``weekly_hours / work_days_per_week``.
+    """
+    user = User(
+        username="dayplanuser",
+        email="dayplan@example.com",
+        password_hash=auth_service.hash_password("testpassword123"),
+        first_name="Tages",
+        last_name="Plan",
+        role=UserRole.EMPLOYEE,
+        weekly_hours=17.0,
+        vacation_days=30,
+        work_days_per_week=3,
+        track_hours=True,
+        use_daily_schedule=True,
+        hours_monday=8.0,
+        hours_tuesday=5.0,
+        hours_wednesday=4.0,
+        is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
 def test_admin(db, default_tenant):
     """Create a test admin user."""
     admin = User(

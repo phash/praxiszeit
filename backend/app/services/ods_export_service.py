@@ -14,6 +14,7 @@ from odf.opendocument import OpenDocumentSpreadsheet
 from odf.style import Style, TextProperties, TableColumnProperties, TableCellProperties
 from odf.text import P
 from odf.table import Table, TableColumn, TableRow, TableCell
+from odf.office import Annotation
 
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
 from app.services import calculation_service, special_days_service
@@ -73,6 +74,32 @@ def _str_cell(value: str, style=None) -> TableCell:
 def _float_cell(value: float, style=None) -> TableCell:
     cell = TableCell(valuetype="float", value=str(round(value, 2)), stylename=style)
     cell.addElement(P(text=f"{value:.2f}"))
+    return cell
+
+
+def _str_cell_with_comment(value: str, style=None) -> TableCell:
+    """Fund D (Abschluss-Review #431): ODS-Zwilling zu
+    ``export_service._attach_overflow_comment`` — dieselbe Ueberlauf-Zelle mit
+    NICHT-leerer Nachbarzelle rechts existiert in ``_monthly_sheet`` (das
+    #415-``Stundenaenderung``-Feld vor „Monat:"), ohne dass odfpy hier je eine
+    Spaltenbreite setzt (LibreOffice zeigt Standardbreite — der lange Satz waere
+    ebenso abgeschnitten). Ein ``office:annotation`` ist der ODS-Standard fuer
+    einen Zellkommentar (LibreOffice: kleiner Eck-Indikator, Inhalt beim
+    Anklicken/Hovern) — bewusst dieselbe Loesung wie im XLSX-Pendant, damit
+    Bildschirm-Metapher UND Begruendung ueber beide Formate hinweg identisch
+    bleiben.
+    """
+    # Fix-Welle 4 #4: das ODF-Inhaltsmodell fuer table:table-cell verlangt
+    # office:annotation VOR den text:p-Kindern (nicht danach) — LibreOffice ist
+    # beim Import meist tolerant, andere ODF-Consumer/Validatoren sind es nicht.
+    # Deshalb NICHT ``_str_cell`` (haengt die Annotation hinten an) wiederver-
+    # wenden, sondern die Zelle hier in der schema-korrekten Reihenfolge bauen.
+    cell = TableCell(valuetype="string", stylename=style)
+    annotation = Annotation()
+    annotation.addElement(P(text=neutralize_spreadsheet_formula(str(value))))
+    cell.addElement(annotation)
+    text = str(value) if value is not None else ""
+    cell.addElement(P(text=neutralize_spreadsheet_formula(text)))
     return cell
 
 
@@ -163,9 +190,11 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1])
     )
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
-    meta1.addElement(_float_cell(float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)))
+    meta1.addElement(_float_cell(float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)))
     _wh_history = format_weekly_hours_history(_wh_segments)
-    meta1.addElement(_str_cell(_wh_history) if _wh_history else _empty_cell())
+    # Fund D: die Nachbarzelle rechts ("Monat:") ist nicht leer — der Satz
+    # laeuft nicht ueber, siehe _str_cell_with_comment.
+    meta1.addElement(_str_cell_with_comment(_wh_history) if _wh_history else _empty_cell())
     meta1.addElement(_str_cell("Monat:", style=bold))
     meta1.addElement(_str_cell(f"{month:02d}/{year}"))
     table.addElement(meta1)
@@ -260,9 +289,9 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(0.0))
             net = Decimal("0.00")
 
-        # Per-day target using historical weekly hours
-        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
-        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        # Per-day target using the historical contract snapshot (#431)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
             daily_target = daily_target * _sd_factor
@@ -441,7 +470,7 @@ def _yearly_overview_sheet(doc, db, users, year, bold, include_health_data: bool
 
         tr = TableRow()
         tr.addElement(_str_cell(f"{user.last_name}, {user.first_name}"))
-        tr.addElement(_float_cell(float(wh_segments[0][2]) if wh_segments else float(user.weekly_hours)))
+        tr.addElement(_float_cell(float(wh_segments[0].weekly_hours) if wh_segments else float(user.weekly_hours)))
         tr.addElement(_float_cell(target))
         tr.addElement(_float_cell(actual))
         tr.addElement(_float_cell(actual - target))
@@ -526,7 +555,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     )
     meta1.addElement(_empty_cell())
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
-    meta1.addElement(_float_cell(float(_wh_segments[0][2]) if _wh_segments else float(user.weekly_hours)))
+    meta1.addElement(_float_cell(float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)))
     _wh_history = format_weekly_hours_history(_wh_segments)
     if _wh_history:
         meta1.addElement(_str_cell(_wh_history))
@@ -575,8 +604,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         day_absences = absences_by_date.get(current_date, [])
         absence = day_absences[0] if day_absences else None
         day_entries = entries_by_date.get(current_date, [])
-        weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, current_date)
-        daily_target = calculation_service.get_daily_target_for_date(user, current_date, weekly_hours=weekly_hours)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
             daily_target = daily_target * _sd_factor

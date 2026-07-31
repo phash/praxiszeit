@@ -3,11 +3,103 @@ from app.services.timezone_service import today_local
 from app.services.date_filters import date_in_year, date_in_month, date_in_range
 from decimal import Decimal
 from calendar import monthrange
-from typing import Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 from app.models import User, TimeEntry, Absence, AbsenceReason, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
 from app.services import special_days_service, settings_service
+
+
+class Schedule(NamedTuple):
+    """#431: der vollstaendige Vertrags-Snapshot fuer EIN Datum.
+
+    Aufgeloest aus der jeweils juengsten ``WorkingHoursChange`` mit
+    ``effective_from <= target_date``; gibt es keine, aus den aktuellen
+    User-Feldern (der Rueckfallwert fuer die Zeit vor der ersten erfassten
+    Aenderung — dieselbe Semantik wie ``user.weekly_hours`` seit #415).
+    """
+
+    weekly_hours: Decimal
+    use_daily_schedule: bool
+    day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[Decimal]
+    work_days_per_week: int
+
+
+def _latest_change(
+    db: Session,
+    user: User,
+    target_date: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Optional[WorkingHoursChange]:
+    """Juengste Aenderung mit ``effective_from <= target_date``. Query-Pfad und
+    In-Memory-Pfad mit identischer Semantik (``ORDER BY effective_from DESC
+    LIMIT 1``)."""
+    if wh_changes is None:
+        return db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+            WorkingHoursChange.effective_from <= target_date,
+        ).order_by(WorkingHoursChange.effective_from.desc()).first()
+    change = None
+    for c in wh_changes:
+        if c.effective_from <= target_date and (
+            change is None or c.effective_from > change.effective_from
+        ):
+            change = c
+    return change
+
+
+def _dec_or_none(value) -> Optional[Decimal]:
+    return None if value is None else Decimal(str(value))
+
+
+def get_schedule_for_date(
+    db: Session,
+    user: User,
+    target_date: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Schedule:
+    """#431: DIE eine Aufloesung des Vertragszustands zu einem Datum.
+
+    Vor #431 war nur ``weekly_hours`` historisiert; Modus, Tageswerte und
+    Arbeitstage kamen live von der User-Zeile — jede Aenderung verschob damit
+    still das Soll der gesamten Vergangenheit. Alle vier Werte stecken jetzt in
+    derselben Snapshot-Zeile, deshalb genuegt EIN Lookup (und der bereits
+    vorhandene ``wh_changes``-Preload der Hot-Loops).
+    """
+    change = _latest_change(db, user, target_date, wh_changes)
+    if change is not None:
+        return Schedule(
+            weekly_hours=Decimal(str(change.weekly_hours)),
+            use_daily_schedule=bool(change.use_daily_schedule),
+            day_hours=(
+                _dec_or_none(change.hours_monday),
+                _dec_or_none(change.hours_tuesday),
+                _dec_or_none(change.hours_wednesday),
+                _dec_or_none(change.hours_thursday),
+                _dec_or_none(change.hours_friday),
+            ),
+            work_days_per_week=int(
+                change.work_days_per_week
+                if change.work_days_per_week is not None
+                else user.work_days_per_week
+            ),
+        )
+    # Kein Eintrag → aktuelle User-Felder. Dies ist die EINZIGE Stelle im Code,
+    # die user.weekly_hours / user.hours_* / user.work_days_per_week direkt
+    # lesen darf.
+    return Schedule(
+        weekly_hours=Decimal(str(user.weekly_hours)),
+        use_daily_schedule=bool(getattr(user, 'use_daily_schedule', False)),
+        day_hours=(
+            _dec_or_none(user.hours_monday),
+            _dec_or_none(user.hours_tuesday),
+            _dec_or_none(user.hours_wednesday),
+            _dec_or_none(user.hours_thursday),
+            _dec_or_none(user.hours_friday),
+        ),
+        work_days_per_week=int(user.work_days_per_week),
+    )
 
 
 def get_weekly_hours_for_date(
@@ -37,31 +129,39 @@ def get_weekly_hours_for_date(
 
     Returns:
         Weekly hours as Decimal
+
+    #431: thin wrapper around ``get_schedule_for_date`` — the resolver above
+    is now the single place that reads ``user.weekly_hours`` directly.
     """
-    if wh_changes is None:
-        # Classic path: one DB query, always correct.
-        change = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
-            WorkingHoursChange.effective_from <= target_date
-        ).order_by(WorkingHoursChange.effective_from.desc()).first()
-    else:
-        # In-memory path: scan the pre-loaded list. We mirror the SQL
-        # ``ORDER BY effective_from DESC LIMIT 1`` semantics exactly.
-        change = None
-        for c in wh_changes:
-            if c.effective_from <= target_date and (
-                change is None or c.effective_from > change.effective_from
-            ):
-                change = c
+    return get_schedule_for_date(db, user, target_date, wh_changes).weekly_hours
 
-    if change:
-        return Decimal(str(change.weekly_hours))
 
-    # No historical change found — fall back to the current user value.
-    # This is the ONLY place in the codebase that may read user.weekly_hours
-    # directly; everything else must route through this helper.
-    return Decimal(str(user.weekly_hours))
+class ScheduleSegment(NamedTuple):
+    """#415/#431: ein zusammenhaengender Zeitraum KONSTANTEN Vertragszustands.
+
+    Bis #431 war das ein 3er-Tupel ``(von, bis, wochenstunden)``. Fuer
+    Mitarbeitende mit individuellem Tagesplan sagte das nichts Brauchbares:
+    ``weekly_hours`` ist dort nur die Summe der fuenf Tageswerte und steuert kein
+    einziges Tagessoll — die sechs §16-Flaechen zeigten eine Zahl ohne Bezug zu
+    ihren eigenen Soll-Spalten. Und zwei Zeilen mit gleicher Wochensumme, aber
+    verschobenem Tagesplan (Mo 8/Di 5/Mi 4 → Mo 4/Di 5/Mi 8) verschmolzen zu
+    EINEM Segment: der Bericht behauptete „keine Aenderung", obwohl sich jedes
+    Tagessoll verschoben hatte.
+
+    ``day_hours`` ist im gleichmaessigen Modus IMMER ``(None,) * 5``, auch wenn
+    die Zeile Reste traegt: ``get_daily_target_for_date`` liest die Tageswerte
+    dort gar nicht, und ``update_user`` raeumt sie beim Abschalten des Tagesplans
+    nicht ab. Solche inerten Reste duerfen weder eine Pseudo-Aenderung erzeugen
+    noch in einem Bericht auftauchen — dieselbe Maskierung wie in
+    ``admin_users._comparable_snapshot``.
+    """
+
+    start: date
+    end: date
+    weekly_hours: Decimal
+    use_daily_schedule: bool
+    day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[Decimal]
+    work_days_per_week: int
 
 
 def weekly_hours_segments(
@@ -70,9 +170,9 @@ def weekly_hours_segments(
     start: date,
     end: date,
     wh_changes: Optional[List[WorkingHoursChange]] = None,
-) -> List[tuple]:
-    """#415: die Wochenstunden-Historie eines Zeitraums als zusammenhaengende
-    Segmente ``[(von, bis, wochenstunden), …]``, lueckenlos ueber ``[start, end]``.
+) -> List[ScheduleSegment]:
+    """#415: die Vertragshistorie eines Zeitraums als zusammenhaengende
+    :class:`ScheduleSegment`, lueckenlos ueber ``[start, end]``.
 
     DIE eine Quelle fuer die Darstellung von Stundenaenderungen in Berichten und
     Exporten. Vorher zeigten die Kopfzeilen/Spalten „Wochenstunden" den
@@ -84,14 +184,19 @@ def weekly_hours_segments(
 
     * Aenderungen VOR ``start`` gelten fuer den gesamten Zeitraum (ein Segment).
     * Aenderungen NACH ``end`` sind unsichtbar.
-    * Eine Aenderung auf denselben Wert erzeugt KEIN neues Segment — sie ist
-      im Bericht keine sichtbare Aenderung.
+    * Eine Aenderung, die am Vertragszustand nichts aendert, erzeugt KEIN neues
+      Segment — sie ist im Bericht keine sichtbare Aenderung.
     * ``start > end`` → ``[]``.
 
-    Die Stundenwerte kommen ausschliesslich aus ``get_weekly_hours_for_date``,
-    damit Darstellung und Berechnung nie auseinanderlaufen koennen. ``wh_changes``
-    ist der Preload fuer Hot-Loops (identische Semantik, keine Query) und muss —
-    wie dort — bereits auf diesen User gefiltert sein.
+    Verglichen wird der VOLLSTAENDIGE Snapshot (Wochenstunden, Modus, Tageswerte,
+    Arbeitstage), nicht mehr nur ``weekly_hours``: sonst bliebe genau der
+    Tagesplan-Fall unsichtbar, fuer den #431 die Historie ueberhaupt erweitert
+    hat (gleiche Wochensumme, anderes Tagessoll).
+
+    Die Werte kommen ausschliesslich aus ``get_schedule_for_date``, damit
+    Darstellung und Berechnung nie auseinanderlaufen koennen. ``wh_changes`` ist
+    der Preload fuer Hot-Loops (identische Semantik, keine Query) und muss — wie
+    dort — bereits auf diesen User gefiltert sein.
     """
     if start > end:
         return []
@@ -112,16 +217,56 @@ def weekly_hours_segments(
         if start < change.effective_from <= end and change.effective_from not in boundaries:
             boundaries.append(change.effective_from)
 
-    segments: List[tuple] = []
+    segments: List[ScheduleSegment] = []
     for i, boundary in enumerate(boundaries):
         seg_end = boundaries[i + 1] - timedelta(days=1) if i + 1 < len(boundaries) else end
-        hours = get_weekly_hours_for_date(db, user, boundary, wh_changes=wh_changes)
-        if segments and segments[-1][2] == hours:
-            # Gleicher Wert → mit dem Vorgaenger verschmelzen.
-            segments[-1] = (segments[-1][0], seg_end, hours)
+        schedule = get_schedule_for_date(db, user, boundary, wh_changes=wh_changes)
+        segment = ScheduleSegment(
+            start=boundary,
+            end=seg_end,
+            weekly_hours=schedule.weekly_hours,
+            use_daily_schedule=schedule.use_daily_schedule,
+            day_hours=schedule.day_hours if schedule.use_daily_schedule else (None,) * 5,
+            work_days_per_week=schedule.work_days_per_week,
+        )
+        # Ab Feld 2 stehen genau die Snapshot-Werte — der Vergleich deckt damit
+        # automatisch jedes kuenftige Feld mit ab.
+        if segments and segments[-1][2:] == segment[2:]:
+            segments[-1] = segments[-1]._replace(end=seg_end)
         else:
-            segments.append((boundary, seg_end, hours))
+            segments.append(segment)
     return segments
+
+
+def work_days_changed(previous, segment) -> bool:
+    """#431: Aendert dieses Segment die ARBEITSTAGE gegenueber dem
+    vorhergehenden?
+
+    DIE eine Definition dieser Frage — genutzt vom Datei-Export
+    (``export_service._format_segment_change``) und vom API-Schema
+    (``schemas.reports.WeeklyHoursChangeInPeriod.from_segment``, das den Befund
+    als ``work_days_changed`` an den Frontend-Zwilling weiterreicht). Der
+    Bildschirm sieht nur die Aenderungen (``segments[1:]``), nicht das
+    Basissegment davor — ohne diesen mitgelieferten Befund koennte er die Frage
+    fuer die ERSTE Aenderung eines Zeitraums gar nicht beantworten und muesste
+    einen anderen Satz schreiben als die Datei.
+
+    Hintergrund: ``weekly_hours_segments`` splittet auf dem VOLLSTAENDIGEN
+    Snapshot, die #415-Formulierung des gleichmaessigen Modus nennt aber nur die
+    Wochenstunden. Ein Wechsel „40 h auf 5 Tage" → „40 h auf 4 Tage" erzeugte so
+    eine Aenderungszeile, die zeichengleich zur Kopfzeile war — waehrend das
+    Tagessoll derselben Tageszeilen von 8,00 h auf 10,00 h sprang.
+
+    ``previous is None`` (das erste Segment, oder eine Altantwort ohne Vorgaenger)
+    → ``False``: ohne Vergleichspunkt wird nichts behauptet.
+    """
+    if previous is None:
+        return False
+    before = getattr(previous, "work_days_per_week", None)
+    after = getattr(segment, "work_days_per_week", None)
+    if before is None or after is None:
+        return False
+    return int(before) != int(after)
 
 
 class RetargetWindow(NamedTuple):
@@ -204,6 +349,27 @@ def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWi
     return RetargetWindow(start=effective_from, end=end, last_absence=last_absence)
 
 
+class AbsenceRetarget(NamedTuple):
+    """Task 15: EINE tatsaechlich nachgezogene Abwesenheit.
+
+    ``retarget_absence_hours`` gab frueher nur die ANZAHL zurueck — welche Zeile
+    von welchem Wert auf welchen ging, wusste danach niemand mehr, obwohl genau
+    das der Weg zurueck ist, wenn sich eine Berechnung als falsch herausstellt.
+    Der Aufrufer schreibt daraus das Einzelprotokoll (die Audit-Zeilen gehoeren
+    in den Router, nicht hierher: die Vorschau ruft dieselbe Funktion und rollt
+    danach zurueck — sie darf nichts protokollieren).
+
+    ``absence_type`` ist mit dabei, damit der Router das deutsche Klartext-Label
+    bilden kann, ohne die eben gelesenen Zeilen ein zweites Mal zu holen.
+    """
+
+    absence_id: Any           # UUID (auf SQLite ggf. str — nie selbst parsen)
+    date: date
+    old_hours: Decimal
+    new_hours: Decimal
+    absence_type: AbsenceType
+
+
 def retarget_absence_hours(
     db: Session,
     user: User,
@@ -211,9 +377,10 @@ def retarget_absence_hours(
     end: date,
     *,
     dry_run: bool = False,
-) -> int:
+) -> List[AbsenceRetarget]:
     """Setzt ``Absence.hours`` im Fenster ``[start, end]`` auf das Tagessoll des
-    jeweiligen Tages. Gibt die Anzahl tatsaechlich abweichender Zeilen zurueck.
+    jeweiligen Tages. Gibt die tatsaechlich abweichenden Zeilen zurueck (die
+    frueher zurueckgegebene Anzahl ist ``len(...)``).
     Das Fenster liefert ``retarget_window`` (DIE eine Stelle dafuer).
 
     Warum es das braucht: das SOLL rechnet datumsbasiert automatisch neu
@@ -239,18 +406,28 @@ def retarget_absence_hours(
     * Tage ausserhalb des Beschaeftigungsfensters (#193).
     * ``half_day IS NULL`` (Legacy-Zeilen von vor #205) — siehe Begruendung in
       der Schleife.
+    * #431: Tagesplan-Mitarbeitende sind NICHT mehr ausgenommen. Ihr Tagessoll
+      kommt jetzt ebenfalls aus der Historien-Zeile; aendert eine Aenderung nur
+      einen Wochentag, ueberspringt die Gleichheitspruefung die uebrigen Tage
+      von selbst — es braucht keinen Wochentagsfilter.
 
     ``half_day`` halbiert, der #146/#394-Sondertagsfaktor (24./31.12.) wird
     angewandt. Die Abwesenheits-TAGE aendern sich dadurch nie — die sind
     tagebasiert (§3 BUrlG) und haengen nicht an ``hours``.
 
-    ``dry_run=True`` zaehlt nur (fuer die Vorschau vor dem Speichern).
+    ``Absence.raw_hours`` bleibt BEWUSST unberuehrt (Task 15): das ist der beim
+    Buchen festgeschriebene Wert und damit die einzige Rueckversicherung, falls
+    sich diese Rechnung als falsch herausstellt. Diese Funktion ist der einzige
+    ``hours``-Schreiber, der ihn nicht mitzieht — jeder menschliche Schreiber
+    setzt beide. Siehe den Kommentar an ``Absence.raw_hours``.
+
+    ``dry_run=True`` ermittelt nur (fuer die Vorschau vor dem Speichern).
 
     DIE eine Stelle, die Abwesenheits-Stunden nachzieht — Anlegen, Loeschen und
     Vorschau rufen alle hier hinein.
     """
     if start > end or not user.track_hours:
-        return 0
+        return []
 
     holidays = {
         h.date for h in db.query(PublicHoliday).filter(
@@ -278,7 +455,7 @@ def retarget_absence_hours(
         Absence.type != AbsenceType.OVERTIME,
     ).all()
 
-    changed = 0
+    changed: List[AbsenceRetarget] = []
     for a in absences:
         d = a.date
         if d.weekday() >= 5 or d in holidays:
@@ -301,8 +478,8 @@ def retarget_absence_hours(
         if a.half_day is None:
             continue
 
-        weekly = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
-        target = get_daily_target_for_date(user, d, weekly)
+        schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        target = get_daily_target_for_date(user, d, schedule)
         # None = keine Sondertagsregel (normaler Tag). Gleiche Behandlung wie in
         # _day_soll_contribution: Faktor NUR anwenden, wenn es einen gibt.
         factor = special_days_service.special_day_target_factor(d, special_cfgs[d.year])
@@ -313,11 +490,19 @@ def retarget_absence_hours(
 
         new_hours = (target / 2) if a.half_day else target
         new_hours = Decimal(str(new_hours)).quantize(Decimal('0.01'))
-        if Decimal(str(a.hours)).quantize(Decimal('0.01')) == new_hours:
+        old_hours = Decimal(str(a.hours)).quantize(Decimal('0.01'))
+        if old_hours == new_hours:
             continue
 
-        changed += 1
+        # KEINE stille Obergrenze (CLAUDE.md „no silent caps"): beruehrt ein
+        # Vorgang viele Zeilen, stehen sie alle in der Liste — und damit alle im
+        # Protokoll.
+        changed.append(AbsenceRetarget(
+            absence_id=a.id, date=d, old_hours=old_hours,
+            new_hours=new_hours, absence_type=a.type,
+        ))
         if not dry_run:
+            # NUR ``hours``. ``raw_hours`` bleibt stehen — siehe Docstring.
             a.hours = float(new_hours)
 
     if changed and not dry_run:
@@ -338,6 +523,9 @@ def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
 
     NOTE: Does NOT consider per-day schedule. Use get_daily_target_for_date()
     for date-aware calculations.
+
+    #431: kennt keinen Tagesplan und keine Historie. Fuer alles Datumsbezogene
+    ``get_daily_target_for_date`` mit ``get_schedule_for_date`` nutzen.
 
     Args:
         user: User object
@@ -361,45 +549,77 @@ def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     return (weekly_hours / work_days).quantize(Decimal('0.01'))
 
 
-def get_daily_target_for_date(user: User, target_date: date, weekly_hours: Decimal = None) -> Decimal:
-    """
-    Calculate daily target hours for a specific date.
+def get_daily_target_for_date(user: User, target_date: date, schedule: Schedule) -> Decimal:
+    """Tagessoll fuer ein konkretes Datum aus dem aufgeloesten Vertrags-Snapshot.
 
-    If user has use_daily_schedule=True, returns the hours configured
-    for that specific weekday (Mon–Fri). Weekends always return 0.
+    ``schedule`` ist PFLICHT (#431): frueher las der Tagesplan-Zweig live
+    ``user.hours_monday…friday`` und verwarf dabei das datumsaufgeloeste
+    ``weekly_hours`` — eine Historien-Zeile hatte fuer Tagesplan-Mitarbeitende
+    also keinerlei Wirkung aufs Soll. Ohne Pflichtparameter bliebe eine
+    uebersehene Call-Site lautlos auf dem AKTUELLEN Plan stehen und erzeugte ein
+    halb-historisches §16-Dokument (Abwesenheitstage historisch gerechnet,
+    regulaere Arbeitstage nicht). Den Snapshot liefert
+    ``get_schedule_for_date`` — in Tagesschleifen mit dem vorhandenen
+    ``wh_changes``-Preload.
 
-    If use_daily_schedule=False, falls back to get_daily_target().
-
-    Args:
-        user: User object
-        target_date: The specific date
-        weekly_hours: Optional weekly hours override (used when use_daily_schedule=False)
-
-    Returns:
-        Daily target hours as Decimal
+    Wochenende ist immer 0; ``track_hours=False`` ebenfalls.
     """
     if not user.track_hours:
         return Decimal('0')
 
-    weekday = target_date.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
-
+    weekday = target_date.weekday()  # 0=Mo, 4=Fr, 5=Sa, 6=So
     if weekday >= 5:
         return Decimal('0')
 
-    if getattr(user, 'use_daily_schedule', False):
-        day_columns = [
-            user.hours_monday,
-            user.hours_tuesday,
-            user.hours_wednesday,
-            user.hours_thursday,
-            user.hours_friday,
-        ]
-        day_hours = day_columns[weekday]
+    if schedule.use_daily_schedule:
+        day_hours = schedule.day_hours[weekday]
         if day_hours is None:
             return Decimal('0')
         return Decimal(str(day_hours)).quantize(Decimal('0.01'))
 
-    return get_daily_target(user, weekly_hours)
+    work_days = Decimal(str(schedule.work_days_per_week))
+    if work_days == 0:
+        return Decimal('0')
+    return (schedule.weekly_hours / work_days).quantize(Decimal('0.01'))
+
+
+def is_vacation_billable_day(
+    db: Session,
+    user: User,
+    target_date: date,
+    schedule: Optional['Schedule'] = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> bool:
+    """#431: zaehlt ``target_date`` in einer Urlaubs-VORPRUEFUNG als Urlaubstag?
+
+    DIE eine Antwort fuer alle Budget-Vorpruefungen (Direkt-Buchung, Antrags-
+    Genehmigung, Antrag anlegen/bearbeiten, CR-Genehmigung). Sie muss exakt das
+    sagen, was die zugehoerige Buchungsschleife danach tut — laufen die beiden
+    auseinander, lehnt der Check eine Buchung mit 400 ab, die nachher weniger
+    Budget verbraucht haette (oder laesst eine durch, die mehr kostet).
+
+    Der Modus wird zum DATUM aufgeloest, nicht von der User-Zeile gelesen: seit
+    #431 ist ``use_daily_schedule`` Teil des historisierten Vertrags-Snapshots,
+    die User-Zeile traegt nur den HEUTE gueltigen Wert. Eine rueckwirkende (oder
+    zukunftsdatierte) Buchung in einen Zeitraum mit abweichendem Modus rechnete
+    sonst mit dem falschen Zweig, waehrend der Filterwert daneben — das
+    Tagessoll — laengst datumsaufgeloest war. Vor #431 konnten die beiden nie
+    divergieren, deshalb war der Live-Zugriff damals korrekt.
+
+    ``track_hours=False`` (leitende Angestellte, #191) zaehlt JEDEN Werktag:
+    deren Tagessoll ist immer 0, tagebasiert kostet der Tag trotzdem 1 — sie
+    duerfen hier nie mitgefiltert werden.
+    """
+    if not user.track_hours:
+        return True
+    if schedule is None:
+        schedule = get_schedule_for_date(db, user, target_date, wh_changes=wh_changes)
+    # Nur der Tagesplan kennt echte 0-Stunden-Werktage. Im gleichmaessigen Modus
+    # traegt jeder Werktag weekly_hours/work_days_per_week > 0 — der Zweig ist
+    # dort also wirkungslos, wird aber bewusst beibehalten (Byte-Identitaet).
+    if not schedule.use_daily_schedule:
+        return True
+    return get_daily_target_for_date(user, target_date, schedule) > 0
 
 
 def fixed_monthly_target(user: User, year: int, month: int) -> Decimal:
@@ -430,11 +650,18 @@ _FIXED_PAID_CREDIT_TYPES = frozenset({AbsenceType.VACATION, AbsenceType.PAID_LEA
 _FIXED_UNPAID_TYPES = frozenset({AbsenceType.OTHER})
 
 
-def _fixed_planned_hours(db: Session, user: User, d: date, special_cfg: dict) -> Decimal:
+def _fixed_planned_hours(
+    db: Session, user: User, d: date, special_cfg: dict,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Decimal:
     """Geplante Tagesstunden an ``d`` (0 an ungeplanten Tagen/Wochenende), inkl.
-    #394-Sondertags-/Halbtags-Faktor. Nur im use_daily_schedule-Sinn sinnvoll."""
-    weekly = get_weekly_hours_for_date(db, user, d)
-    planned = get_daily_target_for_date(user, d, weekly)
+    #394-Sondertags-/Halbtags-Faktor. Nur im use_daily_schedule-Sinn sinnvoll.
+
+    #431: der Plan wird zum Datum aufgeloest. Ohne das schriebe der Fix-Modus
+    einem vergangenen Urlaubs-/Feiertag die HEUTIGEN Planstunden gut.
+    ``wh_changes`` ist der optionale Preload der aufrufenden Tagesschleife."""
+    schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+    planned = get_daily_target_for_date(user, d, schedule)
     if planned <= 0:
         return Decimal('0')
     return (planned * half_special_day_weight(d, special_cfg))
@@ -470,6 +697,12 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
         TimeEntry.user_id == user.id, TimeEntry.tenant_id == user.tenant_id,
         date_in_month(TimeEntry.date, year, month),
     ).all()}
+    # #431: EIN Preload für die ganze Monatsschleife statt einer Query je Tag —
+    # _fixed_planned_hours löst den Vertrags-Snapshot jetzt pro Datum auf.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).all()
     total = Decimal('0')
     for day in range(1, days_in_month + 1):
         d = date(year, month, day)
@@ -489,7 +722,7 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
         coverage = min(coverage, Decimal('1'))  # nie mehr als ein voller Tag gutschreiben
         if coverage <= 0:
             continue
-        planned = _fixed_planned_hours(db, user, d, cfg)
+        planned = _fixed_planned_hours(db, user, d, cfg, wh_changes=wh_changes)
         total += planned * coverage
     return total.quantize(Decimal('0.01'))
 
@@ -612,8 +845,8 @@ def _day_soll_contribution(
     half = absence_half_map.get(d)
     if half is False:
         return Decimal('0')  # full-day soll-reducing absence → no Soll this day
-    weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
-    daily_target = get_daily_target_for_date(user, d, weekly_hours)
+    schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+    daily_target = get_daily_target_for_date(user, d, schedule)
     factor = special_days_service.special_day_target_factor(d, special_cfg)
     if factor is not None:
         daily_target = daily_target * factor
@@ -721,7 +954,7 @@ def future_freizeitausgleich_impact(
             # Feiertag ist die geplante Zeit ohnehin nicht zu leisten → 0.
             if d in holiday_dates:
                 continue
-            total += _fixed_planned_hours(db, user, d, special_cfg)
+            total += _fixed_planned_hours(db, user, d, special_cfg, wh_changes=wh_changes)
             continue
         # OVERTIME ist NICHT soll-reduzierend → leere half_map → volles Tages-Soll
         # (× #146-Sondertag-Faktor). Exakt der Betrag, um den dieser Tag später
@@ -965,6 +1198,11 @@ def get_gross_monthly_target(db: Session, user: User, year: int, month: int) -> 
         PublicHoliday.tenant_id == user.tenant_id,
     ).all()}
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
+    # #431: EIN Preload für die Monatsschleife (Muster wie get_range_target).
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).all()
 
     _, last_day = monthrange(year, month)
     gross = Decimal('0')
@@ -976,8 +1214,8 @@ def get_gross_monthly_target(db: Session, user: User, year: int, month: int) -> 
             continue
         if d in holiday_dates:
             continue
-        weekly_hours = get_weekly_hours_for_date(db, user, d)
-        daily_target = get_daily_target_for_date(user, d, weekly_hours)
+        schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        daily_target = get_daily_target_for_date(user, d, schedule)
         factor = special_days_service.special_day_target_factor(d, special_day_config)
         if factor is not None:
             daily_target = daily_target * factor
@@ -1654,7 +1892,7 @@ def absence_days(db: Session, user: User, absences: list,
             base = Decimal('0.5') if a.half_day else Decimal('1')
             total += base * _weight(a.date)
             continue
-        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date, wh_changes=wh_changes))
+        dt_day = get_daily_target_for_date(user, a.date, get_schedule_for_date(db, user, a.date, wh_changes=wh_changes))
         if dt_day > 0:
             if a.half_day is None:
                 total += Decimal(str(a.hours)) / Decimal(str(dt_day))
@@ -1821,7 +2059,7 @@ def get_vacation_account(
     for a in vacation_absences:
         h = Decimal(str(a.hours))
         used_hours += h
-        dt_day = get_daily_target_for_date(user, a.date, get_weekly_hours_for_date(db, user, a.date, wh_changes=wh_changes))
+        dt_day = get_daily_target_for_date(user, a.date, get_schedule_for_date(db, user, a.date, wh_changes=wh_changes))
         # §3 BUrlG / Tagesprinzip: Urlaub an einem NICHT-Arbeitstag des MA
         # (dt_day == 0, z. B. Di/Do bei einer Mo/Mi/Fr-Kraft) verbraucht 0 Urlaubs-
         # tage — das Überspringen ist gewollt, KEIN Buchungsverlust (Funktions-
@@ -1900,8 +2138,8 @@ def get_vacation_account(
             continue
         if user.last_work_day and d > user.last_work_day:
             continue
-        weekly_hours = get_weekly_hours_for_date(db, user, d, wh_changes=wh_changes)
-        dt_day = get_daily_target_for_date(user, d, weekly_hours)
+        schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        dt_day = get_daily_target_for_date(user, d, schedule)
         if dt_day <= 0:
             continue
         used_hours += Decimal(str(dt_day))

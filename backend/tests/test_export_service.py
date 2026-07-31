@@ -200,6 +200,48 @@ class TestClassicReportSaldo:
         assert abs((gross - adjusted) - 8.0) < 0.01, f"gross {gross} - adjusted {adjusted}"
 
 
+class TestClassicReportDailyHoursCorner:
+    """Fund G (Abschluss-Review #431): die informative Ecke "tägl. Std:" (Zeile
+    6, Spalte Q/R) rief bis dahin ausschließlich ``get_daily_target(user)`` —
+    die letzte verbliebene Bypass-Stelle der Export-Schicht, die weder
+    Historie noch Tagesplan kennt. Für einen Tagesplan-Mitarbeitenden ist
+    "Summe ÷ Anzahl Tage" ein arithmetisches Mittel, das mit keinem einzelnen
+    Wochentag übereinstimmt und der Tagesplan-Zeile desselben Berichts
+    (Zeile 7, ``get_gross_monthly_target``) widerspricht."""
+
+    def test_uniform_schedule_user_keeps_the_old_single_value(self, db, test_user):
+        """Byte-Identität: eine gleichmäßige Woche bleibt exakt der alte,
+        einzelne Tageswert — keine Verhaltensänderung für die überwiegende
+        Mehrheit der Mitarbeitenden."""
+        from app.services import calculation_service as cs
+        from app.services.export_service import generate_yearly_report_classic
+
+        result = generate_yearly_report_classic(db, 2026, include_health_data=True)
+        wb, _ = _load_xlsx(result)
+        ws = next((wb[n] for n in wb.sheetnames if test_user.last_name in n),
+                  wb[wb.sheetnames[0]])
+        assert ws.cell(row=6, column=17).value == "tägl. Std:"
+        expected = float(cs.get_daily_target(test_user))
+        assert ws.cell(row=6, column=18).value == pytest.approx(expected)
+
+    def test_day_plan_user_shows_the_plan_instead_of_a_meaningless_average(self, db, day_plan_user):
+        """Mo 8 / Di 5 / Mi 4 -> vorher 17 ÷ 3 = 5,67h in JEDER Spalte, ein
+        Wert, den kein einziger Wochentag tatsächlich hat. Jetzt der
+        Klartext-Tagesplan, wortgleich zu den #415/#431-Kopfzeilen der
+        übrigen Exporte (``format_day_plan``)."""
+        from app.services.export_service import generate_yearly_report_classic
+
+        result = generate_yearly_report_classic(db, 2026, include_health_data=True)
+        wb, _ = _load_xlsx(result)
+        ws = next((wb[n] for n in wb.sheetnames if day_plan_user.last_name in n),
+                  wb[wb.sheetnames[0]])
+        assert ws.cell(row=6, column=17).value == "Tagesplan:"
+        value = ws.cell(row=6, column=18).value
+        assert value == "Mo 8,0 / Di 5,0 / Mi 4,0"
+        # Der irreführende Mittelwert (17 / 3 = 5,67) darf nirgends mehr stehen.
+        assert value != pytest.approx(17.0 / 3.0)
+
+
 class TestFixedModeMonthlySummary:
     """Finding 1 (Whole-Branch-Review, #377 Baustein 2b): die Monats-Summary
     (Soll-Stunden Monat / Ist-Stunden Monat / Saldo Monat) im XLSX-Detailblatt

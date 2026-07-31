@@ -7,6 +7,11 @@ Verbindliche Begriffsdefinitionen für die **Zeit- und Urlaubsrechnung**. Ziel: 
 > Die Brücke zwischen beiden ist das **Tagessoll** (Stunden pro Arbeitstag).
 > Niemals Urlaub als Stundensumme ÷ Durchschnitts-Tagessoll führen (driftet bei
 > ungleichmäßigem Tagesplan / Halbtagen) — siehe **Tagesprinzip**.
+>
+> Seit #431 sind nicht nur die Wochenstunden, sondern der **gesamte Vertragszustand**
+> (Wochenstunden, Modus gleichmäßig/Tagesplan, Tageswerte, Arbeitstage/Woche) pro
+> Wirkungsdatum historisiert — dieselbe Regel „nie das Live-Feld lesen, immer die
+> datumsaufgelöste Funktion" gilt jetzt für alle vier Größen gemeinsam.
 
 ---
 
@@ -14,9 +19,9 @@ Verbindliche Begriffsdefinitionen für die **Zeit- und Urlaubsrechnung**. Ziel: 
 
 | Größe | Einheit | Bedeutung | Maßgebliche Quelle |
 |-------|---------|-----------|--------------------|
-| **Wochenarbeitszeit** (`weekly_hours`) | Stunden/Woche | Vertraglich vereinbarte Stunden pro Woche (z. B. 40,0). Historisch korrekt über `WorkingHoursChange`. | `get_weekly_hours_for_date()` (NIE `user.weekly_hours` direkt lesen) |
-| **work_days_per_week** | Tage/Woche | Anzahl Arbeitstage pro Woche (z. B. 5). | `User.work_days_per_week` |
-| **Tagessoll** | Stunden/Tag | Soll-Stunden **eines konkreten Tages**. Standard: `weekly_hours ÷ work_days_per_week`. Bei `use_daily_schedule=True`: die pro-Wochentag hinterlegten Stunden (`hours_monday`…`hours_friday`). **Wochenende & nicht-geplante Wochentage = 0.** | `get_daily_target_for_date(user, date)` |
+| **Wochenarbeitszeit** (`weekly_hours`) | Stunden/Woche | Vertraglich vereinbarte Stunden pro Woche (z. B. 40,0). Historisch korrekt über `WorkingHoursChange`. Bei Tagesplan die **Summe** der Tageswerte — serverseitig erzwungen in der `WorkingHoursChange`-Zeile (`check_mode`) und seit #431 auch beim Anlegen (`UserCreate`-Validator). Ein Tagesplan-Mitarbeiter **ohne** eine einzige `WorkingHoursChange`-Zeile fällt dagegen im Fallback-Zweig von `get_schedule_for_date` auf den direkten `user.weekly_hours`-Wert zurück — der kann bei einem vor dieser Regel angelegten Konto weiterhin von der Tagessumme abweichen. | `get_weekly_hours_for_date()` (NIE `user.weekly_hours` direkt lesen) |
+| **work_days_per_week** | Tage/Woche | Anzahl Arbeitstage pro Woche (z. B. 5). Seit #431 ebenfalls historisiert. Bei Tagesplan berechnet es ausschließlich der **Dialog** (Frontend) als Zahl der Wochentage mit Stunden > 0 und schickt es mit — Schema und Router übernehmen unverändert, was der Client sendet, ohne eigene Ableitung oder Prüfung. | `get_schedule_for_date().work_days_per_week` (NIE `User.work_days_per_week` direkt für ein Datum lesen) |
+| **Tagessoll** | Stunden/Tag | Soll-Stunden **eines konkreten Tages**. Standard: `weekly_hours ÷ work_days_per_week`. Bei `use_daily_schedule=True`: die pro-Wochentag hinterlegten Stunden (`hours_monday`…`hours_friday`), historisch aus demselben Snapshot. **Wochenende & nicht-geplante Wochentage = 0.** | `get_daily_target_for_date(user, date, schedule)` mit `schedule = get_schedule_for_date(db, user, date)` |
 | **Arbeitstag** | — (Kalendertag) | Tag mit **Tagessoll > 0** für diesen MA (kein Wochenende, kein Feiertag, kein 0-Stunden-Wochentag). | abgeleitet aus Tagessoll |
 | **Soll** | Stunden | Summe der Tagessolls über einen Zeitraum, **minus** soll-mindernder Abwesenheiten. | `get_range_target()` / `get_monthly_target()` |
 | **Ist** | Stunden | Summe `net_hours` der Zeiteinträge **plus** angerechnete Abwesenheiten (TRAINING/SICK). | `get_range_actual()` / `get_monthly_actual()` |
@@ -109,8 +114,9 @@ immer den vollen Zeitraum** (kein Stichtag).
 
 | Frage | Funktion |
 |-------|----------|
+| Vollständiger Vertrags-Snapshot an Datum X (Modus, Tageswerte, Wochenstunden, Arbeitstage)? | `calculation_service.get_schedule_for_date()` |
 | Wochenstunden an Datum X? | `calculation_service.get_weekly_hours_for_date()` |
-| Tagessoll an Datum X? | `calculation_service.get_daily_target_for_date()` |
+| Tagessoll an Datum X? | `calculation_service.get_daily_target_for_date()` (braucht den Snapshot aus `get_schedule_for_date()` als Pflichtparameter) |
 | Soll/Ist über Zeitraum? | `get_range_target()` / `get_range_actual()` (Monat = Wrapper) |
 | Überstundenkonto (kumuliert)? | `get_overtime_account()` |
 | Urlaubskonto (Budget/Verbrauch/Rest, **Tage**)? | `get_vacation_account()` |

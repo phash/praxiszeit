@@ -144,7 +144,7 @@ def get_monthly_report(
         wh_segments = calculation_service.weekly_hours_segments(
             db, user, report_date, date(year, month_num, monthrange(year, month_num)[1])
         )
-        hist_weekly = wh_segments[0][2] if wh_segments else \
+        hist_weekly = wh_segments[0].weekly_hours if wh_segments else \
             calculation_service.get_weekly_hours_for_date(db, user, report_date)
 
         reports.append(EmployeeMonthlyReport(
@@ -165,8 +165,10 @@ def get_monthly_report(
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
             weekly_hours_changes=[
-                WeeklyHoursChangeInPeriod(effective_from=seg_start, weekly_hours=float(hours))
-                for seg_start, _seg_end, hours in wh_segments[1:]
+                # Der Vorgaenger gehoert dazu: nur er sagt, ob sich die
+                # Arbeitstage geaendert haben (Abschluss-Review #431, Fund 1).
+                WeeklyHoursChangeInPeriod.from_segment(seg, previous=wh_segments[i])
+                for i, seg in enumerate(wh_segments[1:])
             ],
         ))
 
@@ -285,7 +287,7 @@ def get_weekly_report(
         # weekly_hours valid at the week's Monday (mirrors /monthly's report_date).
         # #415: Änderungen innerhalb der Woche werden mitgeliefert.
         wk_segments = calculation_service.weekly_hours_segments(db, user, wk_start, wk_end)
-        hist_weekly = wk_segments[0][2] if wk_segments else \
+        hist_weekly = wk_segments[0].weekly_hours if wk_segments else \
             calculation_service.get_weekly_hours_for_date(db, user, wk_start)
 
         reports.append(EmployeeMonthlyReport(
@@ -306,8 +308,10 @@ def get_weekly_report(
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=bool(user.track_hours),
             weekly_hours_changes=[
-                WeeklyHoursChangeInPeriod(effective_from=seg_start, weekly_hours=float(hours))
-                for seg_start, _seg_end, hours in wk_segments[1:]
+                # Wie im Monatsbericht: der Vorgaenger entscheidet ueber
+                # `work_days_changed`.
+                WeeklyHoursChangeInPeriod.from_segment(seg, previous=wk_segments[i])
+                for i, seg in enumerate(wk_segments[1:])
             ],
         ))
 
@@ -1030,8 +1034,8 @@ def get_24_week_averaging_period(
         d = start_date
         while d <= end_date:
             if d.weekday() < 5 and d not in holiday_dates and d not in absence_dates:
-                weekly_hours = calculation_service.get_weekly_hours_for_date(db, user, d)
-                if calculation_service.get_daily_target_for_date(user, d, weekly_hours) > 0:
+                schedule = calculation_service.get_schedule_for_date(db, user, d)
+                if calculation_service.get_daily_target_for_date(user, d, schedule) > 0:
                     scheduled_days += 1
             d += timedelta(days=1)
 

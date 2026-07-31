@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Date, DateTime, ForeignKey
+from sqlalchemy import Column, String, Numeric, Date, DateTime, ForeignKey, Boolean, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -17,7 +17,28 @@ class WorkingHoursChange(Base):
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     effective_from = Column(Date, nullable=False, index=True)  # Date from which these hours are valid
-    weekly_hours = Column(Numeric(4, 1), nullable=False)  # e.g., 20.0, 30.0, 38.5
+    # #431: zwei Nachkommastellen — im Tagesplan-Modus ist dieser Wert die
+    # ABGELEITETE Summe der fuenf Tageswerte (je Numeric(4,2)). Mit nur einer
+    # Nachkommastelle waere 8,25 + 5,00 + 4,50 = 17,75 als 17,8 gelandet: der
+    # Wert widerspraeche der eigenen Zeile, taeuschte in der #415-Berichtsspalte
+    # „Wochenstunden" eine Aenderung vor und liesse den Snapshot-Vergleich in
+    # create_working_hours_change eine ueberfluessige Basis-Zeile anlegen.
+    # (``users.weekly_hours`` bleibt bewusst Numeric(4,1) — andere Tabelle,
+    # eigene Entscheidung.)
+    weekly_hours = Column(Numeric(4, 2), nullable=False)  # e.g., 20.0, 30.0, 38.5, 17.75
+    # #431: die Zeile ist ein vollstaendiger Vertrags-Snapshot ab
+    # ``effective_from`` — nicht nur die Wochenstunden. Damit ist „die naechste
+    # Zeile" immer die richtige Fenstergrenze, egal WELCHER Soll-Treiber sich
+    # geaendert hat (Modus, Tageswerte, Arbeitstage, Wochenstunden).
+    use_daily_schedule = Column(Boolean, nullable=False, default=False, server_default='false')
+    hours_monday = Column(Numeric(4, 2), nullable=True)
+    hours_tuesday = Column(Numeric(4, 2), nullable=True)
+    hours_wednesday = Column(Numeric(4, 2), nullable=True)
+    hours_thursday = Column(Numeric(4, 2), nullable=True)
+    hours_friday = Column(Numeric(4, 2), nullable=True)
+    # NULL = Rueckfall auf user.work_days_per_week (Bestandszeilen vor #431
+    # tragen den Backfill-Wert, neue Zeilen setzen ihn immer).
+    work_days_per_week = Column(Integer, nullable=True)
     note = Column(String(500), nullable=True)  # Optional note about the change
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

@@ -95,6 +95,52 @@ class UserCreate(UserBase):
     def check_password(cls, v: str) -> str:
         return _validate_password_complexity(v)
 
+    @model_validator(mode='after')
+    def check_daily_schedule_matches_weekly_hours(self):
+        """Fund E (Abschluss-Review #431): Quervalidierung Tagesplan ↔
+        ``weekly_hours`` — bisher nur bei den historisierten
+        ``WorkingHoursChange``-Zeilen geprüft (``WorkingHoursChangeCreate.
+        check_mode``, das Vorbild dieser Regel), nicht beim Anlegen selbst.
+
+        Anders als im Dialog ist ``weekly_hours`` beim Anlegen ein eigenes,
+        vom Admin direkt editierbares Pflichtfeld (das Formular koppelt es
+        NICHT an die Tageswerte) — ``use_daily_schedule=True`` mit Tagen
+        8/5/4 UND ``weekly_hours=40`` ließ sich also unwidersprochen anlegen.
+        Genau dieser Wert ist der Rückfall, den ``get_schedule_for_date``
+        nutzt, solange keine einzige Verlaufszeile existiert — er speist
+        seitdem JEDE #415-Fläche (Kopfzeilen, Berichte, Dashboard) dauerhaft
+        mit einem in sich widersprüchlichen Vertrag. Migration 067 reparierte
+        nur bestehende Verlaufszeilen, nicht diesen Einstiegspunkt.
+
+        ANGLEICHEN statt ablehnen (bewusst, wie beim Vorbild): der Admin hat
+        seine Absicht bereits eindeutig über die Tageswerte ausgedrückt, ein
+        hartes 422 mitten im Ausfüllen wäre nur ein Umweg zurück zur exakt
+        selben Eingabe. Geprüft (Grep über Tests + `xls_import_service.py`,
+        das nie User anlegt): kein Bestandsaufrufer sendet aktuell
+        ``use_daily_schedule=True`` an diesen Endpoint — ein härteres Reject
+        hätte ebenfalls keinen bestehenden Test gebrochen, Angleichen ist
+        hier nur die freundlichere von zwei gleich sicheren Optionen.
+
+        BEWUSST auf ``UserCreate``, NICHT auf ``UserBase``: ein
+        ``mode='after'``-Validator auf ``UserBase`` liefe auch beim LESEN
+        (``UserResponse.model_validate(user, from_attributes=True)``) und
+        würde dort entweder eine BESTEHENDE (evtl. noch nicht migrierte oder
+        vor diesem Fix angelegte) inkonsistente Zeile in einen HTTP 500
+        verwandeln, oder ihren angezeigten Wert unbemerkt vom gespeicherten
+        abweichen lassen — exakt die Falle, vor der der Docstring von
+        ``WorkingHoursChangeCreate.check_mode`` bereits warnt.
+        """
+        if self.use_daily_schedule:
+            days = [self.hours_monday, self.hours_tuesday, self.hours_wednesday,
+                    self.hours_thursday, self.hours_friday]
+            if not any(d for d in days if d):
+                raise ValueError("Im Tagesplan-Modus muss mindestens ein Wochentag Stunden haben.")
+            total = round(sum(d or 0 for d in days), 2)
+            if total > 60:
+                raise ValueError("Die Summe der Tagesstunden darf 60 nicht überschreiten.")
+            self.weekly_hours = total
+        return self
+
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=100)

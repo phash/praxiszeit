@@ -152,6 +152,7 @@ Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 ## Wichtige Patterns
 
 - **`get_weekly_hours_for_date(db, user, date)`** — Immer pro Tag aufrufen, nie `user.weekly_hours` direkt (historische Änderungen!)
+- **`get_schedule_for_date(db, user, date)`** (#431) — DIE Auflösung des vollständigen Vertrags-Snapshots (Wochenstunden, Modus, Tageswerte, Arbeitstage) für ein Datum; `get_weekly_hours_for_date` ist nur noch ein dünner Wrapper darüber. `get_daily_target_for_date(user, date, schedule)` verlangt diesen Snapshot als Pflichtparameter — nie `user.use_daily_schedule`/`user.hours_monday…friday` live lesen. **Benannte Ausnahme (Fix-Welle 4 #6):** die „tägl. Std:"-Ecke des KLASSISCHEN Jahresberichts (`export_service._create_employee_classic_sheet`, ausdrücklich als Legacy-Format geführt) liest dort bewusst live — eine informative Ecke, kein Soll/Ist-Wert; bei Moduswechsel im Berichtsjahr zeigt sie den heutigen statt den historischen Tagesplan (akzeptiert, kommentiert im Code). Keine weiteren Ausnahmen.
 - **Pydantic Response-Schemas:** `float` statt `Decimal` (JSON-Serialisierung)
 - **RLS-Kontext:** Bei neuen Endpoints immer `set_tenant_context(db, tid)` aufrufen
 - **Bulk-Deletes:** `synchronize_session=False` + expliziter `tenant_id`-Filter

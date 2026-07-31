@@ -9,7 +9,7 @@ from app.models.absence import Absence
 from app.middleware.auth import get_current_user
 from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry
 from app.services import calculation_service, milog_service
-from app.services.calculation_service import get_weekly_hours_for_date, get_daily_target_for_date
+from app.services.calculation_service import get_schedule_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
 from app.services.timezone_service import today_local, now_local
 from sqlalchemy import extract, and_
@@ -89,8 +89,8 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
     # Check each day using calculation_service for correct per-date targets
     d = start_date
     while d <= end_date:
-        weekly_hours = get_weekly_hours_for_date(db, user, d)
-        daily_target = float(get_daily_target_for_date(user, d, weekly_hours))
+        schedule = get_schedule_for_date(db, user, d)
+        daily_target = float(get_daily_target_for_date(user, d, schedule))
         is_workday = daily_target > 0
         if is_workday and d not in entry_dates and d not in absence_dates:
             if not is_holiday(db, d, tenant_id=tenant_id):

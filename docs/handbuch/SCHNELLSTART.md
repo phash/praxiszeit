@@ -42,6 +42,7 @@
 - **Leitende Angestellte ohne Stundenzählung:** Häkchen *„Keine Stundenzählung"* (`track_hours=False`) – Urlaub/Krank werden trotzdem tagebasiert geführt.
 - **Ein-/Austritt:** *Erster/Letzter Arbeitstag* setzen – außerhalb zählt kein Soll.
 - **Soll-Arbeitszeit-Fenster (optional):** Soll-Beginn/-Ende je Wochentag, wenn früh-/spät-Stempel auf das Soll begrenzt werden sollen.
+- **Spätere Änderungen:** Wochenstunden, Tagesplan, Modus (gleichmäßig/Tagesplan) und Arbeitstage lassen sich nach dem Anlegen nur noch über den Button „Wochenstunden anpassen…" mit Wirkungsdatum ändern – direkt im Formular sind diese Felder dann nur noch Anzeige (siehe [Admin-Handbuch](HANDBUCH-ADMIN.md#mitarbeiter-bearbeiten)).
 
 ---
 

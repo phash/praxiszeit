@@ -49,13 +49,13 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 - **Opt-in:** ohne gesetzte Soll-Zeiten kein Verhaltenswechsel. Übersprungen bei Mitarbeitern ohne Stundenzählung; §18-MA werden **trotzdem** gekappt (reine Anwesenheits-Policy).
 - Greift an allen Schreibpfaden (Stempeln, manuell, Admin-Korrektur, Import, CR-Genehmigung).
 
-### Stundenänderung (Teilzeit etc.)
-**Benutzer öffnen** → Button **„Wochenstunden anpassen…"** (oder Uhr-Symbol in der Benutzerliste) → neue Wochenstunden + **„Gültig ab"**-Datum eintragen
-→ Wochenstunden sind im Bearbeiten-Formular nur noch Anzeige, keine Direkteingabe mehr
-→ Historische Salden bleiben korrekt! Verlauf zeigt „ab … bis …"; Berichte zeigen den zu Zeitraumsbeginn gültigen Wert + „ab TT.MM.JJJJ: X Std/Woche" (Dashboard, Excel, ODS, PDF)
-→ **Betroffene Buchungen:** Dialog zeigt vorab Zeitraum + altes/neues Tagessoll + betroffene Abwesenheiten – nach Bestätigung werden deren Stunden umgerechnet, bei rückwirkendem **und** zukünftigem Datum (Urlaubs**tage** bleiben unverändert, Tagesprinzip); abgeschlossenes Jahr wird nur gemeldet, nicht neu berechnet
-→ Löschen einer Änderung rechnet zurück; **früheste** Änderung erst löschbar, wenn keine späteren mehr bestehen
-→ Individueller Tagesplan: kein Verlauf – Wochenstunden bleiben dort ein normales Eingabefeld (nur Vertragsangabe), Tagessoll kommt aus den Tagesstunden
+### Stundenänderung (Teilzeit, Tagesplan etc.)
+**Benutzer öffnen** → Button **„Wochenstunden anpassen…"** (oder Uhr-Symbol in der Benutzerliste) → Dialog **„Wochenstunden & Tagesplan"** → **„Gleichmäßig"** (Wochenstunden + Arbeitstage) oder **„Nach Tagen"** (Stunden je Wochentag, Wochensumme + Arbeitstage werden abgeleitet) → **„Gültig ab"**-Datum eintragen
+→ Gilt für **alle** MA gleich, auch bei individuellem Tagesplan: Wochenstunden, Tagesstunden, Modus und Arbeitstage sind im Bearbeiten-Formular nur noch Anzeige, keine Direkteingabe mehr (beim **Anlegen** weiterhin normale Felder)
+→ Historische Salden bleiben korrekt! Verlauf zeigt „ab … bis …" (bei Tagesplan z. B. „Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 Std/Woche · 3 Tage/Woche"); Berichte zeigen den zu Zeitraumsbeginn gültigen Wert + „ab TT.MM.JJJJ: …" (Dashboard, Excel, ODS, PDF — bei Tagesplan „h/Woche" ohne Tage-Suffix)
+→ **Betroffene Buchungen:** Dialog zeigt vorab Zeitraum + Tagessoll je Wochentag (alt→neu) + Anzahl betroffener Abwesenheiten + Überstundensaldo/Urlaub vorher-nachher (mit Jahr) – nach Bestätigung werden die Abwesenheits-Stunden umgerechnet, bei rückwirkendem **und** zukünftigem Datum (Urlaubs**tage** bleiben unverändert, Tagesprinzip); abgeschlossenes Jahr wird nur gemeldet, nicht neu berechnet
+→ Löschen einer Änderung rechnet zurück (auch bei Tagesplan); **früheste** Änderung erst löschbar, wenn keine späteren mehr bestehen
+→ ⚠️ Arbeitstage-only-Änderung (gleiche Wochenstunden, andere Arbeitstage): Berichtstext nennt bei „Gleichmäßig" zwar die neue Arbeitstage-Zahl dazu (z. B. „… auf 4 Arbeitstage"), die Wochenstundenzahl selbst bleibt aber gleich – das Tagessoll verschiebt sich trotzdem still; bei „Nach Tagen" ändert sich stattdessen nur der Urlaubsverbrauch – immer die Vorschau prüfen, nicht nur die Wochenstundenzahl
 
 ### Mitarbeiter deaktivieren (niemals löschen!)
 **Benutzer öffnen** → Status „Inaktiv"

@@ -5,6 +5,9 @@ import { ScrollText, ArrowRight } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import MonthSelector from '../../components/MonthSelector';
 import LoadingSpinner from '../../components/LoadingSpinner';
+// Geteilt mit dem Detail-Modal des Admin-Dashboards — beide Ansichten rendern
+// dieselben Audit-Zeilen und dürfen sich nicht auseinanderentwickeln.
+import AuditValues, { auditPillText, formatAuditNote } from '../../components/AuditValues';
 
 interface AuditEntry {
   id: string;
@@ -45,6 +48,7 @@ const actionLabels: Record<string, string> = {
   profile_update: 'Profil geändert',
   // Zugriffs-/Systemereignisse (keine Änderung — #284: NICHT als „Gelöscht" rendern)
   absence_list_read: 'Abwesenheiten gelesen',
+  audit_log_read: 'Änderungsprotokoll gelesen',
   health_data_read: 'Gesundheitsdaten gelesen',
   health_export: 'Gesundheitsdaten exportiert',
   self_data_export: 'Eigene Daten exportiert',
@@ -64,6 +68,7 @@ const actionColors: Record<string, string> = {
   dsgvo_anonymize: 'bg-red-100 text-red-800',
   dsgvo_purge: 'bg-red-100 text-red-800',
   absence_list_read: 'bg-gray-100 text-gray-700',
+  audit_log_read: 'bg-gray-100 text-gray-700',
   health_data_read: 'bg-amber-100 text-amber-800',
   health_export: 'bg-amber-100 text-amber-800',
   self_data_export: 'bg-gray-100 text-gray-700',
@@ -79,6 +84,7 @@ const sourceLabels: Record<string, string> = {
   break_waiver: 'Pausen-Verzicht',
   vacation_request_cancel: 'Urlaub storniert',
   license_startup: 'Lizenz',
+  wh_change: 'Stundenänderung',
 };
 
 export default function AuditLog() {
@@ -211,26 +217,22 @@ export default function AuditLog() {
                       {sourceLabels[entry.source] || entry.source}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600">
-                      {entry.old_date ? (
-                        <div>
-                          <p>{entry.old_date}</p>
-                          <p>{entry.old_start_time?.substring(0, 5)} - {entry.old_end_time?.substring(0, 5)}</p>
-                          <p>Pause: {entry.old_break_minutes} min</p>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
+                      <AuditValues
+                        date={entry.old_date}
+                        start={entry.old_start_time}
+                        end={entry.old_end_time}
+                        breakMinutes={entry.old_break_minutes}
+                        note={entry.old_note}
+                      />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600">
-                      {entry.new_date ? (
-                        <div>
-                          <p>{entry.new_date}</p>
-                          <p>{entry.new_start_time?.substring(0, 5)} - {entry.new_end_time?.substring(0, 5)}</p>
-                          <p>Pause: {entry.new_break_minutes} min</p>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
+                      <AuditValues
+                        date={entry.new_date}
+                        start={entry.new_start_time}
+                        end={entry.new_end_time}
+                        breakMinutes={entry.new_break_minutes}
+                        note={entry.new_note}
+                      />
                     </td>
                   </tr>
                 ))
@@ -262,19 +264,41 @@ export default function AuditLog() {
                   <div className="text-xs text-gray-500">
                     {format(new Date(entry.created_at), 'dd.MM.yyyy HH:mm')} | von {entry.changed_by_first_name} {entry.changed_by_last_name} | {sourceLabels[entry.source] || entry.source}
                   </div>
-                  <div className="flex items-center space-x-2 text-xs">
-                    {entry.old_date && (
-                      <span className="bg-gray-100 px-2 py-1 rounded-sm">
-                        {entry.old_date} {entry.old_start_time?.substring(0, 5)}-{entry.old_end_time?.substring(0, 5)}
-                      </span>
-                    )}
-                    {entry.old_date && entry.new_date && <ArrowRight size={12} className="text-gray-400" />}
-                    {entry.new_date && (
-                      <span className="bg-amber-100 px-2 py-1 rounded-sm">
-                        {entry.new_date} {entry.new_start_time?.substring(0, 5)}-{entry.new_end_time?.substring(0, 5)}
-                      </span>
-                    )}
-                  </div>
+                  {/* Datums-Pillen. Der Pfeil steht für „von → nach" und darf
+                      deshalb NUR erscheinen, wenn sich die beiden Seiten
+                      tatsächlich unterscheiden: die Zeilen der
+                      Stundenrückrechnung tragen bewusst auf beiden Seiten
+                      DASSELBE Datum (die Rückrechnung verschiebt nie den Tag) —
+                      ein Pfeil dazwischen behauptete eine Verschiebung, die es
+                      nicht gab. `auditPillText` lässt zudem den hängenden
+                      Bindestrich weg, wenn es gar keine Zeiten gibt. */}
+                  {(() => {
+                    const oldPill = auditPillText(entry.old_date, entry.old_start_time, entry.old_end_time);
+                    const newPill = auditPillText(entry.new_date, entry.new_start_time, entry.new_end_time);
+                    if (!oldPill && !newPill) return null;
+                    const identical = Boolean(oldPill) && oldPill === newPill;
+                    return (
+                      <div className="flex items-center space-x-2 text-xs">
+                        {oldPill && (
+                          <span className="bg-gray-100 px-2 py-1 rounded-sm">{oldPill}</span>
+                        )}
+                        {!identical && oldPill && newPill && <ArrowRight size={12} className="text-gray-400" />}
+                        {!identical && newPill && (
+                          <span className="bg-amber-100 px-2 py-1 rounded-sm">{newPill}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {/* Freitext (u. a. die Stundenänderungs-Zeilen, die nur hier
+                      ihren Inhalt tragen) — auf der Karte unter den Datums-Pillen.
+                      Marker wie `absence:sick:8.0h` werden dabei in Klartext
+                      übersetzt (formatAuditNote). */}
+                  {(entry.old_note || entry.new_note) && (
+                    <div className="text-xs text-gray-500 break-words">
+                      {entry.old_note && <p>{formatAuditNote(entry.old_note)}</p>}
+                      {entry.new_note && <p>{formatAuditNote(entry.new_note)}</p>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional
@@ -77,10 +77,61 @@ class AdminUserOverview(BaseModel):
 
 
 class WeeklyHoursChangeInPeriod(BaseModel):
-    """#415: eine Wochenstunden-Änderung, die INNERHALB des Berichtszeitraums
-    wirksam wird. Änderungen davor stecken bereits im Startwert."""
+    """#415: eine Vertragsänderung, die INNERHALB des Berichtszeitraums wirksam
+    wird. Änderungen davor stecken bereits im Startwert.
+
+    #431: die Zeile trägt den vollständigen Snapshot. Für Mitarbeitende mit
+    individuellem Tagesplan ist `weekly_hours` nur die Summe der Tageswerte und
+    steuert kein einziges Tagessoll — ohne `day_hours` könnte die Oberfläche
+    dieselbe nichtssagende Zahl zeigen wie vor #431, und eine Umverteilung bei
+    gleicher Wochensumme sähe aus wie „keine Änderung".
+
+    `work_days_per_week` ist Teil des Snapshots: eine Änderung von 40 h/5 Tage
+    auf 40 h/4 Tage verschiebt das Tagessoll und erzeugt genau deshalb ein
+    eigenes Segment. Gerendert wird der Wert nur, wenn er sich gegenüber dem
+    vorhergehenden Segment ändert — siehe `work_days_changed`.
+    """
     effective_from: date
     weekly_hours: float
+    use_daily_schedule: bool = False
+    # Immer fünf Einträge, Index 0 = Montag; `None` = kein geplanter Arbeitstag.
+    # Im gleichmäßigen Modus durchgehend `None` (dort sind die Tageswerte inert).
+    day_hours: List[Optional[float]] = Field(default_factory=lambda: [None] * 5)
+    work_days_per_week: Optional[int] = None
+    # Abschluss-Review #431, Fund 1: ändert diese Zeile die ARBEITSTAGE
+    # gegenüber dem unmittelbar davor gültigen Zustand? Der Befund kommt vom
+    # Server, weil die Antwort nur die Änderungen trägt (`segments[1:]`) — das
+    # Basissegment davor sieht der Bildschirm nie und könnte die Frage für die
+    # ERSTE Änderung eines Zeitraums gar nicht beantworten. Genau die Frage
+    # entscheidet in beiden Zwillingen über den Zusatz „auf 4 Arbeitstage";
+    # ein serverseitig berechnetes Ja/Nein kann zwischen Datei und Bildschirm
+    # nicht auseinanderlaufen. Default `False` = nichts behaupten.
+    work_days_changed: bool = False
+
+    @classmethod
+    def from_segment(cls, segment, previous=None) -> "WeeklyHoursChangeInPeriod":
+        """DIE eine Übersetzung eines `calculation_service.ScheduleSegment` in die
+        API-Form — genutzt vom Monats- UND vom Wochenbericht. Zwei getrennte
+        Umwandlungen wären zwei Stellen, die auseinanderlaufen können.
+
+        `previous` ist das unmittelbar davor gültige Segment (`None` = keins);
+        daraus entsteht `work_days_changed`, über dieselbe Regel, die auch der
+        Datei-Export benutzt (`calculation_service.work_days_changed`).
+
+        `float`-Cast wie überall bei Response-Schemas (CLAUDE.md: `float` statt
+        `Decimal`)."""
+        # Lokaler Import: die Schema-Schicht soll den Service nicht schon beim
+        # Modul-Laden ziehen (die Router importieren beide, aber in eigener
+        # Reihenfolge) — die Regel selbst darf trotzdem nur EINMAL existieren.
+        from app.services.calculation_service import work_days_changed
+        return cls(
+            effective_from=segment.start,
+            weekly_hours=float(segment.weekly_hours),
+            use_daily_schedule=bool(segment.use_daily_schedule),
+            day_hours=[None if h is None else float(h) for h in segment.day_hours],
+            work_days_per_week=segment.work_days_per_week,
+            work_days_changed=work_days_changed(previous, segment),
+        )
 
 
 class EmployeeMonthlyReport(BaseModel):

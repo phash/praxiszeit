@@ -14,7 +14,9 @@ import secrets
 from collections import OrderedDict
 from app.database import get_db, set_superadmin_context
 from app.middleware.csrf import CSRF_COOKIE_NAME
-from app.models import User, TimeEntry, Absence, TimeEntryAuditLog, ImpersonationSession
+from app.models import (
+    User, TimeEntry, Absence, TimeEntryAuditLog, ImpersonationSession, WorkingHoursChange,
+)
 from app.models.tenant import Tenant
 from app.services.timezone_service import now_local
 
@@ -543,6 +545,18 @@ def export_my_data(
     """
     time_entries = db.query(TimeEntry).filter(TimeEntry.user_id == current_user.id).order_by(TimeEntry.date).all()
     absences = db.query(Absence).filter(Absence.user_id == current_user.id).order_by(Absence.date).all()
+    # #431: die Stundenhistorie ist ein vollstaendiger Vertrags-Snapshot je
+    # Wirkungsdatum (Soll-relevant) und gehoert damit in den Art.-20-Export.
+    # F-026: tenant_id explizit mitfiltern (belt-and-suspenders zu RLS).
+    working_hours_changes = (
+        db.query(WorkingHoursChange)
+        .filter(
+            WorkingHoursChange.user_id == current_user.id,
+            WorkingHoursChange.tenant_id == current_user.tenant_id,
+        )
+        .order_by(WorkingHoursChange.effective_from)
+        .all()
+    )
 
     data = {
         "export_info": {
@@ -586,6 +600,26 @@ def export_my_data(
                 "created_at": a.created_at.isoformat() if a.created_at else None,
             }
             for a in absences
+        ],
+        # #431: Vertragshistorie (Wochenstunden/Tagesplan je Wirkungsdatum).
+        # Numeric(4,2)-Felder float()-gecastet — Decimal-Leak-Klasse #383/#408,
+        # dieser Export laeuft ueber rohes JSONResponse(content=data), nicht
+        # jsonable_encoder.
+        "stundenhistorie": [
+            {
+                "effective_from": str(h.effective_from),
+                "weekly_hours": float(h.weekly_hours) if h.weekly_hours is not None else None,
+                "use_daily_schedule": h.use_daily_schedule,
+                "hours_monday": float(h.hours_monday) if h.hours_monday is not None else None,
+                "hours_tuesday": float(h.hours_tuesday) if h.hours_tuesday is not None else None,
+                "hours_wednesday": float(h.hours_wednesday) if h.hours_wednesday is not None else None,
+                "hours_thursday": float(h.hours_thursday) if h.hours_thursday is not None else None,
+                "hours_friday": float(h.hours_friday) if h.hours_friday is not None else None,
+                "work_days_per_week": h.work_days_per_week,
+                "note": h.note,
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+            }
+            for h in working_hours_changes
         ],
     }
 
