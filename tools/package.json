@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "puppeteer": "^24.37.2"
+  },
+  "overrides": {
+    "js-yaml": "^4.3.0"
   }
 }
