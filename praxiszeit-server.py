@@ -709,6 +709,14 @@ def _restrict_file_permissions(file_path: Path):
     # Only a real interactive user — never the machine account ("<HOST>$").
     if username and not username.endswith("$"):
         cmds.append(["icacls", str(file_path), "/grant", f"{username}:(R,W)"])
+    # "/inheritance:r" only drops INHERITED entries. An explicit grant for a
+    # broad principal (added by hand, or by an older tool) would survive it, so
+    # remove those by SID first. "/remove:g" is a no-op when the SID is absent.
+    #   S-1-5-32-545 = BUILTIN\Users
+    #   S-1-5-11     = NT AUTHORITY\Authenticated Users
+    #   S-1-1-0      = Everyone
+    for broad_sid in ("*S-1-5-32-545", "*S-1-5-11", "*S-1-1-0"):
+        cmds.append(["icacls", str(file_path), "/remove:g", broad_sid])
     cmds.append(["icacls", str(file_path), "/inheritance:r"])  # last: keeps explicit grants
     for cmd in cmds:
         try:
@@ -717,6 +725,84 @@ def _restrict_file_permissions(file_path: Path):
             logger.warning(
                 f"icacls step failed on {file_path.name} ({' '.join(cmd[2:])}): {exc}"
             )
+
+
+def _windows_acl_is_inherited(file_path: Path) -> bool:
+    """True if the file still carries INHERITED ACEs (Windows only).
+
+    ``icacls <file>`` marks inherited entries with ``(I)``. A file that was
+    created with the default permissions of the install directory only has
+    inherited ACEs — that is exactly the pre-1.18 state in which every local
+    account could read the file. Once :func:`_restrict_file_permissions` has
+    run, ``/inheritance:r`` removed them and nothing is marked ``(I)``.
+
+    The ``(I)`` marker is locale-independent (unlike the group NAMES icacls
+    prints, which are localized). On any error we return True so the caller
+    re-applies the hardening — doing it twice is harmless, skipping it is not.
+    """
+    if not IS_WINDOWS:
+        return False
+    try:
+        result = subprocess.run(
+            ["icacls", str(file_path)], capture_output=True, text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    if result.returncode != 0:
+        return True
+    return "(I)" in result.stdout
+
+
+def _ensure_restricted_permissions(file_path: Path):
+    """Harden an EXISTING confidential file if it is still world-readable.
+
+    This is the retrofit path for installations created by an older version:
+    ``praxiszeit.conf`` (admin password + signing key) and the private TLS key
+    used to be created with the inherited permissions of ``C:\\PraxisZeit`` and
+    were never restricted, so every account that can log on to the practice PC
+    could read them.
+
+    It deliberately lives in the SERVICE START path rather than only in the
+    installer: the service start is the one place EVERY kind of installation
+    passes through (GUI installer, unpacked ZIP + setup.bat, hand-made config),
+    it runs again after every reboot, and it needs no action from the operator.
+    The installer/update paths harden the files too — this is the safety net
+    that also catches a config the operator created or replaced by hand.
+
+    No-op once the file is hardened (checked via the ``(I)`` marker), so a
+    normal start does not pay for four extra icacls calls.
+    """
+    if not IS_WINDOWS or not file_path.is_file():
+        return
+    if not _windows_acl_is_inherited(file_path):
+        return
+    logger.info(
+        f"Restricting permissions on {file_path.name} "
+        "(was still readable for every local account)"
+    )
+    _restrict_file_permissions(file_path)
+
+
+def _open_restricted(file_path: Path):
+    """Create ``file_path`` with restricted permissions ALREADY in place.
+
+    Returns an open binary write handle to an empty, freshly created file.
+    The permissions are applied while the file is still empty, so the secret
+    is never on disk with the default (inherited / umask) permissions — same
+    ordering rule the Linux and macOS installers get from ``umask 077``.
+    """
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    # 1. Create (or truncate) the file and close it again straight away. The
+    #    0o600 mode argument covers Unix; on Windows it only drives the
+    #    read-only attribute, so step 2 has to do the real work there.
+    os.close(os.open(str(file_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600))
+    # 2. Restrict the permissions while the file is still EMPTY. Neither the
+    #    Windows security descriptor nor the Unix mode of an already existing
+    #    file is touched by open(), so this has to happen between creating and
+    #    writing — that is the whole point of this helper.
+    _restrict_file_permissions(file_path)
+    # 3. Only now write the secret.
+    return open(file_path, "wb")
 
 
 def pg_setup_database(config: dict):
@@ -1029,17 +1115,20 @@ def _ensure_self_signed_cert(cert_path: Path, key_path: Path, practice_name: str
         )
         .sign(key, hashes.SHA256())
     )
+    # The certificate is public — normal permissions.
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    key_path.write_bytes(key.private_bytes(
+    # The private key is not: create it with restricted permissions ALREADY in
+    # place (0600 on Unix, an ACL without inheritance that only grants SYSTEM
+    # and the Administrators group on Windows) and only then write the key
+    # material. Before, the Windows key was never restricted at all and stayed
+    # readable for every account on the practice PC.
+    key_bytes = key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.TraditionalOpenSSL,
         serialization.NoEncryption(),
-    ))
-    if not IS_WINDOWS:
-        try:
-            key_path.chmod(0o600)
-        except OSError:
-            pass
+    )
+    with _open_restricted(key_path) as handle:
+        handle.write(key_bytes)
     logger.info(f"Self-signed certificate written to {cert_path}")
     return True
 
@@ -1365,6 +1454,22 @@ def cmd_start(args):
     logger.info("=" * 60)
     logger.info("PraxisZeit starting...")
     logger.info("=" * 60)
+
+    # 0. Retrofit for installations created by an older version: praxiszeit.conf
+    # (admin password + signing key) and the private TLS key used to be created
+    # with the inherited, world-readable permissions of the install directory.
+    # No-op once hardened; see _ensure_restricted_permissions for why this lives
+    # in the service start and not only in the installer.
+    _secrets = [CONFIG_FILE]
+    # Resolve the key exactly like uvicorn_start does, so an operator who
+    # pointed [server] ssl_key at a CA-signed key gets that one hardened.
+    _ssl_key = get_config_value(config, "server", "ssl_key", "config/ssl/key.pem")
+    if _ssl_key:
+        _secrets.append(
+            Path(_ssl_key) if Path(_ssl_key).is_absolute() else BASE_DIR / _ssl_key
+        )
+    for _secret in _secrets:
+        _ensure_restricted_permissions(_secret)
 
     # 1. Initialize PostgreSQL if needed
     creds_file = CONFIG_DIR / ".db-credentials"

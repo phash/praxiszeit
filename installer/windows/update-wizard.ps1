@@ -5,7 +5,10 @@
 # Flow:
 #   1. Welcome: Install erkennen, Versionen anzeigen
 #   2. Progress:
-#      a) ACL-Fix auf .db-credentials (F-037, idempotent)
+#      a) ACL-Fix auf allen vertraulichen Dateien (praxiszeit.conf,
+#         config\ssl\key.pem, .db-credentials, .secret-key, license.key):
+#         Vererbung entfernen, nur SYSTEM + Administratoren berechtigen
+#         (idempotent; setzt voraus, dass update-wizard.bat Admin erzwingt)
 #      b) Datenbank-Backup (Service laeuft noch)
 #      c) Service stoppen
 #      d) Dateien aktualisieren (robocopy mit Excludes)
@@ -289,7 +292,7 @@ function Show-ProgressPage {
     $body.Controls.Add($lbl1)
 
     $steps = @(
-        @{ Id='acl';      Text='1. ACL-Fix fuer .db-credentials' },
+        @{ Id='acl';      Text='1. ACL-Fix fuer vertrauliche Dateien' },
         @{ Id='backup';   Text='2. Datenbank-Backup erstellen' },
         @{ Id='stop';     Text='3. PraxisZeit-Service stoppen' },
         @{ Id='copy';     Text='4. Dateien aktualisieren' },
@@ -404,26 +407,89 @@ function Update-Progress([int]$percent) {
 # Update-Schritte
 # ------------------------------------------------------------
 
+# Vertrauliche Dateien einer Bestandsinstallation. Alle drei wurden von
+# aelteren Installern mit den geerbten (zu weiten) Rechten des Installations-
+# ordners angelegt und nie eingeschraenkt -> auf einem Praxis-PC mit mehreren
+# Windows-Konten konnte jeder angemeldete Benutzer das Admin-Passwort, den
+# Signaturschluessel und den privaten TLS-Schluessel mitlesen. Das Update ist
+# der Zeitpunkt, an dem das korrigiert wird (der Dienst laeuft hier noch, die
+# Dateien werden nur in ihrer ACL angefasst, nicht ersetzt).
+$script:SecretFiles = @(
+    'config\praxiszeit.conf',
+    'config\ssl\key.pem',
+    'config\.db-credentials',
+    'config\.secret-key',
+    'config\license.key'
+)
+
+function Repair-SecretFileAcl([string]$file) {
+    # Reihenfolge zwingend: erst die expliziten Rechte vergeben, DANN die
+    # Vererbung kappen. Umgekehrt wuerde /inheritance:r eine Datei ohne jeden
+    # Eintrag hinterlassen - auch SYSTEM koennte sie dann nicht mehr lesen und
+    # der Dienst startet nicht mehr.
+    # SIDs statt lokalisierter Gruppennamen (deutsches vs. englisches Windows):
+    #   S-1-5-18     = NT AUTHORITY\SYSTEM (zugleich das Dienstkonto,
+    #                  NSSM registriert PraxisZeit als LocalSystem)
+    #   S-1-5-32-544 = BUILTIN\Administratoren
+    $grants = @(
+        @('/grant', '*S-1-5-18:(R,W)'),
+        @('/grant', '*S-1-5-32-544:(F)')
+    )
+    foreach ($step in $grants) {
+        $out = & icacls.exe $file @step 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            # Harter Abbruch fuer DIESE Datei: ohne die expliziten Rechte darf
+            # /inheritance:r nicht laufen, sonst bleibt eine Datei ohne jeden
+            # Zugriffseintrag zurueck.
+            Write-Log "  WARNUNG: icacls $($step -join ' ') auf $file - Exit $LASTEXITCODE - $out"
+            Write-Log '  -> Vererbung wird NICHT entfernt (Datei bliebe sonst fuer den Dienst unlesbar).'
+            return $false
+        }
+    }
+    # /inheritance:r entfernt NUR geerbte Eintraege. Ein explizit gesetzter
+    # Eintrag fuer eine breite Gruppe wuerde ueberleben -> vorher gezielt per
+    # SID entfernen. /remove:g ist ein No-Op, wenn die SID nicht vorkommt, und
+    # darf deshalb nicht als Fehler gewertet werden.
+    #   S-1-5-32-545 = Benutzer
+    #   S-1-5-11     = Authentifizierte Benutzer
+    #   S-1-1-0      = Jeder
+    foreach ($sid in @('*S-1-5-32-545', '*S-1-5-11', '*S-1-1-0')) {
+        $null = & icacls.exe $file '/remove:g' $sid 2>&1
+    }
+    $out = & icacls.exe $file '/inheritance:r' 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "  WARNUNG: icacls /inheritance:r auf $file - Exit $LASTEXITCODE - $out"
+        return $false
+    }
+    return $true
+}
+
 function Step-ACLFix {
     Set-StepStatus 'acl' 'running'
-    Write-Log 'Setze Administrator-Leserechte auf .db-credentials (F-037)...'
-    $credsFile = Join-Path $InstallDir 'config\.db-credentials'
-    if (-not (Test-Path $credsFile)) {
-        Write-Log 'WARNUNG: .db-credentials nicht vorhanden (Erstinstallation?). Schritt uebersprungen.'
-        Set-StepStatus 'acl' 'warn'
-        return $true
-    }
+    Write-Log 'Schraenke Rechte vertraulicher Dateien ein (SYSTEM + Administratoren)...'
     if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'acl' 'ok'; return $true }
+
+    $found = 0
+    $warned = $false
     try {
-        # SID *S-1-5-32-544 = BUILTIN\Administrators (locale-unabhaengig)
-        $out = & icacls.exe $credsFile /grant '*S-1-5-32-544:(R)' 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Log 'Administrator-Lesezugriff gewaehrt'
-            Set-StepStatus 'acl' 'ok'
+        foreach ($rel in $script:SecretFiles) {
+            $path = Join-Path $InstallDir $rel
+            if (-not (Test-Path $path)) { continue }
+            $found++
+            Write-Log "  $rel"
+            if (-not (Repair-SecretFileAcl $path)) { $warned = $true }
+        }
+        if ($found -eq 0) {
+            Write-Log 'WARNUNG: keine vertraulichen Dateien gefunden (Erstinstallation?). Schritt uebersprungen.'
+            Set-StepStatus 'acl' 'warn'
             return $true
         }
-        Write-Log "WARNUNG: icacls-Exit $LASTEXITCODE - $out"
-        Set-StepStatus 'acl' 'warn'
+        if ($warned) {
+            Set-StepStatus 'acl' 'warn'
+            return $true
+        }
+        Write-Log "Rechte auf $found Datei(en) eingeschraenkt (Vererbung entfernt)"
+        Set-StepStatus 'acl' 'ok'
         return $true
     } catch {
         Write-Log "FEHLER bei icacls: $_"

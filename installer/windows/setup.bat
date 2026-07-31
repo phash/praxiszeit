@@ -33,6 +33,23 @@ if not exist "%DIR%data\backups" mkdir "%DIR%data\backups"
 if not exist "%DIR%config\ssl" mkdir "%DIR%config\ssl"
 if not exist "%DIR%logs" mkdir "%DIR%logs"
 
+REM --- config\ssl haerten, BEVOR ein Schluessel darin entsteht ---
+REM Der private TLS-Schluessel wird beim ersten Dienststart von
+REM praxiszeit-server.py in dieses Verzeichnis geschrieben. Wird die Vererbung
+REM erst danach gekappt, ist der Schluessel im Zeitfenster dazwischen fuer jedes
+REM lokale Konto lesbar. Mit einem gehaerteten Verzeichnis erbt die Datei von
+REM vornherein nur SYSTEM- und Administratoren-Rechte - das Windows-Aequivalent
+REM zum "umask 077" der Linux-/macOS-Installer.
+call :harden_dir "%DIR%config\ssl"
+
+REM --- Bestandsinstallation: vorhandene vertrauliche Dateien nachziehen ---
+REM setup.bat laeuft auch beim Update ueber ein entpacktes Paket. Aeltere
+REM Versionen haben diese Dateien mit den geerbten (zu weiten) Rechten des
+REM Installationsordners angelegt und nie eingeschraenkt.
+call :harden_file "%DIR%config\praxiszeit.conf"
+call :harden_file "%DIR%config\ssl\key.pem"
+call :harden_file "%DIR%config\license.key"
+
 REM ============================================================
 REM Schritt 1: PostgreSQL installieren (silent)
 REM ============================================================
@@ -212,7 +229,18 @@ if not exist "%DIR%config\praxiszeit.conf" (
     if exist "%DIR%config\praxiszeit.conf.example" (
         echo.
         echo Erstelle Konfigurationsdatei...
-        copy "%DIR%config\praxiszeit.conf.example" "%DIR%config\praxiszeit.conf" >nul
+        REM Rechte VOR dem Inhalt: erst eine leere Datei anlegen, deren
+        REM Berechtigungen einschraenken, dann den Inhalt hineinkopieren.
+        REM copy auf eine EXISTIERENDE Zieldatei ersetzt nur den Inhalt und
+        REM laesst den Sicherheitsdeskriptor stehen - das Admin-Passwort landet
+        REM also nie in einer fuer alle lesbaren Datei. Das zweite harden_file
+        REM danach ist die Absicherung, falls copy die Datei doch neu anlegt.
+        REM Hinweis: keine unbalancierten Klammern in diesen REM-Zeilen - dies
+        REM ist noch ein Klammer-Block, er wuerde sonst vorzeitig enden.
+        type nul > "%DIR%config\praxiszeit.conf"
+        call :harden_file "%DIR%config\praxiszeit.conf"
+        copy /Y "%DIR%config\praxiszeit.conf.example" "%DIR%config\praxiszeit.conf" >nul
+        call :harden_file "%DIR%config\praxiszeit.conf"
         echo.
         echo WICHTIG: Bitte passen Sie die Konfiguration an:
         echo   %DIR%config\praxiszeit.conf
@@ -248,6 +276,62 @@ goto :eof
 REM ============================================================
 REM Subroutinen
 REM ============================================================
+
+:harden_file
+REM Schraenkt die Zugriffsrechte einer vertraulichen Datei auf SYSTEM und die
+REM lokale Administratorengruppe ein und entfernt die Vererbung, damit weder
+REM "Benutzer" noch "Authentifizierte Benutzer" noch "Jeder" Zugriff behalten.
+REM
+REM SIDs statt lokalisierter Gruppennamen, damit das auf deutschem UND
+REM englischem Windows identisch funktioniert:
+REM   S-1-5-18     = NT AUTHORITY\SYSTEM  = Dienstkonto, NSSM registriert
+REM                  PraxisZeit ohne ObjectName, also als LocalSystem
+REM   S-1-5-32-544 = BUILTIN\Administratoren
+REM
+REM Reihenfolge zwingend: erst die expliziten Rechte vergeben, DANN die
+REM Vererbung kappen. Umgekehrt bliebe eine Datei ohne jeden Eintrag zurueck -
+REM auch SYSTEM koennte sie nicht mehr lesen und der Dienst wuerde nicht mehr
+REM starten. Deshalb wird /inheritance:r nur ausgefuehrt, wenn beide
+REM Rechtevergaben erfolgreich waren.
+REM /inheritance:r entfernt NUR geerbte Eintraege. Ein von Hand gesetzter
+REM expliziter Eintrag fuer eine breite Gruppe wuerde ueberleben, deshalb diese
+REM vorher gezielt per SID entfernen. /remove:g ist ein No-Op, wenn die SID
+REM nicht vorkommt:
+REM   S-1-5-32-545 = Benutzer, S-1-5-11 = Authentifizierte Benutzer, S-1-1-0 = Jeder
+if not exist "%~1" goto :eof
+icacls "%~1" /grant "*S-1-5-18:(R,W)" >nul 2>&1
+if errorlevel 1 goto :harden_file_warn
+icacls "%~1" /grant "*S-1-5-32-544:(F)" >nul 2>&1
+if errorlevel 1 goto :harden_file_warn
+icacls "%~1" /remove:g "*S-1-5-32-545" >nul 2>&1
+icacls "%~1" /remove:g "*S-1-5-11" >nul 2>&1
+icacls "%~1" /remove:g "*S-1-1-0" >nul 2>&1
+icacls "%~1" /inheritance:r >nul 2>&1
+if errorlevel 1 goto :harden_file_warn
+goto :eof
+:harden_file_warn
+echo WARNUNG: Zugriffsrechte auf %~nx1 konnten nicht eingeschraenkt werden.
+goto :eof
+
+:harden_dir
+REM Wie :harden_file, aber fuer ein Verzeichnis: (OI)(CI) vererbt die
+REM Berechtigung auf alle darin neu angelegten Dateien und Unterordner. So
+REM entsteht der spaeter erzeugte private TLS-Schluessel bereits mit
+REM eingeschraenkten Rechten.
+if not exist "%~1" goto :eof
+icacls "%~1" /grant "*S-1-5-18:(OI)(CI)F" >nul 2>&1
+if errorlevel 1 goto :harden_dir_warn
+icacls "%~1" /grant "*S-1-5-32-544:(OI)(CI)F" >nul 2>&1
+if errorlevel 1 goto :harden_dir_warn
+icacls "%~1" /remove:g "*S-1-5-32-545" >nul 2>&1
+icacls "%~1" /remove:g "*S-1-5-11" >nul 2>&1
+icacls "%~1" /remove:g "*S-1-1-0" >nul 2>&1
+icacls "%~1" /inheritance:r >nul 2>&1
+if errorlevel 1 goto :harden_dir_warn
+goto :eof
+:harden_dir_warn
+echo WARNUNG: Zugriffsrechte auf %~nx1 konnten nicht eingeschraenkt werden.
+goto :eof
 
 :detect_system_pg
 REM Sucht eine systemweit installierte PostgreSQL-Version.

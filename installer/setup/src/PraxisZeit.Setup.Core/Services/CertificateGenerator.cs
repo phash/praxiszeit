@@ -76,18 +76,18 @@ public sealed class CertificateGenerator
         var certPath = Path.Combine(outputDirectory, "cert.pem");
         var keyPath = Path.Combine(outputDirectory, "key.pem");
 
+        // Das Zertifikat selbst ist oeffentlich — normale Rechte.
         var certPem = PemEncoding.WriteString("CERTIFICATE", cert.Export(X509ContentType.Cert));
         File.WriteAllText(certPath, certPem);
 
-        // PKCS#8 unencrypted — uvicorn --ssl-keyfile versteht das direkt
+        // PKCS#8 unencrypted — uvicorn --ssl-keyfile versteht das direkt.
+        // Der private Schluessel wird ueber SecretFile geschrieben: die
+        // Rechte stehen schon beim Anlegen (Windows-ACL ohne Vererbung, nur
+        // SYSTEM + Administratoren; Unix 0600), nicht erst danach. Vorher
+        // wurde der Key auf Windows GAR NICHT eingeschraenkt und blieb
+        // dauerhaft fuer jedes lokale Konto lesbar.
         var keyPem = PemEncoding.WriteString("PRIVATE KEY", rsa.ExportPkcs8PrivateKey());
-        File.WriteAllText(keyPath, keyPem);
-
-        // Auf Unix: 0600 fuer den Key
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(keyPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        }
+        SecretFile.WriteAllText(keyPath, keyPem, System.Text.Encoding.ASCII);
 
         return new GeneratedCert(certPath, keyPath, cert.Thumbprint);
     }
