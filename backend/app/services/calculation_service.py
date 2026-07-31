@@ -819,6 +819,39 @@ def _soll_reducing_absence_half_map(absences: List[Absence]) -> Dict[date, bool]
     return m
 
 
+def worked_hours_map(
+    db: Session, user: User, absence_half_map: Dict[date, bool]
+) -> Dict[date, Decimal]:
+    """F1 (1.18.0): erfasste Netto-Stunden je Tag mit GANZTÄGIGER soll-reduzierender
+    Abwesenheit — die einzige Konstellation, in der ``_day_soll_contribution`` sie
+    braucht.
+
+    Bleibt beim Buchen einer Abwesenheit ein Zeiteintrag stehen
+    (``keep_time_entries``, Regelfall über den „+"-Knopf im Monatsjournal), zählte
+    der Tag bisher die gearbeiteten Stunden im Ist UND verlor sein ganzes Soll →
+    Phantom-Überstunden in Höhe der gearbeiteten Zeit. Die Abwesenheit darf nur
+    den NICHT gearbeiteten Teil des Tages streichen.
+
+    Bewusst nur für ``half is False``-Tage geladen: ohne solchen Tag entsteht
+    keine Query (der Normalfall bleibt unverändert schnell), und Tage ohne
+    Zeiteintrag liefern keinen Eintrag → das Verhalten bleibt dort byte-identisch.
+    Halbtage (``half is True``) sind bereits korrekt (0,5 × Soll bleibt stehen)
+    und werden hier absichtlich NICHT angefasst.
+    """
+    full_days = [d for d, half in absence_half_map.items() if half is False]
+    if not full_days:
+        return {}
+    entries = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
+        TimeEntry.date.in_(full_days),
+    ).all()
+    worked: Dict[date, Decimal] = {}
+    for e in entries:
+        worked[e.date] = worked.get(e.date, Decimal('0')) + e.net_hours
+    return worked
+
+
 def _day_soll_contribution(
     db: Session,
     user: User,
@@ -828,6 +861,7 @@ def _day_soll_contribution(
     absence_half_map: Dict[date, bool],
     wh_changes: Optional[List[WorkingHoursChange]],
     special_cfg: dict,
+    worked_map: Optional[Dict[date, Decimal]] = None,
 ) -> Decimal:
     """Fix #1: single source of truth for ONE weekday's Soll contribution, shared
     by all four per-day Soll loops (get_range_target, get_overtime_account,
@@ -839,11 +873,20 @@ def _day_soll_contribution(
     special-day factor and finally the half-day halving — special-day factor
     FIRST, then ×0,5 for a half day. Returns 0 for a holiday or a full-day
     soll-reducing absence.
+
+    F1 (1.18.0): ``worked_map`` (aus :func:`worked_hours_map`) hält die erfassten
+    Netto-Stunden der Tage mit GANZTÄGIGER soll-reduzierender Abwesenheit. Wurde
+    an so einem Tag gearbeitet (Abwesenheit über ``keep_time_entries`` gebucht,
+    ohne den Zeiteintrag zu löschen), streicht die Abwesenheit nur den nicht
+    gearbeiteten Teil: ``min(Tagessoll, gearbeitete Stunden)`` bleibt Soll stehen,
+    sonst stünde die gearbeitete Zeit als Phantom-Überstunde im Saldo. Ohne
+    Zeiteintrag (Normalfall) ist das Ergebnis unverändert 0.
     """
     if d in holiday_dates:
         return Decimal('0')
     half = absence_half_map.get(d)
-    if half is False:
+    worked = (worked_map or {}).get(d) or Decimal('0')
+    if half is False and worked <= 0:
         return Decimal('0')  # full-day soll-reducing absence → no Soll this day
     schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
     daily_target = get_daily_target_for_date(user, d, schedule)
@@ -852,6 +895,9 @@ def _day_soll_contribution(
         daily_target = daily_target * factor
     if half is True:
         daily_target = daily_target * Decimal('0.5')
+    elif half is False:
+        # F1: nur der NICHT gearbeitete Teil des Tages fällt weg.
+        daily_target = min(daily_target, worked)
     return daily_target
 
 
@@ -1039,6 +1085,9 @@ def get_range_target(
     ).all()
     # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
     absence_half_map = _soll_reducing_absence_half_map(absences)
+    # F1 (1.18.0): erfasste Arbeitszeit auf Ganztags-Abwesenheitstagen (nur dann
+    # eine Query) — die Abwesenheit darf nur den nicht gearbeiteten Teil streichen.
+    worked_map = worked_hours_map(db, user, absence_half_map)
 
     # Preload the user's WorkingHoursChange rows ONCE and resolve the per-day
     # weekly hours in memory (avoids one SELECT per day — N+1 — for a multi-day
@@ -1083,6 +1132,7 @@ def get_range_target(
             absence_half_map=absence_half_map,
             wh_changes=wh_changes,
             special_cfg=_special_cfg(d.year),
+            worked_map=worked_map,
         )
         d += timedelta(days=1)
 
@@ -1361,6 +1411,9 @@ def get_overtime_account(
     ).all()
     # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
     absence_half_map: Dict[date, bool] = _soll_reducing_absence_half_map(absences)
+    # F1 (1.18.0): siehe worked_hours_map — Ganztags-Abwesenheit auf einem Tag mit
+    # erfasster Arbeitszeit streicht nur den nicht gearbeiteten Teil des Solls.
+    worked_map = worked_hours_map(db, user, absence_half_map)
 
     # All public holidays in range
     holidays = db.query(PublicHoliday).filter(
@@ -1441,6 +1494,7 @@ def get_overtime_account(
                 absence_half_map=absence_half_map,
                 wh_changes=wh_changes,
                 special_cfg=cfg,
+                worked_map=worked_map,
             )
 
         monthly_actual = actual_by_month.get(key, Decimal('0'))
@@ -1558,6 +1612,8 @@ def get_overtime_history_detailed(
         Absence.date <= up_to_date,
         Absence.type.notin_([AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME]),
     ).all())
+    # F1 (1.18.0): siehe worked_hours_map.
+    worked_map = worked_hours_map(db, user, absence_half_map)
 
     holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
         PublicHoliday.date >= start_date,
@@ -1635,6 +1691,7 @@ def get_overtime_history_detailed(
                 absence_half_map=absence_half_map,
                 wh_changes=wh_changes,
                 special_cfg=cfg,
+                worked_map=worked_map,
             )
 
         monthly_actual = actual_by_month.get((cy, cm), Decimal('0'))
@@ -1778,6 +1835,9 @@ def get_ytd_summary(
     ).all()
     # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
     absence_half_map: Dict[date, bool] = _soll_reducing_absence_half_map(absences)
+    # F1 (1.18.0): siehe worked_hours_map (Parität zu get_overtime_account — die
+    # History muss bitgleich zum Konto bleiben).
+    worked_map = worked_hours_map(db, user, absence_half_map)
 
     # Fetch working hours changes (pre-loaded for the per-day loop).
     # F-027: routed through get_weekly_hours_for_date() with in-memory path.
@@ -1808,6 +1868,7 @@ def get_ytd_summary(
                 absence_half_map=absence_half_map,
                 wh_changes=wh_changes,
                 special_cfg=special_day_config,
+                worked_map=worked_map,
             )
         current += timedelta(days=1)
 

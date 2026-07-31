@@ -81,7 +81,8 @@ def export_users(db, tenant_id, period_start: date, period_end: date) -> List[Us
     return sorted(users, key=lambda u: ((u.last_name or "").lower(), (u.first_name or "").lower()))
 
 
-def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg, wh_changes=None):
+def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg,
+                       wh_changes=None, worked_hours=None):
     """Release-Review 1.16.0: Tages-Soll an einem Tag MIT Abwesenheit.
 
     Alle Datei-Exporte setzten hier pauschal ``Decimal('0.00')`` — „irgendeine
@@ -116,12 +117,21 @@ def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg, wh
         )
     ]
     half_map = calculation_service._soll_reducing_absence_half_map(soll_reducing)
+    # F1 (1.18.0): an einem Tag mit behaltenem Zeiteintrag streicht eine
+    # GANZTÄGIGE soll-reduzierende Abwesenheit nur den nicht gearbeiteten Teil —
+    # sonst zeigt der §16-Beleg Soll 0 neben Ist 4 (+4 h), während „Überstunden
+    # kumuliert" darunter (get_overtime_account) korrekt rechnet. Die Aufrufer
+    # kennen die Netto-Stunden des Tages bereits, also keine zusätzliche Query.
+    worked_map = None
+    if worked_hours is not None:
+        worked_map = {d: Decimal(str(worked_hours))}
     return calculation_service._day_soll_contribution(
         db, user, d,
         holiday_dates=holiday_dates,
         absence_half_map=half_map,
         wh_changes=wh_changes,
         special_cfg=special_cfg,
+        worked_map=worked_map,
     )
 
 
@@ -628,7 +638,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
             absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen (Label in Spalte 9 verbinden,
             # Notizen in Spalte 10). DSGVO F-003: Krank ohne Health-Flag maskieren
@@ -1170,7 +1180,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
             absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen; DSGVO F-003: Krank ohne
             # Health-Flag maskieren (Label "Abwesenheit", Notiz unterdrückt).
@@ -1826,7 +1836,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 bg = colors.HexColor('#FFFFCC')
             elif day_absences:
                 # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-                target = absence_day_target(db, user, cur, day_absences, set(holidays_by_date), special_day_config)
+                target = absence_day_target(db, user, cur, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
                 # I-1: ALLE Absences des Tages zeigen; DSGVO F-003: Krank ohne
                 # Health-Flag maskieren (Label 'Abwesenheit', Notiz unterdrückt).
                 abw_parts = []

@@ -340,7 +340,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0
             # (Halbtag/SICK/TRAINING/OVERTIME behalten Soll) — Parität zu XLSX.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
             # DSGVO F-003 / #312: sick + custom-reason absences maskiert (Label +
             # Note) außer bei explizit angeforderten Gesundheitsdaten. ALLE
             # Abwesenheiten des Tages (Misch-Tag) werden gerendert.
@@ -681,7 +681,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             # angeforderten Gesundheitsdaten; ALLE Abwesenheiten des Tages (Misch-Tag).
             label, note_str = _absence_cell_parts(day_absences, reason_names, include_health_data)
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = float(absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config))
+            target = float(absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net))
             tr.addElement(_float_cell(target))
             tr.addElement(_float_cell(net - target))
             tr.addElement(_str_cell(label))
