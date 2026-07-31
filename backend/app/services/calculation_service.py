@@ -2271,6 +2271,23 @@ def get_vacation_account(
         Absence.type == AbsenceType.VACATION,
         date_in_year(Absence.date, year),
     ).all()
+    # Audit 2026-07-31 (Fund B): #193-Beschaeftigungsfenster — dieselbe Funktion
+    # wandte es bis hier DREIMAL an (Budget-Pro-rata oben, freie Sondertage in
+    # beiden Zweigen unten) und auf der Schleife ueber die echten Urlaubszeilen
+    # NICHT. Erreichbar im Regelbetrieb: ``admin_users.update_user`` setzt
+    # ``last_work_day`` und raeumt KEINE Abwesenheiten ab — im Maerz Urlaub fuer
+    # Juli genehmigt, im Mai Kuendigung zum 30.06. Das Budget wurde dann korrekt
+    # auf 15 Tage anteilig gekuerzt, die fuenf Juli-Tage aber trotzdem als
+    # verbraucht gezaehlt: Resturlaub 10 statt 15. Das ist die Grundlage der
+    # Urlaubsabgeltung (§ 7 Abs. 4 BUrlG, also Geld) und geht ueber den
+    # Jahresabschluss in den Uebertrag. Die Soll-Seite
+    # (``get_monthly_target``) kannte das Fenster laengst — ein Monat, fuer den
+    # gar kein Soll mehr entsteht, kann keinen Urlaub verbrauchen.
+    # Der Filter steht VOR beiden Verbrauchszweigen (tracked + untracked/#191)
+    # und speist auch ``existing_vacation_dates``; die Sondertags-Schleifen
+    # darunter blenden dieselben Daten ueber ihre eigenen Fenster-Guards aus,
+    # die Entdopplung bleibt also intakt.
+    vacation_absences = [a for a in vacation_absences if _within_employment_window(user, a.date)]
 
     # #156/T2 — Tagesprinzip (§3 BUrlG, BAG): der Urlaubsverbrauch wird in
     # TAGEN gezählt, nicht als Stundensumme ÷ Durchschnitts-Tagessoll. Jeder
