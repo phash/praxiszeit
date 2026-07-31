@@ -1296,6 +1296,7 @@ def get_range_actual(
     # Training and sick hours count as actual worked hours (außer Haus / §3 EntgFG).
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
         date_in_range(Absence.date, start, end),
     ).all()
@@ -1545,6 +1546,7 @@ def get_overtime_account(
     # Training and sick hours count as actual worked hours (§3 EntgFG)
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
         Absence.date >= start_date,
         Absence.date <= up_to_date,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
@@ -1756,6 +1758,7 @@ def get_overtime_history_detailed(
 
     for ca in db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
         Absence.date >= start_date,
         Absence.date <= up_to_date,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
@@ -2035,6 +2038,7 @@ def get_ytd_summary(
 
     credited_absences = db.query(Absence).filter(
         Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
         Absence.date >= start,
         Absence.date <= end,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),

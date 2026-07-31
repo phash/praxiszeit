@@ -537,6 +537,9 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
     row = 5  # Data starts after 3-row header + blank
+    # Audit 2026-07-31: diese beiden Summen speisen die Summenzeilen NICHT mehr
+    # (die holt sich get_monthly_target/get_monthly_actual, siehe unten). Sie
+    # bleiben als Summe der PER-TAG-Zeilen stehen — nicht wieder anschliessen.
     total_net = Decimal('0.00')
     total_target = Decimal('0.00')
     night_work_count = 0
@@ -698,16 +701,36 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # (use_fixed_monthly_target) MUSS die Monats-Summary mit dem modus-
     # bewussten get_monthly_target/get_monthly_actual übereinstimmen — sonst
     # widerspricht sich das §16-Dokument selbst gegen "Überstunden kumuliert"
-    # weiter unten (get_overtime_account, bereits modus-bewusst). Die Per-Tag-
-    # Detailzeilen oben bleiben unverändert (informativ: geplante Anwesenheit/
-    # reale Erfassung, keine Tages-Soll-Zerlegung des festen Monats-Solls).
-    # Nicht-Modus-MA bleiben exakt auf der alten Per-Tag-Summe (byte-identisch).
-    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-        summary_target = calculation_service.get_monthly_target(db, user, year, month)
-        summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
-    else:
-        summary_target = total_target
-        summary_actual = total_net
+    # weiter unten (get_overtime_account, bereits modus-bewusst).
+    #
+    # Audit 2026-07-31 (Nachzug zu Fund K): der Fall galt NICHT nur im Fixmodus.
+    # Der Nicht-Modus-Zweig summierte ``total_net`` = ausschliesslich erfasste
+    # Zeiteintraege und liess die IST-GUTSCHRIFT fuer Krank/Fortbildung weg,
+    # waehrend ``get_monthly_actual`` sie zaehlt (§3 EntgFG: SICK/TRAINING
+    # reduzieren das Soll nicht, sie werden dem Ist gutgeschrieben). Ein Monat
+    # mit einem Kranktag stand damit als Soll 176 / Ist 160 / Saldo −16 in der
+    # Datei, waehrend "Ueberstunden kumuliert" DARUNTER im selben Blatt 0 zeigte
+    # und die Anwendung 0 anzeigte. Verschaerft durch den 1.16.0-Fix der
+    # SOLL-Seite: davor stand an einem Kranktag 0 gegen 0 (der Export setzte das
+    # Soll pauschal auf 0) und hob sich zufaellig auf — seit das Soll korrekt
+    # stehen bleibt, wird die fehlende Gutschrift als Minus sichtbar.
+    #
+    # Deshalb jetzt fuer JEDEN MA dieselbe Quelle wie die Anwendung, ohne Zweig.
+    # Bewusst KEINE Nachbildung der Gutschrift auf der Export-Seite: die Regel
+    # (``calculation_service.credit_day_weight`` — Wochenende/Feiertag 0,
+    # Halbtags-Sondertag 0,5) lebt an genau einer Stelle, und ein vierter
+    # Nachbau waere die naechste Divergenz. Der Soll-Zweig ist dabei
+    # byte-identisch: ``total_target`` delegiert seit 1.16.0 per Tag ohnehin an
+    # ``_day_soll_contribution``, dieselbe Quelle wie ``get_monthly_target``
+    # (gepinnt in test_export_service.TestFixedModeMonthlySummary).
+    #
+    # Die Per-Tag-Detailzeilen oben bleiben unveraendert: "Netto (Std)" steht
+    # zwischen "Pause (Min)" und "Soll (Std)" und meint die STEMPELZEIT des
+    # Tages — §16-Nachweis der tatsaechlichen Anwesenheit. An einem Kranktag
+    # bleibt sie 0; woher die Gutschrift kommt, sagt Spalte "Abwesenheit"
+    # ("Krank (8.0h)"). Die Summenzeile ist die verbindliche Kennzahl.
+    summary_target = calculation_service.get_monthly_target(db, user, year, month)
+    summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
 
     row += 1
     sheet.cell(row=row, column=1).value = "Soll-Stunden Monat:"
@@ -1080,6 +1103,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
     row = 4
+    # Audit 2026-07-31: speisen die Jahres-Summenzeilen NICHT mehr (siehe unten)
+    # — Summe der PER-TAG-Zeilen, nicht wieder anschliessen.
     total_net = Decimal('0.00')
     total_target = Decimal('0.00')
     night_work_count = 0
@@ -1253,21 +1278,23 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # exakt derselbe Fix wie im Monatsexport (2ae1c6e0), sonst widerspricht
     # sich das §16-Jahresdokument selbst gegen die bereits modus-bewusste
     # Jahresübersicht (_create_yearly_overview_sheet) und "Überstunden
-    # kumuliert" darunter (get_overtime_account, bereits modus-bewusst). Die
-    # Per-Tag-Detailzeilen oben bleiben unverändert. Nicht-Modus-MA bleiben
-    # exakt auf der alten Per-Tag-Summe (byte-identisch).
-    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-        summary_target = sum(
-            (calculation_service.get_monthly_target(db, user, year, m) for m in range(1, 13)),
-            start=Decimal('0'),
-        )
-        summary_actual = sum(
-            (calculation_service.get_monthly_actual(db, user, year, m) for m in range(1, 13)),
-            start=Decimal('0'),
-        )
-    else:
-        summary_target = total_target
-        summary_actual = total_net
+    # kumuliert" darunter (get_overtime_account, bereits modus-bewusst).
+    #
+    # Audit 2026-07-31 (Nachzug zu Fund K): wie im Monatsblatt galt der Fall
+    # NICHT nur im Fixmodus — ``total_net`` liess die Ist-Gutschrift fuer
+    # Krank/Fortbildung weg. Hier fiel das doppelt auf: die Jahresuebersicht im
+    # SELBEN Workbook delegiert laengst an Σ get_monthly_actual, das
+    # Mitarbeiterblatt daneben nicht → ein Kranktag ohne Zeiteintraege ergab
+    # "Ist (Jahr) = 8" in der Uebersicht und "Ist-Stunden Jahr: 0" im Detail.
+    # Begruendung + bewusste Grenzen siehe _create_employee_sheet.
+    summary_target = sum(
+        (calculation_service.get_monthly_target(db, user, year, m) for m in range(1, 13)),
+        start=Decimal('0'),
+    )
+    summary_actual = sum(
+        (calculation_service.get_monthly_actual(db, user, year, m) for m in range(1, 13)),
+        start=Decimal('0'),
+    )
 
     row += 1
     sheet.cell(row=row, column=1).value = "Soll-Stunden Jahr:"
@@ -1791,6 +1818,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                        for h in headers]]
         row_bgs = {}  # row_index -> HexColor
 
+        # Audit 2026-07-31: speisen die Summenzeilen NICHT mehr (siehe unten) —
+        # Summe der PER-TAG-Zeilen, nicht wieder anschliessen.
         total_net = Decimal('0.00')
         total_target = Decimal('0.00')
         night_work_count = 0
@@ -1946,13 +1975,14 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         # als einziger der drei Monats-Exportflächen (XLSX Z.439, ODS-Monat), sodass
         # dieselbe §16-Auskunft je Dateiformat unterschiedliche Soll-Zahlen trug und
         # das PDF sich gegen sein eigenes „Überstunden kumuliert" (bereits
-        # modus-bewusst) stellte. Nicht-Modus-MA bleiben auf der Per-Tag-Summe.
-        if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-            summary_target = calculation_service.get_monthly_target(db, user, year, month)
-            summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
-        else:
-            summary_target = total_target
-            summary_actual = total_net
+        # modus-bewusst) stellte.
+        #
+        # Audit 2026-07-31 (Nachzug zu Fund K): derselbe Fall galt fuer JEDEN MA
+        # auf der IST-Seite — ``total_net`` liess die Gutschrift fuer
+        # Krank/Fortbildung weg. Begruendung + bewusste Grenzen siehe
+        # _create_employee_sheet.
+        summary_target = calculation_service.get_monthly_target(db, user, year, month)
+        summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
         monthly_balance = summary_actual - summary_target
         overtime_account = calculation_service.get_overtime_account(db, user, year, month)
         vacation_account = calculation_service.get_vacation_account(db, user, year)
