@@ -175,7 +175,8 @@ für jeden Tag d im Monat:
     überspringe, wenn d außerhalb [first_work_day, last_work_day]   (#193)
     überspringe, wenn d Feiertag (tenant-scoped)
     überspringe, wenn d ein Abwesenheitstag ist, der das Soll reduziert
-    tagessoll = get_daily_target_for_date(user, d)
+    schedule = get_schedule_for_date(db, user, d)                   (#431)
+    tagessoll = get_daily_target_for_date(user, d, schedule)
     tagessoll × Sondertag-Faktor (24./31.12.)                       (#146)
     Monats-Soll += tagessoll
 ```
@@ -904,16 +905,21 @@ Jahresübersicht als angehängte Spalte „Stundenänderungen"). Eine Änderung 
 Zeitraum steckt bereits im Startwert, eine Änderung auf denselben Wert wird nicht
 ausgewiesen.
 
-> ⚠️ **Fallstrick — eine reine Arbeitstage-Änderung ist im Bericht unsichtbar.** Seit #431
-> lässt sich im Dialog bei gleichmäßiger Verteilung auch **„Arbeitstage pro Woche"** mit
-> Wirkungsdatum ändern, unabhängig von den Wochenstunden. Bleiben die Wochenstunden dabei
-> gleich (z. B. 40 h auf 5 Tage → 40 h auf 4 Tage), zeigt der Bericht denselben Text wie
-> vorher — „ab 01.03.2026: 40,0 Std/Woche" nennt nur die Wochenstunden, keine
-> Arbeitstage-Zahl. Das **Tagessoll** verschiebt sich dabei trotzdem still (8 h/Tag →
-> 10 h/Tag), weil `Tagessoll = weekly_hours ÷ work_days_per_week` (§3.1). Verlassen Sie
-> sich beim Prüfen einer Änderung deshalb **nicht** auf den Wochenstunden-Text allein,
-> sondern auf die Tagessoll-Vorschau im Dialog (§ „Wochenstunden anpassen…", zeigt
-> Mo–Fr alt→neu).
+> ⚠️ **Fallstrick — die Wochenstundenzahl bleibt bei einer reinen Arbeitstage-Änderung
+> gleich, das Tagessoll nicht.** Seit #431 lässt sich im Dialog bei gleichmäßiger
+> Verteilung auch **„Arbeitstage pro Woche"** mit Wirkungsdatum ändern, unabhängig von den
+> Wochenstunden. Bleiben die Wochenstunden dabei gleich (z. B. 40 h auf 5 Tage → 40 h auf
+> 4 Tage), hängt der Bericht seit dem Abschluss-Review #431 (Welle 2) den Zusatz **„auf 4
+> Arbeitstage"** an — z. B. „ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage" (Singular
+> „auf 1 Arbeitstag"; PDF-Kurzform „auf 4 Tage", `_work_days_suffix`). Die Änderung ist
+> damit nicht mehr unsichtbar — der Fallstrick liegt jetzt darin, dass die genannte
+> **Wochenstundenzahl selbst unverändert bleibt** (weiterhin „40,0"): Wer nur auf diese
+> Zahl schaut und den angehängten Halbsatz überliest, übersieht, dass sich das
+> **Tagessoll** dabei trotzdem still verschiebt (8 h/Tag → 10 h/Tag), weil
+> `Tagessoll = weekly_hours ÷ work_days_per_week` (§3.1). Verlassen Sie sich beim Prüfen
+> einer Änderung deshalb **nicht** auf die Wochenstundenzahl allein, sondern lesen Sie den
+> vollständigen Änderungstext bzw. die Tagessoll-Vorschau im Dialog (§ „Wochenstunden
+> anpassen…", zeigt Mo–Fr alt→neu).
 
 **Rückrechnung bereits gebuchter Abwesenheiten.** `calculation_service.retarget_absence_hours(db, user, start, end)`
 zieht die **gespeicherten `hours`** bereits gebuchter `Absence`-Zeilen im Wirkungsbereich

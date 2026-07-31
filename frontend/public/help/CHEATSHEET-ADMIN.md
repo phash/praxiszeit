@@ -55,7 +55,7 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 → Historische Salden bleiben korrekt! Verlauf zeigt „ab … bis …" (bei Tagesplan z. B. „Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 Std/Woche · 3 Tage/Woche"); Berichte zeigen den zu Zeitraumsbeginn gültigen Wert + „ab TT.MM.JJJJ: …" (Dashboard, Excel, ODS, PDF — bei Tagesplan „h/Woche" ohne Tage-Suffix)
 → **Betroffene Buchungen:** Dialog zeigt vorab Zeitraum + Tagessoll je Wochentag (alt→neu) + Anzahl betroffener Abwesenheiten + Überstundensaldo/Urlaub vorher-nachher (mit Jahr) – nach Bestätigung werden die Abwesenheits-Stunden umgerechnet, bei rückwirkendem **und** zukünftigem Datum (Urlaubs**tage** bleiben unverändert, Tagesprinzip); abgeschlossenes Jahr wird nur gemeldet, nicht neu berechnet
 → Löschen einer Änderung rechnet zurück (auch bei Tagesplan); **früheste** Änderung erst löschbar, wenn keine späteren mehr bestehen
-→ ⚠️ Arbeitstage-only-Änderung (gleiche Wochenstunden, andere Arbeitstage) ist im Berichtstext unauffällig: bei „Gleichmäßig" verschiebt sich trotzdem das Tagessoll, bei „Nach Tagen" nur der Urlaubsverbrauch – immer die Vorschau prüfen, nicht nur die Wochenstundenzahl
+→ ⚠️ Arbeitstage-only-Änderung (gleiche Wochenstunden, andere Arbeitstage): Berichtstext nennt bei „Gleichmäßig" zwar die neue Arbeitstage-Zahl dazu (z. B. „… auf 4 Arbeitstage"), die Wochenstundenzahl selbst bleibt aber gleich – das Tagessoll verschiebt sich trotzdem still; bei „Nach Tagen" ändert sich stattdessen nur der Urlaubsverbrauch – immer die Vorschau prüfen, nicht nur die Wochenstundenzahl
 
 ### Mitarbeiter deaktivieren (niemals löschen!)
 **Benutzer öffnen** → Status „Inaktiv"
