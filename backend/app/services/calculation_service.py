@@ -552,6 +552,45 @@ def get_daily_target_for_date(user: User, target_date: date, schedule: Schedule)
     return (schedule.weekly_hours / work_days).quantize(Decimal('0.01'))
 
 
+def is_vacation_billable_day(
+    db: Session,
+    user: User,
+    target_date: date,
+    schedule: Optional['Schedule'] = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> bool:
+    """#431: zaehlt ``target_date`` in einer Urlaubs-VORPRUEFUNG als Urlaubstag?
+
+    DIE eine Antwort fuer alle Budget-Vorpruefungen (Direkt-Buchung, Antrags-
+    Genehmigung, Antrag anlegen/bearbeiten, CR-Genehmigung). Sie muss exakt das
+    sagen, was die zugehoerige Buchungsschleife danach tut — laufen die beiden
+    auseinander, lehnt der Check eine Buchung mit 400 ab, die nachher weniger
+    Budget verbraucht haette (oder laesst eine durch, die mehr kostet).
+
+    Der Modus wird zum DATUM aufgeloest, nicht von der User-Zeile gelesen: seit
+    #431 ist ``use_daily_schedule`` Teil des historisierten Vertrags-Snapshots,
+    die User-Zeile traegt nur den HEUTE gueltigen Wert. Eine rueckwirkende (oder
+    zukunftsdatierte) Buchung in einen Zeitraum mit abweichendem Modus rechnete
+    sonst mit dem falschen Zweig, waehrend der Filterwert daneben — das
+    Tagessoll — laengst datumsaufgeloest war. Vor #431 konnten die beiden nie
+    divergieren, deshalb war der Live-Zugriff damals korrekt.
+
+    ``track_hours=False`` (leitende Angestellte, #191) zaehlt JEDEN Werktag:
+    deren Tagessoll ist immer 0, tagebasiert kostet der Tag trotzdem 1 — sie
+    duerfen hier nie mitgefiltert werden.
+    """
+    if not user.track_hours:
+        return True
+    if schedule is None:
+        schedule = get_schedule_for_date(db, user, target_date, wh_changes=wh_changes)
+    # Nur der Tagesplan kennt echte 0-Stunden-Werktage. Im gleichmaessigen Modus
+    # traegt jeder Werktag weekly_hours/work_days_per_week > 0 — der Zweig ist
+    # dort also wirkungslos, wird aber bewusst beibehalten (Byte-Identitaet).
+    if not schedule.use_daily_schedule:
+        return True
+    return get_daily_target_for_date(user, target_date, schedule) > 0
+
+
 def fixed_monthly_target(user: User, year: int, month: int) -> Decimal:
     """#377 Baustein 2b: festes Monats-Soll = agreed_monthly_hours, anteilig bei
     Eintritt/Austritt (Kalendertag-Bruchteil des Beschäftigungsfensters im Monat).

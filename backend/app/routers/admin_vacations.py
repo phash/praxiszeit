@@ -225,20 +225,14 @@ def review_vacation_request(
         for check_year, year_dates in dates_by_year.items():
             vacation_account = calculation_service.get_vacation_account(db, target_user, check_year)
             # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5).
-            # R1-3: skip days with 0h target only when use_daily_schedule=True
-            # (e.g. Mo/Mi/Fr user — mirrors the creation loop which skips
-            # hours_for_day == 0). Only applies when track_hours=True; for
-            # track_hours=False users all weekdays count (pure day-based booking).
-            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
-                billable_days = [
-                    d for d in year_dates
-                    if float(calculation_service.get_daily_target_for_date(
-                        target_user, d,
-                        calculation_service.get_schedule_for_date(db, target_user, d),
-                    )) > 0
-                ]
-            else:
-                billable_days = year_dates
+            # R1-3: skip days with 0h target (e.g. Mo/Mi/Fr user — mirrors the
+            # creation loop which skips hours_for_day == 0). #431: der Modus wird
+            # PRO TAG aufgeloest, nicht am Live-Flag gelesen (siehe
+            # ``is_vacation_billable_day``, dort auch die track_hours=False-Ausnahme).
+            billable_days = [
+                d for d in year_dates
+                if calculation_service.is_vacation_billable_day(db, target_user, d)
+            ]
             # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
             _base = 0.5 if vr.half_day else 1.0
             _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
@@ -279,7 +273,9 @@ def review_vacation_request(
         # MUSS in BEIDEN Pfaden gepflegt werden (vorher fehlte sie hier → ein per
         # Antrag genehmigter Ausgleich buchte das Tagessoll statt der beantragten
         # Stunden; rechnerisch neutral, aber falsch in Anzeige/Reports).
-        if absence_type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
+        # #431: Modus aus dem zum DATUM aufgeloesten Snapshot (``schedule`` oben),
+        # nicht vom Live-Flag der User-Zeile — identisch zu ``create_absence``.
+        if absence_type != AbsenceType.OVERTIME or schedule.use_daily_schedule:
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, schedule))
             # Review R3 (HIGH): only skip genuine 0h days for TRACKED users. For
             # track_hours=False the daily target is always 0; skipping would book

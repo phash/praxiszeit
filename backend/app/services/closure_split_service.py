@@ -182,6 +182,25 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         # therefore lands on the latest closure of the year.
         used = Decimal('0')
         for a in sorted(absences, key=lambda x: x.date):
+            # #431: eine Closure-Zeile mit Tagessoll 0 (Nicht-Arbeitstag eines
+            # Tagesplan-MA) kostet KEIN Urlaubsbudget — genau wie in
+            # ``_create_closure_absences``, das den Split auf ``day_target > 0``
+            # gated, und wie ``get_vacation_account.used_days``. Ohne diesen
+            # Gleichlauf belastete der Re-Split (der die Klassifizierung des
+            # Buchungspfads ÜBERSCHREIBT) eine 0-h-Zeile mit einem vollen
+            # Urlaubstag und kippte dadurch einen echten 8-h-Arbeitstag auf
+            # OVERTIME, obwohl noch Budget da war. Der Modus wird zum DATUM
+            # aufgelöst (die User-Zeile trägt nur den heutigen Wert).
+            # ``track_hours=False`` erreicht diese Schleife nie (oben `continue`),
+            # deren tagebasierter 1-Tag-Verbrauch (#191) bleibt also unberührt.
+            if calculation_service.get_daily_target_for_date(
+                employee, a.date,
+                calculation_service.get_schedule_for_date(db, employee, a.date),
+            ) <= 0:
+                # Basistyp der Schließung; ``closures`` ist oben auf
+                # ``counts_as_vacation == True`` gefiltert → immer VACATION.
+                a.type = AbsenceType.VACATION
+                continue
             # #394: ein Halbtags-Sondertag kostet nur 0,5 Closure-Budget (deckt sich
             # mit day_consumption in _create_closure_absences + used_days).
             day_cost = _wt(a.date)

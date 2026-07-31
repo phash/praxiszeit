@@ -474,21 +474,16 @@ def create_absence(
             # day (0,5 for a half day, #167); compare the day COUNT against the
             # remaining DAYS, not hours (hours-based checks mis-block uneven
             # schedules / part-time).
-            # R1-3: skip days with 0h daily target only when use_daily_schedule=True
-            # (e.g. Mon/Wed/Fri user — Tuesday has 0h and is skipped by the creation
-            # loop too). Only applies when track_hours=True; for track_hours=False users
-            # all weekdays count (pure day-based booking, hours are always 0).
-            # Pre-check must agree with what the booking actually consumes.
-            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
-                billable_days = [
-                    d for d in year_dates
-                    if float(calculation_service.get_daily_target_for_date(
-                        target_user, d,
-                        calculation_service.get_schedule_for_date(db, target_user, d),
-                    )) > 0
-                ]
-            else:
-                billable_days = year_dates
+            # R1-3: skip days with 0h daily target (e.g. Mon/Wed/Fri user — Tuesday
+            # has 0h and is skipped by the creation loop too). #431: der Modus wird
+            # PRO TAG aufgeloest, nicht am Live-Flag der User-Zeile gelesen —
+            # sonst rechnet eine rueckwirkende Buchung in einen Zeitraum mit
+            # anderem Modus gegen den falschen Zweig. Details + track_hours=False-
+            # Ausnahme in ``is_vacation_billable_day``.
+            billable_days = [
+                d for d in year_dates
+                if calculation_service.is_vacation_billable_day(db, target_user, d)
+            ]
             # #394: ein Halbtags-Sondertag (24./31.12.) kostet 0,5 — der Pre-Check
             # muss exakt so viel verlangen wie get_vacation_account nachher zählt,
             # sonst wird eine 0,5-passende Buchung fälschlich mit 400 abgelehnt.
@@ -565,8 +560,11 @@ def create_absence(
         # daily hours (Teilzeit). §3 EntgFG requires this for SICK anyway.
         # Only OVERTIME compensation keeps its explicit hours (the amount of
         # overtime being drawn down), unless a per-weekday schedule applies.
-        if absence_data.type != AbsenceType.OVERTIME or getattr(target_user, 'use_daily_schedule', False):
-            schedule = calculation_service.get_schedule_for_date(db, target_user, date)
+        # #431: der Modus kommt aus dem zum DATUM aufgeloesten Snapshot, nicht vom
+        # Live-Flag — eine rueckwirkende OVERTIME-Buchung in einen Tagesplan-Zeitraum
+        # muss dessen Tagessoll nehmen, nicht das des heutigen Vertrags.
+        schedule = calculation_service.get_schedule_for_date(db, target_user, date)
+        if absence_data.type != AbsenceType.OVERTIME or schedule.use_daily_schedule:
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, schedule))
             # Review R3 (HIGH): only skip genuine 0h days for TRACKED users (e.g.
             # a Mo/Mi/Fr part-timer's Tue/Thu). For track_hours=False the daily

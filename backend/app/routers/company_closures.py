@@ -226,13 +226,19 @@ def _create_closure_absences(
             day_target = calculation_service.get_daily_target_for_date(
                 employee, workday, schedule
             )
-            # #314 (philvdb): an einem Nicht-Arbeitstag eines use_daily_schedule-
+            # #314 (philvdb): an einem Nicht-Arbeitstag eines Tagesplan-
             # Teilzeitlers (Tagessoll 0 an diesem Wochentag) gibt es nichts zu
             # schließen — KEINE Buchung (sonst eine irreführende 0h-„Urlaub"-Zeile).
             # Vor der TimeEntry-Löschung, damit an einem solchen Tag nichts angefasst
             # wird. Untracked/leitende (track_hours=False → Tagessoll immer 0) NICHT
             # skippen: die bekommen tagebasiert 1 Urlaubstag pro Closure-Tag (#191).
-            if (employee.track_hours and getattr(employee, "use_daily_schedule", False)
+            # #431: der Modus kommt aus dem oben zum DATUM aufgelösten Snapshot,
+            # NICHT vom Live-Flag der User-Zeile. Sonst griff der Skip nicht, wenn
+            # der MA heute gleichmäßig geführt wird, zum Closure-Datum aber im
+            # Tagesplan stand — und der Create-Pfad löschte unten geleistete
+            # Arbeitszeit an einem Tag, an dem gar nicht zu schließen war.
+            # Deckungsgleich mit ``calculation_service.is_vacation_billable_day``.
+            if (employee.track_hours and schedule.use_daily_schedule
                     and day_target <= 0):
                 continue
 

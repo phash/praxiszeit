@@ -154,23 +154,17 @@ def apply_vacation_request_patch(
         # review_vacation_request). Der frühere remaining_hours-Check lief für
         # track_hours=False ins Leere (remaining_hours == 0 UND year_hours_needed
         # == 0 → nie blockiert). half_day ist im Edit nicht änderbar → vr.half_day.
-        # R1-3: skip days with 0h target only when use_daily_schedule=True
-        # (e.g. Mo/Mi/Fr user — mirrors the creation/approval loop which skips
-        # hours_for_day == 0). Only applies when track_hours=True; for
-        # track_hours=False users all weekdays count (pure day-based booking).
+        # R1-3: skip days with 0h target (e.g. Mo/Mi/Fr user — mirrors the
+        # creation/approval loop which skips hours_for_day == 0). #431: der Modus
+        # wird PRO TAG aufgeloest, nicht am Live-Flag gelesen (siehe
+        # ``is_vacation_billable_day``, dort auch die track_hours=False-Ausnahme).
         day_factor = 0.5 if vr.half_day else 1.0
         for check_year, year_dates in dates_by_year.items():
             account = calculation_service.get_vacation_account(db, target_user, check_year)
-            if getattr(target_user, 'use_daily_schedule', False) and target_user.track_hours:
-                billable_days = [
-                    dd for dd in year_dates
-                    if float(calculation_service.get_daily_target_for_date(
-                        target_user, dd,
-                        calculation_service.get_schedule_for_date(db, target_user, dd),
-                    )) > 0
-                ]
-            else:
-                billable_days = year_dates
+            billable_days = [
+                dd for dd in year_dates
+                if calculation_service.is_vacation_billable_day(db, target_user, dd)
+            ]
             # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
             _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
             days_needed = sum(
@@ -317,23 +311,17 @@ def create_vacation_request(
         # Tagesprinzip: tagebasiert prüfen (konsistent mit create_absence /
         # review_vacation_request). half_day verbraucht 0,5 Tage pro Tag —
         # sonst würde ein halber Tag bei genau 0,5 Resttagen fälschlich abgelehnt.
-        # R1-3: skip days with 0h target only when use_daily_schedule=True
-        # (e.g. Mo/Mi/Fr user — mirrors the creation/approval loop which skips
-        # hours_for_day == 0). Only applies when track_hours=True; for
-        # track_hours=False users all weekdays count (pure day-based booking).
+        # R1-3: skip days with 0h target (e.g. Mo/Mi/Fr user — mirrors the
+        # creation/approval loop which skips hours_for_day == 0). #431: der Modus
+        # wird PRO TAG aufgeloest, nicht am Live-Flag gelesen (siehe
+        # ``is_vacation_billable_day``, dort auch die track_hours=False-Ausnahme).
         day_factor = 0.5 if data.half_day else 1.0
         for check_year, year_dates in dates_by_year.items():
             account = calculation_service.get_vacation_account(db, current_user, check_year)
-            if getattr(current_user, 'use_daily_schedule', False) and current_user.track_hours:
-                billable_days = [
-                    dd for dd in year_dates
-                    if float(calculation_service.get_daily_target_for_date(
-                        current_user, dd,
-                        calculation_service.get_schedule_for_date(db, current_user, dd),
-                    )) > 0
-                ]
-            else:
-                billable_days = year_dates
+            billable_days = [
+                dd for dd in year_dates
+                if calculation_service.is_vacation_billable_day(db, current_user, dd)
+            ]
             # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
             _cfg = special_days_service.get_special_day_config(db, current_user.tenant_id, check_year)
             days_needed = sum(

@@ -27,6 +27,7 @@ from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
     get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
+    is_vacation_billable_day,
 )
 from app.services import work_window_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
@@ -537,8 +538,13 @@ def review_change_request(
                     )
 
             _is_overtime = cr.proposed_absence_type == AbsenceType.OVERTIME.value
-            if cr_user and (not _is_overtime or getattr(cr_user, "use_daily_schedule", False)):
-                schedule = get_schedule_for_date(db, cr_user, cr.proposed_date)
+            # #431: der Modus kommt aus dem zum DATUM aufgeloesten Snapshot, nicht
+            # vom Live-Flag der User-Zeile — identisch zu create_absence /
+            # review_vacation_request.
+            schedule = (
+                get_schedule_for_date(db, cr_user, cr.proposed_date) if cr_user else None
+            )
+            if cr_user and (not _is_overtime or schedule.use_daily_schedule):
                 hours = float(get_daily_target_for_date(cr_user, cr.proposed_date, schedule))
             else:
                 hours = float(cr.proposed_absence_hours) if cr.proposed_absence_hours else 0
@@ -570,11 +576,10 @@ def review_change_request(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Kein gültiger Arbeitstag (soll-freier Sondertag) — es kann kein Urlaubstag gebucht werden.",
                     )
-                _bill_day = True
-                if getattr(cr_user, "use_daily_schedule", False) and cr_user.track_hours:
-                    _bs = get_schedule_for_date(db, cr_user, cr.proposed_date)
-                    _bill_day = float(get_daily_target_for_date(cr_user, cr.proposed_date, _bs)) > 0
-                if _bill_day:
+                # #431: Modus pro TAG aufloesen, nicht am Live-Flag (siehe
+                # ``is_vacation_billable_day``; ``schedule`` ist oben schon
+                # aufgeloest und wird durchgereicht, kein zweiter Lookup).
+                if is_vacation_billable_day(db, cr_user, cr.proposed_date, schedule=schedule):
                     vacation_account = get_vacation_account(db, cr_user, cr.proposed_date.year)
                     # #394: ein Halbtags-Sondertag (24./31.12.) kostet nur 0,5.
                     _cfg = special_days_service.get_special_day_config(db, cr_user.tenant_id, cr.proposed_date.year)
@@ -756,8 +761,11 @@ def review_change_request(
             ).first()
             _upd_date = cr.proposed_date or absence.date
             _upd_is_overtime = absence.type == AbsenceType.OVERTIME
-            if _upd_user and (not _upd_is_overtime or getattr(_upd_user, "use_daily_schedule", False)):
-                _upd_schedule = get_schedule_for_date(db, _upd_user, _upd_date)
+            # #431: Modus aus dem zum DATUM aufgeloesten Snapshot, nicht vom Live-Flag.
+            _upd_schedule = (
+                get_schedule_for_date(db, _upd_user, _upd_date) if _upd_user else None
+            )
+            if _upd_user and (not _upd_is_overtime or _upd_schedule.use_daily_schedule):
                 _upd_target = float(get_daily_target_for_date(_upd_user, _upd_date, _upd_schedule))
                 # Release-Review 1.16.0: half_day mitziehen. Ohne die Halbierung
                 # bläht ein reiner Zeit-Edit an einer halbtägigen Abwesenheit die
