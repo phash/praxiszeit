@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time as time_module
 import uuid
 from datetime import date, time, datetime
 
@@ -40,8 +41,14 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal, set_tenant_context
-from app.models import User
+from app.models import Absence, AbsenceType, User
+from app.models.change_request import (
+    ChangeRequest, ChangeRequestStatus, ChangeRequestType,
+)
+from app.routers import absences as absences_router
+from app.routers import change_requests as change_requests_router
 from app.routers import time_entries
+from app.schemas.absence import AbsenceCreate
 from app.schemas.time_entry import ClockInRequest
 from app.services.timezone_service import LOCAL_TZ
 
@@ -70,6 +77,8 @@ def concurrency_seed(admin_engine):
     conn = admin_engine.connect()
     # Best-effort pre-cleanup
     conn.execute(text("DELETE FROM time_entry_audit_logs WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+    conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+    conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": str(TENANT_ID)})
@@ -93,6 +102,8 @@ def concurrency_seed(admin_engine):
     yield
 
     conn.execute(text("DELETE FROM time_entry_audit_logs WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+    conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+    conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": str(TENANT_ID)})
@@ -226,3 +237,265 @@ def test_parallel_clock_in_serializes(app_engine, concurrency_seed, admin_engine
             {"u": str(USER_ID)},
         ).scalar()
         assert count == 1
+
+
+# =============================================================================
+# Audit 2026-07-31 — Nebenläufigkeit / Zustandsübergänge
+# =============================================================================
+
+# Zwei Werktage weit in der Zukunft (Mi/Do), damit die Tests keine echten
+# Feiertags-/Sondertagskonfigurationen treffen und sich nicht gegenseitig sehen.
+_ABS_DAY = date(2099, 6, 3)   # Mittwoch
+_ABS_DAY2 = date(2099, 6, 4)  # Donnerstag
+
+
+@pytest.fixture
+def clean_absence_state(admin_engine):
+    """Leert Anträge + Abwesenheiten des Test-Tenants vor UND nach dem Test."""
+    def _wipe():
+        conn = admin_engine.connect()
+        conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.close()
+
+    _wipe()
+    yield
+    _wipe()
+
+
+# --- A3: Rückziehen darf keine bereits erfolgte Genehmigung überschreiben -----
+
+
+def _seed_pending_cr() -> uuid.UUID:
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        cr = ChangeRequest(
+            tenant_id=TENANT_ID,
+            user_id=USER_ID,
+            request_type=ChangeRequestType.CREATE,
+            status=ChangeRequestStatus.PENDING,
+            entry_kind="time_entry",
+            proposed_date=_ABS_DAY,
+            proposed_start_time=time(9, 0),
+            proposed_end_time=time(17, 0),
+            proposed_break_minutes=30,
+            reason="Audit-Test 2026-07-31",
+        )
+        session.add(cr)
+        session.commit()
+        session.refresh(cr)
+        return cr.id
+    finally:
+        session.close()
+
+
+def _run_withdraw(results: list, cr_id):
+    """Ruft die ECHTE Endpoint-Funktion `withdraw_change_request` auf."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        me = session.query(User).filter(User.id == USER_ID).first()
+        change_requests_router.withdraw_change_request(
+            request_id=str(cr_id), db=session, current_user=me,
+        )
+        results.append(("withdrawn",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+def test_withdraw_cannot_delete_an_approved_change_request(
+    concurrency_seed, clean_absence_state, app_engine,
+):
+    """Zurückziehen während der Admin genehmigt: der Antrag darf NICHT verschwinden.
+
+    Ohne ``with_for_update()`` liest ``withdraw_change_request`` ein veraltetes
+    Abbild (PENDING), setzt sein ``DELETE … WHERE id = :id`` ab und wartet auf
+    die Zeilensperre; nach dem Commit des Genehmigers qualifiziert Postgres die
+    Bedingung unter READ COMMITTED neu (EvalPlanQual) — die Bedingung nennt nur
+    die ``id``, also wird der inzwischen GENEHMIGTE Antrag gelöscht. Seine
+    Seiteneffekte (gebuchte Zeit / Abwesenheit) bleiben bestehen, und das
+    FK ``ON DELETE SET NULL`` auf ``time_entry_audit_logs.change_request_id``
+    schreibt am ``before_insert``-Hook vorbei → der gespeicherte ``row_hash``
+    (#121) wird stale und ``verify-integrity`` meldet eine legitime Zeile als
+    manipuliert.
+
+    Sitzung A sperrt die Antragszeile GENAU so wie
+    ``admin_change_requests.review_change_request`` (``with_for_update``) und
+    flippt den Status; der Commit folgt erst, nachdem der Mitarbeiter sein
+    Zurückziehen abgesetzt hat.
+    """
+    cr_id = _seed_pending_cr()
+
+    approver = SessionLocal()
+    set_tenant_context(approver, TENANT_ID)
+    cr = (
+        approver.query(ChangeRequest)
+        .filter(ChangeRequest.id == cr_id, ChangeRequest.tenant_id == TENANT_ID)
+        .with_for_update()
+        .first()
+    )
+    assert cr is not None
+    cr.status = ChangeRequestStatus.APPROVED
+    approver.flush()  # Zeilensperre + neue Version, noch NICHT committed
+
+    results: list = []
+    t = threading.Thread(target=_run_withdraw, args=(results, cr_id))
+    t.start()
+    time_module.sleep(1.0)
+    # Beide Varianten (mit/ohne Fix) warten hier — die eine an der Lesesperre,
+    # die andere an der DELETE-Sperre. Diese Zusicherung ist nur eine
+    # Plausibilitätsprüfung, dass die Sitzungen wirklich kollidieren.
+    assert not results, f"Kein Konflikt entstanden (Ergebnis bereits da: {results})"
+
+    approver.commit()
+    approver.close()
+    t.join(timeout=20)
+
+    assert results == [("rejected", 400)], (
+        f"Zurückziehen hätte den genehmigten Antrag mit 400 ablehnen müssen: {results}"
+    )
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        row = conn.execute(
+            text("SELECT status FROM change_requests WHERE id = :i"), {"i": str(cr_id)},
+        ).first()
+    assert row is not None, "Der genehmigte Antrag wurde vom Zurückziehen gelöscht"
+    assert row[0] == "approved", row[0]
+
+
+# --- A2: zwei Abwesenheiten am selben Tag ------------------------------------
+
+
+def _run_create_absence(results: list, absence_type, day):
+    """Ruft die ECHTE Endpoint-Funktion `create_absence` auf."""
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        me = session.query(User).filter(User.id == USER_ID).first()
+        absences_router.create_absence(
+            absence_data=AbsenceCreate(date=day, type=absence_type, hours=8.0),
+            db=session, current_user=me,
+        )
+        results.append(("created",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except IntegrityError:
+        session.rollback()
+        results.append(("error", "IntegrityError"))
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+def test_absence_booking_waits_on_the_user_anchor_lock(
+    concurrency_seed, clean_absence_state, app_engine,
+):
+    """Zwei Buchungen UNTERSCHIEDLICHEN Typs am selben Tag dürfen nicht beide durchgehen.
+
+    Das UNIQUE ist ``(tenant, user, date, TYPE)`` — zwei verschiedene Typen
+    kollidieren auf DB-Ebene also NICHT. Griff die Anker-Sperre auf der
+    Benutzerzeile nur für ``VACATION``, schützte sonst allein ein
+    ``with_for_update()`` auf einer LEEREN Ergebnismenge, das unter READ
+    COMMITTED nichts sperrt: beide Buchungen liefen durch (Soll 0 UND Ist +8 h
+    am selben Tag, dazu ggf. ein verbrauchter Urlaubstag).
+
+    Sitzung A hält die Anker-Sperre und bucht danach TRAINING; der Thread bucht
+    KRANK und muss warten, bis die Benutzerzeile frei ist — und sieht dann den
+    Konflikt (409).
+    """
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    holder.query(User).filter(
+        User.id == USER_ID, User.tenant_id == TENANT_ID,
+    ).with_for_update().first()
+
+    results: list = []
+    t = threading.Thread(target=_run_create_absence, args=(results, AbsenceType.SICK, _ABS_DAY))
+    t.start()
+    time_module.sleep(1.5)
+    assert not results, (
+        "create_absence lief an der Anker-Sperre der Benutzerzeile vorbei "
+        f"(Ergebnis: {results}) — die Sperre greift offenbar nur für VACATION."
+    )
+
+    holder.add(Absence(
+        user_id=USER_ID, tenant_id=TENANT_ID, date=_ABS_DAY,
+        type=AbsenceType.TRAINING, hours=8.0, half_day=False,
+    ))
+    holder.commit()
+    holder.close()
+
+    t.join(timeout=20)
+    assert results == [("rejected", 409)], results
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        n = conn.execute(
+            text("SELECT COUNT(*) FROM absences WHERE user_id = :u AND date = :d"),
+            {"u": str(USER_ID), "d": _ABS_DAY},
+        ).scalar()
+    assert n == 1, f"Doppelbuchung: {n} Abwesenheiten am selben Tag"
+
+
+def test_same_type_double_booking_never_raises_integrity_error(
+    concurrency_seed, clean_absence_state, app_engine,
+):
+    """Gleicher Typ parallel: verständliche Meldung statt nacktem IntegrityError (HTTP 500).
+
+    Sitzung A legt die Abwesenheit an und hält sie UNCOMMITTED. VOR dem Fix sah
+    die Existenz-Sonde des Threads sie nicht, sein INSERT wartete am
+    Unique-Index und scheiterte nach dem Commit von A mit einem ungefangenen
+    ``IntegrityError`` → HTTP 500.
+
+    MIT der Anker-Sperre wartet der Thread schon an der Benutzerzeile: Sitzung A
+    hält darauf über den Fremdschlüssel der Abwesenheit implizit ein
+    ``FOR KEY SHARE``, das mit dem ``FOR UPDATE`` des Ankers kollidiert. Nach
+    dem Commit von A sieht die Sonde die Zeile und der Fall endet im
+    regulären, geprüften Zweig — bei gleichem Typ ist das der idempotente
+    Skip (400 „…haben bereits eine Abwesenheit dieses Typs"). Der 409-Übersetzer
+    um ``db.commit()`` bleibt die Rückfallebene; er wird per Fehlerinjektion in
+    ``tests/test_absence_conflict_409.py`` geprüft.
+
+    Zusicherung hier: NIE ein ``IntegrityError``/500, immer genau eine Zeile.
+    """
+    blocker = SessionLocal()
+    set_tenant_context(blocker, TENANT_ID)
+    blocker.add(Absence(
+        user_id=USER_ID, tenant_id=TENANT_ID, date=_ABS_DAY2,
+        type=AbsenceType.SICK, hours=8.0, half_day=False,
+    ))
+    blocker.flush()
+
+    results: list = []
+    t = threading.Thread(target=_run_create_absence, args=(results, AbsenceType.SICK, _ABS_DAY2))
+    t.start()
+    time_module.sleep(1.5)
+    assert not results, f"Kein Konflikt entstanden (Ergebnis bereits da: {results})"
+
+    blocker.commit()
+    blocker.close()
+
+    t.join(timeout=20)
+    assert len(results) == 1 and results[0][0] == "rejected", (
+        f"Erwartet: saubere HTTP-Ablehnung, bekommen: {results}"
+    )
+    assert results[0][1] in (400, 409), results
+
+    with app_engine.connect() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        n = conn.execute(
+            text("SELECT COUNT(*) FROM absences WHERE user_id = :u AND date = :d"),
+            {"u": str(USER_ID), "d": _ABS_DAY2},
+        ).scalar()
+    assert n == 1, n

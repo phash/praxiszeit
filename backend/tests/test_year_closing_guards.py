@@ -18,6 +18,9 @@ from fastapi.testclient import TestClient
 from app.database import get_db, Base
 from app.middleware.auth import get_current_user, require_admin
 from app.models import User, UserRole, Absence, AbsenceType, YearCarryover
+from app.models.change_request import (
+    ChangeRequest, ChangeRequestStatus, ChangeRequestType,
+)
 from app.models.tenant import Tenant
 from app.models.system_setting import SystemSetting
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
@@ -130,6 +133,93 @@ def test_year_closing_ignores_non_pending_request(db, default_tenant, admin, emp
         user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=date(2025, 7, 1),
         end_date=date(2025, 7, 5), hours=8.0, absence_type="vacation",
         status=VacationRequestStatus.APPROVED.value))
+    db.commit()
+    r = _client_as(db, admin).post("/api/admin/year-closing/2025")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+
+
+# --- Audit 2026-07-31 (A1): PENDING-ChangeRequest-Sperre über BEIDE Datumsspalten ---
+#
+# Die F-029-Sperre filterte nur über ``proposed_date``. Ein Lösch-Antrag trägt
+# dort NULL — sein Tagesbezug steht ausschließlich in ``original_date`` — und
+# wurde deshalb still nicht mitgezählt: der Jahresabschluss lief durch, und eine
+# spätere Genehmigung löschte den Zeiteintrag, während der eingefrorene Übertrag
+# falsch stehen blieb. Dasselbe galt für Anträge, die einen Eintrag AUS dem
+# Abschlussjahr herausschieben (original_date im Jahr, proposed_date danach).
+
+
+def _pending_cr(emp, **kw):
+    return ChangeRequest(
+        user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+        status=ChangeRequestStatus.PENDING,
+        entry_kind="time_entry", reason="Audit-Test",
+        **kw,
+    )
+
+
+def test_year_closing_blocked_by_pending_delete_change_request(db, default_tenant, admin, emp):
+    """Lösch-Antrag: proposed_date IS NULL, Tagesbezug nur in original_date."""
+    db.add(_pending_cr(
+        emp, request_type=ChangeRequestType.DELETE,
+        proposed_date=None, original_date=date(2025, 7, 1),
+    ))
+    db.commit()
+    r = _client_as(db, admin).post("/api/admin/year-closing/2025")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 409, r.text
+    assert "Änderungsanträge" in r.json()["detail"]
+
+
+def test_year_closing_blocked_by_cr_moving_entry_out_of_year(db, default_tenant, admin, emp):
+    """Verschiebe-Antrag AUS dem Abschlussjahr heraus: nur original_date liegt drin."""
+    db.add(_pending_cr(
+        emp, request_type=ChangeRequestType.UPDATE,
+        original_date=date(2025, 12, 30), proposed_date=date(2026, 1, 5),
+    ))
+    db.commit()
+    r = _client_as(db, admin).post("/api/admin/year-closing/2025")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 409, r.text
+    assert "Änderungsanträge" in r.json()["detail"]
+
+
+def test_year_closing_still_blocked_by_pending_create_change_request(db, default_tenant, admin, emp):
+    """Kontrolle: der bisher schon erfasste Fall (proposed_date im Jahr) bleibt 409."""
+    db.add(_pending_cr(
+        emp, request_type=ChangeRequestType.CREATE,
+        proposed_date=date(2025, 3, 4), original_date=None,
+    ))
+    db.commit()
+    r = _client_as(db, admin).post("/api/admin/year-closing/2025")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 409, r.text
+
+
+def test_year_closing_allows_pending_change_request_in_other_year(db, default_tenant, admin, emp):
+    """Kontrolle: liegen BEIDE Daten außerhalb, blockiert nichts (kein Over-Blocking)."""
+    db.add(_pending_cr(
+        emp, request_type=ChangeRequestType.UPDATE,
+        original_date=date(2026, 5, 4), proposed_date=date(2026, 5, 5),
+    ))
+    db.add(_pending_cr(
+        emp, request_type=ChangeRequestType.DELETE,
+        original_date=date(2024, 5, 4), proposed_date=None,
+    ))
+    db.commit()
+    r = _client_as(db, admin).post("/api/admin/year-closing/2025")
+    _app.dependency_overrides.clear()
+    assert r.status_code == 200, r.text
+
+
+def test_year_closing_ignores_non_pending_delete_change_request(db, default_tenant, admin, emp):
+    """Kontrolle: ein bereits bearbeiteter Lösch-Antrag blockiert nicht."""
+    cr = _pending_cr(
+        emp, request_type=ChangeRequestType.DELETE,
+        proposed_date=None, original_date=date(2025, 7, 1),
+    )
+    cr.status = ChangeRequestStatus.APPROVED
+    db.add(cr)
     db.commit()
     r = _client_as(db, admin).post("/api/admin/year-closing/2025")
     _app.dependency_overrides.clear()

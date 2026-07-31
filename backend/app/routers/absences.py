@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month, parse_year_month
 from typing import List, Optional
@@ -396,12 +397,26 @@ def create_absence(
         )
 
     # BUG-3 / Review 2026-06-23 (2. Schleife): die User-Zeile ZUERST sperren —
-    # VOR den per-Datum-Absence-Locks unten — damit beide Urlaubs-Buchungspfade
-    # (create_absence + review_vacation_request) dieselbe Lock-Reihenfolge
-    # (User -> Absence) nutzen und kein ABBA-Deadlock moeglich ist. Der Lock
-    # serialisiert zugleich den Budget-Check + Insert pro MA (kein Budget-Overrun).
-    if absence_data.type == AbsenceType.VACATION:
-        db.query(User).filter(User.id == target_user.id).with_for_update().first()
+    # VOR den per-Datum-Absence-Locks unten — damit alle Absence-Buchungspfade
+    # (create_absence, review_vacation_request, review_change_request,
+    # Betriebsferien) dieselbe Lock-Reihenfolge (User -> Absence) nutzen und kein
+    # ABBA-Deadlock moeglich ist. Der Lock serialisiert zugleich den Budget-Check
+    # + Insert pro MA (kein Budget-Overrun).
+    #
+    # Audit 2026-07-31 (A2): die Sperre gilt fuer JEDEN Absence-Typ, nicht nur
+    # VACATION. Ohne sie schuetzte bei allen anderen Typen allein das
+    # ``with_for_update()`` auf der Existenz-Sonde unten — und die laeuft im
+    # Normalfall auf eine LEERE Ergebnismenge, die unter READ COMMITTED nichts
+    # sperrt. Da das UNIQUE ``(tenant, user, date, TYPE)`` lautet, kollidieren
+    # zwei gleichzeitige Buchungen UNTERSCHIEDLICHEN Typs auch auf DB-Ebene
+    # nicht: beide gehen durch, und der Tag traegt danach Soll 0 UND Ist +8 h
+    # (und ggf. einen verbrauchten Urlaubstag). Das Fenster ist bei
+    # Mehrtages-Buchungen deutlich breiter als bei Einzeltagen.
+    # F-026: der Lock-Read wird zusaetzlich am Mandanten gefiltert.
+    db.query(User).filter(
+        User.id == target_user.id,
+        User.tenant_id == target_user.tenant_id,
+    ).with_for_update().first()
 
     # Check for existing absences (any type — no double-booking allowed).
     # F-028: with_for_update() on the existence probe closes the race window
@@ -639,7 +654,29 @@ def create_absence(
         db.add(absence)
         created_absences.append(absence)
 
-    db.commit()
+    # Audit 2026-07-31 (A2): letzte Verteidigungslinie. Die Existenz-Sonde oben
+    # laeuft unter der Anker-Sperre, aber eine parallele Sitzung kann ihre Zeile
+    # bereits eingefuegt und noch nicht committed haben (die Sonde sieht sie dann
+    # nicht, der eigene INSERT wartet am Unique-Index und scheitert nach deren
+    # Commit). Das darf keinen nackten IntegrityError -> HTTP 500 geben, sondern
+    # dieselbe verstaendliche 409 wie der geprueefte Konfliktfall.
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _span = (
+            dates_to_create[0].strftime("%d.%m.%Y")
+            if len(dates_to_create) == 1
+            else f"{dates_to_create[0].strftime('%d.%m.%Y')}–{dates_to_create[-1].strftime('%d.%m.%Y')}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Für mindestens einen Tag ({_span}) wurde zeitgleich bereits "
+                f"eine Abwesenheit gebucht. Bitte die Ansicht neu laden und "
+                f"erneut versuchen."
+            ),
+        )
 
     # Refresh all created absences
     for absence in created_absences:

@@ -152,6 +152,37 @@ def review_change_request(
     current_user: User = Depends(require_admin),
 ):
     """Approve or reject a change request."""
+    # Audit 2026-07-31 (A2): Anker-Sperre auf der MITARBEITER-Zeile, VOR der
+    # Antragszeile. Die Genehmigung ist ein PARALLELER Absence-Buchungspfad
+    # (materialisiert unten Abwesenheiten am Zieltag); die FOR-UPDATE-Sonde auf
+    # der Absence-Tabelle trifft im Normalfall eine LEERE Ergebnismenge und
+    # sperrt unter READ COMMITTED nichts. Da das UNIQUE
+    # ``(tenant, user, date, TYPE)`` lautet, konnte eine gleichzeitige
+    # Direkt-Buchung (``absences.create_absence``) am selben Tag mit einem
+    # ANDEREN Typ durchrutschen. Die Benutzerzeile ist der gemeinsame Anker
+    # aller Buchungspfade (create_absence, review_vacation_request,
+    # Betriebsferien).
+    #
+    # REIHENFOLGE (bindend): Benutzer ZUERST, dann Antrag/Abwesenheit.
+    # ``absences.create_absence`` haelt die Benutzer-Sperre und aktualisiert im
+    # Krank-mit-Urlaubsrueckgabe-Pfad ChangeRequest-Zeilen (absence_id → NULL);
+    # wuerde hier zuerst die CR-Zeile gesperrt, entstuende ein ABBA-Deadlock.
+    # Die Vorabfrage liest nur den Eigentümer des Antrags — der ist
+    # unveraenderlich, ein ungesperrter Lesezugriff genuegt dafuer.
+    _cr_owner = (
+        db.query(ChangeRequest.user_id)
+        .filter(
+            ChangeRequest.id == request_id,
+            ChangeRequest.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
+    if _cr_owner:
+        db.query(User).filter(
+            User.id == _cr_owner[0],
+            User.tenant_id == current_user.tenant_id,  # F-026
+        ).with_for_update().first()
+
     # F-028: Lock the CR row for the duration of this transaction so that
     # two concurrent approval requests cannot both pass the status check
     # and mutate state. Without with_for_update(), a double-click on "Approve"

@@ -105,6 +105,31 @@ def _get_holidays_for_range(db: Session, start: date, end: date, tenant_id) -> s
     return holidays
 
 
+def _lock_participant_rows(db: Session, tenant_id, user_ids) -> None:
+    """Audit 2026-07-31 (A2): Anker-Sperre auf den Mitarbeiter-Zeilen.
+
+    Betriebsferien sind ein Absence-BUCHUNGSpfad. Die Vorab-Existenzprüfung
+    (``existing_keys``) liest ungesperrt; eine gleichzeitige Direkt-Buchung
+    (``absences.create_absence``) oder Antrags-Genehmigung könnte am selben Tag
+    einen ANDEREN Typ einfügen — das UNIQUE ist ``(tenant, user, date, TYPE)``
+    und fängt das nicht. Die Benutzerzeile ist der gemeinsame Anker aller
+    Buchungspfade.
+
+    Die Sperren werden nach ``User.id`` SORTIERT in EINER Anweisung geholt:
+    zwei gleichzeitige Betriebsferien-Vorgänge erwerben sie damit in derselben
+    Reihenfolge (kein Deadlock untereinander), und weil keine Absence-Sperre
+    vor Abschluss dieser Anweisung gehalten wird, bleibt die globale Reihenfolge
+    Benutzer → Abwesenheit auch gegenüber den Einzel-Buchungspfaden gewahrt.
+    """
+    ids = sorted({uid for uid in user_ids if uid is not None}, key=str)
+    if not ids:
+        return
+    db.query(User).filter(
+        User.id.in_(ids),
+        User.tenant_id == tenant_id,  # F-026
+    ).order_by(User.id).with_for_update().all()
+
+
 def _create_closure_absences(
     db: Session,
     closure: CompanyClosure,
@@ -174,6 +199,12 @@ def _create_closure_absences(
     te_by_key: dict = {}
     wh_by_user: dict = {}
     if emp_ids:
+        # Audit 2026-07-31 (A2): Anker-Sperre VOR der Existenz-Vorabfrage —
+        # Reihenfolge Benutzer → Abwesenheit (siehe _lock_participant_rows).
+        # Beim Umspeichern hat ``update_closure`` sie bereits geholt (dort vor
+        # den Löschungen); ein erneuter Erwerb in derselben Transaktion ist ein
+        # No-op.
+        _lock_participant_rows(db, current_user.tenant_id, emp_ids)
         existing_keys = {
             (a.user_id, a.date)
             for a in db.query(Absence.user_id, Absence.date).filter(
@@ -578,6 +609,18 @@ def update_closure(
         User.tenant_id == current_user.tenant_id,
     ).all()
     _rebookable_user_ids = {e.id for e in employees}
+
+    # Audit 2026-07-31 (A2): die Anker-Sperren HIER holen — vor den Löschungen
+    # unten und damit vor jeder Absence-Sperre dieser Transaktion. Würde erst
+    # ``_create_closure_absences`` sie holen, sperrte dieser Pfad in der
+    # Reihenfolge Abwesenheit → Benutzer und liefe damit einem gleichzeitigen
+    # ``create_absence`` (Benutzer → Abwesenheit) in ein ABBA-Deadlock.
+    # Die zu löschenden Abwesenheiten können auch Ausgeschiedenen/Abgewählten
+    # gehören, die nicht in ``employees`` stehen → beide Mengen vereinigen.
+    _lock_participant_rows(
+        db, current_user.tenant_id,
+        _rebookable_user_ids | {a.user_id for a in linked},
+    )
 
     _deleted_out_of_range = 0
     _deleted_for_resplit = 0
