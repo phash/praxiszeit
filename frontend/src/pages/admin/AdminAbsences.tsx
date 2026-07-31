@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import { Plus, X, Trash2, Pencil, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
-import { showArbzgWarnings, collectAbsenceWarnings } from '../../utils/arbzgWarnings';
+import { showArbzgWarnings, collectAbsenceWarnings, showResponseWarning } from '../../utils/arbzgWarnings';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
@@ -163,8 +163,11 @@ export default function AdminAbsences() {
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/company-closures/${closure.id}`);
+          const res = await apiClient.delete(`/company-closures/${closure.id}`);
           toast.success('Betriebsferien und zugehörige Urlaubseinträge gelöscht');
+          // U3: Fix #5 — deleting a closure that touches an already-closed
+          // year replies 200 + { warning } instead of the usual 204.
+          showResponseWarning(toast, res.data);
           loadClosures();
         } catch {
           toast.error('Fehler beim Löschen');

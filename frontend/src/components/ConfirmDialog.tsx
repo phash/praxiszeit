@@ -76,7 +76,13 @@ export default function ConfirmDialog({
               <h3 id="confirm-dialog-title" className="text-lg font-semibold text-gray-900">
                 {title}
               </h3>
-              <p id="confirm-dialog-desc" className="mt-2 text-sm text-gray-600">
+              {/* U5 (Audit 2026-07-31): several callers build multi-line
+                  messages with \n / \n\n + bullet points (Users.tsx anonymize/
+                  purge, AdminDashboard.tsx year-closing, ErrorMonitoring.tsx).
+                  Without whitespace-pre-line the browser collapses all of that
+                  into one run-on sentence — "kann nicht rückgängig gemacht
+                  werden" ends up glued to the preceding bullet list. */}
+              <p id="confirm-dialog-desc" className="mt-2 text-sm text-gray-600 whitespace-pre-line">
                 {message}
               </p>
             </div>

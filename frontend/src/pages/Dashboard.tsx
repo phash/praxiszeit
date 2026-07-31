@@ -8,6 +8,7 @@ import { TrendingUp, TrendingDown, Calendar, Clock, Palmtree, ChevronDown, Chevr
 import { useToast } from '../contexts/ToastContext';
 import { useUIStore } from '../stores/uiStore';
 import { formatHoursHM } from '../utils/errorMessage';
+import { deHoursExact } from '../utils/formatters';
 import StampWidget from '../components/StampWidget';
 import ShiftTodayCard from '../components/ShiftTodayCard';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -437,13 +438,13 @@ export default function Dashboard() {
         )}
         <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
           <div className="text-xl font-bold tabular-nums text-text-primary">
-            {vacationAccount?.remaining_days?.toFixed(1) ?? '—'}
+            {vacationAccount?.remaining_days != null ? deHoursExact(vacationAccount.remaining_days) : '—'}
           </div>
           <div className="text-xs text-text-secondary mt-1">Urlaub</div>
         </div>
         <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
           <div className="text-xl font-bold tabular-nums text-text-primary">
-            {yearlyAbsences?.sick_days?.toFixed(1) ?? '0'}
+            {yearlyAbsences?.sick_days != null ? deHoursExact(yearlyAbsences.sick_days) : '0'}
           </div>
           <div className="text-xs text-text-secondary mt-1">Krank</div>
         </div>
@@ -579,16 +580,16 @@ export default function Dashboard() {
             <>
               <p className="text-xs text-gray-500 mb-2">Resturlaub {vacationAccount.year}</p>
               <p className="text-3xl font-bold text-primary">
-                {(vacationAccount.remaining_days ?? 0).toFixed(1)} Tage
+                {`${deHoursExact(vacationAccount.remaining_days ?? 0)} Tage`}
               </p>
               <div className="mt-4 space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Budget:</span>
-                  <span className="font-medium">{vacationAccount.budget_days} Tage</span>
+                  <span className="font-medium">{`${deHoursExact(vacationAccount.budget_days ?? 0)} Tage`}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Genommen:</span>
-                  <span className="font-medium">{(vacationAccount.used_days ?? 0).toFixed(1)} Tage</span>
+                  <span className="font-medium">{`${deHoursExact(vacationAccount.used_days ?? 0)} Tage`}</span>
                 </div>
               </div>
               <p className="mt-2 text-xs text-gray-400">
@@ -597,7 +598,7 @@ export default function Dashboard() {
               {vacationAccount.has_carryover_warning && vacationAccount.carryover_deadline && (
                 <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                   <p className="text-xs text-amber-800 font-medium">
-                    ⚠️ Noch {(vacationAccount.remaining_days ?? 0).toFixed(1)} Urlaubstage offen!
+                    {`⚠️ Noch ${deHoursExact(vacationAccount.remaining_days ?? 0)} Urlaubstage offen!`}
                   </p>
                   <p className="text-xs text-amber-700 mt-0.5">
                     Bis {new Date(vacationAccount.carryover_deadline + 'T00:00:00').toLocaleDateString('de-DE')} nehmen oder verfällt.
@@ -765,27 +766,27 @@ export default function Dashboard() {
                   <h3 className="text-sm font-medium text-text-secondary mb-3">Abwesenheiten</h3>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-blue-600">{yearlyAbsences.vacation_days.toFixed(1)}</div>
+                      <div className="text-3xl font-bold text-blue-600">{deHoursExact(yearlyAbsences.vacation_days)}</div>
                       <div className="text-sm text-gray-600 mt-1">Urlaub</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-danger">{yearlyAbsences.sick_days.toFixed(1)}</div>
+                      <div className="text-3xl font-bold text-danger">{deHoursExact(yearlyAbsences.sick_days)}</div>
                       <div className="text-sm text-gray-600 mt-1">Krank</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-orange-600">{yearlyAbsences.training_days.toFixed(1)}</div>
+                      <div className="text-3xl font-bold text-orange-600">{deHoursExact(yearlyAbsences.training_days)}</div>
                       <div className="text-sm text-gray-600 mt-1">Fortbildung</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-purple-600">{yearlyAbsences.overtime_days.toFixed(1)}</div>
+                      <div className="text-3xl font-bold text-purple-600">{deHoursExact(yearlyAbsences.overtime_days)}</div>
                       <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days.toFixed(1)}</div>
+                      <div className="text-3xl font-bold text-gray-600">{deHoursExact(yearlyAbsences.other_days)}</div>
                       <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-gray-900">{yearlyAbsences.total_days.toFixed(1)}</div>
+                      <div className="text-3xl font-bold text-gray-900">{deHoursExact(yearlyAbsences.total_days)}</div>
                       <div className="text-sm text-gray-600 mt-1">Gesamt</div>
                     </div>
                   </div>

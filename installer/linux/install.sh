@@ -491,6 +491,15 @@ PRACTICE_NAME_ESC=$(toml_escape "$PRACTICE_NAME")
 ADMIN_USERNAME_ESC=$(toml_escape "$ADMIN_USERNAME")
 ADMIN_EMAIL_ESC=$(toml_escape "$ADMIN_EMAIL")
 ADMIN_PASSWORD_ESC=$(toml_escape "$ADMIN_PASSWORD")
+# S1 (Audit 2026-07-31, DSGVO Art. 32): die Datei enthaelt das Admin-Passwort
+# und den secret_key (Session-/TOTP-Signaturschluessel). Vorher wurde sie mit
+# dem Standard-umask (haeufig 022 -> world-readable 644) angelegt und ERST am
+# Skriptende (chmod 600, s.u.) eingeschraenkt — auf einem Mehrbenutzersystem
+# war der Klartext in diesem Fenster fuer jeden lokalen User lesbar. umask 077
+# in der Subshell erzwingt 600 schon beim Anlegen; das spaetere chmod 600
+# bleibt als zweite Absicherung (z.B. Reinstall-Timing) bestehen.
+(
+umask 077
 cat > "${INSTALL_DIR}/config/praxiszeit.conf" << TOMLEOF
 [server]
 port = ${PORT}
@@ -529,6 +538,7 @@ enabled = true
 schedule = "02:00"
 retention_days = 31
 TOMLEOF
+)
 fi
 
 # Passwort nicht laenger als noetig im Shell-Environment des Installers halten
@@ -579,13 +589,20 @@ if [ "${GEN_SSL,,}" = "j" ]; then
     # zerstoert sonst den RDN-String -> Cert-Erzeugung scheitert -> kein TLS ->
     # Login mit cookie_secure=true bricht. '/' und '\' -> '_', ',' -> ' '.
     _O_NAME=$(printf '%s' "${PRACTICE_NAME}" | tr '/\\' '__' | tr ',' ' ')
-    if openssl req -x509 -newkey rsa:2048 -keyout "${INSTALL_DIR}/config/ssl/key.pem" \
+    # S1 (Audit 2026-07-31): private key — same "created loose, chmod'd later"
+    # window as praxiszeit.conf above. umask 077 in the subshell makes openssl
+    # create key.pem (and cert.pem, harmless) as 600 right away; the later
+    # `chmod 600 config/ssl/*.pem` stays as a second safeguard.
+    if (
+        umask 077
+        openssl req -x509 -newkey rsa:2048 -keyout "${INSTALL_DIR}/config/ssl/key.pem" \
         -out "${INSTALL_DIR}/config/ssl/cert.pem" -days 3650 -nodes \
         -subj "/CN=PraxisZeit/O=${_O_NAME}" \
         -addext "subjectAltName=${SAN}" \
         -addext "basicConstraints=critical,CA:FALSE" \
         -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
-        -addext "extendedKeyUsage=serverAuth"; then
+        -addext "extendedKeyUsage=serverAuth"
+    ); then
         info "SSL-Zertifikat generiert (10 Jahre gueltig, SAN: ${SAN})"
     else
         warn "SSL-Zertifikat konnte nicht erzeugt werden — PraxisZeit erzeugt beim ersten Start automatisch eines."

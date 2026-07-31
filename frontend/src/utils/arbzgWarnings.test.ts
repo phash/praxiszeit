@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { showArbzgWarnings, stripWarningCode } from './arbzgWarnings';
+import { showArbzgWarnings, showResponseWarning, stripWarningCode } from './arbzgWarnings';
 
 describe('#377 stripWarningCode', () => {
   it('strips codes that contain digits (regression: [A-Z_]+ missed the 50)', () => {
@@ -96,5 +96,37 @@ describe('showArbzgWarnings', () => {
     // the raw default branch would keep the "CHILD_SICK_LIMIT:" code prefix — the
     // dedicated case must strip it (proves the case actually ran).
     expect(msg).not.toContain('CHILD_SICK_LIMIT');
+  });
+});
+
+describe('U3 showResponseWarning (Audit 2026-07-31)', () => {
+  it('shows the warning text of a Fix #5 stale-year-closing 200 response', () => {
+    const toast = mockToast();
+    showResponseWarning(toast, {
+      warning: 'Der Jahresabschluss für Jahr 2025 ist bereits erfolgt, der Übertrag für 2026 ist damit veraltet.',
+    });
+    expect(toast.warning).toHaveBeenCalledOnce();
+    expect(toast.warning.mock.calls[0][0]).toContain('Jahresabschluss für Jahr 2025');
+  });
+
+  it('does nothing for a normal 204 response (axios sets data to an empty string)', () => {
+    const toast = mockToast();
+    showResponseWarning(toast, '');
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when there is no warning field, undefined, or null', () => {
+    const toast = mockToast();
+    showResponseWarning(toast, { some_other_field: 'x' });
+    showResponseWarning(toast, undefined);
+    showResponseWarning(toast, null);
+    showResponseWarning(toast, { warning: '' });
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('ignores a non-string warning field instead of throwing', () => {
+    const toast = mockToast();
+    expect(() => showResponseWarning(toast, { warning: 42 })).not.toThrow();
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 });
