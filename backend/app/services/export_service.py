@@ -81,7 +81,8 @@ def export_users(db, tenant_id, period_start: date, period_end: date) -> List[Us
     return sorted(users, key=lambda u: ((u.last_name or "").lower(), (u.first_name or "").lower()))
 
 
-def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg, wh_changes=None):
+def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg,
+                       wh_changes=None, worked_hours=None):
     """Release-Review 1.16.0: Tages-Soll an einem Tag MIT Abwesenheit.
 
     Alle Datei-Exporte setzten hier pauschal ``Decimal('0.00')`` — „irgendeine
@@ -116,12 +117,21 @@ def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg, wh
         )
     ]
     half_map = calculation_service._soll_reducing_absence_half_map(soll_reducing)
+    # F1 (1.18.0): an einem Tag mit behaltenem Zeiteintrag streicht eine
+    # GANZTÄGIGE soll-reduzierende Abwesenheit nur den nicht gearbeiteten Teil —
+    # sonst zeigt der §16-Beleg Soll 0 neben Ist 4 (+4 h), während „Überstunden
+    # kumuliert" darunter (get_overtime_account) korrekt rechnet. Die Aufrufer
+    # kennen die Netto-Stunden des Tages bereits, also keine zusätzliche Query.
+    worked_map = None
+    if worked_hours is not None:
+        worked_map = {d: Decimal(str(worked_hours))}
     return calculation_service._day_soll_contribution(
         db, user, d,
         holiday_dates=holiday_dates,
         absence_half_map=half_map,
         wh_changes=wh_changes,
         special_cfg=special_cfg,
+        worked_map=worked_map,
     )
 
 
@@ -552,6 +562,14 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
 
         # Get time entries if exist (may be multiple per day)
         day_entries = entries_by_date.get(current_date, [])
+        # F2 (1.18.0): Tage außerhalb des Beschäftigungsfensters (vor
+        # first_work_day / nach last_work_day) tragen weder Soll noch Ist —
+        # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
+        # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
+        # im selben Blatt und die Jahresübersicht im selben Workbook bereits
+        # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+        # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
+        in_window = calculation_service._within_employment_window(user, current_date)
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = any(
@@ -569,6 +587,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             last_end = max((e.end_time for e in day_entries if e.end_time), default=None)
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
+            if not in_window:
+                total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
             sheet.cell(row=row, column=5).value = total_break
@@ -600,7 +620,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             daily_target = daily_target * _sd_factor
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
-        if is_weekend:
+        if not in_window:
+            target = Decimal('0.00')  # F2: kein Soll außerhalb der Beschäftigung
+            sheet.cell(row=row, column=9).value = "Außerhalb des Beschäftigungszeitraums"
+        elif is_weekend:
             target = Decimal('0.00')
             if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
@@ -628,7 +651,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
             absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen (Label in Spalte 9 verbinden,
             # Notizen in Spalte 10). DSGVO F-003: Krank ohne Health-Flag maskieren
@@ -1098,6 +1121,14 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         sheet.cell(row=row, column=2).value = weekday_name
 
         day_entries = entries_by_date.get(current_date, [])
+        # F2 (1.18.0): Tage außerhalb des Beschäftigungsfensters (vor
+        # first_work_day / nach last_work_day) tragen weder Soll noch Ist —
+        # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
+        # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
+        # im selben Blatt und die Jahresübersicht im selben Workbook bereits
+        # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+        # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
+        in_window = calculation_service._within_employment_window(user, current_date)
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = any(
@@ -1115,6 +1146,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             last_end = max((e.end_time for e in day_entries if e.end_time), default=None)
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
+            if not in_window:
+                total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
             sheet.cell(row=row, column=5).value = total_break
@@ -1143,7 +1176,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             daily_target = daily_target * _sd_factor
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
-        if is_weekend:
+        if not in_window:
+            target = Decimal('0.00')  # F2: kein Soll außerhalb der Beschäftigung
+            sheet.cell(row=row, column=9).value = "Außerhalb des Beschäftigungszeitraums"
+        elif is_weekend:
             target = Decimal('0.00')
             if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
@@ -1170,7 +1206,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
             absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen; DSGVO F-003: Krank ohne
             # Health-Flag maskieren (Label "Abwesenheit", Notiz unterdrückt).
@@ -1767,6 +1803,14 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             is_holiday = cur in holidays_by_date
             day_absences = absences_by_date.get(cur, [])  # I-1: alle Absences des Tages
             day_entries = entries_by_date.get(cur, [])
+        # F2 (1.18.0): Tage außerhalb des Beschäftigungsfensters (vor
+            # first_work_day / nach last_work_day) tragen weder Soll noch Ist —
+            # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
+            # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
+            # im selben Blatt und die Jahresübersicht im selben Workbook bereits
+            # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+            # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
+            in_window = calculation_service._within_employment_window(user, cur)
 
             is_night = any(
                 e.end_time is not None and is_night_work(e.start_time, e.end_time)
@@ -1784,6 +1828,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 bis = last_end.strftime('%H:%M') if last_end else 'offen'
                 pause_str = str(sum(e.break_minutes or 0 for e in day_entries))
                 total_day_net = sum(e.net_hours for e in day_entries)
+                if not in_window:
+                    total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
                 netto_val = float(total_day_net)
                 net = total_day_net
                 total_net += net
@@ -1806,7 +1852,11 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             if _sd_factor is not None:
                 daily_target = daily_target * _sd_factor
 
-            if is_weekend:
+            if not in_window:
+                target = Decimal('0.00')  # F2: kein Soll außerhalb der Beschäftigung
+                abw = "Außerhalb des Beschäftigungszeitraums"
+                bg = None
+            elif is_weekend:
                 target = Decimal('0.00')
                 if is_sunday and day_entries:
                     abw = 'Sonntagsarbeit (\u00a79/\u00a710)'
@@ -1826,7 +1876,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 bg = colors.HexColor('#FFFFCC')
             elif day_absences:
                 # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-                target = absence_day_target(db, user, cur, day_absences, set(holidays_by_date), special_day_config)
+                target = absence_day_target(db, user, cur, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
                 # I-1: ALLE Absences des Tages zeigen; DSGVO F-003: Krank ohne
                 # Health-Flag maskieren (Label 'Abwesenheit', Notiz unterdrückt).
                 abw_parts = []

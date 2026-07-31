@@ -872,6 +872,17 @@ def run_migrations(config: dict):
             cmd, cwd=str(BACKEND_DIR), env=env, capture_output=True, text=True,
         )
         if result.returncode == 0:
+            # Die Ausgabe der Migrationen gehoert ins Log, auch wenn sie
+            # erfolgreich waren: Migrationen melden dort Datensaetze, die der
+            # Betreiber von Hand nachziehen muss (z. B. 067 benennt Konten mit
+            # einer Wochensumme ueber 60 h, deren Vertragswert deshalb NICHT
+            # zurueckgeschrieben wurde). Unter Docker landet das im
+            # Container-Log; nativ wurde es bisher bei Erfolg verworfen — der
+            # Betreiber erfuhr also nie, welche Konten zu pruefen sind.
+            for stream in (result.stdout, result.stderr):
+                for line in (stream or "").splitlines():
+                    if line.strip():
+                        logger.info(f"  alembic: {_redact_db_url(line)}")
             logger.info("Migrations complete")
             return
         last_err = result.stderr

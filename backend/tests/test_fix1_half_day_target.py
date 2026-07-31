@@ -79,7 +79,15 @@ def test_legacy_null_half_day_treated_as_full(db, test_user):
 
 def test_half_day_in_overtime_account(db, test_user):
     """Das Halbtags-Soll greift auch im Überstundenkonto (zweite Soll-Schleife):
-    Voll-Tag entfernt 8h Soll, Halbtag nur 4h → Halbtag-Konto ist 4h niedriger."""
+    an einem Tag OHNE erfasste Arbeitszeit entfernt der Voll-Tag 8h Soll, der
+    Halbtag nur 4h → Halbtag-Konto ist 4h niedriger.
+
+    F1 (1.18.0): liegt am selben Tag ein Zeiteintrag, gilt dieser Kontrast NICHT
+    mehr — eine Ganztags-Abwesenheit streicht dort nur noch den nicht
+    gearbeiteten Teil (min(Tagessoll, gearbeitete Stunden) bleibt Soll), sonst
+    stünde die gearbeitete Zeit als Phantom-Überstunde im Konto. Beide Fälle
+    werden hier geprüft.
+    """
     _absence(db, test_user, MON, AbsenceType.VACATION, 4.0, half_day=True)
     _entry(db, test_user, MON, 8, 12)  # 4h vormittags
     for d in (TUE, WED, THU, FRI):
@@ -92,7 +100,20 @@ def test_half_day_in_overtime_account(db, test_user):
     db.commit()
     acct_full = calculation_service.get_overtime_account(db, test_user, 2026, 3)
 
-    assert (acct_full - acct_half) == Decimal('4.00'), (acct_full, acct_half)
+    # F1: mit den 4 gestempelten Stunden bleibt in BEIDEN Fällen 4h Soll stehen.
+    assert acct_full == acct_half, (acct_full, acct_half)
+
+    # Ohne Zeiteintrag am Montag bleibt der ursprüngliche Kontrast bestehen.
+    db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id,
+                               TimeEntry.date == MON).delete()
+    db.commit()
+    acct_full_no_entry = calculation_service.get_overtime_account(db, test_user, 2026, 3)
+    a.half_day = True
+    a.hours = 4.0
+    db.commit()
+    acct_half_no_entry = calculation_service.get_overtime_account(db, test_user, 2026, 3)
+    assert (acct_full_no_entry - acct_half_no_entry) == Decimal('4.00'), (
+        acct_full_no_entry, acct_half_no_entry)
 
 
 def test_half_day_history_matches_account(db, test_user):

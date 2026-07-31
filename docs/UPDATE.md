@@ -98,10 +98,20 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build   #
 ```bash
 docker compose ps                      # alle Dienste "Up"/"healthy"
 curl http://localhost/api/health       # {"status":"healthy","database":"connected"}
+curl http://localhost/api/system/info   # enthält die neue Version
 ```
 
+⚠️ Prüfen Sie den **Inhalt** der Antwort, nicht nur den Statuscode: unbekannte
+Pfade beantwortet der Webserver mit der Oberfläche (HTTP 200 + HTML), damit die
+App auch nach einem Neuladen funktioniert. Ein reiner Statuscode-Test meldet
+deshalb auch dann Erfolg, wenn der Pfad gar nicht existiert.
+
 Migrationen werden beim Backend-Start automatisch angewendet
-(`docker compose logs backend` zeigt die alembic-Ausgabe).
+(`docker compose logs backend` zeigt die alembic-Ausgabe). **Lesen Sie diese
+Ausgabe:** Migrationen benennen dort Datensätze, die von Hand nachzuziehen sind
+— zum Beispiel Mitarbeitende, deren hinterlegte Tagesstunden zusammen mehr als
+60 Stunden pro Woche ergeben; deren Vertragswert lässt die Migration bewusst
+unverändert.
 
 ---
 
@@ -163,7 +173,9 @@ beschriebenen Schritte.
 ## Versionsstand prüfen
 
 - **App-Footer** (unten links, nach Hard-Refresh): zeigt die aktive Version.
-- `GET /openapi.json` enthält die Version (`/api/health` liefert sie **nicht**).
+- `GET /api/system/info` liefert die Version auf **jeder** Installationsart.
+- `GET /openapi.json` enthält sie ebenfalls — aber nur, solange `ENVIRONMENT` nicht auf `production` steht. Die Docker-Installation setzt das über `generate-secrets.sh` automatisch, dort antwortet der Pfad mit **404**.
+- `GET /api/health` liefert die Version bewusst **nicht** (nur Status und Datenbank).
 
 ---
 

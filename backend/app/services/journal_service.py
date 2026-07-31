@@ -179,6 +179,15 @@ def get_journal(
                 float(a.hours) for a in day_absences
                 if a.type not in (AbsenceType.TRAINING, AbsenceType.SICK, AbsenceType.OVERTIME)
             )))
+            # F1 (1.18.0): eine soll-reduzierende Abwesenheit darf hoechstens den
+            # NICHT gearbeiteten Teil des Tages streichen — sonst zeigt die
+            # Journal-Zeile bei einer Ganztags-Buchung auf einem Tag mit
+            # behaltenem Zeiteintrag Soll 0 neben Ist 4 (+4 h Phantom-Saldo).
+            # Deckungsgleich mit calculation_service._day_soll_contribution
+            # (dort min(Tagessoll, gearbeitete Stunden) als Rest-Soll).
+            target_reducing_sum = min(
+                target_reducing_sum, max(Decimal("0"), daily_target - time_hours)
+            )
             target_hours = daily_target - target_reducing_sum
         else:
             actual_hours = time_hours

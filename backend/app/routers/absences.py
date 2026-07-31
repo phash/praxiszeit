@@ -561,6 +561,24 @@ def create_absence(
             )
             db.delete(entry)
 
+    # F1 (1.18.0): bleiben Zeiteintraege stehen (keep_time_entries — der „+"-Knopf
+    # im Monatsjournal schickt das automatisch, sobald am Tag schon gestempelt
+    # wurde), darf die Abwesenheit NICHT das volle Tagessoll bekommen: Ist-
+    # gutgeschriebene Typen (SICK/TRAINING) zaehlten sonst gearbeitete Stunden UND
+    # volles Tagessoll (8 h Soll, 08–12 gearbeitet ⇒ Ist 12 ⇒ +4 h Phantom-Saldo).
+    # Die Stunden werden je Tag auf den NICHT gearbeiteten Rest geklemmt. Die
+    # Soll-Seite spiegelt das in calculation_service._day_soll_contribution.
+    kept_net_by_date: dict = {}
+    if absence_data.keep_time_entries:
+        for entry in db.query(TimeEntry).filter(
+            TimeEntry.user_id == target_user.id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+            TimeEntry.date.in_(dates_to_create),
+        ).all():
+            kept_net_by_date[entry.date] = (
+                kept_net_by_date.get(entry.date, 0.0) + float(entry.net_hours)
+            )
+
     # Create absences for all dates
     created_absences = []
     for date in dates_to_create:
@@ -589,6 +607,16 @@ def create_absence(
             # Urlaubstag (8h-Tag: 4h; 3h-Tag: 1,5h — je 0,5 Tag). Nicht für OVERTIME.
             if absence_data.half_day:
                 hours_for_day = round(hours_for_day / 2, 2)
+            # F1 (1.18.0): auf den nicht gearbeiteten Rest des Tages klemmen, wenn
+            # ein Zeiteintrag stehen bleibt. Der gewollte Halbtagsfall (½ Urlaub
+            # vormittags, nachmittags gearbeitet) bleibt unberuehrt — dort ist
+            # bereits 0,5 × Tagessoll ≤ Rest. Nur der Ganztags-Fall wird gekappt.
+            kept_net = kept_net_by_date.get(date, 0.0)
+            if kept_net > 0:
+                full_target = float(
+                    calculation_service.get_daily_target_for_date(target_user, date, schedule)
+                )
+                hours_for_day = round(max(0.0, min(hours_for_day, full_target - kept_net)), 2)
         else:
             hours_for_day = absence_data.hours
 
