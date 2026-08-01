@@ -40,10 +40,14 @@ step() { echo -e "\n${YELLOW}==>${NC} $*"; }
 # 1. Backend pytest (SQLite-backed unit + integration tests)
 # -----------------------------------------------------------------------
 # Excludes Postgres-only tests (RLS, concurrency) — run separately in step 2.
+# TZ=Europe/Berlin: the container runs UTC, but the app computes "today" via
+# now_local() (Europe/Berlin). Between ~22:00 and 24:00 UTC the two differ by a
+# day and ~15 clock/create/break_waiver tests fail for that reason alone. Pinning
+# the suite to the app's timezone removes that nightly false-red window.
 step "Backend tests (pytest)"
-if docker compose exec -T backend pytest tests/ -q --tb=short \
+if docker compose exec -T -e TZ=Europe/Berlin backend pytest tests/ -q --tb=short \
        --ignore=tests/test_tenant_rls.py \
-       --ignore=tests/test_concurrency.py 2>&1 | tail -5; then
+       --ignore=tests/test_concurrency.py </dev/null 2>&1 | tail -5; then
     ok "Backend tests passed"
 else
     fail "Backend tests failed"
@@ -55,9 +59,16 @@ fi
 # These tests hit the real Postgres instance so RLS policies and SELECT …
 # FOR UPDATE actually enforce isolation — SQLite unit tests cannot catch
 # either regression.
+#
+# test_cross_tenant_api.py is the third tenant-isolation suite named in
+# CLAUDE.md. It is SQLite-backed (it exercises the explicit F-026
+# `tenant_id == current_user.tenant_id` filters, not RLS) and therefore already
+# runs inside step 1 — it is listed here only so the trio stays visible.
+# Together the three files are the "50 passed" isolation reference
+# (20 RLS + 12 concurrency + 18 cross-tenant).
 step "Backend Postgres integration (RLS + concurrency)"
-if docker compose exec -T backend pytest \
-       tests/test_tenant_rls.py tests/test_concurrency.py -q --tb=short 2>&1 | tail -5; then
+if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
+       tests/test_tenant_rls.py tests/test_concurrency.py -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else
     fail "Postgres integration tests failed"
@@ -113,6 +124,48 @@ fi
 if [ "$SKIP_E2E" -eq 1 ]; then
     warn "E2E tests skipped (--skip-e2e)"
 else
+    # -------------------------------------------------------------------
+    # 7a. Preflight: auth rate limits must be raised for the E2E suite.
+    #
+    # Playwright logs in from several parallel workers. With the production
+    # defaults (LOGIN_RATE_LIMIT=5/minute, REFRESH_RATE_LIMIT=10/minute) the
+    # suite runs into an HTTP-429 storm and reports a large, confusing mix of
+    # failed/flaky tests that has nothing to do with the code under test
+    # (measured: 19 failed / 40 flaky / 208x 429). Fail fast with an
+    # actionable message instead of burning a full E2E run.
+    # -------------------------------------------------------------------
+    step "E2E preflight (auth rate limits)"
+    limits_ok=1
+    for var in LOGIN_RATE_LIMIT REFRESH_RATE_LIMIT; do
+        # Unset in the container => FastAPI falls back to the low prod default.
+        value="$(docker compose exec -T backend printenv "$var" </dev/null 2>/dev/null | tr -d '\r')" || value=""
+        number="${value%%/*}"
+        if [ -z "$number" ] || ! [ "$number" -ge 100 ] 2>/dev/null; then
+            warn "$var=${value:-<unset>} is too low for the E2E suite (need >= 100/minute)"
+            limits_ok=0
+        fi
+    done
+    if [ "$limits_ok" -eq 0 ]; then
+        fail "Raise the auth rate limits before running E2E, e.g. add to .env:
+    LOGIN_RATE_LIMIT=10000/minute
+    REFRESH_RATE_LIMIT=10000/minute
+  then: docker compose up -d backend"
+    fi
+    ok "Auth rate limits raised for E2E"
+
+    # -------------------------------------------------------------------
+    # 7b. The frontend is served from a BUILT nginx image, not a host volume.
+    # Without this rebuild the E2E suite silently exercises the previously
+    # built bundle, so UI changes made in this working tree are not covered
+    # and the run can be green for the wrong reason.
+    # -------------------------------------------------------------------
+    step "Rebuild frontend image (so E2E tests the current bundle)"
+    if docker compose build frontend >/dev/null 2>&1 && docker compose up -d frontend >/dev/null 2>&1; then
+        ok "Frontend image up to date"
+    else
+        fail "Frontend image rebuild failed"
+    fi
+
     step "E2E tests (playwright)"
     if docker run --rm \
            -v "$(pwd)/e2e":/app -w /app \
