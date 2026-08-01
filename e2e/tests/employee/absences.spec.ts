@@ -166,8 +166,10 @@ test.describe('Employee Absences', () => {
 
     // Cleanup via API
     try {
-      const year = future.getFullYear();
-      const month = future.getMonth() + 1;
+      // Jahr/Monat aus dateStr ableiten. Vorher stand hier `future.getFullYear()` —
+      // eine NIRGENDS deklarierte Variable. Der ReferenceError schlug in der ersten
+      // Zeile des try zu und wurde vom catch verschluckt: das Cleanup lief nie.
+      const [year, month] = dateStr.split('-');
       const absences = await adminApi.get(`/admin/users/${testEmployee.id}/absences?year=${year}&month=${month}`);
       const toDelete = Array.isArray(absences)
         ? absences.filter((a: any) => a.type === 'overtime' && a.date === dateStr)
