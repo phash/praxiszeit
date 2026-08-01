@@ -11,7 +11,7 @@ test.describe('Admin Absences', () => {
     // makes the test flaky on slower runs. Use ``toBeAttached`` (not
     // ``toBeVisible``) because <option>s inside a closed <select> count
     // as non-visible in Playwright's CSS-visibility model.
-    const employeeSelect = adminPage.locator('select').first();
+    const employeeSelect = adminPage.getByTestId('absence-employee-filter');
     const targetOption = employeeSelect.locator('option', { hasText: testEmployee.last_name });
     await expect(targetOption.first()).toBeAttached({ timeout: 10000 });
     const targetValue = await targetOption.first().getAttribute('value');
@@ -64,7 +64,7 @@ test.describe('Admin Absences', () => {
     // wait for the employee's option to attach before reading, else the loop
     // races the fetch and finds nothing (CLAUDE.md <select> pattern → flake at
     // `expect(targetValue).not.toBe('')`).
-    const employeeSelect = adminPage.locator('select').first();
+    const employeeSelect = adminPage.getByTestId('absence-employee-filter');
     await expect(
       employeeSelect.locator('option', { hasText: testEmployee.last_name }).first()
     ).toBeAttached({ timeout: 10000 });
@@ -187,8 +187,17 @@ test.describe('Admin Absences', () => {
     // Switch back
     await adminPage.getByRole('button', { name: 'Mitarbeiter-Abwesenheiten' }).click();
     // Verify the employee select dropdown is visible (contains "Alle Mitarbeiter" option)
-    const selectDropdown = adminPage.locator('select').first();
+    const selectDropdown = adminPage.getByTestId('absence-employee-filter');
     await expect(selectDropdown).toBeVisible();
     await expect(selectDropdown.locator('option').first()).toContainText('Alle Mitarbeiter');
+
+    // Accessibility regression guard: the filter must expose its <label> as its
+    // accessible name via htmlFor/id. Without that association a screen reader
+    // announces a nameless combobox — and the test suite loses its only stable
+    // selector (the department filter above is rendered conditionally, so
+    // `locator('select').first()` silently pointed at a different field).
+    await expect(
+      adminPage.getByRole('combobox', { name: 'Mitarbeiter', exact: true })
+    ).toBeVisible();
   });
 });

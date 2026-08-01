@@ -506,8 +506,10 @@ export default function AdminAbsences() {
         <div className="flex flex-wrap items-center gap-4">
           {departments.length > 0 && (
             <div className="min-w-40">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Abteilung</label>
+              <label htmlFor="absence-department-filter" className="block text-sm font-medium text-gray-700 mb-1">Abteilung</label>
               <select
+                id="absence-department-filter"
+                data-testid="absence-department-filter"
                 value={effectiveDepartmentFilter}
                 onChange={e => { setDepartmentFilter(e.target.value); setSelectedEmployee(''); setShowForm(false); }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
@@ -520,8 +522,10 @@ export default function AdminAbsences() {
             </div>
           )}
           <div className="flex-1 min-w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
+            <label htmlFor="absence-employee-filter" className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
             <select
+              id="absence-employee-filter"
+              data-testid="absence-employee-filter"
               value={selectedEmployee}
               onChange={e => { setSelectedEmployee(e.target.value); setShowForm(false); }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
