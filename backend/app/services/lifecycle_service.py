@@ -210,12 +210,17 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
 
     - ``users``: username → ``deleted_<hex>``, email → NULL, first/last
       → "Anonymisiert"/"Benutzer", password_hash → unusable sentinel,
-      is_active → False
+      is_active → False, profile_picture / totp_secret / department → NULL
+    - ``working_hours_changes``: ``note`` → NULL (die Zeilen selbst bleiben,
+      sie tragen das historische Soll fuer die §16-Aufbewahrung)
     - ``tenants``: name → "[gelöscht]", company_name/vat_id/country/
       billing_address/billing_email → NULL. Stripe ids retained for
       accounting audit. ``anonymized_at`` marks completion.
-    - ``change_requests``, ``signup_audit_log``: notes cleared of email
-      / name fragments — best-effort; free-form text fields stay.
+    - ``signup_audit_log``: email / IP / User-Agent scrubbed, consent row kept.
+
+    Abwesenheiten und Zeiteintraege bleiben bewusst stehen (Modul-Docstring:
+    Aufbewahrung an anonymisierten FKs) — anders als beim Einzel-Nutzer-Pfad
+    ``admin_users.anonymize_user``, der ohne Mandantenaufloesung arbeitet.
     """
     users = db.query(User).filter(User.tenant_id == tenant.id).all()
     for u in users:
@@ -227,6 +232,25 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
         # Force re-hash with an unusable password so no login is possible.
         u.password_hash = "!disabled:" + suffix
         u.is_active = False
+        # Gleichlauf mit dem Einzel-Nutzer-Pfad ``admin_users.anonymize_user``:
+        # ohne diese vier Felder setzt ``anonymized_at`` die Anonymisierung als
+        # erledigt, waehrend ein Base64-Lichtbild (Art. 4 Nr. 1 — identifiziert
+        # die Person unmittelbar), das TOTP-Geheimnis und die Abteilungs-
+        # zuordnung unveraendert in der Zeile stehen. Die Pseudonymisierung
+        # waere damit faktisch aufgehoben.
+        u.profile_picture = None
+        u.totp_secret = None
+        u.totp_enabled = False
+        u.last_totp_counter = None
+        u.department = None
+
+    # #431: die Vertragshistorie bleibt (historisches Soll, §16), ihr freier
+    # ``note``-Text ist aber Admin-Prosa ohne Aufbewahrungspflicht und kann
+    # Klarnamen enthalten ("Rueckkehr Frau Meier nach Elternzeit").
+    db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.tenant_id == tenant.id,
+        WorkingHoursChange.note.isnot(None),
+    ).update({WorkingHoursChange.note: None}, synchronize_session=False)
 
     tenant.name = "[gelöscht]"
     tenant.company_name = None
