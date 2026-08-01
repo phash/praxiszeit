@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 
 function renderBanner() {
   return render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ImpersonationBanner />
     </MemoryRouter>,
   );
