@@ -51,6 +51,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
       LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-5/minute}
       REFRESH_RATE_LIMIT: ${REFRESH_RATE_LIMIT:-10/minute}
+      DATA_EXPORT_RATE_LIMIT: ${DATA_EXPORT_RATE_LIMIT:-5/day}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-onprem}
       # Praxis-Stammdaten (erscheinen u.a. in Excel-Exporten, DSGVO F-016)

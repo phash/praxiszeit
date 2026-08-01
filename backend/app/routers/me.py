@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.limiter import limiter
 from app.database import get_db
 from app.middleware.auth import get_current_user
@@ -40,7 +41,7 @@ def get_my_type_colors(
 # Kompromiss: IP-basiert (slowapi-Default) verhindert Scraping, der zusaetz-
 # liche Audit-Log-Eintrag pro Export macht Missbrauch nachvollziehbar.
 @router.get("/data-export")
-@limiter.limit("5/day")
+@limiter.limit(settings.DATA_EXPORT_RATE_LIMIT)
 def data_export(
     request: Request,
     db: Session = Depends(get_db),
