@@ -43,45 +43,91 @@ test.describe('Admin Error Monitoring', () => {
     await expect(adminPage.getByRole('heading', { name: 'Fehler-Monitoring' })).toBeVisible();
   });
 
-  test('resolve/ignore button works if errors exist', async ({ adminPage }) => {
-    await adminPage.goto('/admin/errors');
-    await expect(adminPage.getByRole('heading', { name: 'Fehler-Monitoring' })).toBeVisible();
-    await adminPage.waitForLoadState('networkidle');
+  /**
+   * Legt die Voraussetzung der beiden folgenden Tests an: EINEN offenen
+   * Fehlereintrag, der eindeutig diesem Testlauf gehört.
+   *
+   * Fehlereinträge entstehen ausschließlich über die Fehler-Middleware — es
+   * gibt (bewusst) keinen Endpunkt zum Anlegen. Der Auslöser ist deshalb ein
+   * echter Serverfehler: eine Ressourcen-ID, die keine UUID ist, lässt die
+   * Abfrage in Postgres auflaufen (`invalid input syntax for type uuid`) und
+   * ist damit genau der Fall, für den das Fehler-Monitoring gebaut wurde.
+   *
+   * Der Sondierungspfad trägt einen eindeutigen Marker. Der Fingerabdruck der
+   * Aggregation enthält den Pfad, also entsteht bei jedem Lauf eine EIGENE
+   * Zeile statt eines Zählers auf einer fremden — sonst könnte ein Test die
+   * Zeile eines anderen wegräumen.
+   *
+   * Sollte die Anwendung diesen Pfad eines Tages sauber mit 404 beantworten
+   * (eine gute Änderung), schlägt die erste Zusicherung mit einer Meldung fehl,
+   * die genau darauf zeigt — statt den Test still wieder wirkungslos zu machen.
+   */
+  async function provokeError(adminApi: any): Promise<{ id: string; path: string }> {
+    const marker = `e2e-err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const probe = `/admin/users/${marker}`;
+    const res = await adminApi.getRaw(probe);
+    expect(
+      res.status,
+      `Voraussetzung: ${probe} muss einen Serverfehler auslösen, damit ein Eintrag im Fehler-Monitoring entsteht. ` +
+      `Antwortet die Anwendung inzwischen sauber, braucht dieser Test einen anderen Auslöser.`
+    ).toBe(500);
 
-    // Check if there are any errors shown
-    const resolveButton = adminPage.locator('button[title="Als behoben markieren"]').first();
-    const hasErrors = await resolveButton.isVisible({ timeout: 5000 }).catch(() => false);
+    const errors = await adminApi.get('/admin/errors/?status=open&limit=200');
+    const row = errors.find((e: any) => (e.path ?? '').includes(marker));
+    expect(row, 'Voraussetzung: der Serverfehler muss im Fehler-Monitoring gelandet sein').toBeTruthy();
+    return row;
+  }
 
-    if (hasErrors) {
-      await resolveButton.click();
-      // Check for success toast
+  // Vorher stand am Ende dieses Tests wörtlich `expect(hasNoErrors || true)` —
+  // ein Ausdruck, der nicht fehlschlagen KANN. Ohne vorhandenen Fehlereintrag
+  // prüfte der Test also gar nichts, und ob überhaupt je einer da war, hing am
+  // Zufall des Datenbestands.
+  test('resolve button marks an error as resolved', async ({ adminPage, adminApi }) => {
+    const err = await provokeError(adminApi);
+
+    try {
+      await adminPage.goto('/admin/errors');
+      await expect(adminPage.getByRole('heading', { name: 'Fehler-Monitoring' })).toBeVisible();
+
+      // Auf "Alle" wechseln — sonst fällt die Zeile durch das Erledigen aus dem
+      // Filter "Offen" und der Statuswechsel wäre nicht mehr nachprüfbar.
+      const tabBar = adminPage.locator('.flex.space-x-1.mb-6');
+      await tabBar.getByText('Alle').click();
+      await adminPage.waitForLoadState('networkidle');
+
+      // Genau die Karte DIESES Fehlers (der Pfad steht in der Kopfzeile)
+      const card = adminPage.locator('div.bg-white').filter({ hasText: err.path }).last();
+      await expect(card).toBeVisible({ timeout: 10000 });
+      await card.locator('button[title="Als behoben markieren"]').click();
+
       await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: /Status|behoben|resolved/ })
+        adminPage.locator('[role="alert"]').filter({ hasText: /Status/ })
       ).toBeVisible({ timeout: 10000 });
-    } else {
-      // No errors to resolve - check for "Keine Fehler" message
-      const noErrors = adminPage.getByText('Keine Fehler gefunden');
-      const hasNoErrors = await noErrors.isVisible({ timeout: 3000 }).catch(() => false);
-      // Either no errors message or loading finished - page works fine
-      expect(hasNoErrors || true).toBeTruthy();
+
+      // Der Status muss wirklich umgesprungen sein: die Karte bietet danach
+      // "Wieder öffnen" an und nicht mehr "Als behoben markieren".
+      await expect(card.locator('button[title="Wieder öffnen"]')).toBeVisible({ timeout: 10000 });
+      await expect(card.locator('button[title="Als behoben markieren"]')).toHaveCount(0);
+    } finally {
+      try { await adminApi.delete(`/admin/errors/${err.id}`); } catch { /* schon weg */ }
     }
   });
 
-  test('delete error works if errors exist', async ({ adminPage }) => {
-    await adminPage.goto('/admin/errors');
-    await expect(adminPage.getByRole('heading', { name: 'Fehler-Monitoring' })).toBeVisible();
+  test('delete error removes the entry', async ({ adminPage, adminApi }) => {
+    const err = await provokeError(adminApi);
 
-    // Show all errors (not just open)
-    const tabBar = adminPage.locator('.flex.space-x-1.mb-6');
-    await tabBar.getByText('Alle').click();
-    await adminPage.waitForLoadState('networkidle');
+    try {
+      await adminPage.goto('/admin/errors');
+      await expect(adminPage.getByRole('heading', { name: 'Fehler-Monitoring' })).toBeVisible();
 
-    // Check if there are any errors with delete button
-    const deleteButton = adminPage.locator('button[title="Löschen"]').first();
-    const hasErrors = await deleteButton.isVisible({ timeout: 5000 }).catch(() => false);
+      // Show all errors (not just open)
+      const tabBar = adminPage.locator('.flex.space-x-1.mb-6');
+      await tabBar.getByText('Alle').click();
+      await adminPage.waitForLoadState('networkidle');
 
-    if (hasErrors) {
-      await deleteButton.click();
+      const card = adminPage.locator('div.bg-white').filter({ hasText: err.path }).last();
+      await expect(card).toBeVisible({ timeout: 10000 });
+      await card.locator('button[title="Löschen"]').click();
 
       // Confirm dialog
       const dialog = adminPage.getByRole('alertdialog');
@@ -92,9 +138,11 @@ test.describe('Admin Error Monitoring', () => {
       await expect(
         adminPage.locator('[role="alert"]').filter({ hasText: /gelöscht/ })
       ).toBeVisible({ timeout: 10000 });
-    } else {
-      // No errors to delete - page works fine
-      await expect(adminPage.getByRole('heading', { name: 'Fehler-Monitoring' })).toBeVisible();
+
+      // Und die Karte ist wirklich fort.
+      await expect(card).toHaveCount(0, { timeout: 10000 });
+    } finally {
+      try { await adminApi.delete(`/admin/errors/${err.id}`); } catch { /* erwartet: schon gelöscht */ }
     }
   });
 });

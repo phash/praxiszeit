@@ -47,13 +47,21 @@ test.describe('Admin Absences', () => {
     }
   });
 
+  // Die Voraussetzung "es gibt eine löschbare Abwesenheitszeile" wird hier
+  // hergestellt (Fixture legt sie an) — die frühere
+  // `isVisible().catch(() => false)`-Weiche ohne else-Zweig machte den Test
+  // ersatzlos grün, sobald der Löschknopf fehlte: genau die Regression, die er
+  // abfangen soll. Der eindeutige Notiz-Marker adressiert DIESE Zeile, damit
+  // `.first()` nicht auf eine automatisch eingebuchte Betriebsferien-Zeile
+  // desselben MA zeigt.
   test('delete absence', async ({ adminPage, testEmployee, createAbsence }) => {
+    const uniqueNote = `E2E delete ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     // Create an absence via API for the test employee
     await createAbsence({
       date: nextWeekday(),
       type: 'other',
       hours: 8,
-      note: 'E2E admin delete test',
+      note: uniqueNote,
       user_id: testEmployee.id,
     });
 
@@ -82,84 +90,98 @@ test.describe('Admin Absences', () => {
     await employeeSelect.selectOption(targetValue);
     await adminPage.waitForLoadState('networkidle');
 
-    // Find delete button
-    const deleteButton = adminPage.locator('button[aria-label="Löschen"]').first();
-    const hasDelete = await deleteButton.isVisible({ timeout: 5000 }).catch(() => false);
+    // Genau die Zeile DIESER Abwesenheit
+    const row = adminPage.locator('main tr').filter({ hasText: uniqueNote });
+    await expect(row).toBeVisible({ timeout: 10000 });
+    await row.getByRole('button', { name: 'Löschen' }).click();
 
-    if (hasDelete) {
-      await deleteButton.click();
-
-      // Confirm dialog
-      const dialog = adminPage.getByRole('alertdialog');
-      await expect(dialog).toBeVisible();
-      await dialog.getByRole('button', { name: 'Löschen' }).click();
-
-      // Check for success toast
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'gelöscht' })
-      ).toBeVisible({ timeout: 10000 });
-    }
-  });
-
-  test('create company closure', async ({ adminPage }) => {
-    await adminPage.goto('/admin/absences');
-    await expect(adminPage.getByRole('heading', { name: 'Abwesenheiten verwalten' })).toBeVisible();
-
-    // Switch to Betriebsferien tab
-    await adminPage.getByRole('button', { name: 'Betriebsferien' }).click();
-    await expect(adminPage.getByRole('button', { name: 'Betriebsferien erstellen' })).toBeVisible();
-
-    // Click "Betriebsferien erstellen"
-    await adminPage.getByRole('button', { name: 'Betriebsferien erstellen' }).click();
-
-    // Fill the form
-    const nameInput = adminPage.locator('input[type="text"]').first();
-    await nameInput.fill(`E2E Betriebsferien ${Date.now()}`);
-
-    // Set start and end dates (future dates)
-    const dateInputs = adminPage.locator('input[type="date"]');
-    const startDate = daysFromNow(60);
-    const endDate = daysFromNow(62);
-    await dateInputs.first().fill(startDate);
-    await dateInputs.nth(1).fill(endDate);
-
-    // Submit
-    await adminPage.getByRole('button', { name: /Betriebsferien erstellen/ }).click();
+    // Confirm dialog
+    const dialog = adminPage.getByRole('alertdialog');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Löschen' }).click();
 
     // Check for success toast
     await expect(
-      adminPage.locator('[role="alert"]').filter({ hasText: /Betriebsferien|eingetragen|erstellt/ })
+      adminPage.locator('[role="alert"]').filter({ hasText: 'gelöscht' })
     ).toBeVisible({ timeout: 10000 });
+
+    // Und die Zeile ist wirklich fort — der Toast allein belegt keine Löschung.
+    await expect(row).toHaveCount(0, { timeout: 10000 });
   });
 
+  test('create company closure', async ({ adminPage, adminApi }) => {
+    const closureName = `E2E Betriebsferien ${Date.now()}`;
+    try {
+      await adminPage.goto('/admin/absences');
+      await expect(adminPage.getByRole('heading', { name: 'Abwesenheiten verwalten' })).toBeVisible();
+
+      // Switch to Betriebsferien tab
+      await adminPage.getByRole('button', { name: 'Betriebsferien' }).click();
+      await expect(adminPage.getByRole('button', { name: 'Betriebsferien erstellen' })).toBeVisible();
+
+      // Click "Betriebsferien erstellen"
+      await adminPage.getByRole('button', { name: 'Betriebsferien erstellen' }).click();
+
+      // Fill the form
+      const nameInput = adminPage.locator('input[type="text"]').first();
+      await nameInput.fill(closureName);
+
+      // Set start and end dates (future dates)
+      const dateInputs = adminPage.locator('input[type="date"]');
+      const startDate = daysFromNow(60);
+      const endDate = daysFromNow(62);
+      await dateInputs.first().fill(startDate);
+      await dateInputs.nth(1).fill(endDate);
+
+      // Submit
+      await adminPage.getByRole('button', { name: /Betriebsferien erstellen/ }).click();
+
+      // Check for success toast
+      await expect(
+        adminPage.locator('[role="alert"]').filter({ hasText: /Betriebsferien|eingetragen|erstellt/ })
+      ).toBeVisible({ timeout: 10000 });
+    } finally {
+      // Aufräumen: eine stehengebliebene Betriebsferien-Zeile bucht JEDEM
+      // künftig angelegten Testkonto sofort Abwesenheiten ein
+      // (admin_users._enroll_user_in_open_closures) — genau die Müllquelle,
+      // die den Jahresexport aufgebläht hat.
+      try {
+        const closures = await adminApi.get('/company-closures/');
+        for (const c of closures.filter((c: any) => c.name === closureName)) {
+          await adminApi.delete(`/company-closures/${c.id}`);
+        }
+      } catch { /* best effort */ }
+    }
+  });
+
+  // Auch hier war die Zusicherung in eine verschluckte Sichtbarkeitsabfrage
+  // ohne else-Zweig gepackt: fehlte der Löschknopf, lief der Test durch, ohne
+  // irgendetwas zu prüfen. Die Voraussetzung (eine Betriebsferien-Zeile) legt
+  // der Test selbst an, also darf sie hart zugesichert werden. Das frühere
+  // `try { … } catch { test.skip() }` um das Anlegen ist ebenfalls fort — ein
+  // fehlschlagendes POST /company-closures ist ein Fehler, kein Grund zum
+  // Überspringen.
   test('delete company closure', async ({ adminPage, adminApi }) => {
     // Create a closure via API
     const closureName = `E2E Delete Test ${Date.now()}`;
+    const closure = await adminApi.post('/company-closures', {
+      name: closureName,
+      start_date: daysFromNow(90),
+      end_date: daysFromNow(91),
+    });
+
     try {
-      await adminApi.post('/company-closures', {
-        name: closureName,
-        start_date: daysFromNow(90),
-        end_date: daysFromNow(91),
-      });
-    } catch {
-      // If API fails, skip
-      test.skip();
-      return;
-    }
+      await adminPage.goto('/admin/absences');
+      await expect(adminPage.getByRole('heading', { name: 'Abwesenheiten verwalten' })).toBeVisible();
 
-    await adminPage.goto('/admin/absences');
-    await expect(adminPage.getByRole('heading', { name: 'Abwesenheiten verwalten' })).toBeVisible();
+      // Switch to Betriebsferien tab
+      await adminPage.getByRole('button', { name: 'Betriebsferien' }).click();
+      await adminPage.waitForLoadState('networkidle');
 
-    // Switch to Betriebsferien tab
-    await adminPage.getByRole('button', { name: 'Betriebsferien' }).click();
-    await adminPage.waitForLoadState('networkidle');
-
-    // Find delete button for the closure
-    const deleteButton = adminPage.locator('button[aria-label="Betriebsferien löschen"]').first();
-    const hasDelete = await deleteButton.isVisible({ timeout: 5000 }).catch(() => false);
-
-    if (hasDelete) {
-      await deleteButton.click();
+      // Genau die Zeile DIESER Betriebsferien
+      const row = adminPage.locator('main tr').filter({ hasText: closureName });
+      await expect(row).toBeVisible({ timeout: 10000 });
+      await row.getByRole('button', { name: 'Betriebsferien löschen' }).click();
 
       // Confirm dialog
       const dialog = adminPage.getByRole('alertdialog');
@@ -170,6 +192,11 @@ test.describe('Admin Absences', () => {
       await expect(
         adminPage.locator('[role="alert"]').filter({ hasText: /gelöscht/ })
       ).toBeVisible({ timeout: 10000 });
+
+      // Und die Zeile ist wirklich fort.
+      await expect(row).toHaveCount(0, { timeout: 10000 });
+    } finally {
+      try { await adminApi.delete(`/company-closures/${closure.id}`); } catch { /* schon gelöscht */ }
     }
   });
 

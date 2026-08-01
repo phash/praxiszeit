@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { authTest as test } from '../../fixtures/auth.fixture';
+import { test } from '../../fixtures/base.fixture';
 
 /**
  * #376 Kind krank (§45 SGB V): a custom "unpaid_free" reason that tracks a
@@ -14,7 +14,7 @@ import { authTest as test } from '../../fixtures/auth.fixture';
  * proxy (E2E_API_BASE overrides the port when :80 is taken).
  */
 test.describe('#376 Kind krank soft limit', () => {
-  test('booking over the yearly cap warns but still books the day', async ({ adminApi }) => {
+  test('booking over the yearly cap warns but still books the day', async ({ adminApi, createUser }) => {
     // Two past weekdays in the same year; a fresh user has no window + no
     // conflicting absences on them.
     const DAY1 = '2026-03-02'; // Montag
@@ -27,14 +27,14 @@ test.describe('#376 Kind krank soft limit', () => {
 
     try {
       // dedicated ephemeral employee (no first_work_day → window open)
-      const created = await adminApi.post('/admin/users', {
+      const created = await createUser({
         username: `e2e-childsick-${stamp}`,
         first_name: 'E2E', last_name: 'ChildSick',
         password: 'E2ePass1234!',
         role: 'employee', weekly_hours: 40, vacation_days: 30, work_days_per_week: 5,
         child_sick_days_per_year: 1, // cap = 1 day
       });
-      empId = created.user.id;
+      empId = created.id;
 
       // activate a Kind-krank reason (unpaid_free + tracks the limit)
       const reason = await adminApi.post('/admin/absence-reasons', {
@@ -65,7 +65,7 @@ test.describe('#376 Kind krank soft limit', () => {
     } finally {
       for (const id of createdAbsenceIds) await adminApi.delete(`/absences/${id}`).catch(() => {});
       if (reasonId) await adminApi.delete(`/admin/absence-reasons/${reasonId}`).catch(() => {});
-      if (empId) await adminApi.delete(`/admin/users/${empId}`).catch(() => {});
+      // Das Konto räumt die createUser-Fixture endgültig ab (purge statt deaktivieren).
     }
   });
 });

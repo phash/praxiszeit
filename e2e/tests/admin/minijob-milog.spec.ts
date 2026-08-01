@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { authTest as test } from '../../fixtures/auth.fixture';
+import { test } from '../../fixtures/base.fixture';
 import { today } from '../../helpers/date.helper';
 
 /**
@@ -48,18 +48,18 @@ test.describe('#377 Minijob MiLoG', () => {
     expect(info.minimum_wage.since).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  test('over-50% month raises a soft MILOG_ACCOUNT_50 warning in the admin overview', async ({ adminApi }) => {
+  test('over-50% month raises a soft MILOG_ACCOUNT_50 warning in the admin overview', async ({ adminApi, createUser }) => {
     const stamp = Date.now();
     let empId: string | undefined;
     const entryIds: string[] = [];
     try {
       // Minijob-MA: 1 h/Woche = 4,33 h/Monat vereinbart, Konto-Flag an
-      const created = await adminApi.post('/admin/users', {
+      const created = await createUser({
         username: `e2e-milog-${stamp}`, first_name: 'E2E', last_name: 'MiLoG',
         password: 'E2ePass1234!', role: 'employee', weekly_hours: MILOG_WEEKLY_HOURS,
         vacation_days: 30, work_days_per_week: 5, milog_working_time_account: true,
       });
-      empId = created.user.id;
+      empId = created.id;
 
       // EIN Tag heute mit 8,5 h netto (30-Min-Pause erfüllt §4 ArbZG) → Konto
       // 8,5 − 4,33 = 4,17 h > Grenze 2,17 h. Der Eintrag zieht zugleich den
@@ -82,7 +82,7 @@ test.describe('#377 Minijob MiLoG', () => {
       expect(row2.milog_warnings).toEqual([]);
     } finally {
       for (const id of entryIds) await adminApi.delete(`/admin/time-entries/${id}`).catch(() => {});
-      if (empId) await adminApi.delete(`/admin/users/${empId}`).catch(() => {});
+      // Das Konto räumt die createUser-Fixture endgültig ab (purge statt deaktivieren).
     }
   });
 });

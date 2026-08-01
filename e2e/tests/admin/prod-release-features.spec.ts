@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
+import { purgeUser } from '../../fixtures/test-data.fixture';
 
 /**
  * UI coverage for the 1.8.0-beta prod-release features that previously had no
@@ -24,11 +25,15 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
     await adminPage.locator('#f-vacation').fill('30');
   }
 
+  // Über die Oberfläche angelegte Konten endgültig löschen. `DELETE
+  // /admin/users/{id}` deaktiviert nur — die Zeile bliebe samt ihrer
+  // automatisch eingebuchten Betriebsferien-Abwesenheiten dauerhaft im
+  // Jahresexport stehen (die Quelle der 735 Karteileichen).
   async function cleanup(adminApi: any, username: string) {
     try {
-      const users = await adminApi.get('/admin/users?include_inactive=true');
+      const users = await adminApi.get('/admin/users?include_inactive=true&include_hidden=true&limit=500');
       const u = users.find((x: any) => x.username === username);
-      if (u) await adminApi.delete(`/admin/users/${u.id}`);
+      if (u) await purgeUser(adminApi, u.id);
     } catch { /* best effort */ }
   }
 

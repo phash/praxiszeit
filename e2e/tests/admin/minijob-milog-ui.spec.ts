@@ -30,14 +30,13 @@ test.describe('#377 Minijob MiLoG — UI', () => {
     await expect(adminPage.locator('main').getByText(/13\.90 €\/h/)).toBeVisible();
   });
 
-  test('UserForm: Arbeitszeitkonto aktivieren zeigt Infozeile und bleibt nach Speichern erhalten', async ({ adminPage, adminApi }) => {
+  test('UserForm: Arbeitszeitkonto aktivieren zeigt Infozeile und bleibt nach Speichern erhalten', async ({ adminPage, createUser }) => {
     const stamp = Date.now();
-    const created = await adminApi.post('/admin/users', {
+    await createUser({
       username: `e2e-milogui-${stamp}`, first_name: 'E2EMilogUI', last_name: `T${stamp}`,
       password: 'E2ePass1234!', role: 'employee', weekly_hours: 7.62,
       vacation_days: 30, work_days_per_week: 5, milog_working_time_account: false,
     });
-    const empId = created.user.id;
     const uname = `e2e-milogui-${stamp}`;
     const openEditor = async () => {
       // Desktop-Tabellen-Zeile des MA → dortiger "Bearbeiten"-Button (title-basiert;
@@ -47,7 +46,7 @@ test.describe('#377 Minijob MiLoG — UI', () => {
       await row.getByRole('button', { name: 'Bearbeiten' }).click();
       await expect(adminPage.getByRole('heading', { name: 'Benutzer bearbeiten' })).toBeVisible();
     };
-    try {
+    {
       await adminPage.goto('/admin/users');
       await openEditor();
 
@@ -64,20 +63,19 @@ test.describe('#377 Minijob MiLoG — UI', () => {
       // Speichern + Persistenz sind backend-/API-seitig abgedeckt
       // (test_userlist_carries_milog…, minijob-milog.spec.ts) — hier der reine
       // UI-Pfad (Checkbox + abgeleitete Infozeile).
-    } finally {
-      await adminApi.delete(`/admin/users/${empId}`).catch(() => {});
+      // Das Konto räumt die createUser-Fixture endgültig ab (purge statt deaktivieren).
     }
   });
 
-  test('Benutzerübersicht zeigt das MiLoG-Badge bei Über-50-%-Monat', async ({ adminPage, adminApi }) => {
+  test('Benutzerübersicht zeigt das MiLoG-Badge bei Über-50-%-Monat', async ({ adminPage, adminApi, createUser }) => {
     const stamp = Date.now();
     const entryIds: string[] = [];
-    const created = await adminApi.post('/admin/users', {
+    const created = await createUser({
       username: `e2e-milogbadge-${stamp}`, first_name: 'E2EMilogBadge', last_name: `T${stamp}`,
       password: 'E2ePass1234!', role: 'employee', weekly_hours: MILOG_WEEKLY_HOURS,
       vacation_days: 30, work_days_per_week: 5, milog_working_time_account: true,
     });
-    const empId = created.user.id;
+    const empId = created.id;
     try {
       const e = await adminApi.post(`/admin/users/${empId}/time-entries`, {
         date: today(), ...MILOG_DAY,
@@ -94,7 +92,7 @@ test.describe('#377 Minijob MiLoG — UI', () => {
       await expect(row).toContainText('MiLoG', { timeout: 25000 });
     } finally {
       for (const id of entryIds) await adminApi.delete(`/admin/time-entries/${id}`).catch(() => {});
-      await adminApi.delete(`/admin/users/${empId}`).catch(() => {});
+      // Das Konto räumt die createUser-Fixture endgültig ab (purge statt deaktivieren).
     }
   });
 });
