@@ -55,10 +55,12 @@ jobs:
           pytest tests/ -p no:asyncio \
             --ignore=tests/test_tenant_rls.py \
             --ignore=tests/test_concurrency.py \
+            --ignore=tests/test_purge_user_postgres.py \
             -q
-      - name: Cross-tenant RLS tests (real Postgres)
+      - name: Cross-tenant RLS + Art.17 purge tests (real Postgres)
         working-directory: backend
         run: |
           psql "$DATABASE_URL_MIGRATIONS" -f init-db-user.sql
           alembic upgrade head
-          pytest tests/test_tenant_rls.py -p no:asyncio -v
+          pytest tests/test_tenant_rls.py tests/test_purge_user_postgres.py \
+            -p no:asyncio -v

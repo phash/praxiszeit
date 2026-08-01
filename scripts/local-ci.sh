@@ -55,11 +55,16 @@ else
 fi
 
 # -----------------------------------------------------------------------
-# 2. Postgres-only integration (RLS + concurrency / row-lock races)
+# 2. Postgres-only integration (RLS + concurrency / row-lock races + Art.17 purge)
 # -----------------------------------------------------------------------
-# These tests hit the real Postgres instance so RLS policies and SELECT …
-# FOR UPDATE actually enforce isolation — SQLite unit tests cannot catch
-# either regression.
+# These tests hit the real Postgres instance so RLS policies, SELECT …
+# FOR UPDATE and FOREIGN KEY rules actually enforce — SQLite unit tests cannot
+# catch any of those regressions.
+#
+# test_purge_user_postgres.py is the Art.-17 erasure (DSGVO). It MUST run here:
+# the SQLite suite has foreign keys switched OFF, so a missing cleanup in
+# purge_user (precedent: shift_plans.created_by, #305) only ever shows up
+# against real Postgres — as a 500 that BLOCKS the erasure request.
 #
 # test_cross_tenant_api.py is the third tenant-isolation suite named in
 # CLAUDE.md. It is SQLite-backed (it exercises the explicit F-026
@@ -67,9 +72,10 @@ fi
 # runs inside step 1 — it is listed here only so the trio stays visible.
 # Together the three files are the "50 passed" isolation reference
 # (20 RLS + 12 concurrency + 18 cross-tenant).
-step "Backend Postgres integration (RLS + concurrency)"
+step "Backend Postgres integration (RLS + concurrency + Art.17 purge)"
 if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
-       tests/test_tenant_rls.py tests/test_concurrency.py -q --tb=short </dev/null 2>&1 | tail -5; then
+       tests/test_tenant_rls.py tests/test_concurrency.py \
+       tests/test_purge_user_postgres.py -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else
     fail "Postgres integration tests failed"
