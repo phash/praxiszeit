@@ -7,6 +7,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { showResponseWarning } from '../../utils/arbzgWarnings';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 import VacationRequestEditModal from '../../components/VacationRequestEditModal';
 
@@ -141,8 +142,12 @@ export default function VacationApprovals() {
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/admin/vacation-requests/${vr.id}`);
+          const res = await apiClient.delete(`/admin/vacation-requests/${vr.id}`);
           toast.success('Urlaub storniert');
+          // U3: Fix #5 — a stale-year-closing guard replies 200 + { warning }
+          // instead of the usual 204 when the cancelled range touches an
+          // already-closed year.
+          showResponseWarning(toast, res.data);
           fetchRequests();
         } catch (error: any) {
           toast.error(getErrorMessage(error, 'Fehler beim Stornieren'));

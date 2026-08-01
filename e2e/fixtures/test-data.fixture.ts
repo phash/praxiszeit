@@ -18,6 +18,68 @@ interface EmployeeLogin {
   user: any;
 }
 
+/**
+ * Endgültiges Aufräumen eines Testkontos (DSGVO Art. 17 „purge").
+ *
+ * ``DELETE /admin/users/{id}`` **deaktiviert** nur — die Benutzerzeile bleibt
+ * mitsamt ihren automatisch eingebuchten Betriebsferien-Abwesenheiten stehen
+ * (``admin_users._enroll_user_in_open_closures`` läuft bei JEDER Neuanlage), und
+ * seit dem Release-Review 1.16.0 nimmt der Jahresexport **inaktive** Mitarbeiter
+ * mit Daten bewusst auf (§16: der Beleg gilt fürs Jahr, nicht für den heutigen
+ * Personalstand). Jedes je angelegte Testkonto landete damit dauerhaft im
+ * Export: 735 Karteileichen, 750 statt 16 Mitarbeiterblätter, 56 s Laufzeit
+ * gegen ein 60-s-Timeout in ``admin/reports.spec.ts``.
+ *
+ * Der einzige echte Löschpfad ist ``DELETE /admin/users/{id}/purge``. Der prüft
+ * aber die ArbZG-§16-Aufbewahrungsfrist (730 Tage ab der jüngsten Aufzeichnung)
+ * und antwortet sonst mit 409 — ein sekundenaltes Testkonto mit Closure-
+ * Abwesenheit fällt genau in diese Sperre. Deshalb in dieser Reihenfolge:
+ *
+ *   1. Zeiteinträge + Abwesenheiten des Kontos über die App löschen
+ *      (danach ist die Frist gegenstandslos: es gibt keine Aufzeichnung mehr),
+ *   2. deaktivieren (Vorbedingung des Purge),
+ *   3. purgen — der Endpunkt räumt Anträge, Schichtzuweisungen, Prüfprotokoll-
+ *      Verweise usw. selbst auf (deshalb API statt SQL).
+ *
+ * Best effort: wirft nie. Ein fehlgeschlagenes Teardown darf keinen grünen
+ * Test nachträglich rot färben — der schlimmste Fall ist eine Karteileiche
+ * mehr, also exakt der Zustand vor dieser Vorrichtung.
+ */
+export async function purgeUser(adminApi: ApiHelper, userId: string): Promise<void> {
+  const drain = async (listPath: string, deletePath: (id: string) => string) => {
+    // Die Listen-Endpunkte cappen bei limit=500; in Runden leeren, bis nichts
+    // mehr kommt (Schleifendeckel gegen einen Endpunkt, der trotz Löschung
+    // weiter Zeilen liefert).
+    for (let round = 0; round < 20; round++) {
+      let rows: any[];
+      try {
+        rows = await adminApi.get(`${listPath}?user_id=${userId}&limit=500`);
+      } catch {
+        return;
+      }
+      if (!Array.isArray(rows) || rows.length === 0) return;
+      let deleted = 0;
+      for (const row of rows) {
+        try {
+          await adminApi.delete(deletePath(row.id));
+          deleted++;
+        } catch { /* schon weg */ }
+      }
+      if (deleted === 0) return;
+    }
+  };
+
+  await drain('/time-entries/', (id) => `/admin/time-entries/${id}`);
+  await drain('/absences/', (id) => `/absences/${id}`);
+
+  try {
+    await adminApi.delete(`/admin/users/${userId}`);
+  } catch { /* bereits deaktiviert */ }
+  try {
+    await adminApi.delete(`/admin/users/${userId}/purge`);
+  } catch { /* z.B. 409: noch aufbewahrungspflichtige Daten — dann bleibt das Konto inaktiv stehen */ }
+}
+
 export type TestDataFixtures = {
   testEmployee: TestUser;
   testEmployeeLogin: EmployeeLogin;
@@ -45,6 +107,13 @@ export type TestDataFixtures = {
     hours: number;
     note?: string;
   }) => Promise<any>;
+  /**
+   * Legt einen zusätzlichen Mitarbeiter an (für Tests, denen die eine
+   * ``testEmployee``-Zeile nicht reicht: Tagesplan, Minijob/MiLoG, Kind-krank,
+   * De-/Reaktivieren). Teardown purged ihn — siehe ``purgeUser``.
+   * Gibt die Benutzerzeile zurück (``response.user ?? response``).
+   */
+  createUser: (data: Record<string, unknown>) => Promise<any>;
 };
 
 export const testDataTest = authTest.extend<TestDataFixtures>({
@@ -75,11 +144,21 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
       last_name: userData.last_name,
     });
 
-    // Teardown: deactivate user
-    try {
-      await adminApi.delete(`/admin/users/${userId}`);
-    } catch {
-      // already deactivated
+    // Teardown: Konto endgültig löschen, nicht nur deaktivieren — siehe purgeUser.
+    await purgeUser(adminApi, userId);
+  },
+
+  createUser: async ({ adminApi }, use) => {
+    const createdIds: string[] = [];
+    const factory = async (data: Record<string, unknown>) => {
+      const response = await adminApi.post('/admin/users', data);
+      const created = (response as any).user ?? response;
+      if (created?.id) createdIds.push(created.id);
+      return created;
+    };
+    await use(factory);
+    for (const id of createdIds) {
+      await purgeUser(adminApi, id);
     }
   },
 

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month, parse_year_month
 from typing import List, Optional
@@ -14,7 +15,7 @@ from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
-from app.routers.admin_helpers import _create_audit_log
+from app.routers.admin_helpers import _create_audit_log, lock_user_row
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
 
@@ -396,12 +397,30 @@ def create_absence(
         )
 
     # BUG-3 / Review 2026-06-23 (2. Schleife): die User-Zeile ZUERST sperren —
-    # VOR den per-Datum-Absence-Locks unten — damit beide Urlaubs-Buchungspfade
-    # (create_absence + review_vacation_request) dieselbe Lock-Reihenfolge
-    # (User -> Absence) nutzen und kein ABBA-Deadlock moeglich ist. Der Lock
-    # serialisiert zugleich den Budget-Check + Insert pro MA (kein Budget-Overrun).
-    if absence_data.type == AbsenceType.VACATION:
-        db.query(User).filter(User.id == target_user.id).with_for_update().first()
+    # VOR den per-Datum-Absence-Locks unten — damit alle Absence-Buchungspfade
+    # (create_absence, review_vacation_request, review_change_request,
+    # Betriebsferien) dieselbe Lock-Reihenfolge (User -> Absence) nutzen und kein
+    # ABBA-Deadlock moeglich ist. Der Lock serialisiert zugleich den Budget-Check
+    # + Insert pro MA (kein Budget-Overrun).
+    #
+    # Audit 2026-07-31 (A2): die Sperre gilt fuer JEDEN Absence-Typ, nicht nur
+    # VACATION. Ohne sie schuetzte bei allen anderen Typen allein das
+    # ``with_for_update()`` auf der Existenz-Sonde unten — und die laeuft im
+    # Normalfall auf eine LEERE Ergebnismenge, die unter READ COMMITTED nichts
+    # sperrt. Da das UNIQUE ``(tenant, user, date, TYPE)`` lautet, kollidieren
+    # zwei gleichzeitige Buchungen UNTERSCHIEDLICHEN Typs auch auf DB-Ebene
+    # nicht: beide gehen durch, und der Tag traegt danach Soll 0 UND Ist +8 h
+    # (und ggf. einen verbrauchten Urlaubstag). Das Fenster ist bei
+    # Mehrtages-Buchungen deutlich breiter als bei Einzeltagen.
+    #
+    # Audit 2026-07-31 (Restklasse): die Sperre laeuft ueber den gemeinsamen
+    # Helfer und ist damit ``FOR NO KEY UPDATE``. Grund: dieser Pfad schreibt
+    # danach Audit-Zeilen mit ``changed_by = handelnder Admin`` — ein
+    # impliziter ``FOR KEY SHARE`` auf einer ZWEITEN, nicht geankerten
+    # Benutzerzeile, der gegen die sortierte Teilnehmer-Sperre der
+    # Betriebsferien ein Sperr-Zyklus war. Ausfuehrliche Begruendung im Kopf
+    # von ``admin_helpers``. F-026 steckt im Helfer.
+    lock_user_row(db, target_user.tenant_id, target_user.id)
 
     # Check for existing absences (any type — no double-booking allowed).
     # F-028: with_for_update() on the existence probe closes the race window
@@ -639,7 +658,48 @@ def create_absence(
         db.add(absence)
         created_absences.append(absence)
 
-    db.commit()
+    # Audit 2026-07-31 (U1, Serverseite): eine Buchung, die NICHTS bucht, ist ein
+    # Fehler — keine 201 mit leerer Liste. Erreichbar, wenn die Schleife oben
+    # jeden Zieltag als 0-Stunden-Tag uebersprungen hat (Tagesplan-MA mit
+    # ``track_hours``, z. B. Di/Do frei). Der Aufrufer bekam bisher eine
+    # Erfolgsantwort ohne Inhalt; das Monatsjournal meldete daraufhin
+    # „Gespeichert", obwohl nichts entstand (und hatte den vorherigen Eintrag
+    # bereits geloescht). Der Rollback der bis hier vorgemerkten Aenderungen
+    # (Urlaubsrueckgabe, geloeschte Zeiteintraege) passiert implizit: es wurde
+    # noch nicht committet, die Session wird am Request-Ende geschlossen.
+    if not created_absences:
+        _days = ", ".join(d.strftime("%d.%m.%Y") for d in dates_to_create[:5])
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Für {_days} sind 0 Stunden geplant — an einem Tag ohne "
+                f"geplante Arbeitszeit kann keine Abwesenheit gebucht werden."
+            ),
+        )
+
+    # Audit 2026-07-31 (A2): letzte Verteidigungslinie. Die Existenz-Sonde oben
+    # laeuft unter der Anker-Sperre, aber eine parallele Sitzung kann ihre Zeile
+    # bereits eingefuegt und noch nicht committed haben (die Sonde sieht sie dann
+    # nicht, der eigene INSERT wartet am Unique-Index und scheitert nach deren
+    # Commit). Das darf keinen nackten IntegrityError -> HTTP 500 geben, sondern
+    # dieselbe verstaendliche 409 wie der geprueefte Konfliktfall.
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _span = (
+            dates_to_create[0].strftime("%d.%m.%Y")
+            if len(dates_to_create) == 1
+            else f"{dates_to_create[0].strftime('%d.%m.%Y')}–{dates_to_create[-1].strftime('%d.%m.%Y')}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Für mindestens einen Tag ({_span}) wurde zeitgleich bereits "
+                f"eine Abwesenheit gebucht. Bitte die Ansicht neu laden und "
+                f"erneut versuchen."
+            ),
+        )
 
     # Refresh all created absences
     for absence in created_absences:
@@ -711,8 +771,32 @@ def delete_absence(
         # unbekannte behandelt, kein Existenz-Leak via Response-Code.
         raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
 
-    # DSGVO Art. 5 Abs. 2: Audit-Log vor Löschung
-    audit = TimeEntryAuditLog(
+    # Audit 2026-07-31 (uebernommen aus Welle C): Anker-Sperre auf der
+    # Benutzerzeile VOR dem Anfassen der abhaengigen Zeilen. Die Sperrreihenfolge
+    # ist im ganzen Projekt Benutzer -> Antrag/Abwesenheit (create_absence,
+    # review_change_request, Betriebsferien). Der Loeschpfad wich als einziger ab:
+    # die Session ist ``autoflush=False``, der oben per ``db.add`` vorgemerkte
+    # Audit-Log-INSERT (der ueber seinen Fremdschluessel implizit ein
+    # ``FOR KEY SHARE`` auf ``users`` nimmt) wird erst beim ``flush()`` unten
+    # ausgefuehrt — die ChangeRequest-Zeile wurde also ZUERST gesperrt. Damit
+    # konnten ein Loeschen und eine gleichzeitige Antrags-Genehmigung ueber Kreuz
+    # aufeinander warten (ABBA); Postgres schoss einen der beiden mit
+    # ``deadlock detected`` ab (HTTP 500 fuer den Anwender).
+    # Audit 2026-07-31 (Restklasse): ueber den gemeinsamen Helfer, also
+    # ``FOR NO KEY UPDATE`` — siehe Kopf von ``admin_helpers``. F-026 im Helfer.
+    lock_user_row(db, current_user.tenant_id, absence.user_id)
+
+    # DSGVO Art. 5 Abs. 2: Audit-Log vor Löschung.
+    # Abschluss-Review 2026-07-31: steht NACH der Anker-Sperre. Fachlich ist die
+    # Reihenfolge egal (beides landet in derselben Transaktion), fuer die
+    # Sperrreihenfolge nicht: der INSERT nimmt ueber ``user_id``/``changed_by``
+    # ein ``FOR KEY SHARE`` auf ``users``. Vor dem Anker platziert, haengt die
+    # Korrektheit allein daran, dass ``SessionLocal`` mit ``autoflush=False``
+    # laeuft — ein spaeteres Einschalten von autoflush (oder ein
+    # zwischengeschobenes ``db.flush()``) wuerde ihn VOR die Sperre ziehen und
+    # dieselbe Sperr-Eskalation ausloesen wie in ``company_closures``. Nach dem
+    # Anker ist die Reihenfolge unabhaengig von der Session-Konfiguration richtig.
+    db.add(TimeEntryAuditLog(
         time_entry_id=None,
         user_id=absence.user_id,
         changed_by=current_user.id,
@@ -721,8 +805,7 @@ def delete_absence(
         old_note=f"absence:{absence.type.value}:{float(absence.hours)}h",
         source="manual",
         tenant_id=current_user.tenant_id,
-    )
-    db.add(audit)
+    ))
 
     # Fix #1 (belt-and-suspenders): null any ChangeRequest referencing this
     # absence so the delete cannot FK-violate (500) on a not-yet-migrated DB

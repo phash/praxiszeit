@@ -243,6 +243,14 @@ info "Schreibe Konfiguration..."
 PRACTICE_NAME_ESC=$(toml_escape "$PRACTICE_NAME")
 ADMIN_EMAIL_ESC=$(toml_escape "$ADMIN_EMAIL")
 ADMIN_PASSWORD_ESC=$(toml_escape "$ADMIN_PASSWORD")
+# S1 (Audit 2026-07-31, DSGVO Art. 32; Paritaet zu install.sh): die Datei
+# enthaelt das Admin-Passwort und den secret_key. Vorher wurde sie mit dem
+# Standard-umask angelegt und ERST danach (chmod 600, s.u.) eingeschraenkt —
+# auf einem Mehrbenutzersystem war der Klartext in diesem Fenster fuer jeden
+# lokalen User lesbar. umask 077 in der Subshell erzwingt 600 schon beim
+# Anlegen; das spaetere chmod 600 bleibt als zweite Absicherung bestehen.
+(
+umask 077
 cat > "${INSTALL_DIR}/config/praxiszeit.conf" << CONFEOF
 [server]
 port = ${PORT}
@@ -279,6 +287,7 @@ enabled = true
 schedule = "02:00"
 retention_days = 31
 CONFEOF
+)
 fi
 chmod 600 "${INSTALL_DIR}/config/praxiszeit.conf"
 

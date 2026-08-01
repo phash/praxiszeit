@@ -51,6 +51,26 @@ export function previousWeekday(): string {
   return formatDate(d);
 }
 
+/**
+ * Heute im Anzeigeformat der Oberfläche (dd.MM.yyyy).
+ *
+ * Gegenstück zu ``today()`` für Tests, die eine Eintragszeile über ihr
+ * `aria-label` adressieren (`Eintrag vom 01.08.2026 bearbeiten`).
+ *
+ * Warum ausgerechnet HEUTE: das Detail-Modal des Admin-Dashboards lädt seine
+ * Zeiteinträge MONATSWEISE (`GET /time-entries?month=<currentMonth>`), zeigt
+ * also nur den laufenden Monat; gleichzeitig lehnt das Backend jedes Datum in
+ * der Zukunft ab (`TimeEntryBase.validate_not_future`). Am Monatsanfang gibt es
+ * damit unter Umständen gar keinen zurückliegenden Werktag im Anzeigemonat
+ * (1. = Samstag) — heute ist das einzige Datum, das beide Bedingungen IMMER
+ * erfüllt. `previousWeekday()` erfüllte die erste nicht und ließ die
+ * Eintragszeile am Monatsanfang unsichtbar werden.
+ */
+export function todayDisplay(): string {
+  const [y, m, d] = today().split('-');
+  return `${d}.${m}.${y}`;
+}
+
 export function currentMonth(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;

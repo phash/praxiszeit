@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
 import { Plus, X, Trash2, Clock, CheckCircle, XCircle, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
-import { showArbzgWarnings, collectAbsenceWarnings } from '../utils/arbzgWarnings';
+import { showArbzgWarnings, collectAbsenceWarnings, showResponseWarning } from '../utils/arbzgWarnings';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
@@ -474,8 +474,11 @@ export default function AbsenceCalendarPage() {
                                 variant: 'danger',
                                 onConfirm: async () => {
                                   try {
-                                    await apiClient.delete(`/vacation-requests/${vr.id}`);
+                                    const res = await apiClient.delete(`/vacation-requests/${vr.id}`);
                                     toast.success(dialog.successMsg);
+                                    // U3: Fix #5 — cancelling an approved vacation that touches an
+                                    // already-closed year replies 200 + { warning } instead of 204.
+                                    showResponseWarning(toast, res.data);
                                     fetchMyVacationRequests();
                                   } catch (error) {
                                     toast.error(getErrorMessage(error, 'Fehler beim Zurückziehen'));

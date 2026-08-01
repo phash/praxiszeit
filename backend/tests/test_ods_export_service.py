@@ -231,7 +231,10 @@ class TestFixedModeMonthlySummary:
         assert saldo == pytest.approx(kumuliert)
 
     def test_monthly_summary_non_mode_byte_identical(self, db, test_user):
-        """Regressions-Anker: Nicht-Modus-MA behält die alte Per-Tag-Summe."""
+        """Regressions-Anker: auch ein Nicht-Modus-MA trägt die Zahlen der
+        Anwendung in der Summenzeile (Audit 2026-07-31 — die Summenzeilen
+        delegieren seither unbedingt, weil der Per-Tag-Zweig die Ist-Gutschrift
+        für Krank/Fortbildung wegliess)."""
         from app.services import calculation_service as cs
         from app.services.ods_export_service import _doc_with_styles, _monthly_sheet
 

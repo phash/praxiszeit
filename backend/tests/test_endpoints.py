@@ -21,6 +21,7 @@ from app.middleware.auth import get_current_user, require_admin
 from app.models import User, UserRole, TimeEntry
 from app.models.tenant import Tenant
 from app.services import auth_service
+from app.services.timezone_service import today_local
 from tests.conftest import (
     DEFAULT_TENANT_ID,
     engine,
@@ -467,7 +468,7 @@ class TestTimeEntryList:
         entry = TimeEntry(
             user_id=employee_user.id,
             tenant_id=DEFAULT_TENANT_ID,
-            date=date.today(),
+            date=today_local(),
             start_time=time(8, 0),
             end_time=time(12, 0),
             break_minutes=0,
@@ -487,7 +488,7 @@ class TestTimeEntryCreate:
 
     def test_create_valid_entry(self, employee_client):
         """Prüft dass ein gueltiger Zeiteintrag mit 201 angelegt wird — Kernfunktion."""
-        today = date.today().isoformat()
+        today = today_local().isoformat()
         resp = employee_client.post("/api/time-entries/", json={
             "date": today,
             "start_time": "08:00",
@@ -502,7 +503,7 @@ class TestTimeEntryCreate:
 
     def test_create_end_before_start(self, employee_client):
         """Prüft dass Ende vor Start abgelehnt wird — verhindert negative Arbeitszeiten."""
-        today = date.today().isoformat()
+        today = today_local().isoformat()
         resp = employee_client.post("/api/time-entries/", json={
             "date": today,
             "start_time": "14:00",
@@ -514,7 +515,7 @@ class TestTimeEntryCreate:
     def test_create_missing_fields(self, employee_client):
         """Prüft dass fehlende Pflichtfelder 422 liefern — Input-Validierung."""
         resp = employee_client.post("/api/time-entries/", json={
-            "date": date.today().isoformat(),
+            "date": today_local().isoformat(),
         })
         assert resp.status_code == 422
 
@@ -527,7 +528,7 @@ class TestTimeEntryUpdateWarning:
         DAILY_HOURS_WARNING auslösen. Bug: die Warn-Berechnung lief NACH dem commit
         mit exclude_entry_id=None -> der bereits gespeicherte Eintrag wurde doppelt
         gezählt (6h -> 12h -> >8h-Warnung), obwohl der Tag <8h hat."""
-        today = date.today().isoformat()
+        today = today_local().isoformat()
         # 08:00–14:00, 0 Pause = 6h (<8h)
         r = employee_client.post("/api/time-entries/", json={
             "date": today, "start_time": "08:00", "end_time": "14:00", "break_minutes": 0,
@@ -552,7 +553,7 @@ class TestTimeEntryDelete:
         entry = TimeEntry(
             user_id=employee_user.id,
             tenant_id=DEFAULT_TENANT_ID,
-            date=date.today(),
+            date=today_local(),
             start_time=time(9, 0),
             end_time=time(11, 0),
             break_minutes=0,
@@ -857,7 +858,7 @@ class TestClockEndpoints:
         assert resp.status_code == 201
         data = resp.json()
         assert data["end_time"] is None
-        assert data["date"] == date.today().isoformat()
+        assert data["date"] == today_local().isoformat()
 
     def test_clock_in_twice_fails(self, employee_client):
         """Prüft dass doppeltes Einstempeln verhindert wird — keine Doppeleintraege."""
@@ -895,7 +896,7 @@ class TestClockEndpoints:
         automatisch geschlossen UND committed (nicht durch das 400-Raise verworfen),
         sonst bliebe der Eintrag für immer offen."""
         from datetime import timedelta
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = today_local() - timedelta(days=1)
         stale = TimeEntry(
             user_id=employee_user.id,
             tenant_id=DEFAULT_TENANT_ID,

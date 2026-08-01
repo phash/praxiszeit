@@ -44,6 +44,28 @@ export function collectAbsenceWarnings(data: unknown): string[] {
   return [...new Set(rows.flatMap((a) => a.warnings ?? []))];
 }
 
+/**
+ * U3 (Audit 2026-07-31): some guard endpoints (Fix #5 — cancelling an approved
+ * vacation request, deleting a company closure) reply with HTTP 200 +
+ * `{ warning: string }` instead of the usual 204 No Content when the action
+ * touches an already-closed year (a frozen `YearCarryover` for year+1 is now
+ * stale). That is a *singular* `warning: string`, not the plural
+ * `warnings: string[]` shape `showArbzgWarnings`/`collectAbsenceWarnings`
+ * handle — three call sites were dropping it silently and only reporting
+ * success.
+ *
+ * A 204 response makes axios set `data` to `''` (empty string), and a normal
+ * success response may be `undefined`/an unrelated object — this tolerates
+ * all of that without throwing.
+ */
+export function showResponseWarning(toast: WarnToast, data: unknown): void {
+  if (!data || typeof data !== 'object') return;
+  const warning = (data as { warning?: unknown }).warning;
+  if (typeof warning === 'string' && warning) {
+    toast.warning(warning);
+  }
+}
+
 export function showArbzgWarnings(
   toast: WarnToast,
   warnings: string[] | undefined | null,

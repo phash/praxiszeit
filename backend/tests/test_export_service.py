@@ -286,9 +286,19 @@ class TestFixedModeMonthlySummary:
         assert rows["Saldo Monat:"] == pytest.approx(rows["Überstunden kumuliert:"])
 
     def test_monthly_summary_non_mode_byte_identical(self, db, test_user):
-        """Regressions-Anker: ein Nicht-Modus-MA behält die alte Per-Tag-Summe
-        (die auf OVERTIME-Tagen legitim von get_monthly_target abweichen darf
-        — ein wholesale-Swap würde das brechen)."""
+        """Regressions-Anker: auch ein Nicht-Modus-MA trägt die Zahlen der
+        Anwendung in der Summenzeile.
+
+        Audit 2026-07-31: die frühere Fassung dieses Docstrings sagte, der
+        Nicht-Modus-Zweig behalte „die alte Per-Tag-Summe" und ein
+        wholesale-Swap würde das brechen. Das stimmte schon damals nicht mit
+        dem hier Behaupteten überein — die Assertions vergleichen gegen
+        get_monthly_target/get_monthly_actual, nicht gegen die Per-Tag-Summe.
+        Seit die Soll-Seite per Tag an _day_soll_contribution delegiert
+        (1.16.0), stimmen beide ohnehin überein; die IST-Seite tat es nicht
+        (fehlende Krank-/Fortbildungs-Gutschrift, siehe
+        test_audit_20260731_export_ist.py), weshalb die Summenzeilen jetzt
+        unbedingt delegieren. Dieser Test bleibt der Anker dafür."""
         from app.services import calculation_service as cs
 
         _make_time_entry(db, test_user, date(2026, 1, 5), 8, 17, 30)
@@ -363,9 +373,9 @@ class TestFixedModeYearlySummary:
         assert overview_row[4].value == pytest.approx(rows["Saldo Jahr:"])          # Spalte 5: Saldo (Jahr)
 
     def test_yearly_summary_non_mode_byte_identical(self, db, test_user):
-        """Regressions-Anker: ein Nicht-Modus-MA behält die alte Per-Tag-Summe
-        (die auf OVERTIME-Tagen legitim von get_monthly_target abweichen darf
-        — ein wholesale-Swap würde das brechen)."""
+        """Regressions-Anker: auch ein Nicht-Modus-MA trägt die Zahlen der
+        Anwendung in der Jahres-Summenzeile (Audit 2026-07-31 — Begründung
+        siehe TestFixedModeMonthlySummary.test_monthly_summary_non_mode_byte_identical)."""
         from app.services import calculation_service as cs
         from app.services.export_service import generate_yearly_report
 

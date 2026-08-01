@@ -1,7 +1,18 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { nextWeekday, daysFromNow, weekdayFromNow } from '../../helpers/date.helper';
+import { weekdayFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin Vacation Approvals', () => {
+  // Mehrere Tests hier schalten die Genehmigungspflicht ein. Bricht einer
+  // vorzeitig ab, bliebe sie an und veränderte das Verhalten aller folgenden
+  // Specs (Urlaub direkt buchen → 400). Das Zurücksetzen gehört deshalb in ein
+  // afterEach und nicht ans Ende des Erfolgspfads — genau die Lücke, die die
+  // entfernten `catch { test.skip() }` bisher verdeckt haben.
+  test.afterEach(async ({ adminApi }) => {
+    try {
+      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' });
+    } catch { /* best effort */ }
+  });
+
   test('page loads with toggle and filter tabs', async ({ adminPage }) => {
     await adminPage.goto('/admin/vacation-approvals');
     await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
@@ -41,56 +52,57 @@ test.describe('Admin Vacation Approvals', () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
+  // Dieser Test lief bis hierher NIE: er buchte den Urlaub direkt über
+  // ``POST /absences`` — was die Anwendung bei aktiver Genehmigungspflicht seit
+  // MA-ABS-01 bewusst mit 400 ablehnt (sonst ließe sich die Genehmigung über
+  // die API umgehen). Der `catch { test.skip() }` schluckte genau diese 400,
+  // der Test wurde übersprungen (er war das eine „skipped" im Gesamtlauf), und
+  // die Zusicherung dahinter war zudem tautologisch
+  // (`if (hasRequest) expect(requestCard).toBeVisible()`).
+  //
+  // Jetzt prüft er die zwei Aussagen, die dahinter stehen: (1) der
+  // Direktbuchungs-Weg ist bei Genehmigungspflicht für MA gesperrt, (2) der
+  // richtige Weg (Antrag) landet sichtbar in der offenen Warteschlange.
   test('employee vacation request shows as pending', async ({
     adminPage,
     adminApi,
     employeeApi,
     testEmployee,
+    createVacationRequest,
   }) => {
-    // Enable approval requirement
-    try {
-      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
-    } catch {
-      test.skip();
-      return;
-    }
+    await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
 
-    // Create a vacation request as employee
-    const futureDate = daysFromNow(30);
     try {
-      await employeeApi.post('/absences', {
-        date: futureDate,
-        type: 'vacation',
+      // (1) Direktbuchung muss abgelehnt werden (kein Approval-Bypass)
+      await expect(
+        employeeApi.post('/absences', {
+          date: weekdayFromNow(30),
+          type: 'vacation',
+          hours: 8,
+          note: 'E2E direct-booking bypass probe',
+        })
+      ).rejects.toThrow(/400/);
+
+      // (2) Der richtige Weg: Antrag stellen → erscheint unter "Offen"
+      const uniqueNote = `E2E pending ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await createVacationRequest({
+        date: weekdayFromNow(30),
         hours: 8,
-        note: 'E2E vacation approval test',
+        note: uniqueNote,
       });
-    } catch {
-      // If creation fails, skip
-      test.skip();
-      return;
+
+      await adminPage.goto('/admin/vacation-approvals');
+      await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
+
+      await adminPage.getByRole('button', { name: 'Offen' }).click();
+      await adminPage.waitForLoadState('networkidle');
+
+      const card = adminPage.locator('div.bg-white').filter({ hasText: uniqueNote }).last();
+      await expect(card).toBeVisible({ timeout: 10000 });
+      await expect(card).toContainText(testEmployee.last_name);
+    } finally {
+      // Zurückschalten übernimmt das afterEach.
     }
-
-    // Navigate to admin vacation approvals
-    await adminPage.goto('/admin/vacation-approvals');
-    await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
-
-    // Make sure we're on "Offen" tab
-    await adminPage.getByRole('button', { name: 'Offen' }).click();
-    await adminPage.waitForLoadState('networkidle');
-
-    // Check if the request shows up
-    const requestCard = adminPage.getByText(testEmployee.last_name).first();
-    const hasRequest = await requestCard.isVisible({ timeout: 5000 }).catch(() => false);
-
-    // If there's a pending request, it should show up
-    if (hasRequest) {
-      await expect(requestCard).toBeVisible();
-    }
-
-    // Cleanup: disable approval requirement
-    try {
-      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' });
-    } catch { /* best effort */ }
   });
 
   test('approve vacation request', async ({
@@ -98,13 +110,10 @@ test.describe('Admin Vacation Approvals', () => {
     adminApi,
     createVacationRequest,
   }) => {
-    // Enable approval requirement
-    try {
-      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
-    } catch {
-      test.skip();
-      return;
-    }
+    // Enable approval requirement. Kein `catch { test.skip() }` mehr: schlägt
+    // das Setzen der Einstellung fehl, ist das ein Fehler und kein Grund, den
+    // Test lautlos zu überspringen.
+    await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
 
     // Create the request via the fixture so the teardown deletes the row
     // (or withdraws it if the test runs the approve step). Unique note marker
@@ -113,17 +122,11 @@ test.describe('Admin Vacation Approvals', () => {
     // approve path doesn't bail out with "Keine gültigen Arbeitstage im Zeitraum".
     const futureDate = weekdayFromNow(35);
     const uniqueNote = `E2E approve ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    try {
-      await createVacationRequest({
-        date: futureDate,
-        hours: 8,
-        note: uniqueNote,
-      });
-    } catch {
-      try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
-      test.skip();
-      return;
-    }
+    await createVacationRequest({
+      date: futureDate,
+      hours: 8,
+      note: uniqueNote,
+    });
 
     await adminPage.goto('/admin/vacation-approvals');
     await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
@@ -139,8 +142,6 @@ test.describe('Admin Vacation Approvals', () => {
       adminPage.locator('[role="alert"]').filter({ hasText: /genehmigt/ })
     ).toBeVisible({ timeout: 10000 });
 
-    // Cleanup setting; the request itself is teardown-handled by the fixture.
-    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
   });
 
   test('reject vacation request with reason', async ({
@@ -148,29 +149,20 @@ test.describe('Admin Vacation Approvals', () => {
     adminApi,
     createVacationRequest,
   }) => {
-    // Enable approval requirement
-    try {
-      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
-    } catch {
-      test.skip();
-      return;
-    }
+    // Enable approval requirement. Kein `catch { test.skip() }` mehr: schlägt
+    // das Setzen der Einstellung fehl, ist das ein Fehler und kein Grund, den
+    // Test lautlos zu überspringen.
+    await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
 
     // Create via fixture so teardown deletes the rejected request row.
     // Unique note marker for disambiguation; weekdayFromNow for valid workdays.
     const futureDate = weekdayFromNow(40);
     const uniqueNote = `E2E reject ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    try {
-      await createVacationRequest({
-        date: futureDate,
-        hours: 8,
-        note: uniqueNote,
-      });
-    } catch {
-      try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
-      test.skip();
-      return;
-    }
+    await createVacationRequest({
+      date: futureDate,
+      hours: 8,
+      note: uniqueNote,
+    });
 
     await adminPage.goto('/admin/vacation-approvals');
     await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
@@ -193,8 +185,6 @@ test.describe('Admin Vacation Approvals', () => {
       adminPage.locator('[role="alert"]').filter({ hasText: /abgelehnt/ })
     ).toBeVisible({ timeout: 10000 });
 
-    // Cleanup setting; the request row is teardown-handled by the fixture.
-    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
   });
 
   test('admin edits pending vacation request — note + date', async ({
@@ -202,28 +192,17 @@ test.describe('Admin Vacation Approvals', () => {
     adminApi,
     createVacationRequest,
   }) => {
-    try {
-      await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
-    } catch {
-      test.skip();
-      return;
-    }
+    await adminApi.put('/admin/settings/vacation_approval_required', { value: 'true' });
 
     const startDate = weekdayFromNow(45);
     const newDate = weekdayFromNow(50);
     const uniqueNote = `E2E admin-edit ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const newNote = `${uniqueNote} edited`;
-    try {
-      await createVacationRequest({
-        date: startDate,
-        hours: 8,
-        note: uniqueNote,
-      });
-    } catch {
-      try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
-      test.skip();
-      return;
-    }
+    await createVacationRequest({
+      date: startDate,
+      hours: 8,
+      note: uniqueNote,
+    });
 
     await adminPage.goto('/admin/vacation-approvals');
     await expect(adminPage.getByRole('heading', { name: 'Abwesenheitsanträge' })).toBeVisible();
@@ -254,6 +233,5 @@ test.describe('Admin Vacation Approvals', () => {
     const updated = adminPage.locator('div.bg-white').filter({ hasText: 'edited' }).first();
     await expect(updated).toBeVisible({ timeout: 5000 });
 
-    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch {}
   });
 });

@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import { Plus, X, Trash2, Pencil, ChevronDown, ChevronUp, Building2 } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
-import { showArbzgWarnings, collectAbsenceWarnings } from '../../utils/arbzgWarnings';
+import { showArbzgWarnings, collectAbsenceWarnings, showResponseWarning } from '../../utils/arbzgWarnings';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
@@ -163,8 +163,11 @@ export default function AdminAbsences() {
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/company-closures/${closure.id}`);
+          const res = await apiClient.delete(`/company-closures/${closure.id}`);
           toast.success('Betriebsferien und zugehörige Urlaubseinträge gelöscht');
+          // U3: Fix #5 — deleting a closure that touches an already-closed
+          // year replies 200 + { warning } instead of the usual 204.
+          showResponseWarning(toast, res.data);
           loadClosures();
         } catch {
           toast.error('Fehler beim Löschen');
@@ -503,8 +506,10 @@ export default function AdminAbsences() {
         <div className="flex flex-wrap items-center gap-4">
           {departments.length > 0 && (
             <div className="min-w-40">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Abteilung</label>
+              <label htmlFor="absence-department-filter" className="block text-sm font-medium text-gray-700 mb-1">Abteilung</label>
               <select
+                id="absence-department-filter"
+                data-testid="absence-department-filter"
                 value={effectiveDepartmentFilter}
                 onChange={e => { setDepartmentFilter(e.target.value); setSelectedEmployee(''); setShowForm(false); }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
@@ -517,8 +522,10 @@ export default function AdminAbsences() {
             </div>
           )}
           <div className="flex-1 min-w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
+            <label htmlFor="absence-employee-filter" className="block text-sm font-medium text-gray-700 mb-1">Mitarbeiter</label>
             <select
+              id="absence-employee-filter"
+              data-testid="absence-employee-filter"
               value={selectedEmployee}
               onChange={e => { setSelectedEmployee(e.target.value); setShowForm(false); }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"

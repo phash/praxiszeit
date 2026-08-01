@@ -194,6 +194,13 @@ public static class PraxisZeitConfigWriter
     /// Schreibt die TOML-Config nach <paramref name="targetPath"/>
     /// als UTF-8 OHNE BOM (sonst bricht der Backend-Parser, F-053).
     /// Erzeugt das Parent-Directory falls noetig.
+    ///
+    /// <para>
+    /// Die Datei enthaelt das Admin-Klartextpasswort und wird deshalb ueber
+    /// <see cref="SecretFile"/> geschrieben: die Zugriffsrechte stehen schon
+    /// beim Anlegen (Windows-ACL ohne Vererbung: nur SYSTEM +
+    /// Administratoren; Unix: 0600), nicht erst nach dem Schreiben.
+    /// </para>
     /// </summary>
     public static async Task WriteAsync(string targetPath, PraxisZeitConfigValues values, CancellationToken ct = default)
     {
@@ -203,16 +210,10 @@ public static class PraxisZeitConfigWriter
             throw new ArgumentException(validation, nameof(values));
         }
 
-        var dir = Path.GetDirectoryName(targetPath);
-        if (!string.IsNullOrEmpty(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-
         // UTF-8 OHNE BOM — Backend-Parser bricht sonst (F-053). Encoding.UTF8
         // schreibt MIT BOM, deshalb explizit `new UTF8Encoding(false)`.
         var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        await File.WriteAllTextAsync(targetPath, Serialize(values), encoding, ct).ConfigureAwait(false);
+        await SecretFile.WriteAllTextAsync(targetPath, Serialize(values), encoding, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -231,7 +232,9 @@ public static class PraxisZeitConfigWriter
         Directory.CreateDirectory(configDir);
         var licensePath = Path.Combine(configDir, "license.key");
         var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        await File.WriteAllTextAsync(licensePath, token.Trim(), encoding, ct).ConfigureAwait(false);
+        // Wie die praxiszeit.conf ein Geheimnis (kundengebundenes, signiertes
+        // Lizenz-Token) -> gleiche Rechte-vor-Inhalt-Regel.
+        await SecretFile.WriteAllTextAsync(licensePath, token.Trim(), encoding, ct).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -125,6 +125,13 @@ class Settings(BaseSettings):
     # F-063: refresh rate limit — also needs to be raised for E2E where
     # every test mount triggers one /auth/refresh call via hydrate().
     REFRESH_RATE_LIMIT: str = "10/minute"
+    # GDPR Art. 15 self-service export (/api/me/data-export). The limit is
+    # per IP, so a whole E2E suite counts as one client: at 5/day the suite is
+    # only cleanly runnable five times per day per machine, and the sixth run
+    # fails on a 429 that has nothing to do with the code under test. Same
+    # opt-out as the two above — raise it in the E2E .env, leave the
+    # production default alone.
+    DATA_EXPORT_RATE_LIMIT: str = "5/day"
 
     # Native mode: serve frontend static files directly from FastAPI (no nginx)
     SERVE_FRONTEND: bool = False

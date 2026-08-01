@@ -297,8 +297,17 @@ class TestReadMethodsAlwaysPass:
         assert not _was_blocked_by_license(resp)
 
     def test_get_reports_export_passes(self, client_readonly):
-        """§16-ArbZG-Export ist im Read-Only-Modus essentiell."""
-        resp = client_readonly.get("/api/reports/export")
+        """§16-ArbZG-Export ist im Read-Only-Modus essentiell.
+
+        Der Pfad lautet ``/api/admin/reports/export`` (Router-Praefix
+        ``/api/admin/reports``). Bis hierher stand hier ``/api/reports/export``
+        — ein Pfad, den es nicht gibt: die Anfrage lief in einen 404, und
+        ``_was_blocked_by_license`` liefert fuer alles ausser 403 ``False``,
+        also erfuellte der tote Pfad die Zusicherung von selbst. Die Route
+        wurde damit nie beruehrt (Audit-Fund C).
+        """
+        resp = client_readonly.get("/api/admin/reports/export")
+        assert resp.status_code != 404, "Exportroute existiert nicht (Praefix?)"
         assert not _was_blocked_by_license(resp)
 
 

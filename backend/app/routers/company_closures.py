@@ -15,7 +15,7 @@ from app.services import calculation_service, settings_service, special_days_ser
 # write paths can call it without importing this router (circular-import safe).
 # Re-exported as _resplit_year_closures to keep the existing call sites intact.
 from app.services.closure_split_service import resplit_year_closures as _resplit_year_closures
-from app.routers.admin_helpers import _create_audit_log
+from app.routers.admin_helpers import _create_audit_log, lock_user_rows
 
 
 # Release-Review 1.16.0: Betriebsferien löschen Abwesenheiten (beim Umspeichern und
@@ -105,6 +105,47 @@ def _get_holidays_for_range(db: Session, start: date, end: date, tenant_id) -> s
     return holidays
 
 
+def _lock_participant_rows(db: Session, tenant_id, user_ids) -> None:
+    """Audit 2026-07-31 (A2): Anker-Sperre auf den Mitarbeiter-Zeilen.
+
+    Betriebsferien sind ein Absence-BUCHUNGSpfad. Die Vorab-Existenzprüfung
+    (``existing_keys``) liest ungesperrt; eine gleichzeitige Direkt-Buchung
+    (``absences.create_absence``) oder Antrags-Genehmigung könnte am selben Tag
+    einen ANDEREN Typ einfügen — das UNIQUE ist ``(tenant, user, date, TYPE)``
+    und fängt das nicht. Die Benutzerzeile ist der gemeinsame Anker aller
+    Buchungspfade.
+
+    Die Sperren werden nach ``User.id`` SORTIERT in EINER Anweisung geholt.
+
+    ZUSICHERUNG (und ihre Vorbedingung — Abschluss-Review 2026-07-31):
+    Zwei gleichzeitige Betriebsferien-Vorgänge können sich nur dann nicht
+    verklemmen, wenn beide diese Anweisung absetzen, BEVOR sie irgendetwas
+    schreiben. Grund: die Anker-Sperren schließen sich gegenseitig aus; wer
+    zuerst einen Teil davon greift und den Rest später nachholt, kann sich mit
+    einem gleichzeitigen Vorgang über Kreuz verklemmen. Genau so lief es bis
+    zum Abschluss-Review in ``create_closure`` (die Schließungszeile wurde vor
+    dem Anker geflusht) — reproduziert in
+    ``tests/test_concurrency.py::test_two_parallel_closure_creations_do_not_deadlock``.
+    Deshalb gilt für ALLE Aufrufer: erst sperren, dann schreiben, und die
+    Menge muss JEDE Benutzerzeile enthalten, die der Vorgang danach EXPLIZIT
+    sperrt.
+
+    Die Zeile des handelnden Admins (``created_by``) bleibt in der Menge der
+    Aufrufer. Seit die Anker ``FOR NO KEY UPDATE`` sind (Audit 2026-07-31,
+    Restklasse — siehe ``admin_helpers.lock_user_rows``), ist sie dafür nicht
+    mehr ZWINGEND: der implizite ``FOR KEY SHARE`` des ``created_by``-INSERTs
+    kollidiert nicht mehr mit einem Anker. Sie bleibt trotzdem drin, weil der
+    Admin über ``receives_company_closures`` in aller Regel ohnehin Teilnehmer
+    ist und die Menge damit ehrlich beschreibt, wessen Buchungen dieser Vorgang
+    serialisiert.
+
+    Weil vor Abschluss dieser Anweisung keine Absence-Sperre gehalten wird,
+    bleibt zugleich die globale Reihenfolge Benutzer → Abwesenheit gegenüber
+    den Einzel-Buchungspfaden gewahrt.
+    """
+    lock_user_rows(db, tenant_id, user_ids)
+
+
 def _create_closure_absences(
     db: Session,
     closure: CompanyClosure,
@@ -174,6 +215,16 @@ def _create_closure_absences(
     te_by_key: dict = {}
     wh_by_user: dict = {}
     if emp_ids:
+        # Audit 2026-07-31 (A2): Anker-Sperre VOR der Existenz-Vorabfrage —
+        # Reihenfolge Benutzer → Abwesenheit (siehe _lock_participant_rows).
+        # Beide Aufrufer holen sie inzwischen schon selbst, bevor sie irgendetwas
+        # schreiben (``create_closure`` vor dem INSERT der Schließungszeile,
+        # ``update_closure`` vor den Löschungen); ein erneuter Erwerb derselben
+        # Zeilen in derselben Transaktion ist ein No-op. Der Aufruf bleibt als
+        # Rückfallebene für künftige Aufrufer stehen — er darf aber NIE die
+        # einzige Sperre sein, wenn vorher schon geschrieben wurde (siehe die
+        # Zusicherung im Docstring von ``_lock_participant_rows``).
+        _lock_participant_rows(db, current_user.tenant_id, emp_ids)
         existing_keys = {
             (a.user_id, a.date)
             for a in db.query(Absence.user_id, Absence.date).filter(
@@ -403,18 +454,6 @@ def create_closure(
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail="Enddatum darf nicht vor dem Startdatum liegen")
 
-    # Create closure record
-    closure = CompanyClosure(
-        name=data.name,
-        start_date=data.start_date,
-        end_date=data.end_date,
-        counts_as_vacation=data.counts_as_vacation,
-        created_by=current_user.id,
-        tenant_id=current_user.tenant_id,
-    )
-    db.add(closure)
-    db.flush()  # Get ID without commit
-
     # Get all workdays in range
     holidays = _get_holidays_for_range(
         db, data.start_date, data.end_date, current_user.tenant_id
@@ -439,6 +478,33 @@ def create_closure(
         User.receives_company_closures == True,
         User.tenant_id == current_user.tenant_id,
     ).all()
+
+    # Abschluss-Review 2026-07-31: Anker-Sperre VOR dem ersten Schreibzugriff.
+    # Der INSERT der Schließungszeile nimmt über ``created_by`` ein
+    # ``FOR KEY SHARE`` auf der Zeile des handelnden Admins; stand er vor dem
+    # Anker, eskalierte diese Transaktion unmittelbar danach auf ``FOR UPDATE``
+    # derselben Zeile (der Admin ist über ``receives_company_closures`` per
+    # Voreinstellung selbst Teilnehmer) — die Reihenfolge-Umkehr, aus der zwei
+    # gleichzeitige Vorgänge ein ``deadlock detected`` (HTTP 500) machten.
+    # Reihenfolge jetzt identisch zu ``update_closure``. Die Zeile des Admins
+    # gehört auch dann in die Menge, wenn er NICHT teilnimmt — ``created_by``
+    # referenziert sie trotzdem.
+    _lock_participant_rows(
+        db, current_user.tenant_id,
+        [e.id for e in employees] + [current_user.id],
+    )
+
+    # Create closure record (erst JETZT — nach der Anker-Sperre).
+    closure = CompanyClosure(
+        name=data.name,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        counts_as_vacation=data.counts_as_vacation,
+        created_by=current_user.id,
+        tenant_id=current_user.tenant_id,
+    )
+    db.add(closure)
+    db.flush()  # Get ID without commit
 
     affected = _create_closure_absences(db, closure, workdays, employees, current_user)
 
@@ -579,6 +645,21 @@ def update_closure(
     ).all()
     _rebookable_user_ids = {e.id for e in employees}
 
+    # Audit 2026-07-31 (A2): die Anker-Sperren HIER holen — vor den Löschungen
+    # unten und damit vor jeder Absence-Sperre dieser Transaktion. Würde erst
+    # ``_create_closure_absences`` sie holen, sperrte dieser Pfad in der
+    # Reihenfolge Abwesenheit → Benutzer und liefe damit einem gleichzeitigen
+    # ``create_absence`` (Benutzer → Abwesenheit) in ein ABBA-Deadlock.
+    # Die zu löschenden Abwesenheiten können auch Ausgeschiedenen/Abgewählten
+    # gehören, die nicht in ``employees`` stehen → beide Mengen vereinigen.
+    # Abschluss-Review 2026-07-31: zusätzlich die Zeile des handelnden Admins —
+    # die Summen-Audit-Zeile unten referenziert sie über
+    # ``user_id``/``changed_by`` und nimmt darauf ein ``FOR KEY SHARE``.
+    _lock_participant_rows(
+        db, current_user.tenant_id,
+        _rebookable_user_ids | {a.user_id for a in linked} | {current_user.id},
+    )
+
     _deleted_out_of_range = 0
     _deleted_for_resplit = 0
     for absence in linked:
@@ -681,6 +762,35 @@ def delete_closure(
     # budget-filling closure frees vacation budget — the OVERTIME days of a later
     # closure of the same year must flip back to VACATION.
     affected_years = list(range(closure.start_date.year, closure.end_date.year + 1))
+
+    # Abschluss-Review 2026-07-31: Anker-Sperre VOR dem ersten Schreibzugriff —
+    # dieselbe Reihenfolge wie create_/update_closure. Der Löschpfad hatte als
+    # einziger der drei Betriebsferien-Pfade gar keinen Anker: er löscht
+    # Abwesenheiten (Sperren auf ``absences``), schreibt eine Audit-Zeile
+    # (``FOR KEY SHARE`` auf der Zeile des Admins) und lässt ggf. den
+    # #314-Re-Split weitere Abwesenheiten umschreiben. Gegenüber einem
+    # gleichzeitigen ``create_closure`` (hält jetzt FOR UPDATE auf den
+    # Benutzerzeilen und will danach an die Abwesenheiten) ergab das erneut ein
+    # ABBA: Abwesenheit → Benutzer hier, Benutzer → Abwesenheit dort.
+    # Menge wie in ``update_closure`` (aktive Teilnehmer ∪ betroffene MA),
+    # zusätzlich die Zeile des handelnden Admins (Audit-Fremdschlüssel).
+    _linked_user_ids = {
+        row[0] for row in db.query(Absence.user_id).filter(
+            Absence.closure_id == closure.id,
+            Absence.tenant_id == current_user.tenant_id,
+        ).distinct().all()
+    }
+    _participant_ids = {
+        row[0] for row in db.query(User.id).filter(
+            User.is_active == True,
+            User.receives_company_closures == True,
+            User.tenant_id == current_user.tenant_id,
+        ).all()
+    }
+    _lock_participant_rows(
+        db, current_user.tenant_id,
+        _linked_user_ids | _participant_ids | {current_user.id},
+    )
 
     # Delete the generated absences via FK (robust against renames / manual
     # note edits) — tenant_id filter kept as belt-and-suspenders (F-026).

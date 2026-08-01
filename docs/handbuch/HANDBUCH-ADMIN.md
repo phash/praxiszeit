@@ -897,6 +897,20 @@ Pro Zeiteintrag: **Ist = (Ende − Beginn) − Pause**, auf 2 Nachkommastellen g
 
 Ist ein **Soll-Arbeitszeit-Fenster** hinterlegt (→ [Abschnitt 4, Soll-Arbeitszeiten](#4-benutzerverwaltung)), wird die angerechnete Zeit auf das Fenster (± Puffer) gekürzt; der Rohstempel bleibt erhalten (§ 16 ArbZG). Zusätzlich zählen **Krankheit** und **Fortbildung** mit ihren gebuchten Stunden als Ist (siehe Matrix).
 
+> **Die Gutschrift folgt dem Soll des Tages.** Krankheit und Fortbildung sollen den Saldo **nicht bewegen**: das Soll des Tages bleibt stehen, die Gutschrift gleicht es aus. Deshalb wird nur gutgeschrieben, soweit an diesem Tag überhaupt ein Soll steht:
+>
+> | Tag | Gutschrift |
+> |-----|-----------|
+> | Regulärer Arbeitstag | volle gebuchte Stunden |
+> | Samstag / Sonntag | **keine** |
+> | Gesetzlicher Feiertag | **keine** |
+> | Sondertag 24./31.12. als „halber Feiertag" | **die Hälfte** |
+> | Sondertag 24./31.12. als „frei" | **keine** |
+>
+> An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — für den Feiertag gilt die Feiertagsvergütung (§ 2 EntgFG), nicht zusätzlich die Entgeltfortzahlung wegen Krankheit (§ 3 EntgFG). **Beispiel:** Wer vom 24.12. bis 28.12. krankgeschrieben ist (24.12. halber Feiertag, 25./26.12. Feiertage, 27.12. Sonntag, 28.12. Arbeitstag), erhält 4 h + 0 h + 0 h + 0 h + 8 h = **12 h** gutgeschrieben — genau das Soll dieser Tage. Der Saldo bleibt bei 0. **Bis einschließlich Version 1.17.0 wurden hier 40 h gutgeschrieben**, also **+28 Überstunden aus dem Nichts**; wer über Weihnachten krank war, sammelte je Feiertag und je Wochenendtag ein volles Tagessoll an Überstunden. Bestehende Salden korrigieren sich mit dem Update automatisch, weil sie bei jedem Aufruf neu berechnet werden.
+>
+> Eine Fortbildung, die **länger** dauerte als der Arbeitstag, bleibt dagegen unangetastet echte Mehrarbeit — gedeckelt wird nicht.
+
 ### 18.4 Monats-Soll
 
 PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll – **außer** an: Wochenenden, Feiertagen, Tagen außerhalb des Beschäftigungszeitraums und Abwesenheitstagen, die das Soll reduzieren (siehe Matrix). Sondertage 24./31.12. wirken mit Faktor 0,5 (Halbtag) bzw. 0 (frei).

@@ -51,6 +51,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
       LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-5/minute}
       REFRESH_RATE_LIMIT: ${REFRESH_RATE_LIMIT:-10/minute}
+      DATA_EXPORT_RATE_LIMIT: ${DATA_EXPORT_RATE_LIMIT:-5/day}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-onprem}
       # Praxis-Stammdaten (erscheinen u.a. in Excel-Exporten, DSGVO F-016)
@@ -111,7 +112,11 @@ services:
     # runtime (in v13 the feature toggle to turn it off was removed; Scenes is
     # always-on). Startup performs a one-time dashboard/folder migration to
     # unified storage.
-    image: grafana/grafana:13.0.1-security-01
+    # 2026-07-31 (Abhaengigkeits-Audit): 13.0.1-security-01 -> 13.0.4. Bleibt auf
+    # der 13.0-Linie (13.1.x waere ein Minor-Sprung und braucht eine eigene
+    # Bewertung). 13.0.4 enthaelt die CVEs des Sonderbuilds 13.0.1-security-01
+    # (2026-05-12) und zusaetzlich die sieben CVEs aus 13.0.2 (2026-06-09).
+    image: grafana/grafana:13.0.4
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
       GF_AUTH_ANONYMOUS_ENABLED: "false"

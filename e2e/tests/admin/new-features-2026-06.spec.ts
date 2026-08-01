@@ -30,7 +30,7 @@ test.describe('#312 Eigene Abwesenheitsgründe', () => {
 
     // and it shows up in the absence booking picker (AdminAbsences) as a custom reason
     await adminPage.goto('/admin/absences');
-    const empSelect = adminPage.locator('select').first();
+    const empSelect = adminPage.getByTestId('absence-employee-filter');
     const opt = empSelect.locator('option', { hasText: testEmployee.last_name });
     await expect(opt.first()).toBeAttached({ timeout: 10000 });
     await empSelect.selectOption((await opt.first().getAttribute('value'))!);

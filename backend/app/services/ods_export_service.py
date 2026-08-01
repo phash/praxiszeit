@@ -245,6 +245,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     # #146: configurable 24./31.12. handling (see export_service N-1).
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
+    # Audit 2026-07-31: speisen die Summenzeilen NICHT mehr (siehe unten) —
+    # Summe der PER-TAG-Zeilen, nicht wieder anschliessen.
     total_net = Decimal("0.00")
     total_target = Decimal("0.00")
     night_work_count = 0
@@ -394,15 +396,16 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     # (use_fixed_monthly_target) MUSS die Monats-Summary mit dem modus-
     # bewussten get_monthly_target/get_monthly_actual übereinstimmen — sonst
     # widerspricht sich das §16-Dokument selbst gegen "Überstunden kumuliert"
-    # (get_overtime_account, bereits modus-bewusst). Die Per-Tag-Detailzeilen
-    # oben bleiben unverändert. Nicht-Modus-MA bleiben exakt auf der alten
-    # Per-Tag-Summe (byte-identisch).
-    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-        summary_target = calculation_service.get_monthly_target(db, user, year, month)
-        summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
-    else:
-        summary_target = total_target
-        summary_actual = total_net
+    # (get_overtime_account, bereits modus-bewusst).
+    #
+    # Audit 2026-07-31 (Nachzug zu Fund K): derselbe Fall galt fuer JEDEN MA auf
+    # der IST-Seite — ``total_net`` summierte nur erfasste Zeiteintraege und
+    # liess die Gutschrift fuer Krank/Fortbildung weg, die
+    # ``get_monthly_actual`` zaehlt. Dieselbe Auskunft muss in ODS und XLSX
+    # dieselbe Zahl tragen; Begruendung + bewusste Grenzen siehe
+    # ``export_service._create_employee_sheet``.
+    summary_target = calculation_service.get_monthly_target(db, user, year, month)
+    summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
 
     table.addElement(summary_row("Soll-Stunden Monat:", float(summary_target)))
     table.addElement(summary_row("Ist-Stunden Monat:", float(summary_actual)))

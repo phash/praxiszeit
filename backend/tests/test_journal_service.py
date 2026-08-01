@@ -22,13 +22,14 @@ def _make_entry(db, user, d, start_h, end_h, break_min=0):
     return entry
 
 
-def _make_absence(db, user, d, atype, hours=8.0):
+def _make_absence(db, user, d, atype, hours=8.0, half_day=None):
     absence = Absence(
         user_id=user.id,
         tenant_id=DEFAULT_TENANT_ID,
         date=d,
         type=atype,
         hours=hours,
+        half_day=half_day,
     )
     db.add(absence)
     db.commit()
@@ -74,13 +75,22 @@ def test_journal_holiday_has_holiday_type(db, test_user):
 
 
 def test_journal_vacation_day(db, test_user):
-    """Prüft dass Urlaubstage als 'vacation' mit ausgeglichenem Saldo erscheinen — Urlaub erzeugt kein Defizit."""
+    """Prüft dass Urlaubstage als 'vacation' mit ausgeglichenem Saldo erscheinen — Urlaub erzeugt kein Defizit.
+
+    L3 (Audit 2026-07-31): Soll UND Ist sind an einem GANZTAGS-Urlaubstag ohne
+    Zeiteintrag jetzt 0,00 — dieselbe Quelle wie get_monthly_target (der Tag
+    faellt aus dem Soll) und wie der §16-Dateiexport
+    (export_service.absence_day_target → 0). Frueher schrieb das Journal hier
+    ``actual = target = Σ absence.hours`` (8/8) und buchte damit nicht erbrachte
+    Arbeit als erbracht. Der Saldo bleibt unveraendert 0,00, und die Tageszeilen
+    summieren sich jetzt zum Monats-Summary."""
     tuesday = date(2026, 3, 10)
     _make_absence(db, test_user, tuesday, AbsenceType.VACATION, hours=8.0)
     result = journal_service.get_journal(db, test_user, 2026, 3)
     day = next(d for d in result["days"] if d["date"] == "2026-03-10")
     assert day["type"] == "vacation"
-    assert day["target_hours"] == 8.0  # target = absence_sum so balance = 0
+    assert day["target_hours"] == 0.0
+    assert day["actual_hours"] == 0.0
     assert day["balance"] == 0.0
 
 
@@ -190,3 +200,157 @@ def test_journal_renders_without_error_for_fixed_mode_user(db, default_tenant):
 
     # Bewusst KEINE Assertion, dass Σ(day["target_hours"]) == monthly_summary
     # (Finding 3: erwartete Divergenz bei fixem Monats-Soll, kein Bug).
+
+
+# --- Audit 2026-07-31 / L2 + L3: die Tageszeile muss aus DERSELBEN Quelle -----
+# kommen wie Berechnung (calculation_service) und §16-Datei (export_service).
+#
+# L2 (Regression aus 1.18.0): die dort eingefuehrte Klemmung des soll-
+#     reduzierenden Anteils wurde auch auf HALBTAGS-Abwesenheiten angewandt;
+#     _day_soll_contribution klemmt bewusst nur ganztaegige (`half is False`).
+# L3: bei einer Abwesenheit OHNE Zeiteintrag wurde `actual = target =
+#     Σ absence.hours` gesetzt — bei einem Halbtag also die offene
+#     Arbeitshaelfte als erbrachtes Ist gutgeschrieben (gruen statt Defizit).
+
+def test_journal_half_day_absence_with_work_matches_calculation(db, test_user):
+    """L2: ½ Urlaub (4 h) an einem 8-h-Tag, an dem 6 h gearbeitet wurden.
+    Tageszeile muss Soll 4 / Ist 6 / Saldo +2 zeigen (wie die Berechnung und
+    die §16-Datei), nicht die 1.18.0-Klemmung 6/6/0."""
+    monday = date(2026, 3, 9)
+    _make_entry(db, test_user, monday, 8, 15, break_min=60)  # 6h netto
+    _make_absence(db, test_user, monday, AbsenceType.VACATION, hours=4.0, half_day=True)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(d for d in result["days"] if d["date"] == "2026-03-09")
+    assert day["target_hours"] == 4.0
+    assert day["actual_hours"] == 6.0
+    assert day["balance"] == 2.0
+
+
+def test_journal_half_day_absence_without_entry_shows_deficit(db, test_user):
+    """L3: ½ Urlaub (4 h) an einem 8-h-Tag OHNE Zeiteintrag. Die offene
+    Arbeitshaelfte ist NICHT erbracht → Soll 4 / Ist 0 / Saldo −4 (statt
+    4/4/0, wo genau die fehlende Erfassung unsichtbar wurde)."""
+    monday = date(2026, 3, 9)
+    _make_absence(db, test_user, monday, AbsenceType.VACATION, hours=4.0, half_day=True)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(d for d in result["days"] if d["date"] == "2026-03-09")
+    assert day["target_hours"] == 4.0
+    assert day["actual_hours"] == 0.0
+    assert day["balance"] == -4.0
+
+
+def test_journal_full_day_absence_with_kept_entry_unchanged(db, test_user):
+    """Kontrolltest (Byte-Identitaet): der GANZTAGS-Fall mit behaltenem
+    Zeiteintrag (F1 aus 1.18.0, „+"-Knopf mit keep_time_entries) bleibt
+    unveraendert Soll 6 / Ist 6 / Saldo 0 — nur der nicht gearbeitete Teil
+    des Tages faellt weg."""
+    monday = date(2026, 3, 9)
+    _make_entry(db, test_user, monday, 8, 15, break_min=60)  # 6h netto
+    # create_absence klemmt die Stunden auf max(0, 8 − 6) = 2
+    _make_absence(db, test_user, monday, AbsenceType.VACATION, hours=2.0, half_day=False)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(d for d in result["days"] if d["date"] == "2026-03-09")
+    assert day["target_hours"] == 6.0
+    assert day["actual_hours"] == 6.0
+    assert day["balance"] == 0.0
+
+
+def test_journal_day_rows_sum_to_monthly_summary(db, test_user):
+    """L2+L3 Invariante: mit gemischten Abwesenheiten (Halbtag mit Arbeit,
+    Ganztag ohne Arbeit, Krank, Ueberstundenausgleich) muessen die Tageszeilen
+    in der Summe exakt das Monats-Summary ergeben — Tageszeile und Berechnung
+    haben jetzt dieselbe Quelle. (Nur fuer Nicht-Fix-Modus-MA, siehe
+    test_journal_renders_without_error_for_fixed_mode_user.)"""
+    _make_entry(db, test_user, date(2026, 3, 9), 8, 15, break_min=60)   # 6h + ½ Urlaub
+    _make_absence(db, test_user, date(2026, 3, 9), AbsenceType.VACATION, hours=4.0, half_day=True)
+    _make_absence(db, test_user, date(2026, 3, 10), AbsenceType.VACATION, hours=8.0, half_day=False)
+    _make_absence(db, test_user, date(2026, 3, 11), AbsenceType.SICK, hours=8.0, half_day=False)
+    _make_absence(db, test_user, date(2026, 3, 12), AbsenceType.OVERTIME, hours=8.0, half_day=False)
+    _make_entry(db, test_user, date(2026, 3, 13), 8, 16, break_min=0)   # 8h regulaer
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    sum_target = round(sum(d["target_hours"] for d in result["days"]), 2)
+    sum_actual = round(sum(d["actual_hours"] for d in result["days"]), 2)
+    assert sum_target == pytest.approx(result["monthly_summary"]["target_hours"])
+    assert sum_actual == pytest.approx(result["monthly_summary"]["actual_hours"])
+
+
+# --- Audit 2026-07-31 / uebernommen aus Welle B ------------------------------
+# Feiertag MIT Krank-/Fortbildungs-Abwesenheit. Die zu schuetzende Invariante ist
+# unveraendert: die Tageszeile muss dasselbe sagen wie das ``monthly_summary`` im
+# SELBEN Response. Der erwartete WERT hat sich mit Fund K des Audits 2026-07-31
+# geaendert — die Gutschrift folgt jetzt der Soll-Struktur des Tages
+# (``calculation_service.credit_day_weight``), an einem Feiertag ist sie also 0
+# statt eines vollen Tagessolls Phantom-Ueberstunden. Beide Seiten stehen jetzt
+# auf 0; vorher standen beide (falsch) auf 8.
+
+def test_journal_holiday_with_sick_matches_calculation(db, test_user):
+    """Krank an einem Feiertag: Soll 0 (Feiertag) UND Ist 0 (keine Gutschrift an
+    einem Tag ohne Arbeitspflicht) — und beides deckungsgleich mit
+    get_monthly_actual im selben Response."""
+    d = date(2026, 3, 11)  # Mittwoch
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    _make_absence(db, test_user, d, AbsenceType.SICK, hours=8.0)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["target_hours"] == 0.0
+    assert day["actual_hours"] == 0.0
+    assert day["balance"] == 0.0
+
+    expected_actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
+    assert round(sum(x["actual_hours"] for x in result["days"]), 2) == pytest.approx(
+        float(expected_actual))
+    assert result["monthly_summary"]["actual_hours"] == pytest.approx(float(expected_actual))
+
+
+def test_journal_holiday_with_training_matches_calculation(db, test_user):
+    """Dieselbe Regel fuer Fortbildung (der zweite ist-gutgeschriebene Typ)."""
+    d = date(2026, 3, 11)
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    _make_absence(db, test_user, d, AbsenceType.TRAINING, hours=6.0)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 0.0
+
+    expected_actual = calculation_service.get_monthly_actual(db, test_user, 2026, 3)
+    assert result["monthly_summary"]["actual_hours"] == pytest.approx(float(expected_actual))
+
+
+def test_journal_holiday_without_absence_unchanged(db, test_user):
+    """Kontrolltest (Byte-Identitaet): ein Feiertag ohne Abwesenheit und ein
+    Feiertag, an dem gearbeitet wurde, bleiben unveraendert."""
+    d = date(2026, 3, 11)
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 0.0
+    assert day["target_hours"] == 0.0
+
+    _make_entry(db, test_user, d, 9, 13)  # 4h am Feiertag gearbeitet
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 4.0
+    assert day["target_hours"] == 0.0
+
+
+def test_journal_holiday_with_vacation_stays_zero(db, test_user):
+    """Kontrolltest: ein NICHT ist-gutgeschriebener Typ (Urlaub) am Feiertag
+    aendert nichts — 0/0/0, genau wie get_monthly_actual ihn nicht zaehlt."""
+    d = date(2026, 3, 11)
+    db.add(PublicHoliday(date=d, name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    _make_absence(db, test_user, d, AbsenceType.VACATION, hours=8.0)
+
+    result = journal_service.get_journal(db, test_user, 2026, 3)
+    day = next(x for x in result["days"] if x["date"] == "2026-03-11")
+    assert day["actual_hours"] == 0.0
+    assert day["target_hours"] == 0.0

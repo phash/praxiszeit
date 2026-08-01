@@ -13,6 +13,14 @@ test.describe('Admin Change Requests', () => {
     await expect(adminPage.getByRole('button', { name: 'Alle' })).toBeVisible();
   });
 
+  // Genehmigen/Ablehnen sind die beiden Pfade, auf denen ein Antrag echte
+  // Daten verändert — und beide steckten in einer verschluckten
+  // Sichtbarkeitsabfrage ohne else-Zweig: verschwand der Knopf, war der Test
+  // grün. Dazu kam ein `try { … } catch { test.skip() }` um das Anlegen des
+  // Antrags („Backend enum issue may prevent creation"), das einen kaputten
+  // Antragspfad in ein stilles Überspringen verwandelt hätte. Beides ist fort;
+  // die Karte wird über einen eindeutigen Begründungs-Marker adressiert, damit
+  // `.first()` keinen Rest-Antrag aus einem früheren Lauf trifft.
   test('approve change request', async ({
     adminPage,
     testEmployee,
@@ -29,27 +37,17 @@ test.describe('Admin Change Requests', () => {
     });
 
     // Create a change request via employee API
-    let requestCreated = false;
-    try {
-      await createChangeRequest({
-        request_type: 'update',
-        time_entry_id: entry.id,
-        proposed_date: pastDate,
-        proposed_start_time: '09:00',
-        proposed_end_time: '18:00',
-        proposed_break_minutes: 30,
-        proposed_note: '',
-        reason: 'E2E test - need to approve',
-      });
-      requestCreated = true;
-    } catch {
-      // Backend enum issue may prevent creation
-    }
-
-    if (!requestCreated) {
-      test.skip();
-      return;
-    }
+    const uniqueReason = `E2E approve ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await createChangeRequest({
+      request_type: 'update',
+      time_entry_id: entry.id,
+      proposed_date: pastDate,
+      proposed_start_time: '09:00',
+      proposed_end_time: '18:00',
+      proposed_break_minutes: 30,
+      proposed_note: '',
+      reason: uniqueReason,
+    });
 
     await adminPage.goto('/admin/change-requests');
     await expect(adminPage.getByRole('heading', { name: 'Änderungsanträge' })).toBeVisible();
@@ -59,16 +57,17 @@ test.describe('Admin Change Requests', () => {
     await adminPage.getByRole('button', { name: 'Offen' }).click();
     await adminPage.waitForLoadState('networkidle');
 
-    // Find "Genehmigen" button
-    const approveButton = adminPage.getByRole('button', { name: 'Genehmigen' }).first();
-    const hasApprove = await approveButton.isVisible({ timeout: 5000 }).catch(() => false);
+    // Genau die Karte DIESES Antrags
+    const card = adminPage.locator('div.bg-white').filter({ hasText: uniqueReason }).last();
+    await expect(card).toBeVisible({ timeout: 10000 });
+    await card.getByRole('button', { name: 'Genehmigen' }).click();
 
-    if (hasApprove) {
-      await approveButton.click();
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: /genehmigt/ })
-      ).toBeVisible({ timeout: 10000 });
-    }
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: /genehmigt/ })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Und der Antrag ist danach nicht mehr offen.
+    await expect(card).toHaveCount(0, { timeout: 10000 });
   });
 
   test('reject change request with reason', async ({
@@ -87,27 +86,17 @@ test.describe('Admin Change Requests', () => {
     });
 
     // Create a change request via employee API
-    let requestCreated = false;
-    try {
-      await createChangeRequest({
-        request_type: 'update',
-        time_entry_id: entry.id,
-        proposed_date: pastDate,
-        proposed_start_time: '08:00',
-        proposed_end_time: '17:00',
-        proposed_break_minutes: 45,
-        proposed_note: '',
-        reason: 'E2E test - need to reject',
-      });
-      requestCreated = true;
-    } catch {
-      // Backend enum issue may prevent creation
-    }
-
-    if (!requestCreated) {
-      test.skip();
-      return;
-    }
+    const uniqueReason = `E2E reject ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await createChangeRequest({
+      request_type: 'update',
+      time_entry_id: entry.id,
+      proposed_date: pastDate,
+      proposed_start_time: '08:00',
+      proposed_end_time: '17:00',
+      proposed_break_minutes: 45,
+      proposed_note: '',
+      reason: uniqueReason,
+    });
 
     await adminPage.goto('/admin/change-requests');
     await expect(adminPage.getByRole('heading', { name: 'Änderungsanträge' })).toBeVisible();
@@ -116,25 +105,25 @@ test.describe('Admin Change Requests', () => {
     await adminPage.getByRole('button', { name: 'Offen' }).click();
     await adminPage.waitForLoadState('networkidle');
 
-    // Find "Ablehnen" button
-    const rejectButton = adminPage.getByRole('button', { name: 'Ablehnen' }).first();
-    const hasReject = await rejectButton.isVisible({ timeout: 5000 }).catch(() => false);
+    // Genau die Karte DIESES Antrags
+    const card = adminPage.locator('div.bg-white').filter({ hasText: uniqueReason }).last();
+    await expect(card).toBeVisible({ timeout: 10000 });
+    await card.getByRole('button', { name: 'Ablehnen' }).click();
 
-    if (hasReject) {
-      await rejectButton.click();
+    // Fill rejection reason (Formular klappt in derselben Karte auf)
+    const textarea = card.locator('textarea').first();
+    await expect(textarea).toBeVisible({ timeout: 5000 });
+    await textarea.fill('E2E Test: Ablehnung mit Begründung');
 
-      // Fill rejection reason
-      const textarea = adminPage.locator('textarea').first();
-      await expect(textarea).toBeVisible({ timeout: 5000 });
-      await textarea.fill('E2E Test: Ablehnung mit Begründung');
+    // Click the "Ablehnen" button in the expanded area
+    await card.getByRole('button', { name: 'Ablehnen' }).click();
 
-      // Click the "Ablehnen" button in the expanded area
-      await adminPage.getByRole('button', { name: 'Ablehnen' }).first().click();
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: /abgelehnt/ })
+    ).toBeVisible({ timeout: 10000 });
 
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: /abgelehnt/ })
-      ).toBeVisible({ timeout: 10000 });
-    }
+    // Und der Antrag ist danach nicht mehr offen.
+    await expect(card).toHaveCount(0, { timeout: 10000 });
   });
 
   test('filter tabs switch correctly', async ({ adminPage }) => {

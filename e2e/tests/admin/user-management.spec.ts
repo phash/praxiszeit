@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
+import { purgeUser } from '../../fixtures/test-data.fixture';
 import { daysFromNow, weekdayFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin User Management', () => {
@@ -33,13 +34,13 @@ test.describe('Admin User Management', () => {
       adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
     ).toBeVisible({ timeout: 10000 });
 
-    // Cleanup: find and deactivate the user via API
+    // Cleanup: das über die Oberfläche angelegte Konto endgültig löschen.
+    // `DELETE /admin/users/{id}` deaktiviert nur — die Zeile bliebe samt ihrer
+    // automatisch eingebuchten Betriebsferien-Abwesenheiten im Jahresexport.
     try {
-      const users = await adminApi.get('/admin/users');
+      const users = await adminApi.get('/admin/users?include_inactive=true&include_hidden=true&limit=500');
       const created = users.find((u: any) => u.username === uniqueName);
-      if (created) {
-        await adminApi.delete(`/admin/users/${created.id}`);
-      }
+      if (created) await purgeUser(adminApi, created.id);
     } catch { /* best effort cleanup */ }
   });
 
@@ -147,12 +148,12 @@ test.describe('Admin User Management', () => {
   // wirkungslos gewesen wäre. Der Weg „Bearbeiten → Wochenstunden anpassen… →
   // Nach Tagen → rückwirkend → bestätigen → speichern" ist damit der neue Kern
   // des Features und muss E2E abgesichert sein.
-  test('Tagesplan rückwirkend über den Dialog ändern', async ({ adminPage, adminApi }) => {
+  test('Tagesplan rückwirkend über den Dialog ändern', async ({ adminPage, createUser }) => {
     // Ein eigener Mitarbeiter mit individuellem Tagesplan — die testEmployee-
     // Fixture legt bewusst einen gleichmäßigen an, und ein PUT könnte den Plan
     // seit Task 7 gar nicht mehr umstellen (400 auf allen historisierten Feldern).
     const lastName = `Tagesplan${Date.now()}`;
-    const created = await adminApi.post('/admin/users', {
+    await createUser({
       username: `e2e_dayplan_${Date.now()}`,
       password: 'TestPass123!',
       first_name: 'Tages',
@@ -167,9 +168,8 @@ test.describe('Admin User Management', () => {
       hours_tuesday: 6,
       hours_wednesday: 4,
     });
-    const userId = (created.user ?? created).id;
 
-    try {
+    {
       await adminPage.goto('/admin/users');
       await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
 
@@ -232,15 +232,13 @@ test.describe('Admin User Management', () => {
       ).toBeVisible();
 
       await dialog.getByRole('button', { name: /schließen/i }).click();
-    } finally {
-      try { await adminApi.delete(`/admin/users/${userId}`); } catch { /* best effort */ }
     }
   });
 
-  test('deactivate user', async ({ adminPage, adminApi }) => {
+  test('deactivate user', async ({ adminPage, createUser }) => {
     // Create a user via API to deactivate
     const username = `e2e_deact_${Date.now()}`;
-    const res = await adminApi.post('/admin/users', {
+    await createUser({
       username,
       password: 'TestPass123!',
       first_name: 'Deact',
@@ -251,7 +249,6 @@ test.describe('Admin User Management', () => {
       vacation_days: 30,
       track_hours: true,
     });
-    const userId = (res.user ?? res).id;
 
     await adminPage.goto('/admin/users');
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
@@ -274,15 +271,12 @@ test.describe('Admin User Management', () => {
     await expect(
       adminPage.locator('[role="alert"]').filter({ hasText: 'deaktiviert' })
     ).toBeVisible({ timeout: 10000 });
-
-    // Cleanup
-    try { await adminApi.delete(`/admin/users/${userId}`); } catch { /* already deactivated */ }
   });
 
-  test('reactivate user', async ({ adminPage, adminApi }) => {
+  test('reactivate user', async ({ adminPage, adminApi, createUser }) => {
     // Create a user and deactivate via API
     const username = `e2e_react_${Date.now()}`;
-    const res = await adminApi.post('/admin/users', {
+    const created = await createUser({
       username,
       password: 'TestPass123!',
       first_name: 'React',
@@ -293,9 +287,8 @@ test.describe('Admin User Management', () => {
       vacation_days: 30,
       track_hours: true,
     });
-    const userId = (res.user ?? res).id;
     // Deactivate
-    await adminApi.delete(`/admin/users/${userId}`);
+    await adminApi.delete(`/admin/users/${created.id}`);
 
     await adminPage.goto('/admin/users');
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
@@ -321,9 +314,6 @@ test.describe('Admin User Management', () => {
     await expect(
       adminPage.locator('[role="alert"]').filter({ hasText: 'reaktiviert' })
     ).toBeVisible({ timeout: 10000 });
-
-    // Cleanup
-    try { await adminApi.delete(`/admin/users/${userId}`); } catch { /* best effort */ }
   });
 
   test('set password for user', async ({ adminPage, testEmployee }) => {
@@ -352,28 +342,44 @@ test.describe('Admin User Management', () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
+  // Vorher endete dieser Test mit „die Seite darf nicht abstürzen" — die
+  // eigentliche Wirkung (der MA verschwindet aus Berichten/Übersichten) wurde
+  // nie geprüft, und der Bestätigungsdialog steckte in einer verschluckten
+  // Sichtbarkeitsabfrage, obwohl er immer erscheint. Jetzt: ausblenden →
+  // Zeile ist aus der Standardliste fort → über „Ausgeblendete anzeigen"
+  // wiederfinden → zurückschalten.
   test('toggle hidden user', async ({ adminPage, testEmployee }) => {
     await adminPage.goto('/admin/users');
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
 
     // Search for test employee
     const searchInput = adminPage.getByPlaceholder('Suche nach Name oder Benutzername...');
-    await searchInput.fill(testEmployee.last_name);
+    await searchInput.fill(testEmployee.username);
 
-    // Find the hide/unhide button (eye icon)
-    const hideButton = adminPage.locator('button[title="Ausblenden"], button[title="Einblenden"]').first();
-    await expect(hideButton).toBeVisible({ timeout: 5000 });
-    await hideButton.click();
+    const row = adminPage.locator('tr', { hasText: testEmployee.username });
+    await expect(row.first()).toBeVisible({ timeout: 10000 });
+    await row.first().locator('button[title="Ausblenden"]').click();
 
-    // Confirm if a dialog appears
     const dialog = adminPage.getByRole('alertdialog');
-    const hasDialog = await dialog.isVisible({ timeout: 2000 }).catch(() => false);
-    if (hasDialog) {
-      await dialog.getByRole('button').last().click();
-    }
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+    await dialog.getByRole('button', { name: 'Ausblenden' }).click();
 
-    // The page should not error out
-    await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: 'ausgeblendet' })
+    ).toBeVisible({ timeout: 10000 });
+
+    // Wirkung: aus der Standardliste verschwunden …
+    await expect(row).toHaveCount(0, { timeout: 10000 });
+
+    // … und über „Ausgeblendete anzeigen" wieder da, mit umgedrehtem Knopf.
+    await adminPage.getByLabel('Ausgeblendete anzeigen').check();
+    await expect(row.first()).toBeVisible({ timeout: 10000 });
+    await row.first().locator('button[title="Sichtbar schalten"]').click();
+    await expect(dialog).toBeVisible({ timeout: 5000 });
+    await dialog.getByRole('button', { name: 'Sichtbar schalten' }).click();
+    await expect(
+      adminPage.locator('[role="alert"]').filter({ hasText: 'ist jetzt sichtbar' })
+    ).toBeVisible({ timeout: 10000 });
   });
 
   test('search filter works', async ({ adminPage }) => {

@@ -94,4 +94,23 @@ describe('ConfirmDialog', () => {
     const confirmBtn = screen.getByRole('button', { name: 'OK' });
     expect(confirmBtn.className).toContain(expectedClass);
   });
+
+  // U5 (Audit 2026-07-31): callers such as Users.tsx (anonymize/purge),
+  // AdminDashboard.tsx (year-closing) and ErrorMonitoring.tsx build
+  // multi-line messages with \n / \n\n + "•" bullets. Plain <p> collapses all
+  // whitespace, so the trailing sentence ("... kann nicht rückgängig gemacht
+  // werden.") used to glue itself onto the last bullet. `whitespace-pre-line`
+  // must be present so the browser actually renders the line breaks.
+  it('preserves line breaks in a multi-line message (whitespace-pre-line)', () => {
+    const message =
+      'Soll Max Mustermann gemäß DSGVO Art. 17 anonymisiert werden?\n\nDabei werden:\n• Name, Benutzername und E-Mail-Adresse unwiderruflich gelöscht\n• Abwesenheiten (Urlaub, Krankheit) gelöscht\n• Zeiteinträge bleiben für ArbZG §16 (2 Jahre) erhalten\n\nDieser Vorgang kann nicht rückgängig gemacht werden.';
+    renderDialog({ message });
+    const desc = document.getElementById('confirm-dialog-desc');
+    expect(desc).not.toBeNull();
+    expect(desc!.className).toContain('whitespace-pre-line');
+    // The raw text (including the newlines) must reach the DOM unmodified —
+    // whitespace-pre-line only changes how the browser RENDERS it, not what
+    // ends up in textContent.
+    expect(desc!.textContent).toBe(message);
+  });
 });

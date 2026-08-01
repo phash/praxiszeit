@@ -157,11 +157,69 @@ als geleistete Ist-Stunden (§3 EntgFG): ihre gebuchten `hours` werden zum Ist a
 
 ```
 Monats-Ist = Σ net_hours(Zeiteinträge im Beschäftigungsfenster)
-           + Σ hours(TRAINING + SICK im Beschäftigungsfenster)
+           + Σ hours(TRAINING + SICK im Beschäftigungsfenster) × Tagesgewicht
 ```
 
 > Im Minijob-Fixmodus (§10.5) kommt eine dritte, ebenfalls gutgeschriebene Quelle
 > hinzu (Feiertag/VACATION/PAID_LEAVE auf einem geplanten Tag) — Details dort.
+
+#### Die Gutschrift folgt der Soll-Struktur des Tages
+
+Der **Zweck** der Gutschrift ist Saldo-Neutralität: Krankheit und Fortbildung reduzieren
+das Soll *nicht* (§5), stattdessen gleicht die Gutschrift auf der Ist-Seite es aus — der
+Saldo des Tages bewegt sich nicht. Das funktioniert nur, solange die Gutschrift **denselben
+strukturellen Regeln folgt wie das Soll**. Deshalb wird jede gutgeschriebene Abwesenheit mit
+dem Gewicht ihres Tages multipliziert (`calculation_service.credit_day_weight`):
+
+| Tag | Tages-Soll | Gewicht der Gutschrift |
+|-----|-----------|------------------------|
+| Regulärer Arbeitstag | volles Tagessoll | **1,0** |
+| Samstag / Sonntag | 0 (übersprungen) | **0** |
+| Gesetzlicher Feiertag | 0 | **0** |
+| Sondertag 24./31.12. als **„halber Feiertag"** | 0,5 × Tagessoll (#146) | **0,5** |
+| Sondertag 24./31.12. als **„frei"** | 0 | **0** |
+
+**Grundsatz:** An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — es gibt
+kein Soll, das auszugleichen wäre. Rechtlich ordnet **§ 4 Abs. 2 EntgFG** den Feiertag
+ausdrücklich der Feiertagsvergütung nach § 2 EntgFG zu, nicht zusätzlich der
+Entgeltfortzahlung wegen Krankheit nach § 3 EntgFG.
+
+**Wichtig — die Regel lautet „kein Soll, keine Gutschrift", nicht „Gutschrift = Soll":**
+An einem regulären Arbeitstag bleibt die Gutschrift **ungedeckelt**. Eine Fortbildung, die
+länger dauerte als der Arbeitstag, ist echte Mehrarbeit und bleibt es.
+
+##### Rechenbeispiel
+
+Vollzeit, 8 h/Tag. Der Mitarbeiter ist vom **24.12. bis 28.12.2026** durchgehend
+krankgeschrieben. Der 24.12. ist als **„halber Feiertag"** konfiguriert, der 25. und 26.12.
+sind gesetzliche Feiertage, der 27.12. ist ein Sonntag, der 28.12. ein regulärer Montag.
+Gebucht sind an allen fünf Tagen `hours = 8` (die Direktbuchung schreibt das volle Tagessoll).
+
+| Datum | Art des Tages | Soll | `hours` | Gewicht | Ist-Gutschrift | Saldo-Effekt |
+|-------|---------------|-----:|--------:|--------:|---------------:|-------------:|
+| Do 24.12. | halber Feiertag | 4,00 h | 8,00 h | 0,5 | 4,00 h | **0,00 h** |
+| Fr 25.12. | Feiertag | 0,00 h | 8,00 h | 0 | 0,00 h | **0,00 h** |
+| Sa 26.12. | Feiertag + Samstag | 0,00 h | 8,00 h | 0 | 0,00 h | **0,00 h** |
+| So 27.12. | Sonntag | 0,00 h | 8,00 h | 0 | 0,00 h | **0,00 h** |
+| Mo 28.12. | Arbeitstag | 8,00 h | 8,00 h | 1,0 | 8,00 h | **0,00 h** |
+| **Summe** | | **12,00 h** | 40,00 h | | **12,00 h** | **0,00 h** |
+
+Der Krankheitszeitraum ist damit vollständig saldo-neutral — genau wie beabsichtigt.
+
+> **Vorher (bis einschließlich 1.17.0) war das falsch:** die Gutschrift summierte `hours` roh.
+> Derselbe Zeitraum ergab 12,00 h Soll gegen **40,00 h** Ist = **+28,00 h Überstunden** aus dem
+> Nichts. Wer über Weihnachten krankgeschrieben war, sammelte je Feiertag und je Wochenendtag
+> ein volles Tagessoll Überstunden. Der Halbtags-Sondertag traf zusätzlich den ganz normalen
+> Betrieb: ein Kranktag am 24.12. brachte 4 h Soll gegen 8 h Gutschrift = +4 h.
+
+Die Regel gilt an **allen** Flächen, die die Gutschrift kennen: `get_range_actual` (und damit
+`get_monthly_actual`), `get_overtime_account`, `get_overtime_history_detailed` (speist die
+MiLoG-Fälligkeit, §10.4), `get_ytd_summary` und die Tageszeilen des Monatsjournals. Die
+Summenzeilen der Datei-Exporte ziehen ihre Ist-Zahl seit 1.18.0 direkt aus
+`get_monthly_actual` und tragen die Gutschrift damit automatisch mit (§16-Beleg und Bildschirm
+können nicht mehr auseinanderlaufen); die **Per-Tag-Spalte „Netto (Std)"** dieser Dateien
+bleibt bewusst die reine **Stempelzeit** — sie ist der § 16-Nachweis der tatsächlichen
+Anwesenheit, die Abwesenheit steht in der Spalte daneben.
 
 ---
 
@@ -209,6 +267,11 @@ Wie jeder Abwesenheitstyp Soll, Ist und Urlaubskonto beeinflusst:
 | **OTHER** (sonstige, inkl. unbezahlt entschuldigt) | ✅ ja | ❌ nein | Tagessoll des Tages | ❌ nein | saldo-neutral, aber **unbezahlt** (Lohn gekürzt) |
 | **OVERTIME** (Überstundenausgleich) | ❌ **nein** | ❌ nein (Ist = 0) | **explizite** Stunden | ❌ nein | **Soll bleibt, Ist = 0 h → Überstundenkonto sinkt** um die geplanten Stunden |
 
+> **SICK/TRAINING — „zählt als Ist" gilt nur, soweit an diesem Tag auch ein Soll steht:**
+> die Gutschrift wird mit dem Tagesgewicht multipliziert (Wochenende/Feiertag 0,
+> „halber Feiertag" 24./31.12. 0,5) — siehe §4.2. Sonst entstünden Überstunden für einen
+> Tag, an dem gar nicht gearbeitet worden wäre.
+>
 > **OVERTIME-Sonderregel (CLAUDE.md):** Beim Überstundenausgleich bleibt das **Soll bestehen**
 > und das **Ist ist 0 h** für den Tag — dadurch reduziert sich das Überstundenkonto. Soll wird
 > **nicht** reduziert.

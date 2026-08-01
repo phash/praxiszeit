@@ -381,7 +381,33 @@ def withdraw_change_request(
     current_user: User = Depends(get_current_user),
 ):
     """Withdraw a pending change request."""
-    cr = db.query(ChangeRequest).filter(ChangeRequest.id == request_id, ChangeRequest.tenant_id == current_user.tenant_id).first()
+    # Audit 2026-07-31 (A3): die Antragszeile MUSS GESPERRT gelesen werden, bevor
+    # der Status geprüft wird — wortgleich zu
+    # ``vacation_requests.withdraw_vacation_request``. Ohne Sperre prüft das
+    # Zurückziehen ein veraltetes Abbild: genehmigt der Admin zeitgleich
+    # (``admin_change_requests.review_change_request`` hält die Zeile per
+    # ``with_for_update``), setzt dieses ``DELETE … WHERE id = :id`` ab und
+    # wartet nur auf die Zeilensperre; nach dem Commit des Genehmigers
+    # qualifiziert Postgres die Bedingung unter READ COMMITTED neu
+    # (EvalPlanQual) — sie nennt ausschließlich die ``id``, der inzwischen
+    # GENEHMIGTE Antrag wird also gelöscht, während seine Seiteneffekte
+    # (gebuchte Zeit, Abwesenheit) bestehen bleiben.
+    # Zusatzschaden: ``time_entry_audit_logs.change_request_id`` hängt per
+    # ``ON DELETE SET NULL`` an dieser Zeile und ist Teil des #121-``row_hash``;
+    # das FK-Nullen schreibt am ``before_insert``-Hook vorbei → der gespeicherte
+    # Hash wird stale und ``verify-integrity`` meldet eine völlig legitime Zeile
+    # als manipuliert.
+    # Mit der Sperre liefert Postgres nach dem Warten die AKTUELLE Zeilenversion
+    # → die Statusprüfung unten sieht APPROVED und lehnt mit 400 ab.
+    cr = (
+        db.query(ChangeRequest)
+        .filter(
+            ChangeRequest.id == request_id,
+            ChangeRequest.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
     if not cr:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.user_id != current_user.id:

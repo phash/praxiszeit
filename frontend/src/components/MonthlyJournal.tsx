@@ -310,34 +310,53 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     }
   }
 
+  /**
+   * U1 (Audit 2026-07-31): ein Typwechsel lief als ZWEI getrennt committende
+   * Aufrufe — erst DELETE, dann POST. Scheiterte der zweite Schritt (400
+   * Beschäftigungsfenster, 400 freier Sondertag, 409 Misch-Tag) oder brach die
+   * Pflichtfeld-Prüfung NACH dem DELETE ab, war der Datensatz weg; der
+   * `catch`-Zweig zeigte nur eine Meldung und liess den gelöschten Eintrag
+   * weiter auf dem Bildschirm stehen. Drei Änderungen:
+   *
+   * 1. Die Pflichtfeld-Prüfung läuft VOR jedem schreibenden Aufruf (und vor
+   *    `setSaving`) — sie kann keinen Löschvorgang mehr hinterlassen. Der
+   *    Bearbeitungsmodus bleibt hier bewusst offen: es wurde nichts verändert,
+   *    und der/die Bearbeitende soll das fehlende Feld nachtragen können, ohne
+   *    die Eingaben zu verlieren.
+   * 2. Wo es trägt, wird der ATOMARE Serverweg genutzt: `POST /absences` löscht
+   *    kollidierende Zeiteinträge in DERSELBEN Transaktion
+   *    (`keep_time_entries: false`, mit Audit-Log `absence_creation`). Das
+   *    greift, wenn am Tag kein weiterer Zeiteintrag stehen bleiben soll — der
+   *    Regelfall. Bleiben andere Einträge stehen, kennt der Server nur
+   *    „alle oder keinen"; dann muss der eine bearbeitete Eintrag weiterhin
+   *    vorab gelöscht werden. Beim Wechsel Abwesenheit -> Arbeit ist die
+   *    Reihenfolge umgedreht (erst schreiben, dann die Abwesenheit löschen):
+   *    scheitert das Schreiben, ist nichts verloren; ein Tag mit beidem ist
+   *    zulässig (Misch-Tag) und sofort sichtbar korrigierbar.
+   * 3. Jeder Fehlschlag beendet den Bearbeitungsmodus und lädt neu, damit der
+   *    Bildschirm den Wahrheitsstand zeigt. Eine LEERE Antwort auf
+   *    `POST /absences` gilt als Fehler (die Serverseite antwortet dafür seit
+   *    dem Audit mit 400 — die Prüfung hier deckt ältere Backends ab).
+   */
   async function handleAdminSave(day: JournalDay) {
+    const hadTimeEntry = day.time_entries.length > 0;
+    const hadAbsence = day.absences.length > 0;
+    const switchingToAbsence = hadTimeEntry && editState.entryType !== 'work';
+    const switchingToWork = hadAbsence && editState.entryType === 'work';
+    const editedEntry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
+
+    // (1) Pflichtfeld-Prüfung VOR jedem schreibenden Aufruf.
+    if (editState.entryType === 'work' && (!editState.startTime || !editState.endTime)) {
+      toast.error('Von und Bis sind Pflichtfelder');
+      return;
+    }
+
     setSaving(true);
     try {
-      const hadTimeEntry = day.time_entries.length > 0;
-      const hadAbsence = day.absences.length > 0;
-      const switchingToAbsence = hadTimeEntry && editState.entryType !== 'work';
-      const switchingToWork = hadAbsence && editState.entryType === 'work';
-
-      // Delete old entry if type changed
-      const editedEntry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
-      if (switchingToAbsence && editedEntry) {
-        await apiClient.delete(`/admin/time-entries/${editedEntry.id}`);
-      }
-      if (switchingToWork && day.absences[0]) {
-        await apiClient.delete(`/absences/${day.absences[0].id}`);
-      }
-
       if (editState.entryType === 'work') {
-        const start = editState.startTime;
-        const end = editState.endTime;
-        if (!start || !end) {
-          toast.error('Von und Bis sind Pflichtfelder');
-          setSaving(false);
-          return;
-        }
         const payload = {
-          start_time: start,
-          end_time: end,
+          start_time: editState.startTime,
+          end_time: editState.endTime,
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
         };
         const existing = !switchingToWork ? editedEntry : null;
@@ -347,23 +366,42 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
             ? apiClient.put(`/admin/time-entries/${existing.id}`, { ...payload, ...extra })
             : apiClient.post(`/admin/users/${userId}/time-entries`, { date: day.date, ...payload, ...extra }),
         );
+        // (2) Die Abwesenheit ERST nach erfolgreichem Schreiben entfernen.
+        if (switchingToWork && day.absences[0]) {
+          await apiClient.delete(`/absences/${day.absences[0].id}`);
+        }
         // ArbZG-Warnungen der Admin-Schreibpfade anzeigen (§3 >8h/Tag, >48h/Woche,
         // §6 Nacht, BREAK_WAIVER) — analog zu den MA-Pfaden (StampWidget/TimeTracking).
         showArbzgWarnings(toast, res.data?.warnings);
       } else {
-        // Delete existing absence of different type if present, then create new
-        if (hadAbsence && day.absences[0] && !switchingToWork) {
+        const remainingEntries = day.time_entries.filter(e => e.id !== editingEntryId);
+        // (2) Atomarer Weg, wenn am Tag kein Zeiteintrag stehen bleiben soll.
+        const serverDropsEntries = switchingToAbsence && remainingEntries.length === 0;
+        if (switchingToAbsence && !serverDropsEntries && editedEntry) {
+          await apiClient.delete(`/admin/time-entries/${editedEntry.id}`);
+        }
+        // Eine bestehende Abwesenheit ANDEREN Typs muss weichen — der POST würde
+        // sonst mit 409 abgelehnt (ein Ersetzen kennt der Endpunkt nicht).
+        if (hadAbsence && day.absences[0]) {
           await apiClient.delete(`/absences/${day.absences[0].id}`);
         }
-        const remainingEntries = day.time_entries.filter(e => e.id !== editingEntryId);
         const res = await apiClient.post('/absences', {
           user_id: userId,
           date: day.date,
           type: editState.entryType,
           hours: parseHours(editState.absenceHours),
           reason_id: editState.reasonId ?? null, // #312
-          keep_time_entries: remainingEntries.length > 0,
+          keep_time_entries: !serverDropsEntries && remainingEntries.length > 0,
         });
+        // (3) „Erfolg" ohne angelegte Zeile ist keiner.
+        if (!Array.isArray(res.data) || res.data.length === 0) {
+          const empty = new Error(
+            'Es wurde keine Abwesenheit angelegt — am Zieltag sind keine Arbeitsstunden geplant.',
+          ) as Error & { response?: { data: { detail: string } } };
+          // Form wie ein API-Fehler, damit getErrorMessage den Klartext zeigt.
+          empty.response = { data: { detail: empty.message } };
+          throw empty;
+        }
         // #376: weiche Kind-krank-Limit-Warnung (§45 SGB V), non-blocking
         showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
       }
@@ -372,6 +410,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       setReloadKey(k => k + 1);
     } catch (err) {
       toast.error(getErrorMessage(err, 'Fehler beim Speichern'));
+      // (3) Wahrheitsstand herstellen: der Bildschirm darf nach einem
+      // Fehlschlag keinen Stand mehr zeigen, den es so nicht (mehr) gibt.
+      cancelEdit();
+      setReloadKey(k => k + 1);
     } finally {
       setSaving(false);
     }

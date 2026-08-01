@@ -15,7 +15,9 @@ from app.schemas.change_request import (
     ChangeRequestBulkReviewResult,
 )
 from app.schemas.time_entry import TimeEntryResponse
-from app.routers.admin_helpers import _create_audit_log, _enrich_cr_response, _enrich_cr_responses
+from app.routers.admin_helpers import (
+    _create_audit_log, _enrich_cr_response, _enrich_cr_responses, lock_user_row,
+)
 from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
@@ -53,6 +55,50 @@ def _vacation_day_contribution(db, user, d, half_day) -> float:
     if dt <= 0:
         return 0.0
     return (0.5 if half_day else 1.0) * weight
+
+
+def _assert_absence_date_bookable(db, tenant_id, target_date) -> None:
+    """Audit 2026-07-31: gesetzlicher Feiertag → keine Abwesenheit an ``target_date``.
+
+    Die Regel stammt aus dem Release-Review 1.16.0 und lebte bis dahin nur im
+    CREATE-Zweig von :func:`review_change_request`. Der UPDATE-Zweig verschob das
+    Datum einer bestehenden Abwesenheit voellig ungeprueft — ein Mitarbeiter
+    konnte seine Krankmeldung per Aenderungsantrag auf den 25.12. legen lassen.
+    Ein Feiertag traegt bereits 0 Soll; eine Abwesenheit darauf kostet je nach Typ
+    einen Urlaubstag fuer einen ohnehin freien Tag bzw. verfaelscht die
+    Abwesenheitstage in Reports und §16-Exporten.
+
+    Bewusst als GEMEINSAMER Helper und nicht als zweite Kopie: die Regel existiert
+    ohnehin schon in vier Fassungen (Direktbuchung ``absences.create_absence``,
+    Antrags-Genehmigung ``admin_vacations.review_vacation_request``,
+    Betriebsferien ``company_closures._get_workdays`` und hier). Beide Zweige
+    dieses Endpunkts teilen sich jetzt EINE — der Wortlaut der Fehlermeldung
+    bleibt exakt der des CREATE-Zweigs, dessen Verhalten damit unveraendert ist.
+
+    **Wochenenden sind hier bewusst NICHT gesperrt** — anders als in der
+    Direktbuchung, die ueber ``weekday() < 5`` filtert. Das ist die im
+    CREATE-Zweig getroffene und hier uebernommene Entscheidung: Praxen mit
+    Samstagsdienst buchen dort reale Abwesenheiten, und ein CR bucht immer genau
+    EINEN vom Menschen benannten Tag (kein Bereich, aus dem stillschweigend Tage
+    herausfallen koennten). Wuerde nur der UPDATE-Zweig Wochenenden sperren,
+    widerspraechen sich die beiden Zweige DESSELBEN Endpunkts — genau die fuenfte
+    Variante, die dieser Helper verhindert. Die Ist-Gutschrift eines Wochenendtags
+    ist seit Fund K ohnehin 0 (``calculation_service.credit_day_weight``).
+    """
+    if target_date is None:
+        return
+    holiday = db.query(PublicHoliday).filter(
+        PublicHoliday.date == target_date,
+        PublicHoliday.tenant_id == tenant_id,  # F-026
+    ).first()
+    if holiday:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"{target_date.strftime('%d.%m.%Y')} ist ein Feiertag "
+                f"({holiday.name}) — dort kann keine Abwesenheit gebucht werden."
+            ),
+        )
 
 
 def _delete_day_time_entries(db, user_id, tenant_id, target_date, changed_by, cr_id):
@@ -152,6 +198,38 @@ def review_change_request(
     current_user: User = Depends(require_admin),
 ):
     """Approve or reject a change request."""
+    # Audit 2026-07-31 (A2): Anker-Sperre auf der MITARBEITER-Zeile, VOR der
+    # Antragszeile. Die Genehmigung ist ein PARALLELER Absence-Buchungspfad
+    # (materialisiert unten Abwesenheiten am Zieltag); die FOR-UPDATE-Sonde auf
+    # der Absence-Tabelle trifft im Normalfall eine LEERE Ergebnismenge und
+    # sperrt unter READ COMMITTED nichts. Da das UNIQUE
+    # ``(tenant, user, date, TYPE)`` lautet, konnte eine gleichzeitige
+    # Direkt-Buchung (``absences.create_absence``) am selben Tag mit einem
+    # ANDEREN Typ durchrutschen. Die Benutzerzeile ist der gemeinsame Anker
+    # aller Buchungspfade (create_absence, review_vacation_request,
+    # Betriebsferien).
+    #
+    # REIHENFOLGE (bindend): Benutzer ZUERST, dann Antrag/Abwesenheit.
+    # ``absences.create_absence`` haelt die Benutzer-Sperre und aktualisiert im
+    # Krank-mit-Urlaubsrueckgabe-Pfad ChangeRequest-Zeilen (absence_id → NULL);
+    # wuerde hier zuerst die CR-Zeile gesperrt, entstuende ein ABBA-Deadlock.
+    # Die Vorabfrage liest nur den Eigentümer des Antrags — der ist
+    # unveraenderlich, ein ungesperrter Lesezugriff genuegt dafuer.
+    _cr_owner = (
+        db.query(ChangeRequest.user_id)
+        .filter(
+            ChangeRequest.id == request_id,
+            ChangeRequest.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
+    if _cr_owner:
+        # Audit 2026-07-31 (Restklasse): gemeinsamer Anker-Helfer, also
+        # ``FOR NO KEY UPDATE`` — dieser Pfad schreibt danach Audit-Zeilen mit
+        # ``changed_by = handelnder Admin`` (zweite, nicht geankerte
+        # Benutzerzeile). Begruendung im Kopf von ``admin_helpers``.
+        lock_user_row(db, current_user.tenant_id, _cr_owner[0])
+
     # F-028: Lock the CR row for the duration of this transaction so that
     # two concurrent approval requests cannot both pass the status check
     # and mutate state. Without with_for_update(), a double-click on "Approve"
@@ -516,26 +594,12 @@ def review_change_request(
             # Release-Review 1.16.0: gesetzliche Feiertage ausschließen. Von den vier
             # Buchungspfaden war dies der einzige ohne Feiertags-Guard — create_absence
             # (absences.py), review_vacation_request und _create_closure_absences
-            # nehmen Feiertage über ihre _get_workdays-/holidays-Mengen heraus. Ein
-            # Feiertag hat bereits 0 Soll; eine Absence darauf kostet je nach Typ einen
-            # Urlaubstag für einen ohnehin freien Tag bzw. verfälscht die Abwesenheits-
-            # tage in Reports und §16-Exporten. Wochenenden sind nicht geprüft — die
-            # tragen ebenfalls 0 Soll und werden von den anderen Pfaden über
-            # `weekday() < 5` ausgeschlossen, hier aber bewusst zugelassen (Praxen mit
-            # Samstagsdienst buchen dort reale Abwesenheiten).
+            # nehmen Feiertage über ihre _get_workdays-/holidays-Mengen heraus.
+            # Audit 2026-07-31: die Regel liegt jetzt in
+            # ``_assert_absence_date_bookable`` (Begruendung + Wochenend-Entscheidung
+            # dort), damit der UPDATE-Zweig unten dieselbe benutzt statt einer Kopie.
             if cr.proposed_date and cr_user:
-                _is_holiday = db.query(PublicHoliday).filter(
-                    PublicHoliday.date == cr.proposed_date,
-                    PublicHoliday.tenant_id == cr_tenant_id,  # F-026
-                ).first()
-                if _is_holiday:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=(
-                            f"{cr.proposed_date.strftime('%d.%m.%Y')} ist ein Feiertag "
-                            f"({_is_holiday.name}) — dort kann keine Abwesenheit gebucht werden."
-                        ),
-                    )
+                _assert_absence_date_bookable(db, cr_tenant_id, cr.proposed_date)
 
             _is_overtime = cr.proposed_absence_type == AbsenceType.OVERTIME.value
             # #431: der Modus kommt aus dem zum DATUM aufgeloesten Snapshot, nicht
@@ -696,6 +760,16 @@ def review_change_request(
                 if cr.proposed_absence_type else absence.type
             )
             _target_date = cr.proposed_date or absence.date
+            # Audit 2026-07-31: derselbe Feiertags-Guard wie im CREATE-Zweig — der
+            # UPDATE-Zweig verschob das Datum bisher ohne jede Pruefung (der
+            # einzige Datums-Check darunter ist hart auf VACATION gegated, ein
+            # Kranktag rutschte also frei durch). Nur wenn der Antrag ein Datum
+            # trägt: ein reiner Zeit-Edit an einer bestehenden — womoeglich aus
+            # Altdaten stammenden — Abwesenheit auf einem Feiertag bleibt
+            # aenderbar, statt sie unreparierbar einzufrieren. Typ-agnostisch, wie
+            # im CREATE-Zweig.
+            if cr.proposed_date:
+                _assert_absence_date_bookable(db, cr_tenant_id, cr.proposed_date)
             if _bud_user and _target_type == AbsenceType.VACATION and _target_date:
                 # AC-11 / F-5: dasselbe Free-Sondertag-Verbot wie im CREATE-Branch —
                 # ein UPDATE darf einen Urlaubstag nicht auf einen soll-freien

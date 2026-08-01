@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -122,11 +122,29 @@ def create_year_closing(
     from app.models.change_request import ChangeRequest, ChangeRequestStatus
     start_of_year = date(year, 1, 1)
     end_of_year = date(year, 12, 31)
+
+    def _in_closing_year(col):
+        return and_(col >= start_of_year, col <= end_of_year)
+
+    # Audit 2026-07-31 (A1): über BEIDE Datumsspalten prüfen, nicht nur
+    # ``proposed_date``.
+    #  * Ein LÖSCH-Antrag trägt in ``proposed_date`` NULL — sein Tagesbezug steht
+    #    ausschließlich in ``original_date``. Er wurde bisher still nicht
+    #    gezählt: der Jahresabschluss lief durch, und eine spätere Genehmigung
+    #    löschte den Zeiteintrag, während der eingefrorene Übertrag falsch
+    #    stehen blieb (der Genehmigungspfad kennt dafür keine Warnung).
+    #  * Ebenso ein Antrag, der einen Eintrag AUS dem Abschlussjahr HERAUS
+    #    schiebt (``original_date`` im Jahr, ``proposed_date`` danach) — auch
+    #    der bewegt den eingefrorenen Saldo nachträglich.
+    # Die Oder-Verknüpfung deckt beide Richtungen ab (hinein UND heraus);
+    # ``coalesce`` allein täte das nicht.
     pending_cr_count = db.query(func.count(ChangeRequest.id)).filter(
         ChangeRequest.tenant_id == current_user.tenant_id,
         ChangeRequest.status == ChangeRequestStatus.PENDING,
-        ChangeRequest.proposed_date >= start_of_year,
-        ChangeRequest.proposed_date <= end_of_year,
+        or_(
+            _in_closing_year(ChangeRequest.proposed_date),
+            _in_closing_year(ChangeRequest.original_date),
+        ),
     ).scalar() or 0
     if pending_cr_count > 0:
         raise HTTPException(

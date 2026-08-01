@@ -145,6 +145,20 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             Absence.date >= year_start,
             Absence.date <= year_end,
         ).all()
+        # Audit 2026-07-31 (Fund B): dieselbe Asymmetrie wie in
+        # ``get_vacation_account`` — die Sondertags-Schleife unten filtert das
+        # #193-Beschaeftigungsfenster, die Schleife ueber die echten Urlaubszeilen
+        # tat es nicht. Hier haengt zusaetzlich das Ergebnis daran: ``consumed``
+        # wird vom (fenster-anteiligen) ``budget`` abgezogen, ein Urlaubstag
+        # ausserhalb des Fensters verkleinerte also ``closure_budget`` und kippte
+        # einen echten Betriebsferien-Tag faelschlich auf OVERTIME. Beide Stellen
+        # muessen dieselbe Menge zaehlen, sonst divergieren Budget und Split.
+        # Die Closure-Zeilen selbst sind bereits gefenstert (#298 in
+        # ``_create_closure_absences``).
+        private = [
+            a for a in private
+            if calculation_service._within_employment_window(employee, a.date)
+        ]
         private_dates = {a.date for a in private}
         consumed = Decimal('0')
         for a in private:

@@ -29,6 +29,7 @@ from app.models import (
 from app.models.tenant import Tenant
 from app.models.system_setting import SystemSetting
 from app.services import auth_service
+from app.services.timezone_service import today_local
 from tests.conftest import (
     DEFAULT_TENANT_ID,
     engine,
@@ -175,13 +176,13 @@ def _set_break_setting(db, value: str):
 
 # A >9h day with no break → §4 break validation fails (needs 45min).
 _LONG_DAY = {
-    "date": date.today().isoformat(),
+    "date": today_local().isoformat(),
     "start_time": "07:00",
     "end_time": "17:30",  # 10.5h gross, 0 break → §4 violation AND §3 (>10h)
 }
 # A 7h day with no break → §4 needs 30min, but under §3 hard limit.
 _OVER_6H = {
-    "date": date.today().isoformat(),
+    "date": today_local().isoformat(),
     "start_time": "08:00",
     "end_time": "15:30",  # 7.5h gross, 0 break → §4 violation, under 10h
 }
@@ -189,7 +190,11 @@ _OVER_6H = {
 # CR-Variante (proposed_*-Keys) eines §4-verletzenden Eintrags.
 _CR_OVER_6H = {
     "request_type": "create",
-    "proposed_date": (date.today() - timedelta(days=7)).isoformat(),  # vergangener Werktag
+    # Vergangenes Datum. Bewusst NICHT als "Werktag" bezeichnet: heute − 7 hat immer
+    # denselben Wochentag wie heute, laeuft die Suite an einem Sa/So ist das ein
+    # Wochenende. Folgenlos, weil change_requests.py nur `proposed_date >= today`
+    # prueft und die §3/§4-Checks brutto rechnen (kein Tagessoll).
+    "proposed_date": (today_local() - timedelta(days=7)).isoformat(),
     "proposed_start_time": "08:00",
     "proposed_end_time": "15:46",  # 7h46m brutto, 0 Pause → §4-Verstoß, unter 10h
     "proposed_break_minutes": 0,
@@ -441,7 +446,7 @@ class TestBreakWaiverWithApproval:
             request_type=ChangeRequestType.CREATE,
             entry_kind="time_entry",
             status=ChangeRequestStatus.PENDING,
-            proposed_date=date.today(),
+            proposed_date=today_local(),
             proposed_start_time=time(8, 0),
             proposed_end_time=time(15, 30),
             proposed_break_minutes=0,
@@ -472,7 +477,7 @@ class TestBreakWaiverWithApproval:
         existing = TimeEntry(
             user_id=employee.id,
             tenant_id=DEFAULT_TENANT_ID,
-            date=date.today(),
+            date=today_local(),
             start_time=time(8, 0),
             end_time=time(16, 0),
             break_minutes=30,
@@ -488,7 +493,7 @@ class TestBreakWaiverWithApproval:
             request_type=ChangeRequestType.CREATE,
             entry_kind="time_entry",
             status=ChangeRequestStatus.PENDING,
-            proposed_date=date.today(),
+            proposed_date=today_local(),
             proposed_start_time=time(16, 30),
             proposed_end_time=time(22, 0),
             proposed_break_minutes=0,
@@ -516,7 +521,7 @@ def _make_today_entry(db, user, break_minutes=45):
     entry = TimeEntry(
         user_id=user.id,
         tenant_id=DEFAULT_TENANT_ID,
-        date=date.today(),
+        date=today_local(),
         start_time=time(8, 0),
         end_time=time(15, 30),  # 7.5h gross
         break_minutes=break_minutes,
@@ -705,7 +710,7 @@ class TestOrdinaryCrSelfApproval:
             request_type=ChangeRequestType.CREATE,
             entry_kind="time_entry",
             status=ChangeRequestStatus.PENDING,
-            proposed_date=date.today() - timedelta(days=2),
+            proposed_date=today_local() - timedelta(days=2),
             proposed_start_time=time(8, 0),
             proposed_end_time=time(12, 0),  # 4h, kein §4-/§3-Problem
             proposed_break_minutes=0,
@@ -785,7 +790,7 @@ class TestCrApprovalRevalidatesDailyHardCap:
     def test_approve_create_cr_pushing_day_over_10h_is_rejected(
         self, db, employee, admin
     ):
-        past_day = date.today() - timedelta(days=3)
+        past_day = today_local() - timedelta(days=3)
         # Move past_day to a weekday so day-of-week edge cases don't matter
         # (irrelevant for §3, but keeps the scenario realistic).
         while past_day.weekday() >= 5:
@@ -869,7 +874,7 @@ class TestClockOutBreakWaiver:
     def _freeze(self, monkeypatch):
         import app.routers.time_entries as te
         from datetime import datetime
-        today = date.today()
+        today = today_local()
         fixed_now = datetime(today.year, today.month, today.day, 15, 30, tzinfo=te.LOCAL_TZ)
         monkeypatch.setattr(te, "_now_local", lambda: fixed_now)
         monkeypatch.setattr(te, "_today_local", lambda: today)
@@ -934,7 +939,7 @@ class TestAdminBreakWaiverParity:
         # Pre-existing compliant entry (30min break on a 7.5h day).
         entry = TimeEntry(
             user_id=employee.id, tenant_id=DEFAULT_TENANT_ID,
-            date=date.today(), start_time=time(8, 0), end_time=time(15, 30),
+            date=today_local(), start_time=time(8, 0), end_time=time(15, 30),
             break_minutes=30,
         )
         db.add(entry)
@@ -976,7 +981,7 @@ class TestClockOutSection3NonBlocking:
     def _freeze(self, monkeypatch, hour=15, minute=30):
         import app.routers.time_entries as te
         from datetime import datetime
-        today = date.today()
+        today = today_local()
         fixed_now = datetime(today.year, today.month, today.day, hour, minute, tzinfo=te.LOCAL_TZ)
         monkeypatch.setattr(te, "_now_local", lambda: fixed_now)
         monkeypatch.setattr(te, "_today_local", lambda: today)
@@ -1063,7 +1068,7 @@ class TestDataExportRawStamp:
 
     def test_export_includes_raw_stamp(self, db, employee):
         db.add(TimeEntry(
-            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=date.today(),
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=today_local(),
             start_time=time(7, 45), end_time=time(16, 15),
             raw_start_time=time(7, 0), raw_end_time=time(17, 30),
             break_minutes=30,
@@ -1079,7 +1084,7 @@ class TestDataExportRawStamp:
 
     def test_export_raw_stamp_null_when_not_clamped(self, db, employee):
         db.add(TimeEntry(
-            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=date.today(),
+            user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=today_local(),
             start_time=time(8, 0), end_time=time(16, 0), break_minutes=30,
         ))
         db.commit()

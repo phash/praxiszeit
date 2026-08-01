@@ -175,6 +175,9 @@ export default function TimeTracking() {
   // Form state
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // U2 (Audit 2026-07-31): der bearbeitete Eintrag laeuft noch (kein Ende).
+  // „Bis" bleibt dann leer und optional, und der PUT laesst das Feld weg.
+  const [editingOpenEntry, setEditingOpenEntry] = useState(false);
   const [formData, setFormData] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
     start_time: '08:00',
@@ -268,6 +271,15 @@ export default function TimeTracking() {
   const validateTimeEntry = (): boolean => {
     const newErrors: typeof errors = {};
 
+    // U2: ein laufender Eintrag hat (noch) kein Ende — Endzeit>Startzeit,
+    // Ueberschneidung und die §4-Pausenpruefung sind darauf nicht anwendbar
+    // (sie rechnen alle mit einer Endzeit). Gespeichert wird nur Datum/Beginn/
+    // Pause/Notiz; das Ende setzt das Ausstempeln.
+    if (editingOpenEntry && !formData.end_time) {
+      setErrors({});
+      return true;
+    }
+
     if (formData.start_time >= formData.end_time) {
       newErrors.end_time = 'Endzeit muss nach Startzeit liegen';
     }
@@ -352,11 +364,18 @@ export default function TimeTracking() {
     }
 
     try {
+      // U2: den laufenden Eintrag als TEILWEISEN PUT speichern — ohne
+      // `end_time`, damit er offen bleibt. Der Server lehnt ein Ende in der
+      // Zukunft zusaetzlich mit 400 ab (zweite Verteidigungslinie).
+      const payload: Record<string, unknown> = { ...submitData };
+      if (editingId && editingOpenEntry && !formData.end_time) {
+        delete payload.end_time;
+      }
       let response;
       if (editingId) {
-        response = await apiClient.put(`/time-entries/${editingId}`, submitData);
+        response = await apiClient.put(`/time-entries/${editingId}`, payload);
       } else {
-        response = await apiClient.post('/time-entries', submitData);
+        response = await apiClient.post('/time-entries', payload);
       }
 
       // #144: 202 = exception was submitted for admin approval (not written yet).
@@ -385,10 +404,19 @@ export default function TimeTracking() {
 
   const handleEdit = (entry: TimeEntry) => {
     setEditingId(entry.id);
+    // U2 (Audit 2026-07-31): ein noch LAUFENDER Eintrag (ohne Ende) wurde mit dem
+    // festen Wert '17:00' vorbelegt, und `end_time` ging immer mit — wer mittags
+    // nur eine Notiz nachtrug, schloss ihn damit unbemerkt auf 17:00. Beim
+    // naechsten Einstempeln entstand eine zweite, ueberlappende Zeile (es gibt
+    // keine Ueberschneidungspruefung), und §4 meldete eine Pausenverletzung fuer
+    // nie gearbeitete Zeit — Spaetdienste und §18-befreite MA merkten davon gar
+    // nichts. Jetzt bleibt das Feld leer und wird beim Speichern weggelassen
+    // (teilweiser PUT); der Eintrag bleibt offen.
+    setEditingOpenEntry(!entry.end_time);
     setFormData({
       date: entry.date,
       start_time: entry.start_time.substring(0, 5),
-      end_time: entry.end_time ? entry.end_time.substring(0, 5) : '17:00',
+      end_time: entry.end_time ? entry.end_time.substring(0, 5) : '',
       break_minutes: entry.break_minutes,
       note: entry.note || '',
       sunday_exception_reason: entry.sunday_exception_reason || '',
@@ -433,6 +461,7 @@ export default function TimeTracking() {
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
+    setEditingOpenEntry(false);  // U2
     const today = format(new Date(), 'yyyy-MM-dd');
     const targetHours = getDailyTargetHours(user, today);
     const defaultEnd = targetHours > 0 ? addHoursToTime('08:00', targetHours) : '17:00';
@@ -648,7 +677,10 @@ export default function TimeTracking() {
                 onChange={(e) => {
                   const newDate = e.target.value;
                   const targetHours = getDailyTargetHours(user, newDate);
-                  const newEndTime = targetHours > 0
+                  // U2: beim laufenden Eintrag KEIN Ende nachziehen — sonst
+                  // kaeme die erfundene Endzeit ueber den Umweg des Datums
+                  // zurueck.
+                  const newEndTime = (targetHours > 0 && !editingOpenEntry)
                     ? addHoursToTime(formData.start_time, targetHours)
                     : formData.end_time;
                   setFormData({ ...formData, date: newDate, end_time: newEndTime });
@@ -691,13 +723,23 @@ export default function TimeTracking() {
                   setFormData({ ...formData, end_time: e.target.value });
                   setErrors({});
                 }}
-                required
+                // U2: beim laufenden Eintrag darf „Bis" leer bleiben — sonst
+                // erzwaenge die Browser-Pflichtprüfung wieder eine erfundene
+                // Endzeit.
+                required={!editingOpenEntry}
                 aria-invalid={errors.end_time ? 'true' : 'false'}
-                aria-describedby={errors.end_time ? 'end-time-error' : undefined}
+                aria-describedby={
+                  errors.end_time ? 'end-time-error' : editingOpenEntry ? 'end-time-open-hint' : undefined
+                }
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
                   errors.end_time ? 'border-red-500' : 'border-gray-300'
                 }`}
               />
+              {editingOpenEntry && !errors.end_time && (
+                <p id="end-time-open-hint" className="text-sm text-gray-500 mt-1">
+                  Läuft noch – leer lassen, um den Eintrag offen zu halten.
+                </p>
+              )}
               {errors.end_time && (
                 <p id="end-time-error" className="text-sm text-red-600 mt-1" role="alert">
                   {errors.end_time}
