@@ -1,6 +1,6 @@
 # Stunden- und Urlaubsberechnung – PraxisZeit
 
-> **Stand: Juli 2026 · App-Version 1.17.0**
+> **Stand: August 2026 · App-Version 1.18.1**
 > Diese Doku beschreibt **exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und
 > Urlaubswerte berechnet. Alle Formeln sind aus
 > [`backend/app/services/calculation_service.py`](../backend/app/services/calculation_service.py)
@@ -193,24 +193,40 @@ länger dauerte als der Arbeitstag, ist echte Mehrarbeit und bleibt es.
 Vollzeit, 8 h/Tag. Der Mitarbeiter ist vom **24.12. bis 28.12.2026** durchgehend
 krankgeschrieben. Der 24.12. ist als **„halber Feiertag"** konfiguriert, der 25. und 26.12.
 sind gesetzliche Feiertage, der 27.12. ist ein Sonntag, der 28.12. ein regulärer Montag.
-Gebucht sind an allen fünf Tagen `hours = 8` (die Direktbuchung schreibt das volle Tagessoll).
+
+Die Buchung legt dabei **nur zwei Zeilen** an — für den 24.12. und den 28.12., je mit dem
+vollen Tagessoll `hours = 8`. Wochenenden und die zum Buchungszeitpunkt bekannten Feiertage
+nimmt jeder Buchungspfad vorab aus dem Zeitraum heraus (`absences.create_absence`,
+`review_vacation_request`, `_create_closure_absences`; der Änderungsantrags-Pfad lässt ein
+Wochenenddatum zwar zu, leitet die Stunden aber aus dem Tagessoll ab, das samstags und
+sonntags 0 ist).
 
 | Datum | Art des Tages | Soll | `hours` | Gewicht | Ist-Gutschrift | Saldo-Effekt |
 |-------|---------------|-----:|--------:|--------:|---------------:|-------------:|
 | Do 24.12. | halber Feiertag | 4,00 h | 8,00 h | 0,5 | 4,00 h | **0,00 h** |
-| Fr 25.12. | Feiertag | 0,00 h | 8,00 h | 0 | 0,00 h | **0,00 h** |
-| Sa 26.12. | Feiertag + Samstag | 0,00 h | 8,00 h | 0 | 0,00 h | **0,00 h** |
-| So 27.12. | Sonntag | 0,00 h | 8,00 h | 0 | 0,00 h | **0,00 h** |
+| Fr 25.12. | Feiertag | 0,00 h | — | — | 0,00 h | **0,00 h** |
+| Sa 26.12. | Feiertag + Samstag | 0,00 h | — | — | 0,00 h | **0,00 h** |
+| So 27.12. | Sonntag | 0,00 h | — | — | 0,00 h | **0,00 h** |
 | Mo 28.12. | Arbeitstag | 8,00 h | 8,00 h | 1,0 | 8,00 h | **0,00 h** |
-| **Summe** | | **12,00 h** | 40,00 h | | **12,00 h** | **0,00 h** |
+| **Summe** | | **12,00 h** | 16,00 h | | **12,00 h** | **0,00 h** |
 
 Der Krankheitszeitraum ist damit vollständig saldo-neutral — genau wie beabsichtigt.
 
+> **Warum es das Gewicht 0 für Feiertage trotzdem braucht.** Der Ausschluss beim Buchen ist
+> eine Momentaufnahme gegen eine **veränderliche** Feiertagstabelle. Eine bereits gebuchte
+> Abwesenheit kann nachträglich auf einem Feiertag liegen: wenn der Mandant das Bundesland
+> wechselt (`holiday_state` löscht und synchronisiert die workalendar-Feiertage neu, ohne
+> bestehende Abwesenheiten zu prüfen), wenn ein Admin einen eigenen Feiertag auf ein bereits
+> gebuchtes Datum legt, oder wenn in ein Jahr gebucht wurde, für das noch keine Feiertage
+> synchronisiert waren. Für **Wochenenden** gilt das nicht — dort entsteht über keinen
+> Buchungspfad eine Zeile mit Stunden; das Gewicht 0 ist dort reine Absicherung.
+
 > **Vorher (bis einschließlich 1.17.0) war das falsch:** die Gutschrift summierte `hours` roh.
-> Derselbe Zeitraum ergab 12,00 h Soll gegen **40,00 h** Ist = **+28,00 h Überstunden** aus dem
-> Nichts. Wer über Weihnachten krankgeschrieben war, sammelte je Feiertag und je Wochenendtag
-> ein volles Tagessoll Überstunden. Der Halbtags-Sondertag traf zusätzlich den ganz normalen
-> Betrieb: ein Kranktag am 24.12. brachte 4 h Soll gegen 8 h Gutschrift = +4 h.
+> Derselbe Zeitraum ergab 12,00 h Soll gegen **16,00 h** Ist = **+4,00 h Überstunden** aus dem
+> Nichts. Der Regelfall war also der Halbtags-Sondertag: ein Kranktag am 24.12. brachte 4 h
+> Soll gegen 8 h Gutschrift = +4 h — erreichbar über die ganz normale Krankmeldung. Liegt eine
+> Zeile zusätzlich auf einem nachträglich entstandenen Feiertag (siehe Kasten oben), kam je
+> solchem Tag ein volles Tagessoll dazu.
 
 Die Regel gilt an **allen** Flächen, die die Gutschrift kennen: `get_range_actual` (und damit
 `get_monthly_actual`), `get_overtime_account`, `get_overtime_history_detailed` (speist die
@@ -451,6 +467,16 @@ used_hours += hours                                (nur informativ)
 
 > Dadurch kostet ein Urlaubstag immer **genau einen Tag seines eigenen Tagessolls** — ein
 > 10-h-Montag kostet nicht mehr als ein 4-h-Mittwoch. Beide = 1,0 Urlaubstag.
+
+**Beschäftigungsfenster (#193) — seit 1.18.1 auch auf der Verbrauchsseite.** Urlaubstage vor
+`first_work_day` oder nach `last_work_day` zählen **nicht** als Verbrauch. Zuvor kürzte die
+Funktion nur das Budget anteilig, zählte aber jede gebuchte Urlaubszeile mit. Erreichbar im
+Regelbetrieb, weil das Setzen eines Austrittsdatums bestehende Abwesenheiten nicht aufräumt:
+im März Urlaub für Juli genehmigt, im Mai Kündigung zum 30.06. → Budget korrekt auf 15 Tage
+gekürzt, die fünf Juli-Tage aber weiter als verbraucht gezählt (Resturlaub 10 statt 15). Der
+Resturlaub ist die Grundlage der Urlaubsabgeltung (**§ 7 Abs. 4 BUrlG**, also Geld) und geht
+über den Jahresabschluss in den Übertrag. Ein Monat, für den kein Soll mehr entsteht, kann
+keinen Urlaub verbrauchen.
 
 **Halbtags-Sondertag (24./31.12. als `half_day`, #394):** Fällt ein Urlaubstag auf einen
 solchen Tag, kostet er nur **0,5** statt 1,0 Urlaubstag — die tagesbasierte Zählung wendet
@@ -1031,11 +1057,23 @@ Bewusst ausgenommen:
   ein Umschreiben der Stunden würde also den Tage-Verbrauch verschieben und die einzige
   verbliebene Spur des Halbtags löschen.
 
-`half_day` halbiert die Umrechnung, der #146/#394-Sondertagsfaktor (24./31.12.) wird über
-`special_days_service.special_day_target_factor` angewandt — dieselbe, **stundenbasierte**
-Quelle wie `_day_soll_contribution` (nicht der tagebasierte
-`half_special_day_weight`-Helper, der die Urlaubs*tage* gewichtet).
-**Die Abwesenheits-TAGE ändern sich dadurch nie** —
+`half_day` halbiert die Umrechnung. Der **#146/#394-Sondertagsfaktor (24./31.12.) wird hier
+bewusst NICHT angewandt**: die Rückrechnung schreibt das **ungewichtete** Tagessoll des Tages
+— genau wie die menschlichen Buchungspfade (`absences.create_absence`,
+`admin_change_requests`). `Absence.hours` trägt in dieser Anwendung durchgängig das volle
+Tagessoll; der Faktor lebt auf der **Leseseite**: `_day_soll_contribution` fürs Soll (§5),
+`credit_day_weight` fürs Ist (§4.2) und `half_special_day_weight` für die Urlaubs*tage* (§8.2).
+
+> **Korrigiert in 1.18.1.** Bis dahin multiplizierte die Rückrechnung den Faktor in den
+> gespeicherten Wert hinein. Solange die Leseseite ihn nicht anwandte, war das zufällig
+> richtig; seit `credit_day_weight` zählte er **doppelt**: ein als halber Feiertag
+> konfigurierter 24.12. mit Krankmeldung stand nach jedem Rückrechnungslauf mit 2,00 h Soll
+> gegen 1,00 h Gutschrift — ein stilles Defizit von 1,00 h an einem Tag, der nach § 3 EntgFG
+> saldo-neutral sein muss. Verschärfend wich der gespeicherte Wert am Sondertag dadurch
+> **immer** vom neu berechneten ab, sodass die Gleichheitsprüfung bei **jedem** Lauf ansprang
+> — die Rückrechnung war an diesen Tagen nicht idempotent.
+
+**Die Abwesenheits-TAGE ändern sich durch die Rückrechnung nie** —
 Urlaub (und jede tagebasierte Zählung) hängt an `absence_days`/`get_vacation_account`,
 nicht an `hours` (§3 BUrlG, Tagesprinzip, s. o.).
 
