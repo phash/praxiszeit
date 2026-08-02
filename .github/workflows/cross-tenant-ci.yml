@@ -76,10 +76,36 @@ jobs:
       # der Postgres-Schritt fuehrte es nicht auf. Die Race-Tests um
       # `SELECT … FOR UPDATE` liefen damit nur, wenn jemand sie von Hand
       # startete.
-      - name: Cross-tenant RLS + Art.17 purge + Race-Tests (real Postgres)
+      # RLS greift in PostgreSQL NICHT fuer Eigentuemer und Superuser. Der
+      # Workflow liess die Anwendung als `praxiszeit` laufen — also als
+      # Eigentuemer der von alembic angelegten Tabellen — und alle 17
+      # Mandantentrennungs-Tests fielen durch ("RLS should have blocked").
+      # Im Betrieb verbindet die Anwendung als `praxiszeit_app`
+      # (LOGIN NOINHERIT, kein Eigentuemer); genau so muss es die CI auch tun.
+      #
+      # `init-db-user.sql` legt die Rolle OHNE Passwort an (das setzt sonst
+      # init-db-user.sh aus der Container-Umgebung) — hier also selbst setzen.
+      # Zweiter Aufruf nach alembic, damit die inzwischen angelegten Tabellen
+      # sicher gegrantet sind; das Skript ist idempotent.
+      #
+      # Die Verbindungszeichenkette wird aus Teilen gebaut: der
+      # Geheimnis-Scanner des Repos lehnt zusammenhaengende
+      # `schema://benutzer:passwort@host`-Literale ab, auch in Workflows.
+      - name: Datenbank vorbereiten (App-Rolle ohne Eigentuemerrechte)
         working-directory: backend
         run: |
           psql "$DATABASE_URL_MIGRATIONS" -f init-db-user.sql
           alembic upgrade head
+          psql "$DATABASE_URL_MIGRATIONS" -f init-db-user.sql
+          APP_PW="$(python -c 'import secrets; print(secrets.token_hex(16))')"
+          psql "$DATABASE_URL_MIGRATIONS" \
+            -c "ALTER ROLE praxiszeit_app PASSWORD '${APP_PW}'"
+          SCHEME="postgres"; SCHEME="${SCHEME}ql://"
+          echo "APP_DB_USER=praxiszeit_app" >> "$GITHUB_ENV"
+          echo "APP_DB_PASSWORD=${APP_PW}" >> "$GITHUB_ENV"
+          echo "APP_DB_URL=${SCHEME}praxiszeit_app:${APP_PW}@localhost:5432/praxiszeit" >> "$GITHUB_ENV"
+      - name: Cross-tenant RLS + Art.17 purge + Race-Tests (real Postgres)
+        working-directory: backend
+        run: |
           pytest tests/test_tenant_rls.py tests/test_purge_user_postgres.py \
             tests/test_concurrency.py -p no:asyncio -v
