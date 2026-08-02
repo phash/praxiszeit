@@ -48,11 +48,13 @@ import pytest
 from sqlalchemy import text
 
 from app.database import Base
+from app.core import audit_integrity
 from app.models import (
     Absence,
     AbsenceType,
     SignupAuditLog,
     TimeEntry,
+    TimeEntryAuditLog,
     User,
     UserRole,
     WorkingHoursChange,
@@ -86,6 +88,15 @@ PII = {
     "signup_email": "PIIANMELDUNGAAA@praxis.invalid",
     "signup_ip": "203.0.113.77",
     "signup_agent": "PIIBROWSERAAA",
+    # Release-Review 1.18.1: die Freitext-Notizen des Aenderungsprotokolls.
+    # ``auth.py`` schreibt bei JEDEM Selbstbedienungs-E-Mail-Wechsel die alte
+    # UND die neue Adresse im Klartext nach ``old_note``; ``reports.py`` und
+    # ``journal.py`` schreiben bei jedem Zugriff auf Gesundheitsdaten den
+    # Benutzernamen nach ``new_note``. Beides sind direkte Identifikatoren —
+    # genau die Werte, die die Anonymisierung auf der ``users``-Zeile
+    # ueberschreibt.
+    "audit_alte_mail": "PIIAUDITMAILAAA@praxis.invalid",
+    "audit_benutzername": "PIIAUDITADMINAAA",
 }
 
 # Diese beiden bleiben absichtlich stehen und duerfen die Suche nicht ausloesen.
@@ -174,6 +185,28 @@ def mandant(_db_session):
         user_id=user.id, tenant_id=TID, date=date(2026, 3, 3),
         type=AbsenceType.VACATION, hours=8.0,
     ))
+    # Zwei Protokollzeilen, wortgleich zu dem, was die Anwendung schreibt.
+    _db_session.add(TimeEntryAuditLog(
+        time_entry_id=None, user_id=user.id, changed_by=user.id,
+        action="update", source="self_service",
+        old_note=f"E-Mail geändert: {PII['audit_alte_mail']} → neu@praxis.invalid",
+        tenant_id=TID,
+    ))
+    _db_session.add(TimeEntryAuditLog(
+        time_entry_id=None, user_id=user.id, changed_by=user.id,
+        action="health_data_access", source="dsgvo",
+        new_note=("Monatsreport 2026-03 (inkl. Krankheitsstunden) gelesen von "
+                  f"Admin: {PII['audit_benutzername']}"),
+        tenant_id=TID,
+    ))
+    # Eine Zeile OHNE Freitext — sie darf der Lauf nicht anfassen (Kontrolle
+    # fuer die Byte-Identitaet des #121-row_hash).
+    _db_session.add(TimeEntryAuditLog(
+        time_entry_id=None, user_id=user.id, changed_by=user.id,
+        action="create", source="manual",
+        old_date=date(2026, 3, 2), new_date=date(2026, 3, 2),
+        new_break_minutes=30, tenant_id=TID,
+    ))
     _db_session.commit()
     return {"tenant": tenant, "user_id": user.id}
 
@@ -253,6 +286,46 @@ class TestKeinePersonenbezogenenDatenMehr:
         assert len(changes) == 1, "die Zeile selbst darf nicht verschwinden"
         assert changes[0].note is None
         assert float(changes[0].weekly_hours) == 20.0
+
+    def test_protokollnotizen_geleert_zeilen_bleiben(self, _db_session, mandant):
+        """Release-Review 1.18.1: die Freitext-Notizen des Aenderungsprotokolls
+        tragen E-Mail-Adresse und Benutzernamen im Klartext. Die Zeilen selbst
+        bleiben (sie belegen, WER WANN WAS an einer Zeitaufzeichnung geaendert
+        hat — §16-relevant); ihre Prosa muss weg."""
+        lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
+        _db_session.expire_all()
+        rows = _db_session.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.tenant_id == TID).all()
+        assert len(rows) == 3, "die Zeilen selbst duerfen nicht verschwinden"
+        assert all(r.old_note is None and r.new_note is None for r in rows)
+        # Die strukturierte Aussage der Zeile bleibt vollstaendig erhalten.
+        strukturiert = [r for r in rows if r.source == "manual"][0]
+        assert strukturiert.action == "create"
+        assert strukturiert.old_date == date(2026, 3, 2)
+        assert strukturiert.new_break_minutes == 30
+
+    def test_manipulationsschutz_bleibt_nach_dem_lauf_gueltig(self, _db_session, mandant):
+        """#121: ``row_hash`` deckt ``old_note``/``new_note`` mit ab. Wird die
+        Notiz per Bulk-UPDATE geleert, umgeht das den ``before_insert``-Hook,
+        der gespeicherte Hash wird schal und ``verify-integrity`` meldet danach
+        JEDE dieser legitimen Zeilen als manipuliert."""
+        vorher = {
+            r.id: r.row_hash
+            for r in _db_session.query(TimeEntryAuditLog).filter(
+                TimeEntryAuditLog.tenant_id == TID).all()
+        }
+        assert all(h for h in vorher.values()), "Vorrichtung: alle Zeilen tragen einen Hash"
+
+        lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
+        _db_session.expire_all()
+
+        rows = _db_session.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.tenant_id == TID).all()
+        schal = [r.id for r in rows if not audit_integrity.verify_row(r)]
+        assert not schal, f"row_hash nach der Anonymisierung nicht mehr gueltig: {schal}"
+        # Die unberuehrte Zeile behaelt ihren Hash unveraendert.
+        unberuehrt = [r for r in rows if r.source == "manual"][0]
+        assert unberuehrt.row_hash == vorher[unberuehrt.id]
 
     def test_kein_login_mehr_moeglich(self, _db_session, mandant):
         """Der Passwort-Hash wird durch einen unbrauchbaren Platzhalter
@@ -335,6 +408,12 @@ class TestFremderMandantUnberuehrt:
             user_id=other.id, tenant_id=OTHER_TID, weekly_hours=30.0,
             effective_from=date(2026, 2, 1), note="Nachbarnotiz bleibt",
         ))
+        _db_session.add(TimeEntryAuditLog(
+            time_entry_id=None, user_id=other.id, changed_by=other.id,
+            action="update", source="self_service",
+            old_note="E-Mail geändert: alt@nachbar.invalid → neu@nachbar.invalid",
+            tenant_id=OTHER_TID,
+        ))
         _db_session.commit()
 
         lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
@@ -350,6 +429,11 @@ class TestFremderMandantUnberuehrt:
         note = _db_session.query(WorkingHoursChange).filter(
             WorkingHoursChange.tenant_id == OTHER_TID).one().note
         assert note == "Nachbarnotiz bleibt"
+        fremd_log = _db_session.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.tenant_id == OTHER_TID).one()
+        assert fremd_log.old_note == (
+            "E-Mail geändert: alt@nachbar.invalid → neu@nachbar.invalid")
+        assert audit_integrity.verify_row(fremd_log) is True
 
 
 class TestUeberDenCronPfad:
