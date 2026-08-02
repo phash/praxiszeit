@@ -159,7 +159,7 @@ function makeUser(overrides: Partial<User> = {}): User {
 
 function renderPage() {
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <ToastProvider>
         <Users />
       </ToastProvider>
