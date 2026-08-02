@@ -619,11 +619,31 @@ class TestSecurityHeaders:
         assert response.status_code == 401
         self._assert_headers(response)
 
-    def test_no_hsts_over_plain_http(self, client_factory):
+    def test_no_hsts_over_plain_http(self, client_factory, monkeypatch):
         """F-050: HSTS ueber HTTP wuerde eine native Windows-Installation
-        unerreichbar machen, die zuerst per http:// aufgerufen wurde."""
+        unerreichbar machen, die zuerst per http:// aufgerufen wurde.
+
+        ``COOKIE_SECURE`` wird hier ausdruecklich auf False gesetzt: das ist
+        die Voraussetzung, unter der die Zusicherung ueberhaupt gilt (der
+        Betreiber hat HTTPS NICHT eingeschaltet). Ohne dieses Festlegen hing
+        der Test an der ambienten Konfiguration — lokal gruen, weil die .env
+        COOKIE_SECURE=false setzt, auf einem nackten Runner rot, weil dort der
+        Standardwert True gilt. Ein Test, der Sicherheitsverhalten zusichert,
+        muss seine Voraussetzung selbst herstellen.
+        """
+        monkeypatch.setattr(settings, "COOKIE_SECURE", False)
         response = client_factory().get("/api/health")
         assert "Strict-Transport-Security" not in response.headers
+
+    def test_hsts_present_once_https_is_enabled(self, client_factory, monkeypatch):
+        """Gegenstueck: hat der Betreiber HTTPS eingeschaltet, MUSS der Header
+        kommen — sonst ist F-050 zu einem stillen Totalausfall von HSTS
+        geraten."""
+        monkeypatch.setattr(settings, "COOKIE_SECURE", True)
+        response = client_factory().get("/api/health")
+        assert response.headers.get("Strict-Transport-Security", "").startswith(
+            "max-age="
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1028,7 +1048,21 @@ class TestCsrfDoubleSubmit:
 
     In der nachgebauten Anwendung von ``test_endpoints.py`` haengt sie nicht
     dran — jeder dortige Schreibtest laeuft also an ihr vorbei.
+
+    ``COOKIE_SECURE`` wird fuer die ganze Klasse auf False gesetzt. Der
+    TestClient spricht ueber ``http://testserver``; mit ``COOKIE_SECURE=True``
+    traegt das ``csrf_token``-Cookie das Secure-Kennzeichen und wird dann gar
+    nicht erst mitgeschickt. Die Middleware sieht kein Cookie, ueberspringt
+    die Pruefung, und der Schreibvorgang geht durch — die Tests bekamen 201
+    bzw. 500 statt 403 und behaupteten damit einen Schutz, den sie an dieser
+    Stelle nie ausgeloest hatten. Im Betrieb ist das folgenlos (mit HTTPS wird
+    das Cookie gesendet); fuer den Test muss die Voraussetzung ausdruecklich
+    stehen.
     """
+
+    @pytest.fixture(autouse=True)
+    def _plain_http_cookies(self, monkeypatch):
+        monkeypatch.setattr(settings, "COOKIE_SECURE", False)
 
     def test_write_without_header_is_rejected(self, client_factory, employee):
         client = client_factory()
