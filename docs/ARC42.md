@@ -569,7 +569,9 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 | `workalendar` unmaintained (VULN-014) | Niedrig | Ablösung durch `python-holidays` erwägen |
 | `SERVE_FRONTEND` + Self-Signed → SW-Registrierung (#84) | Niedrig | Chrome-PWA-Limitierung dokumentiert |
 
-> Veraltete Einträge der v1.0-Fassung („keine E2E-Tests", „CORS auf `*`", „kein Rate-Limiting") sind erledigt: **409 Backend-Tests / 13 RLS-Integrationstests / ~125 E2E-Tests / 11 Frontend-Vitest-Module**, CORS gesetzt, slowapi aktiv. CI: `.github/workflows/` (cross-tenant + validate-macos), `scripts/local-ci.sh`.
+> Veraltete Einträge der v1.0-Fassung („keine E2E-Tests", „CORS auf `*`", „kein Rate-Limiting") sind erledigt: **2072 Backend-Tests (SQLite-Suite) + 44 PostgreSQL-Integrationstests (RLS, Nebenläufigkeit, Art.-17-Purge) / 320 Frontend-Vitest-Tests / 145 E2E-Tests**, CORS gesetzt, slowapi aktiv.
+>
+> **CI:** `.github/workflows/cross-tenant-ci.yml` läuft bei jedem Pull Request und bei jedem Push auf `master` (Pfadfilter `backend/**`) gegen **PostgreSQL 18** und fährt die SQLite-Suite plus die PostgreSQL-Integrationstests. `.github/workflows/validate-macos.yml` deckt den macOS-Installer ab. Nicht von den Actions abgedeckt sind **Frontend** (tsc, ESLint, Vitest, Vite-Build), **E2E** und die **nativen PostgreSQL-Lifecycle-Tests** — diese fährt `scripts/local-ci.sh` lokal.
 
 ---
 

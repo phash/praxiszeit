@@ -153,8 +153,9 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         # ausserhalb des Fensters verkleinerte also ``closure_budget`` und kippte
         # einen echten Betriebsferien-Tag faelschlich auf OVERTIME. Beide Stellen
         # muessen dieselbe Menge zaehlen, sonst divergieren Budget und Split.
-        # Die Closure-Zeilen selbst sind bereits gefenstert (#298 in
-        # ``_create_closure_absences``).
+        # Die Walk-Schleife unten traegt denselben Filter (Release-Review
+        # 1.18.1) — der #298-Guard in ``_create_closure_absences`` gilt nur zum
+        # BUCHUNGS-Zeitpunkt und ist keine Invariante.
         private = [
             a for a in private
             if calculation_service._within_employment_window(employee, a.date)
@@ -210,6 +211,29 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         # therefore lands on the latest closure of the year.
         used = Decimal('0')
         for a in sorted(absences, key=lambda x: x.date):
+            # Release-Review 1.18.1 (Nachzug zu Fund B): eine Closure-Zeile
+            # AUSSERHALB des #193-Beschaeftigungsfensters kostet KEIN Budget —
+            # ``get_vacation_account`` zaehlt sie seit a1cdc250 mit 0, und der
+            # private Urlaub oben ist genauso gefiltert. Der #298-Guard in
+            # ``_create_closure_absences`` verhindert nur die ENTSTEHUNG solcher
+            # Zeilen zum Buchungszeitpunkt; ``PUT /api/admin/users/{id}``
+            # verschiebt ``first_work_day``/``last_work_day`` danach beliebig und
+            # raeumt KEINE Abwesenheiten ab. Ohne diesen Filter zehrten die
+            # fensterfremden (kalendarisch frueheren) Zeilen das Budget auf und
+            # kippten ECHTE Schliesstage auf Ueberstundenausgleich, waehrend das
+            # Urlaubskonto daneben Resturlaub meldet — genau die Divergenz
+            # zwischen Budget- und Walk-Seite, die a1cdc250 als Fehlerklasse
+            # benennt.
+            #
+            # Der Filter sitzt bewusst HIER und nicht in
+            # ``get_daily_target_for_date``: das ist der reine Vertragswert
+            # eines Wochentags (er speist u. a. die gebuchten ``hours`` im
+            # Direkt-Buchungspfad und die Exporte). Das Fenster ist im
+            # ``calculation_service`` durchgaengig eine Sache des AUFRUFERS und
+            # wird dort an ~20 Stellen einzeln angewandt.
+            if not calculation_service._within_employment_window(employee, a.date):
+                a.type = AbsenceType.VACATION  # Basistyp, siehe unten
+                continue
             # #431: eine Closure-Zeile mit Tagessoll 0 (Nicht-Arbeitstag eines
             # Tagesplan-MA) kostet KEIN Urlaubsbudget — genau wie in
             # ``_create_closure_absences``, das den Split auf ``day_target > 0``

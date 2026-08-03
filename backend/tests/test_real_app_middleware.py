@@ -825,6 +825,25 @@ class TestInvalidLicenseDoesNotKillTheService:
         )
         assert _blocked_by_license(response), response.text[:200]
 
+    def test_public_settings_reports_read_only_with_broken_license(
+        self, started_with_broken_license
+    ):
+        """Release-Review 1.18.1: derselbe Zusicherung wie in
+        ``test_public_settings_reports_read_only`` — nur eben fuer den Zweig,
+        in dem gar keine ``LicenseInfo`` geladen werden konnte.
+
+        Von den vier Zweigen, die Read-Only setzen, traegt genau EINER
+        (abgelaufene, aber lesbare Lizenz) ein ``LicenseInfo``-Objekt. Die
+        anderen drei (ungueltige Signatur — der real passierte 1.5.x-Fall nach
+        der Schluesselrotation, abgelaufene Demo, unparsebares Demo-Datum)
+        setzen ``set_license_state(None, read_only=True)``. Der bisherige Test
+        prueft ueber eine Vorrichtung, die ein vollstaendiges ``LicenseInfo``
+        setzt, also ausgerechnet den einen Zweig, in dem es ohnehin ging.
+        """
+        response = started_with_broken_license.get("/api/settings")
+        assert response.status_code == 200
+        assert response.json()["license"] == {"read_only": True}
+
 
 # ---------------------------------------------------------------------------
 # 5. Mandanten-Aufloesung

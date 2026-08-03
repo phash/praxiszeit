@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import List, NamedTuple, Optional
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
@@ -535,6 +535,96 @@ def get_deletion_candidates(
     return result
 
 
+def _scrub_audit_log_notes(
+    db: Session, tenant_id, user_id, old_username: str, old_email: Optional[str],
+    pseudonym: str,
+) -> int:
+    """DSGVO Art. 17: Klarnamen der anonymisierten Person aus den Freitext-
+    Notizen des Aenderungsprotokolls entfernen (Release-Review 1.18.1, Nachzug
+    zum Mandanten-Pfad ``lifecycle_service.anonymize_tenant``).
+
+    Der Protokoll-Freitext traegt direkte Identifikatoren, die die
+    Anonymisierung auf der ``users``-Zeile gerade ueberschreibt:
+
+    * ``auth.py`` schreibt bei JEDEM Selbstbedienungs-E-Mail-Wechsel die alte
+      UND die neue Adresse nach ``old_note``,
+    * ``reports.py`` (10 Stellen) den Benutzernamen des handelnden Admins nach
+      ``new_note``,
+    * ``journal.py`` zusaetzlich den Benutzernamen der BETROFFENEN — dort auf
+      einer Zeile, deren ``user_id`` UND ``changed_by`` der Admin ist. Genau
+      deshalb geht die Suche ueber den INHALT und nicht nur ueber die
+      Zuordnung: ein reiner ``user_id``/``changed_by``-Filter sieht diese Zeile
+      nie.
+
+    Zwei Behandlungen, bewusst unterschiedlich:
+
+    * **Eigene Zeilen** (``user_id`` = die Betroffene) → beide Notizen NULL.
+      Sie sind ueber sie gefuehrt; hier stehen neben dem Namen auch die
+      Art.-9-Spuren (``"absence:sick:8.0h"``), die den Loeschlauf ihrer
+      Abwesenheiten sonst ueberleben, und HISTORISCHE E-Mail-Adressen, die
+      keine Suche nach dem heutigen Wert findet. Die Zeile selbst bleibt: wer
+      wann was an einer Zeitaufzeichnung geaendert hat, samt
+      ``old_*``/``new_*`` fuer Datum, Uhrzeit und Pause, ist der
+      §16-relevante Teil (gleiche Abwaegung wie ``working_hours_changes.note``).
+    * **Fremde Zeilen**, in deren Text sie vorkommt → nur die Fundstelle wird
+      ersetzt (Benutzername → Pseudonym, E-Mail → ``[anonymisiert]``). Die
+      Notiz gehoert dort zum Datensatz eines ANDEREN Beschaeftigten; sie
+      komplett zu leeren waere fremde §16-Prosa.
+
+    #121: ``old_note``/``new_note`` gehen in den ``row_hash`` ein → ORM-Objekte
+    laden und den Hash neu berechnen (Muster aus ``purge_user``). Ein
+    Bulk-``UPDATE`` umginge den ``before_insert``-Hook und liesse
+    ``verify-integrity`` jede geaenderte Zeile als manipuliert melden.
+
+    Grenze (bewusst): gefunden werden die maschinell erzeugten Identifikatoren
+    Benutzername und aktuelle E-Mail. Freie Prosa, die die Person mit Vor-/
+    Nachnamen nennt ("Vertretung fuer Frau Schulz"), ist nicht zuverlaessig
+    auffindbar — das gilt fuer den Mandanten-Pfad genauso.
+
+    Gibt die Zahl der geaenderten Zeilen zurueck. F-026: tenant-gefiltert.
+    """
+    from app.core import audit_integrity
+
+    needles = [n for n in (old_email, old_username) if n]
+    conditions = [TimeEntryAuditLog.user_id == user_id]
+    for needle in needles:
+        # ``contains(..., autoescape=True)`` maskiert %/_ im Wert. Die Suche darf
+        # ruhig zu VIEL laden (dann aendert die Schleife unten nichts) — sie darf
+        # nur nichts uebersehen.
+        conditions.append(TimeEntryAuditLog.old_note.contains(needle, autoescape=True))
+        conditions.append(TimeEntryAuditLog.new_note.contains(needle, autoescape=True))
+
+    def _mask(text: Optional[str]) -> Optional[str]:
+        if not text:
+            return text
+        out = text
+        # E-Mail ZUERST: der Benutzername ist oft ihr lokaler Teil
+        # ("maria.schulz" in "maria.schulz@…") — andersherum bliebe die Domain
+        # als Rest stehen.
+        if old_email:
+            out = out.replace(old_email, "[anonymisiert]")
+        if old_username:
+            out = out.replace(old_username, pseudonym)
+        return out
+
+    touched = 0
+    for row in db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.tenant_id == tenant_id,  # F-026
+        or_(*conditions),
+    ).all():
+        if row.user_id == user_id:
+            new_old, new_new = None, None
+        else:
+            new_old, new_new = _mask(row.old_note), _mask(row.new_note)
+        if new_old == row.old_note and new_new == row.new_note:
+            continue  # nichts zu tun → Hash bleibt unangetastet
+        row.old_note = new_old
+        row.new_note = new_new
+        row.row_hash = audit_integrity.compute_row_hash(row)
+        touched += 1
+    return touched
+
+
 @router.post("/users/{user_id}/anonymize")
 def anonymize_user(
     user_id: str,
@@ -561,6 +651,11 @@ def anonymize_user(
             )
     # If deactivated_at is None but user is inactive: allow anonymization (legacy user).
     # Der is_active-Fall ist bereits oben (vor der Grace-Period-Prüfung) abgefangen.
+
+    # Vor dem Ueberschreiben sichern — der Protokoll-Scrub unten sucht nach
+    # diesen beiden Werten (Release-Review 1.18.1).
+    _old_username = user.username
+    _old_email = user.email
 
     user.first_name = "Gelöschter"
     user.last_name = "Benutzer"
@@ -592,6 +687,16 @@ def anonymize_user(
         WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
         WorkingHoursChange.note.isnot(None),
     ).update({WorkingHoursChange.note: None}, synchronize_session=False)
+
+    # Release-Review 1.18.1: derselbe Nachzug wie im Mandanten-Pfad — der
+    # Freitext des Aenderungsprotokolls traegt E-Mail-Adresse und Benutzernamen
+    # im Klartext. Vor dem Anlegen der Protokollzeile unten, damit diese (sie
+    # nennt den HANDELNDEN Admin) nicht mitgescannt wird. Begruendung, Auswahl
+    # und die #121-Hash-Neuberechnung: siehe ``_scrub_audit_log_notes``.
+    _scrub_audit_log_notes(
+        db, current_user.tenant_id, user.id, _old_username, _old_email,
+        user.username,  # bereits das Pseudonym deleted_<id8>
+    )
 
     log = TimeEntryAuditLog(
         time_entry_id=None,

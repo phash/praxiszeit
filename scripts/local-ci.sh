@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 #
-# F-062: Local CI pipeline — runs the equivalent of what the disabled
-# GitHub Actions would run.
+# F-062: Local CI pipeline — the full-stack gate before a PR.
+#
+# GitHub Actions IS active: .github/workflows/cross-tenant-ci.yml runs on every
+# pull request and on every push to master (path filter `backend/**`) against
+# PostgreSQL 18, covering the SQLite suite plus the Postgres integration tests
+# (steps 1+2 below). This script exists because that workflow deliberately stops
+# at the backend — everything else is only ever checked here:
+#
+#   * step 3  native PostgreSQL lifecycle (praxiszeit-server.py, needs the repo
+#             mounted — impossible in the backend-only workflow)
+#   * steps 4-7  frontend: tsc, vitest, eslint, vite build
+#   * step 8  E2E against a live docker compose stack
+#
+# So: a backend-only change is already gated by Actions; anything touching the
+# frontend, the installer or the E2E surface needs this script.
 #
 # Steps:
 #   1. Backend pytest             (unit + integration, SQLite-backed)
@@ -70,8 +83,10 @@ fi
 # CLAUDE.md. It is SQLite-backed (it exercises the explicit F-026
 # `tenant_id == current_user.tenant_id` filters, not RLS) and therefore already
 # runs inside step 1 — it is listed here only so the trio stays visible.
-# Together the three files are the "50 passed" isolation reference
-# (20 RLS + 12 concurrency + 18 cross-tenant).
+# Reference counts: step 2 runs 44 tests against real Postgres
+# (20 RLS + 12 concurrency + 12 Art.-17 purge); the 18 cross-tenant tests run
+# inside step 1. Same three files as the Actions step "Cross-tenant RLS +
+# Art.17 purge + Race-Tests (real Postgres)".
 step "Backend Postgres integration (RLS + concurrency + Art.17 purge)"
 if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
        tests/test_tenant_rls.py tests/test_concurrency.py \

@@ -28,7 +28,11 @@ test.describe('Employee Absences', () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
-  test('create multi-day absence', async ({ employeePage }) => {
+  // Raeumt die ueber die Oberflaeche angelegten Zeilen wieder ab: `(user_id,
+  // date)` ist eindeutig, und ohne Aufraeumen belegt jeder Lauf die Tage fuer
+  // den naechsten — der Test war dann nur noch auf einem frischen Bestand
+  // gruen.
+  test('create multi-day absence', async ({ employeePage, employeeApi }) => {
     await employeePage.getByRole('button', { name: 'Abwesenheit eintragen' }).click();
 
     // Check the "Zeitraum (mehrere Tage)" checkbox
@@ -56,6 +60,14 @@ test.describe('Employee Absences', () => {
     await expect(
       employeePage.locator('[role="alert"]').filter({ hasText: /eingetragen|erfolgreich/ })
     ).toBeVisible({ timeout: 10000 });
+
+    // Aufraeumen — sonst blockieren die belegten Tage den naechsten Lauf.
+    const eigene = await employeeApi.get('/absences/');
+    for (const a of eigene) {
+      if (a.date >= startDate && a.date <= endDate) {
+        await employeeApi.delete(`/absences/${a.id}`).catch(() => {});
+      }
+    }
   });
 
   test('delete absence', async ({ employeePage, createAbsence }) => {

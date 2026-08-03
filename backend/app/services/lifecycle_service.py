@@ -213,6 +213,10 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
       is_active → False, profile_picture / totp_secret / department → NULL
     - ``working_hours_changes``: ``note`` → NULL (die Zeilen selbst bleiben,
       sie tragen das historische Soll fuer die §16-Aufbewahrung)
+    - ``time_entry_audit_logs``: ``old_note``/``new_note`` → NULL, ``row_hash``
+      neu berechnet (#121). Die Zeilen bleiben — Datum/Uhrzeit/Pause und "wer
+      hat wann was geaendert" sind der §16-relevante Teil, der Freitext nicht,
+      und er traegt E-Mail-Adressen + Benutzernamen im Klartext.
     - ``tenants``: name → "[gelöscht]", company_name/vat_id/country/
       billing_address/billing_email → NULL. Stripe ids retained for
       accounting audit. ``anonymized_at`` marks completion.
@@ -251,6 +255,43 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
         WorkingHoursChange.tenant_id == tenant.id,
         WorkingHoursChange.note.isnot(None),
     ).update({WorkingHoursChange.note: None}, synchronize_session=False)
+
+    # Release-Review 1.18.1: dieselbe Klasse im Aenderungsprotokoll. Die
+    # Freitext-Notizen tragen DIREKTE Identifikatoren, nicht nur Prosa:
+    # ``auth.py`` schreibt bei jedem Selbstbedienungs-E-Mail-Wechsel die alte
+    # und die neue Adresse nach ``old_note``; ``reports.py``/``journal.py``
+    # schreiben bei jedem Zugriff auf Gesundheitsdaten den Benutzernamen nach
+    # ``new_note`` — also genau die Werte, die oben auf der ``users``-Zeile zu
+    # ``deleted_<hex>`` / NULL werden. Ohne diesen Schritt meldet
+    # ``anonymized_at`` die Loeschung als erledigt, waehrend E-Mail-Adresse und
+    # Benutzername im Klartext in der Datenbank stehen und ueber den
+    # Superadmin-§16-Export (``_audit_dict`` gibt beide Notizfelder aus, auch
+    # fuer deaktivierte Mandanten) lesbar bleiben. Einen zweiten Durchlauf gibt
+    # es nicht (``apply_scheduled_deletions`` filtert ``anonymized_at IS NULL``),
+    # und ``purge_expired_vacation_audit_logs`` deckt nur vier Antrags-Quellen —
+    # ``self_service``/``dsgvo`` gehoeren nicht dazu.
+    #
+    # Die ZEILEN bleiben stehen (wie ``working_hours_changes``): sie belegen,
+    # wer wann was an einer Zeitaufzeichnung geaendert hat, und tragen mit
+    # ``old_*``/``new_*`` Datum, Uhrzeit und Pause weiterhin vollstaendig — das
+    # ist der §16-relevante Teil. Der Freitext ist es nicht.
+    #
+    # #121: ``old_note``/``new_note`` sind Teil des ``row_hash``. Deshalb ORM-
+    # Objekte laden und den Hash neu berechnen (Muster aus
+    # ``admin_users.purge_user``) — ein Bulk-UPDATE umginge den
+    # ``before_insert``-Hook, liesse den gespeicherten Hash schal und
+    # ``verify-integrity`` meldete danach jede dieser legitimen Zeilen als
+    # manipuliert. Nur Zeilen MIT Notiz werden angefasst, alle anderen behalten
+    # ihren Hash unveraendert.
+    from app.core import audit_integrity
+    for row in db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.tenant_id == tenant.id,
+        (TimeEntryAuditLog.old_note.isnot(None))
+        | (TimeEntryAuditLog.new_note.isnot(None)),
+    ).all():
+        row.old_note = None
+        row.new_note = None
+        row.row_hash = audit_integrity.compute_row_hash(row)
 
     tenant.name = "[gelöscht]"
     tenant.company_name = None

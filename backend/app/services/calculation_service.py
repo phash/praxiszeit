@@ -617,6 +617,20 @@ def is_vacation_billable_day(
     ``track_hours=False`` (leitende Angestellte, #191) zaehlt JEDEN Werktag:
     deren Tagessoll ist immer 0, tagebasiert kostet der Tag trotzdem 1 — sie
     duerfen hier nie mitgefiltert werden.
+
+    Das #193-Beschaeftigungsfenster gehoert bewusst NICHT hierher, obwohl die
+    Verbrauchs-Seite (``get_vacation_account``) es seit dem Audit 2026-07-31
+    anwendet (Release-Review 1.18.1 geprueft): jeder der vier Aufrufer sperrt
+    Tage ausserhalb des Fensters VORHER mit einer eigenen, praeziseren 400
+    ("Datum liegt nach dem letzten Arbeitstag") — ``absences.create_absence``,
+    ``admin_vacations.review_vacation_request`` und ``vacation_requests``
+    ueber einen Bereichs-Guard auf Start/Ende, ``admin_change_requests`` ueber
+    ``proposed_date``. Da das Fenster ein zusammenhaengender Zeitraum ist,
+    folgt aus "ein Tag des Bereichs liegt draussen" zwingend "Start < Eintritt
+    ODER Ende > Austritt"; ein solcher Tag erreicht diese Funktion also nie.
+    Ein Filter hier waere tot und wuerde die Reihenfolge verschleiern.
+    Faellt einer der Guards weg, muss er hier nachgezogen werden — festgenagelt
+    in ``tests/test_vacation_precheck_employment_window.py``.
     """
     if not user.track_hours:
         return True
