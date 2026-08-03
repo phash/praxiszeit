@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { nextWeekday, daysFromNow } from '../../helpers/date.helper';
+import { nextWeekday, daysFromNow, weekdayFromNow } from '../../helpers/date.helper';
 
 test.describe('Admin Absences', () => {
   test('create absence for employee', async ({ adminPage, testEmployee }) => {
@@ -166,8 +166,15 @@ test.describe('Admin Absences', () => {
     const closureName = `E2E Delete Test ${Date.now()}`;
     const closure = await adminApi.post('/company-closures', {
       name: closureName,
-      start_date: daysFromNow(90),
-      end_date: daysFromNow(91),
+      // Betriebsferien brauchen mindestens einen Arbeitstag im Zeitraum, sonst
+      // lehnt die API mit 400 ab. `daysFromNow(90)`/`(91)` traf an jedem Sonntag
+      // genau Samstag+Sonntag -> der Test war einmal pro Woche garantiert rot,
+      // ohne dass sich am Code etwas geaendert haette. Bewusst genau EIN
+      // Werktag: eine Schliessung bucht JEDEM Mitarbeitenden fuer jeden Werktag
+      // darin eine Abwesenheit, und solange sie steht, sehen parallel laufende
+      // Tests diese Zeilen.
+      start_date: weekdayFromNow(90),
+      end_date: weekdayFromNow(90),
     });
 
     try {
