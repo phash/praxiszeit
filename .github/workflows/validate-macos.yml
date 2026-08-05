@@ -6,22 +6,28 @@ name: validate-macos-release
 # der Build auf Linux nicht auffallen konnte.
 #
 # Triggert auf:
-#   - Push auf master, der ein dist/ macOS-Tarball oder das Build-Script
-#     veraendert (typischer Release-Commit).
+#   - Veroeffentlichtes Release (release: published) — validiert das Asset,
+#     das die Kundschaft tatsaechlich herunterlaedt.
 #   - Manueller Run via workflow_dispatch, optional mit URL zu einem
-#     extern gehosteten Tarball (z.B. GitHub-Release-Asset).
+#     extern gehosteten Tarball.
 #
 # Security-Note: alle workflow_dispatch-Inputs werden ausschliesslich via
 # env: in run:-Bloecke gereicht (kein direktes ${{ inputs.* }}-Splicing in
 # Shell-Strings) — siehe https://github.blog/security/vulnerability-research/
 # how-to-catch-github-actions-workflow-injections-before-attackers-do/
 
+# Der frueher hier stehende push-Trigger auf "tools/build-release.sh" konnte
+# NIE gruen werden: der Workflow sucht das Tarball unter dist/, und dist/ ist
+# gitignored — im Checkout liegt es also nicht. Solange GitHub Actions
+# abgeschaltet war, fiel das nicht auf; mit eingeschalteter CI erzeugte jede
+# Versionsanhebung einen roten Lauf, der nichts ueber macOS aussagt.
+#
+# Jetzt zwei Wege, die beide tatsaechlich ein Artefakt haben:
+#   - release: published  -> validiert das VEROEFFENTLICHTE Asset
+#   - workflow_dispatch   -> mit URL, z. B. gegen ein Release-Asset
 on:
-  push:
-    paths:
-      - "dist/praxiszeit-*-macos-*.tar.gz"
-      - "tools/build-release.sh"
-      - ".github/workflows/validate-macos.yml"
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tarball_url_x64:
@@ -48,20 +54,31 @@ jobs:
       - name: Resolve tarball
         id: resolve
         env:
+          # Beide ueber env: statt direkt in den run:-Block gespliced —
+          # Workflow-Injection-Schutz, siehe Kopf der Datei.
           TARBALL_URL: ${{ inputs.tarball_url_x64 }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -n "${TARBALL_URL:-}" ]; then
             echo "Downloading tarball from URL..."
             curl -fSL --retry 3 --retry-delay 5 -o /tmp/pz-mac-x64.tar.gz "$TARBALL_URL"
             TARBALL=/tmp/pz-mac-x64.tar.gz
+          elif [ -n "${RELEASE_TAG:-}" ]; then
+            # release: published -> das VEROEFFENTLICHTE Asset validieren.
+            echo "Lade macOS-x64-Asset aus Release $RELEASE_TAG ..."
+            gh release download "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern 'praxiszeit-*-macos-x64.tar.gz' \
+              --output /tmp/pz-mac-x64.tar.gz --clobber
+            TARBALL=/tmp/pz-mac-x64.tar.gz
           else
             # shellcheck disable=SC2012  # filenames sind kontrolliert (build-release.sh)
             TARBALL=$(ls -t dist/praxiszeit-*-macos-x64.tar.gz 2>/dev/null | head -1 || true)
             if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
-              echo "::error::Kein dist/praxiszeit-*-macos-x64.tar.gz gefunden und keine URL angegeben."
-              echo "::error::Entweder erst tools/build-release.sh --macos-only laufen lassen,"
-              echo "::error::oder workflow_dispatch mit tarball_url_x64 triggern."
+              echo "::error::Kein macOS-x64-Tarball gefunden."
+              echo "::error::workflow_dispatch mit tarball_url_x64 nutzen, oder ein Release veroeffentlichen."
               exit 1
             fi
           fi
@@ -143,20 +160,30 @@ jobs:
       - name: Resolve tarball
         id: resolve
         env:
+          # Beide ueber env: statt direkt in den run:-Block gespliced —
+          # Workflow-Injection-Schutz, siehe Kopf der Datei.
           TARBALL_URL: ${{ inputs.tarball_url_arm64 }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -n "${TARBALL_URL:-}" ]; then
             echo "Downloading tarball from URL..."
             curl -fSL --retry 3 --retry-delay 5 -o /tmp/pz-mac-arm64.tar.gz "$TARBALL_URL"
             TARBALL=/tmp/pz-mac-arm64.tar.gz
+          elif [ -n "${RELEASE_TAG:-}" ]; then
+            echo "Lade macOS-arm64-Asset aus Release $RELEASE_TAG ..."
+            gh release download "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern 'praxiszeit-*-macos-arm64.tar.gz' \
+              --output /tmp/pz-mac-arm64.tar.gz --clobber
+            TARBALL=/tmp/pz-mac-arm64.tar.gz
           else
             # shellcheck disable=SC2012  # filenames sind kontrolliert (build-release.sh)
             TARBALL=$(ls -t dist/praxiszeit-*-macos-arm64.tar.gz 2>/dev/null | head -1 || true)
             if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
-              echo "::error::Kein dist/praxiszeit-*-macos-arm64.tar.gz gefunden und keine URL angegeben."
-              echo "::error::Entweder erst tools/build-release.sh --macos-only laufen lassen,"
-              echo "::error::oder workflow_dispatch mit tarball_url_arm64 triggern."
+              echo "::error::Kein macOS-arm64-Tarball gefunden."
+              echo "::error::workflow_dispatch mit tarball_url_arm64 nutzen, oder ein Release veroeffentlichen."
               exit 1
             fi
           fi

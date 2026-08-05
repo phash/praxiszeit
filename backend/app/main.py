@@ -662,12 +662,24 @@ def _public_license_state() -> Optional[dict]:
     die UI vor dem Login erklaeren kann, warum Schreibvorgaenge scheitern.
     Die vollstaendigen Lizenzdaten liefert die Admin-Sicht (authentifiziert).
 
-    Returns None, wenn keine Lizenz geladen ist (Beta / Docker / SaaS).
+    Release-Review 1.18.1: der Zustand haengt am READ-ONLY-Flag, nicht am
+    Vorhandensein einer ``LicenseInfo``. Von den vier Lifespan-Zweigen, die
+    Read-Only setzen, traegt nur einer (abgelaufene, aber lesbare Lizenz) ein
+    ``LicenseInfo``; die drei anderen — ungueltige Signatur (der real
+    passierte 1.5.x-Fall nach der Schluesselrotation), abgelaufene Demo und
+    unparsebares Demo-Datum — rufen ``set_license_state(None, read_only=True)``.
+    Dort fehlte der Schluessel ``license`` frueher komplett: die Middleware
+    blockte jedes Schreiben mit 403, die Oberflaeche konnte es aber nicht
+    erklaeren.
+
+    Returns None nur, wenn weder eine Lizenz geladen ist NOCH Read-Only gilt
+    (Beta / Docker / SaaS — der Normalfall).
     """
     from app.core import license as _license
-    if _license.get_current_license() is None:
+    read_only = _license.is_read_only()
+    if _license.get_current_license() is None and not read_only:
         return None
-    return {"read_only": _license.is_read_only()}
+    return {"read_only": read_only}
 
 
 @app.get("/api/settings")

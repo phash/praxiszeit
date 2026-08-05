@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.5 · **Stand:** Juli 2026 (PraxisZeit 1.17.0)
+**Version:** 2.6 · **Stand:** August 2026 (PraxisZeit 1.18.1)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -399,6 +399,18 @@ Beispiele: 40 h auf 5 Tage = **8 h/Tag**; 20 h auf 5 Tage = **4 h/Tag**; 24 h au
 
 Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit: **(Ende − Beginn) − Pause** je Eintrag. Zusätzlich werden **Krankheit** und **Fortbildung** so angerechnet, als hätten Sie an diesen Tagen normal gearbeitet – sie zählen also zu Ihrem Ist.
 
+> **Angerechnet wird nur, soweit Sie an diesem Tag auch hätten arbeiten müssen.** Krankheit und Fortbildung sollen Ihren Saldo weder heben noch senken: Ihr Soll bleibt stehen, die Gutschrift gleicht es genau aus. Deshalb gilt:
+>
+> | Tag | Was angerechnet wird |
+> |---|---|
+> | Regulärer Arbeitstag | Ihr volles Tagessoll |
+> | Samstag / Sonntag | nichts |
+> | Gesetzlicher Feiertag | nichts |
+> | 24./31.12., wenn Ihre Praxis den Tag als **halben Feiertag** führt | die Hälfte |
+> | 24./31.12., wenn Ihre Praxis den Tag als **frei** führt | nichts |
+>
+> An einem Tag, an dem Sie ohnehin nicht arbeiten müssen, kann keine Arbeitszeit ausfallen – für einen Feiertag erhalten Sie die Feiertagsvergütung, nicht zusätzlich eine Krankheitsgutschrift (§ 4 Abs. 2 EntgFG). **Beispiel:** Sie arbeiten 8 h/Tag, Ihre Praxis führt den 24.12. als halben Feiertag, und Sie sind an diesem Tag krank. Angerechnet werden **4 h** – genau Ihr Soll für diesen halben Tag. Im Kalender sehen Sie den Tag trotzdem als vollen Krankheitstag; das ist richtig so, für Ihren Saldo zählt der halbe. Umgekehrt bleibt eine Fortbildung, die **länger** dauerte als Ihr Arbeitstag, in voller Länge Mehrarbeit – gekürzt wird sie nicht.
+
 ### Saldo und Überstunden
 
 - **Tagessaldo / Monatssaldo:** Ist − Soll. Ein **grüner** Saldo (+) bedeutet Mehrarbeit, ein **roter** (−) Minusstunden.
@@ -617,4 +629,4 @@ legt Ihr Administrator fest.
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.5 | Juli 2026 (PraxisZeit 1.17.0)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.6 | August 2026 (PraxisZeit 1.18.1)*

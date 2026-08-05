@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.6 | Stand: Juli 2026 (für PraxisZeit 1.17.0)**
+**Version 2.7 | Stand: August 2026 (für PraxisZeit 1.18.1)**
 
 ---
 
@@ -861,7 +861,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.17.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.18.1). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -907,7 +907,11 @@ Ist ein **Soll-Arbeitszeit-Fenster** hinterlegt (→ [Abschnitt 4, Soll-Arbeitsz
 > | Sondertag 24./31.12. als „halber Feiertag" | **die Hälfte** |
 > | Sondertag 24./31.12. als „frei" | **keine** |
 >
-> An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — für den Feiertag gilt die Feiertagsvergütung (§ 2 EntgFG), nicht zusätzlich die Entgeltfortzahlung wegen Krankheit (§ 3 EntgFG). **Beispiel:** Wer vom 24.12. bis 28.12. krankgeschrieben ist (24.12. halber Feiertag, 25./26.12. Feiertage, 27.12. Sonntag, 28.12. Arbeitstag), erhält 4 h + 0 h + 0 h + 0 h + 8 h = **12 h** gutgeschrieben — genau das Soll dieser Tage. Der Saldo bleibt bei 0. **Bis einschließlich Version 1.17.0 wurden hier 40 h gutgeschrieben**, also **+28 Überstunden aus dem Nichts**; wer über Weihnachten krank war, sammelte je Feiertag und je Wochenendtag ein volles Tagessoll an Überstunden. Bestehende Salden korrigieren sich mit dem Update automatisch, weil sie bei jedem Aufruf neu berechnet werden.
+> An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — für den Feiertag gilt die Feiertagsvergütung (§ 2 EntgFG), nicht zusätzlich die Entgeltfortzahlung wegen Krankheit (§ 3 EntgFG). **Beispiel:** Wer vom 24.12. bis 28.12. krankgeschrieben ist (24.12. halber Feiertag, 25./26.12. Feiertage, 27.12. Sonntag, 28.12. Arbeitstag), erhält 4 h + 0 h + 0 h + 0 h + 8 h = **12 h** gutgeschrieben — genau das Soll dieser Tage. Der Saldo bleibt bei 0.
+>
+> **Wo der Fehler im Alltag auftrat.** PraxisZeit legt beim Buchen an Wochenenden und an den bereits eingetragenen Feiertagen gar keine Abwesenheit an — im Beispiel oben entstehen nur zwei Zeilen (24.12. und 28.12.). Der Regelfall war deshalb der **Halbtags-Sondertag**: eine ganz normale Krankmeldung am 24.12. brachte bis einschließlich Version 1.17.0 4 h Soll gegen 8 h Gutschrift, also **+4 Überstunden aus dem Nichts**. Auf einem **Feiertag** kann eine Abwesenheit nachträglich landen — wenn Sie das Bundesland umstellen, einen eigenen Feiertag auf ein bereits gebuchtes Datum legen oder in ein Jahr gebucht wurde, für das die Feiertage noch nicht synchronisiert waren; dann kam je solchem Tag ein volles Tagessoll dazu.
+>
+> **Was das Update repariert — und was nicht.** Laufende und noch **nicht abgeschlossene** Jahre rechnen sich von selbst richtig, weil PraxisZeit die Salden bei jedem Aufruf neu berechnet. Für ein bereits per **Jahresabschluss** abgeschlossenes Jahr gilt das **nicht**: der Abschluss ist ein eingefrorener Übertrag, und PraxisZeit rechnet ihn bewusst nie automatisch neu (sonst würden manuelle Korrekturen still überschrieben). Da der Fehler naturgemäß im Dezember auftrat, betrifft das den wahrscheinlichsten Fall. **Prüfen Sie deshalb nach dem Update den Übertrag** betroffener Mitarbeiter:innen unter *Jahresabschluss* und korrigieren Sie ihn dort von Hand (→ [Abschnitt 3, Jahresabschluss](#jahresabschluss)).
 >
 > Eine Fortbildung, die **länger** dauerte als der Arbeitstag, bleibt dagegen unangetastet echte Mehrarbeit — gedeckelt wird nicht.
 
@@ -1050,4 +1054,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Juli 2026 (für PraxisZeit 1.17.0)*
+*Stand: August 2026 (für PraxisZeit 1.18.1)*
