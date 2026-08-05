@@ -78,7 +78,18 @@ test.describe('Schichtplanung (#305)', () => {
     await modal.getByLabel('Von').fill('08:00');
     await modal.getByLabel('Bis').fill('12:00');
     // Assign the employee via the checklist (inside the modal).
-    await modal.getByText(`${testEmployee.first_name} ${testEmployee.last_name}`).click();
+    //
+    // Wortgrenze, nicht Teilstring: `testUserCounter` in der Fixture ist ein
+    // prozesslokaler Zähler, jeder Playwright-Worker vergibt also parallel
+    // "Test User1", "Test User2", … Der Dialog listet ALLE Mitarbeitenden,
+    // auch die gerade nebenher angelegten — `getByText('Test User1')` traf
+    // damit zusätzlich "Test User13" und scheiterte an der Eindeutigkeit.
+    // Der Eintrag trägt hinter dem Namen noch das Einweisungs-Kennzeichen
+    // ("… nicht eingewiesen"), deshalb `\b` statt `exact: true`.
+    const employeeLabel = new RegExp(
+      `${testEmployee.first_name} ${testEmployee.last_name}\\b`
+    );
+    await modal.getByText(employeeLabel).click();
 
     const slotCreate = adminPage.waitForResponse(
       (r) => r.url().includes('/api/shift-planning/plans/') && r.url().includes('/slots') && r.request().method() === 'POST',

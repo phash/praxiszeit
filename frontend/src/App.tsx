@@ -106,25 +106,14 @@ function App() {
 
   return (
     <ToastProvider>
-      {/* Schritt 1 des react-router-6→7-Umstiegs: die beiden Schalter, die in
-          v7 Standard sind, schon unter 6.30.4 einschalten. So trifft die
-          Verhaltensänderung auf eine Version, zu der man jederzeit zurück
-          kann, und der spätere Versionssprung ist reine Paketarbeit.
-
-          v7_startTransition: Router-Zustandswechsel laufen durch
-          React.startTransition. Zusammen mit den lazy geladenen Admin-Routen
-          (Suspense-Fallback in Layout.tsx um den <Outlet />) bleibt beim
-          Navigieren die alte Ansicht stehen, bis der neue Chunk da ist,
-          statt sofort auf den Ladezustand umzuschalten.
-
-          v7_relativeSplatPath: ändert die Auflösung relativer Pfade
-          unterhalb einer Splat-Route. Hier folgenlos — die einzige
-          path="*"-Route rendert nur ein <Navigate>, hat also keine
-          Nachfahren mit relativen Links.
-
-          Dieselben Schalter stehen in den vier Tests mit <MemoryRouter>,
-          damit Test und Betrieb dieselbe Semantik fahren. */}
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      {/* react-router 7: `startTransition` und die Splat-Pfad-Auflösung sind
+          hier Standardverhalten, der `future`-Prop existiert nicht mehr. Beides
+          lief in 1.18.x bereits als Zukunftsschalter unter 6.30.4 — gemessen
+          ohne Wirkung auf Ablauf und Zeit bis zum Inhalt, weil "/" und "/admin"
+          je eine eigene <Layout/>-Instanz rendern und das
+          key={location.pathname} an RouterAwareErrorBoundary (F-057) den
+          Remount ohnehin erzwingt. */}
+      <BrowserRouter>
         <RouterAwareErrorBoundary>
           <Routes>
           {/* Public Routes */}

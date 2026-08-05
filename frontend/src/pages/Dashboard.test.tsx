@@ -90,7 +90,7 @@ beforeEach(() => {
 describe('Dashboard vacation-day formatting (Audit 2026-07-31 backlog item)', () => {
   it('renders the vacation account with a German decimal comma, not an English dot', async () => {
     render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <Dashboard />
       </MemoryRouter>,
     );

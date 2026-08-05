@@ -164,17 +164,21 @@ test.describe('Admin Absences', () => {
   test('delete company closure', async ({ adminPage, adminApi }) => {
     // Create a closure via API
     const closureName = `E2E Delete Test ${Date.now()}`;
+    // Betriebsferien brauchen mindestens einen Arbeitstag im Zeitraum, sonst
+    // lehnt die API mit 400 ab. `daysFromNow(90)`/`(91)` traf an jedem Sonntag
+    // genau Samstag+Sonntag -> der Test war einmal pro Woche garantiert rot,
+    // ohne dass sich am Code etwas geaendert haette.
+    //
+    // Bewusst genau EIN Werktag: eine Schliessung bucht JEDEM Mitarbeitenden
+    // fuer jeden Werktag darin eine Abwesenheit, und solange sie steht, sehen
+    // parallel laufende Tests (u. a. die Schichtplanung, die Abwesenheiten
+    // liest) diese Zeilen. Eine breitere Spanne war weekend- und
+    // feiertagsrobuster, erzeugte aber genau diese Querwirkung.
+    const closureDay = weekdayFromNow(90);
     const closure = await adminApi.post('/company-closures', {
       name: closureName,
-      // Betriebsferien brauchen mindestens einen Arbeitstag im Zeitraum, sonst
-      // lehnt die API mit 400 ab. `daysFromNow(90)`/`(91)` traf an jedem Sonntag
-      // genau Samstag+Sonntag -> der Test war einmal pro Woche garantiert rot,
-      // ohne dass sich am Code etwas geaendert haette. Bewusst genau EIN
-      // Werktag: eine Schliessung bucht JEDEM Mitarbeitenden fuer jeden Werktag
-      // darin eine Abwesenheit, und solange sie steht, sehen parallel laufende
-      // Tests diese Zeilen.
-      start_date: weekdayFromNow(90),
-      end_date: weekdayFromNow(90),
+      start_date: closureDay,
+      end_date: closureDay,
     });
 
     try {
