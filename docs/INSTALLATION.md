@@ -82,6 +82,21 @@ nano .env
 | `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint in Excel-Exporten (DSGVO) |
 | `HOLIDAY_STATE` | Bundesland für Feiertage (z. B. `Bayern`) |
 | `CORS_ORIGINS` / `ALLOWED_HOSTS` | Eigene Domain statt `localhost` (bei Internet-Zugriff) |
+| `COOKIE_SECURE` | **Bei HTTP-Betrieb auf `false` setzen** (siehe Kasten unten) |
+
+> **Wichtig bei HTTP (Schritt 4 unten startet ohne HTTPS):** `generate-secrets.sh`
+> setzt `ENVIRONMENT=production`, und damit bleibt `COOKIE_SECURE` auf `true`.
+> Der Browser sendet ein `Secure`-Cookie über eine reine HTTP-Verbindung aber
+> nicht — das Refresh-Cookie kommt nie an, und jeder Seiten-Reload bzw.
+> spätestens der Ablauf nach 30 Minuten wirft alle Nutzer:innen auf die
+> Anmeldeseite zurück. Deshalb bei HTTP-Betrieb in die `.env` eintragen:
+>
+> ```
+> COOKIE_SECURE=false
+> ```
+>
+> Sobald Sie auf HTTPS umstellen (Abschnitt „HTTPS aktivieren"), gehört der Wert
+> wieder auf `true`.
 
 > **Wichtig (seit RLS-Umbau):** Die `.env` braucht zusätzlich
 > `APP_DB_USER`/`APP_DB_PASSWORD`, `ENVIRONMENT` und `CORS_ORIGINS`. Eine alte,
@@ -193,6 +208,9 @@ docker compose down
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
+> Mit HTTPS gehört `COOKIE_SECURE` in der `.env` wieder auf `true` (Default) —
+> hatten Sie es für den HTTP-Betrieb auf `false` gesetzt, jetzt zurückstellen.
+
 ### Schritt 3: Firewall anpassen
 
 ```bash
@@ -218,6 +236,9 @@ Diese Warnung erscheint nur einmalig pro Browser/Geraet. Danach ist die Verbindu
 docker compose down
 docker compose up -d
 ```
+
+> Auch hier wieder `COOKIE_SECURE=false` in der `.env` — sonst bleibt der Login
+> über HTTP an der Anmeldeseite hängen.
 
 ---
 

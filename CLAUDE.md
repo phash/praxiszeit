@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.18.1 (Stand 2026-08-03)
+**Aktuelle Version:** 1.18.2 (Stand 2026-08-13)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 ---
@@ -171,6 +171,9 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 - Mitarbeiter: `manuel@example.de`
 
 ### Claude-Code-Bash-Gotchas
+- **Einen `docker compose exec`-Aufruf abzubrechen beendet NUR den Client — der Prozess im Container läuft weiter** (1.18.2). Zwei so entstandene pytest-Läufe teilen sich dann `/app/test.db` und erzeugen eine Fehlerkaskade (`no such table: signup_tokens` beim `DROP TABLE`), die wie ein echter Regressionsschaden aussieht. Container-Prozesse sind vom Host aus in `ps` sichtbar (eigener PID-Namensraum, gleiche Liste) → vor einem Neustart der Suite `pgrep -af pytest` prüfen und die Reste killen, dann `rm -f /app/test.db`. Lange Läufe besser mit `setsid nohup … &` und Ausgabe in eine Datei starten — dann überlebt der Lauf einen Abbruch des aufrufenden Tools, und die Ausgabe geht nicht verloren, wenn die Pipe stirbt.
+- **`grep`-Muster, die mit `=` beginnen, frisst ugrep als Option** (1.18.2): `grep -q "===== DONE ====="` trifft nie, ein Monitor darauf bleibt stumm bis zum Timeout, obwohl die Zeile in der Datei steht. `grep -qF -e "===== DONE ====="` nutzen.
+- **`$` in Passwort-Hashes niemals durch die Shell schicken** (1.18.2): ein bcrypt-Hash (`$bcrypt-sha256$v=2,t=2b,…`) wird in doppelten Anführungszeichen bzw. in einem unquotierten Heredoc zu `-sha256=2,t=2b,…` zerlegt — die DB nimmt den Torso an, der Login bleibt 401 und der Fehler sieht aus wie ein Auth-Bug. Hash in eine Datei schreiben und serverseitig lesen (`psql … pg_read_file('/pfad')`), im Container `$$…$$`-Dollar-Quoting nutzen.
 - Das `cd` in einem Bash-Aufruf **persistiert** zwischen Tool-Calls. Nach `cd .claude/worktrees/...` ist `git status` ohne erneutes `cd` immer noch im Worktree. Bei git-Operationen lieber `git -C <pfad>` nutzen oder cwd explizit zurücksetzen.
 - `docker compose cp <host-file> <svc>:<container-path>` resolved den Host-Pfad **relativ zum cwd**, nicht zum Repo-Root. Aus fremdem cwd → `docker cp` mit absoluten Pfaden + Container-Name (`praxiszeit-backend-1`).
 - `docker compose cp` braucht den **Service-Namen** (`backend:`), NICHT den Container-Namen (`praxiszeit-backend-1:` → schlägt still fehl, kopiert nichts). Ganzes Verzeichnis geht: `docker compose cp backend/app backend:/app/` (→ `/app/app`).
