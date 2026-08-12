@@ -81,6 +81,11 @@ def apply_vacation_request_patch(
     else:
         new_note = vr.note
     new_absence_type = data.absence_type if "absence_type" in fields_set and data.absence_type is not None else vr.absence_type
+    # Release-Review 1.18.2: half_day ist im Edit jetzt führbar (vorher gar nicht
+    # im Schema) — der Merge folgt dem Muster der übrigen Felder.
+    new_half_day = bool(
+        data.half_day if "half_day" in fields_set and data.half_day is not None else vr.half_day
+    )
 
     no_change = (
         new_date == vr.date
@@ -88,6 +93,7 @@ def apply_vacation_request_patch(
         and new_hours == round(float(vr.hours), 2)
         and (new_note or None) == (vr.note or None)
         and new_absence_type == vr.absence_type
+        and new_half_day == bool(vr.half_day)
     )
     if no_change:
         return _enrich(vr, db)
@@ -99,6 +105,16 @@ def apply_vacation_request_patch(
     # per workday — a PATCH must not be able to silently extend to an unbounded span.
     if (effective_end - new_date).days > 366:
         raise HTTPException(status_code=400, detail="Der Zeitraum darf maximal ein Jahr umfassen")
+    # Release-Review 1.18.2: dieselbe Einzeltag-Regel wie im Create-Schema
+    # (``validate_half_day_single_day``), hier gegen den EFFEKTIVEN Zustand.
+    # Ohne sie kam ein halber Tag über den Bearbeiten-Dialog zu einem Zeitraum,
+    # und die Genehmigung buchte JEDEN Werktag als halben Tag: 5 freie Tage für
+    # 2,5 Urlaubstage, an jedem Tag ein halbes Tagessoll unabgedeckt.
+    if new_half_day and effective_end != new_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Halbe Tage sind nur für Einzeltage möglich",
+        )
     if target_user.first_work_day and new_date < target_user.first_work_day:
         raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
     if target_user.last_work_day and effective_end > target_user.last_work_day:
@@ -153,12 +169,12 @@ def apply_vacation_request_patch(
         # #196: tagebasiert prüfen (konsistent mit POST-Pfad / create_absence /
         # review_vacation_request). Der frühere remaining_hours-Check lief für
         # track_hours=False ins Leere (remaining_hours == 0 UND year_hours_needed
-        # == 0 → nie blockiert). half_day ist im Edit nicht änderbar → vr.half_day.
+        # == 0 → nie blockiert). half_day ist seit 1.18.2 im Edit änderbar → new_half_day.
         # R1-3: skip days with 0h target (e.g. Mo/Mi/Fr user — mirrors the
         # creation/approval loop which skips hours_for_day == 0). #431: der Modus
         # wird PRO TAG aufgeloest, nicht am Live-Flag gelesen (siehe
         # ``is_vacation_billable_day``, dort auch die track_hours=False-Ausnahme).
-        day_factor = 0.5 if vr.half_day else 1.0
+        day_factor = 0.5 if new_half_day else 1.0
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
         # ``is_vacation_billable_day`` (F-026: tenant-gefiltert).
         wh_changes = db.query(WorkingHoursChange).filter(
@@ -187,6 +203,7 @@ def apply_vacation_request_patch(
 
     vr.date = new_date
     vr.end_date = new_end_date
+    vr.half_day = new_half_day
     vr.hours = new_hours
     vr.note = new_note
     vr.absence_type = new_absence_type

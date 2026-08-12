@@ -165,7 +165,7 @@ Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
 | **Benutzername** | Eindeutiger Login-Name (z. B. `m.hoffmann`) |
 | **Passwort** | Initiales Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer) |
 | **Rolle** | Mitarbeiter:in oder Admin |
-| **Wochenstunden** | Vertraglich vereinbarte Wochenstunden (Standard: 40), direkt eingegeben in halben Stunden. Bei individuellen Tagesstunden (Viertelstunden je Wochentag möglich) übernimmt das System die Wochenstunden automatisch als Summe der Tageswerte – der Eingabewert im Feld selbst spielt dann keine Rolle. |
+| **Wochenstunden** | Vertraglich vereinbarte Wochenstunden (Standard: 40), direkt eingegeben in Viertelstunden-Schritten (z. B. 20,25). Bei individuellen Tagesstunden (ebenfalls Viertelstunden je Wochentag) übernimmt das System die Wochenstunden automatisch als Summe der Tageswerte – der Eingabewert im Feld selbst spielt dann keine Rolle. |
 | **Arbeitstage pro Woche** | Anzahl der Arbeitstage 1–7 (Standard: 5). Bestimmt den anteiligen Urlaubsvorschlag. |
 | **Urlaubstage** | Jährlicher Urlaubsanspruch in **Tagen**. Vorschlag anteilig nach Arbeitstagen: `30 × Arbeitstage ÷ 5` (5 Tage → 30, 3 Tage → 18). Überschreibbar. |
 

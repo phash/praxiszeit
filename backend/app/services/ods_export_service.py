@@ -329,7 +329,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             for e in day_entries:
                 if e.sunday_exception_reason:
                     bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
-                elif e.note:
+                if e.note:  # Release-Review 1.18.2: kein elif — sonst verschluckt der §10-Grund die Notiz (XLSX/PDF zeigen beides)
                     bem_parts.append(e.note)
             tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif is_holiday:
@@ -681,7 +681,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             for e in day_entries:
                 if e.sunday_exception_reason:
                     bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
-                elif e.note:
+                if e.note:  # Release-Review 1.18.2: kein elif — sonst verschluckt der §10-Grund die Notiz (XLSX/PDF zeigen beides)
                     bem_parts.append(e.note)
             tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
         elif is_holiday:

@@ -59,6 +59,12 @@ class VacationRequestUpdate(BaseModel):
     hours: Optional[float] = Field(None, ge=0, le=24)
     note: Optional[str] = None
     absence_type: Optional[str] = None
+    # Release-Review 1.18.2: half_day war hier bisher nicht führbar (extra="forbid"
+    # → 422). Die Flagge blieb beim Umbau auf einen Zeitraum still gesetzt, und die
+    # Genehmigung halbierte danach JEDEN Werktag der Spanne. Der Router prüft die
+    # Einzeltag-Invariante gegen den EFFEKTIVEN Wert (gemergt aus Payload + DB) —
+    # damit ist der Umbau auf einen Zeitraum möglich, aber nur mit half_day=False.
+    half_day: Optional[bool] = None
 
     @field_validator('absence_type')
     @classmethod

@@ -453,6 +453,14 @@ def create_closure(
     """
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail="Enddatum darf nicht vor dem Startdatum liegen")
+    # Release-Review 1.18.2: dieselbe Klemme wie im Urlaubsantrag
+    # (``vacation_requests``, POST und PATCH). Betriebsferien sind der
+    # destruktivere Pfad — sie loeschen beim Anlegen die Zeiteintraege ALLER
+    # Teilnehmenden pro Werktag —, standen aber als einziger Spannen-Pfad ohne
+    # Obergrenze da: ein Zahlendreher im Jahr (2036 statt 2026) haette in einem
+    # Request die komplette rueckwirkende Zeiterfassung der Praxis geloescht.
+    if (data.end_date - data.start_date).days > 366:
+        raise HTTPException(status_code=400, detail="Der Zeitraum darf maximal ein Jahr umfassen")
 
     # Get all workdays in range
     holidays = _get_holidays_for_range(
@@ -560,6 +568,14 @@ def update_closure(
     """
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail="Enddatum darf nicht vor dem Startdatum liegen")
+    # Release-Review 1.18.2: dieselbe Klemme wie im Urlaubsantrag
+    # (``vacation_requests``, POST und PATCH). Betriebsferien sind der
+    # destruktivere Pfad — sie loeschen beim Anlegen die Zeiteintraege ALLER
+    # Teilnehmenden pro Werktag —, standen aber als einziger Spannen-Pfad ohne
+    # Obergrenze da: ein Zahlendreher im Jahr (2036 statt 2026) haette in einem
+    # Request die komplette rueckwirkende Zeiterfassung der Praxis geloescht.
+    if (data.end_date - data.start_date).days > 366:
+        raise HTTPException(status_code=400, detail="Der Zeitraum darf maximal ein Jahr umfassen")
 
     # F-026: tenant-scoped lookup.
     closure = db.query(CompanyClosure).filter(
@@ -660,13 +676,35 @@ def update_closure(
         _rebookable_user_ids | {a.user_id for a in linked} | {current_user.id},
     )
 
+    # Release-Review 1.18.2: Wen der Create-Helper wieder bucht, war oben geklärt
+    # (Teilnehmermenge) — WELCHE TAGE er überspringt, nicht. Er lässt jeden Tag
+    # aus, an dem bereits Arbeitszeit gebucht ist (#290, „Arbeit gewinnt", er läuft
+    # hier mit delete_time_entries=False). Eine Abwesenheit auf so einem Tag wurde
+    # also gelöscht und nie zurückgebucht, während die Audit-Zeile „werden neu
+    # gebucht" behauptete: ein reines Umbenennen ließ bei aktivem #314-Split den
+    # Urlaubstag ersatzlos verschwinden (Urlaubskonto zu hoch, Soll lebt wieder auf,
+    # §16-Beleg lückenhaft). Solche Zeilen bleiben stehen und werden nur in-place
+    # synchronisiert — wie die der Ausgeschiedenen/Abgewählten.
+    _worked_keys = set()
+    _linked_user_ids = {a.user_id for a in linked}
+    if _linked_user_ids:
+        _worked_keys = {
+            (uid, d) for uid, d in db.query(TimeEntry.user_id, TimeEntry.date).filter(
+                TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+                TimeEntry.user_id.in_(_linked_user_ids),
+                TimeEntry.date >= data.start_date,
+                TimeEntry.date <= data.end_date,
+            ).all()
+        }
+
     _deleted_out_of_range = 0
     _deleted_for_resplit = 0
     for absence in linked:
         if absence.date not in workday_set:
             db.delete(absence)
             _deleted_out_of_range += 1
-        elif split_active and absence.user_id in _rebookable_user_ids:
+        elif (split_active and absence.user_id in _rebookable_user_ids
+                and (absence.user_id, absence.date) not in _worked_keys):
             # delete → re-created + re-split by the create helper below
             db.delete(absence)
             _deleted_for_resplit += 1

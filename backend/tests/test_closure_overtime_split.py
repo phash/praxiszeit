@@ -240,6 +240,39 @@ class TestClosureOvertimeSplitUpdate:
             AbsenceType.VACATION, AbsenceType.VACATION, AbsenceType.OVERTIME, AbsenceType.OVERTIME,
         ]
 
+    def test_resave_keeps_absence_on_a_day_the_employee_worked(self, db, default_tenant, admin_client):
+        # Release-Review 1.18.2: der Re-Split-Löschzweig prüfte nur, WEN der
+        # Create-Helper wieder bucht (die Teilnehmermenge), nicht WELCHE TAGE er
+        # überspringt. Der Helfer lässt einen Tag mit gebuchter Arbeitszeit
+        # bewusst aus (#290: Arbeit gewinnt) — die Abwesenheit dort wurde also
+        # gelöscht und nie zurückgebucht, obwohl das Protokoll „werden neu
+        # gebucht" behauptet. Ausgelöst durch ein reines Umbenennen.
+        from datetime import time as _time
+
+        from app.models import TimeEntry
+
+        emp = _make_user(db, "e_worked", vacation_days=30)
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)
+        # Nachträglich wird für einen Schließtag doch Arbeitszeit erfasst
+        # (Admin-Nachtrag, XLS-Import — kein Pfad verbietet das).
+        db.add(TimeEntry(user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=TUE,
+                         start_time=_time(9, 0), end_time=_time(17, 0), break_minutes=30))
+        db.commit()
+
+        _update(admin_client, c["id"], counts_as_vacation=True, name="BF-umbenannt")
+
+        dates = [a.date for a in db.query(Absence).filter(
+            Absence.user_id == emp.id, Absence.closure_id == uuid.UUID(c["id"]),
+        ).order_by(Absence.date).all()]
+        # Alle vier Schließtage behalten ihre Abwesenheit — der Tag mit
+        # Arbeitszeit darf nicht gelöscht werden, denn der Create-Helper
+        # überspringt ihn und würde ihn nie zurückbuchen.
+        assert dates == [MON, TUE, WED, THU]
+        assert db.query(TimeEntry).filter(
+            TimeEntry.user_id == emp.id, TimeEntry.date == TUE,
+        ).count() == 1
+
     def test_untracked_employee_keeps_vacation_not_overtime(self, db, default_tenant, admin_client):
         # Review finding: an untracked MA (track_hours=False) has no overtime
         # account → the split must NOT apply (legacy VACATION), otherwise the
@@ -622,3 +655,34 @@ class TestClosureSpecialDays:
         assert r2.status_code == 200, r2.text
         absences = db.query(Absence).filter(Absence.user_id == emp.id).all()
         assert absences and all(a.end_date is None for a in absences)
+
+
+class TestClosureRangeBound:
+    """Release-Review 1.18.2: Spannen-Deckel wie im Urlaubsantrag."""
+
+    def test_create_rejects_span_over_one_year(self, db, default_tenant, admin_client):
+        # Betriebsferien loeschen beim Anlegen die Zeiteintraege ALLER
+        # Teilnehmenden pro Werktag — ein Tippfehler im Jahr darf nicht die
+        # gesamte rueckwirkende Zeiterfassung ausloeschen.
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "Tippfehler", "start_date": "2026-12-24", "end_date": "2036-01-02",
+            "counts_as_vacation": True,
+        })
+        assert r.status_code == 400, r.text
+        assert "maximal ein Jahr" in r.json()["detail"]
+
+    def test_create_accepts_exactly_one_year(self, db, default_tenant, admin_client):
+        r = admin_client.post("/api/company-closures/", json={
+            "name": "Langes Jahr", "start_date": "2026-01-01", "end_date": "2027-01-01",
+            "counts_as_vacation": True,
+        })
+        assert r.status_code == 201, r.text
+
+    def test_update_rejects_span_over_one_year(self, db, default_tenant, admin_client):
+        c = _create_closure(admin_client)
+        r = admin_client.put(f"/api/company-closures/{c['id']}", json={
+            "name": "BF", "start_date": MON.isoformat(), "end_date": "2036-01-02",
+            "counts_as_vacation": True,
+        })
+        assert r.status_code == 400, r.text
+        assert "maximal ein Jahr" in r.json()["detail"]

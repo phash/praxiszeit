@@ -225,10 +225,27 @@ def admin_update_time_entry(
         User.tenant_id == current_user.tenant_id,
     ).first()
 
-    # Use provided values or fall back to existing
+    # Use provided values or fall back to existing.
+    # Release-Review 1.18.2: der Rückfallwert ist der ROHSTEMPEL, nicht die
+    # gespeicherte (bereits gekappte) Zeit. ``entry.start_time`` als Kappungs-
+    # Eingabe hieß: eine reine Datumsänderung kappte das Ergebnis der letzten
+    # Kappung ein zweites Mal und schrieb es anschließend als neuen „Rohwert"
+    # fest (``_times_affected`` gilt auch bei einem Datums-only-PUT). Der echte
+    # Stempel war damit unwiederbringlich weg — das Audit-Log führt nur
+    # date/start/end/break, keine raw_*-Felder. Er ist aber der §16-Nachweis der
+    # tatsächlichen Anwesenheit und laut CLAUDE.md die Grundlage der
+    # §5-Ruhezeitprüfung; danach rechnete § 5 gegen die geschönte Zeit und ein
+    # echter Verstoß blieb unentdeckt. ``clamp`` leitet aus dem Rohwert für den
+    # neuen Wochentag wieder korrekt eff_* UND raw_* ab.
     update_date = entry_data.date if entry_data.date is not None else entry.date
-    update_start_time = entry_data.start_time if entry_data.start_time is not None else entry.start_time
-    update_end_time = entry_data.end_time if entry_data.end_time is not None else entry.end_time
+    update_start_time = (
+        entry_data.start_time if entry_data.start_time is not None
+        else (entry.raw_start_time or entry.start_time)
+    )
+    update_end_time = (
+        entry_data.end_time if entry_data.end_time is not None
+        else (entry.raw_end_time or entry.end_time)
+    )
     update_break_minutes = entry_data.break_minutes if entry_data.break_minutes is not None else entry.break_minutes
 
     # Release-Review 1.16.0: die Reihenfolge des GEMERGTEN Paars prüfen.
