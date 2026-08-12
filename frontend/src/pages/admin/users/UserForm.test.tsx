@@ -471,3 +471,35 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
     expect(screen.getByLabelText('Wochenstunden')).toBeEnabled();
   });
 });
+
+describe('Bug-Tracker #4: Schrittweite der geplanten Arbeitszeit', () => {
+  it('nimmt Viertelstunden beim Anlegen an — wie der Bearbeiten-Dialog (Fund C, #431)', () => {
+    // step="0.5" wies 20,25 h beim ANLEGEN als Schrittfehler ab, während
+    // dieselbe Zahl über "Wochenstunden anpassen…" längst gespeichert werden
+    // konnte. Zwei Wege zum selben Feld dürfen nicht verschieden streng sein.
+    renderForm({ editUser: null });
+    expect(document.getElementById('f-weekly-hours')).toHaveAttribute('step', '0.25');
+  });
+
+  it('erlaubt bei der Monatsarbeitszeit eine Nachkommastelle (= Genauigkeit der Spalte)', () => {
+    // Der eigene Vorschlagswert (Wochenstunden × 13/3 ≈ 86,7) fiel bei step="0.5"
+    // durch die native Schrittprüfung.
+    renderForm({ editUser: null });
+    fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
+    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('step', '0.1');
+  });
+});
+
+describe('Bug-Tracker #3: Kalenderfarben-Kacheln überdecken den Text nicht', () => {
+  it('hält eine feste Kachelgröße statt einer an der Spaltenbreite hängenden', () => {
+    // `w-full aspect-square` im Raster machte die Kacheln so hoch wie die
+    // Spalte breit war — im breiten Formular (bzw. bei Browser-Zoom, wo die
+    // sm:-Stufe wegfällt) wuchsen sie über Label und Hilfetext.
+    renderForm({ editUser: null });
+    const swatch = screen.getByLabelText('Farbe Blau');
+    expect(swatch.className).toContain('h-10');
+    expect(swatch.className).toContain('w-10');
+    expect(swatch.className).not.toContain('aspect-square');
+    expect(swatch.className).not.toContain('w-full');
+  });
+});

@@ -477,7 +477,11 @@ export default function UserForm({
               <input
                 id="f-weekly-hours"
                 type="number"
-                step="0.5"
+                // Bug-Tracker #4 (Nachzug zu #431-Fund C): derselbe Viertelstunden-
+                // Schritt wie im WorkingHoursModal und bei den Tagesfeldern —
+                // sonst nimmt das Anlegen 20,25 h nicht an, das spätere Ändern
+                // derselben Zahl aber schon.
+                step="0.25"
                 value={formData.weekly_hours}
                 onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
                 required
@@ -692,7 +696,11 @@ export default function UserForm({
                 <input
                   id="f-agreed-monthly"
                   type="number"
-                  step="0.5"
+                  // Bug-Tracker #4: `0.5` wies u. a. den eigenen Vorschlagswert
+                  // (Wochenstunden × 13/3, eine Nachkommastelle) als Schrittfehler
+                  // ab. `0.1` = Genauigkeit der Spalte `Numeric(5, 1)`; feiner
+                  // einzugeben hieße, dass die DB still rundet.
+                  step="0.1"
                   min="0"
                   max="400"
                   placeholder={
@@ -777,7 +785,13 @@ export default function UserForm({
                 style={{ backgroundColor: formData.calendar_color }}
               />
             </label>
-            <div className="grid grid-cols-6 sm:grid-cols-12 gap-2">
+            {/* Bug-Tracker #3: feste Kachelgröße statt `w-full aspect-square` im
+                Raster. Die Kachelhöhe hing vorher an der Spaltenbreite — in einem
+                breiten Formular (oder bei Browser-Zoom, wo `sm:` nicht mehr greift)
+                wurden die Felder mehrere hundert Pixel hoch und überdeckten Label
+                und Hilfetext. `py-2` hält zusätzlich Platz für Ring + `scale-110`
+                der ausgewählten Kachel, die sonst über die Zeile hinauswächst. */}
+            <div className="flex flex-wrap gap-3 py-2">
               {PASTEL_COLORS.map((color) => (
                 <button
                   key={color.hex}
@@ -786,7 +800,7 @@ export default function UserForm({
                   aria-label={`Farbe ${color.name}`}
                   aria-pressed={formData.calendar_color === color.hex}
                   title={color.name}
-                  className={`relative w-full aspect-square rounded-lg transition-all hover:scale-110 ${
+                  className={`relative h-10 w-10 shrink-0 rounded-lg transition-all hover:scale-110 ${
                     formData.calendar_color === color.hex
                       ? 'ring-4 ring-primary ring-offset-2 scale-110'
                       : 'hover:ring-2 hover:ring-gray-300'
