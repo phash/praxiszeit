@@ -739,7 +739,10 @@ export default function Profile() {
               </div>
 
               {/* Color Palette */}
-              <div className="grid grid-cols-6 gap-3">
+              {/* Bug-Tracker #3: gleiche feste Kachelgröße wie im Admin-Formular —
+                  `w-full aspect-square` skalierte mit der Spaltenbreite und
+                  überdeckte bei breitem Container/Zoom die Texte darum herum. */}
+              <div className="flex flex-wrap gap-3 py-2">
                 {PASTEL_COLORS.map((color) => (
                   <button
                     key={color.hex}
@@ -747,7 +750,7 @@ export default function Profile() {
                     onClick={() => handleColorChange(color.hex)}
                     aria-label={`Farbe ${color.name}`}
                     aria-pressed={selectedColor === color.hex}
-                    className={`relative w-full aspect-square rounded-lg transition-all hover:scale-110 ${
+                    className={`relative h-10 w-10 shrink-0 rounded-lg transition-all hover:scale-110 ${
                       selectedColor === color.hex
                         ? 'ring-4 ring-primary ring-offset-2 scale-110'
                         : 'hover:ring-2 hover:ring-gray-300'
