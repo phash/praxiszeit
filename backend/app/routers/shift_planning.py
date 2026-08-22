@@ -80,12 +80,17 @@ router = APIRouter(
 
 
 class LocationIn(BaseModel):
-    name: str
+    # #450: Die Spalten sind String(255). Ohne Grenze bricht ein längerer Name
+    # auf PostgreSQL erst beim COMMIT ab (StringDataRightTruncation → 500)
+    # statt am Rand mit 422 und Feldhinweis. Die SQLite-Suite ignoriert
+    # varchar-Längen und fängt das nie — dasselbe Muster wie bei
+    # time_entry_audit_logs.source.
+    name: str = Field(..., min_length=1, max_length=255)
     sort_order: int = 0
 
 
 class WorkstationIn(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)  # #450
     location_id: Optional[UUID] = None
     color: Optional[str] = None
     sort_order: int = 0
@@ -102,7 +107,7 @@ class WorkstationIn(BaseModel):
 
 
 class PlanIn(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)  # #450
     description: Optional[str] = None
     active_from_date: Optional[date] = None
     active_until_date: Optional[date] = None
@@ -113,7 +118,7 @@ class PlanIn(BaseModel):
 
 
 class PlanDuplicateIn(BaseModel):
-    name: str  # #338: Name der Kopie
+    name: str = Field(..., min_length=1, max_length=255)  # #338 Name der Kopie, #450 Grenze
 
 
 class SlotIn(BaseModel):
@@ -1103,7 +1108,10 @@ def set_user_qualifications(
     ).delete(synchronize_session=False)
     for wsid in unique_ws:
         db.add(WorkstationQualification(tenant_id=tid, user_id=user_id, workstation_id=wsid))
-    db.commit()
+    # #450: Zwei Admins (oder zwei Browser-Tabs) auf derselben Zeile laufen
+    # sonst in uq_tenant_user_workstation und bekommen ein 500 mit Traceback
+    # für einen reinen Bedienkonflikt.
+    _commit_or_conflict(db, "Die Einweisungen wurden zwischenzeitlich geändert, bitte erneut versuchen")
     return {"user_id": str(user_id), "workstation_ids": [str(w) for w in unique_ws]}
 
 
