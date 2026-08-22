@@ -488,7 +488,9 @@ def list_plans(
     result = []
     for p in plans:
         active_today = shift_planning_service.is_plan_active_on(p, today)
-        if not is_admin and not active_today:
+        # Fix #7 + #443: Nicht-Admins sehen nur, was heute gilt ODER ausdrücklich
+        # freigegeben ist. Die Regel lebt in EINEM Helfer (siehe get_plan).
+        if not shift_planning_service.is_plan_visible_to(p, today, is_admin):
             continue
         p_slots = slots_by_plan.get(p.id, [])
         understaffed = [
@@ -621,7 +623,9 @@ def get_plan(
     is_admin = current_user.role == UserRole.ADMIN
     # Fix #7: non-admins can only open plans that are active today — an inactive
     # draft does not "exist" for them (404, consistent with list_plans filtering).
-    if not is_admin and not shift_planning_service.is_plan_active_on(plan, today_local()):
+    # Fix #7 + #443: ein für den Nutzer unsichtbarer Plan "existiert" nicht
+    # (404, deckungsgleich mit dem Filter in list_plans).
+    if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
         raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
     return _build_plan_detail(db, tid, plan, is_admin)
 
