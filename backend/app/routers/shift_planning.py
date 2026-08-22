@@ -14,7 +14,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -122,6 +122,10 @@ class SlotIn(BaseModel):
     start_time: time
     end_time: time
     min_staff: int = 0
+    # #443: freier Hinweis je Einteilung ("Einarbeitung Azubi"). Die Spalte ist
+    # TEXT, die Grenze steht am Rand — 500 Zeichen sind reichlich für einen
+    # Hinweis und halten Zelle und PDF lesbar.
+    note: Optional[str] = Field(None, max_length=500)
 
     @field_validator("weekday")
     @classmethod
@@ -136,6 +140,16 @@ class SlotIn(BaseModel):
         if v < 0:
             raise ValueError("Mindestbesetzung darf nicht negativ sein")
         return v
+
+    @field_validator("note")
+    @classmethod
+    def _note_blank_to_none(cls, v: Optional[str]) -> Optional[str]:
+        """Leereingabe → NULL, damit die Anzeige nicht zwischen "kein Hinweis"
+        und "Hinweis aus Leerzeichen" unterscheiden muss."""
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
 
 class AssignmentsIn(BaseModel):
@@ -190,6 +204,8 @@ def _slot_dict(slot: ShiftSlot, ws: Optional[Workstation], assignments: List[dic
         "start_time": _hhmm(slot.start_time),
         "end_time": _hhmm(slot.end_time),
         "min_staff": slot.min_staff,
+        # #443: reiner Anzeigetext, keine Prüfung, keine Berechnung.
+        "note": slot.note,
         "understaffed": shift_planning_service.is_understaffed(slot.min_staff, len(assignments)),
         # #305 M2d: slot has ≥1 person not trained for its workstation (soft).
         "unqualified": any(not a.get("qualified", True) for a in assignments),
@@ -760,6 +776,7 @@ def duplicate_plan(
             start_time=s.start_time,
             end_time=s.end_time,
             min_staff=s.min_staff,
+            note=s.note,
         )
         db.add(ns)
         db.flush()  # ns.id
@@ -925,6 +942,7 @@ def create_slot(
         start_time=data.start_time,
         end_time=data.end_time,
         min_staff=data.min_staff,
+        note=data.note,
     )
     db.add(slot)
     db.commit()
@@ -950,6 +968,7 @@ def update_slot(
     slot.start_time = data.start_time
     slot.end_time = data.end_time
     slot.min_staff = data.min_staff
+    slot.note = data.note
     db.commit()
     db.refresh(slot)
     return _single_slot_dict(db, tid, slot)
