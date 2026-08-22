@@ -126,3 +126,57 @@ def test_get_plan_opens_released_plan_for_employee(db, default_tenant):
     with pytest.raises(HTTPException) as exc:
         get_plan(draft.id, db=db, current_user=emp)
     assert exc.value.status_code == 404
+
+
+from uuid import UUID as _UUID
+
+from app.routers.shift_planning import (
+    PlanDuplicateIn,
+    PlanIn,
+    create_plan,
+    duplicate_plan,
+    update_plan,
+)
+
+# Die Endpunkte werden hier als gewoehnliche Funktionen gerufen, nicht ueber
+# HTTP — FastAPI wandelt den Pfadparameter also NICHT um. Die Antwort-Dicts
+# tragen die Kennung als str, die Signaturen erwarten UUID.
+
+
+def test_create_and_update_carry_the_release_flag(db, default_tenant):
+    admin = _user(db, "vis_api_admin", role=UserRole.ADMIN)
+
+    created = create_plan(PlanIn(name="Herbstplan", visible_to_employees=True), db=db, current_user=admin)
+    assert created["visible_to_employees"] is True
+
+    updated = update_plan(
+        _UUID(created["id"]),
+        PlanIn(name="Herbstplan", visible_to_employees=False),
+        db=db,
+        current_user=admin,
+    )
+    assert updated["visible_to_employees"] is False
+
+
+def test_plan_detail_exposes_the_release_flag(db, default_tenant):
+    admin = _user(db, "vis_detail_admin", role=UserRole.ADMIN)
+    plan = _plan(db, admin, "Detailplan", visible=True)
+    detail = get_plan(plan.id, db=db, current_user=admin)
+    assert detail["visible_to_employees"] is True
+
+
+def test_list_plans_exposes_the_release_flag(db, default_tenant):
+    admin = _user(db, "vis_listflag_admin", role=UserRole.ADMIN)
+    _plan(db, admin, "Listenplan", visible=True)
+    row = next(p for p in list_plans(db=db, current_user=admin) if p["name"] == "Listenplan")
+    assert row["visible_to_employees"] is True
+
+
+def test_duplicate_does_not_inherit_the_release(db, default_tenant):
+    """Eine Kopie ist ein Entwurf — sie darf nicht mit der Freigabe des
+    Originals ins Leben treten (wie schon is_active und das Datumsfenster)."""
+    admin = _user(db, "vis_dup_admin", role=UserRole.ADMIN)
+    src = _plan(db, admin, "Original freigegeben", visible=True)
+
+    copy = duplicate_plan(src.id, PlanDuplicateIn(name="Original freigegeben (Kopie)"), db=db, current_user=admin)
+    assert copy["visible_to_employees"] is False

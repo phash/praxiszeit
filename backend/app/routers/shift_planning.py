@@ -106,6 +106,10 @@ class PlanIn(BaseModel):
     description: Optional[str] = None
     active_from_date: Optional[date] = None
     active_until_date: Optional[date] = None
+    # #443: ausdrückliche Freigabe für Mitarbeitende. PUT ist wie bei den
+    # übrigen Feldern ein Vollersatz — ein Aufruf ohne das Feld nimmt die
+    # Freigabe also zurück. Das Frontend sendet es immer mit.
+    visible_to_employees: bool = False
 
 
 class PlanDuplicateIn(BaseModel):
@@ -481,9 +485,6 @@ def list_plans(
         slots_by_plan.setdefault(s.shift_plan_id, []).append(s)
 
     today = today_local()
-    # Fix #7: non-admins only see plans that are active today — inactive drafts
-    # are an admin planning artefact and must be filtered server-side (the
-    # frontend filtered, the backend did not).
     is_admin = current_user.role == UserRole.ADMIN
     result = []
     for p in plans:
@@ -505,6 +506,7 @@ def list_plans(
             "active_from_date": _iso(p.active_from_date),
             "active_until_date": _iso(p.active_until_date),
             "active_today": active_today,
+            "visible_to_employees": p.visible_to_employees,
             "slot_count": len(p_slots),
             "is_valid": len(understaffed) == 0,
         })
@@ -603,6 +605,7 @@ def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dic
         "active_from_date": _iso(plan.active_from_date),
         "active_until_date": _iso(plan.active_until_date),
         "active_today": shift_planning_service.is_plan_active_on(plan, today_local()),
+        "visible_to_employees": plan.visible_to_employees,
         "slots": slot_dicts,
         "validation": {
             "is_valid": len(understaffed_ids) == 0,
@@ -621,8 +624,6 @@ def get_plan(
     tid = current_user.tenant_id
     plan = _plan_or_404(db, tid, plan_id)
     is_admin = current_user.role == UserRole.ADMIN
-    # Fix #7: non-admins can only open plans that are active today — an inactive
-    # draft does not "exist" for them (404, consistent with list_plans filtering).
     # Fix #7 + #443: ein für den Nutzer unsichtbarer Plan "existiert" nicht
     # (404, deckungsgleich mit dem Filter in list_plans).
     if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
@@ -663,6 +664,7 @@ def _plan_summary(plan: ShiftPlan) -> dict:
         "is_active": plan.is_active,
         "active_from_date": _iso(plan.active_from_date),
         "active_until_date": _iso(plan.active_until_date),
+        "visible_to_employees": plan.visible_to_employees,
     }
 
 
@@ -695,6 +697,7 @@ def create_plan(
         is_active=False,
         active_from_date=data.active_from_date,
         active_until_date=data.active_until_date,
+        visible_to_employees=data.visible_to_employees,
         created_by=current_user.id,
     )
     db.add(plan)
@@ -711,9 +714,10 @@ def duplicate_plan(
     current_user: User = Depends(require_admin),
 ):
     """#338: Schichtplan inkl. Slots + Zuweisungen duplizieren. Die Kopie ist ein
-    INAKTIVER Entwurf OHNE Aktiv-Datumsfenster (sie soll nicht versehentlich neben
-    dem Original aktiv werden); Arbeitsplätze/Einweisungen sind nicht plan-gebunden
-    und werden daher nicht kopiert. Alles tenant-scoped (F-026)."""
+    INAKTIVER Entwurf OHNE Aktiv-Datumsfenster und OHNE Freigabe für Mitarbeitende
+    (#443) (sie soll nicht versehentlich neben dem Original aktiv werden);
+    Arbeitsplätze/Einweisungen sind nicht plan-gebunden und werden daher nicht
+    kopiert. Alles tenant-scoped (F-026)."""
     tid = current_user.tenant_id
     src = _plan_or_404(db, tid, plan_id)
     name = data.name.strip()
@@ -734,6 +738,9 @@ def duplicate_plan(
         is_active=False,
         active_from_date=None,
         active_until_date=None,
+        # #443: Die Kopie erbt die Freigabe NICHT — sie ist ein Entwurf, genau
+        # wie sie is_active und das Datumsfenster nicht erbt.
+        visible_to_employees=False,
         created_by=current_user.id,
     )
     db.add(new_plan)
@@ -796,6 +803,7 @@ def update_plan(
     plan.description = data.description
     plan.active_from_date = data.active_from_date
     plan.active_until_date = data.active_until_date
+    plan.visible_to_employees = data.visible_to_employees
     _commit_or_conflict(db, "Ein Schichtplan mit diesem Namen existiert bereits")
     db.refresh(plan)
     return _plan_summary(plan)
