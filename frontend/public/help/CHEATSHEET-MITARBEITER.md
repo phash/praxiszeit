@@ -192,7 +192,7 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 
 - Menü **Schichtplan**: sichtbare Wochenpläne ansehen (wer wann wo) – heute geltende **und** vom Admin freigegebene, aktuell nicht geltende Pläne; alle heute geltenden Pläne stehen untereinander, freigegebene übrige Pläne zusätzlich in einer Vorschau-Auswahl mit Vorschau-Hinweis.
 - Hinweis an einer Einteilung erkennbar am **»**; Knopf **„PDF"** druckt den angezeigten Plan. Bei mehreren Standorten steht der Standort in der Kopfzeile (einheitlich) oder hinter dem Arbeitsplatznamen (gemischt).
-- **Dashboard → „Deine Einteilung heute"**: Ihre heutigen Einsätze mit Zeit.
+- **Dashboard → „Deine Einteilung heute"**: Ihre heutigen Einsätze mit Zeit, inkl. Hinweis (**»**) falls gesetzt.
 - Nur Planung – ändert **nicht** Ihre Arbeitszeiten/Urlaub/Überstunden. Einteilung macht der Admin.
 
 ---

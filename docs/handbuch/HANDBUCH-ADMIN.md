@@ -1051,8 +1051,9 @@ Blick am **Augen-Symbol** in der Planliste sowie am Abzeichen **„Sichtbar"**
 
 **Hinweis je Einteilung:** Im Slot-Dialog gibt es das Feld **„Hinweis
 (optional)"** (bis zu 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung
-für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster
-und im PDF-Ausdruck – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
+für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster,
+im PDF-Ausdruck und auf der Dashboard-Karte „Deine Einteilung heute" der
+betroffenen Mitarbeitenden – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
 oder Überstunden. **Achtung:** Der Hinweis ist für alle Mitarbeitenden sichtbar,
 die den Plan sehen dürfen, und wird beim PDF-Aushang mitgedruckt – tragen Sie
 dort keine Gesundheitsangaben oder anderen sensiblen Daten ein.

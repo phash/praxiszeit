@@ -76,7 +76,7 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   - **Drag & Drop:** Slot-Block auf einen anderen Wochentag / eine andere Uhrzeit ziehen (15-Minuten-Raster). Mitarbeitende aus der Liste rechts auf einen Slot ziehen → zugewiesen.
   - **Klick-Pfad:** „+ Slot" bzw. Klick auf eine freie Rasterfläche öffnet einen Dialog (Arbeitsplatz, Wochentag, Von/Bis, Mindestbesetzung, Hinweis, Mitarbeitende). Klick auf einen vorhandenen Slot bearbeitet ihn.
 - **Mindestbesetzung:** Pro Slot setzbar. Unterbesetzte Slots werden markiert (⚠), der Plan zeigt einen Hinweis. Es ist eine **weiche Warnung** – Speichern und Aktivieren bleiben möglich.
-- **Hinweis je Einteilung (#443):** Im Slot-Dialog gibt es das Feld **„Hinweis (optional)"** (höchstens 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster unter der Zuweisung und im PDF-Ausdruck. Rein informativ — er fließt in keine Berechnung, Validierung oder Warnung ein und übersteht auch das „Auf Wochentage kopieren" (#322). **Achtung:** sichtbar für alle Mitarbeitenden mit Plansicht und Teil des PDF-Aushangs — keine Gesundheitsangaben oder anderen sensiblen Daten hineinschreiben.
+- **Hinweis je Einteilung (#443, seit #453 auch auf dem Dashboard):** Im Slot-Dialog gibt es das Feld **„Hinweis (optional)"** (höchstens 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster unter der Zuweisung, im PDF-Ausdruck **und** auf der Dashboard-Karte „Deine Einteilung heute" (#453) — genau dort, wo eine Mitarbeiterin morgens tatsächlich hinschaut. Rein informativ — er fließt in keine Berechnung, Validierung oder Warnung ein und übersteht auch das „Auf Wochentage kopieren" (#322). **Achtung:** sichtbar für alle Mitarbeitenden mit Plansicht und Teil des PDF-Aushangs — keine Gesundheitsangaben oder anderen sensiblen Daten hineinschreiben.
 
 **Aktivschaltung:**
 - „Aktiv schalten" macht den Plan für alle sichtbar (Read-only-Ansicht + Dashboard).
@@ -108,8 +108,8 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   Nicht-Admins **serverseitig** ausgeblendet — nicht nur im Frontend (s.
   „Sichtbarkeit").
 - **Mehrere sichtbare Pläne (#443, seit Prüfrunde 2 F-2):** Gilt heute mehr als ein Plan gleichzeitig (z. B. je ein Plan pro Standort — ausdrücklich unterstützte Konfiguration, `get_my_today` bildet serverseitig die Vereinigung über alle aktiven Pläne), werden **alle** heute geltenden Pläne untereinander angezeigt, nicht nur einer. Eine **Plan-Auswahl** (Dropdown mit Namen + „Ab TT.MM.JJJJ"/„Vorschau"/„Nicht mehr gültig") erscheint nur noch für **zusätzlich freigegebene, heute nicht geltende** Pläne und lädt ihr Detail bei Bedarf; gibt es keine solchen, entfällt die Auswahl. Ein dort gewählter Plan trägt zusätzlich den Hinweis „Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben." bzw. „Dieser Plan gilt nicht mehr — er ist zur Ansicht freigegeben." (Zeitraum bereits abgelaufen) — er ist also klar als Vorschau erkennbar und wird nicht mit einem aktuell geltenden Plan verwechselt. Das gilt seit Prüfrunde 2 (I-1) auch für den **Ausdruck** (siehe nächster Punkt) — vorher endete die Kennzeichnung am Bildschirmrand.
-- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** druckt den gerade angezeigten Plan als Aushang (Querformat, Arbeitsplatz × Wochentag) — denselben, den Sie auch am Bildschirm sehen. Gilt der Plan heute noch nicht oder nicht mehr, steht das fett in der Kopfzeile des Ausdrucks („Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — das Papier am Schwarzen Brett verrät also denselben Status wie der Bildschirm. Bei einheitlichem Standort steht er in der Kopfzeile, bei unterschiedlichen Standorten je Arbeitsplatz hinter dessen Namen (#452).
-- **Dashboard → „Deine Einteilung heute":** Arbeitsplatz, Zeit und Plan der heutigen Einsätze.
+- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** druckt den gerade angezeigten Plan als Aushang (Querformat, Arbeitsplatz × Wochentag) — denselben, den Sie auch am Bildschirm sehen. Gilt der Plan heute noch nicht oder nicht mehr, steht das fett in der Kopfzeile des Ausdrucks („Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — das Papier am Schwarzen Brett verrät also denselben Status wie der Bildschirm. Bei einheitlichem Standort steht der Standort in der Kopfzeile, bei unterschiedlichen Standorten je Arbeitsplatz hinter dessen Namen (#452).
+- **Dashboard → „Deine Einteilung heute":** Arbeitsplatz, Zeit und Plan der heutigen Einsätze — inklusive Hinweis je Einteilung, falls einer gesetzt ist (#453).
 
 ---
 
@@ -176,8 +176,9 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   ist **`»`** (U+00BB), nicht der ursprünglich vorgesehene Pfeil `↳` (U+21B3) — der
   fehlt in reportlabs Standardschrift Helvetica/WinAnsiEncoding und erschien im
   Ausdruck als schwarzes Kästchen. `»` liegt in Helvetica und wird identisch im
-  Wochenraster (`WeekGrid.tsx`) verwendet, damit Bildschirm und Ausdruck dasselbe
-  Zeichen zeigen. `shift_slots.note` wird bei `lifecycle_service.anonymize_tenant`
+  Wochenraster (`WeekGrid.tsx`) **und** — seit #453 — auf der Dashboard-Karte
+  „Deine Einteilung heute" (`ShiftTodayCard.tsx`, über `get_my_today`) verwendet,
+  damit Bildschirm, Kachel und Ausdruck dasselbe Zeichen zeigen. `shift_slots.note` wird bei `lifecycle_service.anonymize_tenant`
   geleert (reines Anzeigefeld, kein Berechnungsbezug, aber potenziell personenbezogener
   Freitext). **`Table(..., splitInRow=1)` (C-1, Prüfrunde 2):** reportlab kann eine
   Tabellenzeile sonst nicht über einen Seitenumbruch teilen — eine hohe Zeile (z. B.
