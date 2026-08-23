@@ -218,7 +218,10 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
       neu berechnet (#121). Die Zeilen bleiben — Datum/Uhrzeit/Pause und "wer
       hat wann was geaendert" sind der §16-relevante Teil, der Freitext nicht,
       und er traegt E-Mail-Adressen + Benutzernamen im Klartext.
-    - ``tenants``: name → "[gelöscht]", company_name/vat_id/country/
+    - ``tenants``: name → "[gelöscht]", slug → ``anon-<tenant_id>`` (#435;
+      der Slug wird aus dem Praxisnamen abgeleitet und ist unique — der
+      On-Prem-Default-Mandant ``slug == "default"`` bleibt ausgenommen, siehe
+      Kommentar an der Zuweisung), company_name/vat_id/country/
       billing_address/billing_email → NULL. Stripe ids retained for
       accounting audit. ``anonymized_at`` marks completion.
     - ``signup_audit_log``: email / IP / User-Agent scrubbed, consent row kept.
@@ -306,6 +309,27 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
         row.row_hash = audit_integrity.compute_row_hash(row)
 
     tenant.name = "[gelöscht]"
+    # #435: der Slug wird beim Signup aus dem Praxisnamen abgeleitet
+    # (``signup_service._slug_from_name``) und ueberlebte den obigen Scrub von
+    # ``name`` bisher unveraendert — der Klarname stand danach weiter in einer
+    # eindeutigen Kennung, waehrend ``anonymized_at`` die Loeschung als
+    # erledigt meldete. Ein konstanter Ersatzwert (z.B. "geloescht") kollidiert
+    # an der Unique-Constraint, sobald ein zweiter Mandant anonymisiert wird
+    # (real bei jeder zweiten Faelligkeit im selben Cron-Lauf) — deshalb haengt
+    # die Tenant-ID an, die selbst schon eindeutig ist und nichts
+    # Personenbezogenes traegt. Ausnahme: der On-Prem-Default-Mandant
+    # (``slug == "default"``) bleibt unangetastet — ``main.py`` (Bootstrap,
+    # ~Zeile 182) sucht ihn beim Start ueber genau diesen Slug; ein
+    # umgeschriebener Slug faende ihn nicht mehr und legte eine zweite Zeile
+    # mit derselben festen UUID an → Primary-Key-Verletzung, Totalausfall beim
+    # naechsten Start. Der Selbstbedienungs-Loeschantrag
+    # (``POST /api/tenant/request-deletion``) ist zwar als SaaS-Pfad gedacht,
+    # aber nicht technisch auf ``is_saas()`` gegated — ein On-Prem-Admin kann
+    # ihn fuer den eigenen (Default-)Mandanten ausloesen. Eine Zeile Schutz
+    # gegen einen seltenen, aber realen Totalausfall ist guenstig genug, um
+    # sie unabhaengig von dieser Eintrittswahrscheinlichkeit zu ziehen.
+    if tenant.slug != "default":
+        tenant.slug = f"anon-{tenant.id}"
     tenant.company_name = None
     tenant.vat_id = None
     tenant.country = None
