@@ -660,32 +660,6 @@ def get_plan(
 _FILENAME_SAFE_RE = re.compile(r"[^\w\-]+", re.UNICODE)
 
 
-class _BufferedBytesStream:
-    """Bereits fertig gerendertes PDF, kompatibel mit ``StreamingResponse``.
-
-    Ohne diesen Wrapper würde Starlette ein rohes ``BytesIO`` als reinen
-    Sync-Iterator behandeln und in ``iterate_in_threadpool`` einwickeln — das
-    Ergebnis ist ein ``async_generator``, der NUR ``__anext__`` kennt. Über
-    echtes ASGI (uvicorn/TestClient) läuft das sauber durch; ein Test, der den
-    Router direkt aufruft (kein Event-Loop) und ``response.body_iterator``
-    synchron mit ``b"".join(...)`` ausliest, kann einen reinen Async-Generator
-    aber nie synchron konsumieren (``TypeError: can only join an iterable``).
-    Mit ``__aiter__`` erkennt Starlette dieses Objekt als bereits
-    async-iterierbar und reicht es UNVERÄNDERT als ``body_iterator`` durch;
-    das zusätzliche ``__iter__`` macht denselben Wrapper auch synchron
-    konsumierbar, ohne das reale Streamingverhalten zu ändern.
-    """
-
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def __iter__(self):
-        yield self._data
-
-    async def __aiter__(self):
-        yield self._data
-
-
 @router.get("/plans/{plan_id}/export.pdf")
 def export_plan_pdf(
     plan_id: UUID,
@@ -738,7 +712,7 @@ def export_plan_pdf(
     safe = _FILENAME_SAFE_RE.sub("_", plan.name).strip("_") or "Schichtplan"
     filename = f"Schichtplan_{safe}_{generated_on.isoformat()}.pdf"
     return StreamingResponse(
-        _BufferedBytesStream(pdf.getvalue()),
+        pdf,
         media_type="application/pdf",
         headers={
             "Content-Disposition": (
