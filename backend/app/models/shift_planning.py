@@ -116,6 +116,11 @@ class ShiftPlan(Base):
     # liegt (NULL = offene Grenze; greift nur, wenn mind. eine Grenze gesetzt ist).
     active_from_date = Column(Date, nullable=True)
     active_until_date = Column(Date, nullable=True)
+    # #443: ausdrückliche Freigabe für Mitarbeitende. Ein künftiger Plan (etwa
+    # der ab September geltende) soll angekündigt werden können, ohne schon zu
+    # gelten. Default False hält das Bestandsverhalten unverändert — dort
+    # entscheidet weiterhin allein "heute aktiv".
+    visible_to_employees = Column(Boolean, nullable=False, default=False, server_default="false")
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -163,6 +168,10 @@ class ShiftSlot(Base):
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     min_staff = Column(SmallInteger, nullable=False, default=0, server_default="0")
+    # #443: freier Hinweistext je Einteilung ("Einarbeitung Azubi", "nur
+    # Notfall"). Reines Anzeigefeld — es fließt in keine Prüfung und in keine
+    # Berechnung ein.
+    note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

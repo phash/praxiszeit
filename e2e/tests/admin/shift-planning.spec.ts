@@ -17,6 +17,11 @@ test.describe('Schichtplanung (#305)', () => {
   test.afterAll(async ({ adminApi }) => {
     // Best-effort cleanup + turn the feature back off.
     try {
+      // Der zweite Test dieser Datei ("feature hidden ...") schaltet die
+      // Einstellung als eigene erste Aktion ab — ohne dieses Wiederanschalten
+      // würde der folgende GET 404 werfen (vom catch verschluckt), und Plan +
+      // Arbeitsplatz blieben bei JEDEM Lauf liegen.
+      await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
       const plans = await adminApi.get('/shift-planning/plans');
       for (const p of plans) if (p.name === planName) await adminApi.delete(`/shift-planning/plans/${p.id}`);
       const ws = await adminApi.get('/shift-planning/workstations');

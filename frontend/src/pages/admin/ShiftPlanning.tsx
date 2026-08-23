@@ -21,6 +21,8 @@ import {
   Pencil,
   Wand2,
   Copy,
+  Printer,
+  Eye,
 } from 'lucide-react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
@@ -93,6 +95,43 @@ type SlotDialogState = {
   slotId?: string;
   initial: SlotDialogInitial;
 };
+
+// #443 F-1 (Prüfrunde 2, CRITICAL): baut die `PUT /slots/{id}`-Nutzlast fürs
+// Verschieben eines Slots per Drag & Drop. `PUT /slots/{id}` ist ein
+// Vollersatz — der Server (SlotIn) setzt jedes im Rumpf fehlende Feld auf
+// seinen Default (z. B. note=None). Eine handgeschriebene, feldweise
+// Nutzlast hatte genau deshalb einmal stillschweigend den Hinweis auf NULL
+// gesetzt (Commit 12171aa9). Statt Felder aufzuzählen, übernimmt diese
+// Funktion den unveränderten Zustand des Slots und überschreibt nur, was ein
+// Verschieben tatsächlich ändert (Wochentag/Beginn/Ende) — jedes künftige
+// SlotInput-Feld läuft dadurch automatisch mit; nur die reinen Anzeige-
+// Extrafelder von `ShiftSlot` werden entfernt.
+//
+// Exportiert (statt inline in `onDragEnd`) und in `ShiftPlanning.test.tsx`
+// direkt getestet — siehe F-1-Begründung dort: eine reine Funktion ist ohne
+// dnd-kit-/Toast-/Store-Mocks prüfbar, eine Komponente mit echtem Drag nicht.
+export function buildMovedSlotPayload(
+  slot: ShiftSlot,
+  targetWeekday: number,
+  newStartMinutes: number,
+  newEndMinutes: number,
+): SlotInput {
+  const {
+    id: _id,
+    workstation_name: _workstationName,
+    color: _color,
+    understaffed: _understaffed,
+    unqualified: _unqualified,
+    assignments: _assignments,
+    ...unchanged
+  } = slot;
+  return {
+    ...unchanged,
+    weekday: targetWeekday,
+    start_time: minutesToTime(newStartMinutes),
+    end_time: minutesToTime(newEndMinutes),
+  };
+}
 
 export default function AdminShiftPlanning() {
   const toast = useToast();
@@ -282,6 +321,20 @@ export default function AdminShiftPlanning() {
       },
     });
 
+  // #443: PDF-Aushang des offenen Plans.
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const downloadPdf = async () => {
+    if (!planDetail || downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      await api.downloadPlanPdf(planDetail.id, planDetail.name);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Erstellen des PDF'));
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   // ─── slot dialog ───
   const openCreateSlot = (weekday: number) => {
     if (workstations.length === 0) {
@@ -299,6 +352,7 @@ export default function AdminShiftPlanning() {
         end_time: '12:00',
         min_staff: 1,
         userIds: [],
+        note: '',
       },
     });
   };
@@ -315,6 +369,7 @@ export default function AdminShiftPlanning() {
         end_time: slot.end_time,
         min_staff: slot.min_staff,
         userIds: slot.assignments.map((a) => a.user_id),
+        note: slot.note ?? '',
       },
     });
   };
@@ -395,13 +450,7 @@ export default function AdminShiftPlanning() {
       const newEnd = newStart + duration;
       if (targetWeekday === slot.weekday && newStart === timeToMinutes(slot.start_time)) return; // no-op
       try {
-        await api.updateSlot(slot.id, {
-          workstation_id: slot.workstation_id,
-          weekday: targetWeekday,
-          start_time: minutesToTime(newStart),
-          end_time: minutesToTime(newEnd),
-          min_staff: slot.min_staff,
-        });
+        await api.updateSlot(slot.id, buildMovedSlotPayload(slot, targetWeekday, newStart, newEnd));
         await refreshSelected();
       } catch (err) {
         toast.error(getErrorMessage(err, 'Fehler beim Verschieben'));
@@ -504,11 +553,19 @@ export default function AdminShiftPlanning() {
                         )}
                         <span className="truncate">{p.name}</span>
                       </span>
-                      {p.is_valid ? (
-                        <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-                      ) : (
-                        <AlertTriangle size={14} className="text-amber-500 shrink-0" />
-                      )}
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        {/* #443 F-3: Freigabe war bisher nur im "Bearbeiten"-Dialog sichtbar. */}
+                        {p.visible_to_employees && (
+                          <span title="Für Mitarbeitende sichtbar">
+                            <Eye size={14} className="text-blue-500" />
+                          </span>
+                        )}
+                        {p.is_valid ? (
+                          <CheckCircle2 size={14} className="text-green-500" />
+                        ) : (
+                          <AlertTriangle size={14} className="text-amber-500" />
+                        )}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -528,7 +585,20 @@ export default function AdminShiftPlanning() {
               <DndContext sensors={sensors} onDragEnd={onDragEnd}>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                   <div>
-                    <h2 className="text-xl font-semibold text-gray-900">{planDetail.name}</h2>
+                    <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                      {planDetail.name}
+                      {/* #443 F-3: Freigabe war bisher nur im "Bearbeiten"-Dialog erkennbar — beim
+                          Umräumen eines freigegebenen Plans sah der Admin sonst nicht, dass die
+                          Belegschaft live zuschaut. */}
+                      {planDetail.visible_to_employees && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                          title="Für Mitarbeitende sichtbar"
+                        >
+                          <Eye size={12} /> Sichtbar
+                        </span>
+                      )}
+                    </h2>
                     {planDetail.description && <p className="text-sm text-gray-500">{planDetail.description}</p>}
                     {(planDetail.active_from_date || planDetail.active_until_date) && (
                       <p className="mt-1 text-xs text-gray-500">
@@ -568,6 +638,9 @@ export default function AdminShiftPlanning() {
                     </Button>
                     <Button variant="secondary" icon={Pencil} onClick={() => setPlanSettingsOpen(true)}>
                       Bearbeiten
+                    </Button>
+                    <Button variant="secondary" icon={Printer} loading={downloadingPdf} onClick={downloadPdf}>
+                      PDF
                     </Button>
                     <Button variant="secondary" icon={Copy} onClick={() => openDuplicate(planDetail)}>
                       Duplizieren

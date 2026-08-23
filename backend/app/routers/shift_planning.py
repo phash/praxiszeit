@@ -11,17 +11,19 @@ available to any authenticated user (read-only view + dashboard).
 import re
 from datetime import date, time, timedelta
 from typing import List, Optional
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, field_validator
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, UserRole
+from app.models import Tenant, User, UserRole
 from app.models.shift_planning import (
     Location,
     Workstation,
@@ -30,7 +32,7 @@ from app.models.shift_planning import (
     ShiftAssignment,
     WorkstationQualification,
 )
-from app.services import settings_service, shift_planning_service, shift_planning_generator
+from app.services import settings_service, shift_plan_export_service, shift_planning_service, shift_planning_generator
 from app.services.timezone_service import today_local
 
 # Hex colour `#RRGGBB` — the workstation colour column is String(7); anything
@@ -80,12 +82,17 @@ router = APIRouter(
 
 
 class LocationIn(BaseModel):
-    name: str
+    # #450: Die Spalten sind String(255). Ohne Grenze bricht ein längerer Name
+    # auf PostgreSQL erst beim COMMIT ab (StringDataRightTruncation → 500)
+    # statt am Rand mit 422 und Feldhinweis. Die SQLite-Suite ignoriert
+    # varchar-Längen und fängt das nie — dasselbe Muster wie bei
+    # time_entry_audit_logs.source.
+    name: str = Field(..., min_length=1, max_length=255)
     sort_order: int = 0
 
 
 class WorkstationIn(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)  # #450
     location_id: Optional[UUID] = None
     color: Optional[str] = None
     sort_order: int = 0
@@ -102,14 +109,18 @@ class WorkstationIn(BaseModel):
 
 
 class PlanIn(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)  # #450
     description: Optional[str] = None
     active_from_date: Optional[date] = None
     active_until_date: Optional[date] = None
+    # #443: ausdrückliche Freigabe für Mitarbeitende. PUT ist wie bei den
+    # übrigen Feldern ein Vollersatz — ein Aufruf ohne das Feld nimmt die
+    # Freigabe also zurück. Das Frontend sendet es immer mit.
+    visible_to_employees: bool = False
 
 
 class PlanDuplicateIn(BaseModel):
-    name: str  # #338: Name der Kopie
+    name: str = Field(..., min_length=1, max_length=255)  # #338 Name der Kopie, #450 Grenze
 
 
 class SlotIn(BaseModel):
@@ -118,6 +129,10 @@ class SlotIn(BaseModel):
     start_time: time
     end_time: time
     min_staff: int = 0
+    # #443: freier Hinweis je Einteilung ("Einarbeitung Azubi"). Die Spalte ist
+    # TEXT, die Grenze steht am Rand — 500 Zeichen sind reichlich für einen
+    # Hinweis und halten Zelle und PDF lesbar.
+    note: Optional[str] = Field(None, max_length=500)
 
     @field_validator("weekday")
     @classmethod
@@ -132,6 +147,16 @@ class SlotIn(BaseModel):
         if v < 0:
             raise ValueError("Mindestbesetzung darf nicht negativ sein")
         return v
+
+    @field_validator("note")
+    @classmethod
+    def _note_blank_to_none(cls, v: Optional[str]) -> Optional[str]:
+        """Leereingabe → NULL, damit die Anzeige nicht zwischen "kein Hinweis"
+        und "Hinweis aus Leerzeichen" unterscheiden muss."""
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
 
 class AssignmentsIn(BaseModel):
@@ -186,6 +211,8 @@ def _slot_dict(slot: ShiftSlot, ws: Optional[Workstation], assignments: List[dic
         "start_time": _hhmm(slot.start_time),
         "end_time": _hhmm(slot.end_time),
         "min_staff": slot.min_staff,
+        # #443: reiner Anzeigetext, keine Prüfung, keine Berechnung.
+        "note": slot.note,
         "understaffed": shift_planning_service.is_understaffed(slot.min_staff, len(assignments)),
         # #305 M2d: slot has ≥1 person not trained for its workstation (soft).
         "unqualified": any(not a.get("qualified", True) for a in assignments),
@@ -481,14 +508,13 @@ def list_plans(
         slots_by_plan.setdefault(s.shift_plan_id, []).append(s)
 
     today = today_local()
-    # Fix #7: non-admins only see plans that are active today — inactive drafts
-    # are an admin planning artefact and must be filtered server-side (the
-    # frontend filtered, the backend did not).
     is_admin = current_user.role == UserRole.ADMIN
     result = []
     for p in plans:
         active_today = shift_planning_service.is_plan_active_on(p, today)
-        if not is_admin and not active_today:
+        # Fix #7 + #443: Nicht-Admins sehen nur, was heute gilt ODER ausdrücklich
+        # freigegeben ist. Die Regel lebt in EINEM Helfer (siehe get_plan).
+        if not shift_planning_service.is_plan_visible_to(p, today, is_admin):
             continue
         p_slots = slots_by_plan.get(p.id, [])
         understaffed = [
@@ -503,6 +529,7 @@ def list_plans(
             "active_from_date": _iso(p.active_from_date),
             "active_until_date": _iso(p.active_until_date),
             "active_today": active_today,
+            "visible_to_employees": p.visible_to_employees,
             "slot_count": len(p_slots),
             "is_valid": len(understaffed) == 0,
         })
@@ -516,6 +543,22 @@ def _plan_or_404(db: Session, tenant_id, plan_id: UUID) -> ShiftPlan:
         .first()
     )
     if not plan:
+        raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
+    return plan
+
+
+def _visible_plan_or_404(db: Session, tenant_id, plan_id: UUID, is_admin: bool) -> ShiftPlan:
+    """``_plan_or_404`` PLUS das #443-Sichtbarkeits-Gate in einem Aufruf.
+
+    Die fachliche Regel selbst lebt schon in ``is_plan_visible_to`` — aber das
+    *Tor* (404 wenn der Plan nicht existiert ODER für diesen Nutzer nicht
+    sichtbar ist) stand bislang wortgleich in ``get_plan`` UND
+    ``export_plan_pdf``. Zwei Kopien derselben Prüfung sind in diesem Projekt
+    schon mehrfach auseinandergelaufen (CR-Genehmigung CREATE/UPDATE,
+    Feiertags-Guard) — eine dritte Lesefläche hätte die Kopie wiederholt.
+    """
+    plan = _plan_or_404(db, tenant_id, plan_id)
+    if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
         raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
     return plan
 
@@ -601,6 +644,7 @@ def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dic
         "active_from_date": _iso(plan.active_from_date),
         "active_until_date": _iso(plan.active_until_date),
         "active_today": shift_planning_service.is_plan_active_on(plan, today_local()),
+        "visible_to_employees": plan.visible_to_employees,
         "slots": slot_dicts,
         "validation": {
             "is_valid": len(understaffed_ids) == 0,
@@ -617,13 +661,105 @@ def get_plan(
     current_user: User = Depends(get_current_user),
 ):
     tid = current_user.tenant_id
-    plan = _plan_or_404(db, tid, plan_id)
     is_admin = current_user.role == UserRole.ADMIN
-    # Fix #7: non-admins can only open plans that are active today — an inactive
-    # draft does not "exist" for them (404, consistent with list_plans filtering).
-    if not is_admin and not shift_planning_service.is_plan_active_on(plan, today_local()):
-        raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
+    # Fix #7 + #443: ein für den Nutzer unsichtbarer Plan "existiert" nicht
+    # (404, deckungsgleich mit dem Filter in list_plans UND export_plan_pdf —
+    # T6a: das Tor lebt seither in EINEM Helfer, siehe _visible_plan_or_404).
+    plan = _visible_plan_or_404(db, tid, plan_id, is_admin)
     return _build_plan_detail(db, tid, plan, is_admin)
+
+
+# Dateinamen-Bereinigung: alles außer Buchstaben/Ziffern/Bindestrich wird zu "_".
+# Ein Plan darf "Sommer 2026 (KW 30/31)" heißen — im Dateinamen hat weder der
+# Schrägstrich noch das Anführungszeichen etwas verloren.
+_FILENAME_SAFE_RE = re.compile(r"[^\w\-]+", re.UNICODE)
+
+
+@router.get("/plans/{plan_id}/export.pdf")
+def export_plan_pdf(
+    plan_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """#443: Schichtplan als PDF-Aushang (Querformat A4).
+
+    Zugang über dieselbe Sichtbarkeitsregel wie ``get_plan`` und **nicht** über
+    ``require_admin``: ein Mitarbeitender druckt damit nur, was er ohnehin am
+    Bildschirm liest. Die Einweisungs-Flags (``qualified``/``unqualified``) sind
+    weiterhin admin-only und stehen im PDF grundsätzlich nicht.
+
+    Der Renderer bekommt das Dict von ``_build_plan_detail`` und stellt keine
+    eigenen Abfragen — so erbt der Ausdruck den #371-Wochentagsfilter
+    automatisch statt ihn nachzubauen. Die Unterbesetzung (``understaffed`` /
+    ``min_staff``) steckt aus demselben Grund bereits im Dict; der Renderer
+    druckt sie als "Unterbesetzt (x/y)" in die Zelle (M-3, Fix-Runde 2) —
+    davor stand hier fälschlich, das geschähe schon "automatisch", ohne dass
+    der Renderer die Felder je gelesen hätte.
+    """
+    tid = current_user.tenant_id
+    is_admin = current_user.role == UserRole.ADMIN
+    # T6a: dasselbe Sichtbarkeits-Tor wie get_plan — EIN Helfer statt Kopie.
+    plan = _visible_plan_or_404(db, tid, plan_id, is_admin)
+
+    detail = _build_plan_detail(db, tid, plan, is_admin)
+    weekdays = shift_planning_service.get_planning_weekdays(db, tid)
+    # Minor (Prüfrunde 2): §5.3 der Spezifikation verlangt Zeilen sortiert nach
+    # Standort, sort_order, Name — vorher fehlte der Standort in der Sortierung,
+    # Arbeitsplätze desselben Standorts standen dadurch nicht zwangsläufig
+    # beieinander. In Python statt per SQL-JOIN sortiert, damit die NULL-
+    # Behandlung eines standortlosen Arbeitsplatzes (location_id IS NULL)
+    # nicht von der DB-spezifischen NULLS-FIRST/LAST-Voreinstellung abhängt
+    # (SQLite sortiert NULL zuerst, PostgreSQL zuletzt — das wäre eine stille
+    # Divergenz zwischen Test- und Produktivverhalten gewesen). Standortlose
+    # Arbeitsplätze fallen bewusst ans Ende (sie gehören zu keiner Gruppe).
+    # Der Standort selbst wird im PDF NICHT angezeigt — das bleibt eine offene
+    # Gestaltungsfrage, hier geht es nur um die Zeilenreihenfolge.
+    locations_by_id = {
+        loc.id: loc for loc in db.query(Location).filter(Location.tenant_id == tid).all()
+    }
+
+    def _ws_sort_key(w: Workstation):
+        loc = locations_by_id.get(w.location_id)
+        if loc is None:
+            return (1, 0, "", w.sort_order, w.name)
+        return (0, loc.sort_order, loc.name, w.sort_order, w.name)
+
+    ws_order = [
+        w.name
+        for w in sorted(
+            db.query(Workstation).filter(Workstation.tenant_id == tid).all(),  # F-026
+            key=_ws_sort_key,
+        )
+    ]
+    # "practice_name" ist im Projekt KEIN Settings-Key (nicht in
+    # admin_settings._ALLOWED_SETTINGS) — der Praxisname lebt auf Tenant.name
+    # (siehe signup_service._create_tenant: name=practice_name). Die Abfrage
+    # filtert explizit auf die eigene Tenant-Zeile (F-026-Äquivalent: die
+    # Tenant-PK IST die Mandanten-ID, es gibt keine separate tenant_id-Spalte).
+    tenant = db.query(Tenant).filter(Tenant.id == tid).first()
+    practice_name = tenant.name if tenant else None
+    generated_on = today_local()
+
+    pdf = shift_plan_export_service.generate_plan_pdf(
+        detail,
+        weekdays=weekdays,
+        workstation_order=ws_order,
+        practice_name=practice_name,
+        generated_on=generated_on,
+    )
+    db.close()  # F-053: Pool-Verbindung vor dem Streamen freigeben
+    safe = _FILENAME_SAFE_RE.sub("_", plan.name).strip("_") or "Schichtplan"
+    filename = f"Schichtplan_{safe}_{generated_on.isoformat()}.pdf"
+    return StreamingResponse(
+        pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )
 
 
 @router.post("/plans/{plan_id}/generate")
@@ -659,6 +795,7 @@ def _plan_summary(plan: ShiftPlan) -> dict:
         "is_active": plan.is_active,
         "active_from_date": _iso(plan.active_from_date),
         "active_until_date": _iso(plan.active_until_date),
+        "visible_to_employees": plan.visible_to_employees,
     }
 
 
@@ -691,6 +828,7 @@ def create_plan(
         is_active=False,
         active_from_date=data.active_from_date,
         active_until_date=data.active_until_date,
+        visible_to_employees=data.visible_to_employees,
         created_by=current_user.id,
     )
     db.add(plan)
@@ -707,9 +845,10 @@ def duplicate_plan(
     current_user: User = Depends(require_admin),
 ):
     """#338: Schichtplan inkl. Slots + Zuweisungen duplizieren. Die Kopie ist ein
-    INAKTIVER Entwurf OHNE Aktiv-Datumsfenster (sie soll nicht versehentlich neben
-    dem Original aktiv werden); Arbeitsplätze/Einweisungen sind nicht plan-gebunden
-    und werden daher nicht kopiert. Alles tenant-scoped (F-026)."""
+    INAKTIVER Entwurf OHNE Aktiv-Datumsfenster und OHNE Freigabe für Mitarbeitende
+    (#443 — sie soll nicht versehentlich neben dem Original aktiv werden);
+    Arbeitsplätze/Einweisungen sind nicht plan-gebunden und werden daher nicht
+    kopiert. Alles tenant-scoped (F-026)."""
     tid = current_user.tenant_id
     src = _plan_or_404(db, tid, plan_id)
     name = data.name.strip()
@@ -730,6 +869,9 @@ def duplicate_plan(
         is_active=False,
         active_from_date=None,
         active_until_date=None,
+        # #443: Die Kopie erbt die Freigabe NICHT — sie ist ein Entwurf, genau
+        # wie sie is_active und das Datumsfenster nicht erbt.
+        visible_to_employees=False,
         created_by=current_user.id,
     )
     db.add(new_plan)
@@ -749,6 +891,7 @@ def duplicate_plan(
             start_time=s.start_time,
             end_time=s.end_time,
             min_staff=s.min_staff,
+            note=s.note,
         )
         db.add(ns)
         db.flush()  # ns.id
@@ -792,6 +935,7 @@ def update_plan(
     plan.description = data.description
     plan.active_from_date = data.active_from_date
     plan.active_until_date = data.active_until_date
+    plan.visible_to_employees = data.visible_to_employees
     _commit_or_conflict(db, "Ein Schichtplan mit diesem Namen existiert bereits")
     db.refresh(plan)
     return _plan_summary(plan)
@@ -913,6 +1057,7 @@ def create_slot(
         start_time=data.start_time,
         end_time=data.end_time,
         min_staff=data.min_staff,
+        note=data.note,
     )
     db.add(slot)
     db.commit()
@@ -938,6 +1083,7 @@ def update_slot(
     slot.start_time = data.start_time
     slot.end_time = data.end_time
     slot.min_staff = data.min_staff
+    slot.note = data.note
     db.commit()
     db.refresh(slot)
     return _single_slot_dict(db, tid, slot)
@@ -1072,7 +1218,10 @@ def set_user_qualifications(
     ).delete(synchronize_session=False)
     for wsid in unique_ws:
         db.add(WorkstationQualification(tenant_id=tid, user_id=user_id, workstation_id=wsid))
-    db.commit()
+    # #450: Zwei Admins (oder zwei Browser-Tabs) auf derselben Zeile laufen
+    # sonst in uq_tenant_user_workstation und bekommen ein 500 mit Traceback
+    # für einen reinen Bedienkonflikt.
+    _commit_or_conflict(db, "Die Einweisungen wurden zwischenzeitlich geändert, bitte erneut versuchen")
     return {"user_id": str(user_id), "workstation_ids": [str(w) for w in unique_ws]}
 
 

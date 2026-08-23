@@ -26,6 +26,7 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
   const [description, setDescription] = useState(plan.description ?? '');
   const [from, setFrom] = useState(plan.active_from_date ?? '');
   const [until, setUntil] = useState(plan.active_until_date ?? '');
+  const [visible, setVisible] = useState(plan.visible_to_employees);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
       setDescription(plan.description ?? '');
       setFrom(plan.active_from_date ?? '');
       setUntil(plan.active_until_date ?? '');
+      setVisible(plan.visible_to_employees);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -52,6 +54,7 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
         description: description.trim() || null,
         active_from_date: from || null,
         active_until_date: until || null,
+        visible_to_employees: visible,
       });
       toast.success('Plan gespeichert');
       onSaved();
@@ -99,6 +102,24 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
                 Leer lassen für „keine automatische Aktivierung". Eine offene Grenze ist erlaubt (nur „von" oder nur „bis").
                 Unabhängig davon kann der Plan jederzeit manuell aktiv geschaltet werden.
               </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={visible}
+                  onChange={(e) => setVisible(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">
+                  Für Mitarbeitende sichtbar
+                  <span className="mt-1 block text-xs text-gray-400">
+                    Der Plan erscheint dann in der Mitarbeiteransicht, auch wenn er heute noch nicht gilt —
+                    etwa um einen ab September geltenden Plan vorab bekannt zu machen. Ein heute aktiver Plan
+                    ist ohnehin sichtbar.
+                  </span>
+                </span>
+              </label>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" type="button" onClick={onClose}>
