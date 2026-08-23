@@ -20,6 +20,7 @@ from app.services.arbzg_utils import is_night_work
 import calendar
 from app.services.date_filters import date_in_year, date_in_month, date_in_range, parse_year_month
 from app.core.limiter import limiter
+from app.services.settings_service import SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, get_bool_setting
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,8 @@ def get_monthly_report(
 
     users = _get_active_visible_users(db, current_user.tenant_id)
 
+    show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
+
     reports = []
     _now = now_local()  # #402: Gate für die Jahresende-Projektion (nur aktueller Monat)
 
@@ -107,7 +110,7 @@ def get_monthly_report(
         # bis_heute→cutoff, monatsende→Monatsende (verhindert Doppelzählung künftiger
         # Freizeitausgleich-Tage im laufenden Monat).
         _future_comp = Decimal('0'); _projected = None
-        if year == _now.year and month_num == _now.month and user.track_hours:
+        if show_year_end_projection and year == _now.year and month_num == _now.month and user.track_hours:
             _boundary = cutoff if cutoff is not None else date(year, month_num, calendar.monthrange(year, month_num)[1])
             _future_comp = calculation_service.future_freizeitausgleich_impact(db, user, cutoff_date=_boundary)
             if _future_comp > 0:
@@ -231,6 +234,8 @@ def get_weekly_report(
 
     users = _get_active_visible_users(db, current_user.tenant_id)
 
+    show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
+
     reports = []
     _now = now_local()  # #402: Gate für die Jahresende-Projektion (nur aktuelle Woche)
 
@@ -251,7 +256,7 @@ def get_weekly_report(
         # Boundary = ot_cutoff (Wochenende bzw. bis_heute-Cutoff), damit künftige
         # Freizeitausgleich-Tage nicht doppelt zählen.
         _future_comp = Decimal('0'); _projected = None
-        if wk_end.year == _now.year and wk_start <= _now.date() <= wk_end and user.track_hours:
+        if show_year_end_projection and wk_end.year == _now.year and wk_start <= _now.date() <= wk_end and user.track_hours:
             _future_comp = calculation_service.future_freizeitausgleich_impact(db, user, cutoff_date=ot_cutoff)
             if _future_comp > 0:
                 _projected = float(overtime) - float(_future_comp)
