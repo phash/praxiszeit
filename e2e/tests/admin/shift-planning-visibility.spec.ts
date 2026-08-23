@@ -19,6 +19,11 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
 
   test.afterAll(async ({ adminApi }) => {
     try {
+      // Eine parallel laufende Schichtplanungs-Spec kann die mandantenweite
+      // Einstellung zwischenzeitlich abgeschaltet haben — ohne dieses
+      // Wiederanschalten würde der folgende GET 404 werfen (vom catch
+      // verschluckt), und unsere Pläne blieben liegen.
+      await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
       const plans = await adminApi.get('/shift-planning/plans');
       for (const p of plans) {
         if (p.name === releasedName || p.name === draftName) {
@@ -83,6 +88,13 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
     const download = employeePage.waitForEvent('download');
     await employeePage.getByRole('button', { name: 'PDF' }).click();
     const file = await download;
+    // Nicht nur "irgendein PDF kam an" belegen, sondern dass es der RICHTIGE
+    // Plan war: der Dateiname wird clientseitig aus dem Plannamen gebaut
+    // (`Schichtplan_${safe}.pdf`, siehe frontend/src/api/shiftPlanning.ts).
+    // `unique` besteht nur aus Ziffern und einem Bindestrich — beides bleibt
+    // von der Bereinigung (nicht-alphanumerische Zeichen → `_`) unangetastet,
+    // der Teil übersteht die Umformung also garantiert unverändert.
+    expect(file.suggestedFilename()).toContain(unique);
     expect(file.suggestedFilename()).toMatch(/\.pdf$/);
   });
 });
