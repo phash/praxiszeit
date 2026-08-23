@@ -1067,7 +1067,12 @@ Gilt der gedruckte Plan gerade nicht (freigegebener Vorschau- oder bereits
 abgelaufener Plan), trägt der Ausdruck fett und an erster Stelle in der
 Kopfzeile einen Vermerk: **„Vorschau — gilt derzeit nicht"** bzw. **„Nicht mehr
 gültig"** – damit am Schwarzen Brett kein veralteter oder erst künftig
-geltender Plan mit dem aktuell gültigen verwechselt wird.
+geltender Plan mit dem aktuell gültigen verwechselt wird. Haben **alle**
+Arbeitsplätze des Plans denselben Standort, steht er einmal in der Kopfzeile
+(„Standort: Hauptstelle"); nutzt der Plan **unterschiedliche** Standorte (oder
+ist er bei einem Teil gar nicht gesetzt), steht er stattdessen hinter jedem
+betroffenen Arbeitsplatznamen, z. B. „Tresen (Hauptstelle)" – so ist bei zwei
+Aushängen für zwei Standorte am Schwarzen Brett klar, welcher gemeint ist.
 
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
