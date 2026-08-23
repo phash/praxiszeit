@@ -38,7 +38,15 @@ def _pdf_text(buf) -> str:
             except Exception:  # noqa: BLE001 — nächster Dekodierversuch
                 continue
         parts.append(decoded.decode("latin-1", "replace"))
-    return "\n".join(parts)
+    text = "\n".join(parts)
+    # reportlab escaped Umlaute/Sonderzeichen (alles außerhalb 0x20-0x7e) als
+    # 3-stelliges Oktal-Escape (\ddd) INNERHALB der PDF-String-Literale, nicht
+    # als rohes Byte — "ü" steht im Strom also als "\374", nicht als 0xFC.
+    # NUR 3-stellige Oktalfolgen ersetzen (\( und \) für escapte Klammern,
+    # von test_understaffed_slot_is_marked_in_the_printout u.a. bewusst als
+    # literaler Backslash geprüft, bleiben unangetastet — die Regex greift
+    # nur bei genau drei Ziffern).
+    return re.sub(r"\\([0-3][0-7]{2})", lambda m: chr(int(m.group(1), 8)), text)
 
 
 def _detail(**over):
@@ -47,6 +55,11 @@ def _detail(**over):
         "description": "Regelbesetzung",
         "active_from_date": "2026-09-01",
         "active_until_date": None,
+        # I-1: der Normalfall dieser Testdatei ist ein aktuell geltender Plan
+        # (kein Vorschau-Vermerk im Ausdruck). Die I-1-Tests unten setzen
+        # active_today explizit auf False, um genau den Vorschau-/Ablauf-Fall
+        # zu prüfen.
+        "active_today": True,
         "slots": [
             {
                 "id": "s1",
@@ -253,6 +266,45 @@ def test_many_assignments_in_one_cell_do_not_crash_the_layout():
     }]
     buf = _render(slots=slots)
     assert buf.getvalue()[:4] == b"%PDF"
+
+
+def test_released_future_plan_is_marked_as_preview_in_the_printout():
+    """I-1 (Prüfrunde 2, Important): der Bildschirm zeigt einem freigegebenen,
+    noch nicht geltenden Plan einen blauen Hinweiskasten — der Ausdruck (das
+    Artefakt, das ans Schwarze Brett geht) verriet davon bislang nichts.
+    Gemessene Kopfzeile vor dem Fix: "Herbstplan · Default · Stand:
+    23.08.2026" — neben dem geltenden Plan an derselben Pinnwand nicht zu
+    unterscheiden."""
+    text = _pdf_text(_render(active_today=False))
+    assert "Vorschau" in text
+    assert "gilt derzeit nicht" in text
+
+
+def test_released_future_plan_without_any_date_window_is_still_marked():
+    """Freigabe-Schalter (visible_to_employees) und Datumsfenster sind
+    unabhängige Einstellungen (is_plan_visible_to) — der Vermerk darf NICHT
+    an ein gesetztes active_from/until_date hängen, sonst greift er im
+    Regelfall (freigegebener Entwurf ganz ohne Fenster) nicht."""
+    text = _pdf_text(_render(active_today=False, active_from_date=None, active_until_date=None))
+    assert "Vorschau" in text
+    assert "gilt derzeit nicht" in text
+
+
+def test_expired_plan_is_marked_as_no_longer_valid_not_as_preview():
+    """Liegt active_until_date in der Vergangenheit, ist "Nicht mehr gültig"
+    die ehrlichere Aussage als "Vorschau" — der Plan hat bereits gegolten,
+    er gilt nicht erst noch."""
+    text = _pdf_text(_render(active_today=False, active_from_date=None, active_until_date="2026-01-01"))
+    assert "Nicht mehr gültig" in text
+    assert "Vorschau" not in text
+
+
+def test_currently_active_plan_carries_no_status_note():
+    """Der Normalfall (aktuell geltender Plan) bleibt unverändert: kein
+    Vorschau-/Ablauf-Vermerk in der Kopfzeile."""
+    text = _pdf_text(_render(active_today=True))
+    assert "Vorschau" not in text
+    assert "Nicht mehr gültig" not in text
 
 
 import asyncio

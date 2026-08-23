@@ -82,7 +82,7 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
 - „Aktiv schalten" macht den Plan für alle sichtbar (Read-only-Ansicht + Dashboard).
 - **Mehrere Pläne können gleichzeitig aktiv** sein (z. B. je Standort). Das Dashboard zeigt jedem Mitarbeitenden die **Vereinigung** seiner Einteilungen über alle aktiven Pläne für den heutigen Wochentag.
 - **Freigabe für Mitarbeitende (#443):** Über den Knopf „Bearbeiten" (Stift-Symbol) in der Werkzeugleiste des Plan-Editors öffnen Sie die Plan-Einstellungen; dort gibt es zusätzlich den Schalter **„Für Mitarbeitende sichtbar"**. Er blendet den Plan in der Mitarbeiteransicht ein, **auch wenn er heute noch gar nicht gilt** — gedacht, um z. B. einen ab September geltenden Plan schon jetzt bekannt zu machen. Ein heute aktiver bzw. im Datums-Fenster liegender Plan ist ohnehin sichtbar; der Schalter betrifft nur den Fall davor. Er wirkt nicht rückwirkend auf bereits laufende Pläne, die niemand extra freigegeben hat.
-- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen Aushang im **Querformat** (A4) mit einer Tabelle **Arbeitsplatz × Wochentag** — zum Aushängen am Schwarzen Brett. Mitarbeitende haben denselben Knopf in ihrer Ansicht und können damit **nur den Plan drucken, den sie ohnehin sehen dürfen**. Der Hinweistext je Einteilung wird mitgedruckt — ein Schwarzes Brett ist oft auch für Patientinnen und Patienten einsehbar.
+- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen Aushang im **Querformat** (A4) mit einer Tabelle **Arbeitsplatz × Wochentag** — zum Aushängen am Schwarzen Brett. Mitarbeitende haben denselben Knopf in ihrer Ansicht und können damit **nur den Plan drucken, den sie ohnehin sehen dürfen**. Der Hinweistext je Einteilung wird mitgedruckt — ein Schwarzes Brett ist oft auch für Patientinnen und Patienten einsehbar. Ein noch nicht geltender (freigegebener) oder bereits abgelaufener Plan trägt in der Kopfzeile des Ausdrucks denselben Vorschau-/Ablauf-Vermerk wie am Bildschirm (fett: „Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — er ist also auch am Schwarzen Brett nicht mit dem aktuell geltenden Plan zu verwechseln (Prüfrunde 2, I-1).
 
 **KW-/Ganzjahres-Planung (Datums-Fenster):**
 - Über **Bearbeiten** kann pro Plan ein optionales **Aktiv-Datums-Fenster** („aktiv von/bis") gesetzt werden. Der Plan gilt dann **automatisch** als aktiv, wenn das heutige Datum im Fenster liegt — zusätzlich zum manuellen „Aktiv schalten". Eine offene Grenze ist erlaubt (nur „von" oder nur „bis").
@@ -107,8 +107,8 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   Sonstige Entwürfe sind reine Admin-Planungsartefakte und werden für
   Nicht-Admins **serverseitig** ausgeblendet — nicht nur im Frontend (s.
   „Sichtbarkeit").
-- **Mehrere sichtbare Pläne (#443):** Steht mehr als ein Plan zur Auswahl, erscheint oben eine **Plan-Auswahl** (Dropdown mit Namen + „Aktuell"/„Ab TT.MM.JJJJ"/„Vorschau"). Ein noch nicht geltender Plan trägt zusätzlich den Hinweis „Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben." — er ist also klar als Vorschau erkennbar und wird nicht mit dem aktuellen Plan verwechselt.
-- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** druckt den gerade angezeigten Plan als Aushang (Querformat, Arbeitsplatz × Wochentag) — denselben, den Sie auch am Bildschirm sehen.
+- **Mehrere sichtbare Pläne (#443):** Steht mehr als ein Plan zur Auswahl, erscheint oben eine **Plan-Auswahl** (Dropdown mit Namen + „Aktuell"/„Ab TT.MM.JJJJ"/„Vorschau"). Ein noch nicht geltender Plan trägt zusätzlich den Hinweis „Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben." — er ist also klar als Vorschau erkennbar und wird nicht mit dem aktuellen Plan verwechselt. Das gilt seit Prüfrunde 2 (I-1) auch für den **Ausdruck** (siehe nächster Punkt) — vorher endete die Kennzeichnung am Bildschirmrand.
+- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** druckt den gerade angezeigten Plan als Aushang (Querformat, Arbeitsplatz × Wochentag) — denselben, den Sie auch am Bildschirm sehen. Gilt der Plan heute noch nicht oder nicht mehr, steht das fett in der Kopfzeile des Ausdrucks („Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — das Papier am Schwarzen Brett verrät also denselben Status wie der Bildschirm.
 - **Dashboard → „Deine Einteilung heute":** Arbeitsplatz, Zeit und Plan der heutigen Einsätze.
 
 ---
@@ -179,7 +179,16 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   Wochenraster (`WeekGrid.tsx`) verwendet, damit Bildschirm und Ausdruck dasselbe
   Zeichen zeigen. `shift_slots.note` wird bei `lifecycle_service.anonymize_tenant`
   geleert (reines Anzeigefeld, kein Berechnungsbezug, aber potenziell personenbezogener
-  Freitext).
+  Freitext). **`Table(..., splitInRow=1)` (C-1, Prüfrunde 2):** reportlab kann eine
+  Tabellenzeile sonst nicht über einen Seitenumbruch teilen — eine hohe Zeile (z. B.
+  drei Einteilungen mit je 500-Zeichen-Hinweis am selben Arbeitsplatz/Tag, oder
+  ~100 Personen in einer Einteilung) warf sonst dauerhaft eine `LayoutError` (HTTP
+  500, der Plan ließ sich nie wieder drucken). **`_status_note()` (I-1, Prüfrunde
+  2):** liest `detail["active_today"]` und schreibt bei `False` fett in die
+  Kopfzeile — „Vorschau — gilt derzeit nicht" normalerweise, „Nicht mehr gültig"
+  wenn `active_until_date` in der Vergangenheit liegt. Bewusst **nicht** an
+  `_validity_text`/ein gesetztes Datumsfenster gekoppelt (Freigabe-Schalter und
+  Datumsfelder sind unabhängige Einstellungen, siehe `is_plan_visible_to`).
 - **Auto-Generierung:** `app/services/shift_planning_generator.py` (Greedy,
   read-only ggü. Calc-Modell), Endpoint `POST /plans/{id}/generate`
   (`target_monday` + `mode=replace|fill_gaps`).

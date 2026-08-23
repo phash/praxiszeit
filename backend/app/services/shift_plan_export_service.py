@@ -64,6 +64,36 @@ def _validity_text(detail: dict) -> str:
     return ""
 
 
+def _status_note(detail: dict, today: date) -> str:
+    """#443 I-1 (Prüfrunde 2): der Ausdruck muss dieselbe Kennzeichnung tragen
+    wie der Bildschirm — dort meldet ein blauer Kasten "Dieser Plan gilt noch
+    nicht — er ist zur Ansicht freigegeben.", sobald ``active_today`` False
+    ist. Der Ausdruck ist das Artefakt, das ans Schwarze Brett geht; ohne
+    diesen Vermerk ist ein freigegebener Zukunftsplan dort nicht vom aktuell
+    geltenden Plan zu unterscheiden.
+
+    Bewusst NICHT an ``_validity_text``/das Datumsfenster gekoppelt: Freigabe-
+    Schalter (``visible_to_employees``) und Datumsfelder sind unabhängige
+    Einstellungen (siehe ``is_plan_visible_to``) — ein freigegebener Entwurf
+    ganz ohne Datumsfenster ist ebenso ein "gilt derzeit nicht"-Fall.
+
+    Zwei Fassungen: liegt ``active_until_date`` in der Vergangenheit, ist
+    "Nicht mehr gültig" die ehrlichere Aussage als "Vorschau" (der Plan hat
+    bereits gegolten, nicht "noch nicht") — sonst "Vorschau — gilt derzeit
+    nicht" (Zukunftsplan oder freigegebener Entwurf ohne Fenster).
+    """
+    if detail.get("active_today"):
+        return ""
+    until = detail.get("active_until_date")
+    if until:
+        try:
+            if date.fromisoformat(until) < today:
+                return "Nicht mehr gültig"
+        except (ValueError, TypeError):
+            pass
+    return "Vorschau — gilt derzeit nicht"
+
+
 def _cell_paragraph(slots_of_cell: list[dict]) -> Paragraph:
     """Eine Tabellenzelle: alle Einteilungen dieses Arbeitsplatzes an diesem Tag.
 
@@ -150,7 +180,13 @@ def generate_plan_pdf(
     )
 
     story = [Paragraph(escape_pdf_text(detail.get("name") or "Schichtplan"), _TITLE)]
+    # I-1 (Prüfrunde 2): fett + an erster Stelle, damit der Vermerk am
+    # Schwarzen Brett sofort auffällt — kein escape_pdf_text hier, der Text
+    # kommt aus _status_note() (fest verdrahtete Systemtexte), nicht von
+    # Nutzereingaben.
+    status_note = _status_note(detail, generated_on)
     meta_bits = [b for b in (
+        f"<b>{status_note}</b>" if status_note else "",
         escape_pdf_text(practice_name) if practice_name else "",
         escape_pdf_text(detail.get("description") or ""),
         escape_pdf_text(_validity_text(detail)),
