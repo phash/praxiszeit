@@ -13,6 +13,15 @@ export const SNAP_MINUTES = 15;
 export const LINE_PX = 14;
 export const BLOCK_PADDING_PX = 8; // p-1 oben + unten
 export const NOTE_CHARS_PER_LINE = 20;
+// #443 (Fix-Runde 2, I-1): SlotBody rendert die zugewiesenen Namen als EINEN
+// kommaseparierten, umbrechenden <span> — nicht eine Zeile je Person. Die
+// Schätzung muss dieselbe Struktur annehmen wie das DOM, sonst zählt sie in
+// einer breiten Spur mehrere Namen einzeln, obwohl sie real in eine Zeile
+// passen (falsches "gewachsen" in nahezu jedem mehrfach besetzten Slot der
+// Tagesansicht). Namen und Hinweis stehen in derselben Spurbreite und
+// Schriftgröße (text-[11px]), deshalb bewusst dieselbe Zeichen-pro-Zeile-
+// Annahme wie NOTE_CHARS_PER_LINE.
+export const NAME_CHARS_PER_LINE = NOTE_CHARS_PER_LINE;
 
 export const gridHeightPx = (GRID_END_HOUR - GRID_START_HOUR) * HOUR_PX;
 
@@ -106,6 +115,12 @@ export function mondayOfWeek(iso: string): string {
 // include any slot outside the default 06:00–22:00 range (so nothing renders
 // off-grid).
 
+// #443 (Fix-Runde 2, I-1): trägt den Namen, weil die Inhaltsschätzung ihn
+// braucht — SlotBody zeigt `a.user_name`, unknown[] konnte das nicht abbilden.
+export interface SlotAssignmentLike {
+  user_name: string;
+}
+
 export interface SlotLike {
   id: string;
   weekday: number;
@@ -113,7 +128,7 @@ export interface SlotLike {
   end_time: string;
   // #443: für die Inhaltsschätzung. Optional, damit die reinen Zeit-Tests und
   // ältere Aufrufer unverändert weiterlaufen.
-  assignments?: unknown[];
+  assignments?: SlotAssignmentLike[];
   note?: string | null;
 }
 
@@ -130,18 +145,40 @@ export interface SlotBox {
 /**
  * Geschätzte Höhe, die der INHALT eines Blocks braucht (#443).
  *
- * Gezählt werden: die Kopfzeile (Arbeitsplatz), die Zeitzeile, eine Zeile je
- * zugewiesener Person — mindestens eine, weil dort sonst "0/2" oder "—" steht —
- * und der Hinweis in Zeilen zu ``NOTE_CHARS_PER_LINE`` Zeichen.
+ * Gezählt werden: die Kopfzeile (Arbeitsplatz), die Zeitzeile, die Namenszeile(n)
+ * und der Hinweis — je in Zeilen zu ``NAME_CHARS_PER_LINE`` bzw.
+ * ``NOTE_CHARS_PER_LINE`` Zeichen. Ohne Namen zählt trotzdem eine Zeile,
+ * weil dort sonst "0/2" oder "—" steht.
  *
- * Das Ergebnis ist eine **Untergrenze**: bricht ein langer Name in einer sehr
- * schmalen Spur auf zwei Zeilen um, wächst der Block korrekt, bleibt aber
- * womöglich ohne Markierung. Das ist hingenommen — die Markierung ist ein
- * Hinweis, keine Zusicherung. Der umgekehrte Fehler (Markierung ohne Wachstum)
- * kann nicht auftreten.
+ * **Fix-Runde 2 (I-1):** Die Namen werden — wie im DOM (`SlotBody`) — als EIN
+ * kommaseparierter, umbrechender Block geschätzt, nicht mehr als eine Zeile
+ * je Person. Die vorige Fassung zählte pro zugewiesener Person eine Zeile,
+ * obwohl mehrere Namen in einer breiten Spur real in eine Zeile passen —
+ * Schätzung und DOM hatten verschiedene Struktur, und die Markierung feuerte
+ * dadurch in der Tagesansicht bei nahezu jedem mehrfach besetzten Slot falsch.
+ *
+ * Das Ergebnis bleibt eine **Schätzung, keine Messung**: sie kennt die
+ * tatsächliche Spurbreite nicht, nur eine feste Zeichen-pro-Zeile-Annahme.
+ * In einer sehr schmalen Spur (mehrere überlappende Slots) passen real
+ * weniger Zeichen in eine Zeile als angenommen — dort bleibt die Funktion
+ * eine **Untergrenze**: ein langer Name kann umbrechen, ohne dass die
+ * Markierung greift. Das ist hingenommen, die Markierung ist ein Hinweis,
+ * keine Zusicherung.
+ *
+ * Der umgekehrte Fehler — Markierung ohne echtes Wachstum — ist dadurch
+ * *deutlich seltener*, aber anders als zuvor behauptet **nicht grundsätzlich
+ * ausgeschlossen**: in einer sehr breiten Spur (z. B. der vollen Spalte der
+ * Tagesansicht) passen real mehr Zeichen in eine Zeile, als die Konstante
+ * annimmt. Bei sehr vielen, kombiniert langen Namen kann die Schätzung dort
+ * eine zusätzliche Zeile ansetzen, die real nicht gebraucht wird. Der konkret
+ * gemeldete Fehlerfall (kurze, wenige Namen in einer breiten Spur) ist damit
+ * behoben; eine Garantie für jede denkbare Namenskombination und Spurbreite
+ * gäbe nur eine echte DOM-Messung, die hier bewusst vermieden wird (siehe
+ * Kommentar an NAME_CHARS_PER_LINE oben).
  */
 export function estimateContentHeight(slot: SlotLike): number {
-  const nameLines = Math.max(1, slot.assignments?.length ?? 0);
+  const names = (slot.assignments ?? []).map((a) => a.user_name ?? '').join(', ');
+  const nameLines = names ? Math.ceil(names.length / NAME_CHARS_PER_LINE) : 1;
   const note = (slot.note ?? '').trim();
   const noteLines = note ? Math.ceil(note.length / NOTE_CHARS_PER_LINE) : 0;
   const lines = 1 /* Arbeitsplatz */ + 1 /* Zeit */ + nameLines + noteLines;
@@ -151,6 +188,11 @@ export function estimateContentHeight(slot: SlotLike): number {
 export interface WeekLayout {
   startHour: number;
   endHour: number;
+  // #443 Fix-Runde 2 (M-2): NICHT nur die zeitproportionale Höhe — das Maximum
+  // aus ihr und dem am weitesten hinausragenden Blockboden (`box.top +
+  // box.contentHeight`) über alle Wochentage. `DayColumn`/die Zeitachse
+  // rendern damit hoch genug, dass ein gewachsener Block nicht in eine
+  // Raster-eigene Bildlaufleiste läuft.
   height: number;
   hourMarks: number[];
   boxes: Record<string, SlotBox>;
@@ -165,10 +207,19 @@ export function computeWeekLayout(slots: SlotLike[]): WeekLayout {
   }
   const startHour = Math.floor(minStart / 60);
   const endHour = Math.max(startHour + 1, Math.ceil(maxEnd / 60));
-  const height = (endHour - startHour) * HOUR_PX;
+  const timeHeight = (endHour - startHour) * HOUR_PX;
   const hourMarks = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
 
   const boxes: Record<string, SlotBox> = {};
+  // #443 Fix-Runde 2 (M-2): `DayColumn`/die Zeitachse übernehmen `layout.height`
+  // als feste CSS-Höhe für ALLE Wochentagsspalten. Ragt ein gewachsener Block
+  // (minHeight > zeitproportionale height) darüber hinaus, während `height`
+  // nur die Zeitspanne kennt, rechnet der äußere `overflow-x-auto`-Container
+  // `overflow-y` auf `auto` um — das Raster bekommt eine eigene, in sich
+  // gefangene Bildlaufleiste statt mit der Seite mitzuwachsen. Deshalb über
+  // ALLE Wochentage hinweg (nicht nur den betroffenen) den am weitesten
+  // hinausragenden Blockboden mitführen.
+  let maxContentBottom = timeHeight;
 
   for (let wd = 0; wd < 7; wd++) {
     const day = slots
@@ -187,14 +238,16 @@ export function computeWeekLayout(slots: SlotLike[]): WeekLayout {
       for (const item of group) {
         const height = Math.max(18, ((item.end - item.start) / 60) * HOUR_PX);
         const contentHeight = estimateContentHeight(item.s);
+        const top = ((item.start - startHour * 60) / 60) * HOUR_PX;
         boxes[item.s.id] = {
-          top: ((item.start - startHour * 60) / 60) * HOUR_PX,
+          top,
           height,
           leftPct: (item.lane / lanes) * 100,
           widthPct: (1 / lanes) * 100,
           contentHeight,
           grown: contentHeight > height,
         };
+        maxContentBottom = Math.max(maxContentBottom, top + contentHeight);
       }
       group = [];
       laneEnds = [];
@@ -216,5 +269,5 @@ export function computeWeekLayout(slots: SlotLike[]): WeekLayout {
     if (group.length) flush();
   }
 
-  return { startHour, endHour, height, hourMarks, boxes };
+  return { startHour, endHour, height: maxContentBottom, hourMarks, boxes };
 }

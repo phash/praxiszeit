@@ -63,4 +63,21 @@ describe('WeekGrid', () => {
     render(<WeekGrid slots={[slot()]} weekdays={[0, 1, 2, 3, 4]} />);
     expect(screen.queryByTitle(/über das Zeitfenster hinaus/i)).not.toBeInTheDocument();
   });
+
+  it('I-1-Regressionsfall: kurzer Slot mit mehreren kurzen Namen wächst NICHT (Namen teilen sich eine Zeile)', () => {
+    // 08:00–09:30 (90 Min, wie im gemeldeten Fehlerfall), drei kurze Namen —
+    // die passen real in eine Zeile. Vorher zählte die Schätzung eine Zeile
+    // je Person und markierte diesen Fall fälschlich als gewachsen.
+    const roomy = slot({
+      start_time: '08:00',
+      end_time: '09:30',
+      assignments: [
+        { id: 'a1', user_id: 'u1', user_name: 'Eins' },
+        { id: 'a2', user_id: 'u2', user_name: 'Zwei' },
+        { id: 'a3', user_id: 'u3', user_name: 'Drei' },
+      ],
+    });
+    render(<WeekGrid slots={[roomy]} weekdays={[0, 1, 2, 3, 4]} />);
+    expect(screen.queryByTitle(/über das Zeitfenster hinaus/i)).not.toBeInTheDocument();
+  });
 });
