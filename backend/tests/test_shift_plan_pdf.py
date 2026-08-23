@@ -308,6 +308,7 @@ def test_currently_active_plan_carries_no_status_note():
 
 
 import asyncio
+from datetime import time as _time
 
 import pytest
 from fastapi import HTTPException
@@ -316,7 +317,7 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import User, UserRole
-from app.models.shift_planning import ShiftPlan
+from app.models.shift_planning import ShiftAssignment, ShiftPlan, ShiftSlot, Workstation
 from app.models.system_setting import SystemSetting
 from app.routers.shift_planning import export_plan_pdf
 from tests.conftest import DEFAULT_TENANT_ID
@@ -456,3 +457,63 @@ def test_export_via_real_http_404_when_flag_disabled(db, default_tenant):
         assert resp.status_code == 404
     finally:
         test_app.dependency_overrides.clear()
+
+
+def test_export_pdf_does_not_leak_qualification_flags_for_an_employee(db, default_tenant, monkeypatch):
+    """R2-4 (Prüfrunde 2, Important): kein Test schützte bislang die
+    admin-only-Zusage an GENAU dieser Fläche. Ein Prüfer hat ``is_admin`` in
+    ``export_plan_pdf`` probeweise auf ein hartkodiertes ``True`` geändert —
+    32 von 32 Tests blieben grün, weil der Renderer die Einweisungs-
+    Kennzeichen heute nirgends druckt. Direkt daneben, in ``generate_plan``,
+    steht bereits ein hartkodiertes ``True``; ein Copy-Paste oder eine
+    naheliegende Erweiterung ("Unqualifiziert" auch im Ausdruck markieren)
+    würde daraus ein Datenschutz-Leck machen, das kein Test bemerkt.
+
+    ``test_shift_plan_visibility.py::test_build_plan_detail_hides_qualification_flags_from_non_admin``
+    prüft ``_build_plan_detail`` bereits DIREKT — dieser Test prüft stattdessen
+    die VERDRAHTUNG im Router: er fängt den Aufruf von
+    ``shift_plan_export_service.generate_plan_pdf`` ab und belegt für einen
+    Aufruf durch einen MITARBEITENDEN mit einer unqualifizierten Zuweisung,
+    dass das übergebene ``detail``-Dict kein ``qualified``-Feld an den
+    Zuweisungen trägt und ``validation.unqualified_slot_ids`` leer ist.
+
+    Setzt man ``is_admin`` in ``export_plan_pdf`` hartkodiert auf ``True``,
+    schlägt dieser Test fehl (verifiziert: Fund-Bericht
+    round2-backend-report.md)."""
+    from io import BytesIO
+
+    from app.services import shift_plan_export_service
+
+    admin = _user(db, "pdf_qual_admin", role=UserRole.ADMIN)
+    emp = _user(db, "pdf_qual_emp")
+    ws = Workstation(tenant_id=DEFAULT_TENANT_ID, name="Labor")
+    db.add(ws)
+    db.commit()
+    db.refresh(ws)
+    plan = _plan(db, admin, "Qualifikationsplan zum Drucken", visible=True)
+    slot = ShiftSlot(
+        tenant_id=DEFAULT_TENANT_ID, shift_plan_id=plan.id, workstation_id=ws.id,
+        weekday=0, start_time=_time(8, 0), end_time=_time(12, 0), min_staff=1,
+    )
+    db.add(slot)
+    db.commit()
+    db.refresh(slot)
+    # emp ist NICHT fuer "Labor" eingewiesen (keine WorkstationQualification) ->
+    # in der Admin-Sicht waere der Slot "unqualified".
+    db.add(ShiftAssignment(tenant_id=DEFAULT_TENANT_ID, shift_slot_id=slot.id, user_id=emp.id))
+    db.commit()
+
+    captured = {}
+
+    def _fake_generate_plan_pdf(detail, **kwargs):
+        captured["detail"] = detail
+        return BytesIO(b"%PDF-fake")
+
+    monkeypatch.setattr(shift_plan_export_service, "generate_plan_pdf", _fake_generate_plan_pdf)
+
+    export_plan_pdf(plan.id, db=db, current_user=emp)
+
+    assert "detail" in captured, "generate_plan_pdf wurde nicht aufgerufen"
+    assignment = captured["detail"]["slots"][0]["assignments"][0]
+    assert "qualified" not in assignment
+    assert captured["detail"]["validation"]["unqualified_slot_ids"] == []
