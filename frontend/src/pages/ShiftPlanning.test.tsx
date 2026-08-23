@@ -68,16 +68,51 @@ describe('Mitarbeiteransicht Schichtplan', () => {
     await waitFor(() => expect(api.getPlan).toHaveBeenCalledWith('p1'));
   });
 
-  it('lädt nur den gewählten Plan, nicht alle', async () => {
+  // #443 F-2 (Prüfrunde 2): früher belegte dieser Test, dass NUR der
+  // vorausgewählte Plan geladen wird ("nicht alle") — genau das war der Bug:
+  // gelten mehrere Pläne gleichzeitig, sah die Belegschaft nur den
+  // (alphabetisch) ersten. Umgestellt auf die neue Regel: alle heute
+  // geltenden Pläne laden ja, ein zusätzlich freigegebener Vorschau-Plan
+  // bleibt bis zur Auswahl ungeladen.
+  it('lädt ALLE heute geltenden Pläne — ein Vorschau-Plan bleibt bis zur Auswahl ungeladen', async () => {
     (api.listPlans as ReturnType<typeof vi.fn>).mockResolvedValue([
-      summary(), summary({ id: 'p2', name: 'Zweiter', active_today: true }),
-      summary({ id: 'p3', name: 'Dritter', active_today: true }),
+      summary({ id: 'p1', name: 'Erster', active_today: true }),
+      summary({ id: 'p2', name: 'Zweiter', active_today: true }),
+      summary({ id: 'p3', name: 'Vorschau-Plan', active_today: false, visible_to_employees: true }),
     ]);
     (api.getPlan as ReturnType<typeof vi.fn>).mockResolvedValue(detail());
 
     render(<ShiftPlanning />);
-    await waitFor(() => expect(api.getPlan).toHaveBeenCalled());
-    expect((api.getPlan as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+
+    await waitFor(() => {
+      expect(api.getPlan).toHaveBeenCalledWith('p1');
+      expect(api.getPlan).toHaveBeenCalledWith('p2');
+    });
+    expect(
+      (api.getPlan as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]),
+    ).not.toContain('p3');
+    // Der Vorschau-Plan bleibt wählbar, ohne dass sein Detail schon geladen wäre.
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+  });
+
+  // #443 F-2 Schadensfall: eine Mitarbeiterin mit Einträgen in zwei parallel
+  // gültigen Plänen (z. B. je ein Plan pro Standort) muss BEIDE sehen — vorher
+  // zeigte die Vorbelegung nur den alphabetisch ersten ("Plan Filiale" vor
+  // "Plan Hauptstelle"), der Montags-Eintrag im anderen Plan blieb unsichtbar.
+  it('Schadensfall: zwei heute geltende Pläne (zwei Standorte) sind BEIDE sichtbar', async () => {
+    (api.listPlans as ReturnType<typeof vi.fn>).mockResolvedValue([
+      summary({ id: 'p1', name: 'Plan Hauptstelle', active_today: true }),
+      summary({ id: 'p2', name: 'Plan Filiale', active_today: true }),
+    ]);
+    (api.getPlan as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      Promise.resolve(detail({ id, name: id === 'p1' ? 'Plan Hauptstelle' : 'Plan Filiale' })),
+    );
+
+    render(<ShiftPlanning />);
+
+    await waitFor(() => expect(screen.getByText('Plan Hauptstelle')).toBeInTheDocument());
+    expect(screen.getByText('Plan Filiale')).toBeInTheDocument();
+    expect((api.getPlan as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
   });
 
   it('zeigt den leeren Zustand, wenn nichts sichtbar ist', async () => {
