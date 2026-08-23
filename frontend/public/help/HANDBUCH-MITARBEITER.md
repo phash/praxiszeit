@@ -620,10 +620,14 @@ Nutzt Ihre Praxis die **Schichtplanung**, erscheint links der Menüpunkt
 Übersicht: welcher Arbeitsplatz (z. B. Tresen, Labor) wann besetzt ist und wer
 eingeteilt ist. Sichtbar sind Pläne, die **heute gelten**, sowie Pläne, die Ihr
 Administrator ausdrücklich **für Mitarbeitende freigegeben** hat – auch wenn
-sie erst künftig gelten. Sind mehrere Pläne sichtbar, steht oben eine
-**Auswahl**; ein noch nicht geltender Plan trägt zusätzlich den Hinweis
-„Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben.", damit Sie ihn
-nicht mit dem aktuellen Plan verwechseln.
+sie erst künftig gelten oder ihr Zeitraum bereits abgelaufen ist. Gilt heute
+mehr als ein Plan (z. B. je ein Plan pro Standort), werden **alle**
+untereinander angezeigt. Zusätzlich freigegebene Pläne, die heute nicht
+gelten, erscheinen darunter in einer eigenen **Vorschau-Auswahl**: ein dort
+gewählter Plan trägt den Hinweis „Dieser Plan gilt noch nicht — er ist zur
+Ansicht freigegeben." bzw. „Dieser Plan gilt nicht mehr — er ist zur Ansicht
+freigegeben.", wenn sein Zeitraum bereits abgelaufen ist – damit Sie ihn nicht
+mit einem aktuell geltenden Plan verwechseln.
 
 Manche Einteilungen tragen einen **Hinweis** (z. B. „Einarbeitung Azubi"),
 erkennbar am vorangestellten **»**. Über den Knopf **„PDF"** drucken Sie den
