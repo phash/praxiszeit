@@ -620,6 +620,19 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
                 "start_time": sl.start_time.strftime("%H:%M") if sl.start_time else None,
                 "end_time": sl.end_time.strftime("%H:%M") if sl.end_time else None,
                 "workstation": ws.name if ws else None,
+                # Minor (Prüfrunde 2): der Hinweis wird MIT exportiert, nicht
+                # ausgelassen. anonymize_tenant leert shift_slots.note bei
+                # Anonymisierung, weil der Freitext Personenbezug tragen KANN
+                # ("Einarbeitung Frau Meier") — das ist eine Löschpflicht nach
+                # dem Ausscheiden, kein Grund, ihn einem aktiven Mitarbeitenden
+                # in der eigenen Art.-15-Auskunft über die eigene Einteilung
+                # vorzuenthalten. Der Hinweis ist ohnehin schon breiter sichtbar
+                # als jede Selbstauskunft: er steht am Bildschirm für alle mit
+                # Plansicht UND auf dem PDF-Aushang am Schwarzen Brett (laut
+                # docs/SCHICHTPLANUNG.md teils sogar für Patientinnen und
+                # Patienten einsehbar) — ihn hier zurückzuhalten wäre
+                # widersprüchlich zu dieser bewussten öffentlichen Sichtbarkeit.
+                "note": sl.note,
             })
         for q, ws in (
             db.query(WorkstationQualification, Workstation)

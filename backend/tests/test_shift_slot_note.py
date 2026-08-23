@@ -11,7 +11,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.models import User, UserRole
-from app.models.shift_planning import ShiftPlan, Workstation
+from app.models.shift_planning import ShiftAssignment, ShiftPlan, Workstation
+from app.models.system_setting import SystemSetting
 from app.routers.shift_planning import (
     PlanDuplicateIn,
     SlotIn,
@@ -20,6 +21,7 @@ from app.routers.shift_planning import (
     get_plan,
     update_slot,
 )
+from app.services import lifecycle_service
 from tests.conftest import DEFAULT_TENANT_ID
 
 
@@ -27,6 +29,19 @@ def _admin(db, username):
     u = User(
         username=username, email=f"{username}@t.de", password_hash="h",
         first_name="A", last_name="D", role=UserRole.ADMIN, weekly_hours=40.0,
+        vacation_days=30, work_days_per_week=5, is_active=True,
+        tenant_id=DEFAULT_TENANT_ID,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+def _employee(db, username):
+    u = User(
+        username=username, email=f"{username}@t.de", password_hash="h",
+        first_name="M", last_name="A", role=UserRole.EMPLOYEE, weekly_hours=40.0,
         vacation_days=30, work_days_per_week=5, is_active=True,
         tenant_id=DEFAULT_TENANT_ID,
     )
@@ -118,3 +133,45 @@ def test_duplicate_plan_copies_slot_notes(db, default_tenant):
     copy = duplicate_plan(plan.id, PlanDuplicateIn(name="Notizplan Kopie"), db=db, current_user=admin)
     detail = get_plan(UUID(copy["id"]), db=db, current_user=admin)
     assert [s["note"] for s in detail["slots"]] == ["Einarbeitung Azubi"]
+
+
+def test_self_export_includes_the_note_on_own_shift_assignment(db, default_tenant):
+    """Minor (Prüfrunde 2): die Art.-15-Selbstauskunft
+    (``lifecycle_service.build_self_export_payload``) ließ ``note`` bislang
+    kommentarlos aus, während ``anonymize_tenant`` das Feld im selben Modul
+    mit der Begründung leert, es könne Personenbezug tragen — beides zugleich
+    zu behaupten war widersprüchlich.
+
+    Entscheidung (siehe Kommentar an der Abfrage in ``lifecycle_service.py``):
+    der Hinweis wird in die eigene Selbstauskunft aufgenommen. Er ist ohnehin
+    schon breiter sichtbar als jede Selbstauskunft (Bildschirm für alle mit
+    Plansicht + PDF-Aushang am Schwarzen Brett) — ihn dem Mitarbeitenden
+    selbst vorzuenthalten wäre widersprüchlich zu dieser bewussten
+    öffentlichen Sichtbarkeit. Das Nullen bei ``anonymize_tenant`` ist eine
+    Löschpflicht nach dem Ausscheiden, kein Zugriffsverbot für aktive
+    Mitarbeitende auf die eigene Einteilung."""
+    admin = _admin(db, "note_export_admin")
+    emp = _employee(db, "note_export_emp")
+    plan = _plan(db, admin, "Notizplan Export")
+    ws = _ws(db, "Tresen Export")
+    db.add(SystemSetting(key="shift_planning_enabled", tenant_id=DEFAULT_TENANT_ID, value="true"))
+    db.commit()
+
+    created = create_slot(
+        plan.id, _slot_in(ws.id, note="Vertretung für Frau Schmidt"), db=db, current_user=admin,
+    )
+    db.add(ShiftAssignment(
+        tenant_id=DEFAULT_TENANT_ID, shift_slot_id=UUID(created["id"]), user_id=emp.id,
+    ))
+    db.commit()
+
+    payload = lifecycle_service.build_self_export_payload(db, emp)
+
+    assert payload["shift_assignments"] == [{
+        "plan": "Notizplan Export",
+        "weekday": "Mo",
+        "start_time": "08:00",
+        "end_time": "12:00",
+        "workstation": "Tresen Export",
+        "note": "Vertretung für Frau Schmidt",
+    }]
