@@ -21,6 +21,7 @@ import {
   Pencil,
   Wand2,
   Copy,
+  Printer,
 } from 'lucide-react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
@@ -281,6 +282,20 @@ export default function AdminShiftPlanning() {
         }
       },
     });
+
+  // #443: PDF-Aushang des offenen Plans.
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const downloadPdf = async () => {
+    if (!planDetail || downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      await api.downloadPlanPdf(planDetail.id, planDetail.name);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Erstellen des PDF'));
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   // ─── slot dialog ───
   const openCreateSlot = (weekday: number) => {
@@ -570,6 +585,9 @@ export default function AdminShiftPlanning() {
                     </Button>
                     <Button variant="secondary" icon={Pencil} onClick={() => setPlanSettingsOpen(true)}>
                       Bearbeiten
+                    </Button>
+                    <Button variant="secondary" icon={Printer} loading={downloadingPdf} onClick={downloadPdf}>
+                      PDF
                     </Button>
                     <Button variant="secondary" icon={Copy} onClick={() => openDuplicate(planDetail)}>
                       Duplizieren
