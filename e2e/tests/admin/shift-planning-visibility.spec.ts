@@ -85,8 +85,15 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
     await employeePage.goto('/shift-planning');
     await expect(employeePage.locator('main').getByText(releasedName).first()).toBeVisible();
 
+    // Nicht ungescoped: seit #443 hat JEDER heute geltende Plan seinen eigenen
+    // PDF-Knopf, dazu ggf. der Vorschau-Block — mehrere sichtbare Pläne (auch
+    // durch eine parallel laufende Spec im selben Mandanten) würden sonst
+    // einen strict-mode-Verstoß auslösen. Überschrift und PDF-Knopf sind in
+    // `PlanBlock` (ShiftPlanning.tsx) Geschwister in derselben Kopfzeile —
+    // darüber lässt sich der Knopf des RICHTIGEN Plans eindeutig treffen.
+    const planRow = employeePage.getByRole('heading', { name: releasedName }).locator('..');
     const download = employeePage.waitForEvent('download');
-    await employeePage.getByRole('button', { name: 'PDF' }).click();
+    await planRow.getByRole('button', { name: 'PDF' }).click();
     const file = await download;
     // Nicht nur "irgendein PDF kam an" belegen, sondern dass es der RICHTIGE
     // Plan war: der Dateiname wird clientseitig aus dem Plannamen gebaut
