@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Printer } from 'lucide-react';
+import Button from '../components/Button';
 import EmptyState from '../components/EmptyState';
 import LoadingSpinner from '../components/LoadingSpinner';
 import WeekGrid from '../components/shiftplanning/WeekGrid';
@@ -7,23 +8,41 @@ import { useToast } from '../contexts/ToastContext';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useSystemStore } from '../stores/systemStore';
 import * as api from '../api/shiftPlanning';
-import type { PlanDetail } from '../api/shiftPlanning';
+import type { PlanDetail, PlanSummary } from '../api/shiftPlanning';
+
+/** Vermerk neben dem Plannamen in der Auswahl: gilt er heute, oder ab wann? */
+function planHint(p: PlanSummary): string {
+  if (p.active_today) return 'Aktuell';
+  if (p.active_from_date) {
+    const d = new Date(`${p.active_from_date}T00:00:00`);
+    return `Ab ${d.toLocaleDateString('de-DE')}`;
+  }
+  return 'Vorschau';
+}
 
 export default function ShiftPlanning() {
   const toast = useToast();
   const weekdays = useSystemStore((s) => s.getShiftPlanningWeekdays());
   const [loading, setLoading] = useState(true);
-  const [activePlans, setActivePlans] = useState<PlanDetail[]>([]);
+  const [plans, setPlans] = useState<PlanSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<PlanDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        // #443: NICHT mehr clientseitig auf active_today filtern. Der Server
+        // liefert Mitarbeitenden ohnehin nur Sichtbares (heute gültig ODER
+        // ausdrücklich freigegeben) — ein Filter hier würde genau die
+        // freigegebenen Zukunftspläne wieder wegwerfen, um die es geht.
         const summaries = await api.listPlans();
-        // #305 M2: "aktiv heute" = manuell aktiv ODER Datums-Fenster deckt heute ab.
-        const active = summaries.filter((p) => p.active_today);
-        const details = await Promise.all(active.map((p) => api.getPlan(p.id)));
-        if (!cancelled) setActivePlans(details);
+        if (cancelled) return;
+        setPlans(summaries);
+        const preferred = summaries.find((p) => p.active_today) ?? summaries[0];
+        setSelectedId(preferred ? preferred.id : null);
       } catch (err) {
         if (!cancelled) toast.error(getErrorMessage(err, 'Fehler beim Laden der Schichtpläne'));
       } finally {
@@ -33,11 +52,46 @@ export default function ShiftPlanning() {
     return () => {
       cancelled = true;
     };
-    // Load once on mount. `toast` is a stable ref (memoised ToastContext value)
-    // and only used in the catch branch — keeping it out of the deps avoids a
-    // re-fetch every time an unrelated toast fires (cf. Dashboard.tsx).
+    // Einmalig beim Mounten. `toast` ist eine stabile Referenz und wird nur im
+    // catch-Zweig genutzt (vgl. Dashboard.tsx).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    api
+      .getPlan(selectedId)
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((err) => {
+        if (!cancelled) toast.error(getErrorMessage(err, 'Fehler beim Laden des Schichtplans'));
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  const downloadPdf = async () => {
+    if (!detail || downloading) return;
+    setDownloading(true);
+    try {
+      await api.downloadPlanPdf(detail.id, detail.name);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Fehler beim Erstellen des PDF'));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div>
@@ -47,23 +101,55 @@ export default function ShiftPlanning() {
         <div className="flex justify-center py-12">
           <LoadingSpinner />
         </div>
-      ) : activePlans.length === 0 ? (
+      ) : plans.length === 0 ? (
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <EmptyState
             icon={CalendarDays}
-            title="Kein aktiver Schichtplan"
-            description="Sobald ein Administrator einen Plan aktiv schaltet, erscheint er hier."
+            title="Kein Schichtplan verfügbar"
+            description="Sobald ein Administrator einen Plan aktiv schaltet oder für Mitarbeitende freigibt, erscheint er hier."
           />
         </div>
       ) : (
-        <div className="space-y-6">
-          {activePlans.map((plan) => (
-            <div key={plan.id} className="bg-white rounded-xl shadow-xs border border-gray-200 p-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-1">{plan.name}</h2>
-              {plan.description && <p className="text-sm text-gray-500 mb-3">{plan.description}</p>}
-              <WeekGrid slots={plan.slots} weekdays={weekdays} />
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            {plans.length > 1 ? (
+              <select
+                aria-label="Schichtplan wählen"
+                value={selectedId ?? ''}
+                onChange={(e) => setSelectedId(e.target.value)}
+                className="rounded-lg border-gray-300 text-sm py-1"
+              >
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {planHint(p)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <h2 className="text-xl font-semibold text-gray-900">{plans[0].name}</h2>
+            )}
+            {detail && (
+              <Button variant="secondary" icon={Printer} loading={downloading} onClick={downloadPdf}>
+                PDF
+              </Button>
+            )}
+          </div>
+
+          {detailLoading ? (
+            <div className="flex justify-center py-12">
+              <LoadingSpinner />
             </div>
-          ))}
+          ) : detail ? (
+            <>
+              {detail.description && <p className="text-sm text-gray-500 mb-3">{detail.description}</p>}
+              {!detail.active_today && (
+                <p className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                  Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben.
+                </p>
+              )}
+              <WeekGrid slots={detail.slots} weekdays={weekdays} />
+            </>
+          ) : null}
         </div>
       )}
     </div>
