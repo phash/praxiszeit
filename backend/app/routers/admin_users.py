@@ -21,6 +21,10 @@ from app.services import auth_service, calculation_service, milog_service, setti
 # Task 15: dieselbe Zahl- und Label-Schreibweise wie die §16-Exporte — das
 # Aenderungsprotokoll darf die Stunden nicht anders schreiben als der Beleg.
 from app.services.export_service import ABSENCE_TYPE_LABELS_DE, format_hours_de
+# #448: gleiche Single Source of Truth wie absences.py/admin_vacations.py/
+# vacation_requests.py/admin_change_requests.py — direkt aus dem Service
+# importiert (kein Router-Zirkelimport).
+from app.services.closure_split_service import resplit_year_closures
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -262,6 +266,24 @@ def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -
     - delete_time_entries=False: never destroys logged work on those days.
     Best-effort: a failure here must not abort user creation (the closure
     enrolment can be repaired by re-saving the closure).
+
+    #448: the closures query below has NO ``ORDER BY`` — ``_create_closure_absences``
+    only balances the VACATION/OVERTIME split against the remaining budget WITHIN
+    one closure (``sorted(workdays)`` is per-closure), so across SEVERAL closures
+    the split followed the DB delivery order, not the calendar (e.g. December
+    enrolled before June could book December as VACATION and June, the earlier
+    one, as OVERTIME). Every OTHER closure-writing/private-vacation path
+    (create/update/delete_closure, absences.create/delete_absence,
+    admin_vacations.review_vacation_request, admin_change_requests, both
+    withdraw/cancel paths) re-classifies via
+    ``closure_split_service.resplit_year_closures`` afterwards — this was the one
+    path that didn't. Fixed by re-splitting every YEAR TOUCHED by a vacation
+    closure this call actually booked, in calendar order, same as
+    create_closure/update_closure (toggle-gated). Kept INSIDE the surrounding
+    try/except: the re-split is part of the same best-effort enrolment contract
+    — a failure here must roll back the (uncommitted) partial enrolment, not the
+    already-committed user create/update, and not raise a second, differently-
+    shaped failure mode for what is still the same "closure catch-up" step.
     """
     if not (user.receives_company_closures and user.is_active):
         return
@@ -277,6 +299,11 @@ def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -
             CompanyClosure.tenant_id == current_user.tenant_id,  # F-026
             CompanyClosure.end_date >= today,
         ).all()
+        # #448: years touched by a vacation closure this call actually booked
+        # workdays for — a closure can straddle a year boundary (e.g. 29.12.-
+        # 02.01.), so BOTH years it spans count as touched, exactly like the
+        # `range(start.year, end.year + 1)` loops in create_closure/update_closure.
+        resplit_years: set = set()
         for closure in closures:
             holidays = _get_holidays_for_range(
                 db, closure.start_date, closure.end_date, current_user.tenant_id
@@ -296,6 +323,18 @@ def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -
                 # -> HTTP 500 beim Anlegen eines Mitarbeiters. Reproduzierbar von der
                 # E2E-Suite ausgeloest, die mehrere ueberlappende Schliessungen anlegt.
                 db.flush()
+                if closure.counts_as_vacation:
+                    resplit_years.update(range(closure.start_date.year, closure.end_date.year + 1))
+
+        # #448: re-classify the touched years in CALENDAR order, exactly like
+        # create_closure/update_closure/delete_closure — toggle-gated, the
+        # per-closure db.flush() above already made every booking from this
+        # call visible to the budget snapshot.
+        if resplit_years and settings_service.get_bool_setting(
+            db, "closure_overtime_after_vacation", current_user.tenant_id, False
+        ):
+            for yr in sorted(resplit_years):
+                resplit_year_closures(db, current_user.tenant_id, yr, current_user)
     except Exception:  # noqa: BLE001
         db.rollback()
         logger.warning("closure auto-enrollment failed for user %s", user.id, exc_info=True)
