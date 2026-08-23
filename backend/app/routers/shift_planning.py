@@ -11,9 +11,11 @@ available to any authenticated user (read-only view + dashboard).
 import re
 from datetime import date, time, timedelta
 from typing import List, Optional
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, UserRole
+from app.models import Tenant, User, UserRole
 from app.models.shift_planning import (
     Location,
     Workstation,
@@ -30,7 +32,7 @@ from app.models.shift_planning import (
     ShiftAssignment,
     WorkstationQualification,
 )
-from app.services import settings_service, shift_planning_service, shift_planning_generator
+from app.services import settings_service, shift_plan_export_service, shift_planning_service, shift_planning_generator
 from app.services.timezone_service import today_local
 
 # Hex colour `#RRGGBB` — the workstation colour column is String(7); anything
@@ -650,6 +652,101 @@ def get_plan(
     if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
         raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
     return _build_plan_detail(db, tid, plan, is_admin)
+
+
+# Dateinamen-Bereinigung: alles außer Buchstaben/Ziffern/Bindestrich wird zu "_".
+# Ein Plan darf "Sommer 2026 (KW 30/31)" heißen — im Dateinamen hat weder der
+# Schrägstrich noch das Anführungszeichen etwas verloren.
+_FILENAME_SAFE_RE = re.compile(r"[^\w\-]+", re.UNICODE)
+
+
+class _BufferedBytesStream:
+    """Bereits fertig gerendertes PDF, kompatibel mit ``StreamingResponse``.
+
+    Ohne diesen Wrapper würde Starlette ein rohes ``BytesIO`` als reinen
+    Sync-Iterator behandeln und in ``iterate_in_threadpool`` einwickeln — das
+    Ergebnis ist ein ``async_generator``, der NUR ``__anext__`` kennt. Über
+    echtes ASGI (uvicorn/TestClient) läuft das sauber durch; ein Test, der den
+    Router direkt aufruft (kein Event-Loop) und ``response.body_iterator``
+    synchron mit ``b"".join(...)`` ausliest, kann einen reinen Async-Generator
+    aber nie synchron konsumieren (``TypeError: can only join an iterable``).
+    Mit ``__aiter__`` erkennt Starlette dieses Objekt als bereits
+    async-iterierbar und reicht es UNVERÄNDERT als ``body_iterator`` durch;
+    das zusätzliche ``__iter__`` macht denselben Wrapper auch synchron
+    konsumierbar, ohne das reale Streamingverhalten zu ändern.
+    """
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def __iter__(self):
+        yield self._data
+
+    async def __aiter__(self):
+        yield self._data
+
+
+@router.get("/plans/{plan_id}/export.pdf")
+def export_plan_pdf(
+    plan_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """#443: Schichtplan als PDF-Aushang (Querformat A4).
+
+    Zugang über dieselbe Sichtbarkeitsregel wie ``get_plan`` und **nicht** über
+    ``require_admin``: ein Mitarbeitender druckt damit nur, was er ohnehin am
+    Bildschirm liest. Die Einweisungs-Flags (``qualified``/``unqualified``) sind
+    weiterhin admin-only und stehen im PDF grundsätzlich nicht.
+
+    Der Renderer bekommt das Dict von ``_build_plan_detail`` und stellt keine
+    eigenen Abfragen — so erbt der Ausdruck den #371-Wochentagsfilter und die
+    Unterbesetzungslage automatisch statt sie nachzubauen.
+    """
+    tid = current_user.tenant_id
+    plan = _plan_or_404(db, tid, plan_id)
+    is_admin = current_user.role == UserRole.ADMIN
+    if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
+        raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
+
+    detail = _build_plan_detail(db, tid, plan, is_admin)
+    weekdays = shift_planning_service.get_planning_weekdays(db, tid)
+    ws_order = [
+        w.name
+        for w in db.query(Workstation)
+        .filter(Workstation.tenant_id == tid)  # F-026
+        .order_by(Workstation.sort_order, Workstation.name)
+        .all()
+    ]
+    # "practice_name" ist im Projekt KEIN Settings-Key (nicht in
+    # admin_settings._ALLOWED_SETTINGS) — der Praxisname lebt auf Tenant.name
+    # (siehe signup_service._create_tenant: name=practice_name). Die Abfrage
+    # filtert explizit auf die eigene Tenant-Zeile (F-026-Äquivalent: die
+    # Tenant-PK IST die Mandanten-ID, es gibt keine separate tenant_id-Spalte).
+    tenant = db.query(Tenant).filter(Tenant.id == tid).first()
+    practice_name = tenant.name if tenant else None
+    generated_on = today_local()
+
+    pdf = shift_plan_export_service.generate_plan_pdf(
+        detail,
+        weekdays=weekdays,
+        workstation_order=ws_order,
+        practice_name=practice_name,
+        generated_on=generated_on,
+    )
+    db.close()  # F-053: Pool-Verbindung vor dem Streamen freigeben
+    safe = _FILENAME_SAFE_RE.sub("_", plan.name).strip("_") or "Schichtplan"
+    filename = f"Schichtplan_{safe}_{generated_on.isoformat()}.pdf"
+    return StreamingResponse(
+        _BufferedBytesStream(pdf.getvalue()),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )
 
 
 @router.post("/plans/{plan_id}/generate")
