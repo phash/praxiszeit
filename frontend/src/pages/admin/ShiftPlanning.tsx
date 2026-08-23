@@ -412,12 +412,27 @@ export default function AdminShiftPlanning() {
       const newEnd = newStart + duration;
       if (targetWeekday === slot.weekday && newStart === timeToMinutes(slot.start_time)) return; // no-op
       try {
+        // `PUT /slots/{id}` is a full replace — the server's SlotIn defaults every
+        // field the body omits (e.g. note=None) — so a hand-enumerated payload here
+        // silently wipes out any field it forgets to list. That's exactly how a
+        // #443 note got nulled out by a plain drag. Instead of listing fields, take
+        // the slot's current data as-is and override only what a drag actually
+        // changes (weekday/start/end); ShiftSlot's display-only extras are the only
+        // things stripped out, so any future SlotInput field rides along for free.
+        const {
+          id: _id,
+          workstation_name: _workstationName,
+          color: _color,
+          understaffed: _understaffed,
+          unqualified: _unqualified,
+          assignments: _assignments,
+          ...unchanged
+        } = slot;
         await api.updateSlot(slot.id, {
-          workstation_id: slot.workstation_id,
+          ...unchanged,
           weekday: targetWeekday,
           start_time: minutesToTime(newStart),
           end_time: minutesToTime(newEnd),
-          min_staff: slot.min_staff,
         });
         await refreshSelected();
       } catch (err) {
