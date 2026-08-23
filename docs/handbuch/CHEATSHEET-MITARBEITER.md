@@ -190,7 +190,8 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 
 ## Schichtplan (falls aktiv)
 
-- Menü **Schichtplan**: aktive Wochenpläne ansehen (wer wann wo).
+- Menü **Schichtplan**: sichtbare Wochenpläne ansehen (wer wann wo) – heute geltende **und** vom Admin freigegebene künftige Pläne; mehrere sichtbare Pläne → Auswahl oben, künftiger Plan mit Vorschau-Hinweis markiert.
+- Hinweis an einer Einteilung erkennbar am **»**; Knopf **„PDF"** druckt den angezeigten Plan.
 - **Dashboard → „Deine Einteilung heute"**: Ihre heutigen Einsätze mit Zeit.
 - Nur Planung – ändert **nicht** Ihre Arbeitszeiten/Urlaub/Überstunden. Einteilung macht der Admin.
 

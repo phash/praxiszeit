@@ -616,8 +616,18 @@ Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https:/
 ## Schichtplan (falls Ihre Praxis ihn nutzt)
 
 Nutzt Ihre Praxis die **Schichtplanung**, erscheint links der Menüpunkt
-**Schichtplan**. Dort sehen Sie die aktiven Wochenpläne als Übersicht: welcher
-Arbeitsplatz (z. B. Tresen, Labor) wann besetzt ist und wer eingeteilt ist.
+**Schichtplan**. Dort sehen Sie die für Sie sichtbaren Wochenpläne als
+Übersicht: welcher Arbeitsplatz (z. B. Tresen, Labor) wann besetzt ist und wer
+eingeteilt ist. Sichtbar sind Pläne, die **heute gelten**, sowie Pläne, die Ihr
+Administrator ausdrücklich **für Mitarbeitende freigegeben** hat – auch wenn
+sie erst künftig gelten. Sind mehrere Pläne sichtbar, steht oben eine
+**Auswahl**; ein noch nicht geltender Plan trägt zusätzlich den Hinweis
+„Dieser Plan gilt noch nicht – er ist zur Ansicht freigegeben.", damit Sie ihn
+nicht mit dem aktuellen Plan verwechseln.
+
+Manche Einteilungen tragen einen **Hinweis** (z. B. „Einarbeitung Azubi"),
+erkennbar am vorangestellten **»**. Über den Knopf **„PDF"** drucken Sie den
+gerade angezeigten Plan als Aushang aus.
 
 Auf dem **Dashboard** zeigt die Karte **„Deine Einteilung heute"** Ihre heutigen
 Einsätze mit Arbeitsplatz und Uhrzeit. Unter **Profil → „Meine Einweisungen"**

@@ -308,6 +308,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **Stammdaten:** Standorte (optional) + Arbeitsplätze (mit Farbe) anlegen.
 - **Plan:** beliebig viele Wochenpläne; Slots per Drag & Drop / Klick, Mitarbeitende auf Slot ziehen, Mindestbesetzung optional.
 - **Aktiv schalten** → für alle sichtbar (mehrere Pläne gleichzeitig aktiv möglich).
+- **Freigabe:** Plan-Einstellungen → „Für Mitarbeitende sichtbar" macht einen Plan sichtbar, auch bevor er gilt (Kopie erbt das nicht). **Hinweis** je Slot (optional, 500 Zeichen, sichtbar als »-Text). **PDF**-Knopf druckt Arbeitsplatz×Wochentag im Querformat – auch MA können ihren sichtbaren Plan drucken.
 - **Einweisungen:** Matrix MA × Arbeitsplätze; nicht eingewiesene Zuweisung → weiche Warnung (blockiert nicht). MA sehen ihre Einweisungen im Profil.
 - **KW-/Jahresplanung (#305 M2):** pro Plan optionales Aktiv-Datums-Fenster („von/bis") + Jahres-Zeitstrahl. **Automatisch füllen** verteilt eingewiesene, verfügbare MA greedy auf die Slots (Zielwoche, ausgewogen nach Auslastung/Überstunden) → Entwurf, aktiviert den Plan **nicht**.
 - **Woche/Tag-Umschalter** (#321); im Slot-Dialog **„Auf Wochentage kopieren"** → Schicht inkl. Zuweisungen auf weitere Tage (#322).

@@ -1030,6 +1030,27 @@ Warnung, blockiert nicht).
 gleichzeitig aktiv** sein. Mitarbeitende sehen ihre heutige Einteilung im
 Dashboard.
 
+**Freigabe für Mitarbeitende:** In den Plan-Einstellungen (Zahnrad im Plankopf)
+gibt es zusätzlich den Schalter **„Für Mitarbeitende sichtbar"**. Er macht den
+Plan in der Mitarbeiteransicht sichtbar, **auch wenn er heute noch nicht gilt**
+– praktisch, um z. B. einen ab dem 1. September geltenden Plan schon vorher
+bekannt zu machen. Ein heute aktiver bzw. im Datums-Fenster liegender Plan ist
+ohnehin sichtbar, der Schalter betrifft nur den Fall davor. Eine **Kopie**
+(„Duplizieren") übernimmt diese Freigabe **nicht** – sie startet wie jeder neue
+Entwurf unsichtbar, damit nicht versehentlich eine unfertige Variante bei den
+Mitarbeitenden auftaucht.
+
+**Hinweis je Einteilung:** Im Slot-Dialog gibt es das Feld **„Hinweis
+(optional)"** (bis zu 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung
+für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster
+und im PDF-Ausdruck – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
+oder Überstunden.
+
+**PDF-Ausdruck:** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen
+Aushang im Querformat mit einer Tabelle Arbeitsplatz × Wochentag – zum
+Aushängen am Schwarzen Brett. Auch Mitarbeitende können darüber den Plan
+drucken, den sie in ihrer Ansicht sehen.
+
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
 eingewiesenen Person erscheint die weiche Warnung „nicht eingewiesen" (blockiert
