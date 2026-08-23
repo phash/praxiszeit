@@ -6,6 +6,7 @@
  * `systemStore.isShiftPlanningEnabled()` before rendering shift-planning UI.
  */
 import apiClient from './client';
+import { downloadBlob } from '../utils/downloadBlob';
 
 export interface Location {
   id: string;
@@ -38,6 +39,7 @@ export interface ShiftSlot {
   start_time: string; // "HH:MM"
   end_time: string; // "HH:MM"
   min_staff: number;
+  note: string | null; // #443: Hinweis je Einteilung ("Einarbeitung Azubi")
   understaffed: boolean;
   unqualified?: boolean; // #305 M2d: ≥1 assigned person not trained for the workstation
   assignments: ShiftAssignment[];
@@ -51,6 +53,7 @@ export interface PlanSummary {
   active_from_date: string | null; // ISO date, #305 M2 KW-Planung
   active_until_date: string | null;
   active_today: boolean; // is_active OR window covers today
+  visible_to_employees: boolean; // #443: ausdrücklich für Mitarbeitende freigegeben
   slot_count: number;
   is_valid: boolean;
 }
@@ -63,6 +66,7 @@ export interface PlanDetail {
   active_from_date: string | null;
   active_until_date: string | null;
   active_today: boolean;
+  visible_to_employees: boolean; // #443: ausdrücklich für Mitarbeitende freigegeben
   slots: ShiftSlot[];
   validation: { is_valid: boolean; understaffed_slot_ids: string[]; unqualified_slot_ids?: string[] };
 }
@@ -103,6 +107,7 @@ export interface SlotInput {
   start_time: string;
   end_time: string;
   min_staff: number;
+  note?: string | null; // #443
 }
 
 const BASE = '/shift-planning';
@@ -140,6 +145,7 @@ export interface PlanUpdateBody {
   description?: string | null;
   active_from_date?: string | null;
   active_until_date?: string | null;
+  visible_to_employees?: boolean; // #443
 }
 export const updatePlan = (id: string, body: PlanUpdateBody) =>
   apiClient
@@ -148,6 +154,7 @@ export const updatePlan = (id: string, body: PlanUpdateBody) =>
       description: body.description ?? null,
       active_from_date: body.active_from_date ?? null,
       active_until_date: body.active_until_date ?? null,
+      visible_to_employees: body.visible_to_employees ?? false,
     })
     .then((r) => r.data);
 export const deletePlan = (id: string) => apiClient.delete(`${BASE}/plans/${id}`);
@@ -165,6 +172,15 @@ export const activatePlan = (id: string) =>
   apiClient.post<PlanSummary>(`${BASE}/plans/${id}/activate`).then((r) => r.data);
 export const deactivatePlan = (id: string) =>
   apiClient.post<PlanSummary>(`${BASE}/plans/${id}/deactivate`).then((r) => r.data);
+
+// #443: PDF-Aushang. Der Dateiname wird hier nochmals bereinigt — der Server
+// setzt zwar Content-Disposition, aber downloadBlob nutzt den übergebenen
+// Namen, und ein Plan darf "Sommer 2026 (KW 30/31)" heißen.
+export const downloadPlanPdf = async (id: string, planName: string): Promise<void> => {
+  const res = await apiClient.get(`${BASE}/plans/${id}/export.pdf`, { responseType: 'blob' });
+  const safe = planName.replace(/[^\p{L}\p{N}\-_]+/gu, '_').replace(/^_+|_+$/g, '') || 'Schichtplan';
+  downloadBlob(res.data, `Schichtplan_${safe}.pdf`, 'application/pdf');
+};
 
 // ─── slots ───
 export const createSlot = (planId: string, body: SlotInput) =>
