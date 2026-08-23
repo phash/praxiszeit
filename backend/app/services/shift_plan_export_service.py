@@ -181,7 +181,16 @@ def generate_plan_pdf(
         usable = landscape(A4)[0] - 24 * mm
         first = 38 * mm
         col_widths = [first] + [(usable - first) / len(days)] * len(days)
-        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        # C-1 (Prüfrunde 2): reportlab kann eine Tabellenzeile nicht über einen
+        # Seitenumbruch teilen. Wird eine Zeile höher als der Rahmen (Querformat
+        # A4 ≈ 515 pt) — z. B. drei Einteilungen mit je 500-Zeichen-Hinweis am
+        # selben Arbeitsplatz/Tag, oder ~50 Personen in einer Einteilung —, wirft
+        # ``doc.build`` sonst eine ``LayoutError`` und der Export bleibt
+        # dauerhaft HTTP 500 (der Plan lässt sich nie wieder drucken). Mit
+        # ``splitInRow=1`` darf reportlab EINE hohe Zeile selbst über mehrere
+        # Seiten aufteilen. Siehe test_shift_plan_pdf.py::test_wide_slot_notes_do_not_crash_the_layout
+        # und ::test_many_assignments_in_one_cell_do_not_crash_the_layout.
+        table = Table(table_data, colWidths=col_widths, repeatRows=1, splitInRow=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
             ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),

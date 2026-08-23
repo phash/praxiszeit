@@ -212,6 +212,49 @@ def test_note_marker_is_representable_in_the_cell_font():
     assert used_font.fontName == cell_font_name
 
 
+def test_wide_slot_notes_do_not_crash_the_layout():
+    """C-1 (Prüfrunde 2, CRITICAL): reportlab kann eine Tabellenzeile nicht
+    über einen Seitenumbruch teilen. Drei Einteilungen mit je 500-Zeichen-
+    Hinweis (die erlaubte Höchstlänge von ``shift_slots.note``) am selben
+    Arbeitsplatz/Tag machten die Zeile höher als der Rahmen (Querformat A4
+    ≈ 515 pt) → ``doc.build`` warf eine ``LayoutError``, der Export blieb
+    dauerhaft HTTP 500 (der Plan lässt sich nie wieder drucken). "Vormittag /
+    Nachmittag / Spätsprechstunde" an einem Tresen sind bereits drei
+    Einteilungen — gewöhnlicher Praxisbetrieb, kein Missbrauch.
+
+    Ohne ``splitInRow=1`` an der ``Table``-Konstruktion in
+    ``generate_plan_pdf`` schlägt dieser Test mit genau dieser ``LayoutError``
+    fehl (verifiziert: Fund-Bericht round2-backend-report.md)."""
+    note = "x" * 500
+    slots = [
+        {
+            "id": f"wide{i}", "workstation_name": "Tresen", "weekday": 0,
+            "start_time": "08:00", "end_time": "12:00", "note": note,
+            "assignments": [{"user_name": "Anna Meier"}],
+        }
+        for i in range(3)
+    ]
+    buf = _render(slots=slots)
+    assert buf.getvalue()[:4] == b"%PDF"
+
+
+def test_many_assignments_in_one_cell_do_not_crash_the_layout():
+    """Zweiter Fall derselben LayoutError-Klasse (C-1): statt langer
+    Freitext-Hinweise sprengt hier allein die Personenzahl (~100+) in EINER
+    Einteilung die Zeilenhöhe. Deckt die Grenze in die andere Richtung ab, wie
+    vom Prüfer gefordert ("Personen in einer Einteilung" kippt schon bei
+    deutlich weniger als hier verwendet). Ohne ``splitInRow=1`` schlägt auch
+    dieser Test mit einer ``LayoutError`` fehl."""
+    names = [{"user_name": f"Person Nr{i:03d}"} for i in range(150)]
+    slots = [{
+        "id": "crowd", "workstation_name": "Tresen", "weekday": 0,
+        "start_time": "08:00", "end_time": "12:00", "note": None,
+        "assignments": names,
+    }]
+    buf = _render(slots=slots)
+    assert buf.getvalue()[:4] == b"%PDF"
+
+
 import asyncio
 
 import pytest
