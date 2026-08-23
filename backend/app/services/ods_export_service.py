@@ -16,7 +16,7 @@ from odf.text import P
 from odf.table import Table, TableColumn, TableRow, TableCell
 from odf.office import Annotation
 
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
+from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_month, date_in_year
@@ -179,6 +179,13 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
 
+    # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
+    # pro Tag, plus die #415-Kopfzeile unten. F-026: tenant-gefiltert.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
     # Rows 1–2: ArbZG-relevante Mitarbeiter-Metadaten
     meta1 = TableRow()
     meta1.addElement(_str_cell("Mitarbeiter:", style=bold))
@@ -187,7 +194,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     # #415: Wochenstunden zum Monatsbeginn (nicht der aktuelle Vertragswert) +
     # die Änderungen im Monat — Parität zum XLSX-Exporter.
     _wh_segments = calculation_service.weekly_hours_segments(
-        db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1])
+        db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1]), wh_changes=wh_changes
     )
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
     meta1.addElement(_float_cell(float(_wh_segments[0].weekly_hours) if _wh_segments else float(user.weekly_hours)))
@@ -298,7 +305,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             net = Decimal("0.00")
 
         # Per-day target using the historical contract snapshot (#431)
-        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
@@ -354,7 +361,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0
             # (Halbtag/SICK/TRAINING/OVERTIME behalten Soll) — Parität zu XLSX.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, wh_changes=wh_changes, worked_hours=net)
             # DSGVO F-003 / #312: sick + custom-reason absences maskiert (Label +
             # Note) außer bei explizit angeforderten Gesundheitsdaten. ALLE
             # Abwesenheiten des Tages (Misch-Tag) werden gerendert.
@@ -414,7 +421,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     overtime = calculation_service.get_overtime_account(db, user, year, month)
     table.addElement(summary_row("Überstunden kumuliert:", float(overtime)))
 
-    vac = calculation_service.get_vacation_account(db, user, year)
+    vac = calculation_service.get_vacation_account(db, user, year, wh_changes=wh_changes)
     table.addElement(summary_row("Urlaub genommen (Std):", float(vac["used_hours"])))
     table.addElement(summary_row("Urlaub Rest (Std):", float(vac["remaining_hours"])))
     table.addElement(summary_int_row("Nachtarbeitstage (§6 ArbZG):", night_work_count))
@@ -556,6 +563,14 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
 
+    # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
+    # pro Tag (365× get_schedule_for_date im Jahresblatt, plus die #415-
+    # Kopfzeile unten). F-026: tenant-gefiltert.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
     # ArbZG-relevante Metadaten
     meta1 = TableRow()
     meta1.addElement(_str_cell("§18 ArbZG-befreit:", style=bold))
@@ -566,7 +581,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     meta1.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
     # #415: Wochenstunden zum Jahresbeginn + Änderungen im Jahr
     _wh_segments = calculation_service.weekly_hours_segments(
-        db, user, date(year, 1, 1), date(year, 12, 31)
+        db, user, date(year, 1, 1), date(year, 12, 31), wh_changes=wh_changes
     )
     meta1.addElement(_empty_cell())
     meta1.addElement(_str_cell("Wochenstunden:", style=bold))
@@ -619,7 +634,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         day_absences = absences_by_date.get(current_date, [])
         absence = day_absences[0] if day_absences else None
         day_entries = entries_by_date.get(current_date, [])
-        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
@@ -707,7 +722,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             # angeforderten Gesundheitsdaten; ALLE Abwesenheiten des Tages (Misch-Tag).
             label, note_str = _absence_cell_parts(day_absences, reason_names, include_health_data)
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = float(absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net))
+            target = float(absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, wh_changes=wh_changes, worked_hours=net))
             tr.addElement(_float_cell(target))
             tr.addElement(_float_cell(net - target))
             tr.addElement(_str_cell(label))
