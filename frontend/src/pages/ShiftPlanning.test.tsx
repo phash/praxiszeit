@@ -5,8 +5,13 @@ vi.mock('../api/shiftPlanning', async () => {
   const actual = await vi.importActual<typeof import('../api/shiftPlanning')>('../api/shiftPlanning');
   return { ...actual, listPlans: vi.fn(), getPlan: vi.fn(), downloadPlanPdf: vi.fn() };
 });
+// N-2: `toastError` bleibt über den Modul-Mock hinweg dieselbe Spy-Instanz
+// (via `vi.hoisted`, damit sie im gehoisteten `vi.mock`-Factory verfügbar
+// ist) — so kann ein Test direkt prüfen, ob ein Fehler gemeldet wurde, ohne
+// den Toast-Mock pro Test neu zu verdrahten.
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
 vi.mock('../contexts/ToastContext', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: vi.fn(), error: toastError, warning: vi.fn(), info: vi.fn() }),
 }));
 vi.mock('../stores/systemStore', () => ({
   useSystemStore: (sel: (s: unknown) => unknown) =>
@@ -113,6 +118,35 @@ describe('Mitarbeiteransicht Schichtplan', () => {
     await waitFor(() => expect(screen.getByText('Plan Hauptstelle')).toBeInTheDocument());
     expect(screen.getByText('Plan Filiale')).toBeInTheDocument();
     expect((api.getPlan as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+  });
+
+  // N-2 (Prüfrunde 2 der Nachprüfung): vorher liess `Promise.all` EINEN
+  // fehlgeschlagenen Detail-Abruf die gesamte Zuweisung scheitern — dann
+  // blieben ALLE heute geltenden Pläne als nackte Überschrift ohne Inhalt
+  // stehen. `Promise.allSettled` lässt jeden Plan für sich fehlschlagen: der
+  // gescheiterte Plan verschwindet ganz, der erfolgreiche bleibt vollständig
+  // (Überschrift + PDF-Knopf + Wochenraster) sichtbar.
+  it('ein fehlgeschlagener Plan-Abruf lässt die übrigen weiterhin vollständig sichtbar', async () => {
+    (api.listPlans as ReturnType<typeof vi.fn>).mockResolvedValue([
+      summary({ id: 'p1', name: 'Erster', active_today: true }),
+      summary({ id: 'p2', name: 'Zweiter', active_today: true }),
+    ]);
+    (api.getPlan as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      id === 'p2'
+        ? Promise.reject(new Error('Plan wurde gelöscht'))
+        : Promise.resolve(detail({ id, name: 'Erster' })),
+    );
+
+    render(<ShiftPlanning />);
+
+    // Erst auf den Toast warten: der markiert zuverlässig, dass BEIDE Abrufe
+    // (der erfolgreiche und der gescheiterte) settled sind — vorher stehen
+    // während des Ladens beide Überschriften (samt Spinner) noch nebeneinander,
+    // ein verfrühter Check auf "Erster" träfe also auch im Fehlerfall zu.
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(screen.getByText('Erster')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'PDF' })).toBeInTheDocument();
+    expect(screen.queryByText('Zweiter')).not.toBeInTheDocument();
   });
 
   it('zeigt den leeren Zustand, wenn nichts sichtbar ist', async () => {

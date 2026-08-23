@@ -158,6 +158,16 @@ export default function ShiftPlanning() {
   // ebenfalls die Vereinigung über alle aktiven Pläne). Ohne diesen Fix hält
   // sich eine Mitarbeiterin mit Einträgen in zwei Plänen fälschlich für nicht
   // eingeteilt, sobald der jeweils andere Plan alphabetisch vorn liegt.
+  //
+  // Prüfrunde 2 (N-2): `Promise.all` liess EINEN fehlgeschlagenen Abruf (z. B.
+  // ein Plan wurde zwischen Listen- und Detail-Aufruf gelöscht) die gesamte
+  // Zuweisung zu `activeDetails` scheitern — dann blieben ALLE geltenden
+  // Pläne als nackte Überschrift ohne Inhalt stehen, nicht nur der betroffene.
+  // `Promise.allSettled` lässt jeden Plan für sich fehlschlagen; die
+  // erfolgreichen bleiben vollständig sichtbar, der gescheiterte Plan wird aus
+  // der Liste entfernt (kein leerer Karten-Stumpf) und einmalig per Toast
+  // gemeldet — stillschweigendes Weglassen allein hätte einen echten Fehler
+  // (nicht nur "heute nichts eingeteilt") unbemerkt gelassen.
   useEffect(() => {
     const ids = plans.filter((p) => p.active_today).map((p) => p.id);
     if (ids.length === 0) {
@@ -166,16 +176,26 @@ export default function ShiftPlanning() {
     }
     let cancelled = false;
     setActiveDetailsLoading(true);
-    Promise.all(ids.map((id) => api.getPlan(id).then((d) => [id, d] as const)))
-      .then((entries) => {
-        if (!cancelled) setActiveDetails(Object.fromEntries(entries));
-      })
-      .catch((err) => {
-        if (!cancelled) toast.error(getErrorMessage(err, 'Fehler beim Laden der Schichtpläne'));
-      })
-      .finally(() => {
-        if (!cancelled) setActiveDetailsLoading(false);
-      });
+    Promise.allSettled(ids.map((id) => api.getPlan(id).then((d) => [id, d] as const))).then(
+      (results) => {
+        if (cancelled) return;
+        const entries = results
+          .filter(
+            (r): r is PromiseFulfilledResult<readonly [string, PlanDetail]> => r.status === 'fulfilled',
+          )
+          .map((r) => r.value);
+        setActiveDetails(Object.fromEntries(entries));
+        const failedCount = results.length - entries.length;
+        if (failedCount > 0) {
+          toast.error(
+            failedCount === 1
+              ? 'Ein Schichtplan konnte nicht geladen werden und wird nicht angezeigt.'
+              : `${failedCount} Schichtpläne konnten nicht geladen werden und werden nicht angezeigt.`,
+          );
+        }
+        setActiveDetailsLoading(false);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -247,18 +267,23 @@ export default function ShiftPlanning() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* #443 F-2: alle heute geltenden Pläne untereinander — nicht nur einer. */}
-          {activePlans.map((p) => (
-            <PlanBlock
-              key={p.id}
-              heading={p.name}
-              loading={activeDetailsLoading && !activeDetails[p.id]}
-              detail={activeDetails[p.id] ?? null}
-              weekdays={weekdays}
-              downloading={downloadingId === p.id}
-              onDownload={() => downloadPdf(p)}
-            />
-          ))}
+          {/* #443 F-2: alle heute geltenden Pläne untereinander — nicht nur einer.
+              N-2: solange noch geladen wird oder ein Detail erfolgreich da ist, Karte
+              zeigen; ein einzeln gescheiterter Abruf entfernt NUR seine eigene Karte,
+              statt (wie zuvor bei `Promise.all`) alle als nackte Überschrift zu zeigen. */}
+          {activePlans
+            .filter((p) => activeDetailsLoading || activeDetails[p.id])
+            .map((p) => (
+              <PlanBlock
+                key={p.id}
+                heading={p.name}
+                loading={activeDetailsLoading && !activeDetails[p.id]}
+                detail={activeDetails[p.id] ?? null}
+                weekdays={weekdays}
+                downloading={downloadingId === p.id}
+                onDownload={() => downloadPdf(p)}
+              />
+            ))}
 
           {solePreview ? (
             <PlanBlock
