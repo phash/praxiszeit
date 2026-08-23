@@ -703,12 +703,33 @@ def export_plan_pdf(
 
     detail = _build_plan_detail(db, tid, plan, is_admin)
     weekdays = shift_planning_service.get_planning_weekdays(db, tid)
+    # Minor (Prüfrunde 2): §5.3 der Spezifikation verlangt Zeilen sortiert nach
+    # Standort, sort_order, Name — vorher fehlte der Standort in der Sortierung,
+    # Arbeitsplätze desselben Standorts standen dadurch nicht zwangsläufig
+    # beieinander. In Python statt per SQL-JOIN sortiert, damit die NULL-
+    # Behandlung eines standortlosen Arbeitsplatzes (location_id IS NULL)
+    # nicht von der DB-spezifischen NULLS-FIRST/LAST-Voreinstellung abhängt
+    # (SQLite sortiert NULL zuerst, PostgreSQL zuletzt — das wäre eine stille
+    # Divergenz zwischen Test- und Produktivverhalten gewesen). Standortlose
+    # Arbeitsplätze fallen bewusst ans Ende (sie gehören zu keiner Gruppe).
+    # Der Standort selbst wird im PDF NICHT angezeigt — das bleibt eine offene
+    # Gestaltungsfrage, hier geht es nur um die Zeilenreihenfolge.
+    locations_by_id = {
+        loc.id: loc for loc in db.query(Location).filter(Location.tenant_id == tid).all()
+    }
+
+    def _ws_sort_key(w: Workstation):
+        loc = locations_by_id.get(w.location_id)
+        if loc is None:
+            return (1, 0, "", w.sort_order, w.name)
+        return (0, loc.sort_order, loc.name, w.sort_order, w.name)
+
     ws_order = [
         w.name
-        for w in db.query(Workstation)
-        .filter(Workstation.tenant_id == tid)  # F-026
-        .order_by(Workstation.sort_order, Workstation.name)
-        .all()
+        for w in sorted(
+            db.query(Workstation).filter(Workstation.tenant_id == tid).all(),  # F-026
+            key=_ws_sort_key,
+        )
     ]
     # "practice_name" ist im Projekt KEIN Settings-Key (nicht in
     # admin_settings._ALLOWED_SETTINGS) — der Praxisname lebt auf Tenant.name

@@ -189,6 +189,13 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   wenn `active_until_date` in der Vergangenheit liegt. Bewusst **nicht** an
   `_validity_text`/ein gesetztes Datumsfenster gekoppelt (Freigabe-Schalter und
   Datumsfelder sind unabhängige Einstellungen, siehe `is_plan_visible_to`).
+  **Zeilenreihenfolge (Minor, Prüfrunde 2):** sortiert nach Standort
+  (`Location.sort_order`, `Location.name`), dann `Workstation.sort_order`,
+  `Workstation.name` — in Python sortiert (nicht per SQL-`ORDER BY`), damit
+  ein standortloser Arbeitsplatz (`location_id IS NULL`, fällt bewusst ans
+  Ende) nicht von der DB-spezifischen NULLS-FIRST/LAST-Voreinstellung
+  abhängt (SQLite sortiert NULL zuerst, PostgreSQL zuletzt). Der Standort
+  selbst wird im PDF **nicht** angezeigt — offene Gestaltungsfrage.
 - **Auto-Generierung:** `app/services/shift_planning_generator.py` (Greedy,
   read-only ggü. Calc-Modell), Endpoint `POST /plans/{id}/generate`
   (`target_monday` + `mode=replace|fill_gaps`).

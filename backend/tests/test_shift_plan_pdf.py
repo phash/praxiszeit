@@ -517,3 +517,50 @@ def test_export_pdf_does_not_leak_qualification_flags_for_an_employee(db, defaul
     assignment = captured["detail"]["slots"][0]["assignments"][0]
     assert "qualified" not in assignment
     assert captured["detail"]["validation"]["unqualified_slot_ids"] == []
+
+
+def test_export_pdf_orders_workstations_by_location_then_sort_order_then_name(db, default_tenant, monkeypatch):
+    """Minor (Prüfrunde 2): §5.3 der Spezifikation verlangt Zeilen sortiert
+    nach **Standort**, ``sort_order``, Name — vorher sortierte
+    ``export_plan_pdf`` nur nach ``(Workstation.sort_order, Workstation.name)``,
+    der Standort blieb unberücksichtigt. Arbeitsplätze desselben Standorts
+    standen dadurch nicht zwangsläufig beieinander.
+
+    "Zeta" (Standort "Hauptstelle", sort_order 0) und "Alpha" (Standort
+    "Filiale", sort_order 1) sind bewusst so benannt, dass eine reine
+    Namens-/sort_order-Sortierung OHNE Standort "Alpha" vor "Zeta" einordnen
+    würde — nur die Standort-Gruppierung bringt "Zeta" nach vorn. Ein
+    Arbeitsplatz ohne Standort fällt ans Ende."""
+    from io import BytesIO
+
+    from app.models.shift_planning import Location
+    from app.services import shift_plan_export_service
+
+    admin = _user(db, "pdf_order_admin", role=UserRole.ADMIN)
+
+    loc_haupt = Location(tenant_id=DEFAULT_TENANT_ID, name="Hauptstelle", sort_order=0)
+    loc_filiale = Location(tenant_id=DEFAULT_TENANT_ID, name="Filiale", sort_order=1)
+    db.add_all([loc_haupt, loc_filiale])
+    db.commit()
+    db.refresh(loc_haupt)
+    db.refresh(loc_filiale)
+
+    ws_zeta_haupt = Workstation(tenant_id=DEFAULT_TENANT_ID, name="Zeta", location_id=loc_haupt.id, sort_order=0)
+    ws_alpha_filiale = Workstation(tenant_id=DEFAULT_TENANT_ID, name="Alpha", location_id=loc_filiale.id, sort_order=0)
+    ws_ohne_standort = Workstation(tenant_id=DEFAULT_TENANT_ID, name="Springer", location_id=None, sort_order=0)
+    db.add_all([ws_zeta_haupt, ws_alpha_filiale, ws_ohne_standort])
+    db.commit()
+
+    plan = _plan(db, admin, "Standort-Sortierung")
+
+    captured = {}
+
+    def _fake_generate_plan_pdf(detail, *, workstation_order, **kwargs):
+        captured["workstation_order"] = workstation_order
+        return BytesIO(b"%PDF-fake")
+
+    monkeypatch.setattr(shift_plan_export_service, "generate_plan_pdf", _fake_generate_plan_pdf)
+
+    export_plan_pdf(plan.id, db=db, current_user=admin)
+
+    assert captured["workstation_order"] == ["Zeta", "Alpha", "Springer"]
