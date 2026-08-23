@@ -633,10 +633,15 @@ def anonymize_user(
 ):
     """DSGVO Art. 17: Anonymize an inactive user in-place. Keeps time entries (ArbZG SS16 -- 2-year retention), deletes absences.
 
-    # #443: shift_slots.note bleibt hier stehen — der Hinweis haengt an der
-    # Einteilung, nicht an einer Person, und die Einteilung besteht fuer die
-    # uebrigen Mitarbeitenden fort. Im Mandantenpfad (anonymize_tenant) wird er
-    # geleert, weil dort der ganze Mandant verschwindet.
+    #443: shift_slots.note bleibt hier unveraendert stehen. Die Einteilung
+    besteht fuer die uebrigen eingeteilten Mitarbeitenden fort — ein
+    pauschales Leeren wuerde deren Hinweise mitloeschen, nicht nur den der
+    anonymisierten Person. Ein inhaltsbasierter Namens-Scrub (der Hinweistext
+    traegt regelmaessig Personenbezug, z. B. "Vertretung fuer Frau Schmidt")
+    ist neue Mechanik und offen als #440, nicht Teil dieser Aenderung. Im
+    Mandantenpfad (``lifecycle_service.anonymize_tenant``) wird das Feld
+    dagegen komplett geleert, weil dort der ganze Mandant und damit jede
+    betroffene Einteilung verschwindet.
     """
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
