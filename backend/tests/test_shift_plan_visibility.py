@@ -11,8 +11,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.models import User, UserRole
-from app.models.shift_planning import ShiftPlan, ShiftSlot, Workstation
-from app.routers.shift_planning import get_plan, list_plans
+from app.models.shift_planning import ShiftAssignment, ShiftPlan, ShiftSlot, Workstation
+from app.routers.shift_planning import _build_plan_detail, get_plan, list_plans
 from app.services import shift_planning_service
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
@@ -126,6 +126,38 @@ def test_get_plan_opens_released_plan_for_employee(db, default_tenant):
     with pytest.raises(HTTPException) as exc:
         get_plan(draft.id, db=db, current_user=emp)
     assert exc.value.status_code == 404
+
+
+def test_build_plan_detail_hides_qualification_flags_from_non_admin(db, default_tenant):
+    """M-7 (Abschlussgate, Fix-Runde 2): der Branch oeffnet ``_build_plan_detail``
+    erstmals einer Mitarbeiter-Flaeche (dem PDF-Export). Dass die
+    Einweisungs-Kennzeichen (#305 M2d, admin-only) dort NICHT ankommen, stand
+    bislang nur im Code — kein Test hielt es fest."""
+    admin = _user(db, "vis_qual_admin", role=UserRole.ADMIN)
+    emp = _user(db, "vis_qual_emp")
+    ws = _workstation(db, "Labor")
+    plan = _plan(db, admin, "Qualifikationsplan", visible=True)
+    slot = ShiftSlot(
+        tenant_id=DEFAULT_TENANT_ID, shift_plan_id=plan.id, workstation_id=ws.id,
+        weekday=0, start_time=time(8, 0), end_time=time(12, 0), min_staff=1,
+    )
+    db.add(slot)
+    db.commit()
+    db.refresh(slot)
+    # emp ist NICHT fuer "Labor" eingewiesen (keine WorkstationQualification) ->
+    # die Admin-Sicht muss "unqualified"/"qualified": False zeigen.
+    db.add(ShiftAssignment(tenant_id=DEFAULT_TENANT_ID, shift_slot_id=slot.id, user_id=emp.id))
+    db.commit()
+
+    admin_detail = _build_plan_detail(db, DEFAULT_TENANT_ID, plan, True)
+    admin_assignment = admin_detail["slots"][0]["assignments"][0]
+    assert admin_assignment["qualified"] is False
+    assert admin_detail["validation"]["unqualified_slot_ids"] == [str(slot.id)]
+
+    emp_detail = _build_plan_detail(db, DEFAULT_TENANT_ID, plan, False)
+    emp_assignment = emp_detail["slots"][0]["assignments"][0]
+    assert "qualified" not in emp_assignment
+    assert emp_detail["validation"]["unqualified_slot_ids"] == []
 
 
 from uuid import UUID as _UUID
