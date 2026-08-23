@@ -631,7 +631,13 @@ def anonymize_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """DSGVO Art. 17: Anonymize an inactive user in-place. Keeps time entries (ArbZG SS16 -- 2-year retention), deletes absences."""
+    """DSGVO Art. 17: Anonymize an inactive user in-place. Keeps time entries (ArbZG SS16 -- 2-year retention), deletes absences.
+
+    # #443: shift_slots.note bleibt hier stehen — der Hinweis haengt an der
+    # Einteilung, nicht an einer Person, und die Einteilung besteht fuer die
+    # uebrigen Mitarbeitenden fort. Im Mandantenpfad (anonymize_tenant) wird er
+    # geleert, weil dort der ganze Mandant verschwindet.
+    """
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
     if user.is_active:

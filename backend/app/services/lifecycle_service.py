@@ -45,6 +45,7 @@ from app.models import (
     VacationRequest,
     WorkingHoursChange,
 )
+from app.models.shift_planning import ShiftSlot
 from app.models.tenant import Tenant
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,8 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
       billing_address/billing_email → NULL. Stripe ids retained for
       accounting audit. ``anonymized_at`` marks completion.
     - ``signup_audit_log``: email / IP / User-Agent scrubbed, consent row kept.
+    - ``shift_slots``: ``note`` -> NULL (#443; Admin-Freitext ohne
+      Aufbewahrungspflicht, kann Personenbezug tragen).
 
     Abwesenheiten und Zeiteintraege bleiben bewusst stehen (Modul-Docstring:
     Aufbewahrung an anonymisierten FKs) — anders als beim Einzel-Nutzer-Pfad
@@ -255,6 +258,15 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
         WorkingHoursChange.tenant_id == tenant.id,
         WorkingHoursChange.note.isnot(None),
     ).update({WorkingHoursChange.note: None}, synchronize_session=False)
+
+    # #443/#440: Der Hinweis je Schicht-Einteilung ist Admin-Freitext und kann
+    # Personenbezug tragen ("Einarbeitung Frau Meier"). Ein Bulk-UPDATE ist hier
+    # zulaessig — anders als bei time_entry_audit_logs traegt shift_slots keinen
+    # row_hash (#121), den ein Umgehen der Objektschicht stale werden liesse.
+    db.query(ShiftSlot).filter(
+        ShiftSlot.tenant_id == tenant.id,  # F-026
+        ShiftSlot.note.isnot(None),
+    ).update({ShiftSlot.note: None}, synchronize_session=False)
 
     # Release-Review 1.18.1: dieselbe Klasse im Aenderungsprotokoll. Die
     # Freitext-Notizen tragen DIREKTE Identifikatoren, nicht nur Prosa:
