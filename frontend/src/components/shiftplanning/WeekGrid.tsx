@@ -51,7 +51,11 @@ function blockStyle(slot: ShiftSlot, box: SlotBox): React.CSSProperties {
     minHeight: box.height,
     left: `calc(${box.leftPct}% + 2px)`,
     width: `calc(${box.widthPct}% - 4px)`,
-    backgroundColor: `${color}1a`, // ~10% alpha
+    // #443 Fix-Runde 2 (M-1): deckend statt `${color}1a` (~10% Alpha) — ragt ein
+    // gewachsener Block (siehe minHeight oben) in den folgenden hinein, läse
+    // man sonst zwei Texte übereinander statt eines sauber verdeckten. Die
+    // Grundfarbe bleibt sichtbar, der Untergrund (Spalten-Weiß) deckt ab.
+    background: `linear-gradient(${color}1a, ${color}1a), #ffffff`,
     borderLeft: `3px solid ${color}`,
     // #443: sagt an, dass die Blockhöhe hier nicht mehr die Uhrzeit meint.
     borderBottom: box.grown ? `1px dashed ${color}` : undefined,
