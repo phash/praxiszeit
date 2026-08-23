@@ -50,6 +50,19 @@ describe('downloadPlanPdf', () => {
 
     await downloadPlanPdf('plan-3', '///');
 
-    expect(dlMock.mock.calls[0][1]).toBe('Schichtplan_Schichtplan.pdf');
+    // #443 F-7: Stand-Datum (lokal, YYYY-MM-DD) haengt am Dateinamen, damit
+    // zwei Ausdrucke desselben Plans an verschiedenen Tagen nicht kollidieren.
+    expect(dlMock.mock.calls[0][1]).toMatch(/^Schichtplan_Schichtplan_\d{4}-\d{2}-\d{2}\.pdf$/);
+  });
+
+  it('#443 F-7: haengt das heutige lokale Datum an den Dateinamen an', async () => {
+    getMock.mockResolvedValue({ data: new Blob([]) });
+
+    await downloadPlanPdf('plan-4', 'Normalzustand');
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    expect(dlMock.mock.calls[0][1]).toBe(`Schichtplan_Normalzustand_${todayIso}.pdf`);
   });
 });

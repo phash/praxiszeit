@@ -145,7 +145,13 @@ export interface PlanUpdateBody {
   description?: string | null;
   active_from_date?: string | null;
   active_until_date?: string | null;
-  visible_to_employees?: boolean; // #443
+  // #443 F-5 (Prüfrunde 2, Minor): verpflichtend, NICHT optional. `PUT
+  // /plans/{id}` ist serverseitig ein Vollersatz — ein Aufrufer, der das Feld
+  // vergisst, hätte sonst unbemerkt die Freigabe zurückgenommen (die vorige
+  // Fassung füllte ein fehlendes Feld mit `?? false`). Ein fehlender Wert soll
+  // hier laut fehlschlagen (TS-Fehler beim Aufrufer), nicht still auf "nicht
+  // sichtbar" zurückfallen.
+  visible_to_employees: boolean;
 }
 export const updatePlan = (id: string, body: PlanUpdateBody) =>
   apiClient
@@ -154,7 +160,7 @@ export const updatePlan = (id: string, body: PlanUpdateBody) =>
       description: body.description ?? null,
       active_from_date: body.active_from_date ?? null,
       active_until_date: body.active_until_date ?? null,
-      visible_to_employees: body.visible_to_employees ?? false,
+      visible_to_employees: body.visible_to_employees,
     })
     .then((r) => r.data);
 export const deletePlan = (id: string) => apiClient.delete(`${BASE}/plans/${id}`);
@@ -173,13 +179,28 @@ export const activatePlan = (id: string) =>
 export const deactivatePlan = (id: string) =>
   apiClient.post<PlanSummary>(`${BASE}/plans/${id}/deactivate`).then((r) => r.data);
 
+// #443 F-7 (Prüfrunde 2, Minor): lokales Datum fürs Dateinamen-Suffix — NICHT
+// über `toISOString()` (rollt lokale Mitternacht in einer UTC+-Zone, z. B.
+// Europe/Berlin, auf den Vortag zurück; dokumentiert an
+// components/shiftplanning/weekGridUtils.ts::mondayOfWeek).
+function todayIsoLocal(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // #443: PDF-Aushang. Der Dateiname wird hier nochmals bereinigt — der Server
 // setzt zwar Content-Disposition, aber downloadBlob nutzt den übergebenen
 // Namen, und ein Plan darf "Sommer 2026 (KW 30/31)" heißen.
+//
+// F-7: der Server hängt im Content-Disposition-Kopf bereits ein Stand-Datum
+// an (`Schichtplan_<Plan>_2026-08-23.pdf`) — ohne das hier nachzubilden,
+// kollidieren zwei Ausdrucke desselben Plans an verschiedenen Tagen im
+// Download-Ordner, und dem Aushang sieht man sein Alter nicht an.
 export const downloadPlanPdf = async (id: string, planName: string): Promise<void> => {
   const res = await apiClient.get(`${BASE}/plans/${id}/export.pdf`, { responseType: 'blob' });
   const safe = planName.replace(/[^\p{L}\p{N}\-_]+/gu, '_').replace(/^_+|_+$/g, '') || 'Schichtplan';
-  downloadBlob(res.data, `Schichtplan_${safe}.pdf`, 'application/pdf');
+  downloadBlob(res.data, `Schichtplan_${safe}_${todayIsoLocal()}.pdf`, 'application/pdf');
 };
 
 // ─── slots ───
