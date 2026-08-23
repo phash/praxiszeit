@@ -33,11 +33,16 @@ Bewusst NICHT geprueft (beides ist so gewollt, siehe Modul-Docstring von
 * ``token_version`` wird nicht hochgezaehlt — ``auth.py`` sperrt bereits ueber
   ``is_active``.
 
-Bekannte offene Stelle (nicht Gegenstand dieser Datei, im Bericht vermerkt):
-``tenants.slug`` wird aus dem Praxisnamen abgeleitet (``signup_service._slug_from_name``)
-und NICHT geschrubbt, waehrend ``tenants.name`` geschrubbt wird. Ein Fix
-beruehrt eine Unique-Spalte und die ``slug == "default"``-Suche des Bootstraps
-in ``main.py`` — deshalb hier nur benannt, nicht stillschweigend zugesichert.
+#435 (behoben): ``tenants.slug`` wurde aus dem Praxisnamen abgeleitet
+(``signup_service._slug_from_name``) und blieb bislang ungeschrubbt, waehrend
+``tenants.name`` geschrubbt wurde — der Klarname stand danach weiter in einer
+eindeutigen, extern sichtbaren Kennung. ``anonymize_tenant`` ersetzt den Slug
+jetzt durch ``anon-<tenant_id>`` (eindeutig, kollidiert nicht an der
+Unique-Constraint) — ausser beim On-Prem-Default-Mandanten
+(``slug == "default"``), den ``main.py`` beim Bootstrap ueber genau diesen
+Slug sucht. ``slug`` steht deshalb jetzt in ``PII`` statt in ``KEPT``;
+``TestSlugEindeutigkeit`` deckt den Unique-Fall bei zwei anonymisierten
+Mandanten ab.
 """
 from __future__ import annotations
 
@@ -61,7 +66,7 @@ from app.models import (
 )
 from app.models.shift_planning import ShiftPlan, ShiftSlot, Workstation
 from app.models.tenant import Tenant
-from app.services import auth_service, lifecycle_service
+from app.services import auth_service, lifecycle_service, signup_service
 from tests.conftest import TestingSessionLocal, engine
 
 TID = uuid.UUID("cccccccc-0000-4000-8000-00000000000c")
@@ -82,6 +87,11 @@ PII = {
     "totp_secret": "PIITOTPGEHEIMNISAAA",
     "wh_note": "PIIVERTRAGSNOTIZAAA",
     "tenant_name": "PIIPRAXISNAMEAAA",
+    # #435: der Slug wird beim Signup real aus dem Praxisnamen abgeleitet
+    # (``signup_service._slug_from_name``) — hier ueber dieselbe Funktion
+    # berechnet, damit der Fixture-Wert exakt das simuliert, was in Produktion
+    # tatsaechlich in ``tenants.slug`` landet.
+    "tenant_slug": signup_service._slug_from_name("PIIPRAXISNAMEAAA", set()),
     "company_name": "PIIFIRMAAAA",
     "vat_id": "PIIUSTIDAAA",
     "billing_email": "PIIRECHNUNGAAA@praxis.invalid",
@@ -105,10 +115,9 @@ PII = {
     "shift_note": "PIISCHICHTNOTIZAAA",
 }
 
-# Diese beiden bleiben absichtlich stehen und duerfen die Suche nicht ausloesen.
+# Diese bleiben absichtlich stehen und duerfen die Suche nicht ausloesen.
 KEPT = {
     "stripe_customer": "cus_PIIWIRDBEHALTEN",
-    "slug": "mandant-c",
 }
 
 
@@ -136,7 +145,7 @@ def mandant(_db_session):
     tenant = Tenant(
         id=TID,
         name=PII["tenant_name"],
-        slug=KEPT["slug"],
+        slug=PII["tenant_slug"],
         is_active=True,
         mode="multi",
         plan="trial",
@@ -378,6 +387,10 @@ class TestKeinePersonenbezogenenDatenMehr:
         assert tenant.subscription_status == "canceled"
         assert tenant.name == "[gelöscht]"
         assert tenant.billing_address is None
+        # #435: der Slug trug den Praxisnamen weiter, obwohl name geschrubbt
+        # wurde. Der Ersatzwert ist an die Tenant-ID gebunden statt konstant
+        # (siehe TestSlugEindeutigkeit) und traegt selbst keinen Personenbezug.
+        assert tenant.slug == f"anon-{TID}"
 
 
 class TestAufbewahrungBleibt:
@@ -469,3 +482,78 @@ class TestUeberDenCronPfad:
         hits = _sweep(_db_session)
         assert hits == {}, "personenbezogene Reste nach dem Cron-Lauf: " + "; ".join(
             f"{k} in {v}" for k, v in sorted(hits.items()))
+
+
+class TestSlugEindeutigkeit:
+    """#435: ``slug`` ist unique. Ein konstanter Ersatzwert (z.B. schlicht
+    "geloescht") wuerde beim zweiten anonymisierten Mandanten mit einem
+    ``IntegrityError`` kollidieren — genau der Fallstrick, den das Ticket
+    benennt. Der gewaehlte Ersatzwert (``anon-<tenant_id>``) haengt an der
+    Tenant-ID und ist damit von Natur aus eindeutig."""
+
+    def test_zwei_anonymisierte_mandanten_kollidieren_nicht(self, _db_session, mandant):
+        zweiter = Tenant(
+            id=OTHER_TID, name="Zweite Praxis", slug="zweite-praxis-slug",
+            is_active=True, mode="multi",
+        )
+        _db_session.add(zweiter)
+        _db_session.commit()
+
+        # Beide Laeufe committen selbst (Default `commit=True`) — kollidiert
+        # der Ersatzwert, schlaegt der zweite Aufruf mit IntegrityError fehl.
+        lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
+        lifecycle_service.anonymize_tenant(_db_session, zweiter)
+
+        _db_session.expire_all()
+        erster = _db_session.query(Tenant).filter(Tenant.id == TID).one()
+        zweiter_db = _db_session.query(Tenant).filter(Tenant.id == OTHER_TID).one()
+        assert erster.slug == f"anon-{TID}"
+        assert zweiter_db.slug == f"anon-{OTHER_TID}"
+        assert erster.slug != zweiter_db.slug
+
+    def test_gleicher_ausgangs_slug_kollidiert_ebenfalls_nicht(self, _db_session, mandant):
+        """Selbst wenn zwei Mandanten (Kollisions-Suffix aus
+        ``_slug_from_name``, z.B. "praxis-mueller"/"praxis-mueller-2")
+        zufaellig denselben Ausgangs-Slug-Stamm teilen, entscheidet am Ende
+        die Tenant-ID — nicht der alte Slug-Wert."""
+        zweiter = Tenant(
+            id=OTHER_TID, name="Andere Praxis", slug=PII["tenant_slug"] + "-2",
+            is_active=True, mode="multi",
+        )
+        _db_session.add(zweiter)
+        _db_session.commit()
+
+        lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
+        lifecycle_service.anonymize_tenant(_db_session, zweiter)
+
+        _db_session.expire_all()
+        slugs = {
+            t.slug for t in _db_session.query(Tenant).filter(
+                Tenant.id.in_([TID, OTHER_TID])).all()
+        }
+        assert len(slugs) == 2
+
+
+class TestDefaultMandantSlugBleibt:
+    """#435: ``main.py`` sucht den On-Prem-Default-Mandanten beim Bootstrap
+    ueber ``Tenant.slug == "default"``. Ein Selbstbedienungs-Loeschantrag ist
+    zwar als SaaS-Pfad gedacht, aber technisch nicht auf ``is_saas()``
+    gegated — ein On-Prem-Admin kann ihn fuer den eigenen (Default-)Mandanten
+    ausloesen. Ein umgeschriebener Slug faende den Default-Mandanten beim
+    naechsten Start nicht mehr (Totalausfall)."""
+
+    def test_default_slug_wird_nicht_umgeschrieben(self, _db_session):
+        default = Tenant(
+            id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            name="Default", slug="default", is_active=True, mode="single",
+        )
+        _db_session.add(default)
+        _db_session.commit()
+
+        lifecycle_service.anonymize_tenant(_db_session, default)
+        _db_session.expire_all()
+
+        tenant = _db_session.query(Tenant).filter(Tenant.slug == "default").first()
+        assert tenant is not None, (
+            "main.py-Bootstrap faende den Default-Mandanten nicht mehr")
+        assert tenant.name == "[gelöscht]", "name wird trotzdem geschrubbt"
