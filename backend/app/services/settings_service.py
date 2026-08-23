@@ -44,3 +44,13 @@ def get_int_setting(db: Session, key: str, tenant_id=None, default: int = 0) -> 
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD = (
+    "show_year_end_overtime_employee_dashboard"
+)
+
+SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD = (
+    "show_year_end_overtime_admin_dashboard"
+)
+

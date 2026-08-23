@@ -145,6 +145,27 @@ export default function Settings() {
   const [newDate, setNewDate] = useState('');
   const [creating, setCreating] = useState(false);
 
+  // Jahresende-Projektion der Überstunden.
+  // Default an: Nur ein explizites "false" deaktiviert die Anzeige.
+  const [showEmployeeYearEndProjection, setShowEmployeeYearEndProjection] =
+    useState(true);
+
+  const [
+    originalShowEmployeeYearEndProjection,
+    setOriginalShowEmployeeYearEndProjection,
+  ] = useState(true);
+
+  const [showAdminYearEndProjection, setShowAdminYearEndProjection] =
+    useState(true);
+
+  const [
+    originalShowAdminYearEndProjection,
+    setOriginalShowAdminYearEndProjection,
+  ] = useState(true);
+
+  const [savingYearEndProjection, setSavingYearEndProjection] =
+    useState(false);
+
   // Inline edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -235,6 +256,26 @@ export default function Settings() {
       const childSickVal = childSickSetting?.value ?? '15';
       setChildSickDefault(childSickVal);
       setOriginalChildSickDefault(childSickVal);
+      
+      const employeeYearEndSetting = settingsRes.data.find(
+	  (s) => s.key === 'show_year_end_overtime_employee_dashboard',
+      );
+
+      const employeeYearEndValue =
+        employeeYearEndSetting?.value?.toLowerCase() !== 'false';
+
+      setShowEmployeeYearEndProjection(employeeYearEndValue);
+      setOriginalShowEmployeeYearEndProjection(employeeYearEndValue);
+
+      const adminYearEndSetting = settingsRes.data.find(
+        (s) => s.key === 'show_year_end_overtime_admin_dashboard',
+      );
+
+      const adminYearEndValue =
+        adminYearEndSetting?.value?.toLowerCase() !== 'false';
+
+      setShowAdminYearEndProjection(adminYearEndValue);
+      setOriginalShowAdminYearEndProjection(adminYearEndValue); 
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -452,6 +493,44 @@ export default function Settings() {
       setSavingChildSick(false);
     }
   };
+
+const saveYearEndProjection = async () => {
+  setSavingYearEndProjection(true);
+
+  try {
+    await Promise.all([
+      apiClient.put(
+        '/admin/settings/show_year_end_overtime_employee_dashboard',
+        {
+          value: String(showEmployeeYearEndProjection),
+        },
+      ),
+      apiClient.put(
+        '/admin/settings/show_year_end_overtime_admin_dashboard',
+        {
+          value: String(showAdminYearEndProjection),
+        },
+      ),
+    ]);
+
+    setOriginalShowEmployeeYearEndProjection(
+      showEmployeeYearEndProjection,
+    );
+    setOriginalShowAdminYearEndProjection(
+      showAdminYearEndProjection,
+    );
+
+    toast.success('Überstunden-Projektion gespeichert.');
+  } catch (err) {
+    toast.error(getErrorMessage(err));
+
+    // Die beiden PUTs sind nicht atomar. Bei einem Teilfehler deshalb
+    // den tatsächlich gespeicherten Stand erneut laden.
+    void loadSettings();
+  } finally {
+    setSavingYearEndProjection(false);
+  }
+};
 
   const createHoliday = async () => {
     if (!newName.trim() || !newDate) {
@@ -1119,6 +1198,127 @@ export default function Settings() {
           </button>
         </div>
       </div>
+
+      {/* Voraussichtlicher Überstundensaldo zum Jahresende */}
+<div className="bg-white rounded-xl shadow-sm p-6">
+  <h2 className="text-lg font-semibold text-gray-900 mb-4">
+    Überstunden-Projektion zum Jahresende
+  </h2>
+
+  <p className="text-sm text-gray-500 mb-5">
+    PraxisZeit kann den aktuellen Überstundensaldo um bereits
+    eingetragenen künftigen Freizeitausgleich vermindern und daraus
+    einen voraussichtlichen Saldo zum 31.12. anzeigen. Die Anzeige
+    lässt sich für Mitarbeitende und Administratoren getrennt
+    aktivieren.
+  </p>
+
+  <div className="space-y-5 max-w-xl">
+    <div className="flex items-center justify-between gap-6">
+      <div>
+        <label
+          htmlFor="employee-year-end-projection-toggle"
+          className="text-sm font-medium text-gray-700"
+        >
+          Im Mitarbeiter-Dashboard anzeigen
+        </label>
+
+        <p className="text-xs text-gray-500 mt-1">
+          Mitarbeitende sehen den voraussichtlichen Jahressaldo in
+          ihrem eigenen Überstundenkonto.
+        </p>
+      </div>
+
+      <button
+        id="employee-year-end-projection-toggle"
+        type="button"
+        role="switch"
+        aria-checked={showEmployeeYearEndProjection}
+        onClick={() =>
+          setShowEmployeeYearEndProjection(
+            !showEmployeeYearEndProjection,
+          )
+        }
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          showEmployeeYearEndProjection
+            ? 'bg-primary'
+            : 'bg-gray-300'
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+            showEmployeeYearEndProjection
+              ? 'translate-x-6'
+              : 'translate-x-1'
+          }`}
+        />
+      </button>
+    </div>
+
+    <div className="flex items-center justify-between gap-6 pt-5 border-t border-gray-100">
+      <div>
+        <label
+          htmlFor="admin-year-end-projection-toggle"
+          className="text-sm font-medium text-gray-700"
+        >
+          Im Admin-Dashboard anzeigen
+        </label>
+
+        <p className="text-xs text-gray-500 mt-1">
+          Im Monats- und Wochenbericht erscheint die zusätzliche
+          Spalte „Überstd. Jahresende“.
+        </p>
+      </div>
+
+      <button
+        id="admin-year-end-projection-toggle"
+        type="button"
+        role="switch"
+        aria-checked={showAdminYearEndProjection}
+        onClick={() =>
+          setShowAdminYearEndProjection(
+            !showAdminYearEndProjection,
+          )
+        }
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          showAdminYearEndProjection
+            ? 'bg-primary'
+            : 'bg-gray-300'
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+            showAdminYearEndProjection
+              ? 'translate-x-6'
+              : 'translate-x-1'
+          }`}
+        />
+      </button>
+    </div>
+  </div>
+
+  <div className="mt-5">
+    <button
+      onClick={saveYearEndProjection}
+      disabled={
+        savingYearEndProjection ||
+        (
+          showEmployeeYearEndProjection ===
+            originalShowEmployeeYearEndProjection &&
+          showAdminYearEndProjection ===
+            originalShowAdminYearEndProjection
+        )
+      }
+      className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      <Save size={16} />
+      Speichern
+    </button>
+  </div>
+</div>
+
+
+
 
       {/* Soll-Fenster-Puffer (#201) */}
       <div className="bg-white rounded-xl shadow-sm p-6">
