@@ -137,7 +137,16 @@ export interface SlotBox {
   height: number; // zeitproportional — bleibt die Aussage über die Uhrzeit
   leftPct: number; // 0..100
   widthPct: number; // 0..100
-  // #443
+  // #443 F-8 (Prüfrunde 2, Minor): im Produktionscode wird nur `grown` gelesen
+  // (WeekGrid.tsx) — `contentHeight` selbst treibt keine Anzeige. Bewusst
+  // trotzdem exponiert: `weekGridUtils.test.ts` prüft die Pixel-Schätzung
+  // direkt gegen diesen Wert statt nur gegen das Bool `grown`, und genau diese
+  // Schätzung hatte in diesem Branch bereits zwei reale Bugs (I-1, M-2) — ein
+  // exakter Zahlenvergleich fängt eine künftige Verschiebung der
+  // Zeilen-/Höhen-Konstanten, die `grown` allein unverändert ließe (z. B. ein
+  // Off-by-one, das nie über die Schwelle kippt, an der `grown` von false auf
+  // true wechselt). Nicht wieder entfernen, ohne die betroffenen Tests auf
+  // `estimateContentHeight` umzustellen.
   contentHeight: number;
   grown: boolean; // contentHeight > height → Blockhöhe meint nicht mehr die Uhrzeit
 }
