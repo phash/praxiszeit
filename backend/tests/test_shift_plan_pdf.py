@@ -5,11 +5,40 @@ Der Renderer ist bewusst eine reine Funktion: er bekommt das fertige Dict von
 zu einem zweiten Abfragepfad auswachsen, der dem Bildschirm davonläuft — genau
 das ist im Berechnungsmodell dieses Projekts mehrfach passiert.
 """
+import base64
+import re
+import zlib
 from datetime import date
 
 from reportlab.pdfbase import pdfmetrics
 
 from app.services import shift_plan_export_service
+
+
+def _pdf_text(buf) -> str:
+    """Der Text aus den Inhaltsströmen eines reportlab-PDF.
+
+    ReportLab schreibt die Seiten als ``ASCII85Decode``+``FlateDecode``. Im
+    Container ist keine PDF-Bibliothek installiert (``pdftotext`` u. ä. nicht
+    garantiert vorhanden) — die Ströme werden mit Bordmitteln direkt dekodiert
+    (Muster wie ``test_export_employment_window.py``/``test_export_endpoints.py``).
+    """
+    raw = buf.getvalue()
+    parts: list[str] = []
+    for match in re.finditer(rb"stream\r?\n(.*?)endstream", raw, re.S):
+        chunk = match.group(1).strip()
+        decoded = chunk
+        for decoder in (
+            lambda x: zlib.decompress(base64.a85decode(x, adobe=True)),
+            zlib.decompress,
+        ):
+            try:
+                decoded = decoder(chunk)
+                break
+            except Exception:  # noqa: BLE001 — nächster Dekodierversuch
+                continue
+        parts.append(decoded.decode("latin-1", "replace"))
+    return "\n".join(parts)
 
 
 def _detail(**over):
@@ -61,8 +90,9 @@ def test_renders_a_pdf():
 
 
 def test_plan_without_slots_still_renders():
-    """Ein leerer Plan darf kein 500 werden — reportlab wirft bei einer
-    Tabelle ohne Datenzeilen."""
+    """Ein leerer Plan darf kein 500 werden — er rendert den Fließtext-Hinweis
+    statt der Tabelle (siehe Kommentar bei ``len(table_data) == 1`` in
+    ``shift_plan_export_service``)."""
     buf = _render(slots=[])
     assert buf.getvalue()[:4] == b"%PDF"
 
@@ -80,13 +110,32 @@ def test_markup_in_user_text_does_not_break_the_render():
 
 def test_disabled_weekdays_are_not_rendered():
     """#371: ein abgeschalteter Wochentag ist keine Planfläche — er darf auch
-    im Ausdruck keine Spalte bekommen."""
+    im Ausdruck keine Spalte bekommen.
+
+    Ein reiner Bytelängen-Vergleich (`len(small) < len(wide)`) fängt zwar eine
+    Totalregression, sagt aber nichts darüber, ob die RICHTIGEN Tage entfallen
+    — es könnte zufällig weniger herauskommen. Deshalb hier der Inhalt: die
+    Kopfzeile trägt volle Wochentagsnamen (``WEEKDAY_LABELS``), also muss
+    "Montag" (freigeschaltet, weekday=0) in beiden PDFs auftauchen, "Dienstag"
+    (weekday=1, nur im breiten Plan freigeschaltet) nur in ``wide``."""
     small = shift_plan_export_service.generate_plan_pdf(
         _detail(), weekdays=[0], workstation_order=["Tresen", "Labor"],
         practice_name=None, generated_on=date(2026, 8, 23),
     )
     wide = _render()
-    assert len(small.getvalue()) < len(wide.getvalue())
+
+    small_text = _pdf_text(small)
+    wide_text = _pdf_text(wide)
+
+    montag_in_small = "Montag" in small_text
+    dienstag_in_small = "Dienstag" in small_text
+    montag_in_wide = "Montag" in wide_text
+    dienstag_in_wide = "Dienstag" in wide_text
+
+    assert montag_in_small, "abgeschalteter Plan sollte den freigeschalteten Montag zeigen"
+    assert not dienstag_in_small, "abgeschalteter Dienstag darf im Ausdruck keine Spalte bekommen"
+    assert montag_in_wide, "voller Plan sollte Montag zeigen"
+    assert dienstag_in_wide, "voller Plan sollte den freigeschalteten Dienstag zeigen"
 
 
 def test_unknown_workstation_still_appears():

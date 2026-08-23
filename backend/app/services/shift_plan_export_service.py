@@ -158,8 +158,11 @@ def generate_plan_pdf(
         table_data.append(row)
 
     if len(table_data) == 1:
-        # Kein einziger Slot auf einem freigeschalteten Tag. reportlab wirft bei
-        # einer Tabelle ohne Datenzeile — stattdessen eine ehrliche Zeile.
+        # Kein einziger Slot auf einem freigeschalteten Tag — table_data enthält
+        # dann nur die Kopfzeile. reportlab würde daraus anstandslos eine Tabelle
+        # mit einer einzigen (Kopf-)Zeile bauen (es wirft nur bei GAR keiner Zeile,
+        # Table([])); eine Tabelle ohne jede Dateninformation ist aber schlicht
+        # unschön zu lesen — deshalb hier bewusst ein Fließtext statt der Tabelle.
         story.append(Paragraph("Für diesen Plan sind keine Einteilungen hinterlegt.", _CELL))
     else:
         usable = landscape(A4)[0] - 24 * mm
