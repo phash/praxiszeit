@@ -168,10 +168,24 @@ gestrichelte Unterkante und `title="Anzeige reicht über das Zeitfenster hinaus"
 
 Bewusst geschätzt statt im DOM gemessen: die Funktion bleibt rein und
 unit-testbar, und das Ergebnis ist über alle Browser gleich. Die Schätzung ist
-damit eine **Untergrenze** — bricht ein langer Name in einer sehr schmalen Spur
-auf zwei Zeilen um, wächst der Block korrekt, kann aber ohne Markierung bleiben.
-Das ist hingenommen: die Markierung ist ein Hinweis, keine Zusicherung. Der
-umgekehrte Fehler (Markierung ohne Wachstum) kann nicht auftreten.
+damit in erster Linie eine **Untergrenze** — bricht ein langer Name in einer
+sehr schmalen Spur auf zwei Zeilen um, wächst der Block korrekt, kann aber ohne
+Markierung bleiben. Das ist hingenommen: die Markierung ist ein Hinweis, keine
+Zusicherung.
+
+**Spezifikations-Drift (nachgetragen, Prüfrunde 2):** hier stand ursprünglich,
+der umgekehrte Fehler (Markierung ohne echtes Wachstum) könne "nicht
+auftreten" — das war zu stark und wurde im Code inzwischen ehrlich
+zurückgenommen (Kommentar an `estimateContentHeight` in `weekGridUtils.ts`).
+Er ist durch die feste Konstante `NAME_CHARS_PER_LINE` zwar *deutlich
+seltener*, aber nicht grundsätzlich ausgeschlossen: in einer sehr breiten Spur
+(z. B. der vollen Spalte der Tagesansicht) passen real mehr Zeichen in eine
+Zeile, als die Konstante annimmt — bei sehr vielen, kombiniert langen Namen
+kann die Schätzung dort eine zusätzliche Zeile ansetzen, die real nicht
+gebraucht wird. Der konkret gemeldete Fehlerfall (kurze, wenige Namen in einer
+schmalen/normalen Spur) ist damit behoben; eine Garantie für jede denkbare
+Namenskombination und Spurbreite gäbe nur eine echte DOM-Messung, die hier
+bewusst vermieden wird (siehe Kommentar an `NAME_CHARS_PER_LINE`).
 
 Wächst ein Block in den folgenden hinein, malt der folgende darüber — die
 DOM-Reihenfolge folgt der Startzeit — und bleibt lesbar.
