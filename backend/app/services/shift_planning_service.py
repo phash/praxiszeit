@@ -76,6 +76,23 @@ def is_plan_active_on(plan, d) -> bool:
     return (frm is None or frm <= d) and (until is None or until >= d)
 
 
+def is_plan_visible_to(plan, d, is_admin: bool) -> bool:
+    """#443: Darf dieser Nutzer den Plan sehen?
+
+    Admins sehen jeden Plan ihres Mandanten. Für alle anderen gilt: der Plan ist
+    an ``d`` aktiv ODER er wurde ausdrücklich für Mitarbeitende freigegeben.
+
+    Diese Funktion ist die EINZIGE Quelle der Regel. ``list_plans`` und
+    ``get_plan`` hatten bis #443 je eine eigene Inline-Kopie — genau das Muster,
+    das im Projekt schon mehrfach auseinandergelaufen ist (CR-Genehmigung,
+    Feiertags-Guard). Eine neue Lesefläche ruft diesen Helfer, sie baut die
+    Bedingung nicht nach.
+    """
+    if is_admin:
+        return True
+    return is_plan_active_on(plan, d) or bool(plan.visible_to_employees)
+
+
 def plan_active_filter(d):
     """SQLAlchemy filter expression equivalent to ``is_plan_active_on`` for date ``d``."""
     has_window = or_(ShiftPlan.active_from_date.isnot(None), ShiftPlan.active_until_date.isnot(None))

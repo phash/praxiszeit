@@ -10,8 +10,10 @@ import {
   mondayOfWeek,
   computeWeekLayout,
   visibleWeekdays,
+  estimateContentHeight,
   type SlotLike,
   GRID_START_HOUR,
+  GRID_END_HOUR,
   HOUR_PX,
   DEFAULT_WS_COLORS,
 } from './weekGridUtils';
@@ -141,6 +143,134 @@ describe('computeWeekLayout', () => {
       slot('c', 3, '10:00', '13:00'),
     ]);
     expect(boxes['a'].widthPct).toBeCloseTo(100 / 3, 5);
+  });
+});
+
+const slotWithContent = (over: Record<string, unknown> = {}) => ({
+  id: 's1',
+  weekday: 0,
+  start_time: '08:00',
+  end_time: '12:00',
+  assignments: [],
+  note: null,
+  ...over,
+});
+
+// #443 Fix-Runde 2 (I-1): eine zugewiesene Person, wie sie estimateContentHeight
+// jetzt sieht — mit Namen, nicht mehr als anonymes {}.
+const person = (name: string) => ({ user_name: name });
+
+describe('estimateContentHeight', () => {
+  it('rechnet Kopfzeile, Zeitzeile und eine Namenszeile ohne Zuweisung', () => {
+    // 3 Zeilen à 14px + 8px Innenabstand
+    expect(estimateContentHeight(slotWithContent())).toBe(3 * 14 + 8);
+  });
+
+  it('I-1: mehrere kurze Namen teilen sich EINE Zeile (nicht mehr eine je Person)', () => {
+    // "Ann, Ben, Cem" = 13 Zeichen, passt in eine NAME_CHARS_PER_LINE(20)-Zeile.
+    // Vor Fix-Runde 2 hätte das 3 Namenszeilen gerechnet (5 Zeilen gesamt).
+    const s = slotWithContent({ assignments: [person('Ann'), person('Ben'), person('Cem')] });
+    expect(estimateContentHeight(s)).toBe(3 * 14 + 8);
+  });
+
+  it('eine lange, zusammengesetzte Namensliste bricht in mehrere Zeilen um', () => {
+    // 45 Zeichen kommaseparierter Namen ÷ 20 Zeichen/Zeile = 3 Namenszeilen.
+    const s = slotWithContent({ assignments: [person('x'.repeat(45))] });
+    expect(estimateContentHeight(s)).toBe((2 + 3) * 14 + 8);
+  });
+
+  it('rechnet den Hinweis in 20-Zeichen-Zeilen', () => {
+    const short = slotWithContent({ note: 'Einarbeitung' }); // 1 Zeile
+    const long = slotWithContent({ note: 'x'.repeat(45) }); // 3 Zeilen
+    expect(estimateContentHeight(short)).toBe((3 + 1) * 14 + 8);
+    expect(estimateContentHeight(long)).toBe((3 + 3) * 14 + 8);
+  });
+
+  it('ignoriert einen Hinweis aus Leerzeichen', () => {
+    expect(estimateContentHeight(slotWithContent({ note: '   ' }))).toBe(
+      estimateContentHeight(slotWithContent()),
+    );
+  });
+});
+
+describe('computeWeekLayout: grown', () => {
+  it('markiert einen Slot als gewachsen, wenn die Namen selbst umbrechen', () => {
+    // 75 Minuten = 60px zeitproportional. Ein 25-Zeichen-Name braucht 2
+    // Namenszeilen (25 ÷ 20 → aufgerundet), macht 4 Zeilen gesamt = 64px > 60px.
+    const s = slotWithContent({
+      start_time: '08:00',
+      end_time: '09:15',
+      assignments: [person('x'.repeat(25))],
+    });
+    const layout = computeWeekLayout([s]);
+    expect(layout.boxes.s1.grown).toBe(true);
+    expect(layout.boxes.s1.contentHeight).toBe(64);
+  });
+
+  it('markiert einen ausreichend langen Slot NICHT als gewachsen', () => {
+    // 4 Stunden = 192px. "Ann, Ben" passt in eine Namenszeile → 3 Zeilen
+    // gesamt = 50px.
+    const s = slotWithContent({
+      start_time: '08:00',
+      end_time: '12:00',
+      assignments: [person('Ann'), person('Ben')],
+    });
+    const layout = computeWeekLayout([s]);
+    expect(layout.boxes.s1.grown).toBe(false);
+    expect(layout.boxes.s1.height).toBe(4 * HOUR_PX);
+  });
+
+  it('I-1-Regressionsfall: breite Spur, drei kurze Namen, kurzer Slot → NICHT gewachsen', () => {
+    // Der konkret gemeldete Fehlerfall: Slot 08:00–09:30 (90 Min = 72px),
+    // 3 Personen. "Eins, Zwei, Drei" = 16 Zeichen, passt in eine Namenszeile
+    // → 3 Zeilen gesamt = 50px ≤ 72px. Die alte "eine Zeile je Person"-
+    // Schätzung hätte hier (1+1+3)*14+8 = 78px gerechnet und fälschlich
+    // gewachsen markiert, obwohl real nur eine umbrechende Namenszeile
+    // gebraucht wird.
+    const s = slotWithContent({
+      start_time: '08:00',
+      end_time: '09:30',
+      assignments: [person('Eins'), person('Zwei'), person('Drei')],
+    });
+    const layout = computeWeekLayout([s]);
+    expect(layout.boxes.s1.grown).toBe(false);
+    expect(layout.boxes.s1.contentHeight).toBe(50);
+  });
+
+  it('lässt die zeitproportionale Höhe unberührt', () => {
+    const s = slotWithContent({
+      start_time: '08:00',
+      end_time: '08:30',
+      note: 'x'.repeat(45), // erzwingt Wachstum unabhängig von den Namen
+    });
+    const layout = computeWeekLayout([s]);
+    expect(layout.boxes.s1.grown).toBe(true);
+    // height bleibt die Zeitdauer (Untergrenze 18px) — das Wachsen macht das CSS
+    expect(layout.boxes.s1.height).toBe(24);
+  });
+});
+
+describe('computeWeekLayout: Rasterhöhe wächst mit (M-2)', () => {
+  it('das Grid-`height` deckt einen gewachsenen Block am Rasterende ab, statt in sich selbst zu scrollen', () => {
+    // 21:00–22:00 (1h = 48px), am Ende des Default-Fensters (06–22 = 768px
+    // Zeitspanne). Ein 45-Zeichen-Hinweis braucht 3 Zeilen → contentHeight
+    // (1+1+1+3)*14+8 = 92px. Blockboden = top(720) + 92 = 812 > 768 —
+    // das Grid muss also höher als die reine Zeitspanne werden.
+    const s = slotWithContent({
+      start_time: '21:00',
+      end_time: '22:00',
+      note: 'x'.repeat(45),
+    });
+    const layout = computeWeekLayout([s]);
+    expect(layout.boxes.s1.top).toBe(15 * HOUR_PX); // 720
+    expect(layout.boxes.s1.contentHeight).toBe(92);
+    expect(layout.height).toBe(15 * HOUR_PX + 92); // 812, nicht die reine 768px-Zeitspanne
+  });
+
+  it('bleibt bei der reinen Zeitspanne, wenn kein Block wächst', () => {
+    const s = slotWithContent({ start_time: '09:00', end_time: '17:00' });
+    const layout = computeWeekLayout([s]);
+    expect(layout.height).toBe((GRID_END_HOUR - GRID_START_HOUR) * HOUR_PX);
   });
 });
 

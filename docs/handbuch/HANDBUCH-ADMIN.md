@@ -1030,6 +1030,45 @@ Warnung, blockiert nicht).
 gleichzeitig aktiv** sein. Mitarbeitende sehen ihre heutige Einteilung im
 Dashboard.
 
+**Freigabe für Mitarbeitende:** Über den Knopf „Bearbeiten" (Stift-Symbol) in
+der Werkzeugleiste des Plan-Editors öffnen Sie die Plan-Einstellungen; dort
+gibt es zusätzlich den Schalter **„Für Mitarbeitende sichtbar"**. Er macht den
+Plan in der Mitarbeiteransicht sichtbar – **unabhängig vom Aktiv-Datums-Fenster**,
+in beide Richtungen: schon **vor** dessen Beginn (praktisch, um z. B. einen ab
+dem 1. September geltenden Plan schon vorher bekannt zu machen) genauso wie
+**nach** dessen Ende. **Achtung, Falle:** Ein befristeter Plan (z. B. ein
+Sommerplan Juli–August) bleibt für Mitarbeitende sichtbar, solange der Schalter
+gesetzt ist – auch Wochen nach Ablauf des Zeitfensters. Das Zurückschalten
+müssen Sie selbst erledigen, sonst sammeln sich in der Mitarbeiteransicht
+abgelaufene Pläne (dort dann als „Nicht mehr gültig" gekennzeichnet, siehe
+PDF-Ausdruck unten). Ein heute aktiver bzw. im Datums-Fenster liegender Plan
+ist ohnehin sichtbar, unabhängig vom Schalter. Eine **Kopie** („Duplizieren")
+übernimmt diese Freigabe **nicht** – sie startet wie jeder neue Entwurf
+unsichtbar, damit nicht versehentlich eine unfertige Variante bei den
+Mitarbeitenden auftaucht. Welche Pläne freigegeben sind, sehen Sie auf einen
+Blick am **Augen-Symbol** in der Planliste sowie am Abzeichen **„Sichtbar"**
+(ebenfalls mit Augen-Symbol) im Kopf des geöffneten Plans.
+
+**Hinweis je Einteilung:** Im Slot-Dialog gibt es das Feld **„Hinweis
+(optional)"** (bis zu 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung
+für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster
+und im PDF-Ausdruck – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
+oder Überstunden. **Achtung:** Der Hinweis ist für alle Mitarbeitenden sichtbar,
+die den Plan sehen dürfen, und wird beim PDF-Aushang mitgedruckt – tragen Sie
+dort keine Gesundheitsangaben oder anderen sensiblen Daten ein.
+
+**PDF-Ausdruck:** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen
+Aushang im Querformat mit einer Tabelle Arbeitsplatz × Wochentag – zum
+Aushängen am Schwarzen Brett. Auch Mitarbeitende können darüber den Plan
+drucken, den sie in ihrer Ansicht sehen. Der Hinweistext je Einteilung wird
+dabei mitgedruckt – ein Aushang hängt oft an einem auch für Patientinnen und
+Patienten einsehbaren Ort, das gehört bei der Wahl des Hinweistexts bedacht.
+Gilt der gedruckte Plan gerade nicht (freigegebener Vorschau- oder bereits
+abgelaufener Plan), trägt der Ausdruck fett und an erster Stelle in der
+Kopfzeile einen Vermerk: **„Vorschau — gilt derzeit nicht"** bzw. **„Nicht mehr
+gültig"** – damit am Schwarzen Brett kein veralteter oder erst künftig
+geltender Plan mit dem aktuell gültigen verwechselt wird.
+
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
 eingewiesenen Person erscheint die weiche Warnung „nicht eingewiesen" (blockiert
@@ -1043,8 +1082,11 @@ Auslastung/Überstunden) — als Entwurf zum Review, ohne den Plan zu aktivieren
 
 Mit dem **Woche/Tag**-Umschalter im Editor zeigen Sie wahlweise die ganze Woche
 oder einen einzelnen Wochentag in voller Breite an (#321). Beim **Bearbeiten**
-eines Slots kopiert **„Auf Wochentage kopieren"** die Schicht inkl. Zuweisungen
-auf weitere Wochentage – praktisch für wiederkehrende Schichten (#322). In der
+eines Slots kopiert **„Auf Wochentage kopieren"** die Schicht (Arbeitsplatz,
+Zeit, Mindestbesetzung, Zuweisungen **und Hinweis**) auf weitere Wochentage –
+praktisch für wiederkehrende Schichten (#322); ein für den Ursprungstag
+formulierter Hinweistext wandert also wortgleich mit, auf den Zieltagen ggf.
+anpassen. In der
 Mitarbeiterliste des Editors steht unter jedem Namen die **Auslastung** der
 zugewiesenen Schichtstunden zur Wochenarbeitszeit (z. B. **„15,25 / 17 h"**):
 grün bei ±30 Minuten zur Vertragszeit, gelb bei ±1 Stunde, sonst rot – das

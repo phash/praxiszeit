@@ -59,6 +59,7 @@ from app.models import (
     UserRole,
     WorkingHoursChange,
 )
+from app.models.shift_planning import ShiftPlan, ShiftSlot, Workstation
 from app.models.tenant import Tenant
 from app.services import auth_service, lifecycle_service
 from tests.conftest import TestingSessionLocal, engine
@@ -97,6 +98,11 @@ PII = {
     # ueberschreibt.
     "audit_alte_mail": "PIIAUDITMAILAAA@praxis.invalid",
     "audit_benutzername": "PIIAUDITADMINAAA",
+    # #443: der Hinweis je Schicht-Einteilung ist Admin-Freitext und traegt
+    # regelmaessig Personenbezug ("Einarbeitung Frau Meier"). Ein neues
+    # Freitextfeld, das die Anonymisierung ueberlebt, verlaengert die Restliste
+    # aus #440 — deshalb hier gleich mit gesaet.
+    "shift_note": "PIISCHICHTNOTIZAAA",
 }
 
 # Diese beiden bleiben absichtlich stehen und duerfen die Suche nicht ausloesen.
@@ -206,6 +212,18 @@ def mandant(_db_session):
         action="create", source="manual",
         old_date=date(2026, 3, 2), new_date=date(2026, 3, 2),
         new_break_minutes=30, tenant_id=TID,
+    ))
+    plan = ShiftPlan(tenant_id=TID, name="Normalzustand", created_by=user.id)
+    _db_session.add(plan)
+    workstation = Workstation(tenant_id=TID, name="Tresen")
+    _db_session.add(workstation)
+    _db_session.commit()
+    _db_session.refresh(plan)
+    _db_session.refresh(workstation)
+    _db_session.add(ShiftSlot(
+        tenant_id=TID, shift_plan_id=plan.id, workstation_id=workstation.id,
+        weekday=0, start_time=time(8, 0), end_time=time(12, 0), min_staff=1,
+        note=PII["shift_note"],
     ))
     _db_session.commit()
     return {"tenant": tenant, "user_id": user.id}

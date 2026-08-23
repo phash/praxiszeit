@@ -18,17 +18,25 @@ function SlotBody({ slot }: { slot: ShiftSlot }) {
   const names = slot.assignments.map((a) => a.user_name).join(', ');
   return (
     <>
-      <div className="flex items-center justify-between gap-1">
-        <span className="font-semibold truncate">{slot.workstation_name}</span>
-        {slot.understaffed && <AlertTriangle size={12} className="shrink-0" aria-label="Unterbesetzt" />}
+      <div className="flex items-start justify-between gap-1">
+        {/* #443: kein truncate mehr — der Name bricht um. Bei mehreren parallelen
+            Slots wird die Spur schmal, vertikal ist aber Platz. */}
+        <span className="font-semibold break-words">{slot.workstation_name}</span>
+        {slot.understaffed && <AlertTriangle size={12} className="shrink-0 mt-0.5" aria-label="Unterbesetzt" />}
       </div>
       <div className="opacity-90">
         {slot.start_time}–{slot.end_time}
       </div>
-      <div className="flex items-center gap-1 opacity-90 truncate">
-        <Users size={11} className="shrink-0" />
-        <span className="truncate">{names || (slot.min_staff > 0 ? `0/${slot.min_staff}` : '—')}</span>
+      <div className="flex items-start gap-1 opacity-90">
+        <Users size={11} className="shrink-0 mt-0.5" />
+        <span className="break-words">{names || (slot.min_staff > 0 ? `0/${slot.min_staff}` : '—')}</span>
       </div>
+      {/* #443-Fix-Runde 1: » statt ↳ — muss zum Marker im PDF-Export passen
+          (shift_plan_export_service._cell_paragraph); ↳ ist dort im
+          Standard-PDF-Zeichensatz nicht darstellbar. */}
+      {slot.note && (
+        <div className="opacity-80 italic break-words">» {slot.note}</div>
+      )}
     </>
   );
 }
@@ -38,11 +46,19 @@ function blockStyle(slot: ShiftSlot, box: SlotBox): React.CSSProperties {
   // left/right 2px gutter inside the lane so adjacent lanes stay visually separated
   return {
     top: box.top,
-    height: box.height,
+    // #443: minHeight statt height — der Block wächst mit seinem Inhalt, statt
+    // ihn abzuschneiden. Die zeitproportionale Höhe bleibt die Untergrenze.
+    minHeight: box.height,
     left: `calc(${box.leftPct}% + 2px)`,
     width: `calc(${box.widthPct}% - 4px)`,
-    backgroundColor: `${color}1a`, // ~10% alpha
+    // #443 Fix-Runde 2 (M-1): deckend statt `${color}1a` (~10% Alpha) — ragt ein
+    // gewachsener Block (siehe minHeight oben) in den folgenden hinein, läse
+    // man sonst zwei Texte übereinander statt eines sauber verdeckten. Die
+    // Grundfarbe bleibt sichtbar, der Untergrund (Spalten-Weiß) deckt ab.
+    background: `linear-gradient(${color}1a, ${color}1a), #ffffff`,
     borderLeft: `3px solid ${color}`,
+    // #443: sagt an, dass die Blockhöhe hier nicht mehr die Uhrzeit meint.
+    borderBottom: box.grown ? `1px dashed ${color}` : undefined,
     // #305 M2d: dashed amber outline when ≥1 assigned person is not trained.
     outline: slot.unqualified ? '1px dashed #d97706' : undefined,
     outlineOffset: slot.unqualified ? '-2px' : undefined,
@@ -74,7 +90,8 @@ function DraggableBlock({ slot, box, onClick }: { slot: ShiftSlot; box: SlotBox;
         boxShadow: isOver ? '0 0 0 2px #2563eb inset' : undefined,
         zIndex: isDragging ? 20 : 1,
       }}
-      className="absolute rounded-md p-1 text-[11px] leading-tight text-gray-800 cursor-grab overflow-hidden touch-none"
+      className="absolute rounded-md p-1 text-[11px] leading-tight text-gray-800 cursor-grab touch-none"
+      title={box.grown ? 'Anzeige reicht über das Zeitfenster hinaus' : undefined}
       {...listeners}
       {...attributes}
       onClick={() => onClick?.(slot)}
@@ -96,7 +113,8 @@ function StaticBlock({ slot, box }: { slot: ShiftSlot; box: SlotBox }) {
   return (
     <div
       style={blockStyle(slot, box)}
-      className="absolute rounded-md p-1 text-[11px] leading-tight text-gray-800 overflow-hidden"
+      className="absolute rounded-md p-1 text-[11px] leading-tight text-gray-800"
+      title={box.grown ? 'Anzeige reicht über das Zeitfenster hinaus' : undefined}
     >
       <SlotBody slot={slot} />
     </div>
@@ -121,7 +139,7 @@ function DayColumn({
   const { setNodeRef, isOver } = useDroppable({ id: `day-${weekday}`, data: { type: 'day', weekday } });
   const inner = (
     <div
-      className={`relative overflow-hidden ${isOver && editable ? 'bg-primary/5' : ''}`}
+      className={`relative overflow-visible ${isOver && editable ? 'bg-primary/5' : ''}`}
       style={{ height: layout.height }}
       onClick={(e) => {
         if (editable && onEmptyClick && e.target === e.currentTarget) onEmptyClick(weekday);
