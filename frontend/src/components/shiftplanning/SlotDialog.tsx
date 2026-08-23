@@ -252,8 +252,8 @@ export default function SlotDialog({
                   Auf Wochentage kopieren
                 </span>
                 <p className="text-xs text-gray-400 mb-2">
-                  Legt diesen Slot (Arbeitsplatz, Zeit, Mindestbesetzung und Zuweisungen) auf den gewählten
-                  Tagen zusätzlich an.
+                  Legt diesen Slot (Arbeitsplatz, Zeit, Mindestbesetzung, Zuweisungen und Hinweis) auf den
+                  gewählten Tagen zusätzlich an.
                 </p>
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {enabledWeekdays.map((i) =>
