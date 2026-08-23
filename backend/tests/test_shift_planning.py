@@ -102,17 +102,17 @@ def _mk_plan(client, name="Normalzustand"):
     return r.json()["id"]
 
 
-def _mk_slot(client, plan_id, ws_id, *, weekday=0, start="08:00", end="12:00", min_staff=1):
-    r = client.post(
-        f"{BASE}/plans/{plan_id}/slots",
-        json={
-            "workstation_id": ws_id,
-            "weekday": weekday,
-            "start_time": start,
-            "end_time": end,
-            "min_staff": min_staff,
-        },
-    )
+def _mk_slot(client, plan_id, ws_id, *, weekday=0, start="08:00", end="12:00", min_staff=1, note=None):
+    body = {
+        "workstation_id": ws_id,
+        "weekday": weekday,
+        "start_time": start,
+        "end_time": end,
+        "min_staff": min_staff,
+    }
+    if note is not None:
+        body["note"] = note
+    r = client.post(f"{BASE}/plans/{plan_id}/slots", json=body)
     assert r.status_code == 201, r.text
     return r.json()["id"]
 
@@ -449,6 +449,35 @@ class TestMyToday:
         admin_client.post(f"{BASE}/plans/{plan}/activate")
         data = employee_client.get(f"{BASE}/my-today").json()
         assert data["entries"] == []
+
+    def test_note_is_included_when_set(self, all_weekdays, admin_client, employee_client, test_user):
+        """#453: der Hinweis je Einteilung (#443) muss auf der Dashboard-Kachel
+        ankommen — dieselbe Fläche, die die Betriebsanweisung fürs heutige
+        Einsatz trägt (Wochenraster + PDF-Aushang haben ihn schon)."""
+        wd = today_local().weekday()
+        ws = _mk_workstation(admin_client, "Tresen")
+        plan = _mk_plan(admin_client)
+        sid = _mk_slot(admin_client, plan, ws, weekday=wd, note="Heute Telefon mitübernehmen")
+        admin_client.put(f"{BASE}/slots/{sid}/assignments", json={"user_ids": [str(test_user.id)]})
+        admin_client.post(f"{BASE}/plans/{plan}/activate")
+
+        data = employee_client.get(f"{BASE}/my-today").json()
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["note"] == "Heute Telefon mitübernehmen"
+
+    def test_note_is_none_when_not_set(self, all_weekdays, admin_client, employee_client, test_user):
+        """Ein Eintrag ohne Hinweis liefert None, nicht einen leeren String —
+        die Kachel darf die Hinweiszeile dann gar nicht rendern."""
+        wd = today_local().weekday()
+        ws = _mk_workstation(admin_client, "Tresen")
+        plan = _mk_plan(admin_client)
+        sid = _mk_slot(admin_client, plan, ws, weekday=wd)  # kein note
+        admin_client.put(f"{BASE}/slots/{sid}/assignments", json={"user_ids": [str(test_user.id)]})
+        admin_client.post(f"{BASE}/plans/{plan}/activate")
+
+        data = employee_client.get(f"{BASE}/my-today").json()
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["note"] is None
 
 
 class TestPlanDuplicate:

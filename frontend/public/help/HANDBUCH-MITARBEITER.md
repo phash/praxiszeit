@@ -634,7 +634,8 @@ erkennbar am vorangestellten **»**. Über den Knopf **„PDF"** drucken Sie den
 gerade angezeigten Plan als Aushang aus.
 
 Auf dem **Dashboard** zeigt die Karte **„Deine Einteilung heute"** Ihre heutigen
-Einsätze mit Arbeitsplatz und Uhrzeit. Unter **Profil → „Meine Einweisungen"**
+Einsätze mit Arbeitsplatz und Uhrzeit — samt Hinweis (**»**), falls einer
+gesetzt ist. Unter **Profil → „Meine Einweisungen"**
 sehen Sie, für welche Arbeitsplätze Sie eingewiesen sind (pflegt Ihr Administrator).
 
 Die Schichtplanung ist ein reines Planungswerkzeug und verändert **nicht** Ihre
