@@ -4,17 +4,16 @@ import { test, expect } from '../../fixtures/base.fixture';
  * Schichtplanung follow-ups:
  *   #321 Tagesansicht (Woche/Tag toggle)
  *   #322 Schicht auf andere Wochentage kopieren (SlotDialog)
+ *
+ * #451: die mandantenweite Einstellung `shift_planning_enabled` wird NICHT
+ * mehr hier geschaltet — siehe global-setup.ts.
  */
 test.describe('Schichtplanung Follow-ups (#321/#322)', () => {
   const planName = `E2E-FU-Plan-${Date.now()}`;
 
-  test.beforeEach(async ({ adminApi }) => {
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
-  });
   test.afterEach(async ({ adminApi }) => {
     const plans = await adminApi.get('/shift-planning/plans');
     for (const p of plans) if (p.name === planName) await adminApi.delete(`/shift-planning/plans/${p.id}`);
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'false' });
   });
 
   test('#321 day view toggle shows a single weekday', async ({ adminPage, adminApi }) => {

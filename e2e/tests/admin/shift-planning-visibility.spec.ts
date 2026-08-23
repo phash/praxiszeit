@@ -9,6 +9,9 @@ import { test, expect } from '../../fixtures/base.fixture';
  * und dieser Test soll die Sichtbarkeitsnaht prüfen, nicht sie wiederholen.
  * Die Freigabe selbst läuft bewusst über die Oberfläche: der Schalter im
  * Einstellungsdialog ist Teil dessen, was hier belegt werden soll.
+ *
+ * #451: die mandantenweite Einstellung `shift_planning_enabled` wird NICHT
+ * mehr hier geschaltet — siehe global-setup.ts.
  */
 test.describe('Schichtplan-Freigabe (#443)', () => {
   test.describe.configure({ mode: 'serial' });
@@ -19,11 +22,6 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
 
   test.afterAll(async ({ adminApi }) => {
     try {
-      // Eine parallel laufende Schichtplanungs-Spec kann die mandantenweite
-      // Einstellung zwischenzeitlich abgeschaltet haben — ohne dieses
-      // Wiederanschalten würde der folgende GET 404 werfen (vom catch
-      // verschluckt), und unsere Pläne blieben liegen.
-      await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
       const plans = await adminApi.get('/shift-planning/plans');
       for (const p of plans) {
         if (p.name === releasedName || p.name === draftName) {
@@ -33,7 +31,6 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
     } catch {
       /* ignore */
     }
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'false' });
   });
 
   test('ein freigegebener, noch nicht geltender Plan erscheint beim Mitarbeitenden', async ({
@@ -41,8 +38,6 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
     adminApi,
     employeePage,
   }) => {
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
-
     // Zwei Pläne, beide inaktiv und ohne Datumsfenster — beide gelten heute nicht.
     const released = await adminApi.post('/shift-planning/plans', { name: releasedName });
     await adminApi.post('/shift-planning/plans', { name: draftName });

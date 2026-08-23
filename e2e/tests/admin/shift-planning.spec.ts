@@ -3,11 +3,18 @@ import { test, expect } from '../../fixtures/base.fixture';
 /**
  * Schichtplanung (#305) — admin dialog-path E2E.
  *
- * Exercises the robust (non-drag) path: enable the feature flag, create a
- * workstation + plan, add a slot and assign the employee via the dialog,
- * activate the plan, and verify the read-only employee view shows it.
- * Drag & drop is intentionally NOT simulated (flaky); the dialog path covers
- * the same mutations through the same API.
+ * Exercises the robust (non-drag) path: create a workstation + plan, add a
+ * slot and assign the employee via the dialog, activate the plan, and verify
+ * the read-only employee view shows it. Drag & drop is intentionally NOT
+ * simulated (flaky); the dialog path covers the same mutations through the
+ * same API.
+ *
+ * #451: the mandantenweite Einstellung `shift_planning_enabled` wird NICHT
+ * mehr in dieser Datei geschaltet — `global-setup.ts` schaltet sie einmal
+ * für den gesamten Playwright-Lauf ein, `global-teardown.ts` wieder aus. Der
+ * negative Gegentest ("feature hidden + endpoints 404 when flag is off")
+ * lebt seit #451 in shift-planning-flag-off.spec.ts, in einem eigenen
+ * Playwright-Projekt, das garantiert erst nach dieser Datei läuft.
  */
 test.describe('Schichtplanung (#305)', () => {
   const unique = `${Date.now()}`;
@@ -15,13 +22,8 @@ test.describe('Schichtplanung (#305)', () => {
   const planName = `E2E-Plan-${unique}`;
 
   test.afterAll(async ({ adminApi }) => {
-    // Best-effort cleanup + turn the feature back off.
+    // Best-effort cleanup.
     try {
-      // Der zweite Test dieser Datei ("feature hidden ...") schaltet die
-      // Einstellung als eigene erste Aktion ab — ohne dieses Wiederanschalten
-      // würde der folgende GET 404 werfen (vom catch verschluckt), und Plan +
-      // Arbeitsplatz blieben bei JEDEM Lauf liegen.
-      await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
       const plans = await adminApi.get('/shift-planning/plans');
       for (const p of plans) if (p.name === planName) await adminApi.delete(`/shift-planning/plans/${p.id}`);
       const ws = await adminApi.get('/shift-planning/workstations');
@@ -29,7 +31,6 @@ test.describe('Schichtplanung (#305)', () => {
     } catch {
       /* ignore */
     }
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'false' });
   });
 
   test('admin creates plan + slot + assignment, activates, employee sees it', async ({
@@ -37,10 +38,7 @@ test.describe('Schichtplanung (#305)', () => {
     adminApi,
     testEmployee,
   }) => {
-    // 1. Enable the feature for the tenant.
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
-
-    // 2. Stammdaten: create a workstation.
+    // 1. Stammdaten: create a workstation.
     await adminPage.goto('/admin/shift-planning');
     await expect(adminPage.getByRole('heading', { name: 'Schichtplanung' })).toBeVisible();
     await adminPage.getByRole('button', { name: 'Stammdaten' }).click();
@@ -60,7 +58,7 @@ test.describe('Schichtplanung (#305)', () => {
     await wsCreate;
     await expect(wsCard.getByText(wsName)).toBeVisible();
 
-    // 3. Schichtpläne: create a plan.
+    // 2. Schichtpläne: create a plan.
     await adminPage.getByRole('button', { name: 'Schichtpläne' }).click();
     await main.getByLabel('Neuer Plan').fill(planName);
     const planCreate = adminPage.waitForResponse(
@@ -72,7 +70,7 @@ test.describe('Schichtplanung (#305)', () => {
     // Plan auto-selects after creation → editor heading shows the plan name.
     await expect(adminPage.getByRole('heading', { name: planName })).toBeVisible();
 
-    // 4. Add a slot via the dialog and assign the employee.
+    // 3. Add a slot via the dialog and assign the employee.
     await adminPage.getByRole('button', { name: 'Slot', exact: true }).click();
     // Scope to the modal — the employee name also appears in the sidebar list,
     // and other "Speichern" buttons can exist elsewhere on the page.
@@ -106,7 +104,7 @@ test.describe('Schichtplanung (#305)', () => {
     await expect(main.getByText(wsName).first()).toBeVisible();
     await expect(main.getByText('08:00–12:00').first()).toBeVisible();
 
-    // 5. Activate the plan.
+    // 4. Activate the plan.
     const activate = adminPage.waitForResponse(
       (r) => r.url().includes('/activate') && r.request().method() === 'POST',
     );
@@ -114,23 +112,10 @@ test.describe('Schichtplanung (#305)', () => {
     await activate;
     await expect(adminPage.getByRole('button', { name: 'Deaktivieren' })).toBeVisible();
 
-    // 6. Read-only employee-facing view shows the active plan.
+    // 5. Read-only employee-facing view shows the active plan.
     await adminPage.goto('/shift-planning');
     await expect(adminPage.getByRole('heading', { name: 'Schichtplan' })).toBeVisible();
     await expect(adminPage.locator('main').getByText(planName)).toBeVisible();
     await expect(adminPage.locator('main').getByText(wsName).first()).toBeVisible();
-  });
-
-  test('feature hidden + endpoints 404 when flag is off', async ({ adminPage, adminApi }) => {
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'false' });
-
-    // API gate: 404 when off.
-    const res = await adminApi.getRaw('/shift-planning/plans');
-    expect(res.status).toBe(404);
-
-    // Nav entry hidden after reload.
-    await adminPage.goto('/');
-    await adminPage.reload();
-    await expect(adminPage.getByRole('link', { name: 'Schichtplanung' })).toHaveCount(0);
   });
 });
