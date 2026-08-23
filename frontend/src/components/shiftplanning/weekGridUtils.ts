@@ -5,6 +5,15 @@ export const GRID_END_HOUR = 22;
 export const HOUR_PX = 48; // pixel height of one hour row
 export const SNAP_MINUTES = 15;
 
+// #443: Grundlage der Schätzung, wie hoch ein Block seinem INHALT nach wäre.
+// Sie steuert ausschließlich die Markierung "reicht über das Zeitfenster
+// hinaus" — das tatsächliche Wachsen erledigt das CSS (minHeight statt height).
+// Deshalb ist eine Schätzung hier ausreichend und einer DOM-Messung vorzuziehen:
+// die Funktion bleibt rein, prüfbar und über alle Browser gleich.
+export const LINE_PX = 14;
+export const BLOCK_PADDING_PX = 8; // p-1 oben + unten
+export const NOTE_CHARS_PER_LINE = 20;
+
 export const gridHeightPx = (GRID_END_HOUR - GRID_START_HOUR) * HOUR_PX;
 
 // #371: default planner weekdays (Mo–Fr) when no config is available.
@@ -102,13 +111,41 @@ export interface SlotLike {
   weekday: number;
   start_time: string;
   end_time: string;
+  // #443: für die Inhaltsschätzung. Optional, damit die reinen Zeit-Tests und
+  // ältere Aufrufer unverändert weiterlaufen.
+  assignments?: unknown[];
+  note?: string | null;
 }
 
 export interface SlotBox {
   top: number;
-  height: number;
+  height: number; // zeitproportional — bleibt die Aussage über die Uhrzeit
   leftPct: number; // 0..100
   widthPct: number; // 0..100
+  // #443
+  contentHeight: number;
+  grown: boolean; // contentHeight > height → Blockhöhe meint nicht mehr die Uhrzeit
+}
+
+/**
+ * Geschätzte Höhe, die der INHALT eines Blocks braucht (#443).
+ *
+ * Gezählt werden: die Kopfzeile (Arbeitsplatz), die Zeitzeile, eine Zeile je
+ * zugewiesener Person — mindestens eine, weil dort sonst "0/2" oder "—" steht —
+ * und der Hinweis in Zeilen zu ``NOTE_CHARS_PER_LINE`` Zeichen.
+ *
+ * Das Ergebnis ist eine **Untergrenze**: bricht ein langer Name in einer sehr
+ * schmalen Spur auf zwei Zeilen um, wächst der Block korrekt, bleibt aber
+ * womöglich ohne Markierung. Das ist hingenommen — die Markierung ist ein
+ * Hinweis, keine Zusicherung. Der umgekehrte Fehler (Markierung ohne Wachstum)
+ * kann nicht auftreten.
+ */
+export function estimateContentHeight(slot: SlotLike): number {
+  const nameLines = Math.max(1, slot.assignments?.length ?? 0);
+  const note = (slot.note ?? '').trim();
+  const noteLines = note ? Math.ceil(note.length / NOTE_CHARS_PER_LINE) : 0;
+  const lines = 1 /* Arbeitsplatz */ + 1 /* Zeit */ + nameLines + noteLines;
+  return lines * LINE_PX + BLOCK_PADDING_PX;
 }
 
 export interface WeekLayout {
@@ -148,11 +185,15 @@ export function computeWeekLayout(slots: SlotLike[]): WeekLayout {
     const flush = () => {
       const lanes = Math.max(1, laneEnds.length);
       for (const item of group) {
+        const height = Math.max(18, ((item.end - item.start) / 60) * HOUR_PX);
+        const contentHeight = estimateContentHeight(item.s);
         boxes[item.s.id] = {
           top: ((item.start - startHour * 60) / 60) * HOUR_PX,
-          height: Math.max(18, ((item.end - item.start) / 60) * HOUR_PX),
+          height,
           leftPct: (item.lane / lanes) * 100,
           widthPct: (1 / lanes) * 100,
+          contentHeight,
+          grown: contentHeight > height,
         };
       }
       group = [];

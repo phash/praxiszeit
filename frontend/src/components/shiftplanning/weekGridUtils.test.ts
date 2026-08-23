@@ -10,6 +10,7 @@ import {
   mondayOfWeek,
   computeWeekLayout,
   visibleWeekdays,
+  estimateContentHeight,
   type SlotLike,
   GRID_START_HOUR,
   HOUR_PX,
@@ -141,6 +142,74 @@ describe('computeWeekLayout', () => {
       slot('c', 3, '10:00', '13:00'),
     ]);
     expect(boxes['a'].widthPct).toBeCloseTo(100 / 3, 5);
+  });
+});
+
+const slotWithContent = (over: Record<string, unknown> = {}) => ({
+  id: 's1',
+  weekday: 0,
+  start_time: '08:00',
+  end_time: '12:00',
+  assignments: [],
+  note: null,
+  ...over,
+});
+
+describe('estimateContentHeight', () => {
+  it('rechnet Kopfzeile, Zeitzeile und eine Namenszeile', () => {
+    // 3 Zeilen à 14px + 8px Innenabstand
+    expect(estimateContentHeight(slotWithContent())).toBe(3 * 14 + 8);
+  });
+
+  it('rechnet eine Zeile je zugewiesener Person', () => {
+    const s = slotWithContent({ assignments: [{}, {}, {}] });
+    expect(estimateContentHeight(s)).toBe((2 + 3) * 14 + 8);
+  });
+
+  it('rechnet den Hinweis in 20-Zeichen-Zeilen', () => {
+    const short = slotWithContent({ note: 'Einarbeitung' }); // 1 Zeile
+    const long = slotWithContent({ note: 'x'.repeat(45) }); // 3 Zeilen
+    expect(estimateContentHeight(short)).toBe((3 + 1) * 14 + 8);
+    expect(estimateContentHeight(long)).toBe((3 + 3) * 14 + 8);
+  });
+
+  it('ignoriert einen Hinweis aus Leerzeichen', () => {
+    expect(estimateContentHeight(slotWithContent({ note: '   ' }))).toBe(
+      estimateContentHeight(slotWithContent()),
+    );
+  });
+});
+
+describe('computeWeekLayout: grown', () => {
+  it('markiert einen kurzen Slot mit vielen Namen als gewachsen', () => {
+    // 30 Minuten = 24px zeitproportional, Inhalt braucht (2+4)*14+8 = 92px
+    const s = slotWithContent({
+      start_time: '08:00',
+      end_time: '08:30',
+      assignments: [{}, {}, {}, {}],
+    });
+    const layout = computeWeekLayout([s]);
+    expect(layout.boxes.s1.grown).toBe(true);
+    expect(layout.boxes.s1.contentHeight).toBe(92);
+  });
+
+  it('markiert einen ausreichend langen Slot NICHT als gewachsen', () => {
+    // 4 Stunden = 192px, Inhalt braucht (2+2)*14+8 = 64px
+    const s = slotWithContent({ start_time: '08:00', end_time: '12:00', assignments: [{}, {}] });
+    const layout = computeWeekLayout([s]);
+    expect(layout.boxes.s1.grown).toBe(false);
+    expect(layout.boxes.s1.height).toBe(4 * HOUR_PX);
+  });
+
+  it('lässt die zeitproportionale Höhe unberührt', () => {
+    const s = slotWithContent({
+      start_time: '08:00',
+      end_time: '08:30',
+      assignments: [{}, {}, {}, {}],
+    });
+    const layout = computeWeekLayout([s]);
+    // height bleibt die Zeitdauer (Untergrenze 18px) — das Wachsen macht das CSS
+    expect(layout.boxes.s1.height).toBe(24);
   });
 });
 
