@@ -1045,12 +1045,16 @@ Mitarbeitenden auftaucht.
 (optional)"** (bis zu 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung
 für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster
 und im PDF-Ausdruck – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
-oder Überstunden.
+oder Überstunden. **Achtung:** Der Hinweis ist für alle Mitarbeitenden sichtbar,
+die den Plan sehen dürfen, und wird beim PDF-Aushang mitgedruckt – tragen Sie
+dort keine Gesundheitsangaben oder anderen sensiblen Daten ein.
 
 **PDF-Ausdruck:** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen
 Aushang im Querformat mit einer Tabelle Arbeitsplatz × Wochentag – zum
 Aushängen am Schwarzen Brett. Auch Mitarbeitende können darüber den Plan
-drucken, den sie in ihrer Ansicht sehen.
+drucken, den sie in ihrer Ansicht sehen. Der Hinweistext je Einteilung wird
+dabei mitgedruckt – ein Aushang hängt oft an einem auch für Patientinnen und
+Patienten einsehbaren Ort, das gehört bei der Wahl des Hinweistexts bedacht.
 
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht

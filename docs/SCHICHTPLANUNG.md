@@ -76,13 +76,13 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   - **Drag & Drop:** Slot-Block auf einen anderen Wochentag / eine andere Uhrzeit ziehen (15-Minuten-Raster). Mitarbeitende aus der Liste rechts auf einen Slot ziehen → zugewiesen.
   - **Klick-Pfad:** „+ Slot" bzw. Klick auf eine freie Rasterfläche öffnet einen Dialog (Arbeitsplatz, Wochentag, Von/Bis, Mindestbesetzung, Hinweis, Mitarbeitende). Klick auf einen vorhandenen Slot bearbeitet ihn.
 - **Mindestbesetzung:** Pro Slot setzbar. Unterbesetzte Slots werden markiert (⚠), der Plan zeigt einen Hinweis. Es ist eine **weiche Warnung** – Speichern und Aktivieren bleiben möglich.
-- **Hinweis je Einteilung (#443):** Im Slot-Dialog gibt es das Feld **„Hinweis (optional)"** (höchstens 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster unter der Zuweisung und im PDF-Ausdruck. Rein informativ — er fließt in keine Berechnung, Validierung oder Warnung ein und übersteht auch das „Auf Wochentage kopieren" (#322).
+- **Hinweis je Einteilung (#443):** Im Slot-Dialog gibt es das Feld **„Hinweis (optional)"** (höchstens 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster unter der Zuweisung und im PDF-Ausdruck. Rein informativ — er fließt in keine Berechnung, Validierung oder Warnung ein und übersteht auch das „Auf Wochentage kopieren" (#322). **Achtung:** sichtbar für alle Mitarbeitenden mit Plansicht und Teil des PDF-Aushangs — keine Gesundheitsangaben oder anderen sensiblen Daten hineinschreiben.
 
 **Aktivschaltung:**
 - „Aktiv schalten" macht den Plan für alle sichtbar (Read-only-Ansicht + Dashboard).
 - **Mehrere Pläne können gleichzeitig aktiv** sein (z. B. je Standort). Das Dashboard zeigt jedem Mitarbeitenden die **Vereinigung** seiner Einteilungen über alle aktiven Pläne für den heutigen Wochentag.
 - **Freigabe für Mitarbeitende (#443):** Über den Knopf „Bearbeiten" (Stift-Symbol) in der Werkzeugleiste des Plan-Editors öffnen Sie die Plan-Einstellungen; dort gibt es zusätzlich den Schalter **„Für Mitarbeitende sichtbar"**. Er blendet den Plan in der Mitarbeiteransicht ein, **auch wenn er heute noch gar nicht gilt** — gedacht, um z. B. einen ab September geltenden Plan schon jetzt bekannt zu machen. Ein heute aktiver bzw. im Datums-Fenster liegender Plan ist ohnehin sichtbar; der Schalter betrifft nur den Fall davor. Er wirkt nicht rückwirkend auf bereits laufende Pläne, die niemand extra freigegeben hat.
-- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen Aushang im **Querformat** (A4) mit einer Tabelle **Arbeitsplatz × Wochentag** — zum Aushängen am Schwarzen Brett. Mitarbeitende haben denselben Knopf in ihrer Ansicht und können damit **nur den Plan drucken, den sie ohnehin sehen dürfen**.
+- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen Aushang im **Querformat** (A4) mit einer Tabelle **Arbeitsplatz × Wochentag** — zum Aushängen am Schwarzen Brett. Mitarbeitende haben denselben Knopf in ihrer Ansicht und können damit **nur den Plan drucken, den sie ohnehin sehen dürfen**. Der Hinweistext je Einteilung wird mitgedruckt — ein Schwarzes Brett ist oft auch für Patientinnen und Patienten einsehbar.
 
 **KW-/Ganzjahres-Planung (Datums-Fenster):**
 - Über **Bearbeiten** kann pro Plan ein optionales **Aktiv-Datums-Fenster** („aktiv von/bis") gesetzt werden. Der Plan gilt dann **automatisch** als aktiv, wenn das heutige Datum im Fenster liegt — zusätzlich zum manuellen „Aktiv schalten". Eine offene Grenze ist erlaubt (nur „von" oder nur „bis").
@@ -164,7 +164,11 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   keine Berechnung). Der Renderer ist eine **reine** Funktion über dem bereits
   gebauten Dict von `_build_plan_detail` (kein eigener `db`-Zugriff), damit der
   Ausdruck kein zweiter Abfragepfad wird und automatisch den #371-Wochentagsfilter
-  sowie die Unterbesetzungslage erbt. Zugriff über `is_plan_visible_to`, nicht
+  erbt. Die Unterbesetzung (`understaffed`/`min_staff`) steckt aus demselben Grund
+  bereits im Dict; `_cell_paragraph` druckt sie als „Unterbesetzt (x/y)" in die
+  Zelle (M-3, Fix-Runde 2) — vorher stand hier fälschlich, das geschähe schon
+  "automatisch", ohne dass der Renderer die Felder je gelesen hätte. Zugriff über
+  `is_plan_visible_to`, nicht
   `require_admin` — Mitarbeitende drucken nur, was sie ohnehin sehen; Einweisungs-Flags
   stehen nie im PDF. Der Praxisname im Kopf kommt aus `Tenant.name` (`practice_name`
   ist **kein** Settings-Key im Projekt). Alle Nutzertexte (Plan-/Arbeitsplatzname,
