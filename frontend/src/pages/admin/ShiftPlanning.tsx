@@ -412,13 +412,15 @@ export default function AdminShiftPlanning() {
       const newEnd = newStart + duration;
       if (targetWeekday === slot.weekday && newStart === timeToMinutes(slot.start_time)) return; // no-op
       try {
-        // `PUT /slots/{id}` is a full replace — the server's SlotIn defaults every
-        // field the body omits (e.g. note=None) — so a hand-enumerated payload here
-        // silently wipes out any field it forgets to list. That's exactly how a
-        // #443 note got nulled out by a plain drag. Instead of listing fields, take
-        // the slot's current data as-is and override only what a drag actually
-        // changes (weekday/start/end); ShiftSlot's display-only extras are the only
-        // things stripped out, so any future SlotInput field rides along for free.
+        // `PUT /slots/{id}` ist ein Vollersatz — der Server (SlotIn) setzt jedes im
+        // Rumpf fehlende Feld auf seinen Default (z. B. note=None) — deshalb löscht
+        // eine handgeschriebene, feldweise Nutzlast hier stillschweigend jedes Feld,
+        // das sie zu erwähnen vergisst. Genau so wurde ein #443-Hinweis durch ein
+        // einfaches Verschieben auf NULL gesetzt. Statt Felder aufzuzählen, wird der
+        // aktuelle Zustand des Slots unverändert übernommen und nur überschrieben,
+        // was ein Verschieben tatsächlich ändert (Wochentag/Beginn/Ende); die reinen
+        // Anzeige-Extrafelder von ShiftSlot sind die einzigen, die entfernt werden —
+        // jedes künftige SlotInput-Feld läuft dadurch automatisch mit.
         const {
           id: _id,
           workstation_name: _workstationName,

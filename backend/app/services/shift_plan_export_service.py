@@ -29,6 +29,11 @@ from app.services.export_service import escape_pdf_text
 
 WEEKDAY_LABELS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
+# Marker vor einem Slot-Hinweis (»  statt ↳  — siehe Kommentar bei der Verwendung
+# in _cell_paragraph). Als Konstante, damit test_shift_plan_pdf.py gezielt gegen
+# genau dieses Zeichen prüfen kann, statt den kompletten Zellentext zu parsen.
+NOTE_MARKER = "»"
+
 _TITLE = ParagraphStyle("PlanTitle", fontName="Helvetica-Bold", fontSize=14, leading=17)
 _META = ParagraphStyle("PlanMeta", fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.HexColor("#4b5563"))
 _HEAD = ParagraphStyle("PlanHead", fontName="Helvetica-Bold", fontSize=9, leading=11, alignment=TA_CENTER)
@@ -74,7 +79,14 @@ def _cell_paragraph(slots_of_cell: list[dict]) -> Paragraph:
         lines.append(", ".join(names) if names else "<i>nicht besetzt</i>")
         note = s.get("note")
         if note:
-            lines.append(f"↳ {escape_pdf_text(note)}")
+            # NOTE_MARKER (») statt Pfeil (↳): reportlab rendert mit der
+            # Standardschrift Helvetica/WinAnsiEncoding — U+21B3 (↳) liegt dort
+            # nicht, reportlab weicht dafür still auf ZapfDingbats mit einem
+            # .notdef-artigen Ersatzglyph aus; im Ausdruck erscheint also ein
+            # schwarzes Kästchen statt eines Pfeils. »  (U+00BB) liegt direkt in
+            # WinAnsiEncoding und wird ohne Font-Wechsel korrekt dargestellt.
+            # NICHT auf einen Pfeil zurückstellen — siehe test_shift_plan_pdf.py.
+            lines.append(f"{NOTE_MARKER} {escape_pdf_text(note)}")
         blocks.append("<br/>".join(lines))
     return Paragraph("<br/><br/>".join(blocks), _CELL)
 

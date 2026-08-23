@@ -31,8 +31,11 @@ function SlotBody({ slot }: { slot: ShiftSlot }) {
         <Users size={11} className="shrink-0 mt-0.5" />
         <span className="break-words">{names || (slot.min_staff > 0 ? `0/${slot.min_staff}` : '—')}</span>
       </div>
+      {/* #443-Fix-Runde 1: » statt ↳ — muss zum Marker im PDF-Export passen
+          (shift_plan_export_service._cell_paragraph); ↳ ist dort im
+          Standard-PDF-Zeichensatz nicht darstellbar. */}
       {slot.note && (
-        <div className="opacity-80 italic break-words">↳ {slot.note}</div>
+        <div className="opacity-80 italic break-words">» {slot.note}</div>
       )}
     </>
   );

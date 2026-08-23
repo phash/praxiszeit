@@ -41,7 +41,7 @@ describe('WeekGrid', () => {
 
   it('zeigt keine Hinweiszeile ohne Hinweis', () => {
     render(<WeekGrid slots={[slot()]} weekdays={[0, 1, 2, 3, 4]} />);
-    expect(screen.queryByText(/↳/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/»/)).not.toBeInTheDocument();
   });
 
   it('markiert einen Block, dessen Inhalt über das Zeitfenster reicht', () => {

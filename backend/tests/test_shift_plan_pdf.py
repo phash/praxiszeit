@@ -7,6 +7,8 @@ das ist im Berechnungsmodell dieses Projekts mehrfach passiert.
 """
 from datetime import date
 
+from reportlab.pdfbase import pdfmetrics
+
 from app.services import shift_plan_export_service
 
 
@@ -102,6 +104,32 @@ def test_unknown_workstation_still_appears():
         practice_name=None, generated_on=date(2026, 8, 23),
     )
     assert buf.getvalue()[:4] == b"%PDF"
+
+
+def test_note_marker_is_representable_in_the_cell_font():
+    """Fix-Runde 1 (#443): der Hinweis-Marker muss in der tatsächlich für die
+    Tabellenzelle verwendeten Schrift (Helvetica/WinAnsiEncoding) darstellbar
+    sein, ohne dass reportlab intern auf eine andere Schrift ausweicht.
+
+    ``pdfmetrics.unicode2T1`` zerlegt einen Unicode-String in (Font, Bytes)-
+    Segmente. Ein Zeichen, das die Zielschrift nicht kennt (z. B. der Pfeil
+    "↳" in Helvetica/WinAnsiEncoding), erzeugt ein zusätzliches Segment in
+    einer Ersatzschrift (ZapfDingbats) mit einem .notdef-artigen Ersatzglyph
+    statt eines echten Pfeils — im Ausdruck ein schwarzes Kästchen. Genau EIN
+    Segment, geschrieben in der Zellenschrift selbst, beweist, dass keine
+    Ersatzschrift zum Einsatz kommt. Setzt jemand ``NOTE_MARKER`` auf den Pfeil
+    zurück, schlägt dieser Test fehl (zwei Segmente, das erste in
+    ZapfDingbats statt Helvetica)."""
+    cell_font_name = shift_plan_export_service._CELL.fontName
+    cell_font = pdfmetrics.getFont(cell_font_name)
+
+    segments = pdfmetrics.unicode2T1(shift_plan_export_service.NOTE_MARKER, [cell_font])
+
+    assert len(segments) == 1, (
+        f"NOTE_MARKER erzwingt einen Font-Wechsel: {[f.fontName for f, _ in segments]}"
+    )
+    used_font, _raw_bytes = segments[0]
+    assert used_font.fontName == cell_font_name
 
 
 import asyncio
