@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Dict, List, Any
 from sqlalchemy.orm import Session
 
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType
+from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange
 from app.services import calculation_service, special_days_service
 from app.services.date_filters import date_in_month
 
@@ -102,10 +102,18 @@ def get_journal(
     # for why the summary, not the days, is the source of truth here.
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
+    # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
+    # pro Tag (bis zu 31× get_schedule_for_date über _eff_daily_target unten).
+    # F-026: tenant-gefiltert.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
     def _eff_daily_target(d: date) -> Decimal:
         if not calculation_service._within_employment_window(user, d):
             return Decimal("0")
-        schedule = calculation_service.get_schedule_for_date(db, user, d)
+        schedule = calculation_service.get_schedule_for_date(db, user, d, wh_changes=wh_changes)
         dt = calculation_service.get_daily_target_for_date(user, d, schedule)
         factor = special_days_service.special_day_target_factor(d, special_day_config)
         if factor is not None:
@@ -153,7 +161,7 @@ def get_journal(
             # Feiertage sind oben schon in einen eigenen Zweig abgebogen.
             holiday_dates=set(),
             absence_half_map=half_map,
-            wh_changes=None,
+            wh_changes=wh_changes,  # #449: derselbe Preload wie _eff_daily_target oben
             special_cfg=special_day_config,
             worked_map={d: worked},
         )

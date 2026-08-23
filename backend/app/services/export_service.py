@@ -9,7 +9,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason
+from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason, WorkingHoursChange
 from app.services import calculation_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
@@ -455,6 +455,15 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
 
     reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
+    # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
+    # pro Tag (get_schedule_for_date/get_daily_target_for_date lösen den
+    # Vertrags-Snapshot sonst 28-31× einzeln auf, plus die #415-Kopfzeile
+    # unten). F-026: tenant-gefiltert.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
     # Row 1–2: ArbZG-relevante Mitarbeiter-Metadaten (§16 ArbZG Aufzeichnungspflicht)
     sheet.cell(row=1, column=1).value = "Mitarbeiter:"
     sheet.cell(row=1, column=1).font = Font(bold=True)
@@ -463,7 +472,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # Sonst widerspricht die Kopfzeile den historisch gerechneten Tageszeilen.
     _last_day = monthrange(year, month)[1]
     _wh_segments = calculation_service.weekly_hours_segments(
-        db, user, date(year, month, 1), date(year, month, _last_day)
+        db, user, date(year, month, 1), date(year, month, _last_day), wh_changes=wh_changes
     )
     sheet.cell(row=1, column=4).value = "Wochenstunden:"
     sheet.cell(row=1, column=4).font = Font(bold=True)
@@ -614,7 +623,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             sheet.cell(row=row, column=6).number_format = '0.00'
 
         # Per-day target using the historical contract snapshot (#431)
-        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         # #146: apply the special-day factor (only the working-day branch below
         # consumes daily_target; the weekend/holiday/absence branches hardcode 0).
@@ -654,7 +663,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, wh_changes=wh_changes, worked_hours=net)
             absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen (Label in Spalte 9 verbinden,
             # Notizen in Spalte 10). DSGVO F-003: Krank ohne Health-Flag maskieren
@@ -767,7 +776,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         sheet.cell(row=row, column=2).font = Font(bold=True, color="8B0000")
 
     row += 1
-    vacation_account = calculation_service.get_vacation_account(db, user, year)
+    vacation_account = calculation_service.get_vacation_account(db, user, year, wh_changes=wh_changes)
     sheet.cell(row=row, column=1).value = "Urlaub genommen (Std):"
     sheet.cell(row=row, column=2).value = float(vacation_account['used_hours'])
     sheet.cell(row=row, column=2).number_format = '0.00'
@@ -879,6 +888,9 @@ def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], 
         overtime = calculation_service.get_overtime_account(db, user, year, 12)
 
         # Vacation account
+        # #449: kein Preload hier — Übersichtsblatt iteriert über ALLE
+        # Mitarbeitenden (kein Tages-, sondern ein Personen-Loop, andere
+        # Größenordnung); außerhalb des Tickets, siehe Bericht.
         vacation_account = calculation_service.get_vacation_account(db, user, year)
 
         # Krankheitstage TAGEBASIERT (GLOSSAR-Tagesprinzip) — identisch zum
@@ -1036,6 +1048,14 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet = wb.create_sheet(title=f"{user.last_name[:20]}")
     reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
+    # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
+    # pro Tag (365× get_schedule_for_date im Jahresblatt, plus die #415-
+    # Kopfzeile unten). F-026: tenant-gefiltert.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
     # Title
     sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name} - Jahresreport {year}")
     sheet.cell(row=1, column=1).font = Font(bold=True, size=14)
@@ -1052,7 +1072,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
     # #415: Wochenstunden zum Jahresbeginn + Änderungen im Jahr
     _wh_segments = calculation_service.weekly_hours_segments(
-        db, user, date(year, 1, 1), date(year, 12, 31)
+        db, user, date(year, 1, 1), date(year, 12, 31), wh_changes=wh_changes
     )
     sheet.cell(row=2, column=7).value = "Wochenstunden:"
     sheet.cell(row=2, column=7).font = Font(bold=True)
@@ -1194,7 +1214,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             sheet.cell(row=row, column=6).value = 0.00
             sheet.cell(row=row, column=6).number_format = '0.00'
 
-        schedule = calculation_service.get_schedule_for_date(db, user, current_date)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
         _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
         if _sd_factor is not None:
@@ -1231,7 +1251,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
+            target = absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, wh_changes=wh_changes, worked_hours=net)
             absence_type_map = ABSENCE_TYPE_LABELS_DE
             # I-1: ALLE Absences des Tages anzeigen; DSGVO F-003: Krank ohne
             # Health-Flag maskieren (Label "Abwesenheit", Notiz unterdrückt).
@@ -1331,7 +1351,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         sheet.cell(row=row, column=2).font = Font(bold=True, color="8B0000")
 
     row += 1
-    vacation_account = calculation_service.get_vacation_account(db, user, year)
+    vacation_account = calculation_service.get_vacation_account(db, user, year, wh_changes=wh_changes)
     sheet.cell(row=row, column=1).value = "Urlaub genommen (Tage):"
     sheet.cell(row=row, column=2).value = float(vacation_account['used_days'])
     sheet.cell(row=row, column=2).number_format = '0.0'
@@ -1483,6 +1503,8 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
 
     # Fix #7: das Urlaubskonto hängt nur an (user, year) und ist über alle 12
     # Monate identisch — EINMAL vor der Schleife berechnen statt pro Monat.
+    # #449: kein wh_changes-Preload — dieses Blatt ist die bewusst unangetastete
+    # Legacy-Ausnahme (siehe _create_employee_classic_sheet-Docstring/CLAUDE.md).
     vacation_account = calculation_service.get_vacation_account(db, user, year)
 
     # Calculate data for each month
@@ -1755,12 +1777,20 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         ))
         story.append(Spacer(1, 2 * mm))
 
+        # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
+        # pro Tag (28-31× get_schedule_for_date je PDF-Seite, plus die #415-
+        # Kopfzeile unten). F-026: tenant-gefiltert.
+        wh_changes = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,
+        ).order_by(WorkingHoursChange.effective_from).all()
+
         # ── Employee meta ──
         arbzg_flag = " | \u00a718-befreit" if user.exempt_from_arbzg else ""
         night_flag = " | Nachtarbeitnehmer (\u00a76)" if user.is_night_worker else ""
         # #415: Wochenstunden zum Monatsbeginn + \u00c4nderungen im Monat.
         _wh_segments = calculation_service.weekly_hours_segments(
-            db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1])
+            db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1]), wh_changes=wh_changes
         )
         _wh_start = _wh_segments[0].weekly_hours if _wh_segments else user.weekly_hours
         # #431: `compact` — die Meta ist ein Inline-Absatz in Schriftgroesse 8 auf
@@ -1875,7 +1905,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 net = Decimal('0.00')
 
             # Per-day target using the historical contract snapshot (#431)
-            schedule = calculation_service.get_schedule_for_date(db, user, cur)
+            schedule = calculation_service.get_schedule_for_date(db, user, cur, wh_changes=wh_changes)
             daily_target = calculation_service.get_daily_target_for_date(user, cur, schedule)
             _sd_factor = special_days_service.special_day_target_factor(cur, special_day_config)
             if _sd_factor is not None:
@@ -1905,7 +1935,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 bg = colors.HexColor('#FFFFCC')
             elif day_absences:
                 # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
-                target = absence_day_target(db, user, cur, day_absences, set(holidays_by_date), special_day_config, worked_hours=net)
+                target = absence_day_target(db, user, cur, day_absences, set(holidays_by_date), special_day_config, wh_changes=wh_changes, worked_hours=net)
                 # I-1: ALLE Absences des Tages zeigen; DSGVO F-003: Krank ohne
                 # Health-Flag maskieren (Label 'Abwesenheit', Notiz unterdrückt).
                 abw_parts = []
@@ -1985,7 +2015,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
         monthly_balance = summary_actual - summary_target
         overtime_account = calculation_service.get_overtime_account(db, user, year, month)
-        vacation_account = calculation_service.get_vacation_account(db, user, year)
+        vacation_account = calculation_service.get_vacation_account(db, user, year, wh_changes=wh_changes)
 
         bal_color = '#006400' if monthly_balance > 0 else ('#8B0000' if monthly_balance < 0 else '#1e293b')
         ot_color = '#006400' if overtime_account > 0 else ('#8B0000' if overtime_account < 0 else '#1e293b')
