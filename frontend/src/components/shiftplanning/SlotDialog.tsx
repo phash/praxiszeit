@@ -4,6 +4,7 @@ import { X, Trash2, AlertTriangle } from 'lucide-react';
 import Button from '../Button';
 import FormSelect from '../FormSelect';
 import FormInput from '../FormInput';
+import FormTextarea from '../FormTextarea';
 import { getQualifications, WEEKDAY_LABELS, WEEKDAY_LABELS_LONG, type Workstation, type SlotInput } from '../../api/shiftPlanning';
 import { Copy } from 'lucide-react';
 
@@ -21,6 +22,7 @@ export interface SlotDialogInitial {
   end_time: string;
   min_staff: number;
   userIds: string[];
+  note: string; // #443: leerer String = kein Hinweis
 }
 
 interface SlotDialogProps {
@@ -57,6 +59,7 @@ export default function SlotDialog({
   const [start, setStart] = useState(initial.start_time);
   const [end, setEnd] = useState(initial.end_time);
   const [minStaff, setMinStaff] = useState(initial.min_staff);
+  const [note, setNote] = useState(initial.note ?? '');
   const [userIds, setUserIds] = useState<string[]>(initial.userIds);
   const [submitting, setSubmitting] = useState(false);
   const [copyDays, setCopyDays] = useState<number[]>([]); // #322
@@ -71,6 +74,7 @@ export default function SlotDialog({
       setStart(initial.start_time);
       setEnd(initial.end_time);
       setMinStaff(initial.min_staff);
+      setNote(initial.note ?? '');
       setUserIds(initial.userIds);
       setCopyDays([]);
       getQualifications()
@@ -100,15 +104,23 @@ export default function SlotDialog({
   const toggleCopyDay = (d: number) =>
     setCopyDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
 
+  // #443: eine Quelle für beide Absender (Speichern UND Kopieren). Ein leerer
+  // Hinweis geht als null hinaus, damit die Anzeige nicht zwischen "kein
+  // Hinweis" und "Hinweis aus Leerzeichen" unterscheiden muss.
+  const currentFields = (): SlotInput => ({
+    workstation_id: workstationId,
+    weekday,
+    start_time: start,
+    end_time: end,
+    min_staff: minStaff,
+    note: note.trim() || null,
+  });
+
   const handleCopy = async () => {
     if (!onCopy || copyDays.length === 0 || timeInvalid || noWorkstation || copying) return;
     setCopying(true);
     try {
-      await onCopy(
-        copyDays,
-        { workstation_id: workstationId, weekday, start_time: start, end_time: end, min_staff: minStaff },
-        userIds,
-      );
+      await onCopy(copyDays, currentFields(), userIds);
     } finally {
       setCopying(false);
     }
@@ -119,10 +131,7 @@ export default function SlotDialog({
     if (timeInvalid || noWorkstation || submitting) return;
     setSubmitting(true);
     try {
-      await onSubmit(
-        { workstation_id: workstationId, weekday, start_time: start, end_time: end, min_staff: minStaff },
-        userIds,
-      );
+      await onSubmit(currentFields(), userIds);
     } finally {
       setSubmitting(false);
     }
@@ -190,6 +199,15 @@ export default function SlotDialog({
               value={minStaff}
               onChange={(e) => setMinStaff(Math.max(0, Number(e.target.value)))}
               helperText="0 = keine Mindestbesetzung; sonst wird der Slot bei Unterbesetzung markiert."
+            />
+
+            <FormTextarea
+              label="Hinweis (optional)"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              maxLength={500}
+              helperText='Erscheint im Plan und im Ausdruck, z. B. „Einarbeitung Azubi".'
             />
 
             <div>

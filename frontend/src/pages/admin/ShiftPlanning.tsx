@@ -299,6 +299,7 @@ export default function AdminShiftPlanning() {
         end_time: '12:00',
         min_staff: 1,
         userIds: [],
+        note: '',
       },
     });
   };
@@ -315,6 +316,7 @@ export default function AdminShiftPlanning() {
         end_time: slot.end_time,
         min_staff: slot.min_staff,
         userIds: slot.assignments.map((a) => a.user_id),
+        note: slot.note ?? '',
       },
     });
   };
