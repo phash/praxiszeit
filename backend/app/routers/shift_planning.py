@@ -547,6 +547,22 @@ def _plan_or_404(db: Session, tenant_id, plan_id: UUID) -> ShiftPlan:
     return plan
 
 
+def _visible_plan_or_404(db: Session, tenant_id, plan_id: UUID, is_admin: bool) -> ShiftPlan:
+    """``_plan_or_404`` PLUS das #443-Sichtbarkeits-Gate in einem Aufruf.
+
+    Die fachliche Regel selbst lebt schon in ``is_plan_visible_to`` — aber das
+    *Tor* (404 wenn der Plan nicht existiert ODER für diesen Nutzer nicht
+    sichtbar ist) stand bislang wortgleich in ``get_plan`` UND
+    ``export_plan_pdf``. Zwei Kopien derselben Prüfung sind in diesem Projekt
+    schon mehrfach auseinandergelaufen (CR-Genehmigung CREATE/UPDATE,
+    Feiertags-Guard) — eine dritte Lesefläche hätte die Kopie wiederholt.
+    """
+    plan = _plan_or_404(db, tenant_id, plan_id)
+    if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
+        raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
+    return plan
+
+
 def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dict:
     """Full plan detail (slots + assignments + validation). The per-person
     `qualified` / slot `unqualified` flags are included only for admins (#305 M2d)."""
@@ -645,12 +661,11 @@ def get_plan(
     current_user: User = Depends(get_current_user),
 ):
     tid = current_user.tenant_id
-    plan = _plan_or_404(db, tid, plan_id)
     is_admin = current_user.role == UserRole.ADMIN
     # Fix #7 + #443: ein für den Nutzer unsichtbarer Plan "existiert" nicht
-    # (404, deckungsgleich mit dem Filter in list_plans).
-    if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
-        raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
+    # (404, deckungsgleich mit dem Filter in list_plans UND export_plan_pdf —
+    # T6a: das Tor lebt seither in EINEM Helfer, siehe _visible_plan_or_404).
+    plan = _visible_plan_or_404(db, tid, plan_id, is_admin)
     return _build_plan_detail(db, tid, plan, is_admin)
 
 
@@ -674,14 +689,17 @@ def export_plan_pdf(
     weiterhin admin-only und stehen im PDF grundsätzlich nicht.
 
     Der Renderer bekommt das Dict von ``_build_plan_detail`` und stellt keine
-    eigenen Abfragen — so erbt der Ausdruck den #371-Wochentagsfilter und die
-    Unterbesetzungslage automatisch statt sie nachzubauen.
+    eigenen Abfragen — so erbt der Ausdruck den #371-Wochentagsfilter
+    automatisch statt ihn nachzubauen. Die Unterbesetzung (``understaffed`` /
+    ``min_staff``) steckt aus demselben Grund bereits im Dict; der Renderer
+    druckt sie als "Unterbesetzt (x/y)" in die Zelle (M-3, Fix-Runde 2) —
+    davor stand hier fälschlich, das geschähe schon "automatisch", ohne dass
+    der Renderer die Felder je gelesen hätte.
     """
     tid = current_user.tenant_id
-    plan = _plan_or_404(db, tid, plan_id)
     is_admin = current_user.role == UserRole.ADMIN
-    if not shift_planning_service.is_plan_visible_to(plan, today_local(), is_admin):
-        raise HTTPException(status_code=404, detail="Schichtplan nicht gefunden")
+    # T6a: dasselbe Sichtbarkeits-Tor wie get_plan — EIN Helfer statt Kopie.
+    plan = _visible_plan_or_404(db, tid, plan_id, is_admin)
 
     detail = _build_plan_detail(db, tid, plan, is_admin)
     weekdays = shift_planning_service.get_planning_weekdays(db, tid)
@@ -807,7 +825,7 @@ def duplicate_plan(
 ):
     """#338: Schichtplan inkl. Slots + Zuweisungen duplizieren. Die Kopie ist ein
     INAKTIVER Entwurf OHNE Aktiv-Datumsfenster und OHNE Freigabe für Mitarbeitende
-    (#443) (sie soll nicht versehentlich neben dem Original aktiv werden);
+    (#443 — sie soll nicht versehentlich neben dem Original aktiv werden);
     Arbeitsplätze/Einweisungen sind nicht plan-gebunden und werden daher nicht
     kopiert. Alles tenant-scoped (F-026)."""
     tid = current_user.tenant_id

@@ -76,7 +76,20 @@ def _cell_paragraph(slots_of_cell: list[dict]) -> Paragraph:
     for s in sorted(slots_of_cell, key=lambda x: x.get("start_time") or ""):
         lines = [f"<b>{escape_pdf_text(s.get('start_time'))}–{escape_pdf_text(s.get('end_time'))}</b>"]
         names = [escape_pdf_text(a.get("user_name")) for a in (s.get("assignments") or [])]
-        lines.append(", ".join(names) if names else "<i>nicht besetzt</i>")
+        min_staff = s.get("min_staff") or 0
+        if names:
+            lines.append(", ".join(names))
+            # M-3: die Unterbesetzung selbst sichtbar machen, nicht nur wer
+            # eingeteilt ist. Das Bildschirmraster zeigt sie über ein
+            # Warndreieck (WeekGrid.tsx `slot.understaffed`) — der Ausdruck
+            # druckte sie bislang kommentarlos mit, obwohl Docstring UND
+            # docs/SCHICHTPLANUNG.md behaupteten, er würde sie übernehmen.
+            if s.get("understaffed"):
+                lines.append(f"<i>Unterbesetzt ({len(names)}/{min_staff})</i>")
+        elif min_staff:
+            lines.append(f"<i>nicht besetzt (0/{min_staff})</i>")
+        else:
+            lines.append("<i>nicht besetzt</i>")
         note = s.get("note")
         if note:
             # NOTE_MARKER (») statt Pfeil (↳): reportlab rendert mit der

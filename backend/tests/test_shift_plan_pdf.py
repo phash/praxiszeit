@@ -155,6 +155,37 @@ def test_unknown_workstation_still_appears():
     assert buf.getvalue()[:4] == b"%PDF"
 
 
+def test_understaffed_slot_is_marked_in_the_printout():
+    """M-3 (Abschlussgate, Fix-Runde 2): der Ausdruck druckte eine Unterbesetzung
+    bislang kommentarlos mit, obwohl der Docstring von ``export_plan_pdf`` UND
+    ``docs/SCHICHTPLANUNG.md`` behaupteten, er wuerde sie "automatisch erben".
+    Ein Slot mit Mindestbesetzung 3 und zwei zugewiesenen Personen muss jetzt
+    "Unterbesetzt (2/3)" zeigen; ein ausreichend besetzter Slot nicht."""
+    slots = _detail()["slots"]
+    slots[0]["min_staff"] = 3
+    slots[0]["understaffed"] = True  # 2 zugewiesen ("Anna Meier", "Carla Dorn"), 3 gefordert
+    slots[1]["min_staff"] = 1
+    slots[1]["understaffed"] = False  # 1 zugewiesen, 1 gefordert -> erfuellt
+
+    # reportlab schreibt runde Klammern im PDF-String-Literal maskiert
+    # ("\(" / "\)") — der rohe Content-Stream, nicht die semantische Glyphe.
+    text = _pdf_text(_render(slots=slots))
+    assert r"Unterbesetzt \(2/3\)" in text
+    assert r"Unterbesetzt \(1/1\)" not in text
+
+
+def test_unassigned_slot_shows_the_staffing_shortfall():
+    """Ein komplett unbesetzter Slot mit Mindestbesetzung zeigt den Sollwert
+    mit ("nicht besetzt (0/2)"), nicht nur "nicht besetzt"."""
+    slots = _detail()["slots"]
+    slots[0]["assignments"] = []
+    slots[0]["min_staff"] = 2
+    slots[0]["understaffed"] = True
+
+    text = _pdf_text(_render(slots=slots))
+    assert r"nicht besetzt \(0/2\)" in text
+
+
 def test_note_marker_is_representable_in_the_cell_font():
     """Fix-Runde 1 (#443): der Hinweis-Marker muss in der tatsächlich für die
     Tabellenzelle verwendeten Schrift (Helvetica/WinAnsiEncoding) darstellbar
