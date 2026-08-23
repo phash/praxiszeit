@@ -1030,7 +1030,8 @@ Warnung, blockiert nicht).
 gleichzeitig aktiv** sein. Mitarbeitende sehen ihre heutige Einteilung im
 Dashboard.
 
-**Freigabe für Mitarbeitende:** In den Plan-Einstellungen (Zahnrad im Plankopf)
+**Freigabe für Mitarbeitende:** Über den Knopf „Bearbeiten" (Stift-Symbol) in
+der Werkzeugleiste des Plan-Editors öffnen Sie die Plan-Einstellungen; dort
 gibt es zusätzlich den Schalter **„Für Mitarbeitende sichtbar"**. Er macht den
 Plan in der Mitarbeiteransicht sichtbar, **auch wenn er heute noch nicht gilt**
 – praktisch, um z. B. einen ab dem 1. September geltenden Plan schon vorher

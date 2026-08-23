@@ -622,7 +622,7 @@ eingeteilt ist. Sichtbar sind Pläne, die **heute gelten**, sowie Pläne, die Ih
 Administrator ausdrücklich **für Mitarbeitende freigegeben** hat – auch wenn
 sie erst künftig gelten. Sind mehrere Pläne sichtbar, steht oben eine
 **Auswahl**; ein noch nicht geltender Plan trägt zusätzlich den Hinweis
-„Dieser Plan gilt noch nicht – er ist zur Ansicht freigegeben.", damit Sie ihn
+„Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben.", damit Sie ihn
 nicht mit dem aktuellen Plan verwechseln.
 
 Manche Einteilungen tragen einen **Hinweis** (z. B. „Einarbeitung Azubi"),
