@@ -93,6 +93,7 @@ export interface MyTodayEntry {
   location_name: string | null;
   start_time: string;
   end_time: string;
+  note: string | null; // #453: Hinweis je Einteilung (#443), leer = null
 }
 
 export interface MyToday {
