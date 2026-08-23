@@ -308,10 +308,10 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **Stammdaten:** Standorte (optional) + Arbeitsplätze (mit Farbe) anlegen.
 - **Plan:** beliebig viele Wochenpläne; Slots per Drag & Drop / Klick, Mitarbeitende auf Slot ziehen, Mindestbesetzung optional.
 - **Aktiv schalten** → für alle sichtbar (mehrere Pläne gleichzeitig aktiv möglich).
-- **Freigabe:** Plan-Einstellungen → „Für Mitarbeitende sichtbar" macht einen Plan sichtbar, auch bevor er gilt (Kopie erbt das nicht). **Hinweis** je Slot (optional, 500 Zeichen, sichtbar als »-Text). **PDF**-Knopf druckt Arbeitsplatz×Wochentag im Querformat – auch MA können ihren sichtbaren Plan drucken.
+- **Freigabe:** Plan-Einstellungen → „Für Mitarbeitende sichtbar" macht einen Plan unabhängig vom Datums-Fenster sichtbar – auch bevor er gilt **und nach dessen Ablauf** (Kopie erbt das nicht). **Falle:** befristeter Plan abgelaufen, Schalter vergessen zurückzusetzen → bleibt für MA sichtbar (als „Nicht mehr gültig" markiert). Freigegebene Pläne erkennbar am **Augen-Symbol** in der Planliste / Abzeichen „Sichtbar" im Plan-Kopf. **Hinweis** je Slot (optional, 500 Zeichen, sichtbar als »-Text). **PDF**-Knopf druckt Arbeitsplatz×Wochentag im Querformat – auch MA können ihren sichtbaren Plan drucken; gilt der gedruckte Plan gerade nicht, trägt der Ausdruck den Vermerk „Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig".
 - **Einweisungen:** Matrix MA × Arbeitsplätze; nicht eingewiesene Zuweisung → weiche Warnung (blockiert nicht). MA sehen ihre Einweisungen im Profil.
 - **KW-/Jahresplanung (#305 M2):** pro Plan optionales Aktiv-Datums-Fenster („von/bis") + Jahres-Zeitstrahl. **Automatisch füllen** verteilt eingewiesene, verfügbare MA greedy auf die Slots (Zielwoche, ausgewogen nach Auslastung/Überstunden) → Entwurf, aktiviert den Plan **nicht**.
-- **Woche/Tag-Umschalter** (#321); im Slot-Dialog **„Auf Wochentage kopieren"** → Schicht inkl. Zuweisungen auf weitere Tage (#322).
+- **Woche/Tag-Umschalter** (#321); im Slot-Dialog **„Auf Wochentage kopieren"** → Schicht (Arbeitsplatz, Zeit, Mindestbesetzung, Zuweisungen **und Hinweis**) auf weitere Tage (#322).
 - **Auslastung (#330):** unter jedem Namen „zugewiesene Std / Wochenarbeitszeit" (z. B. „15,25 / 17 h") – grün ±30 Min, gelb ±1 Std, sonst rot.
 - Reines Planungswerkzeug – **keine** Wirkung auf Zeiterfassung/ArbZG/Urlaub/Überstunden. Details: `docs/SCHICHTPLANUNG.md`.
 
