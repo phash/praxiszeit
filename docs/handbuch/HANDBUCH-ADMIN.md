@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.7 | Stand: August 2026 (für PraxisZeit 1.18.1)**
+**Version 2.7 | Stand: August 2026 (für PraxisZeit 1.18.2)**
 
 ---
 
@@ -861,7 +861,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.18.1). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.18.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -937,6 +937,12 @@ PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll –
 **Monatssaldo = Monats-Ist − Monats-Soll.** Das kumulierte Überstundenkonto summiert die Monatssalden fortlaufend und startet beim **Jahresübertrag** (Carryover) des Jahres. Die Spalte „Überstunden (JTD)" in der Benutzerübersicht zeigt den Saldo vom 1. Januar bis heute zzgl. Carryover.
 
 **Voraussichtlicher Saldo zum Jahresende:** Daneben steht, wie das Konto zum 31.12. voraussichtlich aussieht – der Saldo bis heute abzüglich der Stunden aller bereits gebuchten künftigen **Überstundenausgleich**-Tage. Nur Ausgleichstage senken das Konto; Urlaub, Krankheit und Fortbildung sind saldo-neutral und fließen deshalb nicht in die Vorschau ein. Dieselbe Kennzahl sehen Mitarbeitende auf ihrem Dashboard.
+
+Beide Anzeigen lassen sich unter **Einstellungen → Überstunden-Projektion zum Jahresende** getrennt abschalten (#430, Standard jeweils **an** – bisheriges Verhalten bleibt erhalten):
+- **„Im Mitarbeiter-Dashboard anzeigen"** – aus: Mitarbeitende sehen die Vorschau-Zeile auf ihrem eigenen Dashboard nicht mehr; die Berechnung entfällt dann ganz.
+- **„Im Admin-Dashboard anzeigen"** – aus: Die Spalte „Überstd. Jahresende" im Monats- und Wochenbericht des Admin-Dashboards entfällt (dort ohnehin nur im laufenden Monat sichtbar, und nur, wenn mindestens ein/e Mitarbeiter:in bereits künftigen Ausgleich gebucht hat).
+
+Beide Schalter wirken nur auf die Anzeige – das Überstundenkonto selbst wird unverändert weitergerechnet.
 
 ### 18.7 Urlaubskonto (Tagesprinzip)
 
@@ -1102,4 +1108,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: August 2026 (für PraxisZeit 1.18.1)*
+*Stand: August 2026 (für PraxisZeit 1.18.2)*

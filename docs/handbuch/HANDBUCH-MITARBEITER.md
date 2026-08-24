@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.6 · **Stand:** August 2026 (PraxisZeit 1.18.1)
+**Version:** 2.6 · **Stand:** August 2026 (PraxisZeit 1.18.2)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -647,4 +647,4 @@ legt Ihr Administrator fest.
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.6 | August 2026 (PraxisZeit 1.18.1)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.6 | August 2026 (PraxisZeit 1.18.2)*

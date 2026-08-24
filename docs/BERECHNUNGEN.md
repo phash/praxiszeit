@@ -1,6 +1,6 @@
 # Stunden- und Urlaubsberechnung – PraxisZeit
 
-> **Stand: August 2026 · App-Version 1.18.1**
+> **Stand: August 2026 · App-Version 1.18.2**
 > Diese Doku beschreibt **exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und
 > Urlaubswerte berechnet. Alle Formeln sind aus
 > [`backend/app/services/calculation_service.py`](../backend/app/services/calculation_service.py)
@@ -425,6 +425,18 @@ Tages-Soll). Angezeigt im MA-Dashboard und in der Admin-Benutzerübersicht.
   Tages-Solls die geplante Tagesarbeitszeit (`_fixed_planned_hours`): dort mindert ein
   `OVERTIME`-Tag das flache Monats-Soll nicht und bringt kein Ist — der Saldo sinkt um die
   geplanten Stunden des Tages.
+* **Beide Anzeigeflächen sind je Tenant abschaltbar (#430),** über
+  `settings_service.SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD` /
+  `SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD` (beide `get_bool_setting(..., default=True)` —
+  Standard also **an**, bisheriges Verhalten). Aus gesetzt liefert
+  `dashboard.get_overtime_account` (MA-Eigenansicht) bzw.
+  `reports.get_monthly_report`/`get_weekly_report` (Admin-Dashboard, Monats-/Wochenbericht)
+  `projected_year_end`/`projected_year_end_overtime = None`, **ohne**
+  `future_freizeitausgleich_impact` überhaupt aufzurufen. Der Admin-Gate greift zusätzlich
+  nur für den laufenden Monat (`year == heute.year and month == heute.month`) und nur für
+  `track_hours=True`-MA; die Spalte „Überstd. Jahresende" im Admin-Dashboard blendet sich
+  außerdem komplett aus, sobald für keine/n MA ein Wert zurückkommt. Reine Anzeige-Gates —
+  das Überstundenkonto selbst rechnet in beiden Fällen unverändert weiter.
 
 ---
 
