@@ -712,8 +712,9 @@ def export_plan_pdf(
     # (SQLite sortiert NULL zuerst, PostgreSQL zuletzt — das wäre eine stille
     # Divergenz zwischen Test- und Produktivverhalten gewesen). Standortlose
     # Arbeitsplätze fallen bewusst ans Ende (sie gehören zu keiner Gruppe).
-    # Der Standort selbst wird im PDF NICHT angezeigt — das bleibt eine offene
-    # Gestaltungsfrage, hier geht es nur um die Zeilenreihenfolge.
+    # #452: der Standort wird seither angezeigt (Kopfzeile bei einheitlichem
+    # Standort, sonst je Zeile) — siehe ``workstation_locations`` unten und den
+    # Docstring von ``generate_plan_pdf``.
     locations_by_id = {
         loc.id: loc for loc in db.query(Location).filter(Location.tenant_id == tid).all()
     }
@@ -724,13 +725,20 @@ def export_plan_pdf(
             return (1, 0, "", w.sort_order, w.name)
         return (0, loc.sort_order, loc.name, w.sort_order, w.name)
 
-    ws_order = [
-        w.name
-        for w in sorted(
-            db.query(Workstation).filter(Workstation.tenant_id == tid).all(),  # F-026
-            key=_ws_sort_key,
-        )
-    ]
+    ws_rows = sorted(
+        db.query(Workstation).filter(Workstation.tenant_id == tid).all(),  # F-026
+        key=_ws_sort_key,
+    )
+    ws_order = [w.name for w in ws_rows]
+    # #452: Arbeitsplatzname → Standortname, für den Renderer. Der Renderer
+    # bleibt dadurch datenbankfrei (#443) — er bekommt die Zuordnung reingereicht,
+    # genau wie ``ws_order`` selbst. ``_slot_dict``/das Detail-Dict bewusst NICHT
+    # um ``location_name`` erweitert: das würde auch den Bildschirm (Frontend-
+    # Typen, WeekGrid) berühren, den dieses Ticket unangetastet lassen will.
+    ws_locations = {
+        w.name: (locations_by_id[w.location_id].name if w.location_id in locations_by_id else None)
+        for w in ws_rows
+    }
     # "practice_name" ist im Projekt KEIN Settings-Key (nicht in
     # admin_settings._ALLOWED_SETTINGS) — der Praxisname lebt auf Tenant.name
     # (siehe signup_service._create_tenant: name=practice_name). Die Abfrage
@@ -746,6 +754,7 @@ def export_plan_pdf(
         workstation_order=ws_order,
         practice_name=practice_name,
         generated_on=generated_on,
+        workstation_locations=ws_locations,
     )
     db.close()  # F-053: Pool-Verbindung vor dem Streamen freigeben
     safe = _FILENAME_SAFE_RE.sub("_", plan.name).strip("_") or "Schichtplan"

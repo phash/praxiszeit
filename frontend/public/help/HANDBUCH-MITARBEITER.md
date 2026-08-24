@@ -631,7 +631,10 @@ mit einem aktuell geltenden Plan verwechseln.
 
 Manche Einteilungen tragen einen **Hinweis** (z. B. „Einarbeitung Azubi"),
 erkennbar am vorangestellten **»**. Über den Knopf **„PDF"** drucken Sie den
-gerade angezeigten Plan als Aushang aus.
+gerade angezeigten Plan als Aushang aus. Nutzt Ihre Praxis mehrere Standorte,
+zeigt der Ausdruck den Standort entweder einmal in der Kopfzeile (gilt er für
+den ganzen Plan) oder hinter dem jeweiligen Arbeitsplatznamen, z. B. „Tresen
+(Hauptstelle)".
 
 Auf dem **Dashboard** zeigt die Karte **„Deine Einteilung heute"** Ihre heutigen
 Einsätze mit Arbeitsplatz und Uhrzeit — samt Hinweis (**»**), falls einer

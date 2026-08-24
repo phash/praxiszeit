@@ -141,18 +141,40 @@ def generate_plan_pdf(
     workstation_order: list,
     practice_name: Optional[str],
     generated_on: date,
+    workstation_locations: Optional[dict] = None,
 ) -> BytesIO:
     """Rendert einen Schichtplan als PDF-Aushang im Querformat A4.
 
-    ``detail``            Das Dict von ``_build_plan_detail``.
-    ``weekdays``          Freigeschaltete Planungstage (0=Mo … 6=So), #371 —
-                          ein abgeschalteter Tag bekommt keine Spalte.
-    ``workstation_order`` Arbeitsplatznamen in der gewünschten Zeilenreihenfolge.
-                          Ein Name, der hier fehlt, wird hinten angehängt statt
-                          verworfen.
-    ``practice_name``     Praxisname für die Kopfzeile, optional.
-    ``generated_on``      Das „Stand"-Datum. Wird hereingereicht statt intern
-                          ermittelt, damit die Funktion rein und prüfbar bleibt.
+    ``detail``               Das Dict von ``_build_plan_detail``.
+    ``weekdays``             Freigeschaltete Planungstage (0=Mo … 6=So), #371 —
+                             ein abgeschalteter Tag bekommt keine Spalte.
+    ``workstation_order``    Arbeitsplatznamen in der gewünschten Zeilenreihenfolge.
+                             Ein Name, der hier fehlt, wird hinten angehängt statt
+                             verworfen.
+    ``practice_name``        Praxisname für die Kopfzeile, optional.
+    ``generated_on``         Das „Stand"-Datum. Wird hereingereicht statt intern
+                             ermittelt, damit die Funktion rein und prüfbar bleibt.
+    ``workstation_locations`` #452: Arbeitsplatzname → Standortname (oder
+                             ``None``), analog zu ``workstation_order`` vom
+                             Endpunkt hereingereicht statt hier nachgeschlagen —
+                             der Renderer bleibt dadurch ohne Datenbankzugriff
+                             (#443). Fehlt der Parameter (z. B. ältere Aufrufer),
+                             verhält sich die Funktion wie zuvor: kein Standort
+                             irgendwo im Ausdruck.
+
+                             Darstellung (Entscheidung #452): haben ALLE
+                             Arbeitsplätze, die in diesem Plan tatsächlich
+                             vorkommen, denselben (nicht-leeren) Standort, steht
+                             er EINMAL in der Kopfzeile — der häufigste Fall
+                             (eine Praxis, ein Standort, oder ein Plan je
+                             Standort) bleibt billig und die schmale erste
+                             Spalte unangetastet. Sonst (unterschiedliche
+                             Standorte, oder ein Teil ganz ohne) steht er je
+                             Zeile hinter dem Arbeitsplatznamen, z. B.
+                             „Tresen (Hauptstelle)"; ein Arbeitsplatz ganz ohne
+                             Standort bekommt in diesem Fall KEINEN Zusatz. Kein
+                             Standort gesetzt (alle ``None``) zeigt an keiner
+                             Stelle etwas.
     """
     days = sorted(d for d in weekdays if 0 <= d <= 6)
     if not days:
@@ -169,6 +191,16 @@ def generate_plan_pdf(
             present.append(nm)
     rows_order = [n for n in workstation_order if n in present]
     rows_order += [n for n in present if n not in rows_order]
+
+    # #452: Standort auflösen — NUR über die tatsächlich in diesem Plan
+    # vorkommenden Arbeitsplätze (rows_order), nicht über den ganzen
+    # Mandanten-Bestand. Ein Arbeitsplatz ohne Eintrag in
+    # ``workstation_locations`` (z. B. inzwischen gelöscht, siehe
+    # "present"-Fallback oben) zählt als "kein Standort".
+    loc_map = workstation_locations or {}
+    row_locations = {n: loc_map.get(n) for n in rows_order}
+    distinct_locations = set(row_locations.values())
+    header_location = next(iter(distinct_locations)) if len(distinct_locations) == 1 else None
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -188,6 +220,9 @@ def generate_plan_pdf(
     meta_bits = [b for b in (
         f"<b>{status_note}</b>" if status_note else "",
         escape_pdf_text(practice_name) if practice_name else "",
+        # #452: nur wenn ALLE Arbeitsplätze des Plans denselben (nicht-leeren)
+        # Standort tragen — sonst steht er stattdessen je Zeile, siehe unten.
+        f"Standort: {escape_pdf_text(header_location)}" if header_location else "",
         escape_pdf_text(detail.get("description") or ""),
         escape_pdf_text(_validity_text(detail)),
         f"Stand: {generated_on.strftime('%d.%m.%Y')}",
@@ -198,7 +233,15 @@ def generate_plan_pdf(
     header = [Paragraph("Arbeitsplatz", _HEAD)] + [Paragraph(WEEKDAY_LABELS[d], _HEAD) for d in days]
     table_data = [header]
     for ws_name in rows_order:
-        row = [Paragraph(escape_pdf_text(ws_name), _ROWHEAD)]
+        row_label = escape_pdf_text(ws_name)
+        # #452: Standort nur in die Zeile, wenn er NICHT schon einheitlich in
+        # der Kopfzeile steht — sonst würde er doppelt erscheinen. Ein
+        # Arbeitsplatz ohne Standort bleibt auch im gemischten Fall ohne Zusatz.
+        if header_location is None:
+            row_loc = row_locations.get(ws_name)
+            if row_loc:
+                row_label = f"{row_label} ({escape_pdf_text(row_loc)})"
+        row = [Paragraph(row_label, _ROWHEAD)]
         for d in days:
             row.append(_cell_paragraph([
                 s for s in slots

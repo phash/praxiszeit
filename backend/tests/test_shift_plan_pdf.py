@@ -86,12 +86,17 @@ def _detail(**over):
 
 
 def _render(**over):
+    # #452: workstation_locations ist kein Feld von _detail() (das Slot-Dict
+    # führt den Standort bewusst nicht, siehe generate_plan_pdf-Docstring) —
+    # separat herausgelöst statt an _detail() durchgereicht.
+    ws_locations = over.pop("workstation_locations", None)
     return shift_plan_export_service.generate_plan_pdf(
         _detail(**over),
         weekdays=[0, 1, 2, 3, 4],
         workstation_order=["Tresen", "Labor"],
         practice_name="Praxis Beispiel",
         generated_on=date(2026, 8, 23),
+        workstation_locations=ws_locations,
     )
 
 
@@ -305,6 +310,49 @@ def test_currently_active_plan_carries_no_status_note():
     text = _pdf_text(_render(active_today=True))
     assert "Vorschau" not in text
     assert "Nicht mehr gültig" not in text
+
+
+def test_uniform_location_appears_in_header_not_in_rows():
+    """#452: Tragen ALLE Arbeitsplätze des Plans denselben Standort, steht er
+    EINMAL in der Kopfzeile — nicht zusätzlich hinter jedem Arbeitsplatznamen.
+    Reportlab schreibt runde Klammern im PDF-String-Literal maskiert
+    ("\\(" / "\\)"), siehe test_understaffed_slot_is_marked_in_the_printout."""
+    text = _pdf_text(_render(workstation_locations={"Tresen": "Hauptstelle", "Labor": "Hauptstelle"}))
+    assert "Standort: Hauptstelle" in text
+    assert r"Tresen \(Hauptstelle\)" not in text
+    assert r"Labor \(Hauptstelle\)" not in text
+
+
+def test_mixed_locations_appear_in_rows_not_header():
+    """#452: unterschiedliche Standorte je Arbeitsplatz — der Standort steht
+    dann je Zeile hinter dem Arbeitsplatznamen, NICHT (zusätzlich) einheitlich
+    in der Kopfzeile."""
+    text = _pdf_text(_render(workstation_locations={"Tresen": "Hauptstelle", "Labor": "Filiale"}))
+    assert "Standort:" not in text
+    assert r"Tresen \(Hauptstelle\)" in text
+    assert r"Labor \(Filiale\)" in text
+
+
+def test_mixed_locations_workstation_without_location_gets_no_suffix():
+    """#452: im gemischten Fall bekommt ein Arbeitsplatz OHNE Standort keinen
+    Klammer-Zusatz — "Labor" bleibt "Labor", nicht "Labor ()" o. ä."""
+    text = _pdf_text(_render(workstation_locations={"Tresen": "Hauptstelle", "Labor": None}))
+    assert "Standort:" not in text
+    assert r"Tresen \(Hauptstelle\)" in text
+    assert r"Labor \(" not in text
+
+
+def test_no_location_set_shows_nothing():
+    """#452: kein Arbeitsplatz des Plans trägt einen Standort (alle ``None``,
+    oder ``workstation_locations`` ganz weggelassen wie vor #452) — dann taucht
+    an keiner Stelle etwas auf, weder Kopfzeile noch Zeile."""
+    text_explicit = _pdf_text(_render(workstation_locations={"Tresen": None, "Labor": None}))
+    text_omitted = _pdf_text(_render())
+
+    for text in (text_explicit, text_omitted):
+        assert "Standort:" not in text
+        assert r"Tresen \(" not in text
+        assert r"Labor \(" not in text
 
 
 import asyncio
@@ -564,3 +612,48 @@ def test_export_pdf_orders_workstations_by_location_then_sort_order_then_name(db
     export_plan_pdf(plan.id, db=db, current_user=admin)
 
     assert captured["workstation_order"] == ["Zeta", "Alpha", "Springer"]
+
+
+def test_export_pdf_passes_workstation_locations_to_the_renderer(db, default_tenant, monkeypatch):
+    """#452: der Renderer bleibt datenbankfrei (#443) — der Endpunkt reicht ihm
+    deshalb eine Zuordnung Arbeitsplatz→Standort mit hinein, genau wie er das
+    bereits mit ``workstation_order`` tut (Testfall direkt darüber, gleiches
+    Standort-/Arbeitsplatz-Fixture). "Springer" hat keinen Standort und muss
+    als ``None`` ankommen, nicht als fehlender Key oder Leerstring."""
+    from io import BytesIO
+
+    from app.models.shift_planning import Location
+    from app.services import shift_plan_export_service
+
+    admin = _user(db, "pdf_locmap_admin", role=UserRole.ADMIN)
+
+    loc_haupt = Location(tenant_id=DEFAULT_TENANT_ID, name="Hauptstelle", sort_order=0)
+    loc_filiale = Location(tenant_id=DEFAULT_TENANT_ID, name="Filiale", sort_order=1)
+    db.add_all([loc_haupt, loc_filiale])
+    db.commit()
+    db.refresh(loc_haupt)
+    db.refresh(loc_filiale)
+
+    ws_zeta = Workstation(tenant_id=DEFAULT_TENANT_ID, name="Zeta", location_id=loc_haupt.id, sort_order=0)
+    ws_alpha = Workstation(tenant_id=DEFAULT_TENANT_ID, name="Alpha", location_id=loc_filiale.id, sort_order=0)
+    ws_springer = Workstation(tenant_id=DEFAULT_TENANT_ID, name="Springer", location_id=None, sort_order=0)
+    db.add_all([ws_zeta, ws_alpha, ws_springer])
+    db.commit()
+
+    plan = _plan(db, admin, "Standort-Zuordnung")
+
+    captured = {}
+
+    def _fake_generate_plan_pdf(detail, *, workstation_locations, **kwargs):
+        captured["workstation_locations"] = workstation_locations
+        return BytesIO(b"%PDF-fake")
+
+    monkeypatch.setattr(shift_plan_export_service, "generate_plan_pdf", _fake_generate_plan_pdf)
+
+    export_plan_pdf(plan.id, db=db, current_user=admin)
+
+    assert captured["workstation_locations"] == {
+        "Zeta": "Hauptstelle",
+        "Alpha": "Filiale",
+        "Springer": None,
+    }
