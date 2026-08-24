@@ -119,13 +119,28 @@ export type TestDataFixtures = {
 export const testDataTest = authTest.extend<TestDataFixtures>({
   testEmployee: async ({ adminApi }, use) => {
     testUserCounter++;
-    const username = `e2e_test_${Date.now()}_${testUserCounter}`;
+    // #451-Folgefix: `testUserCounter` ist ein PROZESSLOKALER Zähler — mit
+    // `workers: 2` startet jeder Worker-Prozess unabhängig bei 0. Der
+    // Benutzername trug schon `Date.now()` (worker-übergreifend eindeutig
+    // genug), der Nachname aber nur den nackten Zähler (`User1`, `User2`, …)
+    // — zwei Worker konnten so gleichzeitig einen exakt gleich benannten
+    // "Test User1" anlegen. Der Zuweisungsdialog in shift-planning.spec.ts
+    // listet mandantenweit ALLE Mitarbeitenden und matcht über
+    // `${first_name} ${last_name}\b` → strict-mode-Verstoß (zwei Treffer).
+    // Ein einmal gebildeter, gemeinsamer eindeutiger Teil für Username UND
+    // Nachname behebt das an der Quelle. Bewusst nur Ziffern + Unterstrich
+    // (kein Trennzeichen, das eine Regex sprengen könnte) — mehrere Specs
+    // bauen aus `last_name` ein Suchmuster (`new RegExp(...)`) oder einen
+    // CSS-Attribut-Selektor (`[aria-label*="..."]`); Sonderzeichen dort
+    // wären ein neuer, subtilerer Bruch.
+    const unique = `${Date.now()}_${testUserCounter}`;
+    const username = `e2e_test_${unique}`;
     const password = 'TestPass123!';
     const userData = {
       username,
       password,
       first_name: 'Test',
-      last_name: `User${testUserCounter}`,
+      last_name: `User${unique}`,
       role: 'employee',
       weekly_hours: 40,
       work_days_per_week: 5,

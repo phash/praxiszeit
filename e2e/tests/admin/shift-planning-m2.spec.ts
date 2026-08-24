@@ -4,18 +4,16 @@ import { test, expect } from '../../fixtures/base.fixture';
  * #305 M2 — KW-/Ganzjahres-Planung (Datums-Fenster, PlanSettingsDialog) +
  * Auto-Generierung (GenerateDialog). Exercises the new M2 UI wiring on a live
  * plan; the greedy generator itself is covered by backend unit tests.
+ *
+ * #451: die mandantenweite Einstellung `shift_planning_enabled` wird NICHT
+ * mehr hier geschaltet — siehe global-setup.ts.
  */
 test.describe('Schichtplanung M2 (#305)', () => {
   const planName = `E2E-M2-Plan-${Date.now()}`;
 
-  test.beforeEach(async ({ adminApi }) => {
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'true' });
-  });
-
   test.afterEach(async ({ adminApi }) => {
     const plans = await adminApi.get('/shift-planning/plans');
     for (const p of plans) if (p.name === planName) await adminApi.delete(`/shift-planning/plans/${p.id}`);
-    await adminApi.put('/admin/settings/shift_planning_enabled', { value: 'false' });
   });
 
   test('set an active date window via Bearbeiten + open Automatisch füllen', async ({ adminPage, adminApi }) => {
