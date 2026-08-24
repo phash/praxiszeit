@@ -1051,8 +1051,9 @@ Blick am **Augen-Symbol** in der Planliste sowie am Abzeichen **„Sichtbar"**
 
 **Hinweis je Einteilung:** Im Slot-Dialog gibt es das Feld **„Hinweis
 (optional)"** (bis zu 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung
-für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster
-und im PDF-Ausdruck – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
+für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster,
+im PDF-Ausdruck und auf der Dashboard-Karte „Deine Einteilung heute" der
+betroffenen Mitarbeitenden – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
 oder Überstunden. **Achtung:** Der Hinweis ist für alle Mitarbeitenden sichtbar,
 die den Plan sehen dürfen, und wird beim PDF-Aushang mitgedruckt – tragen Sie
 dort keine Gesundheitsangaben oder anderen sensiblen Daten ein.
@@ -1067,7 +1068,12 @@ Gilt der gedruckte Plan gerade nicht (freigegebener Vorschau- oder bereits
 abgelaufener Plan), trägt der Ausdruck fett und an erster Stelle in der
 Kopfzeile einen Vermerk: **„Vorschau — gilt derzeit nicht"** bzw. **„Nicht mehr
 gültig"** – damit am Schwarzen Brett kein veralteter oder erst künftig
-geltender Plan mit dem aktuell gültigen verwechselt wird.
+geltender Plan mit dem aktuell gültigen verwechselt wird. Haben **alle**
+Arbeitsplätze des Plans denselben Standort, steht er einmal in der Kopfzeile
+(„Standort: Hauptstelle"); nutzt der Plan **unterschiedliche** Standorte (oder
+ist er bei einem Teil gar nicht gesetzt), steht er stattdessen hinter jedem
+betroffenen Arbeitsplatznamen, z. B. „Tresen (Hauptstelle)" – so ist bei zwei
+Aushängen für zwei Standorte am Schwarzen Brett klar, welcher gemeint ist.
 
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht

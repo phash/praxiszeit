@@ -76,13 +76,13 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   - **Drag & Drop:** Slot-Block auf einen anderen Wochentag / eine andere Uhrzeit ziehen (15-Minuten-Raster). Mitarbeitende aus der Liste rechts auf einen Slot ziehen → zugewiesen.
   - **Klick-Pfad:** „+ Slot" bzw. Klick auf eine freie Rasterfläche öffnet einen Dialog (Arbeitsplatz, Wochentag, Von/Bis, Mindestbesetzung, Hinweis, Mitarbeitende). Klick auf einen vorhandenen Slot bearbeitet ihn.
 - **Mindestbesetzung:** Pro Slot setzbar. Unterbesetzte Slots werden markiert (⚠), der Plan zeigt einen Hinweis. Es ist eine **weiche Warnung** – Speichern und Aktivieren bleiben möglich.
-- **Hinweis je Einteilung (#443):** Im Slot-Dialog gibt es das Feld **„Hinweis (optional)"** (höchstens 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster unter der Zuweisung und im PDF-Ausdruck. Rein informativ — er fließt in keine Berechnung, Validierung oder Warnung ein und übersteht auch das „Auf Wochentage kopieren" (#322). **Achtung:** sichtbar für alle Mitarbeitenden mit Plansicht und Teil des PDF-Aushangs — keine Gesundheitsangaben oder anderen sensiblen Daten hineinschreiben.
+- **Hinweis je Einteilung (#443, seit #453 auch auf dem Dashboard):** Im Slot-Dialog gibt es das Feld **„Hinweis (optional)"** (höchstens 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster unter der Zuweisung, im PDF-Ausdruck **und** auf der Dashboard-Karte „Deine Einteilung heute" (#453) — genau dort, wo eine Mitarbeiterin morgens tatsächlich hinschaut. Rein informativ — er fließt in keine Berechnung, Validierung oder Warnung ein und übersteht auch das „Auf Wochentage kopieren" (#322). **Achtung:** sichtbar für alle Mitarbeitenden mit Plansicht und Teil des PDF-Aushangs — keine Gesundheitsangaben oder anderen sensiblen Daten hineinschreiben.
 
 **Aktivschaltung:**
 - „Aktiv schalten" macht den Plan für alle sichtbar (Read-only-Ansicht + Dashboard).
 - **Mehrere Pläne können gleichzeitig aktiv** sein (z. B. je Standort). Das Dashboard zeigt jedem Mitarbeitenden die **Vereinigung** seiner Einteilungen über alle aktiven Pläne für den heutigen Wochentag.
 - **Freigabe für Mitarbeitende (#443):** Über den Knopf „Bearbeiten" (Stift-Symbol) in der Werkzeugleiste des Plan-Editors öffnen Sie die Plan-Einstellungen; dort gibt es zusätzlich den Schalter **„Für Mitarbeitende sichtbar"**. Er blendet den Plan in der Mitarbeiteransicht ein, **auch wenn er heute noch gar nicht gilt** — gedacht, um z. B. einen ab September geltenden Plan schon jetzt bekannt zu machen. Ein heute aktiver bzw. im Datums-Fenster liegender Plan ist ohnehin sichtbar; der Schalter betrifft nur den Fall davor. Er wirkt nicht rückwirkend auf bereits laufende Pläne, die niemand extra freigegeben hat.
-- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen Aushang im **Querformat** (A4) mit einer Tabelle **Arbeitsplatz × Wochentag** — zum Aushängen am Schwarzen Brett. Mitarbeitende haben denselben Knopf in ihrer Ansicht und können damit **nur den Plan drucken, den sie ohnehin sehen dürfen**. Der Hinweistext je Einteilung wird mitgedruckt — ein Schwarzes Brett ist oft auch für Patientinnen und Patienten einsehbar. Ein noch nicht geltender (freigegebener) oder bereits abgelaufener Plan trägt in der Kopfzeile des Ausdrucks denselben Vorschau-/Ablauf-Vermerk wie am Bildschirm (fett: „Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — er ist also auch am Schwarzen Brett nicht mit dem aktuell geltenden Plan zu verwechseln (Prüfrunde 2, I-1).
+- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen Aushang im **Querformat** (A4) mit einer Tabelle **Arbeitsplatz × Wochentag** — zum Aushängen am Schwarzen Brett. Mitarbeitende haben denselben Knopf in ihrer Ansicht und können damit **nur den Plan drucken, den sie ohnehin sehen dürfen**. Der Hinweistext je Einteilung wird mitgedruckt — ein Schwarzes Brett ist oft auch für Patientinnen und Patienten einsehbar. Ein noch nicht geltender (freigegebener) oder bereits abgelaufener Plan trägt in der Kopfzeile des Ausdrucks denselben Vorschau-/Ablauf-Vermerk wie am Bildschirm (fett: „Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — er ist also auch am Schwarzen Brett nicht mit dem aktuell geltenden Plan zu verwechseln (Prüfrunde 2, I-1). **Standort (#452):** Haben alle Arbeitsplätze des Plans denselben Standort, steht er einmal in der Kopfzeile („Standort: Hauptstelle"); haben sie unterschiedliche (oder ist er bei einem Teil gar nicht gesetzt), steht er stattdessen hinter jedem betroffenen Arbeitsplatznamen, z. B. „Tresen (Hauptstelle)" — so ist bei zwei Aushängen für zwei Filialen am Schwarzen Brett klar, welcher gemeint ist.
 
 **KW-/Ganzjahres-Planung (Datums-Fenster):**
 - Über **Bearbeiten** kann pro Plan ein optionales **Aktiv-Datums-Fenster** („aktiv von/bis") gesetzt werden. Der Plan gilt dann **automatisch** als aktiv, wenn das heutige Datum im Fenster liegt — zusätzlich zum manuellen „Aktiv schalten". Eine offene Grenze ist erlaubt (nur „von" oder nur „bis").
@@ -108,8 +108,8 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   Nicht-Admins **serverseitig** ausgeblendet — nicht nur im Frontend (s.
   „Sichtbarkeit").
 - **Mehrere sichtbare Pläne (#443, seit Prüfrunde 2 F-2):** Gilt heute mehr als ein Plan gleichzeitig (z. B. je ein Plan pro Standort — ausdrücklich unterstützte Konfiguration, `get_my_today` bildet serverseitig die Vereinigung über alle aktiven Pläne), werden **alle** heute geltenden Pläne untereinander angezeigt, nicht nur einer. Eine **Plan-Auswahl** (Dropdown mit Namen + „Ab TT.MM.JJJJ"/„Vorschau"/„Nicht mehr gültig") erscheint nur noch für **zusätzlich freigegebene, heute nicht geltende** Pläne und lädt ihr Detail bei Bedarf; gibt es keine solchen, entfällt die Auswahl. Ein dort gewählter Plan trägt zusätzlich den Hinweis „Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben." bzw. „Dieser Plan gilt nicht mehr — er ist zur Ansicht freigegeben." (Zeitraum bereits abgelaufen) — er ist also klar als Vorschau erkennbar und wird nicht mit einem aktuell geltenden Plan verwechselt. Das gilt seit Prüfrunde 2 (I-1) auch für den **Ausdruck** (siehe nächster Punkt) — vorher endete die Kennzeichnung am Bildschirmrand.
-- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** druckt den gerade angezeigten Plan als Aushang (Querformat, Arbeitsplatz × Wochentag) — denselben, den Sie auch am Bildschirm sehen. Gilt der Plan heute noch nicht oder nicht mehr, steht das fett in der Kopfzeile des Ausdrucks („Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — das Papier am Schwarzen Brett verrät also denselben Status wie der Bildschirm.
-- **Dashboard → „Deine Einteilung heute":** Arbeitsplatz, Zeit und Plan der heutigen Einsätze.
+- **PDF-Ausdruck (#443):** Der Knopf **„PDF"** druckt den gerade angezeigten Plan als Aushang (Querformat, Arbeitsplatz × Wochentag) — denselben, den Sie auch am Bildschirm sehen. Gilt der Plan heute noch nicht oder nicht mehr, steht das fett in der Kopfzeile des Ausdrucks („Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig") — das Papier am Schwarzen Brett verrät also denselben Status wie der Bildschirm. Bei einheitlichem Standort steht der Standort in der Kopfzeile, bei unterschiedlichen Standorten je Arbeitsplatz hinter dessen Namen (#452).
+- **Dashboard → „Deine Einteilung heute":** Arbeitsplatz, Zeit und Plan der heutigen Einsätze — inklusive Hinweis je Einteilung, falls einer gesetzt ist (#453).
 
 ---
 
@@ -176,8 +176,9 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   ist **`»`** (U+00BB), nicht der ursprünglich vorgesehene Pfeil `↳` (U+21B3) — der
   fehlt in reportlabs Standardschrift Helvetica/WinAnsiEncoding und erschien im
   Ausdruck als schwarzes Kästchen. `»` liegt in Helvetica und wird identisch im
-  Wochenraster (`WeekGrid.tsx`) verwendet, damit Bildschirm und Ausdruck dasselbe
-  Zeichen zeigen. `shift_slots.note` wird bei `lifecycle_service.anonymize_tenant`
+  Wochenraster (`WeekGrid.tsx`) **und** — seit #453 — auf der Dashboard-Karte
+  „Deine Einteilung heute" (`ShiftTodayCard.tsx`, über `get_my_today`) verwendet,
+  damit Bildschirm, Kachel und Ausdruck dasselbe Zeichen zeigen. `shift_slots.note` wird bei `lifecycle_service.anonymize_tenant`
   geleert (reines Anzeigefeld, kein Berechnungsbezug, aber potenziell personenbezogener
   Freitext). **`Table(..., splitInRow=1)` (C-1, Prüfrunde 2):** reportlab kann eine
   Tabellenzeile sonst nicht über einen Seitenumbruch teilen — eine hohe Zeile (z. B.
@@ -194,8 +195,21 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   `Workstation.name` — in Python sortiert (nicht per SQL-`ORDER BY`), damit
   ein standortloser Arbeitsplatz (`location_id IS NULL`, fällt bewusst ans
   Ende) nicht von der DB-spezifischen NULLS-FIRST/LAST-Voreinstellung
-  abhängt (SQLite sortiert NULL zuerst, PostgreSQL zuletzt). Der Standort
-  selbst wird im PDF **nicht** angezeigt — offene Gestaltungsfrage.
+  abhängt (SQLite sortiert NULL zuerst, PostgreSQL zuletzt).
+  **Standort in der Anzeige (#452):** der Endpunkt reicht dem Renderer zusätzlich
+  eine Zuordnung Arbeitsplatzname → Standortname (`workstation_locations`)
+  hinein — genau wie `workstation_order` selbst, damit der Renderer weiterhin
+  ohne eigenen `db`-Zugriff auskommt (#443). `_slot_dict`/das Detail-Dict
+  wurden dafür bewusst **nicht** um `location_name` erweitert, das hätte auch
+  den Bildschirm (Frontend-Typen, `WeekGrid`) berührt. Tragen **alle**
+  Arbeitsplätze, die im Plan tatsächlich vorkommen, denselben (nicht-leeren)
+  Standort, steht er **einmal in der Kopfzeile** („Standort: Hauptstelle") —
+  der häufigste Fall (eine Praxis, ein Standort, oder ein Plan je Standort)
+  bleibt billig und die schmale erste Spalte unangetastet. Andernfalls
+  (unterschiedliche Standorte, oder ein Teil ganz ohne) steht er **je Zeile**
+  hinter dem Arbeitsplatznamen, z. B. „Tresen (Hauptstelle)"; ein
+  Arbeitsplatz ganz ohne Standort bekommt dabei keinen Zusatz. Ist an keinem
+  Arbeitsplatz des Plans ein Standort gesetzt, erscheint er an keiner Stelle.
 - **Auto-Generierung:** `app/services/shift_planning_generator.py` (Greedy,
   read-only ggü. Calc-Modell), Endpoint `POST /plans/{id}/generate`
   (`target_monday` + `mode=replace|fill_gaps`).

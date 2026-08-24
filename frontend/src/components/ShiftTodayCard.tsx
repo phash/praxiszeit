@@ -41,24 +41,31 @@ export default function ShiftTodayCard() {
       </div>
       <ul className="space-y-2">
         {data.entries.map((e, i) => (
-          <li
-            key={i}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2"
-          >
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-text-primary">{e.workstation_name}</span>
-              {e.location_name && (
-                <span className="flex items-center gap-1 text-xs text-text-secondary">
-                  <MapPin size={12} /> {e.location_name}
+          <li key={i} className="rounded-lg bg-muted/60 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-text-primary">{e.workstation_name}</span>
+                {e.location_name && (
+                  <span className="flex items-center gap-1 text-xs text-text-secondary">
+                    <MapPin size={12} /> {e.location_name}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-text-primary">
+                  {e.start_time}–{e.end_time}
                 </span>
-              )}
+                <span className="text-xs text-text-secondary">{e.plan_name}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-text-primary">
-                {e.start_time}–{e.end_time}
-              </span>
-              <span className="text-xs text-text-secondary">{e.plan_name}</span>
-            </div>
+            {/* #453: Hinweis je Einteilung (#443) — » wie im Wochenraster/PDF-Aushang
+                (WeekGrid.tsx / shift_plan_export_service), leer ist serverseitig
+                null und zeigt keine Zeile. */}
+            {e.note && (
+              <div className="mt-1 text-sm italic text-text-secondary opacity-80 break-words">
+                » {e.note}
+              </div>
+            )}
           </li>
         ))}
       </ul>

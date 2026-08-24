@@ -151,6 +151,7 @@ def get_my_today(db: Session, user) -> dict:
             ShiftPlan.name.label("plan_name"),
             ShiftSlot.start_time.label("start_time"),
             ShiftSlot.end_time.label("end_time"),
+            ShiftSlot.note.label("note"),
             Workstation.name.label("workstation_name"),
             Location.name.label("location_name"),
         )
@@ -178,6 +179,9 @@ def get_my_today(db: Session, user) -> dict:
             "location_name": r.location_name,
             "start_time": _hhmm(r.start_time),
             "end_time": _hhmm(r.end_time),
+            # #453: Hinweis je Einteilung (#443, ShiftSlot.note) — leer ist
+            # serverseitig NULL, kein leerer String (siehe WeekGrid/PDF).
+            "note": r.note,
         }
         for r in rows
     ]
