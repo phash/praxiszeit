@@ -1,3 +1,4 @@
+import { Page, Locator } from '@playwright/test';
 import { test, expect } from '../../fixtures/base.fixture';
 
 /**
@@ -12,7 +13,66 @@ import { test, expect } from '../../fixtures/base.fixture';
  *
  * #451: die mandantenweite Einstellung `shift_planning_enabled` wird NICHT
  * mehr hier geschaltet — siehe global-setup.ts.
+ *
+ * #451-Folgefix: ShiftPlanning.tsx (Mitarbeiter-Ansicht) zeigt einen
+ * freigegebenen, heute nicht geltenden Plan auf zwei Arten, je nachdem, ob
+ * er der EINZIGE sichtbare Vorschau-Plan ist:
+ *   - `solePreview`: direkt als eigene Karte mit `<h2>{name}</h2>`.
+ *   - sonst: als `<option>` in einer Auswahlliste (`aria-label`
+ *     "Vorschau-Schichtplan wählen"); das Detail lädt erst nach Auswahl.
+ * Läuft parallel im selben Mandanten eine andere Schichtplanungs-Spec, die
+ * gerade einen weiteren, heute geltenden Plan anlegt (z. B.
+ * shift-planning.spec.ts via "Aktiv schalten"), kippt unser Plan vom ersten
+ * in den zweiten Zustand — und eine `<option>` in einem geschlossenen
+ * `<select>` ist nie "sichtbar" (CLAUDE.md-Falle „<select>-Optionen").
+ * `openReleasedPlan()` bildet BEIDE Zustände nach: im zweiten Fall wählt sie
+ * die Option wirklich aus und wartet, bis der Plan sichtbar geöffnet ist
+ * (PDF-Knopf erscheint erst, wenn das Detail geladen ist), statt die
+ * Zusicherung auf ein bloßes `toBeAttached` aufzuweichen.
  */
+async function openReleasedPlan(page: Page, planName: string): Promise<void> {
+  const main = page.locator('main');
+  const heading = main.getByRole('heading', { name: planName });
+  const select = main.getByLabel('Vorschau-Schichtplan wählen');
+
+  // Warten, bis EINER der beiden Zustände erreicht ist — die Seite lädt
+  // Pläne asynchron nach, vorher steht evtl. keins von beiden.
+  await expect(heading.or(select)).toBeVisible({ timeout: 10000 });
+
+  if ((await heading.count()) > 0) {
+    return; // solePreview: schon direkt gerendert, nichts weiter zu tun.
+  }
+
+  // Auswahlliste: unsere Option kann in einem geschlossenen <select> nie
+  // "sichtbar" sein — nur "attached" prüfen, dann wirklich auswählen, sonst
+  // bleibt der Plan für den Test in Wahrheit ungeöffnet.
+  const option = select.locator('option', { hasText: planName });
+  await expect(option).toBeAttached({ timeout: 10000 });
+  const value = await option.first().getAttribute('value');
+  await select.selectOption(value!);
+
+  // Wirklich geöffnet, nicht nur ausgewählt: das Detail (Wochenraster/Status)
+  // lädt erst nach der Auswahl nach; der PDF-Knopf dieses Vorschau-Blocks
+  // erscheint in ShiftPlanning.tsx exakt dann, wenn das Detail da ist.
+  await expect(pdfButtonNear(select)).toBeVisible({ timeout: 10000 });
+}
+
+/**
+ * Der PDF-Knopf des Vorschau-Blocks ist im DOM ein GESCHWISTER des
+ * `<select>` (beide Kinder derselben Kopfzeile in ShiftPlanning.tsx), keine
+ * Überschrift verrät dort, zu welchem Plan er gehört — anders als bei den
+ * heute geltenden Plänen (`PlanBlock`), wo Überschrift und PDF-Knopf
+ * Geschwister sind. Es gibt aber nur EINEN Vorschau-Block gleichzeitig
+ * (`previewId`/`previewDetail` ist ein Einzelwert), der PDF-Knopf ist also
+ * eindeutig unser gerade ausgewählter Plan — solange man ihn über die
+ * Kopfzeile DIESES Blocks scopt und nicht ungescoped über die ganze Seite
+ * sucht (sonst träfe man zusätzlich den PDF-Knopf jedes heute geltenden
+ * Plans einer parallel laufenden Spec).
+ */
+function pdfButtonNear(select: Locator) {
+  return select.locator('..').locator('..').getByRole('button', { name: 'PDF' });
+}
+
 test.describe('Schichtplan-Freigabe (#443)', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -42,7 +102,9 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
     const released = await adminApi.post('/shift-planning/plans', { name: releasedName });
     await adminApi.post('/shift-planning/plans', { name: draftName });
 
-    // Gegenprobe VOR der Freigabe: der Mitarbeitende sieht keinen der beiden.
+    // Gegenprobe VOR der Freigabe: der Mitarbeitende sieht keinen der beiden
+    // — weder als Überschrift noch (unsichtbar) als Auswahl-Option, das
+    // Backend liefert nicht-freigegebene Pläne für Nicht-Admins gar nicht erst.
     await employeePage.goto('/shift-planning');
     await expect(employeePage.getByRole('heading', { name: 'Schichtplan' })).toBeVisible();
     // In `main` scopen: die Hilfe-Seitenleiste dupliziert Texte und löst sonst
@@ -66,9 +128,10 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
     await modal.getByRole('button', { name: 'Speichern' }).click();
     await save;
 
-    // Jetzt sieht der Mitarbeitende den freigegebenen Plan — den Entwurf aber nicht.
+    // Jetzt ist der freigegebene Plan für den Mitarbeitenden erreichbar —
+    // den Entwurf sieht er weiterhin nicht, in keiner Form.
     await employeePage.goto('/shift-planning');
-    await expect(employeePage.locator('main').getByText(releasedName).first()).toBeVisible();
+    await openReleasedPlan(employeePage, releasedName);
     await expect(employeePage.locator('main').getByText(draftName)).toHaveCount(0);
 
     // Und er ist als noch nicht geltend gekennzeichnet.
@@ -78,17 +141,23 @@ test.describe('Schichtplan-Freigabe (#443)', () => {
   test('der PDF-Knopf liefert dem Mitarbeitenden eine Datei', async ({ employeePage }) => {
     // Läuft nach dem ersten Test: der freigegebene Plan steht noch.
     await employeePage.goto('/shift-planning');
-    await expect(employeePage.locator('main').getByText(releasedName).first()).toBeVisible();
+    await openReleasedPlan(employeePage, releasedName);
 
     // Nicht ungescoped: seit #443 hat JEDER heute geltende Plan seinen eigenen
-    // PDF-Knopf, dazu ggf. der Vorschau-Block — mehrere sichtbare Pläne (auch
-    // durch eine parallel laufende Spec im selben Mandanten) würden sonst
-    // einen strict-mode-Verstoß auslösen. Überschrift und PDF-Knopf sind in
-    // `PlanBlock` (ShiftPlanning.tsx) Geschwister in derselben Kopfzeile —
-    // darüber lässt sich der Knopf des RICHTIGEN Plans eindeutig treffen.
-    const planRow = employeePage.getByRole('heading', { name: releasedName }).locator('..');
+    // PDF-Knopf, dazu der Vorschau-Block — mehrere sichtbare Pläne (auch durch
+    // eine parallel laufende Spec im selben Mandanten) würden sonst einen
+    // strict-mode-Verstoß auslösen. Je nach Zustand (siehe openReleasedPlan)
+    // ist der richtige Knopf entweder der Geschwister-Knopf der Überschrift
+    // (solePreview → PlanBlock) oder der Geschwister-Knopf des Auswahl-Selects
+    // (Vorschau-Block).
+    const main = employeePage.locator('main');
+    const heading = main.getByRole('heading', { name: releasedName });
+    const select = main.getByLabel('Vorschau-Schichtplan wählen');
+    const pdfButton =
+      (await heading.count()) > 0 ? heading.locator('..').getByRole('button', { name: 'PDF' }) : pdfButtonNear(select);
+
     const download = employeePage.waitForEvent('download');
-    await planRow.getByRole('button', { name: 'PDF' }).click();
+    await pdfButton.click();
     const file = await download;
     // Nicht nur "irgendein PDF kam an" belegen, sondern dass es der RICHTIGE
     // Plan war: der Dateiname wird clientseitig aus dem Plannamen gebaut
