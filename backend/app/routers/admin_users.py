@@ -11,13 +11,13 @@ from decimal import Decimal
 from pydantic import ValidationError
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, TimeEntryAuditLog, UserRole, PublicHoliday
+from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse, WorkingHoursChangePreview
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
-from app.services import auth_service, calculation_service, milog_service, settings_service
+from app.services import auth_service, calculation_service, lifecycle_service, milog_service, settings_service
 # Task 15: dieselbe Zahl- und Label-Schreibweise wie die §16-Exporte — das
 # Aenderungsprotokoll darf die Stunden nicht anders schreiben als der Beleg.
 from app.services.export_service import ABSENCE_TYPE_LABELS_DE, format_hours_de
@@ -737,6 +737,45 @@ def anonymize_user(
         WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
         WorkingHoursChange.note.isnot(None),
     ).update({WorkingHoursChange.note: None}, synchronize_session=False)
+
+    # #440 A/B: Die Antraege dieser Person tragen ihre eigene Prosa —
+    # ``change_requests.reason`` ist NOT NULL und regelmaessig gesundheits- oder
+    # adressnah ("Arzttermin wegen ...", "Kind in der Kita abgeholt"), dazu die
+    # Notizen beider Antragsarten und die Ablehnungsbegruendungen der
+    # Verwaltung. Die ZEILEN bleiben stehen (wer hat wann was beantragt und wer
+    # hat entschieden), nur der Freitext geht. ``reason`` bekommt wegen NOT NULL
+    # einen Platzhalter.
+    #
+    # Der Filter ueber ``user_id`` genuegt hier — anders als beim
+    # Aenderungsprotokoll (siehe ``_scrub_audit_log_notes``), wo eine Zeile ueber
+    # die BETROFFENE schreibt, waehrend beide Kennungen auf die handelnde Admin
+    # zeigen. Antraege haengen immer an der antragstellenden Person.
+    #
+    # Bleibt als grundsaetzliche Grenze: Prosa DRITTER, die diese Person beim
+    # Namen nennt ("Vertretung fuer Frau Meier" im Antrag einer Kollegin), ist
+    # ueber ein Feld nicht auffindbar (#440, im Modul-Docstring von
+    # lifecycle_service festgehalten).
+    db.query(ChangeRequest).filter(
+        ChangeRequest.user_id == user.id,
+        ChangeRequest.tenant_id == current_user.tenant_id,  # F-026
+    ).update(
+        {
+            ChangeRequest.reason: lifecycle_service.ANONYMIZED_TEXT,
+            ChangeRequest.proposed_note: None,
+            ChangeRequest.original_note: None,
+            ChangeRequest.break_waiver_reason: None,
+            ChangeRequest.rejection_reason: None,
+        },
+        synchronize_session=False,
+    )
+
+    db.query(VacationRequest).filter(
+        VacationRequest.user_id == user.id,
+        VacationRequest.tenant_id == current_user.tenant_id,  # F-026
+    ).update(
+        {VacationRequest.note: None, VacationRequest.rejection_reason: None},
+        synchronize_session=False,
+    )
 
     # Release-Review 1.18.1: derselbe Nachzug wie im Mandanten-Pfad — der
     # Freitext des Aenderungsprotokolls traegt E-Mail-Adresse und Benutzernamen

@@ -29,17 +29,23 @@ import { defineConfig } from '@playwright/test';
 // Test sieht dagegen exakt wie die irreführende Regression aus, die dieses
 // Ticket beheben soll — nur seltener. Determinismus schlägt hier ein kleines,
 // weiterhin nicht-null Restrisiko.
-const SHIFT_PLANNING_SPECS = [
-  'admin/shift-planning.spec.ts',
-  'admin/shift-planning-m2.spec.ts',
-  'admin/shift-planning-followups.spec.ts',
-  'admin/shift-planning-visibility.spec.ts',
-];
-const SHIFT_PLANNING_FLAG_OFF_SPEC = 'admin/shift-planning-flag-off.spec.ts';
+//
+// #461 K-8: Muster statt handgepflegter Dateiliste. Eine kuenftige
+// `shift-planning-*.spec.ts` fiel vorher still NICHT in das Projekt
+// "shift-planning" — sie lief stattdessen im Projekt "chromium" mit, also
+// ohne die Serialisierung gegenueber dem Flag-Aus-Test, und brachte genau die
+// 404-Wettlaeufe zurueck, die #451 beseitigt hat.
+const SHIFT_PLANNING_FLAG_OFF_SPEC = /admin[\\/]shift-planning-flag-off\.spec\.ts$/;
+const SHIFT_PLANNING_SPECS = /admin[\\/]shift-planning(?!-flag-off)[^\\/]*\.spec\.ts$/;
+const ALL_SHIFT_PLANNING_SPECS = /admin[\\/]shift-planning[^\\/]*\.spec\.ts$/;
 
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
+  // #461 W-2: Deckel ueber den GESAMTEN Lauf. Ohne ihn haengt ein Host, der die
+  // Verbindung annimmt aber nie antwortet, unbegrenzt im "global setup" — ohne
+  // Ausgabe, ohne Abbruch.
+  globalTimeout: 60 * 60_000,
   expect: { timeout: 5_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
@@ -59,7 +65,7 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { browserName: 'chromium' },
-      testIgnore: [...SHIFT_PLANNING_SPECS, SHIFT_PLANNING_FLAG_OFF_SPEC],
+      testIgnore: ALL_SHIFT_PLANNING_SPECS,
     },
     {
       name: 'shift-planning',

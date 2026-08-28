@@ -10,10 +10,21 @@ import { test, expect } from '../../fixtures/base.fixture';
  */
 test.describe('Schichtplanung Follow-ups (#321/#322)', () => {
   const planName = `E2E-FU-Plan-${Date.now()}`;
+  // #461 K-8: angelegte Arbeitsplätze mitschleifen und wieder abräumen. Vorher
+  // blieb je Lauf eine `workstations`-Zeile stehen; die Tabelle ist
+  // mandantenweit und speist u. a. die Einweisungs-Matrix, die davon von Lauf
+  // zu Lauf länger wurde.
+  let createdWorkstationIds: string[] = [];
 
   test.afterEach(async ({ adminApi }) => {
     const plans = await adminApi.get('/shift-planning/plans');
     for (const p of plans) if (p.name === planName) await adminApi.delete(`/shift-planning/plans/${p.id}`);
+    for (const id of createdWorkstationIds) {
+      // Best effort: ein bereits entfernter Arbeitsplatz darf den Testlauf
+      // nicht nachträglich rot färben.
+      await adminApi.delete(`/shift-planning/workstations/${id}`).catch(() => {});
+    }
+    createdWorkstationIds = [];
   });
 
   test('#321 day view toggle shows a single weekday', async ({ adminPage, adminApi }) => {
@@ -35,6 +46,7 @@ test.describe('Schichtplanung Follow-ups (#321/#322)', () => {
   test('#322 copy a slot to other weekdays', async ({ adminPage, adminApi }) => {
     const plan = await adminApi.post('/shift-planning/plans', { name: planName });
     const ws = await adminApi.post('/shift-planning/workstations', { name: `Tresen-${Date.now()}` });
+    createdWorkstationIds.push(ws.id);
     // a Monday slot to copy
     await adminApi.post(`/shift-planning/plans/${plan.id}/slots`, {
       workstation_id: ws.id, weekday: 0, start_time: '07:45', end_time: '13:30', min_staff: 1,

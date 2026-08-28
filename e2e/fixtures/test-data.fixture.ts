@@ -117,7 +117,7 @@ export type TestDataFixtures = {
 };
 
 export const testDataTest = authTest.extend<TestDataFixtures>({
-  testEmployee: async ({ adminApi }, use) => {
+  testEmployee: async ({ adminApi }, use, testInfo) => {
     testUserCounter++;
     // #451-Folgefix: `testUserCounter` ist ein PROZESSLOKALER Zähler — mit
     // `workers: 2` startet jeder Worker-Prozess unabhängig bei 0. Der
@@ -133,7 +133,13 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
     // bauen aus `last_name` ein Suchmuster (`new RegExp(...)`) oder einen
     // CSS-Attribut-Selektor (`[aria-label*="..."]`); Sonderzeichen dort
     // wären ein neuer, subtilerer Bruch.
-    const unique = `${Date.now()}_${testUserCounter}`;
+    // #461 K-8: `workerIndex` mit hinein. `Date.now()` + prozesslokaler Zähler
+    // kollidieren weiterhin, wenn zwei Worker in DERSELBEN Millisekunde je
+    // ihren ersten Benutzer anlegen (→ 400 "Benutzername bereits vergeben").
+    // Der Worker-Index ist über den Lauf hinweg eindeutig und bleibt
+    // ziffernsicher — die Specs bauen aus `last_name` Regexe und
+    // CSS-Attribut-Selektoren, Sonderzeichen wären dort ein neuer Bruch.
+    const unique = `${Date.now()}_${testInfo.workerIndex}_${testUserCounter}`;
     const username = `e2e_test_${unique}`;
     const password = 'TestPass123!';
     const userData = {

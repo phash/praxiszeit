@@ -89,6 +89,7 @@ export default function LocationManager({ locations, onChanged }: Props) {
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="z. B. Hauptstelle"
+            maxLength={255}  /* #461 K-9: Server-Grenze aus #450 */
           />
         </div>
         <Button type="submit" variant="primary" icon={Plus} loading={submitting} disabled={!newName.trim()}>
@@ -109,6 +110,7 @@ export default function LocationManager({ locations, onChanged }: Props) {
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     autoFocus
+                    maxLength={255}
                   />
                   <button onClick={() => saveEdit(loc)} aria-label="Speichern" className="text-green-600 p-1">
                     <Check size={18} />

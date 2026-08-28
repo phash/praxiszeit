@@ -86,6 +86,7 @@ from app.models.change_request import (
     ChangeRequestType,
 )
 from app.models.error_log import ErrorLog
+from app.models.security_event import EVENT_ADMIN_PASSWORD_RESET, SecurityEvent
 from app.models.shift_planning import (
     Location,
     ShiftAssignment,
@@ -121,6 +122,7 @@ SEEDED_USER_FK_COLUMNS = frozenset({
     ("error_logs", "user_id"),
     ("impersonation_sessions", "impersonator_id"),
     ("impersonation_sessions", "target_id"),
+    ("security_events", "subject_user_id"),
     ("shift_assignments", "user_id"),
     ("shift_plans", "created_by"),
     ("signup_tokens", "user_id"),
@@ -182,6 +184,7 @@ def _wipe(engine):
         "time_entry_audit_logs", "change_requests", "vacation_requests",
         "absences", "time_entries", "working_hours_changes", "year_carryovers",
         "company_closures", "signup_tokens", "impersonation_sessions",
+        "security_events",
     ]
     with engine.connect() as conn:
         for table in order:
@@ -296,6 +299,15 @@ def welt(pg_engine):
                                 target_id=VICTIM_ID))
     db.add(ImpersonationSession(tenant_id=TENANT_ID, impersonator_id=VICTIM_ID,
                                 target_id=ADMIN_ID))
+
+    # ── Sicherheitsprotokoll (#425): haengt wie das Fehlerprotokoll allein an
+    #    der Loeschregel SET NULL. Die ZEILE muss die Endloeschung ueberleben —
+    #    sie belegt, wer wann ein Konto uebernommen hat (Art. 5 Abs. 2), und
+    #    genau dieser Nachweis darf nicht verschwinden, wenn das betroffene
+    #    Konto spaeter geloescht wird.
+    db.add(SecurityEvent(tenant_id=TENANT_ID, event=EVENT_ADMIN_PASSWORD_RESET,
+                         subject_user_id=VICTIM_ID, actor="cli:test@host",
+                         detail="Passwort ueber die Kommandozeile neu gesetzt"))
 
     # ── Fehlerprotokoll: haengt allein an der Loeschregel SET NULL ──
     db.add(ErrorLog(tenant_id=TENANT_ID, level="ERROR", logger="test",
@@ -419,6 +431,15 @@ class TestEndloeschung:
         fremd = db.query(VacationRequest).filter(
             VacationRequest.user_id == ADMIN_ID).one()
         assert fremd.last_modified_by is None
+        # security_events (#425): ON DELETE SET NULL — die ZEILE bleibt stehen.
+        # Sie belegt, wer wann ein Konto uebernommen hat (Art. 5 Abs. 2); dieser
+        # Nachweis darf nicht mit dem betroffenen Konto verschwinden. Waere die
+        # Regel stattdessen CASCADE (oder gar keine), bräche die Endloeschung
+        # entweder ab oder loeschte den Nachweis gleich mit.
+        ereignis = db.query(SecurityEvent).filter(
+            SecurityEvent.tenant_id == TENANT_ID).one()
+        assert ereignis.subject_user_id is None
+        assert ereignis.actor == "cli:test@host"
 
     def test_fremde_objekte_werden_umgehaengt_statt_geloescht(self, welt):
         """``created_by`` ist NOT NULL: die Objekte muessen dem handelnden

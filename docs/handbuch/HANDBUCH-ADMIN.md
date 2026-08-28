@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.7 | Stand: August 2026 (für PraxisZeit 1.18.1)**
+**Version 2.7 | Stand: August 2026 (für PraxisZeit 1.18.2)**
 
 ---
 
@@ -861,7 +861,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.18.1). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.18.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -938,6 +938,12 @@ PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll –
 
 **Voraussichtlicher Saldo zum Jahresende:** Daneben steht, wie das Konto zum 31.12. voraussichtlich aussieht – der Saldo bis heute abzüglich der Stunden aller bereits gebuchten künftigen **Überstundenausgleich**-Tage. Nur Ausgleichstage senken das Konto; Urlaub, Krankheit und Fortbildung sind saldo-neutral und fließen deshalb nicht in die Vorschau ein. Dieselbe Kennzahl sehen Mitarbeitende auf ihrem Dashboard.
 
+Beide Anzeigen lassen sich unter **Einstellungen → Überstunden-Projektion zum Jahresende** getrennt abschalten (#430, Standard jeweils **an** – bisheriges Verhalten bleibt erhalten):
+- **„Im Mitarbeiter-Dashboard anzeigen"** – aus: Mitarbeitende sehen die Vorschau-Zeile auf ihrem eigenen Dashboard nicht mehr; die Berechnung entfällt dann ganz.
+- **„Im Admin-Dashboard anzeigen"** – aus: Die Spalte „Überstd. Jahresende" im Monats- und Wochenbericht des Admin-Dashboards entfällt (dort ohnehin nur im laufenden Monat sichtbar, und nur, wenn mindestens ein/e Mitarbeiter:in bereits künftigen Ausgleich gebucht hat).
+
+Beide Schalter wirken nur auf die Anzeige – das Überstundenkonto selbst wird unverändert weitergerechnet.
+
 ### 18.7 Urlaubskonto (Tagesprinzip)
 
 Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip § 3 BUrlG). **Resturlaub = Anspruch − Verbrauch.**
@@ -996,6 +1002,34 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 > **Native:** Die *geplante* Sicherung läuft weiterhin über den OS-Timer (systemd/launchd/Task); der *manuelle* Trigger und die Liste funktionieren überall.
 
 **Wiederherstellung** (idempotent dank `--clean --if-exists`, kein manuelles Leeren der DB nötig) und alle Kommandozeilen-Varianten: siehe [`docs/BACKUP.md`](../BACKUP.md).
+
+---
+
+## 20. Admin-Passwort verloren (nur native Installation)
+
+Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando **auf dem Server selbst** — es setzt das Passwort direkt in der Datenbank neu und braucht dafür keine Anmeldung:
+
+```
+sudo praxiszeit-server.py reset-admin-password
+```
+
+Das Kommando fragt das neue Passwort zweimal ab (es wird nicht mit eingetippt, damit es nicht in der Befehls-Historie landet) und prüft dieselben Regeln wie die Anwendung: mindestens 10 Zeichen, Groß- und Kleinbuchstabe, Ziffer. Danach sind **alle laufenden Sitzungen dieses Kontos ungültig** — wer damit angemeldet war, muss sich neu anmelden.
+
+**Ist auch das Handy mit der Zwei-Faktor-Anmeldung weg**, reicht das neue Passwort nicht: der Login fragt weiterhin nach einem Code. Dann zusätzlich:
+
+```
+sudo praxiszeit-server.py reset-admin-password --disable-2fa
+```
+
+Danach im Profil eine neue Zwei-Faktor-Anmeldung einrichten.
+
+Betrifft es ein anderes Konto als `admin`, geben Sie den Benutzernamen mit an: `--username <name>`.
+
+**Was dabei protokolliert wird:** Jeder solche Vorgang wird mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat, dauerhaft festgehalten (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Ein Passwort-Reset ist also kein stiller Vorgang.
+
+> **Docker-Installation:** Dort gibt es dieses Kommando nicht — die Zugangsdaten stehen in der `.env`, der Weg führt über `docker compose exec db psql`. Siehe [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md).
+
+> **Der Eintrag `[admin] password` in `config/praxiszeit.conf` ist keine Antwort auf die Frage:** er ist nur der Startwert der Erstinstallation und wird bei einer späteren Passwortänderung nicht nachgeführt. Nach einem Reset überschreibt ihn das Kommando mit einem Zufallswert — er steht dann nur noch da, weil die Anwendung das Feld beim Start voraussetzt.
 
 ---
 
@@ -1102,4 +1136,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: August 2026 (für PraxisZeit 1.18.1)*
+*Stand: August 2026 (für PraxisZeit 1.18.2)*

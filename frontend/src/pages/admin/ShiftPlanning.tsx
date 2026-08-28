@@ -768,6 +768,7 @@ export default function AdminShiftPlanning() {
                 autoFocus
                 value={duplicateState.name}
                 onChange={(e) => setDuplicateState({ ...duplicateState, name: e.target.value })}
+                maxLength={255}  /* #461 K-9: Server-Grenze aus #450 */
               />
               <div className="flex justify-end gap-2 mt-4">
                 <Button type="button" variant="secondary" onClick={() => setDuplicateState(null)}>

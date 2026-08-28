@@ -18,7 +18,13 @@ interface Props {
   onChanged: () => void;
 }
 
-const emptyForm = { name: '', location_id: '', color: DEFAULT_WS_COLORS[0] };
+// #461 K-3: `sort_order` gehört in den Formularzustand. `PUT /workstations/{id}`
+// ist ein Vollersatz und setzt `ws.sort_order = data.sort_order`; ein Rumpf, der
+// das Feld nicht aufzählt, schrieb bei JEDEM Speichern still 0 zurück. Seit #452
+// bestimmt genau dieses Feld die Zeilenreihenfolge des Aushangs — Umbenennen
+// eines Arbeitsplatzes warf die Reihenfolge des Ausdrucks um. `LocationManager`
+// macht es richtig; die beiden widersprachen sich.
+const emptyForm = { name: '', location_id: '', color: DEFAULT_WS_COLORS[0], sort_order: 0 };
 
 export default function WorkstationManager({ workstations, locations, onChanged }: Props) {
   const toast = useToast();
@@ -40,6 +46,7 @@ export default function WorkstationManager({ workstations, locations, onChanged 
       name: form.name.trim(),
       location_id: form.location_id || null,
       color: form.color || null,
+      sort_order: form.sort_order,
     };
     try {
       if (editId) {
@@ -60,7 +67,12 @@ export default function WorkstationManager({ workstations, locations, onChanged 
 
   const startEdit = (ws: Workstation) => {
     setEditId(ws.id);
-    setForm({ name: ws.name, location_id: ws.location_id || '', color: ws.color || DEFAULT_WS_COLORS[0] });
+    setForm({
+      name: ws.name,
+      location_id: ws.location_id || '',
+      color: ws.color || DEFAULT_WS_COLORS[0],
+      sort_order: ws.sort_order,
+    });
   };
 
   const remove = (ws: Workstation) =>
@@ -100,6 +112,7 @@ export default function WorkstationManager({ workstations, locations, onChanged 
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="z. B. Tresen"
+            maxLength={255}  /* #461 K-9: Server-Grenze aus #450 */
           />
           <FormSelect
             label="Standort (optional)"

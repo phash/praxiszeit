@@ -14,7 +14,7 @@
  *
  * Jetzt gibt es genau EINEN Besitzer für den gesamten Playwright-Lauf: dieses
  * globalSetup schaltet das Flag einmal ein, bevor irgendein Test startet;
- * global-teardown.ts schaltet es nach dem letzten Test wieder aus. Die vier
+ * global-teardown.ts stellt danach den VORHERIGEN Wert wieder her. Die vier
  * Specs selbst fassen das Flag nicht mehr an (siehe deren Kommentare).
  *
  * Die einzige Ausnahme ist der bewusst negative Test in
@@ -26,14 +26,40 @@
  * garantiert erst startet, nachdem alle vier oben genannten Specs
  * vollständig durchgelaufen sind — kein Worker kann ihm mehr in die Quere
  * kommen.
+ *
+ * #461 W-2: Das Setup LIEST den bisherigen Wert und hinterlegt ihn für den
+ * Teardown. Vorher schrieb der Teardown hart `false` — ein Lauf, der gar
+ * keinen Test ausführte (`--grep` ohne Treffer, ein Einzeldatei-Filter, ein
+ * `--project=chromium`), schaltete die Schichtplanung auf der Instanz ab, auf
+ * der er lief. `local-ci.sh` fährt E2E gegen die Entwicklungsinstanz und deren
+ * echte Datenbank: die Daten überlebten, waren aber unerreichbar, bis jemand
+ * von Hand zurückschaltete.
  */
 import { ApiHelper } from './helpers/api.helper';
 
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'Admin2025!';
 
+/** Vom Teardown gelesen: der Wert, den die Instanz VOR dem Lauf hatte. */
+export const PREV_FLAG_ENV = 'E2E_PREV_SHIFT_PLANNING_ENABLED';
+/** Vom Teardown gelesen: nur ein durchgelaufenes Setup darf zurückschreiben. */
+export const SETUP_DONE_ENV = 'E2E_SHIFT_PLANNING_SETUP_DONE';
+
 export default async function globalSetup(): Promise<void> {
   const api = new ApiHelper();
   await api.login(ADMIN_USER, ADMIN_PASS);
+
+  // Fehlt die Zeile ganz, ist der wirksame Wert der Default `false` — das
+  // Zurückschreiben von 'false' ist dazu gleichbedeutend (es gibt keinen
+  // Endpunkt, der eine Einstellung wieder entfernt).
+  const settings: { key: string; value: string }[] = await api.get('/admin/settings');
+  const prev = settings.find((s) => s.key === 'shift_planning_enabled')?.value ?? 'false';
+  process.env[PREV_FLAG_ENV] = prev;
+
   await api.put('/admin/settings/shift_planning_enabled', { value: 'true' });
+
+  // Erst NACH dem erfolgreichen Schreiben setzen: scheitert das Setup vorher
+  // (429 beim Login, Backend unten, Read-only-Lizenz), hat es das Flag nicht
+  // angefasst und der Teardown darf es ebenfalls nicht anfassen.
+  process.env[SETUP_DONE_ENV] = '1';
 }

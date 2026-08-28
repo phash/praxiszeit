@@ -117,7 +117,17 @@ export default function ShiftPlanning() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const activePlans = useMemo(() => plans.filter((p) => p.active_today), [plans]);
-  const previewPlans = useMemo(() => plans.filter((p) => !p.active_today), [plans]);
+  // #461 W-1: `visible_to_employees` MUSS hier mitgeprüft werden. Für
+  // Mitarbeitende ist die Bedingung ein No-op — der Server liefert ihnen über
+  // `is_plan_visible_to` ohnehin nur Freigegebenes. Für **Admins** filtert der
+  // Server bewusst gar nicht: ohne diesen Filter landen deren private Entwürfe
+  // unter der Überschrift „Vorschau — freigegeben", also unter einer Aussage,
+  // die für sie nicht stimmt. Ausgerechnet hier sieht man nach, ob eine
+  // Freigabe angekommen ist.
+  const previewPlans = useMemo(
+    () => plans.filter((p) => !p.active_today && p.visible_to_employees),
+    [plans],
+  );
   // #443 F-2: gilt heute gar kein Plan UND ist genau ein sichtbarer
   // (Vorschau-)Plan da, ist er das einzig Anzuzeigende — dann direkt wie einen
   // gewöhnlichen Einzelplan zeigen statt eine Auswahl mit nur einer Option zu
@@ -257,7 +267,11 @@ export default function ShiftPlanning() {
         <div className="flex justify-center py-12">
           <LoadingSpinner />
         </div>
-      ) : plans.length === 0 ? (
+      ) : activePlans.length === 0 && previewPlans.length === 0 ? (
+        /* #461 W-1: nicht `plans.length` — für Admins enthält die Liste auch
+           nicht freigegebene Entwürfe, die diese Seite bewusst nicht zeigt.
+           Ohne die engere Bedingung bliebe die Seite bei einem reinen
+           Entwurfsbestand vollständig leer statt den leeren Zustand zu zeigen. */
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <EmptyState
             icon={CalendarDays}

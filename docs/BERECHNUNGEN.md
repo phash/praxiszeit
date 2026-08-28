@@ -1,6 +1,6 @@
 # Stunden- und Urlaubsberechnung – PraxisZeit
 
-> **Stand: August 2026 · App-Version 1.18.1**
+> **Stand: August 2026 · App-Version 1.18.2**
 > Diese Doku beschreibt **exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und
 > Urlaubswerte berechnet. Alle Formeln sind aus
 > [`backend/app/services/calculation_service.py`](../backend/app/services/calculation_service.py)
@@ -413,7 +413,10 @@ Prognose = Saldo bis heute − future_freizeitausgleich_impact(db, user)
 bereits gebuchten künftigen `OVERTIME`-Abwesenheiten** ab dem Tag NACH dem Saldo-Stichtag
 (§7.4) bis zum 31.12. des laufenden Jahres — genau der Betrag, um den ein Ausgleichstag das
 Konto später senkt (bei `OVERTIME` bleibt das Soll stehen, das Ist ist 0 → Konto −=
-Tages-Soll). Angezeigt im MA-Dashboard und in der Admin-Benutzerübersicht.
+Tages-Soll). Angezeigt im MA-Dashboard (`dashboard.get_overtime_account`) und im
+Admin-Dashboard über den Monats-/Wochenbericht (`reports.get_monthly_report`/
+`get_weekly_report`) — **nicht** in der Benutzerübersicht (`admin_users.users_overview`),
+die die Projektion nicht führt.
 
 * Bewusst **Soll-basiert** über dieselbe Quelle `_day_soll_contribution` wie
   `get_overtime_account`, **nicht** über das `hours`-Feld — so ist die Projektion im
@@ -425,6 +428,18 @@ Tages-Soll). Angezeigt im MA-Dashboard und in der Admin-Benutzerübersicht.
   Tages-Solls die geplante Tagesarbeitszeit (`_fixed_planned_hours`): dort mindert ein
   `OVERTIME`-Tag das flache Monats-Soll nicht und bringt kein Ist — der Saldo sinkt um die
   geplanten Stunden des Tages.
+* **Beide Anzeigeflächen sind je Tenant abschaltbar (#430),** über
+  `settings_service.SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD` /
+  `SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD` (beide `get_bool_setting(..., default=True)` —
+  Standard also **an**, bisheriges Verhalten). Aus gesetzt liefert
+  `dashboard.get_overtime_account` (MA-Eigenansicht) bzw.
+  `reports.get_monthly_report`/`get_weekly_report` (Admin-Dashboard, Monats-/Wochenbericht)
+  `projected_year_end`/`projected_year_end_overtime = None`, **ohne**
+  `future_freizeitausgleich_impact` überhaupt aufzurufen. Der Admin-Gate greift zusätzlich
+  nur für den laufenden Monat (`year == heute.year and month == heute.month`) und nur für
+  `track_hours=True`-MA; die Spalte „Überstd. Jahresende" im Admin-Dashboard blendet sich
+  außerdem komplett aus, sobald für keine/n MA ein Wert zurückkommt. Reine Anzeige-Gates —
+  das Überstundenkonto selbst rechnet in beiden Fällen unverändert weiter.
 
 ---
 

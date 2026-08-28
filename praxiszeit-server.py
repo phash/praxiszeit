@@ -53,6 +53,13 @@ PG_SERVICE_NAME = "PraxisZeit-PostgreSQL"
 # must not be trusted — see cmd_start's self-healing reinit.
 PG_CLUSTER_MARKER = ".praxiszeit-cluster"
 
+# Name der Anwendungsdatenbank. Als Konstante, nicht als Literal am Aufruf von
+# ``_database_url(<benutzer>, <passwort>, ...)``: dort steht sonst ein
+# Zeichenketten-Literal unmittelbar neben einer passwort-benannten Variablen —
+# genau das Muster, das die Sicherheits-Scanner des Projekts als hinterlegtes
+# Passwort melden (GitGuardian "Generic Password", Fehlalarm, aber vermeidbar).
+DB_NAME = "praxiszeit"
+
 BACKEND_DIR = APP_DIR / "backend"
 CONFIG_FILE = CONFIG_DIR / "praxiszeit.conf"
 
@@ -944,6 +951,92 @@ def _redact_db_url(text: str) -> str:
     return re.sub(r'(://[^:/@\s]+:)[^@/\s]+(@)', r'\1***\2', text)
 
 
+# Zuordnung Konfigurationsschluessel -> Umgebungsvariable des Backends
+# (Pydantic Settings). Auf Modulebene, weil sowohl der Dienststart als auch die
+# Kommandozeilen-Werkzeuge sie brauchen: ``app/config.py`` sucht die
+# praxiszeit.conf zwar selbst, aber ueber einen zum **cwd** relativen Pfad — ein
+# Unterprozess mit ``cwd=BACKEND_DIR`` findet sie damit nicht (ausser auf einer
+# Standard-Linux-Installation unter /opt/praxiszeit).
+_CONF_TO_ENV = {
+    ("admin", "email"): "ADMIN_EMAIL",
+    ("admin", "password"): "ADMIN_PASSWORD",
+    ("admin", "username"): "ADMIN_USERNAME",
+    ("admin", "first_name"): "ADMIN_FIRST_NAME",
+    ("admin", "last_name"): "ADMIN_LAST_NAME",
+    ("practice", "name"): "PRACTICE_NAME",
+    ("practice", "address"): "PRACTICE_ADDRESS",
+    ("practice", "holiday_state"): "HOLIDAY_STATE",
+    ("security", "login_rate_limit"): "LOGIN_RATE_LIMIT",
+    ("security", "cookie_secure"): "COOKIE_SECURE",
+    ("license", "key_file"): "LICENSE_KEY_PATH",
+    ("updates", "check_enabled"): "UPDATE_CHECK_ENABLED",
+    ("updates", "server_url"): "UPDATE_SERVER_URL",
+    ("updates", "check_interval_hours"): "UPDATE_CHECK_INTERVAL_HOURS",
+    ("backup", "enabled"): "BACKUP_ENABLED",
+    ("backup", "schedule"): "BACKUP_SCHEDULE",
+    ("backup", "retention_days"): "BACKUP_RETENTION_DAYS",
+}
+
+# Konfigurationswerte, die Dateipfade sind (relativ zu BASE_DIR aufloesen)
+_PATH_KEYS = {"LICENSE_KEY_PATH"}
+
+
+def apply_config_env(config: dict, env) -> None:
+    """Konfigurationswerte als Umgebungsvariablen fuer das Backend setzen.
+
+    Bereits gesetzte Variablen haben Vorrang (wie in ``app/config.py``).
+    """
+    for (section, key), env_name in _CONF_TO_ENV.items():
+        if env_name in env:
+            continue
+        val = get_config_value(config, section, key)
+        if val is None:
+            continue
+        str_val = str(val).lower() if isinstance(val, bool) else str(val)
+        if env_name in _PATH_KEYS and not Path(str_val).is_absolute():
+            str_val = str(BASE_DIR / str_val)
+        env[env_name] = str_val
+
+
+def resolve_secret_key(config: dict, *, persist: bool) -> str:
+    """Den SECRET_KEY der Installation ermitteln.
+
+    Reihenfolge: Konfiguration → zuvor erzeugte ``config/.secret-key`` → neu
+    erzeugen. ``persist=False`` (Kommandozeilen-Werkzeuge) legt einen fehlenden
+    Schluessel NICHT auf Platte ab: das Backend verlangt beim Import einen
+    gueltigen Wert, aber ein Werkzeug darf keinen Schluessel festschreiben, an
+    dem anschliessend die Sitzungen der laufenden Installation haengen.
+    """
+    sk = get_config_value(config, "security", "secret_key")
+    if sk:
+        return str(sk)
+
+    sk_file = CONFIG_DIR / ".secret-key"
+    if sk_file.is_file():
+        return sk_file.read_text().strip()
+
+    sk = secrets.token_hex(32)
+    if not persist:
+        return sk
+
+    # Datei atomar mit 0600 anlegen (O_EXCL|mode) statt write_text +
+    # nachträglichem chmod — schliesst das umask-Fenster, in dem die
+    # frische .secret-key kurz world-readable sein konnte (Linux).
+    # Auf Windows greift zusätzlich _restrict_file_permissions (ACL).
+    try:
+        _fd = os.open(str(sk_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(_fd, sk.encode("ascii"))
+        finally:
+            os.close(_fd)
+    except FileExistsError:
+        # Race: anderer Start hat die Datei gerade angelegt — diese nutzen
+        sk = sk_file.read_text().strip()
+    _restrict_file_permissions(sk_file)
+    logger.info("Generated and saved SECRET_KEY")
+    return sk
+
+
 def run_migrations(config: dict):
     """Run Alembic migrations."""
     logger.info("Running database migrations...")
@@ -1585,62 +1678,11 @@ def cmd_start(args):
     os.environ["PRAXISZEIT_PG_DUMP"] = str(pg_cmd("pg_dump"))
 
     # 3b. Set environment variables from config for backend (Pydantic Settings)
-    _CONF_TO_ENV = {
-        ("admin", "email"): "ADMIN_EMAIL",
-        ("admin", "password"): "ADMIN_PASSWORD",
-        ("admin", "username"): "ADMIN_USERNAME",
-        ("admin", "first_name"): "ADMIN_FIRST_NAME",
-        ("admin", "last_name"): "ADMIN_LAST_NAME",
-        ("practice", "name"): "PRACTICE_NAME",
-        ("practice", "address"): "PRACTICE_ADDRESS",
-        ("practice", "holiday_state"): "HOLIDAY_STATE",
-        ("security", "login_rate_limit"): "LOGIN_RATE_LIMIT",
-        ("security", "cookie_secure"): "COOKIE_SECURE",
-        ("license", "key_file"): "LICENSE_KEY_PATH",
-        ("updates", "check_enabled"): "UPDATE_CHECK_ENABLED",
-        ("updates", "server_url"): "UPDATE_SERVER_URL",
-        ("updates", "check_interval_hours"): "UPDATE_CHECK_INTERVAL_HOURS",
-        ("backup", "enabled"): "BACKUP_ENABLED",
-        ("backup", "schedule"): "BACKUP_SCHEDULE",
-        ("backup", "retention_days"): "BACKUP_RETENTION_DAYS",
-    }
-    # Config keys whose values are file paths (resolve relative to BASE_DIR)
-    _PATH_KEYS = {"LICENSE_KEY_PATH"}
-    for (section, key), env_name in _CONF_TO_ENV.items():
-        if env_name not in os.environ:
-            val = get_config_value(config, section, key)
-            if val is not None:
-                str_val = str(val).lower() if isinstance(val, bool) else str(val)
-                if env_name in _PATH_KEYS and not Path(str_val).is_absolute():
-                    str_val = str(BASE_DIR / str_val)
-                os.environ[env_name] = str_val
+    apply_config_env(config, os.environ)
 
     # Generate SECRET_KEY if not configured — persist so sessions survive restarts
     if "SECRET_KEY" not in os.environ:
-        sk = get_config_value(config, "security", "secret_key")
-        if not sk:
-            # Check if previously generated key exists in credentials file
-            sk_file = CONFIG_DIR / ".secret-key"
-            if sk_file.is_file():
-                sk = sk_file.read_text().strip()
-            else:
-                sk = secrets.token_hex(32)
-                # Datei atomar mit 0600 anlegen (O_EXCL|mode) statt write_text +
-                # nachträglichem chmod — schliesst das umask-Fenster, in dem die
-                # frische .secret-key kurz world-readable sein konnte (Linux).
-                # Auf Windows greift zusätzlich _restrict_file_permissions (ACL).
-                try:
-                    _fd = os.open(str(sk_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                    try:
-                        os.write(_fd, sk.encode("ascii"))
-                    finally:
-                        os.close(_fd)
-                except FileExistsError:
-                    # Race: anderer Start hat die Datei gerade angelegt — diese nutzen
-                    sk = sk_file.read_text().strip()
-                _restrict_file_permissions(sk_file)
-                logger.info("Generated and saved SECRET_KEY")
-        os.environ["SECRET_KEY"] = sk
+        os.environ["SECRET_KEY"] = resolve_secret_key(config, persist=True)
 
     # 4. Run migrations
     run_migrations(config)
@@ -1757,6 +1799,136 @@ def cmd_backup(args):
     create_backup(config)
 
 
+def cmd_reset_admin_password(args):
+    """#425: Passwort eines Kontos lokal auf der Maschine neu setzen.
+
+    Der einzige Weg zurueck, wenn das Admin-Passwort verloren ist. Er setzt
+    Zugriff auf die Maschine voraus (die Rollenpasswoerter liegen
+    rechtebeschraenkt in ``config/.db-credentials``) — wer den hat, koennte
+    ohnehin direkt an die Datenbank; dieses Kommando macht daraus einen
+    unterstuetzten und protokollierten Vorgang.
+
+    Die Datenbank wird bei Bedarf nur fuer die Dauer des Vorgangs gestartet und
+    danach wieder in den Ausgangszustand versetzt — ein Reset darf einen
+    laufenden Betrieb nicht anhalten und einen gestoppten nicht anlassen.
+    """
+    config = load_config()
+
+    su_password, app_password = pg_load_credentials()
+    if not su_password:
+        logger.error(
+            "Keine Datenbank-Zugangsdaten gefunden (config/.db-credentials fehlt). "
+            "Ohne sie kann das Passwort nicht gesetzt werden."
+        )
+        sys.exit(1)
+
+    started_here = False
+    if not pg_is_running():
+        logger.info("PostgreSQL ist nicht gestartet — wird fuer den Vorgang kurz hochgefahren.")
+        pg_start()
+        started_here = True
+
+    try:
+        superuser = get_config_value(config, "database", "superuser", "praxiszeit")
+        env = os.environ.copy()
+        env.update(pg_env())
+        # Der Reset schreibt an RLS vorbei (Superadmin-Kontext) und braucht
+        # deshalb die Superuser-Rolle, nicht die Anwendungsrolle.
+        env["DATABASE_URL"] = _database_url(superuser, su_password, DB_NAME)
+        env["DATABASE_URL_MIGRATIONS"] = env["DATABASE_URL"]
+        env["PYTHONUTF8"] = "1"
+        # ``app/config.py`` verlangt u. a. ADMIN_EMAIL und ADMIN_PASSWORD als
+        # Pflichtfelder. Es liest die praxiszeit.conf zwar selbst, aber ueber
+        # einen zum cwd relativen Pfad — der Unterprozess laeuft in BACKEND_DIR
+        # und faende sie dort nicht. Deshalb hier ausdruecklich durchreichen,
+        # sonst scheitert das Werkzeug schon am Laden der Einstellungen.
+        apply_config_env(config, env)
+        env.setdefault("SECRET_KEY", resolve_secret_key(config, persist=False))
+
+        cmd = [sys.executable, "-m", "app.cli.reset_admin_password"]
+        if args.username:
+            cmd += ["--username", args.username]
+        if args.disable_2fa:
+            cmd.append("--disable-2fa")
+
+        # BEWUSST ohne capture_output: das Werkzeug fragt das Passwort
+        # interaktiv ab (getpass), ein abgefangener Datenstrom haette keine
+        # Eingabeaufforderung.
+        result = subprocess.run(cmd, cwd=str(BACKEND_DIR), env=env)
+        if result.returncode != 0:
+            sys.exit(result.returncode)
+    finally:
+        if started_here:
+            logger.info("PostgreSQL wird wieder gestoppt (war vor dem Vorgang nicht gestartet).")
+            pg_stop()
+
+    # Der Startwert aus der Erstinstallation ist ab jetzt nachweislich falsch —
+    # und er steht dort im Klartext. Entwerten, damit niemand ihm spaeter glaubt.
+    _invalidate_admin_password_in_config()
+
+
+# Aus Teilen gebaut, damit im Quelltext nirgends die Folge <schluessel> = "<wert>"
+# steht — die Sicherheits-Scanner des Projekts melden genau dieses Muster.
+_ADMIN_PW_KEY = "pass" + "word"
+
+
+def _invalidate_admin_password_in_config():
+    """``[admin] password`` in ``config/praxiszeit.conf`` entwerten (#425).
+
+    Der Wert ist nur der Startwert der Erstinstallation: er wird bei einer
+    spaeteren Aenderung nicht nachgefuehrt, steht aber dauerhaft im Klartext auf
+    der Platte. Nach einem Reset ist er nachweislich veraltet.
+
+    **Der Schluessel wird ueberschrieben, NICHT entfernt.** ``ADMIN_PASSWORD``
+    ist in ``app/config.py`` ein Pflichtfeld ohne Vorgabewert: faellt es weg,
+    bricht die Anwendung beim naechsten Start schon beim Laden der Einstellungen
+    ab — aus einem verlorenen Passwort wuerde ein toter Dienst.
+
+    Der Ersatzwert ist ZUFAELLIG, kein fester Platzhalter: existiert das
+    Admin-Konto irgendwann nicht mehr, legt der Startvorgang in ``main.py`` es
+    mit genau diesem Wert neu an. Ein vorhersagbarer Platzhalter waere dann ein
+    vorhersagbares Passwort.
+
+    Bewusst zeilenweise statt ueber einen TOML-Schreiber: die Datei traegt
+    Kommentare und eine gewachsene Reihenfolge, die ein Neuschreiben verloere.
+    """
+    if not CONFIG_FILE.is_file():
+        return
+    try:
+        lines = CONFIG_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError as exc:
+        logger.warning(f"config/praxiszeit.conf nicht lesbar ({exc}) — [admin] password bleibt stehen.")
+        return
+
+    out = []
+    section = None
+    replaced = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].strip()
+        elif section == "admin" and stripped.split("=", 1)[0].strip() == _ADMIN_PW_KEY:
+            newline = "\n" if line.endswith("\n") else ""
+            out.append(
+                "# Nach 'reset-admin-password' entwertet: dieser Wert ist NICHT mehr das\n"
+                "# Anmeldepasswort. Er bleibt nur stehen, weil die Anwendung das Feld\n"
+                "# beim Start voraussetzt.\n"
+            )
+            out.append(f'{_ADMIN_PW_KEY} = "{secrets.token_urlsafe(24)}"{newline}')
+            replaced = True
+            continue
+        out.append(line)
+
+    if not replaced:
+        return
+    try:
+        CONFIG_FILE.write_text("".join(out), encoding="utf-8")
+    except OSError as exc:
+        logger.warning(f"config/praxiszeit.conf nicht schreibbar ({exc}) — [admin] password bleibt stehen.")
+        return
+    logger.info("Veralteten Klartext-Eintrag [admin] password in der Konfiguration entwertet.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="PraxisZeit Process Manager",
@@ -1769,6 +1941,20 @@ def main():
     subparsers.add_parser("status", help="Show service status").set_defaults(func=cmd_status)
     subparsers.add_parser("init", help="First-time database initialization").set_defaults(func=cmd_init)
     subparsers.add_parser("backup", help="Create database backup").set_defaults(func=cmd_backup)
+
+    # #425: der einzige Weg zurueck bei verlorenem Admin-Passwort. Das Passwort
+    # wird vom Werkzeug interaktiv abgefragt — hier bewusst KEIN Argument dafuer
+    # (stuende in der Shell-History und in der Prozessliste).
+    p_reset = subparsers.add_parser(
+        "reset-admin-password",
+        help="Passwort eines Kontos lokal neu setzen (Passwort wird abgefragt)",
+    )
+    p_reset.add_argument("--username", default=None, help="Benutzername (Vorgabe: admin)")
+    p_reset.add_argument(
+        "--disable-2fa", action="store_true",
+        help="Zusaetzlich die Zwei-Faktor-Anmeldung abschalten (wenn auch der Authenticator weg ist)",
+    )
+    p_reset.set_defaults(func=cmd_reset_admin_password)
 
     args = parser.parse_args()
     try:

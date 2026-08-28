@@ -14,6 +14,7 @@ from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRe
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 from app.models.company_closure import CompanyClosure
 from app.models.error_log import ErrorLog
+from app.models.security_event import SecurityEvent
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
 from app.models.year_carryover import YearCarryover
@@ -48,6 +49,7 @@ __all__ = [
     "TimeEntryAuditLog",
     "CompanyClosure",
     "ErrorLog",
+    "SecurityEvent",
     "VacationRequest",
     "VacationRequestStatus",
     "SystemSetting",

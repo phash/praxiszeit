@@ -157,8 +157,21 @@ def get_my_today(db: Session, user) -> dict:
         )
         .join(ShiftSlot, ShiftSlot.shift_plan_id == ShiftPlan.id)
         .join(ShiftAssignment, ShiftAssignment.shift_slot_id == ShiftSlot.id)
-        .join(Workstation, ShiftSlot.workstation_id == Workstation.id)
-        .outerjoin(Location, Workstation.location_id == Location.id)
+        .join(
+            Workstation,
+            # #461 K-5 (F-026): der Mandanten-Filter gehoert in die
+            # Verbund-Bedingung, nicht nur in die WHERE-Klausel — die uebrigen
+            # vier Tabellen dieser Abfrage tragen ihn laengst, und
+            # ``my_qualifications`` im selben Feature ebenfalls. Vorbestehend
+            # aus #305; RLS deckt es im normalen Anfragepfad ab, aber genau
+            # dieses Muster ist im Projekt schon einmal auseinandergelaufen
+            # (Fehler-Protokoll unter ``set_superadmin_context``).
+            (ShiftSlot.workstation_id == Workstation.id) & (Workstation.tenant_id == tid),
+        )
+        .outerjoin(
+            Location,
+            (Workstation.location_id == Location.id) & (Location.tenant_id == tid),
+        )
         .filter(
             ShiftPlan.tenant_id == tid,
             plan_active_filter(today),
