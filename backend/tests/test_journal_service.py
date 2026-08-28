@@ -354,3 +354,82 @@ def test_journal_holiday_with_vacation_stays_zero(db, test_user):
     day = next(x for x in result["days"] if x["date"] == "2026-03-11")
     assert day["actual_hours"] == 0.0
     assert day["target_hours"] == 0.0
+
+
+# ── #463: Tageszeilen im festen Monats-Soll ──────────────────────────────────
+
+
+def test_journal_meldet_den_fixen_modus(db, default_tenant, test_user):
+    """Ohne dieses Kennzeichen kann die Oberflaeche die Tagesspalten nicht
+    einordnen und zeigt Zahlen ohne definierte Bedeutung."""
+    from tests.test_fixed_monthly_target import _mk
+
+    assert journal_service.get_journal(db, test_user, 2025, 3)["use_fixed_monthly_target"] is False
+    u = _mk(db)
+    assert journal_service.get_journal(db, u, 2025, 3)["use_fixed_monthly_target"] is True
+
+
+def test_journal_flag_verlangt_auch_die_vereinbarte_monatszeit(db, default_tenant):
+    """Dieselbe Bedingung wie in get_range_actual/-target: das Flag allein
+    genuegt nicht, ohne agreed_monthly_hours gibt es kein festes Soll."""
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db, agreed_monthly_hours=None)
+    assert journal_service.get_journal(db, u, 2025, 3)["use_fixed_monthly_target"] is False
+
+
+def test_urlaubstag_im_fixmodus_zeigt_geplante_stunden_und_gutschrift(db, default_tenant):
+    """Der gemeldete Fall (#463): ein Urlaubstag stand als 0 Ist / 0 Soll da.
+
+    Im Fix-Modus mindert Urlaub das flache Soll gerade NICHT — er schreibt die
+    geplanten Stunden dem Ist gut (``fixed_month_credit``). Die Tageszeile muss
+    dieselbe Geschichte erzaehlen wie die Monatssumme darunter.
+    """
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)  # Mo + Mi geplant, je 3 h
+    _make_absence(db, u, date(2025, 3, 3), AbsenceType.VACATION, hours=3.0)  # Montag
+
+    tag = next(d for d in journal_service.get_journal(db, u, 2025, 3)["days"]
+               if d["date"] == "2025-03-03")
+    assert tag["target_hours"] == pytest.approx(3.0)   # geplante Anwesenheit
+    assert tag["actual_hours"] == pytest.approx(3.0)   # bezahlter Fehltag → Gutschrift
+
+
+def test_ungeplanter_wochentag_bleibt_im_fixmodus_bei_null(db, default_tenant):
+    """Dienstag ist im Tagesplan nicht belegt — dort gibt es nichts zu planen
+    und nichts gutzuschreiben."""
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)
+    _make_absence(db, u, date(2025, 3, 4), AbsenceType.VACATION, hours=3.0)  # Dienstag
+
+    tag = next(d for d in journal_service.get_journal(db, u, 2025, 3)["days"]
+               if d["date"] == "2025-03-04")
+    assert tag["target_hours"] == pytest.approx(0.0)
+    assert tag["actual_hours"] == pytest.approx(0.0)
+
+
+def test_krank_wird_im_fixmodus_nicht_doppelt_gutgeschrieben(db, default_tenant):
+    """SICK laeuft schon ueber ``credited_absences``; ein zweites Gutschreiben
+    ueber den Fix-Zweig wuerde den Tag verdoppeln."""
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)
+    _make_absence(db, u, date(2025, 3, 5), AbsenceType.SICK, hours=3.0)  # Mittwoch
+
+    tag = next(d for d in journal_service.get_journal(db, u, 2025, 3)["days"]
+               if d["date"] == "2025-03-05")
+    assert tag["actual_hours"] == pytest.approx(3.0)
+    assert tag["target_hours"] == pytest.approx(3.0)
+
+
+def test_normalmodus_bleibt_unveraendert(db, test_user):
+    """Kontrolle: fuer alle anderen Mitarbeitenden aendert #463 nichts."""
+    _make_absence(db, test_user, date(2025, 3, 3), AbsenceType.VACATION, hours=8.0)
+
+    tag = next(d for d in journal_service.get_journal(db, test_user, 2025, 3)["days"]
+               if d["date"] == "2025-03-03")
+    # Urlaub mindert im Normalmodell das Soll → 0/0, Saldo 0.
+    assert tag["target_hours"] == pytest.approx(0.0)
+    assert tag["balance"] == pytest.approx(0.0)

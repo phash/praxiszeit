@@ -55,6 +55,11 @@ interface JournalData {
   days: JournalDay[];
   monthly_summary: { actual_hours: number; target_hours: number; balance: number };
   yearly_overtime: number;
+  // #463: Im festen Monats-Soll (#377 Baustein 2b) gibt es kein Tages-Soll.
+  // `target_hours` der Tageszeilen trägt dort die GEPLANTE Anwesenheit, und ein
+  // Tages-Saldo hat keine definierte Bedeutung. Optional, weil ältere Antworten
+  // das Feld nicht führen — fehlt es, gilt das bisherige Verhalten.
+  use_fixed_monthly_target?: boolean;
 }
 
 // #382: the journal fetch can, in an auth/proxy edge, resolve HTTP 200 with a
@@ -168,6 +173,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(format(now, 'yyyy-MM'));
   const [data, setData] = useState<JournalData | null>(null);
+  // #463: `=== true` statt truthy — fehlt das Feld (ältere Antwort), gilt das
+  // bisherige Verhalten, nicht der Fix-Modus.
+  const fixedMode = data?.use_fixed_monthly_target === true;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
@@ -557,6 +565,20 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
       {data && !loading && (
         <>
+          {/* #463: Feste Monatsarbeitszeit — die Tageszeilen sind hier keine
+              Soll/Ist-Abrechnung, sondern eine Anwesenheitsübersicht. Ohne
+              diesen Hinweis liest man die Spalten als verbindliche Zahlen und
+              schließt aus einem Urlaubstag ohne Sollstunden auf einen
+              Rechenfehler (genau die Meldung, die das Ticket ausgelöst hat). */}
+          {fixedMode && (
+            <p className="mb-3 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-800">
+              <strong>Feste Monatsarbeitszeit aktiv.</strong> Die Tageszeilen zeigen die{' '}
+              <strong>geplante</strong> Anwesenheit und die tatsächlich erfassten Stunden —
+              ein Tages-Soll gibt es in diesem Modus nicht, deshalb entfällt auch der
+              Tages-Saldo. Verbindlich ist die <strong>Monatsübersicht</strong> unter der Tabelle.
+            </p>
+          )}
+
           {/* Table */}
           <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full text-sm">
@@ -568,8 +590,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                   <th className="px-3 py-2 text-left hidden md:table-cell">Von–Bis</th>
                   <th className="px-3 py-2 text-right hidden md:table-cell">Pause</th>
                   <th className="px-3 py-2 text-right">Ist</th>
-                  <th className="px-3 py-2 text-right">Soll</th>
-                  <th className="px-3 py-2 text-right">Saldo</th>
+                  <th className="px-3 py-2 text-right">{fixedMode ? 'Geplant' : 'Soll'}</th>
+                  {!fixedMode && <th className="px-3 py-2 text-right">Saldo</th>}
                   <th className="px-3 py-2 text-right w-16"></th>
                 </tr>
               </thead>
@@ -744,9 +766,11 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                         <td className="px-3 py-2 text-right text-gray-500">
                           {isGray ? '' : formatHoursSimple(day.target_hours)}
                         </td>
-                        <td className={`px-3 py-2 text-right ${balanceColor}`}>
-                          {isGray ? '' : formatHours(day.balance)}
-                        </td>
+                        {!fixedMode && (
+                          <td className={`px-3 py-2 text-right ${balanceColor}`}>
+                            {isGray ? '' : formatHours(day.balance)}
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           {editingDate === day.date ? (
                             <div className="flex items-center justify-end gap-1">

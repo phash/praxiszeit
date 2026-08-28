@@ -49,3 +49,10 @@ class JournalResponse(BaseModel):
     days: List[JournalDay]
     monthly_summary: JournalMonthlySummary
     yearly_overtime: float
+    # #463: Im festen Monats-Soll (#377 Baustein 2b) hat ein Tages-Soll keine
+    # Bedeutung — es gibt keins. ``target_hours``/``balance`` der TAGESzeilen
+    # tragen dort die geplante Anwesenheit, nicht eine Zerlegung des flachen
+    # Monatswertes (siehe journal_service). Ohne dieses Kennzeichen kann die
+    # Oberflaeche das nicht unterscheiden und zeigt Zahlen ohne definierte
+    # Bedeutung — der Melder las daraus einen Rechenfehler.
+    use_fixed_monthly_target: bool = False

@@ -100,6 +100,14 @@ def get_journal(
     # (below, via get_monthly_target/get_overtime_account) stays the
     # authoritative Soll. Do not "fix" the day rows to reconcile — see Finding 1
     # for why the summary, not the days, is the source of truth here.
+    # #463: Fix-Modus einmal bestimmen (identische Bedingung wie in
+    # ``get_range_actual``/``get_range_target``: das Flag allein genuegt nicht,
+    # ohne ``agreed_monthly_hours`` gibt es kein festes Soll).
+    fixed_mode = bool(
+        getattr(user, "use_fixed_monthly_target", False)
+        and getattr(user, "agreed_monthly_hours", None)
+    )
+
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
@@ -246,6 +254,38 @@ def get_journal(
             actual_hours = Decimal("0")
             target_hours = Decimal("0")
 
+        # #463: Im festen Monats-Soll (#377 Baustein 2b) erzaehlten die
+        # Tageszeilen bisher eine andere Geschichte als die Monatssumme
+        # darunter. Ein Urlaubstag stand als 0 Ist / 0 Soll da (die
+        # Abwesenheits-Logik oben mindert das Soll — im Fix-Modus mindert Urlaub
+        # das flache Soll aber gerade NICHT, er schreibt die geplanten Stunden
+        # dem Ist gut), und der Tages-Saldo hatte ueberhaupt keine definierte
+        # Bedeutung. Der Melder las daraus einen Rechenfehler.
+        #
+        # Deshalb hier derselbe Schnitt wie in ``get_range_actual``: das
+        # Tagesfeld traegt die GEPLANTE Anwesenheit (die Oberflaeche beschriftet
+        # es im Fix-Modus als "Geplant" und blendet den Tages-Saldo aus), und
+        # bezahlte Fehltage (Feiertag + VACATION/PAID_LEAVE) schreiben die
+        # geplanten Stunden dem Ist gut — exakt die Menge aus
+        # ``_FIXED_PAID_CREDIT_TYPES``/``fixed_month_credit``. SICK/TRAINING
+        # laufen unveraendert ueber ``credited_sum`` (kein Doppelzaehlen: deren
+        # Gewicht ist an Feiertagen 0).
+        #
+        # Verbindlich bleibt die Monatssumme — die Tageszeilen summieren sich im
+        # Fix-Modus bewusst NICHT auf das flache Monats-Soll (siehe Kommentar am
+        # Kopf dieser Funktion).
+        if fixed_mode and calculation_service._within_employment_window(user, d):
+            planned = calculation_service._fixed_planned_hours(
+                db, user, d, special_day_config, wh_changes=wh_changes,
+            )
+            target_hours = planned
+            paid_absence = any(
+                a.type in calculation_service._FIXED_PAID_CREDIT_TYPES
+                for a in day_absences
+            )
+            fixed_credit = planned if (is_holiday_day or paid_absence) else Decimal("0")
+            actual_hours = time_hours + credited_sum + fixed_credit
+
         balance = actual_hours - target_hours
 
         days.append({
@@ -300,4 +340,8 @@ def get_journal(
             "balance": float(monthly_balance.quantize(Decimal("0.01"))),
         },
         "yearly_overtime": float(yearly_overtime.quantize(Decimal("0.01"))),
+        # #463: siehe JournalResponse — die Oberflaeche muss den Modus kennen,
+        # um die Tagesspalten "Soll"/"Saldo" nicht als verbindliche Zahlen
+        # auszugeben. Verbindlich ist im Fix-Modus allein monthly_summary.
+        "use_fixed_monthly_target": fixed_mode,
     }

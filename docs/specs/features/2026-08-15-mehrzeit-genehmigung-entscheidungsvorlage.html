@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Mehrzeit begründen und anerkennen — Konzept und Entscheidungsvorlage</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm 20mm 18mm; }
+
+  :root {
+    --ink: #14181F;
+    --muted: #4E5865;
+    --faint: #78828F;
+    --rule: #D6DAE1;
+    --accent: #1F4E79;
+    --accent-soft: #EAF1F8;
+    --ok: #1B6E4F;
+    --ok-soft: #E8F3ED;
+    --warn: #8A5A00;
+    --warn-soft: #F8F1E1;
+    --stop: #9E2A2E;
+    --stop-soft: #F9E9E9;
+    --sunk: #F2F4F7;
+    --display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --body: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+  }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: var(--body);
+    font-size: 10.2pt;
+    line-height: 1.5;
+    color: var(--ink);
+    background: #fff;
+  }
+
+  h1, h2, h3, h4 { font-family: var(--display); font-weight: 600; margin: 0; }
+  h2 { break-after: avoid; page-break-after: avoid; }
+  h3, h4 { break-after: avoid; page-break-after: avoid; }
+  p, li { orphans: 3; widows: 3; }
+  table, figure, blockquote, .box { break-inside: avoid; page-break-inside: avoid; }
+
+  /* ---------- Titelseite ---------- */
+  .cover { height: 247mm; display: flex; flex-direction: column; break-after: page; page-break-after: always; }
+  .cover .top { flex: 1; }
+  .cover .eyebrow {
+    font-family: var(--mono); font-size: 8.5pt; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--faint); margin: 0 0 10mm;
+  }
+  .cover h1 { font-size: 30pt; line-height: 1.12; letter-spacing: -.01em; margin-bottom: 6mm; }
+  .cover .sub { font-size: 13pt; color: var(--muted); font-family: var(--display); margin: 0 0 12mm; }
+  .cover .lead { font-size: 11pt; line-height: 1.55; color: var(--ink); max-width: 135mm; }
+  .cover .lead strong { font-weight: 650; }
+  .meta { border-top: 1.5pt solid var(--ink); padding-top: 4mm; display: flex; gap: 14mm; flex-wrap: wrap; }
+  .meta div { font-size: 9pt; }
+  .meta dt { font-family: var(--mono); font-size: 7.6pt; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 1.5mm; }
+  .meta dd { margin: 0; }
+
+  .disclaimer {
+    margin-top: 8mm; border: 0.8pt solid var(--rule); border-left: 3pt solid var(--warn);
+    background: var(--warn-soft); padding: 4mm 5mm; font-size: 9pt; line-height: 1.45; color: var(--muted);
+  }
+  .disclaimer strong { color: var(--ink); }
+
+  /* ---------- Inhalt ---------- */
+  section { break-before: page; page-break-before: always; }
+  section.cont { break-before: auto; page-break-before: auto; margin-top: 9mm; }
+
+  .kicker {
+    font-family: var(--mono); font-size: 7.8pt; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 2mm;
+  }
+  h2.sec { font-size: 17pt; line-height: 1.2; margin-bottom: 3mm; }
+  h3 { font-size: 11.5pt; margin: 6mm 0 2mm; }
+  h4 { font-size: 10.2pt; margin: 5mm 0 1.5mm; font-family: var(--body); font-weight: 700; }
+  p { margin: 0 0 3mm; }
+  .sec-note { color: var(--muted); margin-bottom: 5mm; }
+
+  ul, ol { margin: 0 0 3mm; padding-left: 5mm; }
+  li { margin-bottom: 1.8mm; }
+  li::marker { color: var(--faint); }
+
+  strong { font-weight: 650; }
+  code { font-family: var(--mono); font-size: .87em; background: var(--sunk); padding: 0.3mm 1mm; border-radius: 1mm; }
+
+  /* ---------- Bausteine ---------- */
+  .box { border: 0.8pt solid var(--rule); border-left: 3pt solid var(--tone, var(--accent)); background: #fff; padding: 4mm 5mm; margin: 0 0 4mm; }
+  .box.ok { --tone: var(--ok); background: var(--ok-soft); }
+  .box.warn { --tone: var(--warn); background: var(--warn-soft); }
+  .box.stop { --tone: var(--stop); background: var(--stop-soft); }
+  .box.plain { background: var(--sunk); }
+  .box h4 { margin-top: 0; }
+  .box p:last-child { margin-bottom: 0; }
+
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; margin-bottom: 5mm; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 5mm; }
+  .grid3 .box, .grid2 .box { margin: 0; }
+  .tag {
+    display: inline-block; font-family: var(--mono); font-size: 7.4pt; letter-spacing: .1em;
+    text-transform: uppercase; padding: 0.6mm 1.8mm; border-radius: 1mm; margin-bottom: 2mm;
+    background: #fff; border: 0.6pt solid currentColor; color: var(--tone, var(--accent));
+  }
+
+  blockquote { margin: 0 0 4mm; padding: 4mm 5mm; background: var(--accent-soft); border-left: 3pt solid var(--accent); }
+  blockquote p { font-family: var(--display); font-size: 11.5pt; line-height: 1.45; margin: 0; }
+  blockquote cite { display: block; margin-top: 2.5mm; font-family: var(--mono); font-style: normal; font-size: 8.4pt; color: var(--muted); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 9.2pt; margin: 0 0 4mm; }
+  th, td { text-align: left; padding: 2.2mm 3mm; border-bottom: 0.6pt solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--mono); font-size: 7.6pt; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--faint); font-weight: 500; background: var(--sunk); border-bottom: 0.8pt solid var(--rule);
+  }
+  thead { display: table-header-group; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .chip { display: inline-block; font-family: var(--mono); font-size: 8pt; padding: 0.4mm 1.6mm; border-radius: 1mm; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+  .chip.ok { background: var(--ok-soft); color: var(--ok); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+  .chip.stop { background: var(--stop-soft); color: var(--stop); }
+
+  /* ---------- Entscheidungsvorlage ---------- */
+  .decision { border: 0.9pt solid var(--rule); margin-bottom: 5mm; break-inside: avoid; page-break-inside: avoid; }
+  .decision > header { background: var(--sunk); padding: 2.5mm 4mm; border-bottom: 0.9pt solid var(--rule); display: flex; gap: 3mm; align-items: baseline; }
+  .decision > header .no { font-family: var(--mono); font-size: 9pt; color: var(--accent); font-weight: 700; }
+  .decision > header h4 { margin: 0; font-size: 10.4pt; }
+  .decision .body { padding: 3.5mm 4mm 4mm; }
+  .decision .body p { margin-bottom: 2.5mm; font-size: 9.6pt; }
+  .decision .body p:last-of-type { margin-bottom: 3mm; }
+  .rec { font-size: 9.6pt; }
+  .rec b { font-family: var(--mono); font-size: 8pt; letter-spacing: .08em; text-transform: uppercase; color: var(--ok); }
+  .choice { display: flex; gap: 8mm; border-top: 0.6pt dashed var(--rule); padding-top: 2.5mm; margin-top: 3mm; font-size: 9.4pt; }
+  .choice span { display: flex; align-items: center; gap: 2mm; }
+  .cb { display: inline-block; width: 3.6mm; height: 3.6mm; border: 0.9pt solid var(--muted); }
+  .fill { flex: 1; border-bottom: 0.6pt solid var(--rule); }
+
+  .sign { margin-top: 10mm; display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; break-inside: avoid; }
+  .sign div { border-top: 0.9pt solid var(--ink); padding-top: 2mm; font-size: 8.6pt; color: var(--muted); }
+
+  .footnote { margin-top: 6mm; border-top: 0.6pt solid var(--rule); padding-top: 3mm; font-size: 8.6pt; color: var(--faint); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ TITEL ══════════════════ -->
+<div class="cover">
+  <div class="top">
+    <p class="eyebrow">PraxisZeit · Konzeptprüfung und Entscheidungsvorlage</p>
+    <h1>Mehrzeit begründen<br>und anerkennen</h1>
+    <p class="sub">Arbeitszeitrechtliche Prüfung des geplanten Genehmigungsverfahrens<br>für Arbeitszeit über den Dienstplan hinaus</p>
+    <p class="lead">Geplant ist: Wer länger bleibt als geplant, bekommt die Zeit auf das vereinbarte Soll gekürzt und kann einen Grund eintragen; erst die Genehmigung bringt die tatsächliche Zeit zurück. <strong>Die Idee trägt — aber nicht in der Fassung, in der sie beschrieben ist.</strong> Dieses Dokument prüft die Zulässigkeit, benennt die drei Bauteile, die sich ändern müssen, und legt am Ende sieben Entscheidungen zur Freigabe vor.</p>
+    <div class="disclaimer">
+      <strong>Keine Rechtsberatung.</strong> Dieses Dokument ist eine technische Entscheidungsgrundlage. Es nennt Normen und Rechtsprechung, damit die Umsetzung an den richtigen Stellen konservativ gebaut wird — es ersetzt keine anwaltliche Prüfung. Die Punkte in Abschnitt 8 gehören vor der Einführung zu einer Fachanwältin oder einem Fachanwalt für Arbeitsrecht.
+    </div>
+  </div>
+  <div class="meta">
+    <div><dt>Rechtsstand</dt><dd>15. August 2026</dd></div>
+    <div><dt>Status</dt><dd>Konzept, nicht umgesetzt</dd></div>
+    <div><dt>Bezug</dt><dd>Erweiterung des Arbeitszeit-Fensters (#201)</dd></div>
+    <div><dt>Entscheidung erbeten bis</dt><dd>________________</dd></div>
+  </div>
+</div>
+
+<!-- ══════════════════ 1 ══════════════════ -->
+<section>
+  <p class="kicker">1 — Ausgangslage</p>
+  <h2 class="sec">Die Vorgabe</h2>
+  <blockquote>
+    <p>„Der Admin kann dieses Feature an- und ausschalten und das Eingabefeld verpflichtend oder optional machen. In den Optionen kann der Admin auch eine Toleranzzeit eintragen, die jeder Mitarbeiter dann ohne Genehmigung länger arbeiten darf. Die Arbeitszeit eines Mitarbeiters ist nach Plan 6 Stunden. Der Mitarbeiter bleibt aber 7 Stunden da. Dann wird die Arbeitszeit auf die vereinbarte Arbeitszeit gekürzt, aber der Mitarbeiter kann einen Grund für die längere Arbeitszeit eintragen — oder der Admin kann es ohne Antrag genehmigen. Genehmigt der Admin den Grund, wird die tatsächliche Arbeitszeit verwendet. Genehmigt der Admin nicht, wird nur die vereinbarte Arbeitszeit gezählt."</p>
+    <cite>Wortlaut der Anforderung</cite>
+  </blockquote>
+
+  <h3>Das Ergebnis in Kürze</h3>
+  <p>Die Grundidee ist zulässig, aber nur in einem schmalen Korridor. Zulässig ist, dass ein Zeit<em>konto</em> eine Obergrenze hat und nicht anerkannte Mehrzeit dort nicht gutgeschrieben wird — das Bundesarbeitsgericht hat eine solche Kappungsregel ausdrücklich gebilligt und im selben Atemzug klargestellt: <em>„Die Pflicht zur Vergütung geleisteter Arbeit bleibt hiervon unberührt."</em></p>
+  <p>Unzulässig ist alles, was so wirkt, als hätte die Arbeit nicht stattgefunden: die <strong>Aufzeichnung</strong> muss immer die tatsächliche Zeit zeigen, und beim <strong>Mindestlohn</strong> kann eine geleistete Stunde nicht abgelehnt werden. Entscheidend für den Alltag ist außerdem, dass eine Ablehnung im Streitfall nichts wert ist, wenn sie nur aus einem Klick besteht.</p>
+
+  <div class="box plain">
+    <h4>Der tragende Gedanke: drei Größen statt einer Zahl</h4>
+    <p><strong>Tatsächliche Zeit</strong> — was wirklich gearbeitet wurde. Immer vollständig aufgezeichnet, in jedem Beleg. Nicht verhandelbar.<br>
+    <strong>Angerechnete Zeit</strong> — was auf dem Zeitkonto landet. Darf gekürzt sein.<br>
+    <strong>Mehrzeit</strong> — die Differenz, mit eigenem Status und eigener Entscheidung.</p>
+    <p>Diese Trennung ist im Programm bereits angelegt: seit dem Arbeitszeit-Fenster (#201) werden die ungekürzten Stempelzeiten gespeichert. Das Vorhaben ist die Fortsetzung dieser Trennung, nicht ihr Bruch.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 2 ══════════════════ -->
+<section>
+  <p class="kicker">2 — Rechtlicher Rahmen</p>
+  <h2 class="sec">Der Korridor</h2>
+  <p class="sec-note">Das Arbeitsrecht trennt drei Ebenen, die im Entwurf zu einer verschmelzen. Auf zweien ist die Kürzung gestaltbar, auf einer nie.</p>
+
+  <div class="grid3">
+    <div class="box ok">
+      <span class="tag">trägt</span>
+      <h4>Das Zeitkonto</h4>
+      <p>Eine Kappungsregel für das Arbeitszeitkonto ist gebilligt: gekappte Stunden werden „zwar erfasst, aber nicht mehr gutgeschrieben". Auch die Toleranzzeit trägt — als genehmigungsfreie Schwelle, innerhalb derer die Zeit angerechnet wird, nur ohne Antrag.</p>
+    </div>
+    <div class="box warn">
+      <span class="tag">nur bedingt</span>
+      <h4>Die Vergütung</h4>
+      <p>Mehrarbeit wird auf vier gleichrangigen Wegen zugerechnet: angeordnet, gebilligt, <strong>geduldet</strong> oder zur Erledigung der Arbeit <strong>notwendig</strong>. Die Genehmigung im Programm deckt nur den zweiten ab.</p>
+    </div>
+    <div class="box stop">
+      <span class="tag">nie</span>
+      <h4>Aufzeichnung und Mindestlohn</h4>
+      <p>Die dokumentierte Zeit muss die tatsächliche sein. Beim Mindestlohn ist jede Beschränkung unwirksam, die Aufzeichnungspflicht für Minijobs wird vom Zoll geprüft. Bußgeldrahmen: bis 50.000 € (MiLoG), bis 30.000 € (ArbZG).</p>
+    </div>
+  </div>
+
+  <h3>Die vier Wege, auf denen Mehrarbeit zugerechnet wird</h3>
+  <p>Für die Vergütung kommt es nicht allein auf die Genehmigung an. Nach ständiger Rechtsprechung muss Mehrarbeit <em>angeordnet, gebilligt, geduldet oder jedenfalls zur Erledigung der geschuldeten Arbeit notwendig</em> gewesen sein — vier gleichrangige Alternativen. Das Häkchen im Programm entspricht der zweiten. „Geduldet" heißt dabei: der Arbeitgeber weiß davon und trifft keine Vorkehrungen, die Mehrarbeit künftig zu unterbinden.</p>
+
+  <div class="box">
+    <h4>Für den Praxisbetrieb übersetzt</h4>
+    <p>Ihre Genehmigung ist einer von vier Wegen. War die Mehrzeit angeordnet, haben Sie sie monatelang hingenommen, oder war sie schlicht nötig, um die von Ihnen einbestellten Patienten zu versorgen — dann ist sie zu vergüten, unabhängig davon, was im Programm angeklickt wird. Der Klick entscheidet, ob die Zeit auf dem Zeitkonto landet. Er entscheidet nicht, ob sie stattgefunden hat.</p>
+  </div>
+
+  <p>Tragfähig ist die Nichtanerkennung deshalb genau im Kernfall: jemand bleibt <em>aus eigenem Antrieb ohne betrieblichen Anlass</em> länger. Dafür gilt der Satz des Bundesarbeitsgerichts: <em>„Der Arbeitgeber muss sich Leistung und Vergütung von Überstunden nicht aufdrängen lassen."</em> Bloße Anwesenheit begründet keine Vermutung, dass die Mehrarbeit nötig war.</p>
+</section>
+
+<!-- ══════════════════ 3 ══════════════════ -->
+<section>
+  <p class="kicker">3 — Rechtsprechung</p>
+  <h2 class="sec">Das Urteil, das genau diesen Fall schon kennt</h2>
+  <p class="sec-note">Dem Bundesarbeitsgericht lag im Februar 2025 eine Betriebsvereinbarung vor, die technisch genau den geplanten Mechanismus abbildete: automatische Kürzung der erfassten Zeit, Anrechnung nur „nach entsprechender Begründung des Beschäftigten und Bestätigung des Vorgesetzten". Der Arbeitgeber verlor in der Revision.</p>
+
+  <blockquote>
+    <p>„Der automatische Abzug von Pausenzeiten ersetzt nicht den Tatsachenvortrag zur Gewährung und Inanspruchnahme der Pausen."</p>
+    <cite>BAG, Urteil vom 12.02.2025 – 5 AZR 51/24, Rn. 15</cite>
+  </blockquote>
+
+  <p>Das Gericht führte weiter aus, ein Bestreiten mit Nichtwissen genüge dem Arbeitgeber nicht — er wisse schließlich, „welche Aufgaben er in Ausübung seines Weisungsrechts zu welchen Zeiten zugewiesen hat". Die vom Arbeitnehmer vorgetragenen Zeiten galten daraufhin als zugestanden.</p>
+
+  <div class="box plain">
+    <h4>Was daraus folgt — und was nicht</h4>
+    <p>Das Gericht hat den Fall zurückverwiesen, nicht gegen den Arbeitgeber durchentschieden; die Darlegungslast bleibt beim Arbeitnehmer. Die Lehre lautet deshalb nicht „der Mechanismus ist verboten", sondern <strong>„er trägt den Prozess nicht"</strong>.</p>
+    <p>Für das Produkt heißt das konkret: die <strong>Ablehnung braucht eine Pflichtbegründung</strong> — und zwar die Tatsachen, die ein Gericht später verlangt: welche Arbeit war an dem Tag zugewiesen, warum war sie in der vereinbarten Zeit zu schaffen. Ein Jahr später erinnert diese Sätze niemand mehr. „Nicht vorab genehmigt" ist als Begründung wertlos.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 4 ══════════════════ -->
+<section>
+  <p class="kicker">4 — Anpassungen</p>
+  <h2 class="sec">Was sich an der Vorgabe ändern muss</h2>
+  <p class="sec-note">Fünf Punkte. Alles Übrige aus der Anforderung bleibt, wie es beschrieben ist.</p>
+
+  <table>
+    <thead><tr><th style="width:26%">Vorgabe</th><th style="width:37%">Problem</th><th style="width:37%">Stattdessen</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>„Nicht genehmigt → nur die vereinbarte Zeit zählt"</td>
+        <td>Trifft nur einen von vier Zurechnungswegen. Geduldete und betrieblich notwendige Mehrarbeit bleibt zu vergüten.</td>
+        <td>Sprache und Datenmodell auf <em>anerkannt / nicht anerkannt</em>, nie <em>entstanden / verfallen</em>. Die tatsächliche Zeit bleibt überall sichtbar.</td>
+      </tr>
+      <tr>
+        <td>Ablehnen als reine Klick-Entscheidung</td>
+        <td>Eine Ablehnung ohne Tatsachen ist im Streitfall wertlos — der Punkt aus dem Urteil oben.</td>
+        <td><strong>Pflichtbegründung bei Ablehnung</strong>, verbindlicher als beim Mitarbeiter und nicht abschaltbar.</td>
+      </tr>
+      <tr>
+        <td>Frist läuft ab → Zeit ist weg</td>
+        <td>Schweigen des Arbeitgebers ist Duldung, nicht Ablehnung. Eine Programmfrist schneidet keinen Anspruch ab.</td>
+        <td>Keine automatische Ablehnung, in keiner Einstellung. Die Frist schließt nur die Selbsteingabe; die automatische <em>Anerkennung</em> ist zulässig und optional.</td>
+      </tr>
+      <tr>
+        <td>Toleranz als „bis X Minuten täglich unbezahlt"</td>
+        <td>30 Minuten täglich sind rund 11 Stunden im Monat — das wäre eine pauschale Überstundenabgeltung, die in ein Zahlenfeld nicht hineinpasst.</td>
+        <td>Toleranz nur als genehmigungsfreie Schwelle: die Zeit wird angerechnet, nur ohne Antrag. Obergrenze und Monatsdeckel fest verdrahtet.</td>
+      </tr>
+      <tr>
+        <td>Minijobs wie alle anderen behandeln</td>
+        <td>Für mindestlohnrelevante Stunden ist eine Ablehnung unwirksam; die Aufzeichnung wird vom Zoll geprüft.</td>
+        <td>Kürzung für Minijobs standardmäßig aus, tatsächliche Zeit in jedem Beleg, harte Warnung bei Unterschreiten des Mindestlohns.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Was unverändert übernommen wird</h3>
+  <ul>
+    <li>Feature an- und abschaltbar, standardmäßig aus.</li>
+    <li>Toleranzzeit frei einstellbar — in der Lesart „ohne Genehmigung", also ohne Antrag.</li>
+    <li>Begründungsfeld verpflichtend oder optional — für die Eingabe des Mitarbeiters.</li>
+    <li>Der Admin kann ohne Antrag anerkennen. Das ist rechtlich sogar der sauberste Weg.</li>
+    <li>Anerkannt → die tatsächliche Zeit wird verwendet.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════ 5 ══════════════════ -->
+<section>
+  <p class="kicker">5 — Verfahren</p>
+  <h2 class="sec">So läuft ein Fall durch</h2>
+  <p class="sec-note">Sechs Zustände statt eines Häkchens. Der Ausgangszustand ist bewusst <em>offen</em>: eine Vorbelegung „abgelehnt" wäre eine Entscheidung ohne Tatsachen, eine Vorbelegung „anerkannt" höbe den Zweck des Verfahrens auf.</p>
+
+  <table>
+    <thead><tr><th style="width:24%">Zustand</th><th style="width:44%">Bedeutung</th><th style="width:32%">Auf dem Zeitkonto</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip ok">innerhalb Toleranz</span></td><td>Mehrzeit unterhalb der eingestellten Schwelle</td><td class="num">volle Zeit, ohne Antrag</td></tr>
+      <tr><td><span class="chip">offen</span></td><td>Ausgangszustand, noch keine Entscheidung</td><td class="num">Tagessoll + Toleranz</td></tr>
+      <tr><td><span class="chip">eingereicht</span></td><td>Mitarbeiter hat einen Grund eingetragen</td><td class="num">unverändert</td></tr>
+      <tr><td><span class="chip ok">anerkannt</span></td><td>ganz oder teilweise, mit Minutenbetrag</td><td class="num">Tagessoll + anerkannte Minuten</td></tr>
+      <tr><td><span class="chip stop">nicht anerkannt</span></td><td>begründet abgelehnt und zugestellt</td><td class="num">Tagessoll + Toleranz</td></tr>
+      <tr><td><span class="chip warn">angeordnet</span></td><td>vom Arbeitgeber veranlasst</td><td class="num">vorbelegt anerkannt, nicht ablehnbar</td></tr>
+    </tbody>
+  </table>
+
+  <div class="grid2">
+    <div class="box">
+      <h4>Teilanerkennung ist Pflicht, nicht Kür</h4>
+      <p>Der Regelfall lautet: 30 Minuten angeordnet, 90 Minuten geblieben. Ein reines Ja/Nein zwingt dazu, entweder zu viel oder zu wenig anzuerkennen — beides erzeugt Streit. Deshalb wird ein Minutenbetrag anerkannt, keine Ja/Nein-Marke.</p>
+    </div>
+    <div class="box">
+      <h4>Jede Entscheidung wird zugestellt</h4>
+      <p>Auch die Anerkennung. Eine Entscheidung, die den Mitarbeiter nie erreicht, belegt im Streitfall das Gegenteil dessen, was sie soll. Nach einer Ablehnung braucht er zusätzlich einen dokumentierten Widerspruch — der nützt beiden Seiten, weil er den Zeitpunkt markiert, ab dem gestritten wird.</p>
+    </div>
+  </div>
+
+  <h3>Was der Mitarbeiter sieht</h3>
+  <p>Tagesansicht und Journal zeigen beide Werte plus Differenz, etwa: <code>08:00–15:00 erfasst · 6:00 h angerechnet · 1:00 h Mehrzeit — offen</code>. Der Schwebezustand ist überall als „offen" gekennzeichnet. Das ist kein Schönheitsdetail: würde die Mehrzeit vorher unmarkiert als Guthaben angezeigt, könnte bereits diese Anzeige als vorbehaltlose Anerkennung gewertet werden.</p>
+</section>
+
+<!-- ══════════════════ 6 ══════════════════ -->
+<section>
+  <p class="kicker">6 — Sonderfälle</p>
+  <h2 class="sec">Was hart im Programm verdrahtet wird</h2>
+  <p class="sec-note">Diese Fälle sind bewusst nicht einstellbar. Sie folgen aus Gesetzen, die keine Vereinbarung zur Disposition stellt.</p>
+
+  <table>
+    <thead><tr><th style="width:26%">Fall</th><th>Regel</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Minijob / Mindestlohn</strong></td><td>Kürzung standardmäßig aus. Tatsächliche Zeit in jedem Beleg. Warnung, wenn ein Vorgang älter als 7 Kalendertage offen ist (Aufzeichnungsfrist). Harte Warnung, wenn eine Nichtanerkennung den effektiven Stundenlohn unter den Mindestlohn drückt.</td></tr>
+      <tr><td><strong>Angeordnete Mehrarbeit</strong></td><td>Als anerkannt vorbelegt und nicht ablehnbar — für den angeordneten Anteil. Was darüber hinausgeht, läuft normal durch das Verfahren.</td></tr>
+      <tr><td><strong>Notfall</strong></td><td>Eigener, strukturierter Grund mit Vorbelegung „anerkannt". Ablehnung nur mit ausführlicher Begründung.</td></tr>
+      <tr><td><strong>Verstoß gegen Höchstarbeitszeit oder Pausenrecht</strong></td><td>Diese Prüfungen rechnen gegen die tatsächliche Zeit. Die Warnung ist dauerhaft und nicht unterdrückbar; die Kürzung darf sie nicht zum Verschwinden bringen.</td></tr>
+      <tr><td><strong>Schwangere, Jugendliche, schwerbehinderte Menschen</strong></td><td>Dort ist Mehrarbeit nicht genehmigungsfähig, sondern gesetzlich untersagt — ein „Anerkennen"-Knopf würde den Verstoß dokumentieren statt ihn zu heilen. Umsetzung über ein neutrales Kennzeichen („Mehrarbeit ausgeschlossen") <em>ohne</em> Angabe des Grundes, damit keine Gesundheitsdaten im Zeiterfassungssystem landen.</td></tr>
+      <tr><td><strong>Feiertag</strong></td><td>Das Tagessoll ist null — eine „Kürzung auf die vereinbarte Zeit" ergäbe sonst null Stunden für einen ganzen gearbeiteten Feiertag. Feiertagsarbeit ist deshalb vollständig Mehrzeit.</td></tr>
+      <tr><td><strong>Austritt</strong></td><td>Offene Vorgänge müssen vor dem letzten Arbeitstag entschieden sein. Ein Schwebezustand auf einem Konto, das die Person nicht mehr einsehen kann, ist der schlechteste denkbare Ort.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Begründungstexte und Schweigepflicht</h3>
+  <p>Ein Freitextfeld in einer Arztpraxis füllt sich erfahrungsgemäß mit Sätzen wie „Notfall Frau M., Reanimation bis 18:40" — das sind Patientendaten unter ärztlicher Schweigepflicht, in einem Feld, das sonst in Auswertungen wandert. Deshalb: <strong>strukturierte Gründe zur Auswahl</strong> als Standard (Notfall, Patient überzogen, Personalausfall, Dokumentation, angeordnet, Umkleide-/Rüstzeit), Freitext nur ergänzend, mit Hinweis am Feld — und niemals im Aufzeichnungsexport.</p>
+</section>
+
+<!-- ══════════════════ 7 ══════════════════ -->
+<section>
+  <p class="kicker">7 — Voraussetzungen</p>
+  <h2 class="sec">Zwei Dinge müssen vorher in Ordnung gebracht werden</h2>
+  <p class="sec-note">Beide bestehen heute schon. Das neue Verfahren vergrößert sie um genau die Toleranzzeit — deshalb gehören sie davor, nicht danach.</p>
+
+  <div class="grid2">
+    <div class="box stop">
+      <span class="tag">Voraussetzung 1</span>
+      <h4>Die Kürzung läuft vor den Arbeitsschutzprüfungen</h4>
+      <p>Das Beispiel aus der Anforderung ist genau der kritische Fall: Plan 6 Stunden, tatsächlich 7 Stunden anwesend. Damit ist die Sechs-Stunden-Schwelle des Pausenrechts überschritten und eine 30-Minuten-Pause zwingend.</p>
+      <p>Kürzt das Programm vorher weg, prüft es gegen 6 Stunden und meldet nichts. Der Verstoß ist trotzdem passiert — das Programm hat ihn nur unsichtbar gemacht.</p>
+    </div>
+    <div class="box stop">
+      <span class="tag">Voraussetzung 2</span>
+      <h4>Die Belege zeigen die tatsächliche Zeit nicht</h4>
+      <p>Die echten Stempelzeiten stehen in der Datenbank, aber in keinem Monatsblatt, keinem Journal und keinem PDF — nur in den Datenschutz-Auskünften.</p>
+      <p>Bei einer Prüfung wird das Dokument vorgelegt, nicht die Datenbank. Nötig sind Spalten mit der tatsächlichen Zeit in allen Belegen plus ein eigener Aufzeichnungs-Export für den Zoll.</p>
+    </div>
+  </div>
+
+  <h3>Aufwandsrahmen</h3>
+  <table>
+    <thead><tr><th style="width:62%">Schritt</th><th>Einordnung</th></tr></thead>
+    <tbody>
+      <tr><td>Voraussetzung 1 und 2 (tatsächliche Zeit immer speichern, Prüfungen umstellen, Belege erweitern, Aufzeichnungs-Export)</td><td>Vorschaltprojekt, ohne sichtbares neues Feature</td></tr>
+      <tr><td>Verfahren mit Zuständen, Begründung, Entscheidung, Zustellung, Protokoll</td><td>Kern des Vorhabens</td></tr>
+      <tr><td>Toleranz, Sonderfälle, Einstellungen, Vertretungsregelung</td><td>Ausbau</td></tr>
+      <tr><td>Handbuch, In-App-Hilfe, Hinweistext bei Aktivierung</td><td>Abschluss</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ══════════════════ 8 ══════════════════ -->
+<section>
+  <p class="kicker">8 — Außerhalb der Software</p>
+  <h2 class="sec">Was die Praxis selbst regeln muss</h2>
+
+  <ol>
+    <li><strong>Vertragliche Grundlage.</strong> Eine einseitige Anweisung trägt die Kürzung nicht, soweit sie Zeitguthaben verringert. In den Arbeitsvertrag gehören: Genehmigungsvorbehalt, Toleranz <em>mit Zahl</em>, Verfahren und Fristen. Das Programm setzt die Regelung um — es ersetzt sie nicht.</li>
+    <li><strong>Nachweisgesetz.</strong> Die Angaben zur vereinbarten Arbeitszeit und — sofern vereinbart — zur Anordnung von Überstunden samt Voraussetzungen müssen schriftlich vorliegen. Toleranz und Verfahren <em>sind</em> diese Voraussetzungen.</li>
+    <li><strong>Beschäftigte informieren:</strong> was die Kürzung bedeutet, wie man begründet, bis wann, wer entscheidet. Ein Begründungsschritt, den niemand kennt, ist im Streitfall wertlos.</li>
+    <li><strong>Betriebsrat</strong>, falls vorhanden: Einführung <em>und</em> Einstellungen sind mitbestimmungspflichtig.</li>
+    <li><strong>Organisatorisch handeln, nicht nur ablehnen.</strong> Wer dieselbe Überschreitung Monat für Monat ablehnt und sonst nichts ändert, sammelt Belege gegen sich selbst — genau daraus wird später „der Arbeitgeber wusste es und hat nichts geändert".</li>
+  </ol>
+
+  <h3>Vier Punkte für die anwaltliche Prüfung</h3>
+  <table>
+    <thead><tr><th style="width:32%">Punkt</th><th>Warum</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Manteltarifvertrag für Medizinische Fachangestellte</strong></td><td>Höchste Priorität — er trifft den Beispielfall unmittelbar (Teilzeit, Mehrarbeit, Zuschlag) und ließ sich in der Recherche nicht abschließend klären.</td></tr>
+      <tr><td><strong>Die Vertragsklausel selbst</strong></td><td>Eine Entscheidung, die genau einen Genehmigungsvorbehalt mit Verfallfolge prüft, wurde nicht gefunden. Die Ableitung aus der Rechtsprechung zu Pauschalabgeltungen ist eine begründete Analogie, keine gesicherte Rechtslage.</td></tr>
+      <tr><td><strong>Novelle des Arbeitszeitgesetzes</strong></td><td>Der Referentenentwurf ist kein geltendes Recht, aber die berichteten Eckpunkte — Wochen- statt Tageshöchstarbeitszeit, taggleiche Aufzeichnung, Ausnahme für Kleinbetriebe — betreffen die Bauweise, nicht nur die Formulierung.</td></tr>
+      <tr><td><strong>Ruhezeit in Heilberufen</strong></td><td>Ob für eine Arztpraxis die verkürzte Ruhezeit mit Ausgleich gilt, ändert die Prüfung, die das Programm heute pauschal vornimmt.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ══════════════════ ENTSCHEIDUNGSVORLAGE ══════════════════ -->
+<section>
+  <p class="kicker">9 — Zur Freigabe</p>
+  <h2 class="sec">Entscheidungsvorlage</h2>
+  <p class="sec-note">Sieben Entscheidungen. Zu jeder steht die Empfehlung dabei; abweichende Festlegungen bitte in der Zeile darunter notieren. Die Punkte 1 bis 3 bestimmen, was gebaut wird — die Punkte 4 bis 7 sind Bestätigungen zu Dingen, die rechtlich ohnehin feststehen.</p>
+
+  <div class="decision">
+    <header><span class="no">1</span><h4>Woran wird die Mehrzeit gemessen?</h4></header>
+    <div class="body">
+      <p>Die Anforderung sagt „auf die vereinbarte Arbeitszeit gekürzt" — das ist eine <em>Dauer</em>. Das bestehende Arbeitszeit-Fenster kürzt dagegen <em>Uhrzeiten</em>, und die dafür nötigen Soll-Zeiten je Wochentag sind optional und in den meisten Praxen nicht gepflegt. So gebaut würde das Verfahren bei den meisten Kunden nie auslösen.</p>
+      <p class="rec"><b>Empfehlung:</b> Mehrzeit = tatsächliche Zeit minus Tagessoll (dauerbasiert). Das funktioniert für jeden Mitarbeitenden ohne zusätzliche Pflege. Das Arbeitszeit-Fenster bleibt daneben als eigener Zweck bestehen („Anwesenheit außerhalb der Sprechzeit").</p>
+      <div class="choice"><span><i class="cb"></i> Empfehlung übernommen</span><span><i class="cb"></i> abweichend:</span><span class="fill"></span></div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <header><span class="no">2</span><h4>Wie hoch ist die Toleranzzeit?</h4></header>
+    <div class="body">
+      <p>Sie ist die genehmigungsfreie Schwelle: Zeit darunter wird angerechnet, nur ohne Antrag. Zu beachten: das Programm hat bereits einen Puffer von 15 Minuten an der Fenstergrenze — beide Werte addieren sich.</p>
+      <p class="rec"><b>Empfehlung:</b> 15 Minuten pro Tag, zusätzlich ein Monatsdeckel von 2 Stunden. Ohne Monatsdeckel summieren sich 15 Minuten täglich auf gut 5 Stunden im Monat, die nie zur Entscheidung kommen.</p>
+      <div class="choice"><span><i class="cb"></i> 15 min/Tag + 2 h/Monat</span><span><i class="cb"></i> abweichend:</span><span class="fill"></span></div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <header><span class="no">3</span><h4>Muss der Mitarbeiter einen Grund eintragen?</h4></header>
+    <div class="body">
+      <p>Einstellbar, wie gewünscht. Zu bedenken: ein Pflichtfeld erzeugt bei Zeitdruck Textbausteine („Arbeit"), und in einer Praxis wandern in Freitextfelder schnell Patientendaten.</p>
+      <p class="rec"><b>Empfehlung:</b> Auswahl aus festen Gründen ist Pflicht, der ergänzende Freitext bleibt freiwillig. Die Begründungspflicht des Arbeitgebers <em>bei Ablehnung</em> ist davon unabhängig und immer verbindlich.</p>
+      <div class="choice"><span><i class="cb"></i> Auswahl Pflicht, Freitext frei</span><span><i class="cb"></i> abweichend:</span><span class="fill"></span></div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <header><span class="no">4</span><h4>Was passiert, wenn niemand entscheidet?</h4></header>
+    <div class="body">
+      <p>Eine automatische Ablehnung wird es nicht geben — Schweigen des Arbeitgebers ist rechtlich Duldung, nicht Ablehnung, und eine Programmfrist schneidet keinen Anspruch ab. Offen ist nur, ob nach einer Wartezeit automatisch <em>anerkannt</em> werden soll.</p>
+      <p class="rec"><b>Empfehlung:</b> automatische Anerkennung nach 14 Tagen einschalten. Das senkt das Risiko, weil unbeantwortete Vorgänge sonst genau die Duldungslage erzeugen, die später teuer wird.</p>
+      <div class="choice"><span><i class="cb"></i> Auto-Anerkennung nach 14 Tagen</span><span><i class="cb"></i> aus</span><span><i class="cb"></i> andere Frist:</span><span class="fill"></span></div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <header><span class="no">5</span><h4>Minijobs werden ausgenommen</h4></header>
+    <div class="body">
+      <p>Für mindestlohnrelevante Stunden ist eine Nichtanerkennung unwirksam, und die Aufzeichnung der tatsächlichen Zeit wird vom Zoll geprüft. Für geringfügig Beschäftigte ist die Kürzung deshalb standardmäßig aus; das Verfahren dient dort nur der Sichtbarkeit.</p>
+      <p class="rec"><b>Zur Kenntnis und Bestätigung.</b> Diese Festlegung steht nicht zur Disposition.</p>
+      <div class="choice"><span><i class="cb"></i> zur Kenntnis genommen</span><span><i class="cb"></i> Rückfragen:</span><span class="fill"></span></div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <header><span class="no">6</span><h4>Das Vorschaltprojekt wird vorgezogen</h4></header>
+    <div class="body">
+      <p>Die beiden Voraussetzungen aus Abschnitt 7 — Arbeitsschutzprüfungen gegen die tatsächliche Zeit, tatsächliche Zeit in allen Belegen — werden vor dem eigentlichen Verfahren umgesetzt. Sie erzeugen kein sichtbares Feature, beheben aber zwei bestehende Lücken, die das neue Verfahren sonst vergrößert.</p>
+      <p class="rec"><b>Empfehlung:</b> zustimmen. Andernfalls wird ein Verfahren gebaut, dessen Belege der eigenen Datenbank widersprechen.</p>
+      <div class="choice"><span><i class="cb"></i> zugestimmt</span><span><i class="cb"></i> abweichend:</span><span class="fill"></span></div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <header><span class="no">7</span><h4>Anwaltliche Prüfung und Vertragsanpassung</h4></header>
+    <div class="body">
+      <p>Vier Punkte gehören vor der Einführung zu einer Fachanwältin oder einem Fachanwalt (Abschnitt 8), und der Arbeitsvertrag braucht die Regelung zu Genehmigungsvorbehalt, Toleranz und Verfahren. Ohne beides läuft das Verfahren zwar technisch, steht aber auf keiner Grundlage.</p>
+      <p class="rec"><b>Empfehlung:</b> parallel zur Umsetzung beauftragen, damit die Aktivierung nicht daran wartet.</p>
+      <div class="choice"><span><i class="cb"></i> wird beauftragt bis:</span><span class="fill"></span></div>
+    </div>
+  </div>
+
+  <div class="box plain">
+    <h4>Wenn Sie nur eine Sache aus diesem Dokument mitnehmen</h4>
+    <p>Das Verfahren steuert, was auf dem <strong>Zeitkonto</strong> landet — nicht, ob die Arbeit stattgefunden hat. Die tatsächliche Zeit bleibt vollständig dokumentiert und in jedem Beleg sichtbar. Genau diese Trennung macht das Vorhaben zulässig; sie ist auch der Grund, warum es Ihnen im Streitfall hilft statt zu schaden.</p>
+  </div>
+
+  <div class="sign">
+    <div>Ort, Datum</div>
+    <div>Unterschrift Auftraggeber</div>
+  </div>
+
+  <p class="footnote">Alle zitierten Aktenzeichen wurden gegen die Primärquelle geprüft. Wo eine Angabe nicht verifiziert werden konnte — Manteltarifvertrag für Medizinische Fachangestellte, Novelle des Arbeitszeitgesetzes — ist das im Text ausdrücklich vermerkt. Vollständige Fassung mit Fundstellen, Datenmodell und Umsetzungsreihenfolge: <code>docs/specs/features/2026-08-15-mehrzeit-genehmigung-konzept.md</code>.</p>
+</section>
+
+</body>
+</html>
