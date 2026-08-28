@@ -149,6 +149,26 @@ describe('Mitarbeiteransicht Schichtplan', () => {
     expect(screen.queryByText('Zweiter')).not.toBeInTheDocument();
   });
 
+  // W-1 (#461): fuer Admins filtert `is_plan_visible_to` serverseitig bewusst
+  // gar nicht — sie bekommen aus `listPlans` auch nicht freigegebene Entwuerfe.
+  // Diese Seite beschriftet ihre Vorschau aber mit "freigegeben"; ohne den
+  // Client-Filter behauptet sie damit ueber jeden Entwurf das Gegenteil der
+  // Wahrheit. Fuer Mitarbeitende ist der Filter ein No-op (der Server
+  // garantiert die Bedingung ohnehin).
+  it('Admin: ein nicht freigegebener Entwurf erscheint NICHT als Vorschau', async () => {
+    (api.listPlans as ReturnType<typeof vi.fn>).mockResolvedValue([
+      summary({ id: 'p9', name: 'Entwurf Oktober', is_active: false, active_today: false, visible_to_employees: false }),
+    ]);
+    (api.getPlan as ReturnType<typeof vi.fn>).mockResolvedValue(detail());
+
+    render(<ShiftPlanning />);
+
+    await waitFor(() => expect(screen.getByText(/Kein Schichtplan/i)).toBeInTheDocument());
+    expect(screen.queryByText('Entwurf Oktober')).not.toBeInTheDocument();
+    expect(screen.queryByText(/freigegeben/i)).not.toBeInTheDocument();
+    expect(api.getPlan).not.toHaveBeenCalled();
+  });
+
   it('zeigt den leeren Zustand, wenn nichts sichtbar ist', async () => {
     (api.listPlans as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     render(<ShiftPlanning />);
