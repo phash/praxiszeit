@@ -113,6 +113,10 @@ PII = {
     # Freitextfeld, das die Anonymisierung ueberlebt, verlaengert die Restliste
     # aus #440 — deshalb hier gleich mit gesaet.
     "shift_note": "PIISCHICHTNOTIZAAA",
+    # #461 K-4: dieselbe Begruendung wie beim Hinweis je Einteilung gilt woertlich
+    # fuer Name und Beschreibung eines Schichtplans ("Vertretungsplan Frau Meier").
+    "shift_plan_name": "PIIPLANNAMEAAA",
+    "shift_plan_description": "PIIPLANBESCHREIBUNGAAA",
 }
 
 # Diese bleiben absichtlich stehen und duerfen die Suche nicht ausloesen.
@@ -222,7 +226,12 @@ def mandant(_db_session):
         old_date=date(2026, 3, 2), new_date=date(2026, 3, 2),
         new_break_minutes=30, tenant_id=TID,
     ))
-    plan = ShiftPlan(tenant_id=TID, name="Normalzustand", created_by=user.id)
+    plan = ShiftPlan(
+        tenant_id=TID,
+        name=PII["shift_plan_name"],
+        description=PII["shift_plan_description"],
+        created_by=user.id,
+    )
     _db_session.add(plan)
     workstation = Workstation(tenant_id=TID, name="Tresen")
     _db_session.add(workstation)

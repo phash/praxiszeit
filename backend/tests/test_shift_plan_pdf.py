@@ -453,6 +453,37 @@ def test_filename_is_sanitised(db, default_tenant):
     assert "/" not in cd.split("filename=")[1].split(";")[0]
 
 
+def test_filename_survives_a_non_latin1_plan_name(db, default_tenant):
+    """#461 K-2: ein Planname aus nicht-Latin-1-Buchstaben darf den Export nicht
+    zerlegen.
+
+    ``_FILENAME_SAFE_RE`` (``[^\w\-]+`` mit ``re.UNICODE``) laesst Kyrillisch,
+    Griechisch und CJK durch. Der einfache ``filename="..."``-Teil des
+    Content-Disposition-Kopfes wird aber als Latin-1 kodiert — jedes Zeichen
+    ausserhalb sprengte den Kopf und damit die ganze Antwort (500), ohne Ausweg
+    ausser Umbenennen. Umlaute liegen in Latin-1 und waren nie betroffen.
+    """
+    admin = _user(db, "pdf_cyr_admin", role=UserRole.ADMIN)
+    plan = _plan(db, admin, "Смена весна")
+
+    cd = export_plan_pdf(plan.id, db=db, current_user=admin).headers["content-disposition"]
+    cd.encode("latin-1")  # der eigentliche Bruch: wirft sonst UnicodeEncodeError
+    assert "filename*=UTF-8''" in cd
+
+
+def test_filename_keeps_umlauts_readable(db, default_tenant):
+    """Der Latin-1-taugliche Teil bleibt lesbar: Umlaute werden zu ihrem
+    Grundbuchstaben, nicht zum Unterstrich, und der vollstaendige Name steht
+    weiterhin prozentkodiert im ``filename*``-Teil."""
+    admin = _user(db, "pdf_uml_admin", role=UserRole.ADMIN)
+    plan = _plan(db, admin, "Frühdienst")
+
+    cd = export_plan_pdf(plan.id, db=db, current_user=admin).headers["content-disposition"]
+    cd.encode("latin-1")
+    assert "Fruhdienst" in cd.split("filename=")[1]
+    assert "Fr%C3%BChdienst" in cd
+
+
 def _enable_shift_planning(db, tenant_id=DEFAULT_TENANT_ID):
     db.add(SystemSetting(key="shift_planning_enabled", tenant_id=tenant_id, value="true"))
     db.commit()

@@ -9,6 +9,7 @@ feels absent. Write endpoints additionally require admin. Read endpoints are
 available to any authenticated user (read-only view + dashboard).
 """
 import re
+import unicodedata
 from datetime import date, time, timedelta
 from typing import List, Optional
 from urllib.parse import quote
@@ -673,6 +674,23 @@ def get_plan(
 # Ein Plan darf "Sommer 2026 (KW 30/31)" heißen — im Dateinamen hat weder der
 # Schrägstrich noch das Anführungszeichen etwas verloren.
 _FILENAME_SAFE_RE = re.compile(r"[^\w\-]+", re.UNICODE)
+# #461 K-2: Der einfache ``filename="..."``-Teil des Content-Disposition-Kopfes
+# wird als Latin-1 kodiert. ``_FILENAME_SAFE_RE`` laesst mit ``re.UNICODE`` aber
+# JEDEN Buchstaben durch — ein kyrillischer, griechischer oder CJK-Planname
+# sprengte damit den Kopf und die gesamte Antwort (500), ohne Ausweg ausser
+# Umbenennen. Der ASCII-Zweig traegt darum eine eigene, engere Menge; der
+# vollstaendige Name bleibt prozentkodiert im ``filename*``-Teil erhalten.
+_FILENAME_ASCII_RE = re.compile(r"[^A-Za-z0-9_\-]+")
+
+
+def _ascii_filename_part(name: str) -> str:
+    """Latin-1-sicherer Namensteil. Umlaute werden ueber die
+    NFKD-Zerlegung auf ihren Grundbuchstaben zurueckgefuehrt (``Frühdienst``
+    → ``Fruhdienst``) statt zu Unterstrichen zu zerfallen; Schriften ohne
+    ASCII-Entsprechung fallen ganz weg und der Aufrufer nutzt seinen
+    Rueckfallwert."""
+    folded = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    return _FILENAME_ASCII_RE.sub("_", folded).strip("_")
 
 
 @router.get("/plans/{plan_id}/export.pdf")
@@ -759,12 +777,14 @@ def export_plan_pdf(
     db.close()  # F-053: Pool-Verbindung vor dem Streamen freigeben
     safe = _FILENAME_SAFE_RE.sub("_", plan.name).strip("_") or "Schichtplan"
     filename = f"Schichtplan_{safe}_{generated_on.isoformat()}.pdf"
+    ascii_safe = _ascii_filename_part(plan.name) or "Schichtplan"
+    ascii_filename = f"Schichtplan_{ascii_safe}_{generated_on.isoformat()}.pdf"
     return StreamingResponse(
         pdf,
         media_type="application/pdf",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="{filename}"; '
+                f'attachment; filename="{ascii_filename}"; '
                 f"filename*=UTF-8''{quote(filename)}"
             )
         },

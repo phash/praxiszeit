@@ -77,7 +77,9 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
             </button>
           </div>
           <form onSubmit={save} className="p-4 space-y-4">
-            <FormInput label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+            {/* #461 K-9: 255 wie die Server-Grenze (#450). Ohne sie meldet das
+                Hinweisfenster die englische Pydantic-Rohmeldung. */}
+            <FormInput label="Name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={255} />
             <FormTextarea
               label="Beschreibung (optional)"
               value={description}

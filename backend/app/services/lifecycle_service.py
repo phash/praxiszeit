@@ -45,7 +45,7 @@ from app.models import (
     VacationRequest,
     WorkingHoursChange,
 )
-from app.models.shift_planning import ShiftSlot
+from app.models.shift_planning import ShiftPlan, ShiftSlot
 from app.models.tenant import Tenant
 
 logger = logging.getLogger(__name__)
@@ -227,6 +227,8 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
     - ``signup_audit_log``: email / IP / User-Agent scrubbed, consent row kept.
     - ``shift_slots``: ``note`` -> NULL (#443; Admin-Freitext ohne
       Aufbewahrungspflicht, kann Personenbezug tragen).
+    - ``shift_plans``: ``name`` -> "[gelöscht]" (NOT NULL), ``description`` ->
+      NULL (#461 K-4; dieselbe Klasse Freitext wie der Slot-Hinweis).
 
     Abwesenheiten und Zeiteintraege bleiben bewusst stehen (Modul-Docstring:
     Aufbewahrung an anonymisierten FKs) — anders als beim Einzel-Nutzer-Pfad
@@ -270,6 +272,19 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
         ShiftSlot.tenant_id == tenant.id,  # F-026
         ShiftSlot.note.isnot(None),
     ).update({ShiftSlot.note: None}, synchronize_session=False)
+
+    # #461 K-4: Dieselbe Begruendung gilt woertlich fuer Name und Beschreibung
+    # des Plans — "Vertretungsplan Frau Meier" ist Personenbezug, und der Plan
+    # traegt keinerlei Aufbewahrungspflicht (reines Planungsartefakt, vom
+    # Soll-Ist-Modell entkoppelt). Der Name ist NOT NULL, also Ersatzwert statt
+    # NULL; die Beschreibung wird geleert. Wie ShiftSlot ohne row_hash → Bulk-
+    # UPDATE zulaessig.
+    db.query(ShiftPlan).filter(
+        ShiftPlan.tenant_id == tenant.id,  # F-026
+    ).update(
+        {ShiftPlan.name: "[gelöscht]", ShiftPlan.description: None},
+        synchronize_session=False,
+    )
 
     # Release-Review 1.18.1: dieselbe Klasse im Aenderungsprotokoll. Die
     # Freitext-Notizen tragen DIREKTE Identifikatoren, nicht nur Prosa:

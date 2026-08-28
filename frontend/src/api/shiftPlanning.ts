@@ -154,14 +154,19 @@ export interface PlanUpdateBody {
   // sichtbar" zurückfallen.
   visible_to_employees: boolean;
 }
+// #461 K-7: den Rumpf NICHT noch einmal Feld fuer Feld aufzaehlen. `visible_to_employees`
+// wurde oben absichtlich verpflichtend gemacht, damit ein vergesslicher Aufrufer
+// einen Typfehler bekommt statt still die Freigabe zurueckzunehmen — eine zweite
+// Aufzaehlung hier hebelt genau das fuer jedes KUENFTIGE Feld wieder aus: es faellt
+// lautlos aus der Anfrage, und `PUT /plans/{id}` ist serverseitig ein Vollersatz.
+// `updateSlot` reicht durch und hatte die Luecke nie.
 export const updatePlan = (id: string, body: PlanUpdateBody) =>
   apiClient
     .put<PlanSummary>(`${BASE}/plans/${id}`, {
-      name: body.name,
+      ...body,
       description: body.description ?? null,
       active_from_date: body.active_from_date ?? null,
       active_until_date: body.active_until_date ?? null,
-      visible_to_employees: body.visible_to_employees,
     })
     .then((r) => r.data);
 export const deletePlan = (id: string) => apiClient.delete(`${BASE}/plans/${id}`);
