@@ -780,3 +780,105 @@ class TestKonfigurationAlsUmgebung:
         env = {}
         srv.apply_config_env(config, env)
         assert env["LICENSE_KEY_PATH"] == str(srv.BASE_DIR / "config/license.key")
+
+
+# --- #427: der Dienst darf nicht "active" melden, wenn das Backend tot ist ---
+
+class _FakeProcess:
+    """Minimaler Ersatz fuer ``subprocess.Popen``: lebt, bis ``exit`` gesetzt wird."""
+
+    def __init__(self, exit_after=None, returncode=1):
+        self._calls = 0
+        self._exit_after = exit_after
+        self.returncode_value = returncode
+
+    def poll(self):
+        self._calls += 1
+        if self._exit_after is not None and self._calls > self._exit_after:
+            return self.returncode_value
+        return None
+
+    @property
+    def returncode(self):
+        return self.returncode_value
+
+
+class TestGesundheitspruefungGehoertZumEigenenKind:
+    """#427: Der Kern des Fehlers.
+
+    Belegt ein anderer Prozess den Port, beendet sich das eigene uvicorn sofort
+    ("address already in use") — die Gesundheitspruefung bekommt aber trotzdem
+    eine 200, naemlich vom belegenden Prozess. Vorher galt der Dienst damit als
+    gesund: der Manager lief weiter, systemd meldete ``active``, und die
+    Installation lieferte nichts aus. Deshalb entscheidet jetzt ZUERST der
+    Zustand des Kindprozesses und erst danach die HTTP-Antwort.
+    """
+
+    def test_fremde_200_rettet_ein_totes_kind_nicht(self, srv):
+        totes_kind = _FakeProcess(exit_after=0)          # sofort tot
+        fremde_antwort = lambda: True                     # noqa: E731 — Port antwortet
+        assert srv.wait_until_healthy(totes_kind, fremde_antwort,
+                                      attempts=3, sleeper=lambda _s: None) is False
+
+    def test_eigenes_gesundes_kind_wird_erkannt(self, srv):
+        kind = _FakeProcess()
+        assert srv.wait_until_healthy(kind, lambda: True,
+                                      attempts=3, sleeper=lambda _s: None) is True
+
+    def test_lebendes_kind_ohne_antwort_laeuft_in_die_zeitgrenze(self, srv):
+        kind = _FakeProcess()
+        assert srv.wait_until_healthy(kind, lambda: False,
+                                      attempts=3, sleeper=lambda _s: None) is False
+
+    def test_spaeter_tod_beendet_das_warten(self, srv):
+        """Kind lebt zwei Runden und stirbt dann — ohne je zu antworten."""
+        kind = _FakeProcess(exit_after=2)
+        assert srv.wait_until_healthy(kind, lambda: False,
+                                      attempts=10, sleeper=lambda _s: None) is False
+
+
+class TestAufgebenNachWiederholtenAbstuerzen:
+    """#427: Ohne Obergrenze startet der Wachhund endlos neu und haelt den
+    Manager am Leben — fuer systemd bleibt der Dienst ``active``."""
+
+    def test_unter_der_grenze_wird_weiter_versucht(self, srv):
+        assert srv.should_give_up([100.0, 101.0], now=102.0, limit=5, window=300) is False
+
+    def test_grenze_erreicht_fuehrt_zum_aufgeben(self, srv):
+        zeiten = [100.0, 101.0, 102.0, 103.0, 104.0]
+        assert srv.should_give_up(zeiten, now=105.0, limit=5, window=300) is True
+
+    def test_alte_abstuerze_zaehlen_nicht_mehr(self, srv):
+        """Ein Absturz vor Monaten darf einen heutigen Neustart nicht blockieren."""
+        zeiten = [1.0, 2.0, 3.0, 4.0, 1000.0]
+        assert srv.should_give_up(zeiten, now=1001.0, limit=5, window=300) is False
+
+
+class TestPortVorabpruefung:
+    """#427: belegter Port soll als Klartext im Protokoll stehen, nicht als
+    Folgefehler weit dahinter."""
+
+    def test_freier_port_gilt_als_frei(self, srv):
+        import socket as _socket
+        with _socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            frei = s.getsockname()[1]
+        # Socket geschlossen → Port wieder frei
+        assert srv.port_is_occupied("127.0.0.1", frei) is False
+
+    def test_belegter_port_wird_erkannt(self, srv):
+        import socket as _socket
+        with _socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            s.listen(1)
+            belegt = s.getsockname()[1]
+            assert srv.port_is_occupied("127.0.0.1", belegt) is True
+
+    def test_platzhalter_adresse_wird_lokal_geprueft(self, srv):
+        """0.0.0.0 ist keine Zieladresse — geprueft wird 127.0.0.1."""
+        import socket as _socket
+        with _socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            s.listen(1)
+            belegt = s.getsockname()[1]
+            assert srv.port_is_occupied("0.0.0.0", belegt) is True
