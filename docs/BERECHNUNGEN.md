@@ -413,7 +413,10 @@ Prognose = Saldo bis heute − future_freizeitausgleich_impact(db, user)
 bereits gebuchten künftigen `OVERTIME`-Abwesenheiten** ab dem Tag NACH dem Saldo-Stichtag
 (§7.4) bis zum 31.12. des laufenden Jahres — genau der Betrag, um den ein Ausgleichstag das
 Konto später senkt (bei `OVERTIME` bleibt das Soll stehen, das Ist ist 0 → Konto −=
-Tages-Soll). Angezeigt im MA-Dashboard und in der Admin-Benutzerübersicht.
+Tages-Soll). Angezeigt im MA-Dashboard (`dashboard.get_overtime_account`) und im
+Admin-Dashboard über den Monats-/Wochenbericht (`reports.get_monthly_report`/
+`get_weekly_report`) — **nicht** in der Benutzerübersicht (`admin_users.users_overview`),
+die die Projektion nicht führt.
 
 * Bewusst **Soll-basiert** über dieselbe Quelle `_day_soll_contribution` wie
   `get_overtime_account`, **nicht** über das `hours`-Feld — so ist die Projektion im
