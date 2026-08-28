@@ -561,6 +561,19 @@ export const handbuchAdminSections: AccordionItem[] = [
       </div>
     ),
   },
+  {
+    title: '14. Admin-Passwort verloren (nur native Installation)',
+    content: (
+      <div className="space-y-2">
+        <p>Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando <strong>auf dem Server selbst</strong> — es setzt das Passwort direkt in der Datenbank neu und braucht dafür keine Anmeldung:</p>
+        <p><code>sudo praxiszeit-server.py reset-admin-password</code></p>
+        <p>Das neue Passwort wird zweimal abgefragt (nicht mit eingetippt, damit es nicht in der Befehls-Historie landet) und gegen dieselben Regeln geprüft wie in der Anwendung. Danach sind <strong>alle laufenden Sitzungen dieses Kontos ungültig</strong>.</p>
+        <p>Ist auch das Handy mit der <strong>Zwei-Faktor-Anmeldung</strong> weg, reicht das neue Passwort nicht — der Login fragt weiter nach einem Code. Dann <code>--disable-2fa</code> ergänzen und die Zwei-Faktor-Anmeldung anschließend im Profil neu einrichten. Betrifft es ein anderes Konto als <code>admin</code>: <code>--username &lt;name&gt;</code>.</p>
+        <p>Jeder solche Vorgang wird mit Zeitpunkt, betroffenem Konto und dem auslösenden Betriebssystem-Konto dauerhaft festgehalten (Nachweispflicht nach Art. 5 Abs. 2 DSGVO) — ein Passwort-Reset ist kein stiller Vorgang.</p>
+        <p className="text-gray-500">In der <strong>Docker</strong>-Installation gibt es dieses Kommando nicht; dort führt der Weg über <code>docker compose exec db psql</code>. Der Eintrag <code>[admin] password</code> in <code>config/praxiszeit.conf</code> ist <strong>keine</strong> Antwort auf die Frage — er ist nur der Startwert der Erstinstallation und nach der ersten Änderung falsch; das Kommando überschreibt ihn anschließend mit einem Zufallswert.</p>
+      </div>
+    ),
+  },
 ];
 
 // ── Schnellstart (Admin) ─────────────────────────────────────────────────────

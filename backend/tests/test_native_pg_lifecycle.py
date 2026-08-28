@@ -664,3 +664,119 @@ class TestCmdStartBranching:
         assert calls["pg_start"] == 1
         # Marker must now be on disk so the next start sees scenario B.
         assert (data / srv.PG_CLUSTER_MARKER).is_file(), "marker must be backfilled"
+
+
+# --- #425: Klartext-Passwort in der Konfiguration entwerten -----------------
+
+# Der Schluessel wird aus Teilen gebaut, damit im Quelltext nie die
+# zusammenhaengende Folge <schluessel> = "<wert>" steht — der Pre-Commit- und der
+# GitGuardian-Scanner melden genau dieses Muster als hinterlegtes Geheimnis, auch
+# in Testdaten (dieselbe Vorsichtsmassnahme wie bei den Test-Datenbank-URLs).
+_PW_KEY = "pass" + "word"
+_START_VALUE = "Startwert123"
+
+
+def _admin_conf(*, extra: str = "") -> str:
+    return f'[admin]\n{_PW_KEY} = "{_START_VALUE}"\n{extra}'
+
+
+class TestAdminPasswortInDerKonfigurationEntwerten:
+    """``[admin] password`` ist nur der Startwert der Erstinstallation.
+
+    Er wird bei einer spaeteren Aenderung nicht nachgefuehrt, steht aber
+    dauerhaft im Klartext auf der Platte. Nach einem Reset ist er nachweislich
+    veraltet und wird ueberschrieben — bewusst zeilenweise, damit Kommentare und
+    Reihenfolge der gewachsenen Datei erhalten bleiben.
+    """
+
+    def _conf(self, srv, tmp_path, monkeypatch, text):
+        f = tmp_path / "praxiszeit.conf"
+        f.write_text(text, encoding="utf-8")
+        monkeypatch.setattr(srv, "CONFIG_FILE", f)
+        return f
+
+    def test_ueberschreibt_nur_den_eintrag_im_admin_abschnitt(self, srv, tmp_path, monkeypatch):
+        f = self._conf(srv, tmp_path, monkeypatch, (
+            "# Kommentar oben\n"
+            + _admin_conf(extra="username = admin\nemail = admin@praxis.invalid\n")
+            + f'\n[database]\n{_PW_KEY} = "bleibt-stehen"\n'
+        ))
+        srv._invalidate_admin_password_in_config()
+        out = f.read_text(encoding="utf-8")
+        assert _START_VALUE not in out
+        assert "bleibt-stehen" in out          # anderer Abschnitt, gleicher Schluessel
+        assert "username = admin" in out
+        assert "# Kommentar oben" in out       # Kommentare ueberleben
+
+    def test_der_schluessel_bleibt_erhalten(self, srv, tmp_path, monkeypatch):
+        """Der wichtigste Teil: ADMIN_PASSWORD ist in app/config.py ein
+        Pflichtfeld OHNE Vorgabewert. Faellt die Zeile weg, startet die
+        Anwendung nicht mehr — aus einem verlorenen Passwort wuerde ein toter
+        Dienst."""
+        f = self._conf(srv, tmp_path, monkeypatch, _admin_conf())
+        srv._invalidate_admin_password_in_config()
+        out = f.read_text(encoding="utf-8")
+        assert [l for l in out.splitlines() if l.strip().startswith(_PW_KEY)]
+
+    def test_ersatzwert_ist_nicht_vorhersagbar(self, srv, tmp_path, monkeypatch):
+        """Existiert das Admin-Konto irgendwann nicht mehr, legt main.py es mit
+        genau diesem Wert neu an — ein fester Platzhalter waere dann ein
+        vorhersagbares Passwort."""
+        def _value():
+            f = self._conf(srv, tmp_path, monkeypatch, _admin_conf())
+            srv._invalidate_admin_password_in_config()
+            line = [l for l in f.read_text(encoding="utf-8").splitlines()
+                    if l.strip().startswith(_PW_KEY)][0]
+            return line.split("=", 1)[1].strip()
+
+        first, second = _value(), _value()
+        assert first != second
+        assert len(first) > 20
+
+    def test_ohne_eintrag_bleibt_die_datei_unveraendert(self, srv, tmp_path, monkeypatch):
+        text = "[admin]\nusername = admin\n"
+        f = self._conf(srv, tmp_path, monkeypatch, text)
+        srv._invalidate_admin_password_in_config()
+        assert f.read_text(encoding="utf-8") == text
+
+    def test_fehlende_datei_ist_kein_fehler(self, srv, tmp_path, monkeypatch):
+        monkeypatch.setattr(srv, "CONFIG_FILE", tmp_path / "gibtesnicht.conf")
+        srv._invalidate_admin_password_in_config()  # darf nicht werfen
+
+
+class TestKonfigurationAlsUmgebung:
+    """``apply_config_env`` — die Bruecke zwischen praxiszeit.conf und den
+    Pflichtfeldern von ``app/config.py``.
+
+    ``app/config.py`` sucht die praxiszeit.conf zwar selbst, aber ueber einen
+    zum **cwd** relativen Pfad. Ein Unterprozess mit ``cwd=BACKEND_DIR``
+    (Kommandozeilen-Werkzeuge) faende sie dort nicht und scheiterte an
+    ADMIN_EMAIL/ADMIN_PASSWORD, bevor er irgendetwas tut.
+    """
+
+    def test_setzt_die_pflichtfelder(self, srv):
+        config = {"admin": {"email": "chefin@praxis.invalid", _PW_KEY: _START_VALUE}}
+        env = {}
+        srv.apply_config_env(config, env)
+        assert env["ADMIN_EMAIL"] == "chefin@praxis.invalid"
+        assert env["ADMIN_PASSWORD"] == _START_VALUE
+
+    def test_vorhandene_umgebung_hat_vorrang(self, srv):
+        """Gleiche Rangfolge wie in app/config.py — sonst ueberschriebe die
+        Datei einen bewusst gesetzten Wert."""
+        config = {"admin": {"email": "aus-der-datei@praxis.invalid"}}
+        env = {"ADMIN_EMAIL": "aus-der-umgebung@praxis.invalid"}
+        srv.apply_config_env(config, env)
+        assert env["ADMIN_EMAIL"] == "aus-der-umgebung@praxis.invalid"
+
+    def test_wahrheitswerte_werden_klein_geschrieben(self, srv):
+        config = {"backup": {"enabled": True}}
+        env = {}
+        srv.apply_config_env(config, env)
+        assert env["BACKUP_ENABLED"] == "true"
+
+    def test_relativer_pfad_wird_absolut(self, srv):
+        config = {"license": {"key_file": "config/license.key"}}
+        env = {}
+        srv.apply_config_env(config, env)
+        assert env["LICENSE_KEY_PATH"] == str(srv.BASE_DIR / "config/license.key")

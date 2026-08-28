@@ -1005,6 +1005,34 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 
 ---
 
+## 20. Admin-Passwort verloren (nur native Installation)
+
+Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando **auf dem Server selbst** — es setzt das Passwort direkt in der Datenbank neu und braucht dafür keine Anmeldung:
+
+```
+sudo praxiszeit-server.py reset-admin-password
+```
+
+Das Kommando fragt das neue Passwort zweimal ab (es wird nicht mit eingetippt, damit es nicht in der Befehls-Historie landet) und prüft dieselben Regeln wie die Anwendung: mindestens 10 Zeichen, Groß- und Kleinbuchstabe, Ziffer. Danach sind **alle laufenden Sitzungen dieses Kontos ungültig** — wer damit angemeldet war, muss sich neu anmelden.
+
+**Ist auch das Handy mit der Zwei-Faktor-Anmeldung weg**, reicht das neue Passwort nicht: der Login fragt weiterhin nach einem Code. Dann zusätzlich:
+
+```
+sudo praxiszeit-server.py reset-admin-password --disable-2fa
+```
+
+Danach im Profil eine neue Zwei-Faktor-Anmeldung einrichten.
+
+Betrifft es ein anderes Konto als `admin`, geben Sie den Benutzernamen mit an: `--username <name>`.
+
+**Was dabei protokolliert wird:** Jeder solche Vorgang wird mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat, dauerhaft festgehalten (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Ein Passwort-Reset ist also kein stiller Vorgang.
+
+> **Docker-Installation:** Dort gibt es dieses Kommando nicht — die Zugangsdaten stehen in der `.env`, der Weg führt über `docker compose exec db psql`. Siehe [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md).
+
+> **Der Eintrag `[admin] password` in `config/praxiszeit.conf` ist keine Antwort auf die Frage:** er ist nur der Startwert der Erstinstallation und wird bei einer späteren Passwortänderung nicht nachgeführt. Nach einem Reset überschreibt ihn das Kommando mit einem Zufallswert — er steht dann nur noch da, weil die Anwendung das Feld beim Start voraussetzt.
+
+---
+
 ## Schichtplanung (optional, standardmäßig deaktiviert)
 
 Mit der **Schichtplanung** erstellen Sie wöchentliche Einsatzpläne (wer steht
