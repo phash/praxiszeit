@@ -260,6 +260,17 @@ def mandant(_db_session):
         created_by=user.id,
     )
     _db_session.add(plan)
+    # Release-Review 1.19.0: ein ZWEITER Plan. ``shift_plans`` traegt
+    # UniqueConstraint(tenant_id, name) — ein Scrub, der allen Plaenen denselben
+    # Namen gibt, sprengt sie und rollt die GESAMTE Anonymisierung zurueck
+    # (``anonymized_at`` bleibt leer, kein zweiter Durchlauf). Mit nur einem Plan
+    # kann dieser Suchlauf das nicht sehen.
+    _db_session.add(ShiftPlan(
+        tenant_id=TID,
+        name=PII["shift_plan_name"] + "-ZWEI",
+        description=PII["shift_plan_description"] + "-ZWEI",
+        created_by=user.id,
+    ))
     workstation = Workstation(tenant_id=TID, name="Tresen")
     _db_session.add(workstation)
     _db_session.commit()

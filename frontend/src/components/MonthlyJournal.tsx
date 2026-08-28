@@ -900,7 +900,11 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               <input type="number" min={0} max={480} value={editState.breakMinutes} onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))} className="w-16 border border-gray-300 rounded-sm px-1 py-0.5 text-sm text-right" />
                             )}
                           </td>
-                          <td colSpan={3}></td>
+                          {/* Release-Review 1.19.0: Ist + Soll + Saldo — im
+                              Fix-Modus entfaellt der Saldo, sonst haette diese
+                              Zeile eine Zelle mehr als der Tabellenkopf und die
+                              Aktionsknoepfe rutschten aus der Spalte. */}
+                          <td colSpan={fixedMode ? 2 : 3}></td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
                               <button onClick={() => void handleAdminAdd(day.date, day)} disabled={saving} className="p-2.5 text-green-600 hover:text-green-800 disabled:opacity-50" title="Hinzufügen"><Check size={15} /></button>
@@ -911,7 +915,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                       )}
                       {submittingDate === day.date && !isAdminView && (
                         <tr key={`${day.date}-reason`} className="bg-blue-50">
-                          <td colSpan={9} className="px-3 py-2">
+                          <td colSpan={fixedMode ? 8 : 9} className="px-3 py-2">
                             <div className="flex flex-wrap gap-2 items-center">
                               <input
                                 type="text"

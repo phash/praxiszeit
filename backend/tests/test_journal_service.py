@@ -433,3 +433,66 @@ def test_normalmodus_bleibt_unveraendert(db, test_user):
     # Urlaub mindert im Normalmodell das Soll → 0/0, Saldo 0.
     assert tag["target_hours"] == pytest.approx(0.0)
     assert tag["balance"] == pytest.approx(0.0)
+
+
+def test_halbtags_urlaub_im_fixmodus_schreibt_nur_die_haelfte_gut(db, default_tenant):
+    """Release-Review 1.19.0: die Tageszeile darf nicht mehr gutschreiben als
+    die Monatsrechnung. Ein flaches "geplante Stunden" gab dem Halbtag den
+    ganzen Tag — genau der Widerspruch, den #463 beheben soll, nur an einem
+    anderen Tag."""
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)  # Mo + Mi geplant, je 3 h
+    _make_absence(db, u, date(2025, 3, 3), AbsenceType.VACATION, hours=1.5, half_day=True)
+
+    tag = next(d for d in journal_service.get_journal(db, u, 2025, 3)["days"]
+               if d["date"] == "2025-03-03")
+    assert tag["actual_hours"] == pytest.approx(1.5)
+
+
+def test_urlaubstag_mit_zeiteintrag_wird_im_fixmodus_geklemmt(db, default_tenant):
+    """L1-Klemmung (Audit 2026-07-31): erfasste Stunden fuellen zuerst den nicht
+    abgedeckten Teil des Tages. Ohne die Klemmung stand in der Zeile
+    "gearbeitet + geplant" — mehr, als der Monat gutschreibt."""
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)
+    _make_absence(db, u, date(2025, 3, 3), AbsenceType.VACATION, hours=3.0)
+    _make_entry(db, u, date(2025, 3, 3), 8, 10)  # 2 h gestempelt
+
+    tag = next(d for d in journal_service.get_journal(db, u, 2025, 3)["days"]
+               if d["date"] == "2025-03-03")
+    # 2 h gearbeitet + 1 h Rest-Gutschrift = 3 h, nicht 2 + 3 = 5 h.
+    assert tag["actual_hours"] == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize("fall", ["halbtag", "mit_zeiteintrag", "feiertag", "gemischt"])
+def test_summe_der_tages_ist_werte_entspricht_dem_monats_ist(db, default_tenant, fall):
+    """Die eigentliche Zusicherung: im Fix-Modus MUSS die Summe der Tages-Ist-
+    Werte das Monats-Ist ergeben (beides ist Arbeit + Gutschriften).
+
+    Das Soll darf im Fix-Modus bewusst auseinanderlaufen (flaches Monats-Soll,
+    siehe Kopf des journal_service) — das Ist nicht. Diese Zusicherung faengt
+    jede kuenftige Abweichung zwischen Tageszeile und Summenzeile, unabhaengig
+    davon, welcher Sonderfall sie ausloest.
+    """
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)  # Mo + Mi geplant, je 3 h
+    if fall == "halbtag":
+        _make_absence(db, u, date(2025, 3, 3), AbsenceType.VACATION, hours=1.5, half_day=True)
+    elif fall == "mit_zeiteintrag":
+        _make_absence(db, u, date(2025, 3, 5), AbsenceType.VACATION, hours=3.0)
+        _make_entry(db, u, date(2025, 3, 5), 8, 10)
+    elif fall == "feiertag":
+        db.add(PublicHoliday(date=date(2025, 3, 3), name="Testfeiertag",
+                             year=2025, tenant_id=DEFAULT_TENANT_ID))
+        db.commit()
+    else:
+        _make_absence(db, u, date(2025, 3, 3), AbsenceType.VACATION, hours=1.5, half_day=True)
+        _make_entry(db, u, date(2025, 3, 3), 8, 10)
+        _make_absence(db, u, date(2025, 3, 12), AbsenceType.SICK, hours=3.0)
+
+    ergebnis = journal_service.get_journal(db, u, 2025, 3)
+    summe_tage = sum(d["actual_hours"] for d in ergebnis["days"])
+    assert summe_tage == pytest.approx(ergebnis["monthly_summary"]["actual_hours"], abs=0.02)

@@ -279,11 +279,22 @@ def get_journal(
                 db, user, d, special_day_config, wh_changes=wh_changes,
             )
             target_hours = planned
-            paid_absence = any(
-                a.type in calculation_service._FIXED_PAID_CREDIT_TYPES
-                for a in day_absences
+            # Release-Review 1.19.0: die Gutschrift MUSS ueber denselben Helfer
+            # laufen wie die Monatssumme. Ein flaches "planned" wich an zwei
+            # Stellen ab und erzeugte genau den Widerspruch neu, den #463
+            # beheben soll — nur an anderen Tagen: ein HALBTAGS-Urlaub schrieb
+            # der Zeile den ganzen Tag gut (Monat: die Haelfte), und an einem
+            # Feiertag/Urlaubstag MIT Zeiteintrag (ueber den "+"-Knopf oder
+            # normales Stempeln erreichbar) stand "gearbeitet + geplant" statt
+            # der geklemmten Summe.
+            paid_day_absences = [
+                a for a in day_absences
+                if a.type in calculation_service._FIXED_PAID_CREDIT_TYPES
+                and a.start_time is None  # nur ganztaegig, wie die Monatsschleife
+            ]
+            fixed_credit = calculation_service.fixed_day_covered_hours(
+                planned, paid_day_absences, time_hours, is_holiday_day,
             )
-            fixed_credit = planned if (is_holiday_day or paid_absence) else Decimal("0")
             actual_hours = time_hours + credited_sum + fixed_credit
 
         balance = actual_hours - target_hours
