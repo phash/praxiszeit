@@ -48,6 +48,11 @@ from app.models import (
 from app.models.shift_planning import ShiftPlan, ShiftSlot
 from app.models.tenant import Tenant
 
+# #440: Ersatzwert fuer NOT-NULL-Freitextspalten (``change_requests.reason``).
+# Die Spalte darf nicht NULL werden, ein leerer String saehe nach Datenverlust
+# aus — der Platzhalter sagt, dass hier bewusst anonymisiert wurde.
+ANONYMIZED_TEXT = "[anonymisiert]"
+
 logger = logging.getLogger(__name__)
 
 
@@ -229,6 +234,22 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
       Aufbewahrungspflicht, kann Personenbezug tragen).
     - ``shift_plans``: ``name`` -> "[gelöscht]" (NOT NULL), ``description`` ->
       NULL (#461 K-4; dieselbe Klasse Freitext wie der Slot-Hinweis).
+    - ``change_requests``: ``reason`` -> "[anonymisiert]" (NOT NULL),
+      ``proposed_note``/``original_note``/``break_waiver_reason``/
+      ``rejection_reason`` -> NULL (#440 A).
+    - ``vacation_requests``: ``note``/``rejection_reason`` -> NULL (#440 B).
+    - ``absences``: ``note`` -> NULL (#440 D). Nur hier — der Einzel-Nutzer-Pfad
+      loescht die Abwesenheiten vollstaendig.
+
+    **Bewusst NICHT geleert (#440 C):** ``time_entries.note``,
+    ``sunday_exception_reason`` und ``break_waiver_reason`` auf dem Zeiteintrag.
+    Sie sind der aufzeichnungspflichtige Beleg selbst (§16 ArbZG, §4 zur
+    Pausenabweichung) — anders als ihre Zweitschriften im Antrag und im
+    Aenderungsprotokoll, die seit 1.18.1 bzw. #440 geleert werden. Diese
+    Asymmetrie ist eine Entscheidung, kein Nebeneffekt: die Aufbewahrungspflicht
+    haengt am Original, die Kopie traegt sie nicht. ``error_logs`` und
+    ``stripe_events.payload_excerpt`` bleiben ebenfalls stehen — sie brauchen
+    eine Loeschfrist, keine Anonymisierung (offen in #440).
 
     Abwesenheiten und Zeiteintraege bleiben bewusst stehen (Modul-Docstring:
     Aufbewahrung an anonymisierten FKs) — anders als beim Einzel-Nutzer-Pfad
@@ -272,6 +293,49 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
         ShiftSlot.tenant_id == tenant.id,  # F-026
         ShiftSlot.note.isnot(None),
     ).update({ShiftSlot.note: None}, synchronize_session=False)
+
+    # #440 A/B/D: Freitext der Antraege. ``change_requests.reason`` ist Prosa der
+    # Beschaeftigten und regelmaessig gesundheits- oder adressnah ("Arzttermin
+    # wegen ...", "Kind in der Kita abgeholt"); dasselbe gilt fuer die Notizen
+    # beider Antragsarten und die Ablehnungsbegruendungen der Verwaltung. Eine
+    # Anonymisierung, die diese Saetze stehen laesst, ist nach Art. 17 keine.
+    #
+    # Die ZEILEN bleiben (wie ``working_hours_changes``/``time_entry_audit_logs``):
+    # "wer hat wann was beantragt und wer hat es entschieden" ist der belegende
+    # Teil, die Prosa nicht. ``reason`` ist NOT NULL → Platzhalter statt NULL.
+    #
+    # ``break_waiver_reason`` ist hier bewusst dabei, obwohl es eine
+    # §4-ArbZG-Abweichung begruendet: bei der Genehmigung wird der Text auf den
+    # materialisierten ``time_entry`` kopiert, und DORT bleibt er stehen (siehe
+    # unten, Punkt C). Geleert wird nur die Zweitschrift im Antrag.
+    db.query(ChangeRequest).filter(
+        ChangeRequest.tenant_id == tenant.id,  # F-026
+    ).update(
+        {
+            ChangeRequest.reason: ANONYMIZED_TEXT,
+            ChangeRequest.proposed_note: None,
+            ChangeRequest.original_note: None,
+            ChangeRequest.break_waiver_reason: None,
+            ChangeRequest.rejection_reason: None,
+        },
+        synchronize_session=False,
+    )
+
+    db.query(VacationRequest).filter(
+        VacationRequest.tenant_id == tenant.id,  # F-026
+    ).update(
+        {VacationRequest.note: None, VacationRequest.rejection_reason: None},
+        synchronize_session=False,
+    )
+
+    # #440 D: Der Notiztext einer Abwesenheit ist dieselbe Klasse Freitext. Die
+    # Zeilen selbst bleiben (Aufbewahrung an anonymisierten FKs, siehe
+    # Modul-Docstring) — nur im MANDANTEN-Pfad; der Einzel-Nutzer-Pfad loescht
+    # die Abwesenheiten ohnehin vollstaendig.
+    db.query(Absence).filter(
+        Absence.tenant_id == tenant.id,  # F-026
+        Absence.note.isnot(None),
+    ).update({Absence.note: None}, synchronize_session=False)
 
     # #461 K-4: Dieselbe Begruendung gilt woertlich fuer Name und Beschreibung
     # des Plans — "Vertretungsplan Frau Meier" ist Personenbezug, und der Plan

@@ -57,11 +57,15 @@ from app.core import audit_integrity
 from app.models import (
     Absence,
     AbsenceType,
+    ChangeRequest,
+    ChangeRequestStatus,
+    ChangeRequestType,
     SignupAuditLog,
     TimeEntry,
     TimeEntryAuditLog,
     User,
     UserRole,
+    VacationRequest,
     WorkingHoursChange,
 )
 from app.models.shift_planning import ShiftPlan, ShiftSlot, Workstation
@@ -117,6 +121,16 @@ PII = {
     # fuer Name und Beschreibung eines Schichtplans ("Vertretungsplan Frau Meier").
     "shift_plan_name": "PIIPLANNAMEAAA",
     "shift_plan_description": "PIIPLANBESCHREIBUNGAAA",
+    # #440 A/B/D: Freitext der Antraege und der Abwesenheit. ``reason`` ist die
+    # Prosa der Beschaeftigten und regelmaessig gesundheits- oder adressnah.
+    "cr_reason": "PIIANTRAGSGRUNDAAA",
+    "cr_proposed_note": "PIIVORSCHLAGNOTIZAAA",
+    "cr_original_note": "PIIURSPRUNGNOTIZAAA",
+    "cr_waiver_reason": "PIIPAUSENGRUNDAAA",
+    "cr_rejection": "PIIABLEHNUNGAAA",
+    "vr_note": "PIIURLAUBSNOTIZAAA",
+    "vr_rejection": "PIIURLAUBSABLEHNUNGAAA",
+    "absence_note": "PIIABWESENHEITSNOTIZAAA",
 }
 
 # Diese bleiben absichtlich stehen und duerfen die Suche nicht ausloesen.
@@ -202,7 +216,20 @@ def mandant(_db_session):
     ))
     _db_session.add(Absence(
         user_id=user.id, tenant_id=TID, date=date(2026, 3, 3),
-        type=AbsenceType.VACATION, hours=8.0,
+        type=AbsenceType.VACATION, hours=8.0, note=PII["absence_note"],
+    ))
+    _db_session.add(ChangeRequest(
+        user_id=user.id, tenant_id=TID,
+        request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.REJECTED,
+        reason=PII["cr_reason"],
+        proposed_note=PII["cr_proposed_note"],
+        original_note=PII["cr_original_note"],
+        break_waiver_reason=PII["cr_waiver_reason"],
+        rejection_reason=PII["cr_rejection"],
+    ))
+    _db_session.add(VacationRequest(
+        user_id=user.id, tenant_id=TID, date=date(2026, 4, 1), hours=8.0,
+        note=PII["vr_note"], rejection_reason=PII["vr_rejection"],
     ))
     # Zwei Protokollzeilen, wortgleich zu dem, was die Anwendung schreibt.
     _db_session.add(TimeEntryAuditLog(
@@ -566,3 +593,48 @@ class TestDefaultMandantSlugBleibt:
         assert tenant is not None, (
             "main.py-Bootstrap faende den Default-Mandanten nicht mehr")
         assert tenant.name == "[gelöscht]", "name wird trotzdem geschrubbt"
+
+
+class TestAntragsFreitext:
+    """#440 A/B/D: gezielt statt nur ueber den Suchlauf.
+
+    Der Suchlauf oben belegt "kein Klartext mehr uebrig". Diese Zusicherungen
+    belegen zusaetzlich das GEWOLLTE Ergebnis — dass die Zeilen naemlich
+    stehenbleiben und nur ihr Freitext geht. Ein Scrub, der die Antraege
+    stattdessen loescht, wuerde vom Suchlauf allein nicht auffallen.
+    """
+
+    def test_antrag_bleibt_stehen_und_traegt_den_platzhalter(self, _db_session, mandant):
+        lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
+        _db_session.commit()
+
+        cr = _db_session.query(ChangeRequest).filter(ChangeRequest.tenant_id == TID).one()
+        assert cr.reason == lifecycle_service.ANONYMIZED_TEXT  # NOT NULL → Platzhalter
+        assert cr.proposed_note is None
+        assert cr.original_note is None
+        assert cr.break_waiver_reason is None
+        assert cr.rejection_reason is None
+        # Der belegende Teil bleibt: wer hat wann was beantragt.
+        assert cr.user_id == mandant["user_id"]
+        assert cr.status is not None
+
+    def test_urlaubsantrag_behaelt_datum_und_status(self, _db_session, mandant):
+        lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
+        _db_session.commit()
+
+        vr = _db_session.query(VacationRequest).filter(VacationRequest.tenant_id == TID).one()
+        assert vr.note is None
+        assert vr.rejection_reason is None
+        assert vr.date == date(2026, 4, 1)
+        assert float(vr.hours) == 8.0
+
+    def test_abwesenheit_behaelt_datum_und_typ(self, _db_session, mandant):
+        """#440 D: nur der Notiztext geht — die Abwesenheit selbst bleibt
+        (Aufbewahrung an anonymisierten FKs, anders als im Einzel-Nutzer-Pfad)."""
+        lifecycle_service.anonymize_tenant(_db_session, mandant["tenant"])
+        _db_session.commit()
+
+        ab = _db_session.query(Absence).filter(Absence.tenant_id == TID).one()
+        assert ab.note is None
+        assert ab.date == date(2026, 3, 3)
+        assert ab.type == AbsenceType.VACATION
