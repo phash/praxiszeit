@@ -454,7 +454,7 @@ def test_filename_is_sanitised(db, default_tenant):
 
 
 def test_filename_survives_a_non_latin1_plan_name(db, default_tenant):
-    """#461 K-2: ein Planname aus nicht-Latin-1-Buchstaben darf den Export nicht
+    r"""#461 K-2: ein Planname aus nicht-Latin-1-Buchstaben darf den Export nicht
     zerlegen.
 
     ``_FILENAME_SAFE_RE`` (``[^\w\-]+`` mit ``re.UNICODE``) laesst Kyrillisch,
