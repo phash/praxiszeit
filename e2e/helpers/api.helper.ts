@@ -1,6 +1,22 @@
 // Default: the frontend nginx /api proxy on :80. Overridable via E2E_API_BASE so
 // the suite can run against an alternate host port when :80 is taken.
-const API_BASE = process.env.E2E_API_BASE ?? 'http://localhost/api';
+//
+// #461 W-2: faellt E2E_API_BASE weg, wird es aus E2E_BASE_URL abgeleitet. Vorher
+// nutzten die Seiten E2E_BASE_URL und dieser Helfer E2E_API_BASE — wer nur
+// E2E_BASE_URL=https://remote setzte, liess die Tests gegen den entfernten Host
+// laufen, waehrend jeder API-Aufruf (inkl. der mandantenweiten Umschaltung von
+// `shift_planning_enabled`) auf der LOKALEN Instanz landete.
+const API_BASE =
+  process.env.E2E_API_BASE ??
+  (process.env.E2E_BASE_URL
+    ? `${process.env.E2E_BASE_URL.replace(/\/+$/, '')}/api`
+    : 'http://localhost/api');
+
+// #461 W-2: ohne Zeitgrenze haengt ein Host, der die TCP-Verbindung annimmt aber
+// nie antwortet, den gesamten Lauf im "global setup" fest — `fetch` hat von sich
+// aus KEINEN Timeout.
+const REQUEST_TIMEOUT_MS = 30_000;
+const signal = () => AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
 interface LoginResponse {
   access_token: string;
@@ -41,6 +57,7 @@ export class ApiHelper {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
+        signal: signal(),
       });
       if (res.status === 429 && attempt < maxRetries - 1) {
         // Rate limited (5/min on login) - wait and retry
@@ -81,8 +98,8 @@ export class ApiHelper {
   }
 
   async get(path: string): Promise<any> {
-    const res = await fetch(`${API_BASE}${path}`, { headers: this.headers() });
-    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+    const res = await fetch(`${API_BASE}${path}`, { headers: this.headers(), signal: signal() });
+    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status} ${await res.text()}`);
     return res.json();
   }
 
@@ -91,6 +108,7 @@ export class ApiHelper {
       method: 'POST',
       headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined,
+      signal: signal(),
     });
     if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`);
     return res.json();
@@ -101,8 +119,12 @@ export class ApiHelper {
       method: 'PUT',
       headers: this.headers(),
       body: JSON.stringify(body),
+      signal: signal(),
     });
-    if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
+    // #461 K-8: den Antwortrumpf mitnehmen. PUT ist der meistgenutzte Aufruf der
+    // Suite; ohne ihn verbirgt ein 400 sein `detail` und der Fehlschlag lautet
+    // nur "PUT /... failed: 400".
+    if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status} ${await res.text()}`);
     return res.json();
   }
 
@@ -110,11 +132,12 @@ export class ApiHelper {
     const res = await fetch(`${API_BASE}${path}`, {
       method: 'DELETE',
       headers: this.headers(),
+      signal: signal(),
     });
-    if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
+    if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status} ${await res.text()}`);
   }
 
   async getRaw(path: string): Promise<Response> {
-    return fetch(`${API_BASE}${path}`, { headers: this.headers() });
+    return fetch(`${API_BASE}${path}`, { headers: this.headers(), signal: signal() });
   }
 }
