@@ -15,12 +15,19 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.18.2"
-PYTHON_VERSION="3.13.13"
+APP_VERSION="1.19.0"
+PYTHON_VERSION="3.13.15"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
-# 20260510 buendelt CPython 3.13.13 — enthaelt die tarfile-Fixes
-# (CVE-2025-4517 u.a.) gegenueber dem alten 3.13.3 (Tag 20250529).
-PYTHON_STANDALONE_TAG="20260510"
+# 20260825 buendelt CPython 3.13.15 mit OpenSSL 3.5.8, SQLite 3.53.1 und
+# expat 2.8.3 (am Artefakt nachgemessen). Der vorherige Stand 3.13.13 /
+# Tag 20260510 lieferte OpenSSL 3.5.6 — zwei Sicherheitsrunden aelter.
+# Der Interpreter gehoert zu ALLEN vier nativen Kundenpaketen, das ist also
+# ausgelieferte Angriffsflaeche, nicht nur Bauwerkzeug (Release-Review 1.19.0).
+# Beim Anheben: die vier Assets vorher auf HTTP 200 pruefen (nicht jede
+# CPython-Punktversion hat ein python-build-standalone-Release) und danach am
+# gebauten Artefakt gegenmessen:
+#   build/release-<ver>/linux/bin/python/bin/python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"
+PYTHON_STANDALONE_TAG="20260825"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases

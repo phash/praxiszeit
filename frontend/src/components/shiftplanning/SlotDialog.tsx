@@ -196,8 +196,9 @@ export default function SlotDialog({
               label="Mindestbesetzung"
               type="number"
               min={0}
+              max={999}  /* Release-Review 1.19.0: Server-Grenze (smallint) */
               value={minStaff}
-              onChange={(e) => setMinStaff(Math.max(0, Number(e.target.value)))}
+              onChange={(e) => setMinStaff(Math.min(999, Math.max(0, Number(e.target.value))))}
               helperText="0 = keine Mindestbesetzung; sonst wird der Slot bei Unterbesetzung markiert."
             />
 

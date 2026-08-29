@@ -11,7 +11,15 @@
 import pytest
 from pydantic import ValidationError
 
-from app.routers.shift_planning import LocationIn, PlanDuplicateIn, PlanIn, WorkstationIn
+from app.routers.shift_planning import (
+    LocationIn,
+    PlanDuplicateIn,
+    PlanIn,
+    SlotIn,
+    WorkstationIn,
+)
+
+_WS = "11111111-2222-4333-8444-555555555555"
 
 _TOO_LONG = "x" * 256
 
@@ -86,3 +94,42 @@ def test_qualification_conflict_becomes_409(db, default_tenant, monkeypatch):
             target.id, sp.QualificationsIn(workstation_ids=[]), db=db, current_user=admin,
         )
     assert exc.value.status_code == 409
+
+
+# ── Release-Review 1.19.0: dieselbe Klasse, aber die ZAHLENfelder ───────────
+# #450 hat die Namensfelder gebunden und die Zahlen uebersehen. Beides bricht
+# auf PostgreSQL erst beim COMMIT ab: ``_commit_or_conflict`` faengt nur
+# IntegrityError, einen DataError-Handler gibt es nicht — also HTTP 500 statt
+# 422. Live nachgestellt mit min_staff=99999 und sort_order=3000000000.
+
+
+def test_min_staff_ist_nach_oben_gebunden():
+    """``shift_slots.min_staff`` ist auf PostgreSQL ``smallint``."""
+    SlotIn(workstation_id=_WS, weekday=0, start_time="08:00", end_time="12:00", min_staff=999)
+    with pytest.raises(ValidationError):
+        SlotIn(workstation_id=_WS, weekday=0, start_time="08:00", end_time="12:00",
+               min_staff=99999)
+
+
+def test_min_staff_bleibt_nach_unten_gebunden():
+    """Der frühere Negativ-Validator ist durch ge=0 ersetzt — die Regel bleibt."""
+    with pytest.raises(ValidationError):
+        SlotIn(workstation_id=_WS, weekday=0, start_time="08:00", end_time="12:00",
+               min_staff=-1)
+
+
+@pytest.mark.parametrize("model", [LocationIn, WorkstationIn])
+def test_sort_order_ist_gebunden(model):
+    """``sort_order`` ist ``integer`` (2^31)."""
+    model(name="ok", sort_order=100000)
+    with pytest.raises(ValidationError):
+        model(name="ok", sort_order=3000000000)
+    with pytest.raises(ValidationError):
+        model(name="ok", sort_order=-1)
+
+
+def test_uebliche_werte_bleiben_erlaubt():
+    """Kontrolle: die Grenzen duerfen den Normalbetrieb nicht einengen."""
+    SlotIn(workstation_id=_WS, weekday=1, start_time="08:00", end_time="12:00", min_staff=3)
+    LocationIn(name="Hauptstelle", sort_order=10)
+    WorkstationIn(name="Tresen", sort_order=0)

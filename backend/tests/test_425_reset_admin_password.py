@@ -159,3 +159,28 @@ def test_mehrdeutiger_name_bricht_ab(run_cli, db):
     with pytest.raises(SystemExit) as exc:
         run_cli(["--username", "admin"])
     assert exc.value.code == 1
+
+
+# ── Release-Review 1.19.0 ────────────────────────────────────────────────────
+
+
+def test_protokollzeile_verliert_den_kontonamen_bei_der_anonymisierung(run_cli, db):
+    """Art. 17: ``security_events.detail`` nennt das Konto im Klartext. Die
+    ZEILE muss den Vorgang weiter belegen (Art. 5 Abs. 2), der Name nicht."""
+    from app.routers import admin_users
+    from app.services import lifecycle_service  # noqa: F401 — Doku des Zwillingspfads
+
+    u = _user(db)
+    run_cli(["--username", "admin"])
+    assert db.query(SecurityEvent).filter(SecurityEvent.detail.isnot(None)).count() == 1
+
+    u.is_active = False
+    u.deactivated_at = None
+    db.commit()
+    admin = _user(db, username="chefin", role=UserRole.ADMIN)
+    admin_users.anonymize_user(str(u.id), db=db, current_user=admin)
+
+    zeile = db.query(SecurityEvent).filter(SecurityEvent.subject_user_id == u.id).one()
+    assert zeile.detail is None          # Klarname weg
+    assert zeile.event == EVENT_ADMIN_PASSWORD_RESET  # Vorgang bleibt belegt
+    assert zeile.actor.startswith("cli:")
