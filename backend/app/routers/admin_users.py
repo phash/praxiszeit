@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday
+from app.models.security_event import SecurityEvent
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
@@ -738,6 +739,17 @@ def anonymize_user(
         WorkingHoursChange.note.isnot(None),
     ).update({WorkingHoursChange.note: None}, synchronize_session=False)
 
+    # Release-Review 1.19.0: ``security_events.detail`` nennt das Konto im
+    # Klartext ("... (Konto admin)"). Die ZEILE bleibt (Art.-5(2)-Nachweis, wer
+    # wann dieses Konto uebernommen hat), der Freitext geht — Ereignis,
+    # handelndes Betriebssystem-Konto und Zeitpunkt tragen den Nachweis auch
+    # ohne den Namen.
+    db.query(SecurityEvent).filter(
+        SecurityEvent.subject_user_id == user.id,
+        SecurityEvent.tenant_id == current_user.tenant_id,  # F-026
+        SecurityEvent.detail.isnot(None),
+    ).update({SecurityEvent.detail: None}, synchronize_session=False)
+
     # #440 A/B: Die Antraege dieser Person tragen ihre eigene Prosa —
     # ``change_requests.reason`` ist NOT NULL und regelmaessig gesundheits- oder
     # adressnah ("Arzttermin wegen ...", "Kind in der Kita abgeholt"), dazu die
@@ -897,6 +909,16 @@ def purge_user(
         ChangeRequest.reviewed_by == user.id,
         ChangeRequest.tenant_id == current_user.tenant_id,
     ).update({ChangeRequest.reviewed_by: None}, synchronize_session=False)
+    # Release-Review 1.19.0: ``security_events.subject_user_id`` ist ON DELETE
+    # SET NULL — die Zeile ueberlebt den Hard-Delete also (so gewollt: sie
+    # belegt, wer wann dieses Konto uebernommen hat). Ihr ``detail`` nennt aber
+    # den Benutzernamen im Klartext, und den soll die Endloeschung gerade
+    # entfernen. Vor dem Loeschen schrubben, solange die Zuordnung noch steht.
+    db.query(SecurityEvent).filter(
+        SecurityEvent.subject_user_id == user.id,
+        SecurityEvent.tenant_id == current_user.tenant_id,  # F-026
+        SecurityEvent.detail.isnot(None),
+    ).update({SecurityEvent.detail: None}, synchronize_session=False)
     db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     db.query(Absence).filter(Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id).delete(synchronize_session=False)
     # #305 Schichtplanung: shift_plans.created_by is NOT NULL with no ON DELETE

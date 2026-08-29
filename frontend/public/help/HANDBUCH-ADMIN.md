@@ -1028,7 +1028,7 @@ Betrifft es ein anderes Konto als `admin`, geben Sie den Benutzernamen mit an: `
 
 **Was dabei protokolliert wird:** Jeder solche Vorgang wird mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat, dauerhaft festgehalten (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Ein Passwort-Reset ist also kein stiller Vorgang.
 
-> **Docker-Installation:** Dort gibt es dieses Kommando nicht — die Zugangsdaten stehen in der `.env`, der Weg führt über `docker compose exec db psql`. Siehe [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md).
+> **Docker-Installation:** Dasselbe Werkzeug steckt auch im Backend-Abbild — dort lautet der Befehl `docker compose exec backend python -m app.cli.reset_admin_password` (mit `--username <name>` bzw. `--disable-2fa` wie oben). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen: dabei entfiele die Protokollzeile.
 
 > **Der Eintrag `[admin] password` in `config/praxiszeit.conf` ist keine Antwort auf die Frage:** er ist nur der Startwert der Erstinstallation und wird bei einer späteren Passwortänderung nicht nachgeführt. Nach einem Reset überschreibt ihn das Kommando mit einem Zufallswert — er steht dann nur noch da, weil die Anwendung das Feld beim Start voraussetzt.
 

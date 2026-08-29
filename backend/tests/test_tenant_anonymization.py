@@ -68,6 +68,7 @@ from app.models import (
     VacationRequest,
     WorkingHoursChange,
 )
+from app.models.security_event import SecurityEvent
 from app.models.shift_planning import ShiftPlan, ShiftSlot, Workstation
 from app.models.tenant import Tenant
 from app.services import auth_service, lifecycle_service, signup_service
@@ -131,6 +132,8 @@ PII = {
     "vr_note": "PIIURLAUBSNOTIZAAA",
     "vr_rejection": "PIIURLAUBSABLEHNUNGAAA",
     "absence_note": "PIIABWESENHEITSNOTIZAAA",
+    # Release-Review 1.19.0: security_events.detail nennt das Konto im Klartext.
+    "security_detail": "PIISICHERHEITSDETAILAAA",
 }
 
 # Diese bleiben absichtlich stehen und duerfen die Suche nicht ausloesen.
@@ -217,6 +220,10 @@ def mandant(_db_session):
     _db_session.add(Absence(
         user_id=user.id, tenant_id=TID, date=date(2026, 3, 3),
         type=AbsenceType.VACATION, hours=8.0, note=PII["absence_note"],
+    ))
+    _db_session.add(SecurityEvent(
+        tenant_id=TID, event="admin_password_reset_cli", subject_user_id=user.id,
+        actor="cli:root@testhost", detail=PII["security_detail"],
     ))
     _db_session.add(ChangeRequest(
         user_id=user.id, tenant_id=TID,

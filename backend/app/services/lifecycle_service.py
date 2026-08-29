@@ -45,6 +45,7 @@ from app.models import (
     VacationRequest,
     WorkingHoursChange,
 )
+from app.models.security_event import SecurityEvent
 from app.models.shift_planning import ShiftPlan, ShiftSlot
 from app.models.tenant import Tenant
 
@@ -242,6 +243,9 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
     - ``vacation_requests``: ``note``/``rejection_reason`` -> NULL (#440 B).
     - ``absences``: ``note`` -> NULL (#440 D). Nur hier — der Einzel-Nutzer-Pfad
       loescht die Abwesenheiten vollstaendig.
+    - ``security_events``: ``detail`` -> NULL (Release-Review 1.19.0; der
+      Freitext nennt das Konto im Klartext, die Zeile selbst bleibt als
+      Art.-5(2)-Nachweis stehen).
 
     **Bewusst NICHT geleert (#440 C):** ``time_entries.note``,
     ``sunday_exception_reason`` und ``break_waiver_reason`` auf dem Zeiteintrag.
@@ -295,6 +299,19 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
         ShiftSlot.tenant_id == tenant.id,  # F-026
         ShiftSlot.note.isnot(None),
     ).update({ShiftSlot.note: None}, synchronize_session=False)
+
+    # Release-Review 1.19.0: ``security_events.detail`` nennt das betroffene Konto
+    # im Klartext ("... (Konto admin)"). Die ZEILE muss bleiben — sie ist der
+    # Nachweis nach Art. 5 Abs. 2, wer wann ein Konto uebernommen hat —, ihr
+    # Freitext nicht: Ereignis, handelndes Betriebssystem-Konto und Zeitpunkt
+    # tragen den Nachweis auch ohne den Namen, und ``subject_user_id`` verweist
+    # ohnehin auf die (dann anonymisierte) Zeile. Ohne diesen Schritt ueberlebt
+    # der Benutzername die Loeschung — genau die Klasse Rest, die #440 fuer die
+    # Antraege geschlossen hat.
+    db.query(SecurityEvent).filter(
+        SecurityEvent.tenant_id == tenant.id,  # F-026
+        SecurityEvent.detail.isnot(None),
+    ).update({SecurityEvent.detail: None}, synchronize_session=False)
 
     # #440 A/B/D: Freitext der Antraege. ``change_requests.reason`` ist Prosa der
     # Beschaeftigten und regelmaessig gesundheits- oder adressnah ("Arzttermin

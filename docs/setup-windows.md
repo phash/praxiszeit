@@ -199,7 +199,15 @@ Das Backend prüft:
 - **nicht** in der Liste typischer Default-/Beispielpasswörter (z. B. `change`, `secret`, `password`, `12345`, `BITTE_AENDERN…`)
 - praktisch **min. 12 Zeichen** — kürzere Passwörter lösen einen Sicherheitshinweis im Log aus
 
-Das `[admin].password` wird **nur beim Erststart** gelesen, sofort gehasht in die Datenbank geschrieben und nie wieder genutzt. Spätere Passwortänderungen erfolgen über das Frontend (Profil → Passwort ändern). Den Klartextwert in der Datei sollte man danach durch einen Platzhalter (z. B. `password = "set-via-ui"`) ersetzen, damit niemand mehr das Initialpasswort aus der Datei lesen kann.
+Das `[admin].password` wird beim Start gelesen, um das Admin-Konto anzulegen, **falls es fehlt**; existiert es bereits, bleibt es unberührt. Spätere Passwortänderungen erfolgen über das Frontend (Profil → Passwort ändern) — der Wert in der Datei wird dabei **nicht** nachgeführt und ist danach falsch.
+
+Den Klartextwert sollte man deshalb entwerten. ⚠️ **Nicht durch einen festen Platzhalter** wie `set-via-ui`: fehlt das Admin-Konto irgendwann (Benutzername umgestellt, Konto nach Art. 17 endgültig gelöscht), legt der nächste Start es mit genau diesem Wert neu an — und ein in der Projektdokumentation veröffentlichter Wert ist dann das Passwort. Die Schwachpasswort-Prüfung greift dabei nicht: sie bricht den Start nur bei `ENVIRONMENT=production` ab, und der native Standard ist `development`.
+
+Stattdessen einen **zufälligen** Ersatzwert eintragen — oder einfacher das mitgelieferte Kommando nutzen, das den Eintrag selbst mit einem Zufallswert überschreibt (siehe Admin-Handbuch, „Admin-Passwort verloren"):
+
+```
+bin\python\python.exe praxiszeit-server.py reset-admin-password
+```
 
 ### Optional, aber empfohlen: Produktiv-Modus erzwingen
 

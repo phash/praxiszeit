@@ -1914,6 +1914,46 @@ def cmd_backup(args):
     create_backup(config)
 
 
+def bundled_python() -> str:
+    """Pfad zum MITGELIEFERTEN Interpreter (Release-Review 1.19.0).
+
+    Die Abhaengigkeiten der Anwendung (sqlalchemy, passlib, pydantic-settings)
+    liegen bei einer nativen Installation ausschliesslich unter
+    ``bin/python`` — der System-Python kennt sie nicht. systemd und launchd
+    rufen den gebuendelten Interpreter mit vollem Pfad auf, ein von Hand
+    gestartetes Kommando aber nicht zwangslaeufig: ``sys.executable`` ist dann
+    ``/usr/bin/python3`` und der Unterprozess stirbt an
+    ``ModuleNotFoundError: No module named 'sqlalchemy'``.
+
+    Faellt auf ``sys.executable`` zurueck, wenn kein gebuendelter Interpreter
+    daneben liegt (Entwicklungsumgebung, install-local.sh mit venv).
+    """
+    candidates = [
+        BIN_DIR / "python" / "bin" / "python3",   # Linux/macOS-Bundle
+        BIN_DIR / "python" / "python.exe",        # Windows-Bundle
+        BASE_DIR / "venv" / "bin" / "python3",    # install-local.sh
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
+
+
+def _install_owner() -> str:
+    """Das Konto, dem die Installation gehoert — der richtige Aufrufer, wenn die
+    Datenbank noch hochgefahren werden muss (Release-Review 1.19.0)."""
+    try:
+        import pwd
+        return pwd.getpwuid(BASE_DIR.stat().st_uid).pw_name
+    except Exception:  # noqa: BLE001 — Windows/unbekannte UID: der Hinweis bleibt brauchbar
+        return "praxiszeit"
+
+
+def _running_as_root() -> bool:
+    """Unter Windows gibt es ``geteuid`` nicht — dort ist die Frage bedeutungslos."""
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
 def cmd_reset_admin_password(args):
     """#425: Passwort eines Kontos lokal auf der Maschine neu setzen.
 
@@ -1939,6 +1979,21 @@ def cmd_reset_admin_password(args):
 
     started_here = False
     if not pg_is_running():
+        # Release-Review 1.19.0: ``pg_ctl`` verweigert den Start als root
+        # ("cannot be run as root") — mit ``check=True`` schlaegt das als roher
+        # Traceback durch, und das Passwort bleibt unveraendert. Laeuft die
+        # Datenbank dagegen bereits (der Regelfall), ist root voellig in
+        # Ordnung; deshalb steht der Guard genau hier und nicht am Anfang.
+        if _running_as_root():
+            logger.error(
+                "PostgreSQL laeuft nicht, und als root darf es nicht gestartet werden "
+                "(pg_ctl lehnt das ab). Zwei Wege: entweder den Dienst starten "
+                "(systemctl start praxiszeit) und das Kommando erneut aufrufen, oder "
+                "es als Dienstkonto ausfuehren:\n"
+                "  sudo -u %s %s %s reset-admin-password",
+                _install_owner(), bundled_python(), Path(__file__).resolve(),
+            )
+            sys.exit(1)
         logger.info("PostgreSQL ist nicht gestartet — wird fuer den Vorgang kurz hochgefahren.")
         pg_start()
         started_here = True
@@ -1960,7 +2015,8 @@ def cmd_reset_admin_password(args):
         apply_config_env(config, env)
         env.setdefault("SECRET_KEY", resolve_secret_key(config, persist=False))
 
-        cmd = [sys.executable, "-m", "app.cli.reset_admin_password"]
+        # Release-Review 1.19.0: NICHT ``sys.executable`` — siehe bundled_python().
+        cmd = [bundled_python(), "-m", "app.cli.reset_admin_password"]
         if args.username:
             cmd += ["--username", args.username]
         if args.disable_2fa:

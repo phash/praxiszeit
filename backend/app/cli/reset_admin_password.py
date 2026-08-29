@@ -13,7 +13,13 @@ Dieses Modul ist er.
 
 Aufruf ueber den Prozessmanager::
 
-    sudo praxiszeit-server.py reset-admin-password [--username admin] [--disable-2fa]
+    # nativ (der volle Pfad ist noetig: nicht im PATH, und die App-Abhaengigkeiten
+    # liegen nur im mitgelieferten Interpreter):
+    sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \\
+         /opt/praxiszeit/praxiszeit-server.py reset-admin-password [--username admin] [--disable-2fa]
+
+    # unter Docker steckt dasselbe Werkzeug im Backend-Abbild:
+    docker compose exec backend python -m app.cli.reset_admin_password [--disable-2fa]
 
 Eigenschaften:
 

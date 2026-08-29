@@ -89,14 +89,28 @@ class LocationIn(BaseModel):
     # varchar-Längen und fängt das nie — dasselbe Muster wie bei
     # time_entry_audit_logs.source.
     name: str = Field(..., min_length=1, max_length=255)
-    sort_order: int = 0
+    # Release-Review 1.19.0: Obergrenze noetig. Die Spalte ist ``integer``; ein
+    # Wert jenseits von 2^31 bricht erst beim COMMIT ab (psycopg2
+    # NumericValueOutOfRange) — ``_commit_or_conflict`` faengt nur
+    # IntegrityError, es gibt keinen DataError-Handler, also HTTP 500 statt
+    # 422. Dieselbe Fehlerklasse, die #450 fuer die Namensfelder geschlossen
+    # hat; die Zahlenfelder blieben ungebunden. SQLite ignoriert das und faengt
+    # es nie.
+    sort_order: int = Field(0, ge=0, le=100000)
 
 
 class WorkstationIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)  # #450
     location_id: Optional[UUID] = None
     color: Optional[str] = None
-    sort_order: int = 0
+    # Release-Review 1.19.0: Obergrenze noetig. Die Spalte ist ``integer``; ein
+    # Wert jenseits von 2^31 bricht erst beim COMMIT ab (psycopg2
+    # NumericValueOutOfRange) — ``_commit_or_conflict`` faengt nur
+    # IntegrityError, es gibt keinen DataError-Handler, also HTTP 500 statt
+    # 422. Dieselbe Fehlerklasse, die #450 fuer die Namensfelder geschlossen
+    # hat; die Zahlenfelder blieben ungebunden. SQLite ignoriert das und faengt
+    # es nie.
+    sort_order: int = Field(0, ge=0, le=100000)
 
     @field_validator("color")
     @classmethod
@@ -129,7 +143,10 @@ class SlotIn(BaseModel):
     weekday: int
     start_time: time
     end_time: time
-    min_staff: int = 0
+    # Release-Review 1.19.0: ``shift_slots.min_staff`` ist auf PostgreSQL
+    # ``smallint`` — 99999 bricht beim COMMIT ab und ergab HTTP 500 (live
+    # nachgestellt). Die Obergrenze ersetzt den reinen Negativ-Validator unten.
+    min_staff: int = Field(0, ge=0, le=999)
     # #443: freier Hinweis je Einteilung ("Einarbeitung Azubi"). Die Spalte ist
     # TEXT, die Grenze steht am Rand — 500 Zeichen sind reichlich für einen
     # Hinweis und halten Zelle und PDF lesbar.
@@ -140,13 +157,6 @@ class SlotIn(BaseModel):
     def _weekday_range(cls, v: int) -> int:
         if not 0 <= v <= 6:
             raise ValueError("weekday muss zwischen 0 (Montag) und 6 (Sonntag) liegen")
-        return v
-
-    @field_validator("min_staff")
-    @classmethod
-    def _min_staff_nonneg(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("Mindestbesetzung darf nicht negativ sein")
         return v
 
     @field_validator("note")
