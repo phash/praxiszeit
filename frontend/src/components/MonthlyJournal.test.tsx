@@ -270,3 +270,43 @@ describe('<MonthlyJournal /> Typwechsel (U1, Audit 2026-07-31)', () => {
     expect(postMock).not.toHaveBeenCalled();
   });
 });
+
+// #463: Bei fester Monatsarbeitszeit (#377 Baustein 2b) gibt es kein Tages-Soll.
+// Die Tabelle zeigte trotzdem "Soll" und einen Tages-Saldo — Zahlen ohne
+// definierte Bedeutung, aus denen der Melder auf einen Rechenfehler schloss.
+describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {
+  const fixedJournal = { ...validJournal, use_fixed_monthly_target: true };
+
+  it('beschriftet die Spalte als "Geplant" und laesst den Tages-Saldo weg', async () => {
+    getMock.mockResolvedValue({ data: fixedJournal });
+    render(<MonthlyJournal />);
+
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Geplant' })).toBeInTheDocument());
+    expect(screen.queryByRole('columnheader', { name: 'Soll' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Saldo' })).not.toBeInTheDocument();
+  });
+
+  it('erklaert, dass die Monatsuebersicht verbindlich ist', async () => {
+    getMock.mockResolvedValue({ data: fixedJournal });
+    render(<MonthlyJournal />);
+
+    await waitFor(() => expect(screen.getByText(/Feste Monatsarbeitszeit aktiv/)).toBeInTheDocument());
+    expect(screen.getByText(/Monatsübersicht/)).toBeInTheDocument();
+  });
+
+  it('laesst die normale Ansicht unveraendert', async () => {
+    getMock.mockResolvedValue({ data: validJournal });
+    render(<MonthlyJournal />);
+
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Soll' })).toBeInTheDocument());
+    expect(screen.getByRole('columnheader', { name: 'Saldo' })).toBeInTheDocument();
+    expect(screen.queryByText(/Feste Monatsarbeitszeit aktiv/)).not.toBeInTheDocument();
+  });
+
+  it('faellt ohne das Feld auf die normale Ansicht zurueck (aeltere Antwort)', async () => {
+    getMock.mockResolvedValue({ data: { ...validJournal, use_fixed_monthly_target: undefined } });
+    render(<MonthlyJournal />);
+
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Soll' })).toBeInTheDocument());
+  });
+});

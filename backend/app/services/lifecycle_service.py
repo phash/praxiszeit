@@ -232,8 +232,10 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
     - ``signup_audit_log``: email / IP / User-Agent scrubbed, consent row kept.
     - ``shift_slots``: ``note`` -> NULL (#443; Admin-Freitext ohne
       Aufbewahrungspflicht, kann Personenbezug tragen).
-    - ``shift_plans``: ``name`` -> "[gelöscht]" (NOT NULL), ``description`` ->
-      NULL (#461 K-4; dieselbe Klasse Freitext wie der Slot-Hinweis).
+    - ``shift_plans``: ``name`` -> ``[gelöscht] <plan_id>`` (NOT NULL **und**
+      unique je Mandant — ein konstanter Ersatzwert sprengt die Unique-Regel,
+      sobald ein Mandant zwei Plaene hat), ``description`` -> NULL (#461 K-4;
+      dieselbe Klasse Freitext wie der Slot-Hinweis).
     - ``change_requests``: ``reason`` -> "[anonymisiert]" (NOT NULL),
       ``proposed_note``/``original_note``/``break_waiver_reason``/
       ``rejection_reason`` -> NULL (#440 A).
@@ -343,12 +345,17 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
     # Soll-Ist-Modell entkoppelt). Der Name ist NOT NULL, also Ersatzwert statt
     # NULL; die Beschreibung wird geleert. Wie ShiftSlot ohne row_hash → Bulk-
     # UPDATE zulaessig.
-    db.query(ShiftPlan).filter(
-        ShiftPlan.tenant_id == tenant.id,  # F-026
-    ).update(
-        {ShiftPlan.name: "[gelöscht]", ShiftPlan.description: None},
-        synchronize_session=False,
-    )
+    # ⚠️ Kein Bulk-UPDATE auf EINEN Namen: ``shift_plans`` traegt
+    # ``UniqueConstraint(tenant_id, name)`` (Migration 053). Alle Plaene eines
+    # Mandanten auf denselben Wert zu setzen verletzt sie, sobald es mehr als
+    # einen gibt — die IntegrityError rollt die GESAMTE Anonymisierung zurueck,
+    # ``anonymized_at`` bleibt leer und ``apply_scheduled_deletions`` versucht es
+    # nie wieder (der Job filtert auf ``anonymized_at IS NULL``... und scheitert
+    # jedes Mal an derselben Stelle). Deshalb je Zeile ein eindeutiger Wert,
+    # nach demselben Muster wie der Tenant-Slug weiter unten (#435).
+    for _plan in db.query(ShiftPlan).filter(ShiftPlan.tenant_id == tenant.id).all():
+        _plan.name = f"[gelöscht] {_plan.id}"
+        _plan.description = None
 
     # Release-Review 1.18.1: dieselbe Klasse im Aenderungsprotokoll. Die
     # Freitext-Notizen tragen DIREKTE Identifikatoren, nicht nur Prosa:

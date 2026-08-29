@@ -689,6 +689,35 @@ def _fixed_planned_hours(
     return (planned * half_special_day_weight(d, special_cfg))
 
 
+def fixed_day_covered_hours(planned: Decimal, day_absences, worked: Decimal,
+                            is_holiday: bool) -> Decimal:
+    """Die geplanten Stunden eines Tages, die ein bezahlter Fehltag abdeckt (#377 2b).
+
+    DIE eine Quelle der Regel — genutzt von der Monatsschleife
+    (:func:`_fixed_month_absence_hours`) UND von den Tageszeilen des
+    Monatsjournals (#463). Ein zweiter Nachbau ist im Projekt schon mehrfach
+    auseinandergelaufen; hier faellt das sofort auf, weil beide Zahlen im
+    SELBEN Bildschirm nebeneinander stehen.
+
+    ``day_absences`` sind die bereits gefilterten **ganztaegigen** Abwesenheiten
+    der passenden Typen (``start_time IS NULL``). Halbtage decken 0,5 ab; mehr
+    als ein voller Tag wird nie gutgeschrieben. ``worked`` (L1, Audit
+    2026-07-31) geht zuerst gegen den NICHT abgedeckten Teil des Tages, nur der
+    Ueberhang zehrt an der Gutschrift.
+    """
+    coverage = Decimal('1') if is_holiday else Decimal('0')
+    for a in day_absences:
+        coverage += Decimal('0.5') if a.half_day else Decimal('1')
+    coverage = min(coverage, Decimal('1'))  # nie mehr als ein voller Tag
+    if coverage <= 0:
+        return Decimal('0')
+    covered = planned * coverage
+    if worked > 0:
+        rest = max(Decimal('0'), worked - (planned - covered))
+        covered = max(Decimal('0'), covered - rest)
+    return covered
+
+
 def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include_holidays,
                                 from_date=None):
     """Gemeinsame Schleife: Σ geplante Stunden für Tage mit einem passenden
@@ -761,21 +790,16 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
             continue
         if not include_holidays and d in holiday_dates:
             continue  # Finding 2: Feiertag bereits über die Credit-Seite abgedeckt
-        coverage = Decimal('1') if (include_holidays and d in holiday_dates) else Decimal('0')
-        for a in by_date.get(d, []):
-            coverage += Decimal('0.5') if a.half_day else Decimal('1')
-        coverage = min(coverage, Decimal('1'))  # nie mehr als ein voller Tag gutschreiben
-        if coverage <= 0:
-            continue
+        day_absences = by_date.get(d, [])
+        is_holiday_day = bool(include_holidays and d in holiday_dates)
+        if not is_holiday_day and not day_absences:
+            continue  # nichts abzudecken — spart das Aufloesen der Planstunden
         planned = _fixed_planned_hours(db, user, d, cfg, wh_changes=wh_changes)
-        covered = planned * coverage
-        # L1: reale Erfassung geht zuerst gegen den NICHT abgedeckten Teil des
-        # Tages; erst der Überhang zehrt an der Gutschrift/Minderung.
-        worked = worked_by_date.get(d, Decimal('0'))
-        if worked > 0:
-            worked = max(Decimal('0'), worked - (planned - covered))
-            covered = max(Decimal('0'), covered - worked)
-        total += covered
+        # Die Deckungs-/Klemm-Regel steht in fixed_day_covered_hours — dieselbe
+        # Funktion nutzt journal_service fuer die Tageszeile (#463).
+        total += fixed_day_covered_hours(
+            planned, day_absences, worked_by_date.get(d, Decimal('0')), is_holiday_day,
+        )
     return total.quantize(Decimal('0.01'))
 
 

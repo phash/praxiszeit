@@ -761,6 +761,18 @@ Einzelne Fehltage (der Regelfall) sind vollautomatisch korrekt.
 > (statt das per-Tag-Soll selbst zu rekonstruieren) — sonst widerspräche sich das
 > §16-Dokument selbst.
 
+> **Monatsjournal im Fixmodus (#463):** Die Tageszeilen tragen hier die **geplante
+> Anwesenheit** (`_fixed_planned_hours`), nicht ein Tages-Soll — ein solches gibt es im
+> flachen Monats-Soll nicht, und der flexible Rest wird bewusst nicht über die Tage
+> verschmiert. Bezahlte Fehltage (Feiertag + `_FIXED_PAID_CREDIT_TYPES`) schreiben die
+> geplanten Stunden dem **Ist** der Tageszeile gut — dieselbe Menge wie
+> `fixed_month_credit`, damit die Zeile dieselbe Geschichte erzählt wie die Summe darunter.
+> SICK/TRAINING laufen unverändert über `credited_absences` (kein Doppelzählen: deren
+> Gewicht ist an Feiertagen 0). Die Antwort trägt `use_fixed_monthly_target`, damit die
+> Oberfläche die Spalte als „Geplant" beschriften und den bedeutungslosen Tages-Saldo
+> ausblenden kann. **Die Tageszeilen summieren sich weiterhin bewusst NICHT auf das flache
+> Monats-Soll** — verbindlich bleibt `monthly_summary`.
+
 Ein vollständiges Zahlenbeispiel: §15.
 
 ---

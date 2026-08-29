@@ -182,12 +182,24 @@ export default function ShiftPlanning() {
     const ids = plans.filter((p) => p.active_today).map((p) => p.id);
     if (ids.length === 0) {
       setActiveDetails({});
+      // Release-Review 1.19.0: die Ladeanzeige MUSS hier zurueckgesetzt werden.
+      // Wechselt `plans` waehrend eines laufenden Abrufs von "es gilt ein Plan"
+      // auf "es gilt keiner", blieb das Kennzeichen sonst fuer die Lebensdauer
+      // der Seite auf true (der `.then`-Zweig kehrt bei `cancelled` vorher um).
+      setActiveDetailsLoading(false);
       return;
     }
     let cancelled = false;
     setActiveDetailsLoading(true);
     Promise.allSettled(ids.map((id) => api.getPlan(id).then((d) => [id, d] as const))).then(
       (results) => {
+        // Der Abbruch-Zweig fasst die Ladeanzeige BEWUSST nicht an: laeuft der
+        // Effekt neu, gehoert sie bereits dem neuen Durchlauf — ein `false`
+        // hier wuerde dessen frisch gesetztes `true` ueberschreiben und die
+        // Wochenraster der gerade ladenden Plaene ohne Spinner zeigen. Der
+        // einzige Fall, in dem die Anzeige wirklich haengen bleiben konnte,
+        // ist der Zweig ohne heute geltende Plaene oben — dort wird sie
+        // zurueckgesetzt (Release-Review 1.19.0).
         if (cancelled) return;
         const entries = results
           .filter(

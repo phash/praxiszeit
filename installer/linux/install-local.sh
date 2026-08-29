@@ -187,6 +187,14 @@ cat > /etc/systemd/system/praxiszeit.service << SVCEOF
 [Unit]
 Description=PraxisZeit Zeiterfassung
 After=network.target
+# #427: Ohne Obergrenze startet systemd endlos neu und der Dienst wechselt
+# staendig zwischen "activating" und "auto-restart" — er endet nie in "failed".
+# Fuenf Fehlversuche in fuenf Minuten (bei RestartSec=10 also ein anhaltender
+# Fehler, kein einmaliger Ausrutscher) fuehren jetzt zu einem ehrlichen
+# "failed", das `systemctl status` auch anzeigt. Beide Schluessel gehoeren seit
+# systemd 230 in [Unit]; in [Service] werden sie kommentarlos ignoriert.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

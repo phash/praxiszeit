@@ -19,6 +19,7 @@ import os
 import platform
 import secrets
 import shutil
+import socket
 import signal
 import subprocess
 import sys
@@ -1236,6 +1237,71 @@ def _ensure_self_signed_cert(cert_path: Path, key_path: Path, practice_name: str
     return True
 
 
+# #427: Wie oft darf sich uvicorn innerhalb von ``_UVICORN_RESTART_WINDOW_SECONDS``
+# beenden, bevor der Prozess-Manager aufgibt? Ohne Obergrenze laeuft er ewig
+# weiter und systemd fuehrt den Dienst als ``active``, waehrend nichts antwortet.
+_UVICORN_RESTART_LIMIT = 5
+_UVICORN_RESTART_WINDOW_SECONDS = 300
+
+
+def _child_alive(process) -> bool:
+    """Laeuft der uvicorn-Kindprozess noch?"""
+    return process is not None and process.poll() is None
+
+
+def port_is_occupied(host, port, timeout: float = 0.5) -> bool:
+    """Antwortet auf ``host:port`` bereits jemand?
+
+    #427: Der Fall, der das Ticket ausgeloest hat — eine zweite Installation
+    (oder eine alte, nicht gestoppte) haelt den Port. uvicorn beendet sich dann
+    sofort mit ``address already in use``. Geprueft wird per ``connect``, nicht
+    per ``bind``: ein Bind-Versuch auf einen privilegierten Port scheitert unter
+    Umstaenden an fehlenden Rechten und waere als "belegt" fehlgedeutet.
+    """
+    target = "127.0.0.1" if str(host) in ("0.0.0.0", "::", "*") else str(host)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(timeout)
+            return probe.connect_ex((target, int(port))) == 0
+    except OSError:
+        # Kein Urteil moeglich (Namensaufloesung, Adressfamilie) — dann lieber
+        # starten lassen und uvicorn selbst entscheiden.
+        return False
+
+
+def wait_until_healthy(process, probe, attempts: int = 30,
+                       sleep_seconds: float = 1.0, sleeper=time.sleep) -> bool:
+    """Wartet, bis **unser** uvicorn gesund antwortet.
+
+    #427 — der Kern des Fehlers: geprueft wird ZUERST, ob der Kindprozess noch
+    lebt, und erst danach der HTTP-Aufruf. Vorher gewann eine 200 vom Port, und
+    die kann von einem FREMDEN Prozess stammen (genau der Fall "address already
+    in use": die alte Installation antwortet weiter). Der Manager hielt sich
+    dann fuer gesund, obwohl sein eigenes uvicorn schon tot war — und systemd
+    meldete ``active``, waehrend die neue Installation nichts ausliefert.
+    """
+    for _ in range(attempts):
+        sleeper(sleep_seconds)
+        if not _child_alive(process):
+            return False
+        if probe():
+            return True
+    return False
+
+
+def should_give_up(restart_times, now: float,
+                   limit: int = _UVICORN_RESTART_LIMIT,
+                   window: float = _UVICORN_RESTART_WINDOW_SECONDS) -> bool:
+    """Hat sich uvicorn zu oft in zu kurzer Zeit beendet? (#427)
+
+    Ohne diese Grenze startet der Wachhund uvicorn endlos neu und haelt den
+    Manager am Leben — fuer systemd bleibt der Dienst ``active``, obwohl er in
+    Wahrheit in einer Absturzschleife steckt.
+    """
+    recent = [t for t in restart_times if now - t <= window]
+    return len(recent) >= limit
+
+
 def uvicorn_start(config: dict):
     """Start uvicorn with the FastAPI app."""
     global _uvicorn_process
@@ -1317,6 +1383,20 @@ def uvicorn_start(config: dict):
     # Native install: frontend lives at app/frontend/ (no dist/ subfolder)
     env["FRONTEND_DIR"] = str(APP_DIR / "frontend")
 
+    # #427: Ist der Port schon belegt, beendet sich uvicorn sofort mit
+    # "address already in use" — und der belegende Prozess (typischerweise eine
+    # zweite oder nicht gestoppte Installation) beantwortet die anschliessende
+    # Gesundheitspruefung. Frueher galt der Dienst damit als gesund. Hier steht
+    # die Ursache als Klartext im Protokoll, bevor irgendetwas startet.
+    if port_is_occupied(bind_address, port):
+        logger.error(
+            "Port %s ist bereits belegt — dort antwortet schon ein anderer Prozess. "
+            "Laeuft PraxisZeit doppelt (alter Dienst nicht gestoppt) oder nutzt ein "
+            "anderes Programm den Port? Pruefen mit: ss -ltnp | grep :%s",
+            port, port,
+        )
+        sys.exit(1)
+
     logger.info(f"Starting uvicorn on port {port}...")
 
     _uvicorn_process = subprocess.Popen(
@@ -1334,8 +1414,7 @@ def uvicorn_start(config: dict):
     protocol = "https" if ssl_enabled else "http"
     health_url = f"{protocol}://localhost:{port}/api/health"
 
-    for i in range(30):
-        time.sleep(1)
+    def _probe() -> bool:
         try:
             import urllib.request
             import ssl
@@ -1344,15 +1423,25 @@ def uvicorn_start(config: dict):
             ctx.verify_mode = ssl.CERT_NONE
             req = urllib.request.Request(health_url)
             with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
-                if resp.status == 200:
-                    logger.info(f"PraxisZeit is ready at {protocol}://localhost:{port}")
-                    return
-        except Exception:
-            if _uvicorn_process.poll() is not None:
-                logger.error("uvicorn exited unexpectedly")
-                sys.exit(1)
+                return resp.status == 200
+        except Exception:  # noqa: BLE001 — noch nicht bereit ist der Normalfall
+            return False
 
-    logger.error("uvicorn failed to become healthy within 30 seconds")
+    if wait_until_healthy(_uvicorn_process, _probe):
+        logger.info(f"PraxisZeit is ready at {protocol}://localhost:{port}")
+        return
+
+    # #427: Zwei verschiedene Fehler, zwei verschiedene Meldungen — vorher
+    # verschwand der Unterschied hinter einem einzigen "exited unexpectedly".
+    if not _child_alive(_uvicorn_process):
+        logger.error(
+            "uvicorn hat sich beim Start beendet (Exitcode %s). Haeufigste Ursache: "
+            "der Port ist belegt oder die Konfiguration ist fehlerhaft — die "
+            "Meldung von uvicorn steht darueber im Protokoll.",
+            _uvicorn_process.returncode if _uvicorn_process else "?",
+        )
+    else:
+        logger.error("uvicorn wurde nicht innerhalb von 30 Sekunden gesund")
     sys.exit(1)
 
 
@@ -1697,12 +1786,38 @@ def cmd_start(args):
 
     # 7. Watchdog loop
     logger.info("PraxisZeit is running. Press Ctrl+C to stop.")
+    uvicorn_restarts: list[float] = []
     while not _shutdown_requested:
         time.sleep(5)
 
         # Check if uvicorn is still alive
         if _uvicorn_process and _uvicorn_process.poll() is not None:
-            logger.error("uvicorn exited unexpectedly, restarting...")
+            rc = _uvicorn_process.returncode
+            now = time.time()
+            uvicorn_restarts.append(now)
+            uvicorn_restarts = [t for t in uvicorn_restarts
+                                if now - t <= _UVICORN_RESTART_WINDOW_SECONDS]
+            # #427: Irgendwann ist Schluss. Ohne Obergrenze startet der Wachhund
+            # uvicorn endlos neu und bleibt dabei selbst am Leben — fuer systemd
+            # ist der Dienst dann ``active``, obwohl er in einer Absturzschleife
+            # steckt und nichts ausliefert. Mit ``Restart=on-failure`` und
+            # ``StartLimitBurst`` in der Unit endet der Dienst stattdessen
+            # ehrlich in ``failed``.
+            if should_give_up(uvicorn_restarts, now):
+                logger.error(
+                    "uvicorn hat sich %s mal in %s Minuten beendet (zuletzt mit "
+                    "Exitcode %s) — PraxisZeit gibt auf und beendet sich mit "
+                    "Fehler, damit der Dienst nicht faelschlich als laufend gilt.",
+                    len(uvicorn_restarts), _UVICORN_RESTART_WINDOW_SECONDS // 60, rc,
+                )
+                uvicorn_stop()
+                pg_stop()
+                _remove_pid()
+                sys.exit(1)
+            logger.error(
+                "uvicorn hat sich beendet (Exitcode %s), Neustart %s von %s...",
+                rc, len(uvicorn_restarts), _UVICORN_RESTART_LIMIT,
+            )
             uvicorn_start(config)
 
         # Check if PostgreSQL is still alive
