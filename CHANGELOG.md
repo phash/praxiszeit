@@ -2,6 +2,344 @@
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-08-29
+
+Minor-Release. Notfall-Zugang bei verlorenem Admin-Passwort (#425), ehrlicher
+Dienststatus im nativen Betrieb (#427), Freitext-Anonymisierung nach Art. 17
+DSGVO (#440) und die Schichtplan-Darstellung (#443/#450/#452/#453). Zwei
+Migrationen (070, 071).
+
+### ✨ Neu
+- **Admin-Passwort-Reset auf dem Server (#425).** Ist kein Administrator-Konto
+  mehr erreichbar, setzt `praxiszeit-server.py reset-admin-password` (nativ)
+  bzw. `python -m app.cli.reset_admin_password` (Docker) das Passwort direkt in
+  der Datenbank neu — ohne Anmeldung, mit denselben Passwortregeln wie die
+  Anwendung, und invalidiert alle Sitzungen des Kontos (`token_version`).
+  `--disable-2fa` schaltet im selben Zug den zweiten Faktor ab, `--username`
+  wählt ein anderes Konto. Jeder Vorgang landet in `security_events` (Zeitpunkt,
+  Konto, auslösendes OS-Konto) — Nachweispflicht nach Art. 5 Abs. 2 DSGVO.
+- **Schichtplan freigeben, drucken und lesbar darstellen (#443, #450).**
+  Neuer Plan-Schalter „Für Mitarbeitende sichtbar" macht einen Plan unabhängig
+  vom Aktiv-Datums-Fenster sichtbar (auch vor Beginn und nach Ablauf; eine Kopie
+  erbt die Freigabe nicht). Neues Feld **Hinweis** je Einteilung (500 Zeichen,
+  Darstellung mit vorangestelltem `»`) — im Raster, im PDF und auf der
+  Dashboard-Kachel (#453). PDF-Aushang im Querformat (Arbeitsplatz × Wochentag),
+  auch für Mitarbeitende; nicht geltende Pläne tragen den Vermerk „Vorschau —
+  gilt derzeit nicht" bzw. „Nicht mehr gültig". Standort einheitlich in der
+  Kopfzeile, bei gemischten Standorten hinter dem Arbeitsplatznamen (#452).
+  „Auf Wochentage kopieren" nimmt den Hinweis mit.
+- **Jahresende-Überstundenprojektion je Mandant abschaltbar (#430).** Zwei
+  getrennte Settings (`SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD` /
+  `..._ADMIN_DASHBOARD`, Default `True`) blenden die Projektion im
+  Mitarbeiter- bzw. Admin-Dashboard aus; ist sie aus, wird
+  `future_freizeitausgleich_impact` gar nicht erst aufgerufen. Reine
+  Anzeige-Gates — das Überstundenkonto rechnet unverändert weiter.
+
+### 🐞 Korrekturen
+- **Dienststatus meldete `active` bei totem Backend (#427).** Die
+  Gesundheitsprüfung akzeptierte jede Antwort auf dem Port — bei belegtem Port
+  also die eines fremden Prozesses. Jetzt entscheidet der eigene Prozess, ein
+  belegter Port wird vorab im Klartext gemeldet, und nach wiederholten
+  Abstürzen endet der Dienst ehrlich in `failed`.
+- **Monatsjournal widersprach der Monatssumme im festen Monats-Soll-Modus
+  (#463).** Die Tageszeilen tragen dort die geplante Anwesenheit
+  (`_fixed_planned_hours`), kein Tages-Soll — ein solches gibt es im flachen
+  Monats-Soll nicht. Bezahlte Fehltage (Feiertag + `_FIXED_PAID_CREDIT_TYPES`)
+  schreiben die geplanten Stunden jetzt auch in der Tageszeile dem Ist gut,
+  dieselbe Menge wie `fixed_month_credit`. Die Antwort trägt
+  `use_fixed_monthly_target`, damit die Oberfläche die Spalte als „Geplant"
+  beschriften und den bedeutungslosen Tages-Saldo ausblenden kann; verbindlich
+  bleibt `monthly_summary`.
+- **Schichtplanung: Release-Nachzug (#461).** PDF-Ausdruck mit
+  nicht-lateinischen Plannamen, Reihenfolge der Arbeitsplätze im Aushang,
+  Entwürfe erschienen fälschlich als freigegeben.
+- **Betriebsferien-Zuordnung neuer Mitarbeitender chronologisch aufteilen
+  (#448).** Trat jemand mitten in eine Schließung ein, wurden die Schließtage
+  nicht am Eintrittsdatum getrennt.
+- **`tenants.slug` blieb bei der Mandanten-Anonymisierung stehen (#435).**
+
+### 🔒 Security / DSGVO
+- **Freitexte überstehen die Art.-17-Löschung nicht mehr (#440).**
+  Begründungen von Änderungs- und Urlaubsanträgen, Notizen und
+  Ablehnungsgründe werden geleert; die Vorgänge selbst bleiben nachweisbar.
+- Eingebetteter Interpreter aller nativen Pakete auf **CPython 3.13.15 /
+  OpenSSL 3.5.8** (vorher 3.13.13 / 3.5.6).
+
+### ⚡ Performance
+- Vertrags-Snapshot je Mitarbeitendem einmal laden statt pro Tag (#449).
+
+### 📖 Dokumentation
+- Admin-Handbuch: neuer Abschnitt „Admin-Passwort verloren", Journal im
+  Fixmodus, Projektions-Schalter, Schichtplan-Freigabe/Hinweis/PDF.
+- Mitarbeiter-Handbuch: Schichtplan-Sichtbarkeit und Vorschau-Auswahl,
+  abschaltbare Jahresende-Zeile. Cheat-Sheets und In-App-Hilfe synchron.
+- `docs/SCHICHTPLANUNG.md`, `INSTALLATION.md`, `NATIVE-BETRIEB.md`,
+  `setup-windows.md` nachgezogen.
+
+### 🗄️ Migration
+- `070` — Schichtplan: `visible_to_employees` (Plan) + `note` (Einteilung)
+- `071` — `security_events` (Nachweis serverseitiger Eingriffe, Art. 5 Abs. 2 DSGVO)
+
+### Tests
+Backend 2187, Frontend 371, E2E 147, nativer Lebenszyklus 68, Postgres-only 44.
+Installation + echter Login auf Windows 11 (Emulator, PostgreSQL 18.4), Linux
+nativ, Docker sowie als Update einer Bestandsinstallation in beiden Varianten.
+`validate-release` auf fünf Distributionen.
+
+## [1.18.2] - 2026-08-12
+
+Patch-Release. Update aus jeder 1.18.x ohne Zwischenschritte; **keine neue
+Migration** (head bleibt `069_weekly_hours_precision`).
+
+### 🐞 Korrekturen
+- **Betriebsferien-Neuspeichern löschte Schließtage mit gebuchter Arbeitszeit
+  ersatzlos.** Bei aktivem „Betriebsferien über Urlaub hinaus als
+  Überstundenabbau" genügte ein Umbenennen der Schließung, damit ein Urlaubstag
+  verschwand, an dem nachträglich Arbeitszeit erfasst worden war — das
+  Protokoll behauptete dabei, die Tage würden neu gebucht.
+- **Datumskorrektur eines Zeiteintrags** kappte die bereits gekappte Zeit ein
+  zweites Mal und überschrieb den Rohstempel. Der Rohstempel ist der Nachweis
+  der tatsächlichen Anwesenheit (§ 16 ArbZG) und die Grundlage der
+  Ruhezeitprüfung (§ 5) — ein echter Verstoß wäre dadurch unentdeckt geblieben.
+- **Halbtags-Urlaubsantrag ließ sich nachträglich zu einem Zeitraum umbauen**
+  und wurde dann an jedem Werktag als halber Tag gebucht: fünf freie Tage
+  kosteten 2,5 Urlaubstage, und an jedem Tag blieb ein halbes Tagessoll offen.
+- **Betriebsferien akzeptierten beliebig lange Zeiträume.** Ein Zahlendreher im
+  Jahr hätte in einem Vorgang die rückwirkende Zeiterfassung der ganzen Praxis
+  gelöscht. Jetzt wie beim Urlaubsantrag auf ein Jahr begrenzt.
+- **ODS-Export** ließ am Wochenende die Bemerkung der Mitarbeitenden weg,
+  sobald ein § 10-Ausnahmegrund erfasst war; Excel und PDF zeigten beides.
+- **Farbauswahl in der Benutzerverwaltung** überdeckte Beschriftung und
+  Hilfetext (aus dem Bug-Tracker).
+- **Wochenstunden beim Anlegen** nehmen jetzt Viertelstunden an — der
+  Bearbeiten-Dialog konnte das längst (aus dem Bug-Tracker).
+
+### 📦 Dependencies
+- Sicherheitsaktualisierungen für undici, js-yaml, fast-uri, ip-address,
+  brace-expansion und nanoid (Build-/Test-Abhängigkeiten, nicht Teil der
+  ausgelieferten Anwendung). `npm audit`: 0 Schwachstellen.
+
+### 📖 Dokumentation
+- `INSTALLATION.md` weist auf `COOKIE_SECURE=false` für den HTTP-Betrieb hin —
+  ohne den Eintrag landet man nach jedem Neuladen wieder auf der Anmeldeseite.
+- Admin-Handbuch beschreibt die Wochenstunden-Eingabe korrekt in
+  Viertelstunden (Datei und In-App-Hilfe).
+
+### Tests
+Backend 2051, Postgres-Integration 44 (RLS, Nebenläufigkeit, Art.-17-Löschung),
+Frontend 323, `validate-release` auf 5 Distributionen, Docker- und
+Native-Update mit inhaltsgleicher Datenbank über alle 26 Tabellen, Windows 11
+im Emulator (Installation, Anmeldung, Dienst-Neustart, Rechte-Härtung).
+
+## [1.18.1] - 2026-08-03
+
+Patch-Release. **Keine neue Migration** — Schema bleibt auf `069`.
+
+### 🐞 Korrekturen
+- **Betriebsferien: Schließtage wurden fälschlich als Freizeitausgleich
+  gebucht.** Wurde ein Eintrittsdatum nachträglich vorgezogen (Datenkorrektur,
+  Wiedereinstellung, nachgetragener Eintritt), zehrten die davor liegenden
+  Schließtage das Urlaubsbudget auf, und die echten Schließtage landeten auf
+  dem Überstundenkonto — gemessen 40 Stunden zulasten des Kontos, während die
+  Urlaubsübersicht daneben fünf Resturlaubstage meldete; die ungenutzten Tage
+  gingen anschließend in den Jahresübertrag. Laufende Jahre korrigieren sich
+  mit dem Update von selbst, bereits abgeschlossene nicht (Übertrag von Hand
+  prüfen).
+- **Urlaubsverbrauch respektiert das Beschäftigungsfenster (#193).**
+  Urlaubstage vor `first_work_day` oder nach `last_work_day` zählen nicht mehr
+  als Verbrauch — zuvor kürzte die Funktion nur das Budget anteilig, zählte
+  aber jede gebuchte Zeile mit (Resturlaub 10 statt 15). Der Resturlaub ist die
+  Grundlage der Urlaubsabgeltung (§ 7 Abs. 4 BUrlG).
+- **Rückrechnung wandte den Sondertagsfaktor doppelt an.** Sie schrieb den
+  gewichteten statt des ungewichteten Tagessolls in `Absence.hours`; seit
+  `credit_day_weight` auf der Leseseite zählte der Faktor damit zweimal — ein
+  als halber Feiertag konfigurierter 24.12. mit Krankmeldung stand mit 2,00 h
+  Soll gegen 1,00 h Gutschrift. Verschärfend wich der gespeicherte Wert am
+  Sondertag dadurch immer vom neu berechneten ab: die Rückrechnung war an
+  diesen Tagen nicht idempotent.
+
+### 🔒 Security / DSGVO
+- **Anonymisierung ließ den Klarnamen im Änderungsprotokoll stehen.** Beide
+  Wege — einzelne Mitarbeitende wie ganzer Mandant — schrubbten die Stammdaten,
+  nicht aber E-Mail-Adresse und Benutzername in den Freitext-Notizen des
+  Protokolls. Die Manipulationssicherung des Protokolls bleibt intakt.
+
+### 🐞 Bedienung
+- **Nur-Lese-Betrieb wurde nicht erklärt.** Bei ungültiger Lizenzsignatur,
+  abgelaufener Demo oder unlesbarem Demo-Datum sperrte die Anwendung jedes
+  Speichern mit einer 403-Meldung, ohne dass die Oberfläche den Grund nennen
+  konnte.
+
+### 📖 Dokumentation
+- Berechnungsdoku, Handbücher und In-App-Hilfe auf den tatsächlichen Stand
+  gezogen — inklusive der Einschränkung, dass sich abgeschlossene Jahre nicht
+  von selbst korrigieren.
+
+### Tests
+Backend 2047 lokal / 2096 in der CI, Postgres 44, Frontend 320, E2E 145,
+5/5 Linux-Distributionen (PostgreSQL 18.4), Docker lokal + `.131` nativ (HTTPS)
++ `.131` Docker aus dem Paket (Daten byte-identisch, echter Login),
+Windows 11 Neuinstallation.
+
+## [1.18.0] - 2026-07-31
+
+Minor-Release. Wochenstunden mit Wirkungsdatum jetzt auch für individuelle
+Tagespläne (#431) — samt Vorschau, Revisionssicherheit und Ausweisung in
+Berichten. Drei Migrationen (067, 068, 069).
+
+### ✨ Neu
+- **Stundenhistorie für individuelle Tagespläne (#431).** Mitarbeitende mit
+  Tagesplan hatten bisher keinen Stundenverlauf: der Button fehlte im Formular,
+  der Endpunkt lehnte sie ab. Jede Vertragsänderung verschob damit still das
+  Soll bereits abgeschlossener Monate — ohne Protokoll, ohne Rückrechnung der
+  gebuchten Abwesenheits-Stunden, ohne Warnung bei abgeschlossenen Jahren.
+- **Dialog „Wochenstunden & Tagesplan"** für alle Mitarbeitenden, umschaltbar
+  zwischen gleichmäßigen Wochenstunden und Tagesplan (Mo–Fr einzeln,
+  Viertelstunden) — immer mit Wirkungsdatum.
+- **Vorschau vor dem Speichern:** Tagessoll je Wochentag (alt → neu),
+  betroffene Abwesenheiten sowie Überstundensaldo und Urlaubstage
+  vorher/nachher. Rückwirkende Änderungen und solche, die gebuchte Zeilen
+  umschreiben, müssen ausdrücklich bestätigt werden.
+- **Wochenstunden, Tagesstunden, Modus und Arbeitstage sind im
+  Bearbeiten-Formular nur noch Anzeige** — geändert wird ausschließlich über
+  den Dialog. `PUT /api/admin/users/{id}` lehnt diese Felder mit 400 ab.
+- **Berichte und Exporte weisen einen Tagesplan-Wechsel aus**
+  („ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche", bei reinem
+  Arbeitstage-Wechsel „ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage").
+- **Revisionssicherheit:** der beim Buchen gesetzte Stundenwert einer
+  Abwesenheit bleibt erhalten, und jede von einer Stundenänderung nachgezogene
+  Abwesenheit wird einzeln protokolliert (Datum, alt, neu, Auslöser). Das
+  Änderungsprotokoll zeigt diese Angaben jetzt auch an — bisher blieb der
+  Notiztext dort unsichtbar. Stundenhistorie zusätzlich im DSGVO-Export und im
+  §16-Notfall-Export des Superadmins.
+
+### 🐞 Korrekturen
+- **Phantom-Saldo** bei einer Abwesenheit auf einem Tag mit erfasster
+  Arbeitszeit (volles Tagessoll *und* die gearbeiteten Stunden im Ist).
+- **§16-Datei-Exporte ignorierten in den Tageszeilen das
+  Beschäftigungsfenster** — im Eintrittsmonat widersprachen sich Detail- und
+  Summenzeile desselben Blatts. Die Summenzeilen ziehen ihre Ist-Zahl jetzt
+  direkt aus `get_monthly_actual`.
+- **`users.weekly_hours` auf `Numeric(4,2)`** — der Resync rundete still.
+- **Nativer Betrieb verwarf die Ausgabe der Migrationen bei Erfolg**; dort
+  benennen Migrationen Konten, die von Hand nachzuziehen sind.
+
+### 🔒 Security / DSGVO
+- Zugriffsvermerk für das Änderungsprotokoll (Art. 5 Abs. 2 DSGVO).
+
+### 🗄️ Migration
+- `067` — Tagesplan in der Vertragshistorie (+ Backfill `weekly_hours`)
+- `068` — Abwesenheits-Rohwert (revisionssichere Stunden)
+- `069` — `weekly_hours`-Präzision
+
+> **Beim Update die Migrations-Ausgabe lesen:** bei Mitarbeitenden, deren
+> hinterlegte Tagesstunden zusammen mehr als 60 Stunden pro Woche ergeben,
+> lässt die Migration den Vertragswert bewusst unverändert und benennt das
+> Konto.
+
+## [1.17.0] - 2026-07-26
+
+Minor-Release. **Keine neue Migration** (Stand bleibt `066`).
+
+### ✨ Neu
+- **Wochenstunden werden ausschließlich über den Dialog mit Wirkungsdatum
+  geändert (#423).** `PUT /api/admin/users/{id}` weist `weekly_hours` mit 400
+  ab.
+
+### 🐞 Korrekturen
+- **Rückrechnung der Wochenstunden greift jetzt vollständig (#415).** Sie zog
+  die gespeicherten Stunden bereits gebuchter Abwesenheiten nur bis heute nach
+  — und lief überhaupt nur bei einem Wirkungsdatum in der Vergangenheit.
+  Beides war zu eng: Urlaub, Betriebsferien und Fortbildungen werden
+  regelmäßig im Voraus gebucht (bei Krankheit und Fortbildung ergab das einen
+  falschen Saldo, bei Urlaub einen widersprüchlichen §16-Nachweis), und der
+  Regelfall des Dialogs ist ein Datum in der Zukunft. Urlaubs**tage** bleiben
+  unberührt (Tagesprinzip), ebenso Freizeitausgleich und Mitarbeitende ohne
+  Stundenzählung.
+- **Update der nativen Installation repariert (#421).** Unter macOS wurde beim
+  Update der Dienst weder gestoppt noch neu geladen — das Update meldete
+  Erfolg, die alte Version lief weiter. Brach ein Update ab, blieb der Dienst
+  dauerhaft gestoppt. Der Port aus der bestehenden Konfiguration wurde
+  ungeprüft übernommen. Die Abschlussprüfung verwarf ihr Ergebnis:
+  „erfolgreich installiert" erschien auch bei nicht ansprechbarem Dienst.
+- **Ungespeicherte Eingaben im Benutzerformular** gingen bei
+  Hintergrund-Aktualisierungen verloren. Der Warnhinweis erschien nur bei
+  Datum in der Vergangenheit, obwohl ein zukünftiges Datum genauso bereits
+  gebuchte Abwesenheiten trifft. Dazu: sichtbare Begründung, wenn die Vorschau
+  blockiert oder scheitert.
+
+### 📦 Dependencies
+- Drei Schwachstellen hoher Einstufung in Frontend-Abhängigkeiten geschlossen
+  (js-yaml, fast-uri, postcss).
+
+### Tests
+Backend 1524, Frontend 245, 5/5 Linux-Distributionen, Docker-Update
+1.16.0 → 1.17.0 (Daten unverändert), Docker-Neuinstallation, natives Update
+und native Erstinstallation, Windows-Installation in der VM (PostgreSQL 18.4).
+
+## [1.16.0] - 2026-07-25
+
+Minor-Release. Zwei nutzersichtbare Features, vier Security-Fixes und 21
+Korrekturen aus dem Release-Review. **Keine Migration** — das Update ist ein
+reiner Programm-Austausch.
+
+### ✨ Neu
+- **Voraussichtlicher Überstundensaldo zum Jahresende (#402).** Zeigt den
+  aktuellen Saldo abzüglich des bereits gebuchten künftigen
+  Freizeitausgleichs, im Mitarbeiter-Dashboard und in der Admin-Übersicht.
+- **Stundenänderungen in Monats- und Jahresberichten (#415).** Wechselt die
+  Wochenstundenzahl mitten im Berichtszeitraum, weisen die Berichte den zu
+  Zeitraumsbeginn gültigen Wert aus und nennen die Änderung daneben
+  („ab 15.03.2026: 20,0 Std/Woche") — im Admin-Dashboard ebenso wie in Excel,
+  ODS und PDF. Die Jahresübersicht bekommt dafür eine zusätzliche Spalte am
+  Ende, bestehende Spaltenpositionen bleiben unverändert.
+
+### 🔒 Security / DSGVO
+- **2FA-Einrichtung verlangt jetzt das aktuelle Passwort (#416).** Bisher
+  konnte jeder mit einer offenen Sitzung den zweiten Faktor austauschen — der
+  Authenticator des Kontoinhabers wurde ungültig, der des Angreifers gültig,
+  ohne dass das Passwort je bekannt war.
+- **`/api/settings` gibt ohne Login keine Lizenznehmer-Identität mehr preis**
+  (Praxisname, Mitarbeiterzahl, Ablaufstatus).
+- **Impersonation-Token wird beim Logout des Admins ungültig**, die offene
+  Sitzung im Nachweis-Log geschlossen.
+- **Fehler-Deduplizierung ist tenant-gescoped (#418)** — im
+  Mehrmandanten-Betrieb konnte im Fehler-Monitor sonst ein Traceback aus einem
+  fremden Mandanten erscheinen.
+
+### 🐞 Korrekturen mit Datenrelevanz
+- **Betriebsferien umbenennen konnte Abwesenheiten unwiederbringlich löschen.**
+  Bei aktiviertem Überstunden-Split entfernte schon ein reines Speichern die
+  Abwesenheiten ausgeschiedener Mitarbeiter, ohne sie neu anzulegen —
+  genommener Urlaub verschwand rückwirkend. Beide Löschpfade schreiben jetzt
+  zusätzlich einen Nachweis-Eintrag.
+- **Datei-Exporte setzten das Tages-Soll bei jeder Abwesenheit auf 0.** Falsch
+  bei halben Tagen, bei Krank/Fortbildung und beim Überstundenausgleich: ein
+  halber Urlaubstag plus vier gearbeitete Stunden erschien als +4 Überstunden,
+  während „Überstunden kumuliert" im selben Dokument etwas anderes sagte.
+- **Ausgeschiedene Mitarbeiter fehlten komplett in den §16-Belegen** — obwohl
+  das Handbuch anweist, sie auf inaktiv zu setzen statt zu löschen.
+- **Eine Stundenänderung mit Wirkungsdatum „heute" verschob still das Soll
+  bereits abgeschlossener Monate.**
+- **Änderungsantrags-Pfad** buchte halbe Tage falsch, ignorierte Feiertage und
+  verdoppelte bei Zeit-Korrekturen die Ist-Gutschrift halbtägiger
+  Abwesenheiten.
+- **Ein §18-befreiter Admin konnte für eine nicht befreite Mitarbeiterin einen
+  12-Stunden-Tag speichern** (Prüfung lief gegen den Admin statt gegen den
+  Eintrags-Eigentümer).
+
+### 📖 Dokumentation
+- `bash tools/docker/generate-secrets.sh` brach beim dokumentierten Aufruf
+  immer ab — behoben. Backup-Cron und Restore-Befehl in der Doku passten nicht
+  zusammen. Die In-App-Kurzanleitung behauptete, Betriebsferien kosteten keine
+  Urlaubstage; der Standard ist das Gegenteil.
+
+### Tests
+Backend 1458, Frontend 217, `validate-release` auf 5 Distros (Ubuntu 22/24,
+Debian 12, Rocky 9, Arch), Docker-Upgrade lokal mit echtem Login und
+bit-identischen Daten, Windows 11 auf frisch installierter VM
+(PostgreSQL 18.4, Health und Login je HTTP 200).
+
 ## [1.15.2] - 2026-07-18
 
 Patch-Release. Ein neues, klein umrissenes Feature (#408) + der als Folge nötige
