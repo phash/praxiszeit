@@ -50,6 +50,50 @@ def _shift(t: time, minutes: int) -> time:
     return time(total // 60, total % 60)
 
 
+# #462: Kennung der weichen Warnung. Format wie die uebrigen Warnungen des
+# Projekts ("CODE: Text"), damit sie durch `showArbzgWarnings` laeuft.
+CLAMP_WARNING_CODE = "WORK_WINDOW_CLAMPED"
+
+
+def _hhmm(t: Optional[time]) -> str:
+    return t.strftime("%H:%M") if t else "?"
+
+
+def clamp_warning(
+    raw_start: Optional[time], raw_end: Optional[time],
+    eff_start: Optional[time], eff_end: Optional[time],
+    grace_minutes: int,
+) -> Optional[str]:
+    """Text der Kappungs-Warnung — oder None, wenn nichts gekappt wurde.
+
+    #462 (Kundenmeldung): Die Kappung ist gewollt (Anti-Abuse, #201), sie lief
+    aber **stumm**. Ein Admin trug 07:37 ein, gespeichert wurde 07:45, und er
+    erfuhr es nie — bei einer Zeiterfassung ist eine unbemerkte Aenderung
+    fremder Arbeitszeit das eigentliche Problem, nicht die Kappung. Der Melder
+    hielt das fuer eine Viertelstunden-Rundung; die entsteht dadurch, dass
+    ``soll_start`` meist auf einer vollen Stunde liegt und der Puffer 15 Minuten
+    betraegt.
+
+    DIE eine Quelle des Textes: ``clamp`` wird an elf Stellen aufgerufen
+    (Stempeln, manuelles Anlegen/Bearbeiten in beiden Rollen, Genehmigung eines
+    Aenderungsantrags, XLS-Import). Ein zweiter Nachbau je Aufrufer waere genau
+    das Muster, das in diesem Projekt schon mehrfach auseinandergelaufen ist.
+    """
+    teile = []
+    if raw_start is not None and eff_start is not None:
+        teile.append(f"Beginn {_hhmm(raw_start)} \u2192 {_hhmm(eff_start)}")
+    if raw_end is not None and eff_end is not None:
+        teile.append(f"Ende {_hhmm(raw_end)} \u2192 {_hhmm(eff_end)}")
+    if not teile:
+        return None
+    return (
+        f"{CLAMP_WARNING_CODE}: Die eingetragene Zeit wurde auf das hinterlegte "
+        f"Arbeitszeit-Fenster gekappt ({', '.join(teile)}; Puffer {grace_minutes} "
+        f"Minuten). Angerechnet wird die gekappte Zeit; die urspruengliche "
+        f"Eingabe bleibt als Rohstempel gespeichert."
+    )
+
+
 def clamp(
     user, d: date, start: Optional[time], end: Optional[time], grace_minutes: int,
 ) -> Tuple[Optional[time], Optional[time], Optional[time], Optional[time]]:

@@ -126,6 +126,16 @@ export function showArbzgWarnings(
           detail ?? 'Du hast vor deinem Soll-Beginn eingestempelt — die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt.',
         );
         break;
+      case 'WORK_WINDOW_CLAMPED':
+        // #462 (Kundenmeldung): Das Kappen auf das Soll-Fenster (#201) ist
+        // gewollt, geschah aber stumm — wer 07:37 eintrug, bekam 07:45
+        // gespeichert und erfuhr es nie. Bei einer Zeiterfassung ist die
+        // unbemerkte Änderung fremder Arbeitszeit das eigentliche Problem.
+        // Der Text kommt vom Server und nennt die konkreten Zeiten.
+        toast.warning(
+          detail ?? 'Die eingetragene Zeit wurde auf das hinterlegte Arbeitszeit-Fenster gekappt.',
+        );
+        break;
       case 'CHILD_SICK_LIMIT':
         // #376 §45 SGB V: weiche Warnung — die Buchung ist durchgegangen.
         toast.warning(detail ?? 'Kind-krank-Jahresanspruch überschritten (§45 SGB V).');

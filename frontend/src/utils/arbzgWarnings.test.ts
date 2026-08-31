@@ -18,6 +18,29 @@ function mockToast() {
 }
 
 describe('showArbzgWarnings', () => {
+  // #462: Die Kappung auf das Soll-Fenster lief stumm — der Melder hielt sie
+  // für eine Viertelstunden-Rundung. Der Servertext nennt die konkreten Zeiten
+  // und muss deshalb wörtlich durchgereicht werden.
+  it('zeigt die Kappungs-Warnung mit den Zeiten aus dem Servertext', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, [
+      'WORK_WINDOW_CLAMPED: Die eingetragene Zeit wurde auf das hinterlegte Arbeitszeit-Fenster gekappt (Beginn 07:00 \u2192 07:45; Puffer 15 Minuten).',
+    ]);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    const text = (toast.warning as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(text).toContain('07:00');
+    expect(text).toContain('07:45');
+    expect(text).not.toContain('WORK_WINDOW_CLAMPED');
+  });
+
+  it('faellt auf einen eigenen Text zurueck, wenn der Server keinen mitschickt', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, ['WORK_WINDOW_CLAMPED']);
+    expect(toast.warning).toHaveBeenCalledWith(
+      expect.stringContaining('Arbeitszeit-Fenster'),
+    );
+  });
+
   it('does nothing for empty/missing input', () => {
     const toast = mockToast();
     showArbzgWarnings(toast, undefined);

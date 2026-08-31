@@ -198,6 +198,10 @@ def review_change_request(
     current_user: User = Depends(require_admin),
 ):
     """Approve or reject a change request."""
+    # #462: Kappungs-Warnung der beiden Schreibzweige (siehe unten). Hier
+    # vorbelegt, damit der Name auch dann existiert, wenn keiner von beiden
+    # laeuft (Ablehnung, Abwesenheits-Antrag).
+    _clamp_warn: "str | None" = None
     # Audit 2026-07-31 (A2): Anker-Sperre auf der MITARBEITER-Zeile, VOR der
     # Antragszeile. Die Genehmigung ist ein PARALLELER Absence-Buchungspfad
     # (materialisiert unten Abwesenheiten am Zieltag); die FOR-UPDATE-Sonde auf
@@ -469,6 +473,12 @@ def review_change_request(
                 _cr_user_te, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _grace,
             )
+            # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
+            # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
+            # 07:37 und speichert 07:45, ohne dass es jemand erfaehrt.
+            _clamp_warn = work_window_service.clamp_warning(
+                raw_start, raw_end, eff_start, eff_end, _grace,
+            )
             entry = TimeEntry(
                 user_id=cr.user_id,
                 tenant_id=cr_tenant_id,
@@ -508,6 +518,12 @@ def review_change_request(
             eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
                 _cr_user_te, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _grace,
+            )
+            # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
+            # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
+            # 07:37 und speichert 07:45, ohne dass es jemand erfaehrt.
+            _clamp_warn = work_window_service.clamp_warning(
+                raw_start, raw_end, eff_start, eff_end, _grace,
             )
             # #144 §4 ArbZG: mark the audit source as 'break_waiver' when this
             # CR carries a documented break-exception, mirroring the direct path.
@@ -931,6 +947,11 @@ def review_change_request(
         db.refresh(cr)
 
     cr_response = _enrich_cr_response(cr, db)
+    # #462: Die Kappungs-Warnung stammt aus den Schreibzweigen oben (CREATE und
+    # UPDATE). ``_clamp_warn`` ist dort gesetzt; lief keiner der beiden Zweige
+    # (Ablehnung, Abwesenheits-CR), bleibt es der Vorgabewert None.
+    if _clamp_warn:
+        cr_response.warnings.append(_clamp_warn)
 
     # #376: weiche Kind-krank-Limit-Warnung (spiegelt create_absence). TOP-LEVEL —
     # NICHT im ArbZG-Block unten, der bei Ganztags-Absencen (kein proposed_start/

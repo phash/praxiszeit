@@ -314,6 +314,12 @@ def clock_in(
 
     # §5 ArbZG: Ruhezeit-Warnung (11h seit letztem Arbeitsende)
     clock_in_warnings: list[str] = []
+    # #462: Hier KEINE zusaetzliche WORK_WINDOW_CLAMPED-Meldung — der
+    # EARLY_START-Hinweis darunter deckt denselben Fall schon ab und ist
+    # zielgruppengerechter formuliert. Zwei Warnungen fuer eine Kappung waeren
+    # Laerm. Die uebrigen Schreibpfade (Ausstempeln, manuelles Anlegen und
+    # Bearbeiten in beiden Rollen, Antrags-Genehmigung, Import) hatten dagegen
+    # gar keine Rueckmeldung — das war die Luecke der Meldung.
     if raw_start is not None:
         clock_in_warnings.append(
             f"EARLY_START: Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab {eff_start.strftime('%H:%M')}."
@@ -447,6 +453,10 @@ def clock_out(
     db.refresh(open_entry)
 
     clock_out_warnings: list[str] = []
+    # #462: dasselbe beim Ausstempeln — hier wird das ENDE gekappt.
+    _clamp_warn = work_window_service.clamp_warning(None, raw_end, None, eff_end, grace)
+    if _clamp_warn:
+        clock_out_warnings.append(_clamp_warn)
     if not exempt:
         # ArbZG §4: break validation (warning only, don't block clock-out)
         break_error = validate_daily_break(
@@ -752,6 +762,10 @@ def create_time_entry(
 
     # Collect warnings (also skipped for exempt users)
     warnings: list[str] = []
+    # #462: Kappung melden (manuelles Anlegen durch die MA selbst).
+    _clamp_warn = work_window_service.clamp_warning(raw_start, raw_end, eff_start, eff_end, _grace)
+    if _clamp_warn:
+        warnings.append(_clamp_warn)
     if break_waiver_active:
         # Re-run validation to surface the concrete §4 detail in the warning.
         waiver_detail = validate_daily_break(
@@ -1080,6 +1094,14 @@ def update_time_entry(
     db.refresh(entry)
 
     update_warnings: list[str] = []
+    # #462: nur wenn die gekappte Zeit auch geschrieben wird — eine reine
+    # Notiz-Aenderung fasst start/end nicht an (Fix #2) und darf nichts melden.
+    if "start_time" in update_data or "end_time" in update_data:
+        _clamp_warn = work_window_service.clamp_warning(
+            _raw_start, _raw_end, _eff_start, _eff_end, _grace,
+        )
+        if _clamp_warn:
+            update_warnings.append(_clamp_warn)
     if break_waiver_active:
         waiver_detail = validate_daily_break(
             db=db,
