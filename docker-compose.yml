@@ -49,6 +49,11 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
+      # Release-Review 1.19.1: ALLOWED_HOSTS stand in .env.example und in der
+      # Sicherheitsdoku, wurde aber nie durchgereicht — im Docker-Betrieb blieb
+      # der Host-Header-Schutz (TrustedHostMiddleware) damit wirkungslos, egal
+      # was in der .env stand. Default '*' haelt Bestandsinstallationen gleich.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-5/minute}
       REFRESH_RATE_LIMIT: ${REFRESH_RATE_LIMIT:-10/minute}
       DATA_EXPORT_RATE_LIMIT: ${DATA_EXPORT_RATE_LIMIT:-5/day}

@@ -270,6 +270,20 @@ def admin_update_time_entry(
             detail="Endzeit muss nach Startzeit liegen",
         )
 
+    # Release-Review 1.19.1: Schickt das Formular die ANGERECHNETE Zeit unveraendert
+    # zurueck (es fuellt sich damit), ist das keine Eingabe — sondern derselbe
+    # Eintrag. Ohne diese Ruecksetzung sah ``clamp`` darin eine neue,
+    # fensterkonforme Zeit und setzte raw_* auf None: der §16-Rohstempel war nach
+    # einer blossen Notiz- oder Pausenkorrektur weg (und mit ihm die Grundlage der
+    # §5-Ruhezeitpruefung). Derselbe Schaden wie beim Datums-Edit aus 1.18.2, nur
+    # ueber den zweiten Weg.
+    update_start_time = work_window_service.unclamp_input(
+        update_start_time, entry.start_time, entry.raw_start_time,
+    )
+    update_end_time = work_window_service.unclamp_input(
+        update_end_time, entry.end_time, entry.raw_end_time,
+    )
+
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
@@ -303,11 +317,18 @@ def admin_update_time_entry(
     # gekappte Zeit auch tatsaechlich geschrieben wird: eine reine
     # Notiz-Aenderung fasst start/end nicht an (Fix #2 weiter unten) und darf
     # deshalb auch nicht ueber eine Kappung berichten.
+    # Release-Review 1.19.1: Massstab ist nicht "war ein Zeitfeld im Payload",
+    # sondern "hat sich die eingereichte Zeit gegenueber der gespeicherten
+    # geaendert". Das Formular schickt die angerechnete Zeit immer mit; ohne
+    # diesen Vergleich meldete jede Notiz- oder Pausenkorrektur erneut eine
+    # Kappung, die laengst passiert ist — derselbe Laerm, den der Notiz-Gate
+    # vermeiden sollte. ``entry.*`` traegt an dieser Stelle noch den gespeicherten
+    # Stand (geschrieben wird weiter unten).
     _times_written = (
         entry_data.date is not None
-        or entry_data.start_time is not None
-        or entry_data.end_time is not None
-    )
+        and entry_data.date != entry.date
+    ) or update_start_time != (entry.raw_start_time or entry.start_time) \
+      or update_end_time != (entry.raw_end_time or entry.end_time)
     if _times_written:
         _clamp_warn = work_window_service.clamp_warning(
             raw_start, raw_end, eff_start, eff_end, _grace,

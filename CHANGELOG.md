@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+## [1.19.1] - 2026-09-05
+
+Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte; **keine neue
+Migration** (head bleibt `071_security_events`).
+
+### 🐞 Korrekturen
+- **Die Kappung auf das Arbeitszeit-Fenster passierte stumm** (aus dem
+  Bug-Tracker). Wer 07:37 eintrug, bekam bei hinterlegten Soll-Zeiten 07:45
+  gespeichert und erfuhr es nicht — bei einer Zeiterfassung ist die unbemerkte
+  Änderung fremder Arbeitszeit das eigentliche Problem, nicht die Kappung.
+  Jetzt erscheint beim Speichern ein Hinweis mit den konkreten Zeiten („Beginn
+  07:00 → 07:45; Puffer 15 Minuten"), an allen Wegen: Ausstempeln, manuelles
+  Anlegen und Bearbeiten in beiden Rollen, Genehmigung eines Änderungsantrags
+  und Excel-Import. Der Eintrag wird trotzdem gespeichert; der Hinweis
+  blockiert nichts. Eine Rundung auf Viertelstunden gibt es nach wie vor
+  nirgends — bei einem Soll-Beginn zur vollen Stunde landet jede zu frühe
+  Eingabe auf `hh:45`, was danach aussieht.
+- **Der Rohstempel ist jetzt auch im Admin-Dashboard sichtbar** („gestempelt
+  07:37 · angerechnet ab 07:45"). Er stand bisher nur im Monatsjournal und in
+  der Zeiterfassung — ausgerechnet nicht auf der Fläche, auf der die Meldung
+  entstanden ist.
+- **Erneutes Speichern eines gekappten Eintrags löschte den Rohstempel.** Das
+  Bearbeiten-Formular füllt sich mit der angerechneten Zeit; wer nur Notiz oder
+  Pause korrigierte, schickte sie unverändert mit, und die Anwendung sah darin
+  eine neue Eingabe. Der Nachweis der tatsächlichen Anwesenheit (§ 16 ArbZG)
+  und damit die Grundlage der Ruhezeitprüfung (§ 5) war danach weg. Betraf
+  beide Bearbeiten-Wege.
+- **Der Excel-Import prüfte die Zeiten nur in der Vorschau.** Der Bestätigen-
+  Schritt übernahm Zeiten und Rohstempel unverändert aus dem Aufruf; jetzt
+  rechnet der Server erneut, wo ein Arbeitszeit-Fenster hinterlegt ist.
+- **Ein Eintrag ganz außerhalb des Fensters** meldete „Beginn 05:00 → 05:00"
+  und verschwieg die Folge. Jetzt: „… liegt vollständig außerhalb … es werden 0
+  Stunden angerechnet."
+- **Weiche Warnungen des Admin-Dashboards erreichten niemanden.** Die Antwort
+  der Zeiteintrag-Endpunkte wurde nicht ausgewertet — betraf neben der neuen
+  Kappungs-Meldung auch die schon länger vorhandenen Hinweise zu
+  Tages-/Wochenarbeitszeit und Nachtarbeit. Im Monatsjournal galt dasselbe für
+  einen **neuen** Eintrag, während der bearbeitete längst meldete.
+- **`ALLOWED_HOSTS` wirkte im Docker-Betrieb nicht.** Die Einstellung stand in
+  `.env.example` und in der Sicherheitsdokumentation, wurde dem Container aber
+  nie übergeben — der Host-Header-Schutz blieb damit abgeschaltet, unabhängig
+  vom Eintrag in der `.env`. Voreinstellung `*` hält Bestandsinstallationen
+  unverändert.
+
+### 📦 Dependencies
+- Sicherheitsaktualisierungen für `fast-uri`, `browserslist` und `@humanfs/node`
+  (Build- und Lint-Kette des Frontends, nicht Teil der ausgelieferten
+  Anwendung). `npm audit`: 0 Schwachstellen.
+
+### 📖 Dokumentation
+- Admin- und Mitarbeiter-Handbuch (Datei, Download-Spiegel und In-App-Hilfe)
+  beschreiben den neuen Hinweis, die Rohstempel-Zeile und das umbenannte
+  Vorschau-Label des Excel-Imports („Hinweise" statt „ArbZG-Warnungen", weil
+  dort jetzt auch die Kappung erscheint).
+
 ## [1.19.0] - 2026-08-29
 
 Minor-Release. Notfall-Zugang bei verlorenem Admin-Passwort (#425), ehrlicher

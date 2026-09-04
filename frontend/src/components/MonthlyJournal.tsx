@@ -290,12 +290,17 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           setSaving(false);
           return;
         }
-        await apiClient.post(`/admin/users/${userId}/time-entries`, {
+        // Release-Review 1.19.1: Antwort auswerten wie im Bearbeiten-Pfad
+        // (handleAdminSave). Vorher meldete dieselbe Kappung auf demselben
+        // Bildschirm je nach Aktion mal etwas und mal nichts: ein NEUER Eintrag
+        // wurde stumm gekappt, erst die spätere Korrektur sagte es.
+        const res = await apiClient.post(`/admin/users/${userId}/time-entries`, {
           date: dateStr,
           start_time: editState.startTime,
           end_time: editState.endTime,
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
         });
+        showArbzgWarnings(toast, res.data?.warnings);
       } else {
         const hasExistingEntries = day && day.time_entries.length > 0;
         const res = await apiClient.post('/absences', {
