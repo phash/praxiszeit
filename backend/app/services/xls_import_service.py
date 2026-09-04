@@ -260,6 +260,18 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
             same_day_blocks=other_blocks if other_blocks else None,
         )
 
+        # #462: Die Kappung darf auch hier nicht stumm passieren. Die Vorschau ist
+        # der letzte Punkt, an dem der Admin den Import noch abbrechen kann —
+        # bestaetigt er ihn, stehen andere Zeiten in der Datei als in der Datenbank.
+        # Klartext ohne Code-Praefix, weil die Zeilen-Warnungen roh im Tooltip der
+        # Vorschau landen (die Nachbarn lauten "§3 ArbZG: …").
+        if raw_start_t is not None or raw_end_t is not None:
+            clamp_note = work_window_service.clamp_warning_text(
+                raw_start_t, raw_end_t, start_t, end_t, grace,
+            )
+            if clamp_note:
+                arbzg_warnings = arbzg_warnings + [clamp_note]
+
         # Diesen Block für nachfolgende Zeilen am selben Tag merken
         if entry_date not in batch_blocks_by_date:
             batch_blocks_by_date[entry_date] = []

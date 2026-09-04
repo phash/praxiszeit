@@ -313,7 +313,9 @@ export default function ImportXls() {
           {preview.arbzg_warnings > 0 && (
             <span className="text-amber-600 font-medium">
               <AlertTriangle size={14} className="inline mr-1" />
-              {preview.arbzg_warnings} ArbZG-Warnungen
+              {/* #462: Die Zeilen-Warnungen tragen seit dem Kappungs-Hinweis nicht mehr
+                  nur ArbZG-Verstoesse — das Label darf das nicht laenger behaupten. */}
+              {preview.arbzg_warnings} Hinweise
             </span>
           )}
         </div>
@@ -352,7 +354,7 @@ export default function ImportXls() {
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 cursor-help"
                           title={e.arbzg_warnings.join('\n')}
                         >
-                          <AlertTriangle size={11} /> ArbZG
+                          <AlertTriangle size={11} /> Hinweis
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">

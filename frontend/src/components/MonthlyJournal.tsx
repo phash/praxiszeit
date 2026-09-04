@@ -12,6 +12,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
+import { RawStampNote } from './RawStampNote';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -704,16 +705,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
-                                  {(e.raw_start_time || e.raw_end_time) && (
-                                    <div className="text-xs text-gray-500 space-y-0">
-                                      {e.raw_start_time && (
-                                        <div>gestempelt {e.raw_start_time.substring(0, 5)} · ab {e.start_time?.substring(0, 5)}</div>
-                                      )}
-                                      {e.raw_end_time && (
-                                        <div>gestempelt {e.raw_end_time.substring(0, 5)} · bis {e.end_time?.substring(0, 5)}</div>
-                                      )}
-                                    </div>
-                                  )}
+                                  <RawStampNote raw={e.raw_start_time} effective={e.start_time} side="start" className="text-xs text-gray-500" />
+                                  <RawStampNote raw={e.raw_end_time} effective={e.end_time} side="end" className="text-xs text-gray-500" />
                                 </div>
                               ))}
                               {day.type === 'mixed' && day.absences.map((a, i) => (

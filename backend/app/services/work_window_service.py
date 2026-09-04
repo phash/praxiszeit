@@ -50,6 +50,66 @@ def _shift(t: time, minutes: int) -> time:
     return time(total // 60, total % 60)
 
 
+# #462: Kennung der weichen Warnung. Format wie die uebrigen Warnungen des
+# Projekts ("CODE: Text"), damit sie durch `showArbzgWarnings` laeuft.
+CLAMP_WARNING_CODE = "WORK_WINDOW_CLAMPED"
+
+
+def _hhmm(t: Optional[time]) -> str:
+    return t.strftime("%H:%M") if t else "?"
+
+
+def clamp_warning_text(
+    raw_start: Optional[time], raw_end: Optional[time],
+    eff_start: Optional[time], eff_end: Optional[time],
+    grace_minutes: int,
+) -> Optional[str]:
+    """Klartext der Kappungs-Warnung — oder None, wenn nichts gekappt wurde.
+
+    #462 (Kundenmeldung): Die Kappung ist gewollt (Anti-Abuse, #201), sie lief
+    aber **stumm**. Ein Admin trug 07:37 ein, gespeichert wurde 07:45, und er
+    erfuhr es nie — bei einer Zeiterfassung ist eine unbemerkte Aenderung
+    fremder Arbeitszeit das eigentliche Problem, nicht die Kappung. Der Melder
+    hielt das fuer eine Viertelstunden-Rundung; die entsteht dadurch, dass
+    ``soll_start`` meist auf einer vollen Stunde liegt und der Puffer 15 Minuten
+    betraegt.
+
+    DIE eine Quelle des Textes: ``clamp`` wird an elf Stellen aufgerufen
+    (Stempeln, manuelles Anlegen/Bearbeiten in beiden Rollen, Genehmigung eines
+    Aenderungsantrags, XLS-Import). Ein zweiter Nachbau je Aufrufer waere genau
+    das Muster, das in diesem Projekt schon mehrfach auseinandergelaufen ist.
+
+    Ohne Code-Praefix, weil nicht jede Anzeigeflaeche durch ``showArbzgWarnings``
+    laeuft: die Zeilen-Warnungen der XLS-Vorschau (#462) stehen als Klartext im
+    Tooltip neben Nachbarn wie "§3 ArbZG: …" — ein roher Maschinen-Code waere dort
+    sichtbar. Fuer die API-Warnungen setzt ``clamp_warning`` den Code davor.
+    """
+    teile = []
+    if raw_start is not None and eff_start is not None:
+        teile.append(f"Beginn {_hhmm(raw_start)} \u2192 {_hhmm(eff_start)}")
+    if raw_end is not None and eff_end is not None:
+        teile.append(f"Ende {_hhmm(raw_end)} \u2192 {_hhmm(eff_end)}")
+    if not teile:
+        return None
+    return (
+        f"Die eingetragene Zeit wurde auf das hinterlegte Arbeitszeit-Fenster "
+        f"gekappt ({', '.join(teile)}; Puffer {grace_minutes} Minuten). "
+        f"Angerechnet wird die gekappte Zeit; die urspruengliche Eingabe bleibt "
+        f"als Rohstempel gespeichert."
+    )
+
+
+def clamp_warning(
+    raw_start: Optional[time], raw_end: Optional[time],
+    eff_start: Optional[time], eff_end: Optional[time],
+    grace_minutes: int,
+) -> Optional[str]:
+    """Wie ``clamp_warning_text``, aber mit Code-Praefix fuer die ``warnings``-Fläche
+    der API (``showArbzgWarnings`` schneidet den Code vor der Anzeige ab)."""
+    text = clamp_warning_text(raw_start, raw_end, eff_start, eff_end, grace_minutes)
+    return f"{CLAMP_WARNING_CODE}: {text}" if text else None
+
+
 def clamp(
     user, d: date, start: Optional[time], end: Optional[time], grace_minutes: int,
 ) -> Tuple[Optional[time], Optional[time], Optional[time], Optional[time]]:

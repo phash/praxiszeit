@@ -109,6 +109,13 @@ def admin_create_time_entry(
         )
 
     admin_create_warnings: list[str] = []
+    # #462: Die Kappung darf nicht stumm passieren — genau der Fall, den der
+    # Melder als "Rundung auf Viertelstunden" wahrgenommen hat.
+    _clamp_warn = work_window_service.clamp_warning(
+        raw_start, raw_end, eff_start, eff_end, _grace,
+    )
+    if _clamp_warn:
+        admin_create_warnings.append(_clamp_warn)
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
     if not user.exempt_from_arbzg:
@@ -291,6 +298,22 @@ def admin_update_time_entry(
         )
 
     admin_update_warnings: list[str] = []
+    # #462: wie im Anlege-Pfad — eine stille Aenderung fremder Arbeitszeit ist
+    # das eigentliche Problem, nicht die Kappung selbst. Nur melden, wenn die
+    # gekappte Zeit auch tatsaechlich geschrieben wird: eine reine
+    # Notiz-Aenderung fasst start/end nicht an (Fix #2 weiter unten) und darf
+    # deshalb auch nicht ueber eine Kappung berichten.
+    _times_written = (
+        entry_data.date is not None
+        or entry_data.start_time is not None
+        or entry_data.end_time is not None
+    )
+    if _times_written:
+        _clamp_warn = work_window_service.clamp_warning(
+            raw_start, raw_end, eff_start, eff_end, _grace,
+        )
+        if _clamp_warn:
+            admin_update_warnings.append(_clamp_warn)
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
     if not affected_user or not affected_user.exempt_from_arbzg:

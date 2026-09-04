@@ -565,3 +565,47 @@ def test_parse_xls_db_entry_plus_import_same_day_trigger_s4_warning(db, test_use
     assert any("§4" in w for w in entries[0].arbzg_warnings), (
         f"§4-Warnung erwartet (DB+Import), aber nicht gefunden: {entries[0].arbzg_warnings}"
     )
+
+
+def test_parse_xls_reports_clamp_as_row_warning(db, test_user):
+    """#462: Die Kappung darf auch im Import nicht stumm passieren.
+
+    Der Melder sah die Kappung als "Rundung auf Viertelstunden" — im Import ist der
+    Effekt derselbe wie im Admin-Dashboard: die hochgeladene Zeit steht danach anders
+    da. Die Vorschau hat pro Zeile bereits eine Warnliste; dort gehoert der Hinweis
+    hin, sonst bestaetigt der Admin einen Import, der seine Daten stillschweigend
+    veraendert.
+    """
+    test_user.scheduled_start_monday = time(8, 0)
+    test_user.scheduled_end_monday = time(17, 0)
+    db.commit()
+
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 7, 0), _dt(2026, 1, 12, 16, 0)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    warnings = entries[0].arbzg_warnings
+    clamp = [w for w in warnings if "Arbeitszeit-Fenster" in w]
+    assert clamp, f"kein Kappungs-Hinweis in {warnings}"
+    assert "07:00" in clamp[0] and "07:45" in clamp[0], clamp[0]
+    # Die Zeilen-Warnungen des Imports sind Klartext (die Nachbarn beginnen mit "§3
+    # ArbZG: …"); der Maschinen-Code der API-Warnungen hat hier nichts zu suchen,
+    # er landete sonst ungefiltert im Tooltip der Vorschau.
+    assert not clamp[0].startswith("WORK_WINDOW_CLAMPED"), clamp[0]
+
+
+def test_parse_xls_without_soll_window_has_no_clamp_warning(db, test_user):
+    """#462 Gegenprobe: ohne hinterlegte Soll-Zeiten wird nicht gekappt und nichts gemeldet."""
+    test_user.scheduled_start_monday = None
+    test_user.scheduled_end_monday = None
+    db.commit()
+
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 7, 0), _dt(2026, 1, 12, 16, 0)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    assert entries[0].start_time == time(7, 0)
+    assert entries[0].raw_start_time is None
+    assert not [w for w in entries[0].arbzg_warnings if "Arbeitszeit-Fenster" in w]

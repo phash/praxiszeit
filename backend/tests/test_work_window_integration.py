@@ -423,3 +423,90 @@ def test_cr_approval_create_clamps_to_soll_window(db, employee, admin, admin_cli
     # Ende 16:00 liegt innerhalb des Fensters (kein Soll-Ende konfiguriert) → kein Clamp.
     assert entry.end_time == dt.time(16, 0), f"Expected 16:00 (unclamped), got {entry.end_time}"
     assert entry.raw_end_time is None, f"Expected raw_end_time=None, got {entry.raw_end_time}"
+
+
+# ── #462: die Kappung darf nicht stumm passieren ────────────────────────────
+# Kundenmeldung: "Bei der manuellen Erfassung von Zeiten übers Admin-Dashboard
+# oder das Monatsjournal verändert das Programm automatisch die eingegebenen
+# Zeiten. Zudem sollte so eine Veränderung nicht ohne Bestätigung oder zumindest
+# Infomeldung erfolgen." Das Kappen selbst ist gewollt (#201) — dass es stumm
+# geschah, war der Fehler: das Backend weiß beim Speichern genau, dass es
+# gekappt hat (es legt raw_start_time/raw_end_time an), sagte es aber nicht.
+
+
+def _clamp_warnings(resp):
+    return [w for w in resp.json().get("warnings", []) if w.startswith("WORK_WINDOW_CLAMPED")]
+
+
+def test_admin_anlegen_meldet_die_kappung(db, employee, admin_client):
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+
+    resp = admin_client.post(
+        f"/api/admin/users/{employee.id}/time-entries",
+        json={"date": "2026-06-01", "start_time": "07:00", "end_time": "16:00",
+              "break_minutes": 30},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    warn = _clamp_warnings(resp)
+    assert warn, f"keine Kappungs-Warnung, nur: {resp.json().get('warnings')}"
+    assert "07:00" in warn[0] and "07:45" in warn[0], warn[0]
+
+
+def test_ohne_kappung_keine_meldung(db, employee, admin_client):
+    """Kontrolle: innerhalb des Puffers wird nichts gekappt und nichts gemeldet."""
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+
+    resp = admin_client.post(
+        f"/api/admin/users/{employee.id}/time-entries",
+        json={"date": "2026-06-01", "start_time": "07:50", "end_time": "16:00",
+              "break_minutes": 30},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    assert not _clamp_warnings(resp)
+
+
+def test_ohne_soll_zeiten_keine_meldung(db, employee, admin_client):
+    """Das Arbeitszeit-Fenster ist ein Opt-in: ohne hinterlegte Soll-Zeiten wird
+    nicht gekappt — dann darf auch nichts gemeldet werden."""
+    resp = admin_client.post(
+        f"/api/admin/users/{employee.id}/time-entries",
+        json={"date": "2026-06-01", "start_time": "06:00", "end_time": "15:00",
+              "break_minutes": 45},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    assert not _clamp_warnings(resp)
+
+
+def test_reine_notizaenderung_meldet_nichts(db, employee, admin_client):
+    """Eine Notiz-Änderung fasst start/end nicht an (Fix #2) — sie darf deshalb
+    auch nicht über eine Kappung berichten, die längst passiert ist."""
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+    angelegt = admin_client.post(
+        f"/api/admin/users/{employee.id}/time-entries",
+        json={"date": "2026-06-01", "start_time": "07:00", "end_time": "16:00",
+              "break_minutes": 30},
+    )
+    entry_id = angelegt.json()["id"]
+
+    resp = admin_client.put(f"/api/admin/time-entries/{entry_id}", json={"note": "nur Text"})
+    assert resp.status_code == 200, resp.text
+    assert not _clamp_warnings(resp)
+
+
+def test_zeitaenderung_meldet_die_kappung(db, employee, admin_client):
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+    angelegt = admin_client.post(
+        f"/api/admin/users/{employee.id}/time-entries",
+        json={"date": "2026-06-01", "start_time": "08:30", "end_time": "16:00",
+              "break_minutes": 30},
+    )
+    entry_id = angelegt.json()["id"]
+
+    resp = admin_client.put(f"/api/admin/time-entries/{entry_id}",
+                            json={"start_time": "06:30"})
+    assert resp.status_code == 200, resp.text
+    assert _clamp_warnings(resp), resp.json().get("warnings")
