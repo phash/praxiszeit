@@ -20,6 +20,7 @@ import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
 import { useUIStore } from '../stores/uiStore';
+import { RawStampNote } from '../components/RawStampNote';
 
 interface TimeEntry {
   id: string;
@@ -879,21 +880,13 @@ export default function TimeTracking() {
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.start_time.substring(0, 5)}
-                        {entry.raw_start_time && (
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            gestempelt {entry.raw_start_time.substring(0, 5)} · angerechnet ab {entry.start_time.substring(0, 5)}
-                          </div>
-                        )}
+                        <RawStampNote raw={entry.raw_start_time} effective={entry.start_time} side="start" />
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.end_time ? (
                           <>
                             {entry.end_time.substring(0, 5)}
-                            {entry.raw_end_time && (
-                              <div className="text-xs text-gray-500 mt-0.5">
-                                gestempelt {entry.raw_end_time.substring(0, 5)} · angerechnet bis {entry.end_time.substring(0, 5)}
-                              </div>
-                            )}
+                            <RawStampNote raw={entry.raw_end_time} effective={entry.end_time} side="end" />
                           </>
                         ) : (
                           <span className={`font-medium ${new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'text-danger' : 'text-green-600'}`}>offen</span>

@@ -18,6 +18,7 @@ import UpdateBanner from '../../components/UpdateBanner';
 // Geteilt mit dem Änderungsprotokoll (`admin/AuditLog.tsx`) — dieselben
 // Audit-Zeilen, dieselbe Darstellung.
 import AuditValues from '../../components/AuditValues';
+import { RawStampNote } from '../../components/RawStampNote';
 
 interface EmployeeReport {
   user_id: string;
@@ -51,6 +52,11 @@ interface TimeEntry {
   end_time: string | null; // #382: null bei offenem (eingestempeltem) Eintrag — Deref nur über formatClockTime
   break_minutes: number;
   note?: string;
+  // #201/#462: gesetzt, wenn die Zeit auf das Arbeitszeit-Fenster gekappt wurde.
+  // Ohne die Anzeige sieht der Admin nur die gekappte Zeit und erfährt nie, dass
+  // seine Eingabe verändert wurde — der Kern der Meldung #462.
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
 }
 
 interface Absence {
@@ -1472,8 +1478,14 @@ export default function AdminDashboard() {
                             {employeeTimeEntries.map((entry) => (
                               <tr key={entry.id} className="hover:bg-gray-50">
                                 <td className="px-4 py-2 text-sm">{format(new Date(entry.date), 'dd.MM.yyyy')}</td>
-                                <td className="px-4 py-2 text-sm">{formatClockTime(entry.start_time)}</td>
-                                <td className="px-4 py-2 text-sm">{formatClockTime(entry.end_time, 'offen')}</td>
+                                <td className="px-4 py-2 text-sm">
+                                  {formatClockTime(entry.start_time)}
+                                  <RawStampNote raw={entry.raw_start_time} effective={entry.start_time} side="start" />
+                                </td>
+                                <td className="px-4 py-2 text-sm">
+                                  {formatClockTime(entry.end_time, 'offen')}
+                                  <RawStampNote raw={entry.raw_end_time} effective={entry.end_time} side="end" />
+                                </td>
                                 <td className="px-4 py-2 text-sm">{entry.break_minutes} min</td>
                                 <td className="px-4 py-2 text-sm text-gray-500">{entry.note || '-'}</td>
                                 <td className="px-4 py-2 text-right text-sm space-x-1">

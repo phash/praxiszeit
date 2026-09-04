@@ -59,12 +59,12 @@ def _hhmm(t: Optional[time]) -> str:
     return t.strftime("%H:%M") if t else "?"
 
 
-def clamp_warning(
+def clamp_warning_text(
     raw_start: Optional[time], raw_end: Optional[time],
     eff_start: Optional[time], eff_end: Optional[time],
     grace_minutes: int,
 ) -> Optional[str]:
-    """Text der Kappungs-Warnung — oder None, wenn nichts gekappt wurde.
+    """Klartext der Kappungs-Warnung — oder None, wenn nichts gekappt wurde.
 
     #462 (Kundenmeldung): Die Kappung ist gewollt (Anti-Abuse, #201), sie lief
     aber **stumm**. Ein Admin trug 07:37 ein, gespeichert wurde 07:45, und er
@@ -78,6 +78,11 @@ def clamp_warning(
     (Stempeln, manuelles Anlegen/Bearbeiten in beiden Rollen, Genehmigung eines
     Aenderungsantrags, XLS-Import). Ein zweiter Nachbau je Aufrufer waere genau
     das Muster, das in diesem Projekt schon mehrfach auseinandergelaufen ist.
+
+    Ohne Code-Praefix, weil nicht jede Anzeigeflaeche durch ``showArbzgWarnings``
+    laeuft: die Zeilen-Warnungen der XLS-Vorschau (#462) stehen als Klartext im
+    Tooltip neben Nachbarn wie "§3 ArbZG: …" — ein roher Maschinen-Code waere dort
+    sichtbar. Fuer die API-Warnungen setzt ``clamp_warning`` den Code davor.
     """
     teile = []
     if raw_start is not None and eff_start is not None:
@@ -87,11 +92,22 @@ def clamp_warning(
     if not teile:
         return None
     return (
-        f"{CLAMP_WARNING_CODE}: Die eingetragene Zeit wurde auf das hinterlegte "
-        f"Arbeitszeit-Fenster gekappt ({', '.join(teile)}; Puffer {grace_minutes} "
-        f"Minuten). Angerechnet wird die gekappte Zeit; die urspruengliche "
-        f"Eingabe bleibt als Rohstempel gespeichert."
+        f"Die eingetragene Zeit wurde auf das hinterlegte Arbeitszeit-Fenster "
+        f"gekappt ({', '.join(teile)}; Puffer {grace_minutes} Minuten). "
+        f"Angerechnet wird die gekappte Zeit; die urspruengliche Eingabe bleibt "
+        f"als Rohstempel gespeichert."
     )
+
+
+def clamp_warning(
+    raw_start: Optional[time], raw_end: Optional[time],
+    eff_start: Optional[time], eff_end: Optional[time],
+    grace_minutes: int,
+) -> Optional[str]:
+    """Wie ``clamp_warning_text``, aber mit Code-Praefix fuer die ``warnings``-Fläche
+    der API (``showArbzgWarnings`` schneidet den Code vor der Anzeige ab)."""
+    text = clamp_warning_text(raw_start, raw_end, eff_start, eff_end, grace_minutes)
+    return f"{CLAMP_WARNING_CODE}: {text}" if text else None
 
 
 def clamp(
