@@ -510,3 +510,78 @@ def test_zeitaenderung_meldet_die_kappung(db, employee, admin_client):
                             json={"start_time": "06:30"})
     assert resp.status_code == 200, resp.text
     assert _clamp_warnings(resp), resp.json().get("warnings")
+
+
+# ── Release-Review 1.19.1: erneutes Speichern darf den Rohstempel nicht loeschen ──
+# Das Bearbeiten-Formular fuellt sich mit der ANGERECHNETEN Zeit (07:45). Wer nur
+# Notiz oder Pause aendert, schickt sie unveraendert mit — clamp() sah darin eine
+# neue, fensterkonforme Eingabe und setzte raw_start_time auf None. Der echte
+# Stempel (§16-Nachweis, Grundlage der §5-Ruhezeitpruefung) war damit weg, und die
+# seit 1.19.1 sichtbare Rohstempel-Zeile verschwand aus der Liste.
+
+def _angelegt_mit_kappung(admin_client, employee_id):
+    resp = admin_client.post(
+        f"/api/admin/users/{employee_id}/time-entries",
+        json={"date": "2026-06-01", "start_time": "07:00", "end_time": "16:00",
+              "break_minutes": 30},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()["id"]
+
+
+def test_admin_resave_der_gekappten_zeit_bewahrt_den_rohstempel(db, employee, admin_client):
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+    entry_id = _angelegt_mit_kappung(admin_client, employee.id)
+
+    resp = admin_client.put(
+        f"/api/admin/time-entries/{entry_id}",
+        json={"date": "2026-06-01", "start_time": "07:45", "end_time": "16:00",
+              "break_minutes": 30, "note": "Pause korrigiert"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).one()
+    assert entry.start_time == dt.time(7, 45)
+    assert entry.raw_start_time == dt.time(7, 0), (
+        f"Rohstempel verloren: {entry.raw_start_time}"
+    )
+    # Es wurde nichts neu gekappt — also auch nichts zu melden.
+    assert not _clamp_warnings(resp), resp.json().get("warnings")
+
+
+def test_admin_echte_zeitaenderung_setzt_den_rohstempel_neu(db, employee, admin_client):
+    """Gegenprobe: eine andere Uhrzeit ist eine echte Eingabe und laeuft unveraendert
+    durch die Kappung — der neue Rohwert ersetzt den alten."""
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+    entry_id = _angelegt_mit_kappung(admin_client, employee.id)
+
+    resp = admin_client.put(
+        f"/api/admin/time-entries/{entry_id}", json={"start_time": "06:30"},
+    )
+    assert resp.status_code == 200, resp.text
+    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).one()
+    assert entry.start_time == dt.time(7, 45)
+    assert entry.raw_start_time == dt.time(6, 30)
+
+
+def test_zweiter_schreibpfad_bewahrt_den_rohstempel_ebenfalls(db, employee, admin_client):
+    """Derselbe Fall ueber ``PUT /api/time-entries/{id}`` — den zweiten Bearbeiten-Pfad,
+    ueber den Admins fremde Eintraege aendern. Beide Pfade kappen, also muessen beide
+    den Rohstempel bewahren; genau solche Parallelpfade sind in diesem Projekt schon
+    mehrfach auseinandergelaufen."""
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+    entry_id = _angelegt_mit_kappung(admin_client, employee.id)
+
+    resp = admin_client.put(
+        f"/api/time-entries/{entry_id}",
+        json={"start_time": "07:45", "end_time": "16:00", "break_minutes": 30},
+    )
+    assert resp.status_code == 200, resp.text
+    entry = db.query(TimeEntry).filter(TimeEntry.id == entry_id).one()
+    assert entry.start_time == dt.time(7, 45)
+    assert entry.raw_start_time == dt.time(7, 0), (
+        f"Rohstempel verloren: {entry.raw_start_time}"
+    )

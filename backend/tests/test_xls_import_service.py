@@ -609,3 +609,49 @@ def test_parse_xls_without_soll_window_has_no_clamp_warning(db, test_user):
     assert entries[0].start_time == time(7, 0)
     assert entries[0].raw_start_time is None
     assert not [w for w in entries[0].arbzg_warnings if "Arbeitszeit-Fenster" in w]
+
+
+def test_execute_import_kappt_selbst_und_traut_dem_client_nicht(db, test_user, test_admin):
+    """Release-Review 1.19.1: /confirm bekam Zeiten UND §16-Rohstempel unveraendert
+    aus dem Request-Body — geklammert wurde nur in der Vorschau. Wer den Aufruf
+    nachbaut, schreibt damit Zeiten am Arbeitszeit-Fenster vorbei und faelscht
+    obendrein den Rohstempel, der als Anwesenheitsnachweis gilt."""
+    test_user.scheduled_start_monday = time(8, 0)
+    test_user.scheduled_end_monday = time(17, 0)
+    db.commit()
+
+    manipuliert = [ImportedEntry(
+        date=date(2026, 1, 12), start_time=time(6, 0), end_time=time(16, 0),
+        break_minutes=30, note=None, has_conflict=False, arbzg_warnings=[],
+        raw_start_time=None, raw_end_time=None,
+    )]
+    execute_import(
+        test_user.id, manipuliert, overwrite=False, db=db,
+        changed_by_id=test_admin.id, filename="manipuliert.xls",
+        tenant_id=DEFAULT_TENANT_ID,
+    )
+    db_entry = db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).one()
+    assert db_entry.start_time == time(7, 45), f"nicht gekappt: {db_entry.start_time}"
+    assert db_entry.raw_start_time == time(6, 0), f"Rohstempel falsch: {db_entry.raw_start_time}"
+
+
+def test_execute_import_ist_idempotent_zur_vorschau(db, test_user, test_admin):
+    """Gegenprobe: die unveraenderte Vorschau darf durch die zweite Kappung nicht
+    ihren Rohstempel verlieren (die Vorschau liefert bereits gekappte Zeiten)."""
+    test_user.scheduled_start_monday = time(8, 0)
+    test_user.scheduled_end_monday = time(17, 0)
+    db.commit()
+
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        _make_data_row(_dt(2026, 1, 12, 7, 0), _dt(2026, 1, 12, 16, 0)),
+    ]
+    entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    execute_import(
+        test_user.id, entries, overwrite=False, db=db,
+        changed_by_id=test_admin.id, filename="test.xls",
+        tenant_id=DEFAULT_TENANT_ID,
+    )
+    db_entry = db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).one()
+    assert db_entry.start_time == time(7, 45)
+    assert db_entry.raw_start_time == time(7, 0)

@@ -374,6 +374,11 @@ def _execute_import_inner(
     overwritten = 0
     all_warnings: list[str] = []
 
+    # Einmal fuer die Schleife: Ziel-Person (fuer die Kappung unten und die
+    # Zusammenfassung am Ende) und der Tenant-Puffer.
+    target_user = db.query(User).filter(User.id == user_id).first()
+    grace = work_window_service.get_grace_minutes(db, tenant_id)
+
     for entry in entries:
         # Invariant end_time > start_time. net_hours floors a negative duration
         # to 0, so an end<=start row (over-midnight shift, or corrupt/forged
@@ -390,6 +395,37 @@ def _execute_import_inner(
                 f"Über-Mitternacht-Schichten als zwei Einträge erfassen."
             )
             continue
+
+        # Release-Review 1.19.1: NICHT den Client-Zeiten vertrauen. /confirm nimmt
+        # die Eintraege aus dem Request-Body entgegen; gekappt wurde bisher nur in
+        # der Vorschau (parse_xls). Wer den Aufruf nachbaut, schrieb damit Zeiten
+        # am Arbeitszeit-Fenster vorbei — und setzte obendrein raw_start_time/
+        # raw_end_time frei, also genau den Wert, der als §16-Anwesenheitsnachweis
+        # und als Grundlage der §5-Ruhezeitpruefung gilt. Gerechnet wird deshalb
+        # hier erneut, und zwar aus dem Rohwert: fuer eine unveraenderte Vorschau
+        # ist das Ergebnis identisch (die Kappung ist in sich idempotent).
+        # Nur wo an diesem Wochentag ueberhaupt ein Fenster hinterlegt ist. Ohne
+        # Fenster gibt es nichts zu umgehen — und ein mitgeliefertes raw_* (etwa
+        # aus einer Vorschau, die unter einem frueheren Fenster entstand) bleibt
+        # als §16-Nachweis stehen, statt von einer Kappung geloescht zu werden,
+        # die gar nicht stattfindet.
+        _hat_fenster = target_user is not None and work_window_service.get_scheduled_window(
+            target_user, entry.date,
+        ) != (None, None)
+        if _hat_fenster:
+            _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
+                target_user,
+                entry.date,
+                entry.raw_start_time or entry.start_time,
+                entry.raw_end_time or entry.end_time,
+                grace,
+            )
+            entry = entry.model_copy(update={
+                "start_time": _eff_start,
+                "end_time": _eff_end,
+                "raw_start_time": _raw_start,
+                "raw_end_time": _raw_end,
+            })
 
         for w in entry.arbzg_warnings:
             all_warnings.append(f"{entry.date.strftime('%d.%m.%Y')}: {w}")
@@ -473,7 +509,6 @@ def _execute_import_inner(
             imported += 1
 
     # Zusammenfassungs-Eintrag im Audit-Log (action="import", time_entry_id=None)
-    target_user = db.query(User).filter(User.id == user_id).first()
     username = f"{target_user.first_name} {target_user.last_name}" if target_user else str(user_id)
     summary = (
         f"XLS-Import: {imported} neu, {overwritten} überschrieben, {skipped} übersprungen "

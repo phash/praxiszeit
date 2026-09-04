@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.19.0"
+APP_VERSION="1.19.1"
 PYTHON_VERSION="3.13.15"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 # 20260825 buendelt CPython 3.13.15 mit OpenSSL 3.5.8, SQLite 3.53.1 und

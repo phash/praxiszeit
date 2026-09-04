@@ -317,6 +317,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Hat Ihre Praxis für einen Wochentag eine <strong>Soll-Arbeitszeit</strong> hinterlegt, wird Zeit deutlich vor dem Soll-Beginn bzw. nach dem Soll-Ende <strong>nicht angerechnet</strong>. Ein kleiner Puffer (Standard 15 Min.) ist erlaubt.</p>
         <p>Stempeln Sie z. B. zu früh ein, sehen Sie den Hinweis: <em>„Du hast vor deinem Soll-Beginn eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt."</em> In der Eintragsliste steht dann z. B. <em>„gestempelt 07:30 · angerechnet ab 07:45"</em>.</p>
+        <p>Beim <strong>Ausstempeln</strong> und beim Speichern eines eigenen Eintrags erscheint zusätzlich ein Hinweis mit den konkreten Zeiten, sobald gekappt wurde (z. B. <em>„… gekappt (Beginn 07:00 → 07:45; Puffer 15 Minuten)"</em>). Der Eintrag wird trotzdem gespeichert — der Hinweis blockiert nichts.</p>
         <p className="text-gray-700">Ihre <strong>echte Stempelzeit geht nicht verloren</strong> (gesetzlich vorgeschrieben, §16 ArbZG) – fürs Stundenkonto zählt nur die angerechnete Zeit.</p>
       </div>
     ),

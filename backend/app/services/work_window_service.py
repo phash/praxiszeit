@@ -85,10 +85,29 @@ def clamp_warning_text(
     sichtbar. Fuer die API-Warnungen setzt ``clamp_warning`` den Code davor.
     """
     teile = []
-    if raw_start is not None and eff_start is not None:
+    # Nur Seiten nennen, die sich tatsaechlich verschoben haben. Im Kollaps-Fall
+    # (Eintrag ganz ausserhalb des Fensters) gibt ``clamp`` (start, start, start, end)
+    # zurueck — raw_start IST dort eff_start, und "Beginn 05:00 -> 05:00" waere eine
+    # Kappung, die es nicht gab (Release-Review 1.19.1).
+    if raw_start is not None and eff_start is not None and raw_start != eff_start:
         teile.append(f"Beginn {_hhmm(raw_start)} \u2192 {_hhmm(eff_start)}")
-    if raw_end is not None and eff_end is not None:
+    if raw_end is not None and eff_end is not None and raw_end != eff_end:
         teile.append(f"Ende {_hhmm(raw_end)} \u2192 {_hhmm(eff_end)}")
+
+    # Kollaps: angerechnet werden 0 Stunden. Das ist die eigentliche Folge und
+    # stand vorher nirgends — der Text nannte nur Zeitpunkte.
+    collapsed = (
+        eff_start is not None and eff_end is not None and eff_start == eff_end
+    )
+    if collapsed:
+        roh_start = raw_start or eff_start
+        roh_end = raw_end or eff_end
+        return (
+            f"Die eingetragene Zeit ({_hhmm(roh_start)}\u2013{_hhmm(roh_end)}) liegt "
+            f"vollstaendig ausserhalb des hinterlegten Arbeitszeit-Fensters "
+            f"(Puffer {grace_minutes} Minuten) — angerechnet werden 0 Stunden. "
+            f"Die urspruengliche Eingabe bleibt als Rohstempel gespeichert."
+        )
     if not teile:
         return None
     return (
@@ -97,6 +116,26 @@ def clamp_warning_text(
         f"Angerechnet wird die gekappte Zeit; die urspruengliche Eingabe bleibt "
         f"als Rohstempel gespeichert."
     )
+
+
+def unclamp_input(
+    incoming: Optional[time], prev_eff: Optional[time], prev_raw: Optional[time],
+) -> Optional[time]:
+    """Schickt ein Formular die zuvor GEKAPPTE Zeit unveraendert zurueck, ist das
+    keine Eingabe — sondern derselbe Eintrag. Dann mit dem Rohwert weiterrechnen.
+
+    Release-Review 1.19.1: Das Bearbeiten-Formular im Admin-Dashboard fuellt sich
+    mit der angerechneten Zeit (07:45). Wer nur die Notiz oder die Pause aendert
+    und speichert, schickt 07:45 als ``start_time`` mit; ``clamp`` sah darin eine
+    neue, bereits fensterkonforme Eingabe und setzte ``raw_start_time`` auf None —
+    der echte Stempel (07:37) war weg. Das ist derselbe Schaden wie beim
+    Datums-Edit aus 1.18.2, nur ueber den zweiten Weg: der Rohstempel ist der
+    §16-Nachweis der Anwesenheit UND die Grundlage der §5-Ruhezeitpruefung.
+
+    Ein echter Wechsel auf eine andere Uhrzeit laeuft unveraendert durch."""
+    if incoming is not None and prev_raw is not None and incoming == prev_eff:
+        return prev_raw
+    return incoming
 
 
 def clamp_warning(

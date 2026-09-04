@@ -972,8 +972,21 @@ def update_time_entry(
         ).first() or current_user
     )
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    # Release-Review 1.19.1: wie im Admin-Pfad — kommt die bereits gekappte Zeit
+    # unveraendert zurueck, mit dem Rohwert weiterrechnen, statt raw_* zu loeschen.
+    # ``entry.start_time`` traegt hier bereits den Wert aus ``update_data``; der
+    # zuvor gespeicherte Stand steckt in ``orig_snapshot``. Fuer ein Feld, das gar
+    # nicht Teil des Updates war, liefert die Ruecksetzung den Rohwert und die
+    # Kappung daraus wieder exakt dieselbe angerechnete Zeit — §3/§4 pruefen also
+    # unveraendert gegen die angerechnete Zeit.
+    _clamp_start = work_window_service.unclamp_input(
+        entry.start_time, orig_snapshot["start_time"], orig_snapshot["raw_start_time"],
+    )
+    _clamp_end = work_window_service.unclamp_input(
+        entry.end_time, orig_snapshot["end_time"], orig_snapshot["raw_end_time"],
+    )
     _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
-        _entry_owner, entry.date, entry.start_time, entry.end_time, _grace,
+        _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
     )
     # Fix #2: only overwrite start/end + raw_* when the respective time was
     # actually part of this partial update — mirrors the admin path
@@ -1096,7 +1109,14 @@ def update_time_entry(
     update_warnings: list[str] = []
     # #462: nur wenn die gekappte Zeit auch geschrieben wird — eine reine
     # Notiz-Aenderung fasst start/end nicht an (Fix #2) und darf nichts melden.
-    if "start_time" in update_data or "end_time" in update_data:
+    # Release-Review 1.19.1: zusaetzlich muss sich die eingereichte Zeit von der
+    # gespeicherten unterscheiden — das Formular schickt die angerechnete Zeit
+    # immer mit, und eine erneute Meldung derselben alten Kappung ist Laerm.
+    _resubmitted_unchanged = (
+        _clamp_start == (orig_snapshot["raw_start_time"] or orig_snapshot["start_time"])
+        and _clamp_end == (orig_snapshot["raw_end_time"] or orig_snapshot["end_time"])
+    )
+    if ("start_time" in update_data or "end_time" in update_data) and not _resubmitted_unchanged:
         _clamp_warn = work_window_service.clamp_warning(
             _raw_start, _raw_end, _eff_start, _eff_end, _grace,
         )

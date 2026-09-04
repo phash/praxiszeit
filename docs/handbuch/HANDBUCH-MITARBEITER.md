@@ -190,6 +190,7 @@ Manche Praxen hinterlegen für einzelne Wochentage **feste Soll-Arbeitszeiten** 
 - **Zu früh eingestempelt:** Stempeln Sie deutlich **vor Ihrem Soll-Beginn** ein, wird die Zeit davor nicht als Arbeitszeit angerechnet. Ein kleiner **Puffer** (Standard 15 Minuten) ist erlaubt. Sie sehen dann den Hinweis: *„Du hast vor deinem Soll-Beginn eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt."*
 - **Zu spät ausgestempelt:** Bleiben Sie nach Ihrem **Soll-Ende** noch deutlich länger (über den Puffer hinaus), wird die Zeit danach ebenfalls nicht mitgezählt.
 - In der Eintragsliste erkennen Sie das an einer kleinen Zusatzzeile unter der Uhrzeit, z. B. *„gestempelt 07:30 · angerechnet ab 07:45"*.
+- **Beim Ausstempeln und beim Speichern eines eigenen Eintrags** erscheint ein Hinweis mit den konkreten Zeiten, sobald gekappt wurde (z. B. *„… gekappt (Beginn 07:00 → 07:45; Puffer 15 Minuten)"*). Der Eintrag wird dabei **trotzdem gespeichert** — der Hinweis blockiert nichts.
 
 > **Ihre echte Stempelzeit geht nicht verloren:** Der Zeitpunkt, zu dem Sie tatsächlich gestempelt haben, bleibt immer gespeichert (gesetzlich vorgeschrieben, § 16 ArbZG). Für Ihr Stundenkonto wird nur die **angerechnete** Zeit verwendet.
 

@@ -548,7 +548,7 @@ Unter **Import** übernehmen Sie historische **Zeiteinträge** aus einer **TimeR
 **Vorgehensweise (Assistent in drei Schritten):**
 
 1. **Hochladen:** Wählen Sie den/die **Mitarbeiter:in** aus, dem/der die Einträge zugeordnet werden, und laden Sie die `.xls`-Datei hoch (Drag & Drop oder Klick). Klicken Sie auf **„Datei analysieren"**.
-2. **Vorschau:** Das System zeigt alle gefundenen Einträge in einer Tabelle mit Datum, Von/Bis, Pause und Netto-Stunden. **Konflikte** (bereits vorhandene Einträge am selben Tag) werden rot, **ArbZG-Warnungen** (z. B. Ruhezeit, Höchstarbeitszeit) gelb markiert. Über die Option **„Konflikte überschreiben"** entscheiden Sie, ob vorhandene Einträge ersetzt werden – andernfalls werden sie übersprungen. Klicken Sie auf **„Import bestätigen"**.
+2. **Vorschau:** Das System zeigt alle gefundenen Einträge in einer Tabelle mit Datum, Von/Bis, Pause und Netto-Stunden. **Konflikte** (bereits vorhandene Einträge am selben Tag) werden rot, **Hinweise** gelb markiert — das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und, wenn ein Arbeitszeit-Fenster hinterlegt ist, die Kappung der importierten Zeit auf dieses Fenster. Den genauen Text zeigt das Zeilen-Symbol als Kurzinfo. Über die Option **„Konflikte überschreiben"** entscheiden Sie, ob vorhandene Einträge ersetzt werden – andernfalls werden sie übersprungen. Klicken Sie auf **„Import bestätigen"**.
 3. **Ergebnis:** Sie sehen, wie viele Einträge importiert, überschrieben oder übersprungen wurden sowie die ArbZG-Warnungen. Der Import wird im **Änderungsprotokoll** dokumentiert.
 
 ---

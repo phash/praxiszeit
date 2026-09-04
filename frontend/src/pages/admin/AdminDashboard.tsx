@@ -13,6 +13,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 import { formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges } from '../../utils/formatters';
 import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
+import { showArbzgWarnings } from '../../utils/arbzgWarnings';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
 // Geteilt mit dem Änderungsprotokoll (`admin/AuditLog.tsx`) — dieselben
@@ -365,14 +366,20 @@ export default function AdminDashboard() {
           break_minutes: entryForm.break_minutes,
           note: entryForm.note,
         };
-        await submitWithBreakWaiver(async (extra) => {
+        // Release-Review 1.19.1: die Antwort BINDEN. Der Callback gab bisher
+        // nichts zurück, und der äußere Aufruf wertete nichts aus — die weichen
+        // Warnungen dieser beiden Endpunkte (§3-Tagesgrenze, §6-Nachtarbeit,
+        // dokumentierte §4-Ausnahme und seit #462 die Fenster-Kappung) wurden
+        // erzeugt, ausgeliefert und im Browser weggeworfen. Genau auf dieser
+        // Fläche hatte der Melder die stille Änderung bemerkt.
+        const res = await submitWithBreakWaiver(async (extra) => {
           if (editingEntryId) {
-            await apiClient.put(`/admin/time-entries/${editingEntryId}`, { ...base, ...extra });
-          } else {
-            await apiClient.post(`/admin/users/${selectedEmployee.user_id}/time-entries`, { ...base, ...extra });
+            return apiClient.put(`/admin/time-entries/${editingEntryId}`, { ...base, ...extra });
           }
+          return apiClient.post(`/admin/users/${selectedEmployee.user_id}/time-entries`, { ...base, ...extra });
         });
         toast.success(editingEntryId ? 'Eintrag aktualisiert' : 'Eintrag erstellt');
+        showArbzgWarnings(toast, res?.data?.warnings);
       } else {
         // Absence entry (sick, training, overtime comp, other)
         await apiClient.post('/absences', {
