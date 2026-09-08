@@ -1,0 +1,14 @@
+# Laufzeit-Artefakte des Emulator-Tests — nie ins Repo.
+# Anleitung: docs/WINDOWS-EMULATOR-TEST.md
+
+# Entpacktes Release-Paket (~700 MB), wird vor jedem Lauf neu befuellt.
+share/tree/
+
+# Optionale .NET-Sonde fuer den GUI-Installer-Pfad (~80 MB, selbst gebaut).
+share/aclprobe/
+
+# Ergebnisdateien der Laeufe.
+share/install-result*.txt
+
+# Test-Admin-Passwort der VM — gehoert nicht ins Repo.
+share/admin-password.txt

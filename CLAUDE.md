@@ -207,6 +207,7 @@ Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker
 | Admin-Cheat-Sheet | [docs/handbuch/CHEATSHEET-ADMIN.md](docs/handbuch/CHEATSHEET-ADMIN.md) |
 | **Build & Release** (build-release.sh, Cross-Platform-Installer, pzweb-Auslieferung) | [docs/BUILD-RELEASE.md](docs/BUILD-RELEASE.md) |
 | **Native-Betrieb** (PostgreSQL, Windows-/Linux-Installer, SSL, systemd) | [docs/NATIVE-BETRIEB.md](docs/NATIVE-BETRIEB.md) |
+| **Windows-Test im Emulator** (dockur/windows, ACL-Nachweis, Ergebnis lesen) | [docs/WINDOWS-EMULATOR-TEST.md](docs/WINDOWS-EMULATOR-TEST.md) |
 | Native Installation | [docs/INSTALL-NATIVE.md](docs/INSTALL-NATIVE.md) |
 | Docker-Installation | [docs/INSTALL-DOCKER.md](docs/INSTALL-DOCKER.md) |
 | Docker-Schnellstart (aus Tarball/ZIP, ohne git) | [docs/DOCKER-START.md](docs/DOCKER-START.md) |

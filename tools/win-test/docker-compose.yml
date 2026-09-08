@@ -1,0 +1,33 @@
+# Windows-11-Emulator fuer den Release-Test des Windows-Pakets.
+# Anleitung (Vorbereitung, Ergebnis lesen, Fallstricke): docs/WINDOWS-EMULATOR-TEST.md
+#
+# Kurz:  docker compose down -v && docker compose up -d     (das -v ist Pflicht:
+#        /oem/install.bat laeuft nur auf einer frisch eingerichteten Windows-
+#        Installation — mit altem Volume laeuft der Test gar nicht)
+# Zusehen: http://localhost:8006
+
+services:
+  windows:
+    image: ghcr.io/dockur/windows
+    container_name: praxiszeit-windows
+    environment:
+      VERSION: "11"
+      RAM_SIZE: "4G"
+      CPU_CORES: "4"
+      DISK_SIZE: "48G"
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "8006:8006"   # Web-Viewer (noVNC) zum Mitschauen
+    volumes:
+      - praxiszeit-win-data:/storage   # VM-Disk
+      - ./oem:/oem                     # install.bat -> läuft nach OOBE automatisch
+      - ./share:/data                  # \\host.lan\Data : Paket-Tree + Ergebnis
+    stop_grace_period: 2m
+    restart: "no"
+
+volumes:
+  praxiszeit-win-data:
