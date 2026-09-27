@@ -611,6 +611,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                   // stehen sie in der Monatssumme, aber an keinem Tag
                   // (Tracker 2d75bbe4). Nur eine wirklich leere Zeile bleibt leer.
                   const hideHours = isGray && day.actual_hours === 0 && day.target_hours === 0;
+                  // Dasselbe fuer Von–Bis/Pause: ein Eintrag am Samstag/Feiertag zeigt
+                  // seine Uhrzeiten, sonst stuende die Stundenzahl ohne Beleg da.
+                  const hideEntries = isGray && day.time_entries.length === 0;
 
                   const rowClass = isGray
                     ? 'bg-gray-50 text-gray-400'
@@ -682,7 +685,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           )}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-gray-600 whitespace-nowrap">
-                          {isGray ? '–' : editingDate === day.date ? (
+                          {hideEntries ? '–' : editingDate === day.date ? (
                             editState.entryType === 'work' ? (
                               <div className="flex items-center gap-1">
                                 <input
@@ -741,7 +744,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : '–'}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
-                          {isGray ? '' : editingDate === day.date && editState.entryType === 'work' ? (
+                          {hideEntries ? '' : editingDate === day.date && editState.entryType === 'work' ? (
                             <input
                               type="number"
                               inputMode="numeric"

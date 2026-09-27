@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.6 · **Stand:** August 2026 (PraxisZeit 1.18.2)
+**Version:** 2.7 · **Stand:** September 2026 (PraxisZeit 1.19.2)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -64,6 +64,7 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 | **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats (H:MM) |
 | **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
+| **Urlaubscountdown** | Tage bis zu Ihrem nächsten Urlaub oder zur nächsten Praxisschließung, an der Sie teilnehmen – das frühere Datum zählt |
 
 > **Monatssaldo nur bis zum letzten Arbeitstag:** Im **laufenden** Monat wird das Soll nur bis zum **letzten abgeschlossenen Arbeitstag** gezählt – Sie starten den Monat also **nicht** mit einem dicken Minus, sondern der Saldo baut sich Tag für Tag auf. Der heutige Tag zählt mit, sobald Sie **ausgestempelt** haben. Für **abgeschlossene** Monate entspricht der Saldo wie gewohnt dem vollen Monat. Das **Überstundenkonto** übernimmt für den laufenden Monat denselben Stichtag – auch hier entsteht am Monatsanfang kein künstliches Minus.
 
@@ -650,4 +651,4 @@ legt Ihr Administrator fest.
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.6 | August 2026 (PraxisZeit 1.18.2)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.7 | September 2026 (PraxisZeit 1.19.2)*

@@ -69,8 +69,9 @@ def test_nur_ueberstunden_schliessung_zeigt_countdown(db, test_user, test_admin)
 def test_laufende_schliessung_zaehlt_ab_heute(db, test_user, test_admin):
     """Mitten in der Schliessung: 0 Tage, Beginn = heute, Ende = Schliessungsende."""
     c = _closure(db, test_admin, date(2026, 9, 21), date(2026, 10, 2))
-    for day in (28, 29, 30):
-        _absence(db, test_user, date(2026, 9, day), AbsenceType.OVERTIME, c)
+    for d in (date(2026, 9, 28), date(2026, 9, 29), date(2026, 9, 30),
+              date(2026, 10, 1), date(2026, 10, 2)):
+        _absence(db, test_user, d, AbsenceType.OVERTIME, c)
 
     res = _next(db, test_user)
     assert res.kind == "closure"
@@ -104,7 +105,8 @@ def test_als_urlaub_gebuchte_schliessung_zeigt_die_schliessung(db, test_user, te
     """Ein Schliessungstag vom Typ VACATION war bisher 'Urlaub' mit nur einem
     Einzeltag (end_date=None seit #394). Jetzt: Name + ganze Spanne."""
     c = _closure(db, test_admin, date(2026, 10, 12), date(2026, 10, 16))
-    _absence(db, test_user, date(2026, 10, 12), AbsenceType.VACATION, c)
+    for day in range(12, 17):
+        _absence(db, test_user, date(2026, 10, day), AbsenceType.VACATION, c)
 
     res = _next(db, test_user)
     assert res.kind == "closure"
@@ -137,3 +139,54 @@ def test_fremder_mandant_wird_ignoriert(db, test_user, test_admin):
     c = _closure(db, test_admin, date(2026, 10, 5), date(2026, 10, 9), tenant_id=other)
     _absence(db, test_user, date(2026, 10, 5), AbsenceType.OVERTIME, c, tenant_id=other)
     assert _next(db, test_user) is None
+
+
+# Release-Review 1.19.2: Anzeige an den GEBUCHTEN Tagen der Person verankern,
+# nicht an den Daten der Schliessung (#298-Fenster, Fremd-Abwesenheiten).
+
+
+def test_neueintritt_in_der_schliessung_zaehlt_bis_zum_ersten_gebuchten_tag(db, test_user, test_admin):
+    c = _closure(db, test_admin, date(2026, 10, 5), date(2026, 10, 16))
+    for day in (12, 13, 14, 15, 16):  # first_work_day 12.10.
+        _absence(db, test_user, date(2026, 10, day), AbsenceType.VACATION, c)
+
+    res = _next(db, test_user)
+    assert res.kind == "closure"
+    assert res.date == date(2026, 10, 12)
+    assert res.days_until == 14
+
+
+def test_austritt_in_der_schliessung_endet_am_letzten_gebuchten_tag(db, test_user, test_admin):
+    c = _closure(db, test_admin, date(2026, 10, 5), date(2026, 10, 16))
+    for day in (5, 6, 7):  # last_work_day 07.10.
+        _absence(db, test_user, date(2026, 10, day), AbsenceType.OVERTIME, c)
+
+    res = _next(db, test_user)
+    assert res.date == date(2026, 10, 5)
+    assert res.end_date == date(2026, 10, 7)
+
+
+def test_laufende_schliessung_am_wochenende_bleibt_begonnen(db, test_user, test_admin, monkeypatch):
+    """Samstag mitten in der Schliessung: naechster gebuchter Tag ist Montag,
+    die Schliessung hat fuer die Person aber schon begonnen."""
+    sat = date(2026, 10, 3)
+    monkeypatch.setattr(absences_router, "today_local", lambda: sat)
+    c = _closure(db, test_admin, date(2026, 9, 28), date(2026, 10, 9))
+    for day in (date(2026, 9, 28), date(2026, 10, 2), date(2026, 10, 5), date(2026, 10, 9)):
+        _absence(db, test_user, day, AbsenceType.OVERTIME, c)
+
+    res = _next(db, test_user)
+    assert res.days_until == 0
+    assert res.date == sat
+    assert res.end_date == date(2026, 10, 9)
+
+
+def test_fremde_zeilen_zaehlen_nicht_zur_spanne(db, test_user, test_admin):
+    """Min/Max der Spanne nur ueber die eigenen Zeilen des eigenen Mandanten."""
+    c = _closure(db, test_admin, date(2026, 10, 5), date(2026, 10, 16))
+    _absence(db, test_user, date(2026, 10, 6), AbsenceType.OVERTIME, c)
+    _absence(db, test_user, date(2026, 10, 15), AbsenceType.OVERTIME, c, tenant_id=uuid.uuid4())
+
+    res = _next(db, test_user)
+    assert res.date == date(2026, 10, 6)
+    assert res.end_date == date(2026, 10, 6)

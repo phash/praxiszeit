@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.7 | Stand: August 2026 (für PraxisZeit 1.18.2)**
+**Version 2.7 | Stand: September 2026 (für PraxisZeit 1.19.2)**
 
 ---
 
@@ -864,7 +864,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.18.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.19.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -1139,4 +1139,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: August 2026 (für PraxisZeit 1.18.2)*
+*Stand: September 2026 (für PraxisZeit 1.19.2)*

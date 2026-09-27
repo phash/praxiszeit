@@ -281,7 +281,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '2. Dashboard & Saldo verstehen',
     content: (
       <div className="space-y-2">
-        <p>Das Dashboard zeigt Ihren <strong>Tagessaldo</strong> (heute: Ist vs. Tagessoll), den <strong>Monatssaldo</strong> (Ist – Soll in H:MM), den kumulierten Jahressaldo und das Urlaubskonto.</p>
+        <p>Das Dashboard zeigt Ihren <strong>Tagessaldo</strong> (heute: Ist vs. Tagessoll), den <strong>Monatssaldo</strong> (Ist – Soll in H:MM), den kumulierten Jahressaldo, das Urlaubskonto und den <strong>Urlaubscountdown</strong> (Tage bis zum nächsten Urlaub oder zur nächsten Praxisschließung – das frühere Datum zählt).</p>
         <p>Im <strong>laufenden Monat</strong> zählt das Soll nur bis zum <strong>letzten abgeschlossenen Arbeitstag</strong> – Sie starten den Monat also nicht mit einem dicken Minus; der heutige Tag zählt mit, sobald Sie <strong>ausgestempelt</strong> haben. Abgeschlossene Monate entsprechen dem vollen Monat. Das <strong>Überstundenkonto</strong> folgt für den laufenden Monat demselben Stichtag – auch hier entsteht am Monatsanfang kein künstliches Minus.</p>
         <p>Grüner Saldo = Überstunden, roter Saldo = Fehlstunden. Auf mobilen Geräten wird die untere Tab-Leiste zur Navigation genutzt.</p>
       </div>

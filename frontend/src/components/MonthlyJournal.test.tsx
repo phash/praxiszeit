@@ -297,6 +297,21 @@ describe('<MonthlyJournal /> Stunden an Wochenend-/Feiertagen', () => {
     expect(cellText(row, 'Saldo')).toMatch(/^\+3/);
     expect(cellText(row, 'Soll')).toBe('–');
   });
+
+  it('zeigt Von–Bis und Pause des Samstagseintrags (Release-Review 1.19.2)', async () => {
+    const saturday = {
+      ...validDay, date: '2026-06-06', weekday: 'Sa', type: 'weekend' as const,
+      time_entries: [{ id: 'e1', start_time: '08:00', end_time: '11:30', break_minutes: 30, net_hours: 3 }],
+      actual_hours: 3, target_hours: 0, balance: 3,
+    };
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [saturday] } });
+    render(<MonthlyJournal />);
+
+    await screen.findByRole('columnheader', { name: 'Saldo' });
+    const row = screen.getAllByRole('row')[1];
+    expect(cellText(row, 'Von–Bis')).toBe('08:00–11:30');
+    expect(cellText(row, 'Pause')).toBe('30 min');
+  });
 });
 
 describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {

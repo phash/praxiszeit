@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+## [1.19.2] - 2026-09-27
+
+Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte; **keine neue
+Migration** (head bleibt `071_security_events`).
+
+### ✨ Verbesserungen
+- **Der Urlaubscountdown zählt auch bis zur nächsten Praxisschließung** (#476,
+  Wunsch aus der Praxis). Seit Betriebsferien bei aufgebrauchtem Urlaub als
+  Überstundenausgleich gebucht werden können, blieb die Kachel dann leer. Jetzt
+  zeigt sie „Noch X Tage bis zur Praxisschließung" mit Namen und Zeitraum —
+  egal, ob die Schließtage als Urlaub, Überstundenausgleich oder bezahlte
+  Freistellung gebucht sind. Liegt ein eigener Urlaub früher, zeigt sie diesen.
+  Maßgeblich sind die für die Person gebuchten Tage: Wer nicht teilnimmt, sieht
+  keinen Countdown; wer mitten in der Schließung ein- oder austritt, sieht nur
+  seinen Teil.
+
+### 🐞 Korrekturen
+- **Monatsjournal: Feiertage bei fester Monatsarbeitszeit ohne Zahlen**
+  (aus dem Bug-Tracker). Die Gutschrift stimmte in der Monatssumme, die
+  Tageszeile blendete an Feiertagen aber alle Werte aus. Jetzt stehen dort die
+  geplanten Stunden unter „Geplant" und „Ist", wie bei einem Urlaubstag.
+- **Monatsjournal: Arbeit an Wochenende und Feiertag erschien nur in der
+  Monatssumme.** Die Tageszeile zeigt jetzt Ist, Saldo, Von–Bis und Pause
+  solcher Einträge.
+
+### 📖 Dokumentation
+- Mitarbeiter-Handbuch und In-App-Hilfe beschreiben die Countdown-Kachel.
+- `UPDATE.md`: Das native Update beginnt jetzt mit einem frischen
+  Datenbank-Dump statt nur mit dem Verweis auf das nächtliche Backup.
+- Neu: `docs/WINDOWS-EMULATOR-TEST.md` (Windows-Test im Emulator).
+
+### 🔒 Abhängigkeiten
+- vitest/@vitest/mocker 4.1.11 (GHSA-82fw-gwwq-j7x9, nur Entwicklung),
+  js-yaml 4.3.2 im Handbuch-Werkzeug.
+
 ## [1.19.1] - 2026-09-05
 
 Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte; **keine neue
