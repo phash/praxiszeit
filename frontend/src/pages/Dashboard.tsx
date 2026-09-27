@@ -75,6 +75,10 @@ interface NextVacation {
   date: string;
   end_date?: string;
   days_until: number;
+  // #476: "closure" = naechste Praxisschliessung (auch als Ueberstundenausgleich
+  // gebucht). Fehlt bei aelteren Backends → Urlaub.
+  kind?: 'vacation' | 'closure';
+  closure_name?: string | null;
 }
 
 interface TeamAbsence {
@@ -618,7 +622,11 @@ export default function Dashboard() {
           {nextVacation ? (
             <>
               <p className="text-xs text-gray-500 mb-2">
-                {nextVacation.days_until === 0
+                {nextVacation.kind === 'closure'
+                  ? nextVacation.days_until === 0
+                    ? 'Die Praxisschließung hat begonnen!'
+                    : `Noch ${nextVacation.days_until === 1 ? '1 Tag' : `${nextVacation.days_until} Tage`} bis zur Praxisschließung`
+                  : nextVacation.days_until === 0
                   ? 'Heute beginnt dein Urlaub!'
                   : `Noch ${nextVacation.days_until === 1 ? '1 Tag' : `${nextVacation.days_until} Tage`}`}
               </p>
@@ -627,6 +635,9 @@ export default function Dashboard() {
                 {nextVacation.days_until > 0 && <span className="text-lg ml-1">Tage</span>}
               </p>
               <div className="mt-4 space-y-1 text-sm">
+                {nextVacation.kind === 'closure' && nextVacation.closure_name && (
+                  <p className="font-medium text-text-primary">{nextVacation.closure_name}</p>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-600">Ab:</span>
                   <span className="font-medium">
