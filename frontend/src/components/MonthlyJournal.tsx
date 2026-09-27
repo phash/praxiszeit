@@ -605,6 +605,12 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                 {data.days.map((day) => {
                   const dateObj = safeParseISO(day.date);
                   const isGray = isNonWorkDay(day);
+                  // Grau heisst "kein regulaerer Arbeitstag", nicht "keine Stunden":
+                  // Arbeit am Samstag/Feiertag und im Fix-Modus die Feiertags-
+                  // Gutschrift der Planstunden gehoeren in die Zeile — sonst
+                  // stehen sie in der Monatssumme, aber an keinem Tag
+                  // (Tracker 2d75bbe4). Nur eine wirklich leere Zeile bleibt leer.
+                  const hideHours = isGray && day.actual_hours === 0 && day.target_hours === 0;
 
                   const rowClass = isGray
                     ? 'bg-gray-50 text-gray-400'
@@ -759,14 +765,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : '–'}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700">
-                          {isGray ? '' : formatHoursSimple(day.actual_hours)}
+                          {hideHours ? '' : formatHoursSimple(day.actual_hours)}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-500">
-                          {isGray ? '' : formatHoursSimple(day.target_hours)}
+                          {hideHours ? '' : formatHoursSimple(day.target_hours)}
                         </td>
                         {!fixedMode && (
                           <td className={`px-3 py-2 text-right ${balanceColor}`}>
-                            {isGray ? '' : formatHours(day.balance)}
+                            {hideHours ? '' : formatHours(day.balance)}
                           </td>
                         )}
                         <td className="px-3 py-2 text-right whitespace-nowrap">

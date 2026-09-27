@@ -396,6 +396,25 @@ def test_urlaubstag_im_fixmodus_zeigt_geplante_stunden_und_gutschrift(db, defaul
     assert tag["actual_hours"] == pytest.approx(3.0)   # bezahlter Fehltag → Gutschrift
 
 
+def test_feiertag_im_fixmodus_zeigt_geplante_stunden_und_gutschrift(db, default_tenant):
+    """Tracker-Nachtrag zu #463: ein Feiertag auf einem geplanten Tag schreibt
+    die Planstunden gut wie ein Urlaubstag (``include_holidays`` in
+    ``fixed_month_credit``). Die Tageszeile traegt beide Werte — die
+    Oberflaeche darf sie an einem Feiertag nicht pauschal ausblenden."""
+    from tests.test_fixed_monthly_target import _mk
+
+    u = _mk(db)  # Mo + Mi geplant, je 3 h
+    db.add(PublicHoliday(date=date(2025, 3, 5), name="Testfeiertag", year=2025,
+                         tenant_id=DEFAULT_TENANT_ID))  # Mittwoch
+    db.commit()
+
+    tag = next(d for d in journal_service.get_journal(db, u, 2025, 3)["days"]
+               if d["date"] == "2025-03-05")
+    assert tag["type"] == "holiday"
+    assert tag["target_hours"] == pytest.approx(3.0)
+    assert tag["actual_hours"] == pytest.approx(3.0)
+
+
 def test_ungeplanter_wochentag_bleibt_im_fixmodus_bei_null(db, default_tenant):
     """Dienstag ist im Tagesplan nicht belegt — dort gibt es nichts zu planen
     und nichts gutzuschreiben."""
