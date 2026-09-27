@@ -9,7 +9,7 @@ from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
-    WorkingHoursChange,
+    WorkingHoursChange, CompanyClosure,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
@@ -251,9 +251,15 @@ def get_next_vacation(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get the next upcoming vacation for the current user.
-    Returns the start date, optional end date, and days until the vacation.
-    Returns null if no upcoming vacation is found.
+    Get the next upcoming vacation OR company closure for the current user.
+
+    #476: Betriebsferien koennen per #314-Split komplett als
+    Ueberstundenausgleich gebucht sein — ein reiner VACATION-Filter liesse den
+    Countdown dann leer, obwohl die Praxis bald zu hat. Grundlage fuer die
+    Schliessung sind die GEBUCHTEN Abwesenheiten der Person (``closure_id``),
+    nicht ``company_closures`` selbst: so gelten ``receives_company_closures``,
+    das Beschaeftigungsfenster und Fremd-Abwesenheiten von selbst. Das fruehere
+    Ziel gewinnt. Returns null if neither is found.
     """
     today = today_local()
 
@@ -261,8 +267,29 @@ def get_next_vacation(
         Absence.tenant_id == current_user.tenant_id,  # F-026: explizit, nicht nur RLS
         Absence.user_id == current_user.id,
         Absence.type == AbsenceType.VACATION,
+        Absence.closure_id.is_(None),  # Schliessungstage laufen unten als "closure"
         Absence.date >= today
     ).order_by(Absence.date.asc()).first()
+
+    next_closure_row = db.query(Absence, CompanyClosure).join(
+        CompanyClosure, CompanyClosure.id == Absence.closure_id
+    ).filter(
+        Absence.tenant_id == current_user.tenant_id,  # F-026
+        CompanyClosure.tenant_id == current_user.tenant_id,  # F-026
+        Absence.user_id == current_user.id,
+        Absence.date >= today,
+    ).order_by(Absence.date.asc()).first()
+
+    if next_closure_row and (not next_vacation or next_closure_row[0].date <= next_vacation.date):
+        closure_absence, closure = next_closure_row
+        start = max(closure.start_date, today)
+        return NextVacationResponse(
+            date=start,
+            end_date=closure.end_date,
+            days_until=(start - today).days,
+            kind="closure",
+            closure_name=closure.name,
+        )
 
     if not next_vacation:
         return None

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
-from typing import Optional
+from typing import Literal, Optional
 from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
@@ -83,3 +83,7 @@ class NextVacationResponse(BaseModel):
     date: date
     end_date: Optional[date] = None
     days_until: int
+    # #476: "closure" = naechste Praxisschliessung, an der die Person teilnimmt
+    # (egal ob als Urlaub, Ueberstundenausgleich oder bezahlt frei gebucht).
+    kind: Literal["vacation", "closure"] = "vacation"
+    closure_name: Optional[str] = None

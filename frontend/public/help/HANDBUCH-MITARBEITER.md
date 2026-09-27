@@ -380,6 +380,8 @@ Wie sich das auf Ihr Konto auswirkt, legt Ihre Praxisleitung fest:
 
 > Betriebsferien werden bewusst **ohne Budget-Grenze** gebucht: Anders als bei einer selbst eingetragenen Urlaubsbuchung oder einem Urlaubsantrag (die bei zu wenig Resturlaub jeweils abgelehnt werden) kann Ihre Praxisleitung Betriebsferien auch dann anordnen, wenn Ihr Resturlaub dafür nicht reicht.
 
+> Der **Urlaubscountdown** auf dem Dashboard zählt auch bis zur nächsten Praxisschließung – egal, ob die Schließtage als Urlaub, Überstundenabbau oder bezahlte Freistellung gebucht sind. Liegt ein eigener Urlaub früher, zeigt er diesen.
+
 > Bei Fragen zur konkreten Verrechnung Ihrer Betriebsferien wenden Sie sich an Ihre Praxisleitung.
 
 ---

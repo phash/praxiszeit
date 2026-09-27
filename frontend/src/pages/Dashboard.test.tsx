@@ -107,3 +107,46 @@ describe('Dashboard vacation-day formatting (Audit 2026-07-31 backlog item)', ()
     expect(screen.queryByText('27.5 Tage')).not.toBeInTheDocument();
   });
 });
+
+// #476: Betriebsferien, die als Ueberstundenausgleich gebucht sind, liessen den
+// Countdown leer. Das Backend meldet sie jetzt als kind="closure".
+describe('Dashboard Urlaubscountdown mit Praxisschliessung (#476)', () => {
+  function withNextVacation(data: unknown) {
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) =>
+      url === '/absences/next-vacation' ? Promise.resolve({ data }) : base(url),
+    );
+  }
+
+  it('zaehlt bis zur Praxisschliessung und nennt sie', async () => {
+    withNextVacation({
+      date: '2026-10-12', end_date: '2026-10-16', days_until: 14,
+      kind: 'closure', closure_name: 'Herbstschließung',
+    });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('Noch 14 Tage bis zur Praxisschließung')).toBeInTheDocument();
+    expect(screen.getByText('Herbstschließung')).toBeInTheDocument();
+    expect(screen.getByText('16.10.2026')).toBeInTheDocument();
+    expect(screen.queryByText('Kein Urlaub geplant')).not.toBeInTheDocument();
+  });
+
+  it('meldet den Beginn der Praxisschliessung am selben Tag', async () => {
+    withNextVacation({
+      date: '2026-10-12', end_date: '2026-10-16', days_until: 0,
+      kind: 'closure', closure_name: 'Herbstschließung',
+    });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('Die Praxisschließung hat begonnen!')).toBeInTheDocument();
+    expect(screen.queryByText('Heute beginnt dein Urlaub!')).not.toBeInTheDocument();
+  });
+
+  it('laesst den Urlaubsfall unveraendert (auch ohne kind aus aelterem Backend)', async () => {
+    withNextVacation({ date: '2026-10-05', days_until: 7 });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('Noch 7 Tage')).toBeInTheDocument();
+    expect(screen.queryByText(/Praxisschließung/)).not.toBeInTheDocument();
+  });
+});
