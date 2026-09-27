@@ -274,6 +274,31 @@ describe('<MonthlyJournal /> Typwechsel (U1, Audit 2026-07-31)', () => {
 // #463: Bei fester Monatsarbeitszeit (#377 Baustein 2b) gibt es kein Tages-Soll.
 // Die Tabelle zeigte trotzdem "Soll" und einen Tages-Saldo — Zahlen ohne
 // definierte Bedeutung, aus denen der Melder auf einen Rechenfehler schloss.
+// Zelltext einer Tageszeile unter der gegebenen Spaltenueberschrift.
+function cellText(row: HTMLElement, header: string): string {
+  const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
+  const idx = headers.indexOf(header);
+  if (idx < 0) throw new Error(`Spalte ${header} fehlt`);
+  return (row.querySelectorAll('td')[idx]?.textContent ?? '').trim();
+}
+
+describe('<MonthlyJournal /> Stunden an Wochenend-/Feiertagen', () => {
+  it('zeigt Ist und Saldo, wenn am Samstag gearbeitet wurde', async () => {
+    const saturday = {
+      ...validDay, date: '2026-06-06', weekday: 'Sa', type: 'weekend' as const,
+      actual_hours: 3, target_hours: 0, balance: 3,
+    };
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [saturday] } });
+    render(<MonthlyJournal />);
+
+    await screen.findByRole('columnheader', { name: 'Saldo' });
+    const row = screen.getAllByRole('row')[1];
+    expect(cellText(row, 'Ist')).toMatch(/^3/);
+    expect(cellText(row, 'Saldo')).toMatch(/^\+3/);
+    expect(cellText(row, 'Soll')).toBe('–');
+  });
+});
+
 describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {
   const fixedJournal = { ...validJournal, use_fixed_monthly_target: true };
 
@@ -301,6 +326,37 @@ describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {
     await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Soll' })).toBeInTheDocument());
     expect(screen.getByRole('columnheader', { name: 'Saldo' })).toBeInTheDocument();
     expect(screen.queryByText(/Feste Monatsarbeitszeit aktiv/)).not.toBeInTheDocument();
+  });
+
+  // Tracker-Nachtrag zu 2d75bbe4: das Backend schreibt einem Feiertag auf
+  // einem geplanten Tag die Planstunden gut (Geplant + Ist), die Tageszeile
+  // blendete an Wochenend-/Feiertagen aber jede Zahl pauschal aus.
+  it('zeigt an einem Feiertag die gutgeschriebenen Planstunden', async () => {
+    const holiday = {
+      ...validDay, date: '2026-06-04', type: 'holiday' as const,
+      is_holiday: true, holiday_name: 'Fronleichnam',
+      actual_hours: 6, target_hours: 6, balance: 0,
+    };
+    getMock.mockResolvedValue({ data: { ...fixedJournal, days: [holiday] } });
+    render(<MonthlyJournal />);
+
+    const row = (await screen.findByText('Fronleichnam')).closest('tr')!;
+    expect(cellText(row, 'Ist')).toMatch(/^6/);
+    expect(cellText(row, 'Geplant')).toMatch(/^6/);
+  });
+
+  it('laesst einen Feiertag ohne Stunden leer', async () => {
+    const holiday = {
+      ...validDay, date: '2026-06-04', type: 'holiday' as const,
+      is_holiday: true, holiday_name: 'Fronleichnam',
+      actual_hours: 0, target_hours: 0, balance: 0,
+    };
+    getMock.mockResolvedValue({ data: { ...fixedJournal, days: [holiday] } });
+    render(<MonthlyJournal />);
+
+    const row = (await screen.findByText('Fronleichnam')).closest('tr')!;
+    expect(cellText(row, 'Ist')).toBe('');
+    expect(cellText(row, 'Geplant')).toBe('');
   });
 
   it('faellt ohne das Feld auf die normale Ansicht zurueck (aeltere Antwort)', async () => {
