@@ -156,7 +156,7 @@ PY
 | `LOGIN_HTTP` | `200` — echte Anmeldung, nicht nur ein erreichbarer Port |
 | `SYSTEM_INFO_RAW` | `"version":"<version>"` passend zu `PAKET_VERSION` |
 | `ALEMBIC_VERSION` | der aktuelle Migrations-Kopf (z. B. `071_security_events`) |
-| `psql (PostgreSQL)` | `18.4` — der gepinnte Stand, siehe `PG_WINDOWS_SHA256` |
+| `psql (PostgreSQL)` | `18.6` — der gepinnte Stand, siehe `PG_WINDOWS_SHA256` |
 | `STATE` | `4  RUNNING` |
 | `HEALTH_HTTP_NACH_NEUSTART` / `LOGIN_HTTP_NACH_NEUSTART` | beide `200` |
 | `===== DONE =====` | vorhanden (sonst ist der Lauf abgebrochen, nicht bestanden) |

@@ -402,6 +402,86 @@ describe('<MonthlyJournal /> Eintragen an Wochenend-/Feiertagen (#479)', () => {
     await screen.findByRole('columnheader', { name: 'Saldo' });
     expect(screen.queryByTitle('Weiteren Eintrag hinzufügen')).toBeNull();
   });
+
+  // Release-Review 1.19.2: der Admin-Direktweg bucht an Wochenend-/Feiertagen
+  // keine Abwesenheit (create_absence filtert sie) — vorher loeschte das
+  // Journal die alte Abwesenheit bzw. den Zeiteintrag VOR dem 400.
+  it('Speichern einer Wochenend-Abwesenheit loescht sie nicht', async () => {
+    mockJournal([{
+      ...sunday,
+      absences: [{ id: 'ab1', type: 'sick', hours: 8, start_time: null, end_time: null }],
+    }]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Krank bearbeiten'));
+    fireEvent.click(screen.getByTitle('Speichern'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('bietet an Wochenend-/Feiertagen fuer einen Zeiteintrag keine Abwesenheitstypen an', async () => {
+    mockJournal([{
+      ...sunday,
+      time_entries: [
+        { id: 'e1', start_time: '08:00', end_time: '12:00', break_minutes: 0, net_hours: 4 },
+        { id: 'e2', start_time: '18:00', end_time: '22:00', break_minutes: 0, net_hours: 4 },
+      ],
+      actual_hours: 8, balance: 8,
+    }]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('18:00–22:00 bearbeiten'));
+    const select = await screen.findByDisplayValue('Arbeit');
+    expect(Array.from((select as HTMLSelectElement).options).map(o => o.value)).toEqual(['work']);
+  });
+
+  it('Mitarbeiterin beantragt die Loeschung des bearbeiteten, nicht des ersten Eintrags', async () => {
+    mockJournal([{
+      ...sunday,
+      time_entries: [
+        { id: 'e1', start_time: '08:00', end_time: '12:00', break_minutes: 0, net_hours: 4 },
+        { id: 'e2', start_time: '18:00', end_time: '22:00', break_minutes: 0, net_hours: 4 },
+      ],
+      actual_hours: 8, balance: 8,
+    }]);
+    postMock.mockResolvedValue({ data: {} });
+    render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('18:00–22:00 bearbeiten'));
+    fireEvent.click(screen.getByTitle('Löschen'));
+    fireEvent.click(await screen.findByText('Antrag stellen'));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
+      request_type: 'delete', time_entry_id: 'e2',
+    })));
+  });
+});
+
+// Release-Review 1.19.2 (vorbestehend, seit #479 auch an Wochenenden): auf einem
+// Misch-Tag hielt der Speicherpfad das Bearbeiten des Zeiteintrags fuer einen
+// Wechsel Abwesenheit -> Arbeit — er legte einen ZWEITEN Eintrag an und loeschte
+// die Abwesenheit.
+describe('<MonthlyJournal /> Misch-Tag bearbeiten', () => {
+  it('aendert den Zeiteintrag per PUT und laesst die Abwesenheit stehen', async () => {
+    mockJournal([{
+      ...validDay,
+      date: '2026-06-10',
+      type: 'mixed' as const,
+      time_entries: [{ id: 'te1', start_time: '08:00', end_time: '12:00', break_minutes: 0, net_hours: 4 }],
+      absences: [{ id: 'ab1', type: 'vacation', hours: 4, start_time: null, end_time: null }],
+    }]);
+    putMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('08:00–12:00 bearbeiten'));
+    const [, bis] = Array.from(container.querySelectorAll('input[type="time"]'));
+    fireEvent.change(bis, { target: { value: '12:30' } });
+    fireEvent.click(screen.getByTitle('Speichern'));
+
+    await waitFor(() => expect(putMock).toHaveBeenCalledWith(
+      '/admin/time-entries/te1', expect.objectContaining({ end_time: '12:30' }),
+    ));
+    expect(postMock).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {

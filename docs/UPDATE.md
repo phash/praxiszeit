@@ -63,6 +63,9 @@ cp /pfad/zur/alten/installation/.env ./.env
 cp /pfad/zur/alten/installation/ssl/cert.pem ssl/cert.pem 2>/dev/null || true
 cp /pfad/zur/alten/installation/ssl/key.pem  ssl/key.pem  2>/dev/null || true
 
+# Datenbank-Image auf den neuesten 18.x-Patchstand holen (Sicherheitsupdates —
+# `up` allein nimmt sonst das bereits vorhandene, ältere Image):
+docker compose pull db
 # HTTP:
 docker compose up -d --build
 # ODER HTTPS:

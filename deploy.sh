@@ -91,6 +91,10 @@ fi
 
 # --- 4. start / run migrations ---
 
+# PostgreSQL-18-Patchstand nachziehen: `up` allein nimmt das bereits vorhandene
+# Image (floatendes postgres:18-alpine). Ein Pull-Fehler bricht nicht ab.
+$COMPOSE pull db || log "WARN: docker compose pull db failed, continuing with local image"
+
 log ">> Starting services"
 if ! $COMPOSE up -d; then
     log "ERROR: compose up failed. Rolling back to ${PREVIOUS_COMMIT}."

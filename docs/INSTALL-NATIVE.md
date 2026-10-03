@@ -520,7 +520,7 @@ Nutzt systemweit installiertes Python + PostgreSQL statt gebundelter Binaries.
 *(Ausgelagert aus CLAUDE.md — 1.5.x-Postmortems, hier mit voller Historie.)*
 
 **PostgreSQL-Quelle (ab 1.5.0):** Linux- und macOS-Tarbälle bündeln
-`theseus-rs/postgresql-binaries` **18.4.0** (Manylinux-Build, forward-kompatibel
+`theseus-rs/postgresql-binaries` **18.6.0** (Manylinux-Build, forward-kompatibel
 bis **glibc 2.34** → Ubuntu 22.04+, Debian 12+, RHEL/Rocky/Alma 9+, Fedora 35+).
 Die früher genutzten **EDB-Tarbälle sind seit 2026-05 nicht mehr verfügbar**
 (HTTP 403); der System-PG-Fallback wurde mit **#125** entfernt. `build-release.sh`

@@ -16,22 +16,22 @@ set -euo pipefail
 # =============================================================================
 
 APP_VERSION="1.19.2"
-PYTHON_VERSION="3.13.15"
+PYTHON_VERSION="3.13.16"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
-# 20260825 buendelt CPython 3.13.15 mit OpenSSL 3.5.8, SQLite 3.53.1 und
-# expat 2.8.3 (am Artefakt nachgemessen). Der vorherige Stand 3.13.13 /
-# Tag 20260510 lieferte OpenSSL 3.5.6 — zwei Sicherheitsrunden aelter.
+# 20261001 buendelt CPython 3.13.16 (u. a. SSLContext-Use-after-free behoben)
+# mit OpenSSL 3.5.9, expat 2.8.5 und xz 5.8.4 (Dependency-Review 1.19.2).
+# Davor 20260825 = 3.13.15 / OpenSSL 3.5.8; davor 20260510 = OpenSSL 3.5.6.
 # Der Interpreter gehoert zu ALLEN vier nativen Kundenpaketen, das ist also
 # ausgelieferte Angriffsflaeche, nicht nur Bauwerkzeug (Release-Review 1.19.0).
 # Beim Anheben: die vier Assets vorher auf HTTP 200 pruefen (nicht jede
 # CPython-Punktversion hat ein python-build-standalone-Release) und danach am
 # gebauten Artefakt gegenmessen:
 #   build/release-<ver>/linux/bin/python/bin/python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"
-PYTHON_STANDALONE_TAG="20260825"
+PYTHON_STANDALONE_TAG="20261001"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases
-POSTGRESQL_VERSION="18.4.0"
+POSTGRESQL_VERSION="18.6.0"
 # EDB-Format (für Legacy-Fallback, falls jemals wieder verfügbar)
 POSTGRESQL_EDB_SUFFIX="1"
 # Windows-PG: der EDB-Installer (.exe) wird per direktem Link geladen UND
@@ -40,7 +40,7 @@ POSTGRESQL_EDB_SUFFIX="1"
 # (lokal 16.13 vs. Büro-Build-Maschine abweichend, beide ungeprüft) -> 1.10.0-
 # Windows war PG 16.13 statt 18. Beim PG-Bump diese SHA mitziehen (zur
 # POSTGRESQL_VERSION passende postgresql-<maj.min>-<suffix>-windows-x64.exe).
-PG_WINDOWS_SHA256="44b8187d2db7e866495952d8260a1d7252cbb5125843142e1f0bf30115d23279"  # postgresql-18.4-1-windows-x64.exe
+PG_WINDOWS_SHA256="cae561e98d09f3f4a1a95759249240f86f66d71dcf33d14b6f7be894078401d1"  # postgresql-18.6-1-windows-x64.exe
 NSSM_VERSION="2.24"
 
 # =============================================================================
@@ -113,6 +113,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${REPO_DIR}/build/release-${APP_VERSION}"
 DIST_DIR="${REPO_DIR}/dist"
+# Cache-Dateinamen tragen die Version (PG, Python+PBS-Tag): ein alter Blob darf
+# nach einem Versionssprung nicht per --skip-download still mitgepackt werden
+# (Release-Review 1.19.2: 18.4-Tarballs + OpenSSL-3.5.8-Python lagen noch im Cache).
 CACHE_DIR="${REPO_DIR}/build/cache"
 
 RED='\033[0;31m'
@@ -483,9 +486,9 @@ info "App-Dateien: $(du -sh "${BUILD_DIR}/common" | cut -f1)"
 step "3 — Binaries herunterladen"
 
 if [ "$BUILD_LINUX" = true ]; then
-    download "$PYTHON_LINUX_URL"  "${CACHE_DIR}/python-linux-x64.tar.gz"
+    download "$PYTHON_LINUX_URL"  "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-linux-x64.tar.gz"
     if ! download_with_sha "$PG_LINUX_URL" "$PG_LINUX_SHA_URL" \
-                           "${CACHE_DIR}/postgresql-linux-x64.tar.gz"; then
+                           "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-linux-x64.tar.gz"; then
         error "PostgreSQL-Tarball konnte nicht heruntergeladen werden."
         error "Primärquelle (theseus-rs): $PG_LINUX_URL"
         error ""
@@ -502,7 +505,7 @@ if [ "$BUILD_LINUX" = true ]; then
 fi
 
 if [ "$BUILD_WINDOWS" = true ]; then
-    download "$PYTHON_WINDOWS_URL" "${CACHE_DIR}/python-windows-x64.tar.gz"
+    download "$PYTHON_WINDOWS_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-windows-x64.tar.gz"
     download "$NSSM_URL"           "${CACHE_DIR}/nssm.zip"
     # nssm.zip gegen den gepinnten Hash pruefen — auch bei --skip-download/Cache-
     # Hit, da das eingebettete nssm.exe direkt aus dieser Datei stammt.
@@ -549,8 +552,8 @@ if [ "$BUILD_WINDOWS" = true ]; then
 fi
 
 if [ "$BUILD_MACOS" = true ]; then
-    download "$PYTHON_MACOS_X64_URL"   "${CACHE_DIR}/python-macos-x64.tar.gz"
-    download "$PYTHON_MACOS_ARM64_URL" "${CACHE_DIR}/python-macos-arm64.tar.gz"
+    download "$PYTHON_MACOS_X64_URL"   "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-x64.tar.gz"
+    download "$PYTHON_MACOS_ARM64_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-arm64.tar.gz"
     download "$GET_PIP_URL"            "${CACHE_DIR}/get-pip.py"
 
     # PG Tarballs (theseus-rs) — analog zum Linux-Pfad mit SHA256-Verify.
@@ -558,13 +561,13 @@ if [ "$BUILD_MACOS" = true ]; then
     # Download oder ein MITM haetten kommentarlos ein kaputtes Archiv in den
     # Build geschoben (1.5.0-Bug-Kontext). Jetzt: SHA256 enforced.
     if ! download_with_sha "$PG_MACOS_X64_URL" "$PG_MACOS_X64_SHA_URL" \
-                           "${CACHE_DIR}/postgresql-macos-x64.tar.gz"; then
+                           "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-x64.tar.gz"; then
         error "PostgreSQL-Tarball (macOS x64) konnte nicht heruntergeladen werden."
         error "Quelle (theseus-rs): $PG_MACOS_X64_URL"
         exit 1
     fi
     if ! download_with_sha "$PG_MACOS_ARM64_URL" "$PG_MACOS_ARM64_SHA_URL" \
-                           "${CACHE_DIR}/postgresql-macos-arm64.tar.gz"; then
+                           "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-arm64.tar.gz"; then
         error "PostgreSQL-Tarball (macOS arm64) konnte nicht heruntergeladen werden."
         error "Quelle (theseus-rs): $PG_MACOS_ARM64_URL"
         exit 1
@@ -595,7 +598,7 @@ if [ "$BUILD_LINUX" = true ]; then
 
     info "Entpacke Python ${PYTHON_VERSION} (Linux x64)..."
     mkdir -p "${LINUX_DIR}/bin/python"
-    tar xzf "${CACHE_DIR}/python-linux-x64.tar.gz" \
+    tar xzf "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-linux-x64.tar.gz" \
         -C "${LINUX_DIR}/bin/python" --strip-components=1
 
     info "Installiere pip-Dependencies..."
@@ -606,7 +609,7 @@ if [ "$BUILD_LINUX" = true ]; then
     info "PostgreSQL (Linux x64) — theseus-rs ${POSTGRESQL_VERSION}..."
     mkdir -p "${LINUX_DIR}/bin/postgresql"
     # theseus-Tarball-Layout: top-level postgresql-<ver>-<triple>/{bin,lib,share,include}
-    tar xzf "${CACHE_DIR}/postgresql-linux-x64.tar.gz" \
+    tar xzf "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-linux-x64.tar.gz" \
         -C "${LINUX_DIR}/bin/postgresql" --strip-components=1
     # Sanity: erwartete Pfade existieren. pg_dump/pg_ctl/pg_isready ergaenzt
     # (Review 2026-06-23): pg_dump braucht das #213-Backup, pg_ctl der Start/Stop,
@@ -685,7 +688,7 @@ if [ "$BUILD_WINDOWS" = true ]; then
 
     info "Entpacke Python ${PYTHON_VERSION} (Windows x64)..."
     mkdir -p "${WIN_DIR}/bin/python"
-    tar xzf "${CACHE_DIR}/python-windows-x64.tar.gz" \
+    tar xzf "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-windows-x64.tar.gz" \
         -C "${WIN_DIR}/bin/python" --strip-components=1
 
     cp "${CACHE_DIR}/get-pip.py" "${WIN_DIR}/bin/python/"
@@ -943,8 +946,8 @@ if [ "$BUILD_MACOS" = true ]; then
         info "macOS ${arch}: $(du -h "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz" | cut -f1)"
     }
 
-    _build_macos_arch "x64"   "${CACHE_DIR}/python-macos-x64.tar.gz"   "${CACHE_DIR}/postgresql-macos-x64.tar.gz"
-    _build_macos_arch "arm64" "${CACHE_DIR}/python-macos-arm64.tar.gz" "${CACHE_DIR}/postgresql-macos-arm64.tar.gz"
+    _build_macos_arch "x64"   "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-x64.tar.gz"   "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-x64.tar.gz"
+    _build_macos_arch "arm64" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-arm64.tar.gz" "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-arm64.tar.gz"
 else
     step "6 — macOS: uebersprungen"
 fi
@@ -1011,7 +1014,9 @@ Vor jedem Versions-Update die DB der laufenden (alten) Version sichern und nach
 dem Hochziehen der neuen Version wieder einspielen:
 
     bash backup.sh                                  # -> backups/praxiszeit_<ts>.sql.gz
-    # ... neue Version entpacken, .env + backups/ uebernehmen, Stack starten ...
+    # ... neue Version entpacken, .env + backups/ uebernehmen ...
+    docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
+    # ... Stack starten ...
     bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB einspielen
     docker compose up -d backend                    # Alembic-Migrationen -> Schema auf head
 
