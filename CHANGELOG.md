@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [1.19.2] - 2026-09-27
+## [1.19.2] - 2026-10-03
 
 Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte; **keine neue
 Migration** (head bleibt `071_security_events`).
