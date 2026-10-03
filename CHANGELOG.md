@@ -2,6 +2,78 @@
 
 ## [Unreleased]
 
+## [1.19.2] - 2026-10-03
+
+Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte; **keine neue
+Migration** (head bleibt `071_security_events`).
+
+### ✨ Verbesserungen
+- **Der Urlaubscountdown zählt auch bis zur nächsten Praxisschließung** (#476,
+  Wunsch aus der Praxis). Seit Betriebsferien bei aufgebrauchtem Urlaub als
+  Überstundenausgleich gebucht werden können, blieb die Kachel dann leer. Jetzt
+  zeigt sie „Noch X Tage bis zur Praxisschließung" mit Namen und Zeitraum —
+  egal, ob die Schließtage als Urlaub, Überstundenausgleich oder bezahlte
+  Freistellung gebucht sind. Liegt ein eigener Urlaub früher, zeigt sie diesen.
+  Maßgeblich sind die für die Person gebuchten Tage: Wer nicht teilnimmt, sieht
+  keinen Countdown; wer mitten in der Schließung ein- oder austritt, sieht nur
+  seinen Teil.
+
+### 🐞 Korrekturen
+- **Monatsjournal: Feiertage bei fester Monatsarbeitszeit ohne Zahlen**
+  (aus dem Bug-Tracker). Die Gutschrift stimmte in der Monatssumme, die
+  Tageszeile blendete an Feiertagen aber alle Werte aus. Jetzt stehen dort die
+  geplanten Stunden unter „Geplant" und „Ist", wie bei einem Urlaubstag.
+- **Monatsjournal: Arbeit an Wochenende und Feiertag erschien nur in der
+  Monatssumme** (#477, gemeldet auch in #479). Die Tageszeile zeigt jetzt Ist,
+  Saldo, Von–Bis und Pause solcher Einträge und beschriftet sie als
+  „Arbeitszeit".
+- **Monatsjournal: an Wochenend- und Feiertagen ließ sich nichts eintragen**
+  (#479, KV-Dienst am Sonntag). Die Zeile hatte dort keinen Knopf zum Anlegen
+  oder Bearbeiten — weder für Admins noch für Mitarbeitende. Jetzt legen Admins
+  den Eintrag direkt an, Mitarbeitende stellen über das „+" einen Antrag.
+  Abwesenheiten bucht der Admin-Direktweg an solchen Tagen weiterhin nicht; das
+  Journal bietet dort nur Arbeitszeit an und lehnt das Ändern einer bestehenden
+  Wochenend-Abwesenheit ab, bevor etwas gelöscht wird.
+- **Monatsjournal: Bearbeiten eines Zeiteintrags an einem Tag mit zusätzlicher
+  Abwesenheit** (z. B. halber Urlaubstag) legte den Eintrag doppelt an und
+  löschte die Abwesenheit. Jetzt wird nur der Zeiteintrag geändert.
+- **Monatsjournal: Lösch-Antrag** einer Mitarbeiterin bezog sich bei mehreren
+  Einträgen am Tag immer auf den ersten statt auf den bearbeiteten.
+
+### 📖 Dokumentation
+- Mitarbeiter-Handbuch und In-App-Hilfe beschreiben die Countdown-Kachel.
+- `UPDATE.md`: Das native Update beginnt jetzt mit einem frischen
+  Datenbank-Dump statt nur mit dem Verweis auf das nächtliche Backup.
+- Neu: `docs/WINDOWS-EMULATOR-TEST.md` (Windows-Test im Emulator).
+
+### 🔒 Abhängigkeiten
+- **PostgreSQL 18.4 → 18.6** in den nativen Paketen (Linux, macOS, Windows-
+  Neuinstallation). 18.6 schließt rund 30 CVEs. PraxisZeit nutzt keine der
+  Funktionen, die nach dem Update Nacharbeit verlangen (GIN-Indizes, pgcrypto,
+  logische Replikation, btree_gist/ltree). Kein Dump/Restore nötig. Eine bei
+  einem Windows-Update weiterverwendete PostgreSQL-Installation aktualisiert
+  der Installer nicht. **Docker:** vor dem Start `docker compose pull db`
+  ausführen — `up` allein nimmt das bereits vorhandene, ältere Image
+  (`UPDATE.md`, Paket-README und `deploy.sh` enthalten den Schritt jetzt).
+- **Gebündeltes Python:** CPython 3.13.15 → **3.13.16** (python-build-standalone
+  20261001; u. a. SSLContext-Use-after-free behoben) mit **OpenSSL 3.5.9**
+  (vorher 3.5.8), expat 2.8.5, xz 5.8.4.
+- **PyJWT 2.13 → 2.15** (13 Advisories, u. a. Algorithmus-Verwechslung und
+  JWKS-Abruf). PraxisZeit prüft Tokens mit genau einem festen Algorithmus
+  (HS256 bzw. EdDSA für die Lizenz) und ohne JWKS — die Lücken waren hier
+  nicht ausnutzbar; aktualisiert wird trotzdem.
+- **axios 1.19 → 1.20** im Frontend (mehrere Advisories zu Prototype-
+  Pollution-Gadgets und Header-Injection).
+- Docker-Basis-Images: `python:3.12.15-slim-bookworm` (vorher 3.12.13),
+  `nginx:1.31.6-alpine` (vorher 1.31.3).
+- Nur Entwicklung/Werkzeug: vitest/@vitest/mocker 4.1.11
+  (GHSA-82fw-gwwq-j7x9), undici 7.30, brace-expansion 5.0.12, js-yaml 5.4.2,
+  fast-uri 4.2.1; im Handbuch-Werkzeug puppeteer 25.12 (beseitigt
+  extract-zip, basic-ftp, proxy-agent, ip-address und js-yaml ganz).
+- Build: Die Download-Ablage für PostgreSQL und Python trägt jetzt die Version
+  im Dateinamen — ein Neubau mit `--skip-download` kann nach einem
+  Versionssprung kein altes Paket mehr still mitliefern.
+
 ## [1.19.1] - 2026-09-05
 
 Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte; **keine neue

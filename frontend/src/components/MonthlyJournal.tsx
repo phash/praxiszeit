@@ -118,6 +118,10 @@ const TYPE_LABELS: Record<string, string> = {
   mixed: 'Arbeitszeit',
 };
 
+const NON_WORK_DAY_ABSENCE_MSG =
+  'An Wochenend- und Feiertagen lässt sich hier nur Arbeitszeit eintragen. '
+  + 'Eine Abwesenheit an diesem Tag kann nur gelöscht werden.';
+
 const TYPE_COLORS: Record<string, string> = {
   work: 'text-gray-900',
   vacation: 'text-blue-600',
@@ -282,6 +286,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   }
 
   async function handleAdminAdd(dateStr: string, day?: JournalDay) {
+    if (day && isNonWorkDay(day) && editState.entryType !== 'work') {
+      toast.error(NON_WORK_DAY_ABSENCE_MSG);
+      return;
+    }
     setSaving(true);
     try {
       if (editState.entryType === 'work') {
@@ -356,8 +364,18 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     const hadTimeEntry = day.time_entries.length > 0;
     const hadAbsence = day.absences.length > 0;
     const switchingToAbsence = hadTimeEntry && editState.entryType !== 'work';
-    const switchingToWork = hadAbsence && editState.entryType === 'work';
+    // Nur ein Bearbeiten, das bei der Abwesenheit begann, ist ein Wechsel
+    // Abwesenheit -> Arbeit. Auf einem Misch-Tag wird sonst der bearbeitete
+    // Zeiteintrag doppelt angelegt und die Abwesenheit geloescht (Release-Review 1.19.2).
+    const switchingToWork = hadAbsence && editState.entryType === 'work' && !editingEntryId;
     const editedEntry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
+
+    // Vor jedem Loeschen: an Wochenend-/Feiertagen bucht der Server keine
+    // Abwesenheit (#479) — der Versuch haette den alten Eintrag vorab geloescht.
+    if (isNonWorkDay(day) && editState.entryType !== 'work') {
+      toast.error(NON_WORK_DAY_ABSENCE_MSG);
+      return;
+    }
 
     // (1) Pflichtfeld-Prüfung VOR jedem schreibenden Aufruf.
     if (editState.entryType === 'work' && (!editState.startTime || !editState.endTime)) {
@@ -522,7 +540,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   }
 
   function handleEmployeeDelete(day: JournalDay) {
-    const entry = day.time_entries?.[0];
+    const entry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
     if (!entry) return;
     confirm({
       title: 'Lösch-Antrag stellen',
@@ -611,6 +629,22 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                   // stehen sie in der Monatssumme, aber an keinem Tag
                   // (Tracker 2d75bbe4). Nur eine wirklich leere Zeile bleibt leer.
                   const hideHours = isGray && day.actual_hours === 0 && day.target_hours === 0;
+                  // Dasselbe fuer Von–Bis/Pause: ein Eintrag am Samstag/Feiertag zeigt
+                  // seine Uhrzeiten, sonst stuende die Stundenzahl ohne Beleg da.
+                  // Beim Anlegen braucht auch die leere graue Zeile die Eingabefelder (#479).
+                  const hideEntries = isGray && day.time_entries.length === 0 && editingDate !== day.date;
+                  // Der Server liefert am Wochenende immer type 'weekend', auch wenn
+                  // dort gearbeitet wurde — die Beschriftung richtet sich nach dem Inhalt (#479).
+                  const labelType: string = day.type !== 'weekend'
+                    ? day.type
+                    : day.time_entries.length > 0 && day.absences.length > 0
+                    ? 'mixed'
+                    : day.time_entries.length > 0
+                    ? 'work'
+                    : day.absences[0]?.type ?? 'weekend';
+                  // Abwesenheitstypen nur dort anbieten, wo der Admin-Direktweg sie
+                  // buchen kann; eine bestehende Abwesenheit bleibt sichtbar (#479).
+                  const absenceTypesOffered = !isGray || editState.entryType !== 'work';
 
                   const rowClass = isGray
                     ? 'bg-gray-50 text-gray-400'
@@ -650,11 +684,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               className="border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                             >
                               <option value="work">Arbeit</option>
+                              {absenceTypesOffered && (<>
                               <option value="sick">Krank</option>
                               <option value="training">Fortbildung</option>
                               <option value="overtime">ÜSt-Ausgleich</option>
                               <option value="other">Sonstiges</option>
-                              {reasons.length > 0 && (
+                              </>)}
+                              {absenceTypesOffered && reasons.length > 0 && (
                                 <optgroup label="Eigene Gründe">
                                   {reasons.map(r => (
                                     <option key={r.id} value={`reason:${r.id}`}>{r.name}</option>
@@ -666,7 +702,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <>
                               {day.is_holiday && day.holiday_name
                                 ? day.holiday_name
-                                : (day.time_entries.length > 1 || day.type === 'mixed') ? (
+                                : (day.time_entries.length > 1 || labelType === 'mixed') ? (
                                   <div className="space-y-0.5">
                                     {day.time_entries.map((_, i) => (
                                       <div key={`w${i}`} className="text-gray-900">Arbeitszeit</div>
@@ -677,12 +713,12 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                       </div>
                                     ))}
                                   </div>
-                                ) : TYPE_LABELS[day.type] ?? day.type}
+                                ) : TYPE_LABELS[labelType] ?? labelType}
                             </>
                           )}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-gray-600 whitespace-nowrap">
-                          {isGray ? '–' : editingDate === day.date ? (
+                          {hideEntries ? '–' : editingDate === day.date ? (
                             editState.entryType === 'work' ? (
                               <div className="flex items-center gap-1">
                                 <input
@@ -711,7 +747,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 placeholder="Stunden"
                               />
                             )
-                          ) : day.time_entries.length > 0 || (day.type === 'mixed' && day.absences.length > 0) ? (
+                          ) : day.time_entries.length > 0 || (labelType === 'mixed' && day.absences.length > 0) ? (
                             <div className="space-y-0.5">
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
@@ -720,7 +756,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                   <RawStampNote raw={e.raw_end_time} effective={e.end_time} side="end" className="text-xs text-gray-500" />
                                 </div>
                               ))}
-                              {day.type === 'mixed' && day.absences.map((a, i) => (
+                              {labelType === 'mixed' && day.absences.map((a, i) => (
                                 <div key={`a${i}`} className="text-gray-400">
                                   {a.start_time && a.end_time
                                     ? `${a.start_time}–${a.end_time}`
@@ -741,7 +777,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : '–'}
                         </td>
                         <td className="px-3 py-2 hidden md:table-cell text-right text-gray-500">
-                          {isGray ? '' : editingDate === day.date && editState.entryType === 'work' ? (
+                          {hideEntries ? '' : editingDate === day.date && editState.entryType === 'work' ? (
                             <input
                               type="number"
                               inputMode="numeric"
@@ -751,14 +787,14 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               onChange={(e) => setEditState(s => ({ ...s, breakMinutes: e.target.value }))}
                               className="w-16 border border-gray-300 rounded-sm px-1 py-0.5 text-sm text-right"
                             />
-                          ) : editingDate === day.date ? '' : day.time_entries.length > 0 || (day.type === 'mixed' && day.absences.length > 0) ? (
+                          ) : editingDate === day.date ? '' : day.time_entries.length > 0 || (labelType === 'mixed' && day.absences.length > 0) ? (
                             <div className="space-y-0.5">
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
                                   {e.break_minutes > 0 ? `${e.break_minutes} min` : '–'}
                                 </div>
                               ))}
-                              {day.type === 'mixed' && day.absences.map((_, i) => (
+                              {labelType === 'mixed' && day.absences.map((_, i) => (
                                 <div key={`a${i}`}>–</div>
                               ))}
                             </div>
@@ -805,7 +841,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 </button>
                               )}
                             </div>
-                          ) : !isGray && (isAdminView ? !isFutureDay(day.date) : isPastDay(day.date)) ? (
+                          ) : (isAdminView ? !isFutureDay(day.date) : isPastDay(day.date)) ? (
+                            // Auch an Wochenend-/Feiertagen: KV-Dienst, Samstagssprechstunde (#479).
                             <div className="flex flex-col items-end">
                               {(day.time_entries.length > 0 || day.absences.length > 0) ? (
                                 <div className="space-y-0.5">
@@ -875,11 +912,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               className="border border-gray-300 rounded-sm px-1 py-0.5 text-sm"
                             >
                               <option value="work">Arbeit</option>
+                              {absenceTypesOffered && (<>
                               <option value="sick">Krank</option>
                               <option value="training">Fortbildung</option>
                               <option value="overtime">ÜSt-Ausgleich</option>
                               <option value="other">Sonstiges</option>
-                              {reasons.length > 0 && (
+                              </>)}
+                              {absenceTypesOffered && reasons.length > 0 && (
                                 <optgroup label="Eigene Gründe">
                                   {reasons.map(r => (
                                     <option key={r.id} value={`reason:${r.id}`}>{r.name}</option>

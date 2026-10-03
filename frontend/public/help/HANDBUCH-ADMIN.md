@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.7 | Stand: August 2026 (für PraxisZeit 1.18.2)**
+**Version 2.7 | Stand: September 2026 (für PraxisZeit 1.19.2)**
 
 ---
 
@@ -147,7 +147,7 @@ Die Liste zeigt alle aktiven Mitarbeiter mit:
 
 **Filter:** Aktivieren Sie **„Inaktive anzeigen"** oder **„Ausgeblendete anzeigen"** um deaktivierte Mitarbeiter einzublenden.
 
-**Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird.
+**Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird. Einträge können Sie dort **auch an Wochenend- und Feiertagen** anlegen und bearbeiten (seit 1.19.2, z. B. KV-Dienst am Sonntag); Mitarbeitende stellen dafür im eigenen Journal einen Antrag.
 
 **„Login als …" – Ansicht als Mitarbeiter:in (#370):** Über das Anmelde-Symbol in der Aktionsspalte (nur bei **aktiven Mitarbeitenden**, nicht bei Admins) öffnen Sie die Anwendung aus der Perspektive dieser Person – praktisch, um das individuelle Dashboard zu beurteilen oder ein gemeldetes Problem nachzustellen. Die Ansicht ist **ausschließlich lesend**: Stempeln, Anträge stellen und jegliche Änderungen sind gesperrt (der Server weist Schreibversuche ab). Ein dauerhaftes Hinweisbanner am oberen Rand zeigt **„Sie sehen PraxisZeit als … – nur Lesen"**; über **„Zurück zu Admin"** kehren Sie jederzeit zu Ihrem eigenen Konto zurück.
 
@@ -864,7 +864,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.18.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.19.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -1139,4 +1139,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: August 2026 (für PraxisZeit 1.18.2)*
+*Stand: September 2026 (für PraxisZeit 1.19.2)*

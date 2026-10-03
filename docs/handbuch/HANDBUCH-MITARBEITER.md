@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.6 · **Stand:** August 2026 (PraxisZeit 1.18.2)
+**Version:** 2.7 · **Stand:** September 2026 (PraxisZeit 1.19.2)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -64,6 +64,7 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 | **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats (H:MM) |
 | **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
+| **Urlaubscountdown** | Tage bis zu Ihrem nächsten Urlaub oder zur nächsten Praxisschließung, an der Sie teilnehmen – das frühere Datum zählt |
 
 > **Monatssaldo nur bis zum letzten Arbeitstag:** Im **laufenden** Monat wird das Soll nur bis zum **letzten abgeschlossenen Arbeitstag** gezählt – Sie starten den Monat also **nicht** mit einem dicken Minus, sondern der Saldo baut sich Tag für Tag auf. Der heutige Tag zählt mit, sobald Sie **ausgestempelt** haben. Für **abgeschlossene** Monate entspricht der Saldo wie gewohnt dem vollen Monat. Das **Überstundenkonto** übernimmt für den laufenden Monat denselben Stichtag – auch hier entsteht am Monatsanfang kein künstliches Minus.
 
@@ -592,6 +593,9 @@ A: Navigieren Sie zu **Zeiterfassung → Tab „Einträge"**, suchen Sie den bet
 **F: Was passiert bei Sonntagsarbeit?**
 A: Sonntagsarbeit wird markiert. Als Ausgleich steht Ihnen gem. [§ 11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html) ein Ersatzruhetag zu (innerhalb von 2 Wochen).
 
+**F: Wie trage ich Arbeit am Wochenende oder Feiertag ein (z. B. KV-Dienst)?**
+A: **Am selben Tag** stempeln Sie ganz normal oder legen unter **Zeiterfassung → Tab „Einträge" → + Neuer Eintrag** einen Eintrag an; an einem Sonntag erscheint dort zusätzlich das Feld **Ausnahmegrund** (z. B. „Notdienst"). **Nachträglich** stellen Sie einen Antrag: entweder über den Button **Antrag** im Tab „Einträge" oder im **Journal** über das **+** in der Zeile des Tages (seit Version 1.19.2 auch an Wochenend- und Feiertagen). Nach der Genehmigung zählen die Stunden zum Ist; da das Soll an diesen Tagen 0 ist, erhöhen die angerechneten Stunden Ihren Saldo.
+
 **F: Ich habe mein Passwort vergessen.**
 A: Wenden Sie sich an Ihren Administrator. Er kann Ihr Passwort zurücksetzen.
 
@@ -650,4 +654,4 @@ legt Ihr Administrator fest.
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.6 | August 2026 (PraxisZeit 1.18.2)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.7 | September 2026 (PraxisZeit 1.19.2)*

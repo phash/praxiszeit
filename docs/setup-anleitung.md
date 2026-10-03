@@ -245,7 +245,7 @@ Das Script läuft **nicht-interaktiv** und erledigt automatisch:
 
 1. **PostgreSQL-Erkennung:** Sucht in Registry + `%ProgramFiles%\PostgreSQL\{14..18}` nach bestehender Installation
    - Major ≥ 16 vorhanden → wird per `mklink /J` ins Bundle-Verzeichnis verlinkt
-   - Sonst: still installiert PostgreSQL 18.4 aus dem EDB-Installer mit zufälligem 32-Zeichen-Initialpasswort (wird sofort danach durch ein `secrets.token_hex(32)`-generiertes Passwort ersetzt)
+   - Sonst: still installiert PostgreSQL 18.6 aus dem EDB-Installer mit zufälligem 32-Zeichen-Initialpasswort (wird sofort danach durch ein `secrets.token_hex(32)`-generiertes Passwort ersetzt)
 2. **Python-Setup:** Bootstrap von `pip`, Installation aller Abhängigkeiten aus `requirements.txt`
 3. **Konfigurationsdatei:** Kopiert `config\praxiszeit.conf.example` nach `config\praxiszeit.conf` (falls nicht vorhanden)
 

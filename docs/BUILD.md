@@ -15,9 +15,9 @@ Footguns, die in der Praxis zugeschlagen haben.
 
 | Artefakt | Inhalt | DB |
 |---|---|---|
-| `praxiszeit-<v>-linux-x64.tar.gz` | Nativer Installer + Python + PostgreSQL (flach entpackt) | theseus-rs PG **18.4** |
-| `praxiszeit-<v>-macos-x64/arm64.tar.gz` | Nativer Installer (Intel / Apple Silicon) | theseus-rs PG **18.4** |
-| `praxiszeit-<v>-windows-x64.zip` | `.bat`-Installer-Baum (setup.bat-Fallback) | EDB-Installer PG **18.4** |
+| `praxiszeit-<v>-linux-x64.tar.gz` | Nativer Installer + Python + PostgreSQL (flach entpackt) | theseus-rs PG **18.6** |
+| `praxiszeit-<v>-macos-x64/arm64.tar.gz` | Nativer Installer (Intel / Apple Silicon) | theseus-rs PG **18.6** |
+| `praxiszeit-<v>-windows-x64.zip` | `.bat`-Installer-Baum (setup.bat-Fallback) | EDB-Installer PG **18.6** |
 | `praxiszeit-<v>-setup-windows-x64.exe` | Avalonia-GUI-Single-File-Installer (#81) | (bettet das Paket ein) |
 | `praxiszeit-<v>-docker.tar.gz` | compose + Build-Kontext + backup/restore/update-pg-major | `postgres:18-alpine` |
 
@@ -101,7 +101,7 @@ am Ende ist **kosmetisch** (letztes `$BUILD_LINUX && cat <<EOF` liefert 1 bei fa
 ## 6. Pro-OS-Details + Footguns
 
 ### Linux (x64 + arm64)
-- **PostgreSQL = `theseus-rs` 18.4.0** (manylinux, glibc-2.34-portabel: Ubuntu 22.04+/
+- **PostgreSQL = `theseus-rs` 18.6.0** (manylinux, glibc-2.34-portabel: Ubuntu 22.04+/
   Debian 12+/RHEL·Rocky·Alma 9+/Fedora 35+). Download SHA256-verifiziert. Der Build
   **bricht ab**, wenn die Binaries glibc-Symbole **> 2.34** brauchen.
 - `libxml2.so.2` wird mitgebündelt (Rolling-Distros wie Arch liefern nur `.so.16`, #177).
@@ -111,7 +111,7 @@ am Ende ist **kosmetisch** (letztes `$BUILD_LINUX && cat <<EOF` liefert 1 bei fa
   **keinen echten Login**. Nach Dep-Bumps zusätzlich realen Login prüfen.
 
 ### Windows (x64) — der größte Footgun-Garten
-- **PostgreSQL = EDB-Installer (`postgresql-installer.exe`, PG 18.4)** — NICHT theseus.
+- **PostgreSQL = EDB-Installer (`postgresql-installer.exe`, PG 18.6)** — NICHT theseus.
 - ⚠️ **PG-Installer ist SHA256-gepinnt (`PG_WINDOWS_SHA256` in build-release.sh) +
   wird per direktem EDB-Link auto-geladen + verifiziert.** Früher griff der Build blind
   die erste `~/Downloads/postgresql-*-windows-x64.exe` → **jede Maschine bundelte still
@@ -134,7 +134,7 @@ am Ende ist **kosmetisch** (letztes `$BUILD_LINUX && cat <<EOF` liefert 1 bei fa
 - Git Bash on Windows: `rsync`/`zip` fehlen → `tar`/PowerShell-`Compress-Archive`-Fallbacks.
 
 ### macOS (Intel + Apple Silicon)
-- **PostgreSQL = theseus-rs 18.4** (EDB-DMG seit #125 raus). Downloads SHA256- **und**
+- **PostgreSQL = theseus-rs 18.6** (EDB-DMG seit #125 raus). Downloads SHA256- **und**
   per `file(1)` als **Mach-O** geprüft.
 - ⚠️ **`validate-macos.yml` läuft auf dem Privat-Repo NIE** (Runs bleiben `queued`, kein
   Runner). macOS-Release stützt sich auf die lokale Mach-O-`file`-Prüfung im Build,
@@ -194,4 +194,4 @@ for f in praxiszeit-X.Y.Z-*.{tar.gz,zip,exe}; do sha256sum "$f" > "checksum_$f";
 - `validate-macos.yml` läuft nie (Privat-Repo) → lokale Mach-O-Prüfung ist der Gate.
 
 ---
-*Stand: 1.10.1 (PostgreSQL 18.4 auf allen Plattformen).*
+*Stand: 1.19.2 (PostgreSQL 18.6 auf allen Plattformen).*

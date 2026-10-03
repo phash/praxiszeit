@@ -1,8 +1,8 @@
 # F-061: base image pinned to a specific patch release (not :3.12 or
 # :3.12-slim). Bumping happens deliberately via Renovate/Dependabot, not
 # via `docker pull`. Matched digest from Docker Hub:
-#   python:3.12.13-slim-bookworm
-#   sha256:58525e1a8dada8e72d6f8a11a0ddff8d981fd888549108db52455d577f927f77
+#   python:3.12.15-slim-bookworm
+#   sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3
 #
 # F-038: Multi-stage build.
 #
@@ -17,7 +17,7 @@
 # postgresql-client. It was only needed at build time for compiling
 # psycopg2 from source (not done since we use -binary).
 
-FROM python:3.12.13-slim-bookworm AS builder
+FROM python:3.12.15-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -35,7 +35,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 
 # ─────────────────────────────────────────────────────────────────────────
-FROM python:3.12.13-slim-bookworm AS runtime
+FROM python:3.12.15-slim-bookworm AS runtime
 
 WORKDIR /app
 

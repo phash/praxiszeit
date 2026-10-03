@@ -17,7 +17,7 @@ uvicorn[standard]==0.52.*
 sqlalchemy==2.0.*
 alembic==1.18.*
 psycopg2-binary==2.9.*
-PyJWT[crypto]==2.13.*
+PyJWT[crypto]==2.15.*
 # VULN-014 resolved: removed passlib (unmaintained, incompatible with bcrypt 5).
 # auth_service.py implements bcrypt_sha256 directly against PyCA bcrypt — the
 # wire format is identical to passlib 1.7.4's v=2 protocol so existing DB hashes

@@ -59,8 +59,9 @@ bash ssl/generate-cert.sh
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```
 
-Updates: `git pull && docker compose up -d --build` (bei aktivem SSL-Overlay
-beide `-f`-Dateien angeben).
+Updates: `git pull && docker compose pull db && docker compose up -d --build`
+(bei aktivem SSL-Overlay beide `-f`-Dateien angeben). `pull db` holt den neuesten
+PostgreSQL-18-Patchstand — `up` allein nimmt das bereits vorhandene Image.
 
 ---
 

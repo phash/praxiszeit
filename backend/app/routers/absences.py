@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month, parse_year_month
@@ -282,10 +283,23 @@ def get_next_vacation(
 
     if next_closure_row and (not next_vacation or next_closure_row[0].date <= next_vacation.date):
         closure_absence, closure = next_closure_row
-        start = max(closure.start_date, today)
+        # Release-Review 1.19.2: die Spanne kommt aus den GEBUCHTEN Tagen der
+        # Person, nicht aus closure.start_date/end_date — sonst zaehlte eine im
+        # Oktober eintretende Person bis zum Schliessungsbeginn davor, und wer
+        # mitten in der Schliessung austritt, saehe deren volles Ende.
+        first_booked, last_booked = db.query(
+            func.min(Absence.date), func.max(Absence.date)
+        ).filter(
+            Absence.tenant_id == current_user.tenant_id,  # F-026
+            Absence.user_id == current_user.id,
+            Absence.closure_id == closure.id,
+        ).one()
+        # Hat die Schliessung fuer die Person schon begonnen (auch wenn heute
+        # ein Wochenende dazwischen liegt), zaehlt sie ab heute.
+        start = today if first_booked <= today else closure_absence.date
         return NextVacationResponse(
             date=start,
-            end_date=closure.end_date,
+            end_date=last_booked,
             days_until=(start - today).days,
             kind="closure",
             closure_name=closure.name,
