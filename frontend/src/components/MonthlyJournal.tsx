@@ -613,7 +613,17 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                   const hideHours = isGray && day.actual_hours === 0 && day.target_hours === 0;
                   // Dasselbe fuer Von–Bis/Pause: ein Eintrag am Samstag/Feiertag zeigt
                   // seine Uhrzeiten, sonst stuende die Stundenzahl ohne Beleg da.
-                  const hideEntries = isGray && day.time_entries.length === 0;
+                  // Beim Anlegen braucht auch die leere graue Zeile die Eingabefelder (#479).
+                  const hideEntries = isGray && day.time_entries.length === 0 && editingDate !== day.date;
+                  // Der Server liefert am Wochenende immer type 'weekend', auch wenn
+                  // dort gearbeitet wurde — die Beschriftung richtet sich nach dem Inhalt (#479).
+                  const labelType: string = day.type !== 'weekend'
+                    ? day.type
+                    : day.time_entries.length > 0 && day.absences.length > 0
+                    ? 'mixed'
+                    : day.time_entries.length > 0
+                    ? 'work'
+                    : day.absences[0]?.type ?? 'weekend';
 
                   const rowClass = isGray
                     ? 'bg-gray-50 text-gray-400'
@@ -669,7 +679,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                             <>
                               {day.is_holiday && day.holiday_name
                                 ? day.holiday_name
-                                : (day.time_entries.length > 1 || day.type === 'mixed') ? (
+                                : (day.time_entries.length > 1 || labelType === 'mixed') ? (
                                   <div className="space-y-0.5">
                                     {day.time_entries.map((_, i) => (
                                       <div key={`w${i}`} className="text-gray-900">Arbeitszeit</div>
@@ -680,7 +690,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                       </div>
                                     ))}
                                   </div>
-                                ) : TYPE_LABELS[day.type] ?? day.type}
+                                ) : TYPE_LABELS[labelType] ?? labelType}
                             </>
                           )}
                         </td>
@@ -808,7 +818,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 </button>
                               )}
                             </div>
-                          ) : !isGray && (isAdminView ? !isFutureDay(day.date) : isPastDay(day.date)) ? (
+                          ) : (isAdminView ? !isFutureDay(day.date) : isPastDay(day.date)) ? (
+                            // Auch an Wochenend-/Feiertagen: KV-Dienst, Samstagssprechstunde (#479).
                             <div className="flex flex-col items-end">
                               {(day.time_entries.length > 0 || day.absences.length > 0) ? (
                                 <div className="space-y-0.5">

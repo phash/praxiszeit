@@ -312,6 +312,96 @@ describe('<MonthlyJournal /> Stunden an Wochenend-/Feiertagen', () => {
     expect(cellText(row, 'Von–Bis')).toBe('08:00–11:30');
     expect(cellText(row, 'Pause')).toBe('30 min');
   });
+
+  it('beschriftet den Samstagseintrag als "Arbeitszeit" (#479)', async () => {
+    const saturday = {
+      ...validDay, date: '2026-06-06', weekday: 'Sa', type: 'weekend' as const,
+      time_entries: [{ id: 'e1', start_time: '08:00', end_time: '11:30', break_minutes: 30, net_hours: 3 }],
+      actual_hours: 3, target_hours: 0, balance: 3,
+    };
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [saturday] } });
+    render(<MonthlyJournal />);
+
+    await screen.findByRole('columnheader', { name: 'Saldo' });
+    expect(cellText(screen.getAllByRole('row')[1], 'Typ')).toBe('Arbeitszeit');
+  });
+});
+
+// #479: KV-Dienst am Sonntag. Die Aktionsspalte war an Wochenend- und
+// Feiertagen gesperrt (`!isGray`) — weder die Admin noch die Mitarbeiterin
+// konnten dort im Journal etwas eintragen, obwohl das Backend Wochenendarbeit
+// annimmt (Admin direkt, MA per Aenderungsantrag).
+describe('<MonthlyJournal /> Eintragen an Wochenend-/Feiertagen (#479)', () => {
+  const sunday = {
+    ...validDay, date: '2026-06-07', weekday: 'So', type: 'weekend' as const,
+    actual_hours: 0, target_hours: 0, balance: 0,
+  };
+  const holiday = {
+    ...validDay, date: '2026-06-04', weekday: 'Do', type: 'holiday' as const,
+    is_holiday: true, holiday_name: 'Fronleichnam',
+    actual_hours: 0, target_hours: 0, balance: 0,
+  };
+
+  it('Admin kann am vergangenen Sonntag einen Eintrag hinzufuegen', async () => {
+    mockJournal([sunday]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(await screen.findByTitle('Weiteren Eintrag hinzufügen')).toBeInTheDocument();
+  });
+
+  it('Admin kann am vergangenen Feiertag einen Eintrag hinzufuegen', async () => {
+    mockJournal([holiday]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(await screen.findByTitle('Weiteren Eintrag hinzufügen')).toBeInTheDocument();
+  });
+
+  it('Admin kann einen bestehenden Sonntagseintrag bearbeiten', async () => {
+    mockJournal([{
+      ...sunday,
+      time_entries: [{ id: 'e1', start_time: '09:00', end_time: '16:00', break_minutes: 0, net_hours: 7 }],
+      actual_hours: 7, balance: 7,
+    }]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(await screen.findByTitle('09:00–16:00 bearbeiten')).toBeInTheDocument();
+  });
+
+  it('Mitarbeiterin kann fuer den vergangenen Sonntag einen Antrag anlegen', async () => {
+    mockJournal([sunday]);
+    render(<MonthlyJournal />);
+    expect(await screen.findByTitle('Eintrag anlegen')).toBeInTheDocument();
+  });
+
+  it('Mitarbeiterin reicht den Sonntagsdienst als Aenderungsantrag ein', async () => {
+    mockJournal([sunday]);
+    postMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('Eintrag anlegen'));
+
+    // Von/Bis muessen auch in einer grauen Zeile ohne Eintrag erscheinen.
+    const [von, bis] = Array.from(container.querySelectorAll('input[type="time"]'));
+    expect(von).toBeDefined();
+    fireEvent.change(von, { target: { value: '09:00' } });
+    fireEvent.change(bis, { target: { value: '16:00' } });
+    fireEvent.click(screen.getByTitle('Speichern'));
+    fireEvent.change(screen.getByPlaceholderText('Begründung eingeben (Pflicht)'), {
+      target: { value: 'KV-Dienst' },
+    });
+    fireEvent.click(screen.getByText('Absenden'));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
+      request_type: 'create',
+      entry_kind: 'time_entry',
+      proposed_date: '2026-06-07',
+      proposed_start_time: '09:00',
+      proposed_end_time: '16:00',
+    })));
+  });
+
+  it('ein kuenftiger Sonntag bleibt ohne Aktion', async () => {
+    mockJournal([{ ...sunday, date: '2099-06-07' }]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByRole('columnheader', { name: 'Saldo' });
+    expect(screen.queryByTitle('Weiteren Eintrag hinzufügen')).toBeNull();
+  });
 });
 
 describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {

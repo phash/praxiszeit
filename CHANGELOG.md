@@ -24,8 +24,12 @@ Migration** (head bleibt `071_security_events`).
   Tageszeile blendete an Feiertagen aber alle Werte aus. Jetzt stehen dort die
   geplanten Stunden unter „Geplant" und „Ist", wie bei einem Urlaubstag.
 - **Monatsjournal: Arbeit an Wochenende und Feiertag erschien nur in der
-  Monatssumme.** Die Tageszeile zeigt jetzt Ist, Saldo, Von–Bis und Pause
-  solcher Einträge.
+  Monatssumme** (#479). Die Tageszeile zeigt jetzt Ist, Saldo, Von–Bis und Pause
+  solcher Einträge und beschriftet sie als „Arbeitszeit".
+- **Monatsjournal: an Wochenend- und Feiertagen ließ sich nichts eintragen**
+  (#479, KV-Dienst am Sonntag). Die Zeile hatte dort keinen Knopf zum Anlegen
+  oder Bearbeiten — weder für Admins noch für Mitarbeitende. Jetzt legen Admins
+  den Eintrag direkt an, Mitarbeitende stellen über das „+" einen Antrag.
 
 ### 📖 Dokumentation
 - Mitarbeiter-Handbuch und In-App-Hilfe beschreiben die Countdown-Kachel.
