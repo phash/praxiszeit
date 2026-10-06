@@ -59,7 +59,7 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 → ⚠️ Arbeitstage-only-Änderung (gleiche Wochenstunden, andere Arbeitstage): Berichtstext nennt bei „Gleichmäßig" zwar die neue Arbeitstage-Zahl dazu (z. B. „… auf 4 Arbeitstage"), die Wochenstundenzahl selbst bleibt aber gleich – das Tagessoll verschiebt sich trotzdem still; bei „Nach Tagen" ändert sich stattdessen nur der Urlaubsverbrauch – immer die Vorschau prüfen, nicht nur die Wochenstundenzahl
 
 ### Mitarbeiter deaktivieren (niemals löschen!)
-**Benutzer öffnen** → Status „Inaktiv"
+Benutzerliste → Aktionsspalte → **„Deaktivieren"** (Person mit X); das **letzte aktive Admin-Konto** ist nicht deaktivierbar
 → Daten 2 Jahre aufbewahren (§16 ArbZG)
 
 ### DSGVO: Anonymisierung & endgültige Löschung (Art. 17)
