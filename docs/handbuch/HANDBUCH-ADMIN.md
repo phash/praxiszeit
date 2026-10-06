@@ -1012,27 +1012,41 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 
 ---
 
-## 20. Admin-Passwort verloren (nur native Installation)
+## 20. Admin-Passwort verloren
 
-Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando **auf dem Server selbst** — es setzt das Passwort direkt in der Datenbank neu und braucht dafür keine Anmeldung:
+Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando **auf dem Server selbst** — es setzt das Passwort direkt in der Datenbank neu und braucht dafür keine Anmeldung.
+
+**Linux** (Standard-Installationsordner `/opt/praxiszeit`):
 
 ```
-sudo praxiszeit-server.py reset-admin-password
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py reset-admin-password
 ```
+
+**Windows** (Eingabeaufforderung **als Administrator** im Installationsordner, z. B. `C:\PraxisZeit`):
+
+```
+bin\python\python.exe praxiszeit-server.py reset-admin-password
+```
+
+Die lange Form ist nötig: `praxiszeit-server.py` liegt nicht im Suchpfad, und die Programmbibliotheken stecken nur im mitgelieferten Python unter `bin/python`. Ein kurzes `sudo praxiszeit-server.py …` (so stand es bis Version 1.19.2 hier) scheitert schon an der Kommandozeile.
 
 Das Kommando fragt das neue Passwort zweimal ab (es wird nicht mit eingetippt, damit es nicht in der Befehls-Historie landet) und prüft dieselben Regeln wie die Anwendung: mindestens 10 Zeichen, Groß- und Kleinbuchstabe, Ziffer. Danach sind **alle laufenden Sitzungen dieses Kontos ungültig** — wer damit angemeldet war, muss sich neu anmelden.
 
 **Ist auch das Handy mit der Zwei-Faktor-Anmeldung weg**, reicht das neue Passwort nicht: der Login fragt weiterhin nach einem Code. Dann zusätzlich:
 
 ```
-sudo praxiszeit-server.py reset-admin-password --disable-2fa
+… reset-admin-password --disable-2fa
 ```
+
+(dieselbe Befehlszeile wie oben, mit `--disable-2fa` am Ende)
 
 Danach im Profil eine neue Zwei-Faktor-Anmeldung einrichten.
 
 Betrifft es ein anderes Konto als `admin`, geben Sie den Benutzernamen mit an: `--username <name>`.
 
 **Was dabei protokolliert wird:** Jeder solche Vorgang wird mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat, dauerhaft festgehalten (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Ein Passwort-Reset ist also kein stiller Vorgang.
+
+> **Vorher prüfen — ist das Passwort wirklich falsch?** Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der E-Mail-Adresse; Passwortmanager setzen gern die E-Mail ein. Nach **5 Fehlversuchen in 15 Minuten** sperrt PraxisZeit den Benutzer vorübergehend („Konto vorübergehend gesperrt") — dann hilft Warten oder ein Neustart des Dienstes. Welcher Fall vorliegt, steht im Protokoll des Servers: `AUTH login_failed user=<name> reason=unknown_user` (Benutzername unbekannt oder Konto deaktiviert) bzw. `reason=bad_password` (Passwort falsch).
 
 > **Docker-Installation:** Dasselbe Werkzeug steckt auch im Backend-Abbild — dort lautet der Befehl `docker compose exec backend python -m app.cli.reset_admin_password` (mit `--username <name>` bzw. `--disable-2fa` wie oben). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen: dabei entfiele die Protokollzeile.
 
