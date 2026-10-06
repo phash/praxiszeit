@@ -47,6 +47,7 @@ Pro MA je Wochentag (Mo–Fr) optionaler **Soll-Beginn / Soll-Ende** (Bereich �
 - **Rohstempel bleibt erhalten** (§16) – Salden/Überstunden rechnen mit der gekappten Zeit.
 - **Puffer global:** Einstellungen → „Soll-Arbeitszeit-Fenster" → „Puffer (Min.)", Default **15**.
 - **Opt-in:** ohne gesetzte Soll-Zeiten kein Verhaltenswechsel. Übersprungen bei Mitarbeitern ohne Stundenzählung; §18-MA werden **trotzdem** gekappt (reine Anwesenheits-Policy).
+- **Kein Fenster** an Wochenenden, Feiertagen und „freien" Sondertagen (24./31.12.) — dort wird nicht gekappt. „Halber Feiertag" behält das Fenster.
 - Greift an allen Schreibpfaden (Stempeln, manuell, Admin-Korrektur, Import, CR-Genehmigung).
 
 ### Stundenänderung (Teilzeit, Tagesplan etc.)

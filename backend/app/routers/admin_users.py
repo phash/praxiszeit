@@ -776,6 +776,7 @@ def anonymize_user(
             ChangeRequest.proposed_note: None,
             ChangeRequest.original_note: None,
             ChangeRequest.break_waiver_reason: None,
+            ChangeRequest.proposed_sunday_exception_reason: None,  # #485
             ChangeRequest.rejection_reason: None,
         },
         synchronize_session=False,

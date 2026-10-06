@@ -267,6 +267,10 @@ def create_change_request(
             if data.break_waiver_reason and data.break_waiver_reason.strip()
             else None
         ),
+        # #485 §10 ArbZG: Ausnahmegrund fuer Sonn-/Feiertagsarbeit.
+        proposed_sunday_exception_reason=(
+            (data.proposed_sunday_exception_reason or "").strip() or None
+        ),
     )
 
     # Snapshot original values

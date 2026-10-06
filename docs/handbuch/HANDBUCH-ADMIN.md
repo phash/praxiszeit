@@ -147,7 +147,7 @@ Die Liste zeigt alle aktiven Mitarbeiter mit:
 
 **Filter:** Aktivieren Sie **„Inaktive anzeigen"** oder **„Ausgeblendete anzeigen"** um deaktivierte Mitarbeiter einzublenden.
 
-**Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird. Einträge können Sie dort **auch an Wochenend- und Feiertagen** anlegen und bearbeiten (seit 1.19.2, z. B. KV-Dienst am Sonntag); Mitarbeitende stellen dafür im eigenen Journal einen Antrag.
+**Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird. Einträge können Sie dort **auch an Wochenend- und Feiertagen** anlegen und bearbeiten (seit 1.19.2, z. B. KV-Dienst am Sonntag); Mitarbeitende stellen dafür im eigenen Journal einen Antrag. An Sonn- und Feiertagen erscheint unter der Zeile das Feld **„Ausnahmegrund (§10 ArbZG)"** — beim Direkteintrag ebenso wie im Antrag. Der Grund steht danach unter der Uhrzeit (*„§10: Notdienst"*), beim Antrag in der Liste der Änderungsanträge und in der Bemerkungsspalte der Exporte. Bis Version 1.19.2 ging er auf diesen Wegen verloren.
 
 **„Login als …" – Ansicht als Mitarbeiter:in (#370):** Über das Anmelde-Symbol in der Aktionsspalte (nur bei **aktiven Mitarbeitenden**, nicht bei Admins) öffnen Sie die Anwendung aus der Perspektive dieser Person – praktisch, um das individuelle Dashboard zu beurteilen oder ein gemeldetes Problem nachzustellen. Die Ansicht ist **ausschließlich lesend**: Stempeln, Anträge stellen und jegliche Änderungen sind gesperrt (der Server weist Schreibversuche ab). Ein dauerhaftes Hinweisbanner am oberen Rand zeigt **„Sie sehen PraxisZeit als … – nur Lesen"**; über **„Zurück zu Admin"** kehren Sie jederzeit zu Ihrem eigenen Konto zurück.
 
@@ -222,6 +222,8 @@ Im Benutzerformular finden Sie den Bereich **„Soll-Arbeitszeiten je Wochentag"
 - **Puffer:** Der systemweite Toleranzbereich (Standard: **15 Minuten**) ist unter **Einstellungen → „Soll-Arbeitszeit-Fenster"** im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** konfigurierbar (→ [Abschnitt 13](#soll-arbeitszeit-fenster-puffer)). Innerhalb des Puffers wird die Differenz angerechnet; außerhalb wird auf den Fensterrand gekürzt.
 
 **Opt-in:** Sind für einen Mitarbeiter **keine** Soll-Zeiten hinterlegt, ändert sich nichts am bisherigen Verhalten. Die Kappung wird außerdem **übersprungen** bei Mitarbeitern ohne Stundenzählung. Bei **§ 18-befreiten** Mitarbeitern (ArbZG-Prüfungen ausgesetzt) wird **trotzdem gekappt** – es handelt sich um eine reine Anwesenheits-Policy, nicht um eine ArbZG-Prüfung.
+
+**Nur an Tagen mit Soll:** An **Wochenenden**, **gesetzlichen Feiertagen** und an Sondertagen (24./31.12.), die als **„frei"** eingestellt sind, gibt es kein Soll und deshalb auch kein Fenster. Arbeit an diesen Tagen (z. B. ein Notdienst am Ostermontag) wird voll angerechnet. Ein Sondertag als **„halber Feiertag"** hat ein Soll und behält das Fenster seines Wochentags. Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt, ein Sonntag dagegen nicht.
 
 Eingehängt ist die Kappung an **allen** Schreibpfaden: Ein-/Ausstempeln, manuelles Anlegen/Bearbeiten von Zeiteinträgen, Admin-Korrekturen, XLS-Import und genehmigte Korrekturanträge.
 
@@ -415,6 +417,8 @@ Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich 
    - **„Ablehnen"**: Optionalen Ablehnungsgrund eingeben
 
 **Filter-Tabs:** Alle / Offen / Genehmigt / Abgelehnt
+
+**Mehrere Anträge auf einmal:** Markieren Sie offene Anträge über die Kästchen links (oder alle über das Kästchen oben) und klicken Sie auf **„… genehmigen"** bzw. **„… ablehnen"**. Hinweise, die bei einer einzelnen Genehmigung erscheinen (Kappung auf das Arbeitszeit-Fenster, Wochen- oder Nachtarbeitszeit, Kind-krank-Kontingent), erscheinen auch hier, jeweils mit dem Namen der Person davor. Bis Version 1.19.2 zeigte die Sammel-Genehmigung keine dieser Hinweise.
 
 > **Empfehlung:** Prüfen Sie Korrekturanträge zeitnah, damit der Monatssaldo der Mitarbeiter aktuell bleibt.
 

@@ -368,7 +368,7 @@ def review_change_request(
                 # (e.g. a wide raw stamp the window clamps back under 10h).
                 _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
                 _eff_start, _eff_end, _, _ = work_window_service.clamp(
-                    cr_user, cr.proposed_date,
+                    db, cr_user, cr.proposed_date,
                     cr.proposed_start_time, cr.proposed_end_time, _grace,
                 )
 
@@ -470,7 +470,7 @@ def review_change_request(
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                _cr_user_te, cr.proposed_date,
+                db, _cr_user_te, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _grace,
             )
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
@@ -492,6 +492,8 @@ def review_change_request(
                 # #144 §4 ArbZG: materialise the documented break-exception on
                 # the entry so the deviation stays auditable after approval.
                 break_waiver_reason=cr.break_waiver_reason,
+                # #485 §10 ArbZG: Ausnahmegrund aus dem Antrag uebernehmen.
+                sunday_exception_reason=cr.proposed_sunday_exception_reason,
             )
             db.add(entry)
             db.flush()
@@ -516,7 +518,7 @@ def review_change_request(
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                _cr_user_te, cr.proposed_date,
+                db, _cr_user_te, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _grace,
             )
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
@@ -552,6 +554,10 @@ def review_change_request(
             # #144 §4 ArbZG: carry the documented break-exception onto the entry.
             if cr.break_waiver_reason is not None:
                 entry.break_waiver_reason = cr.break_waiver_reason
+            # #485 §10 ArbZG: ein mitgebrachter Ausnahmegrund ersetzt den alten;
+            # ohne Angabe bleibt der bestehende stehen.
+            if cr.proposed_sunday_exception_reason is not None:
+                entry.sunday_exception_reason = cr.proposed_sunday_exception_reason
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # entry already fetched in precondition check above
@@ -997,7 +1003,7 @@ def review_change_request(
             # and the create/update paths. The CR stores the RAW proposed times.
             _wgrace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             _w_start, _w_end, _, _ = work_window_service.clamp(
-                cr_user, cr.proposed_date,
+                db, cr_user, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _wgrace,
             )
             daily_hours_cr = _calculate_daily_net_hours(
@@ -1062,7 +1068,7 @@ def bulk_review_change_requests(
 
     for request_id in body.request_ids:
         try:
-            review_change_request(
+            reviewed = review_change_request(
                 request_id=str(request_id),
                 review=single_body,
                 db=db,
@@ -1071,6 +1077,8 @@ def bulk_review_change_requests(
             items.append(ChangeRequestBulkReviewItemResult(
                 request_id=request_id,
                 status="approved" if body.action == "approve" else "rejected",
+                # #486: die Warnungen der Einzel-Genehmigung durchreichen.
+                warnings=list(getattr(reviewed, "warnings", None) or []),
             ))
             succeeded += 1
         except HTTPException as exc:

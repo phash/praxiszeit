@@ -585,3 +585,31 @@ def test_zweiter_schreibpfad_bewahrt_den_rohstempel_ebenfalls(db, employee, admi
     assert entry.raw_start_time == dt.time(7, 0), (
         f"Rohstempel verloren: {entry.raw_start_time}"
     )
+
+
+def test_admin_create_on_holiday_is_not_clamped(db, employee, admin_client):
+    """#484: Ostermontag (Feiertag) — der Montags-Soll-Fenster gilt dort nicht.
+    Ein Notdienst 07:00–18:00 wird voll angerechnet, ohne Kappungs-Meldung."""
+    from app.models.public_holiday import PublicHoliday
+    from app.services.holiday_service import invalidate_holiday_cache
+
+    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.scheduled_end_monday = dt.time(17, 0)
+    db.add(PublicHoliday(date=dt.date(2026, 4, 6), name="Ostermontag", year=2026,
+                         tenant_id=employee.tenant_id))
+    db.commit()
+    invalidate_holiday_cache()
+    try:
+        resp = admin_client.post(
+            f"/api/admin/users/{employee.id}/time-entries",
+            json={"date": "2026-04-06", "start_time": "07:00", "end_time": "18:00",
+                  "break_minutes": 60, "sunday_exception_reason": "Notdienst"},
+        )
+    finally:
+        invalidate_holiday_cache()
+    assert resp.status_code == 201, resp.text
+    assert not any("WORK_WINDOW_CLAMPED" in w for w in resp.json().get("warnings", []))
+
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert (entry.start_time, entry.end_time) == (dt.time(7, 0), dt.time(18, 0))
+    assert (entry.raw_start_time, entry.raw_end_time) == (None, None)

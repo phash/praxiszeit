@@ -312,6 +312,9 @@ def get_journal(
                     "end_time": e.end_time.strftime("%H:%M") if e.end_time else None,
                     "break_minutes": e.break_minutes,
                     "net_hours": float(Decimal(str(e.net_hours)).quantize(Decimal("0.01"))),
+                    "raw_start_time": e.raw_start_time.strftime("%H:%M") if e.raw_start_time else None,
+                    "raw_end_time": e.raw_end_time.strftime("%H:%M") if e.raw_end_time else None,
+                    "sunday_exception_reason": e.sunday_exception_reason,
                 }
                 for e in day_entries
             ],

@@ -26,6 +26,7 @@ interface TimeEntryItem {
   net_hours: number;
   raw_start_time?: string | null;
   raw_end_time?: string | null;
+  sunday_exception_reason?: string | null; // #485 §10 ArbZG
 }
 
 interface AbsenceItem {
@@ -99,6 +100,7 @@ interface EditState {
   entryType: 'work' | 'sick' | 'training' | 'overtime' | 'other';
   absenceHours: string;
   reasonId?: string | null; // #312: selected custom absence reason
+  sundayReason: string; // #485: §10-ArbZG-Ausnahmegrund (nur Sonn-/Feiertag)
 }
 
 // ---- Helper functions -----------------------------------------------------
@@ -117,6 +119,15 @@ const TYPE_LABELS: Record<string, string> = {
   empty: '–',
   mixed: 'Arbeitszeit',
 };
+
+// #485: An Sonn- und Feiertagen verlangt §10 ArbZG einen Ausnahmegrund. Samstag
+// ist ein Werktag — dort wird nicht gefragt. Ein Feiertag auf einem Samstag
+// kommt vom Server als type 'weekend', traegt aber is_holiday.
+function needsSundayReason(day: { date: string; is_holiday: boolean }): boolean {
+  return safeParseISO(day.date)?.getDay() === 0 || day.is_holiday === true;
+}
+
+const SUNDAY_REASON_LABEL = 'Ausnahmegrund (§10 ArbZG)';
 
 const NON_WORK_DAY_ABSENCE_MSG =
   'An Wochenend- und Feiertagen lässt sich hier nur Arbeitszeit eintragen. '
@@ -188,7 +199,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [addingDate, setAddingDate] = useState<string | null>(null); // separate state for adding new entry
-  const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0', entryType: 'work', absenceHours: '8', reasonId: null });
+  const [editState, setEditState] = useState<EditState>({ startTime: '', endTime: '', breakMinutes: '0', entryType: 'work', absenceHours: '8', reasonId: null, sundayReason: '' });
   const [reasons, setReasons] = useState<AbsenceReason[]>([]); // #312
   useEffect(() => { myReasons().then(setReasons).catch(() => { /* picker omits custom reasons */ }); }, []);
   const [saving, setSaving] = useState(false);
@@ -262,6 +273,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       entryType: hasAbsence ? (absence.type as EditState['entryType']) : 'work',
       absenceHours: hasAbsence ? String(absence.hours) : '8',
       reasonId: (absence as { reason_id?: string | null } | null)?.reason_id ?? null, // #312
+      sundayReason: entry?.sunday_exception_reason ?? '', // #485
     });
   }
 
@@ -275,6 +287,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       entryType: 'work',
       absenceHours: '8',
       reasonId: null, // #312
+      sundayReason: '', // #485
     });
   }
 
@@ -307,6 +320,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           start_time: editState.startTime,
           end_time: editState.endTime,
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
+          ...(day && needsSundayReason(day) ? { sunday_exception_reason: editState.sundayReason.trim() } : {}),
         });
         showArbzgWarnings(toast, res.data?.warnings);
       } else {
@@ -390,6 +404,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           start_time: editState.startTime,
           end_time: editState.endTime,
           break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
+          // #485: Leer gesendet loescht der Server den Grund — deshalb belegt
+          // startEdit das Feld mit dem gespeicherten Wert vor.
+          ...(needsSundayReason(day) ? { sunday_exception_reason: editState.sundayReason.trim() } : {}),
         };
         const existing = !switchingToWork ? editedEntry : null;
         // #200: §4-Pausen-Ausnahme per Retry mit dokumentierter Begründung.
@@ -513,6 +530,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           proposed_end_time: editState.endTime,
           proposed_break_minutes: Math.min(parseInt(editState.breakMinutes, 10) || 0, 480),
         };
+        if (needsSundayReason(day) && editState.sundayReason.trim()) {
+          payload.proposed_sunday_exception_reason = editState.sundayReason.trim(); // #485
+        }
         if (existing) payload.time_entry_id = existing.id;
       } else {
         // Absence CR
@@ -564,6 +584,31 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     });
   }
 
+
+  // #485: §10-Ausnahmegrund — eigene Zeile, damit das Feld auch auf schmalen
+  // Bildschirmen Platz hat (die Zeitspalten sind dort ausgeblendet). Steht
+  // unter der Zeile, in der gerade bearbeitet bzw. hinzugefuegt wird.
+  function renderSundayReasonRow(day: JournalDay) {
+    if (editState.entryType !== 'work' || !needsSundayReason(day)) return null;
+    return (
+      <tr key={`${day.date}-sunday-reason`} className="bg-amber-50">
+        <td colSpan={fixedMode ? 8 : 9} className="px-3 py-2">
+          <label className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+            <span>{SUNDAY_REASON_LABEL}</span>
+            <input
+              type="text"
+              aria-label={SUNDAY_REASON_LABEL}
+              value={editState.sundayReason}
+              onChange={(e) => setEditState(s => ({ ...s, sundayReason: e.target.value }))}
+              placeholder="z. B. Notdienst, Patientenversorgung"
+              maxLength={2000}
+              className="flex-1 min-w-0 px-2 py-1 text-sm border border-amber-300 rounded-lg bg-white focus:ring-2 focus:ring-amber-400"
+            />
+          </label>
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -754,6 +799,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
                                   <RawStampNote raw={e.raw_start_time} effective={e.start_time} side="start" className="text-xs text-gray-500" />
                                   <RawStampNote raw={e.raw_end_time} effective={e.end_time} side="end" className="text-xs text-gray-500" />
+                                  {e.sunday_exception_reason && (
+                                    <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
+                                  )}
                                 </div>
                               ))}
                               {labelType === 'mixed' && day.absences.map((a, i) => (
@@ -892,6 +940,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : null}
                         </td>
                       </tr>
+                      {editingDate === day.date && renderSundayReasonRow(day)}
                       {/* Add-new-entry row */}
                       {addingDate === day.date && isAdminView && (
                         <tr key={`${day.date}-add`} className="bg-green-50">
@@ -956,6 +1005,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           </td>
                         </tr>
                       )}
+                      {addingDate === day.date && isAdminView && renderSundayReasonRow(day)}
                       {submittingDate === day.date && !isAdminView && (
                         <tr key={`${day.date}-reason`} className="bg-blue-50">
                           <td colSpan={fixedMode ? 8 : 9} className="px-3 py-2">

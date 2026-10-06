@@ -77,6 +77,12 @@ class ChangeRequest(Base):
     # auditable. NULL for all non-waiver CRs.
     break_waiver_reason = Column(Text, nullable=True)
 
+    # #485 §10 ArbZG: Ausnahmegrund fuer Sonn-/Feiertagsarbeit, den der Antrag
+    # mitbringt. Bei der Genehmigung auf ``time_entries.sunday_exception_reason``
+    # uebertragen (dort ist er der Beleg). Die Kopie hier wird bei der
+    # Anonymisierung geleert wie die uebrige Antragsprosa (#440).
+    proposed_sunday_exception_reason = Column(Text, nullable=True)
+
     # Admin review
     reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

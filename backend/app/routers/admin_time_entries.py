@@ -86,7 +86,7 @@ def admin_create_time_entry(
     # The affected employee is `user`, NOT the admin (current_user).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-        user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+        db, user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
     )
 
     # #375-Review: mirror the employee path's duplicate-start guard, BEFORE the
@@ -181,6 +181,8 @@ def admin_create_time_entry(
         end_time=eff_end,
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
+        # #485 §10 ArbZG: bis 1.19.2 nahm das Schema den Grund an, hier fiel er weg.
+        sunday_exception_reason=entry_data.sunday_exception_reason,
         break_waiver_reason=waiver_reason if break_waiver_active else None,
         raw_start_time=raw_start,
         raw_end_time=raw_end,
@@ -289,7 +291,7 @@ def admin_update_time_entry(
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     if affected_user is not None:
         eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-            affected_user, update_date, update_start_time, update_end_time, _grace,
+            db, affected_user, update_date, update_start_time, update_end_time, _grace,
         )
     else:
         eff_start, eff_end, raw_start, raw_end = update_start_time, update_end_time, None, None
@@ -425,6 +427,10 @@ def admin_update_time_entry(
         entry.break_minutes = entry_data.break_minutes
     if entry_data.note is not None:
         entry.note = entry_data.note
+    # #485 §10 ArbZG: nur anfassen, wenn das Feld mitgeschickt wurde. Ein leeres
+    # Feld kommt vom Schema als None an und loescht den Grund.
+    if "sunday_exception_reason" in entry_data.model_fields_set:
+        entry.sunday_exception_reason = entry_data.sunday_exception_reason
     # M-ARB3: persist the documented §4 break waiver when one was supplied.
     if break_waiver_active:
         entry.break_waiver_reason = waiver_reason

@@ -9,6 +9,12 @@ class JournalTimeEntry(BaseModel):
     end_time: Optional[str]
     break_minutes: int
     net_hours: float
+    # #485: Bis 1.19.2 fehlten diese Felder hier — die Rohstempel-Zeile des
+    # Monatsjournals (RawStampNote) bekam nie einen Wert, und das Bearbeiten-
+    # Formular konnte den §10-Grund nicht vorbelegen.
+    raw_start_time: Optional[str] = None
+    raw_end_time: Optional[str] = None
+    sunday_exception_reason: Optional[str] = None
 
 
 class JournalAbsence(BaseModel):

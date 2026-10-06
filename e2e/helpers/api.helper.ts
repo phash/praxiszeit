@@ -140,4 +140,13 @@ export class ApiHelper {
   async getRaw(path: string): Promise<Response> {
     return fetch(`${API_BASE}${path}`, { headers: this.headers(), signal: signal() });
   }
+
+  async postRaw(path: string, body?: any): Promise<Response> {
+    return fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: body ? JSON.stringify(body) : undefined,
+      signal: signal(),
+    });
+  }
 }

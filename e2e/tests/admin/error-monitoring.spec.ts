@@ -45,35 +45,41 @@ test.describe('Admin Error Monitoring', () => {
 
   /**
    * Legt die Voraussetzung der beiden folgenden Tests an: EINEN offenen
-   * Fehlereintrag, der eindeutig diesem Testlauf gehört.
+   * Fehlereintrag.
    *
    * Fehlereinträge entstehen ausschließlich über die Fehler-Middleware — es
    * gibt (bewusst) keinen Endpunkt zum Anlegen. Der Auslöser ist deshalb ein
-   * echter Serverfehler: eine Ressourcen-ID, die keine UUID ist, lässt die
-   * Abfrage in Postgres auflaufen (`invalid input syntax for type uuid`) und
-   * ist damit genau der Fall, für den das Fehler-Monitoring gebaut wurde.
+   * echter Serverfehler.
    *
-   * Der Sondierungspfad trägt einen eindeutigen Marker. Der Fingerabdruck der
-   * Aggregation enthält den Pfad, also entsteht bei jedem Lauf eine EIGENE
-   * Zeile statt eines Zählers auf einer fremden — sonst könnte ein Test die
-   * Zeile eines anderen wegräumen.
+   * Bis 1.19.2 war das eine Ressourcen-ID, die keine UUID ist (Postgres:
+   * `invalid input syntax for type uuid` → 500). Genau diese Antwort hat #483
+   * zu einer sauberen 422 gemacht — der Test hat das vorausgesagt und ist
+   * daran rot geworden. Ein anderer Validierungsfehler als Ersatz wäre nur der
+   * nächste Bug, den irgendwann jemand behebt.
    *
-   * Sollte die Anwendung diesen Pfad eines Tages sauber mit 404 beantworten
-   * (eine gute Änderung), schlägt die erste Zusicherung mit einer Meldung fehl,
-   * die genau darauf zeigt — statt den Test still wieder wirkungslos zu machen.
+   * Jetzt: das Kundenportal der Zahlungsabwicklung auf einer Instanz OHNE
+   * Stripe-Konfiguration. `POST /api/billing/portal` antwortet dort mit 503
+   * „Zahlungsabwicklung nicht konfiguriert" — ein Betriebszustand, kein
+   * Programmfehler, und der Eintrag trägt den Mandanten des Admins (die
+   * Anfrage ist authentifiziert), ist in seinem Fehler-Monitoring also
+   * sichtbar. Der Pfad ist fest, der Eintrag aggregiert deshalb; beide Tests
+   * räumen ihn im `finally` wieder weg, und ein erledigter Eintrag aggregiert
+   * nicht weiter (ein neuer Fehler legt eine neue offene Zeile an).
+   *
+   * Ist Stripe auf der Zielinstanz konfiguriert, schlägt die erste Zusicherung
+   * mit einer Meldung fehl, die genau darauf zeigt.
    */
   async function provokeError(adminApi: any): Promise<{ id: string; path: string }> {
-    const marker = `e2e-err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const probe = `/admin/users/${marker}`;
-    const res = await adminApi.getRaw(probe);
+    const probe = '/billing/portal';
+    const res = await adminApi.postRaw(probe, { return_url: 'http://localhost/e2e' });
     expect(
       res.status,
-      `Voraussetzung: ${probe} muss einen Serverfehler auslösen, damit ein Eintrag im Fehler-Monitoring entsteht. ` +
-      `Antwortet die Anwendung inzwischen sauber, braucht dieser Test einen anderen Auslöser.`
-    ).toBe(500);
+      `Voraussetzung: POST ${probe} muss auf einer Instanz ohne Stripe-Konfiguration mit 503 antworten, ` +
+      `damit ein Eintrag im Fehler-Monitoring entsteht. Ist Stripe hier konfiguriert, braucht dieser Test einen anderen Auslöser.`
+    ).toBe(503);
 
     const errors = await adminApi.get('/admin/errors/?status=open&limit=200');
-    const row = errors.find((e: any) => (e.path ?? '').includes(marker));
+    const row = errors.find((e: any) => e.path === `/api${probe}`);
     expect(row, 'Voraussetzung: der Serverfehler muss im Fehler-Monitoring gelandet sein').toBeTruthy();
     return row;
   }

@@ -218,7 +218,7 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
         # #201: Soll-Fenster kappen; raw_* nur gesetzt wenn gekappt
         if user is not None:
             start_t, end_t, raw_start_t, raw_end_t = work_window_service.clamp(
-                user, entry_date, start_t, end_t, grace
+                db, user, entry_date, start_t, end_t, grace
             )
         else:
             raw_start_t = raw_end_t = None
@@ -410,11 +410,11 @@ def _execute_import_inner(
         # als §16-Nachweis stehen, statt von einer Kappung geloescht zu werden,
         # die gar nicht stattfindet.
         _hat_fenster = target_user is not None and work_window_service.get_scheduled_window(
-            target_user, entry.date,
+            db, target_user, entry.date,
         ) != (None, None)
         if _hat_fenster:
             _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
-                target_user,
+                db, target_user,
                 entry.date,
                 entry.raw_start_time or entry.start_time,
                 entry.raw_end_time or entry.end_time,

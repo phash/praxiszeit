@@ -38,6 +38,7 @@ REASON = "Arzttermin wegen Rueckenbeschwerden"
 PROPOSED_NOTE = "Kind aus der Kita abgeholt"
 ORIGINAL_NOTE = "urspruengliche Notiz mit Klarnamen"
 WAIVER = "Pause war wegen Notfall nicht moeglich"
+SUNDAY_REASON = "Notdienst fuer Herrn Weber"  # #485
 REJECTION = "abgelehnt, weil Frau Schulz an dem Tag Dienst hatte"
 VR_NOTE = "Kur in Bad Nauheim"
 VR_REJECTION = "abgelehnt wegen Personalengpass"
@@ -76,6 +77,7 @@ def _cr(db, user, **over):
         status=ChangeRequestStatus.REJECTED,
         reason=REASON, proposed_note=PROPOSED_NOTE, original_note=ORIGINAL_NOTE,
         break_waiver_reason=WAIVER, rejection_reason=REJECTION,
+        proposed_sunday_exception_reason=SUNDAY_REASON,
         proposed_date=date(2026, 5, 4),
         **over,
     )
@@ -113,6 +115,7 @@ class TestAenderungsantrag:
         assert row.proposed_note is None
         assert row.original_note is None
         assert row.break_waiver_reason is None
+        assert row.proposed_sunday_exception_reason is None
         assert row.rejection_reason is None
 
     def test_der_antrag_selbst_bleibt_stehen(self, admin_client, db):

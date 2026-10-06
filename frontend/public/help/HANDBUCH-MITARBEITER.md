@@ -190,6 +190,7 @@ Manche Praxen hinterlegen für einzelne Wochentage **feste Soll-Arbeitszeiten** 
 
 - **Zu früh eingestempelt:** Stempeln Sie deutlich **vor Ihrem Soll-Beginn** ein, wird die Zeit davor nicht als Arbeitszeit angerechnet. Ein kleiner **Puffer** (Standard 15 Minuten) ist erlaubt. Sie sehen dann den Hinweis: *„Du hast vor deinem Soll-Beginn eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt."*
 - **Zu spät ausgestempelt:** Bleiben Sie nach Ihrem **Soll-Ende** noch deutlich länger (über den Puffer hinaus), wird die Zeit danach ebenfalls nicht mitgezählt.
+- **Wochenende und Feiertage:** Dort gilt keine Soll-Arbeitszeit. Arbeiten Sie an einem Samstag, Sonntag oder Feiertag (z. B. Notdienst), wird die ganze Zeit angerechnet.
 - In der Eintragsliste erkennen Sie das an einer kleinen Zusatzzeile unter der Uhrzeit, z. B. *„gestempelt 07:30 · angerechnet ab 07:45"*.
 - **Beim Ausstempeln und beim Speichern eines eigenen Eintrags** erscheint ein Hinweis mit den konkreten Zeiten, sobald gekappt wurde (z. B. *„… gekappt (Beginn 07:00 → 07:45; Puffer 15 Minuten)"*). Der Eintrag wird dabei **trotzdem gespeichert** — der Hinweis blockiert nichts.
 
@@ -594,7 +595,7 @@ A: Navigieren Sie zu **Zeiterfassung → Tab „Einträge"**, suchen Sie den bet
 A: Sonntagsarbeit wird markiert. Als Ausgleich steht Ihnen gem. [§ 11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html) ein Ersatzruhetag zu (innerhalb von 2 Wochen).
 
 **F: Wie trage ich Arbeit am Wochenende oder Feiertag ein (z. B. KV-Dienst)?**
-A: **Am selben Tag** stempeln Sie ganz normal oder legen unter **Zeiterfassung → Tab „Einträge" → + Neuer Eintrag** einen Eintrag an; an einem Sonntag erscheint dort zusätzlich das Feld **Ausnahmegrund** (z. B. „Notdienst"). **Nachträglich** stellen Sie einen Antrag: entweder über den Button **Antrag** im Tab „Einträge" oder im **Journal** über das **+** in der Zeile des Tages (seit Version 1.19.2 auch an Wochenend- und Feiertagen). Nach der Genehmigung zählen die Stunden zum Ist; da das Soll an diesen Tagen 0 ist, erhöhen die angerechneten Stunden Ihren Saldo.
+A: **Am selben Tag** stempeln Sie ganz normal oder legen unter **Zeiterfassung → Tab „Einträge" → + Neuer Eintrag** einen Eintrag an; an einem Sonntag erscheint dort zusätzlich das Feld **Ausnahmegrund** (z. B. „Notdienst"). **Nachträglich** stellen Sie einen Antrag: entweder über den Button **Antrag** im Tab „Einträge" oder im **Journal** über das **+** in der Zeile des Tages (seit Version 1.19.2 auch an Wochenend- und Feiertagen). An einem Sonntag oder Feiertag fragt das Journal dabei ebenfalls nach dem **Ausnahmegrund (§10 ArbZG)**; er wird mit der Genehmigung am Eintrag gespeichert und erscheint in den Exporten. Nach der Genehmigung zählen die Stunden zum Ist; da das Soll an diesen Tagen 0 ist, erhöhen die angerechneten Stunden Ihren Saldo.
 
 **F: Ich habe mein Passwort vergessen.**
 A: Wenden Sie sich an Ihren Administrator. Er kann Ihr Passwort zurücksetzen.

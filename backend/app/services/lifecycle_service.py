@@ -239,7 +239,8 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
       dieselbe Klasse Freitext wie der Slot-Hinweis).
     - ``change_requests``: ``reason`` -> "[anonymisiert]" (NOT NULL),
       ``proposed_note``/``original_note``/``break_waiver_reason``/
-      ``rejection_reason`` -> NULL (#440 A).
+      ``proposed_sunday_exception_reason`` (#485)/``rejection_reason`` -> NULL
+      (#440 A).
     - ``vacation_requests``: ``note``/``rejection_reason`` -> NULL (#440 B).
     - ``absences``: ``note`` -> NULL (#440 D). Nur hier — der Einzel-Nutzer-Pfad
       loescht die Abwesenheiten vollstaendig.
@@ -335,6 +336,7 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
             ChangeRequest.proposed_note: None,
             ChangeRequest.original_note: None,
             ChangeRequest.break_waiver_reason: None,
+            ChangeRequest.proposed_sunday_exception_reason: None,  # #485
             ChangeRequest.rejection_reason: None,
         },
         synchronize_session=False,
@@ -928,6 +930,7 @@ def _change_request_dict(c: ChangeRequest) -> dict[str, Any]:
         "proposed_end_time": str(c.proposed_end_time) if c.proposed_end_time else None,
         "proposed_break_minutes": c.proposed_break_minutes,
         "proposed_note": c.proposed_note,
+        "proposed_sunday_exception_reason": getattr(c, "proposed_sunday_exception_reason", None),
         # Vorgeschlagene Werte (Abwesenheit)
         "proposed_absence_type": c.proposed_absence_type,
         "proposed_absence_hours": (

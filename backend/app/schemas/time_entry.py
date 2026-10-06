@@ -11,13 +11,22 @@ from decimal import Decimal
 from uuid import UUID
 
 
+def _normalize_sunday_reason(v: Optional[str]) -> Optional[str]:
+    """#485: §10-Ausnahmegrund einheitlich fuer alle Schreibwege — getrimmt,
+    leer bzw. nur Leerzeichen wird NULL (statt eines leeren Strings, der im
+    Export als Grund erscheinen wuerde)."""
+    if v is None:
+        return None
+    return v.strip() or None
+
+
 class TimeEntryBase(BaseModel):
     date: date_type
     start_time: time
     end_time: time
     break_minutes: int = Field(default=0, ge=0)
     note: Optional[str] = None
-    sunday_exception_reason: Optional[str] = None  # §10 ArbZG
+    sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)
     # #144 §4 ArbZG: justification when a mandatory break was not possible.
     # Submitted by the client to waive the break-validation block for
     # non-exempt users. Backend enforces non-empty when actually used.
@@ -38,6 +47,11 @@ class TimeEntryBase(BaseModel):
             raise ValueError('Datum darf nicht in der Zukunft liegen')
         return v
 
+    @field_validator('sunday_exception_reason')
+    @classmethod
+    def _sunday_reason(cls, v):
+        return _normalize_sunday_reason(v)
+
 
 class TimeEntryCreate(TimeEntryBase):
     pass
@@ -49,7 +63,7 @@ class TimeEntryUpdate(BaseModel):
     end_time: Optional[time] = None
     break_minutes: Optional[int] = Field(None, ge=0)
     note: Optional[str] = None
-    sunday_exception_reason: Optional[str] = None  # §10 ArbZG
+    sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG (SEC-D: bounded)
 
     @field_validator('end_time')
@@ -59,6 +73,12 @@ class TimeEntryUpdate(BaseModel):
             if v <= info.data['start_time']:
                 raise ValueError('Endzeit muss nach Startzeit liegen')
         return v
+
+
+    @field_validator('sunday_exception_reason')
+    @classmethod
+    def _sunday_reason(cls, v):
+        return _normalize_sunday_reason(v)
 
 
 class TimeEntryResponse(BaseModel):

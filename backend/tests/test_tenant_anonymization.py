@@ -128,6 +128,9 @@ PII = {
     "cr_proposed_note": "PIIVORSCHLAGNOTIZAAA",
     "cr_original_note": "PIIURSPRUNGNOTIZAAA",
     "cr_waiver_reason": "PIIPAUSENGRUNDAAA",
+    # #485: Zweitschrift des §10-Ausnahmegrunds im Antrag (das Original am
+    # Zeiteintrag ist der Beleg und bleibt).
+    "cr_sunday_reason": "PIISONNTAGSGRUNDAAA",
     "cr_rejection": "PIIABLEHNUNGAAA",
     "vr_note": "PIIURLAUBSNOTIZAAA",
     "vr_rejection": "PIIURLAUBSABLEHNUNGAAA",
@@ -232,6 +235,7 @@ def mandant(_db_session):
         proposed_note=PII["cr_proposed_note"],
         original_note=PII["cr_original_note"],
         break_waiver_reason=PII["cr_waiver_reason"],
+        proposed_sunday_exception_reason=PII["cr_sunday_reason"],
         rejection_reason=PII["cr_rejection"],
     ))
     _db_session.add(VacationRequest(
@@ -631,6 +635,7 @@ class TestAntragsFreitext:
         assert cr.proposed_note is None
         assert cr.original_note is None
         assert cr.break_waiver_reason is None
+        assert cr.proposed_sunday_exception_reason is None
         assert cr.rejection_reason is None
         # Der belegende Teil bleibt: wer hat wann was beantragt.
         assert cr.user_id == mandant["user_id"]
