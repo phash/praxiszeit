@@ -793,6 +793,7 @@ export default function TimeTracking() {
                   value={formData.sunday_exception_reason}
                   onChange={(e) => setFormData({ ...formData, sunday_exception_reason: e.target.value })}
                   placeholder="z. B. Notdienst, Patientenversorgung"
+                  maxLength={2000}
                   className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 bg-amber-50"
                 />
               </div>

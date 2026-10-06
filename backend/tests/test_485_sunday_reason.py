@@ -151,3 +151,35 @@ class TestJournalLiefertDieFelder:
         assert entry["sunday_exception_reason"] == REASON
         assert entry["raw_start_time"] == "07:37"
         assert entry["raw_end_time"] is None
+
+
+class TestNormalisierung:
+    """Review: Leerzeichen-Grund und Laengengrenze einheitlich auf allen Wegen."""
+
+    def test_admin_leeres_feld_loescht_den_grund(self, admin_client, db, test_user):
+        e = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=SUNDAY,
+                      start_time=time(9, 0), end_time=time(13, 0), break_minutes=0,
+                      sunday_exception_reason=REASON)
+        db.add(e)
+        db.commit()
+        r = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"sunday_exception_reason": "  "})
+        assert r.status_code == 200, r.text
+        assert _entry(db, test_user.id).sunday_exception_reason is None
+
+    def test_leerzeichen_werden_null(self):
+        # Mitarbeitende legen vergangene Tage nur per Antrag an — deshalb am
+        # Schema geprueft, das Anlegen und Bearbeiten auf allen Wegen teilen.
+        from app.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate
+        base = dict(date=SUNDAY, start_time=time(9, 0), end_time=time(13, 0))
+        assert TimeEntryCreate(**base, sunday_exception_reason="   ").sunday_exception_reason is None
+        assert TimeEntryCreate(**base, sunday_exception_reason=" Notdienst ").sunday_exception_reason == "Notdienst"
+        assert TimeEntryUpdate(sunday_exception_reason="  ").sunday_exception_reason is None
+
+    def test_zu_langer_grund_wird_abgelehnt(self):
+        from pydantic import ValidationError
+        from app.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate
+        with pytest.raises(ValidationError):
+            TimeEntryCreate(date=SUNDAY, start_time=time(9, 0), end_time=time(13, 0),
+                            sunday_exception_reason="x" * 2001)
+        with pytest.raises(ValidationError):
+            TimeEntryUpdate(sunday_exception_reason="x" * 2001)

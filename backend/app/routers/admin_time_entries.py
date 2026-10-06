@@ -182,7 +182,7 @@ def admin_create_time_entry(
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
         # #485 §10 ArbZG: bis 1.19.2 nahm das Schema den Grund an, hier fiel er weg.
-        sunday_exception_reason=(entry_data.sunday_exception_reason or "").strip() or None,
+        sunday_exception_reason=entry_data.sunday_exception_reason,
         break_waiver_reason=waiver_reason if break_waiver_active else None,
         raw_start_time=raw_start,
         raw_end_time=raw_end,
@@ -427,9 +427,10 @@ def admin_update_time_entry(
         entry.break_minutes = entry_data.break_minutes
     if entry_data.note is not None:
         entry.note = entry_data.note
-    # #485 §10 ArbZG: nur bei Angabe anfassen; ein leeres Feld loescht den Grund.
-    if entry_data.sunday_exception_reason is not None:
-        entry.sunday_exception_reason = entry_data.sunday_exception_reason.strip() or None
+    # #485 §10 ArbZG: nur anfassen, wenn das Feld mitgeschickt wurde. Ein leeres
+    # Feld kommt vom Schema als None an und loescht den Grund.
+    if "sunday_exception_reason" in entry_data.model_fields_set:
+        entry.sunday_exception_reason = entry_data.sunday_exception_reason
     # M-ARB3: persist the documented §4 break waiver when one was supplied.
     if break_waiver_active:
         entry.break_waiver_reason = waiver_reason
