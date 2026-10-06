@@ -1,6 +1,7 @@
 """Admin sub-router: User Management + Working Hours Changes."""
 
 import logging
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -12,7 +13,14 @@ from pydantic import ValidationError
 from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday
-from app.models.security_event import SecurityEvent
+from app.models.security_event import (
+    EVENT_ADMIN_SET_PASSWORD,
+    EVENT_USER_DEACTIVATED,
+    EVENT_USER_REACTIVATED,
+    EVENT_USER_ROLE_CHANGED,
+    SecurityEvent,
+)
+from app.schemas.security_event import SecurityEventResponse
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
@@ -374,6 +382,60 @@ def _tenant_has_other_active_admin(db: Session, current_user: User) -> bool:
         .first()
         is not None
     )
+
+
+# ── #489: Schutz vor Aussperrung + Protokoll der Kontovorgaenge ────────────
+# Realfall: eine Praxis kam nicht mehr in ihre Verwaltung — das Admin-Konto war
+# deaktiviert, wer das getan hatte, stand nirgends.
+
+_ROLE_LABELS_DE = {UserRole.ADMIN: "Admin", UserRole.EMPLOYEE: "Mitarbeitende"}
+
+
+def _role_label(role) -> str:
+    role = UserRole(role)
+    return _ROLE_LABELS_DE.get(role, role.value)
+
+
+LAST_ADMIN_DETAIL = (
+    "Das ist das letzte aktive Admin-Konto dieser Praxis. Legen Sie zuerst ein "
+    "weiteres Admin-Konto an oder ernennen Sie jemanden zum Admin – sonst kommt "
+    "niemand mehr in die Verwaltung."
+)
+
+
+def _is_last_active_admin(db: Session, user: User) -> bool:
+    """Ist ``user`` das einzige aktive Admin-Konto seines Mandanten?
+
+    ``FOR UPDATE`` auf alle aktiven Admin-Zeilen: deaktivieren sich zwei Admins
+    gleichzeitig gegenseitig, wartet die zweite Transaktion und sieht danach
+    die erste Deaktivierung (READ COMMITTED prueft gesperrte Zeilen gegen die
+    Bedingung neu). Ohne die Sperre stuenden am Ende beide Konten deaktiviert da.
+    """
+    if user.role != UserRole.ADMIN or not user.is_active:
+        return False
+    active_admin_ids = [
+        row.id for row in db.query(User.id).filter(
+            User.tenant_id == user.tenant_id,  # F-026
+            User.role == UserRole.ADMIN,
+            User.is_active == True,  # noqa: E712
+        ).with_for_update().all()
+    ]
+    return active_admin_ids == [user.id]
+
+
+def _log_account_event(db: Session, current_user: User, event: str, subject: User,
+                       detail: Optional[str] = None) -> None:
+    """Eine Zeile nach ``security_events`` — in DERSELBEN Transaktion wie der
+    Vorgang selbst, damit es keinen Vorgang ohne Nachweis gibt. ``actor`` traegt
+    die Konto-ID statt des Namens: wird die handelnde Person spaeter
+    anonymisiert, bleibt in der Zeile kein Klarname stehen."""
+    db.add(SecurityEvent(
+        tenant_id=current_user.tenant_id,
+        event=event,
+        subject_user_id=subject.id,
+        actor=f"user:{current_user.id}",
+        detail=detail,
+    ))
 
 
 # ── User Management ──────────────────────────────────────────────────────
@@ -1197,6 +1259,9 @@ def update_user(
 
     # VULN-010: invalidate existing JWTs when role is changed
     role_changed = 'role' in update_data and update_data['role'] != user.role
+    old_role = user.role
+    if role_changed and old_role == UserRole.ADMIN and _is_last_active_admin(db, user):
+        raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
     # #290: did this update turn closure participation ON? Then enrol below.
     closures_enabled = (
         update_data.get('receives_company_closures') is True
@@ -1208,6 +1273,10 @@ def update_user(
 
     if role_changed:
         user.token_version = (user.token_version or 0) + 1
+        _log_account_event(
+            db, current_user, EVENT_USER_ROLE_CHANGED, user,
+            detail=f"Rolle {_role_label(old_role)} → {_role_label(user.role)}",
+        )
 
     db.commit()
     db.refresh(user)
@@ -1234,6 +1303,8 @@ def set_password(
 
     user.password_hash = auth_service.hash_password(body.password)
     user.token_version += 1  # Invalidate all existing tokens
+    _log_account_event(db, current_user, EVENT_ADMIN_SET_PASSWORD, user,
+                       detail="Passwort durch die Verwaltung neu gesetzt")
     db.commit()
 
     return {"message": f"Passwort für {user.first_name} {user.last_name} wurde gesetzt"}
@@ -1248,9 +1319,17 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
+    # #489: sonst kommt niemand mehr in die Verwaltung.
+    if _is_last_active_admin(db, user):
+        raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
+
+    was_active = user.is_active
     user.is_active = False
     user.deactivated_at = datetime.now(timezone.utc)
     user.token_version += 1  # Invalidate all existing tokens
+    if was_active:
+        _log_account_event(db, current_user, EVENT_USER_DEACTIVATED, user,
+                           detail=f"Konto deaktiviert (Rolle {_role_label(user.role)})")
     db.commit()
     return None
 
@@ -1268,11 +1347,61 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     if tenant is not None:
         check_seat_limit(db, tenant)
 
+    was_inactive = not user.is_active
     user.is_active = True
     user.deactivated_at = None
+    if was_inactive:
+        _log_account_event(db, current_user, EVENT_USER_REACTIVATED, user,
+                           detail="Konto reaktiviert")
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/security-events", response_model=List[SecurityEventResponse])
+def list_security_events(
+    limit: int = Query(default=200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#489: Kontovorgaenge des eigenen Mandanten, neueste zuerst — wer hat wen
+    deaktiviert, reaktiviert, umgestuft, wessen Passwort neu gesetzt; dazu die
+    Kommandozeilen-Vorgaenge aus #425."""
+    rows = (
+        db.query(SecurityEvent)
+        .filter(SecurityEvent.tenant_id == current_user.tenant_id)  # F-026
+        .order_by(SecurityEvent.created_at.desc(), SecurityEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+    ids = {r.subject_user_id for r in rows if r.subject_user_id}
+    for r in rows:
+        if r.actor.startswith("user:"):
+            try:
+                ids.add(uuid.UUID(r.actor[len("user:"):]))
+            except ValueError:
+                pass
+    names = {}
+    if ids:
+        for u in db.query(User).filter(User.id.in_(ids), User.tenant_id == current_user.tenant_id):
+            names[str(u.id)] = f"{u.first_name} {u.last_name}"
+
+    def _actor_name(actor: str) -> str:
+        if actor.startswith("user:"):
+            return names.get(actor[len("user:"):], "unbekanntes Konto")
+        if actor.startswith("cli:"):
+            return f"Kommandozeile ({actor[len('cli:'):]})"
+        return actor
+
+    return [
+        SecurityEventResponse(
+            id=r.id, created_at=r.created_at, event=r.event,
+            subject_user_id=r.subject_user_id,
+            subject_name=names.get(str(r.subject_user_id)) if r.subject_user_id else None,
+            actor=r.actor, actor_name=_actor_name(r.actor), detail=r.detail,
+        )
+        for r in rows
+    ]
 
 
 @router.post("/users/{user_id}/toggle-hidden", response_model=UserResponse)

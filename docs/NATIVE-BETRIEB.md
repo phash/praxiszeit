@@ -37,7 +37,7 @@ Tests: `test_native_pg_lifecycle.py::TestGesundheitspruefungGehoertZumEigenenKin
 
 ```
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
-     /opt/praxiszeit/praxiszeit-server.py reset-admin-password [--username admin] [--disable-2fa]
+     /opt/praxiszeit/praxiszeit-server.py reset-admin-password [--username admin] [--disable-2fa] [--reactivate]
 ```
 
 ⚠️ **Die vollständige Form ist nicht Zierde, sondern nötig** (Release-Review 1.19.0): `praxiszeit-server.py` liegt weder im `PATH` noch wird es vom Installer ausführbar gemacht — `sudo praxiszeit-server.py …` scheitert schon an der Shell. Und die Abhängigkeiten der Anwendung liegen ausschließlich im **mitgelieferten** Interpreter unter `bin/python`; mit dem System-Python stirbt der Unterprozess an `ModuleNotFoundError: No module named 'sqlalchemy'`. Das Kommando löst den gebündelten Interpreter inzwischen selbst auf (`bundled_python()`), aber der Aufruf muss ihn trotzdem finden. `sudo -u praxiszeit` statt reinem `sudo`, weil `pg_ctl` den Start als root ablehnt — läuft die Datenbank bereits, geht auch root, andernfalls bricht das Kommando jetzt mit einem Hinweis auf genau diese Zeile ab statt mit einem Traceback.

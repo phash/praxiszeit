@@ -2021,6 +2021,10 @@ def cmd_reset_admin_password(args):
             cmd += ["--username", args.username]
         if args.disable_2fa:
             cmd.append("--disable-2fa")
+        # #489: deaktiviertes Konto zurueckholen. getattr: ein aelterer Aufrufer
+        # (Test, Skript) ohne das Attribut soll nicht abstuerzen.
+        if getattr(args, "reactivate", False):
+            cmd.append("--reactivate")
 
         # BEWUSST ohne capture_output: das Werkzeug fragt das Passwort
         # interaktiv ab (getpass), ein abgefangener Datenstrom haette keine
@@ -2124,6 +2128,10 @@ def main():
     p_reset.add_argument(
         "--disable-2fa", action="store_true",
         help="Zusaetzlich die Zwei-Faktor-Anmeldung abschalten (wenn auch der Authenticator weg ist)",
+    )
+    p_reset.add_argument(
+        "--reactivate", action="store_true",
+        help="Zusaetzlich ein deaktiviertes Konto wieder aktivieren (#489)",
     )
     p_reset.set_defaults(func=cmd_reset_admin_password)
 

@@ -60,8 +60,8 @@ def _user(db, username="admin", role=UserRole.ADMIN, **over):
         id=uuid.uuid4(), username=username, email=f"{username}@praxis.invalid",
         password_hash=auth_service.hash_password(ALT),
         first_name="Alte", last_name="Chefin", role=role, weekly_hours=40.0,
-        vacation_days=30, work_days_per_week=5, is_active=True,
-        tenant_id=DEFAULT_TENANT_ID, token_version=3, **over,
+        vacation_days=30, work_days_per_week=5,
+        tenant_id=DEFAULT_TENANT_ID, token_version=3, **{"is_active": True, **over},
     )
     db.add(u)
     db.commit()
@@ -184,3 +184,55 @@ def test_protokollzeile_verliert_den_kontonamen_bei_der_anonymisierung(run_cli, 
     assert zeile.detail is None          # Klarname weg
     assert zeile.event == EVENT_ADMIN_PASSWORD_RESET  # Vorgang bleibt belegt
     assert zeile.actor.startswith("cli:")
+
+
+# ── #489: ein deaktiviertes Konto zurueckholen ──────────────────────────────
+# Realfall: das Admin-Konto war deaktiviert. Der Reset setzte das Passwort und
+# meldete nur "bleibt deaktiviert" — der Login scheiterte weiter, der einzige
+# Weg zurueck war ein Eingriff von Hand in die Datenbank, ohne Protokollzeile.
+
+
+def test_reactivate_holt_ein_deaktiviertes_konto_zurueck(run_cli, db):
+    u = _user(db, is_active=False)
+    assert run_cli(["--username", ADMIN, "--reactivate"]) == 0
+    db.refresh(u)
+    assert u.is_active is True
+    assert u.deactivated_at is None
+    assert auth_service.verify_password(GOOD, u.password_hash)
+
+
+def test_reactivate_wird_protokolliert(run_cli, db):
+    from app.models.security_event import EVENT_USER_REACTIVATED_CLI
+    u = _user(db, is_active=False)
+    run_cli(["--username", ADMIN, "--reactivate"])
+    rows = db.query(SecurityEvent).filter(SecurityEvent.event == EVENT_USER_REACTIVATED_CLI).all()
+    assert len(rows) == 1
+    assert rows[0].subject_user_id == u.id
+    assert rows[0].actor.startswith("cli:")
+
+
+def test_ohne_option_bleibt_das_konto_deaktiviert_und_nennt_den_weg(run_cli, db, capsys):
+    """Ein Passwort-Reset soll ein absichtlich deaktiviertes Konto nicht
+    stillschweigend oeffnen — aber den Weg dorthin nennen."""
+    u = _user(db, is_active=False)
+    run_cli(["--username", ADMIN])
+    db.refresh(u)
+    assert u.is_active is False
+    assert "--reactivate" in capsys.readouterr().out
+
+
+def test_reactivate_auf_aktivem_konto_schreibt_keine_reaktivierung(run_cli, db):
+    from app.models.security_event import EVENT_USER_REACTIVATED_CLI
+    _user(db)
+    run_cli(["--username", ADMIN, "--reactivate"])
+    assert db.query(SecurityEvent).filter(SecurityEvent.event == EVENT_USER_REACTIVATED_CLI).count() == 0
+
+
+def test_benutzername_ohne_gross_klein_schreibung(run_cli, db):
+    """Der Login vergleicht ohne Gross-/Kleinschreibung — das Werkzeug muss
+    dasselbe Konto finden, sonst meldet es "kein Benutzer", obwohl die
+    Anmeldung mit genau diesem Namen funktioniert."""
+    u = _user(db, username="Chefin")
+    assert run_cli(["--username", "chefin"]) == 0
+    db.refresh(u)
+    assert auth_service.verify_password(GOOD, u.password_hash)
