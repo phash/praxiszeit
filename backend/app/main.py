@@ -393,6 +393,10 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# #483: ungueltige ID (PostgreSQL 22P02) -> 422 statt 500 + error_logs-Eintrag.
+from app.core.db_errors import register_db_error_handlers
+register_db_error_handlers(app)
+
 # Prometheus metrics – DSGVO F-014: group_paths=True prevents UUIDs in metric labels
 # In native mode (SERVE_FRONTEND=True), don't expose metrics endpoint (no nginx to block it)
 _instrumentator = Instrumentator(
