@@ -1350,8 +1350,14 @@ def test_no_router_locks_user_rows_directly():
                 node = node.value
             elif isinstance(node, ast.Call):
                 f = node.func
+                # Release-Review 1.19.3 (DB-1): auch ``query(User.id)`` sperrt die
+                # Benutzerzeile — der alte Test kannte nur ``query(User)`` und liess
+                # eine ungeordnete FOR-UPDATE-Sperre auf allen Admin-Zeilen durch.
                 if (isinstance(f, ast.Attribute) and f.attr == "query"
-                        and any(isinstance(a, ast.Name) and a.id == "User"
+                        and any((isinstance(a, ast.Name) and a.id == "User")
+                                or (isinstance(a, ast.Attribute)
+                                    and isinstance(a.value, ast.Name)
+                                    and a.value.id == "User")
                                 for a in node.args)):
                     return True
                 node = f

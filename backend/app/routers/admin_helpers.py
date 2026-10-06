@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.models import User, ChangeRequest, TimeEntryAuditLog
+from app.models import User, UserRole, ChangeRequest, TimeEntryAuditLog
 from app.models.vacation_request import VacationRequest
 from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
@@ -105,6 +105,32 @@ def lock_user_row(db: Session, tenant_id, user_id):
     """
     rows = lock_user_rows(db, tenant_id, [user_id])
     return rows[0] if rows else None
+
+
+def lock_active_admin_ids(db: Session, tenant_id) -> list:
+    """#489: Anker-Sperre auf ALLEN aktiven Admin-Zeilen eines Mandanten.
+
+    Grundlage der Regel „der letzte aktive Admin bleibt aktiv"
+    (``admin_users._is_last_active_admin``). Sortiert und ``FOR NO KEY UPDATE``
+    wie ``lock_user_rows`` (Begruendung oben): schliesst sich weiterhin gegen
+    sich selbst aus — deaktivieren sich zwei Admins gleichzeitig gegenseitig,
+    wartet die zweite Transaktion, prueft die gesperrten Zeilen danach gegen die
+    Bedingung neu (READ COMMITTED) und sieht die erste Deaktivierung —, laesst
+    aber die impliziten ``FOR KEY SHARE`` der Fremdschluessel-INSERTs durch.
+    Gibt die gesperrten IDs in Sortierreihenfolge zurueck.
+    """
+    rows = (
+        db.query(User.id)
+        .filter(
+            User.tenant_id == tenant_id,  # F-026
+            User.role == UserRole.ADMIN,
+            User.is_active == True,  # noqa: E712
+        )
+        .order_by(User.id)
+        .with_for_update(key_share=True)
+        .all()
+    )
+    return [r.id for r in rows]
 
 
 def _get_field(entry, field: str):
