@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.7 | Stand: September 2026 (für PraxisZeit 1.19.2)**
+**Version 2.8 | Stand: Oktober 2026 (für PraxisZeit 1.19.3)**
 
 ---
 
@@ -225,7 +225,7 @@ Im Benutzerformular finden Sie den Bereich **„Soll-Arbeitszeiten je Wochentag"
 
 **Opt-in:** Sind für einen Mitarbeiter **keine** Soll-Zeiten hinterlegt, ändert sich nichts am bisherigen Verhalten. Die Kappung wird außerdem **übersprungen** bei Mitarbeitern ohne Stundenzählung. Bei **§ 18-befreiten** Mitarbeitern (ArbZG-Prüfungen ausgesetzt) wird **trotzdem gekappt** – es handelt sich um eine reine Anwesenheits-Policy, nicht um eine ArbZG-Prüfung.
 
-**Nur an Tagen mit Soll:** An **Wochenenden**, **gesetzlichen Feiertagen** und an Sondertagen (24./31.12.), die als **„frei"** eingestellt sind, gibt es kein Soll und deshalb auch kein Fenster. Arbeit an diesen Tagen (z. B. ein Notdienst am Ostermontag) wird voll angerechnet. Ein Sondertag als **„halber Feiertag"** hat ein Soll und behält das Fenster seines Wochentags. Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt, ein Sonntag dagegen nicht.
+**Nur an Tagen mit Soll:** An **Wochenenden**, **gesetzlichen Feiertagen** und an Sondertagen (24./31.12.), die als **„frei"** eingestellt sind, gibt es kein Soll und deshalb auch kein Fenster. Arbeit an diesen Tagen (z. B. ein Notdienst am Ostermontag) wird voll angerechnet. Ein Sondertag als **„halber Feiertag"** hat ein Soll und behält das Fenster seines Wochentags. Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt, ein Sonntag dagegen nicht. Solche Einträge bleiben nach dem Update gespeichert, wie sie sind; öffnen Sie einen davon im Admin-Dashboard oder Monatsjournal und speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet.
 
 Eingehängt ist die Kappung an **allen** Schreibpfaden: Ein-/Ausstempeln, manuelles Anlegen/Bearbeiten von Zeiteinträgen, Admin-Korrekturen, XLS-Import und genehmigte Korrekturanträge.
 
@@ -876,7 +876,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.19.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.19.3). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -1167,4 +1167,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: September 2026 (für PraxisZeit 1.19.2)*
+*Stand: Oktober 2026 (für PraxisZeit 1.19.3)*

@@ -652,3 +652,36 @@ def test_cr_update_mit_unveraenderter_angerechneter_zeit_bewahrt_den_rohstempel(
     assert e.break_minutes == 30
     assert e.start_time == dt.time(7, 45)
     assert e.raw_start_time == dt.time(7, 37), f"Rohstempel verloren: {e.raw_start_time}"
+
+
+def test_alter_gekappter_feiertagseintrag_wird_beim_speichern_neu_berechnet(db, employee, admin_client):
+    """#484/CHANGELOG 1.19.3: ein vor dem Update an einem Feiertag gekappter
+    Eintrag bleibt gespeichert, wie er ist. Oeffnet ein Admin ihn und speichert
+    unveraendert (das Formular schickt die angerechnete Zeit zurueck),
+    fuehrt unclamp_input zurueck auf den Rohstempel, und weil der Feiertag kein
+    Fenster mehr hat, wird die volle Zeit angerechnet."""
+    from app.models.public_holiday import PublicHoliday
+    from app.services.holiday_service import invalidate_holiday_cache
+
+    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.scheduled_end_monday = dt.time(17, 0)
+    db.add(PublicHoliday(date=dt.date(2026, 4, 6), name="Ostermontag", year=2026,
+                         tenant_id=employee.tenant_id))
+    entry = TimeEntry(user_id=employee.id, tenant_id=employee.tenant_id, date=dt.date(2026, 4, 6),
+                      start_time=dt.time(8, 0), end_time=dt.time(17, 15),
+                      raw_end_time=dt.time(18, 0), break_minutes=45)
+    db.add(entry)
+    db.commit()
+    invalidate_holiday_cache()
+    try:
+        resp = admin_client.put(
+            f"/api/admin/time-entries/{entry.id}",
+            json={"start_time": "08:00", "end_time": "17:15", "break_minutes": 45},
+        )
+    finally:
+        invalidate_holiday_cache()
+    assert resp.status_code == 200, resp.text
+    db.expire_all()
+    e = db.query(TimeEntry).filter(TimeEntry.id == entry.id).one()
+    assert e.end_time == dt.time(18, 0)
+    assert e.raw_end_time is None

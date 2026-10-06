@@ -2,6 +2,66 @@
 
 ## [Unreleased]
 
+## [1.19.3] - 2026-10-06
+
+Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte. **Enthält eine
+Datenbank-Migration** (`072_cr_sunday_reason`, ein neues Feld an den
+Änderungsanträgen); sie läuft beim ersten Start automatisch, bestehende Daten
+bleiben unverändert.
+
+### 🔒 Schutz vor Aussperrung (#489)
+- **Das letzte aktive Admin-Konto lässt sich weder deaktivieren noch zur
+  Mitarbeiterin herabstufen.** Anlass war eine Praxis, die nicht mehr in ihre
+  Verwaltung kam: Das Admin-Konto war deaktiviert, und die Anmeldung meldete das
+  (aus Datenschutzgründen bewusst) wie ein falsches Passwort.
+- **Konto-Vorgänge werden protokolliert und angezeigt.** Wer wann ein Konto
+  deaktiviert, reaktiviert, die Rolle gewechselt oder ein fremdes Passwort
+  gesetzt hat, steht jetzt im Änderungsprotokoll unter „Konto-Vorgänge" —
+  zusammen mit den Notfall-Vorgängen über die Kommandozeile. Bisher war nur zu
+  sehen, *dass* ein Konto deaktiviert war.
+- **`reset-admin-password --reactivate`** holt ein deaktiviertes Konto über die
+  Kommandozeile auf dem Server zurück (protokolliert). Der Benutzername wird wie
+  bei der Anmeldung ohne Groß-/Kleinschreibung erkannt; unter `sudo` steht im
+  Protokoll die ausführende Person, nicht das Dienstkonto.
+
+### ✨ Verbesserungen
+- **§10-Ausnahmegrund auf allen Wegen** (#485). Seit 1.19.2 lassen sich im
+  Monatsjournal Einträge an Sonn- und Feiertagen anlegen; der Ausnahmegrund nach
+  § 10 ArbZG kam dabei nie am Eintrag an. Jetzt fragt das Journal an Sonn- und
+  Feiertagen danach — beim Direkteintrag ebenso wie im Antrag —, Admin-Eintragen
+  und -Bearbeiten speichern ihn, Anträge (auch Pausen-Ausnahme-Anträge) tragen
+  ihn bis zur Genehmigung mit. Er erscheint unter der Uhrzeit und in den Exporten.
+- **Sammel-Genehmigung zeigt Hinweise** (#486). Wer mehrere Änderungsanträge auf
+  einmal genehmigt, sieht jetzt dieselben Hinweise wie bei der Einzel-Genehmigung
+  (Kappung, Wochen- und Nachtarbeitszeit, Kind-krank-Kontingent), jeweils mit
+  dem Namen der Person.
+
+### 🐞 Korrekturen
+- **Arbeitszeit-Fenster an Feiertagen** (#484). Ein Feiertag auf einem Werktag
+  bekam das Fenster seines Wochentags: ein Notdienst am Ostermontag wurde
+  gekappt, derselbe Dienst am Sonntag nicht. Feiertage und als „frei"
+  eingestellte Sondertage haben jetzt — wie das Wochenende — kein Fenster.
+  Einträge, die vor dem Update gekappt wurden, bleiben so gespeichert; einmal
+  in der Verwaltung (Admin-Dashboard oder Monatsjournal) öffnen und unverändert
+  speichern rechnet sie mit der tatsächlich gestempelten Zeit neu.
+- **Rohstempel im Monatsjournal.** Die Zeile „gestempelt 07:37 · angerechnet ab
+  07:45" erschien im Journal nie, weil die Antwort die Rohstempel nicht mitlieferte.
+- **Antrags-Genehmigung bewahrt den Rohstempel.** Ein Änderungsantrag, der nur
+  Pause oder Ausnahmegrund korrigierte, löschte bei der Genehmigung den
+  ursprünglich gestempelten Wert (§ 16 ArbZG-Nachweis, Grundlage der Ruhezeitprüfung).
+- **Ungültige Kennung in einer Anfrage** führte zu „Internal Server Error" und
+  einem Eintrag im Fehler-Monitoring (#483); jetzt eine verständliche Ablehnung.
+- **Admin-Handbuch: Passwort-Reset** (#488). Der genannte Befehl funktionierte
+  auf keiner Installation; jetzt stehen die vollständigen Befehle für Linux und
+  Windows da. Weitere Handbuch-Angaben an den Programmstand angeglichen
+  (Änderungsprotokoll, Deaktivieren).
+
+### 🔧 Technik
+- Grafana 13.0.4 → 13.0.10 (elf Sicherheitskorrekturen; Teil des Docker-Pakets).
+- source-map-js 1.2.1 → 1.2.2 (nur Bauwerkzeuge).
+- Sperrlogik für den Admin-Schutz folgt der projektweiten Regel für
+  Benutzerzeilen (keine neuen Deadlock-Kanten).
+
 ## [1.19.2] - 2026-10-03
 
 Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte; **keine neue

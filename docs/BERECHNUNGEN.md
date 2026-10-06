@@ -1,6 +1,6 @@
 # Stunden- und Urlaubsberechnung – PraxisZeit
 
-> **Stand: August 2026 · App-Version 1.18.2**
+> **Stand: Oktober 2026 · App-Version 1.19.3**
 > Diese Doku beschreibt **exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und
 > Urlaubswerte berechnet. Alle Formeln sind aus
 > [`backend/app/services/calculation_service.py`](../backend/app/services/calculation_service.py)
