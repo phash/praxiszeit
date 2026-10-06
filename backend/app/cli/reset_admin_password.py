@@ -59,11 +59,19 @@ def _fail(msg: str) -> None:
 
 def _actor() -> str:
     """Wer hat gehandelt? Beim Kommandozeilen-Weg gibt es kein Anwendungskonto —
-    festgehalten wird das Betriebssystem-Konto und der Rechner."""
+    festgehalten wird das Betriebssystem-Konto und der Rechner.
+
+    Release-Review 1.19.3: der dokumentierte Aufruf ist ``sudo -u praxiszeit …``.
+    sudo setzt LOGNAME/USER auf das Dienstkonto; die Person, die den Befehl
+    ausgeloest hat, steht nur in ``SUDO_USER``. Ohne sie stuende im Nachweis
+    (Art. 5 Abs. 2 DSGVO) bei jedem Linux-Reset nur "praxiszeit"."""
     try:
         user = getpass.getuser()
     except Exception:  # noqa: BLE001 — ohne Login-Namen (Dienstkontext) trotzdem protokollieren
         user = f"uid={getattr(os, 'geteuid', lambda: '?')()}"
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user and sudo_user != user:
+        user = f"{sudo_user} (als {user})"
     try:
         host = socket.gethostname()
     except Exception:  # noqa: BLE001

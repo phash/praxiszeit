@@ -236,3 +236,27 @@ def test_benutzername_ohne_gross_klein_schreibung(run_cli, db):
     assert run_cli(["--username", "chefin"]) == 0
     db.refresh(u)
     assert auth_service.verify_password(GOOD, u.password_hash)
+
+
+def test_protokoll_nennt_die_person_hinter_sudo(run_cli, db, monkeypatch):
+    """Release-Review 1.19.3 (DOC-1): der dokumentierte Aufruf ist
+    ``sudo -u praxiszeit …``. sudo setzt LOGNAME/USER auf das Dienstkonto, die
+    Person steht nur in SUDO_USER. Ohne Auswertung zeigte "Konto-Vorgaenge" bei
+    jedem Linux-Reset nur das Dienstkonto — der Nachweis nach Art. 5 Abs. 2
+    DSGVO lief ins Leere."""
+    monkeypatch.setenv("SUDO_USER", "manuel")
+    monkeypatch.setenv("LOGNAME", "praxiszeit")
+    monkeypatch.setenv("USER", "praxiszeit")
+    _user(db)
+    run_cli(["--username", ADMIN])
+    row = db.query(SecurityEvent).filter(SecurityEvent.event == EVENT_ADMIN_PASSWORD_RESET).one()
+    assert row.actor.startswith("cli:manuel (als praxiszeit)@")
+
+
+def test_ohne_sudo_bleibt_der_akteur_unveraendert(run_cli, db, monkeypatch):
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    monkeypatch.setenv("LOGNAME", "chefin")
+    _user(db)
+    run_cli(["--username", ADMIN])
+    row = db.query(SecurityEvent).filter(SecurityEvent.event == EVENT_ADMIN_PASSWORD_RESET).one()
+    assert row.actor.startswith("cli:chefin@")
