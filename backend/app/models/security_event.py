@@ -20,6 +20,13 @@ from app.database import Base
 # ab (dieselbe Falle wie time_entry_audit_logs.source, dort real passiert).
 EVENT_ADMIN_PASSWORD_RESET = "admin_password_reset_cli"
 EVENT_TOTP_DISABLED = "totp_disabled_cli"
+# #489: Kontovorgaenge, die eine Praxis aus ihrer Verwaltung aussperren koennen.
+# Bisher stand nur ``users.deactivated_at`` da — wer gehandelt hatte, nirgends.
+EVENT_USER_REACTIVATED_CLI = "user_reactivated_cli"
+EVENT_USER_DEACTIVATED = "user_deactivated"
+EVENT_USER_REACTIVATED = "user_reactivated"
+EVENT_USER_ROLE_CHANGED = "user_role_changed"
+EVENT_ADMIN_SET_PASSWORD = "admin_set_password"
 
 
 class SecurityEvent(Base):

@@ -882,3 +882,51 @@ class TestPortVorabpruefung:
             s.listen(1)
             belegt = s.getsockname()[1]
             assert srv.port_is_occupied("0.0.0.0", belegt) is True
+
+
+class TestResetAdminPasswordReichtOptionenDurch:
+    """#489: ``--reactivate`` muss beim Werkzeug ankommen. Der Prozessmanager
+    baut die Befehlszeile selbst zusammen und reicht nur bekannte Optionen
+    weiter — eine neue Option, die hier fehlt, waere nativ unerreichbar, waehrend
+    sie unter Docker funktioniert."""
+
+    def _run(self, srv, **flags):
+        import argparse
+        import subprocess as sp
+        captured = {}
+
+        def fake_run(cmd, **_kw):
+            captured["cmd"] = cmd
+            return sp.CompletedProcess(cmd, 0)
+
+        args = argparse.Namespace(username=None, disable_2fa=False, reactivate=False)
+        for k, v in flags.items():
+            setattr(args, k, v)
+        with patch.object(srv, "load_config", return_value={}), \
+             patch.object(srv, "pg_load_credentials", return_value=("su", "app")), \
+             patch.object(srv, "pg_is_running", return_value=True), \
+             patch.object(srv, "apply_config_env"), \
+             patch.object(srv, "resolve_secret_key", return_value="k" * 64), \
+             patch.object(srv, "bundled_python", return_value="python"), \
+             patch.object(srv, "_invalidate_admin_password_in_config"), \
+             patch.object(srv.subprocess, "run", side_effect=fake_run):
+            srv.cmd_reset_admin_password(args)
+        return captured["cmd"]
+
+    def test_reactivate_wird_durchgereicht(self, srv):
+        assert "--reactivate" in self._run(srv, reactivate=True)
+
+    def test_ohne_option_kein_reactivate(self, srv):
+        assert "--reactivate" not in self._run(srv)
+
+    def test_parser_kennt_die_option(self, srv):
+        # Der Unterbefehl muss die Option annehmen, sonst bricht argparse ab,
+        # bevor cmd_reset_admin_password ueberhaupt laeuft.
+        with patch("sys.argv", ["praxiszeit-server.py", "reset-admin-password", "--reactivate"]), \
+             patch.object(srv, "cmd_reset_admin_password") as handler:
+            try:
+                srv.main()
+            except SystemExit:
+                pass
+        assert handler.called
+        assert handler.call_args[0][0].reactivate is True
