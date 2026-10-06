@@ -388,6 +388,14 @@ def _tenant_has_other_active_admin(db: Session, current_user: User) -> bool:
 # Realfall: eine Praxis kam nicht mehr in ihre Verwaltung — das Admin-Konto war
 # deaktiviert, wer das getan hatte, stand nirgends.
 
+_ROLE_LABELS_DE = {UserRole.ADMIN: "Admin", UserRole.EMPLOYEE: "Mitarbeitende"}
+
+
+def _role_label(role) -> str:
+    role = UserRole(role)
+    return _ROLE_LABELS_DE.get(role, role.value)
+
+
 LAST_ADMIN_DETAIL = (
     "Das ist das letzte aktive Admin-Konto dieser Praxis. Legen Sie zuerst ein "
     "weiteres Admin-Konto an oder ernennen Sie jemanden zum Admin – sonst kommt "
@@ -1267,7 +1275,7 @@ def update_user(
         user.token_version = (user.token_version or 0) + 1
         _log_account_event(
             db, current_user, EVENT_USER_ROLE_CHANGED, user,
-            detail=f"Rolle {UserRole(old_role).value} → {UserRole(user.role).value}",
+            detail=f"Rolle {_role_label(old_role)} → {_role_label(user.role)}",
         )
 
     db.commit()
@@ -1321,7 +1329,7 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     user.token_version += 1  # Invalidate all existing tokens
     if was_active:
         _log_account_event(db, current_user, EVENT_USER_DEACTIVATED, user,
-                           detail=f"Konto deaktiviert (Rolle {UserRole(user.role).value})")
+                           detail=f"Konto deaktiviert (Rolle {_role_label(user.role)})")
     db.commit()
     return None
 

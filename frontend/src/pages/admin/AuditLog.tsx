@@ -8,6 +8,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 // Geteilt mit dem Detail-Modal des Admin-Dashboards — beide Ansichten rendern
 // dieselben Audit-Zeilen und dürfen sich nicht auseinanderentwickeln.
 import AuditValues, { auditPillText, formatAuditNote } from '../../components/AuditValues';
+import SecurityEventsCard from '../../components/SecurityEventsCard';
 
 interface AuditEntry {
   id: string;
@@ -318,6 +319,9 @@ export default function AuditLog() {
           </div>
         )}
       </div>
+
+      {/* #489: Kontovorgänge (security_events) */}
+      <SecurityEventsCard />
     </div>
   );
 }

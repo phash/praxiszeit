@@ -144,7 +144,7 @@ class TestProtokoll:
         rows = _events(db, EVENT_USER_ROLE_CHANGED)
         assert len(rows) == 1
         assert rows[0].subject_user_id == test_user.id
-        assert "employee" in rows[0].detail and "admin" in rows[0].detail
+        assert rows[0].detail == "Rolle Mitarbeitende → Admin"
 
     def test_unveraenderte_rolle_schreibt_nichts(self, db, test_admin, test_user, client_as):
         client_as(test_admin).put(f"/api/admin/users/{test_user.id}", json={"role": "employee"})

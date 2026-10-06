@@ -265,6 +265,8 @@ Werden dabei Abwesenheits-Stunden zurückgerechnet, erscheint im **Änderungspro
 **Mitarbeiter deaktivieren:**
 Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich nicht mehr einloggen, historische Daten bleiben erhalten.
 
+**Das letzte Admin-Konto bleibt aktiv:** Das letzte aktive Admin-Konto der Praxis lässt sich weder deaktivieren noch zur Mitarbeiterin bzw. zum Mitarbeiter herabstufen – sonst käme niemand mehr in die Verwaltung. Ernennen Sie vorher eine weitere Person zum Admin. Wer wann welches Konto deaktiviert, reaktiviert oder umgestuft hat, steht im Änderungsprotokoll unter **„Konto-Vorgänge"** (→ [Abschnitt 9](#9-änderungsprotokoll-audit-log)).
+
 > **Rechtlicher Hinweis (§16 ArbZG):** Arbeitszeitaufzeichnungen müssen **mindestens 2 Jahre** aufbewahrt werden. Löschen Sie daher niemals Mitarbeiterdaten – deaktivieren Sie die Konten.
 
 ### DSGVO: Anonymisierung & endgültige Löschung (Art. 17)
@@ -437,11 +439,15 @@ Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränder
 | **Login/Logout** | Wer hat sich wann eingeloggt? |
 | **Zeiteinträge** | Erstellen, Ändern, Löschen |
 | **Abwesenheiten** | Neue Abwesenheiten, Stornierungen |
-| **Benutzerverwaltung** | Neue Benutzer, Passwortänderungen, Deaktivierungen |
+| **Konto-Vorgänge** | Deaktivieren, Reaktivieren, Rollenwechsel, durch die Verwaltung gesetzte Passwörter, Notfall-Vorgänge über die Kommandozeile – eigene Liste unten auf der Seite (siehe unten) |
 | **Korrekturanträge** | Stellen, Genehmigen, Ablehnen |
 | **Betriebsferien** | Anlegen und Löschen |
 | **Stundenänderungen** | Sammelzeile je Änderung/Löschung, plus je nachgezogener Abwesenheit eine Einzelzeile mit altem/neuem Stundenwert (Quelle „wh_change", Anzeige „Stundenänderung") |
 | **Pflicht-Pause-Ausnahmen** | Erfasste § 4-Ausnahmen samt Begründung (Quelle „break_waiver") |
+
+### Konto-Vorgänge
+
+Unter der Tabelle der Zeiteintrags-Änderungen steht die Liste **„Konto-Vorgänge"**: wer wann welches Konto **deaktiviert**, **reaktiviert**, die **Rolle gewechselt** (Admin ↔ Mitarbeitende) oder ein **fremdes Passwort neu gesetzt** hat. Dazu kommen die Notfall-Vorgänge auf dem Server (Passwort-Reset, Abschalten der Zwei-Faktor-Anmeldung, Reaktivieren über die Kommandozeile, → [Abschnitt 20](#20-admin-passwort-verloren)); dort steht als handelnde Stelle *„Kommandozeile (Benutzer@Rechner)"*. Bis Version 1.19.2 wurden Deaktivierungen nirgends protokolliert – nachvollziehbar war nur noch, *dass* ein Konto deaktiviert war, nicht durch wen.
 
 ### Filter und Suche
 
@@ -1032,6 +1038,8 @@ Die lange Form ist nötig: `praxiszeit-server.py` liegt nicht im Suchpfad, und d
 
 Das Kommando fragt das neue Passwort zweimal ab (es wird nicht mit eingetippt, damit es nicht in der Befehls-Historie landet) und prüft dieselben Regeln wie die Anwendung: mindestens 10 Zeichen, Groß- und Kleinbuchstabe, Ziffer. Danach sind **alle laufenden Sitzungen dieses Kontos ungültig** — wer damit angemeldet war, muss sich neu anmelden.
 
+**Ist das Konto deaktiviert**, genügt ein neues Passwort nicht: die Anmeldung bleibt gesperrt, und das Kommando meldet *„Das Konto ist derzeit deaktiviert und bleibt es auch"*. Dann den Befehl mit `--reactivate` wiederholen – er setzt das Passwort neu **und** aktiviert das Konto wieder (ebenfalls protokolliert).
+
 **Ist auch das Handy mit der Zwei-Faktor-Anmeldung weg**, reicht das neue Passwort nicht: der Login fragt weiterhin nach einem Code. Dann zusätzlich:
 
 ```
@@ -1046,7 +1054,7 @@ Betrifft es ein anderes Konto als `admin`, geben Sie den Benutzernamen mit an: `
 
 **Was dabei protokolliert wird:** Jeder solche Vorgang wird mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat, dauerhaft festgehalten (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Ein Passwort-Reset ist also kein stiller Vorgang.
 
-> **Vorher prüfen — ist das Passwort wirklich falsch?** Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der E-Mail-Adresse; Passwortmanager setzen gern die E-Mail ein. Nach **5 Fehlversuchen in 15 Minuten** sperrt PraxisZeit den Benutzer vorübergehend („Konto vorübergehend gesperrt") — dann hilft Warten oder ein Neustart des Dienstes. Welcher Fall vorliegt, steht im Protokoll des Servers: `AUTH login_failed user=<name> reason=unknown_user` (Benutzername unbekannt oder Konto deaktiviert) bzw. `reason=bad_password` (Passwort falsch).
+> **Vorher prüfen — ist das Passwort wirklich falsch?** Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der E-Mail-Adresse; Passwortmanager setzen gern die E-Mail ein. Nach **5 Fehlversuchen in 15 Minuten** sperrt PraxisZeit den Benutzer vorübergehend („Konto vorübergehend gesperrt") — dann hilft Warten oder ein Neustart des Dienstes. Welcher Fall vorliegt, steht im Protokoll des Servers: `AUTH login_failed user=<name> reason=unknown_user` (Benutzername unbekannt **oder Konto deaktiviert** – dann hilft `--reactivate`, siehe oben) bzw. `reason=bad_password` (Passwort falsch).
 
 > **Docker-Installation:** Dasselbe Werkzeug steckt auch im Backend-Abbild — dort lautet der Befehl `docker compose exec backend python -m app.cli.reset_admin_password` (mit `--username <name>` bzw. `--disable-2fa` wie oben). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen: dabei entfiele die Protokollzeile.
 
