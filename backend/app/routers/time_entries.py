@@ -739,6 +739,8 @@ def create_time_entry(
                     proposed_note=entry_data.note,
                     reason=waiver_reason,
                     break_waiver_reason=waiver_reason,
+                    # Release-Review 1.19.3 (F3): §10-Grund mitnehmen (#485).
+                    proposed_sunday_exception_reason=entry_data.sunday_exception_reason,
                 )
                 db.add(cr)
                 db.commit()
@@ -1068,6 +1070,10 @@ def update_time_entry(
                     original_note=orig_snapshot["note"],
                     reason=waiver_reason,
                     break_waiver_reason=waiver_reason,
+                    # Release-Review 1.19.3 (F3): §10-Grund vor dem Rollback sichern
+                    # (neuer Wert, falls mitgeschickt, sonst der bestehende — die
+                    # Genehmigung schreibt beides korrekt zurueck).
+                    proposed_sunday_exception_reason=entry.sunday_exception_reason,
                 )
                 db.rollback()  # discard the in-memory edit on `entry`
                 db.add(cr)
