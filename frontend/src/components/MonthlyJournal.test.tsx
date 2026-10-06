@@ -551,3 +551,93 @@ describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {
     await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Soll' })).toBeInTheDocument());
   });
 });
+
+describe('<MonthlyJournal /> §10-Ausnahmegrund (#485)', () => {
+  const sunday = {
+    ...validDay, date: '2026-06-07', weekday: 'So', type: 'weekend' as const,
+    actual_hours: 0, target_hours: 0, balance: 0,
+  };
+  const saturday = { ...sunday, date: '2026-06-06', weekday: 'Sa' };
+  const holiday = {
+    ...validDay, date: '2026-06-04', weekday: 'Do', type: 'holiday' as const,
+    is_holiday: true, holiday_name: 'Fronleichnam',
+    actual_hours: 0, target_hours: 0, balance: 0,
+  };
+  const label = 'Ausnahmegrund (§10 ArbZG)';
+
+  it('Admin traegt am Sonntag einen Eintrag mit Ausnahmegrund ein', async () => {
+    mockJournal([sunday]);
+    postMock.mockResolvedValue({ data: { warnings: [] } });
+    const { container } = render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Weiteren Eintrag hinzufügen'));
+    const [von, bis] = Array.from(container.querySelectorAll('input[type="time"]'));
+    fireEvent.change(von, { target: { value: '09:00' } });
+    fireEvent.change(bis, { target: { value: '13:00' } });
+    fireEvent.change(screen.getByLabelText(label), { target: { value: 'KV-Notdienst' } });
+    fireEvent.click(screen.getByTitle('Hinzufügen'));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/users/u1/time-entries',
+      expect.objectContaining({ date: '2026-06-07', sunday_exception_reason: 'KV-Notdienst' }),
+    ));
+  });
+
+  it('Bearbeiten belegt den gespeicherten Grund vor und schickt ihn mit', async () => {
+    mockJournal([{
+      ...sunday,
+      time_entries: [{ id: 'e1', start_time: '09:00', end_time: '13:00', break_minutes: 0,
+        net_hours: 4, sunday_exception_reason: 'Notdienst' }],
+      actual_hours: 4, balance: 4,
+    }]);
+    putMock.mockResolvedValue({ data: { warnings: [] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('09:00–13:00 bearbeiten'));
+    expect(screen.getByLabelText(label)).toHaveValue('Notdienst');
+    fireEvent.click(screen.getByTitle('Speichern'));
+
+    await waitFor(() => expect(putMock).toHaveBeenCalledWith(
+      '/admin/time-entries/e1',
+      expect.objectContaining({ sunday_exception_reason: 'Notdienst' }),
+    ));
+  });
+
+  it('Mitarbeiterin beantragt Feiertagsarbeit mit Ausnahmegrund', async () => {
+    mockJournal([holiday]);
+    postMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('Eintrag anlegen'));
+    const [von, bis] = Array.from(container.querySelectorAll('input[type="time"]'));
+    fireEvent.change(von, { target: { value: '09:00' } });
+    fireEvent.change(bis, { target: { value: '13:00' } });
+    fireEvent.change(screen.getByLabelText(label), { target: { value: 'Notdienst' } });
+    fireEvent.click(screen.getByTitle('Speichern'));
+    fireEvent.change(screen.getByPlaceholderText('Begründung eingeben (Pflicht)'), {
+      target: { value: 'Dienst nachgetragen' },
+    });
+    fireEvent.click(screen.getByText('Absenden'));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
+      proposed_date: '2026-06-04',
+      proposed_sunday_exception_reason: 'Notdienst',
+    })));
+  });
+
+  it('fragt am Samstag (kein Feiertag) nicht nach einem Ausnahmegrund', async () => {
+    mockJournal([saturday]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Weiteren Eintrag hinzufügen'));
+    expect(screen.queryByLabelText(label)).toBeNull();
+  });
+
+  it('zeigt einen gespeicherten Grund und den Rohstempel in der Zeile', async () => {
+    mockJournal([{
+      ...sunday,
+      time_entries: [{ id: 'e1', start_time: '09:00', end_time: '13:00', break_minutes: 0,
+        net_hours: 4, sunday_exception_reason: 'KV-Notdienst', raw_start_time: '08:52' }],
+      actual_hours: 4, balance: 4,
+    }]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(await screen.findByText('§10: KV-Notdienst')).toBeInTheDocument();
+    expect(screen.getByText(/gestempelt 08:52/)).toBeInTheDocument();
+  });
+});

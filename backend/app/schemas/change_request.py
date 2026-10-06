@@ -20,6 +20,7 @@ class ChangeRequestCreate(BaseModel):
     reason: str = Field(..., min_length=1)
     # SEC-D: cap length to prevent storage DoS via unbounded free text.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG
+    proposed_sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # #485 §10 ArbZG
 
 
 class ChangeRequestReview(BaseModel):
@@ -77,6 +78,7 @@ class ChangeRequestResponse(BaseModel):
 
     reason: str
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
+    proposed_sunday_exception_reason: Optional[str] = None  # #485 §10 ArbZG
     reviewed_by: Optional[UUID] = None
     reviewed_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None

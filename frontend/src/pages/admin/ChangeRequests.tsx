@@ -21,6 +21,7 @@ interface ChangeRequest {
   proposed_end_time?: string;
   proposed_break_minutes?: number;
   proposed_note?: string;
+  proposed_sunday_exception_reason?: string | null; // #485 §10 ArbZG
   proposed_absence_type?: string;
   proposed_absence_hours?: number;
   original_date?: string;
@@ -490,6 +491,7 @@ export default function AdminChangeRequests() {
                             <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} – {cr.proposed_end_time?.substring(0, 5)}</span></p>
                             <p>Pause: <span className="font-medium">{cr.proposed_break_minutes} min</span></p>
                             {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
+                            {cr.proposed_sunday_exception_reason && <p>§10-Ausnahmegrund: {cr.proposed_sunday_exception_reason}</p>}
                           </div>
                         </div>
                       )}

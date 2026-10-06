@@ -492,6 +492,8 @@ def review_change_request(
                 # #144 §4 ArbZG: materialise the documented break-exception on
                 # the entry so the deviation stays auditable after approval.
                 break_waiver_reason=cr.break_waiver_reason,
+                # #485 §10 ArbZG: Ausnahmegrund aus dem Antrag uebernehmen.
+                sunday_exception_reason=cr.proposed_sunday_exception_reason,
             )
             db.add(entry)
             db.flush()
@@ -552,6 +554,10 @@ def review_change_request(
             # #144 §4 ArbZG: carry the documented break-exception onto the entry.
             if cr.break_waiver_reason is not None:
                 entry.break_waiver_reason = cr.break_waiver_reason
+            # #485 §10 ArbZG: ein mitgebrachter Ausnahmegrund ersetzt den alten;
+            # ohne Angabe bleibt der bestehende stehen.
+            if cr.proposed_sunday_exception_reason is not None:
+                entry.sunday_exception_reason = cr.proposed_sunday_exception_reason
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # entry already fetched in precondition check above
