@@ -1068,7 +1068,7 @@ def bulk_review_change_requests(
 
     for request_id in body.request_ids:
         try:
-            review_change_request(
+            reviewed = review_change_request(
                 request_id=str(request_id),
                 review=single_body,
                 db=db,
@@ -1077,6 +1077,8 @@ def bulk_review_change_requests(
             items.append(ChangeRequestBulkReviewItemResult(
                 request_id=request_id,
                 status="approved" if body.action == "approve" else "rejected",
+                # #486: die Warnungen der Einzel-Genehmigung durchreichen.
+                warnings=list(getattr(reviewed, "warnings", None) or []),
             ))
             succeeded += 1
         except HTTPException as exc:

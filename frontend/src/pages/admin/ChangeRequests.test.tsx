@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AdminChangeRequests from './ChangeRequests';
 
 const getMock = vi.fn();
@@ -55,5 +55,30 @@ describe('<AdminChangeRequests /> §10-Ausnahmegrund (#485)', () => {
     render(<AdminChangeRequests />);
     await screen.findByText('Dienst nachgetragen');
     expect(screen.queryByText(/§10-Ausnahmegrund/)).toBeNull();
+  });
+});
+
+describe('<AdminChangeRequests /> Sammel-Genehmigung (#486)', () => {
+  it('zeigt die Warnungen jedes genehmigten Antrags mit dem Namen der Person', async () => {
+    mockApi([pendingCr]);
+    postMock.mockResolvedValue({
+      data: {
+        succeeded: 1, failed: 0,
+        items: [{
+          request_id: 'cr1', status: 'approved',
+          warnings: ['WORK_WINDOW_CLAMPED: Die eingetragene Zeit wurde gekappt (Beginn 07:00 → 07:45).'],
+        }],
+      },
+    });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByLabelText('Antrag von Anna Meier auswählen'));
+    fireEvent.click(screen.getByText(/1 genehmigen/));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(
+      expect.stringMatching(/^Anna Meier: .*Beginn 07:00 → 07:45/),
+      undefined,
+    ));
+    // Der alte Pauschalhinweis "zeigt keine ArbZG-Warnungen" stimmt nicht mehr.
+    expect(toast.info).not.toHaveBeenCalled();
   });
 });

@@ -210,7 +210,11 @@ export default function AdminChangeRequests() {
         action,
         rejection_reason: reason || undefined,
       });
-      const { succeeded, failed } = response.data as { succeeded: number; failed: number };
+      const { succeeded, failed, items } = response.data as {
+        succeeded: number;
+        failed: number;
+        items?: { request_id: string; status: string; warnings?: string[] }[];
+      };
       if (failed === 0) {
         toast.success(`${succeeded} Anträge ${action === 'approve' ? 'genehmigt' : 'abgelehnt'}`);
       } else if (succeeded === 0) {
@@ -218,11 +222,17 @@ export default function AdminChangeRequests() {
       } else {
         toast.warning(`${succeeded} bearbeitet, ${failed} fehlgeschlagen`);
       }
-      // Die Sammel-Genehmigung (bulk-review) liefert KEINE ArbZG-Warnungen pro
-      // Antrag zurück (nur {succeeded, failed}). Darauf hinweisen, damit §3/§6-
-      // Verstöße nicht unbemerkt durchrutschen — bei Bedarf einzeln genehmigen.
-      if (action === 'approve' && succeeded > 0) {
-        toast.info('Sammel-Genehmigung zeigt keine ArbZG-Warnungen — bei Bedarf einzeln genehmigen und prüfen.');
+      // #486: Die Sammel-Route liefert je Antrag dieselben Warnungen wie die
+      // Einzel-Genehmigung (Kappung, §3/§6, Kind krank). Mit dem Namen davor,
+      // damit bei zehn Anträgen klar ist, welcher gemeint ist.
+      for (const item of items ?? []) {
+        if (!item.warnings?.length) continue;
+        const cr = requests.find(r => r.id === item.request_id);
+        const name = cr ? `${cr.user_first_name ?? ''} ${cr.user_last_name ?? ''}`.trim() : '';
+        showArbzgWarnings(
+          { warning: (message, duration) => toast.warning(name ? `${name}: ${message}` : message, duration) },
+          item.warnings,
+        );
       }
       setSelectedIds(new Set());
       setBulkRejectMode(false);

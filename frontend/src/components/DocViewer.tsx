@@ -442,6 +442,7 @@ export const handbuchAdminSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Unter <strong>Änderungsanträge</strong> sehen Sie alle offenen Anträge. Antrag öffnen → Alt- und Neuwerte vergleichen → Begründung lesen → <strong>Genehmigen</strong> oder <strong>Ablehnen</strong> (mit optionalem Grund).</p>
         <p>Bei Genehmigung wird der Zeiteintrag sofort geändert. Der Mitarbeiter sieht den Status unter Zeiterfassung → Tab „Anträge".</p>
+        <p><strong>Mehrere Anträge auf einmal:</strong> offene Anträge über die Kästchen markieren und gemeinsam genehmigen oder ablehnen. Hinweise wie bei der Einzel-Genehmigung (Kappung, Wochen-/Nachtarbeitszeit, Kind-krank-Kontingent) erscheinen auch dabei, jeweils mit dem Namen der Person.</p>
       </div>
     ),
   },

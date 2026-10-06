@@ -418,6 +418,8 @@ Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich 
 
 **Filter-Tabs:** Alle / Offen / Genehmigt / Abgelehnt
 
+**Mehrere Anträge auf einmal:** Markieren Sie offene Anträge über die Kästchen links (oder alle über das Kästchen oben) und klicken Sie auf **„… genehmigen"** bzw. **„… ablehnen"**. Hinweise, die bei einer einzelnen Genehmigung erscheinen (Kappung auf das Arbeitszeit-Fenster, Wochen- oder Nachtarbeitszeit, Kind-krank-Kontingent), erscheinen auch hier, jeweils mit dem Namen der Person davor. Bis Version 1.19.2 zeigte die Sammel-Genehmigung keine dieser Hinweise.
+
 > **Empfehlung:** Prüfen Sie Korrekturanträge zeitnah, damit der Monatssaldo der Mitarbeiter aktuell bleibt.
 
 ---

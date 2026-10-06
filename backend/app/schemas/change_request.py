@@ -38,6 +38,9 @@ class ChangeRequestBulkReviewItemResult(BaseModel):
     request_id: UUID
     status: str  # "approved" | "rejected" | "failed"
     error: Optional[str] = None
+    # #486: dieselben weichen Warnungen wie bei der Einzel-Genehmigung (Kappung,
+    # §6 Nacht, §3 Woche, Kind-krank-Limit). Vorher verwarf die Sammel-Route sie.
+    warnings: List[str] = []
 
     @field_serializer('request_id')
     def serialize_request_id(self, value):
