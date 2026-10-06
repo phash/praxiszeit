@@ -368,7 +368,7 @@ def review_change_request(
                 # (e.g. a wide raw stamp the window clamps back under 10h).
                 _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
                 _eff_start, _eff_end, _, _ = work_window_service.clamp(
-                    cr_user, cr.proposed_date,
+                    db, cr_user, cr.proposed_date,
                     cr.proposed_start_time, cr.proposed_end_time, _grace,
                 )
 
@@ -470,7 +470,7 @@ def review_change_request(
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                _cr_user_te, cr.proposed_date,
+                db, _cr_user_te, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _grace,
             )
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
@@ -516,7 +516,7 @@ def review_change_request(
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                _cr_user_te, cr.proposed_date,
+                db, _cr_user_te, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _grace,
             )
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
@@ -997,7 +997,7 @@ def review_change_request(
             # and the create/update paths. The CR stores the RAW proposed times.
             _wgrace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             _w_start, _w_end, _, _ = work_window_service.clamp(
-                cr_user, cr.proposed_date,
+                db, cr_user, cr.proposed_date,
                 cr.proposed_start_time, cr.proposed_end_time, _wgrace,
             )
             daily_hours_cr = _calculate_daily_net_hours(

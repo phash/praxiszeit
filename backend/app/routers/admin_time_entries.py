@@ -86,7 +86,7 @@ def admin_create_time_entry(
     # The affected employee is `user`, NOT the admin (current_user).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-        user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+        db, user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
     )
 
     # #375-Review: mirror the employee path's duplicate-start guard, BEFORE the
@@ -289,7 +289,7 @@ def admin_update_time_entry(
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     if affected_user is not None:
         eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-            affected_user, update_date, update_start_time, update_end_time, _grace,
+            db, affected_user, update_date, update_start_time, update_end_time, _grace,
         )
     else:
         eff_start, eff_end, raw_start, raw_end = update_start_time, update_end_time, None, None

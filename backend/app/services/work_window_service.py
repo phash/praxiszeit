@@ -1,6 +1,7 @@
 """#201: Soll-Arbeitszeit-Fenster — kappt das Ist beim Schreiben.
 
-Pro User je Wochentag (Mo–Fr) ein optionales Fenster [Soll-Beginn, Soll-Ende].
+Pro User je Wochentag (Mo–Fr) ein optionales Fenster [Soll-Beginn, Soll-Ende];
+nicht an Feiertagen und freien Sondertagen (#484).
 Gestempelte/eingetragene Zeit außerhalb von [Beginn − Puffer, Ende + Puffer]
 wird gekappt; der Rohstempel wird separat bewahrt. Opt-in: NULL = keine Kappung.
 """
@@ -36,11 +37,38 @@ def get_grace_minutes(db: Session, tenant_id) -> int:
         return DEFAULT_GRACE_MINUTES
 
 
-def get_scheduled_window(user, d: date) -> Tuple[Optional[time], Optional[time]]:
+def _is_soll_free_weekday(db: Session, user, d: date) -> bool:
+    """#484: Feiertag des Mandanten oder als ``free`` konfigurierter Sondertag."""
+    from app.services.holiday_service import is_holiday
+    from app.services.special_days_service import free_special_days_in_range
+
+    tenant_id = getattr(user, "tenant_id", None)
+    if is_holiday(db, d, tenant_id=tenant_id):
+        return True
+    return d in free_special_days_in_range(db, tenant_id, d, d)
+
+
+def get_scheduled_window(db: Session, user, d: date) -> Tuple[Optional[time], Optional[time]]:
+    """Soll-Fenster [Beginn, Ende] des Tages oder (None, None).
+
+    Kein Fenster an Tagen ohne Soll: am Wochenende, an Feiertagen und an als
+    ``free`` konfigurierten Sondertagen (#484). Arbeit dort ist eine Ausnahme
+    (§10 ArbZG, z. B. Notdienst), keine verschobene Regelarbeitszeit — bis 1.19.2
+    bekam ein Feiertag auf einem Werktag das Fenster seines Wochentags, und ein
+    KV-Dienst am Ostermontag wurde gekappt, derselbe Dienst am Sonntag nicht.
+    Ein ``half_day``-Sondertag hat ein Soll und behaelt das Fenster.
+
+    ``db`` ist Pflicht, damit eine uebersehene Aufrufstelle laut scheitert,
+    statt Feiertage still weiter zu kappen."""
     attrs = _WEEKDAY_ATTR.get(d.weekday())
     if attrs is None:  # Wochenende
         return (None, None)
-    return (getattr(user, attrs[0], None), getattr(user, attrs[1], None))
+    soll_start, soll_end = getattr(user, attrs[0], None), getattr(user, attrs[1], None)
+    if soll_start is None and soll_end is None:
+        return (None, None)  # kein Fenster hinterlegt → keine Abfrage noetig
+    if _is_soll_free_weekday(db, user, d):
+        return (None, None)
+    return (soll_start, soll_end)
 
 
 def _shift(t: time, minutes: int) -> time:
@@ -150,14 +178,15 @@ def clamp_warning(
 
 
 def clamp(
-    user, d: date, start: Optional[time], end: Optional[time], grace_minutes: int,
+    db: Session, user, d: date, start: Optional[time], end: Optional[time], grace_minutes: int,
 ) -> Tuple[Optional[time], Optional[time], Optional[time], Optional[time]]:
     """Gibt (eff_start, eff_end, raw_start, raw_end) zurück. raw_* nur gesetzt,
-    wenn die jeweilige Seite gekappt wurde. Übersprungen bei track_hours=False."""
+    wenn die jeweilige Seite gekappt wurde. Übersprungen bei track_hours=False
+    und an Tagen ohne Fenster (siehe ``get_scheduled_window``)."""
     if not getattr(user, "track_hours", True):
         return (start, end, None, None)
 
-    soll_start, soll_end = get_scheduled_window(user, d)
+    soll_start, soll_end = get_scheduled_window(db, user, d)
     eff_start, eff_end = start, end
     raw_start = raw_end = None
 

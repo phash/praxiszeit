@@ -141,6 +141,9 @@ Ist ein Soll-Fenster gesetzt (`scheduled_start_<wd>` / `scheduled_end_<wd>`), ka
 (`work_window_grace_minutes`, Default 15). Die **Rohstempel** bleiben in `raw_start_time` /
 `raw_end_time` erhalten (§16 ArbZG); `net_hours` und alle Salden rechnen mit der **gekappten** Zeit.
 
+Kein Fenster gibt es an Tagen ohne Soll: Wochenende, Feiertag des Mandanten und Sondertag im Modus
+`free` (#484, `work_window_service.get_scheduled_window`). Ein `half_day`-Sondertag behält das Fenster.
+
 **Beispiel:** Soll-Fenster Mo 08:00–16:00, Puffer 15 min, MA stempelt 07:30–17:10:
 
 | | Roh | gekappt (effektiv) |

@@ -298,7 +298,7 @@ def clock_in(
     grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     start_t = now.time().replace(second=0, microsecond=0)
     eff_start, _eff_end, raw_start, _raw_end = work_window_service.clamp(
-        current_user, now.date(), start_t, None, grace,
+        db, current_user, now.date(), start_t, None, grace,
     )
 
     entry = TimeEntry(
@@ -401,7 +401,7 @@ def clock_out(
     from app.services import work_window_service
     grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     _eff_start, eff_end, _raw_start, raw_end = work_window_service.clamp(
-        current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
+        db, current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
     )
 
     # §3 ArbZG: check daily hours before committing – skipped for exempt users
@@ -653,7 +653,7 @@ def create_time_entry(
     from app.services import work_window_service
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-        current_user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+        db, current_user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
     )
 
     # Duplikatsprüfung NACH dem Kappen (Release-Review 1.16.0). Gespeichert wird
@@ -986,7 +986,7 @@ def update_time_entry(
         entry.end_time, orig_snapshot["end_time"], orig_snapshot["raw_end_time"],
     )
     _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
-        _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
+        db, _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
     )
     # Fix #2: only overwrite start/end + raw_* when the respective time was
     # actually part of this partial update — mirrors the admin path
