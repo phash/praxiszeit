@@ -291,6 +291,9 @@ def review_change_request(
 
     # Approve: validate preconditions BEFORE changing status
     entry = None
+    # Release-Review 1.19.3 (F1): Eingabezeiten fuer clamp. Bei UPDATE unten durch
+    # unclamp_input ersetzt; hier der Antragswert, damit jeder Pfad sie kennt.
+    _in_start, _in_end = cr.proposed_start_time, cr.proposed_end_time
     if cr.entry_kind != "absence":
         if cr.request_type == ChangeRequestType.CREATE:
             duplicate = db.query(TimeEntry).filter(
@@ -340,6 +343,20 @@ def review_change_request(
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
 
+        # Release-Review 1.19.3 (F1): die Genehmigung ist ein dritter Schreibpfad
+        # neben den beiden Bearbeiten-Wegen. Die Antragsformulare belegen die
+        # Zeiten mit der ANGERECHNETEN Zeit vor — ein Antrag, der nur die Pause
+        # oder den §10-Grund korrigiert, schickt die gekappte Zeit zurueck. Ohne
+        # unclamp_input hielt clamp sie fuer eine neue Eingabe und loeschte den
+        # Rohstempel (§16-Nachweis, Grundlage der §5-Ruhezeit). Hier festhalten,
+        # bevor ``entry`` unten ueberschrieben wird — die informative
+        # Nachpruefung nach dem Commit nutzt dieselben Werte.
+        if cr.request_type == ChangeRequestType.UPDATE and entry is not None:
+            _in_start = work_window_service.unclamp_input(
+                cr.proposed_start_time, entry.start_time, entry.raw_start_time)
+            _in_end = work_window_service.unclamp_input(
+                cr.proposed_end_time, entry.end_time, entry.raw_end_time)
+
         # C-1: Re-validate §3 (daily hard cap) and §4 (breaks) against the
         # CURRENT DB state before materialising a CREATE/UPDATE. The CR was
         # validated at creation time, but other same-day entries may have been
@@ -368,8 +385,7 @@ def review_change_request(
                 # (e.g. a wide raw stamp the window clamps back under 10h).
                 _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
                 _eff_start, _eff_end, _, _ = work_window_service.clamp(
-                    db, cr_user, cr.proposed_date,
-                    cr.proposed_start_time, cr.proposed_end_time, _grace,
+                    db, cr_user, cr.proposed_date, _in_start, _in_end, _grace,
                 )
 
                 daily_hours_revalidate = _calculate_daily_net_hours(
@@ -470,8 +486,7 @@ def review_change_request(
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                db, _cr_user_te, cr.proposed_date,
-                cr.proposed_start_time, cr.proposed_end_time, _grace,
+                db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
             )
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
@@ -518,8 +533,7 @@ def review_change_request(
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                db, _cr_user_te, cr.proposed_date,
-                cr.proposed_start_time, cr.proposed_end_time, _grace,
+                db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
             )
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
@@ -1003,8 +1017,7 @@ def review_change_request(
             # and the create/update paths. The CR stores the RAW proposed times.
             _wgrace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
             _w_start, _w_end, _, _ = work_window_service.clamp(
-                db, cr_user, cr.proposed_date,
-                cr.proposed_start_time, cr.proposed_end_time, _wgrace,
+                db, cr_user, cr.proposed_date, _in_start, _in_end, _wgrace,
             )
             daily_hours_cr = _calculate_daily_net_hours(
                 db=db,

@@ -121,7 +121,10 @@ services:
     # der 13.0-Linie (13.1.x waere ein Minor-Sprung und braucht eine eigene
     # Bewertung). 13.0.4 enthaelt die CVEs des Sonderbuilds 13.0.1-security-01
     # (2026-05-12) und zusaetzlich die sieben CVEs aus 13.0.2 (2026-06-09).
-    image: grafana/grafana:13.0.4
+    # 2026-10-06 (Release-Review 1.19.3): 13.0.4 -> 13.0.10, Patch innerhalb der
+    # 13.0-Linie. Schliesst elf CVEs aus 13.0.7-13.0.10 (u. a. CVE-2026-15815
+    # Symlink beim Plugin-Entpacken, CVE-2026-76154 Stored XSS im Geomap-Panel).
+    image: grafana/grafana:13.0.10
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
       GF_AUTH_ANONYMOUS_ENABLED: "false"

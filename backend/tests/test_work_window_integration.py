@@ -613,3 +613,75 @@ def test_admin_create_on_holiday_is_not_clamped(db, employee, admin_client):
     entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
     assert (entry.start_time, entry.end_time) == (dt.time(7, 0), dt.time(18, 0))
     assert (entry.raw_start_time, entry.raw_end_time) == (None, None)
+
+
+def test_cr_update_mit_unveraenderter_angerechneter_zeit_bewahrt_den_rohstempel(db, employee, admin, admin_client):
+    """Release-Review 1.19.3 (F1): die Genehmigung eines UPDATE-Antrags ist ein
+    dritter Schreibpfad neben den beiden Bearbeiten-Wegen. Die Antragsformulare
+    belegen die Zeiten mit der ANGERECHNETEN Zeit vor; ein Antrag, der nur die
+    Pause korrigiert, schickt 07:45 zurueck. Ohne unclamp_input hielt clamp das
+    fuer eine neue, fensterkonforme Eingabe und loeschte den Rohstempel 07:37
+    (§16-Nachweis + Grundlage der §5-Ruhezeit)."""
+    from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRequestStatus
+
+    employee.scheduled_start_monday = dt.time(8, 0)
+    db.commit()
+    entry = TimeEntry(user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=dt.date(2026, 6, 1),
+                      start_time=dt.time(7, 45), raw_start_time=dt.time(7, 37),
+                      end_time=dt.time(16, 0), break_minutes=0)
+    db.add(entry)
+    db.commit()
+    cr = ChangeRequest(
+        tenant_id=DEFAULT_TENANT_ID, user_id=employee.id,
+        request_type=ChangeRequestType.UPDATE, entry_kind="time_entry",
+        status=ChangeRequestStatus.PENDING, time_entry_id=entry.id,
+        proposed_date=dt.date(2026, 6, 1), proposed_start_time=dt.time(7, 45),
+        proposed_end_time=dt.time(16, 0), proposed_break_minutes=30,
+        reason="Pause nachgetragen",
+        original_date=dt.date(2026, 6, 1), original_start_time=dt.time(7, 45),
+        original_end_time=dt.time(16, 0), original_break_minutes=0,
+    )
+    db.add(cr)
+    db.commit()
+
+    resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+
+    db.expire_all()
+    e = db.query(TimeEntry).filter(TimeEntry.id == entry.id).one()
+    assert e.break_minutes == 30
+    assert e.start_time == dt.time(7, 45)
+    assert e.raw_start_time == dt.time(7, 37), f"Rohstempel verloren: {e.raw_start_time}"
+
+
+def test_alter_gekappter_feiertagseintrag_wird_beim_speichern_neu_berechnet(db, employee, admin_client):
+    """#484/CHANGELOG 1.19.3: ein vor dem Update an einem Feiertag gekappter
+    Eintrag bleibt gespeichert, wie er ist. Oeffnet ein Admin ihn und speichert
+    unveraendert (das Formular schickt die angerechnete Zeit zurueck),
+    fuehrt unclamp_input zurueck auf den Rohstempel, und weil der Feiertag kein
+    Fenster mehr hat, wird die volle Zeit angerechnet."""
+    from app.models.public_holiday import PublicHoliday
+    from app.services.holiday_service import invalidate_holiday_cache
+
+    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.scheduled_end_monday = dt.time(17, 0)
+    db.add(PublicHoliday(date=dt.date(2026, 4, 6), name="Ostermontag", year=2026,
+                         tenant_id=employee.tenant_id))
+    entry = TimeEntry(user_id=employee.id, tenant_id=employee.tenant_id, date=dt.date(2026, 4, 6),
+                      start_time=dt.time(8, 0), end_time=dt.time(17, 15),
+                      raw_end_time=dt.time(18, 0), break_minutes=45)
+    db.add(entry)
+    db.commit()
+    invalidate_holiday_cache()
+    try:
+        resp = admin_client.put(
+            f"/api/admin/time-entries/{entry.id}",
+            json={"start_time": "08:00", "end_time": "17:15", "break_minutes": 45},
+        )
+    finally:
+        invalidate_holiday_cache()
+    assert resp.status_code == 200, resp.text
+    db.expire_all()
+    e = db.query(TimeEntry).filter(TimeEntry.id == entry.id).one()
+    assert e.end_time == dt.time(18, 0)
+    assert e.raw_end_time is None

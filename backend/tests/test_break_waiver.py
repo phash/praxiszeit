@@ -1094,3 +1094,34 @@ class TestDataExportRawStamp:
         entries = resp.json()["zeiteintraege"]
         assert entries[0]["raw_start_time"] is None, entries[0]
         assert entries[0]["raw_end_time"] is None, entries[0]
+
+
+class TestWaiverAntragTraegtParagraph10Grund:
+    """Release-Review 1.19.3 (F3): der Pausen-Ausnahme-Antrag (202) ist ein Weg,
+    auf dem ein Zeiteintrag ueber einen Antrag entsteht — er trug den §10-Grund
+    nicht und verlor ihn damit (genau die Klasse aus #485)."""
+
+    def test_anlegen_mit_genehmigungspflicht_traegt_den_grund(self, db, employee, employee_client):
+        _set_break_setting(db, "true")
+        resp = employee_client.post(
+            "/api/time-entries/",
+            json={**_OVER_6H, "break_minutes": 0, "break_waiver_reason": "OP-Notfall",
+                  "sunday_exception_reason": "Notdienst"},
+        )
+        assert resp.status_code == 202, resp.text
+        cr = db.query(ChangeRequest).one()
+        assert cr.proposed_sunday_exception_reason == "Notdienst"
+
+    def test_bearbeiten_mit_genehmigungspflicht_traegt_den_grund(self, db, employee, employee_client):
+        _set_break_setting(db, "true")
+        entry = _make_today_entry(db, employee, break_minutes=45)
+        resp = employee_client.put(
+            f"/api/time-entries/{entry.id}",
+            json={"break_minutes": 0, "break_waiver_reason": "Notfall",
+                  "sunday_exception_reason": "Notdienst"},
+        )
+        assert resp.status_code == 202, resp.text
+        cr = db.query(ChangeRequest).one()
+        assert cr.proposed_sunday_exception_reason == "Notdienst"
+        db.refresh(entry)
+        assert entry.sunday_exception_reason is None  # Original bleibt bis zur Genehmigung

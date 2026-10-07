@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.19.2"
+APP_VERSION="1.19.3"
 PYTHON_VERSION="3.13.16"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 # 20261001 buendelt CPython 3.13.16 (u. a. SSLContext-Use-after-free behoben)

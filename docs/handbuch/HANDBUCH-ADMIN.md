@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.7 | Stand: September 2026 (für PraxisZeit 1.19.2)**
+**Version 2.8 | Stand: Oktober 2026 (für PraxisZeit 1.19.3)**
 
 ---
 
@@ -31,6 +31,8 @@
 17. [Rechtliche Grundlagen](#17-rechtliche-grundlagen)
 18. [Berechnungsgrundlagen (Anhang)](#18-berechnungsgrundlagen-anhang)
 19. [Datensicherung (Backup & Restore)](#19-datensicherung-backup--restore)
+20. [Admin-Passwort verloren](#20-admin-passwort-verloren)
+- [Schichtplanung (optional)](#schichtplanung-optional-standardmäßig-deaktiviert)
 
 ---
 
@@ -223,7 +225,7 @@ Im Benutzerformular finden Sie den Bereich **„Soll-Arbeitszeiten je Wochentag"
 
 **Opt-in:** Sind für einen Mitarbeiter **keine** Soll-Zeiten hinterlegt, ändert sich nichts am bisherigen Verhalten. Die Kappung wird außerdem **übersprungen** bei Mitarbeitern ohne Stundenzählung. Bei **§ 18-befreiten** Mitarbeitern (ArbZG-Prüfungen ausgesetzt) wird **trotzdem gekappt** – es handelt sich um eine reine Anwesenheits-Policy, nicht um eine ArbZG-Prüfung.
 
-**Nur an Tagen mit Soll:** An **Wochenenden**, **gesetzlichen Feiertagen** und an Sondertagen (24./31.12.), die als **„frei"** eingestellt sind, gibt es kein Soll und deshalb auch kein Fenster. Arbeit an diesen Tagen (z. B. ein Notdienst am Ostermontag) wird voll angerechnet. Ein Sondertag als **„halber Feiertag"** hat ein Soll und behält das Fenster seines Wochentags. Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt, ein Sonntag dagegen nicht.
+**Nur an Tagen mit Soll:** An **Wochenenden**, **gesetzlichen Feiertagen** und an Sondertagen (24./31.12.), die als **„frei"** eingestellt sind, gibt es kein Soll und deshalb auch kein Fenster. Arbeit an diesen Tagen (z. B. ein Notdienst am Ostermontag) wird voll angerechnet. Ein Sondertag als **„halber Feiertag"** hat ein Soll und behält das Fenster seines Wochentags. Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt, ein Sonntag dagegen nicht. Solche Einträge bleiben nach dem Update gespeichert, wie sie sind; öffnen Sie einen davon im Admin-Dashboard oder Monatsjournal und speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet.
 
 Eingehängt ist die Kappung an **allen** Schreibpfaden: Ein-/Ausstempeln, manuelles Anlegen/Bearbeiten von Zeiteinträgen, Admin-Korrekturen, XLS-Import und genehmigte Korrekturanträge.
 
@@ -263,7 +265,7 @@ Die Änderung ist auch in den Berichten sichtbar: Monats- und Jahresbericht zeig
 Werden dabei Abwesenheits-Stunden zurückgerechnet, erscheint im **Änderungsprotokoll** neben der zusammenfassenden Zeile zusätzlich **je betroffener Abwesenheit eine eigene Protokollzeile** mit dem alten und dem neuen Stundenwert (z. B. „Krank 8,0 h" → „Krank 4,0 h — Wochenstunden-Änderung ab 15.03.2026") – so lässt sich jede einzelne Umrechnung im Nachhinein nachvollziehen. Der ursprünglich beim Buchen erfasste Stundenwert bleibt daneben intern unverändert gespeichert und wird von der Rückrechnung nie überschrieben – eine Rückversicherung, falls sich eine Berechnung nachträglich als falsch herausstellt.
 
 **Mitarbeiter deaktivieren:**
-Setzen Sie den Status auf **„Inaktiv"**. Deaktivierte Mitarbeiter können sich nicht mehr einloggen, historische Daten bleiben erhalten.
+Klicken Sie in der Benutzerliste in der Aktionsspalte auf **„Deaktivieren"** (Symbol Person mit X). Deaktivierte Mitarbeiter können sich nicht mehr einloggen, historische Daten bleiben erhalten. Über **„Inaktive anzeigen"** und **„Reaktivieren"** holen Sie ein Konto zurück.
 
 **Das letzte Admin-Konto bleibt aktiv:** Das letzte aktive Admin-Konto der Praxis lässt sich weder deaktivieren noch zur Mitarbeiterin bzw. zum Mitarbeiter herabstufen – sonst käme niemand mehr in die Verwaltung. Ernennen Sie vorher eine weitere Person zum Admin. Wer wann welches Konto deaktiviert, reaktiviert oder umgestuft hat, steht im Änderungsprotokoll unter **„Konto-Vorgänge"** (→ [Abschnitt 9](#9-änderungsprotokoll-audit-log)).
 
@@ -275,7 +277,7 @@ Für das **Recht auf Löschung** (Art. 17 DSGVO) gibt es zwei Stufen, die das ge
 
 **Ablauf in Kürze:**
 
-1. **Deaktivieren** Sie den/die Mitarbeiter:in (Status „Inaktiv"). Damit startet eine **14-tägige Sperrfrist**.
+1. **Deaktivieren** Sie den/die Mitarbeiter:in (Knopf „Deaktivieren" in der Aktionsspalte). Damit startet eine **14-tägige Sperrfrist**.
 2. Nach Ablauf der Sperrfrist kann **anonymisiert** werden.
 3. **Endgültig löschen** lässt sich ein Datensatz erst, wenn die **730-tägige (2-Jahre-)Aufbewahrungsfrist** abgelaufen ist.
 
@@ -436,7 +438,6 @@ Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränder
 
 | Aktion | Beispiel |
 |--------|---------|
-| **Login/Logout** | Wer hat sich wann eingeloggt? |
 | **Zeiteinträge** | Erstellen, Ändern, Löschen |
 | **Abwesenheiten** | Neue Abwesenheiten, Stornierungen |
 | **Konto-Vorgänge** | Deaktivieren, Reaktivieren, Rollenwechsel, durch die Verwaltung gesetzte Passwörter, Notfall-Vorgänge über die Kommandozeile – eigene Liste unten auf der Seite (siehe unten) |
@@ -451,9 +452,10 @@ Unter der Tabelle der Zeiteintrags-Änderungen steht die Liste **„Konto-Vorgä
 
 ### Filter und Suche
 
-- **Zeitraum**: Von–Bis-Datum wählen
-- **Benutzer**: Nur Aktionen eines bestimmten Mitarbeiters
-- **Aktion**: Nur bestimmte Aktionstypen
+- **Monat**: Monatswähler über der Tabelle
+- **Mitarbeitende**: Nur Einträge einer bestimmten Person
+
+Die Liste **„Konto-Vorgänge"** ist nicht gefiltert, sie zeigt die neuesten 200 Vorgänge. Fehlgeschlagene Anmeldungen stehen nicht im Änderungsprotokoll, sondern im Protokoll des Servers (`AUTH login_failed …`, → [Abschnitt 20](#20-admin-passwort-verloren)).
 
 > **Rechtlicher Hinweis:** Das Audit-Log erfüllt die Anforderungen einer unveränderlichen Aufzeichnung gem. § 16 ArbZG und kann bei Betriebsprüfungen als Nachweis dienen.
 
@@ -874,7 +876,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.19.2). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.19.3). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -1165,4 +1167,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: September 2026 (für PraxisZeit 1.19.2)*
+*Stand: Oktober 2026 (für PraxisZeit 1.19.3)*

@@ -21,6 +21,7 @@ from app.models.security_event import (
     SecurityEvent,
 )
 from app.schemas.security_event import SecurityEventResponse
+from app.routers.admin_helpers import lock_active_admin_ids
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
@@ -406,21 +407,15 @@ LAST_ADMIN_DETAIL = (
 def _is_last_active_admin(db: Session, user: User) -> bool:
     """Ist ``user`` das einzige aktive Admin-Konto seines Mandanten?
 
-    ``FOR UPDATE`` auf alle aktiven Admin-Zeilen: deaktivieren sich zwei Admins
-    gleichzeitig gegenseitig, wartet die zweite Transaktion und sieht danach
-    die erste Deaktivierung (READ COMMITTED prueft gesperrte Zeilen gegen die
-    Bedingung neu). Ohne die Sperre stuenden am Ende beide Konten deaktiviert da.
+    Sperrt alle aktiven Admin-Zeilen ueber ``lock_active_admin_ids`` (sortiert,
+    ``FOR NO KEY UPDATE`` — die Projektregel fuer Anker-Sperren auf ``users``):
+    deaktivieren sich zwei Admins gleichzeitig gegenseitig, wartet die zweite
+    Transaktion und sieht danach die erste Deaktivierung. Ohne die Sperre
+    stuenden am Ende beide Konten deaktiviert da.
     """
     if user.role != UserRole.ADMIN or not user.is_active:
         return False
-    active_admin_ids = [
-        row.id for row in db.query(User.id).filter(
-            User.tenant_id == user.tenant_id,  # F-026
-            User.role == UserRole.ADMIN,
-            User.is_active == True,  # noqa: E712
-        ).with_for_update().all()
-    ]
-    return active_admin_ids == [user.id]
+    return lock_active_admin_ids(db, user.tenant_id) == [user.id]
 
 
 def _log_account_event(db: Session, current_user: User, event: str, subject: User,
