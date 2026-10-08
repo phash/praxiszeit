@@ -10,9 +10,12 @@ on-prem gibt es keine Oberfläche, die ``Tenant.name`` ändert. Wer
 so geschehen im Schichtplan-Aushang.
 
 ``practice_display_name`` ist deshalb die EINE Antwort auf „wie heißt die
-Praxis auf einem Ausdruck?" für jede Fläche, die bisher ``Tenant.name`` dafür
-nahm. Bewusst ein Ersatz zur Laufzeit statt einer Migration oder eines
-Startup-Abgleichs:
+Praxis auf einem Ausdruck?" — genutzt vom Schichtplan-Aushang, vom AVV-Entwurf
+und vom klassischen Jahresbericht (Zelle A1; der las bis dahin direkt
+``settings.PRACTICE_NAME`` und zeigte in SaaS damit für jeden Mandanten den
+Betreiber-Wert). Eine neue Fläche mit Praxisnamen ruft ebenfalls diesen
+Helfer, weder ``Tenant.name`` noch ``PRACTICE_NAME`` direkt. Bewusst ein
+Ersatz zur Laufzeit statt einer Migration oder eines Startup-Abgleichs:
 
 * Die Konfiguration bleibt on-prem die Quelle. Wer ``PRACTICE_NAME`` später
   korrigiert (Docker-Installationen starten oft mit dem Vorgabewert

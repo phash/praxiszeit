@@ -679,7 +679,7 @@ DB-Migrationen laufen automatisch beim Backend-Start (über den Superuser via `D
 1. `https://<server-ip>` (bzw. `http://...` ohne SSL) im Browser öffnen
 2. Login mit Admin-Daten aus Installer / `.env`
 3. **Pflicht:** Admin-Passwort sofort unter `Profil → Passwort ändern` neu setzen
-4. Praxis-Daten vervollständigen: `Einstellungen → Praxis`
+4. Praxis-Daten prüfen: Name und Anschrift stehen nicht in der Oberfläche, sondern in der Konfiguration – nativ `[practice] name`/`address` in `config/praxiszeit.conf` (Abschnitt 7.1), Docker `PRACTICE_NAME`/`PRACTICE_ADDRESS` in `.env` (Abschnitt 7.2); der Name erscheint u. a. in der Kopfzeile des Schichtplan-Aushangs. Änderungen gelten nach einem Neustart des Dienstes (Docker: `docker compose up -d`). Das Bundesland lässt sich zusätzlich unter `Einstellungen` (Karte „Feiertage") umstellen.
 5. Erste Mitarbeitenden anlegen: `Mitarbeiter → Neu`
 6. Wöchentliche Soll-Stunden, Urlaubsanspruch und Vertragsbeginn pro Person eintragen
 7. Test-Stempelung über `Stempeluhr` → kontrollieren, dass Eintrag in „Heute" erscheint

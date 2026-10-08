@@ -9,8 +9,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason, WorkingHoursChange
-from app.services import calculation_service, special_days_service
+from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason, WorkingHoursChange, Tenant
+from app.services import calculation_service, practice_name_service, special_days_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
 from app.config import settings
@@ -1437,7 +1437,15 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
                    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
     # Row 1: Practice header (DSGVO F-016: use configurable env vars)
-    sheet.cell(row=1, column=1).value = settings.PRACTICE_NAME
+    # #495: der Praxisname kommt — wie auf Aushang und AVV — aus
+    # practice_display_name: on-prem ist das unverändert PRACTICE_NAME, in SaaS
+    # der Signup-Name des Mandanten statt der Betreiber-Einstellung. Dort ist
+    # er Nutzereingabe, deshalb neutralize_spreadsheet_formula. Die Abfrage
+    # filtert auf die Mandanten-Zeile des Mitarbeiters (F-026: die Tenant-PK
+    # IST die Mandanten-ID).
+    tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+    practice_name = practice_name_service.practice_display_name(tenant) or settings.PRACTICE_NAME
+    sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(practice_name)
     sheet.cell(row=1, column=1).font = header_font
     if settings.PRACTICE_ADDRESS:
         sheet.cell(row=1, column=2).value = settings.PRACTICE_ADDRESS

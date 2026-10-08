@@ -221,3 +221,54 @@ def test_placeholder_matches_what_migration_027_and_bootstrap_write():
     assert practice_name_service.DEFAULT_TENANT_SLUG == "default"
     assert "'Default', 'default'" in migration
     assert "name=practice_name_service.DEFAULT_TENANT_NAME" in main_py
+
+
+# ─── Dritte Fläche: der klassische Jahresbericht (XLSX, Zelle A1) ───────
+#
+# ``_create_employee_classic_sheet`` schrieb ``settings.PRACTICE_NAME`` direkt
+# in die Kopfzelle. On-prem ist das derselbe Wert, den der Helfer liefert —
+# in SaaS aber die Einstellung des Betreibers (Vorgabe „Praxis") für JEDEN
+# Mandanten, während Aushang und AVV desselben Mandanten dessen Signup-Namen
+# zeigen. Ein Mandant, zwei Praxisnamen auf zwei Ausdrucken.
+
+
+def _classic_a1(db):
+    from app.services.export_service import generate_yearly_report_classic
+    from openpyxl import load_workbook
+    from tests.conftest import DEFAULT_TENANT_ID
+
+    out = generate_yearly_report_classic(db, 2026, tenant_id=DEFAULT_TENANT_ID)
+    out.seek(0)
+    wb = load_workbook(out, read_only=True)
+    return wb[wb.sheetnames[0]].cell(row=1, column=1).value
+
+
+def test_classic_yearly_report_shows_the_saas_tenant_name(db, default_tenant, test_user, monkeypatch):
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(settings, "PRACTICE_NAME", "Betreiber-Platzhalter")
+    default_tenant.name = "Zahnarztpraxis Sonnenschein"
+    default_tenant.slug = "zahnarztpraxis-sonnenschein"
+    db.commit()
+
+    assert _classic_a1(db) == "Zahnarztpraxis Sonnenschein"
+
+
+def test_classic_yearly_report_on_prem_keeps_the_configured_name(db, default_tenant, test_user, monkeypatch):
+    """On-prem unverändert: der Bootstrap-Mandant „Default" wird zum
+    konfigurierten ``PRACTICE_NAME`` — derselbe Wert wie vor dem Fix."""
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "onprem")
+    monkeypatch.setattr(settings, "PRACTICE_NAME", DEMO_NAME)
+
+    assert _classic_a1(db) == DEMO_NAME
+
+
+def test_classic_yearly_report_neutralizes_a_formula_like_tenant_name(db, default_tenant, test_user, monkeypatch):
+    """In SaaS ist der Name eine Eingabe aus dem öffentlichen Signup — er darf
+    in der Tabelle nicht als Formel ausgeführt werden (wie jeder andere
+    Nutzertext der Exporte)."""
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "saas")
+    default_tenant.name = '=HYPERLINK("http://example.invalid","Praxis")'
+    default_tenant.slug = "formel-praxis"
+    db.commit()
+
+    assert _classic_a1(db) == '\'=HYPERLINK("http://example.invalid","Praxis")'
