@@ -11,7 +11,12 @@ interface TimeEntry {
   end_time: string | null;
   break_minutes: number;
   note?: string;
+  is_sunday_or_holiday?: boolean;
+  sunday_exception_reason?: string | null;
 }
+
+// #491 F4: Wortgleich zum Monatsjournal, damit beide Antragswege dasselbe fragen.
+const SUNDAY_REASON_LABEL = 'Ausnahmegrund (§10 ArbZG)';
 
 interface Props {
   entry: TimeEntry | null; // null for CREATE
@@ -36,6 +41,39 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
   // Eintrag" ab, die das Formular allein nicht vorab erkennen kann).
   const [showWaiver, setShowWaiver] = useState(false);
   const [breakWaiverReason, setBreakWaiverReason] = useState('');
+  // #491 F4: §10-ArbZG-Ausnahmegrund für Sonn- und Feiertage. Ohne dieses Feld
+  // kamen Anträge über den Button „Antrag" ohne Grund an, während das
+  // Monatsjournal danach fragt.
+  const [sundayReason, setSundayReason] = useState(entry?.sunday_exception_reason || '');
+  const [holidayDates, setHolidayDates] = useState<Set<string>>(() => new Set());
+  const holidayYear = /^\d{4}-/.test(formData.proposed_date) ? formData.proposed_date.slice(0, 4) : '';
+
+  useEffect(() => {
+    if (requestType === 'delete' || !holidayYear) return;
+    let cancelled = false;
+    apiClient
+      .get<{ date: string }[]>(`/holidays?year=${holidayYear}`)
+      .then((res) => {
+        if (!cancelled) setHolidayDates(new Set((res.data ?? []).map((h) => h.date)));
+      })
+      // Ohne Feiertagsliste bleibt die Sonntagsregel — das Feld ist optional.
+      .catch(() => {
+        if (!cancelled) setHolidayDates(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [holidayYear, requestType]);
+
+  // Samstag ist ein Werktag — dort fragt §10 nicht (gleiche Regel wie im Journal).
+  const isSundayOrHoliday = (() => {
+    const d = formData.proposed_date;
+    if (!d) return false;
+    if (new Date(`${d}T12:00:00`).getDay() === 0) return true;
+    if (holidayDates.has(d)) return true;
+    return !!entry?.is_sunday_or_holiday && d === entry.date;
+  })();
+  const showSundayReason = requestType !== 'delete' && isSundayOrHoliday;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +100,7 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
         proposed_note: requestType !== 'delete' ? formData.proposed_note : null,
         reason: formData.reason,
         break_waiver_reason: showWaiver && breakWaiverReason.trim() ? breakWaiverReason.trim() : null,
+        proposed_sunday_exception_reason: showSundayReason && sundayReason.trim() ? sundayReason.trim() : null,
       });
       onSuccess();
     } catch (err: any) {
@@ -145,8 +184,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
           {requestType !== 'delete' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+                <label htmlFor="cr-date" className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
                 <input
+                  id="cr-date"
                   type="date"
                   value={formData.proposed_date}
                   onChange={(e) => setFormData({ ...formData, proposed_date: e.target.value })}
@@ -155,8 +195,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Von</label>
+                <label htmlFor="cr-start" className="block text-sm font-medium text-gray-700 mb-1">Von</label>
                 <input
+                  id="cr-start"
                   type="time"
                   value={formData.proposed_start_time}
                   onChange={(e) => setFormData({ ...formData, proposed_start_time: e.target.value })}
@@ -165,8 +206,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bis</label>
+                <label htmlFor="cr-end" className="block text-sm font-medium text-gray-700 mb-1">Bis</label>
                 <input
+                  id="cr-end"
                   type="time"
                   value={formData.proposed_end_time}
                   onChange={(e) => setFormData({ ...formData, proposed_end_time: e.target.value })}
@@ -175,8 +217,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Pause (Min.)</label>
+                <label htmlFor="cr-break" className="block text-sm font-medium text-gray-700 mb-1">Pause (Min.)</label>
                 <input
+                  id="cr-break"
                   type="number"
                   min="0"
                   value={formData.proposed_break_minutes}
@@ -185,8 +228,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
+                <label htmlFor="cr-note" className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
                 <input
+                  id="cr-note"
                   type="text"
                   value={formData.proposed_note}
                   onChange={(e) => setFormData({ ...formData, proposed_note: e.target.value })}
@@ -194,6 +238,22 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
                 />
               </div>
+              {showSundayReason && (
+                <div className="md:col-span-2">
+                  <label htmlFor="cr-sunday-reason" className="block text-sm font-medium text-gray-700 mb-1">
+                    {SUNDAY_REASON_LABEL} <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
+                  </label>
+                  <input
+                    id="cr-sunday-reason"
+                    type="text"
+                    value={sundayReason}
+                    onChange={(e) => setSundayReason(e.target.value)}
+                    placeholder="z. B. Notdienst, Patientenversorgung"
+                    maxLength={2000}
+                    className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 bg-amber-50"
+                  />
+                </div>
+              )}
             </div>
           )}
 

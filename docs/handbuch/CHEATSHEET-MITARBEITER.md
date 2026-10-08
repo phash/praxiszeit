@@ -69,7 +69,7 @@ Wenn ein Eintrag gesperrt / zu alt ist:
 
 **Zeiterfassung → Tab Einträge** → Zeile des Eintrags → **Änderungsantrag**-Button
 1. Korrekte Zeiten eintragen
-2. Begründung schreiben
+2. Begründung schreiben (an Sonn- und Feiertagen zusätzlich **Ausnahmegrund (§10 ArbZG)**, z. B. „Notdienst")
 3. **Antrag stellen**
 
 Für Löschung: **Löschantrag**-Button → Begründung → Bestätigen

@@ -293,7 +293,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Navigieren Sie zu <strong>Zeiterfassung → Tab „Einträge"</strong>. Klicken Sie auf <strong>+ Neuer Eintrag</strong>. Das Formular erscheint direkt über der Tabelle – Datum, Von, Bis und Pause ausfüllen, dann Speichern.</p>
         <p>Aktuelle entsperrte Einträge können direkt über <strong>Bearbeiten</strong> geändert werden. Ältere oder gesperrte Einträge erfordern einen Korrekturantrag.</p>
-        <p><strong>Wochenende/Feiertag (z. B. KV-Dienst):</strong> Am selben Tag stempeln oder normal eintragen – an einem Sonntag erscheint zusätzlich das Feld <strong>Ausnahmegrund</strong>. Nachträglich per Antrag: Button <strong>Antrag</strong> im Tab „Einträge" oder im <strong>Journal</strong> das <strong>+</strong> in der Zeile des Tages; an Sonn- und Feiertagen fragt auch das Journal nach dem <strong>Ausnahmegrund (§10 ArbZG)</strong>. Das Soll ist an diesen Tagen 0, die angerechneten Stunden erhöhen also den Saldo.</p>
+        <p><strong>Wochenende/Feiertag (z. B. KV-Dienst):</strong> Am selben Tag stempeln oder normal eintragen – an einem Sonntag erscheint zusätzlich das Feld <strong>Ausnahmegrund</strong>. Nachträglich per Antrag: Button <strong>Antrag</strong> im Tab „Einträge" oder im <strong>Journal</strong> das <strong>+</strong> in der Zeile des Tages; an Sonn- und Feiertagen fragen beide Wege (Antragsformular und Journal) nach dem <strong>Ausnahmegrund (§10 ArbZG)</strong>. Das Soll ist an diesen Tagen 0, die angerechneten Stunden erhöhen also den Saldo.</p>
         <p className="text-amber-700 font-medium">ArbZG: Pflichtpause ab 6h (30 Min.), ab 9h (45 Min.). Über 10h Nettoarbeitszeit: beim Live-Ausstempeln Warnung, bei manueller Eingabe/Antrag harte Sperre.</p>
       </div>
     ),
@@ -327,7 +327,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
     title: '6. Korrekturanträge stellen & verwalten',
     content: (
       <div className="space-y-2">
-        <p>Wenn ein gesperrter Eintrag korrigiert werden muss: <strong>Zeiterfassung → Tab „Einträge"</strong> → in der Aktionsspalte auf <strong>Änderungsantrag</strong> klicken → korrekte Zeiten + Begründung eingeben → Antrag stellen.</p>
+        <p>Wenn ein gesperrter Eintrag korrigiert werden muss: <strong>Zeiterfassung → Tab „Einträge"</strong> → in der Aktionsspalte auf <strong>Änderungsantrag</strong> klicken → korrekte Zeiten + Begründung eingeben (an Sonn- und Feiertagen zusätzlich den <strong>Ausnahmegrund (§10 ArbZG)</strong>) → Antrag stellen.</p>
         <p>Den Status aller Anträge sehen Sie unter <strong>Zeiterfassung → Tab „Anträge"</strong>. Filter: Alle / Offen / Genehmigt / Abgelehnt. Offene Anträge können mit <strong>Zurückziehen</strong> storniert werden.</p>
         <p className="text-gray-700"><strong>Pflicht-Pause war nicht möglich?</strong> Erfüllen Ihre korrigierten Zeiten die Pausenregel nicht, wird der Antrag nicht abgelehnt – es erscheint das Feld <strong>„Pflicht-Pause war nicht möglich – Begründung"</strong>. Kurz erläutern und mit <strong>Mit dokumentierter Ausnahme senden</strong> abschicken; die Abweichung wird dokumentiert und dem Admin vorgelegt.</p>
       </div>
