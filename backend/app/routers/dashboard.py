@@ -327,12 +327,10 @@ def get_vacation_account(
     else:
         carryover_deadline = date(year + 1, 3, 31)
 
-    # Warning: remaining vacation AND deadline hasn't passed yet
-    today = today_local()
-    has_warning = (
-        float(account["remaining_days"]) > 0
-        and today.year == year  # only warn for current year
-        and today.month >= 10  # Q4 warning
+    # Jahresend-Warnung (Q4 des laufenden Jahres, #501: erst ab einem ganzen
+    # offenen Urlaubstag) — dieselbe Regel wie der Admin-Banner.
+    has_warning = calculation_service.has_year_end_vacation_warning(
+        account["remaining_days"], year, today_local()
     )
 
     return VacationAccount(

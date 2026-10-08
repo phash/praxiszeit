@@ -2198,6 +2198,32 @@ def child_sick_days_used(db: Session, user: User, year: int,
     return absence_days(db, user, windowed, wh_changes=wh_changes)
 
 
+# #501: Ab so vielen offenen Urlaubstagen warnt die Jahresend-Warnung. Ein
+# kleinerer Rest (Teilzeit-Bruchteile wie 0,3 / 0,5 Tage) wandert ins Folgejahr
+# und wird dort mit weiteren Bruchteilen zu ganzen Tagen zusammengelegt — als
+# „verfallender Urlaub, jetzt noch nehmen" lässt er sich gar nicht nehmen.
+YEAR_END_VACATION_WARNING_MIN_DAYS = Decimal('1')
+
+
+def has_year_end_vacation_warning(remaining_days, year: int, today: date) -> bool:
+    """#501: DIE eine Regel für die plakative Jahresend-Warnung vor verfallendem
+    Urlaub — gespeist in ``/dashboard/vacation`` (``has_carryover_warning``) UND
+    ``/admin/reports/yearly-absences`` (``has_year_end_warning``). Vorher lebte
+    sie zweimal (Backend ``> 0`` und Admin-Frontend ``> 0``).
+
+    Warnt nur im 4. Quartal des betrachteten Jahres und erst ab
+    ``YEAR_END_VACATION_WARNING_MIN_DAYS`` (1,0) offenen Tagen. Der Wert ist im
+    Urlaubskonto bereits auf 0,1 Tag gerundet; der Vergleich läuft über
+    ``Decimal(str(…))``, damit 1,0 als float nicht knapp darunter landet.
+    Reine Anzeige-Schwelle: das Urlaubskonto, der Übertrag und der
+    Jahresabschluss rechnen den Rest unverändert weiter."""
+    return (
+        Decimal(str(remaining_days)) >= YEAR_END_VACATION_WARNING_MIN_DAYS
+        and today.year == year
+        and today.month >= 10
+    )
+
+
 def get_vacation_account(
     db: Session,
     user: User,

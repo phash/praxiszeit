@@ -80,6 +80,7 @@ interface YearlyAbsences {
   overtime_comp_days?: number;
   overtime_year: number;
   total_days: number;
+  has_year_end_warning?: boolean; // #501: serverseitige Jahresend-Warnung (ab 1,0 Tagen, Q4)
 }
 
 interface UserDetails {
@@ -967,9 +968,12 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Year-end vacation warning banner (Q4 only) */}
-        {new Date().getMonth() >= 9 && currentYear === new Date().getFullYear() && (() => {
-          const withRemaining = yearlyAbsences.filter(e => e.remaining_vacation_days > 0);
+        {/* Year-end vacation warning banner. #501: Ob gewarnt wird (Q4 des
+            laufenden Jahres, erst ab 1,0 offenen Tagen — Teilzeit-Bruchteile
+            wandern ins Folgejahr), entscheidet der Server über dieselbe Regel
+            wie im Mitarbeiter-Dashboard; hier wird NICHT mehr selbst gefiltert. */}
+        {(() => {
+          const withRemaining = yearlyAbsences.filter(e => e.has_year_end_warning);
           return withRemaining.length > 0 ? (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
               <p className="font-semibold text-amber-800 mb-2">

@@ -15,7 +15,7 @@ from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
 from app.services import calculation_service, export_service, ods_export_service, rest_time_service
-from app.services.timezone_service import now_local
+from app.services.timezone_service import now_local, today_local
 from app.services.arbzg_utils import is_night_work
 import calendar
 from app.services.date_filters import date_in_year, date_in_month, date_in_range, parse_year_month
@@ -360,6 +360,7 @@ def get_yearly_absences(
     users = _get_active_visible_users(db, current_user.tenant_id)
 
     results = []
+    _today = today_local()  # #501: Gate der Jahresend-Warnung (Q4 des laufenden Jahres)
 
     for user in users:
         # F-033 + Sprint 3.4: fetch all absences for this user+year in ONE
@@ -421,7 +422,11 @@ def get_yearly_absences(
             other_days=other_days,
             paid_leave_days=paid_leave_days,
             overtime_year=float(overtime_year),
-            total_days=total_days
+            total_days=total_days,
+            # #501: dieselbe Regel wie die Warnung im Mitarbeiter-Dashboard.
+            has_year_end_warning=calculation_service.has_year_end_vacation_warning(
+                remaining_vacation_days, year, _today
+            ),
         ))
 
     # L-2: Übersicht erfolgreich gebaut -> health_data_read-Audit festschreiben.

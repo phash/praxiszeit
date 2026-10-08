@@ -197,3 +197,7 @@ class EmployeeYearlyAbsences(BaseModel):
     paid_leave_days: float = 0.0
     overtime_year: float
     total_days: float
+    # #501: Banner „Jahresend-Warnung: Offene Urlaubstage" im Admin-Dashboard —
+    # dieselbe Regel wie VacationAccount.has_carryover_warning
+    # (calculation_service.has_year_end_vacation_warning).
+    has_year_end_warning: bool = False

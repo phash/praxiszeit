@@ -70,6 +70,8 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 > **Voraussichtlicher Stand zum Jahresende:** Neben Ihrem **Überstundenkonto** steht, wie es zum 31.12. voraussichtlich aussieht – Ihr Saldo bis heute abzüglich der Stunden Ihrer bereits eingetragenen künftigen **Überstundenausgleich**-Tage. So sehen Sie sofort, ob die schon geplanten freien Tage Ihr Konto wie gewünscht abbauen. Urlaub, Krankheit und Fortbildung senken das Konto nicht und fließen deshalb nicht in die Vorschau ein. Ihre Praxisleitung kann diese Anzeige abschalten – fehlt die Zeile, ist entweder kein künftiger Ausgleichstag eingetragen oder die Anzeige in den Einstellungen deaktiviert.
 
+> **Hinweis auf offenen Urlaub (ab Oktober):** Im letzten Quartal zeigt das **Urlaubskonto** einen gelben Hinweis „Noch … Urlaubstage offen!" mit der Frist – aber erst, wenn noch **mindestens ein ganzer Urlaubstag** offen ist. Kleinere Reste (z. B. 0,5 Tage bei Teilzeit) lösen keinen Hinweis aus; sie stehen unverändert in Ihrem Urlaubskonto.
+
 > **Auf dem Smartphone** steht oben die Stempelkarte mit „x von y h heute" (Tagessaldo, siehe oben) und darunter die Karte **„Letzte Einträge"** mit Ihren fünf **neuesten** Zeiteinträgen des laufenden Monats – der jüngste zuerst. Alle Einträge finden Sie über „Alle anzeigen →" in der Zeiterfassung.
 
 > **Zeitanzeige:** Stunden werden im Format H:MM angezeigt (z. B. „8:30" für 8 Stunden 30 Minuten). Negative Salden werden mit einem Minus-Zeichen dargestellt (z. B. „-2:15").

@@ -107,6 +107,8 @@ Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/a
 
 Unterhalb der Monatsübersicht finden Sie die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeiter. Hier können Sie den Jahresabschluss durchführen.
 
+> **Jahresend-Warnung (ab Oktober):** Im letzten Quartal des laufenden Jahres erscheint über der Jahresübersicht der gelbe Hinweis **„Jahresend-Warnung: Offene Urlaubstage"** mit allen Mitarbeitenden, die noch **mindestens einen ganzen Urlaubstag** offen haben. Kleinere Reste – typisch bei Teilzeit, z. B. 0,3 oder 0,5 Tage – lösen bewusst **keine** Warnung aus: sie lassen sich nicht als ganzer Tag nehmen und werden üblicherweise im Folgejahr mit weiteren Bruchteilen zusammengelegt. In der Tabelle, im Urlaubskonto und beim Jahresabschluss zählen sie unverändert mit. Dieselbe Schwelle gilt für den Hinweis im Urlaubskonto auf dem Mitarbeiter-Dashboard.
+
 #### Jahresabschluss erstellen
 
 1. Wählen Sie das gewünschte **Jahr** im Zahlenfeld aus
