@@ -25,6 +25,7 @@ from app.services.export_service import (
     export_users,  # Release-Review 1.16.0
     neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label, _group_by_date,
     format_weekly_hours_history,  # #415
+    day_work_blocks,  # #498
 )
 
 
@@ -222,6 +223,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     headers = [
         "Datum", "Wochentag", "Von", "Bis", "Pause (Min)",
         "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
+        # #498: angehängt, nie eingeschoben (Parität zu XLSX).
+        "Unterbrechung (Min)", "Arbeitsblöcke",
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -280,6 +283,13 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         # Rohstempel bleiben sichtbar (§16), Soll und Ist zählen 0.
         in_window = calculation_service._within_employment_window(user, current_date)
 
+        # #497: Ist-Gutschrift Krank/Fortbildung für die Tages-Differenz — siehe
+        # export_service._create_employee_sheet (Parität, dieselbe Quelle wie
+        # get_monthly_actual). An Wochenende/Feiertag per Gewicht 0.
+        credit = (calculation_service.credited_absence_hours(
+            day_absences, current_date, set(holidays_by_date), special_day_config)
+            if in_window else Decimal("0.00"))
+
         tr = TableRow()
         tr.addElement(_str_cell(current_date.strftime("%d.%m.%Y")))
         tr.addElement(_str_cell(WEEKDAY_NAMES[weekday]))
@@ -329,7 +339,10 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             tr.addElement(_float_cell(0.0))
-            tr.addElement(_float_cell(0.0))
+            # #497: Soll 0 — Wochenend-/Feiertagsarbeit zählt im Saldo und steht
+            # deshalb in der Differenz (vorher fest 0.0, XLSX/PDF zeigten Netto).
+            # Die Gutschrift ist hier per credit_day_weight 0.
+            tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
             # Bemerkung: §10-Ausnahmegrund wenn vorhanden
             bem_parts = []
@@ -349,7 +362,10 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             tr.addElement(_float_cell(0.0))
-            tr.addElement(_float_cell(0.0))
+            # #497: Soll 0 — Wochenend-/Feiertagsarbeit zählt im Saldo und steht
+            # deshalb in der Differenz (vorher fest 0.0, XLSX/PDF zeigten Netto).
+            # Die Gutschrift ist hier per credit_day_weight 0.
+            tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
             bem_parts = []
             for e in day_entries:
@@ -368,18 +384,25 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             label, note_str = _absence_cell_parts(day_absences, reason_names, include_health_data)
             tr.addElement(_float_cell(float(target)))
             # net ist hier Decimal (vgl. else-Zweig) — beide Seiten Decimal halten.
-            tr.addElement(_float_cell(float(net - target)))
+            # #497: + Gutschrift Krank/Fortbildung (Soll bleibt dort stehen).
+            tr.addElement(_float_cell(float(net + credit - target)))
             tr.addElement(_str_cell(label))
             tr.addElement(_str_cell(note_str))
         else:
             target = daily_target
-            diff = float(net - target)
+            diff = float(net + credit - target)  # credit hier 0 (keine Abwesenheit)
             tr.addElement(_float_cell(float(target)))
             tr.addElement(_float_cell(diff))
             abw = "Nachtarbeit (§6 ArbZG)" if is_night_wrk else ""
             tr.addElement(_str_cell(abw))
             notes = " | ".join(e.note for e in day_entries if e.note)
             tr.addElement(_str_cell(notes))
+
+        # #498: angehängte Spalten 11/12 — Unterbrechung zwischen den Blöcken
+        # und die Blöcke selbst (geteilter Dienst), Parität zu XLSX.
+        _blocks, _gap = day_work_blocks(day_entries)
+        tr.addElement(_int_cell(_gap) if _gap is not None else _empty_cell())
+        tr.addElement(_str_cell(_blocks))
 
         total_target += target
         table.addElement(tr)
@@ -595,6 +618,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     headers = [
         "Datum", "Wochentag", "Von", "Bis", "Pause (Min)",
         "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
+        # #498: angehängt, nie eingeschoben (Parität zu XLSX).
+        "Unterbrechung (Min)", "Arbeitsblöcke",
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -652,6 +677,11 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         # Rohstempel bleiben sichtbar (§16), Soll und Ist zählen 0.
         in_window = calculation_service._within_employment_window(user, current_date)
 
+        # #497: Ist-Gutschrift Krank/Fortbildung für die Tages-Differenz (s. Monat).
+        credit = (calculation_service.credited_absence_hours(
+            day_absences, current_date, set(holidays_by_date), special_day_config)
+            if in_window else Decimal("0.00"))
+
         tr = TableRow()
         tr.addElement(_str_cell(current_date.strftime("%d.%m.%Y")))
         tr.addElement(_str_cell(WEEKDAY_NAMES[weekday]))
@@ -690,7 +720,10 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             tr.addElement(_float_cell(0.0))
-            tr.addElement(_float_cell(0.0))
+            # #497: Soll 0 — Wochenend-/Feiertagsarbeit zählt im Saldo und steht
+            # deshalb in der Differenz (vorher fest 0.0, XLSX/PDF zeigten Netto).
+            # Die Gutschrift ist hier per credit_day_weight 0.
+            tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
             bem_parts = []
             for e in day_entries:
@@ -708,7 +741,10 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             tr.addElement(_float_cell(0.0))
-            tr.addElement(_float_cell(0.0))
+            # #497: Soll 0 — Wochenend-/Feiertagsarbeit zählt im Saldo und steht
+            # deshalb in der Differenz (vorher fest 0.0, XLSX/PDF zeigten Netto).
+            # Die Gutschrift ist hier per credit_day_weight 0.
+            tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
             bem_parts = []
             for e in day_entries:
@@ -724,17 +760,22 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
             target = float(absence_day_target(db, user, current_date, day_absences, set(holidays_by_date), special_day_config, wh_changes=wh_changes, worked_hours=net))
             tr.addElement(_float_cell(target))
-            tr.addElement(_float_cell(net - target))
+            tr.addElement(_float_cell(net + float(credit) - target))  # #497
             tr.addElement(_str_cell(label))
             tr.addElement(_str_cell(note_str))
         else:
             target = float(daily_target)
             tr.addElement(_float_cell(target))
-            tr.addElement(_float_cell(net - target))
+            tr.addElement(_float_cell(net + float(credit) - target))  # credit hier 0
             abw = "Nachtarbeit (§6 ArbZG)" if is_night_wrk else ""
             tr.addElement(_str_cell(abw))
             notes = " | ".join(e.note for e in day_entries if e.note)
             tr.addElement(_str_cell(notes))
+
+        # #498: angehängte Spalten 11/12 (s. Monatsblatt).
+        _blocks, _gap = day_work_blocks(day_entries)
+        tr.addElement(_int_cell(_gap) if _gap is not None else _empty_cell())
+        tr.addElement(_str_cell(_blocks))
 
         table.addElement(tr)
         current_date += timedelta(days=1)

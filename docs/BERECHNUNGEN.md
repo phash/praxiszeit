@@ -240,6 +240,17 @@ können nicht mehr auseinanderlaufen); die **Per-Tag-Spalte „Netto (Std)"** di
 bleibt bewusst die reine **Stempelzeit** — sie ist der § 16-Nachweis der tatsächlichen
 Anwesenheit, die Abwesenheit steht in der Spalte daneben.
 
+Die **Per-Tag-Spalte „Differenz"/„Diff."** ist dagegen eine Saldo-Aussage und rechnet seit
+#497 `Netto + Gutschrift − Soll`, mit der Gutschrift aus
+`calculation_service.credited_absence_hours` (= Σ `hours` der TRAINING/SICK-Abwesenheiten des
+Tages × `credit_day_weight`, dieselbe Regel wie `get_range_actual`; das Monatsjournal nutzt
+denselben Helfer). Ein Krank-/Fortbildungstag steht damit bei ±0, und Σ „Differenz" =
+„Saldo Monat" (XLSX/PDF/ODS, Monat und Jahres-Mitarbeiterblatt). Vorher stand dort
+`Netto − Soll`: ein Kranktag erschien als −Tagessoll, im Widerspruch zur Summenzeile
+desselben Blatts. **Ausnahme Fix-Modus** (#377 Baustein 2b): dort ist das Monats-Soll flach,
+die Tageszeilen der Dateien summieren sich weiterhin nicht darauf — verbindlich ist die
+Summenzeile.
+
 ---
 
 ## 5. Monats-Soll

@@ -929,6 +929,31 @@ def credit_day_weight(d: date, holiday_dates: set, special_cfg: Optional[dict] =
     return Decimal('1') if factor is None else Decimal(str(factor))
 
 
+def credited_absence_hours(day_absences, d: date, holiday_dates: set,
+                           special_cfg: Optional[dict] = None) -> Decimal:
+    """#497: Ist-Gutschrift EINES Tages — Σ ``hours`` der TRAINING/SICK-
+    Abwesenheiten × :func:`credit_day_weight`.
+
+    Dieselbe Regel wie ``get_range_actual`` (und damit ``get_monthly_actual``),
+    hier nur fuer die Abwesenheiten eines einzelnen Tages. Gedacht fuer die
+    PER-TAG-Zeilen (Monatsjournal, §16-Datei-Exporte), die ihren Tages-Saldo
+    sonst ohne Gutschrift rechneten: ein Kranktag stand dort als −Tagessoll,
+    waehrend die Summenzeile darunter (``get_monthly_actual``) ihn korrekt
+    saldo-neutral zaehlte. Nicht nachbauen — diese Funktion aufrufen.
+
+    Das Beschaeftigungsfenster (#195) bleibt Sache des Aufrufers, wie bei
+    :func:`credit_day_weight`.
+    """
+    hours = sum(
+        (Decimal(str(a.hours)) for a in day_absences
+         if a.type in (AbsenceType.TRAINING, AbsenceType.SICK)),
+        Decimal('0'),
+    )
+    if not hours:
+        return Decimal('0')
+    return hours * credit_day_weight(d, holiday_dates, special_cfg)
+
+
 def _credited_day_context(db: Session, user: User, credited_absences: List[Absence]):
     """Feiertage + Sondertags-Konfiguration fuer :func:`get_range_actual`.
 

@@ -213,13 +213,11 @@ def get_journal(
         # im Wochenend-/Feiertagszweig, weil ``get_range_actual`` sie damals
         # ungefiltert summierte. Jetzt filtern beide Seiten — der Summand bleibt
         # stehen, ist an solchen Tagen aber per Gewicht 0.
-        credit_weight = calculation_service.credit_day_weight(
-            d, holiday_dates, special_day_config
+        # #497: EINE Quelle fuer die Tages-Gutschrift — dieselbe Funktion nutzen
+        # die Tageszeilen der §16-Datei-Exporte (Spalte „Differenz").
+        credited_sum = calculation_service.credited_absence_hours(
+            day_absences, d, holiday_dates, special_day_config
         )
-        credited_sum = Decimal(str(sum(
-            float(a.hours) for a in day_absences
-            if a.type in (AbsenceType.TRAINING, AbsenceType.SICK)
-        ))) * credit_weight
 
         if is_weekend or is_holiday_day:
             # ``credited_sum`` ist hier per Gewicht 0 → Ist = reine Stempelzeit.
