@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from app.core.limiter import limiter
 from app.database import get_db
-from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
+from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview, VacationRequestUpdate
-from app.services import calculation_service, special_days_service, settings_service
+from app.services import calculation_service, settings_service
 from app.services.closure_split_service import resplit_year_closures
 from app.services.timezone_service import today_local
 from app.routers.admin_helpers import (
@@ -165,38 +165,15 @@ def review_vacation_request(
             detail=f"Datum liegt nach dem letzten Arbeitstag ({target_user.last_work_day.strftime('%d.%m.%Y')})",
         )
 
-    # Collect affected years for holidays
-    years = set()
-    cur = start_date
-    while cur <= end_date:
-        years.add(cur.year)
-        cur += timedelta(days=1)
-
-    holidays = set()
-    for year in years:
-        # F-026 + CLAUDE.md PublicHoliday rule: standalone holiday queries must
-        # be tenant-scoped explicitly (RLS does not always cover them).
-        rows = db.query(PublicHoliday).filter(
-            PublicHoliday.year == year,
-            PublicHoliday.tenant_id == current_user.tenant_id,
-        ).all()
-        for h in rows:
-            holidays.add(h.date)
-
-    # AC-11: 'free'-Sondertage (24./31.12.) sind soll-frei → wie Feiertage
-    # ausschließen, sonst kostet ein Urlaubsantrag über einen freien Tag fälschlich
-    # einen Urlaubstag (free+counts_as_vacation wird separat im Konto gezählt).
-    holidays |= special_days_service.free_special_days_in_range(
-        db, current_user.tenant_id, start_date, end_date
+    # Determine working days: Mo–Fr ohne Feiertage (F-026: tenant-gefiltert) und
+    # ohne 'free'-Sondertage (AC-11: soll-frei → wie Feiertage ausschließen, sonst
+    # kostet ein Urlaubsantrag über einen freien Tag fälschlich einen Urlaubstag;
+    # free+counts_as_vacation wird separat im Konto gezählt).
+    # #496: dieselbe Quelle wie die Anzeige „Arbeitstage" am Antrag.
+    year_cache: dict = {}
+    dates_to_create = calculation_service.request_workday_candidates(
+        db, current_user.tenant_id, start_date, end_date, year_cache=year_cache
     )
-
-    # Determine working days
-    dates_to_create = []
-    cur = start_date
-    while cur <= end_date:
-        if cur.weekday() < 5 and cur not in holidays:
-            dates_to_create.append(cur)
-        cur += timedelta(days=1)
 
     if not dates_to_create:
         raise HTTPException(status_code=400, detail="Keine gültigen Arbeitstage im Zeitraum")
@@ -222,35 +199,26 @@ def review_vacation_request(
 
     # Check vacation budget only for VACATION type (per year for cross-year requests)
     if absence_type == AbsenceType.VACATION:
-        dates_by_year = {}
-        for d in dates_to_create:
-            dates_by_year.setdefault(d.year, []).append(d)
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
         # ``is_vacation_billable_day`` (F-026: tenant-gefiltert).
         wh_changes = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == target_user.id,
             WorkingHoursChange.tenant_id == target_user.tenant_id,
         ).order_by(WorkingHoursChange.effective_from).all()
-        for check_year, year_dates in dates_by_year.items():
+        # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5). R1-3: Tage
+        # mit 0 h Tagessoll zaehlen nicht (wie die Buchungsschleife unten). #431:
+        # Modus PRO TAG aufgeloest. #394: Halbtags-Sondertag = 0,5. Alles in
+        # ``vacation_day_cost_by_year`` — #496: dieselbe Zahl zeigt der Antrag
+        # unter „Arbeitstage".
+        cost_by_year = calculation_service.vacation_day_cost_by_year(
+            db, target_user, dates_to_create, bool(vr.half_day),
+            wh_changes=wh_changes, year_cache=year_cache,
+        )
+        for check_year in sorted({d.year for d in dates_to_create}):
             vacation_account = calculation_service.get_vacation_account(
                 db, target_user, check_year, wh_changes=wh_changes
             )
-            # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5).
-            # R1-3: skip days with 0h target (e.g. Mo/Mi/Fr user — mirrors the
-            # creation loop which skips hours_for_day == 0). #431: der Modus wird
-            # PRO TAG aufgeloest, nicht am Live-Flag gelesen (siehe
-            # ``is_vacation_billable_day``, dort auch die track_hours=False-Ausnahme).
-            billable_days = [
-                d for d in year_dates
-                if calculation_service.is_vacation_billable_day(db, target_user, d, wh_changes=wh_changes)
-            ]
-            # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
-            _base = 0.5 if vr.half_day else 1.0
-            _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
-            days_needed = sum(
-                _base * float(calculation_service.half_special_day_weight(d, _cfg))
-                for d in billable_days
-            )
+            days_needed = float(cost_by_year.get(check_year, 0))
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

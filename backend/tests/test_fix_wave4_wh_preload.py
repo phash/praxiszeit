@@ -235,7 +235,10 @@ def test_vacation_request_patch_wh_query_count_is_constant(db, default_tenant, e
     with _WhQueryCounter() as c:
         r = client.patch(f"/api/vacation-requests/{vr.id}", json={"end_date": RANGE_END.isoformat()})
     assert r.status_code == 200, r.text
-    assert c.count == 1, f"erwartet 1 WHChange-Preload, gemessen {c.count}"
+    # 1 Preload der Budget-Vorpruefung + 1 Preload des Antwort-Enrichers, der
+    # seit #496 die „Arbeitstage" nach dem Tagesplan je Datum zaehlt — beide
+    # konstant, unabhaengig von der Laenge des Zeitraums.
+    assert c.count == 2, f"erwartet 2 WHChange-Preloads, gemessen {c.count}"
 
 
 def test_vacation_request_create_wh_query_count_is_constant(db, default_tenant, emp):
@@ -251,7 +254,8 @@ def test_vacation_request_create_wh_query_count_is_constant(db, default_tenant, 
             "hours": 8, "absence_type": "vacation",
         })
     assert r.status_code == 201, r.text
-    assert c.count == 1, f"erwartet 1 WHChange-Preload, gemessen {c.count}"
+    # Vorpruefung + Antwort-Enricher (#496) je ein konstanter Preload.
+    assert c.count == 2, f"erwartet 2 WHChange-Preloads, gemessen {c.count}"
 
 
 def _set_closure_toggle(db, on: bool):

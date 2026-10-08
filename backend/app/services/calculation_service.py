@@ -630,7 +630,10 @@ def is_vacation_billable_day(
     ODER Ende > Austritt"; ein solcher Tag erreicht diese Funktion also nie.
     Ein Filter hier waere tot und wuerde die Reihenfolge verschleiern.
     Faellt einer der Guards weg, muss er hier nachgezogen werden — festgenagelt
-    in ``tests/test_vacation_precheck_employment_window.py``.
+    in ``tests/test_vacation_precheck_employment_window.py``. Die einzige
+    Lesestelle ohne vorgeschalteten Guard, die Tage-Anzeige am Antrag
+    (``request_day_count``, #496), filtert das Fenster deshalb selbst: ein
+    offener Antrag kann aelter sein als ein spaeter gesetzter Austritt.
     """
     if not user.track_hours:
         return True
@@ -2443,33 +2446,135 @@ def get_vacation_account(
     }
 
 
-def count_workdays(db: Session, start: date, end: date, tenant_id=None) -> int:
-    """Count weekdays (Mon-Fri) excluding public holidays between start and end (inclusive).
+def _request_year_info(db: Session, tenant_id, year: int, year_cache: Optional[dict]) -> dict:
+    """Je (Mandant, Jahr) einmal geladen: Feiertage, 'free'-Sondertage und die
+    Sondertags-Config. ``year_cache`` ist ein optionaler, vom Aufrufer gehaltener
+    Dict (der Antrags-Enricher listet bis zu 500 Antraege — ohne Cache liefen je
+    Antrag mehrere Abfragen auf dieselben Jahres-Daten)."""
+    key = (str(tenant_id), year)
+    if year_cache is not None and key in year_cache:
+        return year_cache[key]
+    # F-026 + CLAUDE.md PublicHoliday-Regel: Feiertage IMMER tenant-gefiltert.
+    holidays = {
+        h.date for h in db.query(PublicHoliday).filter(
+            PublicHoliday.year == year,
+            PublicHoliday.tenant_id == tenant_id,
+        ).all()
+    }
+    info = {
+        "holidays": holidays,
+        # AC-11: 'free'-Sondertage (24./31.12.) sind soll-frei wie Feiertage.
+        "free_special": special_days_service.free_special_days_in_range(
+            db, tenant_id, date(year, 1, 1), date(year, 12, 31)
+        ),
+        "special_cfg": special_days_service.get_special_day_config(db, tenant_id, year),
+    }
+    if year_cache is not None:
+        year_cache[key] = info
+    return info
 
-    F-026: pass ``tenant_id`` to scope the holiday lookup explicitly (belt-and-
-    suspenders on top of RLS). When omitted the query relies on RLS alone.
+
+def request_workday_candidates(
+    db: Session,
+    tenant_id,
+    start: date,
+    end: date,
+    year_cache: Optional[dict] = None,
+) -> List[date]:
+    """#496: die Kandidaten-Tage eines Urlaubs-/Abwesenheitszeitraums — Mo–Fr
+    ohne gesetzliche Feiertage und ohne 'free'-Sondertage (AC-11), aufsteigend.
+
+    Das ist die ERSTE Haelfte der Regel, nach der ein Antrag gebucht wird
+    (``admin_vacations.review_vacation_request``: genau diese Tage bekommen eine
+    Abwesenheit, sofern die Person dort arbeitet). Ob ein Kandidat fuer DIESE
+    Person ein Arbeitstag ist, entscheidet danach ``is_vacation_billable_day``
+    (Snapshot je Datum, #431) — siehe :func:`vacation_day_cost_by_year`.
+    Mandanten-, nicht personenbezogen: das Beschaeftigungsfenster prueft der
+    Aufrufer.
     """
-    years: set = set()
+    excluded: set = set()
+    for year in range(start.year, end.year + 1):
+        info = _request_year_info(db, tenant_id, year, year_cache)
+        excluded |= info["holidays"]
+        excluded |= info["free_special"]
+    result: List[date] = []
     cur = start
     while cur <= end:
-        years.add(cur.year)
+        if cur.weekday() < 5 and cur not in excluded:
+            result.append(cur)
         cur += timedelta(days=1)
+    return result
 
-    holidays: set = set()
-    for year in years:
-        q = db.query(PublicHoliday).filter(PublicHoliday.year == year)
-        if tenant_id is not None:
-            q = q.filter(PublicHoliday.tenant_id == tenant_id)
-        year_holidays = q.all()
-        holidays.update(h.date for h in year_holidays)
 
-    count = 0
-    cur = start
-    while cur <= end:
-        if cur.weekday() < 5 and cur not in holidays:
-            count += 1
-        cur += timedelta(days=1)
-    return count
+def vacation_day_cost_by_year(
+    db: Session,
+    user: User,
+    dates: List[date],
+    half_day: bool,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+    year_cache: Optional[dict] = None,
+) -> Dict[int, Decimal]:
+    """#496: was die Buchung dieser Kandidaten-Tage im Urlaubskonto kostet, je
+    Kalenderjahr — tagebasiert (Tagesprinzip §3 BUrlG).
+
+    DIE eine Regel fuer die Budget-Vorpruefungen der Antragspfade (Anlegen,
+    Bearbeiten, Genehmigen) UND fuer die Anzeige „Arbeitstage" am Antrag
+    (:func:`request_day_count`). Vorher stand die Anzeige als eigene, stumpfe
+    Mo–Fr-Zaehlung daneben (``count_workdays``) und widersprach bei jeder
+    Teilzeitkraft mit Tagesplan dem, was die Genehmigung danach verbrauchte.
+
+    - ein Tag zaehlt nur, wenn ``is_vacation_billable_day`` ihn als Arbeitstag
+      der Person sieht (Tagesplan-0-h-Tage raus, Modus je Datum aufgeloest,
+      ``track_hours=False`` zaehlt jeden Werktag);
+    - Halbtags-Antrag = 0,5 je Tag (#167);
+    - ein als „halber Feiertag" eingestellter 24./31.12. kostet nur die Haelfte
+      (``half_special_day_weight``, #394).
+
+    Exakt die Regel von ``get_vacation_account.used_days`` fuer die danach
+    gebuchten Zeilen. Jahre ohne zaehlenden Tag fehlen im Ergebnis.
+    """
+    base = Decimal('0.5') if half_day else Decimal('1')
+    cost: Dict[int, Decimal] = {}
+    for d in dates:
+        if not is_vacation_billable_day(db, user, d, wh_changes=wh_changes):
+            continue
+        cfg = _request_year_info(db, user.tenant_id, d.year, year_cache)["special_cfg"]
+        cost[d.year] = cost.get(d.year, Decimal('0')) + base * half_special_day_weight(d, cfg)
+    return cost
+
+
+def request_day_count(
+    db: Session,
+    user: User,
+    start: date,
+    end: date,
+    half_day: bool,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+    year_cache: Optional[dict] = None,
+) -> Decimal:
+    """#496: die Tage, die ein Antrag ``start``…``end`` die Person kostet — die
+    Zahl hinter „Arbeitstage" in der Admin-Antragsliste und hinter dem Zeitraum
+    in „Meine Anträge".
+
+    Gleiche Quelle wie Buchung und Budget-Vorpruefung (Kandidaten-Tage +
+    :func:`vacation_day_cost_by_year`), plus das #193-Beschaeftigungsfenster:
+    ein offener Antrag kann aelter sein als ein spaeter gesetzter Austritt, und
+    Tage ausserhalb des Fensters zaehlt das Urlaubskonto nicht (Audit
+    2026-07-31, Fund B). In den Vorpruefungen ist das Fenster bereits per 400
+    vorweg gesperrt, dort waere der Filter wirkungslos.
+
+    Fuer jeden Antragstyp dieselbe Zahl: auch Fortbildung/Sonstiges bucht nur
+    die Arbeitstage der Person, und ``absence_days`` zaehlt sie in den
+    Berichten mit demselben Halbtags-/Sondertagsgewicht.
+    """
+    dates = [
+        d for d in request_workday_candidates(db, user.tenant_id, start, end, year_cache=year_cache)
+        if _within_employment_window(user, d)
+    ]
+    cost = vacation_day_cost_by_year(
+        db, user, dates, half_day, wh_changes=wh_changes, year_cache=year_cache
+    )
+    return sum(cost.values(), Decimal('0'))
 
 
 def closed_years_in_range(db: Session, tenant_id, years) -> List[int]:

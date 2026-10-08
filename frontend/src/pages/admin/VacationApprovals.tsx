@@ -8,6 +8,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { showResponseWarning } from '../../utils/arbzgWarnings';
+import { formatDayCount } from '../../utils/formatters';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 import VacationRequestEditModal from '../../components/VacationRequestEditModal';
 
@@ -295,7 +296,7 @@ export default function VacationApprovals() {
                       </span>
                     </p>
                     <p>
-                      Arbeitstage: <span className="font-medium">{vr.days != null ? `${vr.days} Tag${vr.days !== 1 ? 'e' : ''}` : `${vr.hours} h`}</span>
+                      Arbeitstage: <span className="font-medium">{vr.days != null ? formatDayCount(vr.days) : `${vr.hours} h`}</span>
                     </p>
                     {vr.note && (
                       <p>

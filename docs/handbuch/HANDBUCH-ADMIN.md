@@ -380,9 +380,18 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 
 ### Antrag genehmigen
 
-1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, Notiz
+1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, **Arbeitstage**, Notiz
 2. Klicken Sie auf **„Genehmigen"** (grüner Button)
-3. Das System trägt automatisch Abwesenheiten für alle Werktage ein (Wochenenden und Feiertage ausgeschlossen)
+3. Das System trägt automatisch Abwesenheiten für alle Arbeitstage der Person ein (Wochenenden, Feiertage, als „frei" eingestellte Sondertage 24./31.12. und freie Wochentage laut Tagesplan ausgeschlossen)
+
+**„Arbeitstage" auf der Antragskarte** zeigt, wie viele Tage der Antrag nach der Genehmigung tatsächlich kostet – nach genau denselben Regeln wie die Buchung und das Urlaubskonto:
+
+- Es zählen nur Tage, an denen die Person laut ihrem **zum jeweiligen Datum gültigen** Arbeitsplan arbeitet. Bei einer 4-Tage-Woche mit freiem Mittwoch kostet eine Woche Montag bis Freitag **4** Tage, nicht 5. Liegt im Zeitraum eine Stundenänderung, gilt für jeden Tag der Plan, der an diesem Tag gültig ist.
+- Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht.
+- Ein **halber Tag** zählt **0,5**; ein als **„halber Feiertag"** eingestellter 24./31.12. ebenfalls **0,5**.
+- Tage nach einem inzwischen eingetragenen **letzten Arbeitstag** zählen nicht mit.
+
+Dieselbe Zahl sehen Mitarbeitende im Tab **„Meine Anträge"**. Bis Version 1.19.3 zählte die Anzeige stumpf Montag bis Freitag ohne Feiertage und widersprach damit bei Teilzeitkräften mit Tagesplan, bei Halbtagen und bei freien Sondertagen dem, was die Genehmigung danach verbucht.
 
 ### Genehmigten Antrag stornieren
 

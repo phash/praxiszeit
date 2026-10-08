@@ -128,6 +128,21 @@ export function formatDayPlan(dayHours?: (number | null)[] | null): string {
 }
 
 /**
+ * #496: Tage-Anzahl eines Abwesenheitsantrags — '1 Tag', '4 Tage', '0,5 Tage'.
+ *
+ * Seit #496 zählt der Server die Antrags-Tage nach der Buchungsregel (Tagesplan,
+ * Halbtag 0,5, halber Feiertag 0,5 — zusammen auch 0,25). Vorher kamen nur ganze
+ * Zahlen, und `${days} Tage` schrieb einen Bruch mit Dezimalpunkt. Höchstens
+ * zwei Nachkommastellen, deutsches Komma, Singular nur für genau einen Tag.
+ */
+export function formatDayCount(days: number): string {
+  if (!Number.isFinite(days)) return '? Tage';
+  const rounded = Math.round(days * 100) / 100;
+  const text = String(rounded).replace('.', ',');
+  return `${text} ${rounded === 1 ? 'Tag' : 'Tage'}`;
+}
+
+/**
  * ' auf 4 Arbeitstage' — aber nur, wenn diese Änderung die Arbeitstage
  * tatsächlich verschiebt (Leerstring sonst). Zwilling von
  * `export_service._work_days_suffix`; die Kurzform („4 Tage") gibt es nur in
