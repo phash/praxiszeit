@@ -571,6 +571,7 @@ export const handbuchAdminSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando <strong>auf dem Server selbst</strong> — es setzt das Passwort direkt in der Datenbank neu und braucht dafür keine Anmeldung:</p>
         <p><strong>Linux:</strong> <code>sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py reset-admin-password</code></p>
+        <p><strong>macOS</strong> (Dienstkonto mit Unterstrich): <code>sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py reset-admin-password</code></p>
         <p><strong>Windows</strong> (Eingabeaufforderung als Administrator im Installationsordner): <code>bin\python\python.exe praxiszeit-server.py reset-admin-password</code></p>
         <p className="text-gray-500">Der lange Pfad ist nötig: das Programm braucht den mitgelieferten Python-Interpreter und liegt nicht als normaler Befehl im Systempfad. Weicht Ihr Installationsverzeichnis von <code>/opt/praxiszeit</code> ab, ersetzen Sie es entsprechend.</p>
         <p>Das neue Passwort wird zweimal abgefragt (nicht mit eingetippt, damit es nicht in der Befehls-Historie landet) und gegen dieselben Regeln geprüft wie in der Anwendung. Danach sind <strong>alle laufenden Sitzungen dieses Kontos ungültig</strong>.</p>

@@ -131,25 +131,51 @@ Installers in dasselbe Verzeichnis**. Daten (`data/db`), Konfiguration
 (`config/`, inkl. `.env`/`.secret-key`/`.db-credentials`/`license.key`) und
 das Backup-Verzeichnis bleiben dabei erhalten.
 
-### Linux / macOS
+### Linux
 
 ```bash
 # 1. Backup — frischer DB-Dump (Dienst läuft dabei), dann Konfiguration sichern
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
-    /opt/praxiszeit/praxiszeit-server.py backup        # macOS: /usr/local/praxiszeit/...
+    /opt/praxiszeit/praxiszeit-server.py backup
 ls /opt/praxiszeit/data/backups/                       # der neue Dump liegt hier
-sudo systemctl stop praxiszeit                         # Linux (macOS: launchctl unload, s. INSTALL-NATIVE.md)
-cp -a /opt/praxiszeit/config /opt/praxiszeit/config.bak-$(date +%F)
+sudo systemctl stop praxiszeit
+sudo cp -a /opt/praxiszeit/config /opt/praxiszeit/config.bak-$(date +%F)   # config/ ist nur fürs Dienstkonto lesbar
 
 # 2. Neues Tarball flach in einen Ordner entpacken + Installer erneut ausführen
 mkdir -p praxiszeit-<neu>
-tar xzf praxiszeit-<neu>-linux-x64.tar.gz -C praxiszeit-<neu>      # macOS: -macos-x64 / -macos-arm64
+tar xzf praxiszeit-<neu>-linux-x64.tar.gz -C praxiszeit-<neu>
 cd praxiszeit-<neu>
 sudo ./install.sh                                       # erkennt die bestehende Installation,
                                                         # behält Daten/Config/Lizenz, spielt nur Code + Migrationen ein
 
 # 3. Dienst läuft danach wieder; Status prüfen
 sudo systemctl status praxiszeit
+```
+
+### macOS
+
+Auf dem Mac weichen drei Dinge ab: der Installationsordner ist
+`/usr/local/praxiszeit`, das Dienstkonto heißt **`_praxiszeit`** (mit
+Unterstrich, wie bei macOS-Systemkonten üblich) und der Dienst läuft über
+launchd statt systemd.
+
+```bash
+# 1. Backup — frischer DB-Dump (Dienst läuft dabei), dann Konfiguration sichern
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
+    /usr/local/praxiszeit/praxiszeit-server.py backup
+ls /usr/local/praxiszeit/data/backups/
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo cp -a /usr/local/praxiszeit/config /usr/local/praxiszeit/config.bak-$(date +%F)
+
+# 2. Neues Paket flach in einen Ordner entpacken + Installer erneut ausführen
+mkdir -p praxiszeit-<neu>
+tar xzf praxiszeit-<neu>-macos-arm64.tar.gz -C praxiszeit-<neu>    # Intel-Mac: -macos-x64
+cd praxiszeit-<neu>
+sudo ./install.sh                                       # erkennt die bestehende Installation
+                                                        # und lädt den Dienst am Ende wieder
+
+# 3. Status prüfen
+sudo launchctl list | grep de.praxiszeit
 ```
 
 > Der Installer legt Verzeichnisse mit `mkdir -p` an (löscht nichts), übernimmt

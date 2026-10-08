@@ -55,9 +55,13 @@ Erzeugt sofort ein Backup im konfigurierten `data/backups/`-Verzeichnis (gleiche
 Routine wie das automatische, inkl. Aufräumen alter Backups):
 
 ```bash
-# Linux / macOS
+# Linux
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
-    /opt/praxiszeit/praxiszeit-server.py backup          # macOS: /usr/local/praxiszeit/...
+    /opt/praxiszeit/praxiszeit-server.py backup
+
+# macOS (Dienstkonto mit Unterstrich, anderer Installationsordner)
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
+    /usr/local/praxiszeit/praxiszeit-server.py backup
 ```
 
 ```bat

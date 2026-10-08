@@ -203,11 +203,7 @@ Das `[admin].password` wird beim Start gelesen, um das Admin-Konto anzulegen, **
 
 Den Klartextwert sollte man deshalb entwerten. ⚠️ **Nicht durch einen festen Platzhalter** wie `set-via-ui`: fehlt das Admin-Konto irgendwann (Benutzername umgestellt, Konto nach Art. 17 endgültig gelöscht), legt der nächste Start es mit genau diesem Wert neu an — und ein in der Projektdokumentation veröffentlichter Wert ist dann das Passwort. Die Schwachpasswort-Prüfung greift dabei nicht: sie bricht den Start nur bei `ENVIRONMENT=production` ab, und der native Standard ist `development`.
 
-Stattdessen einen **zufälligen** Ersatzwert eintragen — oder einfacher das mitgelieferte Kommando nutzen, das den Eintrag selbst mit einem Zufallswert überschreibt (siehe Admin-Handbuch, „Admin-Passwort verloren"):
-
-```
-bin\python\python.exe praxiszeit-server.py reset-admin-password
-```
+Stattdessen einen **zufälligen** Ersatzwert eintragen — oder das mitgelieferte Kommando nutzen, das den Eintrag selbst mit einem Zufallswert überschreibt. **Beides erst nach dem ersten Login** (Schritt 7): jetzt, vor dem ersten Dienststart, gibt es weder Datenbank noch Admin-Konto — das Kommando hätte nichts, dessen Passwort es setzen könnte, und der Wert in der Datei wird für die Anlage des Kontos noch gebraucht. Wie es geht, steht in Schritt 7.
 
 ### Optional, aber empfohlen: Produktiv-Modus erzwingen
 
@@ -319,7 +315,15 @@ Login:
 - **Benutzername:** `admin` (oder der Wert aus `[admin].username`)
 - **Passwort:** der Wert aus `[admin].password`
 
-**Sofort nach dem ersten Login Pflicht:** rechts oben das Profil-Menü öffnen → **Profil → Passwort ändern** → neues Passwort setzen.
+**Sofort nach dem ersten Login Pflicht:** das Startpasswort ersetzen **und** den Klartext-Eintrag `[admin].password` in `praxiszeit.conf` entwerten (Begründung in Schritt 5). Zwei Wege:
+
+- **Im Browser:** rechts oben das Profil-Menü öffnen → **Profil → Passwort ändern** → neues Passwort setzen. Danach in `praxiszeit.conf` den Wert von `[admin].password` durch einen **zufälligen** Wert ersetzen (nicht löschen — der Dienst setzt den Eintrag beim Start voraus).
+- **Beides in einem Schritt per Kommando** (Eingabeaufforderung **als Administrator**): es fragt das neue Passwort ab, setzt es und überschreibt den Eintrag in der Datei selbst mit einem Zufallswert. Der Vorgang wird protokolliert (siehe Admin-Handbuch, „Admin-Passwort verloren").
+
+  ```cmd
+  cd C:\PraxisZeit
+  bin\python\python.exe praxiszeit-server.py reset-admin-password
+  ```
 
 ---
 

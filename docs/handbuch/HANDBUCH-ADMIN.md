@@ -1030,6 +1030,12 @@ Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kom
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py reset-admin-password
 ```
 
+**macOS** (Standard-Installationsordner `/usr/local/praxiszeit`; das Dienstkonto heißt hier `_praxiszeit` – mit Unterstrich):
+
+```
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py reset-admin-password
+```
+
 **Windows** (Eingabeaufforderung **als Administrator** im Installationsordner, z. B. `C:\PraxisZeit`):
 
 ```

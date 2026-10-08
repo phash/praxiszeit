@@ -268,9 +268,12 @@ systemctl list-timers praxiszeit-backup.timer
 # Backup sofort ausloesen (Linux)
 sudo systemctl start praxiszeit-backup.service
 
-# Manuelles Backup (Linux/macOS, direkt)
+# Manuelles Backup (Linux, direkt)
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
     /opt/praxiszeit/praxiszeit-server.py backup
+# macOS: Dienstkonto _praxiszeit, Ordner /usr/local/praxiszeit
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
+    /usr/local/praxiszeit/praxiszeit-server.py backup
 
 # Backups anzeigen
 ls -la /opt/praxiszeit/data/backups/
