@@ -283,6 +283,75 @@ def test_half_special_day_sick_is_neutral_in_daily_diff(db, test_user):
     assert row[7] == pytest.approx(0.0)
 
 
+LATE_FIRST_WORK_DAY = date(2026, 9, 16)   # Mi — Eintritt mitten im Monat
+SICK_BEFORE_START = date(2026, 9, 8)      # Di — Krankmeldung VOR dem Eintritt
+
+
+@pytest.fixture
+def late_starter_sick(db, test_user):
+    """Krankmeldung vor dem Eintritt (z. B. ``first_work_day`` nachträglich
+    nach hinten verschoben). ``get_monthly_actual`` schließt die Gutschrift
+    über das Beschäftigungsfenster aus (#195) — die Tagesspalte „Differenz"
+    muss dasselbe tun, sonst stünden dort +8 h Phantom-Überstunden."""
+    test_user.first_work_day = LATE_FIRST_WORK_DAY
+    db.commit()
+    _absence(db, test_user, SICK_BEFORE_START, AbsenceType.SICK, hours=8.0)
+    return test_user
+
+
+class TestIssue497CreditOutsideEmploymentWindow:
+    """Review-Fund R3: der Guard ``credit = … if in_window else 0`` steht in
+    FÜNF Tagesschleifen (XLSX Monat/Jahr, PDF, ODS Monat/Jahr). Ohne diesen
+    Test bliebe die Suite grün, wenn er an einer Stelle verloren ginge.
+
+    In XLSX und PDF trägt der Guard allein: ohne ihn stünde dort Diff +8. Die
+    ODS-Blätter schreiben im Zweig „Außerhalb des Beschäftigungszeitraums" die
+    Differenz zusätzlich fest auf 0 — dort pinnen die Tests das Verhalten, falls
+    dieser Zweig einmal auf die berechnete Differenz umgestellt wird."""
+
+    def test_xlsx_monthly(self, db, late_starter_sick):
+        sheet = _xlsx_employee_sheet(export_service.generate_monthly_report(
+            db, YEAR, MONTH, tenant_id=DEFAULT_TENANT_ID), late_starter_sick)
+        rows = _xlsx_day_rows(sheet)
+        assert rows[SICK_BEFORE_START][6] == pytest.approx(0.0), "kein Soll vor dem Eintritt"
+        assert rows[SICK_BEFORE_START][7] == pytest.approx(0.0), "keine Gutschrift vor dem Eintritt"
+        total = sum(r[7] for r in rows.values())
+        assert total == pytest.approx(_month_saldo(db, late_starter_sick), abs=0.005)
+
+    def test_xlsx_yearly(self, db, late_starter_sick):
+        sheet = _xlsx_employee_sheet(export_service.generate_yearly_report(
+            db, YEAR, tenant_id=DEFAULT_TENANT_ID), late_starter_sick, yearly=True)
+        rows = _xlsx_day_rows(sheet)
+        assert rows[SICK_BEFORE_START][7] == pytest.approx(0.0)
+        total = sum(r[7] for r in rows.values())
+        assert total == pytest.approx(_year_saldo(db, late_starter_sick), abs=0.01)
+
+    def test_pdf(self, db, late_starter_sick, monkeypatch):
+        header, rows = _pdf_main_table(db, monkeypatch)
+        col = header.index("Diff.")
+        assert float(rows[SICK_BEFORE_START][col]) == pytest.approx(0.0)
+        total = sum(float(r[col]) for r in rows.values())
+        assert total == pytest.approx(_month_saldo(db, late_starter_sick), abs=0.005)
+
+    def test_ods_monthly(self, db, late_starter_sick):
+        user = late_starter_sick
+        table = _ods_table(ods_export_service.generate_monthly_report(
+            db, YEAR, MONTH, tenant_id=DEFAULT_TENANT_ID), f"{user.last_name} {user.first_name}"[:31])
+        rows = _ods_day_rows(table)
+        assert float(rows[SICK_BEFORE_START][7][1]) == pytest.approx(0.0)
+        total = sum(float(r[7][1]) for r in rows.values())
+        assert total == pytest.approx(_month_saldo(db, user), abs=0.005)
+
+    def test_ods_yearly(self, db, late_starter_sick):
+        user = late_starter_sick
+        table = _ods_table(ods_export_service.generate_yearly_report(
+            db, YEAR, tenant_id=DEFAULT_TENANT_ID), f"{user.last_name} {user.first_name}"[:31])
+        rows = _ods_day_rows(table)
+        assert float(rows[SICK_BEFORE_START][7][1]) == pytest.approx(0.0)
+        total = sum(float(r[7][1]) for r in rows.values())
+        assert total == pytest.approx(_year_saldo(db, user), abs=0.01)
+
+
 def test_credited_absence_hours_helper():
     """Die Tages-Gutschrift hat EINE Quelle: Σ hours × credit_day_weight, nur
     TRAINING/SICK."""
