@@ -21,7 +21,7 @@ from app.models.security_event import (
     SecurityEvent,
 )
 from app.schemas.security_event import SecurityEventResponse
-from app.routers.admin_helpers import lock_active_admin_ids
+from app.routers.admin_helpers import lock_active_admin_ids, lock_user_row
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
@@ -416,6 +416,26 @@ def _is_last_active_admin(db: Session, user: User) -> bool:
     if user.role != UserRole.ADMIN or not user.is_active:
         return False
     return lock_active_admin_ids(db, user.tenant_id) == [user.id]
+
+
+def _lock_and_reload(db: Session, current_user: User, user: User) -> None:
+    """#491 API-2: Anker-Sperre auf der Zielzeile, danach ihren Stand neu lesen.
+
+    ``_get_user_in_tenant`` liest ungesperrt — bei einem gleichzeitigen,
+    noch nicht committeten Umschalten also den ALTEN Stand. Auf diesem Stand
+    entschieden Deaktivieren/Reaktivieren bisher, ob eine Protokollzeile
+    entsteht: zwei parallele Deaktivierungen schrieben zwei Zeilen; trafen
+    Reaktivierung und Deaktivierung aufeinander, fehlte die Zeile der zweiten —
+    und weil das ORM einen „unveraenderten" Wert nicht schreibt, blieb das Konto
+    sogar im Zustand der ersten stehen, obwohl die zweite erfolgreich meldete.
+
+    Die Sperre wartet auf die Gegenseite; ``refresh`` holt danach deren Stand.
+    Reihenfolge: NACH ``_is_last_active_admin`` (das ggf. alle aktiven
+    Admin-Zeilen sortiert sperrt) — erst die Admin-Menge, dann die Zielzeile,
+    sonst verklemmen sich zwei gleichzeitige Admin-Deaktivierungen ueber Kreuz.
+    """
+    lock_user_row(db, current_user.tenant_id, user.id)
+    db.refresh(user)
 
 
 def _log_account_event(db: Session, current_user: User, event: str, subject: User,
@@ -1318,6 +1338,7 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     if _is_last_active_admin(db, user):
         raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
 
+    _lock_and_reload(db, current_user, user)  # #491 API-2
     was_active = user.is_active
     user.is_active = False
     user.deactivated_at = datetime.now(timezone.utc)
@@ -1342,6 +1363,7 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     if tenant is not None:
         check_seat_limit(db, tenant)
 
+    _lock_and_reload(db, current_user, user)  # #491 API-2
     was_inactive = not user.is_active
     user.is_active = True
     user.deactivated_at = None
