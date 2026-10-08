@@ -109,6 +109,27 @@ function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], da
     .reduce((sum, a) => sum + a.hours, 0) / dailyTarget;
 }
 
+interface RecentEntry {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string | null;
+  net_hours: number;
+}
+
+/**
+ * #493: die `n` neuesten Einträge, neueste zuerst. Sortiert selbst statt sich auf
+ * die Reihenfolge der API-Antwort zu verlassen — `GET /time-entries?month=`
+ * liefert absteigend, das frühere `slice(-5).reverse()` setzte aufsteigend voraus
+ * und zeigte so die fünf ÄLTESTEN Einträge des Monats. ISO-Datum und `HH:MM:SS`
+ * sortieren lexikografisch korrekt.
+ */
+function newestEntries(entries: RecentEntry[], n = 5): RecentEntry[] {
+  return [...entries]
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.start_time ?? '').localeCompare(a.start_time ?? ''))
+    .slice(0, n);
+}
+
 export default function Dashboard() {
   const toast = useToast();
   const { user } = useAuthStore();
@@ -122,7 +143,7 @@ export default function Dashboard() {
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [clockStatus, setClockStatus] = useState<{ is_clocked_in: boolean; elapsed_minutes?: number | null; current_entry?: { start_time: string } } | null>(null);
-  const [recentEntries, setRecentEntries] = useState<Array<{ id: string; date: string; start_time: string; end_time: string | null; net_hours: number }>>([]);
+  const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsenceSummary | null>(null);
@@ -184,7 +205,7 @@ export default function Dashboard() {
             trackHours ? apiClient.get('/time-entries/clock-status') : Promise.resolve({ data: null }),
           ]);
           if (cancelled) return;
-          setRecentEntries(entriesRes.data.slice(-5).reverse());
+          setRecentEntries(newestEntries(entriesRes.data));
           if (clockRes.data) setClockStatus(clockRes.data);
         } catch (err) {
           if (!cancelled) console.warn('recent entries fetch failed', err);
@@ -256,7 +277,7 @@ export default function Dashboard() {
       setDashboardData(dashRes.data);
       setOvertimeAccount(overtimeRes.data);
       setYtdOvertime(ytdRes.data);
-      setRecentEntries(entriesRes.data.slice(-5).reverse());
+      setRecentEntries(newestEntries(entriesRes.data));
     }).catch((err) => {
       if (!cancelled) console.warn('stamp-refresh failed', err);
     });

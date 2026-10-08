@@ -150,3 +150,62 @@ describe('Dashboard Urlaubscountdown mit Praxisschliessung (#476)', () => {
     expect(screen.queryByText(/Praxisschließung/)).not.toBeInTheDocument();
   });
 });
+
+// #493: Die Karte „Letzte Einträge" (mobil) nahm `slice(-5).reverse()` auf die
+// Monatsliste — das setzt eine AUFSTEIGEND sortierte Antwort voraus. Die API
+// liefert aber absteigend (date desc, start_time desc), also standen dort ab der
+// zweiten Monatswoche die fünf ÄLTESTEN Einträge.
+describe('Dashboard „Letzte Einträge" (#493)', () => {
+  function withMonthEntries(entries: unknown[]) {
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) =>
+      url.startsWith('/time-entries?month=') ? Promise.resolve({ data: entries }) : base(url),
+    );
+  }
+
+  const entry = (id: string, date: string, start: string, end: string | null) => ({
+    id, date, start_time: start, end_time: end, net_hours: 1,
+  });
+
+  // Reihenfolge exakt wie GET /api/time-entries?month=… sie liefert (neueste zuerst).
+  const API_DESC = [
+    entry('e8b', '2026-10-08', '14:17:00', '17:00:00'),
+    entry('e8a', '2026-10-08', '07:43:00', '12:04:00'),
+    entry('e6', '2026-10-06', '07:40:00', '12:10:00'),
+    entry('e5b', '2026-10-05', '14:14:00', '17:02:00'),
+    entry('e5a', '2026-10-05', '07:44:00', '12:01:00'),
+    entry('e2', '2026-10-02', '07:39:00', '12:05:00'),
+    entry('e1b', '2026-10-01', '14:11:00', '17:00:00'),
+    entry('e1a', '2026-10-01', '07:41:00', '12:00:00'),
+  ];
+
+  const NEWEST_FIVE = [
+    '14:17–17:00',
+    '07:43–12:04',
+    '07:40–12:10',
+    '14:14–17:02',
+    '07:44–12:01',
+  ];
+
+  async function renderedRanges(): Promise<string[]> {
+    const heading = await screen.findByText('Letzte Einträge');
+    const card = heading.closest('div')!.parentElement!;
+    return Array.from(card.querySelectorAll('span'))
+      .map((s) => s.textContent ?? '')
+      .filter((t) => /^\d\d:\d\d–/.test(t));
+  }
+
+  it('zeigt die fünf NEUESTEN Einträge, neueste zuerst', async () => {
+    withMonthEntries(API_DESC);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await renderedRanges()).toEqual(NEWEST_FIVE);
+  });
+
+  it('hängt nicht von der Sortierung der API-Antwort ab', async () => {
+    withMonthEntries([...API_DESC].reverse());
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await renderedRanges()).toEqual(NEWEST_FIVE);
+  });
+});
