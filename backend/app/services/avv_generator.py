@@ -18,6 +18,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from app.services.export_service import escape_pdf_text
+from app.services.practice_name_service import practice_display_name
 
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
@@ -29,7 +30,11 @@ _PROVIDER_ADDRESS = "Manuel Rödig · Lindenallee 1 · 61118 Bad Vilbel"
 
 def generate_avv_pdf(tenant: "Tenant") -> bytes:
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, title=f"AVV – {tenant.name}")
+    # #495: nicht tenant.name direkt — on-prem steht dort nur der Bootstrap-
+    # Platzhalter „Default", der Praxisname kommt aus der Konfiguration.
+    practice_name = practice_display_name(tenant) or ""
+    title = f"AVV – {practice_name}" if practice_name else "AVV"
+    doc = SimpleDocTemplate(buf, pagesize=A4, title=title)
     styles = getSampleStyleSheet()
 
     def p(text: str, style_name: str = "Normal"):
@@ -50,7 +55,7 @@ def generate_avv_pdf(tenant: "Tenant") -> bytes:
         p(_PROVIDER_ADDRESS),
         Spacer(1, 6),
         p("<b>Verantwortlicher</b>"),
-        p(escape_pdf_text(tenant.company_name or tenant.name)),
+        p(escape_pdf_text(tenant.company_name or practice_name)),
         p(_address_line(tenant) or "<i>Keine Anschrift hinterlegt – bitte in den Abrechnungsdaten ergänzen.</i>"),
         p(f"USt-ID: {escape_pdf_text(tenant.vat_id) if tenant.vat_id else '—'}"),
         Spacer(1, 12),

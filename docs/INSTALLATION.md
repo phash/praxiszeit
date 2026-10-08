@@ -79,7 +79,7 @@ nano .env
 |----------|-----------|
 | `ADMIN_USERNAME` / `ADMIN_EMAIL` | Initialer Admin-Login |
 | `ADMIN_FIRST_NAME` / `ADMIN_LAST_NAME` | Name des Admins |
-| `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint in Excel-Exporten (DSGVO) |
+| `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint in Excel-Exporten (DSGVO); `PRACTICE_NAME` auch in der Kopfzeile des Schichtplan-Aushangs (PDF) |
 | `HOLIDAY_STATE` | Bundesland für Feiertage (z. B. `Bayern`) |
 | `CORS_ORIGINS` / `ALLOWED_HOSTS` | Eigene Domain statt `localhost` (bei Internet-Zugriff) |
 | `COOKIE_SECURE` | **Bei HTTP-Betrieb auf `false` setzen** (siehe Kasten unten) |

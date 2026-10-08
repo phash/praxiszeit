@@ -327,7 +327,7 @@ Login:
 
 Im Menü **Einstellungen → Praxis** vervollständigen:
 
-- Vollständiger Praxis-Name (taucht in Excel-Exporten auf)
+- Vollständiger Praxis-Name (taucht in Excel-Exporten und im Schichtplan-Aushang auf)
 - Adresse, ggf. weitere Standorte
 - **Bundesland** (steuert die gesetzlichen Feiertage)
 - Optional: Betriebsferien einplanen (**Einstellungen → Betriebsferien**)

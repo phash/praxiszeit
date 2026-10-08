@@ -483,7 +483,7 @@ retention_days = 730                  # § 16 ArbZG: min. 2 Jahre!
 | `COOKIE_SECURE` | — | true | `false` für HTTP-only Erststart |
 | `CORS_ORIGINS` | — | `http://localhost,http://localhost:5173` | Komma-Liste erlaubter Origins |
 | `LOGIN_RATE_LIMIT` / `REFRESH_RATE_LIMIT` | — | `5/minute` / `10/minute` | Rate-Limits |
-| `PRACTICE_NAME` / `PRACTICE_ADDRESS` / `HOLIDAY_STATE` | — | „Praxis" / leer / Bayern | Excel-Export-Header + Feiertage |
+| `PRACTICE_NAME` / `PRACTICE_ADDRESS` / `HOLIDAY_STATE` | — | „Praxis" / leer / Bayern | Excel-Export-Header, Kopfzeile des Schichtplan-Aushangs (nur der Name) + Feiertage |
 | `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_FIRST_NAME` / `ADMIN_LAST_NAME` | ✅ (Email + Pwd) | admin / — / — / Admin / Praxis | Initial-Admin (nur Erststart) |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ | — | Pflicht-Variable (sonst startet Stack nicht) |
 

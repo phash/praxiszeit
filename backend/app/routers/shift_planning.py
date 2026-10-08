@@ -33,7 +33,13 @@ from app.models.shift_planning import (
     ShiftAssignment,
     WorkstationQualification,
 )
-from app.services import settings_service, shift_plan_export_service, shift_planning_service, shift_planning_generator
+from app.services import (
+    practice_name_service,
+    settings_service,
+    shift_plan_export_service,
+    shift_planning_generator,
+    shift_planning_service,
+)
 from app.services.timezone_service import today_local
 
 # Hex colour `#RRGGBB` — the workstation colour column is String(7); anything
@@ -768,12 +774,15 @@ def export_plan_pdf(
         for w in ws_rows
     }
     # "practice_name" ist im Projekt KEIN Settings-Key (nicht in
-    # admin_settings._ALLOWED_SETTINGS) — der Praxisname lebt auf Tenant.name
-    # (siehe signup_service._create_tenant: name=practice_name). Die Abfrage
-    # filtert explizit auf die eigene Tenant-Zeile (F-026-Äquivalent: die
-    # Tenant-PK IST die Mandanten-ID, es gibt keine separate tenant_id-Spalte).
+    # admin_settings._ALLOWED_SETTINGS). SaaS: der Praxisname lebt auf
+    # Tenant.name (signup_service._create_tenant: name=practice_name). On-prem
+    # trägt der Mandant dort nur den Bootstrap-Platzhalter „Default", der echte
+    # Name steht in der Konfiguration (PRACTICE_NAME) — #495: NIE Tenant.name
+    # direkt drucken, sondern über practice_display_name. Die Abfrage filtert
+    # explizit auf die eigene Tenant-Zeile (F-026-Äquivalent: die Tenant-PK IST
+    # die Mandanten-ID, es gibt keine separate tenant_id-Spalte).
     tenant = db.query(Tenant).filter(Tenant.id == tid).first()
-    practice_name = tenant.name if tenant else None
+    practice_name = practice_name_service.practice_display_name(tenant)
     generated_on = today_local()
 
     pdf = shift_plan_export_service.generate_plan_pdf(

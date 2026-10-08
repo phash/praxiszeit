@@ -1139,6 +1139,12 @@ Arbeitsplätze des Plans denselben Standort, steht er einmal in der Kopfzeile
 ist er bei einem Teil gar nicht gesetzt), steht er stattdessen hinter jedem
 betroffenen Arbeitsplatznamen, z. B. „Tresen (Hauptstelle)" – so ist bei zwei
 Aushängen für zwei Standorte am Schwarzen Brett klar, welcher gemeint ist.
+Der **Praxisname** in der Kopfzeile ist der bei der Installation angegebene –
+in der nativen Installation der Eintrag `name` im Abschnitt `[practice]` der
+Datei `config/praxiszeit.conf`, bei Docker `PRACTICE_NAME` in der `.env`.
+Ändern Sie ihn dort; er gilt nach einem Neustart des Dienstes (Docker:
+`docker compose up -d`). Ohne eigenen Eintrag steht dort der Vorgabewert
+„Praxis".
 
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
