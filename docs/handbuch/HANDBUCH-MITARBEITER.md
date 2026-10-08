@@ -60,7 +60,7 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 | Kachel | Was wird angezeigt |
 |--------|-------------------|
-| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll. Gezählt werden **alle** heute erfassten Blöcke – bei geteiltem Dienst also Vormittag **und** Nachmittag, auch nach dem Ausstempeln (grün = eingestempelt, rot = an einem Arbeitstag heute noch gar nicht eingestempelt, neutral „Ausgestempelt" = heute schon gearbeitet, gerade nicht eingestempelt) |
+| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll. Gezählt werden **alle** heute erfassten Blöcke – bei geteiltem Dienst also Vormittag **und** Nachmittag, auch nach dem Ausstempeln (grün = eingestempelt, rot = an einem Arbeitstag heute noch gar nicht eingestempelt, neutral „Ausgestempelt" = heute schon gearbeitet, gerade nicht eingestempelt). An Feiertagen, bei ganztägiger Abwesenheit (Urlaub, Krankheit, Fortbildung, Überstundenausgleich …), vor dem Eintritt und an einem freien 24./31.12. gibt es heute kein Tagessoll – dann erscheint weder Rot noch „x von y". Ein halber Urlaubstag oder ein halber 24./31.12. halbiert das Tagessoll |
 | **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats (H:MM) |
 | **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |

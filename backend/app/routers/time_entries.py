@@ -230,9 +230,13 @@ def _today_target_hours(db: Session, user: User, today: date) -> float:
     Vorher las das Frontend ``user.hours_<wochentag>`` bzw. ``weekly_hours /
     work_days_per_week`` live von der User-Zeile — bei einer heute wirksamen
     Stundenänderung der falsche Wert.
+
+    Review F1: über ``get_day_presence_target`` statt des reinen
+    Wochentags-Vertragswerts — Feiertag, ganztägige Abwesenheit (jeden Typs),
+    halber/freier 24./31.12. und das Beschäftigungsfenster ergeben 0 bzw. das
+    anteilige Soll, sonst stand die Karte dort rot auf „0:00 von 8:00 h heute".
     """
-    schedule = calculation_service.get_schedule_for_date(db, user, today)
-    return float(calculation_service.get_daily_target_for_date(user, today, schedule))
+    return float(calculation_service.get_day_presence_target(db, user, today))
 
 
 @router.get("/clock-status", response_model=ClockStatusResponse)

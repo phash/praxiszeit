@@ -1064,6 +1064,62 @@ def _day_soll_contribution(
     return daily_target
 
 
+def get_day_presence_target(db: Session, user: User, d: date) -> Decimal:
+    """#494 (Review F1): Stunden, die ``user`` am Tag ``d`` zu stempeln hat — das
+    Tagessoll der mobilen Stempelkarte („x von y h heute", rot „Noch nicht
+    eingestempelt" nur bei Wert > 0).
+
+    Die Soll-STRUKTUR des Tages kommt aus :func:`_day_soll_contribution` (Feiertag
+    des Mandanten, datumsaufgelöster Vertrags-Snapshot #431, #146-Sondertagsfaktor
+    24./31.12.); Wochenende, Beschäftigungsfenster (#193) und ``track_hours``
+    (#191) prüft — wie in jeder Soll-Schleife — der Aufrufer, also hier.
+
+    Abwesenheiten zählen hier anders als in der Saldo-Rechnung: dort senken
+    SICK/TRAINING/OVERTIME das Soll NICHT (Ist-Gutschrift bzw. Konto-Abbau). Für
+    die Karte zählt aber nur, ob heute gestempelt werden muss — und das muss bei
+    keiner ganztägigen Abwesenheit, gleich welchen Typs. Deshalb:
+
+    * ganztägige Abwesenheit (``start_time IS NULL``, nicht ``half_day``) → 0
+    * ``half_day``-Abwesenheiten decken je einen halben Tag ab (zwei Hälften,
+      z. B. ½ Urlaub + ½ Krank, den ganzen Tag) — derselbe Halbierungs-Pfad wie
+      im Soll (Sondertagsfaktor ZUERST, dann × 0,5)
+    * stundenweise Abwesenheit (Uhrzeiten gesetzt) lässt das Soll stehen — die
+      Person kommt an dem Tag noch
+
+    Gilt bewusst auch im festen Monats-Soll-Modus (#377 2b): ``get_range_target``
+    lieferte dort für einen Einzeltag den kalendertag-anteiligen Monatswert, nicht
+    die für den Wochentag geplanten Stunden.
+
+    Reine Lesefunktion, keine Berechnungswirkung (Saldo/Exporte unberührt).
+    """
+    if not user.track_hours or d.weekday() >= 5 or not _within_employment_window(user, d):
+        return Decimal('0')
+
+    absences = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
+        Absence.date == d,
+    ).all()
+    if any(a.start_time is None and a.half_day is not True for a in absences):
+        return Decimal('0')
+    halves = sum(1 for a in absences if a.half_day is True)
+    if halves >= 2:
+        return Decimal('0')
+
+    is_holiday = db.query(PublicHoliday.id).filter(
+        PublicHoliday.date == d,
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).first() is not None
+
+    return _day_soll_contribution(
+        db, user, d,
+        holiday_dates={d} if is_holiday else set(),
+        absence_half_map={d: True} if halves == 1 else {},
+        wh_changes=None,
+        special_cfg=special_days_service.get_special_day_config(db, user.tenant_id, d.year),
+    ).quantize(Decimal('0.01'))
+
+
 def get_soll_cutoff_date(db: Session, user: User, today: date = None) -> date:
     """#313: last date (inclusive) that counts toward the running Soll/Ist.
 
