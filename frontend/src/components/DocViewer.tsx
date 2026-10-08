@@ -139,7 +139,7 @@ export function CheatsheetMitarbeiter() {
             </tr>
           </thead>
           <tbody>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Tagessaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Heute: Ist vs. Tagessoll (grün = eingestempelt)</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Tagessaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Heute: Ist aller Blöcke des Tages (z. B. Vormittag + Nachmittag) vs. Tagessoll (grün = eingestempelt)</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Monatssaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Über-/Unterstunden diesen Monat (H:MM)</td></tr>
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Überstunden</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Kumulierter Jahressaldo</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Urlaub</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Verbleibende Urlaubstage</td></tr>
@@ -283,6 +283,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Das Dashboard zeigt Ihren <strong>Tagessaldo</strong> (heute: Ist vs. Tagessoll), den <strong>Monatssaldo</strong> (Ist – Soll in H:MM), den kumulierten Jahressaldo, das Urlaubskonto und den <strong>Urlaubscountdown</strong> (Tage bis zum nächsten Urlaub oder zur nächsten Praxisschließung – das frühere Datum zählt).</p>
         <p>Im <strong>laufenden Monat</strong> zählt das Soll nur bis zum <strong>letzten abgeschlossenen Arbeitstag</strong> – Sie starten den Monat also nicht mit einem dicken Minus; der heutige Tag zählt mit, sobald Sie <strong>ausgestempelt</strong> haben. Abgeschlossene Monate entsprechen dem vollen Monat. Das <strong>Überstundenkonto</strong> folgt für den laufenden Monat demselben Stichtag – auch hier entsteht am Monatsanfang kein künstliches Minus.</p>
+        <p>Der <strong>Tagessaldo</strong> („x von y h heute") zählt <strong>alle</strong> heute erfassten Blöcke – bei geteiltem Dienst Vormittag <strong>und</strong> Nachmittag, auch nach dem Ausstempeln. Rot („Noch nicht eingestempelt") erscheint nur an einem Arbeitstag, an dem Sie heute noch gar nicht gestempelt haben; wer schon gearbeitet hat und gerade nicht eingestempelt ist, sieht neutral „Ausgestempelt". Auf dem Smartphone listet die Karte <strong>„Letzte Einträge"</strong> Ihre fünf neuesten Einträge des Monats, der jüngste zuerst.</p>
         <p>Grüner Saldo = Überstunden, roter Saldo = Fehlstunden. Auf mobilen Geräten wird die untere Tab-Leiste zur Navigation genutzt.</p>
       </div>
     ),

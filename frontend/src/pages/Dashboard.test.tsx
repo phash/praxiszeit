@@ -209,3 +209,53 @@ describe('Dashboard „Letzte Einträge" (#493)', () => {
     expect(await renderedRanges()).toEqual(NEWEST_FIVE);
   });
 });
+
+// #494: „x von y h heute" zählte nur die Laufzeit des OFFENEN Eintrags
+// (`elapsed_minutes`). Geteilte Dienste verloren den Vormittag, nach dem
+// Ausstempeln stand 0:00. Das Tages-Ist kommt jetzt als `today_net_minutes`,
+// das Tagessoll als `today_target_hours` (Snapshot #431) aus /clock-status.
+describe('Dashboard Stempelkarte „x von y h heute" (#494)', () => {
+  function withClockStatus(data: unknown) {
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) =>
+      url === '/time-entries/clock-status' ? Promise.resolve({ data }) : base(url),
+    );
+  }
+
+  it('zählt abgeschlossene Blöcke des Tages mit, auch ohne offenen Eintrag', async () => {
+    withClockStatus({
+      is_clocked_in: false, elapsed_minutes: null,
+      today_net_minutes: 424, today_target_hours: 7,
+    });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('7:04 von 7:00 h heute')).toBeInTheDocument();
+    // Wer heute schon gearbeitet hat, ist nicht „noch nicht eingestempelt".
+    expect(screen.queryByText('Noch nicht eingestempelt')).not.toBeInTheDocument();
+    expect(screen.getByText('Ausgestempelt')).toBeInTheDocument();
+  });
+
+  it('addiert im Nachmittagsblock den Vormittag (nicht nur die laufenden Minuten)', async () => {
+    withClockStatus({
+      is_clocked_in: true, elapsed_minutes: 70,
+      current_entry: { start_time: '14:17:00' },
+      today_net_minutes: 331, today_target_hours: 7,
+    });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('5:31 von 7:00 h heute')).toBeInTheDocument();
+    // (Die Desktop-Stempeluhr zeigt denselben Text, daher getAll.)
+    expect(screen.getAllByText('Eingestempelt seit 14:17').length).toBeGreaterThan(0);
+  });
+
+  it('nimmt das Tagessoll aus der API, nicht aus der User-Zeile', async () => {
+    withClockStatus({
+      is_clocked_in: false, elapsed_minutes: null,
+      today_net_minutes: 0, today_target_hours: 4.5,
+    });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('0:00 von 4:30 h heute')).toBeInTheDocument();
+    expect(screen.getByText('Noch nicht eingestempelt')).toBeInTheDocument();
+  });
+});

@@ -10,7 +10,7 @@ from app.models import (
     User, TimeEntry, UserRole, TimeEntryAuditLog,
     ChangeRequest, ChangeRequestType, ChangeRequestStatus,
 )
-from app.services import settings_service, milog_service
+from app.services import settings_service, milog_service, calculation_service
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
@@ -207,27 +207,71 @@ def _close_stale_entry(
 
 # --- Clock endpoints (must be BEFORE /{entry_id} to avoid route conflicts) ---
 
+def _today_closed_net_minutes(db: Session, user: User, today: date) -> int:
+    """#494: Σ net_hours der HEUTE abgeschlossenen Einträge, in Minuten.
+
+    ``net_hours`` ist derselbe Wert, der ins Ist geht (gekappte Zeit #201, Pause
+    abgezogen, nie negativ) — die Karte rechnet ihn bewusst nicht aus Start/Ende
+    nach. ``net_hours`` ist auf 0,01 h gerundet (≤ 0,3 min Abweichung), daher
+    ist das Runden auf ganze Minuten exakt.
+    """
+    closed = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
+        TimeEntry.date == today,
+        TimeEntry.end_time.isnot(None),
+    ).all()
+    return int(round(sum(float(e.net_hours) for e in closed) * 60))
+
+
+def _today_target_hours(db: Session, user: User, today: date) -> float:
+    """#494/#431: Tagessoll von heute aus dem datumsaufgelösten Snapshot.
+
+    Vorher las das Frontend ``user.hours_<wochentag>`` bzw. ``weekly_hours /
+    work_days_per_week`` live von der User-Zeile — bei einer heute wirksamen
+    Stundenänderung der falsche Wert.
+    """
+    schedule = calculation_service.get_schedule_for_date(db, user, today)
+    return float(calculation_service.get_daily_target_for_date(user, today, schedule))
+
+
 @router.get("/clock-status", response_model=ClockStatusResponse)
 def get_clock_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get the current clock-in/out status for the authenticated user."""
+    """Get the current clock-in/out status for the authenticated user.
+
+    #494: zusätzlich ``today_net_minutes`` (Tages-Ist inkl. bereits
+    abgeschlossener Blöcke) und ``today_target_hours`` (Tagessoll laut Snapshot).
+    """
+    today = _today_local()
     open_entry = _get_open_entry(db, current_user.id, tenant_id=current_user.tenant_id)
 
-    if not open_entry:
-        return ClockStatusResponse(is_clocked_in=False)
-
     # If the open entry is from a previous day, auto-close it
-    if open_entry.date != _today_local():
+    if open_entry and open_entry.date != today:
         _close_stale_entry(db, open_entry, changed_by_id=current_user.id)
         db.commit()  # F-043: /clock-status now owns the commit
-        return ClockStatusResponse(is_clocked_in=False)
+        open_entry = None
+
+    closed_minutes = _today_closed_net_minutes(db, current_user, today)
+    target_hours = _today_target_hours(db, current_user, today)
+
+    if not open_entry:
+        return ClockStatusResponse(
+            is_clocked_in=False,
+            today_net_minutes=closed_minutes,
+            today_target_hours=target_hours,
+        )
 
     # Calculate elapsed minutes in local time
     now = _now_local()
     start_dt = datetime.combine(open_entry.date, open_entry.start_time, tzinfo=LOCAL_TZ)
     elapsed = int((now - start_dt).total_seconds() / 60)
+    # Laufender Block netto: eine schon erfasste Pause abziehen; ein auf das
+    # Arbeitszeitfenster gekappter Beginn kann nach „jetzt" liegen (#201) — das
+    # darf das Tages-Ist nicht senken.
+    running_net = max(0, elapsed - (open_entry.break_minutes or 0))
 
     response_entry = TimeEntryResponse.model_validate(open_entry)
     _enrich_response(response_entry, open_entry, current_user, db)
@@ -236,6 +280,8 @@ def get_clock_status(
         is_clocked_in=True,
         current_entry=response_entry,
         elapsed_minutes=elapsed,
+        today_net_minutes=closed_minutes + running_net,
+        today_target_hours=target_hours,
     )
 
 

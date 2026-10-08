@@ -142,7 +142,13 @@ export default function Dashboard() {
   const { openStampSheet, stampVersion, notifyStampChange } = useUIStore();
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [clockStatus, setClockStatus] = useState<{ is_clocked_in: boolean; elapsed_minutes?: number | null; current_entry?: { start_time: string } } | null>(null);
+  const [clockStatus, setClockStatus] = useState<{
+    is_clocked_in: boolean;
+    elapsed_minutes?: number | null;
+    current_entry?: { start_time: string };
+    today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Blöcke
+    today_target_hours?: number; // #494/#431: Tagessoll laut Snapshot
+  } | null>(null);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
@@ -380,22 +386,18 @@ export default function Dashboard() {
 
       {/* Status Card - Mobile Hero */}
       {trackHours && (() => {
-        // Calculate today's target hours from user schedule
-        const weekday = new Date().getDay(); // 0=Sun, 1=Mon...6=Sat
-        const dayFields = [null, 'hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday', null] as const;
-        let todayTarget = 0;
-        if (user && weekday >= 1 && weekday <= 5) {
-          if (user.use_daily_schedule) {
-            const field = dayFields[weekday];
-            todayTarget = field ? ((user as unknown as Record<string, number | null>)[field] ?? 0) : 0;
-          } else {
-            todayTarget = user.weekly_hours / (user.work_days_per_week || 5);
-          }
-        }
+        // #494: Tagessoll und Tages-Ist kommen vom Server. Das Soll stammt aus dem
+        // datumsaufgelösten Vertrags-Snapshot (#431) statt aus den Live-Feldern
+        // der User-Zeile; das Ist enthält auch die heute bereits ABGESCHLOSSENEN
+        // Blöcke (geteilter Dienst), nicht nur die Laufzeit des offenen Eintrags.
+        const todayTarget = clockStatus?.today_target_hours ?? 0;
         const isWorkday = todayTarget > 0;
-        const todayActual = (clockStatus?.elapsed_minutes ?? 0) / 60;
+        const todayActual = (clockStatus?.today_net_minutes ?? 0) / 60;
         const isClockedIn = clockStatus?.is_clocked_in ?? false;
-        const shouldBeClockedIn = isWorkday && !isClockedIn;
+        // Wer heute schon gestempelt hat (z. B. Mittagspause, Feierabend), ist
+        // nicht „noch nicht eingestempelt" — kein roter Hinweis.
+        const workedToday = todayActual > 0;
+        const shouldBeClockedIn = isWorkday && !isClockedIn && !workedToday;
         const cardBg = isClockedIn
           ? 'bg-success/8 border border-success/25'
           : shouldBeClockedIn
@@ -424,6 +426,8 @@ export default function Dashboard() {
                   ? `Eingestempelt seit ${startDisplay}`
                   : shouldBeClockedIn
                   ? 'Noch nicht eingestempelt'
+                  : !isClockedIn && workedToday
+                  ? 'Ausgestempelt'
                   : 'Nicht eingestempelt'}
               </span>
             </div>
