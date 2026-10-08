@@ -135,6 +135,8 @@ Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, si
 
 *Monatssaldo und Überstunden zählen nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus am 1.).*
 
+**Monat ↔ Woche:** Umschalter über der Übersichtstabelle → letzte 8 Kalenderwochen mit Soll/Ist/Saldo/Konto (laufende Woche bis heute). Fehlende Blöcke fallen pro Woche sofort auf.
+
 ---
 
 ## Ohne Stundenzählung

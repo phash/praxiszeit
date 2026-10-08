@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import User, TimeEntry, UserRole
 from app.models.absence import Absence
 from app.middleware.auth import get_current_user
-from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry
+from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
 from app.services import calculation_service, milog_service
 from app.services.calculation_service import get_schedule_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
@@ -263,6 +263,59 @@ def get_overtime_account(
         future_comp_hours=float(future_comp),
         projected_year_end=projected,
     )
+
+
+@router.get("/weekly-overview", response_model=List[WeeklyOverviewRow])
+def get_weekly_overview(
+    weeks: int = Query(8, ge=1, le=53, description="Anzahl Wochen bis einschließlich der laufenden"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """#500: Wochenübersicht der angemeldeten Person — die letzten ``weeks``
+    ISO-Wochen bis einschließlich der laufenden, **älteste zuerst** (wie
+    ``/dashboard/overtime``.history).
+
+    Pro Woche Soll/Ist/Saldo und das Überstundenkonto zum Wochenende — exakt die
+    Rechnung des Admin-Wochenberichts (#329) über
+    ``calculation_service.get_week_summary``. Die laufende Woche zählt „bis heute"
+    (#313-Stichtag, wie die Monatsübersicht dieses Dashboards).
+
+    Wie die Monatsübersicht beginnt die Liste frühestens mit der Woche des ersten
+    Zeiteintrags; ohne Zeiteinträge oder ohne Stundenzählung ist sie leer.
+    """
+    if not current_user.track_hours:
+        return []
+
+    first_entry = db.query(TimeEntry).filter(
+        TimeEntry.user_id == current_user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).order_by(TimeEntry.date).first()
+    if not first_entry:
+        return []
+
+    today = today_local()
+    current_monday = today - timedelta(days=today.weekday())
+    first_monday = first_entry.date - timedelta(days=first_entry.date.weekday())
+    monday = max(current_monday - timedelta(weeks=weeks - 1), first_monday)
+
+    cutoff = calculation_service.get_soll_cutoff_date(db, current_user)  # #313
+
+    rows: List[WeeklyOverviewRow] = []
+    while monday <= current_monday:
+        week = calculation_service.get_week_summary(db, current_user, monday, cutoff)
+        iso = week.week_start.isocalendar()
+        rows.append(WeeklyOverviewRow(
+            week_start=week.week_start,
+            week_end=week.week_end,
+            iso_year=iso[0],
+            iso_week=iso[1],
+            target=float(week.target),
+            actual=float(week.actual),
+            balance=float(week.balance),
+            cumulative=float(week.cumulative),
+        ))
+        monday += timedelta(weeks=1)
+    return rows
 
 
 @router.get("/ytd-overtime", response_model=YtdOvertime)

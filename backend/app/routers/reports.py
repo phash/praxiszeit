@@ -242,15 +242,12 @@ def get_weekly_report(
     for user in users:
         # #313: per-user cutoff (last finished workday) unless run on the full basis.
         cutoff = calculation_service.get_soll_cutoff_date(db, user) if soll_basis == "bis_heute" else None
-        target = calculation_service.get_range_target(db, user, wk_start, wk_end, up_to_date=cutoff)
-        actual = calculation_service.get_range_actual(db, user, wk_start, wk_end, up_to_date=cutoff)
-        balance = (actual - target).quantize(Decimal('0.01'))
-        # Überstunden = kumulativer laufender Saldo zum Wochenende (für die laufende
-        # Woche am bis_heute-Cutoff gekappt).
-        ot_cutoff = wk_end if cutoff is None else min(wk_end, cutoff)
-        overtime = calculation_service.get_overtime_account(
-            db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff
-        )
+        # #500: Soll/Ist/Saldo + Konto zum Wochenende aus DER einen Wochenrechnung,
+        # die auch die Wochenübersicht des Mitarbeiter-Dashboards nutzt.
+        week = calculation_service.get_week_summary(db, user, wk_start, cutoff)
+        target, actual, balance = week.target, week.actual, week.balance
+        overtime = week.cumulative
+        ot_cutoff = week.ot_cutoff
 
         # #402: projizierter Jahresende-Saldo — nur in der AKTUELLEN Woche sinnvoll.
         # Boundary = ot_cutoff (Wochenende bzw. bis_heute-Cutoff), damit künftige

@@ -80,9 +80,11 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 > **Minijob mit festem Monats-Soll:** Führt Ihre Praxis Sie als Minijob-Kraft mit einer **festen vereinbarten Monatsarbeitszeit** (statt eines aus Wochenstunden berechneten Solls), zeigt Ihr **Monatssaldo** jeden Monat dasselbe feste Soll (bei unterjährigem Ein-/Austritt anteilig gekürzt). Feiertage sowie Urlaub oder bezahlte Freistellung an einem für Sie geplanten Arbeitstag werden Ihnen dabei automatisch mit den geplanten Stunden gutgeschrieben; unbezahlt freie Tage mindern das Monatssoll entsprechend. Unter dem **Überstundenkonto** kann in diesem Fall ein gelber Hinweis erscheinen, wenn die vereinbarte Zeit deutlich überschritten wird oder ein Zeitguthaben zu lange nicht ausgeglichen wurde (§ 2 Abs. 2 MiLoG) – das ist eine reine Information und blockiert nichts. Ob dieses Modell für Sie gilt, legt Ihre Praxisleitung fest.
 
-### Monatsübersicht (Tabelle)
+### Monats-/Wochenübersicht (Tabelle)
 
-Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto.
+Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto – die neueste Zeile steht oben.
+
+Über den Umschalter **„Monat / Woche"** rechts über der Tabelle wechseln Sie zur **Wochenübersicht**: die letzten **8 Kalenderwochen** (z. B. „KW 41 · 05.–11.10."), je Woche Soll, Ist, Saldo und der Stand Ihres Überstundenkontos am Wochenende. Pro Woche fällt sofort auf, wenn etwas fehlt – etwa ein vergessener Nachmittagsblock oder ein Eintrag, der nicht beendet wurde und automatisch um 23:59 geschlossen wurde. Die **laufende Woche** zählt wie der Monatssaldo nur **bis heute** (bis zum letzten abgeschlossenen Arbeitstag; heute zählt mit, sobald Sie ausgestempelt haben). Ihre Auswahl bleibt auf diesem Gerät/Browser gespeichert.
 
 - **Grün** = Plusstunden
 - **Rot** = Minusstunden

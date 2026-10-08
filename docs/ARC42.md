@@ -196,7 +196,7 @@ Verdichteter Katalog (UC-Granularität, nicht jeder der 140 Endpoints einzeln). 
 | Anträge | Urlaubsantrag stellen/bearbeiten/zurückziehen | 🟢 | `POST/GET/PATCH/DELETE /api/vacation-requests/...` |
 | Anträge | Änderungsanträge prüfen (einzeln/Bulk) | 🔵 | `…/api/admin/change-requests/{id}/review`, `/bulk-review`, `/pending-count` |
 | Anträge | Urlaubsanträge genehmigen/ablehnen/ändern | 🔵 | `…/api/admin/vacation-requests/{id}/review`, `PATCH …`, `/pending-count` |
-| Auswertung | Dashboard, Überstunden (Monat/JTD), Urlaubskonto | 🟢 | `GET /api/dashboard/`,`/overtime`,`/ytd-overtime`,`/vacation` |
+| Auswertung | Dashboard, Überstunden (Monat/Woche/JTD), Urlaubskonto | 🟢 | `GET /api/dashboard/`,`/overtime`,`/weekly-overview`,`/ytd-overtime`,`/vacation` |
 | Auswertung | Monatsjournal | 🟢/🔵 | `GET /api/journal/me`, `…/api/admin/users/{id}/journal` |
 | Auswertung | Fehlende Buchungen (eigen / Team) | 🟢/🔵 | `GET /api/dashboard/missing-bookings`, `…/team` |
 | Benutzer | MA CRUD + Passwort + Übersicht + Löschkandidaten | 🔵 | `…/api/admin/users`, `/users-overview`, `/deletion-candidates`, `/set-password` |

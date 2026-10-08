@@ -36,6 +36,23 @@ class OvertimeAccount(BaseModel):
     projected_year_end: Optional[float] = None
 
 
+class WeeklyOverviewRow(BaseModel):
+    """#500: eine ISO-Woche der Wochenübersicht im Mitarbeiter-Dashboard.
+
+    Gleiche Bedeutung wie eine Zeile von :class:`OvertimeHistory`, nur je Woche:
+    Soll/Ist/Saldo der Woche (laufende Woche bis zum #313-Stichtag) und das
+    Überstundenkonto zum Wochenende.
+    """
+    week_start: date  # Montag
+    week_end: date  # Sonntag
+    iso_year: int
+    iso_week: int
+    target: float
+    actual: float
+    balance: float
+    cumulative: float
+
+
 class YtdOvertime(BaseModel):
     """Year-to-date overtime summary (Jan 1 to today)."""
     year: int

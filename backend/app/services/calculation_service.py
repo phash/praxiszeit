@@ -1701,6 +1701,58 @@ def get_overtime_account(
     return total_balance.quantize(Decimal('0.01'))
 
 
+class WeekSummary(NamedTuple):
+    """Soll/Ist/Saldo einer ISO-Woche (Mo–So) + Überstundenkonto zum Wochenende.
+
+    Aus :func:`get_week_summary`; ``ot_cutoff`` ist der letzte Tag, bis zu dem
+    das Konto gerechnet wurde (Wochenende bzw. der #313-Stichtag in der
+    laufenden Woche) — der Admin-Wochenbericht braucht ihn als Grenze der
+    #402-Jahresende-Projektion.
+    """
+    week_start: date
+    week_end: date
+    target: Decimal
+    actual: Decimal
+    balance: Decimal
+    cumulative: Decimal
+    ot_cutoff: date
+
+
+def get_week_summary(
+    db: Session, user: User, any_day: date, cutoff: Optional[date] = None
+) -> WeekSummary:
+    """#329/#500: DIE eine Wochenrechnung — Admin-Wochenbericht
+    (``/admin/reports/weekly``) UND Wochenübersicht des Mitarbeiter-Dashboards
+    (``/dashboard/weekly-overview``) rufen sie, damit beide Flächen für dieselbe
+    Woche dieselben Zahlen zeigen.
+
+    ``any_day`` wird auf den Montag seiner ISO-Woche normalisiert (die Woche darf
+    eine Monats-/Jahresgrenze überschreiten). ``cutoff`` ist der #313-Stichtag
+    („bis heute") oder ``None`` für die volle Woche. Soll/Ist über
+    :func:`get_range_target` / :func:`get_range_actual` (damit auch der feste
+    Monats-Soll-Modus #377 und die Gutschrift-Regeln mitkommen), das Konto über
+    :func:`get_overtime_account` zum Wochenende bzw. zum Stichtag.
+    """
+    wk_start = any_day - timedelta(days=any_day.weekday())  # Monday
+    wk_end = wk_start + timedelta(days=6)                   # Sunday
+    target = get_range_target(db, user, wk_start, wk_end, up_to_date=cutoff)
+    actual = get_range_actual(db, user, wk_start, wk_end, up_to_date=cutoff)
+    balance = (actual - target).quantize(Decimal('0.01'))
+    # Konto = kumulativer laufender Saldo zum Wochenende (in der laufenden Woche
+    # am bis_heute-Stichtag gekappt).
+    ot_cutoff = wk_end if cutoff is None else min(wk_end, cutoff)
+    cumulative = get_overtime_account(db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff)
+    return WeekSummary(
+        week_start=wk_start,
+        week_end=wk_end,
+        target=target,
+        actual=actual,
+        balance=balance,
+        cumulative=cumulative,
+        ot_cutoff=ot_cutoff,
+    )
+
+
 class MonthlyOvertime(NamedTuple):
     """Per-Monat-Aufschlüsselung aus :func:`get_overtime_history_detailed`.
 
