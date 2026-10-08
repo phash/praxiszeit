@@ -105,6 +105,9 @@ export default function Settings() {
   const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
   const [originalBreakApproval, setOriginalBreakApproval] = useState(false);
   const [savingBreakApproval, setSavingBreakApproval] = useState(false);
+  // #499 Ausnahme „Pflicht-Pause war nicht möglich" überhaupt anbieten (Default an)
+  const [breakExceptionAllowed, setBreakExceptionAllowed] = useState(true);
+  const [originalBreakExceptionAllowed, setOriginalBreakExceptionAllowed] = useState(true);
 
   // Onboarding (Erst-Login-Willkommens-Tour) an/aus — Default an.
   const [onboardingEnabled, setOnboardingEnabled] = useState(true);
@@ -217,6 +220,11 @@ export default function Settings() {
       const breakVal = breakSetting?.value?.toLowerCase() === 'true';
       setBreakApprovalRequired(breakVal);
       setOriginalBreakApproval(breakVal);
+      // #499: Default an — nur ein explizites "false" schaltet die Ausnahme ab.
+      const allowSetting = settingsRes.data.find((s) => s.key === 'break_exception_allowed');
+      const allowVal = allowSetting?.value?.toLowerCase() !== 'false';
+      setBreakExceptionAllowed(allowVal);
+      setOriginalBreakExceptionAllowed(allowVal);
 
       // Onboarding-Tour (Default an: nur ein explizites "false" deaktiviert)
       const obSetting = settingsRes.data.find((s) => s.key === 'onboarding_enabled');
@@ -377,10 +385,22 @@ export default function Settings() {
   const saveBreakApproval = async () => {
     setSavingBreakApproval(true);
     try {
-      await apiClient.put('/admin/settings/break_exception_requires_approval', {
-        value: String(breakApprovalRequired),
-      });
-      setOriginalBreakApproval(breakApprovalRequired);
+      // #499: beide Schalter der Karte gemeinsam speichern — nur, was sich geändert hat.
+      if (breakExceptionAllowed !== originalBreakExceptionAllowed) {
+        await apiClient.put('/admin/settings/break_exception_allowed', {
+          value: String(breakExceptionAllowed),
+        });
+        setOriginalBreakExceptionAllowed(breakExceptionAllowed);
+        // systemStore aktualisieren, damit Stempel-Dialog, Zeiterfassung und
+        // Anträge die Checkbox sofort aus-/einblenden (sonst erst nach Reload).
+        await useSystemStore.getState().fetch();
+      }
+      if (breakApprovalRequired !== originalBreakApproval) {
+        await apiClient.put('/admin/settings/break_exception_requires_approval', {
+          value: String(breakApprovalRequired),
+        });
+        setOriginalBreakApproval(breakApprovalRequired);
+      }
       toast.success('Pflicht-Pause-Ausnahme-Einstellung gespeichert.');
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -985,10 +1005,38 @@ const saveYearEndProjection = async () => {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Pflicht-Pause-Ausnahme</h2>
         <p className="text-sm text-gray-500 mb-4">
           Konnte eine gesetzlich vorgeschriebene Pause (§4 ArbZG) nicht eingelegt werden, können
-          Mitarbeiter den Eintrag mit einer Pflicht-Begründung trotzdem erfassen. Wenn diese Option
-          aktiviert ist, wird ein solcher Eintrag erst nach Admin-Genehmigung wirksam (4-Augen-Prinzip);
-          andernfalls wird er sofort gespeichert und die Abweichung als Warnung sowie im Änderungsprotokoll
-          dokumentiert.
+          Mitarbeiter den Eintrag mit einer Pflicht-Begründung („Pflicht-Pause war nicht möglich“)
+          trotzdem erfassen. Ist in Ihrer Praxis immer eine Pause möglich, schalten Sie diese Ausnahme
+          ab: Die Auswahl verschwindet dann beim Ausstempeln, in der Zeiterfassung und in Anträgen, und
+          ein Tag über 6 bzw. 9 Stunden lässt sich nur noch mit eingetragener Pause speichern (auch für
+          Admins). Bereits erfasste Ausnahmen bleiben unverändert.
+        </p>
+        <div className="flex items-center justify-between max-w-sm mb-4">
+          <label htmlFor="break-exception-allowed-toggle" className="text-sm font-medium text-gray-700">
+            Ausnahme „Pflicht-Pause war nicht möglich“ erlauben
+          </label>
+          <button
+            id="break-exception-allowed-toggle"
+            role="switch"
+            aria-checked={breakExceptionAllowed}
+            onClick={() => setBreakExceptionAllowed(!breakExceptionAllowed)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              breakExceptionAllowed ? 'bg-primary' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                breakExceptionAllowed ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        {breakExceptionAllowed && (
+        <>
+        <p className="text-sm text-gray-500 mb-4">
+          Wenn die Genehmigung aktiviert ist, wird ein solcher Eintrag erst nach Admin-Genehmigung wirksam
+          (4-Augen-Prinzip); andernfalls wird er sofort gespeichert und die Abweichung als Warnung sowie im
+          Änderungsprotokoll dokumentiert.
         </p>
         <div className="flex items-center justify-between max-w-sm">
           <label htmlFor="break-approval-toggle" className="text-sm font-medium text-gray-700">
@@ -1010,10 +1058,16 @@ const saveYearEndProjection = async () => {
             />
           </button>
         </div>
+        </>
+        )}
         <div className="mt-4">
           <button
             onClick={saveBreakApproval}
-            disabled={savingBreakApproval || breakApprovalRequired === originalBreakApproval}
+            disabled={
+              savingBreakApproval
+              || (breakApprovalRequired === originalBreakApproval
+                && breakExceptionAllowed === originalBreakExceptionAllowed)
+            }
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

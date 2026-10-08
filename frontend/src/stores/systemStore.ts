@@ -13,6 +13,8 @@ interface SystemInfo {
   shift_planning_weekdays?: number[];
   // #377: gesetzlicher Mindestlohn (€/h) + Gültigkeit + nächste Stufe.
   minimum_wage?: MinimumWage;
+  // #499: darf „Pflicht-Pause war nicht möglich" angeboten werden? (Default an)
+  break_exception_allowed?: boolean;
 }
 
 export interface MinimumWage {
@@ -35,6 +37,7 @@ interface SystemState {
   isShiftPlanningEnabled: () => boolean;
   getShiftPlanningWeekdays: () => number[];
   getMinimumWage: () => MinimumWage | null;
+  isBreakExceptionAllowed: () => boolean;
 }
 
 // Conservative default: treat as on-prem until the /api/system/info response
@@ -77,4 +80,9 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   },
   // #377: current statutory minimum wage (null until /system/info lands).
   getMinimumWage: () => get().info?.minimum_wage ?? null,
+  // #499: Default AN (bisheriges Verhalten) — nur ein explizites false blendet
+  // die Ausnahme „Pflicht-Pause war nicht möglich" aus. Der Server setzt den
+  // Schalter ohnehin an jedem Schreibpfad selbst durch (400), die Oberfläche
+  // soll nur nicht nach etwas fragen, das abgelehnt würde.
+  isBreakExceptionAllowed: () => get().info?.break_exception_allowed !== false,
 }));

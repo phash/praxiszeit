@@ -11,7 +11,7 @@ from app.middleware.auth import require_admin
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses
-from app.services.break_validation_service import validate_daily_break
+from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
@@ -124,14 +124,19 @@ def admin_create_time_entry(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            tenant_id=current_user.tenant_id,
         )
         if break_error:
             # M-ARB3: parity with the employee path (#144) — a documented break
             # waiver lets the admin record the §4 deviation instead of being
             # hard-blocked. §3 (10h hard cap, below) is checked afterwards and
-            # is NOT waivable.
-            if not waiver_reason:
-                raise HTTPException(status_code=400, detail=break_error)
+            # is NOT waivable. #499: gilt nur, solange der Mandant die Ausnahme
+            # nicht abgeschaltet hat — dann auch für Admins nicht.
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
             break_waiver_active = True
             admin_create_warnings.append(f"BREAK_WAIVER: {break_error}")
 
@@ -345,13 +350,17 @@ def admin_update_time_entry(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            tenant_id=current_user.tenant_id,
         )
         if break_error:
             # M-ARB3: parity with the employee path (#144) — documented waiver
             # records the §4 deviation instead of a hard 400. §3 (below) stays
-            # a hard cap.
-            if not waiver_reason:
-                raise HTTPException(status_code=400, detail=break_error)
+            # a hard cap. #499: Mandanten-Schalter beachten.
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
             break_waiver_active = True
             admin_update_warnings.append(f"BREAK_WAIVER: {break_error}")
 

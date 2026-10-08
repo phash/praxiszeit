@@ -775,6 +775,11 @@ def system_info():
     # shift_planning_weekdays (#371): configurable planner weekdays (0=Mo…6=So),
     # Default Mo–Fr; a read error must never break system/info → default.
     shift_planning_weekdays = [0, 1, 2, 3, 4]
+    # break_exception_allowed (#499): darf „Pflicht-Pause war nicht möglich"
+    # angeboten werden? Default AN (bisheriges Verhalten); ein Lesefehler darf
+    # system/info NIE brechen → True. Der Server setzt den Schalter an jedem
+    # Schreibpfad selbst durch — die Oberfläche blendet nur die Checkbox aus.
+    break_exception_allowed = True
     try:
         from app.models.system_setting import SystemSetting
         from app.database import set_superadmin_context as _set_sa
@@ -796,12 +801,19 @@ def system_info():
             if _sp is not None:
                 shift_planning_enabled = _sp.value.strip().lower() == "true"
             shift_planning_weekdays = _sps.get_planning_weekdays(_db, _default_tid)
+            _be = _db.query(SystemSetting).filter(
+                SystemSetting.key == "break_exception_allowed",
+                SystemSetting.tenant_id == _default_tid,
+            ).first()
+            if _be is not None:
+                break_exception_allowed = _be.value.strip().lower() != "false"
         finally:
             _db.close()
     except Exception:  # noqa: BLE001
         onboarding_enabled = True
         shift_planning_enabled = False
         shift_planning_weekdays = [0, 1, 2, 3, 4]
+        break_exception_allowed = True
     # #377: gesetzlicher Mindestlohn (rein statisch, kein DB-Zugriff → nie 500).
     from app.core import minimum_wage as _mw
     from app.services.timezone_service import today_local as _today_local
@@ -817,6 +829,9 @@ def system_info():
         "shift_planning_enabled": shift_planning_enabled,
         # shift_planning_weekdays: konfigurierte Planer-Wochentage (Default Mo–Fr).
         "shift_planning_weekdays": shift_planning_weekdays,
+        # break_exception_allowed (#499): Checkbox „Pflicht-Pause war nicht
+        # möglich" anbieten (Default an).
+        "break_exception_allowed": break_exception_allowed,
         # minimum_wage (#377): {current, since, next} — für die Compliance-Anzeige.
         "minimum_wage": minimum_wage,
     }

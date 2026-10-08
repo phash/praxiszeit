@@ -3,6 +3,43 @@ from typing import Optional
 from datetime import date, time
 from uuid import UUID
 from app.models import TimeEntry
+from app.services import settings_service
+
+
+# #499: Mandanten-Schalter für die Ausnahme „Pflicht-Pause war nicht möglich"
+# (#144). Default AN = bisheriges Verhalten. AUS → keine Ausnahme mehr, an
+# keinem Schreibpfad: der §4-Verstoß bleibt eine harte Sperre.
+BREAK_EXCEPTION_ALLOWED = "break_exception_allowed"
+
+BREAK_EXCEPTION_DISABLED_HINT = (
+    "Die Ausnahme „Pflicht-Pause war nicht möglich“ ist in dieser Praxis "
+    "abgeschaltet – bitte die Pause erfassen."
+)
+
+
+def is_break_exception_allowed(db: Session, tenant_id) -> bool:
+    """#499: darf ein §4-Verstoß per dokumentierter Begründung erfasst werden?"""
+    return settings_service.get_bool_setting(
+        db, BREAK_EXCEPTION_ALLOWED, tenant_id=tenant_id, default=True,
+    )
+
+
+def break_waiver_rejection(
+    db: Session, tenant_id, break_error: str, waiver_reason: Optional[str],
+) -> Optional[str]:
+    """#499: entscheidet einheitlich für ALLE Schreibpfade, ob ein §4-Verstoß
+    (``break_error``) per Ausnahme durchgelassen wird.
+
+    Liefert ``None``, wenn die Ausnahme greift (Begründung vorhanden UND der
+    Mandant erlaubt Ausnahmen) — sonst den Text für die 400-Antwort. Ist die
+    Ausnahme abgeschaltet, nennt der Text das ausdrücklich, damit die
+    Oberfläche nicht erneut nach einer Begründung fragt.
+    """
+    if not is_break_exception_allowed(db, tenant_id):
+        return f"{break_error} {BREAK_EXCEPTION_DISABLED_HINT}"
+    if not (waiver_reason or "").strip():
+        return break_error
+    return None
 
 
 def _time_to_minutes(t: time) -> int:
@@ -18,10 +55,16 @@ def validate_daily_break(
     end_time: time,
     break_minutes: int,
     exclude_entry_id: Optional[UUID] = None,
+    tenant_id: Optional[UUID] = None,
 ) -> Optional[str]:
     """
     Validate that daily break requirements are met per ArbZG §4.
     >6h work requires at least 30min break (sum of all breaks + gaps between entries).
+
+    Maßstab ist der ganze TAG (#499): alle geschlossenen Einträge des Tages
+    plus der neue/geänderte. Eine Lücke unter 15 Minuten zwischen zwei
+    Einträgen ist keine Pause — aneinandergereihte Einträge zählen wie ein
+    durchgehender Block.
 
     Returns an error message string if invalid, None if valid.
     """
@@ -30,6 +73,9 @@ def validate_daily_break(
         TimeEntry.user_id == user_id,
         TimeEntry.date == entry_date,
     )
+    # F-026: expliziter Tenant-Filter zusätzlich zu RLS (belt-and-suspenders).
+    if tenant_id is not None:
+        query = query.filter(TimeEntry.tenant_id == tenant_id)
     if exclude_entry_id:
         query = query.filter(TimeEntry.id != exclude_entry_id)
 

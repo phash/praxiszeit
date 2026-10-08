@@ -151,6 +151,10 @@ Am einfachsten erfassen Sie Ihre Arbeitszeit live mit der Stempeluhr. Sie finden
 > 2. **Begründung angeben** – falls eine Pause wirklich nicht möglich war, schreiben Sie in das Textfeld kurz, warum (z. B. „Notfall, keine Vertretung"). Diese **dokumentierte Ausnahme** wird gespeichert, und Sie können danach normal ausstempeln.
 >
 > Anders als früher genügt also kein flüchtiger Hinweis mehr – Sie müssen entweder die Pause eintragen **oder** die Ausnahme begründen, bevor das Ausstempeln abgeschlossen wird.
+>
+> **Der ganze Tag zählt:** Geprüft wird nicht nur der gerade laufende Abschnitt, sondern alle Einträge des Tages zusammen. Wer z. B. um 13:59 aus- und sofort wieder einstempelt, hat **keine** Pause gemacht – eine Unterbrechung zählt erst ab **15 Minuten** als Pause. Stempeln Sie abends nach insgesamt mehr als 6 bzw. 9 Stunden aus, verlangt PraxisZeit die Pause deshalb auch dann, wenn der letzte Abschnitt für sich kurz war.
+>
+> **Keine Begründung angeboten?** Ihre Praxis kann die Ausnahme „Pflicht-Pause war nicht möglich" abschalten. Dann fehlt das Textfeld, und das Ausstempeln klappt nur mit eingetragener Pause.
 
 > **Verschrieben?** Mit **Abbrechen** schließen Sie das Pausenfeld wieder, ohne auszustempeln – die Uhr läuft weiter.
 
@@ -231,6 +235,7 @@ Für eine vollständige Löschung eines gesperrten Eintrags klicken Sie stattdes
 
 > **Pflicht-Pause war nicht möglich? (§ 4 ArbZG):**
 > Wenn Ihre korrigierten Zeiten die Pausenregel nicht erfüllen (mind. 30 Min. bei mehr als 6 h, mind. 45 Min. bei mehr als 9 h), wird Ihr Antrag **nicht einfach abgelehnt**. Stattdessen erscheint ein zusätzliches Feld **„Pflicht-Pause war nicht möglich – Begründung"**. Tragen Sie dort kurz ein, warum keine ausreichende Pause möglich war (z. B. „Notfall, keine Vertretung verfügbar"), und senden Sie den Antrag mit **Mit dokumentierter Ausnahme senden** ab. Die Abweichung wird dokumentiert und dem Administrator zur Genehmigung vorgelegt.
+> Hat Ihre Praxis diese Ausnahme abgeschaltet, erscheint das Feld nicht – tragen Sie dann die Pause in den Antrag ein.
 
 **Was danach passiert:**
 - Der Antrag erscheint beim Administrator zur Prüfung
@@ -562,10 +567,10 @@ A: Überprüfen Sie, ob Sie den richtigen Monat anzeigen. Nutzen Sie die Pfeile 
 A: PraxisZeit prüft die gesetzlichen Grenzen:
 - Netto > 8h: Hinweis (zulässig mit Ausgleich – § 3 ArbZG)
 - Netto > 10h: bei **manueller Eingabe** blockiert; beim **Live-Ausstempeln** nur Warnung, weil die Zeit bereits geleistet ist (Tageshöchstgrenze – § 3 ArbZG)
-- Zu kurze Pause: Warnung (§ 4 ArbZG – bei >6h mind. 30 Min., bei >9h mind. 45 Min.)
+- Zu kurze Pause (§ 4 ArbZG – bei >6h mind. 30 Min., bei >9h mind. 45 Min., gerechnet über **alle** Einträge des Tages; Lücken unter 15 Min. zählen nicht als Pause): Speichern und Ausstempeln erst mit ausreichender Pause oder – sofern Ihre Praxis das erlaubt – mit Begründung
 
 **F: Beim Ausstempeln werde ich nach meiner Pause gefragt – was muss ich eintragen?**
-A: Tragen Sie im Feld **Pause (Min.)** ein, wie viele Minuten Sie heute Pause gemacht haben. Bei mehr als 6 Stunden Arbeit verlangt das Gesetz eine Pause (§ 4 ArbZG). Reicht Ihre Eingabe nicht aus, können Sie entweder die Pausenminuten korrigieren **oder** im erscheinenden Textfeld kurz begründen, warum keine Pause möglich war. Erst danach ist das Ausstempeln abgeschlossen.
+A: Tragen Sie im Feld **Pause (Min.)** ein, wie viele Minuten Sie heute Pause gemacht haben. Bei mehr als 6 Stunden Arbeit am Tag – alle Einträge des Tages zusammengerechnet – verlangt das Gesetz eine Pause (§ 4 ArbZG). Reicht Ihre Eingabe nicht aus, können Sie entweder die Pausenminuten korrigieren **oder** im erscheinenden Textfeld kurz begründen, warum keine Pause möglich war (das Textfeld fehlt, wenn Ihre Praxis diese Ausnahme abgeschaltet hat). Erst danach ist das Ausstempeln abgeschlossen.
 
 **F: Warum steht bei meinem Eintrag „gestempelt 07:30 · angerechnet ab 07:45"?**
 A: Ihre Praxis hat für diesen Wochentag eine Soll-Arbeitszeit hinterlegt. Wenn Sie deutlich vor dem Soll-Beginn ein- oder nach dem Soll-Ende ausstempeln, wird nur bis zu einem kleinen Puffer (Standard 15 Min.) angerechnet. Ihre tatsächliche Stempelzeit bleibt aber gespeichert. Siehe [Abschnitt 3.3](#33-soll-arbeitszeiten-und-anrechnung).

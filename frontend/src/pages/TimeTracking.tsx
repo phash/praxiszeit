@@ -19,6 +19,8 @@ import EmptyState from '../components/EmptyState';
 import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
+import { BREAK_EXCEPTION_DISABLED_HINT } from '../utils/breakWaiverRetry';
+import { useSystemStore } from '../stores/systemStore';
 import { useUIStore } from '../stores/uiStore';
 import { RawStampNote } from '../components/RawStampNote';
 
@@ -205,6 +207,9 @@ export default function TimeTracking() {
   const [submitting, setSubmitting] = useState(false);
   // Whether the practice requires admin approval for such exceptions (public setting).
   const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
+  // #499: die Praxis kann die Ausnahme ganz abschalten — dann keine Checkbox,
+  // der §4-Hinweis bleibt eine harte Sperre (der Server lehnt sonst mit 400 ab).
+  const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
 
   // Change request modal
   const [crModalOpen, setCrModalOpen] = useState(false);
@@ -321,7 +326,10 @@ export default function TimeTracking() {
       !!user?.exempt_from_arbzg
     );
     if (breakError) {
-      if (breakWaiverChecked) {
+      if (!breakExceptionAllowed) {
+        // #499: Ausnahme abgeschaltet → nur die Pause selbst hilft.
+        newErrors.break_time = `${breakError}. ${BREAK_EXCEPTION_DISABLED_HINT}`;
+      } else if (breakWaiverChecked) {
         // #144: the user opted to document an exception → the §4 block is
         // lifted, but the reason is mandatory (backend enforces this too).
         if (!breakWaiverReason.trim()) {
@@ -360,7 +368,9 @@ export default function TimeTracking() {
     }
 
     // #144: attach the documented break-exception reason when the user opted in.
-    if (breakWaiverChecked && breakWaiverReason.trim()) {
+    // #499: nie, wenn die Praxis die Ausnahme abgeschaltet hat (auch nicht die
+    // aus einem Alt-Eintrag vorbelegte Begründung).
+    if (breakExceptionAllowed && breakWaiverChecked && breakWaiverReason.trim()) {
       submitData = { ...submitData, break_waiver_reason: breakWaiverReason.trim() };
     }
 
@@ -613,7 +623,7 @@ export default function TimeTracking() {
 
           {/* #144 §4 ArbZG: documented exception when the mandatory break was
               not possible. Only offered to non-exempt users (exempt skip §4). */}
-          {!user?.exempt_from_arbzg && (errors.break_time || breakWaiverChecked) && (
+          {!user?.exempt_from_arbzg && breakExceptionAllowed && (errors.break_time || breakWaiverChecked) && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <label className="flex items-start gap-2 cursor-pointer">
                 <input

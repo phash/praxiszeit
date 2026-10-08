@@ -24,7 +24,9 @@ from app.routers.time_entries import (
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
     BREAK_WAIVER_SOURCE,
 )
-from app.services.break_validation_service import validate_daily_break
+from app.services.break_validation_service import (
+    validate_daily_break, is_break_exception_allowed, BREAK_EXCEPTION_DISABLED_HINT,
+)
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
@@ -289,6 +291,17 @@ def review_change_request(
             ),
         )
 
+    # #499: Eine im Antrag mitgebrachte Pflicht-Pause-Ausnahme gilt nur, solange
+    # der Mandant sie erlaubt. Wurde sie nach dem Stellen abgeschaltet, wird der
+    # Antrag wie einer OHNE Ausnahme behandelt: §4 erneut prüfen (422 bei
+    # Verstoß), und die Begründung landet weder am Eintrag noch als
+    # 'break_waiver'-Quelle im Protokoll.
+    waiver_reason = cr.break_waiver_reason
+    waiver_disabled = False
+    if waiver_reason is not None and not is_break_exception_allowed(db, cr.tenant_id):
+        waiver_reason = None
+        waiver_disabled = True
+
     # Approve: validate preconditions BEFORE changing status
     entry = None
     # Release-Review 1.19.3 (F1): Eingabezeiten fuer clamp. Bei UPDATE unten durch
@@ -406,7 +419,7 @@ def review_change_request(
 
                 # §4 break validation — skipped only when a documented waiver
                 # is attached (waiver excuses §4, never §3).
-                if cr.break_waiver_reason is None:
+                if waiver_reason is None:
                     break_error = validate_daily_break(
                         db=db,
                         user_id=cr.user_id,
@@ -415,8 +428,11 @@ def review_change_request(
                         end_time=_eff_end,
                         break_minutes=cr.proposed_break_minutes or 0,
                         exclude_entry_id=exclude_id,
+                        tenant_id=cr.tenant_id,
                     )
                     if break_error:
+                        if waiver_disabled:
+                            break_error = f"{break_error} {BREAK_EXCEPTION_DISABLED_HINT}"
                         raise HTTPException(status_code=422, detail=break_error)
 
     # Absence CR preconditions
@@ -506,7 +522,8 @@ def review_change_request(
                 note=cr.proposed_note,
                 # #144 §4 ArbZG: materialise the documented break-exception on
                 # the entry so the deviation stays auditable after approval.
-                break_waiver_reason=cr.break_waiver_reason,
+                # #499: nur, solange der Mandant die Ausnahme erlaubt.
+                break_waiver_reason=waiver_reason,
                 # #485 §10 ArbZG: Ausnahmegrund aus dem Antrag uebernehmen.
                 sunday_exception_reason=cr.proposed_sunday_exception_reason,
             )
@@ -519,7 +536,7 @@ def review_change_request(
             _create_audit_log(
                 db, entry.id, cr.user_id, current_user.id,
                 action="create", new_entry=entry,
-                source=BREAK_WAIVER_SOURCE if cr.break_waiver_reason is not None else "change_request",
+                source=BREAK_WAIVER_SOURCE if waiver_reason is not None else "change_request",
                 change_request_id=cr.id,
                 tenant_id=cr_tenant_id,
             )
@@ -553,7 +570,7 @@ def review_change_request(
                     "break_minutes": cr.proposed_break_minutes,
                     "note": cr.proposed_note,
                 },
-                source=BREAK_WAIVER_SOURCE if cr.break_waiver_reason is not None else "change_request",
+                source=BREAK_WAIVER_SOURCE if waiver_reason is not None else "change_request",
                 change_request_id=cr.id,
                 tenant_id=cr_tenant_id,
             )
@@ -566,8 +583,8 @@ def review_change_request(
             if cr.proposed_note is not None:
                 entry.note = cr.proposed_note
             # #144 §4 ArbZG: carry the documented break-exception onto the entry.
-            if cr.break_waiver_reason is not None:
-                entry.break_waiver_reason = cr.break_waiver_reason
+            if waiver_reason is not None:
+                entry.break_waiver_reason = waiver_reason
             # #485 §10 ArbZG: ein mitgebrachter Ausnahmegrund ersetzt den alten;
             # ohne Angabe bleibt der bestehende stehen.
             if cr.proposed_sunday_exception_reason is not None:

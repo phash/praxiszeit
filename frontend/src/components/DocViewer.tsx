@@ -252,7 +252,7 @@ export function CheatsheetAdmin() {
           </thead>
           <tbody>
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§3</td><td className="px-3 py-2 border border-gray-200 text-gray-600">8h-Warnung; &gt;10h: Warnung beim Live-Ausstempeln, harte Sperre bei manueller Eingabe/Antrag</td></tr>
-            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§4</td><td className="px-3 py-2 border border-gray-200 text-gray-600">30/45 Min. Pausenpflicht</td></tr>
+            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§4</td><td className="px-3 py-2 border border-gray-200 text-gray-600">30/45 Min. Pausenpflicht – ganzer Tag, Lücken unter 15 Min. zählen nicht; Sperre auch beim Ausstempeln (Ausnahme mit Begründung abschaltbar)</td></tr>
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§5</td><td className="px-3 py-2 border border-gray-200 text-gray-600">11h Mindestruhezeit</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§11</td><td className="px-3 py-2 border border-gray-200 text-gray-600">15 freie Sonntage/Jahr</td></tr>
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§14</td><td className="px-3 py-2 border border-gray-200 text-gray-600">48h-Wochenwarnung</td></tr>
@@ -309,6 +309,8 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
           <li><strong>Begründung angeben</strong> – falls keine Pause möglich war, kurz erläutern (z. B. „Notfall, keine Vertretung"). Diese <strong>dokumentierte Ausnahme</strong> wird gespeichert.</li>
         </ul>
         <p>Erst nach Pause-Eingabe <strong>oder</strong> Begründung ist das Ausstempeln abgeschlossen. Mit <strong>Abbrechen</strong> schließen Sie das Feld, ohne auszustempeln – die Uhr läuft weiter.</p>
+        <p><strong>Der ganze Tag zählt:</strong> Geprüft werden alle Einträge des Tages zusammen, nicht nur der laufende Abschnitt. Aus- und sofort wieder einstempeln ist keine Pause – eine Unterbrechung zählt erst ab <strong>15 Minuten</strong>.</p>
+        <p className="text-gray-700">Fehlt das Begründungsfeld, hat Ihre Praxis die Ausnahme „Pflicht-Pause war nicht möglich" abgeschaltet – dann klappt das Ausstempeln nur mit eingetragener Pause.</p>
       </div>
     ),
   },
@@ -329,7 +331,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Wenn ein gesperrter Eintrag korrigiert werden muss: <strong>Zeiterfassung → Tab „Einträge"</strong> → in der Aktionsspalte auf <strong>Änderungsantrag</strong> klicken → korrekte Zeiten + Begründung eingeben → Antrag stellen.</p>
         <p>Den Status aller Anträge sehen Sie unter <strong>Zeiterfassung → Tab „Anträge"</strong>. Filter: Alle / Offen / Genehmigt / Abgelehnt. Offene Anträge können mit <strong>Zurückziehen</strong> storniert werden.</p>
-        <p className="text-gray-700"><strong>Pflicht-Pause war nicht möglich?</strong> Erfüllen Ihre korrigierten Zeiten die Pausenregel nicht, wird der Antrag nicht abgelehnt – es erscheint das Feld <strong>„Pflicht-Pause war nicht möglich – Begründung"</strong>. Kurz erläutern und mit <strong>Mit dokumentierter Ausnahme senden</strong> abschicken; die Abweichung wird dokumentiert und dem Admin vorgelegt.</p>
+        <p className="text-gray-700"><strong>Pflicht-Pause war nicht möglich?</strong> Erfüllen Ihre korrigierten Zeiten die Pausenregel nicht, wird der Antrag nicht abgelehnt – es erscheint das Feld <strong>„Pflicht-Pause war nicht möglich – Begründung"</strong>. Kurz erläutern und mit <strong>Mit dokumentierter Ausnahme senden</strong> abschicken; die Abweichung wird dokumentiert und dem Admin vorgelegt. Hat Ihre Praxis diese Ausnahme abgeschaltet, erscheint das Feld nicht – tragen Sie dann die Pause ein.</p>
       </div>
     ),
   },
@@ -477,7 +479,9 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Konnte eine vorgeschriebene Pause (§4 ArbZG: 30 Min. ab 6h, 45 Min. ab 9h) nicht eingelegt werden, kann ein Eintrag mit einer <strong>dokumentierten Pflicht-Begründung</strong> erfasst werden, statt blockiert zu werden. Die Begründung landet im Änderungsprotokoll (Quelle „break_waiver").</p>
-        <p>Den Schalter <strong>„Genehmigung erforderlich"</strong> stellen Sie unter <strong>Einstellungen → „Pflicht-Pause-Ausnahme"</strong> ein:</p>
+        <p>Geprüft wird der <strong>ganze Tag</strong>: alle Einträge zusammen, Lücken unter 15 Min. sind keine Pause (§4 Satz 2) – aneinandergereihte Einträge zählen wie ein durchgehender Block. Das gilt seit #499 auch beim <strong>Ausstempeln</strong>: ohne ausreichende Pause oder Begründung wird nicht ausgestempelt.</p>
+        <p>Mit <strong>„Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"</strong> (Standard: an) legen Sie fest, ob es die Ausnahme überhaupt gibt. <strong>Aus</strong> → die Auswahl verschwindet beim Ausstempeln, in Zeiterfassung, Monatsjournal und Anträgen, und der Server lehnt Ausnahmen ab (auch von Admins). Ein Tag über 6/9 h lässt sich dann nur mit eingetragener Pause speichern. Bestehende Ausnahmen bleiben; offene Ausnahme-Anträge lassen sich danach nicht mehr genehmigen, nur ablehnen.</p>
+        <p>Ist die Ausnahme erlaubt, stellen Sie den Schalter <strong>„Genehmigung erforderlich"</strong> unter <strong>Einstellungen → „Pflicht-Pause-Ausnahme"</strong> ein:</p>
         <ul className="list-disc list-inside space-y-0.5">
           <li><strong>Aus</strong> – die Ausnahme wird sofort wirksam.</li>
           <li><strong>Ein</strong> – der Eintrag wird erst nach Admin-Genehmigung wirksam.</li>

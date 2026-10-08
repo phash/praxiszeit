@@ -10,7 +10,7 @@ from app.models import (
 )
 from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
-from app.services.break_validation_service import validate_daily_break
+from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
@@ -206,13 +206,19 @@ def create_change_request(
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
             exclude_entry_id=entry.id if entry else None,
+            tenant_id=current_user.tenant_id,
         )
         # #200: §4-Pausen-Ausnahme — bei dokumentierter Begründung den §4-Block
         # NICHT hart werfen, sondern den Antrag mit break_waiver_reason anlegen
         # (admin_change_requests honoriert ihn beim Genehmigen). Der §3-10h-Cap
-        # unten bleibt unabhängig davon hart.
-        if break_error and not (data.break_waiver_reason and data.break_waiver_reason.strip()):
-            raise HTTPException(status_code=400, detail=break_error)
+        # unten bleibt unabhängig davon hart. #499: ist die Ausnahme im
+        # Mandanten abgeschaltet, bleibt der §4-Block auch mit Begründung.
+        if break_error:
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, data.break_waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
 
         # §3 ArbZG: daily hours hard limit
         daily_hours = _calculate_daily_net_hours(

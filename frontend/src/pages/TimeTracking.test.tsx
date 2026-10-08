@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { format } from 'date-fns';
 import TimeTracking from './TimeTracking';
+import { useSystemStore } from '../stores/systemStore';
 
 // ---------------------------------------------------------------------------
 // U2 (Audit 2026-07-31): ein noch LAUFENDER Zeiteintrag (ohne Ende) galt als
@@ -129,5 +130,51 @@ describe('<TimeTracking /> laufender Eintrag (U2, Audit 2026-07-31)', () => {
     expect(putMock.mock.calls[0][1]).toMatchObject({
       start_time: '08:00', end_time: '16:00', break_minutes: 30,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #499: Mandanten-Schalter für „Pflicht-Pause war nicht möglich". Aus → die
+// Checkbox erscheint gar nicht erst; der §4-Hinweis bleibt eine harte Sperre.
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Pflicht-Pause-Ausnahme (#499)', () => {
+  async function editWithoutBreak() {
+    mockEntries([closedEntry]); // 08:00–16:00
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+  }
+
+  it('bietet die Checkbox an, solange die Ausnahme erlaubt ist (Default)', async () => {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    await editWithoutBreak();
+    expect(await screen.findByText('Pflicht-Pause war nicht möglich')).toBeInTheDocument();
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it('blendet die Checkbox aus und nennt den Grund, wenn die Praxis sie abgeschaltet hat', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    await editWithoutBreak();
+    expect(await screen.findByText(/mind\. 30 Min\. Pause/)).toBeInTheDocument();
+    expect(screen.getByText(/in dieser Praxis abgeschaltet/)).toBeInTheDocument();
+    expect(screen.queryByText('Pflicht-Pause war nicht möglich')).not.toBeInTheDocument();
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it('schickt eine vorhandene Begründung nicht mit, wenn die Ausnahme abgeschaltet ist', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    mockEntries([{ ...closedEntry, break_waiver_reason: 'Altfall' }]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).not.toHaveProperty('break_waiver_reason');
   });
 });

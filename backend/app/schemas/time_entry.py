@@ -117,7 +117,9 @@ class ClockOutRequest(BaseModel):
     break_minutes: int = Field(default=0, ge=0)
     note: Optional[str] = None
     # M-ARB1: document a §4 break deviation captured during clock-out, mirroring
-    # the create/CR paths (#144). Non-blocking — clock-out always succeeds.
+    # the create/CR paths (#144). #499: ohne ausreichende Pause UND ohne
+    # (zulässige) Begründung lehnt der Server das Ausstempeln mit 400 ab — der
+    # Eintrag bleibt offen, bis Pause oder Begründung mitkommt.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)
 
 
