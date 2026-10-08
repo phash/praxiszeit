@@ -146,6 +146,7 @@ export function CheatsheetMitarbeiter() {
           </tbody>
         </table>
         <p className="text-sm text-gray-500 mt-2">Grüner Saldo (+) = Überstunden | Roter Saldo (–) = Fehlstunden</p>
+        <p className="text-sm text-gray-500 mt-1"><strong>Monat ↔ Woche:</strong> Umschalter über der Übersichtstabelle → letzte 8 Kalenderwochen mit Soll/Ist/Saldo/Konto (laufende Woche bis heute). Fehlende Blöcke fallen pro Woche sofort auf.</p>
       </section>
 
       {/* Passwort */}
