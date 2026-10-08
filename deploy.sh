@@ -6,7 +6,8 @@
 #   1. refuse to deploy with a dirty working tree
 #   2. record the currently-deployed commit so we can roll back
 #   3. pre-migration pg_dump via scripts/backup-db.sh (fails-closed)
-#   4. git pull + docker build + docker compose up -d
+#   4. git pull + docker build --pull (frische Basis-Images, #491) +
+#      compose pull db + docker compose up -d
 #   5. wait for /api/health, on failure: rewind to the previous commit,
 #      rebuild, and surface logs
 #
@@ -83,10 +84,19 @@ log "New commit: ${NEW_COMMIT}"
 # --- 3. build ---
 
 log ">> Building frontend + backend"
-if ! $COMPOSE build frontend backend; then
-    log "ERROR: build failed. Rolling back to ${PREVIOUS_COMMIT}."
-    git reset --hard "${PREVIOUS_COMMIT}"
-    exit 1
+# #491 DEP-4: --pull zieht die Basis-Images (python:3.12-slim, node:20-alpine,
+# nginx:alpine) neu — sonst kommen Debian/Alpine-Sicherheitsupdates unter
+# demselben Tag nie an. Wie beim `pull db` unten darf ein nicht erreichbares
+# Registry das Deployment nicht verhindern: scheitert der Bau mit --pull, folgt
+# ein Bau mit den lokalen Images. Erst wenn auch der scheitert -> Rollback.
+# (Die Rollback-Bauten weiter unten bleiben bewusst ohne --pull.)
+if ! $COMPOSE build --pull frontend backend; then
+    log "WARN: build --pull failed (registry unreachable?), retrying with local base images"
+    if ! $COMPOSE build frontend backend; then
+        log "ERROR: build failed. Rolling back to ${PREVIOUS_COMMIT}."
+        git reset --hard "${PREVIOUS_COMMIT}"
+        exit 1
+    fi
 fi
 
 # --- 4. start / run migrations ---

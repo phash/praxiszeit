@@ -31,14 +31,15 @@ PraxisZeit liefert **eine Codebasis in zwei Varianten**, gesteuert über die Env
 ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 ```
 
-`deploy.sh` macht: `git pull` → `build frontend backend` → `up -d` (mit SSL-Overlay) → Health-Check.
+`deploy.sh` macht: `git pull` → `build --pull frontend backend` (zieht die Basis-Images neu, damit Debian/Alpine-Sicherheitsupdates ankommen; ist das Registry nicht erreichbar, baut es mit den lokalen Images weiter) → `pull db` → `up -d` (mit SSL-Overlay) → Health-Check.
 
 ### Manuell (falls deploy.sh nicht nutzbar)
 
 ```bash
 cd /opt/praxiszeit/praxiszeit
 git pull origin master
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml build frontend backend
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml build --pull frontend backend
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml pull db
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 

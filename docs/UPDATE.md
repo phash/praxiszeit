@@ -66,10 +66,14 @@ cp /pfad/zur/alten/installation/ssl/key.pem  ssl/key.pem  2>/dev/null || true
 # Datenbank-Image auf den neuesten 18.x-Patchstand holen (Sicherheitsupdates —
 # `up` allein nimmt sonst das bereits vorhandene, ältere Image):
 docker compose pull db
+# Basis-Images der selbst gebauten Dienste ebenfalls neu ziehen (Debian/Alpine-
+# Sicherheitsupdates erscheinen unter demselben Tag — `--build` allein nimmt
+# die lokal vorhandenen):
+docker compose build --pull
 # HTTP:
-docker compose up -d --build
+docker compose up -d
 # ODER HTTPS:
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
 > Wichtig: Das **Postgres-Volume** muss dasselbe bleiben. Starten Sie das Update
@@ -93,7 +97,9 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 cd praxiszeit
 git pull
 docker compose down
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build   # oder ohne -f … für HTTP
+docker compose pull db                 # PostgreSQL-18-Patchstand
+docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # oder ohne -f … für HTTP
 ```
 
 ### 3. Prüfen

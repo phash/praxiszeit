@@ -113,6 +113,9 @@ fi
 #
 # --user: the mount is host-owned; the image's default user cannot create the
 # logs/ directory the orchestrator opens at import time.
+#
+# Same mount, same reason: test_491_deploy_pull.py drives the real ../deploy.sh
+# against git/docker stubs (#491 DEP-4) and skips without the repo.
 step "Native PG lifecycle (praxiszeit-server.py)"
 if docker run --rm --user "$(id -u):$(id -g)" \
        -v "$(pwd)":/work -w /work/backend \
@@ -123,7 +126,9 @@ if docker run --rm --user "$(id -u):$(id -g)" \
        -e ENVIRONMENT=development -e CORS_ORIGINS=http://localhost \
        -e DATABASE_URL=sqlite:////tmp/native-lifecycle.db \
        praxiszeit-backend \
-       python -m pytest tests/test_native_pg_lifecycle.py -q --tb=short </dev/null 2>&1 | tail -5; then
+       python -m pytest tests/test_native_pg_lifecycle.py \
+         tests/test_491_deploy_pull.py \
+         -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Native PG lifecycle verified"
 else
     fail "Native PG lifecycle tests failed"
