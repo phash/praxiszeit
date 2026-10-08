@@ -1,7 +1,8 @@
 # Arbeitszeit als Blöcke je Tag — Design
 
 **Datum:** 2026-10-08
-**Status:** Entwurf (Entscheidungen vom Betreiber freigegeben am 2026-10-07/08)
+**Status:** Entwurf (Entscheidungen vom Betreiber freigegeben am 2026-10-07/08; Antworten
+auf die Review-Fragen — Abschnitt 19.1 — am 2026-10-08 verbindlich gegeben und eingearbeitet)
 **Ziel-Version:** 1.20.0 (MINOR)
 **Branch:** `feat/arbeitszeit-bloecke`
 **Löst ab:** #201 (ein Soll-Fenster je Wochentag, Spalten `users.scheduled_*`)
@@ -10,8 +11,11 @@ Verbindliche Grundlage ist das Entscheidungsprotokoll des Betreibers. Wo die
 Touchpoint-Karte (D1–D35) oder die Rechtsbewertung etwas anderes empfehlen, gilt das
 Protokoll. Ergänzungen dieser Spec, die das Protokoll nicht ausdrücklich regelt, stehen
 gesammelt unter „Präzisierungen" (Abschnitt 2.10) und sind als solche gekennzeichnet.
-Review-Funde, die eine Protokoll-Entscheidung ändern würden, sind **nicht** eingearbeitet,
-sondern stehen als Frage an den Betreiber mit Empfehlung in Abschnitt 19.1.
+Review-Funde, die eine Protokoll-Entscheidung ändern oder auslegen, hat der Betreiber am
+2026-10-08 entschieden (Abschnitt 19.1 „Entschiedene Punkte"). Diese Antworten sind in
+allen betroffenen Abschnitten eingearbeitet und gehen dem Protokoll vor, wo sie es ändern
+(Verkürzungsbegriff, Downgrade aus der Hülle, Beschriftung der Grundtypen, gespeicherter
+Puffer je Eintrag).
 
 ---
 
@@ -57,8 +61,11 @@ einem Schutzpaket gegen rückwirkende Verkürzung.
 3. Das Tagessoll eines Block-Tages ist (Σ Blockdauer − Pause) in Stunden, beim Speichern
    in `hours_<tag>` materialisiert; `calculation_service` bleibt für alle Soll-Schleifen
    unverändert, und alle bestehenden Soll-/Saldo-Suiten bleiben grün — bis auf die in 17.6
-   genannten mechanischen Anpassungen (`ScheduleSegment`-/`Schedule`-Helfer) und die bewusst
-   geänderten F1-Fälle in `test_retarget_absence_hours.py` (E51, 9.6).
+   genannten mechanischen Anpassungen (`ScheduleSegment`-/`Schedule`-Helfer), die bewusst
+   geänderten F1-Fälle in `test_retarget_absence_hours.py` (E51, 9.6) sowie die in 17.6
+   genannten Bestandstests mit rückwirkender Soll-Erhöhung bzw. F1-Senkung (u. a. #415- und
+   #431-Suiten, `test_wh_change_preview.py`), die jetzt Grund/Haken senden oder bewusst 400
+   erwarten (19.1 Nr. 1).
 4. Nach Migration 073 sind `net_hours`, Tagessoll und Überstundensaldo aller
    Bestandsdaten byte-identisch (Nachweis per Postgres-Lauf auf einer Prod-Kopie).
 5. Eine Änderung mit Wirkungsdatum in der Vergangenheit kappt die betroffenen Einträge
@@ -68,9 +75,13 @@ einem Schutzpaket gegen rückwirkende Verkürzung.
    jedes Anlegen und jedes Löschen einer Arbeitszeit-Änderung genau eine Sammelzeile mit
    handelnder Admin — auch ohne betroffene Einträge (10.2);
    `GET /api/admin/audit/verify-integrity` bleibt grün.
-7. Verliert durch die Änderung mindestens ein erfasster Eintrag angerechnete Zeit, ist
-   „rückwirkend" nur mit Grundtyp, Begründung und Bestätigung speicherbar; in ein
-   abgeschlossenes Jahr hinein gar nicht (HTTP 400).
+7. Ist eine Änderung eine **Verkürzung** — mindestens ein erfasster Eintrag verliert
+   angerechnete Zeit, **oder** das Überstundenkonto sinkt im Wirkungsbereich, **oder** die
+   F1-Klemmung senkt eine Abwesenheits-Gutschrift stärker als das Tagessoll des Tages
+   (9.5) —, ist „rückwirkend" beim Anlegen wie beim Löschen nur mit Grundtyp, Begründung
+   und Bestätigung speicherbar; in ein abgeschlossenes Jahr hinein gar nicht (HTTP 400).
+   Eine reine rückwirkende Soll-Erhöhung ohne Grund endet mit HTTP 400; eine rückwirkende
+   Soll-Senkung mit regulär geklemmtem Misch-Tag ist keine Verkürzung.
 8. Nicht angerechnete Zeit — Lücke **und** von der Hülle gekappte Anwesenheit (P19) —
    steht an jedem Eintrag (Admin-Dashboard, Monatsjournal, Zeiterfassung), als
    Monatssumme im Journal und als angehängte Spalte „Nicht angerechnet (Min)" in XLSX, ODS
@@ -85,6 +96,10 @@ einem Schutzpaket gegen rückwirkende Verkürzung.
 11. Kein Code liest mehr `scheduled_*` (Guard-Test), kein Code außer dem Resolver liest
     `users.work_blocks` für eine Berechnung (Guard-Test).
 12. Alle fünf Doku-Sync-Flächen und `CLAUDE.md` sind nachgezogen.
+13. Jeder gegen Blöcke gekappte Eintrag trägt seinen Puffer (`clamp_grace_minutes`); wird
+    der Mandanten-Puffer danach gesenkt, kappt eine Bearbeitung des Eintrags (Admin-Edit,
+    Antragsgenehmigung, XLS-Überschreiben, Datumswechsel, Auto-Close) weiter mit dem
+    gespeicherten Puffer — die Puffer-Senkung allein kürzt keine angerechnete Zeit (E79/E80).
 
 ---
 
@@ -102,7 +117,7 @@ knapp zusammen.
 | E3 | **Lücke zwischen Blöcken wird nicht angerechnet**, behandelt wie Zeit außerhalb des Fensters heute (#201); Rohstempel bleibt, Hinweis wird gezeigt. | Konsequente Fortsetzung von #201; Nachweis der Anwesenheit (§16 ArbZG) bleibt unberührt. |
 | E4 | **Datenmodell Ansatz A:** Blöcke sind Teil des datierten Vertrags-Snapshots `working_hours_changes` als JSON-Spalte — keine Kindtabelle, keine eigene Historie. | „Die nächste Zeile ist immer die Fenstergrenze" (#431) gilt automatisch; keine zweite Historie, keine neue RLS-Tabelle. |
 | E5 | **Puffer an jedem Blockrand**, auch an den inneren, symmetrisch: 8–18 durchgestempelt bei 8–12 + 15–18 und 15 Min Puffer → angerechnet 08:00–12:15 + 14:45–18:00 = 7:30 h. Eine Lücke ≤ 2 × Puffer verschwindet. | Eine einheitliche Regel; kein Minutenabzug beim Ausstempeln um 12:05. |
-| E6 | **Schutzpaket für rückwirkende Verkürzung** (Abschnitt 9.5). | Lage der Arbeitszeit ist einseitig nur für die Zukunft änderbar (§ 106 GewO); Rechtsbewertung „rot" ohne Schutzpaket. |
+| E6 | **Schutzpaket für rückwirkende Verkürzung** (Abschnitt 9.5; Verkürzung = Eintrag verliert angerechnete Zeit, Überstundenkonto sinkt oder F1 senkt eine Abwesenheits-Gutschrift stärker als das Tagessoll, 19.1 Nr. 1). | Lage der Arbeitszeit ist einseitig nur für die Zukunft änderbar (§ 106 GewO); Rechtsbewertung „rot" ohne Schutzpaket. |
 | E7 | **Oberfläche, „Anerkennen", Mitarbeiter-Hinweis** wie beschrieben (Abschnitte 12–14). | Nichtanrechnung darf nicht still sein (Rechtsbewertung „rot" ohne Sichtbarkeit und Freigabeweg). |
 
 ### 2.2 Datenmodell
@@ -116,6 +131,7 @@ knapp zusammen.
 | E12 | `time_entries.credit_override`: `BOOL NOT NULL DEFAULT false`. Gesetzt per Admin-Aktion „Anerkennen": für diesen Eintrag keine Kappung (Fenster ignoriert), dauerhaft, auch bei späterer Neukappung. Protokolliert. | Freigabeweg für geduldete Arbeit (§ 612 BGB); muss Neuberechnungen überleben. |
 | E13 | `net_hours` = Ende − Beginn − Pause − `uncredited_minutes`, als Hybrid-Property in Python **und** als SQL-Ausdruck. | Ohne das wirkt das Feature in keinem Saldo und keinem Export. |
 | E14 | Raster 5 Minuten für Blockgrenzen und Pause. Höchstens 3 Blöcke je Tag. Validierung: sortiert, überlappungsfrei, Beginn < Ende, 0 ≤ Pause < Σ Blockdauer. Nur Mo–Fr. | Tagessoll und Fenster kennen heute nur Mo–Fr; 5 Min hält die Rundungsabweichung ≤ 0,005 h/Tag. |
+| E79 | `time_entries.clamp_grace_minutes`: `INT NULL`, ohne Default. Bei **jeder** Kappung gesetzt = der Puffer, mit dem der Eintrag gegen Blöcke geprüft wurde (auch wenn nichts abgeschnitten wurde). Migration 073 legt die Spalte an; Bestand bleibt NULL = „unbekannt → aktueller Puffer". **Nie Eingabefeld.** Entschieden 2026-10-08 (19.1 Nr. 8). | Der Mandanten-Puffer ist nicht historisiert. Ohne den gespeicherten Wert verlöre ein alter Eintrag nach einer Puffer-Senkung bei jeder Einzelbearbeitung angerechnete Zeit — nebenbei, ohne Vorschau und ohne Verkürzungsschutz (Review-Fund R16). |
 
 ### 2.3 Tagessoll
 
@@ -130,12 +146,12 @@ knapp zusammen.
 
 | Nr | Entscheidung | Begründung |
 |---|---|---|
-| E19 | Neue Spalten wie E8–E12. Backfill in Python (`Decimal`), als Superuser (FORCE RLS). | SQL-`ROUND` rundet anders als Python-HALF_EVEN; unter FORCE RLS träfe der Backfill sonst still 0 Zeilen. |
+| E19 | Neue Spalten wie E8–E12, P18, P28 und E79. Backfill in Python (`Decimal`), als Superuser (FORCE RLS). | SQL-`ROUND` rundet anders als Python-HALF_EVEN; unter FORCE RLS träfe der Backfill sonst still 0 Zeilen. |
 | E20 | Jede Person mit Fenster: `users.work_blocks` = heutiges Fenster als ein Block je Tag (`pause_minutes` NULL), **und jede bestehende Verlaufszeile dieser Person** bekommt denselben Wert. | Die Fenster wirkten live → Verhalten byte-identisch, gleiches Prinzip wie 067. |
 | E21 | Bestandsfallen: halboffenes Fenster → Platzhalter 00:00 bzw. 23:59 (identisches Kappungsverhalten) plus Diagnosezeile; Beginn ≥ Ende → nicht übernommen, Diagnosezeile; Sekunden → abgeschnitten, Diagnosezeile. | Keine Abbrüche (Update eines Kundensystems darf nicht hängen), aber nichts verschweigen. |
 | E22 | Keine Neukappung in der Migration, `uncredited_minutes` bleibt 0, `net_hours` byte-identisch, Soll byte-identisch. | §16-Belege der Vergangenheit bleiben unangetastet (Rechtsbewertung Pflicht 1). |
 | E23 | Die `scheduled_*`-Spalten werden in 073 gelöscht (kein Expand/Contract), dazu ein Guard-Test (grep), dass kein Code mehr `scheduled_*` liest. | `getattr(user, "scheduled_…", None)` würde nach dem Drop die Kappung still abschalten; einen App-Rollback ohne DB-Downgrade gibt es nicht. |
-| E24 | Downgrade ist verlustbehaftet: Rekonstruktion **aus dem ersten Block**, mit Diagnose der Personen mit mehreren Blöcken und der Einträge mit `uncredited_minutes` > 0. | Vom Betreiber so entschieden; Folgen siehe Abschnitt 19.1 Nr. 3. |
+| E24 | Downgrade ist verlustbehaftet: Rekonstruktion des 072-Fensters je Tag aus der **Hülle** der Blöcke (Beginn des ersten bis Ende des letzten Blocks), mit Diagnose, die die Personen mit mehreren Blöcken (Tag, Hülle, wieder angerechnete Lücken) und die Einträge mit `uncredited_minutes` > 0 namentlich nennt. | Entschieden 2026-10-08 (19.1 Nr. 3), ändert den Protokollwortlaut „aus dem ersten Block": Nach einem Rückfall rechnet das Fenster die Lücke wieder an, statt Nachmittagseinträge auf 0 h kollabieren zu lassen. Einblock-Tage (alle Altzeilen aus 073) bleiben identisch. |
 | E25 | Vorbedingung: Diagnose-SQL (Abschnitt 5.1) auf einer Kopie der Produktions-DB, **bevor** implementiert wird. | Welche Fallen real vorkommen, ist unbekannt; keine der Analyse-Lanes hatte DB-Zugriff. |
 
 ### 2.5 API
@@ -152,7 +168,7 @@ knapp zusammen.
 
 | Nr | Entscheidung | Begründung |
 |---|---|---|
-| E31 | `clamp(db, user, d, start, end, grace)` liefert ein `NamedTuple` `(eff_start, eff_end, raw_start, raw_end, uncredited_minutes)`. Altes Entpacken in 4 Variablen scheitert laut (gewollt). | Jede übersehene Aufrufstelle fällt im Test sofort auf. |
+| E31 | `clamp(db, user, d, start, end, grace)` liefert ein `NamedTuple` `(eff_start, eff_end, raw_start, raw_end, uncredited_minutes, grace_minutes)` — `grace_minutes` = angewandter Puffer, `None`, wenn nicht gekappt wurde (E79). Altes Entpacken in 4 Variablen scheitert laut (gewollt). | Jede übersehene Aufrufstelle fällt im Test sofort auf. |
 | E32 | Äußere Hülle wie heute: Beginn vor erstem Block − Puffer → verschoben, Ende nach letztem Block + Puffer → verschoben, `raw_*` bleiben. Kollaps außerhalb der Hülle wie heute (0 h, `uncredited` 0). | Bestandsverhalten #201/#462. |
 | E33 | **Beginn in der Lücke wird NICHT verschoben.** Die Lücke läuft über `uncredited`. | Verschieben erzeugt UNIQUE-Verletzungen auf `uq_tenant_user_date_start` (clock_in hat keine Duplikatprüfung), und Einträge mit Beginn = Ende ließen sich nicht mehr speichern. |
 | E34 | `uncredited` = Überlappung von [eff_start, eff_end] mit den Lücken (um 2 × Puffer geschrumpft). Eintrag ganz in der Lücke → 0 h angerechnet, Kollaps-Hinweis, Stempel bleiben. | Folgt aus E3/E5. |
@@ -160,6 +176,7 @@ knapp zusammen.
 | E36 | **Alle 12 clamp-Aufrufstellen** (`time_entries` 300/403/655/990, `admin_time_entries` 88/293, `admin_change_requests` 387/488/535/1019, `xls_import_service` 220/416) **plus Auto-Close** (`_close_stale_entry`, 23:59): läuft über `clamp` (Ende = letzter Block + Puffer, `raw_end` = 23:59). | Schließt das Altschlupfloch, dass der Abend voll angerechnet wurde. |
 | E37 | Warncode `WORK_WINDOW_CLAMPED` bleibt; der Text aus `clamp_warning_text` wird um Lücke und nicht angerechnete Zeit erweitert. Einstempeln in der Lücke nutzt denselben Text. | Eine Textquelle (#462), keine Mapping-Änderung im Frontend. |
 | E38 | XLS: Helfer `has_blocks(...)` statt `get_scheduled_window(...) != (None, None)`. Auto-Pause = nur, was nach Lückensegmenten ≥ 15 Min fehlt. `/confirm` rechnet serverseitig neu. | `[] != (None, None)` ist immer wahr → `raw_*` würden an Tagen ohne Blöcke gelöscht. |
+| E80 | **Herkunft des Puffers** (19.1 Nr. 8): Neuanlagen kappen mit dem aktuellen Mandanten-Puffer. Jede **Einzel-Neukappung eines gespeicherten Eintrags** — Ausstempeln, MA- und Admin-Bearbeitung inkl. Datumswechsel, CR-Genehmigung (UPDATE), XLS-Überschreiben, Auto-Close — nutzt dessen `clamp_grace_minutes` (NULL → aktueller Puffer). Nur die **Massen-Neukappung** einer Arbeitszeit-Änderung nutzt den aktuellen Puffer und schreibt ihn neu (E47). Jede schreibende Stelle übernimmt `ClampResult.grace_minutes` nach `clamp_grace_minutes`, wenn es nicht `None` ist. | Eine Puffer-Senkung wirkt damit auf neue Einträge, nicht nebenbei auf alte. Die Massen-Neukappung bleibt beim aktuellen Puffer (Protokoll); dort ist der Effekt in der Vorschau sichtbar und fällt als Verlust unter das Schutzpaket. |
 
 ### 2.7 Mitbehobene Bestandsfehler
 
@@ -183,23 +200,23 @@ knapp zusammen.
 
 | Nr | Entscheidung | Begründung |
 |---|---|---|
-| E47 | Neukappung nur für Einträge in [Wirkungsdatum, nächste Änderung) und nur an Wochentagen, deren Blöcke sich zwischen altem und neuem Snapshot unterscheiden. Reine Pausenänderung → keine Neukappung. Es gilt der **aktuelle** Mandanten-Puffer; die Vorschau nennt ihn. | Der historische Puffer ist nicht gespeichert; unbeteiligte Tage bleiben unberührt. |
+| E47 | Neukappung nur für Einträge in [Wirkungsdatum, nächste Änderung) und nur an Wochentagen, deren Blöcke sich zwischen altem und neuem Snapshot unterscheiden. Reine Pausenänderung → keine Neukappung. Es gilt der **aktuelle** Mandanten-Puffer; die Vorschau nennt ihn, und jeder geprüfte Eintrag an einem geänderten Wochentag (Tag mit Blöcken im neuen Snapshot) bekommt ihn als `clamp_grace_minutes` — auch wenn sich seine Zeiten nicht ändern (E79 „bei jeder Kappung", 9.2 Schritt 9). | Vom Protokoll so festgelegt und am 2026-10-08 bestätigt (19.1 Nr. 8); ein kleinerer aktueller Puffer erscheint in der Vorschau als Verlust und löst das Schutzpaket aus. Unbeteiligte Tage bleiben unberührt und behalten ihren gespeicherten Puffer. |
 | E48 | Quelle der Neukappung ist der Rohstempel; fehlt er, ist die gespeicherte Zeit der Stempel (nie gekappt). | Kein kumulatives Doppelkappen (1.18.2-Fehlerklasse). |
-| E49 | Übersprungen und einzeln in Vorschau und Antwort gemeldet: offene Einträge; Sonntag/Feiertag/freier Sondertag; `track_hours=False`; außerhalb des Beschäftigungsfensters; `credit_override`; UNIQUE-Kollisionen. | Kein stilles Auslassen. |
+| E49 | Übersprungen und einzeln in Vorschau und Antwort gemeldet: der offene Eintrag von heute (offene Einträge vergangener Tage werden vorher geschlossen und regulär neu gekappt, P23); Sonntag/Feiertag/freier Sondertag; `track_hours=False`; außerhalb des Beschäftigungsfensters; `credit_override`; UNIQUE-Kollisionen. | Kein stilles Auslassen. |
 | E50 | Einträge, deren Rohstempel vor 1.19.1 verloren ging, sind nicht erkennbar; sie werden in der Vorschau als „nicht erweiterbar" markiert, wenn die gespeicherte Zeit exakt auf der alten Fensterkante liegt. | Ehrliche Grenze statt falscher Verlängerung. |
 | E51 | Reihenfolge: erst Zeiteinträge neu kappen, dann `retarget_absence_hours`. `retarget_absence_hours` bekommt die F1-Klemmung (`kept_net_by_date`) und schließt damit die Bestandslücke. | Sonst Phantomsalden an Misch-Tagen (Krank/Fortbildung + Arbeit). |
 | E52 | Eine Transaktion unter der Ankersperre (`lock_user_row`). Keine stille Obergrenze; die Vorschau nennt die Anzahl. | Atomar; CLAUDE.md „no silent caps". |
-| E53 | **Verlängerung** (niemand verliert angerechnete Zeit): Vorschau (Einträge alt → neu je Monat, Δ Überstundenkonto, übersprungene), Speichern nach Bestätigung; abgeschlossenes Jahr (YearCarryover für Y+1) → nur Warnung. | Begünstigt die Beschäftigten bei der **angerechneten Zeit** (Rechtsbewertung „gelb"). Achtung: Im Block-Modell bestimmen die Blöcke auch das Soll (E2/E15); längere Blöcke oder eine kleinere Pause erhöhen rückwirkend das Soll und können den Saldo senken, ohne dass ein Eintrag verliert. Ob das unter das Schutzpaket fällt, ist offene Frage 19.1 Nr. 1 (R1); die Vorschau weist Soll- und Ist-Differenz getrennt aus (9.4). |
-| E54 | **Verkürzung** (mindestens ein Eintrag verliert angerechnete Zeit): Standard „Ab heute wirksam" (Wirkungsdatum = heute, keine rückwirkende Zeile, keine Neukappung der Vergangenheit → auch keine Hintertür über späteres Bearbeiten). Option „Rückwirkend ab ‹Datum› mit Neuberechnung" verlangt Grundtyp (Erfassungsfehler korrigiert / einvernehmlich vereinbart / sonstiges) plus Freitext, einen Bestätigungshaken zum Vergütungsrisiko und zeigt eine Zusatzwarnung bei MiLoG-Konto/Minijob. Rückwirkende Verkürzung in ein abgeschlossenes Jahr ist **gesperrt**. Der Grund steht in `working_hours_changes.note` (mit Typ) und in der Sammelzeile. | Schutzpaket der Rechtsbewertung. |
-| E55 | Löschen einer Verlaufszeile rechnet symmetrisch zurück (eigene Vorschau/Bestätigung, gleiche Regeln inkl. Verkürzungsschutz). Die früheste Änderung bleibt gesperrt, solange spätere existieren (bestehende Regel). | Symmetrie wie #415. |
+| E53 | **Verlängerung** = weder Netto noch Saldo sinken (9.4): kein Eintrag verliert angerechnete Zeit, das Überstundenkonto sinkt im Wirkungsbereich nicht, und die F1-Klemmung senkt keine Abwesenheits-Gutschrift stärker als das Tagessoll des Tages (eine Soll-Senkung bleibt damit eine Verlängerung, auch am regulär geklemmten Misch-Tag). Vorschau (Einträge alt → neu je Monat, Δ Überstundenkonto getrennt nach Soll und angerechneter Zeit, übersprungene), Speichern nach Bestätigung; abgeschlossenes Jahr (YearCarryover für Y+1) → nur Warnung. | Begünstigt die Beschäftigten bei angerechneter Zeit **und** Saldo (Rechtsbewertung „gelb"). Eine rückwirkende Soll-Erhöhung (längere Blöcke, kleinere Pause), die den Saldo senkt, ist keine Verlängerung, sondern eine Verkürzung (E54; entschieden 2026-10-08, 19.1 Nr. 1). |
+| E54 | **Verkürzung** (9.5) = mindestens eines von: (a) ein Eintrag verliert angerechnete Zeit; (b) das Überstundenkonto sinkt im Wirkungsbereich (einschließlich nachgezogener Abwesenheiten und eines steigenden Solls am heute offenen Tag); (c) die F1-Klemmung senkt eine Abwesenheits-Gutschrift stärker als das Tagessoll des Tages — (b) und (c) ergänzt am 2026-10-08 (19.1 Nr. 1), geprüft beim Anlegen **und** beim Löschen. Standard „Ab ‹frühestes verlustfreies Datum› wirksam" (im Regelfall heute; morgen, wenn heute schon etwas verliert — P1, bestätigt 19.1 Nr. 2): keine rückwirkende Zeile, keine Neukappung der Vergangenheit → auch keine Hintertür über späteres Bearbeiten. Option „Rückwirkend ab ‹Datum› mit Neuberechnung" verlangt Grundtyp („Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)" / „Mit der beschäftigten Person vereinbart" / „Sonstiges", Beschriftungen nach 19.1 Nr. 7; Schlüssel `erfassungsfehler`/`einvernehmlich`/`sonstiges`) plus Freitext, einen Bestätigungshaken zum Vergütungsrisiko und zeigt eine Zusatzwarnung bei MiLoG-Konto/Minijob. Rückwirkende Verkürzung in ein abgeschlossenes Jahr ist **gesperrt**. Der Grund steht in `working_hours_changes.note` (mit unverändertem Typ-Präfix) und in der Sammelzeile. | Schutzpaket der Rechtsbewertung. Den **Umfang** (Soll) rückwirkend zu erhöhen, deckt nicht einmal § 106 GewO; Netto, Saldo und Gutschrift sind deshalb gleichrangig geschützt. |
+| E55 | Löschen einer Verlaufszeile rechnet symmetrisch zurück (eigene Vorschau/Bestätigung, gleiche Regeln inkl. Verkürzungsschutz). Verkürzt das Löschen, ist der Standard „Ab ‹Datum› auf den vorherigen Stand zurücksetzen" (neue Verlaufszeile mit dem Snapshot des Vorgängers, P13); rückwirkendes echtes Löschen nur mit Grund und Bestätigung (bestätigt 2026-10-08, 19.1 Nr. 4). Die früheste Änderung bleibt gesperrt, solange spätere existieren (bestehende Regel). | Symmetrie wie #415; das Protokoll verlangt beim Löschen „dieselben Regeln inkl. Verkürzungsschutz". |
 | E56 | Zukunftsdatierte Änderungen: kein Scheduler. Ein Guard-Test sichert, dass nichts `users.work_blocks` live liest. | Wie D29; der Resolver ist datumsaufgelöst. |
 | E57 | Protokoll: je neu gekapptem Eintrag eine `TimeEntryAuditLog`-Zeile, `source="wh_reclamp"` (≤ 40 Zeichen), Label „Neukappung (Arbeitszeit-Änderung)"; alte/neue effektive Beginn/Ende, Notiz mit `uncredited`, Auslöser und Grund. Eine Sammelzeile je Änderung (handelnde Admin, Wirkungsdatum, Grund, Anzahlen). `row_hash` über die Objektschicht (#121), kein Bulk-UPDATE. Die Vorschau protokolliert nie (Rollback). | Revisionssicherheit (Art. 5 Abs. 2 DSGVO, §16 ArbZG). |
 | E58 | Knopf „Arbeitszeit anpassen…", Dialogtitel „Arbeitszeit & Wochenstunden". | Die E2E-Regex `/Wochenstunden/i` passt weiter. |
 | E59 | Je Wochentag bis zu 3 Zeilen „von–bis" plus „Pause innerhalb der Blöcke"; live „Gesamtzeit 9:00 h · Pause 1:00 h · Tagessoll 8:00 h" plus Wochensumme. | E2. |
-| E60 | Wirkungsdatum; Vorschau darunter; bei Verkürzung die Wahl „ab heute" vs. „rückwirkend" mit Grund/Haken. | E54. |
+| E60 | Wirkungsdatum; Vorschau darunter; bei Verkürzung die Wahl „ab ‹frühestes verlustfreies Datum›" (meist „ab heute") vs. „rückwirkend" mit Grund/Haken. | E54. |
 | E61 | Fester Hinweis zu Mitbestimmung (§ 87 Abs. 1 Nr. 2 BetrVG) und Direktionsrecht (§ 106 GewO; Änderung der Lage einseitig nur für die Zukunft). | Rechtsbewertung Pflicht 11. |
 | E62 | UserForm: der alte Fenster-Abschnitt entfällt; stattdessen Zusammenfassung der heute gültigen Blöcke (serverseitig datumsaufgelöst) plus Link zum Dialog. Beim Anlegen ein Block-Editor für den Startvertrag. | E9/E28. |
-| E63 | `track_hours=false`: Block-Editor ausgeblendet, gespeicherte Werte bleiben. | Ohne Stundenzählung wirkt weder Soll noch Kappung. |
+| E63 | `track_hours=false`: Block-Editor ausgeblendet, gespeicherte Werte bleiben bis zur nächsten Arbeitszeit-Änderung. Weil der Dialog dort nur „Gleichmäßig"/„Nach Tagen" anbietet, beendet **jede** im Dialog eingegebene Arbeitszeit-Änderung die Blöcke ab ihrem Wirkungsdatum (`blocks` = NULL, P24, bestätigt 2026-10-08, 19.1 Nr. 6). Per API — auch bei der Rücksetzung mit `reset_body` (P13), die den Vorgänger-Snapshot samt Blöcken sendet — nimmt der Server `blocks` an; sie bleiben ohne Wirkung, solange keine Stunden gezählt werden (11.2). | Ohne Stundenzählung wirkt weder Soll noch Kappung. |
 | E64 | `RawStampNote` erweitert: „gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet" (Admin-Dashboard, Monatsjournal, Zeiterfassung). | E7. |
 | E65 | Journal-Monatssumme: Zeile „Anwesenheit nicht angerechnet". | E7. |
 | E66 | **Anerkennen:** Admin-Aktion je Eintrag → `credit_override=true`, `uncredited=0`, protokolliert. Überlebt spätere Neukappungen. | E12. |
@@ -218,26 +235,30 @@ knapp zusammen.
 
 ### 2.10 Präzisierungen dieser Spec
 
-Diese Punkte regelt das Protokoll nicht ausdrücklich; sie folgen aus ihm. **Ausnahme:**
-P1 weicht vom Wortlaut des Protokolls ab („effective_from = today") und gilt nur bis zur
-Bestätigung durch den Betreiber; P13, P23 und P24 legen Protokollformulierungen aus. Alle
-vier stehen in Abschnitt 19.1 zur Bestätigung.
+Diese Punkte regelt das Protokoll nicht ausdrücklich; sie folgen aus ihm. P1 weicht vom
+Wortlaut des Protokolls ab („effective_from = today"), P13, P23 und P24 legen
+Protokollformulierungen aus; der Betreiber hat alle vier am 2026-10-08 bestätigt (19.1
+Nr. 2, 4, 5, 6). P27 ist durch die Entscheidung zu 19.1 Nr. 1 geändert (Kriterium (c) =
+Senkung über das Tagessoll des Tages hinaus, wie die Ausnahme „sinkt nur mit dem Soll" es
+verlangt), P1 um den heute offenen Tag mit steigendem Soll ergänzt (19.1 Nr. 1, 9.5 (b)),
+P24 für `track_hours=false` präzisiert, P26 durch Nr. 7 angepasst, P7 um Saldo-Δ und
+Rücksetzung erweitert.
 
 | Nr | Präzisierung | Grund |
 |---|---|---|
-| P1 | **Abweichung vom Protokoll bis zur Bestätigung (19.1 Nr. 2).** „Verkürzung" ist rein über die Wirkung auf **erfasste** Einträge definiert. Erfasst ist auch ein geschlossener Eintrag von heute. Ein **offener Eintrag von heute** (nur dieser; offene Einträge vergangener Tage gibt es nach P23 im Fenster nicht mehr) an einem geänderten Wochentag zählt nur dann als verlierend, wenn der neue Snapshot für **irgendein** mögliches Ende ≥ jetzt weniger anrechnet als der alte. Exakte Prüfung: Die Differenz `angerechnet_neu(Ende) − angerechnet_alt(Ende)` ist in `Ende` stückweise linear mit Knickstellen an den Hüllen- und Lückenkanten beider Snapshots; geprüft wird an `max(jetzt, Beginn)`, an jeder Knickstelle danach und an 23:59. Ist sie überall ≥ 0 (z. B. reine Verlängerung), wird der offene Eintrag nur als `open` übersprungen (E49) und beeinflusst `is_shortening` nicht. Die Standardoption heißt „Ab heute wirksam", wenn ab heute kein Eintrag verliert, sonst „Ab ‹frühestes verlustfreies Datum› wirksam" (im Regelfall morgen). | Sonst würde „ab heute" bereits geleistete Arbeit von heute Vormittag rückwirkend kürzen, beim Ausstempeln über die normale Kappung sogar ohne Vorschau. Die Knickstellen-Prüfung verhindert, dass eine reine Verlängerung, gespeichert während jemand eingestempelt ist, als Verkürzung gilt. |
+| P1 | **Weicht vom Protokollwortlaut „effective_from = today" ab; vom Betreiber bestätigt am 2026-10-08 (19.1 Nr. 2).** Das Eintragskriterium der Verkürzung (9.5 (a)) ist über die Wirkung auf **erfasste** Einträge definiert. Erfasst ist auch ein geschlossener Eintrag von heute. Ein **offener Eintrag von heute** (nur dieser; offene Einträge vergangener Tage gibt es nach P23 im Fenster nicht mehr) an einem geänderten Wochentag zählt nur dann als verlierend, wenn der neue Snapshot für **irgendein** mögliches Ende ≥ jetzt weniger anrechnet als der alte. Exakte Prüfung: Die Differenz `angerechnet_neu(Ende) − angerechnet_alt(Ende)` ist in `Ende` stückweise linear mit Knickstellen an den Hüllen- und Lückenkanten beider Snapshots; geprüft wird an `max(jetzt, Beginn)`, an jeder Knickstelle danach und an 23:59. Ist sie überall ≥ 0 (z. B. reine Verlängerung), wird der offene Eintrag nur als `open` übersprungen (E49) und beeinflusst `is_shortening` über (a) nicht; ein steigendes Soll des heute offenen Tages zählt dagegen nach 9.5 (b). Standard bei einer Verkürzung ist „Ab ‹earliest_lossless_date› wirksam" (9.5): „Ab heute wirksam", wenn ab heute nichts verliert, sonst im Regelfall „Ab morgen" (heute verliert schon ein Eintrag, der bereits gebuchte heutige Tag verliert Saldo bzw. Gutschrift, oder das Soll des heutigen Tages steigt, während die Person eingestempelt ist — 9.5 (b), H). Eine reine Verlängerung mit Wirkungsdatum heute bleibt „ab heute" — auch während die Person eingestempelt ist. | Sonst würde „ab heute" bereits geleistete Arbeit von heute Vormittag rückwirkend kürzen, beim Ausstempeln über die normale Kappung sogar ohne Vorschau. Die Knickstellen-Prüfung verhindert, dass eine reine Verlängerung, gespeichert während jemand eingestempelt ist, als Verkürzung gilt. |
 | P2 | Altfenster (`pause_minutes` NULL) werden in neue Verlaufszeilen der Modi „Gleichmäßig"/„Nach Tagen" übernommen, bis sie ausdrücklich entfernt (`remove_legacy_window`) oder durch Blöcke ersetzt werden. Quelle ist der **vor der Änderung für `effective_from` gültige Snapshot** (Vorgängerzeile bzw. Rückfall `users.work_blocks`, wie 9.1) — nicht die User-Zeile und nicht der heutige Stand (P24). | Sonst schaltete jede Wochenstunden-Änderung die bewusst gesetzte Kappung still ab. |
 | P3 | `credit_override` bleibt bei Admin-Direktbearbeitung, bei Genehmigung eines Änderungsantrags (UPDATE) und beim XLS-Überschreib-Import **erhalten** — die Verwaltung bestätigt dort die neuen Zeiten ausdrücklich. Antragsprüfung und XLS-Vorschau zeigen dazu den Hinweis „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet." Ein MA-`PUT` auf einen anerkannten Eintrag → **409** „Anerkannter Eintrag – Änderung bitte per Änderungsantrag." Kein Pfad setzt das Flag still zurück. | Ein stilles Zurücksetzen wäre eine Rücknahme anerkannter Zeit ohne Vorschau, Grund und Protokoll — genau die Verkürzung, die P11 ausschließt (R2). |
 | P4 | „Anerkennen" blockiert nie an §3/§4; Verstöße kommen als weiche Warnung. | Anerkennen ändert den Nachweis nicht, nur die Anrechnung; eine Sperre würde geleistete Arbeit verstecken. |
 | P5 | **Jeder** Schreibpfad für Zeiteinträge (7.1 Nr. 1–13 und die Anerkennung 13.3) nimmt als **erste** Anweisung, vor `get_grace_minutes`, Snapshot-Auflösung und `clamp`, die Ankersperre `lock_user_row(db, tenant_id, owner_id)`. `clock_in` (`time_entries.py:267`) und `review_change_request` (`admin_change_requests.py:235`, damit auch Bulk) tun das schon; neu sind `clock_out`, `create_time_entry`, `update_time_entry`, `admin_create/update_time_entry`, `_execute_import_inner` (einmal je Import, Zielperson) und der Stale-Zweig von `GET /clock-status` (sperren, offenen Eintrag danach neu lesen). `create_change_request` (7.1 Nr. 14) schreibt keinen Eintrag und braucht keine Sperre. Reihenfolge: Ankersperre **vor** jeder Zeilensperre auf `time_entries`. | Unter READ COMMITTED liest ein nicht sperrender Schreiber während einer laufenden Änderung noch den alten Snapshot, kappt danach und wird von der bereits gelaufenen Neukappungs-Abfrage nicht erfasst — Eintrag unter alten Blöcken, ohne Protokoll. Die feste Reihenfolge verhindert Deadlocks (40P01 → 500). |
 | P6 | `Schedule` bekommt die neuen Felder **ohne** Vorgabewert; `clamp` nimmt `credit_override` als **pflichtiges** Schlüsselwort-Argument. | Übersehene Aufrufstellen scheitern laut (Projektregel seit #431). |
-| P7 | Die Sammelzeile trägt Wirkungsdatum, Löschkennzeichen, Anzahl, Δ angerechnete Minuten, Verkürzungskennzeichen und Grundtyp in einem festen Notiz-Präfix; Schreiben und Lesen leben in einem Modul mit Round-Trip-Test (10.2). | Keine neue gehashte Spalte (sonst meldet `verify-integrity` alle Altzeilen). |
+| P7 | Die Sammelzeile trägt Wirkungsdatum, Löschkennzeichen, Anzahl, Δ angerechnete Minuten, Saldo-Δ (Minuten), Verkürzungskennzeichen, Grundtyp und das Rücksetzungs-Kennzeichen (P13) in festen Notiz-Bausteinen; Schreiben und Lesen leben in einem Modul mit Round-Trip-Test (10.2). | Keine neue gehashte Spalte (sonst meldet `verify-integrity` alle Altzeilen). |
 | P8 | `DELETE …/working-hours-changes/{id}` nimmt einen optionalen JSON-Body (Verkürzungsschutz) und hat eine eigene Vorschau `POST …/{id}/delete-preview`. | E55 verlangt Vorschau und Schutzpaket auch beim Löschen. |
 | P9 | Plan-Hinweise im Dialog (nicht blockierend, `block_break_notices`), abgeleitet aus dem **ganzen** Tagesplan statt aus Einzelblöcken: (a) §4 — geplante Arbeitszeit = Σ Blöcke − Pause, Bedarf 30 bzw. 45 Min; geplante Pausen = `pause_minutes` + Σ **rohe** Lücken ≥ 15 Min; Hinweis, wenn sie nicht reichen oder (bei Pause 0) eine Strecke ohne Lücke ≥ 15 Min länger als 6 h ist; (b) eine Lücke ≤ 2 × aktueller Puffer verschwindet in der Anrechnung → Hinweis „Mo: Die Lücke 12:00–12:30 ist nicht länger als der doppelte Puffer (15 Min) und wird vollständig angerechnet. Eine geplante Pause bitte als „Pause innerhalb der Blöcke" erfassen."; (c) §3 — Tagessoll > 10 h: deutlicher Hinweis („geplanter Verstoß gegen § 3 ArbZG; eine Erfassung nach diesem Plan lehnt die Zeiterfassung mit 400 ab"), Tagessoll > 8 h: Hinweis auf den 24-Wochen-Durchschnitt, Wochensoll > 48 h: Hinweis; entfällt bei `exempt_from_arbzg`. Kein 422 (die Protokoll-Validierung bleibt abschließend). | §4 hängt an der täglichen Arbeitszeit, nicht am Einzelblock; eine verschwindende 30-Min-Lücke würde sonst still voll angerechnet und mit harter §4-Sperre enden (R11, Fund F13). |
 | P10 | Drei Nebenbefunde im ohnehin umgebauten Code werden mitbehoben (Abschnitt 7.3). | Die Funktionen werden ohnehin neu geschrieben. |
 | P11 | Eine Rücknahme von „Anerkennen" gibt es in diesem Umfang nicht (Folgeticket). | Rücknahme = Verkürzung angerechneter Zeit, bräuchte eigenes Schutzkonzept. |
 | P12 | Das Profil der Mitarbeitenden zeigt den Freitext `note` nicht; er steht im Art.-15-Export. Der Dashboard-Hinweis (P20) nennt höchstens den festen Grundtyp. | Der Verwaltungsfreitext ist kein Anzeigeelement; das Auskunftsrecht bleibt vollständig. |
-| P13 | **Löschen mit Verkürzung (zur Bestätigung, 19.1 Nr. 4):** wie beim Anlegen ist die Standardoption verlustfrei — „Ab ‹earliest_lossless_date› auf den vorherigen Stand zurücksetzen" legt **statt des Löschens** eine neue Verlaufszeile mit dem Snapshot des Vorgängers an (keine Neukappung der Vergangenheit). Angeboten nur, wenn `earliest_lossless_date` nach dem `effective_from` der zu löschenden Zeile und vor der nächsten Änderung liegt (P25), sonst nur „Löschen mit Neuberechnung" mit Grund/Haken. | Das Protokoll verlangt beim Löschen „dieselben Regeln inkl. Verkürzungsschutz"; dessen Standard ist „ab heute". |
+| P13 | **Löschen mit Verkürzung (bestätigt 2026-10-08, 19.1 Nr. 4):** wie beim Anlegen ist die Standardoption verlustfrei — „Ab ‹earliest_lossless_date› auf den vorherigen Stand zurücksetzen" legt **statt des Löschens** eine neue Verlaufszeile mit dem Snapshot des Vorgängers an (keine Neukappung der Vergangenheit; Anlege-Body fertig aus der `delete-preview`, `reset_body`, 9.7/11.3). Angeboten nur, wenn `earliest_lossless_date` nach dem `effective_from` der zu löschenden Zeile und vor der nächsten Änderung liegt (P25). Rückwirkendes echtes Löschen („Rückwirkend löschen mit Neuberechnung") nur mit Grundtyp, Begründung und Haken. | Das Protokoll verlangt beim Löschen „dieselben Regeln inkl. Verkürzungsschutz"; dessen Standard das früheste verlustfreie Datum ist (P1, 19.1 Nr. 2). |
 | P14 | Zusatzbedingungen der weichen Anwesenheits-Warnungen: `PRESENCE_DAILY_HOURS` nur, wenn die harte §3-Prüfung auf angerechneter Zeit nicht gegriffen hat; `PRESENCE_BREAK` nur, wenn die §4-Prüfung auf angerechneter Zeit kein `BREAK_WARNING`/400 ausgelöst hat (Doppelmeldung vermeiden). **Keine** Bedingung „nur dank Lückensegmenten bestanden" (8.3). | Die frühere Zusatzbedingung unterdrückte die Warnung bei K9 und immer dann, wenn die angerechnete Zeit ≤ 6 h ist (K19) — genau die Fälle, die Pflicht 4 meint. |
 | P15 | `retroactive_reason_text` mindestens 10, höchstens 400 Zeichen. | Ein Ein-Wort-Grund ist kein Grund; Gesamtlänge der `note` ≤ 500 (9.5). |
 | P16 | Aneinanderstoßende Blöcke (Ende_i = Beginn_i+1) sind unzulässig (3.4). | Sie wären ein Block mit einer Lücke von 0 Min; zwei Darstellungen derselben Arbeitszeit. |
@@ -247,11 +268,11 @@ vier stehen in Abschnitt 19.1 zur Bestätigung.
 | P20 | Sammelzeile bei **jedem** Anlegen und Löschen einer Arbeitszeit-Änderung (auch 0 betroffene Einträge, auch reine Wochenstunden-Änderung); der Dashboard-Hinweis wird aus diesen Sammelzeilen der letzten 30 Tage abgeleitet und erscheint für jede Änderung (auch „ab heute"/zukunftsdatiert, Löschung), mit Neukappungs-Zusatz nur bei n > 0. | Das Protokoll verlangt „a summary row per change"; eine Weisung muss Mitarbeitende erreichen (§ 106 GewO, Art. 5 Abs. 1 lit. a, Art. 13 DSGVO) (F2, R8). |
 | P21 | **Anrechnung beantragen:** Mitarbeitende können an einem eigenen geschlossenen Eintrag mit nicht angerechneter Zeit einen Änderungsantrag mit Kennzeichen `request_credit_override` stellen (Begründung Pflicht wie jeder Antrag). Die Antragsprüfung bietet „Genehmigen = Anerkennen" (Pfad 13.3) und zeigt für jeden UPDATE-Antrag auf einen Eintrag mit nicht angerechneter Zeit zusätzlich die Option „genehmigen und anerkennen". | Art. 22 Abs. 3 DSGVO: Eingreifen einer Person, eigener Standpunkt, Anfechtung; ein gleichlautender Antrag würde sonst bei Genehmigung wieder gekappt (R9). |
 | P22 | Weicher Code `PRESENCE_WEEKLY_HOURS` (Anwesenheit laut Stempel > 48 h je Kalenderwoche, nur wenn `WEEKLY_HOURS_WARNING` auf angerechneter Zeit nicht schon kam); die 24-Wochen-Auswertung bekommt einen zweiten Wert „Anwesenheit laut Stempel"; die Vorschau der Neukappung nennt geänderte ArbZG-Befunde. | Neukappung darf Verstöße nicht aus Warnungen **und** Berichten verschwinden lassen (Pflicht 4, R5). |
-| P23 | **(zur Bestätigung, 19.1 Nr. 5)** Offene Einträge mit Datum < heute im Fenster werden vor der Neukappung per `_close_stale_entry` geschlossen (wie `clock_in` es tut, handelnde Admin als `changed_by`) und danach regulär neu gekappt und protokolliert. „Übersprungen: offen" betrifft damit nur den Eintrag von heute. | Sonst schlösse sie später der Auto-Close unter dem neuen Snapshot — Verlust ohne `wh_reclamp`-Zeile und ohne Klassifikation (F08). |
-| P24 | **(zur Bestätigung, 19.1 Nr. 6)** Neue Blöcke (`pause_minutes` int) bleiben in einer neuen Verlaufszeile nur, solange der Modus „Nach Arbeitsblöcken" bleibt (mit abgeleiteten `hours_*`). Ein Wechsel nach „Gleichmäßig"/„Nach Tagen" setzt `blocks = NULL` — auch bei `track_hours=false`; der Dialog nennt das vor dem Speichern. „Gespeicherte Werte bleiben" (E63) heißt: unverändert, solange der Modus nicht gewechselt wird. | Sonst entstünde eine Zeile mit neuen Blöcken neben `use_daily_schedule=False` und fremdem Soll — die Doppelpflege, die E2 abschafft; nach Wiedereinschalten von `track_hours` kappten Blöcke gegen ein Soll aus anderer Quelle (F15). |
+| P23 | **(bestätigt 2026-10-08, 19.1 Nr. 5)** Offene Einträge mit Datum < heute im Fenster werden vor der Neukappung per `_close_stale_entry` geschlossen (wie `clock_in` es tut, handelnde Admin als `changed_by`) und danach regulär neu gekappt und protokolliert. „Übersprungen: offen" betrifft damit nur den Eintrag von heute. | Sonst schlösse sie später der Auto-Close unter dem neuen Snapshot — Verlust ohne `wh_reclamp`-Zeile und ohne Klassifikation (F08). |
+| P24 | **(bestätigt 2026-10-08, 19.1 Nr. 6)** Neue Blöcke (`pause_minutes` int) bleiben in einer neuen Verlaufszeile nur, solange der Modus „Nach Arbeitsblöcken" bleibt (mit abgeleiteten `hours_*`). Ein Wechsel nach „Gleichmäßig"/„Nach Tagen" setzt `blocks = NULL` — auch bei `track_hours=false`; der Dialog nennt das vor dem Speichern. „Gespeicherte Werte bleiben" (E63) heißt: unverändert bis zur nächsten Arbeitszeit-Änderung. Bei `track_hours=false` bietet der Dialog den Block-Modus nicht an; **jede** im Dialog eingegebene Arbeitszeit-Änderung beendet die Blöcke dort also ab ihrem Wirkungsdatum. Per API angenommene Blöcke bei `track_hours=false` (11.2, auch aus `reset_body`) bleiben wirkungslos. | Sonst entstünde eine Zeile mit neuen Blöcken neben `use_daily_schedule=False` und fremdem Soll — die Doppelpflege, die E2 abschafft; nach Wiedereinschalten von `track_hours` kappten Blöcke gegen ein Soll aus anderer Quelle (F15). |
 | P25 | `earliest_lossless_date` ist durch die **nächste** Änderung begrenzt: liegt es am oder nach deren `effective_from`, ist es `null`, Option 1 wird nicht angeboten, Text „Die Änderung liegt vollständig vor der Änderung ab ‹Datum›; nur rückwirkend mit Begründung oder abbrechen." | Sonst landete die neue Zeile hinter der nächsten und überschriebe ab heute deren Vertrag (F07). |
-| P26 | Schutzpaket je Grundtyp: Hilfetext unter „Erfassungsfehler korrigiert" („Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit."); Bestätigungstext je Typ (12.1); bei „Sonstiges" rote Zusatzwarnung zum Direktionsrecht und eigener Pflicht-Haken `other_reason_risk_confirmed`; jeder Bestätigungstext endet mit dem MiLoG-Verzichtssatz. MiLoG-Warnung zusätzlich bei gesetztem `agreed_monthly_hours`, allgemeiner Minijob-/Mindestlohnsatz bei **jeder** rückwirkenden Verkürzung. | Ein einziger Haken „Fehlerkorrektur oder einvernehmlich" widerspräche bei „Sonstiges" der eigenen Auswahl; Minijobber ohne Opt-in-Flag blieben ohne Warnung (R10, R12). |
-| P27 | F1-Angleichungen in `retarget_absence_hours` (9.6) zählen **nicht** als Verkürzung: sie korrigieren eine Doppelanrechnung (Arbeit + volles Tagessoll als Gutschrift am selben Tag). Sie stehen als eigene Vorschauzeile „n Abwesenheiten an Misch-Tagen angeglichen" und lösen bei abgeschlossenem Jahr einen Hinweis aus. Ob sie künftig mitzählen sollen, ist Teil von Frage 19.1 Nr. 1. | Ausdrückliche Entscheidung statt stiller Lücke (F19). |
+| P26 | Schutzpaket je Grundtyp: Beschriftungen „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)" / „Mit der beschäftigten Person vereinbart" / „Sonstiges" (19.1 Nr. 7; Schlüssel und Notiz-Präfixe unverändert); fester Hilfetext unter der Grund-Auswahl („Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit."); Bestätigungstext je Typ (12.1); bei „Sonstiges" rote Zusatzwarnung zum Direktionsrecht und eigener Pflicht-Haken `other_reason_risk_confirmed`; jeder Bestätigungstext endet mit dem MiLoG-Verzichtssatz. MiLoG-Warnung zusätzlich bei gesetztem `agreed_monthly_hours`, allgemeiner Minijob-/Mindestlohnsatz bei **jeder** rückwirkenden Verkürzung. | Ein einziger Haken „Fehlerkorrektur oder einvernehmlich" widerspräche bei „Sonstiges" der eigenen Auswahl; Minijobber ohne Opt-in-Flag blieben ohne Warnung (R10, R12). |
+| P27 | **Geändert am 2026-10-08 (19.1 Nr. 1):** Eine F1-Angleichung in `retarget_absence_hours` (9.6), die eine Abwesenheits-Gutschrift **über das Tagessoll hinaus senkt** (Klemmung greift, `hours` nachher < vorher **und** die Gutschrift sinkt stärker als das Tagessoll des Tages: `(new_hours − old_hours)·w < (new_full_target − old_full_target)·w`), macht die Änderung zur Verkürzung (9.5 (c)) — mit Schutzpaket, in einem abgeschlossenen Jahr gesperrt. Darunter fallen die Korrektur einer Doppelanrechnung (vor 1.18.0 gebuchte Gutschrift über volles Tagessoll neben Arbeit am selben Tag) und die Gutschrift, die sinkt, weil ein Eintrag am Misch-Tag durch die Neukappung gewinnt — beide nehmen gutgeschriebene Zeit zurück. Die Vorschau nennt jede solche Abwesenheit einzeln (`absence_credit_reductions`) und alle F1-Angleichungen als Zeile „n Abwesenheiten an Misch-Tagen angeglichen". Eine Gutschrift, die höchstens so stark sinkt wie das Tagessoll des Tages, erfüllt (c) nicht — auch dann nicht, wenn die Klemmung dabei greift (Beispiel: seit 1.18.0 regulär geklemmt gebuchter Misch-Tag Krank 4 h + 4 h Arbeit, rückwirkende Soll-Senkung 8 → 6 h: Gutschrift 4 → 2 h, Soll −2 h, saldo-neutral). | Ausdrückliche Entscheidung statt stiller Lücke (F19); der Betreiber hat die Gutschrift dem Netto gleichgestellt. |
 | P28 | Neue Spalte `change_requests.original_uncredited_minutes` (INT NULL) ergänzt den `original_*`-Snapshot des Antrags. | Der Antrag friert den Vorher-Zustand ein; ohne die Spalte zeigte die Prüfung „vorher angerechnet" falsch, sobald der Eintrag sich ändert (F10). |
 
 ---
@@ -301,6 +322,7 @@ Altzeile aus Migration 073 (Fenster Mo–Do 07:30–16:30, Fr halboffen ab 07:30
 | `time_entries` | `uncredited_minutes` | `INTEGER` | nein | `0` (server_default `'0'`) | In der Lücke liegende, nicht angerechnete Minuten. Nur serverseitig. |
 | `time_entries` | `credit_override` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Eintrag wird nie gekappt („Anerkennen"). |
 | `time_entries` | `auto_closed` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Vom Auto-Close geschlossen; `raw_end_time` 23:59 ist dann kein echter Stempel (P18). Jeder andere Pfad, der `end_time` schreibt, setzt es auf `false`. |
+| `time_entries` | `clamp_grace_minutes` | `INTEGER` | ja | — | Puffer der letzten Kappung gegen Blöcke (E79). NULL = nie gegen Blöcke gekappt bzw. Bestand vor 073 („unbekannt → aktueller Puffer"). Einzel-Neukappungen lesen ihn, die Massen-Neukappung überschreibt ihn (E80). Nur serverseitig. |
 | `change_requests` | `request_credit_override` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Antrag „Anrechnung beantragen" (P21). |
 | `change_requests` | `original_uncredited_minutes` | `INTEGER` | ja | — | Vorher-Snapshot der nicht angerechneten Lückenminuten (P28). |
 | `users` | `scheduled_start_<tag>`, `scheduled_end_<tag>` (10 Spalten) | — | — | — | **entfallen** in 073. |
@@ -462,12 +484,12 @@ Clientwerte werden überschrieben, kein 422.
 | Von → nach | Wirkung ab Wirkungsdatum |
 |---|---|
 | ohne Blöcke → Blöcke | `use_daily_schedule=True`, `hours_*` abgeleitet, Kappung aktiv |
-| Blöcke → „Gleichmäßig" / „Nach Tagen" | `blocks` = NULL, Kappung endet, Soll aus der neuen Eingabe; der Dialog nennt das vor dem Speichern (P24) |
+| Blöcke → „Gleichmäßig" / „Nach Tagen" | `blocks` = NULL ab dem Wirkungsdatum (auch bei `track_hours=false`), Kappung endet, Soll aus der neuen Eingabe; der Dialog nennt das vor dem Speichern (P24) |
 | Blöcke → Blöcke (geändert) | neue Ableitung; Neukappung nur an geänderten Wochentagen |
-| Nur Pause geändert | neues Tagessoll (Abwesenheiten werden wie #415 nachgezogen), **keine** Neukappung |
-| Altfenster → Blöcke | `pause_minutes` Pflicht; Soll neu abgeleitet (Vorschau zeigt Δ Tagessoll und Δ Saldo) |
+| Nur Pause geändert | neues Tagessoll (Abwesenheiten werden wie #415 nachgezogen), **keine** Neukappung; eine kleinere Pause erhöht das Soll und ist rückwirkend eine Verkürzung, sobald der Saldo sinkt (9.5 (b)) |
+| Altfenster → Blöcke | `pause_minutes` Pflicht; Soll neu abgeleitet (Vorschau zeigt Δ Tagessoll und Δ Saldo); sinkt der Saldo rückwirkend, gilt das Schutzpaket (9.5 (b)) |
 | Altfenster, Änderung in „Gleichmäßig"/„Nach Tagen" | Altfenster aus dem **Vorgänger-Snapshot** für `effective_from` wird übernommen (P2), außer `remove_legacy_window=true`. Test: Zeile wird zwischen eine Zeile mit Fenster und eine ohne Fenster eingefügt → übernimmt das Fenster, die Folgezeile bleibt ohne |
-| `track_hours=false` | Block-Modus nicht angeboten. Altfenster: nach P2 übernommen. Neue Blöcke: bleiben nur, solange nichts geändert wird; eine Änderung in „Gleichmäßig"/„Nach Tagen" setzt `blocks` = NULL (P24), der Dialog nennt das vor dem Speichern |
+| `track_hours=false` | Block-Modus im Dialog nicht angeboten. Altfenster: nach P2 übernommen. Neue Blöcke: bleiben unverändert (ohne Wirkung) bis zur nächsten Arbeitszeit-Änderung; weil der Dialog dort nur „Gleichmäßig"/„Nach Tagen" anbietet, beendet **jede** im Dialog eingegebene Arbeitszeit-Änderung die Blöcke ab ihrem Wirkungsdatum (`blocks` = NULL, P24, bestätigt 2026-10-08, 19.1 Nr. 6); der Dialog nennt das vor dem Speichern. Per API — auch bei der Rücksetzung mit `reset_body` (P13) — nimmt der Server `blocks` an (11.2) |
 
 ### 4.4 Altzeilen
 
@@ -610,7 +632,8 @@ FROM tenants t ORDER BY t.name;
    (`sa.JSON().with_variant(postgresql.JSONB(), "postgresql")`, nullable);
    `time_entries.uncredited_minutes` (`Integer`, NOT NULL, `server_default="0"`);
    `time_entries.credit_override` und `time_entries.auto_closed` (`Boolean`, NOT NULL,
-   `server_default="false"`); `change_requests.request_credit_override` (`Boolean`, NOT
+   `server_default="false"`); `time_entries.clamp_grace_minutes` (`Integer`, nullable, kein
+   Default, E79); `change_requests.request_credit_override` (`Boolean`, NOT
    NULL, `server_default="false"`); `change_requests.original_uncredited_minutes`
    (`Integer`, nullable).
 2. Auf der Migrationsverbindung `SET LOCAL app.is_superadmin = 'true'` (Absicherung,
@@ -635,8 +658,10 @@ FROM tenants t ORDER BY t.name;
 9. Diagnoseblock ausgeben (5.4).
 10. Die zehn `scheduled_*`-Spalten löschen.
 
-Kein Schritt kappt Einträge neu, setzt `uncredited_minutes` oder berührt `hours_*`,
-`weekly_hours`, `use_daily_schedule`, `work_days_per_week`.
+Kein Schritt kappt Einträge neu, setzt `uncredited_minutes` oder `clamp_grace_minutes`
+(Bestand bleibt NULL = „unbekannt → aktueller Puffer"; der Puffer, mit dem vor 073 gekappt
+wurde, ist nicht rekonstruierbar) oder berührt `hours_*`, `weekly_hours`,
+`use_daily_schedule`, `work_days_per_week`.
 
 Wiederholbarkeit: Nach dem Restore eines alten Dumps läuft 073 erneut; der Backfill ist
 deterministisch und hängt nur von den `scheduled_*`-Werten des Dumps ab.
@@ -673,25 +698,34 @@ Update-Log nativ und im Container-Log bei Docker).
 
 ### 5.5 Downgrade
 
+Entschieden 2026-10-08 (19.1 Nr. 3, E24): Das 072-Fenster entsteht aus der **Hülle** der
+Blöcke, nicht aus dem ersten Block.
+
 1. Die zehn `scheduled_*`-Spalten (`Time`, nullable) anlegen.
-2. Je Konto mit `work_blocks`: je Tag **erster Block** → `scheduled_start_<tag>` /
-   `scheduled_end_<tag>`. Platzhalter `"00:00"` als Beginn und `"23:59"` als Ende werden
-   zu NULL zurück (Round-Trip der halboffenen Fenster).
-3. Diagnose:
-   - Konten mit mehr als einem Block an einem Tag (Name, Tag, verworfene Blöcke) —
-     nach dem Downgrade kappt das 072-Fenster am Ende des ersten Blocks;
-   - Einträge mit `uncredited_minutes > 0` je Konto (Anzahl, Summe in h) — deren
-     angerechnete Zeit steigt um diese Summe;
+2. Je Konto mit `work_blocks`: je Tag die **Hülle** → `scheduled_start_<tag>` = Beginn des
+   ersten Blocks, `scheduled_end_<tag>` = Ende des letzten Blocks (Beispiel: 08:00–12:00 +
+   15:00–18:00 → 08:00–18:00). Ein Tag ohne Blöcke bleibt NULL/NULL. Platzhalter `"00:00"`
+   als Beginn und `"23:59"` als Ende werden zu NULL zurück (Round-Trip der halboffenen
+   Fenster). Für Einblock-Tage — darunter alle Altzeilen aus 073 — ist die Hülle der Block
+   selbst; der Round-Trip 073 → 072 → 073 bleibt dort identisch (17.1).
+3. Diagnose (namentlich, Muster 5.4):
+   - Konten mit mehr als einem Block an einem Tag (Name, Mandant, Tag, Blöcke, Hülle,
+     wieder angerechnete Lücken) — nach dem Downgrade kappt das 072-Fenster nur noch an
+     der Hülle, Zeit zwischen den Blöcken wird bei **künftigen** Schreibvorgängen wieder
+     angerechnet;
+   - Einträge mit `uncredited_minutes > 0` je Konto (Name, Anzahl, Summe in h) — deren
+     angerechnete Zeit steigt mit dem Spalten-Drop sofort um diese Summe;
    - Einträge mit `credit_override = true` je Konto (Anzahl);
    - offene Anträge mit `request_credit_override = true` (Anzahl) — sie werden nach dem
      Downgrade wie gewöhnliche UPDATE-Anträge genehmigt, also wieder gekappt.
-4. Spalten `uncredited_minutes`, `credit_override`, `auto_closed` (`time_entries`),
-   `request_credit_override`, `original_uncredited_minutes` (`change_requests`),
-   `work_blocks`, `blocks` löschen.
+4. Spalten `uncredited_minutes`, `credit_override`, `auto_closed`, `clamp_grace_minutes`
+   (`time_entries`), `request_credit_override`, `original_uncredited_minutes`
+   (`change_requests`), `work_blocks`, `blocks` löschen.
 
-Verluste: die Verlaufshistorie der Blöcke (Fenster waren nie historisiert), alle
-Blöcke ab dem zweiten, die Nichtanrechnung der Lücken, alle Anerkennungen, das
-Auto-Close-Kennzeichen und die Anrechnungs-Anträge.
+Verluste: die Verlaufshistorie der Blöcke (Fenster waren nie historisiert), die
+Blockgrenzen innerhalb der Hülle und damit die Nichtanrechnung der Lücken, alle
+Anerkennungen, das Auto-Close-Kennzeichen, die je Eintrag gespeicherten Puffer und die
+Anrechnungs-Anträge.
 
 ---
 
@@ -708,6 +742,16 @@ class ClampResult(NamedTuple):
     raw_start: Optional[time]
     raw_end: Optional[time]
     uncredited_minutes: int
+    grace_minutes: Optional[int]   # angewandter Puffer; None = nicht gegen Blöcke gekappt (E79)
+
+
+def grace_for_entry(db, entry) -> int:
+    """Puffer für die Einzel-Neukappung eines GESPEICHERTEN Eintrags (E80):
+    der bei der letzten Kappung gespeicherte Wert, sonst (Bestand vor 073 /
+    nie gegen Blöcke gekappt) der aktuelle Mandanten-Puffer."""
+    if entry.clamp_grace_minutes is not None:
+        return entry.clamp_grace_minutes
+    return get_grace_minutes(db, entry.tenant_id)
 
 
 def get_scheduled_blocks(db, user, d, *, wh_changes=None,
@@ -756,11 +800,11 @@ def _overlap(a0, a1, b0, b1) -> int:
 def clamp(db, user, d, start, end, grace, *, credit_override: bool,
           wh_changes=None, soll_free_dates=None) -> ClampResult:
     if credit_override or not getattr(user, "track_hours", True):
-        return ClampResult(start, end, None, None, 0)
+        return ClampResult(start, end, None, None, 0, None)
     blocks = get_scheduled_blocks(db, user, d, wh_changes=wh_changes,
                                   soll_free_dates=soll_free_dates)
     if not blocks:
-        return ClampResult(start, end, None, None, 0)
+        return ClampResult(start, end, None, None, 0, None)
 
     floor = _shift_min(blocks[0][0], -grace)      # begrenzt auf [00:00, 23:59]
     ceil = _shift_min(blocks[-1][1], +grace)
@@ -772,21 +816,28 @@ def clamp(db, user, d, start, end, grace, *, credit_override: bool,
 
     # Kollaps außerhalb der Hülle — unverändert seit #201
     if eff_start is not None and eff_end is not None and eff_start >= eff_end:
-        return ClampResult(start, start, start, end, 0)
+        return ClampResult(start, start, start, end, 0, grace)
     if eff_end is None:                            # offener Eintrag (P17: Hülle gilt)
-        return ClampResult(eff_start, None, raw_start, None, 0)
+        return ClampResult(eff_start, None, raw_start, None, 0, grace)
     if eff_start is None:                          # Teil-Update ohne Beginn
-        return ClampResult(None, eff_end, None, raw_end, 0)
+        return ClampResult(None, eff_end, None, raw_end, 0, grace)
 
     s, e = _min(eff_start), _min(eff_end)
     uncredited = sum(_overlap(s, e, gs, ge) for gs, ge in credit_gaps(blocks, grace))
-    return ClampResult(eff_start, eff_end, raw_start, raw_end, uncredited)
+    return ClampResult(eff_start, eff_end, raw_start, raw_end, uncredited, grace)
 ```
 
 - `_min(t)` = `t.hour * 60 + t.minute` (Sekunden werden ignoriert wie in `_net_hours`).
 - Der Beginn wird **nur** an der Hülle verschoben, nie in einer Lücke (E33).
 - `credit_override` ist pflichtiges Schlüsselwort-Argument (P6); jede Aufrufstelle
   entscheidet ausdrücklich.
+- **Puffer-Herkunft (E80):** Der Aufrufer bestimmt `grace` — aktueller Mandanten-Puffer
+  (`get_grace_minutes`) bei Neuanlage und in der Massen-Neukappung,
+  `grace_for_entry(db, entry)` bei jeder Einzel-Neukappung eines gespeicherten Eintrags.
+  Jede schreibende Stelle setzt danach `entry.clamp_grace_minutes = r.grace_minutes`,
+  sofern `r.grace_minutes is not None`; ein `None` (kein Block an diesem Tag,
+  `track_hours=false`, `credit_override`) lässt den gespeicherten Wert stehen — ein
+  Datumswechsel auf einen Tag ohne Blöcke und zurück verliert den Puffer also nicht.
 - `gap_segments(db, user, d, start, end, grace, *, credit_override) -> list[int]`
   liefert dieselben Überlappungen als Liste je Lücke (für §4, XLS-Auto-Pause und
   StampWidget); `sum(gap_segments(...)) == clamp(...).uncredited_minutes` ist Test-Invariante.
@@ -818,8 +869,10 @@ n × 0,005 h (17.3).
 ### 6.2 Warntext
 
 `clamp_warning_text` / `clamp_warning` (`:90-146`, `:169-177`) bekommen die Signatur
-`clamp_warning(db, user, d, result: ClampResult, grace, *, for_employee: bool) ->
-Optional[str]` und lösen die Lücken selbst auf. Code-Präfix bleibt `WORK_WINDOW_CLAMPED`.
+`clamp_warning(db, user, d, result: ClampResult, *, for_employee: bool) ->
+Optional[str]` und lösen die Lücken selbst auf. Den im Text genannten Puffer nehmen sie aus
+`result.grace_minutes` — also den tatsächlich angewandten (bei Einzel-Neukappungen den
+gespeicherten, E80), nie einen getrennt gelesenen Mandantenwert. Code-Präfix bleibt `WORK_WINDOW_CLAMPED`.
 `for_employee=True` (Mitarbeiterpfade `clock_in`, `clock_out`, `create_time_entry`,
 `update_time_entry`) hängt an die **Lückentexte geschlossener Einträge** (nicht an den
 byte-identischen Hülle-Text, nicht an „Einstempeln in der Lücke") den Satz „Haben Sie in dieser Zeit gearbeitet, beantragen Sie die Anrechnung
@@ -882,6 +935,14 @@ Snapshot-Auflösung und `clamp`; erst danach werden Eintragszeilen mit `with_for
 geladen. Jeder Pfad außer dem Auto-Close, der `end_time` schreibt, setzt `auto_closed =
 false` (P18).
 
+**Puffer je Zeile (E79/E80):** aktueller Mandanten-Puffer bei Neuanlagen — Nr. 1, 3, 5, 8,
+Neuanlage-Zweig von 11/12 und die CREATE-Prüfungen in 7 und 14; `grace_for_entry(db, entry)`
+bei Einzel-Neukappungen gespeicherter Einträge — Nr. 2 (Puffer des offenen Eintrags aus
+`clock_in`), 4, 6, 9, Überschreib-Zweig von 11/12, 13 und die UPDATE-Prüfungen in 7 und 14;
+aktueller Puffer, neu geschrieben, nur in Nr. 15. Jede schreibende Zeile übernimmt
+`r.grace_minutes` nach `clamp_grace_minutes` (6.1). Nr. 10 schreibt nichts; die Anerkennung
+(16) kappt nicht und lässt `clamp_grace_minutes` unverändert.
+
 | Nr | Stelle | Funktion | Änderung |
 |---|---|---|---|
 | 1 | `routers/time_entries.py:300` | `clock_in` | Sperre besteht (`:267`). `ClampResult` entpacken, `credit_override=False`; Insert (`:304-313`) mit `uncredited_minutes=0`; Einstempeln in der Lücke → `WORK_WINDOW_CLAMPED` (Text „Einstempeln in der Lücke"); vor der Hülle wie heute (P17, K20): `EARLY_START` (`:319-326`) unverändert nur bei `raw_start` (vor dem ersten Block). |
@@ -896,7 +957,7 @@ false` (P18).
 | 10 | `routers/admin_change_requests.py:1019` | Nachprüfung nach dem Commit | `uncredited` an `_calculate_daily/weekly_net_hours` (`:1022`, `:1044`); `exclude_entry_id=cr.time_entry_id` (E41). Schreibt selbst keinen Eintrag. |
 | 11 | `services/xls_import_service.py:220` | `parse_xls` (Vorschau) | `ImportedEntry.uncredited_minutes` (nur Anzeige); Auto-Pause-Rest (7.4); Vorschau-Warntext über `clamp_warning_text`. Kappungsnotiz-Gate (`:268`, heute nur `raw_start_t is not None or raw_end_t is not None`) → `r.raw_start or r.raw_end or r.uncredited_minutes > 0`, sonst bekommen reine Lückenfälle (K1) keinen Hinweis. Inline-ArbZG `_check_arbzg` (`:59-158`) bekommt `uncredited` und die Lückensegmente (8.2); bei anerkanntem Zieleintrag Hinweis „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet" (P3). |
 | 12 | `services/xls_import_service.py:416` | `_execute_import_inner` | Neu `lock_user_row` der Zielperson einmal am Anfang (P5). `_hat_fenster` (`:412-414`) → `clamp_applies(db, user, d, credit_override=…)` (E38; prüft zusätzlich `track_hours` und `credit_override`, sonst löschte `track_hours=false` + Blöcke ein mitgeliefertes `raw_*`); `uncredited` und Auto-Pause serverseitig neu; beide Zweige: Überschreiben (`:455-478`, `credit_override` **bleibt**, P3) und Neuanlage (`:481-506`). |
-| 13 | `routers/time_entries.py:165` | `_close_stale_entry` (Aufrufer `:223`, `:281`, `:386`) | Über `clamp(entry.start_time, 23:59, credit_override=entry.credit_override)`: `end_time` = Hülle, `raw_end_time` = 23:59 (wenn gekappt), `uncredited`, `auto_closed = true` (P18); Audit `source="auto_close"` unverändert. Ohne Blöcke bleibt 23:59 ungekappt (wie heute), `auto_closed = true`. Aufrufer `:223` (`GET /clock-status`, Stale-Zweig) nimmt vorher die Ankersperre und liest den offenen Eintrag danach neu (P5); `:281` (`clock_in`) und `:386` (`clock_out`) liegen hinter ihrer Sperre. |
+| 13 | `routers/time_entries.py:165` | `_close_stale_entry` (Aufrufer `:223`, `:281`, `:386`) | Über `clamp(db, user, entry.date, entry.start_time, 23:59, grace_for_entry(db, entry), credit_override=entry.credit_override)` (gespeicherter Puffer aus `clock_in`, E80): `end_time` = Hülle, `raw_end_time` = 23:59 (wenn gekappt), `uncredited`, `auto_closed = true` (P18); Audit `source="auto_close"` unverändert. Ohne Blöcke bleibt 23:59 ungekappt (wie heute), `auto_closed = true`. Aufrufer `:223` (`GET /clock-status`, Stale-Zweig) nimmt vorher die Ankersperre und liest den offenen Eintrag danach neu (P5); `:281` (`clock_in`) und `:386` (`clock_out`) liegen hinter ihrer Sperre. |
 | 14 | **neu** `routers/change_requests.py:194-232, 270-283, 289-331` | `create_change_request` (MA-Antrag) | §3/§4/§6/48 h mit `clamp` + `uncredited` prüfen (E40), weiterhin roh speichern; `original_uncredited_minutes` (P28) im Snapshot setzen; neues Feld `request_credit_override` (P21, nur UPDATE auf einen eigenen geschlossenen Eintrag mit `not_credited_minutes > 0`, nicht anerkannt, nicht `auto_closed` ohne korrigiertes Ende). |
 | 15 | **neu** `services/work_window_service.py::reclamp_time_entries` | Rückwirkung | Abschnitt 9. |
 | 16 | **neu** `routers/admin_time_entries.py` `POST /time-entries/{id}/credit-override` | Anerkennen | Abschnitt 13. |
@@ -912,11 +973,12 @@ ist **Pflichtparameter**; bestehende Einträge des Tages/der Woche tragen ihr ge
 7,75 h sind.
 
 Schemas (`schemas/time_entry.py:23-75`, `ClockOutRequest`, `ChangeRequestCreate`,
-`ImportedEntry`-Eingabe): `uncredited_minutes`, `credit_override` und `auto_closed` sind
-**nie** Eingabefelder (einzige neue Eingabe ist `ChangeRequestCreate.request_credit_override`,
-P21). `TimeEntryResponse`/`ClockStatusResponse` (`:84-109`, `:124-127`) tragen
-`uncredited_minutes: int = 0`, `credit_override: bool = False`, `auto_closed: bool = False`
-und `not_credited_minutes: int = 0` (P19) nur lesend.
+`ImportedEntry`-Eingabe): `uncredited_minutes`, `credit_override`, `auto_closed` und
+`clamp_grace_minutes` sind **nie** Eingabefelder (einzige neue Eingabe ist
+`ChangeRequestCreate.request_credit_override`, P21). `TimeEntryResponse`/`ClockStatusResponse`
+(`:84-109`, `:124-127`) tragen `uncredited_minutes: int = 0`, `credit_override: bool = False`,
+`auto_closed: bool = False`, `clamp_grace_minutes: Optional[int] = None` und
+`not_credited_minutes: int = 0` (P19) nur lesend.
 
 ### 7.2 Mitbehobene Bestandsfehler (Protokoll)
 
@@ -987,9 +1049,10 @@ uncredited_segments: list[int], exclude_entry_id=None, tenant_id)`:
   Lückensegmente ≥ 15.
 - Segmente bestehender Einträge des Tages rechnet die Funktion über
   `work_window_service.gap_segments(...)` aus deren **gespeicherten** wirksamen Zeiten
-  (`start_time`/`end_time`) und den Blöcken des Datums nach; ein einzelner gespeicherter
-  Integer verlöre die Segmentierung. **Weicht Σ Segmente vom gespeicherten
-  `uncredited_minutes` ab** (Puffer seit der Kappung geändert, Eintrag von der Neukappung
+  (`start_time`/`end_time`), den Blöcken des Datums und dem **Puffer des Eintrags**
+  (`grace_for_entry`, E80) nach; ein einzelner gespeicherter Integer verlöre die
+  Segmentierung. **Weicht Σ Segmente vom gespeicherten `uncredited_minutes` ab** (Bestand
+  ohne gespeicherten Puffer nach einer Puffer-Änderung, Eintrag von der Neukappung
   übersprungen), zählt der **gespeicherte** Wert als Abzug von der Bruttozeit und **nicht**
   als Pausenabschnitt (strenge Richtung); §3 und §4 rechnen so auf derselben Grundlage. Für
   `credit_override`-Einträge: keine Segmente.
@@ -1042,7 +1105,7 @@ als feste Infozeile im Dialog und im Handbuch (12.1, 16.1) und bleibt Folgeticke
 |---|---|
 | §4-Bedarf und XLS-Auto-Pause aus angerechneter Zeit | 7.4 und 8.2 |
 | Pause > 0 **und** `uncredited` > 0 am selben Eintrag | weiche Warnung `BREAK_IN_GAP`: „Pause in der Lücke wird zusätzlich abgezogen: {p} Min Pause und {u} nicht angerechnet zwischen den Arbeitsblöcken. Lag die Pause in der Lücke, bitte die Pause auf 0 setzen." |
-| StampWidget verlangt keine Pause, wenn die Lücke §4 abdeckt | `GET /time-entries/clock-status` liefert in **jedem** Antwortzweig (11.1) `blocks_today` (Liste `{start, end}`) und `grace_minutes`; `utils/workBlocks.ts::gapSegments(blocks, grace, start, end)` (Zwilling von `gap_segments`) speist `computeBreakError` (`utils/breakValidation.ts:23-92`, `StampWidget.tsx:104-117`, auch `TimeTracking.tsx:311-322`). |
+| StampWidget verlangt keine Pause, wenn die Lücke §4 abdeckt | `GET /time-entries/clock-status` liefert in **jedem** Antwortzweig (11.1) `blocks_today` (Liste `{start, end}`) und `grace_minutes` — den Puffer, mit dem `clock_out` kappen wird (`clamp_grace_minutes` des offenen Eintrags, sonst aktueller Mandanten-Puffer, E80); `utils/workBlocks.ts::gapSegments(blocks, grace, start, end)` (Zwilling von `gap_segments`) speist `computeBreakError` (`utils/breakValidation.ts:23-92`, `StampWidget.tsx:104-117`, auch `TimeTracking.tsx:311-322`). |
 | Keine Formel `max(Pause, Lücke)` | widerspräche „Pause innerhalb der Blöcke" |
 
 ### 8.5 Abgrenzung §5 / §6
@@ -1071,9 +1134,14 @@ als feste Infozeile im Dialog und im Handbuch (12.1, 16.1) und bleibt Folgeticke
   Beim Löschen: gelöschte Zeile → Vorgänger (bzw. Rückfall `users.work_blocks`).
 - Nur Einträge im Fenster an geänderten Wochentagen. Reine Pausenänderung → leere Menge.
 - Puffer: aktueller Mandantenwert (`get_grace_minutes`), in Vorschau und Sammelzeile
-  genannt.
-- Offene Einträge mit Datum < heute im Fenster werden vorher geschlossen (P23, 9.3
-  Schritt 2), sind also reguläre Kandidaten; „offen" betrifft nur den Eintrag von heute.
+  genannt und in `clamp_grace_minutes` jedes geprüften Eintrags an einem geänderten
+  Wochentag geschrieben, auch wenn sich seine Zeiten nicht ändern (E47, E79, E80; 9.2
+  Schritt 9). Weicht der gespeicherte Puffer eines Eintrags ab, nennt seine Einzelzeile beide
+  Werte (10.1). Ein kleinerer aktueller Puffer kann Einträge verlieren lassen — das ist
+  dann eine Verkürzung (9.5 (a)) mit Schutzpaket.
+- Offene Einträge mit Datum < heute im Fenster werden vorher geschlossen (P23, bestätigt
+  2026-10-08, 9.3 Schritt 2), sind also reguläre Kandidaten; „übersprungen: offen" betrifft
+  nur den Eintrag von heute.
 
 ### 9.2 Funktion
 
@@ -1084,6 +1152,7 @@ class ReclampChange(NamedTuple):
     old_start: time; old_end: time; old_uncredited: int; old_net: Decimal
     new_start: time; new_end: time; new_uncredited: int; new_net: Decimal
     not_extendable: Optional[str]          # None | "start" | "end" | "both"
+    old_grace: Optional[int]               # clamp_grace_minutes vorher (E79); neu = grace
 
 class ReclampSkip(NamedTuple):
     entry_id: Any
@@ -1119,15 +1188,25 @@ Vorlade-Parameter durchgereicht, 6.1):
    Einträge des Tages (mit deren bereits berechneten neuen Beginnzeiten); Treffer →
    `unique_collision`, Eintrag unverändert. (SQLite meldet die Verletzung je nach
    flush-Reihenfolge anders als Postgres; die Prüfung macht beide gleich.)
-9. Alle fünf Werte unverändert → kein Eintrag in `changed`.
-10. Sonst ORM-Attribute setzen (`start_time`, `end_time`, `raw_start_time`,
-    `raw_end_time`, `uncredited_minutes`) — kein `query.update`.
-11. „Nicht erweiterbar" (E50): Seite ohne Rohstempel und gespeicherte Zeit = alte
-    Hüllenkante (`alter erster Beginn − g` bzw. `altes letztes Ende + g`) **und** die
-    neue Hülle ist auf dieser Seite weiter → in `flagged`.
+9. Gespeicherten Puffer als `old_grace` festhalten, dann `clamp_grace_minutes =
+   r.grace_minutes` setzen, sofern nicht `None` (Tag ohne Blöcke im neuen Snapshot lässt
+   den Wert stehen, 6.1) — für **jeden** hier angekommenen Kandidaten, auch wenn die fünf
+   Werte aus Schritt 10 unverändert bleiben (E79 „bei jeder Kappung", 19.1 Nr. 8: die
+   Massen-Neukappung schreibt den aktuellen Puffer neu; Bestandseinträge mit NULL bekommen
+   ihn ebenfalls). Das allein ist keine Änderung: kein Eintrag in `changed`, keine
+   Einzelzeile (kein Zeitwert ändert sich, und die Spalte ist nicht gehasht, 10.3).
+10. Alle fünf Werte (`start_time`, `end_time`, `raw_start_time`, `raw_end_time`,
+    `uncredited_minutes`) unverändert → kein Eintrag in `changed`.
+11. Sonst die fünf Werte aus Schritt 10 als ORM-Attribute setzen und den Eintrag in
+    `changed` aufnehmen — kein `query.update`.
+12. „Nicht erweiterbar" (E50): Seite ohne Rohstempel und gespeicherte Zeit = alte
+    Hüllenkante (`alter erster Beginn − g` bzw. `altes letztes Ende + g`, mit
+    g = `old_grace` aus Schritt 9, sonst aktueller Puffer) **und** die neue Hülle
+    ist auf dieser Seite weiter → in `flagged`.
 
 Kein `commit`, kein Protokoll (beides im Router). Idempotent: ein zweiter Lauf mit
-denselben Blöcken liefert `changed == []`.
+denselben Blöcken und demselben Puffer liefert `changed == []` und schreibt in Schritt 9
+denselben Puffer erneut.
 
 ### 9.3 Reihenfolge, Transaktion, Sperre
 
@@ -1135,64 +1214,129 @@ In `create_working_hours_change` (`admin_users.py:1433`), eine Transaktion:
 
 1. `lock_user_row(db, tenant_id, user.id)` (Ankersperre, E52).
 2. Offene Einträge mit Datum < heute im künftigen Fenster per `_close_stale_entry`
-   schließen (P23; unter dem **alten** Snapshot, Audit `auto_close` mit der handelnden
-   Admin als `changed_by`), `flush`.
-3. Bestehende Logik: Basis-Zeile (`:1514-1567`, jetzt mit `_current.blocks` und
+   schließen (P23, bestätigt 2026-10-08; unter dem **alten** Snapshot und mit dem
+   gespeicherten Puffer des Eintrags, Audit `auto_close` mit der handelnden Admin als
+   `changed_by`), `flush`.
+3. Saldo **vorher** festhalten: Soll und Ist je Monat des Wirkungsbereichs bis zum
+   Saldo-Stichtag, ohne Jahresüberträge (9.5 (b)), den Saldo-Anteil eines heute offenen
+   Tages ohne den offenen Eintrag (9.5 (b), zweiter Teil) und das volle Tagessoll **vor**
+   der Änderung je Abwesenheitsdatum im Rückrechnungs-Fenster (`old_full_target_by_date`,
+   `get_daily_target_for_date` mit dem bisher gültigen Snapshot; für 9.5 (c), 9.6) — nach
+   Schritt 2, weil das Schließen unter dem alten Snapshot nicht Wirkung der Änderung ist.
+4. Bestehende Logik: Basis-Zeile (`:1514-1567`, jetzt mit `_current.blocks` und
    `_current.block_pauses`), neue Zeile, `flush`.
-4. `reclamp_time_entries(...)` für `retarget_window` ∩ geänderte Wochentage, `flush`.
-5. Klassifikation (9.4/9.5) und Schutzpaket-Prüfung; Verstoß → `HTTPException`,
-   der Request-Rollback verwirft Schritt 2–4.
+5. `reclamp_time_entries(...)` für `retarget_window` ∩ geänderte Wochentage, `flush`.
 6. `retarget_absence_hours(...)` (`:373`) wie bisher bei `has_absences`, jetzt mit
-   F1-Klemmung (9.6).
-7. Protokoll (Abschnitt 10): Einzelzeilen je `changed`, **immer** genau eine Sammelzeile
+   F1-Klemmung und `old_full_target_by_date` (9.6), `flush` — **vor** der Klassifikation, weil die Kriterien (b) und (c)
+   die nachgezogenen Abwesenheiten brauchen (E51-Reihenfolge Einträge → Abwesenheiten
+   bleibt).
+7. Saldo **nachher**; Klassifikation (9.4/9.5, Kriterien (a)–(c)) und
+   Schutzpaket-Prüfung; Verstoß → `HTTPException`, der Request-Rollback verwirft
+   Schritt 2–6.
+8. Protokoll (Abschnitt 10): Einzelzeilen je `changed`, **immer** genau eine Sammelzeile
    (P20, auch ohne Neukappungs-Umfang), Abwesenheitszeilen wie bisher.
-8. `stale_year_closing_warning` (`:2509`) für die Jahre des Fensters.
-9. Sync (`_sync_user_from_change`), `commit`.
+9. `stale_year_closing_warning` (`:2509`) für die Jahre des Fensters.
+10. Sync (`_sync_user_from_change`), `commit`.
 
 Alle übrigen Schreibpfade für Zeiteinträge nehmen dieselbe Ankersperre als erste
 Anweisung (P5); damit wartet jeder parallele Schreiber, bis die Änderung committet ist,
 und löst danach den neuen Snapshot auf. Die Vorschau nimmt keine Ankersperre; sie führt
-dieselben Schritte 2–6 im `flush`/Rollback-Lauf aus (die Zeilensperren auf geschlossenen
+dieselben Schritte 2–7 im `flush`/Rollback-Lauf aus (die Zeilensperren auf geschlossenen
 Alteinträgen halten nur für die Dauer der Vorschau-Anfrage) und fasst den offenen Eintrag
 von heute nicht an, damit `clock_out` nicht auf ihn wartet. Keine Obergrenze für die
 Anzahl; die Vorschau nennt sie.
 
 ### 9.4 Verlängerung
 
-Kein Eintrag verliert angerechnete Zeit (`new_net ≥ old_net` für alle `changed`,
-keine verlierende offene Zeile nach P1).
+Verlängerung = **weder Netto noch Saldo sinken** (entschieden 2026-10-08, 19.1 Nr. 1),
+also keines der Kriterien aus 9.5: kein Eintrag verliert angerechnete Zeit
+(`new_net ≥ old_net` für alle `changed`, keine verlierende offene Zeile nach P1),
+`saldo_delta_hours ≥ 0` (auch im Anteil jedes abgeschlossenen Jahres), kein steigendes Soll
+am heute offenen Tag (`open_day_saldo_delta_hours ≥ 0`, 9.5 (b)) und keine durch die
+F1-Klemmung über das Tagessoll hinaus gesenkte Abwesenheits-Gutschrift (9.5 (c)).
 
 - Vorschau: Einträge alt → neu je Monat, Δ Überstundenkonto **getrennt nach Soll und
-  angerechneter Zeit** (`target_delta_hours`, `credited_delta_hours`, 11.3), Übersprungene,
-  „nicht erweiterbar", geänderte ArbZG-Befunde (P22).
-- Eine Verlängerung kann den Saldo senken, wenn sie zugleich das Soll erhöht (längere
-  Blöcke, kleinere Pause). Das Protokoll stuft sie trotzdem als Verlängerung ein; ob dafür
-  das Schutzpaket gelten soll, ist offene Frage 19.1 Nr. 1. Bis dahin macht die Vorschau den
-  Effekt sichtbar („Soll im Zeitraum +4:00 h · angerechnet +0:15 h · Überstunden −3:45 h").
+  angerechneter Zeit** (`target_delta_hours`, `credited_delta_hours`, `saldo_delta_hours`,
+  11.3), Übersprungene, „nicht erweiterbar", geänderte ArbZG-Befunde (P22).
+- Gewinnt jeder Eintrag, steigt aber das Soll stärker (längere Blöcke, kleinere Pause),
+  ist das **keine** Verlängerung, sondern eine Verkürzung nach 9.5 (b) — etwa „Soll im
+  Zeitraum +4:00 h · angerechnet +0:15 h · Überstunden −3:45 h" (dritter Zustand in 12.1).
+  Echte Verlängerungen im Block-Modell sind z. B. längere Blöcke mit einer Pause, die das
+  Tagessoll gleich hält (zweiter Zustand in 12.1), oder eine Soll-Senkung.
 - Speichern nach Bestätigung (Haken „Ich habe die Auswirkungen geprüft", Pflicht sobald
-  `affected_time_entries > 0`, unabhängig davon, ob das Datum in der Vergangenheit liegt).
+  `affected_time_entries > 0` **oder** `affected_absences > 0` — unabhängig davon, ob das
+  Datum in der Vergangenheit liegt, also auch bei Wirkungsdatum heute; dieselbe Regel wie
+  12.1).
 - Abgeschlossenes Jahr im Fenster → nur Warnung (`closed_year_warning`).
 
 ### 9.5 Verkürzung und Schutzpaket
 
-Verkürzung = mindestens ein `changed` mit `new_net < old_net`, **oder** der offene
-Eintrag von heute an einem geänderten Wochentag verliert nach der Knickstellen-Prüfung aus
-P1 für irgendein mögliches Ende angerechnete Zeit. Ein offener Eintrag, der nach P1 nichts
-verliert, ist nur `open` übersprungen. Gemischte Änderungen (manche Tage gewinnen, andere
-verlieren) sind Verkürzungen. Abwesenheits-Angleichungen nach F1 (9.6) zählen nicht (P27).
+**Verkürzung** = mindestens eines der drei Kriterien (entschieden 2026-10-08, 19.1 Nr. 1).
+Sie gelten beim Anlegen **und** beim Löschen (9.7) und für jede Änderung über diesen
+Endpunkt — auch für eine reine Wochenstunden- oder Tagesplan-Änderung ohne Blöcke
+(19 Nr. 4). Geprüft wird im selben `flush`-Lauf wie die Vorschau (9.3 Schritt 7):
 
-`earliest_lossless_date` = `max(heute, letztes Datum eines verlierenden Eintrags + 1 Tag)`
-— im Regelfall heute, mit einem heute bereits erfassten oder offenen verlierenden Eintrag
-morgen. **Begrenzung (P25):** Liegt der Wert am oder nach dem `effective_from` der nächsten
-Änderung, ist er `null`; Option 1 entfällt mit dem Text „Die Änderung liegt vollständig vor
-der Änderung ab ‹Datum›; nur rückwirkend mit Begründung oder abbrechen." Eine weitere
-Server-Prüfung braucht es nicht — jedes gesendete `effective_from` wird für sich bewertet.
+- **(a) Eintrag:** mindestens ein `changed` mit `new_net < old_net`, **oder** der offene
+  Eintrag von heute an einem geänderten Wochentag verliert nach der Knickstellen-Prüfung
+  aus P1 für irgendein mögliches Ende angerechnete Zeit. Ein offener Eintrag, der nach P1
+  nichts verliert, ist nur `open` übersprungen. Gemischte Änderungen (manche Tage gewinnen,
+  andere verlieren) sind Verkürzungen.
+- **(b) Saldo:** `saldo_delta_hours < 0`, **oder** der Anteil eines abgeschlossenen Jahres
+  daran ist < 0 (dessen Saldo ist eingefroren; Gewinne späterer Jahre gleichen ihn nicht
+  aus). `saldo_delta_hours` = Σ über die Monate des Wirkungsbereichs bis zum
+  Saldo-Stichtag (`get_soll_cutoff_date`, #313) von (Ist − Soll) nachher minus vorher, über
+  `get_monthly_target`/`get_monthly_actual` (`up_to_date` = Stichtag im laufenden Monat;
+  der #377-Fix-Modus geht so automatisch mit), **einschließlich** der nachgezogenen
+  Abwesenheiten (Soll-Entlastung und Ist-Gutschrift nach `retarget_absence_hours` mit F1)
+  und **ohne** Jahresüberträge (`YearCarryover`). Ohne abgeschlossenes Jahr im
+  Wirkungsbereich ist das genau `overtime_after − overtime_before`. Keine Toleranz: jede
+  Senkung ab 0,01 h zählt, auch ein Rundungsrest der Soll-Ableitung (4.1).
+  **Heute offener Tag** (offener Eintrag von heute, kein geschlossener Eintrag heute): Er
+  liegt nach #313 hinter dem Stichtag und geht nicht in `saldo_delta_hours` ein, sein
+  Saldo sinkt aber spätestens beim Ausstempeln. Deshalb zählt für (b) zusätzlich
+  `open_day_saldo_delta_hours` = Saldo-Anteil dieses Tages **ohne** den offenen Eintrag
+  (Abwesenheits-Gutschrift − Soll-Beitrag des Tages, wie `get_monthly_target`/
+  `get_monthly_actual` ihn zählen), nachher minus vorher; < 0 (z. B. das Tagessoll von heute
+  steigt, während die Person eingestempelt ist) ⇒ (b) (entschieden 2026-10-08, 19.1 Nr. 1:
+  das Konto sinkt im Wirkungsbereich). Ein möglicher Gewinn des offenen Eintrags wird nicht
+  gegengerechnet (sein Ende ist unbekannt); seine angerechnete Zeit deckt (a) über P1 ab.
+- **(c) Abwesenheits-Gutschrift:** die F1-Klemmung (9.6) senkt mindestens eine
+  Abwesenheits-Gutschrift **stärker als das Tagessoll des Tages**
+  (`absence_credit_reductions` nicht leer: `f1_clamped`, `hours` nachher < vorher **und**
+  `(new_hours − old_hours)·w < (new_full_target − old_full_target)·w`, P27). Eine
+  Gutschrift, die höchstens so stark sinkt wie das Tagessoll (saldo-neutral), erfüllt (c)
+  nicht — auch nicht, wenn die Klemmung dabei greift (regulär geklemmter Misch-Tag bei einer
+  Soll-Senkung, 9.4). Weiterhin (c) sind die Korrektur einer Doppelanrechnung vor 1.18.0
+  und eine Gutschrift, die sinkt, weil ein Eintrag am Misch-Tag gewinnt.
+
+`is_shortening` = (a) ∨ (b) ∨ (c); `shortening_reasons` nennt die erfüllten Kriterien
+(`entries`, `saldo`, `absence_credit`), `shortening_closed_years` die abgeschlossenen Jahre
+mit einem Verlust nach (a), (b) oder (c).
+
+`earliest_lossless_date` = `max(heute, A + 1 Tag, C + 1 Tag, H)` mit A = letztes Datum
+eines verlierenden Eintrags (a, inkl. offener Eintrag von heute nach P1), C = letztes Datum
+einer gesenkten Gutschrift (c) und H = morgen, wenn der heutige Tag bereits zum Saldo zählt
+(Stichtag heute) und sein Anteil an (b) negativ ist, **oder** wenn heute ein offener Tag
+mit `open_day_saldo_delta_hours < 0` ist (b), sonst entfällt H. Im Regelfall also
+heute; morgen, wenn heute schon ein Eintrag verliert, der bereits gebuchte heutige Tag
+Saldo bzw. Gutschrift verliert oder das Soll von heute steigt, während die Person
+eingestempelt ist (P1, bestätigt 2026-10-08, 19.1 Nr. 2). Ab diesem Datum ist
+die Änderung nach allen drei Kriterien verlustfrei: der Wirkungsbereich enthält keinen
+verlierenden Eintrag, keine gesenkte Gutschrift und keinen heutigen Tag mit Saldo-Verlust
+(gebucht oder offen), und spätere Tage zählen noch nicht zum Saldo. Eine reine
+Verlängerung (9.4) braucht keine Option und wird mit dem eingegebenen Datum gespeichert;
+„ab heute" bleibt also „ab heute", auch während die Person eingestempelt ist.
+**Begrenzung (P25):** Liegt der Wert am oder nach dem `effective_from` der
+nächsten Änderung, ist er `null`; Option 1 entfällt mit dem Text „Die Änderung liegt
+vollständig vor der Änderung ab ‹Datum›; nur rückwirkend mit Begründung oder abbrechen."
+Eine weitere Server-Prüfung braucht es nicht — jedes gesendete `effective_from` wird für
+sich nach (a)–(c) bewertet.
 
 | Variante | Voraussetzung | Wirkung |
 |---|---|---|
-| **„Ab ‹earliest_lossless_date› wirksam"** (Standard, Beschriftung „Ab heute wirksam", wenn das Datum heute ist) | keine | Der Client sendet `effective_from = earliest_lossless_date`; im Fenster verliert dann niemand → keine rückwirkende Zeile, keine Neukappung der Vergangenheit. Spätere Bearbeitungen alter Einträge lösen den alten Snapshot auf → keine Hintertür. |
-| **„Rückwirkend ab ‹Datum› mit Neuberechnung"** | `retroactive_reason_type` ∈ {`erfassungsfehler`, `einvernehmlich`, `sonstiges`}; `retroactive_reason_text` (10–400 Zeichen, P15); `wage_risk_confirmed = true`; bei `sonstiges` zusätzlich `other_reason_risk_confirmed = true` (P26) | Neukappung wie berechnet; Grund in `note` und Sammelzeile. |
-| Rückwirkend in ein abgeschlossenes Jahr | verlierender Eintrag in einem Jahr Y mit `YearCarryover` für Y+1 | **400**, nicht speicherbar; genannt wird das **größte** solche Y, Vorschlag 01.01.{Y+1} (11.4) |
+| **„Ab ‹earliest_lossless_date› wirksam"** (Standard, Beschriftung „Ab heute wirksam", wenn das Datum heute ist) | keine | Der Client sendet `effective_from = earliest_lossless_date`; im Fenster verliert dann nichts — weder Eintrag noch Saldo noch Gutschrift → keine rückwirkende Zeile, keine Neukappung der Vergangenheit. Spätere Bearbeitungen alter Einträge lösen den alten Snapshot auf → keine Hintertür. |
+| **„Rückwirkend ab ‹Datum› mit Neuberechnung"** | `retroactive_reason_type` ∈ {`erfassungsfehler`, `einvernehmlich`, `sonstiges`} (Beschriftungen „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)" / „Mit der beschäftigten Person vereinbart" / „Sonstiges", 19.1 Nr. 7); `retroactive_reason_text` (10–400 Zeichen, P15); `wage_risk_confirmed = true`; bei `sonstiges` zusätzlich `other_reason_risk_confirmed = true` (P26) | Neukappung und Rückrechnung wie berechnet; Grund in `note` und Sammelzeile. |
+| Rückwirkend in ein abgeschlossenes Jahr | Verlust nach (a), (b) oder (c) in einem Jahr Y mit `YearCarryover` für Y+1 | **400**, nicht speicherbar; genannt wird das **größte** solche Y, Vorschlag 01.01.{Y+1} (11.4) |
 
 Zusatzwarnungen (nicht blockierend) im Dialog und in der Vorschau-Antwort
 (`milog_warning`):
@@ -1216,7 +1360,17 @@ Speicherung des Grundes in `working_hours_changes.note` (String(500)):
 `"[Erfassungsfehler korrigiert] <Begründung>"` bzw. `"[Einvernehmlich vereinbart] …"` /
 `"[Sonstiges] …"`; eine zusätzliche Notiz wird mit `" · "` angehängt. Gesamtlänge > 500 →
 422 „Notiz und Begründung zusammen höchstens 500 Zeichen." (keine stille Kürzung). Die
-Präfixe stehen als Konstante in `reclamp_audit.py`; ein Test sichert, dass
+Präfixe bleiben trotz der neuen Beschriftungen unverändert (19.1 Nr. 7) — sie stehen
+schon so in Protokoll und Parser. Schlüssel, Präfix und Beschriftung stehen als **eine**
+Konstante `REASON_TYPES` in `reclamp_audit.py`:
+
+| Schlüssel | Notiz-Präfix (unverändert) | Beschriftung in Oberfläche und Dashboard-Hinweis |
+|---|---|---|
+| `erfassungsfehler` | `[Erfassungsfehler korrigiert]` | „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)" |
+| `einvernehmlich` | `[Einvernehmlich vereinbart]` | „Mit der beschäftigten Person vereinbart" |
+| `sonstiges` | `[Sonstiges]` | „Sonstiges" |
+
+Ein Test sichert, dass
 `_audit_note_is_health_sensitive` für Sammelzeile und Eintragsnotiz mit **allen drei**
 Präfixen ohne Freitext `False` liefert (das Präfix „[Sonstiges]" enthält das Label des
 maskierten Typs OTHER und entgeht dem Token „Sonstiges " nur durch die schließende Klammer;
@@ -1229,6 +1383,9 @@ Gleichheitsvergleich:
 
 ```python
 kept_net = kept_net_by_date.get(a.date, 0.0)     # Σ net_hours geschlossener Einträge des Tages
+old_hours = float(a.hours)                        # gespeicherte Gutschrift vor der Änderung
+f1_clamped = False
+credit_reduction = False
 if kept_net > 0:
     # Vergleich in GUTSCHRIFTS-Einheiten: die Gutschrift ist new_hours × w
     # (credit_day_weight: Halbtags-Sondertag 0,5, frei 0, sonst 1,0); das wirksame
@@ -1237,8 +1394,33 @@ if kept_net > 0:
     if w > 0:
         full_target = float(get_daily_target_for_date(user, a.date, schedule))
         cap_credit = max(0.0, full_target * w - kept_net)
-        new_hours = round(max(0.0, min(new_hours, cap_credit / w)), 2)
+        clamped = round(max(0.0, min(new_hours, cap_credit / w)), 2)
+        f1_clamped = clamped < new_hours           # Klemmung hat gegriffen
+        new_hours = clamped
+        if f1_clamped and new_hours < old_hours:
+            # 9.5 (c) nur, wenn die Gutschrift STÄRKER sinkt als das Tagessoll des Tages;
+            # sinkt sie nur mit dem Soll (regulär geklemmter Misch-Tag bei einer
+            # Soll-Senkung), bleibt der Tag saldo-neutral.
+            old_full_target = float(old_full_target_by_date[a.date])   # 9.3 Schritt 3
+            credit_reduction = (round((new_hours - old_hours) * w, 2)
+                                < round((full_target - old_full_target) * w, 2))
 ```
+
+`AbsenceRetarget` bekommt die Felder `f1_clamped: bool` und `credit_reduction: bool` (ohne
+Vorgabewert, P6). `retarget_absence_hours` nimmt `old_full_target_by_date` (9.3 Schritt 3)
+als Pflichtparameter. `absence_credit_reductions` (9.5 (c), 11.3) = alle Rückgaben mit
+`credit_reduction` (also `f1_clamped`, `new_hours < old_hours` **und**
+`(new_hours − old_hours)·w < (new_full_target − old_full_target)·w`);
+`absence_f1_adjustments` = Anzahl der Rückgaben mit `f1_clamped`. Gerundet wird beim
+Vergleich auf 0,01 h (Float-Rauschen, z. B. 7,92 − 8,00). Beispiele mit Tagessoll vorher 8 h
+und 4 h Arbeit am Krank-Tag:
+
+| Fall | Gutschrift vorher | Tagessoll nachher | Gutschrift nachher | Δ Gutschrift | Δ Tagessoll | (c) |
+|---|---|---|---|---|---|---|
+| seit 1.18.0 geklemmt gebucht, Soll-Senkung | 4 h | 6 h | 2 h | −2 h | −2 h | nein (saldo-neutral) |
+| vor 1.18.0 ungeklemmt gebucht, Soll unverändert | 8 h | 8 h | 4 h | −4 h | 0 | ja (Doppelanrechnung) |
+| vor 1.18.0 ungeklemmt gebucht, Soll-Senkung | 8 h | 6 h | 2 h | −6 h | −2 h | ja |
+| Eintrag gewinnt durch Neukappung 1 h (Arbeit 5 h), Soll unverändert | 4 h | 8 h | 3 h | −1 h | 0 | ja |
 
 Test: 24.12. (Halbtags-Sondertag) + Krank + 3 h Arbeit bei Tagessoll 8 h → Soll 4 h,
 Gutschrift höchstens 1 h, Saldo des Tages 0.
@@ -1252,13 +1434,17 @@ nicht gearbeiteten Rest statt des vollen Tagessolls; Zeilen, die vor 1.18.0 ohne
 gebucht wurden, werden dabei mit angeglichen. Das gilt auch an unveränderten Wochentagen
 und bei reinen Wochenstunden-Änderungen ohne Blöcke.
 
-Einordnung (P27): Diese Angleichungen korrigieren eine Doppelanrechnung und zählen
-**nicht** als Verkürzung. Sie stehen in der Vorschau als eigene Zeile
-(`absence_f1_adjustments`: „2 Abwesenheiten an Misch-Tagen angeglichen (Arbeit und
-Gutschrift am selben Tag)") und im Protokoll wie jede Abwesenheits-Rückrechnung
-(`source="wh_change"`); liegt eine davon in einem abgeschlossenen Jahr, kommt ein eigener
-Hinweis (`closed_year_warning`, keine Sperre). Ob sie künftig unter das Schutzpaket fallen
-sollen, ist Teil von Frage 19.1 Nr. 1.
+Einordnung (P27, entschieden 2026-10-08, 19.1 Nr. 1): Diese Angleichungen korrigieren eine
+Doppelanrechnung bzw. gleichen die Gutschrift an gewonnene Arbeitszeit an, nehmen dabei aber
+gutgeschriebene Zeit zurück. **Senkt** eine davon die Gutschrift stärker als das Tagessoll
+des Tages (`credit_reduction`), ist die Änderung eine Verkürzung nach 9.5 (c): Standard „ab ‹earliest_lossless_date›", rückwirkend nur mit Grundtyp,
+Begründung und Haken, in einem abgeschlossenen Jahr gesperrt (400). Weil die Klemmung über
+das ganze Rückrechnungs-Fenster läuft, kann sie auch eine Änderung, die an den geänderten
+Wochentagen niemandem schadet (z. B. eine reine Wochenstunden-Änderung), zur Verkürzung
+machen. Die Vorschau zeigt alle Angleichungen als eigene Zeile (`absence_f1_adjustments`:
+„2 Abwesenheiten an Misch-Tagen angeglichen (Arbeit und Gutschrift am selben Tag)") und
+jede gesenkte Gutschrift einzeln (`absence_credit_reductions`: Datum, Stunden vorher →
+nachher); protokolliert wird wie jede Abwesenheits-Rückrechnung (`source="wh_change"`).
 
 ### 9.7 Löschen einer Verlaufszeile
 
@@ -1267,17 +1453,31 @@ sollen, ist Teil von Frage 19.1 Nr. 1.
 - `DELETE …/{change_id}` mit optionalem JSON-Body
   (`retroactive_reason_type`, `retroactive_reason_text`, `wage_risk_confirmed`,
   `other_reason_risk_confirmed`).
-- Gleiche Regeln: `lock_user_row`, Schließen alter offener Einträge (P23), Neukappung gegen
-  den Vorgänger-Snapshot, `retarget_absence_hours` mit F1, Protokoll inkl. Sammelzeile
-  („… gelöscht", 10.2), Jahreswarnung.
-- Verkürzt das Löschen, gilt das Schutzpaket wie beim Anlegen (P13, zur Bestätigung in
-  19.1 Nr. 4): **Standard** ist „Ab ‹earliest_lossless_date› auf den vorherigen Stand
-  zurücksetzen" — der Dialog legt dann statt des Löschens über den normalen
-  Anlege-Endpunkt eine neue Verlaufszeile mit dem Snapshot des Vorgängers an (keine
-  Neukappung der Vergangenheit). Angeboten nur, wenn `earliest_lossless_date` nach dem
-  `effective_from` der zu löschenden Zeile und vor der nächsten Änderung liegt (P25).
-  Die zweite Option „Löschen mit Neuberechnung" verlangt Grund/Haken wie 9.5. In ein
-  abgeschlossenes Jahr hinein → 400.
+- Gleiche Regeln: `lock_user_row`, Schließen alter offener Einträge (P23), Saldo und
+  Tagessoll vorher (9.3 Schritt 3, „vorher" = mit der zu löschenden Zeile), Neukappung
+  gegen den Vorgänger-Snapshot, `retarget_absence_hours` mit F1, Klassifikation
+  nach 9.5 (a)–(c), Protokoll inkl. Sammelzeile („… gelöscht", 10.2), Jahreswarnung
+  (Reihenfolge 9.3).
+- Verkürzt das Löschen (Kriterien (a)–(c), bezogen auf den Wechsel zum
+  Vorgänger-Snapshot — z. B. das Löschen einer Änderung, die das Soll gesenkt hatte), gilt
+  das Schutzpaket wie beim Anlegen (P13, bestätigt 2026-10-08, 19.1 Nr. 4):
+  - **Standard „Ab ‹earliest_lossless_date› auf den vorherigen Stand zurücksetzen":** statt
+    zu löschen legt der Dialog über den normalen Anlege-Endpunkt eine **neue
+    Verlaufszeile mit dem Snapshot des Vorgängers** an. Den fertigen Anlege-Body liefert
+    die `delete-preview` als `reset_body` (Vorgänger-Snapshot einschließlich Blöcken und
+    Pausen bzw. Altfenster, `effective_from = earliest_lossless_date`,
+    `reset_of_change_id` = die Zeile, die zurückgesetzt wird); der Client baut den
+    Snapshot nicht selbst nach. Der Server prüft beim Anlegen, dass der Snapshot noch dem
+    Vorgänger dieser Zeile entspricht (`_comparable_snapshot`, sonst 409, 11.4), und
+    bewertet die neue Zeile wie jede andere nach (a)–(c) — ab diesem Datum verliert
+    nichts, also keine Neukappung der Vergangenheit; die zurückgesetzte Zeile bleibt bis
+    zum Vortag wirksam und im Verlauf stehen. Die Sammelzeile trägt „Rücksetzung der
+    Änderung ab ‹Datum›" (10.2). Angeboten nur, wenn `earliest_lossless_date` nach dem
+    `effective_from` der zu löschenden Zeile und vor der nächsten Änderung liegt (P25);
+    sonst ist `reset_body` null.
+  - **„Rückwirkend löschen mit Neuberechnung":** echtes Löschen nur mit Grundtyp,
+    Begründung und Haken wie 9.5 (DELETE-Body); ohne → 400 (11.4). Verlust in einem
+    abgeschlossenen Jahr → 400.
 - Die früheste Zeile bleibt gesperrt, solange spätere existieren (bestehende Regel,
   `admin_users.py:2056-2075`).
 - Antwort: 200 mit `{adjusted_absences, adjusted_time_entries, skipped_time_entries,
@@ -1313,7 +1513,7 @@ nicht in `app/`) und die Anonymisierung (fasst Blöcke nach E73 nicht an).
 | `new_start_time` / `new_end_time` | effektive Zeiten nachher |
 | `old_break_minutes` / `new_break_minutes` | Pause (unverändert) |
 | `old_note` | `credit_summary_text(vorher)`, z. B. `"angerechnet 7:30 h, nicht angerechnet 2:30 h, davon 2:30 h zwischen den Blöcken"` |
-| `new_note` | `credit_summary_text(nachher)` + `" — Arbeitszeit-Änderung ab 01.09.2026"` + bei Verkürzung `" · Grund: [Erfassungsfehler korrigiert] <Begründung>"`; beim Löschen Auslöser „Löschung der Arbeitszeit-Änderung ab 01.09.2026" |
+| `new_note` | `credit_summary_text(nachher)` + `" — Arbeitszeit-Änderung ab 01.09.2026"` + bei abweichendem gespeichertem Puffer `" · Puffer 15 → 10 Min"` (E80; bei NULL kein Zusatz) + bei Verkürzung `" · Grund: [Erfassungsfehler korrigiert] <Begründung>"` (Präfix unverändert, 9.5); beim Löschen Auslöser „Löschung der Arbeitszeit-Änderung ab 01.09.2026" |
 
 Begriffe (P19): „angerechnet" = `net_hours` (nach Pause und Lücke), „nicht angerechnet" =
 `not_credited_minutes` (Lücke + Hülle), „davon … zwischen den Blöcken" = `uncredited_minutes`
@@ -1343,25 +1543,42 @@ auch bei einer reinen Wochenstunden-Änderung. `WorkingHoursChange` hat keine
 | `new_note` | festes Präfix (P7), danach Klartext |
 
 ```
-Arbeitszeit-Änderung ab 01.09.2026: 3 Einträge neu berechnet, Δ -135 Min, 1 übersprungen (1 anerkannt) · Puffer 15 Min · Verkürzung · Grund: [Erfassungsfehler korrigiert] Stempeluhr lief falsch · Vertrag: Mo 08:00–12:00+15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00 → Mo 08:00–12:00+15:00–17:00 / Di 08:00–12:00 / Do 08:00–12:00
-Arbeitszeit-Änderung ab 01.11.2026: 0 Einträge neu berechnet, Δ +0 Min · Puffer 15 Min · Vertrag: 20,0 h/Woche (gleichmäßig, 5 Tage) → 25,0 h/Woche (gleichmäßig, 5 Tage)
-Arbeitszeit-Änderung ab 01.09.2026 gelöscht: 1 Eintrag neu berechnet, Δ +15 Min · Puffer 15 Min · Vertrag: … → …
+Arbeitszeit-Änderung ab 01.09.2026: 3 Einträge neu berechnet, Δ -135 Min, Saldo Δ +105 Min, 1 übersprungen (1 anerkannt) · Puffer 15 Min · Verkürzung · Grund: [Erfassungsfehler korrigiert] Mo-Nachmittagsblock war seit 01.09. mit 18:00 statt 17:00 hinterlegt · Vertrag: Mo 08:00–12:00+15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00 → Mo 08:00–12:00+15:00–17:00 / Di 08:00–12:00 / Do 08:00–12:00
+Arbeitszeit-Änderung ab 01.09.2026: 1 Eintrag neu berechnet, Δ +15 Min, Saldo Δ -225 Min, 1 übersprungen (1 anerkannt) · Puffer 15 Min · Verkürzung · Grund: [Einvernehmlich vereinbart] Montags ab September bis 19 Uhr vereinbart · Vertrag: … → …
+Arbeitszeit-Änderung ab 01.11.2026: 0 Einträge neu berechnet, Δ +0 Min, Saldo Δ +0 Min · Puffer 15 Min · Vertrag: 20,0 h/Woche (gleichmäßig, 5 Tage) → 25,0 h/Woche (gleichmäßig, 5 Tage)
+Arbeitszeit-Änderung ab 09.10.2026: 0 Einträge neu berechnet, Δ +0 Min, Saldo Δ +0 Min · Puffer 15 Min · Rücksetzung der Änderung ab 01.09.2026 · Vertrag: … → …
+Arbeitszeit-Änderung ab 01.09.2026: 0 Einträge neu berechnet, Δ +0 Min, Saldo Δ -240 Min · Puffer 15 Min · 1 Abwesenheits-Gutschrift gesenkt · Verkürzung · Grund: [Sonstiges] … · Vertrag: … → …
+Arbeitszeit-Änderung ab 01.09.2026 gelöscht: 1 Eintrag neu berechnet, Δ +15 Min, Saldo Δ +15 Min · Puffer 15 Min · Vertrag: … → …
 ```
 
 - „Δ" = Σ (`new_net − old_net`) der neu berechneten Einträge in ganzen Minuten, ASCII-
   Vorzeichen `+`/`-`.
+- „Saldo Δ" = `saldo_delta_hours` (9.5 (b)) in ganzen Minuten, immer geschrieben (auch
+  bei 0); so ist eine Verkürzung nach (b), bei der kein Eintrag verliert (zweite Zeile),
+  im Protokoll nachvollziehbar. Der heute offene Tag (`open_day_saldo_delta_hours`) geht
+  nicht ein; eine Verkürzung allein aus ihm steht als „Saldo Δ +0 Min" mit dem Kennzeichen
+  „Verkürzung" im Protokoll.
+- „n Abwesenheits-Gutschrift(en) gesenkt" nur bei Kriterium (c), Anzahl =
+  `len(absence_credit_reductions)`; die Einzelwerte stehen in den `wh_change`-Zeilen.
+- „Rücksetzung der Änderung ab ‹Datum›" nur bei einer Anlage mit `reset_of_change_id`
+  (P13, 9.7); ‹Datum› = `effective_from` der zurückgesetzten Zeile.
+- „Grund: […]" trägt das **unveränderte** Notiz-Präfix (9.5), nicht die neue Beschriftung.
 - „Vertrag:" = Kurzform alt → neu (PDF-Kurzform aus 15.2 bzw. #415-Text ohne Blöcke).
-- Singular/Plural korrekt: „1 Eintrag", sonst „n Einträge".
+- Singular/Plural korrekt: „1 Eintrag", sonst „n Einträge"; ebenso „1
+  Abwesenheits-Gutschrift", sonst „n Abwesenheits-Gutschriften".
 
 Modul `app/services/reclamp_audit.py`: `summary_note(...)` und
 `parse_summary_note(note) -> Optional[SummaryNote]` mit
-`SummaryNote(effective_from, deleted, count, delta_minutes, shortening, reason_label)`.
+`SummaryNote(effective_from, deleted, count, delta_minutes, saldo_delta_minutes,
+shortening, reason_type, reset_of)`.
 Regex des Präfixes:
-`^Arbeitszeit-Änderung ab (\d{2}\.\d{2}\.\d{4})( gelöscht)?: (\d+) Eintr(?:ag|äge) neu berechnet, Δ ([+-]\d+) Min`;
-`shortening` = Teilstring „ · Verkürzung · "; `reason_label` = Inhalt von „Grund: [ … ]",
-nur wenn er einer der drei festen Grundtyp-Labels ist (sonst `None`; der Freitext danach
-wird nie gelesen, P12). Round-Trip-Test in `test_reclamp_audit.py` für n = 0, 1, 2 und 14,
-mit und ohne Verkürzung, mit Löschkennzeichen.
+`^Arbeitszeit-Änderung ab (\d{2}\.\d{2}\.\d{4})( gelöscht)?: (\d+) Eintr(?:ag|äge) neu berechnet, Δ ([+-]\d+) Min, Saldo Δ ([+-]\d+) Min`;
+`shortening` = Teilstring „ · Verkürzung · "; `reason_type` = Schlüssel aus `REASON_TYPES`
+(9.5) zum Inhalt von „Grund: [ … ]", nur wenn er eines der drei festen Präfixe ist (sonst
+`None`; der Freitext danach wird nie gelesen, P12); `reset_of` = Datum aus „ · Rücksetzung
+der Änderung ab (\d{2}\.\d{2}\.\d{4}) · " oder `None`. Round-Trip-Test in
+`test_reclamp_audit.py` für n = 0, 1, 2 und 14, Saldo Δ negativ/0/positiv, mit und ohne
+Verkürzung, mit Löschkennzeichen, mit Rücksetzung.
 
 ### 10.3 Integrität
 
@@ -1391,15 +1608,16 @@ mit und ohne Verkürzung, mit Löschkennzeichen.
 | `PUT /api/admin/users/{id}` | Admin | `work_blocks` in `_HISTORISED_FIELDS` → 400; Altfelder → 400 |
 | `GET /api/admin/users`, `GET /api/admin/users/{id}`, Login- und Impersonation-Antwort (`auth.py:302`, `impersonation.py:92`, `admin_users.py:438`) | — | `work_blocks` (locker) und neu `work_blocks_today` (datumsaufgelöst für heute, locker; Liste mit einem Preload der Verlaufszeilen, #449-Muster) |
 | `GET /api/admin/users/{id}/working-hours-changes` | Admin | Antwort trägt `blocks` (locker) |
-| `POST /api/admin/users/{id}/working-hours-changes` | Admin | Body `WorkingHoursChangeCreate` (11.2); Antwort zusätzlich `adjusted_time_entries`, `skipped_time_entries` |
+| `POST /api/admin/users/{id}/working-hours-changes` | Admin | Body `WorkingHoursChangeCreate` (11.2, inkl. optional `reset_of_change_id` für „auf vorherigen Stand zurücksetzen", P13); Antwort zusätzlich `adjusted_time_entries`, `skipped_time_entries` |
 | `POST /api/admin/users/{id}/working-hours-changes/preview` | Admin | **neu** (ersetzt `GET …/preview`); Body wie Speichern, aber **untypisiert** entgegengenommen (`body: dict = Body(...)`) und intern per `WorkingHoursChangeCreate.model_validate` in `try/except ValidationError` geprüft → Fehler als `blocked_reason` über `_schedule_input_error` (wie heute `admin_users.py:1740-1743`), nie hartes 422 beim Tippen; Antwort 11.3 |
-| `POST /api/admin/users/{id}/working-hours-changes/{change_id}/delete-preview` | Admin | **neu**; Body ebenso untypisiert; Antwort 11.3 |
-| `DELETE /api/admin/users/{id}/working-hours-changes/{change_id}` | Admin | optionaler Body (Schutzpaket); 200 mit Zusammenfassung oder 204 |
+| `POST /api/admin/users/{id}/working-hours-changes/{change_id}/delete-preview` | Admin | **neu**; Body ebenso untypisiert; Antwort 11.3 plus `reset_body` (9.7) |
+| `DELETE /api/admin/users/{id}/working-hours-changes/{change_id}` | Admin | optionaler Body (Schutzpaket: `retroactive_reason_type`, `retroactive_reason_text`, `wage_risk_confirmed`, `other_reason_risk_confirmed`; Pflicht, sobald das Löschen nach 9.5 (a)–(c) verkürzt); 200 mit Zusammenfassung oder 204 |
 | `POST /api/admin/time-entries/{entry_id}/credit-override` | Admin | **neu**, Abschnitt 13 |
-| `GET /api/time-entries/clock-status` | angemeldet | `blocks_today` und `grace_minutes` in **allen drei** Rückgabezweigen — nicht eingestempelt (`time_entries.py:~218`), Stale-Auto-Close (`~225`, mit Ankersperre, P5) und eingestempelt; `uncredited_minutes` am laufenden Eintrag (0). E69 braucht die Blöcke gerade im nicht eingestempelten Zustand (14) |
+| `GET /api/time-entries/clock-status` | angemeldet | `blocks_today` und `grace_minutes` (beim Ausstempeln angewandter Puffer: `clamp_grace_minutes` des offenen Eintrags, sonst aktueller Mandanten-Puffer, E80) in **allen drei** Rückgabezweigen — nicht eingestempelt (`time_entries.py:~218`), Stale-Auto-Close (`~225`, mit Ankersperre, P5) und eingestempelt; `uncredited_minutes` am laufenden Eintrag (0). E69 braucht die Blöcke gerade im nicht eingestempelten Zustand (14) |
 | `GET /api/auth/me/work-schedule` | angemeldet, nur eigene Daten | **neu**, Abschnitt 14 |
 | `GET /api/dashboard/` | angemeldet | zusätzlich `schedule_change_notices` (Liste, jüngste zuerst, Abschnitt 14) |
 | `GET /api/journal/…` | wie heute | je Eintrag `uncredited_minutes`, `not_credited_minutes`, `credit_override`, `auto_closed`; Monatssumme `not_credited_minutes_total` (P19) |
+| Zeiteintrags-Antworten (`TimeEntryResponse`, `ClockStatusResponse`) | wie heute | zusätzlich `clamp_grace_minutes` (nur lesend, E79) |
 | `POST /api/change-requests` | angemeldet | `ChangeRequestCreate.request_credit_override` (P21, 7.1 Nr. 14) |
 | `POST /api/admin/change-requests/{id}/review` | Admin | `ChangeRequestReview.grant_credit_override: Optional[bool]` (Default = `request_credit_override` des Antrags); Bulk übernimmt den Antragswert (P21) |
 | `GET /api/admin/reports/24-week-average` (`routers/reports.py:957-1080`) | Admin | zusätzlich `presence_hours` je Woche und `presence_average` (P22, 8.1) |
@@ -1425,10 +1643,28 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase):
     retroactive_reason_text: Optional[str] = Field(None, min_length=10, max_length=400)  # P15
     wage_risk_confirmed: bool = False
     other_reason_risk_confirmed: bool = False            # P26, Pflicht bei "sonstiges"
+    reset_of_change_id: Optional[UUID] = None            # P13: „auf vorherigen Stand zurücksetzen"
 ```
 
+- `retroactive_reason_type` behält die Schlüssel aus dem Protokoll; die Oberfläche zeigt
+  die Beschriftungen aus `REASON_TYPES` (9.5, 19.1 Nr. 7). Der Body der Schutzpaket-Felder
+  ist für Anlegen und `DELETE` derselbe; Pflicht sind sie, sobald die gesendete Änderung
+  (mit ihrem `effective_from`) bzw. das Löschen nach 9.5 (a)–(c) verkürzt — ein
+  `effective_from` ab `earliest_lossless_date` verkürzt nicht und braucht sie nicht.
+- `reset_of_change_id` gesetzt → Zeile muss im Mandanten und bei derselben Person
+  existieren (sonst 404); der übrige Body muss dem Vorgänger-Snapshot dieser Zeile
+  entsprechen (`_comparable_snapshot`, sonst 409). Der Client sendet dafür unverändert den
+  `reset_body` aus der `delete-preview`.
 - `blocks` gesetzt → `validate_week_blocks` + `derive_targets`; `weekly_hours`/`hours_*`
   im selben Body → 422. `use_daily_schedule` wird `True`.
+- `blocks` bei einer Person mit `track_hours=false` wird **angenommen** (kein 422), ebenso
+  `work_blocks` in `POST /admin/users` mit `track_hours=false`: Die Zeile speichert Blöcke
+  und abgeleitete `hours_*`; ohne Stundenzählung wirken weder Soll noch Kappung (E35,
+  E63), die Neukappung überspringt alle Einträge als `track_hours_off` (9.2 Schritt 1).
+  Grund: `reset_body` (P13) gibt den Vorgänger-Snapshot unverändert zurück, und der kann
+  Blöcke aus der Zeit vor dem Abschalten der Stundenzählung tragen; ein 422 machte die
+  Rücksetzung für diese Personen unmöglich. Nur der Dialog bietet den Block-Modus bei
+  `track_hours=false` nicht an (12.1).
 - `blocks` nicht gesetzt → Modus wie bisher (`check_mode`); Altfenster-/`track_hours`-
   Übernahme nach 4.3, `remove_legacy_window=true` entfernt ein Altfenster.
 - Leseschema `WorkingHoursChangeBase`/`…Response`: `blocks: Optional[Any] = None`, kein
@@ -1451,19 +1687,26 @@ Bestehende Felder bleiben (`is_retroactive`, `period_start`, `period_end`,
 | `time_entry_changes` | List[{`entry_id`, `date`, `old_start`, `old_end`, `old_uncredited`, `old_net`, `new_start`, `new_end`, `new_uncredited`, `new_net`, `not_extendable`}] | vollständig, ohne Obergrenze |
 | `skipped_time_entries` | List[{`entry_id`, `date`, `reason`}] | E49 |
 | `not_extendable_count` | int | E50 |
-| `is_shortening` | bool | 9.5 |
-| `earliest_lossless_date` | Optional[date] | P1; `null`, wenn es die nächste Änderung erreicht (P25) |
+| `is_shortening` | bool | 9.5: (a) ∨ (b) ∨ (c) |
+| `shortening_reasons` | List[Literal["entries", "saldo", "absence_credit"]] | erfüllte Verkürzungskriterien (9.5); leer bei Verlängerung |
+| `shortening_closed_years` | List[int] | abgeschlossene Jahre mit Verlust nach (a), (b) oder (c) — nicht leer ⇒ rückwirkende Variante gesperrt (400) |
+| `earliest_lossless_date` | Optional[date] | 9.5 / P1; `null`, wenn es die nächste Änderung erreicht (P25) |
 | `earliest_lossless_note` | Optional[str] | Text aus P25, wenn `earliest_lossless_date` null ist |
 | `lost_credited_hours` | float | Σ Verlust der verlierenden Einträge (Anzeige im Verkürzungs-Kasten) |
-| `target_delta_hours` / `credited_delta_hours` | float | Δ Soll und Δ angerechnete Zeit im Wirkungsbereich (9.4, Frage 19.1 Nr. 1) |
+| `target_delta_hours` / `credited_delta_hours` | float | Δ Soll (nach Soll-Entlastung durch Abwesenheiten) und Δ Ist (angerechnete Zeit der Einträge plus Abwesenheits-Gutschrift) im Wirkungsbereich bis zum Saldo-Stichtag, ohne Jahresüberträge (9.4, 9.5 (b)) |
+| `saldo_delta_hours` | float | `credited_delta_hours − target_delta_hours`; < 0 ⇒ Kriterium (b) |
+| `open_day_saldo_delta_hours` | float | Saldo-Anteil des heute offenen Tages ohne den offenen Eintrag, nachher minus vorher (9.5 (b)); 0 ohne offenen Tag; < 0 ⇒ Kriterium (b) und H = morgen |
 | `absence_f1_adjustments` | int | F1-Angleichungen (P27, 9.6) |
+| `absence_credit_reductions` | List[{`absence_id`, `date`, `old_hours`, `new_hours`}] | durch F1 **stärker als das Tagessoll des Tages** gesenkte Gutschriften (`credit_reduction`, 9.6); eine nur mit dem Tagessoll sinkende Gutschrift steht nicht darin; nicht leer ⇒ Kriterium (c) |
+| `reset_body` | Optional[dict] | nur `delete-preview`: fertiger Anlege-Body „auf vorherigen Stand zurücksetzen" (9.7); `null`, wenn nicht angeboten (P25) oder das Löschen nicht verkürzt |
 | `stale_entries_closed` | int | vor der Neukappung geschlossene Alteinträge (P23) |
 | `arbzg_findings` | {`days_over_10_credited_before`, `days_over_10_credited_after`, `days_over_10_presence`, `weeks_over_48_credited_before`, `weeks_over_48_credited_after`, `weeks_over_48_presence`} | geänderte ArbZG-Befunde im Wirkungsbereich (P22); Anzeige z. B. „Wochen > 48 h: angerechnet bisher 3, neu 0 · laut Stempel 3" |
 | `milog_warning` | List[str] | 9.5 (bis zu zwei Sätze) |
 | `block_break_notices` | List[str] | P9, z. B. „Mo: geplant 10:00 h Arbeit, eingeplante Pausen 0 Min – nach § 4 ArbZG sind mindestens 45 Minuten nötig." / „Mo: Die Lücke 12:00–12:30 ist nicht länger als der doppelte Puffer …" / „Mo: Tagessoll 10:30 h – geplanter Verstoß gegen § 3 ArbZG …" |
 
-`overtime_after` stammt aus demselben `flush`/Rollback-Lauf, in dem die Neukappung
-**ausgeführt** (nicht nur gezählt) wurde — also vor dem Rollback berechnet. Der
+`overtime_after` und alle Δ-Felder stammen aus demselben `flush`/Rollback-Lauf, in dem die
+Neukappung und die Rückrechnung der Abwesenheiten **ausgeführt** (nicht nur gezählt)
+wurden — also vor dem Rollback berechnet (9.3 Schritte 2–7). Der
 Kurzschluss „Snapshot unverändert" (`admin_users.py:1891-1897`) vergleicht über
 `_comparable_snapshot` (`:155`) jetzt einschließlich kanonischer Blöcke und Pausen; eine
 reine Blockänderung ist damit eine Änderung (Basis-Zeile, Segment, Neukappung).
@@ -1476,9 +1719,12 @@ reine Blockänderung ist damit eine Änderung (Basis-Zeile, Segment, Neukappung)
 | 400 | `PUT /admin/users/{id}` mit `work_blocks` oder einem anderen historisierten Feld | „Wochenstunden, Tagesstunden, Arbeitstage und Arbeitszeit-Blöcke werden über „Arbeitszeit anpassen…" mit Wirkungsdatum geändert, damit Historie und Soll vergangener Monate korrekt bleiben." |
 | 422 | Blockvalidierung | Tabelle 3.4 |
 | 422 | `blocks` zusammen mit `weekly_hours`/`hours_*` | „Tagesstunden werden aus den Arbeitszeit-Blöcken abgeleitet." |
-| 400 | Verkürzung rückwirkend ohne Grund/Haken | „Rückwirkende Verkürzung: Bitte Grund, Begründung und die Bestätigung zum Vergütungsrisiko angeben – oder die Änderung ab dem {earliest_lossless_date} wirksam werden lassen." |
+| 400 | Verkürzung (9.5 (a), (b) oder (c)) rückwirkend ohne Grund/Haken — z. B. eine reine rückwirkende Soll-Erhöhung | „Rückwirkende Verkürzung ({Kriterien}): Bitte Grund, Begründung und die Bestätigung zum Vergütungsrisiko angeben – oder die Änderung ab dem {earliest_lossless_date} wirksam werden lassen." — {Kriterien} aus `shortening_reasons`, z. B. „3 Einträge verlieren angerechnete Zeit; Überstundenkonto −3:45 h; 1 Abwesenheits-Gutschrift sinkt" bzw. für den heute offenen Tag (9.5 (b)) „Soll heute +1:00 h während eingestempelt"; ist `earliest_lossless_date` null, endet der Satz mit „– oder abbrechen: {earliest_lossless_note}" |
+| 400 | `DELETE` verkürzt ohne Grund/Haken | „Das Löschen verkürzt rückwirkend ({Kriterien}): Bitte Grund, Begründung und die Bestätigung zum Vergütungsrisiko angeben – oder ab dem {earliest_lossless_date} auf den vorherigen Stand zurücksetzen." — wird keine Rücksetzung angeboten (`reset_body` null: `earliest_lossless_date` null oder nicht nach dem `effective_from` der Zeile, P13/P25), nennt die Meldung nur die rückwirkende Variante und endet mit „– oder abbrechen: {earliest_lossless_note}" bzw. ohne Notiz mit „– oder abbrechen." |
 | 400 | `retroactive_reason_type = "sonstiges"` ohne `other_reason_risk_confirmed` | „Bei „Sonstiges" bitte bestätigen, dass eine einseitige rückwirkende Kürzung vom Direktionsrecht nicht gedeckt ist." |
-| 400 | Verkürzung in abgeschlossenes Jahr | „Rückwirkende Verkürzung in das abgeschlossene Jahr {Y} ist gesperrt. Bitte die Änderung frühestens ab 01.01.{Y+1} wirksam werden lassen." — Y = das **größte** abgeschlossene Jahr mit verlierendem Eintrag (sonst scheiterte auch das vorgeschlagene Datum) |
+| 400 | Verkürzung in abgeschlossenes Jahr (Anlegen oder Löschen) | „Rückwirkende Verkürzung in das abgeschlossene Jahr {Y} ist gesperrt. Bitte die Änderung frühestens ab 01.01.{Y+1} wirksam werden lassen." — Y = das **größte** Jahr aus `shortening_closed_years` (verlierender Eintrag, negativer Saldo-Anteil oder gesenkte Gutschrift; sonst scheiterte auch das vorgeschlagene Datum) |
+| 404 | `reset_of_change_id` nicht im Mandanten oder nicht bei dieser Person | unverändert („nicht gefunden") |
+| 409 | `reset_of_change_id`: Body entspricht nicht mehr dem Vorgänger-Snapshot (Verlauf inzwischen geändert) | „Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden." |
 | 400 | bestehende Regeln (Datum doppelt, früheste Zeile löschen) | unverändert |
 | 404 | Person/Zeile/Eintrag nicht im Mandanten | unverändert |
 | 400 | Anerkennen eines offenen Eintrags | „Ein offener Eintrag kann erst nach dem Ausstempeln anerkannt werden." |
@@ -1564,7 +1810,7 @@ Neue Änderung
   ⚠ Verkürzung: 3 Einträge verlieren angerechnete Zeit (zusammen 2:15 h)
     ( ) Ab heute (08.10.2026) wirksam – vergangene Einträge bleiben unverändert
     (•) Rückwirkend ab 01.09.2026 mit Neuberechnung
-          Grund        [Erfassungsfehler korrigiert ▾]
+          Grund        [Arbeitszeit war falsch hinterlegt (Fehlerkorrektur) ▾]
                        Falsche Stempelzeiten bitte am Zeiteintrag korrigieren,
                        nicht über die Arbeitszeit.
           Begründung   [ .......................................... ]
@@ -1588,13 +1834,35 @@ Verlauf
 Nachrechnung: je verlierendem Montag kappt der Nachmittag 15:00–18:00 auf 15:00–17:15
 (Hülle 17:00 + 15 Min) → −0:45 h, drei Montage → −2:15 h; das Soll sinkt an vier Montagen
 um je 1:00 h (am Urlaubstag 07.09. heben sich Soll und Urlaub auf) → −4:00 h; Überstunden
-+1:45 h. Die Verkürzung zeigt sich also an den Einträgen, nicht am Saldo (Frage 19.1 Nr. 1).
++1:45 h. Die Verkürzung zeigt sich hier an den Einträgen (9.5 (a)); der Saldo steigt
+sogar. `earliest_lossless_date` ist heute (Do; kein Montag zwischen heute und dem
+Saldo-Stichtag), Option 1 heißt deshalb „Ab heute (08.10.2026) wirksam".
 `[Löschen]` steht nur an der jüngsten Zeile (die früheste bleibt gesperrt, solange spätere
 existieren). Bei Option 1 zeigt die Box die Vorschau für 08.10.2026: keine Zeiteinträge
 betroffen, Soll ab heute −1:00 h je Montag.
 
-Zweiter Zustand — **Verlängerung** (Mo 15:00–18:00 → 15:00–19:00; am 21.09. bis 18:30
-gestempelt, am 14.09. Ende 18:15 ohne Rohstempel aus der Zeit vor 1.19.1):
+Zweiter Zustand — **Verlängerung** (Mo 15:00–18:00 → 15:00–19:00 **und** Pause Mo 0 →
+60 Min, Tagessoll Mo bleibt 7:00 h; am 21.09. bis 18:30 gestempelt, am 14.09. Ende 18:15
+ohne Rohstempel aus der Zeit vor 1.19.1):
+
+```
+  Auswirkung (Puffer 15 Min)
+    Wirkungsbereich 01.09.2026 – 08.10.2026 · geänderte Tage: Mo
+    Zeiteinträge: 1 neu berechnet · 1 übersprungen (1 anerkannt)
+      Sep 2026   1 Eintrag     3:15 h → 3:30 h
+    1 Eintrag ohne Rohstempel – nicht erweiterbar (14.09., Ende 18:15)
+                       bisher      neu         Δ
+    Soll im Zeitraum                            0:00 h
+    Angerechnet                                 +0:15 h
+    Überstunden        +12:30 h    +12:45 h     +0:15 h
+```
+
+Kein Verkürzungs-Kasten: kein Eintrag verliert, das Soll bleibt, der Saldo steigt — weder
+Netto noch Saldo sinken (9.4). Es genügt der Haken „Ich habe die Auswirkungen geprüft".
+
+Dritter Zustand — **rückwirkende Soll-Erhöhung** (Mo 15:00–18:00 → 15:00–19:00, Pause
+bleibt 0, Tagessoll Mo 7:00 → 8:00 h; sonst wie der zweite Zustand). Admin hat Option 2
+gewählt:
 
 ```
   Auswirkung (Puffer 15 Min)
@@ -1607,10 +1875,17 @@ gestempelt, am 14.09. Ende 18:15 ohne Rohstempel aus der Zeit vor 1.19.1):
     Soll im Zeitraum                            +4:00 h
     Angerechnet                                 +0:15 h
     Überstunden        +12:30 h    +8:45 h      −3:45 h
+
+  ⚠ Verkürzung: Das Überstundenkonto sinkt im Wirkungsbereich um 3:45 h
+    (höheres Soll), obwohl kein Eintrag angerechnete Zeit verliert.
+    ( ) Ab heute (08.10.2026) wirksam – vergangene Tage bleiben unverändert
+    (•) Rückwirkend ab 01.09.2026 mit Neuberechnung
+          Grund, Begründung und Bestätigung wie im ersten Zustand
 ```
 
-Kein Verkürzungs-Kasten (niemand verliert angerechnete Zeit, E53); der Saldo sinkt trotzdem
-durch das höhere Soll — sichtbar gemacht, Einordnung offene Frage 19.1 Nr. 1.
+Kein Eintrag verliert (einer gewinnt 0:15 h), das Konto sinkt aber durch das höhere Soll → Verkürzung nach 9.5 (b)
+(entschieden 2026-10-08, 19.1 Nr. 1). Ohne Grund und Haken lehnt der Server die
+rückwirkende Variante mit 400 ab (11.4); „Ab heute" ist ohne Grund speicherbar.
 
 Verhalten:
 
@@ -1628,35 +1903,49 @@ Verhalten:
   nie als 422 (11.1).
 - `comparableSnapshot` (`:191-198`) nimmt Blöcke und Pausen auf; „Speichern" gesperrt,
   solange sich gegenüber dem heute gültigen Zustand nichts geändert hat.
-- **Bestätigungspflicht**, sobald `affected_time_entries > 0` oder `affected_absences > 0`
-  — auch bei Wirkungsdatum heute (dort ist `isRetroactive` false, Einträge von heute
-  werden trotzdem neu gekappt).
+- **Bestätigungspflicht** (Haken „Ich habe die Auswirkungen geprüft"), sobald
+  `affected_time_entries > 0` oder `affected_absences > 0` — auch bei Wirkungsdatum heute
+  (dort ist `isRetroactive` false, Einträge von heute werden trotzdem neu gekappt). Dieselbe
+  Regel steht in 9.4 und wird in 17.7 geprüft.
 - **Verkürzungs-Wahl, Zustand (F24):** Der Dialog hält das vom Admin eingegebene Datum
   (`requestedDate`) und dessen Vorschau getrennt vom gesendeten `effective_from`. Ob der
   Kasten erscheint und welche Optionen er anbietet, leitet sich **immer** aus der Vorschau
   für `requestedDate` ab (`is_shortening`, `earliest_lossless_date`); die Auswirkungs-Box
   zeigt die Vorschau der **gewählten** Option (bei Option 1 eine zweite Anfrage für
   `earliest_lossless_date`). So bleibt nach der Wahl von Option 1 der Rückweg zu Option 2
-  offen. Standard ist Option 1; ist `earliest_lossless_date` null (P25), gibt es nur Option
+  offen. Standard ist Option 1 („Ab heute (TT.MM.JJJJ) wirksam", sonst „Ab ‹Datum›
+  wirksam", P1); ist `earliest_lossless_date` null (P25), gibt es nur Option
   2 mit `earliest_lossless_note`. Option 2 blendet Grund (mit Hilfetext), Begründung und den
   Bestätigungshaken ein; bei „Sonstiges" zusätzlich die rote Warnung und den zweiten Haken.
-  Ohne alle Pflichtangaben bleibt „Speichern" gesperrt. `closed_years` mit verlierenden
-  Einträgen → Option 2 deaktiviert mit dem Text der 400-Meldung.
+  Ohne alle Pflichtangaben bleibt „Speichern" gesperrt. `shortening_closed_years` nicht
+  leer → Option 2 deaktiviert mit dem Text der 400-Meldung.
+- **Kopfzeile des Verkürzungs-Kastens** je erfülltem Kriterium aus `shortening_reasons`
+  (9.5), mehrere untereinander: (a) „n Einträge verlieren angerechnete Zeit (zusammen
+  H:MM h)"; (b) „Das Überstundenkonto sinkt im Wirkungsbereich um H:MM h" (bei steigendem
+  Soll mit dem Zusatz „(höheres Soll), obwohl kein Eintrag angerechnete Zeit verliert",
+  wenn (a) nicht erfüllt ist), bei `open_day_saldo_delta_hours < 0` zusätzlich bzw. allein
+  „Heute steigt das Soll um H:MM h, während die Person eingestempelt ist – das
+  Überstundenkonto sinkt beim Ausstempeln."; (c) „n Abwesenheits-Gutschriften sinken
+  stärker als das Tagessoll (Arbeit und Gutschrift am selben Tag)" mit der Liste aus `absence_credit_reductions` unter
+  „Einzelheiten". Der Kasten erscheint für jede Verkürzung — auch für eine reine
+  Wochenstunden- oder Tagesplan-Änderung ohne Blöcke.
+- **Grundtypen (19.1 Nr. 7):** Auswahl „Arbeitszeit war falsch hinterlegt
+  (Fehlerkorrektur)" / „Mit der beschäftigten Person vereinbart" / „Sonstiges" (Schlüssel
+  und Notiz-Präfixe unverändert, `REASON_TYPES`, 9.5). Fest unter dem Auswahlfeld, bei jedem
+  Grundtyp sichtbar, der Hilfetext „Falsche Stempelzeiten bitte am Zeiteintrag korrigieren,
+  nicht über die Arbeitszeit."
 - **Bestätigungstexte je Grundtyp (P26):**
-  - Erfassungsfehler korrigiert (Hilfetext „Falsche Stempelzeiten bitte am Zeiteintrag
-    korrigieren, nicht über die Arbeitszeit."): „Ich habe geprüft, dass die hinterlegte
-    Arbeitszeit falsch war (Fehlerkorrektur)."
-  - Einvernehmlich vereinbart: „Ich habe geprüft, dass die rückwirkende Änderung mit der
-    beschäftigten Person vereinbart ist."
-  - Sonstiges: „Ich habe die Gründe geprüft." plus rote Warnung „Eine einseitige
+  - „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)": „Ich habe geprüft, dass die
+    hinterlegte Arbeitszeit falsch war (Fehlerkorrektur)."
+  - „Mit der beschäftigten Person vereinbart": „Ich habe geprüft, dass die rückwirkende
+    Änderung mit der beschäftigten Person vereinbart ist."
+  - „Sonstiges": „Ich habe die Gründe geprüft." plus rote Warnung „Eine einseitige
     rückwirkende Kürzung deckt das Direktionsrecht nicht (§ 106 GewO wirkt nur für die
     Zukunft); geleistete Arbeit bleibt zu vergüten." und zweiter Haken „Mir ist bewusst,
     dass eine einseitige rückwirkende Kürzung vom Direktionsrecht nicht gedeckt ist."
   - Jeder Text endet mit: „Tatsächlich geleistete Arbeit, die angeordnet, gebilligt oder
     geduldet wurde, ist unabhängig von der Anrechnung zu vergüten (§ 611a, § 612 BGB). Auf
     den Mindestlohn für geleistete Stunden kann nicht verzichtet werden (§ 3 MiLoG)."
-  - Die Beschriftungen der Grundtypen folgen dem Protokoll; eine Umbenennung von
-    „Erfassungsfehler korrigiert" ist offene Frage 19.1 Nr. 7.
 - **Hinweis Arbeitsrecht/Mitbestimmung** fest unter dem Editor (Kurzfassung; volle
   Fassung im Handbuch, 16.1):
   „Ändert sich der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine
@@ -1674,14 +1963,30 @@ Verhalten:
   aus 4.4.
 - **Moduswechsel weg von Blöcken** (auch bei `track_hours=false`): Hinweis vor dem
   Speichern „Die Arbeitszeit-Blöcke enden mit dieser Änderung; ab ‹Datum› wird nicht mehr
-  gekappt." (P24).
+  gekappt." (P24, bestätigt 2026-10-08; `blocks` = NULL ab dem Wirkungsdatum).
 - **`track_hours=false`:** Modus „Nach Arbeitsblöcken" nicht angeboten, gespeicherte
   Blöcke als Text „Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung)".
+  Jede im Dialog eingegebene Arbeitszeit-Änderung ist damit „Gleichmäßig" oder „Nach Tagen"
+  und beendet die gespeicherten Blöcke ab ihrem Wirkungsdatum; der Hinweis zum
+  Moduswechsel (oben) erscheint deshalb bei **jeder** solchen Änderung (P24). Ausnahme ist
+  nur die Rücksetzung per `reset_body`, die den Vorgänger-Snapshot samt Blöcken unverändert
+  sendet (11.2).
 - **Toast nach dem Speichern:** „Gespeichert. 3 Zeiteinträge neu berechnet, 1 übersprungen,
   1 Abwesenheit angepasst." plus `warning` über `showResponseWarning`.
 - **Löschen** (nur an der jüngsten Zeile) öffnet eine Bestätigung mit der `delete-preview`
-  (gleiche Auswirkungs-Box); verkürzt das Löschen, dieselbe Zwei-Optionen-Wahl wie oben
-  mit „Ab ‹Datum› auf den vorherigen Stand zurücksetzen" als Standard (P13, 9.7).
+  (gleiche Auswirkungs-Box). Verkürzt das Löschen (9.5 (a)–(c)), dieselbe
+  Zwei-Optionen-Wahl wie oben (P13, bestätigt 2026-10-08, 9.7):
+  - Standard **„Ab ‹Datum› auf den vorherigen Stand zurücksetzen"** — sendet `reset_body`
+    aus der `delete-preview` unverändert an `POST …/working-hours-changes`; die
+    Auswirkungs-Box zeigt dafür die Vorschau `POST …/preview` mit demselben Body. Hinweis
+    darunter: „Die Änderung ab ‹effective_from› bleibt bis ‹Vortag› wirksam und im Verlauf
+    stehen; ab ‹Datum› gilt wieder der vorherige Stand." Bei 409 (Verlauf inzwischen
+    geändert) lädt der Dialog die `delete-preview` neu.
+  - **„Rückwirkend löschen mit Neuberechnung"** — Grund, Begründung und Haken wie beim
+    Anlegen, gesendet als `DELETE`-Body.
+  - Ist `reset_body` null (P25), nur die zweite Option; `shortening_closed_years` nicht
+    leer → die zweite Option deaktiviert mit dem Text der 400-Meldung.
+  - Verkürzt das Löschen nicht, bleibt es bei der einfachen Bestätigung.
 
 ### 12.2 UserForm
 
@@ -1703,19 +2008,24 @@ Verhalten:
   dritte Modus zeigt `WorkBlocksEditor`, die Felder Wochenstunden/Tagesstunden/Arbeitstage
   werden dann schreibgeschützt aus den Blöcken abgeleitet angezeigt, der Payload trägt
   `work_blocks`.
-- `track_hours=false`: Editor ausgeblendet, gespeicherte Werte bleiben.
+- `track_hours=false`: Editor ausgeblendet, gespeicherte Werte bleiben bis zur nächsten
+  Arbeitszeit-Änderung; jede im Dialog eingegebene Änderung beendet sie ab ihrem
+  Wirkungsdatum (P24, 12.1).
 - Texte „Änderung über „Wochenstunden anpassen…"" (`:540-541`, `:879`) →
   „Arbeitszeit anpassen…".
 
 ### 12.3 Weitere Admin-Flächen
 
 - `pages/admin/Settings.tsx:1320-1353`: Puffer-Text „gilt an jedem Blockrand, auch zwischen
-  zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet". Zusätzlich:
-  „Eine Änderung des Puffers wirkt auf jede künftige Kappung — auch wenn ein älterer Eintrag
-  später bearbeitet oder bei einer Arbeitszeit-Änderung neu berechnet wird. Ein kleinerer
-  Puffer kann dabei die angerechnete Zeit alter Einträge senken; bereits gespeicherte
-  Einträge ändern sich durch das Speichern dieser Einstellung allein nicht." (Ob der
-  angewandte Puffer je Eintrag gespeichert werden soll, ist offene Frage 19.1 Nr. 8.)
+  zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet". Zusätzlich (E79/E80):
+  „Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich
+  seinen Puffer und behält ihn, auch wenn er später bearbeitet wird. Nur eine
+  Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen Einträge mit dem dann
+  gültigen Puffer neu; die Vorschau nennt ihn, und verliert dabei ein Eintrag angerechnete
+  Zeit, gilt der Verkürzungsschutz. Einträge aus der Zeit vor Version 1.20.0 tragen keinen
+  gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt.
+  Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein
+  nicht."
 - `pages/admin/AdminDashboard.tsx:1473-1515`: Detailtabelle bekommt eine Netto-Spalte und
   die `RawStampNote`; dort sitzt auch „Anerkennen".
 
@@ -1769,7 +2079,8 @@ angerechnet: 7:30 h" (nur wenn > 0) — das Etikett deckt damit genau das ab, wa
 3. Neue Zeiten: `start = raw_start_time or start_time`, `end = raw_end_time or end_time`;
    UNIQUE-Prüfung gegen andere Einträge des Tages → 409.
 4. Setzen: `start_time`, `end_time`, `raw_start_time = None`, `raw_end_time = None`,
-   `uncredited_minutes = 0`, `credit_override = True`.
+   `uncredited_minutes = 0`, `credit_override = True`; `clamp_grace_minutes` bleibt
+   unverändert (ohne Wirkung, solange das Flag gilt).
 5. Protokoll: `source="credit_override"` (15 Zeichen), `action="update"`, alte/neue
    effektive Zeiten, `old_note` = `credit_summary_text(vorher)` (z. B. „angerechnet 7:30 h,
    nicht angerechnet 2:30 h, davon 2:30 h zwischen den Blöcken"), `new_note` „angerechnet
@@ -1823,10 +2134,16 @@ eigene Rücknahme gibt es nicht (P11).
   - Anlegen, `effective_from` ≤ heute: „Ihre Arbeitszeit wurde ab 01.09.2026 geändert
     (neu: Mo 08:00–12:00 + 15:00–17:00 / Di 08:00–12:00 / Do 08:00–12:00)."
   - Anlegen, zukunftsdatiert: „Ihre Arbeitszeit ändert sich ab 01.11.2026 (neu: …)."
+  - Rücksetzung (`reset_of` gesetzt, P13): „Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab
+    09.10.2026 auf den vorherigen Stand zurückgesetzt (neu: …)." bzw. zukunftsdatiert „…
+    wird ab 09.10.2026 auf den vorherigen Stand zurückgesetzt (neu: …)."
   - Löschen: „Die Arbeitszeit-Änderung ab 01.09.2026 wurde zurückgenommen."
   - Zusatz bei n > 0: „ 3 Einträge neu berechnet, angerechnete Zeit −2:15 h."
-  - Zusatz bei Verkürzung: „ Rückwirkende Verkürzung – Grund: Erfassungsfehler
-    korrigiert." (nur der feste Grundtyp, nie der Freitext, P12)
+  - Zusatz bei Saldo Δ ≠ 0: „ Überstundenkonto im Zeitraum −3:45 h." (aus
+    `saldo_delta_minutes`, 10.2)
+  - Zusatz bei Verkürzung: „ Rückwirkende Verkürzung – Grund: Arbeitszeit war falsch
+    hinterlegt (Fehlerkorrektur)." — Beschriftung aus `REASON_TYPES` zum geparsten
+    `reason_type` (19.1 Nr. 7), nie das Notiz-Präfix und nie der Freitext (P12)
   „neu: …" ist der Kurztext des **heute** für `effective_from` aufgelösten Snapshots
   (`get_schedule_for_date`); ohne Blöcke der #415-Text („25,0 h/Woche"). Link auf das
   Profil. Keine Bestätigungstabelle; jeder Hinweis verschwindet nach 30 Tagen. Unter
@@ -1907,10 +2224,10 @@ Flächen: XLSX-Monatsblatt, Jahresübersicht, Jahres-Mitarbeiterblatt (`:474-480
 | Fläche | Neu |
 |---|---|
 | `lifecycle_service._user_dict` (`:509-589`) | `work_blocks` (Strings wie gespeichert), Verlaufszeilen mit `blocks` und `note` |
-| `lifecycle_service._time_entry_dict` (`:592-610`) | `uncredited_minutes` (int), `credit_override` (bool), `auto_closed` (bool) |
+| `lifecycle_service._time_entry_dict` (`:592-610`) | `uncredited_minutes` (int), `credit_override` (bool), `auto_closed` (bool), `clamp_grace_minutes` (int oder null) |
 | Änderungsanträge im Art.-15/20-Export (sofern dort geführt) | `request_credit_override` (bool), `original_uncredited_minutes` (int oder null) |
 | `routers/auth.py /me/export` (`:538-637`) | dieselben Felder |
-| `routers/superadmin.py` §16-Notfallexport (`:55-130`) | `uncredited_minutes` je Eintrag; Mandantenfilter (`:229`) bleibt Pflicht |
+| `routers/superadmin.py` §16-Notfallexport (`:55-130`) | je Eintrag (`_time_entry_dict`, `:115-130`) `uncredited_minutes` (int), `credit_override` (bool), `auto_closed` (bool), `clamp_grace_minutes` (int oder null) — der Export trägt `raw_*`, und ohne `auto_closed` läse sich `raw_end_time` 23:59 als echter Stempel (P18). Dieser Export führt keine Änderungsanträge, die Antragsfelder entfallen dort. Mandantenfilter (`:229`) bleibt Pflicht |
 | Art.-15-Kategorien (`lifecycle_service.py:820-837`) | „Soll-Arbeitszeiten (Arbeitszeit-Blöcke, Pause, Verlauf)", „nicht angerechnete Zeit und Anerkennungen" |
 
 Nur `str`/`int`/`bool` in den rohen JSON-Pfaden — ein `time`- oder `Decimal`-Objekt macht den
@@ -1956,9 +2273,28 @@ Pflichtinhalte:
 - Blöcke, Pause innerhalb der Blöcke, Tagessoll-Ableitung, Puffer an jedem Blockrand
   (Beispiel K1 mit 7:30 h).
 - Wortlaute aus 6.2 und 13.1 wörtlich zitiert.
-- Rückwirkung: Vorschau (Soll- und Ist-Differenz getrennt), Verlängerung/Verkürzung,
-  Schutzpaket je Grundtyp, Sperre abgeschlossener Jahre, Löschen mit „auf vorherigen Stand
-  zurücksetzen", Dashboard-Hinweis an die Mitarbeitenden bei jeder Änderung.
+- Rückwirkung: Vorschau (Soll- und Ist-Differenz getrennt), Verlängerung („weder
+  angerechnete Zeit noch Überstundenkonto sinken") und Verkürzung mit allen drei Kriterien
+  (Eintrag verliert, Überstundenkonto sinkt — auch durch ein rückwirkend höheres Soll oder
+  ein höheres Soll für den heutigen Tag, während die Person eingestempelt ist —,
+  Abwesenheits-Gutschrift an einem Misch-Tag sinkt stärker als das Tagessoll), Standard „ab frühestem verlustfreiem
+  Datum" (meist heute, sonst morgen), Schutzpaket je Grundtyp mit den Beschriftungen
+  „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)" / „Mit der beschäftigten Person
+  vereinbart" / „Sonstiges" und dem Hinweis, dass das Protokoll dafür die Kürzel
+  „[Erfassungsfehler korrigiert]" / „[Einvernehmlich vereinbart]" / „[Sonstiges]" zeigt,
+  dazu der feste Hilfetext unter der Grund-Auswahl wörtlich: „Falsche Stempelzeiten bitte
+  am Zeiteintrag korrigieren, nicht über die Arbeitszeit." — mit der Erläuterung, dass
+  falsche Stempelzeiten am Zeiteintrag selbst (Verwaltung: Bearbeiten im Admin-Dashboard
+  bzw. Monatsjournal) bzw. per Änderungsantrag (Mitarbeitende) korrigiert werden und eine
+  rückwirkende Arbeitszeit-Änderung nur eine falsch **hinterlegte** Arbeitszeit
+  berichtigt; Sperre abgeschlossener Jahre, Löschen mit „auf vorherigen Stand zurücksetzen",
+  Dashboard-Hinweis an die Mitarbeitenden bei jeder Änderung.
+- Puffer: gilt an jedem Blockrand; jeder Eintrag behält den Puffer, mit dem er gekappt
+  wurde; nur eine Arbeitszeit-Änderung mit Neuberechnung nimmt den aktuellen (Wortlaut
+  wie `Settings.tsx`, 12.3).
+- Offene Einträge vergangener Tage werden bei einer Arbeitszeit-Änderung vorher
+  automatisch geschlossen (P23); ein Moduswechsel weg von Blöcken beendet die Blöcke ab
+  dem Wirkungsdatum, auch ohne Stundenzählung (P24).
 - **Kasten Vergütung:** „Nichtanrechnung ersetzt keine Vergütungsentscheidung. Tatsächlich
   geleistete Arbeit, die angeordnet, gebilligt oder geduldet wurde oder zur Erledigung der
   Arbeit notwendig war, ist zu vergüten (§ 611a Abs. 2, § 612 Abs. 1 BGB; MiLoG). Wurde
@@ -1986,7 +2322,11 @@ Pflichtinhalte:
   änderbar.
 - Bekannte Grenze: Arbeit in der Lücke bleibt in der angerechneten Zeit unsichtbar, bis sie
   anerkannt wird; §6-Nachterkennung auf Rohstempeln folgt separat.
-- Release-Notes: Auto-Close kappt jetzt (Abend wird nicht mehr voll angerechnet).
+- Release-Notes: Auto-Close kappt jetzt (Abend wird nicht mehr voll angerechnet);
+  rückwirkende Erhöhungen der Wochenstunden bzw. des Tagesplans brauchen jetzt Grund und
+  Bestätigung, wenn das Überstundenkonto dadurch sinkt (bisher nur Bestätigung, 19 Nr. 4);
+  der Puffer wird je Eintrag gespeichert; der Downgrade auf 1.19.x stellt je Tag die Hülle
+  der Blöcke als Fenster her.
 - Weitere Texte: `Profile.tsx:369-373`, `Privacy.tsx:84`, `admin/Reports.tsx:362`.
 - Screenshots: `e2e/capture-handbook-screenshots.ts:168/181`,
   `tools/handbook/handbuch-screenshots.js:178/196`, `docs/handbuch/screenshots/16-*.png`,
@@ -2006,7 +2346,7 @@ Pflichtinhalte:
    `weekly_hours`, `work_days_per_week`, `use_daily_schedule=True` beim Schreiben —
    `calculation_service` liest nie Blöcke fürs Soll. Einzige Leseschnittstelle:
    `get_schedule_for_date` → `work_window_service.get_scheduled_blocks`.
-2. **`clamp` liefert `ClampResult` (5 Felder), `credit_override` ist Pflicht-Schlüsselwort.**
+2. **`clamp` liefert `ClampResult` (6 Felder, zuletzt `grace_minutes`), `credit_override` ist Pflicht-Schlüsselwort.**
    Beginn in der Lücke wird nie verschoben (UNIQUE `uq_tenant_user_date_start`); die
    Lücke läuft über `uncredited_minutes`. Puffer an jedem Blockrand, Lücke schrumpft um 2g.
    Jede neue Schreibfläche für Zeiteinträge: `clamp` + `uncredited` + Warnung, und die
@@ -2018,8 +2358,14 @@ Pflichtinhalte:
 4. **Neukappung** (`reclamp_time_entries`): Quelle Rohstempel, nur geänderte Wochentage,
    aktueller Puffer, erst Zeiteinträge, dann `retarget_absence_hours` (mit F1), eine
    Transaktion unter `lock_user_row`, Protokoll `wh_reclamp` je Eintrag + Sammelzeile im
-   Router, Vorschau rollt zurück und protokolliert nie. Rückwirkende **Verkürzung** nur
-   mit Grund/Haken, in abgeschlossene Jahre gesperrt.
+   Router, Vorschau rollt zurück und protokolliert nie. **Verkürzung** = Eintrag verliert
+   angerechnete Zeit **oder** Saldo sinkt (ohne Jahresüberträge, bis zum Stichtag, plus
+   steigendes Soll am heute offenen Tag) **oder** F1 senkt eine Abwesenheits-Gutschrift
+   stärker als das Tagessoll des Tages (eine nur mit dem Soll sinkende Gutschrift ist
+   saldo-neutral und keine Verkürzung) — beim Anlegen und Löschen, auch bei reinen
+   Wochenstunden-Änderungen; rückwirkend nur mit Grund/Haken, in abgeschlossene Jahre
+   gesperrt, Standard ist das früheste verlustfreie Datum. Klassifikation erst **nach**
+   `retarget_absence_hours`.
 5. **`credit_override`** überlebt jede Neuberechnung und jede Zeitänderung durch die
    Verwaltung (Direktbearbeitung, Antragsgenehmigung, XLS-Überschreiben); kein Pfad setzt
    es still zurück. MA-`PUT` auf einen anerkannten Eintrag → 409 (nur per Antrag).
@@ -2038,6 +2384,15 @@ Pflichtinhalte:
 10. **„Nicht angerechnet" = Lücke + Hülle** (`not_credited_minutes`, eine Quelle +
     Frontend-Zwilling); „angerechnet" = `net_hours`. Neue Anzeige-/Exportflächen nutzen den
     Helfer, nie `uncredited_minutes` allein.
+11. **Puffer je Eintrag (`clamp_grace_minutes`):** Jede Kappung gegen Blöcke schreibt den
+    angewandten Puffer. Wer einen **gespeicherten** Eintrag neu kappt (Ausstempeln,
+    Bearbeiten, Datumswechsel, CR-Genehmigung, XLS-Überschreiben, Auto-Close), nimmt
+    `grace_for_entry(db, entry)` — nie `get_grace_minutes` direkt; NULL (Bestand) = aktueller
+    Puffer. Nur die Massen-Neukappung nimmt den aktuellen Puffer und schreibt ihn neu — in
+    **jeden** geprüften Eintrag an einem geänderten Wochentag, auch wenn sich seine Zeiten
+    nicht ändern (ohne Einzelzeile, 9.2 Schritt 9).
+12. **Grundtypen:** Schlüssel und Notiz-Präfixe (`[Erfassungsfehler korrigiert]` …) sind
+    eingefroren (Parser, Protokoll); Beschriftungen nur über `REASON_TYPES`.
 
 ---
 
@@ -2058,16 +2413,24 @@ alles zusammen über `bash scripts/local-ci.sh`.
   Segmentänderung in `weekly_hours_segments`/#415-Text (3.3, 5.2).
 - `auto_closed`-Backfill: Eintrag mit `auto_close`-Protokollzeile und Ende 23:59 → true;
   mit später korrigiertem Ende → false; `net_hours` unverändert.
+- `clamp_grace_minutes` (E79): Spalte existiert, nullable; **alle** Bestandseinträge NULL,
+  auch solche mit `raw_*` (der Puffer vor 073 ist unbekannt).
 - Byte-Identität: für eine Stichprobe von Daten vor/nach der Migration gleiches
   `get_daily_target_for_date`, gleiches `net_hours` je Eintrag, gleiches
   `get_overtime_account`.
 - Kappungsparität: `clamp` nach 073 liefert für Einträge an Altfenster-Tagen dieselben
   `eff_*`/`raw_*` wie der 072-Code (Falltabelle aus `test_work_window_service.py:25-45`
   übernommen, inkl. halboffen).
-- Downgrade: erster Block → `scheduled_*`; Platzhalter → NULL; Diagnose nennt
-  Mehrblock-Personen, `uncredited > 0`, `credit_override`, offene Anrechnungs-Anträge;
-  alle neuen Spalten (auch `auto_closed`, `request_credit_override`,
-  `original_uncredited_minutes`) entfernt.
+- Downgrade aus der **Hülle** (E24, 19.1 Nr. 3): Mehrblock-Tag 08:00–12:00 + 15:00–18:00
+  → `scheduled_start` 08:00 / `scheduled_end` 18:00 (nicht 12:00); drei Blöcke
+  07:00–10:00 + 11:00–13:00 + 16:00–19:00 → 07:00/19:00; Einblock-Tag → der Block selbst;
+  Tag ohne Blöcke → NULL/NULL; Platzhalter → NULL (ein Nachmittagseintrag 15:00–18:00
+  liegt damit im rekonstruierten Fenster, statt wie beim ersten Block zu kollabieren).
+  Diagnose nennt
+  Mehrblock-Personen namentlich mit Tag, Hülle und wieder angerechneten Lücken, dazu
+  `uncredited > 0` (Name, Anzahl, Summe), `credit_override`, offene Anrechnungs-Anträge;
+  alle neuen Spalten (auch `auto_closed`, `clamp_grace_minutes`,
+  `request_credit_override`, `original_uncredited_minutes`) entfernt.
 - **Postgres-Round-Trip** auf Wegwerf-PG18 mit der Prod-Kopie: `alembic upgrade 073` →
   `downgrade 072` → `upgrade 073`; Tabellenvergleich order-unabhängig
   (`count(*) + md5(string_agg(t::text ORDER BY t::text))`) für `time_entries`,
@@ -2088,8 +2451,14 @@ alles zusammen über `bash scripts/local-ci.sh`.
   `_comparable_snapshot` erkennt Blöcke; NULL und „5× leer" gelten als gleich;
   Pausenänderung → neues Soll, keine Neukappung; Altfenster-Übernahme in „Gleichmäßig"
   aus dem **Vorgänger**-Snapshot (Zeile zwischen eine mit und eine ohne Fenster eingefügt);
-  `remove_legacy_window`; Wechsel von neuen Blöcken nach „Gleichmäßig" setzt `blocks` NULL,
-  auch bei `track_hours=false` (P24); `blocks` + `weekly_hours` → 422; Vorschau ist `POST`
+  `remove_legacy_window`; Wechsel von neuen Blöcken nach „Gleichmäßig" bzw. „Nach Tagen"
+  setzt `blocks` NULL ab dem Wirkungsdatum, auch bei `track_hours=false` (P24, 19.1 Nr. 6),
+  die Vorgängerzeile behält ihre Blöcke; `blocks` + `weekly_hours` → 422;
+  `reset_of_change_id` einer fremden Person/eines fremden Mandanten → 404; `blocks` bei
+  `track_hours=false` → angenommen (201, Zeile mit Blöcken und abgeleiteten `hours_*`, alle
+  Einträge `track_hours_off` übersprungen), ebenso `POST /admin/users` mit `work_blocks`
+  und `track_hours=false`; `reset_body` mit Blöcken für eine Person, deren Stundenzählung
+  inzwischen aus ist, wird angenommen (11.2); Vorschau ist `POST`
   mit JSON-Body; **unfertiger** Body (Pause ≥ Σ, Block unvollständig, Raster) → 200 mit
   `blocked_reason`, kein 422 (11.1).
 - `test_work_blocks_plan_notices.py`: `block_break_notices` (P9) — 07:00–12:00 +
@@ -2105,18 +2474,31 @@ alles zusammen über `bash scripts/local-ci.sh`.
 
 - `test_clamp_blocks.py`: Falltabelle K1–K21 inkl. Spalte „nicht angerechnet" und
   vollständiger Codeliste (Fall-IDs identisch im Frontend-Test); Invariante
-  `sum(gap_segments) == uncredited`; Ergebnis hat 5 Felder (4er-Entpacken → `ValueError`);
+  `sum(gap_segments) == uncredited`; Ergebnis hat 6 Felder (4er-Entpacken → `ValueError`),
+  `grace_minutes` = übergebener Puffer bei Blöcken, `None` ohne Blöcke, bei
+  `track_hours=false` und bei `credit_override`;
   fehlendes `credit_override` → `TypeError`; `start=None` mit gesetztem Ende → kein
   Fehler (6.1); Vorlade-Parameter `wh_changes`/`soll_free_dates` liefern dasselbe Ergebnis
   wie ohne; `not_credited_minutes`/`presence_minutes` für K7, K8, K15, K20.
 - `test_write_paths_uncredited.py`: parametrisiert über die **schreibenden** Stellen aus
-  7.1 (1–6, 8, 9, 12, 13) — jede setzt `uncredited` und (außer 13) `auto_closed = false`;
+  7.1 (1–6, 8, 9, 12, 13) — jede setzt `uncredited`, `clamp_grace_minutes` (an Tagen mit
+  Blöcken) und (außer 13) `auto_closed = false`;
   eigener Test für 7 und 10 (Genehmigung eines Teilschicht-Antrags „08–18, Pause 0" ohne
   422 und ohne Doppelzählung); eigener Test für 11 (`ImportedEntry.uncredited_minutes`
   gesetzt, Kappungsnotiz auch bei reinem Lückenfall K1 ohne `raw_*`); Formular-Re-Save
   (`unclamp_input`) behält `raw_*` und `uncredited`; Datumswechsel auf anderen Wochentag
   (MA- und Admin-Pfad) kappt neu **und** liefert die Warnung (Warn-Gate mit `date`, 7.1
   Nr. 4).
+- `test_clamp_grace.py` (E79/E80, 19.1 Nr. 8): Eintrag mit Puffer 15 erfasst, Puffer auf 0
+  gesenkt → Admin-Edit, MA-Edit, Datumswechsel (MA und Admin), CR-Genehmigung (UPDATE),
+  XLS-Überschreiben, Ausstempeln eines offenen Eintrags und Auto-Close kappen weiter mit 15
+  (angerechnete Zeit unverändert, `clamp_grace_minutes` bleibt 15, Warntext nennt 15);
+  Bestand mit NULL → aktueller Puffer, danach gespeichert; Neuanlagen (`clock_in`,
+  `create_time_entry`, Admin-Anlage, CR-CREATE, XLS-Neuanlage) speichern den aktuellen
+  Puffer; Tag ohne Blöcke lässt einen gespeicherten Wert stehen (Datumswechsel auf
+  Samstag und zurück); `credit_override` setzt nichts; `GET /clock-status` liefert als
+  `grace_minutes` den Puffer des offenen Eintrags; §4-Segmente bestehender Einträge
+  rechnen mit deren Puffer (8.2); Schemas nehmen `clamp_grace_minutes` nie als Eingabe an.
 - `test_auto_close_blocks.py`: K15 inkl. `auto_closed = true`; ohne Blöcke bleibt 23:59
   (`auto_closed = true`); eine spätere Admin-Korrektur des Endes setzt `auto_closed =
   false`; Anwesenheit des Tages endet am wirksamen Ende (kein falsches
@@ -2159,12 +2541,45 @@ alles zusammen über `bash scripts/local-ci.sh`.
 
 - `test_reclamp.py`:
   - Verlängerung: Werte, `affected_time_entries`, Monatssummen, Δ Saldo,
-    `target_delta_hours`/`credited_delta_hours` (Beispiel „Verlängerung" aus 12.1);
-  - Verkürzung ohne Grund → 400; mit Grund/Haken → ok, Grund in `note` und Sammelzeile;
-    `sonstiges` ohne `other_reason_risk_confirmed` → 400; `retroactive_reason_text` mit
-    9 Zeichen → 422;
-  - `earliest_lossless_date` = heute bzw. morgen (geschlossener Eintrag heute; offener
-    Eintrag heute, der nach P1 verliert);
+    `target_delta_hours`/`credited_delta_hours`/`saldo_delta_hours`, `shortening_reasons`
+    leer, Speichern ohne Grund (zweiter Zustand aus 12.1: längere Blöcke, Pause hält das
+    Tagessoll);
+  - Verkürzung nach (a) ohne Grund → 400; mit Grund/Haken → ok, Grund (Präfix) in `note`
+    und Sammelzeile; `sonstiges` ohne `other_reason_risk_confirmed` → 400;
+    `retroactive_reason_text` mit 9 Zeichen → 422;
+  - **reine Soll-Erhöhung rückwirkend → 400 ohne Grund** (19.1 Nr. 1, Pflichttest): Blöcke
+    länger, Pause gleich, kein Eintrag verliert (dritter Zustand aus 12.1) →
+    `is_shortening = true`, `shortening_reasons = ["saldo"]`, `saldo_delta_hours = −3,75`;
+    ohne Grund 400 mit Kriterientext, mit Grund/Haken 200; dieselbe Änderung „ab heute"
+    (heute weder geschlossener noch offener Eintrag) → 200 ohne Grund;
+  - reine Wochenstunden-Erhöhung **ohne** Blöcke rückwirkend → 400 ohne Grund; Altfenster
+    → Blöcke mit gleichen Zeiten, aber Soll höher als bisher gespeichert → Verkürzung (b);
+    Pause kleiner → Verkürzung (b);
+  - Grenzwerte (b): `saldo_delta_hours` = −0,01 → Verkürzung, 0,00 → keine; Gewinn im
+    laufenden Jahr, Verlust im abgeschlossenen Vorjahr → Verkürzung, 400 mit diesem Y;
+  - rückwirkende Soll-Senkung mit Kranktag ohne Arbeit im Bereich (Gutschrift sinkt nur mit
+    dem Soll, keine Klemmung) → **keine** Verkürzung;
+  - **Soll-Senkung + regulär geklemmter Misch-Tag → keine Verkürzung** (9.5 (c), 9.6):
+    Krank 4 h + 4 h Arbeit, seit 1.18.0 geklemmt gebucht, rückwirkende Soll-Senkung
+    8 → 6 h → Gutschrift 4 → 2 h, `absence_f1_adjustments = 1`,
+    `absence_credit_reductions` leer, `shortening_reasons` ohne `absence_credit`,
+    Saldo-Anteil des Misch-Tags unverändert, Speichern ohne Grund 200; dieselbe Senkung bei einer
+    **vor 1.18.0** ungeklemmt gebuchten Gutschrift (8 h) → Gutschrift 8 → 2 h, Verkürzung
+    (c); Eintrag am Misch-Tag gewinnt durch die Neukappung 1 h bei unverändertem Soll →
+    Gutschrift 4 → 3 h, Verkürzung (c); Vergleich auf 0,01 h gerundet (Tagessoll 7,92 h);
+  - `earliest_lossless_date` = heute bzw. morgen (geschlossener verlierender Eintrag heute;
+    offener Eintrag heute, der nach P1 verliert; Soll-Erhöhung des heutigen Wochentags bei
+    geschlossenem Eintrag heute → morgen; dieselbe bei nur offenem Eintrag heute → ebenfalls
+    morgen, weil `open_day_saldo_delta_hours < 0` (9.5 (b), H); dieselbe ohne jeden
+    Eintrag heute → heute); eine zweite Vorschau mit
+    `effective_from = earliest_lossless_date` liefert `is_shortening = false` (19.1 Nr. 2);
+  - **Soll-Erhöhung „ab heute" bei eingestempelter Person** (nur offener Eintrag heute,
+    heutiger Wochentag betroffen) → `is_shortening = true`, `shortening_reasons = ["saldo"]`,
+    `open_day_saldo_delta_hours < 0`, `saldo_delta_hours = 0`; ohne Grund 400, „ab morgen"
+    → 200 ohne Grund; dieselbe Person mit einer Änderung, die das Soll von heute nicht
+    erhöht (Pausenausgleich, zweiter Zustand aus 12.1) → `is_shortening = false`;
+  - reine Verlängerung „ab heute" bei eingestempelter Person → bleibt „ab heute"
+    (`is_shortening = false`);
   - **Verlängerung mit offenem Eintrag heute** → `is_shortening = false`, Eintrag nur
     `open` übersprungen (P1, Knickstellen-Prüfung); offener Eintrag, dessen Hülle sich
     verkürzt → `is_shortening = true`;
@@ -2173,20 +2588,35 @@ alles zusammen über `bash scripts/local-ci.sh`.
   - abgeschlossenes Jahr: Verkürzung 400, Verlängerung nur Warnung; **zwei**
     abgeschlossene Jahre mit Verlust → Meldung nennt das größere Y, Vorschlag 01.01.{Y+1};
   - offener Eintrag von gestern im Fenster → vorher geschlossen (Audit `auto_close` mit
-    Admin), danach neu gekappt und protokolliert (P23);
+    Admin, gespeicherter Puffer), danach neu gekappt und protokolliert, **nicht** in
+    `skipped_time_entries`; offener Eintrag von heute → nur dieser als `open` übersprungen
+    (P23, 19.1 Nr. 5); das Schließen geht nicht in `saldo_delta_hours` ein (Saldo vorher
+    nach dem Schließen, 9.3);
+  - Puffer: aktueller Puffer 10, gespeicherter 15 → Eintrag verliert, Verkürzung (a);
+    danach tragen **alle** geprüften Einträge an geänderten Wochentagen
+    `clamp_grace_minutes = 10` — auch solche, deren Zeiten unverändert bleiben (nicht in
+    `changed`, ohne Einzelzeile), und Bestandseinträge mit NULL; Einträge an unveränderten
+    Wochentagen sowie übersprungene behalten ihren Wert; Einzelzeile mit „Puffer 15 → 10
+    Min" nur für `changed` (E79/E80, 9.2 Schritt 9);
   - MiLoG-Warnung bei `agreed_monthly_hours` ohne Konto-Flag; allgemeiner Satz bei jeder
     rückwirkenden Verkürzung;
   - **Idempotenz:** zweimal dieselbe Änderung anwenden → zweiter Lauf `changed == []`,
     keine neuen Protokollzeilen;
   - **Reversibilität:** anlegen + löschen → alle Einträge wieder byte-gleich (inkl. `raw_*`,
-    `uncredited`);
+    `uncredited`; `clamp_grace_minutes` aller geprüften Einträge an Tagen mit Blöcken =
+    aktueller Puffer);
   - nur geänderte Wochentage; Pausenänderung → 0;
   - Überspringen je Grund (offen, Feiertag, `track_hours=false`, außerhalb Fenster,
     `credit_override`, Kollision — Kollision auf PG);
   - „nicht erweiterbar" an der alten Kante ohne Rohstempel;
   - Vorschau: DB nach dem Aufruf unverändert, **keine** Protokollzeile;
-  - F1-Misch-Tag: Krank + 4 h Arbeit, Tagessoll 8 → Abwesenheit 4 h nach Neukappung;
-    zählt nicht als Verkürzung, `absence_f1_adjustments = 1` (P27);
+  - F1-Misch-Tag: Krank (vor 1.18.0 ungeklemmt mit 8 h gebucht) + 4 h Arbeit, Tagessoll 8
+    unverändert → Abwesenheit 4 h nach Neukappung; **zählt als Verkürzung (c)** (19.1 Nr. 1, P27): `absence_f1_adjustments = 1`,
+    `absence_credit_reductions` = [8,0 → 4,0], `shortening_reasons` enthält
+    `absence_credit`, ohne Grund 400, mit Grund 200; F1-Senkung in einem abgeschlossenen
+    Jahr → 400; F1-Senkung an einem **unveränderten** Wochentag bei einer reinen
+    Wochenstunden-Änderung → ebenfalls Verkürzung (c); F1-Klemmung, die die Gutschrift
+    nicht senkt (bereits geklemmt gebucht) → keine Verkürzung;
   - F1 am Halbtags-Sondertag: 24.12. + Krank + 3 h Arbeit, Tagessoll 8 → Saldo des Tages 0
     (9.6);
   - `arbzg_findings`: rückwirkende Verkürzung senkt `weeks_over_48_credited_after`,
@@ -2196,9 +2626,13 @@ alles zusammen über `bash scripts/local-ci.sh`.
 - `test_reclamp_audit.py`: Anzahl Zeilen = `changed` + 1 Sammelzeile; **zukunftsdatierte
   Änderung ohne Einträge und Abwesenheiten erzeugt genau eine Sammelzeile mit
   `changed_by`**, ebenso das Löschen einer solchen Zeile und eine reine
-  Wochenstunden-Änderung (P20); Notizformate; `parse_summary_note(summary_note(...))`
-  Round-Trip für n = 0, 1, 2, 14, mit/ohne Verkürzung, mit Löschkennzeichen;
-  `_audit_note_is_health_sensitive` ist für alle drei Grundtyp-Präfixe ohne Freitext
+  Wochenstunden-Änderung (P20); Notizformate inkl. „Saldo Δ" (immer), „n
+  Abwesenheits-Gutschriften gesenkt" (nur bei (c)) und „Rücksetzung der Änderung ab …";
+  `parse_summary_note(summary_note(...))` Round-Trip für n = 0, 1, 2, 14, Saldo Δ
+  negativ/0/positiv, mit/ohne Verkürzung, mit Löschkennzeichen, mit Rücksetzung;
+  `reason_type` aus jedem der drei unveränderten Präfixe, `REASON_TYPES` liefert die neuen
+  Beschriftungen (19.1 Nr. 7) und die Sammelzeile enthält nie eine Beschriftung, nur das
+  Präfix; `_audit_note_is_health_sensitive` ist für alle drei Grundtyp-Präfixe ohne Freitext
   `False`; `verify-integrity` grün nach Neukappung und nach Anonymisierung; `source` ≤ 40
   auf PG.
 - `test_reclamp_concurrency.py` (PG-only, in `test_concurrency.py`-Stil), parametrisiert
@@ -2206,9 +2640,17 @@ alles zusammen über `bash scripts/local-ci.sh`.
   Auto-Close in `GET /clock-status`: der Schreiber wartet während einer laufenden Änderung
   auf die Ankersperre und kappt danach mit den neuen Blöcken; Anerkennen parallel zu einer
   Neukappung desselben Eintrags endet ohne Deadlock.
-- `test_wh_change_delete_reclamp.py`: symmetrisches Löschen, `delete-preview`, Schutzpaket
-  beim Löschen inkl. Variante „auf vorherigen Stand zurücksetzen" (P13: neue Zeile, keine
-  Neukappung der Vergangenheit), früheste Zeile weiter gesperrt, Antwort 200/204.
+- `test_wh_change_delete_reclamp.py` (P13, 19.1 Nr. 4): symmetrisches Löschen,
+  `delete-preview` inkl. Kriterien (a)–(c); Löschen einer Änderung, die das Soll gesenkt
+  hatte → Verkürzung (b); **Rücksetzen:** `reset_body` enthält den Vorgänger-Snapshot
+  (Blöcke, Pausen, Altfenster bzw. Wochenstunden), `effective_from = earliest_lossless_date`
+  und `reset_of_change_id`; unverändert an `POST …/working-hours-changes` gesendet → neue
+  Verlaufszeile, keine Neukappung der Vergangenheit, gelöschte Zeile bleibt bestehen,
+  Sammelzeile mit „Rücksetzung der Änderung ab …", Dashboard-Hinweis mit Rücksetzungstext;
+  veränderter Body mit `reset_of_change_id` → 409; `reset_body = null`, wenn P25 greift oder
+  das Löschen nicht verkürzt; **rückwirkendes echtes Löschen** ohne Grund/Haken → 400, mit
+  → 200; Verlust in abgeschlossenem Jahr → 400; früheste Zeile weiter gesperrt, Antwort
+  200/204.
 
 ### 17.6 Export, DSGVO, Guards
 
@@ -2218,9 +2660,13 @@ alles zusammen über `bash scripts/local-ci.sh`.
 - `test_format_blocks_history.py`: Texte aus 15.2; ohne `blocks_changed` byte-identisch zu
   1.19.3 (eingefrorene Fixtures aus `test_415_*`).
 - `test_dsgvo_work_blocks.py`: `_user_dict`, `/me/export`, Superadmin-Export →
-  `json.dumps` ohne Fehler, Felder vorhanden (inkl. `auto_closed`,
-  `request_credit_override`, `original_uncredited_minutes`); Anonymisierung leert `note`
-  (beide Pfade).
+  `json.dumps` ohne Fehler; Feldliste **je Export** nach 15.3: Art.-15/20
+  (`lifecycle_service._user_dict`/`_time_entry_dict`, `/me/export`) mit `work_blocks`,
+  Verlaufs-`blocks`, `uncredited_minutes`, `credit_override`, `auto_closed`,
+  `clamp_grace_minutes` (int bzw. null) und den Antragsfeldern `request_credit_override`,
+  `original_uncredited_minutes`; Superadmin-§16-Export je Eintrag `uncredited_minutes`,
+  `credit_override`, `auto_closed`, `clamp_grace_minutes` (keine Antragsfelder, der Export
+  führt keine Anträge); Anonymisierung leert `note` (beide Pfade).
 - `test_no_scheduled_columns.py`: in `app/` kommt **kein** Token `scheduled_start_` oder
   `scheduled_end_` vor (die Altfeld-Erkennung nutzt nur das Präfix `scheduled_`, 11.4;
   die Migration liegt in `alembic/`, nicht in `app/`). In `tests/` sind nur **Lesezugriffe**
@@ -2230,27 +2676,46 @@ alles zusammen über `bash scripts/local-ci.sh`.
   selbst.
 - `test_no_live_work_blocks_read.py`: 9.8 (Liste der realen Lesestellen).
 - `test_dashboard_schedule_notice.py`: Hinweis 30 Tage, nur eigene Zeilen; Hinweis auch bei
-  n = 0 (Änderung „ab heute", zukunftsdatiert, Löschung) mit den Texten aus 14;
-  Neukappungs-Zusatz nur bei n > 0; Verkürzung nennt nur den Grundtyp; eine Einzelzeile,
-  deren Eintrag gelöscht wurde (`time_entry_id` NULL), verdrängt den Hinweis nicht.
+  n = 0 (Änderung „ab heute", zukunftsdatiert, Löschung, Rücksetzung) mit den Texten aus
+  14; Neukappungs-Zusatz nur bei n > 0, Saldo-Zusatz nur bei Saldo Δ ≠ 0; Verkürzung nennt
+  nur die neue Beschriftung des Grundtyps („Arbeitszeit war falsch hinterlegt
+  (Fehlerkorrektur)"), nie das Präfix „[Erfassungsfehler korrigiert]" und nie den
+  Freitext; eine Einzelzeile, deren Eintrag gelöscht wurde (`time_entry_id` NULL),
+  verdrängt den Hinweis nicht.
 - Anzupassende Suiten (Anhang B, Gruppe 7): u. a. `test_work_window_service.py`,
   `test_work_window_integration.py`, `test_xls_import_service.py`, `test_endpoints.py`,
   `test_release_1_19_1_review.py`, `test_fix2_update_keeps_raw.py`,
   `test_retarget_absence_hours.py`, `test_wh_change_preview.py`, `test_415_*`,
   `test_449_schedule_preload.py`, `test_audit_integrity.py`, `test_break_validation.py`.
-  Fälle, die einen realen Vorfall kodieren, werden umgeschrieben, nicht gelöscht.
+  Fälle, die einen realen Vorfall kodieren, werden umgeschrieben, nicht gelöscht. Bestehende
+  Tests, die eine **rückwirkende** Wochenstunden- oder Tagesplan-Erhöhung bzw. eine
+  rückwirkende Änderung mit F1-Senkung nur mit dem Bestätigungshaken speichern (u. a.
+  `test_415_*`, `test_wh_change_preview.py`, `test_retarget_absence_hours.py`, die
+  #431-Suiten), senden jetzt Grund/Haken oder ein verlustfreies Wirkungsdatum (9.5,
+  19 Nr. 4); prüft ein Test gerade das Speichern ohne Grund, wird seine Erwartung bewusst
+  auf 400 umgestellt.
 
 ### 17.7 Frontend (Vitest)
 
 `workBlocks.test.ts` (K1–K21, `deriveTargets`, `notCreditedMinutes`, Validierungstexte),
 `WorkingHoursModal.test.tsx` (Editor, Live-Summen, POST-Body statt Query, stabiler
-Effekt-Schlüssel, `blocked_reason` statt 422, Bestätigung bei `affected_time_entries > 0`
-und Datum heute, Verkürzungs-Wahl: Option 1 wählen, dann zurück zu Option 2 —
-`requestedDate` bleibt erhalten (F24), `earliest_lossless_date = null` → nur Option 2,
-gesperrtes Speichern ohne Grund/Haken, „Sonstiges" mit zweitem Haken, Bestätigungstexte je
-Grundtyp, Plan-Hinweise inkl. K6-Lücke, JArbSchG-Infozeile, Hinweis beim Moduswechsel weg
-von Blöcken, Altfenster-Aktionen, `track_hours=false`, `[Löschen]` nur an der jüngsten
-Zeile), `UserForm.test.tsx` (kein Fenster-Abschnitt, POST- und PUT-Payload ohne Schlüssel
+Effekt-Schlüssel, `blocked_reason` statt 422, Bestätigungshaken Pflicht bei
+`affected_time_entries > 0` **oder** `affected_absences > 0`, je ein Fall mit Datum in der
+Vergangenheit und mit Datum heute, kein Haken bei beiden = 0 (Regel aus 9.4/12.1),
+Verkürzungs-Wahl: Option 1 wählen, dann zurück zu Option 2 —
+`requestedDate` bleibt erhalten (F24), Beschriftung „Ab heute (…)" bzw. „Ab ‹Datum›"
+nach `earliest_lossless_date`, `earliest_lossless_date = null` → nur Option 2,
+gesperrtes Speichern ohne Grund/Haken, „Sonstiges" mit zweitem Haken; Kasten-Kopfzeilen
+je `shortening_reasons` (Soll-Erhöhung ohne verlierenden Eintrag zeigt den Kasten mit dem
+Saldo-Satz, dritter Zustand; Verlängerung mit Pausenausgleich zeigt keinen, zweiter
+Zustand; F1-Liste unter „Einzelheiten"); Grund-Auswahl mit den drei neuen Beschriftungen,
+gesendet werden die unveränderten Schlüssel, Hilfetext bei jedem Grundtyp sichtbar;
+Bestätigungstexte je Grundtyp, Plan-Hinweise inkl. K6-Lücke, JArbSchG-Infozeile, Hinweis
+beim Moduswechsel weg von Blöcken (auch bei `track_hours=false`), Altfenster-Aktionen,
+`track_hours=false`, `[Löschen]` nur an der jüngsten Zeile; Löschen mit Verkürzung:
+Standard „auf vorherigen Stand zurücksetzen" sendet `reset_body` unverändert an den
+Anlege-Endpunkt, Vorschau mit demselben Body, 409 lädt die `delete-preview` neu,
+`reset_body = null` → nur „Rückwirkend löschen" mit Grund/Haken als `DELETE`-Body), `UserForm.test.tsx` (kein Fenster-Abschnitt, POST- und PUT-Payload ohne Schlüssel
 mit Präfix `scheduled_`, `PUT` ohne `work_blocks`, Anlegen mit Blöcken), `Users.test.tsx`
 (`displayBlocks`), `RawStampNote.test.tsx` (K1, K7, K9, K15, K20; Guard `raw === eff`;
 „anerkannt"; „Anrechnung beantragen" nur in der Mitarbeiter-Ansicht),
@@ -2262,7 +2727,8 @@ Bearbeiten eines anerkannten Eintrags bietet „Änderung beantragen"),
 (keine Pausenabfrage, wenn die Lücke §4 deckt), `Dashboard` (nicht eingestempelt um 12:05
 bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Varianten),
 `ImportXls` (Netto vom Server), `AuditValues.test.tsx`/`AuditLog` (Labels), `Reports`
-(Spalte „Anwesenheit laut Stempel"), `Settings` (Puffer-Hinweis).
+(Spalte „Anwesenheit laut Stempel"), `Settings` (Puffer-Hinweis im Wortlaut aus 12.3),
+`Dashboard`-Hinweise (Rücksetzungstext, Saldo-Zusatz, neue Grundtyp-Beschriftung).
 
 ### 17.8 E2E (Playwright)
 
@@ -2271,14 +2737,23 @@ bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Va
   1. Anlegen mit Blöcken → Tagessoll in der Benutzerliste;
   2. Einträge per API, Admin verlängert rückwirkend → Vorschau zeigt Anzahl → Speichern →
      Journal zeigt neue Werte und Lückenzeile;
-  3. Verkürzung: Standard „ab heute", dann rückwirkend mit Grund/Haken;
-  4. Anerkennen im Admin-Dashboard;
-  5. Mitarbeiter-Sicht: Profilkarte, Dashboard-Hinweis (auch nach einer Änderung „ab
+  3. Verkürzung: Standard „Ab ‹earliest_lossless_date›" (Beschriftung aus der Vorschau;
+     Testperson ohne verlierenden oder heute bereits gebuchten bzw. offenen Eintrag am
+     geänderten Wochentag → „Ab heute"), dann rückwirkend mit Grund/Haken (Grund-Auswahl
+     mit den neuen Beschriftungen);
+  4. rückwirkende Soll-Erhöhung ohne verlierenden Eintrag: Kasten erscheint, „Speichern"
+     ohne Grund gesperrt, mit Grund/Haken gespeichert (19.1 Nr. 1);
+  5. Anerkennen im Admin-Dashboard;
+  6. Mitarbeiter-Sicht: Profilkarte, Dashboard-Hinweis (auch nach einer Änderung „ab
      heute");
-  6. Mitarbeiter beantragt Anrechnung, Admin genehmigt → Eintrag anerkannt.
+  7. Mitarbeiter beantragt Anrechnung, Admin genehmigt → Eintrag anerkannt;
+  8. Löschen einer verkürzenden Änderung → Standard „auf vorherigen Stand zurücksetzen" →
+     neue Verlaufszeile im Verlauf, alte bleibt stehen (19.1 Nr. 4).
 - Anpassen: `prod-release-features.spec.ts:39-67` (Labels „Soll-Beginn Mo",
   API-Prüfung `scheduled_start_monday`), `user-management.spec.ts:51-226` (Knopf, Dialog,
-  Verlaufs-Regex), `visual-prod-release.spec.ts:19-25`,
+  Verlaufs-Regex; speichert die Spec eine rückwirkende Wochenstunden-Erhöhung, braucht sie
+  jetzt Grund/Haken oder ein verlustfreies Wirkungsdatum (`earliest_lossless_date` aus der
+  Vorschau, wie 17.6)), `visual-prod-release.spec.ts:19-25`,
   `fixtures/test-data.fixture.ts:172-184, 243-256`.
 - Vor dem Lauf erhöhte Auth-Rate-Limits (CLAUDE.md).
 - Nach dem Merge: echter Login + Stempeln auf einem realen Host (Docker-Bundle und nativ),
@@ -2311,18 +2786,42 @@ bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Va
    Eintrag des Wochentags auf 0 h; nach 073 wird an diesem Tag gar nicht mehr gekappt
    (künftige Einträge voll angerechnet, bestehende unverändert). Ergebnis hier nachtragen,
    bevor Task 1 beginnt.
-2. **Aktueller statt historischer Puffer.** Wurde der Mandanten-Puffer seit der Erfassung
-   geändert, kappt die Neukappung die betroffenen Wochentage mit dem neuen Wert; ebenso jede
-   Einzelbearbeitung eines alten Eintrags. Die Vorschau nennt den Puffer, `Settings.tsx`
-   weist darauf hin (12.3), §4 rechnet bei Abweichung mit dem gespeicherten `uncredited`
-   (8.2). Speicherung je Eintrag: Frage 19.1 Nr. 8.
+2. **Puffer: gespeichert je Eintrag, aktuell nur in der Massen-Neukappung (E79/E80).**
+   Einzelbearbeitungen kappen mit dem Puffer, mit dem der Eintrag erfasst wurde; eine
+   spätere Puffer-Änderung wirkt nur auf neue Einträge. Zwei Restfälle bleiben:
+   (a) **Bestand vor 073** trägt `clamp_grace_minutes` NULL und wird bei einer Bearbeitung
+   mit dem **aktuellen** Puffer gekappt — wurde der Puffer seit der Erfassung geändert,
+   kann sich die angerechnete Zeit dabei ändern (wie bisher; `Settings.tsx` weist darauf
+   hin, 12.3). Danach ist der Wert gespeichert. (b) Die **Massen-Neukappung** nimmt nach
+   Protokoll den aktuellen Puffer; ein kleinerer Puffer erscheint in der Vorschau als
+   Verlust und fällt unter das Schutzpaket (9.5 (a)), die Einzelzeile nennt alten und neuen
+   Puffer (10.1). §4 rechnet bei verbleibender Abweichung mit dem gespeicherten
+   `uncredited` (8.2).
 3. **Historische Compliance-Ergebnisse verschieben sich.** Der angerechnete Wert der
    24-Wochen-Auswertung (`reports.py:957-1080`) und die 48-h-Auswertung folgen `net_hours`;
    eine Neukappung ändert sie rückwirkend. Gegenmittel (P22): zweiter Wert „Anwesenheit
    laut Stempel", `PRESENCE_WEEKLY_HOURS`, `arbzg_findings` in der Vorschau. Exportdateien
    tragen keine Rohstempel (Folgeticket).
-4. **Rückwirkende Soll-Erhöhung fällt nicht unter das Schutzpaket** — siehe Frage 19.1
-   Nr. 1. Bis zur Entscheidung macht die Vorschau Soll- und Ist-Differenz getrennt sichtbar.
+4. **Schutzpaket greift jetzt auch bei Saldo- und Gutschrift-Verlust (19.1 Nr. 1) —
+   Verhaltensänderung für Bestandsfunktionen.** Jede rückwirkende Änderung, die das
+   Überstundenkonto im Wirkungsbereich senkt oder per F1 eine Abwesenheits-Gutschrift
+   senkt, braucht Grundtyp, Begründung und Bestätigung und ist in abgeschlossene Jahre
+   gesperrt — auch eine reine Wochenstunden- oder Tagesplan-Änderung ohne Blöcke. Bisher
+   (#415/#431) genügte für eine rückwirkende Erhöhung der Bestätigungshaken. Release-Notes,
+   Handbuch (16.1) und die betroffenen Bestandstests (17.6) ziehen mit. Die Schwelle ist
+   streng (jede Senkung ab 0,01 h, auch ein Rundungsrest der Soll-Ableitung 4.1), und weil
+   F1 über das ganze Rückrechnungs-Fenster läuft, kann eine Misch-Tag-Abwesenheit an einem
+   unveränderten Wochentag eine sonst neutrale Änderung zur Verkürzung machen. Die Vorschau
+   nennt jedes erfüllte Kriterium (`shortening_reasons`) und jede betroffene Abwesenheit
+   (`absence_credit_reductions`); der verlustfreie Standard (meist „ab heute") bleibt ohne
+   Grund speicherbar. Ein heute nur offener Tag zählt nach #313 noch nicht zum Saldo; damit
+   eine Soll-Erhöhung „ab heute" während die Person eingestempelt ist, nicht beim
+   Ausstempeln ohne Schutzpaket wirkt, zählt sein steigendes Soll trotzdem als (b)
+   (`open_day_saldo_delta_hours`, Standard dann „ab morgen", 9.5). Das ist streng: ein
+   möglicher Gewinn des offenen Eintrags wird nicht gegengerechnet, und eine Soll-Erhöhung
+   für den heutigen Wochentag ist während einer laufenden Schicht nur „ab morgen" ohne
+   Grund speicherbar. F1-Gutschriften, die nur mit dem Tagessoll sinken, lösen (c) nicht
+   aus (9.6).
 5. **Nicht erweiterbare Alteinträge.** Rohstempel, die vor 1.19.1 verloren gingen, sind
    unwiederbringlich; eine Verlängerung erreicht diese Einträge nicht. Ausgewiesen, nicht
    behebbar.
@@ -2340,78 +2839,104 @@ bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Va
    `milog_working_time_account` oder `agreed_monthly_hours`; der allgemeine Mindestlohnsatz
    bei jeder rückwirkenden Verkürzung fängt den Rest auf (9.5).
 
-### 19.1 Offene Fragen an den Betreiber
+### 19.1 Entschiedene Punkte
 
-Die folgenden Punkte würden eine Protokoll-Entscheidung ändern oder legen sie aus. Sie
-sind **nicht** (bzw. nur vorläufig, wie gekennzeichnet) eingearbeitet und brauchen eine
-Antwort vor dem Plan für PR3 (Abschnitt 20).
+Die folgenden Punkte hätten eine Protokoll-Entscheidung geändert oder ausgelegt. Der
+Betreiber hat sie am 2026-10-08 verbindlich beantwortet; die Antworten sind in allen
+betroffenen Abschnitten eingearbeitet (jeweils unter „Eingearbeitet in"). Die Voraussetzung
+für den Plan zu PR3 (Abschnitt 20) ist damit erfüllt.
 
-1. **Verkürzung auch über Soll und Abwesenheits-Gutschrift definieren? (Review-Fund R1,
-   betrifft E53/E54/E55; auch F19)**
-   Das Protokoll definiert Verkürzung als „mindestens ein Eintrag verliert angerechnete
-   Zeit". Im Block-Modell bestimmen die Blöcke aber auch das Soll: längere Blöcke oder eine
-   kleinere Pause erhöhen rückwirkend das Soll vergangener Tage und senken das
-   Überstundenkonto, ohne dass ein Eintrag verliert. Beispiel: Mo–Fr 08–12 rückwirkend ab
-   01.01. → 08–12 + 13–15, Einträge 08:00–12:00 unverändert, Soll +2 h/Tag, Konto rund
-   −380 h — heute eine „Verlängerung" mit nur dem Haken „Auswirkungen geprüft". Dasselbe
-   gilt für Altfenster → Blöcke mit gleichen Zeiten, reine Pausenänderungen und die
-   F1-Angleichung (9.6). Den **Umfang** der Arbeitszeit rückwirkend zu ändern, deckt nicht
-   einmal § 106 GewO.
-   **Empfehlung:** Ja. Verkürzung zusätzlich, wenn Δ Überstundenkonto im Wirkungsbereich
-   < 0 (`overtime_after − overtime_before` einschließlich nachgezogener Abwesenheiten) oder
-   irgendeine Abwesenheits-Gutschrift sinkt (F1). Dann dasselbe Paket wie E54 (Standard „ab
-   ‹earliest_lossless_date›", rückwirkend nur mit Grundtyp, Freitext, Haken,
-   MiLoG-Warnung, 400 bei Verlust in einem abgeschlossenen Jahr), auch beim Löschen.
-   „Verlängerung" nur, wenn weder Netto noch Saldo sinken. Test: reine Soll-Erhöhung
-   rückwirkend → 400 ohne Grund. Die Vorschau liefert die nötigen Werte schon
-   (`target_delta_hours`, `credited_delta_hours`, `absence_f1_adjustments`).
-2. **P1 bestätigen: Standard „ab morgen", wenn heute schon ein Eintrag verliert.**
-   Das Protokoll sagt „effective_from = today". P1 verschiebt den Standard auf das
-   früheste verlustfreie Datum (im Regelfall morgen), wenn heute bereits ein geschlossener
-   Eintrag verliert oder der offene Eintrag nach der Knickstellen-Prüfung verlieren kann.
-   **Empfehlung:** bestätigen — sonst kürzt „ab heute" die Arbeit von heute Vormittag
-   rückwirkend, beim Ausstempeln über die normale Kappung sogar ohne Vorschau. Eine reine
-   Verlängerung bleibt dank der Knickstellen-Prüfung „ab heute".
-3. **Downgrade „aus dem ersten Block" (E24) — Bestätigung.** Für Mehrblock-Personen kappt
-   das 072-Fenster nach einem Rückfall am Ende des **ersten** Blocks; ein
-   Nachmittagseintrag kollabiert dann auf 0 h. Die Hülle (erster Beginn bis letztes Ende)
-   wäre milder (Lücke würde angerechnet). Die Spec folgt dem Protokoll; die Diagnose nennt
-   die betroffenen Personen. (Bestand vor diesem Review, nur hierher verschoben.)
-4. **P13 bestätigen: Löschen mit Verkürzung bekommt die „ab heute"-Variante.**
-   Das Protokoll verlangt beim Löschen „dieselben Regeln inkl. Verkürzungsschutz"; dessen
-   Standard ist „ab heute". P13 setzt das als „Ab ‹Datum› auf den vorherigen Stand
-   zurücksetzen" um (neue Verlaufszeile mit dem Vorgänger-Snapshot statt Löschen).
-   **Empfehlung:** bestätigen. Alternative wäre „kein ‚ab heute' beim Löschen, nur mit
-   Grund" (Stand vor dem Review) — weicht dann vom Protokollwortlaut ab.
-5. **P23 bestätigen: offene Einträge vergangener Tage vor der Neukappung schließen.**
-   Das Protokoll listet „offene Einträge" als übersprungen. Ein offener Eintrag von gestern
-   würde sonst später vom Auto-Close unter dem **neuen** Snapshot geschlossen — Verlust ohne
-   `wh_reclamp`-Zeile und ohne Klassifikation. **Empfehlung:** bestätigen; „übersprungen:
-   offen" gilt dann nur für den Eintrag von heute.
-6. **P24 bestätigen: Moduswechsel beendet neue Blöcke, auch bei `track_hours=false`.**
-   Das Protokoll sagt „track_hours=false: Block-Editor ausgeblendet, gespeicherte Werte
-   bleiben". P24 liest das als „bleiben, solange der Modus nicht gewechselt wird"; ein
-   Wechsel nach „Gleichmäßig"/„Nach Tagen" setzt `blocks` = NULL (sonst Doppelpflege und
-   ein Soll aus anderer Quelle nach Wiedereinschalten). **Empfehlung:** bestätigen.
-7. **Beschriftung der Grundtypen ändern? (Review-Fund R10, betrifft E54)**
-   „Erfassungsfehler korrigiert" ist mehrdeutig: falsche Stempel gehören am Zeiteintrag
-   korrigiert (sonst bleibt der falsche Rohstempel als §16-Nachweis stehen); eine
-   rückwirkende Blockänderung rechtfertigt nur eine **falsch hinterlegte Arbeitszeit**.
-   Das Protokoll nennt die Typen „Erfassungsfehler korrigiert / einvernehmlich vereinbart /
-   sonstiges". **Empfehlung:** Beschriftungen „Arbeitszeit war falsch hinterlegt
-   (Fehlerkorrektur)", „Mit der beschäftigten Person vereinbart", „Sonstiges"; Schlüssel
-   und Note-Präfixe bleiben. Eingearbeitet ist bis zur Antwort nur der Hilfetext („Falsche
-   Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit."), die
-   Bestätigungstexte je Typ und die Zusatzwarnung bei „Sonstiges" (P26).
-8. **Angewandten Puffer je Eintrag speichern? (Review-Fund R16, betrifft E47)**
-   Der Mandanten-Puffer ist nicht historisiert. Sinkt er (z. B. 15 → 0), verliert ein alter
-   Eintrag bei **jeder** Einzelbearbeitung (Admin-Edit, Antragsgenehmigung, XLS-Überschreiben,
-   Datumswechsel) bis zu 30 Min je Lücke plus 15 Min je Hüllenrand — nebenbei, ohne
-   Verkürzungsschutz. Das Protokoll legt für die Neukappung den **aktuellen** Puffer fest.
-   **Empfehlung:** neue Spalte `time_entries.clamp_grace_minutes` (bei jeder Kappung
-   gesetzt) und Einzel-Neukappungen alter Einträge mit diesem Wert; die Massen-Neukappung
-   bleibt beim aktuellen Puffer (Protokoll). Bis zur Antwort nur der Hinweis in
-   `Settings.tsx` (12.3).
+1. **Verkürzung auch über Saldo und Abwesenheits-Gutschrift (Review-Fund R1, betrifft
+   E53/E54/E55; auch F19).**
+   Ausgangslage: Das Protokoll definierte Verkürzung nur als „mindestens ein Eintrag
+   verliert angerechnete Zeit". Im Block-Modell bestimmen die Blöcke aber auch das Soll;
+   längere Blöcke oder eine kleinere Pause erhöhen rückwirkend das Soll und senken das
+   Überstundenkonto, ohne dass ein Eintrag verliert (Beispiel: Mo–Fr 08–12 rückwirkend ab
+   01.01. → 08–12 + 13–15, Konto rund −380 h). Dasselbe gilt für Altfenster → Blöcke,
+   reine Pausenänderungen und die F1-Angleichung (9.6).
+   **Entschieden 2026-10-08:** Verkürzung zusätzlich, wenn Δ Überstundenkonto im
+   Wirkungsbereich < 0 (einschließlich nachgezogener Abwesenheiten) **oder** irgendeine
+   Abwesenheits-Gutschrift durch F1 sinkt — beim Anlegen **und** beim Löschen, mit
+   demselben Schutzpaket (Standard „ab ‹earliest_lossless_date›", rückwirkend nur mit
+   Grundtyp, Freitext, Haken, MiLoG-Warnung, 400 bei Verlust in einem abgeschlossenen
+   Jahr). „Verlängerung" nur, wenn weder Netto noch Saldo sinken. Pflichttest: reine
+   Soll-Erhöhung rückwirkend → 400 ohne Grund.
+   Eingearbeitet in: Erfolgskriterium 7, E6, E53, E54, E55, P1, P27, 4.3, 9.3 (Klassifikation
+   nach der Rückrechnung), 9.4, 9.5 (Kriterien (a)–(c), `saldo_delta_hours` ohne
+   Jahresüberträge bis zum Stichtag, `earliest_lossless_date`), 9.6, 9.7, 10.2 (Saldo Δ),
+   11.3 (`shortening_reasons`, `saldo_delta_hours`, `absence_credit_reductions`,
+   `shortening_closed_years`), 11.4, 12.1 (zweiter und dritter Zustand, Kasten-Kopfzeilen),
+   14, 16.1, 16.2, 17.5–17.8, Risiko 4, A.1–A.3.
+
+2. **P1: Standard „frühestes verlustfreies Datum" statt wörtlich „heute".**
+   Ausgangslage: Das Protokoll sagt „effective_from = today"; P1 verschiebt den Standard auf
+   das früheste verlustfreie Datum, wenn heute bereits etwas verliert.
+   **Entschieden 2026-10-08:** bestätigt. Standard bei einer Verkürzung ist
+   `earliest_lossless_date` (meist heute, morgen, wenn heute schon ein Eintrag verliert —
+   nach Nr. 1 auch, wenn der bereits gebuchte heutige Tag Saldo oder Gutschrift verliert
+   oder das Soll des heute offenen Tages steigt, 9.5 (b));
+   eine reine Verlängerung bleibt „ab heute".
+   Eingearbeitet in: P1, E54, E60, 9.5, 11.3, 12.1, 17.5, 17.7, A.2.
+
+3. **Downgrade aus der Hülle statt aus dem ersten Block (betrifft E24).**
+   Ausgangslage: Das Protokoll sah die Rekonstruktion „aus dem ersten Block" vor; für
+   Mehrblock-Personen kappte das 072-Fenster dann am Ende des ersten Blocks, ein
+   Nachmittagseintrag kollabierte auf 0 h.
+   **Entschieden 2026-10-08:** Für Mehrblock-Personen entsteht das Einzelfenster aus der
+   **Hülle** (Beginn des ersten bis Ende des letzten Blocks), nicht aus dem ersten Block. Die
+   Diagnose nennt die Betroffenen.
+   Eingearbeitet in: E24, 5.5, 16.1 (Release-Notes), 17.1.
+
+4. **P13: Löschen mit Verkürzung — Standard „auf den vorherigen Stand zurücksetzen".**
+   Ausgangslage: Das Protokoll verlangt beim Löschen „dieselben Regeln inkl.
+   Verkürzungsschutz", dessen Standard „ab heute" ist.
+   **Entschieden 2026-10-08:** bestätigt. Löschen mit Verkürzung bekommt den Standard
+   „Ab ‹Datum› auf den vorherigen Stand zurücksetzen" (neue Verlaufszeile mit dem
+   Vorgänger-Snapshot); rückwirkendes echtes Löschen nur mit Grund und Bestätigung.
+   Eingearbeitet in: E55, P13, 9.7 (`reset_body`, `reset_of_change_id`), 10.2, 11.1–11.4,
+   12.1, 14, 17.2, 17.5, 17.7, 17.8.
+
+5. **P23: offene Einträge vergangener Tage vor der Neukappung schließen.**
+   Ausgangslage: Das Protokoll listet „offene Einträge" als übersprungen; ein offener
+   Eintrag von gestern würde sonst später vom Auto-Close unter dem neuen Snapshot
+   geschlossen — Verlust ohne `wh_reclamp`-Zeile und ohne Klassifikation.
+   **Entschieden 2026-10-08:** bestätigt. Offene Einträge vergangener Tage werden vor der
+   Neukappung geschlossen; „übersprungen: offen" gilt nur für den Eintrag von heute.
+   Eingearbeitet in: E49, P23, 9.1, 9.3, 16.1, 17.5.
+
+6. **P24: Moduswechsel beendet neue Blöcke, auch bei `track_hours=false`.**
+   Ausgangslage: Das Protokoll sagt „track_hours=false: Block-Editor ausgeblendet,
+   gespeicherte Werte bleiben".
+   **Entschieden 2026-10-08:** bestätigt. Ein Wechsel von Blöcken nach „Gleichmäßig" bzw.
+   „Nach Tagen" setzt `blocks` = NULL ab dem Wirkungsdatum, auch bei `track_hours=false`.
+   Eingearbeitet in: E63, P24, 4.3, 12.1, 12.2, 16.1, 17.2, 17.7.
+
+7. **Beschriftung der Grundtypen (Review-Fund R10, betrifft E54).**
+   Ausgangslage: „Erfassungsfehler korrigiert" ist mehrdeutig — falsche Stempel gehören am
+   Zeiteintrag korrigiert; eine rückwirkende Blockänderung rechtfertigt nur eine falsch
+   hinterlegte Arbeitszeit.
+   **Entschieden 2026-10-08:** Beschriftungen „Arbeitszeit war falsch hinterlegt
+   (Fehlerkorrektur)" / „Mit der beschäftigten Person vereinbart" / „Sonstiges";
+   Schlüssel (`erfassungsfehler`, `einvernehmlich`, `sonstiges`) und Notiz-Präfixe
+   (`[Erfassungsfehler korrigiert]`, `[Einvernehmlich vereinbart]`, `[Sonstiges]`) bleiben.
+   Dazu der Hilfetext „Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über
+   die Arbeitszeit."
+   Eingearbeitet in: E54, P26, 9.5 (`REASON_TYPES`), 10.2 (`reason_type`), 11.2, 12.1, 14,
+   16.1, 16.2, 17.5–17.8.
+
+8. **Angewandten Puffer je Eintrag speichern (Review-Fund R16, betrifft E47).**
+   Ausgangslage: Der Mandanten-Puffer ist nicht historisiert; sank er, verlor ein alter
+   Eintrag bei jeder Einzelbearbeitung angerechnete Zeit — nebenbei, ohne
+   Verkürzungsschutz.
+   **Entschieden 2026-10-08:** neue Spalte `time_entries.clamp_grace_minutes` (INT,
+   nullable; bei **jeder** Kappung gesetzt; Migration 073 legt sie an, Bestand NULL =
+   „unbekannt → aktueller Puffer"). Einzel-Neukappungen alter Einträge (Admin-Edit,
+   CR-Genehmigung, XLS-Überschreiben, Datumswechsel, Auto-Close) nutzen den gespeicherten
+   Wert; die Massen-Neukappung (Verlaufsänderung) nutzt den aktuellen Mandanten-Puffer und
+   schreibt ihn neu. Gehört in PR1.
+   Eingearbeitet in: Erfolgskriterium 13, E19, E31, E47, E79, E80, 3.2, 5.2, 5.5, 6.1
+   (`ClampResult.grace_minutes`, `grace_for_entry`), 6.2, 7.1, 8.2, 8.4, 9.1, 9.2, 10.1,
+   11.1, 12.3, 13.3, 15.3, 16.1, 16.2, 17.1, 17.3, 17.5, 17.6, 20 (PR1), Risiko 2.
 
 ---
 
@@ -2425,9 +2950,9 @@ released.
 
 | Phase | Inhalt | Verhalten nach dem Merge |
 |---|---|---|
-| **PR1 „Fundament, verhaltensneutral"** | Diagnose (E25) vorher; Migration 073 inkl. aller neuen Spalten und `auto_closed`-Backfill; Modelle; Resolver mit Normalisierung (3.3); `ClampResult`/`uncredited`/`clamp_applies`/`not_credited_minutes`/`presence_minutes`; `net_hours` Python + SQL; Netto-Helfer und `validate_daily_break` mit Pflichtparameter; alle 13 Schreibpfade inkl. Ankersperren (P5); E39–E42 und 7.3; UserForm ohne Fenster-Abschnitt und ohne `scheduled_*` im Payload, 400 für Altfelder; Guard-Tests; E2E-Fixtures | Altfenster wirken als Einzelblock unverändert (`uncredited` immer 0, weil Einzelblöcke keine Lücke haben); Auto-Close kappt jetzt (E42). Altfenster sind bis PR3 nicht editierbar. |
-| **PR2 „Sichtbarkeit"** | `RawStampNote`, Journal-Summe, Export-Spalte, Anerkennen inkl. „Anrechnung beantragen", `PRESENCE_*`/`BREAK_IN_GAP`, 24-Wochen-Anwesenheit, StampWidget/Dashboard-Status, Profil-Endpunkt, Audit-Labels, Privacy-Text | wirkungslos, solange `uncredited` = 0; Hüllenminuten werden schon sichtbar |
-| **PR3 „Aktivierung"** | Schreibschemas mit Blöcken, `derive_targets`, Dialog/Editor, Vorschau per `POST` (untypisiert), Neukappung, Schutzpaket, Löschen, Sammelzeile bei jeder Änderung, Dashboard-Hinweise, F1-Klemmung, Plan-Hinweise. **Voraussetzung:** Antworten auf 19.1 | Blöcke und Lückenkappung aktiv |
+| **PR1 „Fundament, verhaltensneutral"** | Diagnose (E25) vorher; Migration 073 inkl. aller neuen Spalten (auch `clamp_grace_minutes`, E79) und `auto_closed`-Backfill, Downgrade aus der Hülle (E24); Modelle; Resolver mit Normalisierung (3.3); `ClampResult` mit `grace_minutes`/`grace_for_entry`/`uncredited`/`clamp_applies`/`not_credited_minutes`/`presence_minutes`; `net_hours` Python + SQL; Netto-Helfer und `validate_daily_break` mit Pflichtparameter (Segmente mit dem Puffer des Eintrags); alle 13 Schreibpfade inkl. Ankersperren (P5) und Puffer-Herkunft (E80: schreiben `clamp_grace_minutes`, Einzel-Neukappungen lesen ihn); E39–E42 und 7.3; UserForm ohne Fenster-Abschnitt und ohne `scheduled_*` im Payload, 400 für Altfelder; Guard-Tests; E2E-Fixtures | Altfenster wirken als Einzelblock unverändert (`uncredited` immer 0, weil Einzelblöcke keine Lücke haben); Auto-Close kappt jetzt (E42). Jeder neu gekappte Eintrag speichert seinen Puffer; eine spätere Puffer-Änderung wirkt bei Bearbeitungen nur noch auf Einträge ohne gespeicherten Wert (Bestand). Altfenster sind bis PR3 nicht editierbar. |
+| **PR2 „Sichtbarkeit"** | `RawStampNote`, Journal-Summe, Export-Spalte, Anerkennen inkl. „Anrechnung beantragen", `PRESENCE_*`/`BREAK_IN_GAP`, 24-Wochen-Anwesenheit, StampWidget/Dashboard-Status (`grace_minutes` des offenen Eintrags), Profil-Endpunkt, Audit-Labels, Privacy-Text, `clamp_grace_minutes` in Antworten, Art.-15/20- und §16-Notfallexport (15.3) | wirkungslos, solange `uncredited` = 0; Hüllenminuten werden schon sichtbar |
+| **PR3 „Aktivierung"** | Schreibschemas mit Blöcken, `derive_targets`, Dialog/Editor (Grundtyp-Beschriftungen nach 19.1 Nr. 7), Vorschau per `POST` (untypisiert), Neukappung (aktueller Puffer, schreibt `clamp_grace_minutes`), Schutzpaket mit Verkürzungskriterien (a)–(c) und `earliest_lossless_date`, Löschen inkl. „auf vorherigen Stand zurücksetzen" (`reset_body`/`reset_of_change_id`), Sammelzeile mit Saldo Δ bei jeder Änderung, Dashboard-Hinweise, F1-Klemmung mit `absence_credit_reductions`, Plan-Hinweise; Anpassung der Bestandstests mit rückwirkender Erhöhung (17.6). **Voraussetzung:** Antworten auf 19.1 — erfüllt (2026-10-08) | Blöcke und Lückenkappung aktiv; rückwirkende Soll-Erhöhungen (auch reine Wochenstunden-Änderungen) nur noch mit Schutzpaket (19 Nr. 4) |
 | **PR4 „Doku"** | fünf Doku-Flächen, `CLAUDE.md`, Screenshots, Release-Notes; pzweb als eigener PR | — |
 
 Release-Regeln: 1.20.0 erst nach PR1–PR4. PR3 nie ohne PR2 auf `master` (Lückenkappung
@@ -2447,8 +2972,8 @@ Rückwirkung sollte eine Fachanwältin für Arbeitsrecht mitlesen.
 |---|---|---|---|
 | Blöcke im datierten Snapshot, protokolliert | grün | grün | Migration/Backfill sauber (Abschnitt 5) |
 | Tagessoll = Σ Blöcke | grün/gelb | grün | „Pause innerhalb der Blöcke" klärt netto/brutto |
-| Rückwirkende Verlängerung mit Neukappung | gelb | gelb | Vorschau (Soll und Ist getrennt), Protokoll, MA-Hinweis. Nicht grün: im Block-Modell kann eine „Verlängerung" über das höhere Soll den Saldo senken (Umfangsänderung, die § 106 GewO nicht deckt) — offene Frage 19.1 Nr. 1 |
-| Rückwirkende **Verkürzung** mit Neukappung | **rot** (automatisch) | gelb | nur mit Schutzpaket (9.5); abgeschlossene Jahre gesperrt |
+| Rückwirkende Verlängerung mit Neukappung | gelb | gelb | Vorschau (Soll und Ist getrennt), Protokoll, MA-Hinweis; Verlängerung nur, wenn weder angerechnete Zeit noch Saldo noch eine Gutschrift sinken (9.4) — eine Saldo-Senkung über höheres Soll läuft seit 2026-10-08 über das Schutzpaket (9.5 (b)). Nicht grün: auch eine begünstigende rückwirkende Umfangsänderung bleibt vertraglich zustimmungsbedürftig (Hinweis 12.1/16.1) |
+| Rückwirkende **Verkürzung** mit Neukappung | **rot** (automatisch) | gelb | nur mit Schutzpaket (9.5, Kriterien (a) Eintrag, (b) Saldo, (c) Gutschrift; beim Anlegen und Löschen); abgeschlossene Jahre gesperrt |
 | Vorschau / Protokoll / Jahresabschluss-Warnung | grün | grün | Muster `_log_wh_change_retarget` |
 | Nichtanrechnung der Lücke | **rot** (still, ohne Freigabe) | gelb | Sichtbarkeit von Lücke **und** Hülle (P19; 13.1/13.2/15.1) + Anerkennen (13.3) + „Anrechnung beantragen" (P21) |
 
@@ -2462,7 +2987,7 @@ Rückwirkung sollte eine Fachanwältin für Arbeitsrecht mitlesen.
 | § 5 ArbZG | Ruhezeit ab tatsächlichem Ende | unverändert auf Rohstempel |
 | §§ 9/10 ArbZG | Blöcke gelten nicht an Sonn-/Feiertagen | `get_scheduled_blocks` → `[]` (E35, #484) |
 | § 611a Abs. 2, § 612 Abs. 1 BGB; §§ 1, 3, 17 MiLoG; § 2 Abs. 2 MiLoG (Arbeitszeitkonto); § 4 Abs. 4 TVG | angeordnete, gebilligte, geduldete oder zur Erledigung notwendige Arbeit ist zu vergüten (BAG 5 AZR 359/21); Kappung beseitigt den Anspruch nicht; auf Mindestlohn (und tarifliche Ansprüche) kann nicht wirksam verzichtet werden | Handbuch-Kasten (E76), Anerkennen (E66), „Anrechnung beantragen" (P21), MiLoG-Warnungen (9.5, P26), Bestätigungstexte je Grundtyp mit MiLoG-Verzichtssatz |
-| § 106 GewO | Lage der Arbeitszeit einseitig nur für die Zukunft, nach billigem Ermessen und mit angemessener Ankündigung; Vertrag kann sie festlegen; der **Umfang** ist nicht vom Direktionsrecht gedeckt | Standard „ab heute", rückwirkend nur mit Grund (E54); Zusatzwarnung bei „Sonstiges" (P26); Umfangsänderung: Hinweis 12.1/16.1, Schutzpaket-Frage 19.1 Nr. 1 |
+| § 106 GewO | Lage der Arbeitszeit einseitig nur für die Zukunft, nach billigem Ermessen und mit angemessener Ankündigung; Vertrag kann sie festlegen; der **Umfang** ist nicht vom Direktionsrecht gedeckt | Standard „ab ‹frühestes verlustfreies Datum›" (meist heute, P1), rückwirkend nur mit Grund (E54); Zusatzwarnung bei „Sonstiges" (P26); rückwirkende Umfangsänderung, die den Saldo senkt, ebenfalls nur mit Schutzpaket (9.5 (b), 19.1 Nr. 1); Hinweis 12.1/16.1 |
 | § 2 KSchG; §§ 8, 9, 12 Abs. 3 TzBfG | Umfangsänderung nur einvernehmlich oder per Änderungskündigung; Teilzeitregeln; Abrufarbeit mit 4 Tagen Ankündigung | Hinweis im Handbuch (16.1), Kurzfassung im Dialog (12.1) |
 | § 2 Abs. 1 Satz 2 Nr. 7, § 3 NachwG | vereinbarte Arbeitszeit und Ruhepausen sind wesentliche Vertragsbedingungen; Änderung spätestens am Tag des Wirksamwerdens schriftlich mitteilen | Hinweis im Dialog und Handbuch (12.1, 16.1); PraxisZeit prüft das nicht (19 Nr. 7) |
 | § 87 Abs. 1 Nr. 2, Nr. 3 und Nr. 6 BetrVG | Mitbestimmung bei Lage/Verteilung/Pausen, vorübergehender Änderung der betriebsüblichen Arbeitszeit und technischer Einrichtung (Kappung); ohne Zustimmung gegenüber den Beschäftigten unwirksam | fester Hinweis im Dialog (Kurzfassung) und Handbuch (volle Fassung), Wortlaut 12.1/16.1 |
@@ -2485,7 +3010,7 @@ Rückwirkung sollte eine Fachanwältin für Arbeitsrecht mitlesen.
 | 4 | §3/§4 zusätzlich auf Anwesenheit, kein Doppelabzug, Lücke nie automatisch genommene Pause beim Durchstempeln; Verstöße verschwinden weder aus Warnungen noch aus Berichten | E43–E45, P14, P22 |
 | 5 | Pufferregel an inneren Rändern | E5 |
 | 6 | Verlängerung: Vorschau, Protokoll, MA-Hinweis, Jahreswarnung, symmetrisches Löschen | E53, E55, E57, E68 |
-| 7 | Verkürzung: Schutzpaket, abgeschlossenes Jahr gesperrt | E54 |
+| 7 | Verkürzung: Schutzpaket, abgeschlossenes Jahr gesperrt | E54, E55, 9.5 (a)–(c), P13 |
 | 8 | Nicht angerechnete Anwesenheit sichtbar (Lücke und Hülle), Freigabeweg, Antragsweg der Beschäftigten | E64–E66, E70, P18, P19, P21; Warnschwelle → Ticket |
 | 9 | Ausnahmen (Sonn-/Feiertag, offen, `track_hours=false`, Beschäftigungsfenster) | E35, E49 |
 | 10 | Transparenz für Mitarbeitende | E67–E69, P20 |
@@ -2510,7 +3035,8 @@ UserResponse 210-229, UserListResponse 232-284; Login `auth.py:302`, Impersonati
 `app/schemas/working_hours_change.py:8-25, 28-56, 59-75, 78-150`; `app/main.py:209-220`;
 `services/signup_service.py:133-142`; `tests/conftest.py:128-270`;
 `app/models/change_request.py:65-69` (P21/P28: `request_credit_override`,
-`original_uncredited_minutes`); `app/models/time_entry.py` (`auto_closed`, P18).
+`original_uncredited_minutes`); `app/models/time_entry.py` (`auto_closed`, P18;
+`clamp_grace_minutes`, E79).
 
 **2 Kappung / Schreibpfade** — `services/work_window_service.py:15-21, 51-71, 74-78, 90-146,
 149-166, 169-177, 180-216`; `routers/time_entries.py:46-57, 60-85, 88-119, 165-205, 211-238,
@@ -2537,7 +3063,10 @@ Hybrid, nicht umbauen); `services/journal_service.py:205, 308-318`;
 (`_schedule_input_error`), `1736-2016` (Vorschau), `2019-2165` (Löschen);
 `calculation_service.py:139-238` (Segmente), `241-269` (`work_days_changed`), `272-349`
 (`retarget_window`), `352-518` (`retarget_absence_hours`), `560-644` (unverändert),
-`2475-2520` (Jahreswarnung); `routers/admin_helpers.py:79-107` (`lock_user_row`),
+`2475-2520` (Jahreswarnung), `352-372` (`AbsenceRetarget` + `f1_clamped`, `credit_reduction`; Parameter
+`old_full_target_by_date`), `1067`
+(`get_soll_cutoff_date`, Stichtag für 9.5 (b)), `1384-1420` (`get_monthly_target`/`_actual`
+für `saldo_delta_hours`); `routers/admin_helpers.py:79-107` (`lock_user_row`),
 `141-175`; `core/audit_integrity.py:43-53`; `models/time_entry_audit_log.py:28-39`;
 `routers/admin_time_entries.py:44-64` (Art.-9-Notizmaskierung).
 
