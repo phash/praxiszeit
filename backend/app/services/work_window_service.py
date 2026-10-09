@@ -323,6 +323,32 @@ def unclamp_input(
     return incoming
 
 
+def end_is_correction(
+    incoming: Optional[time], prev_eff: Optional[time], prev_raw: Optional[time],
+    auto_closed: bool,
+) -> bool:
+    """P18: Liefert eine Eingabe ein tatsächliches Ende, das das Kennzeichen
+    ``auto_closed`` aufhebt?
+
+    Nein, wenn sie das gespeicherte wirksame Ende unverändert zurückschickt
+    (Formular, siehe ``unclamp_input``) — und nein, wenn sie bei einem
+    automatisch geschlossenen Eintrag dessen Rohende zurückschickt: 23:59 ist
+    dort kein Stempel. Review Task 8: die Waiver-Rückfrage der MA-Route füllt
+    ein fehlendes Ende mit dem Rohwert auf, die Genehmigung hielt das für ein
+    eingetragenes Ende und machte aus dem synthetischen 23:59 einen echten
+    Stempel (Hülle bis 23:59 „nicht angerechnet", Anerkennen 08:00–23:59).
+    Ein Eintrag ohne Blöcke (``raw`` None, Ende 23:59) fällt schon unter den
+    ersten Vergleich. Ein ``None``-Ende gilt hier als Änderung; ob ein
+    fehlendes bzw. ``None``-Ende überhaupt geprüft wird, entscheidet der
+    Aufrufer. Dieselbe Regel gilt in allen drei Schreibpfaden (MA-Route,
+    Admin-Bearbeitung, Antragsgenehmigung)."""
+    if incoming == prev_eff:
+        return False
+    if auto_closed and prev_raw is not None and incoming == prev_raw:
+        return False
+    return True
+
+
 def not_credited_minutes(entry) -> int:
     """P19: nicht angerechnete Anwesenheit eines Eintrags = ``uncredited_minutes``
     + von der Hülle gekappte Minuten (``eff_start − raw_start``,

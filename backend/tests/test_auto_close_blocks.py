@@ -3,6 +3,8 @@ import datetime as dt
 from datetime import date, time
 from decimal import Decimal
 
+import pytest
+
 from app.models import ChangeRequest, TimeEntry, TimeEntryAuditLog
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.models.system_setting import SystemSetting
@@ -198,3 +200,92 @@ def test_cr_update_unchanged_end_keeps_flag(_db_session, employee_user, admin_cl
     _approve_update_cr(_db_session, admin_client, employee_user, e, time(18, 15))
     _db_session.refresh(e)
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
+
+
+# Review Task 8 (P18): das Rohende 23:59 eines automatisch geschlossenen Eintrags
+# ist kein Stempel — wer es zurückschickt, korrigiert nichts. Sonst wüsche jeder
+# Pfad, der den Rohwert mitführt, das synthetische 23:59 zu einem echten Stempel
+# (``not_credited_minutes`` zählte die Hülle bis 23:59, Anerkennen rechnete
+# 08:00–23:59 an). Die Waiver-Rückfrage der MA-Route füllt ein fehlendes Ende
+# selbst auf — dort entstand der Antrag ganz ohne Eingabe.
+
+def test_waiver_cr_without_end_keeps_flag(_db_session, employee_user, admin_client):
+    employee_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
+    _db_session.add(SystemSetting(key="break_exception_requires_approval", value="true",
+                                  tenant_id=DEFAULT_TENANT_ID))
+    _db_session.commit()
+    e = _open(_db_session, employee_user)
+    _auto_close_directly(_db_session, e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(17, 15), time(23, 59), True)
+    # Nur Notiz + Ausnahmegrund; §4 (9:15 h ohne Pause) verlangt die Ausnahme,
+    # der Mandant die Genehmigung → 202 + Antrag.
+    resp = admin_client.put(f"/api/time-entries/{e.id}", json={
+        "note": "nachgetragen", "break_waiver_reason": "Notfall"})
+    assert resp.status_code == 202, resp.text
+    cr = _db_session.query(ChangeRequest).filter(ChangeRequest.time_entry_id == e.id).one()
+    # Der Antrag behauptet kein Ende 23:59, das niemand eingetragen hat.
+    assert cr.proposed_end_time == time(17, 15)
+    resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(17, 15), time(23, 59), True)
+
+
+def test_cr_update_raw_end_keeps_flag(_db_session, employee_user, admin_client):
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = _open(_db_session, employee_user)
+    _auto_close_directly(_db_session, e)
+    _approve_update_cr(_db_session, admin_client, employee_user, e, time(23, 59))
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
+
+
+def test_employee_route_raw_end_keeps_flag(_db_session, employee_user, admin_client):
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = _open(_db_session, employee_user)
+    _auto_close_directly(_db_session, e)
+    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"end_time": "23:59"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
+
+
+def test_admin_route_raw_end_keeps_flag(_db_session, employee_user, admin_client):
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = _open(_db_session, employee_user)
+    _auto_close_directly(_db_session, e)
+    resp = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"end_time": "23:59"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
+
+
+def test_raw_end_of_regular_entry_is_still_a_correction(_db_session, employee_user, admin_client):
+    """Gegenprobe: ohne ``auto_closed`` ist der Rohwert ein echter Stempel — ihn
+    erneut einzutragen bleibt eine gewöhnliche Eingabe (kein Kennzeichen)."""
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                  start_time=time(8, 0), end_time=time(18, 15), raw_end_time=time(19, 0),
+                  break_minutes=0, uncredited_minutes=150)
+    _db_session.add(e)
+    _db_session.commit()
+    _approve_update_cr(_db_session, admin_client, employee_user, e, time(19, 0))
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(19, 0), False)
+
+
+@pytest.mark.parametrize("incoming, eff, raw, auto_closed, expected", [
+    (time(18, 15), time(18, 15), time(23, 59), True, False),   # Formular schickt wirksames Ende
+    (time(23, 59), time(18, 15), time(23, 59), True, False),   # Rohende 23:59 zurück (P18)
+    (time(17, 0), time(18, 15), time(23, 59), True, True),     # echtes Ende eingetragen
+    (time(23, 59), time(23, 59), None, True, False),           # ohne Blöcke: 23:59 = wirksam
+    (None, time(23, 59), None, True, True),                    # Ende entfernt: Aufrufer entscheidet
+    (time(19, 0), time(18, 15), time(19, 0), False, True),     # Rohwert eines echten Stempels
+])
+def test_end_is_correction(incoming, eff, raw, auto_closed, expected):
+    from app.services.work_window_service import end_is_correction
+    assert end_is_correction(incoming, eff, raw, auto_closed) is expected

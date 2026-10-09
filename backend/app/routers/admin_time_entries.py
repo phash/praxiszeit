@@ -460,7 +460,12 @@ def admin_update_time_entry(
     # P18: VOR dem Überschreiben festhalten — ``entry.end_time`` trägt hier noch
     # das gespeicherte wirksame Ende. Nur ein ANDERES Ende ist eine echte
     # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit.
-    _end_corrected = entry_data.end_time is not None and entry_data.end_time != entry.end_time
+    # Das Rohende 23:59 eines automatisch geschlossenen Eintrags ist kein Stempel
+    # und ebenfalls keine Korrektur (Review Task 8, gleiche Regel wie MA-Route
+    # und Antragsgenehmigung).
+    _end_corrected = entry_data.end_time is not None and work_window_service.end_is_correction(
+        entry_data.end_time, entry.end_time, entry.raw_end_time, entry.auto_closed,
+    )
 
     # Apply only provided updates (always write clamped effective times).
     # Release-Review 1.16.0: ein Datumswechsel ändert das Soll-Fenster des Tages und

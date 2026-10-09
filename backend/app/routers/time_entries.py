@@ -1113,6 +1113,8 @@ def update_time_entry(
         # can preserve it when start/end are not part of this partial update.
         "raw_start_time": entry.raw_start_time,
         "raw_end_time": entry.raw_end_time,
+        # P18: ob 23:59 im Rohende ein synthetischer Wert des Auto-Close ist.
+        "auto_closed": entry.auto_closed,
     }
 
     # Update fields
@@ -1159,8 +1161,13 @@ def update_time_entry(
         entry.start_time if "start_time" in update_data
         else (orig_snapshot["raw_start_time"] or orig_snapshot["start_time"])
     )
+    # P18 (Review Task 8): beim automatisch geschlossenen Eintrag ist das
+    # Rohende 23:59 kein Stempel — der Antrag trägt dann das wirksame Ende und
+    # behauptet kein Ende, das niemand eingetragen hat. Die Genehmigung stellt
+    # über ``unclamp_input`` das Rohende 23:59 trotzdem wieder her.
     _intended_end = (
         entry.end_time if "end_time" in update_data
+        else orig_snapshot["end_time"] if orig_snapshot["auto_closed"]
         else (orig_snapshot["raw_end_time"] or orig_snapshot["end_time"])
     )
 
@@ -1237,9 +1244,14 @@ def update_time_entry(
     # P18: nur ein ANDERES Ende als das gespeicherte wirksame ist eine echte
     # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit
     # (``unclamp_input`` rechnet dann mit dem synthetischen 23:59 weiter, das
-    # Kennzeichen bleibt). Nie über die generische ``setattr``-Schleife oben —
-    # ``auto_closed`` ist kein Schemafeld (E11).
-    if "end_time" in update_data and update_data["end_time"] != orig_snapshot["end_time"]:
+    # Kennzeichen bleibt). Ebenso wenig das zurückgeschickte Rohende 23:59
+    # eines automatisch geschlossenen Eintrags (Review Task 8). Nie über die
+    # generische ``setattr``-Schleife oben — ``auto_closed`` ist kein
+    # Schemafeld (E11).
+    if "end_time" in update_data and work_window_service.end_is_correction(
+        update_data["end_time"], orig_snapshot["end_time"],
+        orig_snapshot["raw_end_time"], orig_snapshot["auto_closed"],
+    ):
         entry.auto_closed = False
 
     exempt = _entry_owner.exempt_from_arbzg

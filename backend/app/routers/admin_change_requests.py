@@ -606,7 +606,12 @@ def review_change_request(
             # P18: VOR dem Überschreiben festhalten — nur ein ANDERES Ende als das
             # gespeicherte wirksame ist eine echte Korrektur; ein Antrag, der nur
             # Pause oder Notiz ändert, schickt das wirksame Ende unverändert mit.
-            _end_corrected = cr.proposed_end_time is not None and cr.proposed_end_time != entry.end_time
+            # Das Rohende 23:59 eines automatisch geschlossenen Eintrags ist kein
+            # Stempel und damit ebenfalls keine Korrektur (Review Task 8) —
+            # ``unclamp_input`` rechnet es oben unverändert mit.
+            _end_corrected = cr.proposed_end_time is not None and work_window_service.end_is_correction(
+                cr.proposed_end_time, entry.end_time, entry.raw_end_time, entry.auto_closed,
+            )
             entry.date = cr.proposed_date
             entry.start_time = eff_start
             entry.end_time = eff_end
