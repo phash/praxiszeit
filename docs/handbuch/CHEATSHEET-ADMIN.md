@@ -110,6 +110,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 - **Aus** (Standard): Mitarbeiter buchen Urlaub direkt
 - **Ein**: Urlaub landet als „Offen" zur Genehmigung
 
+**Arbeitstage** auf der Karte = was die Genehmigung kostet: nur Arbeitstage laut Tagesplan zum jeweiligen Datum (4-Tage-Woche, Mi frei: Mo–Fr = 4), ohne Wochenende/Feiertag/„frei"-Sondertag; Halbtag und „halber Feiertag" je 0,5
 **Genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen
 **Ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
 **Stornieren:** Filter „Genehmigt" → Antrag → **„Urlaub stornieren"** (nur wenn Zeitraum noch nicht begonnen) → Abwesenheiten werden **automatisch entfernt**, Antrag wird „Zurückgezogen"

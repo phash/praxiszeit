@@ -3,12 +3,12 @@
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-from app.models import User, UserRole, ChangeRequest, TimeEntryAuditLog
+from app.models import User, UserRole, ChangeRequest, TimeEntryAuditLog, WorkingHoursChange
 from app.models.vacation_request import VacationRequest
 from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.schemas.vacation_request import VacationRequestResponse
-from app.services.calculation_service import count_workdays
+from app.services.calculation_service import request_day_count
 
 
 # ── Anker-Sperre auf Benutzerzeilen ──────────────────────────────────────────
@@ -288,6 +288,23 @@ def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse
     )
     user_map = {u.id: u for u in users}
 
+    # #496: Vertrags-Historie der ANTRAGSTELLENDEN einmal fuer die ganze Liste
+    # laden (die Tage-Zaehlung loest den Tagesplan je Datum auf, #431) — sonst
+    # eine Abfrage je Tag und Antrag. F-026: tenant-gefiltert wie oben.
+    requester_ids = {vr.user_id for vr in vrs}
+    wh_by_user: dict = {}
+    for change in (
+        db.query(WorkingHoursChange)
+        .filter(
+            WorkingHoursChange.user_id.in_(requester_ids),
+            WorkingHoursChange.tenant_id.in_(tenant_ids),
+        )
+        .order_by(WorkingHoursChange.effective_from)
+        .all()
+    ):
+        wh_by_user.setdefault(change.user_id, []).append(change)
+    year_cache: dict = {}
+
     results = []
     for vr in vrs:
         resp = VacationRequestResponse.model_validate(vr)
@@ -305,8 +322,16 @@ def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse
             if modifier:
                 resp.last_modifier_first_name = modifier.first_name
                 resp.last_modifier_last_name = modifier.last_name
-        end = vr.end_date if vr.end_date else vr.date
-        resp.days = count_workdays(db, vr.date, end, tenant_id=vr.tenant_id)
+        # #496: dieselbe Regel wie Genehmigung + Budget-Vorpruefung (Tagesplan je
+        # Datum, Halbtag 0,5, freie/halbe Sondertage) — vorher stumpf Mo–Fr, die
+        # Admin sah bei einer 4-Tage-Kraft „5 Tage", gebucht wurden 4.
+        if user:
+            end = vr.end_date if vr.end_date else vr.date
+            resp.days = float(request_day_count(
+                db, user, vr.date, end, bool(vr.half_day),
+                wh_changes=[c for c in wh_by_user.get(user.id, []) if c.tenant_id == user.tenant_id],
+                year_cache=year_cache,
+            ))
         results.append(resp)
     return results
 

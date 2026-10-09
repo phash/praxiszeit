@@ -12,7 +12,7 @@ import AbsenceBadge from '../components/AbsenceBadge';
 import { useTypeColorsStore } from '../stores/typeColorsStore';
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
-import { parseHours, formatHoursHM } from '../utils/formatters';
+import { parseHours, formatHoursHM, formatDayCount } from '../utils/formatters';
 import { getSpecialDayInfo, type SpecialDaySettings } from '../utils/specialDays';
 import { myReasons, type AbsenceReason } from '../api/absenceReasons';
 import MonthSelector from '../components/MonthSelector';
@@ -422,7 +422,7 @@ export default function AbsenceCalendarPage() {
                       <p className="text-sm font-medium text-gray-900 mt-1">
                         {format(new Date(vr.date + 'T00:00:00'), 'dd.MM.yyyy')}
                         {vr.end_date && ` – ${format(new Date(vr.end_date + 'T00:00:00'), 'dd.MM.yyyy')}`}
-                        {' · '}{vr.days != null ? `${vr.days} Tag${vr.days !== 1 ? 'e' : ''}` : `${vr.hours} h/Tag`}
+                        {' · '}{vr.days != null ? formatDayCount(vr.days) : `${vr.hours} h/Tag`}
                       </p>
                       {vr.note && <p className="text-sm text-gray-500 mt-0.5">{vr.note}</p>}
                       {vr.last_modified_by && vr.user_id && vr.last_modified_by !== vr.user_id && vr.last_modified_at && (

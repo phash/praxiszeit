@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -337,5 +337,24 @@ describe('formatWeeklyHoursChanges (#415)', () => {
         { effective_from: '2026-03-16', weekly_hours: 40, work_days_changed: true },
       ]),
     ).toBe('ab 16.03.2026: 40,0 Std/Woche');
+  });
+});
+
+describe('formatDayCount (#496)', () => {
+  it('uses the singular only for exactly one day', () => {
+    expect(formatDayCount(1)).toBe('1 Tag');
+    expect(formatDayCount(4)).toBe('4 Tage');
+    expect(formatDayCount(0)).toBe('0 Tage');
+  });
+
+  it('writes fractions with a German decimal comma', () => {
+    // Halbtag = 0,5; halber Feiertag (24./31.12.) = 0,5; beides zusammen = 0,25.
+    expect(formatDayCount(0.5)).toBe('0,5 Tage');
+    expect(formatDayCount(3.5)).toBe('3,5 Tage');
+    expect(formatDayCount(0.25)).toBe('0,25 Tage');
+  });
+
+  it('does not leak float noise', () => {
+    expect(formatDayCount(0.1 + 0.2)).toBe('0,3 Tage');
   });
 });

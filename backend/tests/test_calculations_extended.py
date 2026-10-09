@@ -356,35 +356,46 @@ def test_vacation_account_mid_month_day_accurate(db):
 
 
 # ============================================================
-# count_workdays
+# request_workday_candidates (#496: Nachfolger von count_workdays)
 # ============================================================
 
-def test_count_workdays_simple_week(db):
-    """Prüft dass eine volle Woche Mo-Fr ohne Feiertage 5 Werktage ergibt."""
-    result = calculation_service.count_workdays(db, date(2026, 3, 9), date(2026, 3, 13))
-    assert result == 5
+def _candidates(db, start, end):
+    return calculation_service.request_workday_candidates(db, DEFAULT_TENANT_ID, start, end)
 
 
-def test_count_workdays_excludes_holiday(db):
-    """Prüft dass Feiertage von den Werktagen abgezogen werden — wichtig für Urlaubsberechnung."""
+def test_request_candidates_simple_week(db):
+    """Prüft dass eine volle Woche Mo-Fr ohne Feiertage 5 Kandidaten-Tage ergibt."""
+    assert len(_candidates(db, date(2026, 3, 9), date(2026, 3, 13))) == 5
+
+
+def test_request_candidates_exclude_holiday(db):
+    """Prüft dass Feiertage von den Kandidaten-Tagen abgezogen werden — wichtig für Urlaubsberechnung."""
     h = PublicHoliday(date=date(2026, 3, 11), name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID)
     db.add(h)
     db.commit()
-    result = calculation_service.count_workdays(db, date(2026, 3, 9), date(2026, 3, 13))
-    assert result == 4
+    result = _candidates(db, date(2026, 3, 9), date(2026, 3, 13))
+    assert len(result) == 4
+    assert date(2026, 3, 11) not in result
 
 
-def test_count_workdays_excludes_weekends(db):
-    """Prüft dass Sa/So nicht als Werktage gezählt werden — nur Mo zählt im Sa-Mo-Bereich."""
+def test_request_candidates_ignore_foreign_tenant_holiday(db):
+    """F-026: der Feiertag eines FREMDEN Mandanten nimmt keinen Tag heraus."""
+    import uuid
+    h = PublicHoliday(date=date(2026, 3, 11), name="Fremd", year=2026, tenant_id=uuid.uuid4())
+    db.add(h)
+    db.commit()
+    assert len(_candidates(db, date(2026, 3, 9), date(2026, 3, 13))) == 5
+
+
+def test_request_candidates_exclude_weekends(db):
+    """Prüft dass Sa/So keine Kandidaten sind — nur Mo zählt im Sa-Mo-Bereich."""
     # Sa 14.03. + So 15.03. + Mo 16.03. → nur Montag zählt
-    result = calculation_service.count_workdays(db, date(2026, 3, 14), date(2026, 3, 16))
-    assert result == 1
+    assert _candidates(db, date(2026, 3, 14), date(2026, 3, 16)) == [date(2026, 3, 16)]
 
 
-def test_count_workdays_cross_month(db):
+def test_request_candidates_cross_month(db):
     """Prüft dass monatsübergreifende Berechnung korrekt funktioniert — kein Off-by-One."""
-    result = calculation_service.count_workdays(db, date(2026, 3, 30), date(2026, 4, 3))
-    assert result == 5
+    assert len(_candidates(db, date(2026, 3, 30), date(2026, 4, 3))) == 5
 
 
 # ============================================================

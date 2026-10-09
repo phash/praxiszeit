@@ -83,7 +83,9 @@ class VacationRequestResponse(BaseModel):
     date: date
     end_date: Optional[date] = None
     hours: float
-    days: Optional[float] = None  # Number of workdays (excluding weekends/holidays)
+    # #496: Tage, die der Antrag kostet — Regel der Buchung (Tagesplan je Datum,
+    # Halbtag 0,5, freie/halbe Sondertage), siehe calculation_service.request_day_count.
+    days: Optional[float] = None
     absence_type: str = "vacation"
     half_day: bool = False  # #167
     note: Optional[str] = None
