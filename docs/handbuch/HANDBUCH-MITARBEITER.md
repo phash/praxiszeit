@@ -336,7 +336,7 @@ Statt direkt eingetragen zu werden, erscheint die Meldung: **„Urlaubsantrag ge
 
 Die App wechselt automatisch zum Tab **„Meine Anträge"**, wo Sie den Status verfolgen können.
 
-Neben dem Zeitraum steht, wie viele **Tage** der Antrag kostet. Gezählt werden nur Ihre Arbeitstage – arbeiten Sie z. B. mittwochs nicht, kostet eine Woche Montag bis Freitag 4 Tage. Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht; ein halber Tag und ein als „halber Feiertag" eingestellter 24./31.12. zählen je **0,5**. Dieselbe Zahl sieht Ihr Administrator bei der Entscheidung, und genau so viele Urlaubstage werden nach der Genehmigung von Ihrem Konto abgezogen.
+Neben dem Zeitraum steht, wie viele **Tage** der Antrag kostet. Gezählt werden nur Ihre Arbeitstage – arbeiten Sie z. B. mittwochs nicht, kostet eine Woche Montag bis Freitag 4 Tage. Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht; ein halber Tag und ein als „halber Feiertag" eingestellter 24./31.12. zählen je **0,5**. Dieselbe Zahl sieht Ihr Administrator bei der Entscheidung. Bei einem Urlaubsantrag werden genau so viele Urlaubstage nach der Genehmigung von Ihrem Konto abgezogen.
 
 **Statusbedeutungen:**
 

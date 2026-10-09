@@ -389,7 +389,7 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 - Es zählen nur Tage, an denen die Person laut ihrem **zum jeweiligen Datum gültigen** Arbeitsplan arbeitet. Bei einer 4-Tage-Woche mit freiem Mittwoch kostet eine Woche Montag bis Freitag **4** Tage, nicht 5. Liegt im Zeitraum eine Stundenänderung, gilt für jeden Tag der Plan, der an diesem Tag gültig ist.
 - Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht.
 - Ein **halber Tag** zählt **0,5**; ein als **„halber Feiertag"** eingestellter 24./31.12. ebenfalls **0,5**.
-- Tage nach einem inzwischen eingetragenen **letzten Arbeitstag** zählen nicht mit.
+- Tage nach einem inzwischen eingetragenen **letzten Arbeitstag** zählen nicht mit – ein solcher Antrag lässt sich so aber nicht mehr genehmigen (Fehlermeldung „Datum liegt nach dem letzten Arbeitstag"). Kürzen Sie ihn vorher über **„Bearbeiten"** auf den Beschäftigungszeitraum.
 
 Dieselbe Zahl sehen Mitarbeitende im Tab **„Meine Anträge"**. Bis Version 1.19.3 zählte die Anzeige stumpf Montag bis Freitag ohne Feiertage und widersprach damit bei Teilzeitkräften mit Tagesplan, bei Halbtagen und bei freien Sondertagen dem, was die Genehmigung danach verbucht.
 

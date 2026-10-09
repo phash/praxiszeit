@@ -200,7 +200,7 @@ def review_vacation_request(
     # Check vacation budget only for VACATION type (per year for cross-year requests)
     if absence_type == AbsenceType.VACATION:
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
-        # ``is_vacation_billable_day`` (F-026: tenant-gefiltert).
+        # ``get_schedule_for_date`` (F-026: tenant-gefiltert).
         wh_changes = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == target_user.id,
             WorkingHoursChange.tenant_id == target_user.tenant_id,

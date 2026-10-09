@@ -354,3 +354,99 @@ class TestListQueryCost:
         # Nov Mo–Fr = 4 (Mi frei), Dez Mo–Do = 3 (Mi frei).
         assert sorted(x["days"] for x in r.json()) == [3, 3, 3, 4, 4, 4]
         assert count["n"] == 1, f"erwartet 1 Historien-Abfrage, gemessen {count['n']}"
+
+
+# ── 0-Stunden-Zeitraum im gleichmaessigen Modus (Review 496-R1) ──────────────
+
+def _zero_hours_from(db, emp, effective_from):
+    """Gleichmaessiger Modus, ab ``effective_from`` 0 h/Woche (z. B. Elternzeit).
+    ``weekly_hours`` darf 0 sein (Schema ge=0 auf User und WorkingHoursChange)."""
+    db.add(WorkingHoursChange(
+        user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+        effective_from=effective_from, weekly_hours=Decimal("0"),
+        use_daily_schedule=False, work_days_per_week=5,
+    ))
+    db.commit()
+
+
+class TestZeroHoursUniformPeriod:
+    """Die Buchungsschleife der Genehmigung ueberspringt bei ``track_hours``
+    jeden Tag mit Tagessoll 0 — in BEIDEN Modi. ``is_vacation_billable_day``
+    kennt im gleichmaessigen Modus dagegen eine Abkuerzung (``True``), die nur
+    stimmt, solange ``weekly_hours > 0``. Bei einem 0-h-Zeitraum zeigte der
+    Antrag deshalb „5 Tage", gebucht wurde nichts, und die Vorpruefung verlangte
+    Budget fuer Tage, die nie verbraucht werden."""
+
+    def test_display_is_zero_and_approval_books_nothing(self, db, admin):
+        emp = _make_user(db, "parental")
+        _zero_hours_from(db, emp, date(2026, 11, 1))
+        vr = _pending(db, emp, NOV_MON, NOV_FRI)
+
+        assert _admin_days(db, admin, vr) == 0
+        assert _own_days(db, emp, vr) == 0
+
+        _approve(db, admin, vr)
+        assert db.query(Absence).filter(Absence.user_id == emp.id).count() == 0
+
+    def test_partial_zero_period_counts_only_the_booked_days(self, db, admin):
+        """0 h ab Mi 04.11.: Mo/Di werden gebucht, Mi–Fr nicht → 2 Tage."""
+        emp = _make_user(db, "parental2")
+        _zero_hours_from(db, emp, NOV_WED)
+        vr = _pending(db, emp, NOV_MON, NOV_FRI)
+
+        shown = _admin_days(db, admin, vr)
+        approved = _approve(db, admin, vr)
+
+        assert shown == approved["days"] == 2
+        booked = {a.date for a in db.query(Absence).filter(Absence.user_id == emp.id)}
+        assert booked == {NOV_MON, date(2026, 11, 3)}
+        assert calculation_service.get_vacation_account(db, emp, 2026)["used_days"] == pytest.approx(shown)
+
+    def test_approval_precheck_does_not_demand_budget_for_zero_days(self, db, admin):
+        """3 Resttage, Antrag Mo–Fr mit 0 h ab Mi: verbraucht werden 2 — die
+        Vorpruefung der Genehmigung darf nicht mit „nicht genuegend
+        Urlaubstage" (5 > 3) ablehnen."""
+        emp = _make_user(db, "parental3", vacation_days=3)
+        _zero_hours_from(db, emp, NOV_WED)
+        assert calculation_service.get_vacation_account(db, emp, 2026)["remaining_days"] == pytest.approx(3)
+        vr = _pending(db, emp, NOV_MON, NOV_FRI)
+
+        approved = _approve(db, admin, vr)
+
+        assert approved["status"] == VacationRequestStatus.APPROVED.value
+        assert calculation_service.get_vacation_account(db, emp, 2026)["remaining_days"] == pytest.approx(1)
+
+    def test_create_precheck_does_not_demand_budget_for_zero_days(self, db, admin):
+        """Dieselbe Regel beim Anlegen des Antrags (``POST /vacation-requests``)."""
+        _set(db, "vacation_approval_required", "true")
+        emp = _make_user(db, "parental4", vacation_days=3)
+        _zero_hours_from(db, emp, NOV_WED)
+
+        r = _client_as(db, emp).post("/api/vacation-requests/", json={
+            "date": NOV_MON.isoformat(), "end_date": NOV_FRI.isoformat(), "hours": 8.0,
+        })
+        _app.dependency_overrides.clear()
+
+        assert r.status_code == 201, r.text
+        assert r.json()["days"] == 2
+
+    def test_helper_counts_zero_hour_uniform_days_as_zero(self, db, default_tenant):
+        emp = _make_user(db, "parental5")
+        _zero_hours_from(db, emp, NOV_WED)
+        days = calculation_service.request_workday_candidates(db, DEFAULT_TENANT_ID, NOV_MON, NOV_FRI)
+        assert calculation_service.vacation_day_cost_by_year(db, emp, days, False) == {2026: Decimal("2")}
+
+    def test_edit_precheck_does_not_demand_budget_for_zero_days(self, db, admin):
+        """Und beim Bearbeiten (``PATCH /vacation-requests/{id}``): Antrag Mo
+        auf Mo–Fr verlaengert, 0 h ab Mi, 3 Resttage → kostet 2, kein 400."""
+        emp = _make_user(db, "parental6", vacation_days=3)
+        _zero_hours_from(db, emp, NOV_WED)
+        vr = _pending(db, emp, NOV_MON)
+
+        r = _client_as(db, emp).patch(f"/api/vacation-requests/{vr.id}", json={
+            "end_date": NOV_FRI.isoformat(),
+        })
+        _app.dependency_overrides.clear()
+
+        assert r.status_code == 200, r.text
+        assert r.json()["days"] == 2

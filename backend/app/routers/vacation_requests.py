@@ -150,7 +150,7 @@ def apply_vacation_request_patch(
             db, vr.tenant_id, new_date, effective_end, year_cache=year_cache
         )
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
-        # ``is_vacation_billable_day`` (F-026: tenant-gefiltert).
+        # ``get_schedule_for_date`` (F-026: tenant-gefiltert).
         wh_changes = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == target_user.id,
             WorkingHoursChange.tenant_id == target_user.tenant_id,
@@ -282,7 +282,7 @@ def create_vacation_request(
             db, current_user.tenant_id, start_date, end_date, year_cache=year_cache
         )
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
-        # ``is_vacation_billable_day`` (F-026: tenant-gefiltert).
+        # ``get_schedule_for_date`` (F-026: tenant-gefiltert).
         wh_changes = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == current_user.id,
             WorkingHoursChange.tenant_id == current_user.tenant_id,

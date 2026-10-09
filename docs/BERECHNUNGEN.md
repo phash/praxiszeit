@@ -524,14 +524,35 @@ Beim Anlegen eines Urlaubs/Antrags wird **tagebasiert** geprüft:
 benötigte_Tage = Σ über buchbare Arbeitstage d von
                    [ (0,5 wenn Halbtag-Antrag, sonst 1,0) × half_special_day_weight(d) ]
 ```
-„Buchbare Arbeitstage" = Werktage im Zeitraum mit Tagessoll > 0 (Feiertage/Wochenenden/
-Null-Soll-Tage zählen nicht). Ein 3-Tage-Teilzeit-MA, der „eine ganze Woche" Urlaub nimmt,
-verbraucht so nur **3** Urlaubstage. Der Faktor `half_special_day_weight(d)` ist **derselbe
-zentrale Helper** wie in §8.2/§12.2: ein Antragstag, der auf einen als „Halbtag" konfigurierten
-24./31.12. fällt, trägt nur **0,5** statt 1,0 zum Bedarf bei (Vollzeit-Woche mit 24.12.-Halbtag →
-`1,0 + 1,0 + 0,5 = 2,5`). Alle vier Buchungspfade (`absences`, `vacation_requests` ×2,
-`admin_change_requests`) wenden ihn an. Dieser Check ist **hart** (400 bei Überziehung) — anders
-als die Betriebsferien-Buchung (§9.5), die bewusst nicht cappt.
+„Buchbare Arbeitstage" = Werktage im Zeitraum ohne gesetzliche Feiertage und ohne als `free`
+konfigurierte Sondertage (24./31.12., AC-11), an denen die Person laut dem **zum Datum
+aufgelösten** Vertrags-Snapshot (#431) ein Tagessoll > 0 hat. Wochenenden, Feiertage, `free`-
+Sondertage und Null-Soll-Tage zählen nicht — auch nicht ein Zeitraum, in dem die Wochenstunden
+auf 0 gesetzt sind (z. B. Elternzeit). Ausnahme: ohne Stundenzählung (`track_hours=False`,
+leitende Angestellte, #191) zählt jeder dieser Werktage. Ein 3-Tage-Teilzeit-MA, der „eine
+ganze Woche" Urlaub nimmt, verbraucht so nur **3** Urlaubstage. Der Faktor
+`half_special_day_weight(d)` ist **derselbe zentrale Helper** wie in §8.2/§12.2: ein Antragstag,
+der auf einen als „Halbtag" konfigurierten 24./31.12. fällt, trägt nur **0,5** statt 1,0 zum
+Bedarf bei (Vollzeit-Woche mit 24.12.-Halbtag → `1,0 + 1,0 + 0,5 = 2,5`).
+
+Geprüft wird an allen fünf Buchungspfaden: Direktbuchung (`absences.create_absence`), Antrag
+anlegen und bearbeiten (`vacation_requests` ×2), Antrags-Genehmigung
+(`admin_vacations.review_vacation_request`) und Änderungsantrag (`admin_change_requests`). Die
+drei Antragspfade (Anlegen, Bearbeiten, Genehmigen) teilen sich dafür die Helper
+`request_workday_candidates` (Kandidaten-Tage — genau die Tage, die die Genehmigung danach
+bucht) und `vacation_day_cost_by_year` (Kosten je Kalenderjahr, #496). Direktbuchung und
+Änderungsantrag entscheiden den Arbeitstag über `is_vacation_billable_day`; dessen Abkürzung im
+gleichmäßigen Modus (jeder Werktag zählt) weicht nur in einem Zeitraum mit 0 Wochenstunden von
+der Regel ab — dort verlangt die Prüfung Budget für Tage, die danach nicht gebucht werden
+(bekannte Restschuld). Dieser Check ist **hart** (400 bei Überziehung) — anders als die
+Betriebsferien-Buchung (§9.5), die bewusst nicht cappt.
+
+Die Anzeige „Arbeitstage" am Antrag (Admin-Liste „Abwesenheitsanträge" und „Meine Anträge")
+nutzt dieselbe Regel (`request_day_count`) und blendet zusätzlich Tage außerhalb des
+Beschäftigungsfensters aus (#496) — ein offener Antrag kann älter sein als ein später gesetzter
+Austritt. Genehmigen lässt sich ein solcher Antrag erst, wenn er auf den Beschäftigungszeitraum
+gekürzt ist (die Genehmigung lehnt einen Zeitraum vor `first_work_day` oder über
+`last_work_day` hinaus mit 400 ab).
 
 ---
 
