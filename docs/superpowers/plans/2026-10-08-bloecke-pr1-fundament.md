@@ -7477,8 +7477,13 @@ die Prod-Kopie auf 072 und einmal mit dem PR1-Code gegen dieselbe Kopie auf
 Nutzt nur Funktionen, die es in 1.19.3 und nach PR1 gleichlautend gibt.
 Aufruf im Backend-Image, Arbeitsverzeichnis = Backend der jeweiligen Version:
     python /probe/probe_073.py > /out/<name>.json
+
+``PROBE_TODAY`` (ISO-Datum, optional) hält „heute" für alle Läufe eines Vergleichs
+fest — sonst verschiebt ein Lauf über Mitternacht (Europe/Berlin) das Ende des
+Zeitraums, und der Vergleich meldet eine Abweichung, die keine ist.
 """
 import json
+import os
 import sys
 from datetime import date, timedelta
 
@@ -7500,7 +7505,7 @@ def _months(first: date, last: date):
 def main() -> None:
     db = SessionLocal()
     set_superadmin_context(db)
-    today = today_local()
+    today = date.fromisoformat(os.environ["PROBE_TODAY"]) if os.environ.get("PROBE_TODAY") else today_local()
     result = {}
     for user in db.query(User).filter(User.tenant_id.isnot(None)).order_by(User.id).all():
         entries = (
@@ -7539,8 +7544,9 @@ Aus der Repo-Wurzel:
 
 ```bash
 bash <<'BASHEOF'
-set -e
+set -e -o pipefail
 WORK=$(mktemp -d); echo "Arbeitsverzeichnis: $WORK"
+PROBE_TODAY=$(TZ=Europe/Berlin date +%F); echo "PROBE_TODAY=$PROBE_TODAY"
 CT=pz073-prod; NET=pz073
 PGPW=$(python3 -c 'import secrets;print(secrets.token_hex(16))')
 docker exec $CT psql -q -U praxiszeit -d praxiszeit -c "ALTER ROLE praxiszeit PASSWORD '${PGPW}'"
@@ -7570,12 +7576,14 @@ run() {  # $1 = Backend-Verzeichnis, Rest = Befehl
     --user "$(id -u):$(id -g)" -e HOME=/tmp -e PYTHONDONTWRITEBYTECODE=1 \
     -e SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))') -e ADMIN_EMAIL=ci@example.invalid \
     -e ADMIN_PASSWORD=LocalCiDummy2025X -e APP_DB_USER=ci -e APP_DB_PASSWORD=ci -e ENVIRONMENT=development \
-    -e CORS_ORIGINS=http://localhost -e TZ=Europe/Berlin -e DATABASE_URL="$URL" -e DATABASE_URL_MIGRATIONS="$URL" \
+    -e CORS_ORIGINS=http://localhost -e TZ=Europe/Berlin -e PROBE_TODAY="$PROBE_TODAY" \
+    -e DATABASE_URL="$URL" -e DATABASE_URL_MIGRATIONS="$URL" \
     praxiszeit-backend "$@"
 }
 migrate() { run "$PWD/backend" python -c "from alembic.config import main; main(['$1','$2'])"; }
 
 echo "== Stand: $(sql 'SELECT version_num FROM alembic_version')"
+echo "-- Datenstand der Kopie (letzter Eintrag | zuletzt angelegt): $(sql "SELECT max(date) || ' | ' || max(created_at) FROM time_entries")"
 sql "DROP TABLE IF EXISTS _probe_users_072; CREATE TABLE _probe_users_072 AS SELECT id, username, $WIN FROM users" > /dev/null
 check_cols time_entries "$COLS_TE"; check_cols working_hours_changes "$COLS_WH"; check_cols users "$COLS_U"
 md5s | tee "$WORK/md5-072.txt"
@@ -7599,6 +7607,7 @@ diff "$WORK/md5-072.txt" "$WORK/md5-073.txt" && echo "TABELLEN NACH UPGRADE IDEN
 
 echo "== Round-Trip 073 -> 072 -> 073"
 migrate downgrade 072_cr_sunday_reason 2>&1 | sed -n '/HINWEIS (Migration 073, Downgrade)/,/ENDE HINWEIS/p'
+echo "== Stand: $(sql 'SELECT version_num FROM alembic_version')"
 md5s > "$WORK/md5-roundtrip.txt"
 diff "$WORK/md5-072.txt" "$WORK/md5-roundtrip.txt" && echo "TABELLEN IDENTISCH (time_entries, working_hours_changes, users)"
 echo "-- Personen mit geändertem 072-Fenster nach dem Round-Trip:"
@@ -7611,17 +7620,19 @@ echo "== Stand: $(sql 'SELECT version_num FROM alembic_version')"
 BASHEOF
 ```
 
+`PROBE_TODAY` hält „heute" für alle drei Probeläufe fest. Jeder Lauf dauert auf der Prod-Kopie rund 400 s (der Zeitraum beginnt beim frühesten Eintrag), alle drei zusammen rund 20 min; ein Lauf über Mitternacht (Europe/Berlin) verschöbe sonst das Zeitraumende und erzeugte eine Scheinabweichung. `pipefail`, weil `migrate … | sed` sonst einen gescheiterten Downgrade verschluckt: die festen Spaltenlisten liefern auf 073 dieselben md5 wie auf 072, der Lauf meldete dann „TABELLEN IDENTISCH" für eine Datenbank, die noch auf 073 steht, und bräche erst an der Fensterabfrage ab.
+
 Expected, in dieser Reihenfolge:
-1. `== Stand: 072_cr_sunday_reason`, keine Zeile „Spaltenliste … unvollständig" (sonst bricht der Lauf ab: eine Migration vor 073 hat eine Spalte ergänzt, die in `COLS_TE`/`COLS_WH`/`COLS_U` fehlt — Liste ergänzen; sie muss jede 072-Spalte außer `scheduled_*` tragen), drei Zeilen `time_entries|<n>|<md5>` / `working_hours_changes|<n>|<md5>` / `users|<p>|<md5>`, die Zeile „Auto-Close-Formen" mit zwei Zahlen `<a>|<b>`, `== Code vor PR1: 3d46c2f …` (bzw. der in Task 0 Step 5 festgehaltene Kopf; fehlt die Datei `pr1-base`, bricht `set -e` hier ab — dann nicht auf `merge-base` ausweichen, sondern den Commit unmittelbar vor dem ersten PR1-Commit per `git log --oneline` bestimmen und in die Datei schreiben), „<p> Personen, <e> Einträge" mit e > 0.
+1. `PROBE_TODAY=<heute>`, `== Stand: 072_cr_sunday_reason`, die Zeile „Datenstand der Kopie" (letztes Eintragsdatum | letzter `created_at`; muss zum Sicherungszeitpunkt aus Spec §19 Nr. 1 passen, d. h. darf nicht danach liegen), keine Zeile „Spaltenliste … unvollständig" (sonst bricht der Lauf ab: eine Migration vor 073 hat eine Spalte ergänzt, die in `COLS_TE`/`COLS_WH`/`COLS_U` fehlt — Liste ergänzen; sie muss jede 072-Spalte außer `scheduled_*` tragen), drei Zeilen `time_entries|<n>|<md5>` / `working_hours_changes|<n>|<md5>` / `users|<p>|<md5>`, die Zeile „Auto-Close-Formen" mit zwei Zahlen `<a>|<b>`, `== Code vor PR1: 3d46c2f …` (bzw. der in Task 0 Step 5 festgehaltene Kopf; fehlt die Datei `pr1-base`, bricht `set -e` hier ab — dann nicht auf `merge-base` ausweichen, sondern den Commit unmittelbar vor dem ersten PR1-Commit per `git log --oneline` bestimmen und in die Datei schreiben), „<p> Personen, <e> Einträge" mit e > 0.
 2. Der 073-Diagnoseblock nennt dieselben Fallen wie Task 0 (Q2: halboffen → „halboffen: …", `Beginn>=Ende` → „nicht übernommen: …", Sekunden → „Sekunden abgeschnitten: …"; Kontenzahl = Q3-Zeilen mit mindestens einem gültigen Tag) und **keine** Zeile „Abweichung: … (RLS?)" (das belegt hier nur, dass die Zählprobe stimmt: `praxiszeit` ist auch auf der Prod-Kopie Superuser, RLS greift also gar nicht, und unter RLS würde auch das Lesen gefiltert, sodass die Zählprobe nie anschlägt. Ob der Backfill unter FORCE RLS alle Zeilen trifft, prüft `test_073_migration_pg.py::test_073_backfill_as_owner_under_force_rls`, Task 14); `auto_closed = true: <a + b>` (Summe der beiden Auto-Close-Formen aus 1.); danach `BYTE-IDENTISCH` und `TABELLEN NACH UPGRADE IDENTISCH (time_entries, working_hours_changes, users)` (073 füllt nur neue Spalten; die Bestandsspalten aller drei Tabellen, bei `users` ohne die gelöschten Fensterspalten, bleiben unberührt).
-3. Der Downgrade-Block nennt keine Mehrblock-Personen und keine Einträge mit nicht angerechneter Zeit (PR1 erzeugt keine); `TABELLEN IDENTISCH (time_entries, working_hours_changes, users)` — Spec 17.1 „`users` (ohne die neuen Spalten) — identisch bis auf die diagnostizierten Fälle" ist damit zweigeteilt geprüft: die md5-Zeile deckt alle `users`-Spalten außer den zehn Fensterspalten streng ab, die Fensterspalten vergleicht die folgende Abfrage je Person; unter „Personen mit geändertem 072-Fenster" stehen nur Personen, die die 073-Diagnose mit „Sekunden abgeschnitten" oder „nicht übernommen" nennt (halboffene Fenster kommen über die Platzhalter identisch zurück).
+3. Der Downgrade-Block nennt keine Mehrblock-Personen und keine Einträge mit nicht angerechneter Zeit (PR1 erzeugt keine); `== Stand: 072_cr_sunday_reason` (scheitert der Downgrade, bricht `pipefail` vorher ab); `TABELLEN IDENTISCH (time_entries, working_hours_changes, users)` — Spec 17.1 „`users` (ohne die neuen Spalten) — identisch bis auf die diagnostizierten Fälle" ist damit zweigeteilt geprüft: die md5-Zeile deckt alle `users`-Spalten außer den zehn Fensterspalten streng ab, die Fensterspalten vergleicht die folgende Abfrage je Person; unter „Personen mit geändertem 072-Fenster" stehen nur Personen, die die 073-Diagnose mit „Sekunden abgeschnitten" oder „nicht übernommen" nennt (halboffene Fenster kommen über die Platzhalter identisch zurück).
 4. `NACH ROUND-TRIP BYTE-IDENTISCH`, `== Stand: 073_work_blocks`.
 
 Fehlt `BYTE-IDENTISCH`: `diff "$WORK/072.json" "$WORK/073.json" | head -40` (Pfad aus der ersten Ausgabezeile) — jede Abweichung ist ein Fehler in PR1 (Spec E22), nicht in der Probe; Task stoppen und melden.
 
 - [ ] **Step 3: Ergebnis festhalten, aufräumen, Commit**
 
-Für den PR-Text notieren: Datum der Sicherung, „<p> Personen, <e> Einträge", die Zählzeile der 073-Diagnose, die beiden Auto-Close-Formen und `auto_closed = true`, „BYTE-IDENTISCH", „TABELLEN NACH UPGRADE IDENTISCH" und „TABELLEN IDENTISCH (time_entries, working_hours_changes, users)", die Zahl der Personen mit geändertem Fenster. Dann das Arbeitsverzeichnis aus der ersten Ausgabezeile löschen (`rm -rf <Pfad>` — es enthält Prod-Daten) und:
+Für den PR-Text notieren: Datum der Sicherung (die Sicherung aus Task 0 Step 3, wie in Spec §19 Nr. 1 eingetragen — nicht aus dem Gedächtnis oder einer Auftragsnotiz übernehmen; die Zeile „Datenstand der Kopie" ist die Gegenprobe), „<p> Personen, <e> Einträge", die Zählzeile der 073-Diagnose, die beiden Auto-Close-Formen und `auto_closed = true`, „BYTE-IDENTISCH", „TABELLEN NACH UPGRADE IDENTISCH" und „TABELLEN IDENTISCH (time_entries, working_hours_changes, users)", die Zahl der Personen mit geändertem Fenster. Dann das Arbeitsverzeichnis aus der ersten Ausgabezeile löschen (`rm -rf <Pfad>` — es enthält Prod-Daten) und:
 
 ```bash
 git add tools/migration-073/probe_073.py
