@@ -220,7 +220,7 @@ def get_journal(
         )
 
         if is_weekend or is_holiday_day:
-            # ``credited_sum`` ist hier per Gewicht 0 → Ist = reine Stempelzeit.
+            # ``credited_sum`` ist hier per Gewicht 0 → Ist = nur die Zeiteintraege.
             actual_hours = time_hours + credited_sum
             target_hours = Decimal("0")
         elif day_absences:

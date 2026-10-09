@@ -237,8 +237,12 @@ MiLoG-Fälligkeit, §10.4), `get_ytd_summary` und die Tageszeilen des Monatsjour
 Summenzeilen der Datei-Exporte ziehen ihre Ist-Zahl seit 1.18.0 direkt aus
 `get_monthly_actual` und tragen die Gutschrift damit automatisch mit (§16-Beleg und Bildschirm
 können nicht mehr auseinanderlaufen); die **Per-Tag-Spalte „Netto (Std)"** dieser Dateien
-bleibt bewusst die reine **Stempelzeit** — sie ist der § 16-Nachweis der tatsächlichen
-Anwesenheit, die Abwesenheit steht in der Spalte daneben.
+zeigt bewusst nur die **angerechnete Arbeitszeit der Zeiteinträge** (Σ `net_hours`, ohne
+Gutschrift; außerhalb des Beschäftigungsfensters 0), die Abwesenheit steht in der Spalte
+daneben. „Angerechnet" heißt: bei Soll-Arbeitszeit-Fenster (#201) die **gekappte** Zeit —
+Von/Bis/Netto kommen aus `start_time`/`end_time`, die Rohstempel `raw_*` stehen bis heute
+in keiner Datei. „Stempelzeit" oder „tatsächlich erfasst" wäre deshalb die falsche
+Beschreibung.
 
 Die **Per-Tag-Spalte „Differenz"/„Diff."** ist dagegen eine Saldo-Aussage und rechnet seit
 #497 `Netto + Gutschrift − Soll`, mit der Gutschrift aus
@@ -250,6 +254,16 @@ denselben Helfer). Ein Krank-/Fortbildungstag steht damit bei ±0, und Σ „Dif
 desselben Blatts. **Ausnahme Fix-Modus** (#377 Baustein 2b): dort ist das Monats-Soll flach,
 die Tageszeilen der Dateien summieren sich weiterhin nicht darauf — verbindlich ist die
 Summenzeile.
+
+Geteilte Dienste (#498): Von/Bis bleiben der Rahmen des Tages (erster Beginn, spätestes
+Ende); XLSX/ODS hängen „Unterbrechung (Min)" (Lücke zwischen den Einträgen, Vereinigung der
+Intervalle über `export_service.day_work_blocks`) und „Arbeitsblöcke" als Spalten 11/12 an,
+das PDF zeigt „Unterbr. (Min)" als Spalte 6 neben der Pause. Damit gilt je Zeile
+`Bis − Von − Pause − Unterbrechung = Netto` — **außer** bei überlappenden Einträgen (eine
+Überschneidungsprüfung gibt es nicht; Netto summiert `net_hours` und zählt die Überlappung
+doppelt), bei einem noch laufenden Eintrag (er zählt mit 0 h, „Bis" = spätestes Ende der
+geschlossenen Einträge) und außerhalb des Beschäftigungsfensters (Netto 0, Stempel
+sichtbar).
 
 ---
 

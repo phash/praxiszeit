@@ -59,7 +59,14 @@ def day_work_blocks(day_entries):
       Eintrag lief (Vereinigung der Intervalle: ueberlappende Eintraege, Review
       2026-06-23, ergeben weder eine negative noch eine erfundene Luecke).
       ``0`` bei einem Block, ``None`` an Tagen ohne Eintrag. Damit geht die
-      Zeile auf: Bis − Von − Pause − Unterbrechung = Netto.
+      Zeile auf: Bis − Von − Pause − Unterbrechung = Netto — ausser bei
+      ueberlappenden Eintraegen (Netto summiert ``net_hours`` und zaehlt die
+      Ueberlappung doppelt; eine Ueberschneidungspruefung gibt es nicht), bei
+      einem noch laufenden Eintrag (0 h, „Bis" = spaetestes geschlossenes
+      Ende) und ausserhalb des Beschaeftigungsfensters (Netto 0). Kommt eine
+      weitere Abzugsgroesse innerhalb von Von/Bis hinzu (z. B. nicht
+      angerechnete Luecke eines Eintrags), gehoert sie hierher, damit die
+      Zeilenregel an EINER Stelle gerechnet wird.
 
     Bewusst die Luecke OHNE 15-Minuten-Schwelle: die Spalte soll die Zeile
     rechnerisch schliessen. Ob ein Abschnitt als Ruhepause nach §4 Satz 2 zaehlt
@@ -637,7 +644,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
         # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
         # im selben Blatt und die Jahresübersicht im selben Workbook bereits
-        # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+        # gefenstert rechnen (#193/#195). Die Stempel (Von/Bis) bleiben sichtbar,
         # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
         in_window = calculation_service._within_employment_window(user, current_date)
 
@@ -658,7 +665,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
             if not in_window:
-                total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
+                total_day_net = Decimal('0.00')  # F2: Von/Bis sichtbar, Ist 0
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
             sheet.cell(row=row, column=5).value = total_break
@@ -759,7 +766,9 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # §3 EntgFG), sonst stand ein Kranktag als −Tagessoll in der Datei und
         # Σ Differenz widersprach dem „Saldo Monat" darunter. Dieselbe Quelle
         # wie get_monthly_actual (credit_day_weight: Wochenende/Feiertag 0,
-        # Halbtags-Sondertag 0,5). „Netto (Std)" bleibt Stempelzeit (§16).
+        # Halbtags-Sondertag 0,5). „Netto (Std)" bleibt die angerechnete Zeit
+        # der Zeiteintraege OHNE Gutschrift (bei #201-Fenster die gekappte Zeit,
+        # nicht der Rohstempel).
         credit = (calculation_service.credited_absence_hours(
             day_absences, current_date, set(holidays_by_date), special_day_config)
             if in_window else Decimal('0.00'))
@@ -808,11 +817,14 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # ``_day_soll_contribution``, dieselbe Quelle wie ``get_monthly_target``
     # (gepinnt in test_export_service.TestFixedModeMonthlySummary).
     #
-    # Die Per-Tag-Detailzeilen oben bleiben unveraendert: "Netto (Std)" steht
-    # zwischen "Pause (Min)" und "Soll (Std)" und meint die STEMPELZEIT des
-    # Tages — §16-Nachweis der tatsaechlichen Anwesenheit. An einem Kranktag
-    # bleibt sie 0; woher die Gutschrift kommt, sagt Spalte "Abwesenheit"
-    # ("Krank (8.0h)"). Die Summenzeile ist die verbindliche Kennzahl.
+    # Die Per-Tag-Spalte "Netto (Std)" (zwischen "Pause (Min)" und "Soll (Std)")
+    # zeigt die angerechnete Zeit der Zeiteintraege OHNE Gutschrift — bei
+    # Soll-Arbeitszeit-Fenster (#201) die gekappte Zeit, die Rohstempel stehen
+    # nicht in der Datei. An einem Kranktag bleibt sie 0; woher die Gutschrift
+    # kommt, sagt Spalte "Abwesenheit" ("Krank (8.0h)"). Die Tagesspalte
+    # "Differenz" zieht die Gutschrift seit #497 mit (credited_absence_hours),
+    # damit Σ Differenz = Saldo Monat. Die Summenzeile ist die verbindliche
+    # Kennzahl.
     summary_target = calculation_service.get_monthly_target(db, user, year, month)
     summary_actual = calculation_service.get_monthly_actual(db, user, year, month)
 
@@ -1251,7 +1263,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
         # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
         # im selben Blatt und die Jahresübersicht im selben Workbook bereits
-        # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+        # gefenstert rechnen (#193/#195). Die Stempel (Von/Bis) bleiben sichtbar,
         # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
         in_window = calculation_service._within_employment_window(user, current_date)
 
@@ -1272,7 +1284,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             total_break = sum(e.break_minutes or 0 for e in day_entries)
             total_day_net = sum(e.net_hours for e in day_entries)
             if not in_window:
-                total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
+                total_day_net = Decimal('0.00')  # F2: Von/Bis sichtbar, Ist 0
             sheet.cell(row=row, column=3).value = first_start.strftime('%H:%M')
             sheet.cell(row=row, column=4).value = last_end.strftime('%H:%M') if last_end else 'offen'
             sheet.cell(row=row, column=5).value = total_break
@@ -1367,7 +1379,9 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         # §3 EntgFG), sonst stand ein Kranktag als −Tagessoll in der Datei und
         # Σ Differenz widersprach dem „Saldo Jahr" darunter. Dieselbe Quelle
         # wie get_monthly_actual (credit_day_weight: Wochenende/Feiertag 0,
-        # Halbtags-Sondertag 0,5). „Netto (Std)" bleibt Stempelzeit (§16).
+        # Halbtags-Sondertag 0,5). „Netto (Std)" bleibt die angerechnete Zeit
+        # der Zeiteintraege OHNE Gutschrift (bei #201-Fenster die gekappte Zeit,
+        # nicht der Rohstempel).
         credit = (calculation_service.credited_absence_hours(
             day_absences, current_date, set(holidays_by_date), special_day_config)
             if in_window else Decimal('0.00'))
@@ -1970,7 +1984,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             # get_daily_target_for_date kennt das Fenster NICHT und lieferte hier das
             # volle Tagessoll, während "Überstunden kumuliert" (get_overtime_account)
             # im selben Blatt und die Jahresübersicht im selben Workbook bereits
-            # gefenstert rechnen (#193/#195). Die Rohstempel bleiben sichtbar (§16),
+            # gefenstert rechnen (#193/#195). Die Stempel (Von/Bis) bleiben sichtbar,
             # zählen aber 0 — Detailzeilen und Summenzeile sind damit beide gefenstert.
             in_window = calculation_service._within_employment_window(user, cur)
 
@@ -1998,7 +2012,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 pause_str = str(sum(e.break_minutes or 0 for e in day_entries))
                 total_day_net = sum(e.net_hours for e in day_entries)
                 if not in_window:
-                    total_day_net = Decimal('0.00')  # F2: Rohstempel sichtbar, Ist 0
+                    total_day_net = Decimal('0.00')  # F2: Von/Bis sichtbar, Ist 0
                 netto_val = float(total_day_net)
                 net = total_day_net
                 total_net += net

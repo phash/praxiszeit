@@ -5,11 +5,12 @@
 SICK/TRAINING reduzieren das Soll nicht, sie werden dem Ist gutgeschrieben
 (§ 3 EntgFG, ``credited_absences``). Die Summenzeilen der Exporte ziehen das
 seit 1.18.0 aus ``get_monthly_actual``; die Tagesspalte „Differenz" rechnete
-aber weiter ``Netto − Soll`` mit Netto = reiner Stempelzeit. Ein Kranktag stand
+aber weiter ``Netto − Soll`` mit Netto = Zeit der Zeiteinträge. Ein Kranktag stand
 damit als −Tagessoll (rot) in der Datei, Σ „Differenz" widersprach dem
-„Saldo Monat" desselben Blatts. „Netto (Std)" bleibt bewusst Stempelzeit
-(§16-Nachweis der Anwesenheit) — nur die Saldo-Aussage je Tag zieht die
-Gutschrift mit, aus derselben Quelle wie die Summenzeile
+„Saldo Monat" desselben Blatts. „Netto (Std)" bleibt bewusst die angerechnete
+Zeit der Zeiteinträge ohne Gutschrift (bei #201-Fenster gekappt) — nur die
+Saldo-Aussage je Tag zieht die Gutschrift mit, aus derselben Quelle wie die
+Summenzeile
 (``calculation_service.credited_absence_hours`` → ``credit_day_weight``).
 
 #498 — geteilte Dienste
@@ -200,7 +201,7 @@ class TestIssue497XlsxMonthly:
         rows = _xlsx_day_rows(sheet)
         for d in (SICK_DAY, TRAINING_DAY):
             netto, soll, diff = rows[d][5], rows[d][6], rows[d][7]
-            assert netto == pytest.approx(0.0), "Netto bleibt Stempelzeit (§16)"
+            assert netto == pytest.approx(0.0), "Netto = Zeit der Zeiteinträge, ohne Gutschrift"
             assert soll == pytest.approx(8.0), "Soll bleibt stehen (§3 EntgFG)"
             assert diff == pytest.approx(0.0), f"{d}: Gutschrift-Tag ist saldo-neutral, Diff={diff}"
 
@@ -236,7 +237,7 @@ class TestIssue497Ods:
         rows = _ods_day_rows(table)
         assert float(rows[SICK_DAY][7][1]) == pytest.approx(0.0)
         assert float(rows[TRAINING_DAY][7][1]) == pytest.approx(0.0)
-        assert float(rows[SICK_DAY][5][1]) == pytest.approx(0.0), "Netto bleibt Stempelzeit"
+        assert float(rows[SICK_DAY][5][1]) == pytest.approx(0.0), "Netto = Zeit der Zeiteinträge, ohne Gutschrift"
         total = sum(float(r[7][1]) for r in rows.values())
         assert total == pytest.approx(_month_saldo(db, month), abs=0.005)
 

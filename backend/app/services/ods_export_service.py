@@ -280,7 +280,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             night_work_count += 1
 
         # F2 (1.18.0): Beschäftigungsfenster — siehe export_service (Parität).
-        # Rohstempel bleiben sichtbar (§16), Soll und Ist zählen 0.
+        # Von/Bis bleiben sichtbar, Soll und Ist zählen 0.
         in_window = calculation_service._within_employment_window(user, current_date)
 
         # #497: Ist-Gutschrift Krank/Fortbildung für die Tages-Differenz — siehe
@@ -674,7 +674,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             night_work_count += 1
 
         # F2 (1.18.0): Beschäftigungsfenster — siehe export_service (Parität).
-        # Rohstempel bleiben sichtbar (§16), Soll und Ist zählen 0.
+        # Von/Bis bleiben sichtbar, Soll und Ist zählen 0.
         in_window = calculation_service._within_employment_window(user, current_date)
 
         # #497: Ist-Gutschrift Krank/Fortbildung für die Tages-Differenz (s. Monat).
