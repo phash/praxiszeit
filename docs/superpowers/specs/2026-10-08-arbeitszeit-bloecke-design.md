@@ -652,9 +652,18 @@ FROM tenants t ORDER BY t.name;
    **mindestens einem nicht leeren Tag**, sonst Diagnosezeile „Abweichung … (RLS?)". Kein
    Abbruch.
 8. `UPDATE time_entries SET auto_closed = true` für Einträge mit einer Protokollzeile
-   `source='auto_close'` **und** `end_time = '23:59'` (vor 073 kappte der Auto-Close nie,
-   ein später korrigiertes Ende fällt damit heraus). Reines Kennzeichen; `net_hours`
-   unverändert.
+   `source='auto_close'` **und** (`end_time = '23:59'` **oder** `raw_end_time = '23:59'`)
+   (`backfill_auto_closed`). Vor 073 kappte der Auto-Close nie; ein später korrigiertes
+   Ende fällt damit heraus. Das Rohende gehört dazu: unter 072 kappte ein späteres
+   Speichern des ganzen Formulars (etwa nur die Pause ergänzt, Ende 23:59 unverändert —
+   `unclamp_input` reicht es mangels Rohwert durch) die synthetischen 23:59 auf das
+   Fensterende und hielt 23:59 als `raw_end_time` fest. Das ist genau die Form, die der
+   neue Auto-Close mit `auto_closed = true` schreibt; ohne Kennzeichen zählte P19 die
+   Strecke bis 23:59 als „nicht angerechnet", und Anerkennen rechnete bis 23:59 an. Kein
+   Fehltreffer: ein echt korrigiertes Ende lässt `raw_end_time` NULL (im Fenster) oder
+   trägt den echten Wert (außerhalb), nie 23:59; offen bleibt nur ein echtes Ende um genau
+   23:59, dieselbe Mehrdeutigkeit wie bei `end_time = '23:59'`. Reines Kennzeichen;
+   `net_hours` unverändert.
 9. Diagnoseblock ausgeben (5.4).
 10. Die zehn `scheduled_*`-Spalten löschen.
 
@@ -2452,7 +2461,10 @@ alles zusammen über `bash scripts/local-ci.sh`.
   alle Verlaufszeilen bleiben NULL, keine Zählprobe-Abweichung, **keine**
   Segmentänderung in `weekly_hours_segments`/#415-Text (3.3, 5.2).
 - `auto_closed`-Backfill: Eintrag mit `auto_close`-Protokollzeile und Ende 23:59 → true;
-  mit später korrigiertem Ende → false; `net_hours` unverändert.
+  nachgekappt (Ende = Fensterende, Rohende 23:59, mit `auto_close`-Protokollzeile) → true;
+  mit später korrigiertem Ende (im oder außerhalb des Fensters) → false; ohne
+  `auto_close`-Protokollzeile → false (auch bei Ende oder Rohende 23:59); `net_hours`
+  unverändert.
 - `clamp_grace_minutes` (E79): Spalte existiert, nullable; **alle** Bestandseinträge NULL,
   auch solche mit `raw_*` (der Puffer vor 073 ist unbekannt).
 - Byte-Identität: für eine Stichprobe von Daten vor/nach der Migration gleiches
