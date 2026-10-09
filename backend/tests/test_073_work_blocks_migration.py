@@ -147,6 +147,28 @@ def test_downgrade_report_names_everyone():
     assert "2 offene Anträge" in text
 
 
+def test_upgrade_report_singular():
+    """Die Prod-Kopie hat genau ein Konto mit Fenster — das Update-Log beim
+    Kunden soll nicht „1 Konten, 1 Verlaufszeilen" melden."""
+    assert "übernommen: 1 Konto, 1 Verlaufszeile." in M.upgrade_report(1, 1, [])
+    assert "übernommen: 1 Konto, 0 Verlaufszeilen." in M.upgrade_report(1, 0, [])
+    assert "übernommen: 0 Konten, 0 Verlaufszeilen." in M.upgrade_report(0, 0, [])
+
+
+def test_downgrade_report_singular():
+    text = M.downgrade_report(
+        [],
+        [("eins (Mandant 0000…0001)", 1, 150)],
+        [("eins (Mandant 0000…0001)", 1)],
+        1,
+    )
+    assert "eins (Mandant 0000…0001): 1 Eintrag, zusammen 2,50 h" in text
+    assert "  - eins (Mandant 0000…0001): 1 Eintrag\n" in text
+    assert ("1 offener Antrag „Anrechnung beantragen“ wird nach dem Downgrade wie ein "
+            "gewöhnlicher Änderungsantrag genehmigt, also wieder gekappt.") in text
+    assert "Einträge," not in text and "offene Anträge" not in text
+
+
 def _stdout(monkeypatch, encoding):
     import io
     import sys

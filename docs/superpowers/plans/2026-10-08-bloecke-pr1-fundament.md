@@ -6083,6 +6083,7 @@ gegen die SQLite-Test-DB (``tests/test_073_work_blocks_migration.py``); der
 Lauf gegen echtes PostgreSQL steht in ``tests/test_073_migration_pg.py``.
 """
 import json
+import sys
 from datetime import time
 
 from alembic import op
@@ -6113,6 +6114,29 @@ def _hms(t: time) -> str:
 
 def _parse_hhmm(value: str) -> time:
     return time(int(value[:2]), int(value[3:5]))
+
+
+def _n(count: int, singular: str, plural: str) -> str:
+    """Zahl mit passender Form: ``1 Konto``, ``0 Konten``, ``2 Konten``."""
+    return f"{count} {singular if count == 1 else plural}"
+
+
+def _emit(text: str) -> None:
+    """Diagnose ausgeben, ohne an der Kodierung der Ausgabe zu scheitern.
+
+    Die Texte enthalten "→" (U+2192), das cp1252 nicht kennt. Nativ unter
+    Windows ist stdout dieser Migration eine Pipe in der ANSI-Codepage, sobald
+    PYTHONUTF8 nicht gesetzt ist (etwa beim Konsolenstart des Prozessmanagers);
+    ein nacktes ``print`` wuerfe dann UnicodeEncodeError, alembic rollte die
+    Migration zurueck und der Dienst startete nicht - genau das, was E21
+    ausschliesst. Rueckfall: "→" als "->", alles Uebrige, was die Kodierung
+    nicht kennt (etwa ein Benutzername mit "ł"), als "?". Mit UTF-8 bleibt der
+    Wortlaut der Spec unveraendert."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.replace("→", "->").encode(enc, "replace").decode(enc))
 
 
 def tenant_label(tenant_id) -> str:
@@ -6194,13 +6218,15 @@ def window_from_week(week) -> tuple:
 
 
 def upgrade_report(accounts: int, history_rows: int, notes) -> str:
-    """Diagnose-Ausgabe (Spec 5.4) - ``print`` wie 067, landet im Update-Log
-    (nativ) bzw. im Container-Log (Docker)."""
+    """Diagnose-Ausgabe (Spec 5.4) - ausgegeben ueber ``_emit`` (``print`` wie
+    067, mit Rueckfall fuer Nicht-UTF-8-Ausgaben), landet im Update-Log (nativ)
+    bzw. im Container-Log (Docker)."""
     lines = [
         "",
         "*** HINWEIS (Migration 073) ***",
         "Arbeitszeit-Fenster wurden in Arbeitszeit-Blöcke übernommen: "
-        f"{accounts} Konten, {history_rows} Verlaufszeilen.",
+        f"{_n(accounts, 'Konto', 'Konten')}, "
+        f"{_n(history_rows, 'Verlaufszeile', 'Verlaufszeilen')}.",
     ]
     if notes:
         lines.append("Besonderheiten (bitte im Dialog „Arbeitszeit anpassen…“ prüfen):")
@@ -6236,16 +6262,19 @@ def downgrade_report(multi_block, uncredited, overrides, open_requests: int) -> 
             "mit dem Downgrade sofort um diese Summe:"
         )
         lines.extend(
-            f"  - {who}: {count} Einträge, zusammen {_hours_de(minutes)} h"
+            f"  - {who}: {_n(count, 'Eintrag', 'Einträge')}, zusammen {_hours_de(minutes)} h"
             for who, count, minutes in uncredited
         )
     if overrides:
         lines.append("Anerkannte Einträge (das Kennzeichen entfällt):")
-        lines.extend(f"  - {who}: {count} Einträge" for who, count in overrides)
+        lines.extend(f"  - {who}: {_n(count, 'Eintrag', 'Einträge')}" for who, count in overrides)
     if open_requests:
+        one = open_requests == 1
         lines.append(
-            f"{open_requests} offene Anträge „Anrechnung beantragen“ werden nach dem "
-            "Downgrade wie gewöhnliche Änderungsanträge genehmigt, also wieder gekappt."
+            f"{_n(open_requests, 'offener Antrag', 'offene Anträge')} „Anrechnung beantragen“ "
+            f"{'wird' if one else 'werden'} nach dem Downgrade wie "
+            f"{'ein gewöhnlicher Änderungsantrag' if one else 'gewöhnliche Änderungsanträge'} "
+            "genehmigt, also wieder gekappt."
         )
     lines.append("*** ENDE HINWEIS ***")
     return "\n".join(lines) + "\n"
@@ -6335,12 +6364,13 @@ def upgrade():
         ).rowcount
     if accounts != expected:
         notes.append(
-            f"Abweichung: {expected} Konten erwartet, {accounts} aktualisiert (RLS?)"
+            f"Abweichung: {_n(expected, 'Konto', 'Konten')} erwartet, "
+            f"{accounts} aktualisiert (RLS?)"
         )
 
     backfill_auto_closed(conn)
 
-    print(upgrade_report(accounts, history_rows, notes))
+    _emit(upgrade_report(accounts, history_rows, notes))
 
     for column in WINDOW_COLUMNS:
         op.drop_column("users", column)
@@ -6394,7 +6424,7 @@ def downgrade():
         "WHERE request_credit_override AND status = 'pending'"
     )).scalar() or 0
 
-    print(downgrade_report(multi_block, uncredited, overrides, int(open_requests)))
+    _emit(downgrade_report(multi_block, uncredited, overrides, int(open_requests)))
 
     op.drop_column("change_requests", "original_uncredited_minutes")
     op.drop_column("change_requests", "request_credit_override")
@@ -6430,6 +6460,8 @@ Run: `rm -f backend/test.db backend/test.db-wal backend/test.db-shm && docker ru
 Expected: PASS (36 Tests in den drei neuen Dateien + 3 in 067).
 
 Danach die volle SQLite-Suite (Global Constraints). Expected: keine neuen Fehlschläge.
+
+Nachgezogen nach dem Review von Task 13: Einzahl in den Diagnosen (`_n`: „1 Konto, 1 Verlaufszeile.", „1 Eintrag", „1 offener Antrag … wird … wie ein gewöhnlicher Änderungsantrag genehmigt") und `_emit` statt `print` (cp1252-Rückfall „→" → „->", Kodierungsfremdes → „?"; nativ unter Windows sonst UnicodeEncodeError → Rollback → Dienst startet nicht, E21). Tests dazu in `test_073_work_blocks_migration.py` (`test_upgrade_report_singular`, `test_downgrade_report_singular`, `test_emit_*`, `test_upgrade_and_downgrade_print_only_through_emit`); außerdem setzt `praxiszeit-server.py::run_migrations` `PYTHONUTF8=1` und liest die Ausgabe als UTF-8 mit `errors="replace"` (`test_native_pg_lifecycle.py::TestMigrationenLaufenInUtf8`, läuft nur mit gemountetem Repo wie in `scripts/local-ci.sh` Schritt 3).
 
 Kontrolle der Revisionskette: `grep -n "^revision\|^down_revision" backend/alembic/versions/*073*.py` → `073_work_blocks` / `072_cr_sunday_reason`; `grep -l "down_revision = \"073_work_blocks\"" backend/alembic/versions/*.py` → keine Ausgabe (073 ist Kopf). Der Lauf gegen echtes PostgreSQL folgt in Task 14.
 
@@ -6677,8 +6709,8 @@ def test_073_upgrade_downgrade_round_trip(scratch):
     assert "*** HINWEIS (Migration 073, Downgrade) ***" in out
     assert ("mehr (Mandant 0000…0001): Mo 08:00–12:00 + 15:00–18:00 → Fenster 08:00–18:00 "
             "(wieder angerechnete Lücken: 12:00–15:00)") in out
-    assert "mehr (Mandant 0000…0001): 1 Einträge, zusammen 2,50 h" in out
-    assert "1 offene Anträge „Anrechnung beantragen“" in out
+    assert "mehr (Mandant 0000…0001): 1 Eintrag, zusammen 2,50 h" in out
+    assert "1 offener Antrag „Anrechnung beantragen“ wird" in out
     with engine.connect() as conn:
         windows = {row[0]: row[1:] for row in conn.execute(text(
             f"SELECT username, {', '.join(WINDOW_COLUMNS)} FROM users ORDER BY username"

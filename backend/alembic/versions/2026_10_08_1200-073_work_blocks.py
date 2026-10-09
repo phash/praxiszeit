@@ -67,6 +67,11 @@ def _parse_hhmm(value: str) -> time:
     return time(int(value[:2]), int(value[3:5]))
 
 
+def _n(count: int, singular: str, plural: str) -> str:
+    """Zahl mit passender Form: ``1 Konto``, ``0 Konten``, ``2 Konten``."""
+    return f"{count} {singular if count == 1 else plural}"
+
+
 def _emit(text: str) -> None:
     """Diagnose ausgeben, ohne an der Kodierung der Ausgabe zu scheitern.
 
@@ -171,7 +176,8 @@ def upgrade_report(accounts: int, history_rows: int, notes) -> str:
         "",
         "*** HINWEIS (Migration 073) ***",
         "Arbeitszeit-Fenster wurden in Arbeitszeit-Blöcke übernommen: "
-        f"{accounts} Konten, {history_rows} Verlaufszeilen.",
+        f"{_n(accounts, 'Konto', 'Konten')}, "
+        f"{_n(history_rows, 'Verlaufszeile', 'Verlaufszeilen')}.",
     ]
     if notes:
         lines.append("Besonderheiten (bitte im Dialog „Arbeitszeit anpassen…“ prüfen):")
@@ -207,16 +213,19 @@ def downgrade_report(multi_block, uncredited, overrides, open_requests: int) -> 
             "mit dem Downgrade sofort um diese Summe:"
         )
         lines.extend(
-            f"  - {who}: {count} Einträge, zusammen {_hours_de(minutes)} h"
+            f"  - {who}: {_n(count, 'Eintrag', 'Einträge')}, zusammen {_hours_de(minutes)} h"
             for who, count, minutes in uncredited
         )
     if overrides:
         lines.append("Anerkannte Einträge (das Kennzeichen entfällt):")
-        lines.extend(f"  - {who}: {count} Einträge" for who, count in overrides)
+        lines.extend(f"  - {who}: {_n(count, 'Eintrag', 'Einträge')}" for who, count in overrides)
     if open_requests:
+        one = open_requests == 1
         lines.append(
-            f"{open_requests} offene Anträge „Anrechnung beantragen“ werden nach dem "
-            "Downgrade wie gewöhnliche Änderungsanträge genehmigt, also wieder gekappt."
+            f"{_n(open_requests, 'offener Antrag', 'offene Anträge')} „Anrechnung beantragen“ "
+            f"{'wird' if one else 'werden'} nach dem Downgrade wie "
+            f"{'ein gewöhnlicher Änderungsantrag' if one else 'gewöhnliche Änderungsanträge'} "
+            "genehmigt, also wieder gekappt."
         )
     lines.append("*** ENDE HINWEIS ***")
     return "\n".join(lines) + "\n"
@@ -308,7 +317,8 @@ def upgrade():
         ).rowcount
     if accounts != expected:
         notes.append(
-            f"Abweichung: {expected} Konten erwartet, {accounts} aktualisiert (RLS?)"
+            f"Abweichung: {_n(expected, 'Konto', 'Konten')} erwartet, "
+            f"{accounts} aktualisiert (RLS?)"
         )
 
     backfill_auto_closed(conn)
