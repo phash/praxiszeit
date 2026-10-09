@@ -1404,8 +1404,13 @@ def update_time_entry(
         and _clamp_end == (orig_snapshot["raw_end_time"] or orig_snapshot["end_time"])
     )
     if _times_written and not _resubmitted_unchanged:
+        # Spec 6.2: der Hinweis „Anrechnung beantragen" gilt der Person des
+        # Eintrags. Eine Admin, die hier einen fremden Eintrag bearbeitet, ist
+        # die Verwaltung (P3, siehe oben) und erkennt selbst an — wie bei der
+        # MiLoG-Warnung weiter unten entscheidet die Selbst-Bearbeitung.
         _clamp_warn = work_window_service.clamp_warning(
-            db, _entry_owner, entry.date, _r, for_employee=True,
+            db, _entry_owner, entry.date, _r,
+            for_employee=(entry.user_id == current_user.id),
         )
         if _clamp_warn:
             update_warnings.append(_clamp_warn)

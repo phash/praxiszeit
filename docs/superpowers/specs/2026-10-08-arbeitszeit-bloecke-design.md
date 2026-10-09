@@ -877,7 +877,11 @@ gespeicherten, E80), nie einen getrennt gelesenen Mandantenwert. Code-Präfix bl
 `update_time_entry`) hängt an die **Lückentexte geschlossener Einträge** (nicht an den
 byte-identischen Hülle-Text, nicht an „Einstempeln in der Lücke") den Satz „Haben Sie in dieser Zeit gearbeitet, beantragen Sie die Anrechnung
 (Zeiterfassung → Eintrag → „Anrechnung beantragen")." an (P21); Admin-Pfade übergeben
-`False`.
+`False`. Der Satz gilt nur der Person des Eintrags: `update_time_entry` übergibt
+`for_employee=(entry.user_id == current_user.id)` (wie die Selbst-Bearbeitungsprüfung der
+MiLoG-Warnung derselben Route). Bearbeitet eine Admin über diese Route einen fremden
+Eintrag, ist sie die Verwaltung (P3) und erkennt selbst an — der Lückentext bleibt, der
+Satz entfällt.
 
 | Fall | Text (ohne Code-Präfix) |
 |---|---|

@@ -7,6 +7,7 @@ import pytest
 
 from app.models import ChangeRequest, TimeEntry
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
+from app.services import work_window_service as wws
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import (  # noqa: F401 — Fixtures
     _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
@@ -74,6 +75,26 @@ def test_employee_update_writes_uncredited(_db_session, employee_user, employee_
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert e.uncredited_minutes == 150
+
+
+@pytest.mark.parametrize("client_fixture, with_hint", [
+    ("employee_client", True), ("admin_client", False)])
+def test_update_credit_hint_only_for_own_entry(_db_session, employee_user, request, monkeypatch,
+                                               client_fixture, with_hint):
+    """Spec 6.2 (Gesamtreview PR1): der Satz „beantragen Sie die Anrechnung"
+    gilt der Person des Eintrags. Bearbeitet eine Admin über dieselbe Route einen
+    fremden Eintrag, ist sie die Verwaltung (P3) und erkennt selbst an — der
+    Lückentext bleibt, der Mitarbeiter-Hinweis entfällt."""
+    _blocks(_db_session, employee_user)
+    e = _entry(_db_session, employee_user, time(8, 0), time(12, 0))
+    _today(monkeypatch, 19, 0)
+    client = request.getfixturevalue(client_fixture)
+    resp = client.put(f"/api/time-entries/{e.id}", json={"end_time": "18:00", "break_minutes": 45})
+    assert resp.status_code == 200, resp.text
+    clamped = [w for w in resp.json()["warnings"] if w.startswith(wws.CLAMP_WARNING_CODE)]
+    assert len(clamped) == 1, resp.json()["warnings"]
+    assert "Zwischen den Arbeitsblöcken (12:15–14:45" in clamped[0]
+    assert clamped[0].endswith(wws.EMPLOYEE_CREDIT_HINT) is with_hint
 
 
 def test_admin_create_counts_daily_hours_on_credited_time(_db_session, employee_user, admin_client):
