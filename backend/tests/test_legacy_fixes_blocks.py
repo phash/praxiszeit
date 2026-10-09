@@ -2,13 +2,13 @@
 import datetime as dt
 from datetime import date, time
 
-from app.models import ChangeRequest, TimeEntry
+from app.models import ChangeRequest, SystemSetting, TimeEntry
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import (  # noqa: F401 — Fixtures
     _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
 )
-from tests.work_blocks_fixtures import K_BLOCKS, MON, legacy_week
+from tests.work_blocks_fixtures import K_BLOCKS, MON, block_week, legacy_week
 
 import app.routers.time_entries as te
 
@@ -36,6 +36,22 @@ def test_e39_employee_date_change_reclamps_and_warns(_db_session, employee_user,
     assert (e.date, e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (FRI_BEFORE, time(7, 45), time(7, 0), 15)
 
 
+def test_e39_date_change_reclamps_end_too(_db_session, employee_user, employee_client, monkeypatch):
+    """Review Task 9: auch das Ende gehört zum alten Tag. Am Montag (ohne
+    Blöcke) ungekappt 07:00–17:30, am Freitag (Hülle 07:45–17:15) gekappt —
+    ohne ``date`` im Ende-Gate bliebe 17:30 als angerechnete Zeit stehen."""
+    employee_user.work_blocks = legacy_week(fri=("08:00", "17:00"))
+    _db_session.commit()
+    e = _entry(_db_session, employee_user, MON, time(7, 0), time(17, 30), 45)
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 18, 0))
+    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.start_time, e.raw_start_time, e.end_time, e.raw_end_time) == (
+        time(7, 45), time(7, 0), time(17, 15), time(17, 30))
+
+
 def test_e40_request_validates_on_credited_time_and_stores_raw(_db_session, employee_user, employee_client):
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
@@ -48,6 +64,22 @@ def test_e40_request_validates_on_credited_time_and_stores_raw(_db_session, empl
     assert (cr.proposed_start_time, cr.proposed_end_time) == (time(8, 0), time(18, 0))
 
 
+def test_e40_daily_cap_counts_credited_time(_db_session, employee_user, employee_client):
+    """Review Task 9: die §3-Tagesgrenze (hart, 422) rechnet ebenfalls auf der
+    angerechneten Zeit. 07:00–18:30 ohne Pause: roh 11,5 h, gekappt auf die
+    Hülle 07:45–18:15 noch 10,5 h, abzüglich 150 Min Lücke 8,0 h → zulässig.
+    Gespeichert bleiben die rohen Vorschläge."""
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    resp = employee_client.post("/api/change-requests/", json={
+        "request_type": "create", "proposed_date": MON.isoformat(),
+        "proposed_start_time": "07:00", "proposed_end_time": "18:30",
+        "proposed_break_minutes": 0, "reason": "Nachtrag"})
+    assert resp.status_code == 201, resp.text
+    cr = _db_session.query(ChangeRequest).one()
+    assert (cr.proposed_start_time, cr.proposed_end_time) == (time(7, 0), time(18, 30))
+
+
 def test_p28_request_snapshots_uncredited(_db_session, employee_user, employee_client):
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
@@ -58,6 +90,21 @@ def test_p28_request_snapshots_uncredited(_db_session, employee_user, employee_c
         "proposed_start_time": "08:00", "proposed_end_time": "18:00",
         "proposed_break_minutes": 45, "reason": "Notiz"})
     assert resp.status_code == 201, resp.text
+    assert _db_session.query(ChangeRequest).one().original_uncredited_minutes == 150
+
+
+def test_p28_waiver_request_snapshots_uncredited(_db_session, employee_user, employee_client, monkeypatch):
+    """Review Task 9: auch der Waiver-Antrag des MA-PUT (Pausenausnahme mit
+    Genehmigungspflicht) hält den Vorher-Stand der Lückenminuten fest."""
+    _db_session.add(SystemSetting(key="break_exception_requires_approval",
+                                  tenant_id=DEFAULT_TENANT_ID, value="true"))
+    _db_session.commit()
+    e = _entry(_db_session, employee_user, MON, time(8), time(18), 45, uncredited_minutes=150)
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 19, 0))
+    resp = employee_client.put(f"/api/time-entries/{e.id}",
+                               json={"break_minutes": 0, "break_waiver_reason": "Notfall"})
+    assert resp.status_code == 202, resp.text
     assert _db_session.query(ChangeRequest).one().original_uncredited_minutes == 150
 
 
@@ -75,6 +122,42 @@ def test_e41_post_commit_check_counts_entry_once(_db_session, employee_user, adm
     resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
     assert resp.status_code == 200, resp.text
     assert not [w for w in resp.json()["warnings"] if "Wochenarbeitszeit" in w], resp.json()["warnings"]
+
+
+# Review Task 9: der Test oben hält nur fest, dass der Eintrag NICHT doppelt
+# zählt. Die beiden folgenden halten fest, dass er GENAU EINMAL zählt und dabei
+# mit seiner ANGERECHNETEN Zeit (Spec 7.1 Nr. 10 — die in Review Task 4 auf
+# E41 verschobene Aufrufstelle). Mo–Do je 10,0 h (07:00–17:15, Pause 15) = 40 h.
+def _seed_week_and_approve_fri(db, user, client, start, end, brk):
+    for day in range(1, 5):
+        _entry(db, user, date(2026, 6, day), time(7), time(17, 15), 15)
+    fri = _entry(db, user, date(2026, 6, 5), time(8), time(12))
+    cr = ChangeRequest(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
+                       request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
+                       time_entry_id=fri.id, proposed_date=date(2026, 6, 5),
+                       proposed_start_time=start, proposed_end_time=end,
+                       proposed_break_minutes=brk, reason="Notiz")
+    db.add(cr)
+    db.commit()
+    resp = client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    return [w for w in resp.json()["warnings"] if "Wochenarbeitszeit" in w]
+
+
+def test_e41_entry_counts_exactly_once(_db_session, employee_user, admin_client):
+    """Fr 08:00–17:00, Pause 45 → 8,25 h → Woche 48,25 h. Einmal gezählt warnt
+    es mit genau diesem Wert; gar nicht gezählt (40 h) schwiege die Warnung,
+    doppelt gezählt (56,5 h) nennte sie einen anderen Wert."""
+    warnings = _seed_week_and_approve_fri(_db_session, employee_user, admin_client, time(8), time(17), 45)
+    assert warnings == ["§3 ArbZG: Wochenarbeitszeit 48.2h überschreitet 48h-Grenze."], warnings
+
+
+def test_e41_post_commit_uses_credited_time(_db_session, employee_user, admin_client):
+    """Fr mit Lücke 12:15–14:45: 08:00–18:00, Pause 45 → roh 9,25 h (Woche
+    49,25 h → Warnung), angerechnet 6,75 h (Woche 46,75 h → keine)."""
+    employee_user.work_blocks = block_week(fri=[("08:00", "12:00"), ("15:00", "18:00")])
+    _db_session.commit()
+    assert _seed_week_and_approve_fri(_db_session, employee_user, admin_client, time(8), time(18), 45) == []
 
 
 def test_p3_employee_put_on_acknowledged_entry_is_409(_db_session, employee_user, employee_client, monkeypatch):

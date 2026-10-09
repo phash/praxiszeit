@@ -197,9 +197,10 @@ def test_clock_out_daily_check_counts_credited_time(_db_session, employee_user, 
 # angerechneten Zeit. Mo–Do je 10,0 h ohne Blöcke (07:00–17:15, Pause 15),
 # Fr mit Lücke 12:15–14:45: 08:00–18:00, Pause 45 → roh 9,25 h (Woche
 # 49,25 h → beide Warnungen), angerechnet 6,75 h (Woche 46,75 h → keine).
-# Die Nachprüfung der Antragsgenehmigung (Nr. 10) bleibt außen vor, bis E41
-# (Task 9) die Doppelzählung des eben geschriebenen Eintrags behebt — sie
-# warnte bis dahin ohnehin.
+# Die Nachprüfung der Antragsgenehmigung (Nr. 10) meldet die Wochengrenze in
+# eigenem Wortlaut (§3 ArbZG: …) und liest seit E41 den gespeicherten Eintrag;
+# sie ist in test_legacy_fixes_blocks.py festgehalten
+# (test_e41_entry_counts_exactly_once, test_e41_post_commit_uses_credited_time).
 FRI = date(2026, 6, 5)
 FRI_BLOCKS = block_week(fri=[("08:00", "12:00"), ("15:00", "18:00")])
 FRI_DAY = {"start_time": "08:00", "end_time": "18:00", "break_minutes": 45}

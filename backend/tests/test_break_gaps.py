@@ -123,7 +123,9 @@ def test_daily_break_figures_without_blocks_is_byte_identical():
 # geänderten Eintrags durch. K1 (08:00–18:00 ohne Pause, Lücke 12:15–14:45):
 # angerechnet 7:30 h, die Lücke deckt die Pause (150 Min ≥ 30). Ohne Segmente
 # sähe §4 auf der Hülle 10 h ohne Pause → 400 (bzw. 422 in der Genehmigung).
-# Der MA-Antragsweg prüft bis E40 (Task 9) roh und bleibt hier außen vor.
+# Der MA-Antragsweg legt keinen Eintrag an und ist deshalb nicht Teil der
+# Parametrisierung; seine Prüfung mit Lückensegmenten (E40) hält
+# test_legacy_fixes_blocks.py fest (test_e40_request_validates_on_credited_time_and_stores_raw).
 # ---------------------------------------------------------------------------
 from datetime import time as _time  # noqa: E402
 from decimal import Decimal  # noqa: E402
