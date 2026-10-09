@@ -202,3 +202,17 @@ def test_clock_status_stale_branch_reads_entry_after_lock(_db_session, employee_
     _db_session.expire_all()
     stored = _db_session.get(TimeEntry, entry_id)
     assert (stored.date, stored.end_time) == (tuesday, None)
+
+
+def test_xls_import(_db_session, employee_user, admin_user, calls):
+    """P5: ``_execute_import_inner`` sperrt die Zielperson EINMAL am Anfang —
+    vor Puffer, Snapshot und clamp (lokaler Import → Spy über admin_helpers)."""
+    from app.services.xls_import_service import ImportedEntry, execute_import
+
+    _setup(_db_session, employee_user)
+    row = ImportedEntry(date=MON, start_time=time(8), end_time=time(12), break_minutes=0,
+                        note=None, has_conflict=False, arbzg_warnings=[])
+    result = execute_import(employee_user.id, [row], overwrite=False, db=_db_session,
+                            changed_by_id=admin_user.id, filename="t.xls", tenant_id=DEFAULT_TENANT_ID)
+    assert result.imported == 1
+    assert_lock_first(calls, employee_user.id)

@@ -5,21 +5,35 @@ Dateiformat: Sheet "Zeiterfassung", Spalten: Datum, Tag, Total, Ein, Aus, Tagesn
 import uuid
 import xlrd
 from datetime import datetime, timedelta, date, time
-from typing import Optional
+from typing import Optional, Sequence
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.services.arbzg_utils import is_night_work
 from app.services import work_window_service
+from app.services.break_validation_service import (
+    BreakBlock, break_block_for_entry, break_block_for_new, daily_break_figures,
+)
 
 EXCEL_EPOCH = datetime(1899, 12, 30)
 MAX_DAILY_NET_HOURS = 10.0   # §3 ArbZG
 MIN_REST_HOURS = 11.0        # §5 ArbZG
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 
+# Spec 2026-10-08 P3: Hinweis in der Vorschau, wenn die Zeile einen anerkannten
+# Eintrag überschreibt — die neuen Zeiten werden dann ungekappt angerechnet.
+CREDIT_OVERRIDE_IMPORT_NOTE = (
+    "Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."
+)
 
-class ImportedEntry(BaseModel):
+
+class ImportedEntryIn(BaseModel):
+    """Eine Importzeile, wie ``/confirm`` sie annimmt (Eingabe).
+
+    Spec 2026-10-08 E11 / 7.1 („``ImportedEntry``-Eingabe"): Felder, die der
+    Server selbst ableitet (``uncredited_minutes`` usw.), gibt es hier nicht —
+    ein mitgeschickter Wert fällt beim Einlesen weg (Pydantic ``extra=ignore``)."""
     date: date
     start_time: time
     end_time: time
@@ -29,6 +43,13 @@ class ImportedEntry(BaseModel):
     arbzg_warnings: list[str]
     raw_start_time: Optional[time] = None
     raw_end_time: Optional[time] = None
+
+
+class ImportedEntry(ImportedEntryIn):
+    """Eine Zeile der Vorschau (Ausgabe von ``parse_xls``)."""
+    # Spec 2026-10-08 (7.1 Nr. 11): nur ANZEIGE der Vorschau. ``/confirm``
+    # nimmt den Wert nicht an (E11) — ``_execute_import_inner`` rechnet neu.
+    uncredited_minutes: int = 0
 
 
 class ImportResult(BaseModel):
@@ -43,16 +64,24 @@ def _excel_serial_to_datetime(serial: float) -> datetime:
     return EXCEL_EPOCH + timedelta(days=serial)
 
 
-def _calc_break_minutes(start: time, end: time) -> int:
-    """ArbZG §4: Pausen automatisch nach Brutto-Arbeitszeit berechnen."""
-    # Note: assumes end > start (no overnight shifts). TimeRec format does not produce overnight entries.
-    gross_seconds = (end.hour * 3600 + end.minute * 60) - (start.hour * 3600 + start.minute * 60)
-    gross_hours = gross_seconds / 3600.0
-    if gross_hours > 9:
-        return 45
-    elif gross_hours > 6:
-        return 30
-    return 0
+def _min(t: time) -> int:
+    return t.hour * 60 + t.minute
+
+
+def _calc_break_minutes(eff_start: time, eff_end: time, segments: Sequence[int]) -> int:
+    """ArbZG §4: Auto-Pause aus der ANGERECHNETEN Bruttozeit (Spec 7.4).
+
+    ``segments`` = ``work_window_service.gap_segments`` der Zeile. Lückensegmente
+    >= 15 Min decken den Bedarf als Pausenabschnitt; nachgetragen wird nur, was
+    fehlt — sonst zöge der Import eine Pause in der Lücke ein zweites Mal ab
+    (Doppelabzug, E45). Ein Rest unter 15 Min wird auf 15 aufgerundet (§4 Satz 2).
+    Ohne Blöcke (``segments == []``) byte-identisch zur bisherigen Regel.
+    Note: assumes end > start (no overnight shifts) — TimeRec liefert keine."""
+    credited_gross = (_min(eff_end) - _min(eff_start)) - sum(segments)
+    required = 45 if credited_gross > 9 * 60 else 30 if credited_gross > 6 * 60 else 0
+    covered = sum(s for s in segments if s >= 15)
+    rest = max(0, required - covered)
+    return 15 if 0 < rest < 15 else rest
 
 
 NIGHT_WORKER_MAX_NET_HOURS = 8.0  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer
@@ -66,47 +95,35 @@ def _check_arbzg(
     prev_end_dt: Optional[datetime],
     exempt: bool = False,
     is_night_worker: bool = False,
-    same_day_blocks: Optional[list[dict]] = None,
+    same_day_blocks: Optional[list[BreakBlock]] = None,
+    *,
+    uncredited_segments: Sequence[int],
+    rest_start: Optional[time] = None,
 ) -> list[str]:
     """ArbZG-Warnungen ermitteln (§3 Tageslimit, §4 Pause, §5 Ruhezeit, §6 Nachtarbeit).
 
     exempt=True (§18 ArbZG): alle Prüfungen werden übersprungen.
     is_night_worker=True (§6 Abs. 2 ArbZG): 8h-Limit statt 10h.
-    same_day_blocks: Liste von {"start": time, "end": time, "break_minutes": int} für
-        andere Einträge am selben Tag (aus Import-Batch + vorhandener DB). Wenn übergeben,
-        werden §3 und §4 auf Basis der Tages-Aggregation statt des Einzeleintrags bewertet.
+    same_day_blocks: ``BreakBlock`` der anderen Einträge desselben Tages (Import-
+        Batch + vorhandene DB). Wenn übergeben, werden §3 und §4 auf Basis der
+        Tages-Aggregation bewertet — mit derselben Regel wie
+        ``validate_daily_break`` (``daily_break_figures``), kein vierter Nachbau.
+    uncredited_segments: Lückensegmente dieses Eintrags (Spec 8.2) — nicht
+        angerechnete Zeit ist keine Arbeitszeit, Segmente >= 15 Min zählen als Pause.
+    rest_start: Beginn für §5, der ROHSTEMPEL (``raw_start or start``) wie in
+        ``rest_time_service`` (Spec 7.3); ohne Angabe ``start``.
     """
     if exempt:
         return []
 
     warnings = []
-    gross_seconds = (end.hour * 3600 + end.minute * 60) - (start.hour * 3600 + start.minute * 60)
-    net_hours = (gross_seconds / 3600.0) - (break_min / 60.0)
+    own = break_block_for_new(start, end, break_min, uncredited_segments)
+    net_hours = (own.end - own.start - own.deduct_minutes) / 60.0 - break_min / 60.0
 
     if same_day_blocks:
         # §3 / §4 Aggregation: alle Blöcke des Tages zusammenfassen (inkl. diesem Eintrag)
-        all_blocks = list(same_day_blocks) + [{"start": start, "end": end, "break_minutes": break_min}]
-        all_blocks.sort(key=lambda b: b["start"])
-
-        total_gross_min = sum(
-            (b["end"].hour * 60 + b["end"].minute) - (b["start"].hour * 60 + b["start"].minute)
-            for b in all_blocks
-        )
-        total_declared_break_min = sum(
-            b["break_minutes"] for b in all_blocks if b["break_minutes"] >= 15
-        )
-        # Lücken zwischen aufeinanderfolgenden Blöcken (≥15 min zählen als Pause)
-        total_gap_min = 0
-        for i in range(1, len(all_blocks)):
-            gap = (
-                (all_blocks[i]["start"].hour * 60 + all_blocks[i]["start"].minute)
-                - (all_blocks[i - 1]["end"].hour * 60 + all_blocks[i - 1]["end"].minute)
-            )
-            if gap >= 15:
-                total_gap_min += gap
-        total_net_min = total_gross_min - total_declared_break_min
+        total_net_min, total_effective_break = daily_break_figures(list(same_day_blocks) + [own])
         total_net_hours = total_net_min / 60.0
-        total_effective_break = total_declared_break_min + total_gap_min
 
         # §3 / §6 Abs. 2 auf Tagesbasis
         if is_night_worker and total_net_hours > NIGHT_WORKER_MAX_NET_HOURS:
@@ -146,7 +163,7 @@ def _check_arbzg(
         warnings.append("§6 ArbZG: Nachtarbeit (>2h in der Nachtzeit 23:00–06:00)")
 
     if prev_end_dt is not None:
-        curr_start_dt = datetime.combine(entry_date, start)
+        curr_start_dt = datetime.combine(entry_date, rest_start or start)
         rest_hours = (curr_start_dt - prev_end_dt).total_seconds() / 3600.0
         if rest_hours < MIN_REST_HOURS:
             warnings.append(
@@ -157,10 +174,66 @@ def _check_arbzg(
     return warnings
 
 
-def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[ImportedEntry]:
+def _find_existing_entry(
+    db: Session,
+    user_id: uuid.UUID,
+    tenant_id,
+    d: date,
+    *,
+    starts: Sequence[time],
+    raw_start: time,
+) -> Optional[TimeEntry]:
+    """Der Eintrag, den eine Importzeile überschreiben würde.
+
+    Reihenfolge:
+    1. ``start_time`` == einer der ``starts`` (angerechneter Beginn der Zeile,
+       bei ``/confirm`` zusätzlich der vom Client gelieferte) — Verhalten bis 1.19.3;
+    2. ``raw_start_time`` == Dateibeginn — ein gekappter Eintrag, der mit dem
+       AKTUELLEN Puffer einen anderen Beginn bekäme (Puffer seither geändert).
+       Ohne diesen Schritt entstünde ein zweiter Eintrag neben dem alten;
+    3. ``start_time`` == Dateibeginn — ein ungekappt gespeicherter Eintrag
+       (anerkannt, oder erfasst, als der Tag noch keine Blöcke hatte).
+
+    F-026: ``tenant_id``-Filter zusätzlich zu RLS (Spec 7.3)."""
+    base = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user_id,
+        TimeEntry.tenant_id == tenant_id,
+        TimeEntry.date == d,
+    )
+    for start in dict.fromkeys(s for s in starts if s is not None):
+        hit = base.filter(TimeEntry.start_time == start).first()
+        if hit is not None:
+            return hit
+    hit = base.filter(TimeEntry.raw_start_time == raw_start).first()
+    if hit is not None:
+        return hit
+    return base.filter(TimeEntry.start_time == raw_start).first()
+
+
+def _start_taken(db: Session, user_id, tenant_id, d: date, start: time, exclude_id) -> bool:
+    """Belegt ein ANDERER Eintrag des Tages schon diesen Beginn?
+    (``uq_tenant_user_date_start`` — SQLite prüft den Index nicht.)"""
+    return db.query(TimeEntry.id).filter(
+        TimeEntry.user_id == user_id,
+        TimeEntry.tenant_id == tenant_id,  # F-026
+        TimeEntry.date == d,
+        TimeEntry.start_time == start,
+        TimeEntry.id != exclude_id,
+    ).first() is not None
+
+
+def parse_xls(
+    file_bytes: bytes,
+    user_id: uuid.UUID,
+    db: Session,
+    *,
+    tenant_id: Optional[uuid.UUID] = None,
+) -> list[ImportedEntry]:
     """
     Parst eine TimeRec-XLS-Datei und gibt ImportedEntry-Liste zurück.
     Ermittelt Konflikte (user_id+date+start_time) und ArbZG-Warnungen.
+
+    ``tenant_id``: F-026 — der Router übergibt den Mandanten der Verwaltung.
 
     Raises ValueError bei ungültigem Format oder fehlenden Daten.
     """
@@ -179,23 +252,27 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
         )
 
     # §18-Bypass und §6 Abs. 2: User-Flags einmalig laden
-    user = db.query(User).filter(User.id == user_id).first()
-    exempt = getattr(user, "exempt_from_arbzg", False) or False
-    is_night_worker = getattr(user, "is_night_worker", False) or False
+    user_query = db.query(User).filter(User.id == user_id)
+    if tenant_id is not None:
+        user_query = user_query.filter(User.tenant_id == tenant_id)  # F-026
+    user = user_query.first()
+    if user is None:
+        raise ValueError("Benutzer nicht gefunden")
+    exempt = bool(getattr(user, "exempt_from_arbzg", False))
+    is_night_worker = bool(getattr(user, "is_night_worker", False))
+    user_tenant = user.tenant_id
 
-    # #201: Soll-Fenster-Puffer einmalig laden (Default 15 min)
-    grace = work_window_service.get_grace_minutes(db, user.tenant_id) if user else work_window_service.DEFAULT_GRACE_MINUTES
+    # Puffer des Mandanten (Default 15 min) — für NEUE Einträge (E80).
+    grace = work_window_service.get_grace_minutes(db, user_tenant)
 
     ws = wb.sheet_by_name("Zeiterfassung")
     entries: list[ImportedEntry] = []
     prev_end_dt: Optional[datetime] = None
     first_import_date: Optional[date] = None
 
-    # §3/§4 Tagesaggregation: Blöcke pro Datum sammeln (Import-Batch + DB-Einträge bereits gecacht)
-    # batch_blocks_by_date: date -> list of {"start": time, "end": time, "break_minutes": int}
-    batch_blocks_by_date: dict[date, list[dict]] = {}
-    # db_blocks_by_date: gecachte DB-Einträge pro Datum (einmalig pro Datum abgefragt)
-    db_blocks_by_date: dict[date, list[dict]] = {}
+    # §3/§4 Tagesaggregation: BreakBlocks pro Datum (Import-Batch + DB-Einträge)
+    batch_blocks_by_date: dict[date, list[BreakBlock]] = {}
+    db_blocks_by_date: dict[date, list[BreakBlock]] = {}
 
     for row_idx in range(ws.nrows):
         # Datenzeile erkennbar durch numerischen ctype (3) in Ein-Spalte (D)
@@ -212,44 +289,63 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
 
         entry_date = ein_dt.date()
         # Sekunden auf 0 setzen (XLS hat keine Sekunden)
-        start_t = ein_dt.time().replace(second=0, microsecond=0)
-        end_t = aus_dt.time().replace(second=0, microsecond=0)
+        file_start = ein_dt.time().replace(second=0, microsecond=0)
+        file_end = aus_dt.time().replace(second=0, microsecond=0)
 
-        # #201: Soll-Fenster kappen; raw_* nur gesetzt wenn gekappt
-        if user is not None:
-            _r = work_window_service.clamp(
-                db, user, entry_date, start_t, end_t, grace, credit_override=False,
+        # Spec 6.1/E80: neue Zeilen kappen mit dem aktuellen Puffer; trifft die
+        # Zeile einen GESPEICHERTEN Eintrag, gelten dessen Puffer und dessen
+        # Anerkennung (P3) — die Vorschau zeigt, was /confirm schreiben wird.
+        r = work_window_service.clamp(
+            db, user, entry_date, file_start, file_end, grace, credit_override=False,
+        )
+        existing = _find_existing_entry(
+            db, user_id, user_tenant, entry_date, starts=(r.eff_start,), raw_start=file_start,
+        )
+        override = bool(existing is not None and existing.credit_override)
+        row_grace = (
+            work_window_service.grace_for_entry(db, existing) if existing is not None else grace
+        )
+        if override or row_grace != grace:
+            r = work_window_service.clamp(
+                db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
             )
-            start_t, end_t, raw_start_t, raw_end_t = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
-        else:
-            _r = work_window_service.ClampResult(start_t, end_t, None, None, 0, None)
-            raw_start_t = raw_end_t = None
+        segs = work_window_service.gap_segments(
+            db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
+        )
+        start_t, end_t = r.eff_start, r.eff_end
+        raw_start_t, raw_end_t = r.raw_start, r.raw_end
 
-        break_min = _calc_break_minutes(start_t, end_t)
+        break_min = _calc_break_minutes(start_t, end_t, segs)
 
-        # §5-Check: Für den ersten Eintrag im Import letzten DB-Eintrag vor Import-Zeitraum holen
+        # §5-Check: Für den ersten Eintrag im Import letzten DB-Eintrag vor Import-Zeitraum holen.
+        # Spec 7.3: gegen den ROHSTEMPEL (raw_end or end) wie rest_time_service.
         check_prev = prev_end_dt
         if first_import_date is None:
             first_import_date = entry_date
             last_db_entry = (
                 db.query(TimeEntry)
-                .filter(TimeEntry.user_id == user_id, TimeEntry.date < entry_date)
+                .filter(
+                    TimeEntry.user_id == user_id,
+                    TimeEntry.tenant_id == user_tenant,  # F-026
+                    TimeEntry.date < entry_date,
+                )
                 .order_by(TimeEntry.date.desc(), TimeEntry.start_time.desc())
                 .first()
             )
             if last_db_entry and last_db_entry.end_time:
-                check_prev = datetime.combine(last_db_entry.date, last_db_entry.end_time)
+                check_prev = datetime.combine(
+                    last_db_entry.date, last_db_entry.raw_end_time or last_db_entry.end_time,
+                )
 
         # §3/§4 Tagesaggregation: bestehende DB-Einträge für diesen Tag einmalig laden
         if entry_date not in db_blocks_by_date:
-            db_entries_today = (
-                db.query(TimeEntry)
-                .filter(TimeEntry.user_id == user_id, TimeEntry.date == entry_date)
-                .all()
-            )
             db_blocks_by_date[entry_date] = [
-                {"start": e.start_time, "end": e.end_time, "break_minutes": e.break_minutes}
-                for e in db_entries_today
+                break_block_for_entry(db, user, e)
+                for e in db.query(TimeEntry).filter(
+                    TimeEntry.user_id == user_id,
+                    TimeEntry.tenant_id == user_tenant,  # F-026
+                    TimeEntry.date == entry_date,
+                ).all()
                 if e.end_time is not None
             ]
 
@@ -260,34 +356,25 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
             entry_date, start_t, end_t, break_min, check_prev,
             exempt=exempt, is_night_worker=is_night_worker,
             same_day_blocks=other_blocks if other_blocks else None,
+            uncredited_segments=segs,
+            rest_start=raw_start_t or start_t,
         )
 
-        # #462: Die Kappung darf auch hier nicht stumm passieren. Die Vorschau ist
-        # der letzte Punkt, an dem der Admin den Import noch abbrechen kann —
-        # bestaetigt er ihn, stehen andere Zeiten in der Datei als in der Datenbank.
-        # Klartext ohne Code-Praefix, weil die Zeilen-Warnungen roh im Tooltip der
-        # Vorschau landen (die Nachbarn lauten "§3 ArbZG: …").
-        if raw_start_t is not None or raw_end_t is not None:
+        # #462: Die Kappung darf auch hier nicht stumm passieren. Spec 7.1 Nr. 11:
+        # auch ein reiner Lückenfall (K1, ohne raw_*) bekommt den Hinweis.
+        # Klartext ohne Code-Präfix (Tooltip der Vorschau).
+        if raw_start_t is not None or raw_end_t is not None or r.uncredited_minutes > 0:
             clamp_note = work_window_service.clamp_warning_text(
-                db, user, entry_date, _r, for_employee=False,
+                db, user, entry_date, r, for_employee=False,
             )
             if clamp_note:
                 arbzg_warnings = arbzg_warnings + [clamp_note]
+        if override:
+            arbzg_warnings = arbzg_warnings + [CREDIT_OVERRIDE_IMPORT_NOTE]
 
         # Diesen Block für nachfolgende Zeilen am selben Tag merken
-        if entry_date not in batch_blocks_by_date:
-            batch_blocks_by_date[entry_date] = []
-        batch_blocks_by_date[entry_date].append({"start": start_t, "end": end_t, "break_minutes": break_min})
-
-        # Konflikt-Check nach UniqueConstraint (user_id + date + start_time)
-        existing = (
-            db.query(TimeEntry)
-            .filter(
-                TimeEntry.user_id == user_id,
-                TimeEntry.date == entry_date,
-                TimeEntry.start_time == start_t,
-            )
-            .first()
+        batch_blocks_by_date.setdefault(entry_date, []).append(
+            break_block_for_new(start_t, end_t, break_min, segs)
         )
 
         entries.append(ImportedEntry(
@@ -300,9 +387,10 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
             arbzg_warnings=arbzg_warnings,
             raw_start_time=raw_start_t,
             raw_end_time=raw_end_t,
+            uncredited_minutes=r.uncredited_minutes,
         ))
 
-        prev_end_dt = datetime.combine(entry_date, end_t)
+        prev_end_dt = datetime.combine(entry_date, raw_end_t or end_t)
 
     if not entries:
         raise ValueError("Keine Datenzeilen im Sheet 'Zeiterfassung' gefunden")
@@ -312,7 +400,7 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
 
 def execute_import(
     user_id: uuid.UUID,
-    entries: list[ImportedEntry],
+    entries: Sequence[ImportedEntryIn],
     overwrite: bool,
     db: Session,
     changed_by_id: uuid.UUID,
@@ -363,7 +451,7 @@ def execute_import(
 
 def _execute_import_inner(
     user_id: uuid.UUID,
-    entries: list[ImportedEntry],
+    entries: Sequence[ImportedEntryIn],
     overwrite: bool,
     db: Session,
     changed_by_id: uuid.UUID,
@@ -371,14 +459,25 @@ def _execute_import_inner(
     tenant_id: uuid.UUID | None = None,
 ) -> ImportResult:
     """Actual import body. Callers should use execute_import() which wraps it."""
+    # Lokaler Import: ein Service greift auf den Router-Helfer zu (kein Zirkel
+    # beim Laden von app.routers).
+    from app.routers.admin_helpers import lock_user_row
+
     imported = 0
     skipped = 0
     overwritten = 0
     all_warnings: list[str] = []
 
+    # Spec P5: Ankersperre der Zielperson EINMAL am Anfang — vor Puffer,
+    # Snapshot-Auflösung und clamp, vor jeder Zeilensperre.
+    lock_user_row(db, tenant_id, user_id)
+
     # Einmal fuer die Schleife: Ziel-Person (fuer die Kappung unten und die
     # Zusammenfassung am Ende) und der Tenant-Puffer.
-    target_user = db.query(User).filter(User.id == user_id).first()
+    target_query = db.query(User).filter(User.id == user_id)
+    if tenant_id is not None:
+        target_query = target_query.filter(User.tenant_id == tenant_id)  # F-026
+    target_user = target_query.first()
     grace = work_window_service.get_grace_minutes(db, tenant_id)
 
     for entry in entries:
@@ -398,57 +497,64 @@ def _execute_import_inner(
             )
             continue
 
-        # Release-Review 1.19.1: NICHT den Client-Zeiten vertrauen. /confirm nimmt
-        # die Eintraege aus dem Request-Body entgegen; gekappt wurde bisher nur in
-        # der Vorschau (parse_xls). Wer den Aufruf nachbaut, schrieb damit Zeiten
-        # am Arbeitszeit-Fenster vorbei — und setzte obendrein raw_start_time/
-        # raw_end_time frei, also genau den Wert, der als §16-Anwesenheitsnachweis
-        # und als Grundlage der §5-Ruhezeitpruefung gilt. Gerechnet wird deshalb
-        # hier erneut, und zwar aus dem Rohwert: fuer eine unveraenderte Vorschau
-        # ist das Ergebnis identisch (die Kappung ist in sich idempotent).
-        # Nur wo an diesem Wochentag ueberhaupt ein Fenster hinterlegt ist. Ohne
-        # Fenster gibt es nichts zu umgehen — und ein mitgeliefertes raw_* (etwa
-        # aus einer Vorschau, die unter einem frueheren Fenster entstand) bleibt
-        # als §16-Nachweis stehen, statt von einer Kappung geloescht zu werden,
-        # die gar nicht stattfindet.
-        _hat_fenster = target_user is not None and work_window_service.has_blocks(
-            db, target_user, entry.date,
+        # Release-Review 1.19.1 + Spec 7.4: NICHT den Client-Werten vertrauen.
+        # /confirm nimmt die Einträge aus dem Request-Body entgegen; wo gekappt
+        # wird, rechnet der Server Zeiten, raw_*, uncredited UND Auto-Pause neu,
+        # und zwar aus dem Rohwert (für eine unveränderte Vorschau identisch).
+        file_start = entry.raw_start_time or entry.start_time
+        file_end = entry.raw_end_time or entry.end_time
+        first = work_window_service.clamp(
+            db, target_user, entry.date, file_start, file_end, grace, credit_override=False,
         )
-        if _hat_fenster:
-            _r = work_window_service.clamp(
-                db, target_user,
-                entry.date,
-                entry.raw_start_time or entry.start_time,
-                entry.raw_end_time or entry.end_time,
-                grace,
+        # ``has_conflict`` der Vorschau ist nur ein Stand: zwischen Vorschau und
+        # Bestätigung kann ein Eintrag entstanden sein — deshalb hier neu suchen.
+        existing = _find_existing_entry(
+            db, user_id, tenant_id, entry.date,
+            starts=(first.eff_start, entry.start_time), raw_start=file_start,
+        )
+        override = bool(existing is not None and existing.credit_override)
+        row_grace = (
+            work_window_service.grace_for_entry(db, existing) if existing is not None else grace
+        )
+        # E38: ``clamp_applies`` statt „hat Blöcke" — prüft zusätzlich
+        # track_hours und credit_override. Ohne Kappung bleibt ein mitgeliefertes
+        # raw_* als §16-Nachweis stehen, statt von einer Kappung gelöscht zu
+        # werden, die gar nicht stattfindet.
+        if target_user is not None and work_window_service.clamp_applies(
+            db, target_user, entry.date, credit_override=override,
+        ):
+            r = work_window_service.clamp(
+                db, target_user, entry.date, file_start, file_end, row_grace,
                 credit_override=False,
             )
-            entry = entry.model_copy(update={
-                "start_time": _r.eff_start,
-                "end_time": _r.eff_end,
-                "raw_start_time": _r.raw_start,
-                "raw_end_time": _r.raw_end,
-            })
+            segs = work_window_service.gap_segments(
+                db, target_user, entry.date, file_start, file_end, row_grace,
+                credit_override=False,
+            )
+            eff_start, eff_end, raw_start, raw_end = r.eff_start, r.eff_end, r.raw_start, r.raw_end
+            uncredited, applied_grace = r.uncredited_minutes, r.grace_minutes
+            break_minutes = _calc_break_minutes(eff_start, eff_end, segs)
+        else:
+            eff_start, eff_end = entry.start_time, entry.end_time
+            raw_start, raw_end = entry.raw_start_time, entry.raw_end_time
+            uncredited, applied_grace = 0, None
+            break_minutes = entry.break_minutes
 
         for w in entry.arbzg_warnings:
             all_warnings.append(f"{entry.date.strftime('%d.%m.%Y')}: {w}")
 
-        # Re-query conflict: has_conflict on ImportedEntry reflects preview state.
-        # A new entry may have been created between preview and confirm, so we
-        # re-check here rather than trusting the frontend's has_conflict flag.
-        existing = (
-            db.query(TimeEntry)
-            .filter(
-                TimeEntry.user_id == user_id,
-                TimeEntry.date == entry.date,
-                TimeEntry.start_time == entry.start_time,
-            )
-            .first()
-        )
-
         if existing:
             if not overwrite:
                 skipped += 1
+                continue
+            if eff_start != existing.start_time and _start_taken(
+                db, user_id, tenant_id, entry.date, eff_start, existing.id,
+            ):
+                skipped += 1
+                all_warnings.append(
+                    f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — ein anderer "
+                    f"Eintrag beginnt bereits um {eff_start.strftime('%H:%M')}."
+                )
                 continue
 
             # Audit-Log: alter Zustand
@@ -464,20 +570,26 @@ def _execute_import_inner(
                 old_break_minutes=existing.break_minutes,
                 old_note=existing.note,
                 new_date=entry.date,
-                new_start_time=entry.start_time,
-                new_end_time=entry.end_time,
-                new_break_minutes=entry.break_minutes,
+                new_start_time=eff_start,
+                new_end_time=eff_end,
+                new_break_minutes=break_minutes,
                 new_note=entry.note,
                 tenant_id=tenant_id,
             )
-            existing.end_time = entry.end_time
-            existing.break_minutes = entry.break_minutes
+            existing.start_time = eff_start
+            existing.end_time = eff_end
+            existing.break_minutes = break_minutes
             existing.note = entry.note
             # Audit R3/§16: Roh-Stempel des Import-Eintrags übernehmen, sonst
             # geht der Nachweis der tatsächlichen Anwesenheit beim Overwrite
             # verloren (gekappter Wert bliebe, Rohwert verschwände).
-            existing.raw_start_time = entry.raw_start_time
-            existing.raw_end_time = entry.raw_end_time
+            existing.raw_start_time = raw_start
+            existing.raw_end_time = raw_end
+            existing.uncredited_minutes = uncredited
+            if applied_grace is not None:
+                existing.clamp_grace_minutes = applied_grace
+            # P18: der Import liefert ein echtes Ende; credit_override bleibt (P3).
+            existing.auto_closed = False
             db.add(log)
             overwritten += 1
         else:
@@ -485,12 +597,14 @@ def _execute_import_inner(
                 user_id=user_id,
                 tenant_id=tenant_id,
                 date=entry.date,
-                start_time=entry.start_time,
-                end_time=entry.end_time,
-                break_minutes=entry.break_minutes,
+                start_time=eff_start,
+                end_time=eff_end,
+                break_minutes=break_minutes,
                 note=entry.note,
-                raw_start_time=entry.raw_start_time,
-                raw_end_time=entry.raw_end_time,
+                raw_start_time=raw_start,
+                raw_end_time=raw_end,
+                uncredited_minutes=uncredited,
+                clamp_grace_minutes=applied_grace,
             )
             db.add(new_entry)
             db.flush()  # ID für Audit-Log
@@ -502,9 +616,9 @@ def _execute_import_inner(
                 action="create",
                 source="import",
                 new_date=entry.date,
-                new_start_time=entry.start_time,
-                new_end_time=entry.end_time,
-                new_break_minutes=entry.break_minutes,
+                new_start_time=eff_start,
+                new_end_time=eff_end,
+                new_break_minutes=break_minutes,
                 new_note=entry.note,
                 tenant_id=tenant_id,
             )

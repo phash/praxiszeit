@@ -14,6 +14,7 @@ from app.middleware.auth import require_admin
 from app.models import User
 from app.services.xls_import_service import (
     ImportedEntry,
+    ImportedEntryIn,
     ImportResult,
     parse_xls,
     execute_import,
@@ -36,7 +37,8 @@ class PreviewResponse(BaseModel):
 class ConfirmRequest(BaseModel):
     user_id: uuid.UUID
     overwrite: bool
-    entries: list[ImportedEntry]
+    # E11: Eingabeform ohne die serverseitig abgeleiteten Felder der Vorschau.
+    entries: list[ImportedEntryIn]
     filename: Optional[str] = "import.xls"
 
 
@@ -74,7 +76,7 @@ def preview_import(
         raise HTTPException(status_code=400, detail="Ungültiges Dateiformat — es wird eine .xls-Datei (BIFF) erwartet.")
 
     try:
-        entries = parse_xls(content, user_id, db)
+        entries = parse_xls(content, user_id, db, tenant_id=current_admin.tenant_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

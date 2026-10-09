@@ -51,60 +51,60 @@ def _make_data_row(ein_dt: datetime, aus_dt: datetime, notiz: str = ""):
 
 def test_break_under_6h_is_0():
     """Prüft dass unter 6h Arbeitszeit keine Pflichtpause berechnet wird — §4 ArbZG."""
-    assert _calc_break_minutes(time(8, 0), time(13, 59)) == 0
+    assert _calc_break_minutes(time(8, 0), time(13, 59), []) == 0
 
 
 def test_break_exactly_6h_is_0():
     """Prüft dass exakt 6h Arbeitszeit noch keine Pflichtpause ausloest — §4 ArbZG Grenze."""
-    assert _calc_break_minutes(time(8, 0), time(14, 0)) == 0
+    assert _calc_break_minutes(time(8, 0), time(14, 0), []) == 0
 
 
 def test_break_over_6h_is_30():
     """Prüft dass ueber 6h Arbeitszeit 30min Pflichtpause berechnet wird — §4 Abs. 1 ArbZG."""
-    assert _calc_break_minutes(time(8, 0), time(14, 1)) == 30
+    assert _calc_break_minutes(time(8, 0), time(14, 1), []) == 30
 
 
 def test_break_exactly_9h_is_30():
     """Prüft dass exakt 9h Arbeitszeit noch 30min Pause ergibt — §4 Abs. 1 ArbZG Grenze."""
-    assert _calc_break_minutes(time(7, 0), time(16, 0)) == 30
+    assert _calc_break_minutes(time(7, 0), time(16, 0), []) == 30
 
 
 def test_break_over_9h_is_45():
     """Prüft dass ueber 9h Arbeitszeit 45min Pflichtpause berechnet wird — §4 Abs. 2 ArbZG."""
-    assert _calc_break_minutes(time(7, 0), time(16, 1)) == 45
+    assert _calc_break_minutes(time(7, 0), time(16, 1), []) == 45
 
 
 # ── _check_arbzg ─────────────────────────────────────────────────────────────
 
 def test_no_warnings_for_normal_entry():
     """Prüft dass ein normaler Arbeitstag keine ArbZG-Warnungen erzeugt."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, None)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, None, uncredited_segments=[])
     assert warnings == []
 
 
 def test_warning_for_over_10h():
     """Prüft dass ueber 10h Netto-Arbeitszeit eine §3 ArbZG-Warnung erzeugt — Hoechstarbeitszeit."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, uncredited_segments=[])
     assert any("§3" in w for w in warnings)
 
 
 def test_warning_for_night_work():
     """Prüft dass Nachtarbeit (22:00-06:00) eine §6 ArbZG-Warnung erzeugt."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(22, 0), time(6, 0), 0, None)
+    warnings = _check_arbzg(date(2026, 1, 12), time(22, 0), time(6, 0), 0, None, uncredited_segments=[])
     assert any("§6" in w for w in warnings)
 
 
 def test_warning_for_insufficient_rest():
     """Prüft dass bei unter 11h Ruhezeit eine §5 ArbZG-Warnung erzeugt wird — Mindestruhezeit."""
     prev_end = datetime(2026, 1, 11, 23, 0)  # Vortag 23:00
-    warnings = _check_arbzg(date(2026, 1, 12), time(8, 0), time(14, 0), 30, prev_end)
+    warnings = _check_arbzg(date(2026, 1, 12), time(8, 0), time(14, 0), 30, prev_end, uncredited_segments=[])
     assert any("§5" in w for w in warnings)
 
 
 def test_no_rest_warning_for_sufficient_rest():
     """Prüft dass bei ausreichender Ruhezeit (>11h) keine §5-Warnung erzeugt wird."""
     prev_end = datetime(2026, 1, 11, 18, 0)  # Vortag 18:00
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, prev_end)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, prev_end, uncredited_segments=[])
     assert not any("§5" in w for w in warnings)
 
 
@@ -113,27 +113,27 @@ def test_exempt_user_gets_no_warnings():
     prev_end = datetime(2026, 1, 11, 23, 0)
     warnings = _check_arbzg(
         date(2026, 1, 12), time(7, 0), time(18, 30), 45, prev_end,
-        exempt=True,
+        exempt=True, uncredited_segments=[],
     )
     assert warnings == []
 
 
 def test_night_worker_8h_warning():
     """Prüft dass Nachtarbeitnehmer ab 8h Netto §6 Abs. 2 ArbZG-Warnung erhalten statt §3."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(16, 30), 45, None, is_night_worker=True)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(16, 30), 45, None, is_night_worker=True, uncredited_segments=[])
     assert any("§6 Abs. 2" in w for w in warnings)
     assert not any("§3" in w for w in warnings)
 
 
 def test_night_worker_no_warning_under_8h():
     """Prüft dass Nachtarbeitnehmer unter 8h keine §6 Abs. 2-Warnung erhalten."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(14, 30), 30, None, is_night_worker=True)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(14, 30), 30, None, is_night_worker=True, uncredited_segments=[])
     assert not any("§6 Abs. 2" in w for w in warnings)
 
 
 def test_non_night_worker_no_8h_warning():
     """Prüft dass normale User die §3-Warnung erhalten, nicht §6 Abs. 2 — kein Nachtarbeitnehmer."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, is_night_worker=False)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, is_night_worker=False, uncredited_segments=[])
     assert any("§3" in w for w in warnings)
     assert not any("§6 Abs. 2" in w for w in warnings)
 
