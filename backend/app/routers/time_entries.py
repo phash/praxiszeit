@@ -543,9 +543,17 @@ def clock_out(
     db.refresh(open_entry)
 
     clock_out_warnings: list[str] = []
-    # #462: dasselbe beim Ausstempeln — hier wird das ENDE gekappt.
+    # #462: dasselbe beim Ausstempeln — hier wird das ENDE gekappt. Gemeldet wird
+    # nur, was tatsächlich gespeichert ist: clock_out schreibt allein das Ende, der
+    # Beginn bleibt, wie clock_in ihn gespeichert hat. Haben sich Blöcke oder
+    # Puffer seit dem Einstempeln geändert, kappt clamp den gespeicherten Beginn
+    # rechnerisch erneut — eine daraus gemeldete Beginn-Kappung widerspräche dem
+    # gespeicherten Eintrag (#462-Klasse, Review Task 3). Der Kollaps-Text bleibt
+    # gleich (dort ist eff_start == start), der Lückenanteil ebenso (Lücken liegen
+    # hinter der Hüllkante).
     _clamp_warn = work_window_service.clamp_warning(
-        db, current_user, open_entry.date, _r, for_employee=True,
+        db, current_user, open_entry.date,
+        _r._replace(eff_start=open_entry.start_time, raw_start=None), for_employee=True,
     )
     if _clamp_warn:
         clock_out_warnings.append(_clamp_warn)

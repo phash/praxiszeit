@@ -681,3 +681,72 @@ def test_alter_gekappter_feiertagseintrag_wird_beim_speichern_neu_berechnet(db, 
     e = db.query(TimeEntry).filter(TimeEntry.id == entry.id).one()
     assert e.end_time == dt.time(18, 0)
     assert e.raw_end_time is None
+
+
+# ── Review Task 3 (#462-Klasse): die Ausstempel-Warnung nennt nur, was gespeichert wird ──
+# clock_out schreibt nur das Ende (end_time/raw_end_time); der Beginn des offenen
+# Eintrags bleibt, wie clock_in ihn gespeichert hat. Ändern sich Blöcke oder Puffer
+# zwischen Ein- und Ausstempeln, kappt clamp den gespeicherten Beginn rechnerisch
+# erneut — die Warnung durfte daraus keine Beginn-Kappung melden („Angerechnet wird
+# die gekappte Zeit"), während tatsächlich ab dem ursprünglichen Beginn angerechnet
+# wird. Unter 072 bekam die Warnung nur die Endseite.
+
+def _einstempeln_0750_unter_8_bis_17(db, employee, employee_client, monkeypatch):
+    import app.routers.time_entries as te
+    employee.work_blocks = legacy_week(mon=("08:00", "17:00"))
+    db.commit()
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 7, 50))
+    monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
+    resp = employee_client.post("/api/time-entries/clock-in", json={})
+    assert resp.status_code in (200, 201), resp.text
+    return te
+
+
+def _ausstempeln(te, employee_client, monkeypatch, hour, minute):
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, hour, minute))
+    resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 45})
+    assert resp.status_code == 200, resp.text
+    return resp
+
+
+def test_ausstempeln_nach_blockaenderung_meldet_keine_beginn_kappung(db, employee, employee_client, monkeypatch):
+    te = _einstempeln_0750_unter_8_bis_17(db, employee, employee_client, monkeypatch)
+    employee.work_blocks = legacy_week(mon=("10:00", "17:00"))   # Hülle jetzt ab 09:45
+    db.commit()
+
+    resp = _ausstempeln(te, employee_client, monkeypatch, 16, 0)
+
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert (entry.start_time, entry.raw_start_time) == (dt.time(7, 50), None)
+    assert (entry.end_time, entry.raw_end_time) == (dt.time(16, 0), None)
+    assert not _clamp_warnings(resp), _clamp_warnings(resp)
+
+
+def test_ausstempeln_nach_puffer_senkung_meldet_keine_beginn_kappung(db, employee, employee_client, monkeypatch):
+    from app.models.system_setting import SystemSetting
+    te = _einstempeln_0750_unter_8_bis_17(db, employee, employee_client, monkeypatch)
+    db.add(SystemSetting(key="work_window_grace_minutes", value="0", tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+
+    resp = _ausstempeln(te, employee_client, monkeypatch, 16, 0)
+
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert (entry.start_time, entry.raw_start_time) == (dt.time(7, 50), None)
+    assert not _clamp_warnings(resp), _clamp_warnings(resp)
+
+
+def test_ausstempeln_nach_blockaenderung_meldet_nur_die_ende_kappung(db, employee, employee_client, monkeypatch):
+    """Kontrolle: eine echte Ende-Kappung wird weiter gemeldet — ohne Beginn-Teil."""
+    te = _einstempeln_0750_unter_8_bis_17(db, employee, employee_client, monkeypatch)
+    employee.work_blocks = legacy_week(mon=("10:00", "17:00"))
+    db.commit()
+
+    resp = _ausstempeln(te, employee_client, monkeypatch, 18, 30)
+
+    entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).one()
+    assert (entry.start_time, entry.raw_start_time) == (dt.time(7, 50), None)
+    assert (entry.end_time, entry.raw_end_time) == (dt.time(17, 15), dt.time(18, 30))
+    warn = _clamp_warnings(resp)
+    assert len(warn) == 1, resp.json().get("warnings")
+    assert "Ende 18:30 → 17:15" in warn[0], warn[0]
+    assert "Beginn" not in warn[0], warn[0]
