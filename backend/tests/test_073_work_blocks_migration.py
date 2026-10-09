@@ -151,6 +151,53 @@ def test_tenant_label():
     assert M.tenant_label("00000000-0000-0000-0000-000000000001") == "0000…0001"
 
 
+# ── auto_closed-Backfill (Spec 5.2 Nr. 8, P18) ───────────────────────────────
+
+def test_auto_closed_backfill_finds_closed_and_reclamped_entries(db, test_user):
+    """072 kappte den Auto-Close nie (Ende 23:59, Rohende NULL). Speicherte danach
+    jemand das ganze Formular (nur die Pause ergänzt, Ende 23:59 unverändert),
+    kappte 072 die synthetischen 23:59 auf das Fensterende und hielt 23:59 als
+    ``raw_end_time`` fest — dieselbe Form, die der neue Auto-Close mit
+    ``auto_closed = true`` schreibt. Ohne Kennzeichen zählte P19 23:59 − 16:45
+    als „nicht angerechnet" und Anerkennen öffnete das 16-h-Schlupfloch wieder."""
+    from app.models import TimeEntry, TimeEntryAuditLog
+
+    cases = {  # Schlüssel: (Ende, Rohende, Protokollzeile auto_close?) → erwartet
+        "auto_close": (time(23, 59), None, True, True),
+        "nachgekappt": (time(16, 45), time(23, 59), True, True),
+        "korrigiert_im_fenster": (time(17, 0), None, True, False),
+        "korrigiert_ausserhalb": (time(16, 45), time(19, 0), True, False),
+        "ohne_protokoll": (time(23, 59), None, False, False),
+        "echter_stempel_2359": (time(16, 45), time(23, 59), False, False),
+    }
+    ids = {}
+    for day, (key, (end, raw_end, audited, _)) in enumerate(cases.items(), 1):
+        entry = TimeEntry(tenant_id=test_user.tenant_id, user_id=test_user.id,
+                          date=date(2026, 6, day), start_time=time(8, 0), end_time=end,
+                          raw_end_time=raw_end, break_minutes=0)
+        db.add(entry)
+        db.flush()
+        ids[key] = entry.id
+        if audited:
+            db.add(TimeEntryAuditLog(
+                tenant_id=test_user.tenant_id, time_entry_id=entry.id, user_id=test_user.id,
+                changed_by=test_user.id, action="update", source="auto_close",
+                new_end_time=time(23, 59)))
+    db.add(TimeEntryAuditLog(  # fremde Protokollzeile darf nichts auslösen
+        tenant_id=test_user.tenant_id, time_entry_id=ids["ohne_protokoll"], user_id=test_user.id,
+        changed_by=test_user.id, action="update", source="manual", new_end_time=time(23, 59)))
+    db.commit()
+
+    assert M.backfill_auto_closed(db.connection()) == 2
+    db.commit()
+    db.expire_all()
+
+    flags = {key: db.get(TimeEntry, ids[key]).auto_closed for key in cases}
+    assert flags == {key: expected for key, (*_, expected) in cases.items()}
+    nachgekappt = db.get(TimeEntry, ids["nachgekappt"])  # reines Kennzeichen
+    assert (nachgekappt.end_time, nachgekappt.raw_end_time) == (time(16, 45), time(23, 59))
+
+
 # ── Kappungsparität (Spec 17.1) ──────────────────────────────────────────────
 
 def _shift_072(t, minutes):

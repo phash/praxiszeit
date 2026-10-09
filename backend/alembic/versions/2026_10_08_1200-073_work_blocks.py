@@ -16,7 +16,8 @@ Upgrade (Spec 5.2):
 * Bestandsfallen (halboffen, Beginn >= Ende, Sekunden) brechen NICHT ab,
   sondern stehen namentlich in der Diagnose (Spec 5.3/5.4) - ein Update eines
   Kundensystems darf nicht haengen;
-* ``auto_closed`` fuer Eintraege, die der Auto-Close auf 23:59 geschlossen hat;
+* ``auto_closed`` fuer Eintraege, die der Auto-Close auf 23:59 geschlossen hat
+  (Ende ODER Rohende 23:59, siehe ``backfill_auto_closed``);
 * die zehn ``scheduled_*``-Spalten werden geloescht (E23, kein Expand/Contract).
 
 KEINE Neukappung: ``uncredited_minutes`` bleibt 0, ``clamp_grace_minutes``
@@ -28,9 +29,9 @@ HUELLE der Bloecke (Beginn des ersten bis Ende des letzten Blocks), nicht aus
 dem ersten Block. Verlustbehaftet; die Diagnose nennt die Betroffenen.
 
 Die reinen Helfer (``build_week``, ``window_from_week``, ``upgrade_report``,
-``downgrade_report``) sind ohne Datenbank testbar
-(``tests/test_073_work_blocks_migration.py``); der Lauf gegen echtes
-PostgreSQL steht in ``tests/test_073_migration_pg.py``.
+``downgrade_report``) sind ohne Datenbank testbar, ``backfill_auto_closed``
+gegen die SQLite-Test-DB (``tests/test_073_work_blocks_migration.py``); der
+Lauf gegen echtes PostgreSQL steht in ``tests/test_073_migration_pg.py``.
 """
 import json
 from datetime import time
@@ -217,6 +218,31 @@ def _superadmin(conn) -> bool:
     return True
 
 
+def backfill_auto_closed(conn) -> int:
+    """P18: vor 073 kappte der Auto-Close nie - ein Eintrag mit Ende 23:59 UND
+    Protokollzeile auto_close ist der Auto-Close. Reines Kennzeichen, net_hours
+    unveraendert. Rueckgabe: Anzahl gekennzeichneter Eintraege.
+
+    ``raw_end_time = 23:59`` gehoert dazu: unter 072 kappte ein spaeteres
+    Speichern des ganzen Formulars (etwa nur die Pause ergaenzt, Ende 23:59
+    unveraendert - ``unclamp_input`` reicht es mangels Rohwert durch) die
+    synthetischen 23:59 auf das Fensterende und hielt 23:59 als ``raw_end_time``
+    fest. Das ist genau die Form, die der neue Auto-Close mit
+    ``auto_closed = true`` schreibt; ohne Kennzeichen zaehlte P19 die Strecke bis
+    23:59 als "nicht angerechnet", und Anerkennen rechnete bis 23:59 an.
+
+    Kein Fehltreffer: ein echt korrigiertes Ende laesst ``raw_end_time`` NULL
+    (im Fenster) oder traegt den echten Wert (ausserhalb), nie 23:59. Offen
+    bleibt nur ein echtes Ende um genau 23:59 - dieselbe Mehrdeutigkeit, die die
+    Spec fuer ``end_time = 23:59`` schon hinnimmt."""
+    return conn.execute(sa.text(
+        "UPDATE time_entries SET auto_closed = true "
+        "WHERE (end_time = :t OR raw_end_time = :t) AND EXISTS ("
+        "  SELECT 1 FROM time_entry_audit_logs a "
+        "  WHERE a.time_entry_id = time_entries.id AND a.source = 'auto_close')"
+    ).bindparams(sa.bindparam("t", time(23, 59), type_=sa.Time()))).rowcount
+
+
 def upgrade():
     op.add_column("users", sa.Column("work_blocks", _json_type(), nullable=True))
     op.add_column("working_hours_changes", sa.Column("blocks", _json_type(), nullable=True))
@@ -265,15 +291,7 @@ def upgrade():
             f"Abweichung: {expected} Konten erwartet, {accounts} aktualisiert (RLS?)"
         )
 
-    # P18: vor 073 kappte der Auto-Close nie - ein Eintrag mit Ende 23:59 UND
-    # Protokollzeile auto_close ist der Auto-Close; ein spaeter korrigiertes Ende
-    # faellt heraus. Reines Kennzeichen, net_hours unveraendert.
-    conn.execute(sa.text(
-        "UPDATE time_entries SET auto_closed = true "
-        "WHERE end_time = :t AND EXISTS ("
-        "  SELECT 1 FROM time_entry_audit_logs a "
-        "  WHERE a.time_entry_id = time_entries.id AND a.source = 'auto_close')"
-    ), {"t": time(23, 59)})
+    backfill_auto_closed(conn)
 
     print(upgrade_report(accounts, history_rows, notes))
 
