@@ -112,6 +112,45 @@ def test_gap_text_and_employee_hint(db, default_tenant):
     assert wws.clamp_warning(db, user, MON, r, for_employee=False).startswith("WORK_WINDOW_CLAMPED: Zwischen")
 
 
+def _k(cid):
+    return next(c for c in K_CASES if c.id == cid)
+
+
+def _k_text(db, cid, *, for_employee):
+    case = _k(cid)
+    user = k_user(case)
+    r = wws.clamp(db, user, case.day, case.start, case.end, 15, credit_override=case.credit_override)
+    return wws.clamp_warning_text(db, user, case.day, r, for_employee=for_employee)
+
+
+# Review Task 3: alle vier neuen Texte der Spec 6.2 wörtlich (PR4 zitiert sie in
+# der Doku) — nicht nur über ein Fragment wie in ``_TEXT_KIND``.
+def test_in_gap_text_k3_exact(db, default_tenant):
+    assert _k_text(db, "K3", for_employee=False) == (
+        "Die eingetragene Zeit (12:30–14:30) liegt vollständig zwischen zwei Arbeitsblöcken "
+        "(Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet werden 0 Stunden. "
+        "Die gestempelte Zeit bleibt gespeichert."
+    )
+    assert _k_text(db, "K3", for_employee=True).endswith(wws.EMPLOYEE_CREDIT_HINT)
+
+
+def test_hull_and_gap_text_k7_exact(db, default_tenant):
+    assert _k_text(db, "K7", for_employee=False) == (
+        "Die eingetragene Zeit wurde auf das hinterlegte Arbeitszeit-Fenster gekappt "
+        "(Beginn 07:00 → 07:45, Ende 19:00 → 18:15; Puffer 15 Minuten). Angerechnet wird "
+        "die gekappte Zeit; die urspruengliche Eingabe bleibt als Rohstempel gespeichert."
+        " Zusätzlich werden zwischen den Arbeitsblöcken (12:15–14:45) 2:30 h nicht angerechnet."
+    )
+
+
+def test_collapse_text_k8_has_no_employee_hint(db, default_tenant):
+    """P21: der Hinweis hängt nur an Lückentexten, nie am Kollaps-Text."""
+    text = _k_text(db, "K8", for_employee=True)
+    assert text == _k_text(db, "K8", for_employee=False)
+    assert "vollstaendig ausserhalb" in text
+    assert wws.EMPLOYEE_CREDIT_HINT not in text
+
+
 def test_clock_in_gap_text(db, default_tenant):
     user = k_user(K_CASES[0])
     r = wws.clamp(db, user, MON, time(13), None, 15, credit_override=False)
