@@ -7060,9 +7060,49 @@ describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => 
     expect(screen.getByText(/Altbestand: kappt die erfasste Zeit/)).toBeInTheDocument();
   });
 
+  // E63/P2: ohne Stundenzählung kappt das Backend nie (`_clamp_core`/`clamp_applies`
+  // brechen bei track_hours=False ab), 073 übernimmt Altfenster aber unabhängig davon.
+  // Der Kappungs-Hinweis wäre dort eine falsche Aussage.
+  it('Altfenster bei track_hours=false: kein Kappungs-Hinweis, sondern „ohne Wirkung"', () => {
+    renderForm({ editUser: { ...baseEditUser, track_hours: false, work_blocks_today: LEGACY } });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Mo 07:37–16:30 · Fr 07:30–23:59');
+    expect(screen.queryByText(/kappt die erfasste Zeit/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Altbestand gespeichert, ohne Wirkung \(keine Stundenzählung\)/)).toBeInTheDocument();
+  });
+
+  it('Blöcke bei track_hours=false: „gespeichert, ohne Wirkung" (Wortlaut wie im Dialog, Spec 12.1)', () => {
+    renderForm({ editUser: { ...baseEditUser, track_hours: false }, displayBlocks: TWO_BLOCKS });
+    expect(screen.getByText('Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung).')).toBeInTheDocument();
+    expect(screen.queryByText(/Altbestand/)).not.toBeInTheDocument();
+  });
+
+  it('Hinweis folgt dem Haken „Stundenzählung aktiv" im Formular', () => {
+    renderForm({ editUser: { ...baseEditUser, work_blocks_today: LEGACY } });
+    expect(screen.getByText(/Altbestand: kappt die erfasste Zeit/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Stundenzählung aktiv/));
+    expect(screen.queryByText(/kappt die erfasste Zeit/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Altbestand gespeichert, ohne Wirkung/)).toBeInTheDocument();
+  });
+
+  it('ohne Blöcke bei track_hours=false: kein „ohne Wirkung"-Hinweis', () => {
+    renderForm({ editUser: { ...baseEditUser, track_hours: false }, displayBlocks: null });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
+    expect(screen.queryByText(/ohne Wirkung/)).not.toBeInTheDocument();
+  });
+
   it('ohne Blöcke: „Keine Arbeitszeit-Blöcke hinterlegt"', () => {
     renderForm({ editUser: baseEditUser, displayBlocks: null });
     expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
+  });
+
+  // Vorrangregel nach dem Muster `displayDayHours` (Spec 12.2, vgl. #431 Fund 3):
+  // ein frisch nachgeführtes `displayBlocks = null` (Fenster entfernt, Verlaufszeile
+  // gelöscht) schlägt den beim Öffnen übergebenen Stand. Ein `??` an dieser Stelle
+  // fiele auf das alte Altfenster samt Altbestand-Hinweis zurück.
+  it('frisches displayBlocks=null schlägt veraltete editUser.work_blocks_today', () => {
+    renderForm({ editUser: { ...baseEditUser, work_blocks_today: LEGACY }, displayBlocks: null });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
+    expect(screen.queryByText(/Altbestand/)).not.toBeInTheDocument();
   });
 
   it('beim Anlegen keine Blöcke-Anzeige (der Editor folgt mit PR3)', () => {
@@ -7130,7 +7170,7 @@ describe('Spec 2026-10-08 (PR1): heute gültige Blöcke werden mit nachgezogen',
 - [ ] **Step 2: Tests laufen lassen — müssen scheitern**
 
 Run (aus `frontend/`): `npx vitest run src/utils/workBlocks.test.ts src/pages/admin/users/UserForm.test.tsx src/pages/admin/Users.test.tsx --pool=threads`
-Expected: FAIL — `workBlocks.test.ts`: „Failed to resolve import ./workBlocks" (bzw. `../types/workBlocks`); `UserForm.test.tsx`: „zeigt keine Soll-Fenster-Felder mehr", die beiden Payload-Tests (`scheduled_start_monday` u. a. im Payload) und die drei Anzeige-Tests („Unable to find a label with the text of: Arbeitszeit heute"); `Users.test.tsx`: der neue Test (`display-blocks` zeigt „undefined").
+Expected: FAIL — `workBlocks.test.ts`: „Failed to resolve import ./workBlocks" (bzw. `../types/workBlocks`); `UserForm.test.tsx`: „zeigt keine Soll-Fenster-Felder mehr", die beiden Payload-Tests (`scheduled_start_monday` u. a. im Payload) und die acht Anzeige-Tests (u. a. „Unable to find a label with the text of: Arbeitszeit heute"; nur „beim Anlegen keine Blöcke-Anzeige" ist schon grün); `Users.test.tsx`: der neue Test (`display-blocks` zeigt „undefined").
 
 - [ ] **Step 3: Typen und Helfer anlegen**
 
@@ -7252,7 +7292,18 @@ Den kompletten Abschnitt ab `{/* Soll-Arbeitszeiten (Arbeitszeit-Fenster) */}` b
               <div aria-labelledby="f-work-blocks-label" className="text-sm text-gray-800">
                 {workBlocksText ?? 'Keine Arbeitszeit-Blöcke hinterlegt'}
               </div>
-              {workBlocksText && isLegacyWeek(shownBlocks) && (
+              {/* E63: ohne Stundenzählung wirken weder Soll noch Kappung — das
+                  Backend kappt dann nie (`clamp_applies`/`_clamp_core`), 073
+                  übernimmt Altfenster aber unabhängig von track_hours (P2).
+                  Wortlaut wie im Dialog (Spec 12.1). */}
+              {workBlocksText && !formData.track_hours && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {isLegacyWeek(shownBlocks)
+                    ? 'Arbeitszeit-Fenster aus dem Altbestand gespeichert, ohne Wirkung (keine Stundenzählung).'
+                    : 'Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung).'}
+                </p>
+              )}
+              {workBlocksText && formData.track_hours && isLegacyWeek(shownBlocks) && (
                 <p className="text-xs text-gray-500 mt-1">
                   Arbeitszeit-Fenster aus dem Altbestand: kappt die erfasste Zeit, ändert das Tagessoll nicht.
                 </p>
