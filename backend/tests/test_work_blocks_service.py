@@ -54,11 +54,19 @@ def test_week_blocks_to_json_none():
 @pytest.mark.parametrize("raw", [
     CANONICAL[:4],                                                      # vier Tage
     block_week(mon=[("7:30", "12:00")]),                                # kein HH:MM
-    block_week(mon=[("24:00", "23:00")]),                               # Stunde 24
+    # Stunde 24 am ENDE: Beginn liegt davor, nur die Stundengrenze greift
+    # (``("24:00", "23:00")`` scheiterte schon an Beginn >= Ende).
+    block_week(mon=[("08:00", "24:00")]),                               # Stunde 24
+    block_week(mon=[("08:00", "09:60")]),                               # Minute 60
     block_week(mon=[("12:00", "08:00")]),                               # Beginn >= Ende
     block_week(mon=[("08:00", "12:00"), ("11:00", "14:00")]),           # Überlappung
     [{"blocks": "x", "pause_minutes": 0}] * 5,                          # kein Block-Array
+    [{"blocks": [{"start": "08:00"}], "pause_minutes": 0}] + block_week()[1:],  # Block ohne end
     [{"blocks": [], "pause_minutes": -5}] + block_week()[1:],           # negative Pause
+    # bool ist in Python ein int — ``True`` darf nicht als Pause 1 durchgehen.
+    # Tag MIT Block, damit die Woche nicht leer ist und die Prüfung unabhängig
+    # davon greift, wann „fünf leere Tage ≡ None" entschieden wird.
+    [{"blocks": [{"start": "08:00", "end": "12:00"}], "pause_minutes": True}] + block_week()[1:],
 ])
 def test_structural_errors_raise(raw):
     with pytest.raises(ValueError):
