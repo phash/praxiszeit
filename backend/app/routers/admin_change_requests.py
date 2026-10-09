@@ -366,8 +366,9 @@ def review_change_request(
         # oder den §10-Grund korrigiert, schickt die gekappte Zeit zurueck. Ohne
         # unclamp_input hielt clamp sie fuer eine neue Eingabe und loeschte den
         # Rohstempel (§16-Nachweis, Grundlage der §5-Ruhezeit). Hier festhalten,
-        # bevor ``entry`` unten ueberschrieben wird — die informative
-        # Nachpruefung nach dem Commit nutzt dieselben Werte.
+        # bevor ``entry`` unten ueberschrieben wird. Die informative
+        # Nachpruefung nach dem Commit liest dagegen den gespeicherten Eintrag
+        # (E41) — der traegt das Ergebnis genau dieser Kappung.
         if cr.request_type == ChangeRequestType.UPDATE and entry is not None:
             _in_start = work_window_service.unclamp_input(
                 cr.proposed_start_time, entry.start_time, entry.raw_start_time)
@@ -1074,31 +1075,37 @@ def review_change_request(
         and cr.proposed_end_time
     ):
         cr_user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
-        if cr_user and not cr_user.exempt_from_arbzg:
-            # §16/#201: assess the informational ArbZG warnings on the CREDITED
-            # (clamped) time too — consistent with the §3/§4 hard re-check above
-            # and the create/update paths. The CR stores the RAW proposed times.
-            _wgrace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            _rw = work_window_service.clamp(
-                db, cr_user, cr.proposed_date, _in_start, _in_end, _wgrace,
-                credit_override=bool(getattr(entry, "credit_override", False)),
-            )
-            _w_start, _w_end = _rw.eff_start, _rw.eff_end
-            daily_hours_cr = _calculate_daily_net_hours(
+        # E41 (Spec 2026-10-08): der eben geschriebene Eintrag steht schon in der
+        # Tabelle — er wird ausgeschlossen und mit seinen GESPEICHERTEN Werten
+        # (gekappt, uncredited, Pause) einmal addiert, statt doppelt gezählt zu
+        # werden. Die gespeicherten Werte sind genau die angerechnete Zeit, die
+        # der Schreibzweig oben aus ``clamp`` übernommen hat (CREATE setzt
+        # ``cr.time_entry_id`` auf die neue Zeile) — eine zweite Kappung entfällt.
+        _w_entry = (
+            db.query(TimeEntry).filter(
+                TimeEntry.id == cr.time_entry_id,
+                TimeEntry.tenant_id == cr.tenant_id,  # F-026
+            ).first()
+            if cr.time_entry_id else None
+        )
+        if cr_user and not cr_user.exempt_from_arbzg and _w_entry is not None and _w_entry.end_time is not None:
+            _w_kwargs = dict(
                 db=db,
                 user_id=cr.user_id,
-                entry_date=cr.proposed_date,
-                start_time=_w_start,
-                end_time=_w_end,
-                break_minutes=cr.proposed_break_minutes or 0,
-                uncredited_minutes=_rw.uncredited_minutes,
+                entry_date=_w_entry.date,
+                start_time=_w_entry.start_time,
+                end_time=_w_entry.end_time,
+                break_minutes=_w_entry.break_minutes,
+                uncredited_minutes=_w_entry.uncredited_minutes,
+                exclude_entry_id=_w_entry.id,
                 tenant_id=cr.tenant_id,
             )
+            daily_hours_cr = _calculate_daily_net_hours(**_w_kwargs)
 
             # SS6 Abs. 2: Nachtarbeitnehmer-Tageslimit
             if (
                 cr_user.is_night_worker
-                and is_night_work(_w_start, _w_end)
+                and is_night_work(_w_entry.start_time, _w_entry.end_time)
                 and daily_hours_cr > MAX_NIGHT_WORKER_DAILY_WARN
             ):
                 cr_response.warnings.append(
@@ -1107,16 +1114,7 @@ def review_change_request(
                 )
 
             # §3 ArbZG: Wochenarbeitszeit-Warnung (48h)
-            weekly = _calculate_weekly_net_hours(
-                db=db,
-                user_id=cr.user_id,
-                entry_date=cr.proposed_date,
-                start_time=_w_start,
-                end_time=_w_end,
-                break_minutes=cr.proposed_break_minutes or 0,
-                uncredited_minutes=_rw.uncredited_minutes,
-                tenant_id=cr.tenant_id,
-            )
+            weekly = _calculate_weekly_net_hours(**_w_kwargs)
             if weekly > MAX_WEEKLY_HOURS_WARN:
                 cr_response.warnings.append(
                     f"§3 ArbZG: Wochenarbeitszeit {weekly:.1f}h überschreitet 48h-Grenze."

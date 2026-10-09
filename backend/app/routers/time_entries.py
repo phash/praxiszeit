@@ -1100,6 +1100,15 @@ def update_time_entry(
             detail="Einträge vergangener Tage können nur per Änderungsantrag geändert werden"
         )
 
+    # P3: ein anerkannter Eintrag wird nicht still per MA-PUT neu gekappt —
+    # die Änderung läuft über einen Antrag (die Verwaltung bestätigt dort).
+    # Admins auf dieser Route SIND die Verwaltung: Flag bleibt, keine Kappung.
+    if entry.credit_override and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=409,
+            detail="Anerkannter Eintrag – Änderung bitte per Änderungsantrag.",
+        )
+
     # #144: snapshot the persisted values BEFORE mutating in-memory, so an
     # approval-required waiver can file an UPDATE ChangeRequest against the
     # unchanged entry without first committing the edit.
@@ -1115,6 +1124,9 @@ def update_time_entry(
         "raw_end_time": entry.raw_end_time,
         # P18: ob 23:59 im Rohende ein synthetischer Wert des Auto-Close ist.
         "auto_closed": entry.auto_closed,
+        # P28: Vorher-Stand der nicht angerechneten Lückenminuten für den
+        # Snapshot eines Waiver-Antrags.
+        "uncredited_minutes": entry.uncredited_minutes,
     }
 
     # Update fields
@@ -1227,17 +1239,23 @@ def update_time_entry(
     # (already-credited) times and must NOT wipe raw_start/raw_end (§16 evidence;
     # §5 rest-time also reads the raw stamp). Without this gate a reine
     # Notiz-Änderung set raw_*=None and could lower Ist on a shifted soll window.
-    if "start_time" in update_data:
+    # E39 (Spec 2026-10-08): ein reiner Datumswechsel auf einen anderen
+    # Wochentag kappt neu — das gespeicherte Paar gehört zum alten Tag. Die
+    # Rücksetzung oben liefert dafür den Rohstempel, die Kappung rechnet ihn
+    # gegen die Blöcke des NEUEN Datums.
+    _times_written = any(k in update_data for k in ("start_time", "end_time", "date"))
+    if "start_time" in update_data or "date" in update_data:
         entry.start_time = _eff_start
         entry.raw_start_time = _raw_start
-    if "end_time" in update_data:
+    if "end_time" in update_data or "date" in update_data:
         entry.end_time = _eff_end
         entry.raw_end_time = _raw_end
-    if "start_time" in update_data or "end_time" in update_data:
+    if _times_written:
         # Spec E11/E79: Lückenminuten und angewandter Puffer folgen dem
-        # geschriebenen Zeitpaar. Ohne Zeitfeld im Update bleibt der gespeicherte
-        # Wert stehen (passend zu den unverändert gespeicherten Zeiten, Fix #2);
-        # ein None-Puffer (Tag ohne Blöcke) lässt den gespeicherten Wert stehen.
+        # geschriebenen Zeitpaar. Ohne Zeit- oder Datumsfeld im Update bleibt der
+        # gespeicherte Wert stehen (passend zu den unverändert gespeicherten
+        # Zeiten, Fix #2); ein None-Puffer (Tag ohne Blöcke) lässt den
+        # gespeicherten Wert stehen.
         entry.uncredited_minutes = _r.uncredited_minutes
         if _r.grace_minutes is not None:
             entry.clamp_grace_minutes = _r.grace_minutes
@@ -1327,6 +1345,7 @@ def update_time_entry(
                     original_end_time=orig_snapshot["end_time"],
                     original_break_minutes=orig_snapshot["break_minutes"],
                     original_note=orig_snapshot["note"],
+                    original_uncredited_minutes=orig_snapshot["uncredited_minutes"],  # P28
                     reason=waiver_reason,
                     break_waiver_reason=waiver_reason,
                     # Release-Review 1.19.3 (F3): §10-Grund vor dem Rollback sichern
@@ -1377,11 +1396,14 @@ def update_time_entry(
     # Release-Review 1.19.1: zusaetzlich muss sich die eingereichte Zeit von der
     # gespeicherten unterscheiden — das Formular schickt die angerechnete Zeit
     # immer mit, und eine erneute Meldung derselben alten Kappung ist Laerm.
+    # E39: ein Datumswechsel ist nie „unveraendert" — dieselbe Rohzeit an einem
+    # anderen Wochentag kappt anders und muss gemeldet werden (#462-Klasse).
     _resubmitted_unchanged = (
-        _clamp_start == (orig_snapshot["raw_start_time"] or orig_snapshot["start_time"])
+        entry.date == orig_snapshot["date"]
+        and _clamp_start == (orig_snapshot["raw_start_time"] or orig_snapshot["start_time"])
         and _clamp_end == (orig_snapshot["raw_end_time"] or orig_snapshot["end_time"])
     )
-    if ("start_time" in update_data or "end_time" in update_data) and not _resubmitted_unchanged:
+    if _times_written and not _resubmitted_unchanged:
         _clamp_warn = work_window_service.clamp_warning(
             db, _entry_owner, entry.date, _r, for_employee=True,
         )

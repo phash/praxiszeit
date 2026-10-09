@@ -203,17 +203,51 @@ def create_change_request(
     # wäre dann ungeprüft als 'break_waiver' gebucht worden.
     waiver_needed = False
 
+    # E40 (Spec 2026-10-08): der Antrag prüft §3/§4/§6/48 h auf der
+    # ANGERECHNETEN Zeit — wie die Genehmigung. Gespeichert werden weiter die
+    # ROHEN Vorschläge (die Genehmigung kappt genau einmal, admin_change_requests).
+    from app.services import work_window_service
+    _cr_clamp = None
+    _cr_segs: list = []
+    if (data.request_type in ("create", "update")
+            and data.proposed_date and data.proposed_start_time and data.proposed_end_time):
+        _in_start, _in_end = data.proposed_start_time, data.proposed_end_time
+        _override = bool(entry is not None and entry.credit_override)
+        if entry is not None:
+            # Das Antragsformular belegt die Zeiten mit der angerechneten Zeit vor
+            # (Release-Review 1.19.3 F1) — derselbe Rohwert-Rückgriff wie bei der
+            # Genehmigung, sonst zählte eine reine Pausen-Korrektur gekappt.
+            _in_start = work_window_service.unclamp_input(_in_start, entry.start_time, entry.raw_start_time)
+            _in_end = work_window_service.unclamp_input(_in_end, entry.end_time, entry.raw_end_time)
+            # E80: UPDATE-Prüfung mit dem gespeicherten Puffer des Eintrags,
+            # CREATE-Prüfung mit dem aktuellen Mandanten-Puffer — dieselbe
+            # Herkunft wie der Schreibzweig der Genehmigung.
+            _cr_grace = work_window_service.grace_for_entry(db, entry)
+        else:
+            _cr_grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+        _cr_clamp = work_window_service.clamp(
+            db, current_user, data.proposed_date, _in_start, _in_end, _cr_grace,
+            credit_override=_override,
+        )
+        # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
+        _cr_segs = work_window_service.gap_segments(
+            db, current_user, data.proposed_date, _in_start, _in_end, _cr_grace,
+            credit_override=_override,
+        )
+    _chk_start = _cr_clamp.eff_start if _cr_clamp else data.proposed_start_time
+    _chk_end = _cr_clamp.eff_end if _cr_clamp else data.proposed_end_time
+    _chk_unc = _cr_clamp.uncredited_minutes if _cr_clamp else 0
+
     # Break validation for CREATE and UPDATE (§18-Ausnahme: exempt_from_arbzg überspringt §3/§4)
     if not current_user.exempt_from_arbzg and data.request_type in ("create", "update") and data.proposed_date:
         break_error = validate_daily_break(
             db=db,
             user=current_user,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
+            start_time=_chk_start,
+            end_time=_chk_end,
             break_minutes=data.proposed_break_minutes or 0,
-            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
-            uncredited_segments=[],
+            uncredited_segments=_cr_segs,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
@@ -235,11 +269,10 @@ def create_change_request(
             db=db,
             user_id=current_user.id,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
+            start_time=_chk_start,
+            end_time=_chk_end,
             break_minutes=data.proposed_break_minutes or 0,
-            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
-            uncredited_minutes=0,
+            uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
@@ -298,6 +331,7 @@ def create_change_request(
         cr.original_end_time = entry.end_time
         cr.original_break_minutes = entry.break_minutes
         cr.original_note = entry.note
+        cr.original_uncredited_minutes = entry.uncredited_minutes  # P28
 
     db.add(cr)
     db.commit()
@@ -316,17 +350,16 @@ def create_change_request(
             db=db,
             user_id=current_user.id,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
+            start_time=_chk_start,
+            end_time=_chk_end,
             break_minutes=data.proposed_break_minutes or 0,
-            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
-            uncredited_minutes=0,
+            uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
         if (
             current_user.is_night_worker
-            and is_night_work(data.proposed_start_time, data.proposed_end_time)
+            and is_night_work(_chk_start, _chk_end)
             and daily_hours_check > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             response.warnings.append(
@@ -342,11 +375,10 @@ def create_change_request(
             db=db,
             user_id=current_user.id,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
+            start_time=_chk_start,
+            end_time=_chk_end,
             break_minutes=data.proposed_break_minutes or 0,
-            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
-            uncredited_minutes=0,
+            uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
