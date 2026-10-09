@@ -1039,7 +1039,8 @@ dem Hochziehen der neuen Version wieder einspielen:
     bash backup.sh                                  # -> backups/praxiszeit_<ts>.sql.gz
     # ... neue Version entpacken, .env + backups/ uebernehmen ...
     docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
-    # ... Stack starten ...
+    docker compose build --pull                     # frische Basis-Images (Debian/Alpine-Sicherheitsupdates)
+    docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # nur HTTP: docker compose up -d
     bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB einspielen
     docker compose up -d backend                    # Alembic-Migrationen -> Schema auf head
 

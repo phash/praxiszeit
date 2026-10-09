@@ -240,3 +240,35 @@ def test_health_failure_with_failing_retag_falls_back_to_rebuild(tmp_path):
     rollback = _after(log, "git reset --hard aaa")
     assert _builds(rollback), rollback
     assert any(line.endswith("up -d") for line in rollback), rollback
+
+
+# --- Kunden-Bundle (#491 DEP-4, Review-Nachzug) -------------------------------
+
+_BUILD_RELEASE = _DEPLOY.parent / "tools" / "build-release.sh"
+
+
+def _docker_readme() -> str:
+    src = _BUILD_RELEASE.read_text(encoding="utf-8")
+    start = src.index('cat > "${DOCKER_STAGE}/DOCKER-README.md" << DOCKEREOF')
+    return src[start:src.index("\nDOCKEREOF\n", start)]
+
+
+def test_docker_bundle_readme_update_pulls_fresh_base_images():
+    """Die Updateanleitung IM pzweb-Docker-Bundle (groesste Docker-Nutzergruppe)
+    muss die Basis-Images neu ziehen — sonst baut `up -d --build` weiter auf
+    den lokal gecachten python:3.12-slim/node:20-alpine/nginx:alpine, und die
+    Debian/Alpine-Sicherheitsupdates aus DEP-4 kommen dort nie an."""
+    readme = _docker_readme()
+    section = readme[readme.index("## Datensicherung / Update"):]
+    section = section[:section.index("\n## ", 1)]
+    lines = [line.strip() for line in section.splitlines()]
+    pull_db = next(i for i, line in enumerate(lines) if line.startswith("docker compose pull db"))
+    build = next(i for i, line in enumerate(lines) if line.startswith("docker compose build --pull"))
+    restore = next(i for i, line in enumerate(lines) if line.startswith("bash restore.sh"))
+    assert pull_db < build < restore, section
+    # Der Startschritt steht konkret da (wie UPDATE.md 2a), nicht als Platzhalter.
+    assert "Stack starten" not in section, section
+    start = next(i for i, line in enumerate(lines)
+                 if line.startswith("docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d"))
+    assert build < start < restore, section
+    assert "--build" not in lines[start], lines[start]
