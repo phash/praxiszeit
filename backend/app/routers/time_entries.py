@@ -1113,8 +1113,14 @@ def update_time_entry(
         else db.query(User).filter(
             User.id == entry.user_id,
             User.tenant_id == current_user.tenant_id,  # F-026
-        ).first() or current_user
+        ).first()
     )
+    # Spec 8.2: §4 rechnet mit den Einträgen der Person des Eintrags, §3 mit
+    # ``entry.user_id`` — beides muss dieselbe Person sein. Kein Rückfall auf den
+    # Aufrufer (falsch zugeordnete Zeile, F-026): dann prüfte §4 die Einträge der
+    # bearbeitenden Admin. 404 wie in ``admin_update_time_entry``.
+    if _entry_owner is None:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
     # Release-Review 1.19.1: wie im Admin-Pfad — kommt die bereits gekappte Zeit
     # unveraendert zurueck, mit dem Rohwert weiterrechnen, statt raw_* zu loeschen.

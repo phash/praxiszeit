@@ -132,6 +132,8 @@ import pytest  # noqa: E402
 
 from app.models import ChangeRequest  # noqa: E402
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType  # noqa: E402
+from app.models.user import User, UserRole  # noqa: E402
+from app.services import auth_service  # noqa: E402
 from tests.test_endpoints import (  # noqa: E402,F401 — Fixtures
     _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
 )
@@ -196,3 +198,38 @@ def test_write_paths_count_gap_segment_as_break(_db_session, employee_user, requ
     entry = _db_session.query(TimeEntry).one()
     assert (entry.uncredited_minutes, entry.net_hours) == (150, Decimal("7.50"))
 
+
+# ---------------------------------------------------------------------------
+# Spec 8.2/F-026: §3 und §4 beziehen sich auf DIESELBE Person — die des
+# Eintrags. Ist sie im Mandanten nicht auffindbar (falsch zugeordnete Zeile),
+# antworten beide Bearbeitungswege mit 404, statt mit den Einträgen der
+# bearbeitenden Admin zu rechnen.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("url", ["/api/time-entries/{id}", "/api/admin/time-entries/{id}"],
+                         ids=["ma_route", "admin_route"])
+def test_update_with_owner_outside_tenant_is_404(_db_session, admin_user, admin_client,
+                                                 monkeypatch, url):
+    db = _db_session
+    other = Tenant(id=uuid.uuid4(), name="Fremd", slug="fremd")
+    db.add(other)
+    owner = User(username="fremd", email="fremd@test.de",
+                 password_hash=auth_service.hash_password("Fremd2025!x"),
+                 first_name="F", last_name="F", role=UserRole.EMPLOYEE, weekly_hours=40.0,
+                 vacation_days=30, work_days_per_week=5, is_active=True, tenant_id=other.id)
+    db.add(owner)
+    db.commit()
+    # Eigener Eintrag der Admin am selben Tag: 08:00–14:00 ohne Pause. Mit dem
+    # früheren Rückfall auf den Aufrufer ergab das 7 h ohne Pause → 400.
+    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=admin_user.id, date=MON,
+                     start_time=_time(8), end_time=_time(14), break_minutes=0))
+    # Falsch zugeordnete Zeile: Mandant der Admin, Person aus fremdem Mandant.
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=owner.id, date=MON,
+                  start_time=_time(14), end_time=_time(14, 30), break_minutes=0)
+    db.add(e)
+    db.commit()
+    _today(monkeypatch, 16, 0)
+    resp = admin_client.put(url.format(id=e.id), json={"start_time": "14:00", "end_time": "15:00"})
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Benutzer nicht gefunden"
+    db.expire_all()
+    assert db.get(TimeEntry, e.id).end_time == _time(14, 30)
