@@ -16,6 +16,7 @@ import app.routers.time_entries as te
 
 NEXT_MON = date(2026, 6, 8)
 SATURDAY = date(2026, 6, 6)
+FRI_BEFORE = date(2026, 5, 29)
 
 
 def _grace(db, minutes):
@@ -196,6 +197,27 @@ def test_admin_date_change_keeps_stored_grace_and_names_it(_db_session, employee
     assert any("Puffer 15 Minuten" in w for w in resp.json()["warnings"])
     e = _only(_db_session)
     assert (e.date, e.start_time, e.clamp_grace_minutes) == (NEXT_MON, time(7, 45), 15)
+
+
+def test_employee_date_change_keeps_stored_grace_and_names_it(_db_session, employee_user, employee_client, monkeypatch):
+    """Spec 17.3 „Datumswechsel (MA und Admin)", MA-Hälfte (E39 + E80): ein
+    reiner Datumswechsel über ``PUT /api/time-entries/{id}`` kappt den
+    Rohstempel gegen die Blöcke des neuen Tages — mit dem gespeicherten Puffer
+    15, nicht mit dem inzwischen auf 0 gesenkten Mandanten-Puffer (das gäbe
+    08:00). Die Warnung nennt den tatsächlich angewandten Puffer."""
+    employee_user.work_blocks = legacy_week(mon=("08:00", "17:00"), fri=("08:00", "17:00"))
+    _db_session.commit()
+    _stored_entry(_db_session, employee_user, grace=15)
+    _grace(_db_session, 0)
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 17, 0))
+    e = _only(_db_session)
+    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    assert resp.status_code == 200, resp.text
+    assert any("Puffer 15 Minuten" in w for w in resp.json()["warnings"])
+    e = _only(_db_session)
+    assert (e.date, e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (
+        FRI_BEFORE, time(7, 45), time(7, 0), 15)
 
 
 def test_cr_update_keeps_stored_grace(_db_session, employee_user, admin_client):
