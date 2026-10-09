@@ -46,11 +46,39 @@ exit 0
 _DOCKER_STUB = """#!/usr/bin/env bash
 echo "docker $*" >> "$STUB_DIR/calls.log"
 args=" $* "
+last="${@: -1}"
 if [[ "$args" == *" build "* ]]; then
   if [[ "$args" == *" --pull "* ]]; then
     [ "${FAIL_PULL_BUILD:-0}" = 1 ] && exit 1
   else
     [ "${FAIL_PLAIN_BUILD:-0}" = 1 ] && exit 1
+  fi
+fi
+# Laufende Container: `compose ... ps -q <dienst>` -> Container-ID.
+if [[ "$args" == *" ps -q "* ]]; then
+  [ "${NO_RUNNING:-0}" = 1 ] && exit 0
+  echo "cid-$last"
+  exit 0
+fi
+# `inspect -f '{{.Image}} {{.Config.Image}}' cid-<dienst>` -> "<id> <name>".
+if [ "$1" = inspect ]; then
+  echo "sha256:old-${last#cid-} praxiszeit-${last#cid-}"
+  exit 0
+fi
+if [ "$1" = tag ]; then
+  [ "${FAIL_TAG:-0}" = 1 ] && exit 1
+  # Nur das Zuruecktaggen im Rollback scheitern lassen.
+  [ "${FAIL_RETAG:-0}" = 1 ] && [[ "$2" == *:pre-deploy ]] && exit 1
+fi
+# Health-Check im Backend-Container.
+if [[ "$args" == *" exec "* ]]; then
+  [ "${FAIL_HEALTH:-0}" = 1 ] && exit 1
+fi
+# Das erste `up -d` des Deploys (nicht das des Rollbacks).
+if [[ "$args" == *" up -d"* && "$args" != *" --no-build "* ]]; then
+  if [ "${FAIL_UP:-0}" = 1 ] && [ ! -f "$STUB_DIR/up-failed" ]; then
+    touch "$STUB_DIR/up-failed"
+    exit 1
   fi
 fi
 exit 0
@@ -124,3 +152,91 @@ def test_real_build_failure_still_rolls_back(tmp_path):
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "git reset --hard aaa" in log, log
     assert not any(" up -d" in line for line in log), log
+    # Ein teilweise geglueckter Bau kann einen Namen schon umgehaengt haben:
+    # die Namen zeigen danach wieder auf die laufenden Images.
+    rollback = log[log.index("git reset --hard aaa") + 1:]
+    assert "docker tag praxiszeit-backend:pre-deploy praxiszeit-backend" in rollback, rollback
+    assert "docker tag praxiszeit-frontend:pre-deploy praxiszeit-frontend" in rollback, rollback
+
+
+# --- Rollback nach `build --pull` (#491 DEP-4, Review-Nachzug) ----------------
+#
+# Nach `build --pull` zeigen die lokalen Basis-Tags (python:3.12-slim, ...) auf
+# die FRISCHEN Images. Ein Rollback per Neubau entstuende auf genau diesen —
+# kommt der Fehler vom neuen Basis-Image, stellte er nichts wieder her (und ein
+# Bau-Fehler mitten im Rollback brach unter `set -e` ab). Deshalb gibt das
+# Skript den laufenden App-Images VOR dem Bau eine zweite Referenz
+# `<name>:pre-deploy` und taggt im Rollback von dort zurueck; neu gebaut wird
+# nur, wenn keine Referenz entstand. Die blosse Image-ID genuegt nicht: im
+# containerd-Image-Store (Docker 29) ist das alte Image weg, sobald `build`
+# den Namen umhaengt — auch wenn ein Container es noch nutzt.
+
+def _after(log: list[str], marker: str) -> list[str]:
+    return log[log.index(marker) + 1:]
+
+
+_KEEP_BACKEND = "docker tag sha256:old-backend praxiszeit-backend:pre-deploy"
+_KEEP_FRONTEND = "docker tag sha256:old-frontend praxiszeit-frontend:pre-deploy"
+_BACK_BACKEND = "docker tag praxiszeit-backend:pre-deploy praxiszeit-backend"
+_BACK_FRONTEND = "docker tag praxiszeit-frontend:pre-deploy praxiszeit-frontend"
+
+
+def test_running_images_get_a_second_reference_before_the_build(tmp_path):
+    proc, log = _run(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    first_build = next(i for i, line in enumerate(log) if line in _builds(log))
+    assert _KEEP_BACKEND in log[:first_build], log
+    assert _KEEP_FRONTEND in log[:first_build], log
+    # Erfolg: kein Zuruecktaggen, die Zusatz-Referenzen fallen am Ende weg.
+    assert _BACK_BACKEND not in log and _BACK_FRONTEND not in log, log
+    tail = log[first_build:]
+    assert "docker rmi praxiszeit-backend:pre-deploy" in tail, tail
+    assert "docker rmi praxiszeit-frontend:pre-deploy" in tail, tail
+
+
+def test_health_failure_restores_the_previous_images_without_rebuild(tmp_path):
+    proc, log = _run(tmp_path, FAIL_HEALTH="1")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "git reset --hard aaa" in log, log
+    rollback = _after(log, "git reset --hard aaa")
+    assert _BACK_BACKEND in rollback, rollback
+    assert _BACK_FRONTEND in rollback, rollback
+    assert any(line.endswith("up -d --no-build") for line in rollback), rollback
+    assert not _builds(rollback), (
+        f"Rollback baut neu {_builds(rollback)} — auf den frisch gezogenen Basis-Images."
+    )
+
+
+def test_health_failure_without_recorded_images_falls_back_to_rebuild(tmp_path):
+    proc, log = _run(tmp_path, FAIL_HEALTH="1", NO_RUNNING="1")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    rollback = _after(log, "git reset --hard aaa")
+    assert not any(line.startswith("docker tag ") for line in rollback), rollback
+    assert _builds(rollback), rollback
+    assert any(line.endswith("up -d") for line in rollback), rollback
+
+
+def test_health_failure_without_a_kept_reference_falls_back_to_rebuild(tmp_path):
+    proc, log = _run(tmp_path, FAIL_HEALTH="1", FAIL_TAG="1")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    rollback = _after(log, "git reset --hard aaa")
+    assert _builds(rollback), rollback
+    assert any(line.endswith("up -d") for line in rollback), rollback
+
+
+def test_up_failure_restores_the_previous_images_without_rebuild(tmp_path):
+    proc, log = _run(tmp_path, FAIL_UP="1")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    rollback = _after(log, "git reset --hard aaa")
+    assert _BACK_BACKEND in rollback, rollback
+    assert _BACK_FRONTEND in rollback, rollback
+    assert any(line.endswith("up -d --no-build") for line in rollback), rollback
+    assert not _builds(rollback), rollback
+
+
+def test_health_failure_with_failing_retag_falls_back_to_rebuild(tmp_path):
+    proc, log = _run(tmp_path, FAIL_HEALTH="1", FAIL_RETAG="1")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    rollback = _after(log, "git reset --hard aaa")
+    assert _builds(rollback), rollback
+    assert any(line.endswith("up -d") for line in rollback), rollback

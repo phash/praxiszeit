@@ -33,6 +33,8 @@ ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
 
 `deploy.sh` macht: `git pull` → `build --pull frontend backend` (zieht die Basis-Images neu, damit Debian/Alpine-Sicherheitsupdates ankommen; ist das Registry nicht erreichbar, baut es mit den lokalen Images weiter) → `pull db` → `up -d` (mit SSL-Overlay) → Health-Check.
 
+Scheitert der Start oder der Health-Check, setzt `deploy.sh` git auf den vorherigen Commit zurück und startet die **zuvor laufenden Images** wieder — ohne Neubau (scheitert schon der Bau, laufen sie ohnehin weiter). Dafür bekommen sie vor dem Bau die Zusatz-Referenz `<name>:pre-deploy` (nach Erfolg wieder entfernt). Ein Neubau des alten Commits entstünde sonst auf den gerade frisch gezogenen Basis-Images und könnte einen Fehler, der von dort kommt, nicht beheben. Die Image-ID allein genügt dafür nicht: im containerd-Image-Store (Docker 29) ist das alte Image weg, sobald `build` seinen Namen neu vergibt. Nur wenn vorher nichts lief, baut der Rollback neu. Die Datenbank rollt er nicht zurück (dafür das Backup aus Schritt 1).
+
 ### Manuell (falls deploy.sh nicht nutzbar)
 
 ```bash
@@ -82,6 +84,8 @@ alembic revision --autogenerate -m "beschreibung"
 Migration committen **vor** Container-Rebuild.
 
 ## Rollback
+
+Automatisch: siehe oben (`deploy.sh` startet bei einem Fehlschlag die vorherigen Images). Von Hand:
 
 ```bash
 # Auf vorherigen Commit zurück
