@@ -4,7 +4,7 @@ import { purgeUser } from '../../fixtures/test-data.fixture';
 /**
  * UI coverage for the 1.8.0-beta prod-release features that previously had no
  * e2e spec (#189 Betriebsferien-Flag, #191 Stundenzählung-Toggle,
- * #194 Überstunden-Übersicht, #201 Soll-Arbeitszeit-Fenster + Puffer).
+ * #194 Überstunden-Übersicht, #201 → Arbeitszeit-Blöcke (Spec 2026-10-08)).
  *
  * Each test drives the real admin UI and verifies persistence through the API,
  * then cleans up after itself.
@@ -37,15 +37,16 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
     } catch { /* best effort */ }
   }
 
-  test('#201 + #189: Soll-Arbeitszeit-Fenster und Betriebsferien-Flag werden gespeichert', async ({ adminPage, adminApi }) => {
+  test('#201 → Blöcke + #189: kein Soll-Fenster im Formular, Altfelder per API abgelehnt, Betriebsferien-Flag gespeichert', async ({ adminPage, adminApi }) => {
     const username = `e2e_ww_${Date.now()}`;
     try {
       await openNewUserForm(adminPage);
       await fillRequired(adminPage, username);
 
-      // #201: Soll-Beginn/-Ende für Montag setzen
-      await adminPage.getByLabel('Soll-Beginn Mo').fill('09:00');
-      await adminPage.getByLabel('Soll-Ende Mo').fill('17:00');
+      // Spec 2026-10-08 (E62/12.2): die #201-Fenster sind mit Migration 073 in
+      // Arbeitszeit-Blöcke übergegangen — das Formular hat keine Fensterfelder mehr.
+      await expect(adminPage.getByLabel('Soll-Beginn Mo')).toHaveCount(0);
+      await expect(adminPage.getByLabel('Soll-Ende Mo')).toHaveCount(0);
 
       // #189: Teilnahme an Betriebsferien abwählen
       await adminPage.locator('#receives_company_closures').uncheck();
@@ -59,9 +60,18 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       const users = await adminApi.get('/admin/users?include_inactive=true');
       const created = users.find((u: any) => u.username === username);
       expect(created, 'created user should exist').toBeTruthy();
-      expect(created.scheduled_start_monday).toMatch(/^09:00/);
-      expect(created.scheduled_end_monday).toMatch(/^17:00/);
+      expect(Object.keys(created).filter((k) => k.startsWith('scheduled_'))).toEqual([]);
+      expect(created.work_blocks ?? null).toBeNull();
+      expect(created.work_blocks_today ?? null).toBeNull();
       expect(created.receives_company_closures).toBe(false);
+
+      // E26: ein gecachtes altes Frontend schickt die Altfelder mit → 400, nichts gespeichert.
+      await expect(
+        adminApi.put(`/admin/users/${created.id}`, { first_name: 'Alt', scheduled_start_monday: '09:00' })
+      ).rejects.toThrow(/failed: 400 .*Bitte Seite neu laden/);
+      const again = (await adminApi.get('/admin/users?include_inactive=true'))
+        .find((u: any) => u.id === created.id);
+      expect(again.first_name).toBe('E2E');
     } finally {
       await cleanup(adminApi, username);
     }
