@@ -470,3 +470,170 @@ class TestSystemInfoExposesSwitch:
         _disable_waiver(db)
         body = TestClient(main_module.app).get("/api/system/info").json()
         assert body["break_exception_allowed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Review-Nachzug zu #499
+# ---------------------------------------------------------------------------
+
+class TestClockOutIgnoresApprovalRequirement:
+    """Review F1: Das Ausstempeln kennt die Genehmigungspflicht bewusst nicht.
+
+    Der Eintrag MUSS geschlossen werden (§16 ArbZG: die Zeit ist geleistet);
+    eine zulässige Begründung wird sofort wirksam und steht im
+    Änderungsprotokoll (Quelle ``break_waiver``). Ein Antrag entsteht nicht —
+    die Genehmigungspflicht gilt für manuelle Erfassung, Bearbeitung und
+    Anträge. Der Test hält das fest, damit eine Änderung bewusst geschieht und
+    Handbuch/Einstellungen-Karte mitgezogen werden.
+    """
+
+    def test_begruendung_wirkt_sofort_trotz_genehmigungspflicht(
+        self, db, employee, client_as, monkeypatch,
+    ):
+        from app.models import TimeEntryAuditLog
+
+        _setting(db, "break_exception_requires_approval", "true")
+        today = _freeze_now(monkeypatch, 18, 0)
+        open_entry = _open_after(db, employee, today, time(8, 49), time(13, 59), time(13, 59))
+
+        resp = client_as(employee).post("/api/time-entries/clock-out", json={
+            "break_minutes": 0, "break_waiver_reason": "Notfall",
+        })
+
+        assert resp.status_code == 200, resp.text
+        db.expire_all()
+        e = db.get(TimeEntry, open_entry.id)
+        assert e.end_time == time(18, 0)
+        assert e.break_waiver_reason == "Notfall"
+        assert db.query(ChangeRequest).count() == 0
+        assert db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.time_entry_id == open_entry.id,
+            TimeEntryAuditLog.source == "break_waiver",
+        ).count() == 1
+
+
+class TestOwnWaiverRequestAfterSwitchOff:
+    """Review F3: Die 4-Augen-Sperre für eigene Pflicht-Pause-Ausnahmen (SEC-E)
+    richtet sich nach der WIRKSAMEN Ausnahme. Ist der Schalter aus, verwirft die
+    Genehmigung die gespeicherte Begründung und prüft §4 neu — dann gewährt sie
+    keine Ausnahme mehr, und die Sperre (403 mit falschem Grund) darf nicht
+    greifen. Einzel-Admin-Praxen dürfen gewöhnliche eigene Anträge genehmigen (A01).
+    """
+
+    def _own_waiver_cr(self, db, admin, d):
+        """Nachtrag 12:00–15:00 an einen Vormittag 08:00–12:00 ohne Pause —
+        beim Stellen ein §4-Verstoß, darum mit Ausnahme-Begründung."""
+        cr = ChangeRequest(
+            user_id=admin.id, tenant_id=DEFAULT_TENANT_ID,
+            request_type=ChangeRequestType.CREATE, entry_kind="time_entry",
+            status=ChangeRequestStatus.PENDING, proposed_date=d,
+            proposed_start_time=time(12, 0), proposed_end_time=time(15, 0),
+            proposed_break_minutes=0, reason="Nachtrag", break_waiver_reason="Notfall",
+        )
+        db.add(cr)
+        db.commit()
+        return cr
+
+    def test_tag_inzwischen_konform_wird_genehmigt(self, db, admin, client_as):
+        d = today_local() - timedelta(days=7)
+        morning = _entry(db, admin, d, time(8, 0), time(12, 0))
+        cr = self._own_waiver_cr(db, admin, d)
+        _disable_waiver(db)
+        # Inzwischen wurde die Pause am Vormittag nachgetragen → Tag erfüllt §4.
+        morning.break_minutes = 30
+        db.commit()
+
+        resp = client_as(admin).post(
+            f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"},
+        )
+
+        assert resp.status_code == 200, resp.text
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.APPROVED
+        created = db.query(TimeEntry).filter(
+            TimeEntry.user_id == admin.id, TimeEntry.start_time == time(12, 0),
+        ).one()
+        assert created.break_waiver_reason is None
+
+    def test_tag_weiter_verstoss_meldet_pause_statt_4_augen(self, db, admin, client_as):
+        d = today_local() - timedelta(days=7)
+        _entry(db, admin, d, time(8, 0), time(12, 0))
+        cr = self._own_waiver_cr(db, admin, d)
+        _disable_waiver(db)
+
+        resp = client_as(admin).post(
+            f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"},
+        )
+
+        assert resp.status_code == 422, resp.text
+        assert "abgeschaltet" in resp.json()["detail"]
+        db.refresh(cr)
+        assert cr.status == ChangeRequestStatus.PENDING
+
+    def test_schalter_an_bleibt_403(self, db, admin, client_as):
+        """Gegenprobe: mit erlaubter Ausnahme bleibt SEC-E unverändert hart."""
+        d = today_local() - timedelta(days=7)
+        _entry(db, admin, d, time(8, 0), time(12, 0))
+        cr = self._own_waiver_cr(db, admin, d)
+
+        resp = client_as(admin).post(
+            f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"},
+        )
+
+        assert resp.status_code == 403, resp.text
+        assert "selbst genehmigt" in resp.json()["detail"]
+
+
+class TestWaiverOnlyStoredWhenNeeded:
+    """Review F4: Ein Antrag speichert die Begründung nur, wenn sie eine §4-
+    Ausnahme tatsächlich trägt. Sonst übersprang die Genehmigung die §4-
+    Neuprüfung (``waiver_reason is None``-Gate) und materialisierte den Eintrag
+    als ``break_waiver``, obwohl der Tag inzwischen gegen §4 verstößt."""
+
+    def test_begruendung_ohne_verstoss_wird_nicht_gespeichert(self, db, employee, client_as):
+        d = today_local() - timedelta(days=7)
+        resp = client_as(employee).post("/api/change-requests/", json={
+            "request_type": "create", "proposed_date": d.isoformat(),
+            "proposed_start_time": "12:00", "proposed_end_time": "15:00",
+            "proposed_break_minutes": 0, "reason": "vergessen",
+            "break_waiver_reason": "Notfall",
+        })
+
+        assert resp.status_code == 201, resp.text
+        cr = db.query(ChangeRequest).one()
+        assert cr.break_waiver_reason is None
+
+    def test_begruendung_mit_verstoss_wird_gespeichert(self, db, employee, client_as):
+        """Gegenprobe: echter §4-Verstoß → Begründung bleibt am Antrag."""
+        d = today_local() - timedelta(days=7)
+        _entry(db, employee, d, time(8, 0), time(12, 0))
+        resp = client_as(employee).post("/api/change-requests/", json={
+            "request_type": "create", "proposed_date": d.isoformat(),
+            "proposed_start_time": "12:00", "proposed_end_time": "15:00",
+            "proposed_break_minutes": 0, "reason": "vergessen",
+            "break_waiver_reason": "Notfall",
+        })
+
+        assert resp.status_code == 201, resp.text
+        assert db.query(ChangeRequest).one().break_waiver_reason == "Notfall"
+
+    def test_genehmigung_prueft_spaeteren_tagesverstoss(self, db, employee, admin, client_as):
+        """Antrag war beim Stellen §4-konform (Begründung überflüssig); bis zur
+        Genehmigung kam ein Vormittag dazu → 422 statt stiller break_waiver-Buchung."""
+        d = today_local() - timedelta(days=7)
+        resp = client_as(employee).post("/api/change-requests/", json={
+            "request_type": "create", "proposed_date": d.isoformat(),
+            "proposed_start_time": "12:00", "proposed_end_time": "15:00",
+            "proposed_break_minutes": 0, "reason": "vergessen",
+            "break_waiver_reason": "Notfall",
+        })
+        assert resp.status_code == 201, resp.text
+        cr_id = resp.json()["id"]
+        _entry(db, employee, d, time(8, 0), time(12, 0))
+
+        review = client_as(admin).post(
+            f"/api/admin/change-requests/{cr_id}/review", json={"action": "approve"},
+        )
+
+        assert review.status_code == 422, review.text
+        assert db.query(TimeEntry).filter(TimeEntry.start_time == time(12, 0)).count() == 0

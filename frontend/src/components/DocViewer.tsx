@@ -83,6 +83,7 @@ export function CheatsheetMitarbeiter() {
                 </tr>
               </tbody>
             </table>
+            <p className="text-sm text-gray-500 mt-1">Gilt für den <strong>ganzen Tag</strong> (alle Einträge zusammen); Lücken unter 15 Min. zählen nicht als Pause.</p>
           </div>
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Tagesgrenze (§3 ArbZG)</p>
@@ -480,12 +481,13 @@ export const handbuchAdminSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Konnte eine vorgeschriebene Pause (§4 ArbZG: 30 Min. ab 6h, 45 Min. ab 9h) nicht eingelegt werden, kann ein Eintrag mit einer <strong>dokumentierten Pflicht-Begründung</strong> erfasst werden, statt blockiert zu werden. Die Begründung landet im Änderungsprotokoll (Quelle „break_waiver").</p>
         <p>Geprüft wird der <strong>ganze Tag</strong>: alle Einträge zusammen, Lücken unter 15 Min. sind keine Pause (§4 Satz 2) – aneinandergereihte Einträge zählen wie ein durchgehender Block. Das gilt seit #499 auch beim <strong>Ausstempeln</strong>: ohne ausreichende Pause oder Begründung wird nicht ausgestempelt.</p>
-        <p>Mit <strong>„Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"</strong> (Standard: an) legen Sie fest, ob es die Ausnahme überhaupt gibt. <strong>Aus</strong> → die Auswahl verschwindet beim Ausstempeln, in Zeiterfassung, Monatsjournal und Anträgen, und der Server lehnt Ausnahmen ab (auch von Admins). Ein Tag über 6/9 h lässt sich dann nur mit eingetragener Pause speichern. Bestehende Ausnahmen bleiben; offene Ausnahme-Anträge lassen sich danach nicht mehr genehmigen, nur ablehnen.</p>
-        <p>Ist die Ausnahme erlaubt, stellen Sie den Schalter <strong>„Genehmigung erforderlich"</strong> unter <strong>Einstellungen → „Pflicht-Pause-Ausnahme"</strong> ein:</p>
+        <p>Mit <strong>„Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"</strong> (Standard: an) legen Sie fest, ob es die Ausnahme überhaupt gibt. <strong>Aus</strong> → die Auswahl verschwindet beim Ausstempeln, in Zeiterfassung, Monatsjournal und Anträgen, und der Server lehnt Ausnahmen ab (auch von Admins). Ein Tag über 6/9 h lässt sich dann nur mit eingetragener Pause speichern. Bestehende Ausnahmen bleiben; offene Ausnahme-Anträge gelten danach als Anträge ohne Ausnahme – genehmigen lassen sie sich nur noch, wenn die Pause des Tages jetzt reicht (sonst ablehnen).</p>
+        <p>Ist die Ausnahme erlaubt, stellen Sie den Schalter <strong>„Genehmigung erforderlich"</strong> unter <strong>Einstellungen → „Pflicht-Pause-Ausnahme"</strong> ein. Er gilt für Ausnahmen, die Mitarbeitende in der <strong>Zeiterfassung</strong> (Eintrag anlegen oder bearbeiten) begründen:</p>
         <ul className="list-disc list-inside space-y-0.5">
           <li><strong>Aus</strong> – die Ausnahme wird sofort wirksam.</li>
           <li><strong>Ein</strong> – der Eintrag wird erst nach Admin-Genehmigung wirksam.</li>
         </ul>
+        <p><strong>Beim Ausstempeln</strong> wirkt eine Begründung immer <strong>sofort</strong>, auch bei eingeschalteter Genehmigungspflicht – der Eintrag muss geschlossen werden, weil die Zeit bereits geleistet ist (§16 ArbZG). Diese Ausnahmen prüfen Sie im Änderungsprotokoll (Quelle „break_waiver"). Soll beim Ausstempeln gar keine Ausnahme möglich sein, schalten Sie die Ausnahme ganz ab. Änderungsanträge gehen ohnehin immer zur Genehmigung; Korrekturen durch Admins wirken sofort.</p>
         <p className="text-gray-700"><strong>4-Augen-Prinzip:</strong> Ist die Genehmigungspflicht aktiv, darf ein Admin seine <strong>eigene</strong> Pflicht-Pause-Ausnahme nicht selbst genehmigen – sie muss von einer zweiten Person geprüft werden.</p>
       </div>
     ),

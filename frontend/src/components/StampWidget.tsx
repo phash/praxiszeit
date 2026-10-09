@@ -100,6 +100,18 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     }
   };
 
+  // #499-Review F2: Die §4-Sperre steht im Dialog — schließt jemand danach das
+  // Sheet oder verlässt die Seite, bliebe er unbemerkt eingestempelt, und am
+  // Folgetag schlösse der Server den Eintrag auf 23:59 ohne Pause. Deshalb
+  // zusätzlich ein Fehler-Toast, der den Dialog überlebt.
+  const notifyStillClockedIn = (msg: string) => {
+    const canWaive = breakExceptionAllowed && !isBreakExceptionDisabledMessage(msg);
+    toast.error(
+      `Noch NICHT ausgestempelt – die Pause des Tages reicht nicht (§4 ArbZG). ` +
+        `Bitte Pause nachtragen${canWaive ? ' oder begründen' : ''}.`,
+    );
+  };
+
   const handleClockOut = async () => {
     if (!showBreakInput) {
       setShowBreakInput(true);
@@ -121,6 +133,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       const breakErr = computeBreakError([], startHHMM, endHHMM, breakMinutes, false);
       if (breakErr && !waiver) {
         setBreakWarn(breakErr);
+        notifyStillClockedIn(breakErr);
         return; // Eingabe (Pause erhöhen oder — falls erlaubt — Begründung) erforderlich
       }
     }
@@ -152,8 +165,10 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       const msg = getErrorMessage(err, 'Fehler beim Ausstempeln');
       if (err?.response?.status === 400 && msg.includes('Pause')) {
         // #499: §4-Verstoß über den ganzen Tag — im Dialog zeigen, damit Pause
-        // bzw. Begründung direkt nachgetragen werden kann (kein flüchtiger Toast).
+        // bzw. Begründung direkt nachgetragen werden kann; der Toast meldet
+        // zusätzlich, dass NICHT ausgestempelt wurde.
         setBreakWarn(msg);
+        notifyStillClockedIn(msg);
       } else {
         toast.error(msg);
       }

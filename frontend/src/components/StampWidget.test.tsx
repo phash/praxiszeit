@@ -77,7 +77,34 @@ describe('<StampWidget /> §4 über den ganzen Tag (#499)', () => {
     expect(await screen.findByText(S4)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Notfall, keine Vertretung/)).toBeInTheDocument();
     expect(toast.success).not.toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('meldet zusätzlich per Toast, dass NICHT ausgestempelt wurde (bleibt sichtbar, wenn das Sheet zugeht)', async () => {
+    // #499-Review F2: wer das Sheet nach der Sperre schließt, bliebe sonst
+    // unbemerkt eingestempelt — am Folgetag schließt der Server den Eintrag auf
+    // 23:59 ohne Pause.
+    clockedInSince(startedAgo(5));
+    rejectWith(S4);
+    await openBreakDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+
+    await screen.findByText(S4);
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error.mock.calls[0][0]).toMatch(/NICHT ausgestempelt/);
+    expect(toast.error.mock.calls[0][0]).toMatch(/oder begründen/);
+  });
+
+  it('meldet auch bei der Vorprüfung im Browser per Toast, dass NICHT ausgestempelt wurde', async () => {
+    clockedInSince(startedAgo(7 * 60)); // 7 h ohne Pause → Vorprüfung schlägt an
+    await openBreakDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+
+    expect(await screen.findByText(/mind\. 30 Min\. Pause/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error.mock.calls[0][0]).toMatch(/NICHT ausgestempelt/);
   });
 
   it('schickt die Begründung beim zweiten Versuch mit', async () => {
@@ -125,5 +152,9 @@ describe('<StampWidget /> Ausnahme abgeschaltet (#499)', () => {
 
     expect(await screen.findByText(S4 + DISABLED)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/Notfall, keine Vertretung/)).not.toBeInTheDocument();
+    // Toast nennt nur den Weg, den es gibt: Pause nachtragen, keine Begründung.
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error.mock.calls[0][0]).toMatch(/NICHT ausgestempelt/);
+    expect(toast.error.mock.calls[0][0]).not.toMatch(/begründen/);
   });
 });

@@ -267,10 +267,25 @@ def review_change_request(
         db.refresh(cr)
         return _enrich_cr_response(cr, db)
 
+    # #499: Eine im Antrag mitgebrachte Pflicht-Pause-Ausnahme gilt nur, solange
+    # der Mandant sie erlaubt. Wurde sie nach dem Stellen abgeschaltet, wird der
+    # Antrag wie einer OHNE Ausnahme behandelt: §4 erneut prüfen (422 bei
+    # Verstoß), und die Begründung landet weder am Eintrag noch als
+    # 'break_waiver'-Quelle im Protokoll.
+    waiver_reason = cr.break_waiver_reason
+    waiver_disabled = False
+    if waiver_reason is not None and not is_break_exception_allowed(db, cr.tenant_id):
+        waiver_reason = None
+        waiver_disabled = True
+
     # SEC-E: 4-eyes principle for the break-waiver workflow. An admin must not
     # approve their OWN documented break-exception (#144 §4 ArbZG) — the whole
     # point of the approval mode is independent oversight.
-    if cr.break_waiver_reason is not None and cr.user_id == current_user.id:
+    # #499-Review (F3): maßgeblich ist die WIRKSAME Ausnahme (``waiver_reason``
+    # nach der Neutralisierung oben), nicht die gespeicherte. Ist der Schalter
+    # aus, gewährt die Genehmigung keine Ausnahme mehr (§4 wird neu geprüft) —
+    # dann ist es ein gewöhnlicher Antrag, für den die A01-Regel darunter gilt.
+    if waiver_reason is not None and cr.user_id == current_user.id:
         raise HTTPException(
             status_code=403,
             detail="Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden.",
@@ -290,17 +305,6 @@ def review_change_request(
                 "wenn ein weiterer Admin vorhanden ist (4-Augen-Prinzip)."
             ),
         )
-
-    # #499: Eine im Antrag mitgebrachte Pflicht-Pause-Ausnahme gilt nur, solange
-    # der Mandant sie erlaubt. Wurde sie nach dem Stellen abgeschaltet, wird der
-    # Antrag wie einer OHNE Ausnahme behandelt: §4 erneut prüfen (422 bei
-    # Verstoß), und die Begründung landet weder am Eintrag noch als
-    # 'break_waiver'-Quelle im Protokoll.
-    waiver_reason = cr.break_waiver_reason
-    waiver_disabled = False
-    if waiver_reason is not None and not is_break_exception_allowed(db, cr.tenant_id):
-        waiver_reason = None
-        waiver_disabled = True
 
     # Approve: validate preconditions BEFORE changing status
     entry = None

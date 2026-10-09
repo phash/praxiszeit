@@ -1036,7 +1036,9 @@ const saveYearEndProjection = async () => {
         <p className="text-sm text-gray-500 mb-4">
           Wenn die Genehmigung aktiviert ist, wird ein solcher Eintrag erst nach Admin-Genehmigung wirksam
           (4-Augen-Prinzip); andernfalls wird er sofort gespeichert und die Abweichung als Warnung sowie im
-          Änderungsprotokoll dokumentiert.
+          Änderungsprotokoll dokumentiert. Das gilt für Einträge, die Mitarbeiter in der Zeiterfassung
+          anlegen oder bearbeiten. Beim Ausstempeln wirkt eine Begründung immer sofort, weil der Eintrag
+          geschlossen werden muss (§16 ArbZG) – diese Ausnahmen prüfen Sie im Änderungsprotokoll.
         </p>
         <div className="flex items-center justify-between max-w-sm">
           <label htmlFor="break-approval-toggle" className="text-sm font-medium text-gray-700">

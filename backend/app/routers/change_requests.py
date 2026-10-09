@@ -196,6 +196,13 @@ def create_change_request(
         if entry.date >= today_local():
             raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
 
+    # #499-Review (F4): die Begründung wird nur dann am Antrag gespeichert, wenn
+    # sie eine §4-Ausnahme tatsächlich trägt. Eine überflüssige Begründung ließ
+    # die Genehmigung die §4-Neuprüfung überspringen (admin_change_requests:
+    # ``if waiver_reason is None``) — ein inzwischen entstandener Tagesverstoß
+    # wäre dann ungeprüft als 'break_waiver' gebucht worden.
+    waiver_needed = False
+
     # Break validation for CREATE and UPDATE (§18-Ausnahme: exempt_from_arbzg überspringt §3/§4)
     if not current_user.exempt_from_arbzg and data.request_type in ("create", "update") and data.proposed_date:
         break_error = validate_daily_break(
@@ -219,6 +226,7 @@ def create_change_request(
             )
             if rejection:
                 raise HTTPException(status_code=400, detail=rejection)
+            waiver_needed = True
 
         # §3 ArbZG: daily hours hard limit
         daily_hours = _calculate_daily_net_hours(
@@ -270,7 +278,7 @@ def create_change_request(
         reason=data.reason,
         break_waiver_reason=(
             data.break_waiver_reason.strip()
-            if data.break_waiver_reason and data.break_waiver_reason.strip()
+            if waiver_needed and data.break_waiver_reason and data.break_waiver_reason.strip()
             else None
         ),
         # #485 §10 ArbZG: Ausnahmegrund fuer Sonn-/Feiertagsarbeit.

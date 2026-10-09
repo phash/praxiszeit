@@ -82,6 +82,9 @@ export function showArbzgWarnings(
         );
         break;
       case 'BREAK_WARNING':
+        // Altmeldung: wird seit #499 vom Backend nicht mehr erzeugt (§4 ist an
+        // allen Schreibwegen eine Sperre, auch beim Ausstempeln; mit Begründung
+        // kommt BREAK_WAIVER). Bleibt nur als harmloser Rückfall stehen.
         toast.warning(detail ?? 'Pausenregel verletzt (§4 ArbZG).');
         break;
       case 'BREAK_WAIVER':

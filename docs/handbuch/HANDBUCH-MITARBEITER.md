@@ -183,8 +183,7 @@ Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das
 >
 > - **> 8 Stunden Netto:** Hinweis gem. [§ 3 ArbZG](https://www.gesetze-im-internet.de/arbzg/__3.html)
 > - **> 10 Stunden Netto:** Bei **manueller Eingabe** (wie hier) wird der Eintrag blockiert (Tageshöchstgrenze). Beim **Live-Ausstempeln** wird stattdessen nur gewarnt — die Zeit ist dann bereits geleistet und § 16-aufzeichnungspflichtig.
-> - **Zu kurze Pause:** Warnung gem. [§ 4 ArbZG](https://www.gesetze-im-internet.de/arbzg/__4.html):
->   bei > 6h → mind. 30 Min.; bei > 9h → mind. 45 Min.
+> - **Zu kurze Pause** gem. [§ 4 ArbZG](https://www.gesetze-im-internet.de/arbzg/__4.html) (bei > 6h → mind. 30 Min.; bei > 9h → mind. 45 Min.), gerechnet über **alle** Einträge des Tages; Lücken unter 15 Min. zählen nicht als Pause: Speichern erst mit ausreichender Pause oder – falls Ihre Praxis es erlaubt – mit Begründung („Pflicht-Pause war nicht möglich"). Je nach Einstellung Ihrer Praxis wird ein so begründeter Eintrag erst nach Genehmigung durch die Verwaltung wirksam.
 
 ---
 

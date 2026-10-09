@@ -629,11 +629,13 @@ Konnte eine gesetzlich vorgeschriebene Pause (§ 4 ArbZG) nicht eingelegt werden
 
 Der Schalter **„Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"** (Standard: **an**) legt fest, ob es diese Ausnahme in Ihrer Praxis überhaupt gibt:
 - **An** (Standard): Mitarbeitende und Admins können eine fehlende Pause begründen – beim Ausstempeln, in der Zeiterfassung, im Monatsjournal und in Änderungsanträgen.
-- **Aus**: Die Auswahl verschwindet an all diesen Stellen, und der Server lehnt jede Ausnahme ab – **auch für Admins**. Ein Tag über 6 bzw. 9 Stunden lässt sich dann nur noch mit eingetragener Pause speichern oder ausstempeln. Sinnvoll, wenn in Ihrer Praxis immer eine Pause möglich ist und die Pausenzeit in jedem Fall abgezogen werden soll. Bereits erfasste Ausnahmen bleiben unverändert stehen; ein noch **offener** Ausnahme-Antrag lässt sich nach dem Abschalten nicht mehr genehmigen (die Genehmigung prüft die Pause dann erneut) – lehnen Sie ihn ab, damit er mit Pause neu gestellt wird.
+- **Aus**: Die Auswahl verschwindet an all diesen Stellen, und der Server lehnt jede Ausnahme ab – **auch für Admins**. Ein Tag über 6 bzw. 9 Stunden lässt sich dann nur noch mit eingetragener Pause speichern oder ausstempeln. Sinnvoll, wenn in Ihrer Praxis immer eine Pause möglich ist und die Pausenzeit in jedem Fall abgezogen werden soll. Bereits erfasste Ausnahmen bleiben unverändert stehen. Ein noch **offener** Ausnahme-Antrag gilt nach dem Abschalten als Antrag **ohne** Ausnahme: Die Genehmigung prüft die Pause des Tages erneut und klappt nur noch, wenn sie jetzt reicht – sonst lehnen Sie ihn ab, damit er mit Pause neu gestellt wird.
 
-Ist die Ausnahme erlaubt, steuert der Schalter **„Genehmigung erforderlich"** das weitere Verhalten:
+Ist die Ausnahme erlaubt, steuert der Schalter **„Genehmigung erforderlich"**, was mit einer Ausnahme geschieht, die Mitarbeitende in der **Zeiterfassung** begründen (Eintrag anlegen oder bearbeiten):
 - **Aus** (Standard): Der Eintrag wird sofort gespeichert; die Abweichung wird als Warnung gemeldet und im Änderungsprotokoll dokumentiert.
 - **Ein**: Der Eintrag wird erst nach **Admin-Genehmigung** wirksam (**4-Augen-Prinzip**).
+
+**Beim Ausstempeln** wird eine Begründung dagegen immer **sofort wirksam** – auch bei eingeschalteter Genehmigungspflicht. Die Arbeitszeit ist dann bereits geleistet, und der Eintrag muss geschlossen werden (§ 16 ArbZG). Diese Ausnahmen finden Sie im Änderungsprotokoll (Quelle „break_waiver", siehe [Abschnitt 9](#9-änderungsprotokoll-audit-log)). Soll beim Ausstempeln gar keine Ausnahme möglich sein, schalten Sie die Ausnahme ganz ab. Änderungsanträge gehen ohnehin immer zur Genehmigung an Sie; Korrekturen durch Admins wirken sofort.
 
 > **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden.
 

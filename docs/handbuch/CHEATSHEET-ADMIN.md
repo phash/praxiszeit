@@ -211,11 +211,12 @@ Erscheinen beim Buchen unter „Eigene Gründe". Im Team-Kalender für Kolleg:in
 Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** möglich (im Änderungsprotokoll dokumentiert, Quelle „break_waiver").
 **Einstellungen → „Pflicht-Pause-Ausnahme" → „Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"** (#499):
 - **An** (Standard): Begründung wird angeboten (Ausstempeln, Zeiterfassung, Anträge, Admin-Korrektur)
-- **Aus**: kein Begründungsfeld mehr; der Server lehnt Ausnahmen ab (auch von Admins) – ein Tag über 6/9 h lässt sich nur mit eingetragener Pause speichern. Offene Ausnahme-Anträge lassen sich dann nicht mehr genehmigen (nur ablehnen bzw. mit Pause neu stellen). Bestehende Ausnahmen bleiben.
+- **Aus**: kein Begründungsfeld mehr; der Server lehnt Ausnahmen ab (auch von Admins) – ein Tag über 6/9 h lässt sich nur mit eingetragener Pause speichern. Offene Ausnahme-Anträge gelten dann als Anträge ohne Ausnahme: Genehmigen klappt nur, wenn die Pause des Tages jetzt reicht (sonst ablehnen → mit Pause neu stellen). Bestehende Ausnahmen bleiben.
 
-**„Genehmigung erforderlich"** (nur bei erlaubter Ausnahme):
+**„Genehmigung erforderlich"** (nur bei erlaubter Ausnahme; gilt für Ausnahmen, die MA in der Zeiterfassung beim Anlegen/Bearbeiten begründen):
 - **Aus** (Standard): Eintrag sofort wirksam, Abweichung als Warnung
 - **Ein**: Eintrag erst nach Admin-Genehmigung wirksam
+- **Ausstempeln:** Begründung wirkt **immer sofort** (Eintrag muss geschlossen werden, §16) → im Änderungsprotokoll prüfen (Quelle „break_waiver"). Keine Ausnahme beim Ausstempeln gewünscht → Ausnahme ganz abschalten.
 > **4-Augen:** Eigene Pflicht-Pause-Ausnahme **nie selbst genehmigen** – muss ein anderer Admin prüfen.
 
 ---
