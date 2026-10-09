@@ -2,6 +2,8 @@
 import datetime as dt
 from datetime import date, time
 
+import pytest
+
 from app.models import ChangeRequest, SystemSetting, TimeEntry
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from tests.conftest import DEFAULT_TENANT_ID
@@ -78,6 +80,56 @@ def test_e40_daily_cap_counts_credited_time(_db_session, employee_user, employee
     assert resp.status_code == 201, resp.text
     cr = _db_session.query(ChangeRequest).one()
     assert (cr.proposed_start_time, cr.proposed_end_time) == (time(7, 0), time(18, 30))
+
+
+# Review Task 9: die beiden Tests oben decken nur den Teil VOR dem Speichern
+# (§4-Lückensegmente, §3-Tagesgrenze). Die Hinweise NACH dem Speichern (§6
+# Nachtarbeitnehmer, 48-h-Woche) rechnen ebenfalls auf der angerechneten Zeit.
+# Je Fall eine Kontrolle ohne Lücke bzw. ohne Kappung: sie warnt, damit der
+# Negativfall nicht still grün bleibt, falls die Warnung gar nicht mehr feuert.
+@pytest.mark.parametrize("fri_blocks, warned", [
+    ([("08:00", "12:00"), ("15:00", "18:00")], False),  # Lücke 12:15–14:45
+    ([("08:00", "18:00")], True),                         # Kontrolle ohne Lücke
+])
+def test_e40_request_weekly_warning_uses_credited_time(
+        _db_session, employee_user, employee_client, fri_blocks, warned):
+    """Mo–Do je 10,0 h = 40 h; Fr-Antrag 08:00–18:00, Pause 45: roh 9,25 h
+    (Woche 49,25 h → Warnung), angerechnet 6,75 h (46,75 h → keine)."""
+    employee_user.work_blocks = block_week(fri=fri_blocks)
+    _db_session.commit()
+    for day in range(1, 5):
+        _entry(_db_session, employee_user, date(2026, 6, day), time(7), time(17, 15), 15)
+    resp = employee_client.post("/api/change-requests/", json={
+        "request_type": "create", "proposed_date": "2026-06-05",
+        "proposed_start_time": "08:00", "proposed_end_time": "18:00",
+        "proposed_break_minutes": 45, "reason": "Nachtrag"})
+    assert resp.status_code == 201, resp.text
+    assert ("WEEKLY_HOURS_WARNING" in resp.json()["warnings"]) is warned, resp.json()["warnings"]
+
+
+@pytest.mark.parametrize("mon_blocks, start, end, warned", [
+    # Tageswert: 00:30–10:00, Pause 45 → roh 8,75 h; Lücke 04:15–06:45 →
+    # angerechnet 6,25 h. Nachtarbeit liegt in beiden Fällen vor.
+    ([("00:30", "04:00"), ("07:00", "10:00")], "00:30", "10:00", False),
+    ([("00:30", "10:00")], "00:30", "10:00", True),
+    # Einstufung: 03:00–13:30, Pause 45 → roh 180 Min Nachtzeit; gekappt ab
+    # 04:00 nur 120 Min (nicht mehr als 2 h, § 2 Abs. 4) bei angerechneten
+    # 8,75 h > 8 h — hier schweigt allein die Nachtarbeits-Einstufung.
+    ([("04:15", "13:30")], "03:00", "13:30", False),
+    ([("03:15", "13:30")], "03:00", "13:30", True),
+])
+def test_e40_request_night_worker_warning_uses_credited_time(
+        _db_session, employee_user, employee_client, mon_blocks, start, end, warned):
+    employee_user.is_night_worker = True
+    employee_user.work_blocks = block_week(mon=mon_blocks)
+    _db_session.commit()
+    resp = employee_client.post("/api/change-requests/", json={
+        "request_type": "create", "proposed_date": MON.isoformat(),
+        "proposed_start_time": start, "proposed_end_time": end,
+        "proposed_break_minutes": 45, "reason": "Nachtrag"})
+    assert resp.status_code == 201, resp.text
+    night = [w for w in resp.json()["warnings"] if w.startswith("§6 ArbZG")]
+    assert bool(night) is warned, resp.json()["warnings"]
 
 
 def test_p28_request_snapshots_uncredited(_db_session, employee_user, employee_client):
