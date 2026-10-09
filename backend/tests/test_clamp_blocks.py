@@ -1,5 +1,6 @@
 """Spec 6.1–6.3: Kappung gegen Arbeitszeit-Blöcke (Falltabelle K1–K21)."""
 from datetime import time
+from decimal import Decimal
 
 import pytest
 
@@ -192,3 +193,10 @@ def test_seconds_at_the_hull_edge_behave_like_072(db, default_tenant):
     assert (early.eff_start, early.raw_start) == (time(7, 45), time(7, 44, 30))
     edge = wws.clamp(db, user, MON, time(9), time(18, 15), 15, credit_override=False)
     assert edge.raw_end is None
+
+
+# Task 4 / Spec E13: net_hours zieht die nicht angerechneten Minuten ab.
+@pytest.mark.parametrize("case", K_CASES, ids=[c.id for c in K_CASES])
+def test_k_table_net_hours(db, k_setup, case):
+    r = wws.clamp(db, k_user(case), case.day, case.start, case.end, 15, credit_override=case.credit_override)
+    assert _entry(case, r).net_hours == Decimal(case.exp_net)

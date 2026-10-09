@@ -46,8 +46,12 @@ class TimeEntry(Base):
     @hybrid_property
     def net_hours(self) -> Decimal:
         """
-        Calculate net hours worked (end - start - break).
+        Calculate net hours worked (end - start - break - uncredited).
         Returns hours as Decimal with 2 decimal places.
+
+        Spec 2026-10-08 (E13): ``uncredited_minutes`` = Zeit zwischen zwei
+        Arbeitsblöcken, die nicht angerechnet wird. ``or 0`` deckt transiente
+        Einträge vor dem flush ab (der Spalten-Default greift erst dort).
         """
         if not self.start_time or not self.end_time:
             return Decimal('0.00')
@@ -59,10 +63,11 @@ class TimeEntry(Base):
         # Calculate duration in hours
         duration_hours = (end_seconds - start_seconds) / 3600.0
 
-        # Subtract break time
+        # Subtract break time and the uncredited gap minutes
         break_hours = self.break_minutes / 60.0
+        uncredited_hours = (self.uncredited_minutes or 0) / 60.0
 
-        net = duration_hours - break_hours
+        net = duration_hours - break_hours - uncredited_hours
 
         return Decimal(str(max(round(net, 2), 0)))
 
@@ -78,10 +83,16 @@ class TimeEntry(Base):
         NULL-safe: returns 0 when end_time is NULL (open entries).
         Dialect-portable: uses CASE for the max(..., 0) floor instead of
         Postgres-only GREATEST(), so the test suite on SQLite still works.
+
+        Spec 2026-10-08 (E13/6.1): zieht ``uncredited_minutes`` ab wie der
+        Python-Pfad, rundet aber bewusst NICHT je Zeile — sonst änderten sich
+        bestehende SQL-Summen (Byte-Identität E22). Parität zum Python-Pfad
+        bis auf n × 0,005 h (``test_net_hours_parity_pg.py``).
         """
         duration = (
             func.extract("epoch", cls.end_time - cls.start_time) / 3600.0
             - cls.break_minutes / 60.0
+            - func.coalesce(cls.uncredited_minutes, 0) / 60.0
         )
         return case(
             (cls.end_time.is_(None), 0),

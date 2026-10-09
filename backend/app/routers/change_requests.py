@@ -236,6 +236,8 @@ def create_change_request(
             start_time=data.proposed_start_time,
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
+            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
+            uncredited_minutes=0,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
@@ -315,6 +317,8 @@ def create_change_request(
             start_time=data.proposed_start_time,
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
+            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
+            uncredited_minutes=0,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
@@ -339,6 +343,8 @@ def create_change_request(
             start_time=data.proposed_start_time,
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
+            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
+            uncredited_minutes=0,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )

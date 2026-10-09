@@ -43,8 +43,9 @@ MAX_WEEKLY_HOURS_WARN = 48.0        # §3 ArbZG: 6 Werktage × 8h Durchschnitt =
 MAX_NIGHT_WORKER_DAILY_WARN = 8.0   # §6 Abs. 2 ArbZG: Tageslimit für Nachtarbeitnehmer
 
 
-def _net_hours(st: time, et: time, brk: int) -> float:
-    """Calculate net working hours from start/end time and break minutes.
+def _net_hours(st: time, et: time, brk: int, uncredited: int) -> float:
+    """Calculate net working hours from start/end time, break minutes and the
+    uncredited minutes between work blocks (Spec 2026-10-08, E13).
 
     Invariant: et > st. This is NOT over-midnight aware on purpose — the system
     models over-midnight shifts as two separate entries, and end<=start is
@@ -52,9 +53,13 @@ def _net_hours(st: time, et: time, brk: int) -> float:
     skips such rows in execute_import). Reinterpreting et<st as "+1 day" would
     silently turn a data-entry error (e.g. swapped start/end) into a 16h shift,
     so we keep the max(0, …) floor as a last-resort guard instead.
+
+    ``uncredited`` ist Pflicht: ohne ihn ergäbe „gestempelt 08:00–18:30,
+    gekappt auf 18:15" bei einer Lücke von 2:30 h 10,25 h und HTTP 422, obwohl
+    nur 7,75 h angerechnet sind (Spec 7.1).
     """
     mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
-    return max(0.0, (mins - brk) / 60.0)
+    return max(0.0, (mins - brk - uncredited) / 60.0)
 
 
 def _calculate_daily_net_hours(
@@ -64,10 +69,17 @@ def _calculate_daily_net_hours(
     start_time: time,
     end_time: time,
     break_minutes: int,
+    *,
+    uncredited_minutes: int,
     exclude_entry_id=None,
     tenant_id=None,
 ) -> float:
-    """Sum up all net hours for a user on a given date, including the new/updated entry."""
+    """Sum up all net hours for a user on a given date, including the new/updated entry.
+
+    Bestehende Einträge tragen ihr gespeichertes ``uncredited_minutes`` bei;
+    ``uncredited_minutes`` des neuen/geänderten Eintrags ist Pflicht (Spec 7.1),
+    damit keine Aufrufstelle die Lücke still mitzählt.
+    """
     query = db.query(TimeEntry).filter(
         TimeEntry.user_id == user_id,
         TimeEntry.date == entry_date,
@@ -80,8 +92,11 @@ def _calculate_daily_net_hours(
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
 
-    total = sum(_net_hours(e.start_time, e.end_time, e.break_minutes) for e in existing)
-    total += _net_hours(start_time, end_time, break_minutes)
+    total = sum(
+        _net_hours(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes or 0)
+        for e in existing
+    )
+    total += _net_hours(start_time, end_time, break_minutes, uncredited_minutes)
     return total
 
 
@@ -92,10 +107,16 @@ def _calculate_weekly_net_hours(
     start_time: time,
     end_time: time,
     break_minutes: int,
+    *,
+    uncredited_minutes: int,
     exclude_entry_id=None,
     tenant_id=None,
 ) -> float:
-    """Sum all net hours for the ISO calendar week containing entry_date, including the new/updated entry."""
+    """Sum all net hours for the ISO calendar week containing entry_date, including the new/updated entry.
+
+    ``uncredited_minutes`` wie im Tageshelfer (Pflicht; bestehende Einträge
+    mit ihrem gespeicherten Wert).
+    """
     from datetime import timedelta
     # Monday of that ISO week
     monday = entry_date - timedelta(days=entry_date.weekday())
@@ -114,8 +135,11 @@ def _calculate_weekly_net_hours(
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
 
-    total = sum(_net_hours(e.start_time, e.end_time, e.break_minutes) for e in existing)
-    total += _net_hours(start_time, end_time, break_minutes)
+    total = sum(
+        _net_hours(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes or 0)
+        for e in existing
+    )
+    total += _net_hours(start_time, end_time, break_minutes, uncredited_minutes)
     return total
 
 
@@ -358,6 +382,8 @@ def clock_in(
         date=now.date(),
         start_time=eff_start,
         raw_start_time=raw_start,
+        # Spec 7.1 Nr. 1: offen → 0, Lücken zählen erst mit dem Ende.
+        uncredited_minutes=_r.uncredited_minutes,
         end_time=None,
         break_minutes=0,
         note=body.note,
@@ -472,6 +498,7 @@ def clock_out(
         start_time=open_entry.start_time,
         end_time=eff_end,
         break_minutes=body.break_minutes,
+        uncredited_minutes=_r.uncredited_minutes,
         exclude_entry_id=open_entry.id,
         tenant_id=current_user.tenant_id,
     )
@@ -518,6 +545,8 @@ def clock_out(
 
     open_entry.end_time = eff_end
     open_entry.raw_end_time = raw_end
+    # Spec 7.1 Nr. 2 (E11): die Lückenminuten folgen dem geschriebenen Ende.
+    open_entry.uncredited_minutes = _r.uncredited_minutes
     open_entry.break_minutes = body.break_minutes
     if body.note:
         open_entry.note = body.note
@@ -593,6 +622,7 @@ def clock_out(
             start_time=open_entry.start_time,
             end_time=eff_end,
             break_minutes=body.break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
             exclude_entry_id=open_entry.id,
             tenant_id=current_user.tenant_id,
         )
@@ -775,6 +805,7 @@ def create_time_entry(
         start_time=eff_start,
         end_time=eff_end,
         break_minutes=entry_data.break_minutes,
+        uncredited_minutes=_r.uncredited_minutes,
         tenant_id=current_user.tenant_id,
     )
     if not exempt and daily_hours > MAX_DAILY_HOURS_HARD:
@@ -884,6 +915,7 @@ def create_time_entry(
             start_time=eff_start,
             end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
             tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -914,6 +946,8 @@ def create_time_entry(
         end_time=eff_end,
         raw_start_time=raw_start,
         raw_end_time=raw_end,
+        # Spec 7.1 Nr. 3 (E11): Lückenminuten immer serverseitig aus clamp().
+        uncredited_minutes=_r.uncredited_minutes,
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
         sunday_exception_reason=entry_data.sunday_exception_reason,
@@ -1099,6 +1133,11 @@ def update_time_entry(
     if "end_time" in update_data:
         entry.end_time = _eff_end
         entry.raw_end_time = _raw_end
+    if "start_time" in update_data or "end_time" in update_data:
+        # Spec E11: die Lückenminuten folgen dem geschriebenen Zeitpaar. Ohne
+        # Zeitfeld im Update bleibt der gespeicherte Wert stehen (passend zu den
+        # unverändert gespeicherten Zeiten, Fix #2).
+        entry.uncredited_minutes = _r.uncredited_minutes
 
     exempt = _entry_owner.exempt_from_arbzg
 
@@ -1115,6 +1154,7 @@ def update_time_entry(
             start_time=entry.start_time,
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
+            uncredited_minutes=entry.uncredited_minutes,
             exclude_entry_id=entry.id,
             tenant_id=entry.tenant_id,
         )
@@ -1257,6 +1297,7 @@ def update_time_entry(
             start_time=entry.start_time,
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
+            uncredited_minutes=entry.uncredited_minutes,
             exclude_entry_id=entry.id,
             tenant_id=entry.tenant_id,
         )
@@ -1269,6 +1310,7 @@ def update_time_entry(
             start_time=entry.start_time,
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
+            uncredited_minutes=entry.uncredited_minutes,
             exclude_entry_id=entry.id,
             tenant_id=entry.tenant_id,
         )

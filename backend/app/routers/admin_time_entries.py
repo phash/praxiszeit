@@ -147,6 +147,7 @@ def admin_create_time_entry(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
             tenant_id=current_user.tenant_id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
@@ -164,6 +165,7 @@ def admin_create_time_entry(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
             tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -193,6 +195,8 @@ def admin_create_time_entry(
         break_waiver_reason=waiver_reason if break_waiver_active else None,
         raw_start_time=raw_start,
         raw_end_time=raw_end,
+        # Spec 7.1 Nr. 5 (E11): Lückenminuten immer serverseitig aus clamp().
+        uncredited_minutes=_r.uncredited_minutes,
     )
     db.add(entry)
     db.flush()
@@ -370,7 +374,9 @@ def admin_update_time_entry(
         daily_hours = _calculate_daily_net_hours(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
-            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            break_minutes=update_break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
+            exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
@@ -387,7 +393,9 @@ def admin_update_time_entry(
         weekly_hours = _calculate_weekly_net_hours(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
-            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            break_minutes=update_break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
+            exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -451,6 +459,11 @@ def admin_update_time_entry(
         entry.raw_start_time = raw_start
     if entry_data.end_time is not None or _times_affected:
         entry.raw_end_time = raw_end
+    # Spec 7.1 Nr. 6 (E11): die Lückenminuten folgen dem geschriebenen
+    # Zeitpaar — dasselbe Gate wie start/end; eine reine Notiz- oder
+    # Pausenkorrektur lässt den gespeicherten Wert stehen.
+    if entry_data.start_time is not None or entry_data.end_time is not None or _times_affected:
+        entry.uncredited_minutes = _r.uncredited_minutes
 
     db.commit()
     db.refresh(entry)

@@ -1,0 +1,122 @@
+"""Spec 7.1 Nr. 1–6, 8, 9: jede schreibende Stelle speichert uncredited_minutes."""
+import datetime as dt
+from datetime import time
+from decimal import Decimal
+
+from app.models import ChangeRequest, TimeEntry
+from app.models.change_request import ChangeRequestStatus, ChangeRequestType
+from tests.conftest import DEFAULT_TENANT_ID
+from tests.test_endpoints import (  # noqa: F401 — Fixtures
+    _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
+)
+from tests.work_blocks_fixtures import K_BLOCKS, MON, block_week
+
+import app.routers.time_entries as te
+
+
+def _blocks(db, user, blocks=K_BLOCKS):
+    user.work_blocks = blocks
+    db.commit()
+
+
+def _entry(db, user, start, end, brk=0):
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=MON,
+                  start_time=start, end_time=end, break_minutes=brk)
+    db.add(e)
+    db.commit()
+    db.refresh(e)
+    return e
+
+
+def _today(monkeypatch, hh=12, mm=0):
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, hh, mm))
+
+
+def test_clock_in_in_gap(_db_session, employee_user, employee_client, monkeypatch):
+    _blocks(_db_session, employee_user)
+    _today(monkeypatch, 13, 0)
+    resp = employee_client.post("/api/time-entries/clock-in", json={})
+    assert resp.status_code == 201, resp.text
+    assert any(w.startswith("WORK_WINDOW_CLAMPED: Eingestempelt zwischen") for w in resp.json()["warnings"])
+    entry = _db_session.query(TimeEntry).one()
+    assert entry.uncredited_minutes == 0
+
+
+def test_clock_out_k2b(_db_session, employee_user, employee_client, monkeypatch):
+    _blocks(_db_session, employee_user)
+    _entry(_db_session, employee_user, time(13, 0), None)
+    _today(monkeypatch, 18, 0)
+    resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
+    assert resp.status_code == 200, resp.text
+    entry = _db_session.query(TimeEntry).one()
+    assert entry.uncredited_minutes == 105
+    assert entry.net_hours == Decimal("3.25")
+
+
+def test_employee_create_k21(_db_session, employee_user, employee_client, monkeypatch):
+    _blocks(_db_session, employee_user)
+    _today(monkeypatch)
+    resp = employee_client.post("/api/time-entries/", json={
+        "date": MON.isoformat(), "start_time": "08:00", "end_time": "18:00", "break_minutes": 45})
+    assert resp.status_code == 201, resp.text
+    entry = _db_session.query(TimeEntry).one()
+    assert (entry.uncredited_minutes, entry.net_hours) == (150, Decimal("6.75"))
+
+
+def test_employee_update_writes_uncredited(_db_session, employee_user, employee_client, monkeypatch):
+    _blocks(_db_session, employee_user)
+    e = _entry(_db_session, employee_user, time(8, 0), time(12, 0))
+    _today(monkeypatch, 19, 0)
+    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"end_time": "18:00", "break_minutes": 45})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert e.uncredited_minutes == 150
+
+
+def test_admin_create_counts_daily_hours_on_credited_time(_db_session, employee_user, admin_client):
+    """Spec 7.1 (Netto-Helfer): 06:00–19:00, Pause 45, Lücke 10:15–13:45 →
+    angerechnet 8,75 h; ohne uncredited wären es 12,25 h und HTTP 422."""
+    _blocks(_db_session, employee_user, block_week(mon=[("06:00", "10:00"), ("14:00", "19:00")]))
+    resp = admin_client.post(f"/api/admin/users/{employee_user.id}/time-entries", json={
+        "date": MON.isoformat(), "start_time": "06:00", "end_time": "19:00", "break_minutes": 45})
+    assert resp.status_code == 201, resp.text
+    entry = _db_session.query(TimeEntry).one()
+    assert (entry.uncredited_minutes, entry.net_hours) == (210, Decimal("8.75"))
+
+
+def test_admin_update_writes_uncredited(_db_session, employee_user, admin_client):
+    _blocks(_db_session, employee_user)
+    e = _entry(_db_session, employee_user, time(8, 0), time(12, 0))
+    resp = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"end_time": "18:00", "break_minutes": 45})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert e.uncredited_minutes == 150
+
+
+def _cr(db, user, **kw):
+    cr = ChangeRequest(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
+                       status=ChangeRequestStatus.PENDING, proposed_date=MON,
+                       proposed_start_time=time(8, 0), proposed_end_time=time(18, 0),
+                       proposed_break_minutes=45, reason="Nachtrag", **kw)
+    db.add(cr)
+    db.commit()
+    return cr
+
+
+def test_cr_create_approval_writes_uncredited(_db_session, employee_user, admin_client):
+    _blocks(_db_session, employee_user)
+    cr = _cr(_db_session, employee_user, request_type=ChangeRequestType.CREATE)
+    resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    assert _db_session.query(TimeEntry).one().uncredited_minutes == 150
+
+
+def test_cr_update_approval_writes_uncredited(_db_session, employee_user, admin_client):
+    _blocks(_db_session, employee_user)
+    e = _entry(_db_session, employee_user, time(8, 0), time(12, 0))
+    cr = _cr(_db_session, employee_user, request_type=ChangeRequestType.UPDATE, time_entry_id=e.id)
+    resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert e.uncredited_minutes == 150

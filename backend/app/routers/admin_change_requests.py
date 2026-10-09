@@ -414,6 +414,7 @@ def review_change_request(
                     start_time=_eff_start,
                     end_time=_eff_end,
                     break_minutes=cr.proposed_break_minutes or 0,
+                    uncredited_minutes=_r_pre.uncredited_minutes,
                     exclude_entry_id=exclude_id,
                     tenant_id=cr.tenant_id,
                 )
@@ -526,6 +527,8 @@ def review_change_request(
                 end_time=eff_end,
                 raw_start_time=raw_start,
                 raw_end_time=raw_end,
+                # Spec 7.1 Nr. 8 (E11): Lückenminuten immer serverseitig aus clamp().
+                uncredited_minutes=_r.uncredited_minutes,
                 break_minutes=cr.proposed_break_minutes or 0,
                 note=cr.proposed_note,
                 # #144 §4 ArbZG: materialise the documented break-exception on
@@ -589,6 +592,8 @@ def review_change_request(
             entry.end_time = eff_end
             entry.raw_start_time = raw_start
             entry.raw_end_time = raw_end
+            # Spec 7.1 Nr. 9 (E11): die Lückenminuten folgen dem übernommenen Zeitpaar.
+            entry.uncredited_minutes = _r.uncredited_minutes
             entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
             if cr.proposed_note is not None:
                 entry.note = cr.proposed_note
@@ -1055,6 +1060,7 @@ def review_change_request(
                 start_time=_w_start,
                 end_time=_w_end,
                 break_minutes=cr.proposed_break_minutes or 0,
+                uncredited_minutes=_rw.uncredited_minutes,
                 tenant_id=cr.tenant_id,
             )
 
@@ -1077,6 +1083,7 @@ def review_change_request(
                 start_time=_w_start,
                 end_time=_w_end,
                 break_minutes=cr.proposed_break_minutes or 0,
+                uncredited_minutes=_rw.uncredited_minutes,
                 tenant_id=cr.tenant_id,
             )
             if weekly > MAX_WEEKLY_HOURS_WARN:
