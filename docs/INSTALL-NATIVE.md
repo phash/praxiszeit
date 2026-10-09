@@ -392,11 +392,20 @@ Wenn ein Backup von `config/.db-credentials` existiert (z.B. aus dem
 naechtlichen `data/backups/`-Verzeichnis oder einem externen Backup):
 
 ```bash
-# Linux/macOS
-cp /pfad/zum/backup/.db-credentials /opt/praxiszeit/config/.db-credentials
-chmod 600 /opt/praxiszeit/config/.db-credentials
-chown praxiszeit:praxiszeit /opt/praxiszeit/config/.db-credentials
+# Linux
+sudo cp /pfad/zum/backup/.db-credentials /opt/praxiszeit/config/.db-credentials
+sudo chmod 600 /opt/praxiszeit/config/.db-credentials
+sudo chown praxiszeit:praxiszeit /opt/praxiszeit/config/.db-credentials
 sudo systemctl start praxiszeit
+```
+
+```bash
+# macOS (Dienstkonto _praxiszeit, Ordner /usr/local/praxiszeit, launchd statt systemd)
+sudo cp /pfad/zum/backup/.db-credentials /usr/local/praxiszeit/config/.db-credentials
+sudo chmod 600 /usr/local/praxiszeit/config/.db-credentials
+sudo chown _praxiszeit:staff /usr/local/praxiszeit/config/.db-credentials
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null
+sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
 ```
 
 ```cmd
