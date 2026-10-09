@@ -207,11 +207,13 @@ def create_change_request(
     if not current_user.exempt_from_arbzg and data.request_type in ("create", "update") and data.proposed_date:
         break_error = validate_daily_break(
             db=db,
-            user_id=current_user.id,
+            user=current_user,
             entry_date=data.proposed_date,
             start_time=data.proposed_start_time,
             end_time=data.proposed_end_time,
             break_minutes=data.proposed_break_minutes or 0,
+            # Roh geprüft, ohne Kappung → keine Lücke (Spec E40 stellt auf clamp um).
+            uncredited_segments=[],
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )

@@ -302,7 +302,8 @@ class TestValidateDailyBreakTenantFilter:
         db.commit()
 
         result = validate_daily_break(
-            db, employee.id, d, time(14, 0), time(15, 0), 0, tenant_id=DEFAULT_TENANT_ID,
+            db, employee, d, time(14, 0), time(15, 0), 0,
+            uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID,
         )
 
         assert result is None

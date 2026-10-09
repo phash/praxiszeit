@@ -406,6 +406,11 @@ def review_change_request(
                     credit_override=bool(entry is not None and entry.credit_override),
                 )
                 _eff_start, _eff_end = _r_pre.eff_start, _r_pre.eff_end
+                # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
+                _segs_pre = work_window_service.gap_segments(
+                    db, cr_user, cr.proposed_date, _in_start, _in_end, _grace,
+                    credit_override=bool(entry is not None and entry.credit_override),
+                )
 
                 daily_hours_revalidate = _calculate_daily_net_hours(
                     db=db,
@@ -429,11 +434,12 @@ def review_change_request(
                 if waiver_reason is None:
                     break_error = validate_daily_break(
                         db=db,
-                        user_id=cr.user_id,
+                        user=cr_user,
                         entry_date=cr.proposed_date,
                         start_time=_eff_start,
                         end_time=_eff_end,
                         break_minutes=cr.proposed_break_minutes or 0,
+                        uncredited_segments=_segs_pre,
                         exclude_entry_id=exclude_id,
                         tenant_id=cr.tenant_id,
                     )

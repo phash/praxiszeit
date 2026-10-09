@@ -489,6 +489,11 @@ def clock_out(
         credit_override=open_entry.credit_override,
     )
     eff_end, raw_end = _r.eff_end, _r.raw_end
+    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
+    _segs = work_window_service.gap_segments(
+        db, current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
+        credit_override=open_entry.credit_override,
+    )
 
     # §3 ArbZG: check daily hours before committing – skipped for exempt users
     daily_hours = _calculate_daily_net_hours(
@@ -528,11 +533,12 @@ def clock_out(
     if not exempt:
         break_error = validate_daily_break(
             db=db,
-            user_id=current_user.id,
+            user=current_user,
             entry_date=open_entry.date,
             start_time=open_entry.start_time,
             end_time=eff_end,
             break_minutes=body.break_minutes,
+            uncredited_segments=_segs,
             exclude_entry_id=open_entry.id,
             tenant_id=current_user.tenant_id,
         )
@@ -771,6 +777,11 @@ def create_time_entry(
         credit_override=False,
     )
     eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
+    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
+    _segs = work_window_service.gap_segments(
+        db, current_user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+        credit_override=False,
+    )
 
     # Duplikatsprüfung NACH dem Kappen (Release-Review 1.16.0). Gespeichert wird
     # `eff_start`, geprüft wurde vorher die ROHE `entry_data.start_time` — zwei
@@ -823,11 +834,12 @@ def create_time_entry(
     if not exempt:
         break_error = validate_daily_break(
             db=db,
-            user_id=current_user.id,
+            user=current_user,
             entry_date=entry_data.date,
             start_time=eff_start,
             end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_segments=_segs,
             tenant_id=current_user.tenant_id,
         )
         if break_error:
@@ -897,11 +909,12 @@ def create_time_entry(
         # Re-run validation to surface the concrete §4 detail in the warning.
         waiver_detail = validate_daily_break(
             db=db,
-            user_id=current_user.id,
+            user=current_user,
             entry_date=entry_data.date,
             start_time=eff_start,
             end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_segments=_segs,
             tenant_id=current_user.tenant_id,
         )
         warnings.append(f"BREAK_WAIVER: {waiver_detail}")
@@ -1121,6 +1134,11 @@ def update_time_entry(
         credit_override=entry.credit_override,
     )
     _eff_start, _eff_end, _raw_start, _raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
+    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
+    _segs = work_window_service.gap_segments(
+        db, _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
+        credit_override=entry.credit_override,
+    )
     # Fix #2: only overwrite start/end + raw_* when the respective time was
     # actually part of this partial update — mirrors the admin path
     # (admin_time_entries.py). A note-only edit must NOT re-clamp the stored
@@ -1172,11 +1190,12 @@ def update_time_entry(
     if not exempt and entry.end_time is not None:
         break_error = validate_daily_break(
             db=db,
-            user_id=entry.user_id,
+            user=_entry_owner,
             entry_date=entry.date,
             start_time=entry.start_time,
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
+            uncredited_segments=_segs,
             exclude_entry_id=entry.id,
             tenant_id=entry.tenant_id,
         )
@@ -1274,11 +1293,12 @@ def update_time_entry(
     if break_waiver_active:
         waiver_detail = validate_daily_break(
             db=db,
-            user_id=entry.user_id,
+            user=_entry_owner,
             entry_date=entry.date,
             start_time=entry.start_time,
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
+            uncredited_segments=_segs,
             exclude_entry_id=entry.id,
             tenant_id=entry.tenant_id,
         )

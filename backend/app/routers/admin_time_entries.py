@@ -90,6 +90,11 @@ def admin_create_time_entry(
         credit_override=False,
     )
     eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
+    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
+    _segs = work_window_service.gap_segments(
+        db, user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+        credit_override=False,
+    )
 
     # #375-Review: mirror the employee path's duplicate-start guard, BEFORE the
     # ArbZG aggregate checks. The admin per-day journal add is now available for
@@ -123,9 +128,10 @@ def admin_create_time_entry(
     if not user.exempt_from_arbzg:
         # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
-            db=db, user_id=user.id, entry_date=entry_data.date,
+            db=db, user=user, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_segments=_segs,
             tenant_id=current_user.tenant_id,
         )
         if break_error:
@@ -244,6 +250,9 @@ def admin_update_time_entry(
         User.id == entry.user_id,
         User.tenant_id == current_user.tenant_id,
     ).first()
+    # Spec 8.2: §4 und die Lückensegmente brauchen die betroffene Person.
+    if affected_user is None:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     # Use provided values or fall back to existing.
     # Release-Review 1.18.2: der Rückfallwert ist der ROHSTEMPEL, nicht die
@@ -300,12 +309,16 @@ def admin_update_time_entry(
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-    # clamp ist None-sicher: ohne betroffene Person wird nichts gekappt.
     _r = work_window_service.clamp(
         db, affected_user, update_date, update_start_time, update_end_time, _grace,
         credit_override=entry.credit_override,
     )
     eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
+    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
+    _segs = work_window_service.gap_segments(
+        db, affected_user, update_date, update_start_time, update_end_time, _grace,
+        credit_override=entry.credit_override,
+    )
 
     # #375-Review: mirror the create-path duplicate-start guard (exclude self) —
     # editing start_time/date onto an existing sibling entry would otherwise hit
@@ -350,12 +363,13 @@ def admin_update_time_entry(
             admin_update_warnings.append(_clamp_warn)
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
-    if not affected_user or not affected_user.exempt_from_arbzg:
+    if not affected_user.exempt_from_arbzg:
         # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
-            db=db, user_id=entry.user_id, entry_date=update_date,
+            db=db, user=affected_user, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
-            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            break_minutes=update_break_minutes,
+            uncredited_segments=_segs, exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
         if break_error:
