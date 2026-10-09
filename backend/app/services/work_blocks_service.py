@@ -22,8 +22,12 @@ class ParsedWeek(NamedTuple):
 
 
 def hhmm_to_minutes(value: str) -> int:
-    """``"HH:MM"`` → Minuten seit Mitternacht (00:00–23:59)."""
-    if not isinstance(value, str) or len(value) != 5 or value[2] != ":":
+    """``"HH:MM"`` → Minuten seit Mitternacht (00:00–23:59).
+
+    Nur ASCII-Ziffern: ``str.isdigit()`` ist auch für Vollbreiten- und
+    arabisch-indische Ziffern wahr (``"０８:００"`` → 480), der Frontend-Zwilling
+    lehnt sie ab — ein so gespeicherter Wert wäre im Editor nicht lesbar."""
+    if not isinstance(value, str) or not value.isascii() or len(value) != 5 or value[2] != ":":
         raise ValueError(f"Uhrzeit {value!r} nicht im Format HH:MM")
     hh, mm = value[:2], value[3:]
     if not (hh.isdigit() and mm.isdigit()):

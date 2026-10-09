@@ -78,3 +78,33 @@ def test_minutes_helpers():
     assert wbs.minutes_to_hhmm(1439) == "23:59"
     with pytest.raises(ValueError):
         wbs.hhmm_to_minutes("7:37")
+
+
+@pytest.mark.parametrize("value", [
+    # ``str.isdigit()`` ist auch für Vollbreiten- und arabisch-indische Ziffern
+    # wahr, ``int()`` wandelt sie um — der Frontend-Zwilling (``/^\d{2}:\d{2}$/``)
+    # lehnt sie ab, ein gespeicherter Wert wäre im Editor nicht mehr lesbar.
+    "０８:００",
+    "٠٨:٣٠",
+    "08-00",    # Trennzeichen
+    "-1:00",    # ohne Ziffernprüfung: −60 Minuten
+    " 8:00",    # ``int(" 8")`` ist 8
+])
+def test_hhmm_to_minutes_rejects_non_ascii_digits_and_separators(value):
+    with pytest.raises(ValueError):
+        wbs.hhmm_to_minutes(value)
+
+
+def test_week_with_fullwidth_digits_is_rejected():
+    with pytest.raises(ValueError):
+        wbs.parse_week_blocks(block_week(mon=[("０８:００", "１２:００")]))
+
+
+def test_is_legacy_week_with_single_none_pause():
+    """Spec 3.3: MINDESTENS EIN ``pause_minutes`` None genügt für die Altzeile —
+    eine gemischte Zeile liefe sonst in der Soll-Ableitung (int erwartet) in
+    einen TypeError."""
+    mixed = block_week(mon=[("08:00", "12:00")])
+    mixed[0]["pause_minutes"] = None
+    assert wbs.is_legacy_week(wbs.parse_week_blocks(mixed)) is True
+    assert wbs.is_legacy_week(None) is False
