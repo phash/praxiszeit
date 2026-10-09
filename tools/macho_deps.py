@@ -18,7 +18,15 @@ Zulaessig sind:
   * ``/usr/lib/`` und ``/System/Library/`` — Bestandteil jedes macOS
 
 Alles andere (``/Users/...``, ``/opt/homebrew/...``, ``/usr/local/...``) ist ein
-Fund. Aufruf::
+Fund.
+
+``@rpath/`` ist nur so portabel wie die Suchpfade, gegen die dyld es aufloest.
+Deshalb werden zusaetzlich die eigenen ``LC_RPATH``-Eintraege jeder Datei
+geprueft: zulaessig sind ``@loader_path``/``@executable_path`` (mit oder ohne
+Unterpfad), ``/usr/lib/`` und ``/System/Library/``; ein rpath auf den
+Build-Runner oder nach Homebrew ist ein Fund (gemeldet als ``LC_RPATH <pfad>``).
+Geerbte rpaths (vom ladenden Programm) zaehlen nicht als Fund — sie werden an
+ihrer eigenen Datei geprueft. Aufruf::
 
     python3 tools/macho_deps.py [--prune] <verzeichnis> [<verzeichnis> ...]
 
@@ -69,11 +77,20 @@ DYLIB_LOAD_COMMANDS = frozenset({
     LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, LC_REEXPORT_DYLIB,
     LC_LAZY_LOAD_DYLIB, LC_LOAD_UPWARD_DYLIB,
 })
+# Suchpfad fuer ``@rpath/``-Abhaengigkeiten (``struct rpath_command``: der
+# Pfad-Offset steht wie beim dylib_command bei +8).
+LC_RPATH = 0x8000001C
 
 PORTABLE_PREFIXES = (
     "@loader_path/", "@executable_path/", "@rpath/",
     "/usr/lib/", "/System/Library/",
 )
+# Ein rpath darf selbst NICHT auf ``@rpath`` zeigen (loest nichts auf), dafuer
+# aber ``@loader_path``/``@executable_path`` ohne Unterpfad sein.
+PORTABLE_RPATH_PREFIXES = (
+    "@loader_path/", "@executable_path/", "/usr/lib/", "/System/Library/",
+)
+PORTABLE_RPATH_EXACT = frozenset({"@loader_path", "@executable_path"})
 
 # Ein Java-.class beginnt ebenfalls mit 0xCAFEBABE; dort steht an Stelle der
 # Architektur-Anzahl die Versionsnummer (>= 45). Kein Universal-Binary hat so
@@ -87,9 +104,9 @@ def _read_cstr(data: bytes, start: int, end: int) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def _thin_dylib_deps(data: bytes, base: int) -> Optional[List[str]]:
-    """Abhaengigkeiten EINER Architektur ab Offset ``base`` — None, wenn dort
-    kein Mach-O-Kopf steht."""
+def _thin_refs(data: bytes, base: int) -> Optional[Tuple[List[str], List[str]]]:
+    """(Abhaengigkeiten, rpaths) EINER Architektur ab Offset ``base`` — None,
+    wenn dort kein Mach-O-Kopf steht."""
     if len(data) < base + 28:
         return None
     (magic_le,) = struct.unpack_from("<I", data, base)
@@ -105,23 +122,32 @@ def _thin_dylib_deps(data: bytes, base: int) -> Optional[List[str]]:
     off = base + (32 if is64 else 28)
     limit = min(len(data), off + sizeofcmds)
     deps: List[str] = []
+    rpaths_found: List[str] = []
     for _ in range(ncmds):
         if off + 8 > limit:
             break
         cmd, cmdsize = struct.unpack_from(endian + "2I", data, off)
         if cmdsize < 8 or off + cmdsize > limit:
             break  # kaputter Kopf: nicht weiterlesen statt Unsinn zu melden
-        if cmd in DYLIB_LOAD_COMMANDS and cmdsize >= 12:
+        if (cmd in DYLIB_LOAD_COMMANDS or cmd == LC_RPATH) and cmdsize >= 12:
             (name_off,) = struct.unpack_from(endian + "I", data, off + 8)
             if 0 < name_off < cmdsize:
-                deps.append(_read_cstr(data, off + name_off, off + cmdsize))
+                value = _read_cstr(data, off + name_off, off + cmdsize)
+                (rpaths_found if cmd == LC_RPATH else deps).append(value)
         off += cmdsize
-    return deps
+    return deps, rpaths_found
 
 
-def dylib_deps(data: bytes) -> Optional[List[str]]:
-    """Alle nachgeladenen Bibliotheken einer Mach-O-Datei (alle Architekturen,
-    Reihenfolge erhalten, ohne Doppelte). ``None``: keine Mach-O-Datei."""
+def _merge(into: List[str], items: List[str]) -> None:
+    for item in items:
+        if item not in into:
+            into.append(item)
+
+
+def macho_refs(data: bytes) -> Optional[Tuple[List[str], List[str]]]:
+    """(nachgeladene Bibliotheken, eigene LC_RPATH-Eintraege) einer Mach-O-Datei
+    — alle Architekturen, Reihenfolge erhalten, ohne Doppelte. ``None``: keine
+    Mach-O-Datei."""
     if len(data) < 8:
         return None
     (magic_be,) = struct.unpack_from(">I", data, 0)
@@ -131,6 +157,7 @@ def dylib_deps(data: bytes) -> Optional[List[str]]:
             return None
         entry = 32 if magic_be == FAT_MAGIC_64 else 20
         found: List[str] = []
+        found_rpaths: List[str] = []
         any_arch = False
         for i in range(nfat):
             pos = 8 + i * entry
@@ -140,20 +167,39 @@ def dylib_deps(data: bytes) -> Optional[List[str]]:
                 _cpu, _sub, offset, _size = struct.unpack_from(">iiQQ", data, pos)
             else:
                 _cpu, _sub, offset, _size = struct.unpack_from(">iiII", data, pos)
-            deps = _thin_dylib_deps(data, offset)
-            if deps is None:
+            refs = _thin_refs(data, offset)
+            if refs is None:
                 continue
             any_arch = True
-            for d in deps:
-                if d not in found:
-                    found.append(d)
-        return found if any_arch else None
-    return _thin_dylib_deps(data, 0)
+            _merge(found, refs[0])
+            _merge(found_rpaths, refs[1])
+        return (found, found_rpaths) if any_arch else None
+    return _thin_refs(data, 0)
+
+
+def dylib_deps(data: bytes) -> Optional[List[str]]:
+    """Alle nachgeladenen Bibliotheken einer Mach-O-Datei (alle Architekturen,
+    Reihenfolge erhalten, ohne Doppelte). ``None``: keine Mach-O-Datei."""
+    refs = macho_refs(data)
+    return None if refs is None else refs[0]
+
+
+def rpaths(data: bytes) -> Optional[List[str]]:
+    """Die eigenen ``LC_RPATH``-Eintraege einer Mach-O-Datei. ``None``: keine
+    Mach-O-Datei."""
+    refs = macho_refs(data)
+    return None if refs is None else refs[1]
 
 
 def is_portable(dep: str) -> bool:
     """Laesst sich diese Abhaengigkeit auf einem beliebigen Mac aufloesen?"""
     return dep.startswith(PORTABLE_PREFIXES)
+
+
+def is_portable_rpath(rpath: str) -> bool:
+    """Zeigt dieser Suchpfad auf etwas, das es auf jedem Mac gibt bzw. das im
+    Paket selbst liegt?"""
+    return rpath in PORTABLE_RPATH_EXACT or rpath.startswith(PORTABLE_RPATH_PREFIXES)
 
 
 def scan(roots: Iterable[str]) -> Tuple[int, List[Tuple[str, str]]]:
@@ -178,13 +224,17 @@ def scan(roots: Iterable[str]) -> Tuple[int, List[Tuple[str, str]]]:
                             and m_be not in (FAT_MAGIC, FAT_MAGIC_64)):
                         continue
                     data = head + fh.read()
-                deps = dylib_deps(data)
-                if deps is None:
+                refs = macho_refs(data)
+                if refs is None:
                     continue
                 count += 1
+                deps, rps = refs
                 for dep in deps:
                     if not is_portable(dep):
                         offenders.append((path, dep))
+                for rp in rps:
+                    if not is_portable_rpath(rp):
+                        offenders.append((path, f"LC_RPATH {rp}"))
     return count, offenders
 
 

@@ -101,7 +101,34 @@ def test_weak_dependencies_count_too(md):
 
 
 def test_rpath_is_not_a_dependency(md):
+    # LC_RPATH ist ein Suchpfad, keine Bibliothek — er steht in rpaths(), nicht
+    # in dylib_deps(); geprueft wird er trotzdem (siehe scan-Tests unten).
     assert md.dylib_deps(_macho([LIBSYSTEM], rpath="/Users/runner/lib")) == [LIBSYSTEM]
+
+
+def test_rpaths_are_read_from_thin_and_universal_files(md):
+    assert md.rpaths(_macho([LIBSYSTEM], rpath="/Users/runner/lib")) == ["/Users/runner/lib"]
+    assert md.rpaths(_macho([LIBSYSTEM])) == []
+    fat = _fat(_macho([LIBSYSTEM], rpath="@loader_path/../lib"),
+               _macho([LIBSYSTEM], rpath="/Users/runner/lib"))
+    assert md.rpaths(fat) == ["@loader_path/../lib", "/Users/runner/lib"]
+    assert md.rpaths(b"#!/bin/sh\n") is None
+
+
+@pytest.mark.parametrize("rpath,ok", [
+    ("@loader_path/../lib", True),
+    ("@loader_path", True),
+    ("@executable_path/../lib", True),
+    ("/usr/lib/swift", True),
+    ("/System/Library/Frameworks", True),
+    ("/Users/runner/work/postgresql-binaries/lib", False),
+    ("/opt/homebrew/lib", False),
+    ("/usr/local/lib", False),
+    # Ein rpath, der selbst wieder auf @rpath zeigt, loest nichts auf.
+    ("@rpath/../lib", False),
+])
+def test_rpath_portability_rule(md, rpath, ok):
+    assert md.is_portable_rpath(rpath) is ok
 
 
 @pytest.mark.parametrize("bits,endian", [(64, "<"), (32, "<"), (64, ">"), (32, ">")])
@@ -168,6 +195,36 @@ def test_scan_reports_only_the_non_portable_file(md, tmp_path):
     count, offenders = md.scan([str(pg)])
     assert count == 6  # Symlink und Makefile zaehlen nicht
     assert offenders == [(str(pg / "lib" / "pgxs" / "src" / "test" / "regress" / "pg_regress"), RUNNER)]
+
+
+def test_scan_reports_a_runner_rpath(md, tmp_path):
+    """#482 (Review-Nachzug): ``@rpath/`` gilt als portabel — aber nur, solange
+    der rpath, gegen den es aufgeloest wird, selbst portabel ist. Ein kuenftiges
+    theseus-Paket mit ``@rpath/libpq.5.dylib`` und ``LC_RPATH /Users/runner/...``
+    kaeme sonst durch und laedt auf keinem Kunden-Mac (das #183-Muster)."""
+    pg = _theseus_like_tree(tmp_path)
+    mod = pg / "lib" / "dblink.dylib"
+    mod.write_bytes(_macho(["@rpath/libpq.5.dylib", LIBSYSTEM],
+                           rpath="/Users/runner/work/postgresql-binaries/lib"))
+    md.prune(str(pg))
+    _count, offenders = md.scan([str(pg)])
+    assert offenders == [(str(mod), "LC_RPATH /Users/runner/work/postgresql-binaries/lib")]
+
+
+def test_scan_accepts_a_package_relative_rpath(md, tmp_path):
+    pg = _theseus_like_tree(tmp_path)
+    (pg / "lib" / "dblink.dylib").write_bytes(
+        _macho(["@rpath/libpq.5.dylib", LIBSYSTEM], rpath="@loader_path/../lib"))
+    md.prune(str(pg))
+    assert md.scan([str(pg)])[1] == []
+
+
+def test_cli_fails_on_a_runner_rpath(md, tmp_path, capsys):
+    pg = _theseus_like_tree(tmp_path)
+    (pg / "bin" / "postgres").write_bytes(
+        _macho(["@rpath/libssl.3.dylib", LIBSYSTEM], rpath="/opt/homebrew/opt/openssl@3/lib"))
+    assert md.main(["macho_deps.py", "--prune", str(pg)]) == 1
+    assert "LC_RPATH /opt/homebrew/opt/openssl@3/lib" in capsys.readouterr().out
 
 
 def test_cli_fails_on_a_runner_path(md, tmp_path, capsys):
