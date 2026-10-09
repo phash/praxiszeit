@@ -103,6 +103,54 @@ def test_logged_warning_uses_the_route_template_and_only_the_first_line(caplog):
     assert "jemand@example.org" not in msg
 
 
+class _FakeDiag:
+    def __init__(self, message_primary):
+        self.message_primary = message_primary
+
+
+class _FakePgErrorWithDiag(_FakePgError):
+    """Wie psycopg2: die Hauptmeldung steht in ``diag.message_primary``."""
+
+    def __init__(self, pgcode, message_primary, detail=None):
+        super().__init__(pgcode, detail)
+        self.diag = _FakeDiag(message_primary)
+
+
+@pytest.mark.parametrize("injected", [
+    'kaputt\n2026-10-09 12:00:00 ERROR app.auth: Login fuer admin erfolgreich',
+    'kaputt\r\n2026-10-09 12:00:00 ERROR app.auth: gefaelscht',
+    'kaputt\rERROR app.auth: ueberschrieben',
+    'kaputt\x1b[2K\x85ERROR gefaelscht',
+])
+def test_logged_warning_cannot_be_split_into_forged_lines(caplog, injected):
+    """#491 API-1 (Nachzug): PostgreSQL zitiert die abgelehnte Eingabe roh in
+    ``diag.message_primary`` — ein Pfadparameter mit ``%0A`` (von FastAPI zu
+    ``\\n`` dekodiert) haette sonst eine eigene, gefaelschte Zeile ins
+    Container-/Dienstprotokoll geschrieben. Der psycopg2-Zweig MIT ``diag``
+    nahm die Meldung bisher ungekuerzt; nur der Rueckfall schnitt auf die
+    erste Zeile."""
+    a = FastAPI()
+    register_db_error_handlers(a)
+
+    @a.get("/items/{item_id}")
+    def item(item_id: str):
+        raise DataError("SELECT 1", {}, _FakePgErrorWithDiag(
+            "22P02", f'invalid input syntax for type uuid: "{injected}"',
+        ))
+
+    with caplog.at_level(logging.WARNING, logger="app.core.db_errors"):
+        r = TestClient(a).get("/items/x")
+    assert r.status_code == 422
+    records = [rec for rec in caplog.records if rec.name == "app.core.db_errors"]
+    assert len(records) == 1, records
+    msg = records[0].getMessage()
+    for ch in ("\n", "\r", "\x1b", "\x85", " "):
+        assert ch not in msg, (ch, msg)
+    # Der Wert bleibt lesbar (nur die Steuerzeichen sind eingeebnet).
+    assert "invalid input syntax for type uuid" in msg
+    assert "kaputt" in msg
+
+
 def test_handler_tolerates_a_missing_request(caplog):
     """``test_invalid_uuid_postgres.py`` ruft den Handler ohne Request auf —
     das Protokollieren darf daran nicht scheitern."""

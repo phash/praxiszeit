@@ -24,6 +24,7 @@ Sonst kaemen genau die Eintraege zurueck, die #483 von der Admin-Fehlerseite
 genommen hat — jede vertippte oder von einem Scanner geratene ID.
 """
 import logging
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -39,6 +40,12 @@ logger = logging.getLogger(__name__)
 # braucht die Diagnose nicht.
 _MAX_DB_MESSAGE = 200
 
+# Steuerzeichen (C0, DEL, C1) und die Unicode-Zeilentrenner. PostgreSQL zitiert
+# die abgelehnte Eingabe ROH in der Hauptmeldung — ein ``%0A`` im Pfadparameter
+# (von FastAPI zu ``\n`` dekodiert) schriebe sonst eine eigene, gefaelschte
+# Zeile ins Container-/Dienstprotokoll (#491 API-1, Nachzug).
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+
 
 def _db_message(exc: DataError) -> str:
     """Nur die Hauptmeldung (``invalid input syntax for type uuid: "xyz"``).
@@ -51,6 +58,9 @@ def _db_message(exc: DataError) -> str:
     diag = getattr(orig, "diag", None)
     primary = getattr(diag, "message_primary", None) if diag is not None else None
     text = primary or (str(orig).strip().splitlines() or [""])[0]
+    # Fuer BEIDE Zweige: ``message_primary`` ist einzeilig gemeint, enthaelt
+    # aber den Eingabewert ungefiltert.
+    text = _CONTROL_CHARS.sub(" ", text)
     return _scrub_pii(text)[:_MAX_DB_MESSAGE]
 
 
@@ -61,7 +71,8 @@ def _route_of(request) -> str:
         return "-"
     try:
         path = getattr(request.scope.get("route"), "path", None)
-        return path or _scrub_path(request.url.path) or "-"
+        # Der Rohpfad (Rueckfall ohne Route) ist dekodiert — gleiche Einebnung.
+        return _CONTROL_CHARS.sub(" ", path or _scrub_path(request.url.path) or "-")
     except Exception:  # noqa: BLE001 — Protokollieren darf die Antwort nie kippen
         return "-"
 

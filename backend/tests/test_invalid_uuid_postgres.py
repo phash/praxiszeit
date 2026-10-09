@@ -58,3 +58,23 @@ def test_handler_turns_the_real_error_into_422(session):
     response = asyncio.run(invalid_text_representation_handler(None, exc))
     assert response.status_code == 422
     assert "Ungültige ID" in json.loads(response.body)["detail"]
+
+
+def test_real_message_primary_carries_raw_newlines_and_the_log_does_not(session):
+    """#491 API-1 (Nachzug): Beleg der Voraussetzung am echten psycopg2-Fehler.
+
+    PostgreSQL zitiert die abgelehnte Eingabe ROH in ``diag.message_primary``
+    — ein Zeilenumbruch im Pfadparameter steht also darin. ``_db_message``
+    muss ihn einebnen, sonst schreibt eine geratene ID eine eigene Logzeile.
+    """
+    from app.core.db_errors import _db_message
+
+    forged = "xyz\n2026-10-09 12:00:00 ERROR app.auth: gefaelscht"
+    with pytest.raises(DataError) as info:
+        session.query(User).filter(User.id == forged).first()
+    session.rollback()
+    primary = info.value.orig.diag.message_primary
+    assert "\n" in primary, primary  # Voraussetzung: PG reicht den Umbruch durch
+    msg = _db_message(info.value)
+    assert "\n" not in msg and "\r" not in msg, msg
+    assert "gefaelscht" in msg  # der Wert bleibt lesbar, nur einzeilig
