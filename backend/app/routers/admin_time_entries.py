@@ -457,6 +457,11 @@ def admin_update_time_entry(
         tenant_id=current_user.tenant_id,
     )
 
+    # P18: VOR dem Überschreiben festhalten — ``entry.end_time`` trägt hier noch
+    # das gespeicherte wirksame Ende. Nur ein ANDERES Ende ist eine echte
+    # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit.
+    _end_corrected = entry_data.end_time is not None and entry_data.end_time != entry.end_time
+
     # Apply only provided updates (always write clamped effective times).
     # Release-Review 1.16.0: ein Datumswechsel ändert das Soll-Fenster des Tages und
     # damit das Kappungsergebnis, auch wenn keine Zeit mitgeschickt wurde. Vorher
@@ -496,6 +501,8 @@ def admin_update_time_entry(
         entry.uncredited_minutes = _r.uncredited_minutes
         if _r.grace_minutes is not None:
             entry.clamp_grace_minutes = _r.grace_minutes
+    if _end_corrected:
+        entry.auto_closed = False  # P18: tatsächliches Ende eingetragen
 
     db.commit()
     db.refresh(entry)

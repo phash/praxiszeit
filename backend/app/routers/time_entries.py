@@ -192,17 +192,43 @@ def _close_stale_entry(
     *,
     changed_by_id=None,
 ) -> None:
-    """Close a stale open entry at 23:59 of its date.
+    """Close a stale open entry of a previous day.
 
-    F-043: Does NOT commit — the caller's transaction owns the commit.
-    Writes a TimeEntryAuditLog row with action=update / source=auto_close
-    so stale auto-closes can be traced and so §3 ArbZG violations on
-    previous days are not silently lost.
+    Spec E36/E42 (7.1 Nr. 13): läuft über ``clamp`` — das Ende 23:59 wird auf
+    die Hülle (letzter Block + Puffer) gekappt, ``raw_end_time`` = 23:59, die
+    Lückenminuten folgen dem Zeitpaar. Puffer = der gespeicherte des Eintrags
+    aus ``clock_in`` (E80, ``grace_for_entry``). P18: ``auto_closed`` = True —
+    23:59 ist dann ein synthetischer Wert, kein Stempel (nie anerkennen, nie als
+    Anwesenheit oder „nicht angerechnet" zählen). Ohne Blöcke bleibt 23:59
+    ungekappt (wie bisher), gekennzeichnet wird trotzdem.
+
+    F-043: Does NOT commit — the caller's transaction owns the commit (und hält
+    die Ankersperre, P5). Writes a TimeEntryAuditLog row with action=update /
+    source=auto_close so stale auto-closes can be traced and so §3 ArbZG
+    violations on previous days are not silently lost.
     """
+    from app.services import work_window_service
+
+    # Gekappt wird gegen die Person des Eintrags, nicht gegen den Aufrufer
+    # (``changed_by_id`` kann künftig eine Admin sein, PR3/P23).
+    owner = db.query(User).filter(
+        User.id == entry.user_id,
+        User.tenant_id == entry.tenant_id,  # F-026
+    ).first()
     old_end_time = entry.end_time
     old_note = entry.note
 
-    entry.end_time = time(23, 59)
+    r = work_window_service.clamp(
+        db, owner, entry.date, entry.start_time, time(23, 59),
+        work_window_service.grace_for_entry(db, entry),
+        credit_override=entry.credit_override,
+    )
+    entry.end_time = r.eff_end
+    entry.raw_end_time = r.raw_end
+    entry.uncredited_minutes = r.uncredited_minutes
+    if r.grace_minutes is not None:
+        entry.clamp_grace_minutes = r.grace_minutes
+    entry.auto_closed = True
     entry.note = (entry.note or '') + ' [auto-closed]'
     if entry.note.startswith(' '):
         entry.note = entry.note.strip()
@@ -573,6 +599,7 @@ def clock_out(
 
     open_entry.end_time = eff_end
     open_entry.raw_end_time = raw_end
+    open_entry.auto_closed = False  # P18: echtes Ende gestempelt
     # Spec 7.1 Nr. 2 (E11): die Lückenminuten folgen dem geschriebenen Ende.
     open_entry.uncredited_minutes = _r.uncredited_minutes
     if _r.grace_minutes is not None:
@@ -1207,6 +1234,13 @@ def update_time_entry(
         entry.uncredited_minutes = _r.uncredited_minutes
         if _r.grace_minutes is not None:
             entry.clamp_grace_minutes = _r.grace_minutes
+    # P18: nur ein ANDERES Ende als das gespeicherte wirksame ist eine echte
+    # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit
+    # (``unclamp_input`` rechnet dann mit dem synthetischen 23:59 weiter, das
+    # Kennzeichen bleibt). Nie über die generische ``setattr``-Schleife oben —
+    # ``auto_closed`` ist kein Schemafeld (E11).
+    if "end_time" in update_data and update_data["end_time"] != orig_snapshot["end_time"]:
+        entry.auto_closed = False
 
     exempt = _entry_owner.exempt_from_arbzg
 

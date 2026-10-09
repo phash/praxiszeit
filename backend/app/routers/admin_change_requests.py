@@ -603,6 +603,10 @@ def review_change_request(
                 change_request_id=cr.id,
                 tenant_id=cr_tenant_id,
             )
+            # P18: VOR dem Überschreiben festhalten — nur ein ANDERES Ende als das
+            # gespeicherte wirksame ist eine echte Korrektur; ein Antrag, der nur
+            # Pause oder Notiz ändert, schickt das wirksame Ende unverändert mit.
+            _end_corrected = cr.proposed_end_time is not None and cr.proposed_end_time != entry.end_time
             entry.date = cr.proposed_date
             entry.start_time = eff_start
             entry.end_time = eff_end
@@ -614,6 +618,8 @@ def review_change_request(
             # gespeicherten Wert stehen.
             if _r.grace_minutes is not None:
                 entry.clamp_grace_minutes = _r.grace_minutes
+            if _end_corrected:
+                entry.auto_closed = False  # P18: tatsächliches Ende genehmigt
             entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
             if cr.proposed_note is not None:
                 entry.note = cr.proposed_note
