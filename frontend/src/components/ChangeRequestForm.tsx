@@ -4,6 +4,8 @@ import FocusTrap from 'focus-trap-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
+import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
+import { useSystemStore } from '../stores/systemStore';
 
 interface TimeEntry {
   id: string;
@@ -49,6 +51,8 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
   // Gemeinsame Regel mit der Direkteingabe (TimeTracking): Sonntag oder
   // Feiertag des Mandanten, Samstag nicht; ohne Feiertagsliste die Sonntagsregel.
   const showSundayReason = useSundayOrHoliday(formData.proposed_date, entry, requestType !== 'delete');
+  // #499: abgeschaltete Ausnahme → kein Begründungsfeld, der §4-Fehler bleibt stehen.
+  const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,8 +84,14 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
       onSuccess();
     } catch (err: any) {
       const msg = getErrorMessage(err, 'Fehler beim Erstellen des Antrags');
-      // §4-Pausenfehler enthält stets „Pause" (§3-10h-Cap nicht) → Ausnahme anbieten.
-      if (!showWaiver && msg.includes('Pause')) {
+      // §4-Pausenfehler enthält stets „Pause" (§3-10h-Cap nicht) → Ausnahme anbieten,
+      // sofern die Praxis sie erlaubt (#499).
+      if (
+        !showWaiver
+        && breakExceptionAllowed
+        && msg.includes('Pause')
+        && !isBreakExceptionDisabledMessage(msg)
+      ) {
         setShowWaiver(true);
         setError(`${msg} Wenn die Pflicht-Pause nachweislich nicht möglich war, begründen Sie dies unten und senden Sie erneut.`);
       } else {

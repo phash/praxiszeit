@@ -641,9 +641,17 @@ Die Option ist **global** und gilt nur für Betriebsferien, die als Urlaub gewer
 
 > **Hinweis:** Hintergrund zur Pausenpflicht selbst (§ 4 ArbZG) siehe [Abschnitt 14 → „Pflicht-Pause-Ausnahme"](#pflicht-pause-ausnahme-§4-arbzg).
 
-Konnte eine gesetzlich vorgeschriebene Pause (§ 4 ArbZG) nicht eingelegt werden, kann ein Eintrag mit einer **Pflicht-Begründung** trotzdem erfasst werden, statt ihn zu blockieren. Der Schalter **„Genehmigung erforderlich"** steuert das Verhalten:
+Konnte eine gesetzlich vorgeschriebene Pause (§ 4 ArbZG) nicht eingelegt werden, kann ein Eintrag mit einer **Pflicht-Begründung** („Pflicht-Pause war nicht möglich") trotzdem erfasst werden, statt ihn zu blockieren.
+
+Der Schalter **„Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"** (Standard: **an**) legt fest, ob es diese Ausnahme in Ihrer Praxis überhaupt gibt:
+- **An** (Standard): Mitarbeitende und Admins können eine fehlende Pause begründen – beim Ausstempeln, in der Zeiterfassung, im Monatsjournal und in Änderungsanträgen.
+- **Aus**: Die Auswahl verschwindet an all diesen Stellen, und der Server lehnt jede Ausnahme ab – **auch für Admins**. Ein Tag über 6 bzw. 9 Stunden lässt sich dann nur noch mit eingetragener Pause speichern oder ausstempeln. Sinnvoll, wenn in Ihrer Praxis immer eine Pause möglich ist und die Pausenzeit in jedem Fall abgezogen werden soll. Bereits erfasste Ausnahmen bleiben unverändert stehen. Ein noch **offener** Ausnahme-Antrag gilt nach dem Abschalten als Antrag **ohne** Ausnahme: Die Genehmigung prüft die Pause des Tages erneut und klappt nur noch, wenn sie jetzt reicht – sonst lehnen Sie ihn ab, damit er mit Pause neu gestellt wird.
+
+Ist die Ausnahme erlaubt, steuert der Schalter **„Genehmigung erforderlich"**, was mit einer Ausnahme geschieht, die Mitarbeitende in der **Zeiterfassung** begründen (Eintrag anlegen oder bearbeiten):
 - **Aus** (Standard): Der Eintrag wird sofort gespeichert; die Abweichung wird als Warnung gemeldet und im Änderungsprotokoll dokumentiert.
 - **Ein**: Der Eintrag wird erst nach **Admin-Genehmigung** wirksam (**4-Augen-Prinzip**).
+
+**Beim Ausstempeln** wird eine Begründung dagegen immer **sofort wirksam** – auch bei eingeschalteter Genehmigungspflicht. Die Arbeitszeit ist dann bereits geleistet, und der Eintrag muss geschlossen werden (§ 16 ArbZG). Diese Ausnahmen finden Sie im Änderungsprotokoll (Quelle „break_waiver", siehe [Abschnitt 9](#9-änderungsprotokoll-audit-log)). Soll beim Ausstempeln gar keine Ausnahme möglich sein, schalten Sie die Ausnahme ganz ab. Änderungsanträge gehen ohnehin immer zur Genehmigung an Sie; Korrekturen durch Admins wirken sofort.
 
 > **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden.
 
@@ -797,9 +805,11 @@ Eine **8-Stunden-Warnung** weist bereits ab Überschreiten der Regelgrenze auf d
 
 Nach § 4 ArbZG ist die Arbeit durch im Voraus feststehende Ruhepausen zu unterbrechen: **mindestens 30 Minuten** bei mehr als 6 Stunden, **mindestens 45 Minuten** bei mehr als 9 Stunden Arbeitszeit.
 
-Wird beim Erfassen, Korrigieren oder Genehmigen eines Eintrags die Pausenpflicht verletzt, blockiert PraxisZeit den Vorgang nicht zwingend. Stattdessen kann eine **dokumentierte Ausnahme mit Pflicht-Begründung** erfasst werden, falls die Pause im konkreten Fall nicht eingelegt werden konnte. Die Begründung wird im Änderungsprotokoll festgehalten.
+**Maßstab ist der ganze Tag.** PraxisZeit rechnet alle Einträge eines Tages zusammen. Eine Unterbrechung zählt nach § 4 Satz 2 ArbZG erst ab **15 Minuten** als Pause – wer um 13:59 aus- und sofort wieder einstempelt, hat keine Pause gemacht. Zwei aneinandergereihte Einträge (z. B. 08:49–13:59 und 13:59–18:00) werden deshalb wie ein durchgehender 9-Stunden-Tag behandelt.
 
-Ob solche Ausnahmen sofort wirksam werden oder zuerst genehmigt werden müssen, steuern Sie unter **Einstellungen → „Pflicht-Pause-Ausnahme"** (→ [Abschnitt 13](#pflicht-pause-ausnahme)).
+Wird beim **Ausstempeln**, Erfassen, Korrigieren oder Genehmigen eines Eintrags die Pausenpflicht verletzt, lässt sich der Vorgang erst abschließen, wenn eine ausreichende Pause eingetragen ist – oder, falls die Pause im konkreten Fall nicht eingelegt werden konnte, mit einer **dokumentierten Ausnahme mit Pflicht-Begründung**. Die Begründung wird im Änderungsprotokoll festgehalten. Bis Version 1.19 meldete das Ausstempeln einen Verstoß nur als Warnung; seit #499 gilt dort dieselbe Sperre wie an allen anderen Erfassungswegen (anders als bei der 10-Stunden-Grenze kann die Person den Verstoß im selben Schritt beheben).
+
+Ob es solche Ausnahmen in Ihrer Praxis gibt und ob sie sofort wirksam werden oder zuerst genehmigt werden müssen, steuern Sie unter **Einstellungen → „Pflicht-Pause-Ausnahme"** (→ [Abschnitt 13](#pflicht-pause-ausnahme)).
 
 > **4-Augen-Prinzip:** Ist die Genehmigungspflicht aktiv, darf ein Admin seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen**. Sie muss von einer zweiten Person geprüft werden.
 
@@ -811,7 +821,7 @@ Ob solche Ausnahmen sofort wirksam werden oder zuerst genehmigt werden müssen, 
 |---------|----------|-----------|----------------|
 | **Tageshöchstgrenze** | > 10h Arbeitszeit | Warnung beim Live-Ausstempeln; harte Sperre bei manueller Eingabe/Antrag | § 3 ArbZG |
 | **8h-Warnung** | > 8h Arbeitszeit | Warnung | § 3 ArbZG |
-| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h | Warnung; dokumentierte Ausnahme mit Begründung möglich | § 4 ArbZG |
+| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h (alle Einträge des Tages; Lücken < 15 Min. zählen nicht) | Sperre, auch beim Ausstempeln; dokumentierte Ausnahme mit Begründung möglich, sofern in den Einstellungen erlaubt | § 4 ArbZG |
 | **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag | Warnung | § 9 ArbZG |
 | **Wochenhöchstgrenze** | > 48h/Woche | Warnung | § 14 ArbZG |
 | **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | Warnung | § 6 ArbZG |

@@ -17,7 +17,7 @@ from app.schemas.time_entry import (
     ClockInRequest, ClockOutRequest, ClockStatusResponse,
 )
 from app.services.holiday_service import is_holiday
-from app.services.break_validation_service import validate_daily_break
+from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.services.arbzg_utils import is_night_work
 from app.routers.admin_helpers import _create_audit_log, lock_user_row
 from uuid import UUID as UUIDType
@@ -426,6 +426,36 @@ def clock_out(
     # wählbaren Zeiten (manueller Eintrag, Antrag) bestehen, wo der Nutzer
     # die Zeiten vor dem Speichern korrigieren kann.
 
+    # #499 (Kundenmeldung): §4 ArbZG wird über den ganzen TAG geprüft — und
+    # anders als §3 BLOCKIERT ein Verstoß das Ausstempeln jetzt (400), solange
+    # weder ausreichende Pause noch eine zulässige Begründung mitkommt. Bis
+    # 1.19.x war das nur eine weiche Warnung; zusammen mit dem Ausstempel-Dialog,
+    # der allein den laufenden Block ansah, ließen sich so zwei aneinander-
+    # gereihte Einträge (08:49–13:59 + 13:59–18:00) ohne Pause und ohne
+    # Begründung schließen. Anders als bei §3 kann die Person den Verstoß im
+    # selben Aufruf beheben (Pause eintragen oder — falls erlaubt — begründen),
+    # sie bleibt also nicht dauerhaft eingestempelt. Geprüft wird VOR dem
+    # Schreiben: der get_db-Rollback lässt den Eintrag dann unverändert offen.
+    waiver_reason = (body.break_waiver_reason or "").strip()
+    break_error = None
+    if not exempt:
+        break_error = validate_daily_break(
+            db=db,
+            user_id=current_user.id,
+            entry_date=open_entry.date,
+            start_time=open_entry.start_time,
+            end_time=eff_end,
+            break_minutes=body.break_minutes,
+            exclude_entry_id=open_entry.id,
+            tenant_id=current_user.tenant_id,
+        )
+        if break_error:
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
+
     open_entry.end_time = eff_end
     open_entry.raw_end_time = raw_end
     open_entry.break_minutes = body.break_minutes
@@ -457,40 +487,24 @@ def clock_out(
     _clamp_warn = work_window_service.clamp_warning(None, raw_end, None, eff_end, grace)
     if _clamp_warn:
         clock_out_warnings.append(_clamp_warn)
-    if not exempt:
-        # ArbZG §4: break validation (warning only, don't block clock-out)
-        break_error = validate_daily_break(
-            db=db,
-            user_id=current_user.id,
-            entry_date=open_entry.date,
-            start_time=open_entry.start_time,
-            end_time=eff_end,
-            break_minutes=body.break_minutes,
-            exclude_entry_id=open_entry.id,
+    if break_error:
+        # M-ARB1: die zulässige Begründung (oben durch break_waiver_rejection
+        # freigegeben) dokumentiert die §4-Abweichung am Eintrag + im
+        # Änderungsprotokoll (source='break_waiver'), wie bei Anlage/Antrag (#144).
+        open_entry.break_waiver_reason = waiver_reason
+        _create_audit_log(
+            db,
+            open_entry.id,
+            open_entry.user_id,
+            current_user.id,
+            action="update",
+            new_entry=open_entry,
+            source=BREAK_WAIVER_SOURCE,
+            tenant_id=current_user.tenant_id,
         )
-        if break_error:
-            # M-ARB1: if the employee supplied a break_waiver_reason, document the
-            # §4 deviation on the entry + audit trail (source='break_waiver'),
-            # mirroring the create/CR paths (#144). Clock-out stays non-blocking
-            # either way — without a reason it is a plain warning as before.
-            waiver_reason = (body.break_waiver_reason or "").strip()
-            if waiver_reason:
-                open_entry.break_waiver_reason = waiver_reason
-                _create_audit_log(
-                    db,
-                    open_entry.id,
-                    open_entry.user_id,
-                    current_user.id,
-                    action="update",
-                    new_entry=open_entry,
-                    source=BREAK_WAIVER_SOURCE,
-                    tenant_id=current_user.tenant_id,
-                )
-                db.commit()
-                db.refresh(open_entry)
-                clock_out_warnings.append(f"BREAK_WAIVER: {break_error}")
-            else:
-                clock_out_warnings.append(f"BREAK_WARNING: {break_error}")
+        db.commit()
+        db.refresh(open_entry)
+        clock_out_warnings.append(f"BREAK_WAIVER: {break_error}")
     if not exempt:
         if daily_hours > MAX_DAILY_HOURS_HARD:
             # Review R2-b: §3-Höchstgrenze überschritten — der Eintrag wurde
@@ -711,11 +725,17 @@ def create_time_entry(
             start_time=eff_start,
             end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            tenant_id=current_user.tenant_id,
         )
         if break_error:
-            if not waiver_reason:
-                # No documented exception → the §4 block stands (unchanged).
-                raise HTTPException(status_code=400, detail=break_error)
+            # No (permitted) documented exception → the §4 block stands.
+            # #499: the tenant may switch the exception off altogether — then
+            # even a supplied reason is rejected (and no approval CR is filed).
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
 
             # A valid waiver was supplied. If the practice requires approval,
             # do NOT write the entry — file a ChangeRequest (request_type=CREATE)
@@ -777,6 +797,7 @@ def create_time_entry(
             start_time=eff_start,
             end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            tenant_id=current_user.tenant_id,
         )
         warnings.append(f"BREAK_WAIVER: {waiver_detail}")
     if not exempt:
@@ -1041,10 +1062,16 @@ def update_time_entry(
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
             exclude_entry_id=entry.id,
+            tenant_id=entry.tenant_id,
         )
         if break_error:
-            if not waiver_reason:
-                raise HTTPException(status_code=400, detail=break_error)
+            # #499: einheitliche Entscheidung (Begründung fehlt / Ausnahme
+            # im Mandanten abgeschaltet → 400).
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
 
             if _break_exception_requires_approval(db, current_user.tenant_id):
                 # Do not persist the edit — file an UPDATE ChangeRequest with the
@@ -1137,6 +1164,7 @@ def update_time_entry(
             end_time=entry.end_time,
             break_minutes=entry.break_minutes,
             exclude_entry_id=entry.id,
+            tenant_id=entry.tenant_id,
         )
         update_warnings.append(f"BREAK_WAIVER: {waiver_detail}")
     saved_hours = 0.0  # defined here so the night-worker check below can always reference it

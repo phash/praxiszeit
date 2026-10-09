@@ -6,6 +6,8 @@ import { useAuthStore } from '../stores/authStore';
 import { getErrorMessage } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
+import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
+import { useSystemStore } from '../stores/systemStore';
 
 interface ClockStatus {
   is_clocked_in: boolean;
@@ -43,6 +45,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   // #199: §4-Pausenpflicht beim Ausstempeln — Warnung + Pflicht-Begründung.
   const [breakWarn, setBreakWarn] = useState<string | null>(null);
   const [breakWaiverReason, setBreakWaiverReason] = useState('');
+  // #499: Die Praxis kann die Ausnahme „Pflicht-Pause war nicht möglich"
+  // abschalten — dann bleibt nur, die Pause nachzutragen.
+  const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -95,6 +100,18 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     }
   };
 
+  // #499-Review F2: Die §4-Sperre steht im Dialog — schließt jemand danach das
+  // Sheet oder verlässt die Seite, bliebe er unbemerkt eingestempelt, und am
+  // Folgetag schlösse der Server den Eintrag auf 23:59 ohne Pause. Deshalb
+  // zusätzlich ein Fehler-Toast, der den Dialog überlebt.
+  const notifyStillClockedIn = (msg: string) => {
+    const canWaive = breakExceptionAllowed && !isBreakExceptionDisabledMessage(msg);
+    toast.error(
+      `Noch NICHT ausgestempelt – die Pause des Tages reicht nicht (§4 ArbZG). ` +
+        `Bitte Pause nachtragen${canWaive ? ' oder begründen' : ''}.`,
+    );
+  };
+
   const handleClockOut = async () => {
     if (!showBreakInput) {
       setShowBreakInput(true);
@@ -103,23 +120,28 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     if (acting) return;  // synchroner Doppelklick-Schutz (setActing ist async)
     // #199: §4-Pausenpflicht — bei >6h Netto und unzureichender Pause die Pause
     // nacherfassen ODER eine dokumentierte Ausnahme verlangen, statt still mit
-    // Warn-Toast durchzuwinken. (Aggregat mehrerer Tagesblöcke prüft das Backend.)
+    // Warn-Toast durchzuwinken. Die Vorprüfung hier sieht nur den laufenden
+    // Block; den ganzen TAG (mehrere aneinandergereihte Einträge) prüft der
+    // Server und lehnt seit #499 mit 400 ab — die Meldung landet unten im
+    // selben Dialog (catch).
+    const waiver = breakExceptionAllowed ? breakWaiverReason.trim() : '';
     const st = status?.current_entry?.start_time;
     if (st && !user?.exempt_from_arbzg) {
       const startHHMM = st.includes('T') ? st.split('T')[1].substring(0, 5) : st.substring(0, 5);
       const now = new Date();
       const endHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const breakErr = computeBreakError([], startHHMM, endHHMM, breakMinutes, false);
-      if (breakErr && !breakWaiverReason.trim()) {
+      if (breakErr && !waiver) {
         setBreakWarn(breakErr);
-        return; // Eingabe (Pause erhöhen oder Begründung) erforderlich
+        notifyStillClockedIn(breakErr);
+        return; // Eingabe (Pause erhöhen oder — falls erlaubt — Begründung) erforderlich
       }
     }
     setActing(true);
     try {
       const res = await apiClient.post('/time-entries/clock-out', {
         break_minutes: breakMinutes,
-        break_waiver_reason: breakWaiverReason.trim() || undefined,
+        break_waiver_reason: waiver || undefined,
       });
       toast.success('Erfolgreich ausgestempelt');
       showArbzgWarnings(toast, res.data?.warnings);
@@ -140,11 +162,24 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         onSuccess?.();
       }
     } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Fehler beim Ausstempeln'));
+      const msg = getErrorMessage(err, 'Fehler beim Ausstempeln');
+      if (err?.response?.status === 400 && msg.includes('Pause')) {
+        // #499: §4-Verstoß über den ganzen Tag — im Dialog zeigen, damit Pause
+        // bzw. Begründung direkt nachgetragen werden kann; der Toast meldet
+        // zusätzlich, dass NICHT ausgestempelt wurde.
+        setBreakWarn(msg);
+        notifyStillClockedIn(msg);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setActing(false);
     }
   };
+
+  // #499: Begründungsfeld nur, wenn die Praxis die Ausnahme erlaubt (und der
+  // Server sie nicht ausdrücklich als abgeschaltet gemeldet hat).
+  const offerWaiver = breakExceptionAllowed && !!breakWarn && !isBreakExceptionDisabledMessage(breakWarn);
 
   const cancelClockOut = () => {
     setShowBreakInput(false);
@@ -229,14 +264,20 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
             {breakWarn && (
               <div className="mt-3 text-left bg-amber-50 border border-amber-200 rounded-xl p-3">
                 <p className="text-sm text-amber-800">{breakWarn}</p>
-                <p className="text-xs text-amber-700 mt-1">Pause oben nachtragen <strong>oder</strong> begründen, warum sie nicht möglich war:</p>
-                <textarea
-                  value={breakWaiverReason}
-                  onChange={(e) => setBreakWaiverReason(e.target.value)}
-                  rows={2}
-                  placeholder="z. B. Notfall, keine Vertretung"
-                  className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
-                />
+                {offerWaiver ? (
+                  <>
+                    <p className="text-xs text-amber-700 mt-1">Pause oben nachtragen <strong>oder</strong> begründen, warum sie nicht möglich war:</p>
+                    <textarea
+                      value={breakWaiverReason}
+                      onChange={(e) => setBreakWaiverReason(e.target.value)}
+                      rows={2}
+                      placeholder="z. B. Notfall, keine Vertretung"
+                      className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
+                    />
+                  </>
+                ) : (
+                  <p className="text-xs text-amber-700 mt-1">Bitte die Pause oben nachtragen.</p>
+                )}
               </div>
             )}
             <button onClick={cancelClockOut} className="text-sm text-text-secondary hover:text-text-primary mt-2 transition">
@@ -315,14 +356,20 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
             {breakWarn && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 max-w-md">
                 <p className="text-sm text-amber-800">{breakWarn}</p>
-                <p className="text-xs text-amber-700 mt-1">Pause nachtragen <strong>oder</strong> Ausnahme begründen:</p>
-                <textarea
-                  value={breakWaiverReason}
-                  onChange={(e) => setBreakWaiverReason(e.target.value)}
-                  rows={2}
-                  placeholder="z. B. Notfall, keine Vertretung"
-                  className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
-                />
+                {offerWaiver ? (
+                  <>
+                    <p className="text-xs text-amber-700 mt-1">Pause nachtragen <strong>oder</strong> Ausnahme begründen:</p>
+                    <textarea
+                      value={breakWaiverReason}
+                      onChange={(e) => setBreakWaiverReason(e.target.value)}
+                      rows={2}
+                      placeholder="z. B. Notfall, keine Vertretung"
+                      className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
+                    />
+                  </>
+                ) : (
+                  <p className="text-xs text-amber-700 mt-1">Bitte die Pause nachtragen.</p>
+                )}
               </div>
             )}
           </div>

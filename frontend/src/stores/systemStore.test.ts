@@ -53,3 +53,25 @@ describe('systemStore.getMinimumWage (#377)', () => {
     expect(mw?.next?.value).toBe(14.6);
   });
 });
+
+describe('systemStore.isBreakExceptionAllowed (#499)', () => {
+  beforeEach(() => {
+    useSystemStore.setState({ info: null, isLoaded: false });
+  });
+
+  it('defaults to true while /system/info is not loaded (bisheriges Verhalten)', () => {
+    expect(useSystemStore.getState().isBreakExceptionAllowed()).toBe(true);
+  });
+
+  it('defaults to true when the field is missing', () => {
+    setInfo({});
+    expect(useSystemStore.getState().isBreakExceptionAllowed()).toBe(true);
+  });
+
+  it('is false only for an explicit false', () => {
+    setInfo({ break_exception_allowed: false });
+    expect(useSystemStore.getState().isBreakExceptionAllowed()).toBe(false);
+    setInfo({ break_exception_allowed: true });
+    expect(useSystemStore.getState().isBreakExceptionAllowed()).toBe(true);
+  });
+});

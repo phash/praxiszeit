@@ -899,17 +899,20 @@ class TestClockOutBreakWaiver:
         warnings = resp.json().get("warnings", [])
         assert any("BREAK_WAIVER" in w for w in warnings), warnings
 
-    def test_clock_out_without_reason_still_warns(self, db, employee, employee_client, monkeypatch):
+    def test_clock_out_without_reason_is_rejected(self, db, employee, employee_client, monkeypatch):
+        """#499: bis 1.19.x nur eine weiche BREAK_WARNING — darüber ließen sich
+        Tage ohne Pause und ohne Begründung schließen. Jetzt 400; der Eintrag
+        bleibt offen, bis Pause oder Begründung mitkommt."""
         today = self._freeze(monkeypatch)
         self._open_entry(db, employee, today)
 
         resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 400, resp.text
+        assert "Pause" in resp.json()["detail"]
         db.expire_all()
         entry = db.query(TimeEntry).filter(TimeEntry.user_id == employee.id).first()
+        assert entry.end_time is None
         assert entry.break_waiver_reason is None
-        warnings = resp.json().get("warnings", [])
-        assert any("BREAK_WARNING" in w for w in warnings), warnings
 
 
 class TestAdminBreakWaiverParity:
@@ -966,7 +969,12 @@ class TestClockOutSection3NonBlocking:
     422 würde den offenen Eintrag stranden lassen (get_db rollt zurück → kein
     end_time → MA bleibt für immer eingestempelt, jeder Retry 422t). Stattdessen
     wird der Eintrag geschlossen (wahrheitsgemäßer Datensatz, §16) und der
-    §3-Verstoß als deutliche Warnung ausgegeben (analog §4-Pausen-Pfad)."""
+    §3-Verstoß als deutliche Warnung ausgegeben.
+
+    #499: §4 blockiert das Ausstempeln seither sehr wohl (400) — die Person
+    kann ihn aber im selben Aufruf beheben (Pause eintragen bzw. begründen),
+    strandet also nicht. Die Tests hier tragen deshalb eine §4-konforme Pause,
+    damit sie weiter allein die §3-Regel prüfen."""
 
     def _open_entry(self, db, employee, today, start):
         e = TimeEntry(
@@ -989,10 +997,11 @@ class TestClockOutSection3NonBlocking:
 
     def test_clock_out_over_10h_closes_entry_not_422(self, db, employee, employee_client, monkeypatch):
         today = self._freeze(monkeypatch, 15, 30)
-        # 04:00 → 15:30 = 11.5h brutto, 0 Pause → 11.5h netto > 10h (§3 hard)
+        # 04:00 → 15:30 = 11.5h brutto, 45 min Pause (§4 erfüllt)
+        # → 10h45 netto > 10h (§3 hard)
         entry = self._open_entry(db, employee, today, time(4, 0))
 
-        resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
+        resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 45})
 
         # NICHT 422 — der Eintrag muss geschlossen werden, nicht stranden.
         assert resp.status_code == 200, resp.text

@@ -30,6 +30,8 @@ Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
   1. **Pause nachtragen** (Minuten korrigieren), oder
   2. **kurz begründen**, warum keine Pause möglich war (z. B. „Notfall, keine Vertretung") → **dokumentierte Ausnahme**
 - Erst danach ist das Ausstempeln fertig (flüchtiger Hinweis reicht nicht mehr).
+- Gezählt wird der **ganze Tag**: aus- und gleich wieder einstempeln ist keine Pause (erst ab **15 Min.** Unterbrechung).
+- Kein Begründungsfeld? Dann hat die Praxis die Ausnahme abgeschaltet → Pause eintragen.
 
 ### Neuen Zeiteintrag erstellen
 **Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag**
@@ -51,6 +53,8 @@ Aktionsspalte in der Einträge-Tabelle:
 |-------------|-------------|
 | > 6 Stunden | **30 Minuten** |
 | > 9 Stunden | **45 Minuten** |
+
+Gilt für den **ganzen Tag** (alle Einträge zusammen); Lücken unter 15 Min. zählen nicht als Pause.
 
 ### Tagesgrenze (§3 ArbZG)
 - Warnung ab **8 Stunden** Nettoarbeitszeit
@@ -171,7 +175,7 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 
 | Problem | Lösung |
 |---------|--------|
-| Pause zu kurz beim Ausstempeln | Pause nachtragen **oder** kurz begründen (dokumentierte Ausnahme) |
+| Pause zu kurz beim Ausstempeln | Pause nachtragen **oder** kurz begründen (dokumentierte Ausnahme, falls die Praxis sie erlaubt) |
 | Zeiteintrag zu lang | Max. 10h netto (§3 ArbZG) |
 | Eintrag lässt sich nicht bearbeiten | Zu alt → Änderungsantrag stellen |
 | „angerechnet ab HH:MM" beim Eintrag | Soll-Zeit-Fenster: nur bis Puffer angerechnet (echte Zeit bleibt) |
