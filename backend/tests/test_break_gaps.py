@@ -11,6 +11,10 @@ from app.services import work_window_service as wws
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.work_blocks_fixtures import K_BLOCKS, MON, block_week
 
+# Lücke 12:15–12:25 (Hülle bis 12:15, ab 12:25): ein Segment von 10 Minuten —
+# wird abgezogen, zählt aber nicht als Pausenabschnitt (unter 15 Minuten).
+SHORT_GAP = block_week(mon=[("08:00", "12:00"), ("12:40", "17:00")])
+
 
 def _validate(db, user, start, end, brk=0, segs=(), **kw):
     return validate_daily_break(db, user, MON, start, end, brk, uncredited_segments=list(segs),
@@ -26,12 +30,39 @@ def test_gap_segment_counts_as_break_k1(db, test_user):
 
 
 def test_segment_below_15_is_deducted_but_no_break(db, test_user):
-    test_user.work_blocks = block_week(mon=[("08:00", "12:00"), ("12:40", "17:00")])  # Lücke 12:15–12:25
+    test_user.work_blocks = SHORT_GAP
     db.commit()
     segs = wws.gap_segments(db, test_user, MON, time(8), time(17), 15, credit_override=False)
     assert segs == [10]
     error = _validate(db, test_user, time(8), time(17), 0, segs)
+    # Abzug: 540 − 10 = 530 Min (ohne Abzug stünde dort 9h 0min); keine Pause:
+    # das 10-Minuten-Segment ist kein Abschnitt (sonst „Gesamtpause: 10").
     assert error is not None and "30 Minuten" in error
+    assert "8h 50min" in error and "Gesamtpause: 0 Minuten" in error, error
+
+
+def test_segment_below_15_deduction_pulls_under_six_hours(db, test_user):
+    """8.2: der Abzug wirkt auch bei Segmenten unter 15 Minuten — 08:00–14:05
+    sind brutto 365 Min, angerechnet 355 Min (≤ 6 h), also keine Pausenpflicht."""
+    test_user.work_blocks = SHORT_GAP
+    db.commit()
+    segs = wws.gap_segments(db, test_user, MON, time(8), time(14, 5), 15, credit_override=False)
+    assert segs == [10]
+    assert _validate(db, test_user, time(8), time(14, 5), 0, segs) is None
+
+
+def test_existing_entry_segment_below_15_is_no_break(db, test_user):
+    """8.2: auch beim BESTEHENDEN Eintrag zählt ein Segment unter 15 Minuten
+    nicht als Pausenabschnitt; abgezogen wird der gespeicherte Wert.
+    530 + 30 = 560 Min Arbeit, Pause 0."""
+    test_user.work_blocks = SHORT_GAP
+    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id, date=MON,
+                     start_time=time(8), end_time=time(17), break_minutes=0,
+                     uncredited_minutes=10, clamp_grace_minutes=15))
+    db.commit()
+    error = _validate(db, test_user, time(17), time(17, 30), 0, ())
+    assert error is not None and "45 Minuten" in error, error
+    assert "9h 20min" in error and "Gesamtpause: 0 Minuten" in error, error
 
 
 def test_existing_entry_segments_use_its_own_grace(db, test_user):
@@ -164,3 +195,4 @@ def test_write_paths_count_gap_segment_as_break(_db_session, employee_user, requ
     _db_session.expire_all()
     entry = _db_session.query(TimeEntry).one()
     assert (entry.uncredited_minutes, entry.net_hours) == (150, Decimal("7.50"))
+
