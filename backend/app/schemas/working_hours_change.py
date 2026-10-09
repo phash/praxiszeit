@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
-from typing import List, Optional
+from typing import Any, List, Optional
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -67,6 +67,10 @@ class WorkingHoursChangeResponse(WorkingHoursChangeBase):
     # erzeugte Row, BEVOR sie zurückgegeben wird.
     adjusted_absences: int = 0
     warning: Optional[str] = None
+    # Spec 11.1/11.5: Blöcke der Zeile, LOCKER (kein Validator — Altzeilen aus
+    # Migration 073 tragen 07:37/23:59). Bewusst nicht auf WorkingHoursChangeBase:
+    # das Create-Schema erbte sonst ein ungeprüftes Eingabefeld (PR3 typisiert es).
+    blocks: Optional[Any] = None
 
     @field_serializer('id', 'user_id')
     def serialize_uuid(self, value: UUID) -> str:

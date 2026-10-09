@@ -1,5 +1,6 @@
 """Admin sub-router: User Management + Working Hours Changes."""
 
+import copy
 import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -29,7 +30,7 @@ from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeResponse, WorkingHoursChangePreview
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
-from app.services import auth_service, calculation_service, lifecycle_service, milog_service, settings_service
+from app.services import auth_service, calculation_service, lifecycle_service, milog_service, settings_service, work_blocks_service
 # Task 15: dieselbe Zahl- und Label-Schreibweise wie die §16-Exporte — das
 # Aenderungsprotokoll darf die Stunden nicht anders schreiben als der Beleg.
 from app.services.export_service import ABSENCE_TYPE_LABELS_DE, format_hours_de
@@ -154,7 +155,8 @@ def _log_wh_change_retarget(
         ))
 
 
-def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_per_week):
+def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_per_week,
+                         blocks, block_pauses):
     """#431: der Vertrags-Snapshot als vergleichbares Tupel.
 
     Verglichen wird, was das SOLL treibt. Im gleichmaessigen Modus sind die
@@ -167,6 +169,11 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
     ``work_days_per_week`` bleibt immer im Vergleich: es treibt im
     gleichmaessigen Modus das Tagessoll und in beiden Modi den
     Urlaubsanspruch.
+
+    Spec 2026-10-08 (3.3/11.3): Blöcke und Pausen gehören ebenfalls zum
+    Snapshot — sie treiben die Kappung, und eine Änderung allein an ihnen
+    (PR3: reine Blockänderung) braucht genauso eine Basis-Zeile, die die
+    Vergangenheit einfriert.
     """
     use_daily_schedule = bool(use_daily_schedule)
     return (
@@ -176,7 +183,30 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
             None if v is None else Decimal(str(v)) for v in day_hours
         ) if use_daily_schedule else (None,) * 5,
         int(work_days_per_week),
+        # Spec 2026-10-08 (3.3/11.3): Blöcke und Pausen gehören zum Snapshot.
+        # Beide kommen im Schedule-Format (bereits normalisiert: None == fünf
+        # leere Tage), Pausen nur, wenn es Blöcke gibt.
+        blocks,
+        block_pauses if blocks is not None else None,
     )
+
+
+def _carried_blocks(predecessor: "calculation_service.Schedule") -> tuple:
+    """P2/P24: welche Blöcke eine NEUE Verlaufszeile erbt, solange der Dialog
+    keine Blöcke kennt — aus dem VOR der Änderung für ``effective_from``
+    gültigen Snapshot (Vorgängerzeile bzw. Rückfall ``users.work_blocks``).
+
+    Ein Altfenster (``pause_minutes`` NULL) läuft weiter; ohne diese Übernahme
+    schaltete jede Wochenstunden-Änderung die Kappung still ab. Neue Blöcke
+    (Pause gesetzt) enden mit einem Wechsel nach „Gleichmäßig"/„Nach Tagen".
+    Rückgabe ``(blocks, block_pauses)`` im Schedule-Format."""
+    parsed = (
+        None if predecessor.blocks is None
+        else work_blocks_service.ParsedWeek(predecessor.blocks, predecessor.block_pauses)
+    )
+    if work_blocks_service.is_legacy_week(parsed):
+        return predecessor.blocks, predecessor.block_pauses
+    return None, None
 
 
 class _NormalisedSchedule(NamedTuple):
@@ -261,6 +291,9 @@ def _sync_user_from_change(user: User, most_recent: WorkingHoursChange) -> None:
     # `users.work_days_per_week` ist NOT NULL und darf das nicht erben.
     if most_recent.work_days_per_week is not None:
         user.work_days_per_week = most_recent.work_days_per_week
+    # Spec E9: Spiegel der jüngsten Zeile ≤ heute — als KOPIE (eine geteilte
+    # Liste würde eine spätere In-place-Änderung in beide Zeilen tragen).
+    user.work_blocks = copy.deepcopy(most_recent.blocks)
 
 
 def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -> None:
@@ -1522,6 +1555,12 @@ def create_working_hours_change(
     # hier, einmal dort) und wuerde irgendwann auseinanderlaufen.
     norm = _normalise_schedule_input(change_data, user)
 
+    # P2 (Spec 2.10): Blöcke aus dem VOR der Änderung für effective_from
+    # gültigen Snapshot — vor dem Anlegen der neuen Zeile aufgelöst.
+    _new_blocks, _new_pauses = _carried_blocks(
+        calculation_service.get_schedule_for_date(db, user, change_data.effective_from)
+    )
+
     # Release-Review 1.16.0 (#415-Folgefund): Bevor die ERSTE Änderung eines
     # Mitarbeiters gespeichert wird, den bisherigen Vertragswert als Basis-Zeile
     # festhalten.
@@ -1572,9 +1611,11 @@ def create_working_hours_change(
     if _current is not None and _comparable_snapshot(
         _current.weekly_hours, _current.use_daily_schedule,
         _current.day_hours, _current.work_days_per_week,
+        _current.blocks, _current.block_pauses,
     ) != _comparable_snapshot(
         norm.weekly_hours, norm.use_daily_schedule,
         norm.day_hours, norm.work_days_per_week,
+        _new_blocks, _new_pauses,
     ):
         # Der Vortag ist immer dabei → das Ergebnis liegt garantiert VOR
         # `effective_from` (die frühere Zusatz-Klemme ist damit überflüssig).
@@ -1609,6 +1650,8 @@ def create_working_hours_change(
             hours_thursday=_current.day_hours[3],
             hours_friday=_current.day_hours[4],
             work_days_per_week=_current.work_days_per_week,
+            # E8: die Basis-Zeile friert auch die Blöcke der Vergangenheit ein.
+            blocks=work_blocks_service.week_blocks_to_json(_current.blocks, _current.block_pauses),
             note="Automatisch erfasster Ausgangswert vor der ersten Stundenänderung",
         ))
 
@@ -1628,6 +1671,9 @@ def create_working_hours_change(
         # Snapshot vollständig ist (der Rückfall steckt in
         # _normalise_schedule_input, gemeinsam mit der Vorschau).
         work_days_per_week=norm.work_days_per_week,
+        # P2/P24: ein Altfenster läuft weiter, neue Blöcke enden hier
+        # (_carried_blocks) — der Dialog kennt bis PR3 keine Blöcke.
+        blocks=work_blocks_service.week_blocks_to_json(_new_blocks, _new_pauses),
         note=change_data.note
     )
     db.add(change)
@@ -1846,6 +1892,7 @@ def preview_working_hours_change(
     # Eingabe ab), und „neu" bleibt gleich „aktuell" — lieber gar keine Änderung
     # anzeigen als eine erfundene.
     current_schedule = calculation_service.get_schedule_for_date(db, user, effective_from)
+    _new_blocks, _new_pauses = _carried_blocks(current_schedule)  # P2, wie der Schreibpfad
     input_error = None
     try:
         norm = _normalise_schedule_input(
@@ -1869,10 +1916,10 @@ def preview_working_hours_change(
                 None if v is None else Decimal(str(v)) for v in norm.day_hours
             ),
             work_days_per_week=norm.work_days_per_week,
-            # PR1: der Dialog kennt noch keine Blöcke — die neue Zeile übernimmt
-            # die des aktuell gültigen Snapshots (Task 12 verfeinert das nach P2).
-            blocks=current_schedule.blocks,
-            block_pauses=current_schedule.block_pauses,
+            # PR1: der Dialog kennt noch keine Blöcke — die neue Zeile erbt
+            # nach P2/P24 dieselben Blöcke wie im Schreibpfad (_carried_blocks).
+            blocks=_new_blocks,
+            block_pauses=_new_pauses,
         )
     except ValidationError as exc:
         input_error = _schedule_input_error(exc)
@@ -1941,9 +1988,11 @@ def preview_working_hours_change(
     snapshot_unchanged = norm is not None and _comparable_snapshot(
         current_schedule.weekly_hours, current_schedule.use_daily_schedule,
         current_schedule.day_hours, current_schedule.work_days_per_week,
+        current_schedule.blocks, current_schedule.block_pauses,
     ) == _comparable_snapshot(
         norm.weekly_hours, norm.use_daily_schedule,
         norm.day_hours, norm.work_days_per_week,
+        _new_blocks, _new_pauses,
     )
 
     # #431: Saldo und Urlaub im IST-Zustand — vor dem Dry-Run, damit sie die
@@ -2002,6 +2051,7 @@ def preview_working_hours_change(
                 hours_thursday=norm.day_hours[3],
                 hours_friday=norm.day_hours[4],
                 work_days_per_week=norm.work_days_per_week,
+                blocks=work_blocks_service.week_blocks_to_json(_new_blocks, _new_pauses),
             )
             db.add(temp_change)
             db.flush()
