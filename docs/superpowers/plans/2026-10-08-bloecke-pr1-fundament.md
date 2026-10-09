@@ -7547,11 +7547,22 @@ docker exec $CT psql -q -U praxiszeit -d praxiszeit -c "ALTER ROLE praxiszeit PA
 S="postgres"; S="${S}ql://"; URL="${S}praxiszeit:${PGPW}@$CT:5432/praxiszeit"
 COLS_TE="id, tenant_id, user_id, date, start_time, end_time, break_minutes, raw_start_time, raw_end_time, note, sunday_exception_reason, break_waiver_reason, created_at, updated_at"
 COLS_WH="id, tenant_id, user_id, effective_from, weekly_hours, use_daily_schedule, hours_monday, hours_tuesday, hours_wednesday, hours_thursday, hours_friday, work_days_per_week, note, created_at"
+# users: alle 072-Spalten außer den Fensterspalten. Feste Liste statt *, weil dieselbe
+# Abfrage auf 072 und 073 läuft (073: work_blocks dazu, scheduled_* weg) und der Downgrade
+# die Fensterspalten hinten wieder anhängt. Die Fensterspalten dürfen sich in den
+# diagnostizierten Fällen ändern (Spec 17.1) — die vergleicht _probe_users_072 je Person.
+COLS_U="agreed_monthly_hours, calendar_color, child_sick_days_per_year, created_at, deactivated_at, department, email, exempt_from_arbzg, first_name, first_work_day, hours_friday, hours_monday, hours_thursday, hours_tuesday, hours_wednesday, id, is_active, is_hidden, is_night_worker, last_name, last_totp_counter, last_work_day, milog_working_time_account, onboarding_completed_at, password_hash, profile_picture, receives_company_closures, role, tenant_id, token_version, totp_enabled, totp_secret, track_hours, updated_at, use_daily_schedule, use_fixed_monthly_target, username, vacation_carryover_deadline, vacation_days, weekly_hours, work_days_per_week"
 WIN="scheduled_start_monday, scheduled_end_monday, scheduled_start_tuesday, scheduled_end_tuesday, scheduled_start_wednesday, scheduled_end_wednesday, scheduled_start_thursday, scheduled_end_thursday, scheduled_start_friday, scheduled_end_friday"
 sql() { docker exec $CT psql -U praxiszeit -d praxiszeit -Atc "$1"; }
 md5s() {
   sql "SELECT 'time_entries', count(*), md5(string_agg(t::text, ',' ORDER BY t::text)) FROM (SELECT $COLS_TE FROM time_entries) t"
   sql "SELECT 'working_hours_changes', count(*), md5(string_agg(t::text, ',' ORDER BY t::text)) FROM (SELECT $COLS_WH FROM working_hours_changes) t"
+  sql "SELECT 'users', count(*), md5(string_agg(t::text, ',' ORDER BY t::text)) FROM (SELECT $COLS_U FROM users) t"
+}
+check_cols() {  # $1 = Tabelle, $2 = feste Spaltenliste; auf 072: jede Spalte steht in der Liste oder ist eine Fensterspalte
+  local fehlt
+  fehlt=$(sql "SELECT string_agg(column_name, ', ' ORDER BY column_name) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '$1' AND column_name NOT LIKE 'scheduled\_%' AND column_name <> ALL (string_to_array(replace('$2', ' ', ''), ','))")
+  [ -z "$fehlt" ] || { echo "Spaltenliste $1 unvollständig, es fehlt: $fehlt"; exit 1; }
 }
 run() {  # $1 = Backend-Verzeichnis, Rest = Befehl
   local dir=$1; shift
@@ -7566,6 +7577,7 @@ migrate() { run "$PWD/backend" python -c "from alembic.config import main; main(
 
 echo "== Stand: $(sql 'SELECT version_num FROM alembic_version')"
 sql "DROP TABLE IF EXISTS _probe_users_072; CREATE TABLE _probe_users_072 AS SELECT id, username, $WIN FROM users" > /dev/null
+check_cols time_entries "$COLS_TE"; check_cols working_hours_changes "$COLS_WH"; check_cols users "$COLS_U"
 md5s | tee "$WORK/md5-072.txt"
 echo "-- Auto-Close-Formen (P18): Ende 23:59 | nachgekappt (Ende <> 23:59, Rohende 23:59)"
 sql "SELECT count(*) FILTER (WHERE end_time = '23:59'), count(*) FILTER (WHERE end_time <> '23:59' AND raw_end_time = '23:59') FROM time_entries t WHERE EXISTS (SELECT 1 FROM time_entry_audit_logs a WHERE a.time_entry_id = t.id AND a.source = 'auto_close')"
@@ -7582,11 +7594,13 @@ migrate upgrade 073_work_blocks 2>&1 | tee "$WORK/upgrade.log" | sed -n '/HINWEI
 run "$PWD/backend" python /probe/probe_073.py > "$WORK/073.json"
 echo "-- auto_closed = true: $(sql 'SELECT count(*) FROM time_entries WHERE auto_closed')"
 diff -q "$WORK/072.json" "$WORK/073.json" && echo "BYTE-IDENTISCH"
+md5s > "$WORK/md5-073.txt"
+diff "$WORK/md5-072.txt" "$WORK/md5-073.txt" && echo "TABELLEN NACH UPGRADE IDENTISCH (time_entries, working_hours_changes, users)"
 
 echo "== Round-Trip 073 -> 072 -> 073"
 migrate downgrade 072_cr_sunday_reason 2>&1 | sed -n '/HINWEIS (Migration 073, Downgrade)/,/ENDE HINWEIS/p'
 md5s > "$WORK/md5-roundtrip.txt"
-diff "$WORK/md5-072.txt" "$WORK/md5-roundtrip.txt" && echo "TABELLEN IDENTISCH"
+diff "$WORK/md5-072.txt" "$WORK/md5-roundtrip.txt" && echo "TABELLEN IDENTISCH (time_entries, working_hours_changes, users)"
 echo "-- Personen mit geändertem 072-Fenster nach dem Round-Trip:"
 sql "SELECT b.username FROM _probe_users_072 b JOIN users u USING (id) WHERE ($(echo "$WIN" | sed 's/\([a-z_]*day\)/b.\1/g')) IS DISTINCT FROM ($(echo "$WIN" | sed 's/\([a-z_]*day\)/u.\1/g')) ORDER BY 1"
 migrate upgrade 073_work_blocks > /dev/null 2>&1
@@ -7598,16 +7612,16 @@ BASHEOF
 ```
 
 Expected, in dieser Reihenfolge:
-1. `== Stand: 072_cr_sunday_reason`, zwei Zeilen `time_entries|<n>|<md5>` / `working_hours_changes|<n>|<md5>`, die Zeile „Auto-Close-Formen" mit zwei Zahlen `<a>|<b>`, `== Code vor PR1: 3d46c2f …` (bzw. der in Task 0 Step 5 festgehaltene Kopf; fehlt die Datei `pr1-base`, bricht `set -e` hier ab — dann nicht auf `merge-base` ausweichen, sondern den Commit unmittelbar vor dem ersten PR1-Commit per `git log --oneline` bestimmen und in die Datei schreiben), „<p> Personen, <e> Einträge" mit e > 0.
-2. Der 073-Diagnoseblock nennt dieselben Fallen wie Task 0 (Q2: halboffen → „halboffen: …", `Beginn>=Ende` → „nicht übernommen: …", Sekunden → „Sekunden abgeschnitten: …"; Kontenzahl = Q3-Zeilen mit mindestens einem gültigen Tag) und **keine** Zeile „Abweichung: … (RLS?)" (das belegt hier nur, dass die Zählprobe stimmt: `praxiszeit` ist auch auf der Prod-Kopie Superuser, RLS greift also gar nicht, und unter RLS würde auch das Lesen gefiltert, sodass die Zählprobe nie anschlägt. Ob der Backfill unter FORCE RLS alle Zeilen trifft, prüft `test_073_migration_pg.py::test_073_backfill_as_owner_under_force_rls`, Task 14); `auto_closed = true: <a + b>` (Summe der beiden Auto-Close-Formen aus 1.); danach `BYTE-IDENTISCH`.
-3. Der Downgrade-Block nennt keine Mehrblock-Personen und keine Einträge mit nicht angerechneter Zeit (PR1 erzeugt keine); `TABELLEN IDENTISCH`; unter „Personen mit geändertem 072-Fenster" stehen nur Personen, die die 073-Diagnose mit „Sekunden abgeschnitten" oder „nicht übernommen" nennt (halboffene Fenster kommen über die Platzhalter identisch zurück).
+1. `== Stand: 072_cr_sunday_reason`, keine Zeile „Spaltenliste … unvollständig" (sonst bricht der Lauf ab: eine Migration vor 073 hat eine Spalte ergänzt, die in `COLS_TE`/`COLS_WH`/`COLS_U` fehlt — Liste ergänzen; sie muss jede 072-Spalte außer `scheduled_*` tragen), drei Zeilen `time_entries|<n>|<md5>` / `working_hours_changes|<n>|<md5>` / `users|<p>|<md5>`, die Zeile „Auto-Close-Formen" mit zwei Zahlen `<a>|<b>`, `== Code vor PR1: 3d46c2f …` (bzw. der in Task 0 Step 5 festgehaltene Kopf; fehlt die Datei `pr1-base`, bricht `set -e` hier ab — dann nicht auf `merge-base` ausweichen, sondern den Commit unmittelbar vor dem ersten PR1-Commit per `git log --oneline` bestimmen und in die Datei schreiben), „<p> Personen, <e> Einträge" mit e > 0.
+2. Der 073-Diagnoseblock nennt dieselben Fallen wie Task 0 (Q2: halboffen → „halboffen: …", `Beginn>=Ende` → „nicht übernommen: …", Sekunden → „Sekunden abgeschnitten: …"; Kontenzahl = Q3-Zeilen mit mindestens einem gültigen Tag) und **keine** Zeile „Abweichung: … (RLS?)" (das belegt hier nur, dass die Zählprobe stimmt: `praxiszeit` ist auch auf der Prod-Kopie Superuser, RLS greift also gar nicht, und unter RLS würde auch das Lesen gefiltert, sodass die Zählprobe nie anschlägt. Ob der Backfill unter FORCE RLS alle Zeilen trifft, prüft `test_073_migration_pg.py::test_073_backfill_as_owner_under_force_rls`, Task 14); `auto_closed = true: <a + b>` (Summe der beiden Auto-Close-Formen aus 1.); danach `BYTE-IDENTISCH` und `TABELLEN NACH UPGRADE IDENTISCH (time_entries, working_hours_changes, users)` (073 füllt nur neue Spalten; die Bestandsspalten aller drei Tabellen, bei `users` ohne die gelöschten Fensterspalten, bleiben unberührt).
+3. Der Downgrade-Block nennt keine Mehrblock-Personen und keine Einträge mit nicht angerechneter Zeit (PR1 erzeugt keine); `TABELLEN IDENTISCH (time_entries, working_hours_changes, users)` — Spec 17.1 „`users` (ohne die neuen Spalten) — identisch bis auf die diagnostizierten Fälle" ist damit zweigeteilt geprüft: die md5-Zeile deckt alle `users`-Spalten außer den zehn Fensterspalten streng ab, die Fensterspalten vergleicht die folgende Abfrage je Person; unter „Personen mit geändertem 072-Fenster" stehen nur Personen, die die 073-Diagnose mit „Sekunden abgeschnitten" oder „nicht übernommen" nennt (halboffene Fenster kommen über die Platzhalter identisch zurück).
 4. `NACH ROUND-TRIP BYTE-IDENTISCH`, `== Stand: 073_work_blocks`.
 
 Fehlt `BYTE-IDENTISCH`: `diff "$WORK/072.json" "$WORK/073.json" | head -40` (Pfad aus der ersten Ausgabezeile) — jede Abweichung ist ein Fehler in PR1 (Spec E22), nicht in der Probe; Task stoppen und melden.
 
 - [ ] **Step 3: Ergebnis festhalten, aufräumen, Commit**
 
-Für den PR-Text notieren: Datum der Sicherung, „<p> Personen, <e> Einträge", die Zählzeile der 073-Diagnose, die beiden Auto-Close-Formen und `auto_closed = true`, „BYTE-IDENTISCH", „TABELLEN IDENTISCH", die Zahl der Personen mit geändertem Fenster. Dann das Arbeitsverzeichnis aus der ersten Ausgabezeile löschen (`rm -rf <Pfad>` — es enthält Prod-Daten) und:
+Für den PR-Text notieren: Datum der Sicherung, „<p> Personen, <e> Einträge", die Zählzeile der 073-Diagnose, die beiden Auto-Close-Formen und `auto_closed = true`, „BYTE-IDENTISCH", „TABELLEN NACH UPGRADE IDENTISCH" und „TABELLEN IDENTISCH (time_entries, working_hours_changes, users)", die Zahl der Personen mit geändertem Fenster. Dann das Arbeitsverzeichnis aus der ersten Ausgabezeile löschen (`rm -rf <Pfad>` — es enthält Prod-Daten) und:
 
 ```bash
 git add tools/migration-073/probe_073.py
