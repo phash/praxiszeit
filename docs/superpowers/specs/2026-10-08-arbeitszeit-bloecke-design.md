@@ -263,7 +263,7 @@ Rücksetzung erweitert.
 | P15 | `retroactive_reason_text` mindestens 10, höchstens 400 Zeichen. | Ein Ein-Wort-Grund ist kein Grund; Gesamtlänge der `note` ≤ 500 (9.5). |
 | P16 | Aneinanderstoßende Blöcke (Ende_i = Beginn_i+1) sind unzulässig (3.4). | Sie wären ein Block mit einer Lücke von 0 Min; zwei Darstellungen derselben Arbeitszeit. |
 | P17 | Für `end=None` gilt E35 („kein Fenster") nur für die **Lücke**: die Hülle verschiebt den Beginn weiter wie seit #201 (`raw_start`, `EARLY_START`), `uncredited` = 0. Fall K20. | Wörtlich gelesen schaltete E35 die #201-Kappung beim Einstempeln ab; E32 („Äußere Hülle wie heute") verlangt sie. |
-| P18 | Neue Spalte `time_entries.auto_closed` (BOOL, Default false): vom Auto-Close gesetzt, von jedem anderen Schreibpfad, der `end_time` setzt, zurückgesetzt. `raw_end_time = 23:59` bleibt (Protokoll), wird aber nie als echter Stempel gelesen: Anerkennen → 400, `RawStampNote` „nicht ausgestempelt – automatisch geschlossen, angerechnet bis 18:15", Anwesenheit (8.3) bis zum wirksamen Ende, Hüllenminuten am Ende zählen nicht als „nicht angerechnet" (P19). Erkennung über die Spalte, nicht über die editierbare Notiz. | 23:59 ist ein synthetischer Wert in einer Spalte, die sonst §16-Nachweis ist; ohne Kennzeichen öffnete Anerkennen das Schlupfloch wieder (16 h angerechnet), das E36/E42 schließen. |
+| P18 | Neue Spalte `time_entries.auto_closed` (BOOL, Default false): vom Auto-Close gesetzt, von einem Schreibpfad zurückgesetzt, der ein **tatsächlich neues** Ende schreibt (Ausstempeln, XLS-Überschreiben; bei MA-Bearbeitung, Admin-Bearbeitung und Antragsgenehmigung entscheidet `work_window_service.end_is_correction`). Ein unverändert zurückgeschicktes wirksames Ende, das zurückgeschickte Rohende 23:59 eines automatisch geschlossenen Eintrags und die Neukappung (9) lassen es stehen — sonst hebt schon das Formular-Speichern (Pause ergänzt, Ende unverändert) das Kennzeichen auf. `raw_end_time = 23:59` bleibt (Protokoll), wird aber nie als echter Stempel gelesen: Anerkennen → 400, `RawStampNote` „nicht ausgestempelt – automatisch geschlossen, angerechnet bis 18:15", Anwesenheit (8.3) bis zum wirksamen Ende, Hüllenminuten am Ende zählen nicht als „nicht angerechnet" (P19). Erkennung über die Spalte, nicht über die editierbare Notiz. | 23:59 ist ein synthetischer Wert in einer Spalte, die sonst §16-Nachweis ist; ohne Kennzeichen öffnete Anerkennen das Schlupfloch wieder (16 h angerechnet), das E36/E42 schließen. |
 | P19 | „angerechnet" = `net_hours` (nach Pause und `uncredited`). „Nicht angerechnet" eines Eintrags = `uncredited_minutes` + Hüllenminuten (`eff_start − raw_start`, `raw_end − eff_end`; 0 ohne `raw_*`; Endseite bei `auto_closed` ausgenommen). Eine Quelle: `work_window_service.not_credited_minutes(entry)` + Frontend-Zwilling `utils/workBlocks.ts::notCreditedMinutes` (wortgleiche Testfälle). Genutzt von `RawStampNote`, Journal-Summe und Export-Spalte. | Sonst bliebe gekappte Anwesenheit außerhalb der Hülle im §16-Beleg unerklärt (K7: 1:30 h, K15: 5:44 h) — Pflicht 8 nur halb erfüllt (R6, F11). |
 | P20 | Sammelzeile bei **jedem** Anlegen und Löschen einer Arbeitszeit-Änderung (auch 0 betroffene Einträge, auch reine Wochenstunden-Änderung); der Dashboard-Hinweis wird aus diesen Sammelzeilen der letzten 30 Tage abgeleitet und erscheint für jede Änderung (auch „ab heute"/zukunftsdatiert, Löschung), mit Neukappungs-Zusatz nur bei n > 0. | Das Protokoll verlangt „a summary row per change"; eine Weisung muss Mitarbeitende erreichen (§ 106 GewO, Art. 5 Abs. 1 lit. a, Art. 13 DSGVO) (F2, R8). |
 | P21 | **Anrechnung beantragen:** Mitarbeitende können an einem eigenen geschlossenen Eintrag mit nicht angerechneter Zeit einen Änderungsantrag mit Kennzeichen `request_credit_override` stellen (Begründung Pflicht wie jeder Antrag). Die Antragsprüfung bietet „Genehmigen = Anerkennen" (Pfad 13.3) und zeigt für jeden UPDATE-Antrag auf einen Eintrag mit nicht angerechneter Zeit zusätzlich die Option „genehmigen und anerkennen". | Art. 22 Abs. 3 DSGVO: Eingreifen einer Person, eigener Standpunkt, Anfechtung; ein gleichlautender Antrag würde sonst bei Genehmigung wieder gekappt (R9). |
@@ -321,7 +321,7 @@ Altzeile aus Migration 073 (Fenster Mo–Do 07:30–16:30, Fr halboffen ab 07:30
 | `users` | `work_blocks` | `JSON` / `JSONB` | ja | — | Rückfall nur vor der ersten Verlaufszeile; Spiegel der jüngsten Zeile ≤ heute (Sync). |
 | `time_entries` | `uncredited_minutes` | `INTEGER` | nein | `0` (server_default `'0'`) | In der Lücke liegende, nicht angerechnete Minuten. Nur serverseitig. |
 | `time_entries` | `credit_override` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Eintrag wird nie gekappt („Anerkennen"). |
-| `time_entries` | `auto_closed` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Vom Auto-Close geschlossen; `raw_end_time` 23:59 ist dann kein echter Stempel (P18). Jeder andere Pfad, der `end_time` schreibt, setzt es auf `false`. |
+| `time_entries` | `auto_closed` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Vom Auto-Close geschlossen; `raw_end_time` 23:59 ist dann kein echter Stempel (P18). Ein Pfad, der ein tatsächlich neues Ende schreibt (`end_is_correction`), setzt es auf `false`; ein unverändert zurückgeschicktes wirksames Ende, das Rohende 23:59 eines automatisch geschlossenen Eintrags und die Neukappung lassen es stehen. |
 | `time_entries` | `clamp_grace_minutes` | `INTEGER` | ja | — | Puffer der letzten Kappung gegen Blöcke (E79). NULL = nie gegen Blöcke gekappt bzw. Bestand vor 073 („unbekannt → aktueller Puffer"). Einzel-Neukappungen lesen ihn, die Massen-Neukappung überschreibt ihn (E80). Nur serverseitig. |
 | `change_requests` | `request_credit_override` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Antrag „Anrechnung beantragen" (P21). |
 | `change_requests` | `original_uncredited_minutes` | `INTEGER` | ja | — | Vorher-Snapshot der nicht angerechneten Lückenminuten (P28). |
@@ -936,8 +936,14 @@ aus 6.2 in Klammern. „nicht angerechnet" = `not_credited_minutes` (P19).
 Für alle schreibenden Zeilen (1–6, 8, 9, 12, 13 und die Anerkennung) gilt P5: erste
 Anweisung ist `lock_user_row(db, tenant_id, owner_id)`, vor `get_grace_minutes`,
 Snapshot-Auflösung und `clamp`; erst danach werden Eintragszeilen mit `with_for_update`
-geladen. Jeder Pfad außer dem Auto-Close, der `end_time` schreibt, setzt `auto_closed =
-false` (P18).
+geladen. Ein Pfad außer dem Auto-Close, der ein **tatsächlich neues** Ende schreibt, setzt
+`auto_closed = false` (P18): Ausstempeln (Nr. 2) und XLS-Überschreiben (Nr. 12) immer, die
+Bearbeitungen (Nr. 4, 6) und der CR-UPDATE-Zweig (Nr. 9) nur, wenn
+`work_window_service.end_is_correction(eingehend, wirksames Ende, Rohende, auto_closed)`
+zutrifft. Ein unverändert zurückgeschicktes wirksames Ende (Formular, `unclamp_input`), das
+zurückgeschickte Rohende 23:59 eines automatisch geschlossenen Eintrags und die
+Neukappung (Nr. 15) lassen es stehen — sonst läsen Anerkennen und P19 nach jedem
+Formular-Speichern die synthetischen 23:59 wieder als echten Stempel.
 
 **Puffer je Zeile (E79/E80):** aktueller Mandanten-Puffer bei Neuanlagen — Nr. 1, 3, 5, 8,
 Neuanlage-Zweig von 11/12 und die CREATE-Prüfungen in 7 und 14; `grace_for_entry(db, entry)`
@@ -2516,7 +2522,8 @@ alles zusammen über `bash scripts/local-ci.sh`.
   wie ohne; `not_credited_minutes`/`presence_minutes` für K7, K8, K15, K20.
 - `test_write_paths_uncredited.py`: parametrisiert über die **schreibenden** Stellen aus
   7.1 (1–6, 8, 9, 12, 13) — jede setzt `uncredited`, `clamp_grace_minutes` (an Tagen mit
-  Blöcken) und (außer 13) `auto_closed = false`;
+  Blöcken) und (außer 13) bei neuem Ende `auto_closed = false` (das unverändert
+  zurückgeschickte Ende lässt ein gesetztes Kennzeichen stehen, `end_is_correction`);
   eigener Test für 7 und 10 (Genehmigung eines Teilschicht-Antrags „08–18, Pause 0" ohne
   422 und ohne Doppelzählung); eigener Test für 11 (`ImportedEntry.uncredited_minutes`
   gesetzt, Kappungsnotiz auch bei reinem Lückenfall K1 ohne `raw_*`); Formular-Re-Save
