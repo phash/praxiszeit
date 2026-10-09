@@ -940,6 +940,29 @@ if [ "$BUILD_MACOS" = true ]; then
             exit 1
         fi
 
+        # #482: Load-Commands ALLER Mach-O-Dateien pruefen — ohne otool, direkt aus
+        # den Mach-O-Koepfen (laeuft auf dem Linux-Build-Host). Jede Bibliothek muss
+        # ueber @loader_path/@rpath/@executable_path oder aus /usr/lib bzw.
+        # /System/Library aufloesbar sein; ein Pfad auf dem theseus-Build-Runner
+        # (/Users/runner/...) oder in Homebrew bricht den Build ab, bevor ein auf
+        # dem Kunden-Mac nicht ladbares Paket entsteht (das #183-Muster).
+        # --prune entfernt vorher die PGXS-Testtreiber (lib/pgxs/src/test:
+        # pg_regress, isolationtester, pg_isolation_regress) — in theseus 18.6.0
+        # die einzigen Dateien mit Runner-Pfad, und nur zum Testen selbst gebauter
+        # Erweiterungen da. dblink/postgres_fdw/libpqwalreceiver laden in 18.6.0
+        # sauber und bleiben im Paket.
+        if ! command -v python3 &>/dev/null; then
+            error "python3 fehlt — Mach-O-Pruefung (#482) nicht moeglich, Abbruch."
+            exit 1
+        fi
+        if ! python3 "${REPO_DIR}/tools/macho_deps.py" --prune "${mac_dir}/bin/postgresql"; then
+            error "macOS-${arch}: nicht portable Mach-O-Abhaengigkeiten (Liste oben)."
+            error "  Auswirkung: diese Dateien laden auf keinem Kunden-Mac."
+            error "  Neue theseus-Version? Datei pruefen; wird sie nie ausgefuehrt,"
+            error "  in PG_PRUNE (tools/macho_deps.py) aufnehmen, sonst Upstream melden."
+            exit 1
+        fi
+
         _write_macos_installer "${mac_dir}"
 
         tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz" -C "${mac_dir}" .
@@ -1016,7 +1039,8 @@ dem Hochziehen der neuen Version wieder einspielen:
     bash backup.sh                                  # -> backups/praxiszeit_<ts>.sql.gz
     # ... neue Version entpacken, .env + backups/ uebernehmen ...
     docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
-    # ... Stack starten ...
+    docker compose build --pull                     # frische Basis-Images (Debian/Alpine-Sicherheitsupdates)
+    docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # nur HTTP: docker compose up -d
     bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB einspielen
     docker compose up -d backend                    # Alembic-Migrationen -> Schema auf head
 

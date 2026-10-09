@@ -40,6 +40,8 @@ sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
      /opt/praxiszeit/praxiszeit-server.py reset-admin-password [--username admin] [--disable-2fa] [--reactivate]
 ```
 
+macOS: Dienstkonto **`_praxiszeit`** (so legt es `installer/macos/install.sh` per `dscl` an), Ordner `/usr/local/praxiszeit` — also `sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py reset-admin-password`. Der Hinweistext des Kommandos beim Aufruf als root ermittelt das Konto selbst (`_install_owner()` = Eigentümer des Installationsordners).
+
 ⚠️ **Die vollständige Form ist nicht Zierde, sondern nötig** (Release-Review 1.19.0): `praxiszeit-server.py` liegt weder im `PATH` noch wird es vom Installer ausführbar gemacht — `sudo praxiszeit-server.py …` scheitert schon an der Shell. Und die Abhängigkeiten der Anwendung liegen ausschließlich im **mitgelieferten** Interpreter unter `bin/python`; mit dem System-Python stirbt der Unterprozess an `ModuleNotFoundError: No module named 'sqlalchemy'`. Das Kommando löst den gebündelten Interpreter inzwischen selbst auf (`bundled_python()`), aber der Aufruf muss ihn trotzdem finden. `sudo -u praxiszeit` statt reinem `sudo`, weil `pg_ctl` den Start als root ablehnt — läuft die Datenbank bereits, geht auch root, andernfalls bricht das Kommando jetzt mit einem Hinweis auf genau diese Zeile ab statt mit einem Traceback.
 
 - Fragt das neue Passwort **interaktiv** ab (zweimal, gegen dieselbe Komplexitätsregel wie die Anwendung). **Bewusst kein Argument dafür** — es stünde in der Shell-History und in der Prozessliste.

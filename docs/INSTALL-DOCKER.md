@@ -59,9 +59,10 @@ bash ssl/generate-cert.sh
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```
 
-Updates: `git pull && docker compose pull db && docker compose up -d --build`
+Updates: `git pull && docker compose pull db && docker compose build --pull && docker compose up -d`
 (bei aktivem SSL-Overlay beide `-f`-Dateien angeben). `pull db` holt den neuesten
-PostgreSQL-18-Patchstand — `up` allein nimmt das bereits vorhandene Image.
+PostgreSQL-18-Patchstand — `up` allein nimmt das bereits vorhandene Image;
+`build --pull` zieht ebenso die Basis-Images von Backend und Frontend neu.
 
 ---
 
@@ -117,7 +118,7 @@ Monitoring (Prometheus/Grafana) läuft mit — wer es nicht braucht, kann
 docker compose ps                 # Status
 docker compose logs -f backend    # Backend-Logs
 docker compose down               # Stoppen (Daten bleiben im Volume)
-docker compose pull && docker compose up -d --build   # Update (Weg A: neues Bundle entpacken)
+docker compose pull && docker compose build --pull && docker compose up -d   # Update (Weg A: neues Bundle entpacken)
 ```
 
 ---

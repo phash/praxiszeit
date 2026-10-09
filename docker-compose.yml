@@ -97,9 +97,18 @@ services:
   prometheus:
     # F-037: pinned to a specific minor version for reproducible builds.
     # Bump deliberately via Dependabot/Renovate, not via `docker pull`.
-    # #175: v2.54 war seit 2024-09 EOL -> auf v3 LTS-Linie. Config ist minimal
+    # #175: v2.54 war seit 2024-09 EOL -> auf v3. Config ist minimal
     # (global + ein scrape-job) und v3-kompatibel (promtool check config gruen).
-    image: prom/prometheus:v3.12.0
+    # 2026-10-08 (#491 DEP-2): v3.12.0 war entgegen dem frueheren Kommentar KEIN
+    # LTS-Release, sondern eine normale Minor-Version (Support endet nach ~6
+    # Wochen mit der naechsten Minor). -> 3.13.x = LTS-Linie (2026-07-01, Support
+    # bis 2027-07-31, https://prometheus.io/docs/introduction/release-cycle/).
+    # Ein Minor-Schritt; die 3.13-Aenderungen betreffen unsere Config nicht
+    # (keine Credentials/Redirects, kein experimental-duration-expr).
+    # Geprueft: promtool check config gruen; 3.12.0 legt TSDB an, 3.13.4 startet
+    # auf demselben Volume. Bei Bumps auf der 3.13-Linie bleiben; die naechste
+    # LTS ist fuer 2027-06 angekuendigt.
+    image: prom/prometheus:v3.13.4
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus

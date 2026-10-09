@@ -55,9 +55,13 @@ Erzeugt sofort ein Backup im konfigurierten `data/backups/`-Verzeichnis (gleiche
 Routine wie das automatische, inkl. Aufräumen alter Backups):
 
 ```bash
-# Linux / macOS
+# Linux
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
-    /opt/praxiszeit/praxiszeit-server.py backup          # macOS: /usr/local/praxiszeit/...
+    /opt/praxiszeit/praxiszeit-server.py backup
+
+# macOS (Dienstkonto mit Unterstrich, anderer Installationsordner)
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
+    /usr/local/praxiszeit/praxiszeit-server.py backup
 ```
 
 ```bat
@@ -115,6 +119,8 @@ Erst entpacken, dann durch `psql` leiten — **nicht** `psql -f` auf die `.gz`:
 ```bash
 # Linux/macOS — gebündeltes psql, Verbindung über den eigenen Unix-Socket.
 # Das Superuser-Passwort steht in config/.db-credentials (SUPERUSER_PASSWORD=...).
+# Als root ausführen (vorher `sudo -i`): die Datei ist nur fürs Dienstkonto
+# lesbar (600) — sonst bleibt PGPASSWORD leer und psql scheitert an der Anmeldung.
 PZ=/opt/praxiszeit          # macOS: /usr/local/praxiszeit
 export PGPASSWORD="$(grep '^SUPERUSER_PASSWORD=' "$PZ/config/.db-credentials" | cut -d= -f2-)"
 gunzip -c "$PZ/data/backups/<datei>.sql.gz" \

@@ -268,9 +268,12 @@ systemctl list-timers praxiszeit-backup.timer
 # Backup sofort ausloesen (Linux)
 sudo systemctl start praxiszeit-backup.service
 
-# Manuelles Backup (Linux/macOS, direkt)
+# Manuelles Backup (Linux, direkt)
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
     /opt/praxiszeit/praxiszeit-server.py backup
+# macOS: Dienstkonto _praxiszeit, Ordner /usr/local/praxiszeit
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
+    /usr/local/praxiszeit/praxiszeit-server.py backup
 
 # Backups anzeigen
 ls -la /opt/praxiszeit/data/backups/
@@ -389,11 +392,20 @@ Wenn ein Backup von `config/.db-credentials` existiert (z.B. aus dem
 naechtlichen `data/backups/`-Verzeichnis oder einem externen Backup):
 
 ```bash
-# Linux/macOS
-cp /pfad/zum/backup/.db-credentials /opt/praxiszeit/config/.db-credentials
-chmod 600 /opt/praxiszeit/config/.db-credentials
-chown praxiszeit:praxiszeit /opt/praxiszeit/config/.db-credentials
+# Linux
+sudo cp /pfad/zum/backup/.db-credentials /opt/praxiszeit/config/.db-credentials
+sudo chmod 600 /opt/praxiszeit/config/.db-credentials
+sudo chown praxiszeit:praxiszeit /opt/praxiszeit/config/.db-credentials
 sudo systemctl start praxiszeit
+```
+
+```bash
+# macOS (Dienstkonto _praxiszeit, Ordner /usr/local/praxiszeit, launchd statt systemd)
+sudo cp /pfad/zum/backup/.db-credentials /usr/local/praxiszeit/config/.db-credentials
+sudo chmod 600 /usr/local/praxiszeit/config/.db-credentials
+sudo chown _praxiszeit:staff /usr/local/praxiszeit/config/.db-credentials
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null
+sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
 ```
 
 ```cmd
@@ -533,6 +545,19 @@ glibc-Symbole > 2.34 verlangt (`check_glibc_compat`).
   **Mach-O** verifiziert. Das ist die **1.5.2-Härtung** und verhindert das
   **1.5.0-Pattern**, bei dem nur das EDB-**DMG** (ohne entpackbare Binaries) im
   Paket landete und der Build trotzdem „erfolgreich" meldete.
+- macOS außerdem (#482): `tools/macho_deps.py` liest die Load-Commands **aller**
+  Mach-O-Dateien unter `bin/postgresql` direkt aus den Dateiköpfen (kein `otool`
+  nötig, läuft auf dem Linux-Build-Host) und bricht den Build ab, sobald eine
+  Bibliothek nicht über `@loader_path`/`@rpath`/`@executable_path` oder aus
+  `/usr/lib`/`/System/Library` aufzulösen ist — etwa ein Pfad auf dem
+  theseus-Build-Runner (`/Users/runner/...`) oder in Homebrew. Vorher entfernt
+  `--prune` die PGXS-Testtreiber `lib/pgxs/src/test/` (`pg_regress`,
+  `isolationtester`, `pg_isolation_regress`): in theseus 18.6.0 die einzigen
+  Dateien mit Runner-Pfad, nur zum Testen selbst gebauter Erweiterungen da.
+  `dblink`, `postgres_fdw` und `libpqwalreceiver` laden in 18.6.0 sauber über
+  `@loader_path` und bleiben im Paket. Meldet die Prüfung nach einem PG-Bump
+  eine neue Datei: wird sie nie ausgeführt, in `PG_PRUNE` aufnehmen, sonst
+  Upstream melden.
 
 **⚠️ macOS-CI-Gap:** `validate-macos.yml` läuft auf dem **privaten** Repo **nicht**
 (alle Runs hängen dauerhaft `queued` — keine macOS-Runner-Minuten). 1.8.1–1.8.7

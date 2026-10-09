@@ -1,6 +1,7 @@
 """Shared helpers used by the router layer (admin sub-routers + Buchungspfade)."""
 
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 from app.models import User, UserRole, ChangeRequest, TimeEntryAuditLog
 from app.models.vacation_request import VacationRequest
@@ -131,6 +132,43 @@ def lock_active_admin_ids(db: Session, tenant_id) -> list:
         .all()
     )
     return [r.id for r in rows]
+
+
+def lock_active_admins_and_user(db: Session, tenant_id, user_id) -> list:
+    """#491 API-2 (Nachzug): Admin-Menge UND Zielzeile in EINER sortierten Sperre.
+
+    Fuer den Rollenwechsel (``admin_users.update_user``): er braucht die
+    Admin-Menge (Letzter-Admin-Regel) und die Zielzeile (Stand nach der Sperre
+    lesen). Zwei Anweisungen nacheinander — erst die Admin-Menge, dann die
+    Zielzeile — verklemmen sich mit jeder sortierten Mehrzeilen-Sperre
+    (``lock_user_rows``, z. B. Betriebsferien-Buchung), sobald die Ziel-ID vor
+    einer Admin-ID liegt: jene haelt das Ziel und wartet auf den Admin, diese
+    haelt den Admin und wartet auf das Ziel (``DeadlockDetected``, belegt in
+    ``test_concurrency.py``). In EINER Anweisung mit ``ORDER BY id`` werden
+    alle Zeilen in derselben globalen Reihenfolge gesperrt wie dort.
+
+    READ COMMITTED: die Bedingung wird nach dem Warten an der neuesten Version
+    neu geprueft — ein inzwischen herabgestufter Admin faellt heraus, die
+    Zielzeile bleibt (``id``-Treffer) immer drin und kommt mit ihrem neuesten
+    Stand zurueck.
+
+    Gibt die IDs der AKTIVEN ADMINS unter den gesperrten Zeilen zurueck
+    (sortiert; die Zielzeile nur, wenn sie selbst aktiver Admin ist).
+    """
+    rows = (
+        db.query(User.id, User.role, User.is_active)
+        .filter(
+            User.tenant_id == tenant_id,  # F-026
+            or_(
+                and_(User.role == UserRole.ADMIN, User.is_active == True),  # noqa: E712
+                User.id == user_id,
+            ),
+        )
+        .order_by(User.id)
+        .with_for_update(key_share=True)
+        .all()
+    )
+    return [r.id for r in rows if r.role == UserRole.ADMIN and r.is_active]
 
 
 def _get_field(entry, field: str):

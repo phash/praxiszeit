@@ -77,7 +77,9 @@ def app_engine():
 def concurrency_seed(admin_engine):
     """Create the test tenant + user; clean up after module."""
     conn = admin_engine.connect()
-    # Best-effort pre-cleanup (company_closures VOR users: created_by ist ein FK)
+    # Best-effort pre-cleanup (company_closures VOR users: created_by ist ein FK;
+    # security_events VOR tenants: tenant_id ist ein FK — #491 API-2)
+    conn.execute(text("DELETE FROM security_events WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM time_entry_audit_logs WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
@@ -104,6 +106,7 @@ def concurrency_seed(admin_engine):
 
     yield
 
+    conn.execute(text("DELETE FROM security_events WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM time_entry_audit_logs WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
     conn.execute(text("DELETE FROM absences WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
@@ -1389,3 +1392,290 @@ def test_no_router_locks_user_rows_directly():
         "Deadlocks zurück (Begründung im Kopf von admin_helpers.py). "
         f"Fundstellen: {offenders}"
     )
+
+
+# ---------------------------------------------------------------------------
+# #491 API-2: Deaktivieren/Reaktivieren entscheidet ueber die Protokollzeile
+# am Zustand NACH der Sperre, nicht an einem veralteten ``is_active``.
+# ---------------------------------------------------------------------------
+
+ACCOUNT_ACTOR_ID = uuid.UUID("ccccccc1-0000-4000-8000-000000000491")
+
+
+@pytest.fixture
+def account_event_state(admin_engine):
+    """Handelnde Verwaltung + leeres ``security_events`` fuer den Testmandanten."""
+    def _wipe():
+        conn = admin_engine.connect()
+        conn.execute(text("DELETE FROM security_events WHERE tenant_id = :t"), {"t": str(TENANT_ID)})
+        conn.execute(text("DELETE FROM users WHERE id = :u"), {"u": str(ACCOUNT_ACTOR_ID)})
+        conn.execute(
+            text("UPDATE users SET is_active = true, deactivated_at = NULL, "
+                 "role = 'EMPLOYEE' WHERE id = :u"),
+            {"u": str(USER_ID)},
+        )
+        conn.close()
+
+    _wipe()
+    conn = admin_engine.connect()
+    conn.execute(text("""
+        INSERT INTO users (id, tenant_id, username, email, password_hash,
+                           first_name, last_name, role, weekly_hours,
+                           vacation_days, work_days_per_week, is_active)
+        VALUES (:id, :tid, 'concurrency_test_actor491', 'actor491@test.local',
+                'not-real', 'A', 'Test', 'ADMIN', 40, 30, 5, true)
+    """), {"id": str(ACCOUNT_ACTOR_ID), "tid": str(TENANT_ID)})
+    conn.close()
+    yield
+    _wipe()
+
+
+def _run_account_call(results: list, endpoint: str):
+    """Ruft die ECHTE Endpunkt-Funktion (``deactivate_user``/``reactivate_user``)."""
+    from app.routers import admin_users as admin_users_router
+
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        actor = session.query(User).filter(User.id == ACCOUNT_ACTOR_ID).first()
+        getattr(admin_users_router, endpoint)(
+            user_id=str(USER_ID), db=session, current_user=actor,
+        )
+        results.append(("ok",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize(
+    "initially_active, holder_sets_active, holder_event, endpoint, expected_events, expected_active",
+    [
+        # Zwei gleichzeitige Deaktivierungen: nur EINE Protokollzeile.
+        (True, False, "user_deactivated", "deactivate_user",
+         ["user_deactivated"], False),
+        # Zwei gleichzeitige Reaktivierungen: nur EINE Protokollzeile.
+        (False, True, "user_reactivated", "reactivate_user",
+         ["user_reactivated"], True),
+        # Reaktivierung laeuft, Deaktivierung kommt dazu: ohne Sperre las die
+        # Deaktivierung das alte „inaktiv", schrieb KEINE Zeile und liess das
+        # Konto trotzdem deaktiviert zurueck — das Protokoll endete auf
+        # „reaktiviert".
+        (False, True, "user_reactivated", "deactivate_user",
+         ["user_reactivated", "user_deactivated"], False),
+        # Spiegelbild: Deaktivierung laeuft, Reaktivierung kommt dazu.
+        (True, False, "user_deactivated", "reactivate_user",
+         ["user_deactivated", "user_reactivated"], True),
+    ],
+    ids=["deact+deact", "react+react", "react+deact", "deact+react"],
+)
+def test_parallel_account_toggle_logs_against_the_locked_state(
+    concurrency_seed, account_event_state, admin_engine,
+    initially_active, holder_sets_active, holder_event, endpoint,
+    expected_events, expected_active,
+):
+    """#491 API-2: ``was_active`` wird erst NACH der Anker-Sperre gelesen.
+
+    Sitzung A hat das Konto bereits umgeschaltet (samt Protokollzeile), aber
+    noch nicht committet. Der Endpunkt im Thread muss an der Benutzerzeile
+    warten und danach den NEUEN Zustand sehen. Vorher las er ``is_active``
+    ungesperrt (also den alten, committeten Wert), wartete erst beim Schreiben
+    — und entschied ueber die Protokollzeile anhand des veralteten Werts:
+    doppelte Zeilen bzw. ein Protokoll, das dem Endzustand widerspricht.
+    """
+    with admin_engine.connect() as conn:
+        conn.execute(
+            text("UPDATE users SET is_active = :a, deactivated_at = NULL WHERE id = :u"),
+            {"a": initially_active, "u": str(USER_ID)},
+        )
+
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    holder.execute(
+        text("UPDATE users SET is_active = :a WHERE id = :u AND tenant_id = :t"),
+        {"a": holder_sets_active, "u": str(USER_ID), "t": str(TENANT_ID)},
+    )
+    holder.execute(
+        text("""INSERT INTO security_events (id, tenant_id, event, subject_user_id, actor)
+                VALUES (:id, :t, :e, :u, :a)"""),
+        {"id": str(uuid.uuid4()), "t": str(TENANT_ID), "e": holder_event,
+         "u": str(USER_ID), "a": f"user:{ACCOUNT_ACTOR_ID}"},
+    )
+
+    results: list = []
+    t = threading.Thread(target=_run_account_call, args=(results, endpoint))
+    t.start()
+    time_module.sleep(1.5)
+    holder.commit()
+    holder.close()
+    t.join(timeout=20)
+    assert not t.is_alive(), "Endpunkt haengt nach dem Commit der Gegenseite"
+    assert results == [("ok",)], results
+
+    with admin_engine.connect() as conn:
+        events = [r[0] for r in conn.execute(text(
+            "SELECT event FROM security_events WHERE tenant_id = :t AND subject_user_id = :u "
+            "ORDER BY created_at, id"
+        ), {"t": str(TENANT_ID), "u": str(USER_ID)})]
+        active = conn.execute(
+            text("SELECT is_active FROM users WHERE id = :u"), {"u": str(USER_ID)},
+        ).scalar()
+    assert active is expected_active
+    assert events == expected_events, (
+        f"Protokoll {events} passt nicht zum Ablauf (erwartet {expected_events}) — "
+        "der Endpunkt hat ueber die Protokollzeile anhand eines veralteten Zustands entschieden."
+    )
+
+
+# ---------------------------------------------------------------------------
+# #491 API-2 (Nachzug): der Rollenwechsel in ``update_user`` entscheidet ueber
+# Protokollzeile, token_version und das Schreiben selbst ebenfalls am Stand
+# NACH der Sperre — vorher las er ``user.role`` ungesperrt.
+# ---------------------------------------------------------------------------
+
+def _run_role_call(results: list, role: str):
+    """Ruft die ECHTE Endpunkt-Funktion ``update_user`` mit einem Rollenwechsel."""
+    from app.routers import admin_users as admin_users_router
+    from app.schemas.user import UserUpdate
+
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        actor = session.query(User).filter(User.id == ACCOUNT_ACTOR_ID).first()
+        admin_users_router.update_user(
+            user_id=str(USER_ID), user_data=UserUpdate(role=role),
+            db=session, current_user=actor,
+        )
+        results.append(("ok",))
+    except HTTPException as e:
+        session.rollback()
+        results.append(("rejected", e.status_code))
+    except Exception as e:  # pragma: no cover — surface the failure
+        session.rollback()
+        results.append(("error", type(e).__name__))
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize(
+    "initial_role, holder_role, requested_role, expected_role",
+    [
+        # Laufende Befoerderung, parallel die Herabstufung: ohne Sperre las die
+        # Herabstufung das alte „Mitarbeiter", hielt die Anfrage fuer wirkungslos
+        # — keine Zeile, kein token_version-Bump, das ORM schrieb die Rolle nicht
+        # und das Konto blieb Admin, obwohl die Anfrage 200 bekam.
+        ("EMPLOYEE", "ADMIN", "employee", "EMPLOYEE"),
+        # Spiegelbild: laufende Herabstufung, parallel die Befoerderung.
+        ("ADMIN", "EMPLOYEE", "admin", "ADMIN"),
+    ],
+    ids=["promote+demote", "demote+promote"],
+)
+def test_parallel_role_change_reads_the_locked_role(
+    concurrency_seed, account_event_state, admin_engine,
+    initial_role, holder_role, requested_role, expected_role,
+):
+    """#491 API-2 (Nachzug): ``old_role``/``role_changed`` erst NACH der Sperre.
+
+    Sitzung A hat die Rolle bereits umgestellt (samt Protokollzeile), aber
+    noch nicht committet. ``update_user`` im Thread muss an der Benutzerzeile
+    warten und danach den NEUEN Stand sehen: die gewuenschte Rolle wird
+    geschrieben, protokolliert und entwertet die Sitzungen (token_version).
+    """
+    with admin_engine.connect() as conn:
+        conn.execute(
+            text("UPDATE users SET role = :r WHERE id = :u"),
+            {"r": initial_role, "u": str(USER_ID)},
+        )
+        tv_before = conn.execute(
+            text("SELECT token_version FROM users WHERE id = :u"), {"u": str(USER_ID)},
+        ).scalar()
+
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    holder.execute(
+        text("UPDATE users SET role = :r WHERE id = :u AND tenant_id = :t"),
+        {"r": holder_role, "u": str(USER_ID), "t": str(TENANT_ID)},
+    )
+    holder.execute(
+        text("""INSERT INTO security_events (id, tenant_id, event, subject_user_id, actor)
+                VALUES (:id, :t, 'user_role_changed', :u, :a)"""),
+        {"id": str(uuid.uuid4()), "t": str(TENANT_ID),
+         "u": str(USER_ID), "a": f"user:{ACCOUNT_ACTOR_ID}"},
+    )
+
+    results: list = []
+    t = threading.Thread(target=_run_role_call, args=(results, requested_role))
+    t.start()
+    time_module.sleep(1.5)
+    holder.commit()
+    holder.close()
+    t.join(timeout=20)
+    assert not t.is_alive(), "Endpunkt haengt nach dem Commit der Gegenseite"
+    assert results == [("ok",)], results
+
+    with admin_engine.connect() as conn:
+        events = [r[0] for r in conn.execute(text(
+            "SELECT event FROM security_events WHERE tenant_id = :t AND subject_user_id = :u "
+            "ORDER BY created_at, id"
+        ), {"t": str(TENANT_ID), "u": str(USER_ID)})]
+        role, tv_after = conn.execute(
+            text("SELECT role, token_version FROM users WHERE id = :u"), {"u": str(USER_ID)},
+        ).one()
+    assert role == expected_role, (
+        f"Rolle {role!r} statt {expected_role!r}: der Rollenwechsel wurde gegen "
+        "einen veralteten Stand entschieden und nie geschrieben."
+    )
+    assert events == ["user_role_changed", "user_role_changed"], events
+    assert (tv_after or 0) == (tv_before or 0) + 1, (tv_before, tv_after)
+
+
+def test_role_change_and_sorted_multi_row_lock_do_not_deadlock(
+    concurrency_seed, account_event_state, admin_engine,
+):
+    """#491 API-2 (Nachzug): der Rollenwechsel darf sich nicht mit einer
+    sortierten Mehrzeilen-Sperre (``lock_user_rows`` der Betriebsferien-
+    Buchung) ueber Kreuz verklemmen.
+
+    Sperrt ``update_user`` erst die Admin-Menge und DANACH die Zielzeile, und
+    liegt die Ziel-ID (Mitarbeiterin) vor der Admin-ID, ergibt sich ein Zyklus:
+    die Betriebsferien-Buchung haelt die Mitarbeiterin und wartet auf den
+    Admin, der Rollenwechsel haelt den Admin und wartet auf die Mitarbeiterin.
+    Die Sitzung ``holder`` spielt die sortierte Sperre in ihren zwei Schritten
+    nach (USER_ID < ACCOUNT_ACTOR_ID).
+    """
+    from app.routers.admin_helpers import lock_user_row
+
+    assert str(USER_ID) < str(ACCOUNT_ACTOR_ID)  # Voraussetzung des Szenarios
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    lock_user_row(holder, TENANT_ID, USER_ID)  # Schritt 1 der sortierten Sperre
+
+    results: list = []
+    t = threading.Thread(target=_run_role_call, args=(results, "admin"))
+    t.start()
+    time_module.sleep(1.5)  # update_user steht jetzt in seiner Sperre
+    try:
+        lock_user_row(holder, TENANT_ID, ACCOUNT_ACTOR_ID)  # Schritt 2
+        holder.commit()
+        holder_result = "ok"
+    except OperationalError as e:
+        holder.rollback()
+        holder_result = f"error: {type(e.orig).__name__}"
+    finally:
+        holder.close()
+    t.join(timeout=20)
+    assert not t.is_alive(), "Rollenwechsel haengt"
+    assert holder_result == "ok", (
+        f"Sortierte Mehrzeilen-Sperre abgebrochen ({holder_result}) — Rollenwechsel "
+        "und Betriebsferien-Buchung haben sich ueber Kreuz verklemmt."
+    )
+    assert results == [("ok",)], results
+    with admin_engine.connect() as conn:
+        role = conn.execute(
+            text("SELECT role FROM users WHERE id = :u"), {"u": str(USER_ID)},
+        ).scalar()
+    assert role == "ADMIN"

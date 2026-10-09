@@ -561,6 +561,9 @@ systemctl status praxiszeit-backup.timer
 systemctl list-timers | grep praxiszeit
 # Manuell sofort: sudo systemctl start praxiszeit-backup.service
 ```
+macOS: statt des systemd-Timers ein LaunchDaemon (`de.praxiszeit.backup`, täglich
+03:00, Protokoll in `/usr/local/praxiszeit/logs/backup.log`):
+`sudo launchctl list | grep de.praxiszeit.backup`.
 
 Retention erhöhen für ArbZG-Konformität:
 ```toml
@@ -571,10 +574,15 @@ schedule = "02:00"
 retention_days = 730       # 2 Jahre
 ```
 
-Backup manuell triggern:
+Backup manuell triggern (die volle Form mit dem gebündelten Interpreter ist
+nötig: `praxiszeit-server.py` ist nicht ausführbar, und nur `bin/python` hat
+die Abhängigkeiten der Anwendung):
 ```bash
-# Linux/macOS
-sudo -u praxiszeit /opt/praxiszeit/praxiszeit-server.py backup
+# Linux
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py backup
+
+# macOS (Dienstkonto mit Unterstrich, anderer Installationsordner)
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py backup
 
 # Windows
 cd C:\PraxisZeit
@@ -599,13 +607,11 @@ crontab -e
 
 **Native (Windows):** `restore-backup.bat` aus dem Installer-Verzeichnis ausführen (fordert die Eingabe „LOESCHEN" zur Bestätigung).
 
-**Native (Linux/macOS):**
-```bash
-sudo systemctl stop praxiszeit
-gunzip -c /opt/praxiszeit/data/backups/<dump>.sql.gz \
-  | sudo -u praxiszeit /opt/praxiszeit/bin/postgresql/bin/psql -d praxiszeit
-sudo systemctl start praxiszeit
-```
+**Native (Linux/macOS):** Der Dienst (und damit PostgreSQL) muss beim
+Einspielen **laufen** — `psql` erreicht die Datenbank nur über den eigenen
+Unix-Socket unter `data/run`, ein vorheriges Stoppen des Dienstes nähme ihn mit.
+Den vollständigen Befehl (Linux und macOS, als root, mit dem Passwort aus
+`config/.db-credentials`) enthält [BACKUP.md → Restore → Native](BACKUP.md#restore-wiederherstellung).
 
 **Docker:**
 ```bash

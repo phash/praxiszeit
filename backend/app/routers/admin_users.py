@@ -21,7 +21,9 @@ from app.models.security_event import (
     SecurityEvent,
 )
 from app.schemas.security_event import SecurityEventResponse
-from app.routers.admin_helpers import lock_active_admin_ids
+from app.routers.admin_helpers import (
+    lock_active_admin_ids, lock_active_admins_and_user, lock_user_row,
+)
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
@@ -416,6 +418,26 @@ def _is_last_active_admin(db: Session, user: User) -> bool:
     if user.role != UserRole.ADMIN or not user.is_active:
         return False
     return lock_active_admin_ids(db, user.tenant_id) == [user.id]
+
+
+def _lock_and_reload(db: Session, current_user: User, user: User) -> None:
+    """#491 API-2: Anker-Sperre auf der Zielzeile, danach ihren Stand neu lesen.
+
+    ``_get_user_in_tenant`` liest ungesperrt — bei einem gleichzeitigen,
+    noch nicht committeten Umschalten also den ALTEN Stand. Auf diesem Stand
+    entschieden Deaktivieren/Reaktivieren bisher, ob eine Protokollzeile
+    entsteht: zwei parallele Deaktivierungen schrieben zwei Zeilen; trafen
+    Reaktivierung und Deaktivierung aufeinander, fehlte die Zeile der zweiten —
+    und weil das ORM einen „unveraenderten" Wert nicht schreibt, blieb das Konto
+    sogar im Zustand der ersten stehen, obwohl die zweite erfolgreich meldete.
+
+    Die Sperre wartet auf die Gegenseite; ``refresh`` holt danach deren Stand.
+    Reihenfolge: NACH ``_is_last_active_admin`` (das ggf. alle aktiven
+    Admin-Zeilen sortiert sperrt) — erst die Admin-Menge, dann die Zielzeile,
+    sonst verklemmen sich zwei gleichzeitige Admin-Deaktivierungen ueber Kreuz.
+    """
+    lock_user_row(db, current_user.tenant_id, user.id)
+    db.refresh(user)
 
 
 def _log_account_event(db: Session, current_user: User, event: str, subject: User,
@@ -1253,10 +1275,32 @@ def update_user(
             )
 
     # VULN-010: invalidate existing JWTs when role is changed
-    role_changed = 'role' in update_data and update_data['role'] != user.role
+    role_changed = False
     old_role = user.role
-    if role_changed and old_role == UserRole.ADMIN and _is_last_active_admin(db, user):
-        raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
+    if 'role' in update_data:
+        # #491 API-2 (Nachzug): ``user.role`` stammt aus dem UNGESPERRTEN Lesen
+        # von ``_get_user_in_tenant``. Stellte eine parallele, noch nicht
+        # committete Anfrage die Rolle gerade um, hielt diese Anfrage ihren
+        # Wechsel fuer wirkungslos — keine Protokollzeile, kein
+        # token_version-Bump, und das ORM schrieb die „unveraenderte" Rolle
+        # nicht: das Konto blieb im Zustand der anderen Anfrage, obwohl diese
+        # hier 200 meldete. Deshalb IMMER (nicht nur, wenn die veraltete Rolle
+        # ADMIN ist — die veraltete Rolle ist genau das Problem) Admin-Menge
+        # UND Zielzeile sperren, erst danach lesen. Beides in EINER nach ID
+        # sortierten Anweisung: zwei Anweisungen (erst Admin-Menge, dann Ziel)
+        # verklemmten sich mit der sortierten Mehrzeilen-Sperre der
+        # Betriebsferien-Buchung, sobald die Ziel-ID vor einer Admin-ID liegt
+        # (test_concurrency.py). Die Letzter-Admin-Pruefung laeuft gegen die
+        # dabei gesperrte ID-Liste — kein zweites Sperren danach.
+        admin_ids = lock_active_admins_and_user(db, current_user.tenant_id, user.id)
+        db.refresh(user)
+        old_role = user.role
+        role_changed = update_data['role'] != old_role
+        # Konservativ: auch eine leere Liste (kein anderer aktiver Admin
+        # gesperrt) blockiert die Herabstufung eines aktiven Admins.
+        if (role_changed and old_role == UserRole.ADMIN and user.is_active
+                and not any(aid != user.id for aid in admin_ids)):
+            raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
     # #290: did this update turn closure participation ON? Then enrol below.
     closures_enabled = (
         update_data.get('receives_company_closures') is True
@@ -1318,6 +1362,7 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     if _is_last_active_admin(db, user):
         raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
 
+    _lock_and_reload(db, current_user, user)  # #491 API-2
     was_active = user.is_active
     user.is_active = False
     user.deactivated_at = datetime.now(timezone.utc)
@@ -1342,6 +1387,7 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     if tenant is not None:
         check_seat_limit(db, tenant)
 
+    _lock_and_reload(db, current_user, user)  # #491 API-2
     was_inactive = not user.is_active
     user.is_active = True
     user.deactivated_at = None

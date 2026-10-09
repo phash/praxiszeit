@@ -101,6 +101,24 @@ class TestLetzterAdmin:
         db.refresh(other)
         assert other.role == UserRole.EMPLOYEE
 
+    def test_herabstufen_ohne_anderen_gesperrten_admin_bleibt_gesperrt(
+        self, db, test_admin, client_as, monkeypatch,
+    ):
+        """#491 API-2 (Nachzug): die Letzter-Admin-Pruefung beim Rollenwechsel
+        laeuft gegen die VOR der Zeilensperre gesperrte ID-Liste. Unter
+        Parallelitaet kann darin das Zielkonto selbst fehlen (frisch befoerdert,
+        im Schnappschuss der Sperrabfrage noch Mitarbeiter). Eine Liste ohne
+        ANDEREN aktiven Admin muss trotzdem sperren — nicht nur ``[ziel]``."""
+        from app.routers import admin_users as admin_users_router
+
+        other = _make_user(db, "zweitadmin", role=UserRole.ADMIN)
+        monkeypatch.setattr(admin_users_router, "lock_active_admins_and_user",
+                            lambda db, tid, uid: [])
+        r = client_as(other).put(f"/api/admin/users/{test_admin.id}", json={"role": "employee"})
+        assert r.status_code == 400, r.text
+        db.refresh(test_admin)
+        assert test_admin.role == UserRole.ADMIN
+
     def test_mitarbeitende_bleiben_deaktivierbar(self, db, test_admin, test_user, client_as):
         r = client_as(test_admin).delete(f"/api/admin/users/{test_user.id}")
         assert r.status_code == 204
