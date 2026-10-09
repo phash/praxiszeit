@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Boolean, Numeric, Integer, BigInteger, Enum, DateTime, Date, Text, Time, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Boolean, Numeric, Integer, BigInteger, Enum, DateTime, Date, Text, Time, ForeignKey, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -41,6 +41,12 @@ class User(Base):
     hours_wednesday = Column(Numeric(4, 2), nullable=True)
     hours_thursday = Column(Numeric(4, 2), nullable=True)
     hours_friday = Column(Numeric(4, 2), nullable=True)
+    # Spec 2026-10-08 (E9): Arbeitszeit-Blöcke als Rückfall NUR für Tage vor der
+    # ersten Verlaufszeile (wie weekly_hours seit #415) und Spiegel der jüngsten
+    # Zeile ≤ heute. Gelesen wird sie AUSSCHLIESSLICH vom Resolver
+    # (calculation_service.get_schedule_for_date) — Guard-Test
+    # test_no_live_work_blocks_read.py. JSON-Form: Spec 3.1.
+    work_blocks = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
     # #201: optionales Soll-Arbeitszeit-Fenster je Wochentag (Mo–Fr). NULL =
     # kein Fenster an dem Tag → keine Kappung. Kappt nur das Ist, nicht das Soll.
     scheduled_start_monday = Column(Time, nullable=True)

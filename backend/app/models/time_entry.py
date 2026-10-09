@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Integer, Text, DateTime, Numeric, ForeignKey, UniqueConstraint, case
+from sqlalchemy import Boolean, Column, Date, Time, Integer, Text, DateTime, Numeric, ForeignKey, UniqueConstraint, case
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -23,6 +23,16 @@ class TimeEntry(Base):
     # Kappung die jeweilige Seite verändert hat (sonst NULL = nicht gekappt).
     raw_start_time = Column(Time, nullable=True)
     raw_end_time = Column(Time, nullable=True)
+    # Spec 2026-10-08: nicht angerechnete Minuten in der Lücke zwischen zwei
+    # Arbeitsblöcken (E11). NIE Eingabefeld, immer serverseitig aus clamp().
+    uncredited_minutes = Column(Integer, nullable=False, default=0, server_default="0")
+    # „Anerkennen" (E12, Endpunkt in PR2): Eintrag wird nie gekappt.
+    credit_override = Column(Boolean, nullable=False, default=False, server_default="false")
+    # P18: vom Auto-Close geschlossen — raw_end_time 23:59 ist dann kein Stempel.
+    auto_closed = Column(Boolean, nullable=False, default=False, server_default="false")
+    # E79: Puffer der letzten Kappung gegen Blöcke; NULL = nie gegen Blöcke
+    # gekappt bzw. Bestand vor 073 („unbekannt → aktueller Puffer").
+    clamp_grace_minutes = Column(Integer, nullable=True)
     note = Column(Text, nullable=True)
     sunday_exception_reason = Column(Text, nullable=True)  # §10 ArbZG: reason for Sunday/holiday work
     break_waiver_reason = Column(Text, nullable=True)  # #144 §4 ArbZG: reason a mandatory break was not possible

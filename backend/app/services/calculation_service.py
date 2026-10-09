@@ -7,7 +7,7 @@ from typing import Any, Dict, List, NamedTuple, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 from app.models import User, TimeEntry, Absence, AbsenceReason, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
-from app.services import special_days_service, settings_service
+from app.services import special_days_service, settings_service, work_blocks_service
 
 
 class Schedule(NamedTuple):
@@ -17,12 +17,17 @@ class Schedule(NamedTuple):
     ``effective_from <= target_date``; gibt es keine, aus den aktuellen
     User-Feldern (der Rueckfallwert fuer die Zeit vor der ersten erfassten
     Aenderung — dieselbe Semantik wie ``user.weekly_hours`` seit #415).
+
+    Spec 2026-10-08 (P6): ``blocks``/``block_pauses`` OHNE Vorgabewert — eine
+    uebersehene Konstruktor-Stelle soll laut scheitern.
     """
 
     weekly_hours: Decimal
     use_daily_schedule: bool
     day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[Decimal]
     work_days_per_week: int
+    blocks: Optional[tuple]        # 5 × tuple[(start_min, end_min), …] oder None
+    block_pauses: Optional[tuple]  # 5 × Optional[int]; None-Einträge = Altzeile
 
 
 def _latest_change(
@@ -53,6 +58,19 @@ def _dec_or_none(value) -> Optional[Decimal]:
     return None if value is None else Decimal(str(value))
 
 
+def _parsed_blocks(holder, raw) -> Optional[work_blocks_service.ParsedWeek]:
+    """Parse-Cache am ORM-Objekt (Spec 3.6): der Preload-Pfad (#449) löst
+    hunderte Tage gegen dieselbe Zeile auf. Geprüft wird die IDENTITÄT des
+    JSON-Werts — eine Neuzuweisung (einziger erlaubter Änderungsweg) macht den
+    Cache ungültig."""
+    cache = getattr(holder, "_parsed_blocks", None)
+    if cache is not None and cache[0] is raw:
+        return cache[1]
+    parsed = work_blocks_service.parse_week_blocks(raw)
+    holder._parsed_blocks = (raw, parsed)
+    return parsed
+
+
 def get_schedule_for_date(
     db: Session,
     user: User,
@@ -69,6 +87,8 @@ def get_schedule_for_date(
     """
     change = _latest_change(db, user, target_date, wh_changes)
     if change is not None:
+        # E8: NULL in der Verlaufszeile = keine Blöcke, KEIN Rückfall.
+        parsed = _parsed_blocks(change, change.blocks)
         return Schedule(
             weekly_hours=Decimal(str(change.weekly_hours)),
             use_daily_schedule=bool(change.use_daily_schedule),
@@ -84,10 +104,13 @@ def get_schedule_for_date(
                 if change.work_days_per_week is not None
                 else user.work_days_per_week
             ),
+            blocks=parsed.blocks if parsed else None,
+            block_pauses=parsed.pauses if parsed else None,
         )
     # Kein Eintrag → aktuelle User-Felder. Dies ist die EINZIGE Stelle im Code,
-    # die user.weekly_hours / user.hours_* / user.work_days_per_week direkt
-    # lesen darf.
+    # die user.weekly_hours / user.hours_* / user.work_days_per_week /
+    # user.work_blocks direkt lesen darf.
+    parsed = _parsed_blocks(user, getattr(user, "work_blocks", None))
     return Schedule(
         weekly_hours=Decimal(str(user.weekly_hours)),
         use_daily_schedule=bool(getattr(user, 'use_daily_schedule', False)),
@@ -99,6 +122,8 @@ def get_schedule_for_date(
             _dec_or_none(user.hours_friday),
         ),
         work_days_per_week=int(user.work_days_per_week),
+        blocks=parsed.blocks if parsed else None,
+        block_pauses=parsed.pauses if parsed else None,
     )
 
 
@@ -134,6 +159,18 @@ def get_weekly_hours_for_date(
     is now the single place that reads ``user.weekly_hours`` directly.
     """
     return get_schedule_for_date(db, user, target_date, wh_changes).weekly_hours
+
+
+def get_blocks_json_for_date(
+    db: Session,
+    user: User,
+    target_date: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Optional[list]:
+    """Spec 11.1 ``work_blocks_today``: die datumsaufgelösten Blöcke als
+    kanonische JSON-Woche (Strings, nie ``time``) oder None."""
+    schedule = get_schedule_for_date(db, user, target_date, wh_changes)
+    return work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses)
 
 
 class ScheduleSegment(NamedTuple):

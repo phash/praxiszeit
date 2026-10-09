@@ -1869,6 +1869,10 @@ def preview_working_hours_change(
                 None if v is None else Decimal(str(v)) for v in norm.day_hours
             ),
             work_days_per_week=norm.work_days_per_week,
+            # PR1: der Dialog kennt noch keine Blöcke — die neue Zeile übernimmt
+            # die des aktuell gültigen Snapshots (Task 12 verfeinert das nach P2).
+            blocks=current_schedule.blocks,
+            block_pauses=current_schedule.block_pauses,
         )
     except ValidationError as exc:
         input_error = _schedule_input_error(exc)

@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Numeric, Date, DateTime, ForeignKey, Boolean, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Numeric, Date, DateTime, ForeignKey, Boolean, Integer, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 import uuid
 from app.database import Base
@@ -39,6 +39,11 @@ class WorkingHoursChange(Base):
     # NULL = Rueckfall auf user.work_days_per_week (Bestandszeilen vor #431
     # tragen den Backfill-Wert, neue Zeilen setzen ihn immer).
     work_days_per_week = Column(Integer, nullable=True)
+    # Spec 2026-10-08 (E8): Blöcke ab effective_from. NULL heißt „keine Blöcke"
+    # — NIE Rückfall auf users.work_blocks (sonst schlüge jede Sync der
+    # User-Zeile rückwirkend in alle Altzeilen durch, #431-Fehlerklasse).
+    # Änderung nur per Neuzuweisung des ganzen Werts (keine In-place-Mutation).
+    blocks = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
     note = Column(String(500), nullable=True)  # Optional note about the change
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

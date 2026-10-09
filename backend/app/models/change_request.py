@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Integer, String, Text, DateTime, Numeric, Enum, ForeignKey
+from sqlalchemy import Boolean, Column, Date, Time, Integer, String, Text, DateTime, Numeric, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -67,6 +67,10 @@ class ChangeRequest(Base):
     original_end_time = Column(Time, nullable=True)
     original_break_minutes = Column(Integer, nullable=True)
     original_note = Column(Text, nullable=True)
+    # P28: Vorher-Snapshot der nicht angerechneten Lückenminuten des Eintrags.
+    original_uncredited_minutes = Column(Integer, nullable=True)
+    # P21 (Antrag „Anrechnung beantragen", Logik in PR2).
+    request_credit_override = Column(Boolean, nullable=False, default=False, server_default="false")
 
     # Employee reason
     reason = Column(Text, nullable=False)
