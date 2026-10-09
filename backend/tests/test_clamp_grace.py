@@ -45,6 +45,27 @@ def _only(db):
     return entry
 
 
+def _stored_entry(db, user, d=MON, grace=None, start=time(7, 45), raw_start=time(7, 0), end=time(16, 0)):
+    """Gespeicherter Eintrag mit frei gesetztem Puffer — ``grace=None`` ist der
+    Bestand vor 073 (bzw. ein vor 073 eingestempelter, noch offener Eintrag)."""
+    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=d,
+                     start_time=start, raw_start_time=raw_start, end_time=end,
+                     break_minutes=30 if end else 0, clamp_grace_minutes=grace))
+    db.commit()
+
+
+def _approve_update_cr(db, client, user, entry, d, start, end, reason):
+    cr = ChangeRequest(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
+                       request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
+                       time_entry_id=entry.id, proposed_date=d, proposed_start_time=start,
+                       proposed_end_time=end, proposed_break_minutes=30, reason=reason)
+    db.add(cr)
+    db.commit()
+    resp = client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    return resp
+
+
 def test_new_entries_store_current_grace(_db_session, employee_user, admin_client):
     _window(_db_session, employee_user)
     _admin_create(admin_client, employee_user)
@@ -137,6 +158,34 @@ def test_employee_edit_keeps_stored_grace(_db_session, employee_user, employee_c
     assert (e.start_time, e.clamp_grace_minutes) == (time(7, 45), 15)
 
 
+def test_employee_edit_null_grace_uses_current_and_stores_it(_db_session, employee_user, employee_client, monkeypatch):
+    """Restfall (Spec 19 Nr. 2a) auf dem MA-Pfad: NULL → aktueller Puffer, danach gespeichert."""
+    _window(_db_session, employee_user)
+    _stored_entry(_db_session, employee_user, grace=None)
+    _grace(_db_session, 10)
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 17, 0))
+    e = _only(_db_session)
+    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"start_time": "07:10", "end_time": "16:00"})
+    assert resp.status_code == 200, resp.text
+    e = _only(_db_session)
+    assert (e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (time(7, 50), time(7, 10), 10)
+
+
+def test_employee_edit_on_day_without_blocks_keeps_stored_grace(_db_session, employee_user, employee_client, monkeypatch):
+    """Tag ohne Blöcke: clamp liefert keinen Puffer — der gespeicherte bleibt stehen."""
+    _window(_db_session, employee_user)
+    _stored_entry(_db_session, employee_user, d=SATURDAY, grace=15,
+                  start=time(7, 0), raw_start=None, end=time(12, 0))
+    monkeypatch.setattr(te, "_today_local", lambda: SATURDAY)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 6, 17, 0))
+    e = _only(_db_session)
+    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"start_time": "07:30", "end_time": "12:00"})
+    assert resp.status_code == 200, resp.text
+    e = _only(_db_session)
+    assert (e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (time(7, 30), None, 15)
+
+
 def test_admin_date_change_keeps_stored_grace_and_names_it(_db_session, employee_user, admin_client):
     _window(_db_session, employee_user)
     _admin_create(admin_client, employee_user)
@@ -166,6 +215,30 @@ def test_cr_update_keeps_stored_grace(_db_session, employee_user, admin_client):
     assert (e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (time(7, 45), time(7, 0), 15)
 
 
+def test_cr_update_null_grace_uses_current_and_stores_it(_db_session, employee_user, admin_client):
+    """Restfall (Spec 19 Nr. 2a) im CR-UPDATE: 07:45 kommt als gekappter Wert
+    zurück (unclamp → Rohwert 07:00) und wird mit dem aktuellen Puffer 10 gekappt."""
+    _window(_db_session, employee_user)
+    _stored_entry(_db_session, employee_user, grace=None)
+    _grace(_db_session, 10)
+    e = _only(_db_session)
+    _approve_update_cr(_db_session, admin_client, employee_user, e, MON, time(7, 45), time(16, 0), "Notiz")
+    e = _only(_db_session)
+    assert (e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (time(7, 50), time(7, 0), 10)
+
+
+def test_cr_update_to_day_without_blocks_keeps_stored_grace(_db_session, employee_user, admin_client):
+    """CR-Datumswechsel auf Samstag: keine Blöcke, also kein Puffer aus clamp —
+    der gespeicherte Puffer 15 bleibt stehen (wie im Admin-Pfad)."""
+    _window(_db_session, employee_user)
+    _admin_create(admin_client, employee_user)
+    _grace(_db_session, 0)
+    e = _only(_db_session)
+    _approve_update_cr(_db_session, admin_client, employee_user, e, SATURDAY, time(7, 0), time(16, 0), "Samstag")
+    e = _only(_db_session)
+    assert (e.date, e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (SATURDAY, time(7, 0), None, 15)
+
+
 def test_clock_out_uses_grace_of_open_entry(_db_session, employee_user, employee_client, monkeypatch):
     _window(_db_session, employee_user)
     monkeypatch.setattr(te, "_today_local", lambda: MON)
@@ -175,8 +248,24 @@ def test_clock_out_uses_grace_of_open_entry(_db_session, employee_user, employee
     monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 17, 30))
     resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 30})
     assert resp.status_code == 200, resp.text
+    # Spec 17: der Warntext nennt den angewandten Puffer, nicht den aktuellen.
+    assert any("Puffer 15 Minuten" in w for w in resp.json()["warnings"])
     e = _only(_db_session)
     assert (e.end_time, e.raw_end_time, e.clamp_grace_minutes) == (time(17, 15), time(17, 30), 15)
+
+
+def test_clock_out_null_grace_uses_current_and_stores_it(_db_session, employee_user, employee_client, monkeypatch):
+    """Upgrade-Fall: vor 073 eingestempelt (Puffer NULL), danach ausgestempelt —
+    das Ende wird mit dem aktuellen Puffer gekappt und dieser gespeichert."""
+    _window(_db_session, employee_user)
+    _stored_entry(_db_session, employee_user, grace=None, end=None)
+    _grace(_db_session, 10)
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 17, 30))
+    resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 30})
+    assert resp.status_code == 200, resp.text
+    e = _only(_db_session)
+    assert (e.end_time, e.raw_end_time, e.clamp_grace_minutes) == (time(17, 10), time(17, 30), 10)
 
 
 def test_null_grace_uses_current_and_stores_it(_db_session, employee_user, admin_client):
