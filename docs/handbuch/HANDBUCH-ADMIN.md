@@ -329,7 +329,14 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 - **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
 - **Format:** Excel (.xlsx), ODS (.ods) oder PDF (.pdf)
-- **Details pro Mitarbeiter:** Datum, Wochentag, Start, Ende, Pause, Ist-Stunden, Soll-Stunden, Abwesenheitstyp, Monatssaldo
+- **Spalten je Tag:** Datum, Wochentag, Von, Bis, Pause (Min), Netto (Std), Soll (Std), Differenz, Abwesenheit, Bemerkung – in Excel und ODS zusätzlich **Unterbrechung (Min)** und **Arbeitsblöcke** (hinten angehängt; alle übrigen Spalten stehen unverändert an ihrem Platz, damit bestehende Auswertungen weiter funktionieren)
+- **Zusammenfassung pro Mitarbeiter:** Soll-/Ist-Stunden, Saldo Monat, Überstunden kumuliert, Urlaub, Nachtarbeitstage
+
+**So lesen Sie eine Tageszeile:**
+
+- **Netto (Std)** ist die **angerechnete Arbeitszeit** der Zeiteinträge des Tages. Ist für die Person ein [Soll-Arbeitszeit-Fenster](#soll-arbeitszeiten-soll-arbeitszeit-fenster-201) hinterlegt, ist das die auf das Fenster gekappte Zeit – auch „Von"/„Bis" zeigen dann die gekappten Zeiten; der ursprüngliche Stempel bleibt in PraxisZeit gespeichert (Monatsjournal, Admin-Dashboard), steht aber nicht in der Datei. An einem Krank- oder Fortbildungstag ohne Zeiteintrag steht hier 0, außerhalb des Beschäftigungszeitraums ebenfalls (die Stempel bleiben dort sichtbar).
+- **Differenz** ist der Saldo des Tages: Netto **plus Gutschrift für Krankheit/Fortbildung** minus Soll. Ein Krank- oder Fortbildungstag ist damit **±0** – das Soll bleibt stehen, die Stunden aus der Spalte „Abwesenheit" werden gutgeschrieben. Die Summe der Spalte entspricht dem „Saldo Monat" der Zusammenfassung. **Ausnahme:** Mitarbeitende mit fester Monatsarbeitszeit (Minijob-Modus, → [Abschnitt 13](#13-einstellungen)) – dort ist das Monats-Soll fest und nicht die Summe der Tage; verbindlich ist dann nur die Zusammenfassung.
+- **Geteilte Dienste** (mehrere Zeiteinträge an einem Tag, z. B. 07:45–12:00 und 14:15–17:00): In Excel/ODS zeigen „Von"/„Bis" den Rahmen des Tages (erster Beginn, letztes Ende), **Unterbrechung (Min)** die Zeit zwischen den Blöcken und **Arbeitsblöcke** die einzelnen Blöcke („07:45–12:00, 14:15–17:00"). Damit geht die Zeile auf: Bis − Von − Pause − Unterbrechung = Netto. **Ausnahmen:** Überschneiden sich zwei Einträge, zählt Netto die Überschneidung doppelt – die Spalte „Arbeitsblöcke" zeigt sie; läuft ein Eintrag des Tages noch (nicht ausgestempelt), fehlt seine Zeit in Netto und in „Bis"; außerhalb des Beschäftigungszeitraums ist Netto 0. Im **PDF** stehen die Blöcke in „Von"/„Bis" untereinander, die Unterbrechung in einer eigenen Spalte direkt neben der Pause.
 
 **Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
 
@@ -344,7 +351,7 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 ### Jahresreport Detailliert
 
 - **Format:** Excel (.xlsx) oder ODS (.ods)
-- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter
+- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter – mit denselben Tagesspalten wie der Monatsreport (inkl. Unterbrechung und Arbeitsblöcke; die Differenz enthält die Gutschrift für Krankheit/Fortbildung)
 - **Hinweis:** Generierungszeit 3–5 Sekunden
 
 **Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung

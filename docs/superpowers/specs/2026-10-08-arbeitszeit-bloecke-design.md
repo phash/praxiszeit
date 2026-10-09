@@ -2197,6 +2197,36 @@ die gesamte nicht angerechnete Anwesenheit sichtbar (K7: 240, nicht 150):
 `absence_day_target(..., worked_hours=net)` (`export_service` 666/1938, ODS-Gegenstücke)
 folgt dem Hybrid und bleibt unverändert. Rohstempel in Dateien: Folgeticket.
 
+**Abgleich mit #497/#498 (Stand 2026-10-08, vor diesem Feature umgesetzt).** Die
+Zeilennummern der Tabelle oben beziehen sich auf 1.19.3 und haben sich verschoben. Außerdem:
+
+- **Spaltenposition:** #498 hat in XLSX (Monat, Jahres-Mitarbeiterblatt) und ODS (beide)
+  bereits die Spalten 11 „Unterbrechung (Min)" und 12 „Arbeitsblöcke" angehängt. „Nicht
+  angerechnet (Min)" wird damit **Spalte 13** (weiter die letzte). Im **PDF** hat #498
+  „Unterbr. (Min)" als **Spalte 6** direkt neben die Pause gesetzt (11 Spalten); „Nicht
+  angerechnet" wird dort die **12. und letzte** Spalte, die 267 mm sind erneut zu verteilen.
+- **Der Kommentar „Netto = Stempelzeit"** (Summenblock im XLSX-Monatsblatt und die neuen
+  #497-Kommentare in den Tagesschleifen) ist bereits auf „angerechnete Zeit der
+  Zeiteinträge ohne Gutschrift, bei Fenster gekappt" korrigiert; mit diesem Feature um
+  „nicht angerechnete Zeit steht in der letzten Spalte" ergänzen.
+- **Zeilenregel:** #498 dokumentiert im Handbuch `Bis − Von − Pause − Unterbrechung = Netto`.
+  Mit E13 (`net_hours` = Ende − Beginn − Pause − `uncredited_minutes`) wird daraus
+  `Bis − Von − Pause − Unterbrechung − Σ uncredited_minutes = Netto`. **Nicht** „− Nicht
+  angerechnet": die Spalte trägt `not_credited_minutes` = Lücke **plus** Hüllenminuten (P19),
+  und die Hülle liegt außerhalb der gekappten Von/Bis, die die Datei zeigt. K7: Bis − Von =
+  18:15 − 07:45 = 10:30 h; − 150 Min = 8:00 h = Netto, − 240 Min = 6:30 h ≠ Netto. Offen
+  (Entscheidung vor der Umsetzung): den Lückenanteil in der Datei sichtbar machen (eigene
+  Spalte oder Zusatz „davon … zwischen den Blöcken" wie im `RawStampNote`, E64) oder die
+  Zeilenregel im Handbuch auf „ohne gekappte Anwesenheit" einschränken. Gerechnet wird der
+  Lückenanteil je Tag in `export_service.day_work_blocks` (liefert heute Blöcke +
+  Unterbrechung), damit die Zeilenregel an **einer** Stelle lebt.
+- **Begriffe:** Die #498-Spalte „Arbeitsblöcke" listet die **Zeiteinträge** des Tages
+  („07:42–12:02, 14:15–16:30"), die #498-„Unterbrechung" ist Zeit **ohne** Eintrag. In diesem
+  Feature heißen „Arbeitsblöcke" die **Vertrags**-Blöcke (Modus „Nach Arbeitsblöcken",
+  „zwischen den Arbeitsblöcken nicht angerechnet"), und die „Lücke" ist gestempelte Zeit
+  **zwischen** Vertrags-Blöcken. In derselben Datei nebeneinander missverständlich — vor dem
+  Release eine der beiden Bezeichnungen ändern (z. B. die #498-Spalte „Zeiteinträge").
+
 ### 15.2 Berichtstext der Vertragsänderungen (#415)
 
 `calculation_service.ScheduleSegment`/`weekly_hours_segments` (`:139-238`) führen Blöcke
@@ -2657,6 +2687,11 @@ alles zusammen über `bash scripts/local-ci.sh`.
 - `test_export_uncredited_column.py`: Spalte ist die **letzte** in XLSX-Monat,
   XLSX-Jahres-Mitarbeiterblatt, ODS (beide), PDF; Wert = Σ `not_credited_minutes` (K7 →
   240, K15 → 150); Summen; bestehende Spaltenpositionen unverändert.
+  Konkret nach #498 (15.1): Spalte **13** in XLSX/ODS (Köpfe 1–12 unverändert, siehe
+  `test_497_498_export_day_rows.py::TestIssue498Xlsx::test_columns_are_appended_not_inserted`
+  und `TestIssue498Ods`), **12. und letzte** Spalte im PDF (Spalte 6 bleibt „Unterbr. (Min)");
+  Zeilenregel für K7 mit Σ `uncredited_minutes` (150), nicht mit der Spalte (240); und
+  Σ „Differenz" = „Saldo Monat" bleibt grün (`TestIssue497*`).
 - `test_format_blocks_history.py`: Texte aus 15.2; ohne `blocks_changed` byte-identisch zu
   1.19.3 (eingefrorene Fixtures aus `test_415_*`).
 - `test_dsgvo_work_blocks.py`: `_user_dict`, `/me/export`, Superadmin-Export →
