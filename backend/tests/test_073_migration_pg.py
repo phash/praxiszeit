@@ -220,6 +220,10 @@ def test_073_upgrade_downgrade_round_trip(scratch):
     assert "Sekunden abgeschnitten: Mo 07:30:45 → 07:30" in out
     assert "nicht übernommen: Mo 17:00–08:00" in out
     assert "nicht übernommen: Mi 17:00–08:00" in out
+    # Spec 17.1: "nurinvers" (nur invertierte Fenster) zählt nicht als erwartetes
+    # Konto. Der einzige Lauf, in dem die Zählprobe überhaupt rechnet — die
+    # SQLite-Tests prüfen nur die Helfer und rufen ``upgrade()`` nie auf.
+    assert "Abweichung" not in out
 
     with engine.connect() as conn:
         assert _blocks(conn, "zwei") == [_one("07:30", "16:30")] * 4 + [_one("07:30", "23:59")]
