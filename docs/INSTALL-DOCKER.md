@@ -89,7 +89,7 @@ PostgreSQL-18-Patchstand — `up` allein nimmt das bereits vorhandene Image;
 |----------|-----------|
 | `CORS_ORIGINS` | Erlaubte Origins (eigene Domain statt `localhost`) |
 | `ADMIN_USERNAME` / `ADMIN_EMAIL` | Initialer Admin |
-| `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint u.a. in Excel-Exporten (DSGVO) |
+| `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint u.a. in Excel-Exporten (DSGVO); `PRACTICE_NAME` auch in der Kopfzeile des Schichtplan-Aushangs (PDF) |
 | `HOLIDAY_STATE` | Bundesland für Feiertage (z.B. `Bayern`) |
 
 Das initiale Admin-Passwort **nach dem ersten Login** in der Benutzerverwaltung

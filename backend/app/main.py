@@ -182,9 +182,17 @@ async def lifespan(app: FastAPI):
             default_tenant = db.query(Tenant).filter(Tenant.slug == "default").first()
             if not default_tenant:
                 print("🏢 Creating default tenant...")
+                # #495: der Name ist ein Platzhalter (wie in Migration 027) —
+                # Ausdrucke zeigen on-prem stattdessen PRACTICE_NAME aus der
+                # Konfiguration (practice_name_service.practice_display_name).
+                # Bewusst NICHT PRACTICE_NAME hier hineinkopieren: das fröre
+                # den Wert des ersten Starts ein (Docker startet oft mit dem
+                # Vorgabewert „Praxis"), eine spätere Korrektur in der
+                # Konfiguration käme nie mehr an.
+                from app.services import practice_name_service
                 default_tenant = Tenant(
                     id=_uuid.UUID("00000000-0000-0000-0000-000000000001"),
-                    name="Default",
+                    name=practice_name_service.DEFAULT_TENANT_NAME,
                     slug="default",
                     is_active=True,
                     mode="single",

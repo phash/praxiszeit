@@ -483,7 +483,7 @@ retention_days = 730                  # § 16 ArbZG: min. 2 Jahre!
 | `COOKIE_SECURE` | — | true | `false` für HTTP-only Erststart |
 | `CORS_ORIGINS` | — | `http://localhost,http://localhost:5173` | Komma-Liste erlaubter Origins |
 | `LOGIN_RATE_LIMIT` / `REFRESH_RATE_LIMIT` | — | `5/minute` / `10/minute` | Rate-Limits |
-| `PRACTICE_NAME` / `PRACTICE_ADDRESS` / `HOLIDAY_STATE` | — | „Praxis" / leer / Bayern | Excel-Export-Header + Feiertage |
+| `PRACTICE_NAME` / `PRACTICE_ADDRESS` / `HOLIDAY_STATE` | — | „Praxis" / leer / Bayern | Excel-Export-Header, Kopfzeile des Schichtplan-Aushangs (nur der Name) + Feiertage |
 | `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_FIRST_NAME` / `ADMIN_LAST_NAME` | ✅ (Email + Pwd) | admin / — / — / Admin / Praxis | Initial-Admin (nur Erststart) |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ | — | Pflicht-Variable (sonst startet Stack nicht) |
 
@@ -685,7 +685,7 @@ DB-Migrationen laufen automatisch beim Backend-Start (über den Superuser via `D
 1. `https://<server-ip>` (bzw. `http://...` ohne SSL) im Browser öffnen
 2. Login mit Admin-Daten aus Installer / `.env`
 3. **Pflicht:** Admin-Passwort sofort unter `Profil → Passwort ändern` neu setzen
-4. Praxis-Daten vervollständigen: `Einstellungen → Praxis`
+4. Praxis-Daten prüfen: Name und Anschrift stehen nicht in der Oberfläche, sondern in der Konfiguration – nativ `[practice] name`/`address` in `config/praxiszeit.conf` (Abschnitt 7.1), Docker `PRACTICE_NAME`/`PRACTICE_ADDRESS` in `.env` (Abschnitt 7.2); der Name erscheint u. a. in der Kopfzeile des Schichtplan-Aushangs. Änderungen gelten nach einem Neustart des Dienstes (Docker: `docker compose up -d`). Das Bundesland lässt sich zusätzlich unter `Einstellungen` (Karte „Feiertage") umstellen.
 5. Erste Mitarbeitenden anlegen: `Mitarbeiter → Neu`
 6. Wöchentliche Soll-Stunden, Urlaubsanspruch und Vertragsbeginn pro Person eintragen
 7. Test-Stempelung über `Stempeluhr` → kontrollieren, dass Eintrag in „Heute" erscheint

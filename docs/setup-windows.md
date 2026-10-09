@@ -329,13 +329,18 @@ Login:
 
 ## 8. Praxis-Stammdaten ergänzen
 
-Im Menü **Einstellungen → Praxis** vervollständigen:
+**Praxis-Name und Anschrift** stehen nicht in der Oberfläche, sondern im Abschnitt `[practice]` der Datei `C:\PraxisZeit\config\praxiszeit.conf` (siehe [Schritt 5](#5-praxiszeitconf-anpassen)):
 
-- Vollständiger Praxis-Name (taucht in Excel-Exporten auf)
-- Adresse, ggf. weitere Standorte
-- **Bundesland** (steuert die gesetzlichen Feiertage)
-- Optional: Betriebsferien einplanen (**Einstellungen → Betriebsferien**)
-- Optional: Lizenzschlüssel laden (**Einstellungen → Lizenz**)
+- `name` – Praxis-Name (Excel-Exporte, Kopfzeile des Schichtplan-Aushangs)
+- `address` – Anschrift (Kopf der Excel-Exporte)
+
+Nach einer Änderung den Dienst neu starten (`net stop PraxisZeit`, dann `net start PraxisZeit`).
+
+In der Oberfläche vervollständigen:
+
+- **Bundesland** (**Einstellungen**, Karte „Feiertage" – steuert die gesetzlichen Feiertage)
+- Optional: Betriebsferien einplanen (**Abwesenheiten → Tab „Betriebsferien"**)
+- Eine Lizenz ist in der Beta nicht nötig (siehe Hinweis am Anfang).
 
 ---
 
