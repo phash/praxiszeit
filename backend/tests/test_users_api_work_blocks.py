@@ -202,3 +202,16 @@ def test_attach_ignores_history_rows_of_foreign_tenant(employee_user, _db_sessio
     _db_session.commit()
     calculation_service.attach_work_blocks_today(_db_session, [employee_user], today_local())
     assert employee_user.work_blocks_today == ODD
+
+
+def test_put_response_carries_work_blocks_today(admin_client, employee_user, _db_session):
+    """Spec 11.1 (Plan „Produces"): auch die Bearbeiten-Antwort trägt
+    ``work_blocks_today`` datumsaufgelöst — das UserForm übernimmt sie nach dem
+    Speichern. Ohne den Preload in ``update_user`` käme still ``null``."""
+    employee_user.work_blocks = ODD
+    _db_session.add(_history_row(employee_user, days_from_today=-3, blocks=LATER))
+    _db_session.commit()
+    resp = admin_client.put(f"/api/admin/users/{employee_user.id}", json={"first_name": "Neu"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["work_blocks"] == ODD
+    assert resp.json()["work_blocks_today"] == LATER
