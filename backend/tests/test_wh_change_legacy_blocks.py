@@ -95,6 +95,22 @@ def test_new_blocks_end_with_a_change_without_blocks(_db_session, employee_user,
     assert [r.blocks for r in _rows(_db_session, employee_user)] == [K_BLOCKS, None]
 
 
+def test_blocks_only_change_freezes_new_blocks_in_baseline(_db_session, employee_user, admin_client):
+    """E8/P24 ohne Verlauf: gleiche Wochenstunden (40 → 40), nur die neuen
+    Blöcke enden mit der Änderung. Allein der Blockvergleich an der
+    Aufrufstelle löst die Basis-Zeile aus — ohne sie fiele die Vergangenheit
+    auf den Spiegel zurück, der danach None ist, und verlöre ihre Blöcke still.
+    (Im Betrieb erst ab PR3 erreichbar; neue Blöcke gibt es vorher nicht.)"""
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    resp = _post(admin_client, employee_user, EFFECTIVE, 40)
+    assert resp.status_code == 201, resp.text
+    assert [(r.effective_from, r.blocks) for r in _rows(_db_session, employee_user)] == [
+        (date(2026, 5, 31), K_BLOCKS), (EFFECTIVE, None)]
+    _db_session.refresh(employee_user)
+    assert employee_user.work_blocks is None
+
+
 def test_delete_resyncs_the_user_mirror(_db_session, employee_user, admin_client):
     _row(_db_session, employee_user, date(2026, 1, 1), LEGACY)
     later = _row(_db_session, employee_user, date(2026, 6, 1), LEGACY_LATER, weekly_hours=30)
