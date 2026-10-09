@@ -4,6 +4,8 @@ import datetime as dt
 from datetime import date, time
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 import app.routers.admin_change_requests as acr
 import app.routers.admin_time_entries as ate
@@ -47,7 +49,30 @@ def calls(monkeypatch):
         return real_close(*a, **kw)
 
     monkeypatch.setattr(te, "_close_stale_entry", spy_close)
-    return log
+
+    # Zweite Hälfte von P5 (Spec 7.1: „erst danach werden Eintragszeilen mit
+    # ``with_for_update`` geladen"): jede ORM-Abfrage mit FOR UPDATE auf
+    # ``time_entries`` landet ebenfalls im Protokoll. Ohne diesen Eintrag
+    # bliebe eine Ankersperre HINTER der Zeilensperre unentdeckt — genau die
+    # Reihenfolge, die gegen Betriebsferien und Neukappung 40P01 auslöst.
+    # SQLite übersetzt FOR UPDATE nicht, das Statement trägt es trotzdem.
+    def on_execute(state):
+        if (state.is_select
+                and getattr(state.statement, "_for_update_arg", None) is not None
+                and any(m.class_ is TimeEntry for m in state.all_mappers)):
+            log.append(("row_lock",))
+
+    event.listen(Session, "do_orm_execute", on_execute)
+    yield log
+    event.remove(Session, "do_orm_execute", on_execute)
+
+
+def assert_row_lock_seen(log):
+    """Der Listener auf ``do_orm_execute`` hängt am privaten Attribut
+    ``_for_update_arg``. Fiele er nach einem SQLAlchemy-Update stumm aus,
+    bestünde jeder Reihenfolge-Test wieder kampflos — deshalb in den Pfaden,
+    die eine Eintragszeile sperren, ausdrücklich prüfen, dass er anschlägt."""
+    assert ("row_lock",) in log, f"keine Zeilensperre auf time_entries protokolliert: {log}"
 
 
 def assert_lock_first(log, owner_id):
@@ -80,6 +105,7 @@ def test_clock_in(_db_session, employee_user, employee_client, calls, monkeypatc
     _clock(monkeypatch, MON, 8)
     assert employee_client.post("/api/time-entries/clock-in", json={}).status_code == 201
     assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
 
 
 def test_clock_out(_db_session, employee_user, employee_client, calls, monkeypatch):
@@ -88,6 +114,7 @@ def test_clock_out(_db_session, employee_user, employee_client, calls, monkeypat
     _clock(monkeypatch, MON, 12)
     assert employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0}).status_code == 200
     assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
 
 
 def test_clock_status_stale_branch(_db_session, employee_user, employee_client, calls, monkeypatch):
@@ -97,6 +124,7 @@ def test_clock_status_stale_branch(_db_session, employee_user, employee_client, 
     assert employee_client.get("/api/time-entries/clock-status").status_code == 200
     assert ("close",) in calls
     assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
 
 
 def test_create(_db_session, employee_user, employee_client, calls, monkeypatch):
@@ -114,6 +142,7 @@ def test_update(_db_session, employee_user, employee_client, calls, monkeypatch)
     _clock(monkeypatch, MON, 13)
     assert employee_client.put(f"/api/time-entries/{e.id}", json={"end_time": "12:00"}).status_code == 200
     assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
 
 
 def test_admin_create(_db_session, employee_user, admin_client, calls):
@@ -129,6 +158,7 @@ def test_admin_update(_db_session, employee_user, admin_client, calls):
     e = _entry(_db_session, employee_user, time(8), time(11))
     assert admin_client.put(f"/api/admin/time-entries/{e.id}", json={"end_time": "12:00"}).status_code == 200
     assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
 
 
 def test_cr_review(_db_session, employee_user, admin_client, calls):
