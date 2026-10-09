@@ -401,9 +401,11 @@ def review_change_request(
                 # here would wrongly reject an entry whose credited time is legal
                 # (e.g. a wide raw stamp the window clamps back under 10h).
                 _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-                _eff_start, _eff_end, _, _ = work_window_service.clamp(
+                _r_pre = work_window_service.clamp(
                     db, cr_user, cr.proposed_date, _in_start, _in_end, _grace,
+                    credit_override=bool(entry is not None and entry.credit_override),
                 )
+                _eff_start, _eff_end = _r_pre.eff_start, _r_pre.eff_end
 
                 daily_hours_revalidate = _calculate_daily_net_hours(
                     db=db,
@@ -505,14 +507,16 @@ def review_change_request(
                 User.tenant_id == cr.tenant_id,
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+            _r = work_window_service.clamp(
                 db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
+                credit_override=False,
             )
+            eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
             # 07:37 und speichert 07:45, ohne dass es jemand erfaehrt.
             _clamp_warn = work_window_service.clamp_warning(
-                raw_start, raw_end, eff_start, eff_end, _grace,
+                db, _cr_user_te, cr.proposed_date, _r, for_employee=False,
             )
             entry = TimeEntry(
                 user_id=cr.user_id,
@@ -553,14 +557,16 @@ def review_change_request(
                 User.tenant_id == cr.tenant_id,
             ).first()
             _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+            _r = work_window_service.clamp(
                 db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
+                credit_override=entry.credit_override,
             )
+            eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
             # 07:37 und speichert 07:45, ohne dass es jemand erfaehrt.
             _clamp_warn = work_window_service.clamp_warning(
-                raw_start, raw_end, eff_start, eff_end, _grace,
+                db, _cr_user_te, cr.proposed_date, _r, for_employee=False,
             )
             # #144 §4 ArbZG: mark the audit source as 'break_waiver' when this
             # CR carries a documented break-exception, mirroring the direct path.
@@ -1037,9 +1043,11 @@ def review_change_request(
             # (clamped) time too — consistent with the §3/§4 hard re-check above
             # and the create/update paths. The CR stores the RAW proposed times.
             _wgrace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            _w_start, _w_end, _, _ = work_window_service.clamp(
+            _rw = work_window_service.clamp(
                 db, cr_user, cr.proposed_date, _in_start, _in_end, _wgrace,
+                credit_override=bool(getattr(entry, "credit_override", False)),
             )
+            _w_start, _w_end = _rw.eff_start, _rw.eff_end
             daily_hours_cr = _calculate_daily_net_hours(
                 db=db,
                 user_id=cr.user_id,

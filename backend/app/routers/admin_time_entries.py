@@ -85,9 +85,11 @@ def admin_create_time_entry(
     # #201: Clamp start/end to the employee's soll window (grace from tenant setting).
     # The affected employee is `user`, NOT the admin (current_user).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-    eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+    _r = work_window_service.clamp(
         db, user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+        credit_override=False,
     )
+    eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
 
     # #375-Review: mirror the employee path's duplicate-start guard, BEFORE the
     # ArbZG aggregate checks. The admin per-day journal add is now available for
@@ -112,7 +114,7 @@ def admin_create_time_entry(
     # #462: Die Kappung darf nicht stumm passieren — genau der Fall, den der
     # Melder als "Rundung auf Viertelstunden" wahrgenommen hat.
     _clamp_warn = work_window_service.clamp_warning(
-        raw_start, raw_end, eff_start, eff_end, _grace,
+        db, user, entry_data.date, _r, for_employee=False,
     )
     if _clamp_warn:
         admin_create_warnings.append(_clamp_warn)
@@ -294,12 +296,12 @@ def admin_update_time_entry(
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-    if affected_user is not None:
-        eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-            db, affected_user, update_date, update_start_time, update_end_time, _grace,
-        )
-    else:
-        eff_start, eff_end, raw_start, raw_end = update_start_time, update_end_time, None, None
+    # clamp ist None-sicher: ohne betroffene Person wird nichts gekappt.
+    _r = work_window_service.clamp(
+        db, affected_user, update_date, update_start_time, update_end_time, _grace,
+        credit_override=entry.credit_override,
+    )
+    eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
 
     # #375-Review: mirror the create-path duplicate-start guard (exclude self) —
     # editing start_time/date onto an existing sibling entry would otherwise hit
@@ -338,7 +340,7 @@ def admin_update_time_entry(
       or update_end_time != (entry.raw_end_time or entry.end_time)
     if _times_written:
         _clamp_warn = work_window_service.clamp_warning(
-            raw_start, raw_end, eff_start, eff_end, _grace,
+            db, affected_user, update_date, _r, for_employee=False,
         )
         if _clamp_warn:
             admin_update_warnings.append(_clamp_warn)

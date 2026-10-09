@@ -1,6 +1,23 @@
+"""#201 → Spec 2026-10-08: Kappung gegen Altfenster (Einblock-Tage aus 073).
+
+Kappungsparität: dieselben Fälle wie bis 1.19.3, jetzt über ``work_blocks``
+(``legacy_week``) statt ``scheduled_*`` und mit ``ClampResult``."""
 from datetime import date, time
-from app.models import User, UserRole, TimeEntry
+
+import pytest
+
+from app.models import TimeEntry, User, UserRole
+from app.models.public_holiday import PublicHoliday
+from app.models.system_setting import SystemSetting
+from app.models.tenant import Tenant
 from app.services import work_window_service as wws
+from app.services.holiday_service import invalidate_holiday_cache
+from tests.conftest import DEFAULT_TENANT_ID
+from tests.work_blocks_fixtures import legacy_week
+
+MON = date(2026, 6, 1)
+EASTER_MONDAY = date(2026, 4, 6)
+DEC24 = date(2026, 12, 24)
 
 
 def _user(**kw):
@@ -12,107 +29,91 @@ def _user(**kw):
     defaults.update(kw)
     return User(**defaults)
 
-MON = date(2026, 6, 1)  # Montag
+
+def _c(db, user, d, start, end, grace=15):
+    return wws.clamp(db, user, d, start, end, grace, credit_override=False)
 
 
 def test_no_window_no_clamp(db):
-    u = _user()
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(db, u, MON, time(7, 0), time(17, 0), 15)
-    assert (eff_s, eff_e, raw_s, raw_e) == (time(7, 0), time(17, 0), None, None)
+    assert _c(db, _user(), MON, time(7, 0), time(17, 0)) == wws.ClampResult(
+        time(7, 0), time(17, 0), None, None, 0, None)
 
 
 def test_early_start_capped(db):
-    u = _user(scheduled_start_monday=time(8, 0))
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(db, u, MON, time(7, 0), time(16, 0), 15)
-    assert eff_s == time(7, 45)
-    assert raw_s == time(7, 0)
-    assert eff_e == time(16, 0) and raw_e is None
+    r = _c(db, _user(work_blocks=legacy_week(mon=("08:00", None))), MON, time(7, 0), time(16, 0))
+    assert (r.eff_start, r.raw_start, r.eff_end, r.raw_end) == (time(7, 45), time(7, 0), time(16, 0), None)
+    assert (r.uncredited_minutes, r.grace_minutes) == (0, 15)
 
 
 def test_within_grace_not_capped(db):
-    u = _user(scheduled_start_monday=time(8, 0))
-    eff_s, _, raw_s, _ = wws.clamp(db, u, MON, time(7, 50), time(16, 0), 15)
-    assert eff_s == time(7, 50) and raw_s is None
+    r = _c(db, _user(work_blocks=legacy_week(mon=("08:00", None))), MON, time(7, 50), time(16, 0))
+    assert r.eff_start == time(7, 50) and r.raw_start is None
 
 
 def test_late_end_capped(db):
-    u = _user(scheduled_end_monday=time(17, 0))
-    _, eff_e, _, raw_e = wws.clamp(db, u, MON, time(8, 0), time(18, 30), 15)
-    assert eff_e == time(17, 15) and raw_e == time(18, 30)
+    r = _c(db, _user(work_blocks=legacy_week(mon=(None, "17:00"))), MON, time(8, 0), time(18, 30))
+    assert r.eff_end == time(17, 15) and r.raw_end == time(18, 30)
 
 
 def test_track_hours_false_skips(db):
-    u = _user(track_hours=False, scheduled_start_monday=time(8, 0))
-    eff_s, _, raw_s, _ = wws.clamp(db, u, MON, time(6, 0), time(16, 0), 15)
-    assert eff_s == time(6, 0) and raw_s is None
+    r = _c(db, _user(track_hours=False, work_blocks=legacy_week(mon=("08:00", None))), MON, time(6, 0), time(16, 0))
+    assert r.eff_start == time(6, 0) and r.raw_start is None and r.grace_minutes is None
 
 
 def test_open_end_none_passthrough(db):
-    u = _user(scheduled_start_monday=time(8, 0), scheduled_end_monday=time(17, 0))
-    eff_s, eff_e, _, raw_e = wws.clamp(db, u, MON, time(6, 0), None, 15)
-    assert eff_e is None and raw_e is None
+    r = _c(db, _user(work_blocks=legacy_week(mon=("08:00", "17:00"))), MON, time(6, 0), None)
+    assert r.eff_end is None and r.raw_end is None
 
 
 def test_grace_shift_clamps_to_day_bounds(db):
-    u = _user(scheduled_end_monday=time(23, 50))
-    _, eff_e, _, _ = wws.clamp(db, u, MON, time(8, 0), time(23, 59), 15)
-    assert eff_e == time(23, 59)
+    r = _c(db, _user(work_blocks=legacy_week(mon=(None, "23:50"))), MON, time(8, 0), time(23, 59))
+    assert r.eff_end == time(23, 59)
 
 
 def test_entry_entirely_before_window_zero_credit(db):
     # Nachmittagsschicht-Fenster, Vormittags-Eintrag → komplett außerhalb.
     # #201-Spec §5: 0 angerechnete Stunden (eff_start == eff_end → net 0),
     # aber beide Rohstempel bleiben für den §16-Nachweis erhalten.
-    u = _user(scheduled_start_monday=time(14, 0), scheduled_end_monday=time(18, 0))
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(db, u, MON, time(8, 0), time(9, 0), 15)
-    assert eff_s == eff_e          # angerechnete Zeit kollabiert auf einen Punkt → net 0
-    assert raw_s == time(8, 0)     # Originalstart bewahrt
-    assert raw_e == time(9, 0)     # Originalende bewahrt
+    r = _c(db, _user(work_blocks=legacy_week(mon=("14:00", "18:00"))), MON, time(8, 0), time(9, 0))
+    assert r.eff_start == r.eff_end
+    assert (r.raw_start, r.raw_end) == (time(8, 0), time(9, 0))
 
 
 def test_entry_entirely_after_window_zero_credit(db):
-    u = _user(scheduled_start_monday=time(8, 0), scheduled_end_monday=time(10, 0))
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(db, u, MON, time(14, 0), time(15, 0), 15)
-    assert eff_s == eff_e
-    assert raw_s == time(14, 0)
-    assert raw_e == time(15, 0)
+    r = _c(db, _user(work_blocks=legacy_week(mon=("08:00", "10:00"))), MON, time(14, 0), time(15, 0))
+    assert r.eff_start == r.eff_end
+    assert (r.raw_start, r.raw_end) == (time(14, 0), time(15, 0))
 
 
 def test_entirely_outside_entry_has_zero_net_hours(db):
-    # Die kollabierte Effektivzeit erzeugt auf dem TimeEntry net_hours = 0.
-    u = _user(scheduled_start_monday=time(8, 0), scheduled_end_monday=time(10, 0))
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(db, u, MON, time(14, 0), time(15, 0), 15)
-    te = TimeEntry(
-        start_time=eff_s, end_time=eff_e, break_minutes=0,
-        raw_start_time=raw_s, raw_end_time=raw_e,
-    )
+    r = _c(db, _user(work_blocks=legacy_week(mon=("08:00", "10:00"))), MON, time(14, 0), time(15, 0))
+    te = TimeEntry(start_time=r.eff_start, end_time=r.eff_end, break_minutes=0,
+                   raw_start_time=r.raw_start, raw_end_time=r.raw_end)
     assert te.net_hours == 0
-    # §16: die tatsächlichen Stempel bleiben rekonstruierbar.
     assert te.raw_start_time == time(14, 0) and te.raw_end_time == time(15, 0)
 
 
-# ── #484: kein Fenster an soll-freien Werktagen ─────────────────────────────
-# Das Fenster beschreibt die Lage der Sollzeit. Am Wochenende gibt es keins; ein
+def test_half_open_placeholders_behave_like_072(db):
+    """Spec 5.3: Platzhalter 00:00/23:59 verhalten sich wie das fehlende Ende."""
+    start_only = _user(work_blocks=legacy_week(mon=("08:00", None)))
+    r = _c(db, start_only, MON, time(9, 0), time(23, 59))
+    assert (r.eff_end, r.raw_end) == (time(23, 59), None)
+    end_only = _user(work_blocks=legacy_week(mon=(None, "17:00")))
+    r = _c(db, end_only, MON, time(0, 0), time(16, 0))
+    assert (r.eff_start, r.raw_start) == (time(0, 0), None)
+
+
+# ── #484: keine Kappung an soll-freien Werktagen ──────────────────────────────
+# Die Blöcke beschreiben die Lage der Sollzeit. Am Wochenende gibt es keine; ein
 # Feiertag auf einem Werktag bekam bis 1.19.2 trotzdem das Fenster seines
 # Wochentags — ein KV-Dienst am Ostermontag wurde gekappt, derselbe Dienst am
 # Sonntag nicht. Feiertage und als "frei" konfigurierte Sondertage haben wie das
-# Wochenende kein Soll und deshalb kein Fenster.
-
-import pytest
-from app.models.public_holiday import PublicHoliday
-from app.models.system_setting import SystemSetting
-from app.services.holiday_service import invalidate_holiday_cache
-from tests.conftest import DEFAULT_TENANT_ID
-
-EASTER_MONDAY = date(2026, 4, 6)   # Montag, gesetzlicher Feiertag
-DEC24 = date(2026, 12, 24)          # Donnerstag
-
+# Wochenende kein Soll und deshalb keine Blöcke.
 
 def _windowed_user():
     return _user(
         tenant_id=DEFAULT_TENANT_ID,
-        scheduled_start_monday=time(8, 0), scheduled_end_monday=time(17, 0),
-        scheduled_start_thursday=time(8, 0), scheduled_end_thursday=time(17, 0),
+        work_blocks=legacy_week(mon=("08:00", "17:00"), thu=("08:00", "17:00")),
     )
 
 
@@ -127,7 +128,7 @@ def _dec24_mode(db, mode):
     db.commit()
 
 
-@pytest.fixture(autouse=False)
+@pytest.fixture
 def fresh_holiday_cache():
     invalidate_holiday_cache()
     yield
@@ -135,38 +136,34 @@ def fresh_holiday_cache():
 
 
 def test_window_still_applies_on_ordinary_monday(db, default_tenant, fresh_holiday_cache):
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(db, _windowed_user(), MON, time(7, 0), time(18, 0), 15)
-    assert (eff_s, eff_e, raw_s, raw_e) == (time(7, 45), time(17, 15), time(7, 0), time(18, 0))
+    r = _c(db, _windowed_user(), MON, time(7, 0), time(18, 0))
+    assert (r.eff_start, r.eff_end, r.raw_start, r.raw_end) == (time(7, 45), time(17, 15), time(7, 0), time(18, 0))
 
 
 def test_holiday_on_weekday_has_no_window(db, default_tenant, fresh_holiday_cache):
     _holiday(db, EASTER_MONDAY)
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(
-        db, _windowed_user(), EASTER_MONDAY, time(7, 0), time(18, 0), 15,
-    )
-    assert (eff_s, eff_e, raw_s, raw_e) == (time(7, 0), time(18, 0), None, None)
-    assert wws.get_scheduled_window(db, _windowed_user(), EASTER_MONDAY) == (None, None)
+    r = _c(db, _windowed_user(), EASTER_MONDAY, time(7, 0), time(18, 0))
+    assert r == wws.ClampResult(time(7, 0), time(18, 0), None, None, 0, None)
+    assert wws.get_scheduled_blocks(db, _windowed_user(), EASTER_MONDAY) == []
 
 
 def test_holiday_of_another_tenant_does_not_lift_the_window(db, default_tenant, fresh_holiday_cache):
-    from app.models.tenant import Tenant
     import uuid
     other = Tenant(id=uuid.uuid4(), name="Andere Praxis", slug="andere-praxis")
     db.add(other)
     db.commit()
     _holiday(db, EASTER_MONDAY, tenant_id=other.id)
-    _, _, raw_s, raw_e = wws.clamp(db, _windowed_user(), EASTER_MONDAY, time(7, 0), time(18, 0), 15)
-    assert (raw_s, raw_e) == (time(7, 0), time(18, 0))
+    r = _c(db, _windowed_user(), EASTER_MONDAY, time(7, 0), time(18, 0))
+    assert (r.raw_start, r.raw_end) == (time(7, 0), time(18, 0))
 
 
 def test_free_special_day_has_no_window(db, default_tenant, fresh_holiday_cache):
     _dec24_mode(db, "free")
-    eff_s, eff_e, raw_s, raw_e = wws.clamp(db, _windowed_user(), DEC24, time(7, 0), time(18, 0), 15)
-    assert (eff_s, eff_e, raw_s, raw_e) == (time(7, 0), time(18, 0), None, None)
+    r = _c(db, _windowed_user(), DEC24, time(7, 0), time(18, 0))
+    assert r == wws.ClampResult(time(7, 0), time(18, 0), None, None, 0, None)
 
 
 def test_half_special_day_keeps_the_window(db, default_tenant, fresh_holiday_cache):
-    # Ein halber Sondertag hat ein Soll (die Hälfte) — dort gilt das Fenster weiter.
     _dec24_mode(db, "half_day")
-    _, _, raw_s, raw_e = wws.clamp(db, _windowed_user(), DEC24, time(7, 0), time(18, 0), 15)
-    assert (raw_s, raw_e) == (time(7, 0), time(18, 0))
+    r = _c(db, _windowed_user(), DEC24, time(7, 0), time(18, 0))
+    assert (r.raw_start, r.raw_end) == (time(7, 0), time(18, 0))

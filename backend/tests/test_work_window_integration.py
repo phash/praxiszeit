@@ -20,6 +20,7 @@ from tests.conftest import (
     engine,
     TestingSessionLocal,
 )
+from tests.work_blocks_fixtures import legacy_week
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +154,7 @@ def test_clock_in_caps_early_start(db, employee, employee_client, monkeypatch):
     Soll 08:00), wird die gespeicherte start_time auf 07:45 gekappt.
     Der Rohstempel 07:00 landet in raw_start_time."""
     # Soll-Beginn Montag = 08:00; 2026-06-01 ist ein Montag.
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
 
     import app.routers.time_entries as te
@@ -172,7 +173,7 @@ def test_clock_in_caps_early_start(db, employee, employee_client, monkeypatch):
 
 def test_clock_in_early_start_warning(db, employee, employee_client, monkeypatch):
     """Frühstart-Kappung erzeugt EARLY_START-Warnung in der Response."""
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
 
     import app.routers.time_entries as te
@@ -192,7 +193,7 @@ def test_clock_in_no_clamp_within_grace(db, employee, employee_client, monkeypat
     """Stempelt ein MA innerhalb des Puffers ein, bleibt start_time unverändert
     und raw_start_time ist NULL (keine Kappung)."""
     # Soll-Beginn Montag = 08:00; stamp at 07:50 (nur 10 min früh, grace=15 → kein Clamp).
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
 
     import app.routers.time_entries as te
@@ -209,7 +210,7 @@ def test_clock_in_no_clamp_within_grace(db, employee, employee_client, monkeypat
 
 def test_clock_in_no_window_configured(db, employee, employee_client, monkeypatch):
     """Ohne Soll-Zeiten (NULL) wird nicht gekappt — start_time = Rohstempel."""
-    # scheduled_start_monday bleibt NULL (kein Soll-Fenster gesetzt).
+    # Kein Fenster hinterlegt (work_blocks bleibt NULL).
     import app.routers.time_entries as te
     monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 6, 0))
     monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
@@ -224,7 +225,7 @@ def test_clock_in_no_window_configured(db, employee, employee_client, monkeypatc
 
 def test_clock_out_caps_late_end(db, employee, employee_client, monkeypatch):
     import datetime as dt
-    employee.scheduled_end_monday = dt.time(17, 0)
+    employee.work_blocks = legacy_week(mon=(None, "17:00"))
     db.commit()
     import app.routers.time_entries as te
     from app.models import TimeEntry
@@ -254,8 +255,7 @@ def test_manual_create_caps_both_ends(db, employee, employee_client, monkeypatch
     import datetime as dt
     import app.routers.time_entries as te
 
-    employee.scheduled_start_monday = dt.time(8, 0)
-    employee.scheduled_end_monday = dt.time(17, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
@@ -288,8 +288,7 @@ def test_manual_create_entirely_outside_window_zero_credit(db, employee, employe
     import datetime as dt
     import app.routers.time_entries as te
 
-    employee.scheduled_start_monday = dt.time(8, 0)
-    employee.scheduled_end_monday = dt.time(10, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", "10:00"))
     db.commit()
 
     monkeypatch.setattr(te, "_today_local", lambda: dt.date(2026, 6, 1))
@@ -319,8 +318,7 @@ def test_admin_create_caps_both_ends(db, employee, admin, admin_client):
                end_time=17:15, raw_end_time=18:00.
     2026-06-01 ist ein Montag.
     """
-    employee.scheduled_start_monday = dt.time(8, 0)
-    employee.scheduled_end_monday = dt.time(17, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     resp = admin_client.post(
@@ -381,7 +379,7 @@ def test_cr_approval_create_clamps_to_soll_window(db, employee, admin, admin_cli
     """CR-Genehmigung (request_type=create, entry_kind=time_entry) klappt
     start_time ins Soll-Fenster und speichert den Rohwert in raw_start_time.
 
-    Soll Mo 08:00 (scheduled_start_monday), grace=15 min → floor=07:45.
+    Soll Mo 08:00 (work_blocks), grace=15 min → floor=07:45.
     CR proposed_start_time=07:00 (60 min zu früh) → nach Genehmigung:
       start_time=07:45, raw_start_time=07:00.
     2026-06-01 ist ein Montag.
@@ -389,7 +387,7 @@ def test_cr_approval_create_clamps_to_soll_window(db, employee, admin, admin_cli
     from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRequestStatus
 
     # Soll-Beginn Montag 08:00; kein Soll-Ende → nur Start-Kappung.
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
 
     # CR direkt in der DB anlegen (pending, create, time_entry).
@@ -439,7 +437,7 @@ def _clamp_warnings(resp):
 
 
 def test_admin_anlegen_meldet_die_kappung(db, employee, admin_client):
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
 
     resp = admin_client.post(
@@ -455,7 +453,7 @@ def test_admin_anlegen_meldet_die_kappung(db, employee, admin_client):
 
 def test_ohne_kappung_keine_meldung(db, employee, admin_client):
     """Kontrolle: innerhalb des Puffers wird nichts gekappt und nichts gemeldet."""
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
 
     resp = admin_client.post(
@@ -482,7 +480,7 @@ def test_ohne_soll_zeiten_keine_meldung(db, employee, admin_client):
 def test_reine_notizaenderung_meldet_nichts(db, employee, admin_client):
     """Eine Notiz-Änderung fasst start/end nicht an (Fix #2) — sie darf deshalb
     auch nicht über eine Kappung berichten, die längst passiert ist."""
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
     angelegt = admin_client.post(
         f"/api/admin/users/{employee.id}/time-entries",
@@ -497,7 +495,7 @@ def test_reine_notizaenderung_meldet_nichts(db, employee, admin_client):
 
 
 def test_zeitaenderung_meldet_die_kappung(db, employee, admin_client):
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
     angelegt = admin_client.post(
         f"/api/admin/users/{employee.id}/time-entries",
@@ -530,7 +528,7 @@ def _angelegt_mit_kappung(admin_client, employee_id):
 
 
 def test_admin_resave_der_gekappten_zeit_bewahrt_den_rohstempel(db, employee, admin_client):
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
     entry_id = _angelegt_mit_kappung(admin_client, employee.id)
 
@@ -553,7 +551,7 @@ def test_admin_resave_der_gekappten_zeit_bewahrt_den_rohstempel(db, employee, ad
 def test_admin_echte_zeitaenderung_setzt_den_rohstempel_neu(db, employee, admin_client):
     """Gegenprobe: eine andere Uhrzeit ist eine echte Eingabe und laeuft unveraendert
     durch die Kappung — der neue Rohwert ersetzt den alten."""
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
     entry_id = _angelegt_mit_kappung(admin_client, employee.id)
 
@@ -571,7 +569,7 @@ def test_zweiter_schreibpfad_bewahrt_den_rohstempel_ebenfalls(db, employee, admi
     ueber den Admins fremde Eintraege aendern. Beide Pfade kappen, also muessen beide
     den Rohstempel bewahren; genau solche Parallelpfade sind in diesem Projekt schon
     mehrfach auseinandergelaufen."""
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
     entry_id = _angelegt_mit_kappung(admin_client, employee.id)
 
@@ -593,8 +591,7 @@ def test_admin_create_on_holiday_is_not_clamped(db, employee, admin_client):
     from app.models.public_holiday import PublicHoliday
     from app.services.holiday_service import invalidate_holiday_cache
 
-    employee.scheduled_start_monday = dt.time(8, 0)
-    employee.scheduled_end_monday = dt.time(17, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.add(PublicHoliday(date=dt.date(2026, 4, 6), name="Ostermontag", year=2026,
                          tenant_id=employee.tenant_id))
     db.commit()
@@ -624,7 +621,7 @@ def test_cr_update_mit_unveraenderter_angerechneter_zeit_bewahrt_den_rohstempel(
     (§16-Nachweis + Grundlage der §5-Ruhezeit)."""
     from app.models.change_request import ChangeRequest, ChangeRequestType, ChangeRequestStatus
 
-    employee.scheduled_start_monday = dt.time(8, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", None))
     db.commit()
     entry = TimeEntry(user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=dt.date(2026, 6, 1),
                       start_time=dt.time(7, 45), raw_start_time=dt.time(7, 37),
@@ -663,8 +660,7 @@ def test_alter_gekappter_feiertagseintrag_wird_beim_speichern_neu_berechnet(db, 
     from app.models.public_holiday import PublicHoliday
     from app.services.holiday_service import invalidate_holiday_cache
 
-    employee.scheduled_start_monday = dt.time(8, 0)
-    employee.scheduled_end_monday = dt.time(17, 0)
+    employee.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.add(PublicHoliday(date=dt.date(2026, 4, 6), name="Ostermontag", year=2026,
                          tenant_id=employee.tenant_id))
     entry = TimeEntry(user_id=employee.id, tenant_id=employee.tenant_id, date=dt.date(2026, 4, 6),

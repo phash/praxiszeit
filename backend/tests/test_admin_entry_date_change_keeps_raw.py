@@ -22,6 +22,7 @@ from app.models import User, UserRole, TimeEntry
 from app.routers.admin_time_entries import admin_update_time_entry
 from app.schemas.time_entry import TimeEntryUpdate
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.work_blocks_fixtures import legacy_week
 
 
 def _next_weekday(target_weekday: int) -> date:
@@ -54,8 +55,7 @@ def employee(db, default_tenant):
         first_name="E", last_name="M", role=UserRole.EMPLOYEE, weekly_hours=40.0,
         vacation_days=30, work_days_per_week=5, is_active=True,
         tenant_id=DEFAULT_TENANT_ID,
-        scheduled_start_monday=time(8, 0), scheduled_end_monday=time(16, 0),
-        scheduled_start_tuesday=time(10, 0), scheduled_end_tuesday=time(18, 0),
+        work_blocks=legacy_week(mon=("08:00", "16:00"), tue=("10:00", "18:00")),
     )
     db.add(u)
     db.commit()

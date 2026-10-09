@@ -17,6 +17,7 @@ from app.services.xls_import_service import (
     MAX_FILE_SIZE_BYTES,
 )
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.work_blocks_fixtures import legacy_week
 
 
 # ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -447,8 +448,7 @@ def test_parse_xls_clamps_early_start_to_soll_window(db, test_user):
     """#201: Zeilen vor dem Soll-Fenster (inkl. Puffer) werden auf Fenster-Beginn minus
     Puffer gekappt; raw_start_time bewahrt den Rohwert."""
     # Montag 2026-01-12, Soll-Beginn 08:00
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     # Importzeile: 07:00 Uhr — 15 min Puffer → floor = 07:45
@@ -470,8 +470,7 @@ def test_parse_xls_clamps_early_start_to_soll_window(db, test_user):
 
 def test_execute_import_stores_raw_start_time_in_db(db, test_user, test_admin):
     """#201: execute_import schreibt raw_start_time/-end_time in den TimeEntry."""
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     rows = [
@@ -576,8 +575,7 @@ def test_parse_xls_reports_clamp_as_row_warning(db, test_user):
     hin, sonst bestaetigt der Admin einen Import, der seine Daten stillschweigend
     veraendert.
     """
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     rows = [
@@ -597,8 +595,7 @@ def test_parse_xls_reports_clamp_as_row_warning(db, test_user):
 
 def test_parse_xls_without_soll_window_has_no_clamp_warning(db, test_user):
     """#462 Gegenprobe: ohne hinterlegte Soll-Zeiten wird nicht gekappt und nichts gemeldet."""
-    test_user.scheduled_start_monday = None
-    test_user.scheduled_end_monday = None
+    test_user.work_blocks = None
     db.commit()
 
     rows = [
@@ -616,8 +613,7 @@ def test_execute_import_kappt_selbst_und_traut_dem_client_nicht(db, test_user, t
     aus dem Request-Body — geklammert wurde nur in der Vorschau. Wer den Aufruf
     nachbaut, schreibt damit Zeiten am Arbeitszeit-Fenster vorbei und faelscht
     obendrein den Rohstempel, der als Anwesenheitsnachweis gilt."""
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     manipuliert = [ImportedEntry(
@@ -638,8 +634,7 @@ def test_execute_import_kappt_selbst_und_traut_dem_client_nicht(db, test_user, t
 def test_execute_import_ist_idempotent_zur_vorschau(db, test_user, test_admin):
     """Gegenprobe: die unveraenderte Vorschau darf durch die zweite Kappung nicht
     ihren Rohstempel verlieren (die Vorschau liefert bereits gekappte Zeiten)."""
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     rows = [

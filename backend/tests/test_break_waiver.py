@@ -35,6 +35,7 @@ from tests.conftest import (
     engine,
     TestingSessionLocal,
 )
+from tests.work_blocks_fixtures import legacy_week
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +375,7 @@ class TestBreakWaiverWithApproval:
         import datetime as dt
         import app.routers.time_entries as te
         _set_break_setting(db, "true")
-        # Soll-Fenster gibt es nur Mo–Fr (work_window_service._WEEKDAY_ATTR), und
+        # Soll-Fenster gibt es nur Mo–Fr (work_window_service.get_scheduled_blocks), und
         # der POST-Endpoint verbietet vergangene Tage. Deshalb "heute" auf einen
         # fixen Montag einfrieren → Eintrag ist gleichzeitig "heute" (nicht
         # vergangen) UND ein Werktag mit Soll-Fenster. Voll deterministisch.
@@ -386,8 +387,7 @@ class TestBreakWaiverWithApproval:
             lambda: dt.datetime(2026, 6, 1, 12, 0, tzinfo=te.LOCAL_TZ),
         )
         employee.track_hours = True
-        employee.scheduled_start_monday = dt.time(8, 0)  # grace=15 → Fenster [07:45, 16:15]
-        employee.scheduled_end_monday = dt.time(16, 0)
+        employee.work_blocks = legacy_week(mon=("08:00", "16:00"))  # grace=15 → Fenster [07:45, 16:15]
         db.commit()
 
         def override_db():

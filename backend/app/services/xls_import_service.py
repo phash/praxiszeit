@@ -217,10 +217,12 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
 
         # #201: Soll-Fenster kappen; raw_* nur gesetzt wenn gekappt
         if user is not None:
-            start_t, end_t, raw_start_t, raw_end_t = work_window_service.clamp(
-                db, user, entry_date, start_t, end_t, grace
+            _r = work_window_service.clamp(
+                db, user, entry_date, start_t, end_t, grace, credit_override=False,
             )
+            start_t, end_t, raw_start_t, raw_end_t = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
         else:
+            _r = work_window_service.ClampResult(start_t, end_t, None, None, 0, None)
             raw_start_t = raw_end_t = None
 
         break_min = _calc_break_minutes(start_t, end_t)
@@ -267,7 +269,7 @@ def parse_xls(file_bytes: bytes, user_id: uuid.UUID, db: Session) -> list[Import
         # Vorschau landen (die Nachbarn lauten "§3 ArbZG: …").
         if raw_start_t is not None or raw_end_t is not None:
             clamp_note = work_window_service.clamp_warning_text(
-                raw_start_t, raw_end_t, start_t, end_t, grace,
+                db, user, entry_date, _r, for_employee=False,
             )
             if clamp_note:
                 arbzg_warnings = arbzg_warnings + [clamp_note]
@@ -409,22 +411,23 @@ def _execute_import_inner(
         # aus einer Vorschau, die unter einem frueheren Fenster entstand) bleibt
         # als §16-Nachweis stehen, statt von einer Kappung geloescht zu werden,
         # die gar nicht stattfindet.
-        _hat_fenster = target_user is not None and work_window_service.get_scheduled_window(
+        _hat_fenster = target_user is not None and work_window_service.has_blocks(
             db, target_user, entry.date,
-        ) != (None, None)
+        )
         if _hat_fenster:
-            _eff_start, _eff_end, _raw_start, _raw_end = work_window_service.clamp(
+            _r = work_window_service.clamp(
                 db, target_user,
                 entry.date,
                 entry.raw_start_time or entry.start_time,
                 entry.raw_end_time or entry.end_time,
                 grace,
+                credit_override=False,
             )
             entry = entry.model_copy(update={
-                "start_time": _eff_start,
-                "end_time": _eff_end,
-                "raw_start_time": _raw_start,
-                "raw_end_time": _raw_end,
+                "start_time": _r.eff_start,
+                "end_time": _r.eff_end,
+                "raw_start_time": _r.raw_start,
+                "raw_end_time": _r.raw_end,
             })
 
         for w in entry.arbzg_warnings:
