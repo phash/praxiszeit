@@ -1273,10 +1273,30 @@ def update_user(
             )
 
     # VULN-010: invalidate existing JWTs when role is changed
-    role_changed = 'role' in update_data and update_data['role'] != user.role
+    role_changed = False
     old_role = user.role
-    if role_changed and old_role == UserRole.ADMIN and _is_last_active_admin(db, user):
-        raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
+    if 'role' in update_data:
+        # #491 API-2 (Nachzug): ``user.role`` stammt aus dem UNGESPERRTEN Lesen
+        # von ``_get_user_in_tenant``. Stellte eine parallele, noch nicht
+        # committete Anfrage die Rolle gerade um, hielt diese Anfrage ihren
+        # Wechsel fuer wirkungslos — keine Protokollzeile, kein
+        # token_version-Bump, und das ORM schrieb die „unveraenderte" Rolle
+        # nicht: das Konto blieb im Zustand der anderen Anfrage, obwohl diese
+        # hier 200 meldete. Deshalb dieselbe Sperrreihenfolge wie beim
+        # Deaktivieren: IMMER zuerst die Admin-Menge (nicht nur, wenn die
+        # veraltete Rolle ADMIN ist — die veraltete Rolle ist genau das
+        # Problem), dann die Zielzeile, erst danach lesen. Die Letzter-Admin-
+        # Pruefung laeuft gegen die bereits gesperrte ID-Liste; ein erneutes
+        # Sperren nach der Zeilensperre drehte die Reihenfolge um (Deadlock).
+        admin_ids = lock_active_admin_ids(db, current_user.tenant_id)
+        _lock_and_reload(db, current_user, user)
+        old_role = user.role
+        role_changed = update_data['role'] != old_role
+        # Konservativ: auch eine leere Liste (kein anderer aktiver Admin
+        # gesperrt) blockiert die Herabstufung eines aktiven Admins.
+        if (role_changed and old_role == UserRole.ADMIN and user.is_active
+                and not any(aid != user.id for aid in admin_ids)):
+            raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
     # #290: did this update turn closure participation ON? Then enrol below.
     closures_enabled = (
         update_data.get('receives_company_closures') is True
