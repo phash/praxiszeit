@@ -182,6 +182,8 @@ export default function Users() {
   // unangetastet, sonst verwirft der Sync ungespeicherte Eingaben.
   const displayWorkDays = freshEditingUser?.work_days_per_week;
   const displayUseDailySchedule = freshEditingUser?.use_daily_schedule;
+  // Spec 2026-10-08 (E62/12.2): dieselbe Bauart für die heute gültigen Blöcke.
+  const displayBlocks = freshEditingUser ? (freshEditingUser.work_blocks_today ?? null) : undefined;
 
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
@@ -395,6 +397,7 @@ export default function Users() {
           displayDayHours={displayDayHours}
           displayWorkDays={displayWorkDays}
           displayUseDailySchedule={displayUseDailySchedule}
+          displayBlocks={displayBlocks}
         />
       )}
 

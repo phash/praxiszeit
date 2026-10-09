@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { ToastProvider } from '../../contexts/ToastContext';
 import Users from './Users';
 import type { User } from '../../types/user';
+import type { WeekBlocks } from '../../types/workBlocks';
 
 const getMock = vi.fn();
 const postMock = vi.fn();
@@ -55,6 +56,8 @@ function FakeUserForm(props: {
   // soll-treibenden Felder, die der Dialog schreibt.
   displayWorkDays?: number;
   displayUseDailySchedule?: boolean;
+  // Spec 2026-10-08 (E62/12.2): heute gültige Blöcke, gleiche Bauart.
+  displayBlocks?: WeekBlocks | null;
   onOpenHoursHistory?: (u: User) => void;
 }) {
   const [unsavedDept, setUnsavedDept] = useState('');
@@ -71,6 +74,9 @@ function FakeUserForm(props: {
       <span data-testid="display-weekly-hours">{props.displayWeeklyHours ?? ''}</span>
       <span data-testid="display-day-hours">{(props.displayDayHours ?? []).join(',')}</span>
       <span data-testid="display-work-days">{props.displayWorkDays ?? ''}</span>
+      <span data-testid="display-blocks">
+        {props.displayBlocks === undefined ? 'undefined' : JSON.stringify(props.displayBlocks)}
+      </span>
       <span data-testid="display-use-daily-schedule">
         {props.displayUseDailySchedule === undefined ? '' : String(props.displayUseDailySchedule)}
       </span>
@@ -139,16 +145,6 @@ function makeUser(overrides: Partial<User> = {}): User {
     hours_wednesday: null,
     hours_thursday: null,
     hours_friday: null,
-    scheduled_start_monday: null,
-    scheduled_end_monday: null,
-    scheduled_start_tuesday: null,
-    scheduled_end_tuesday: null,
-    scheduled_start_wednesday: null,
-    scheduled_end_wednesday: null,
-    scheduled_start_thursday: null,
-    scheduled_end_thursday: null,
-    scheduled_start_friday: null,
-    scheduled_end_friday: null,
     first_work_day: null,
     last_work_day: null,
     deactivated_at: null,
@@ -302,5 +298,35 @@ describe('Abschluss-Review #431 Fund 3: Arbeitstage und Modus werden mit nachgez
     // Und weiterhin ohne die offene Eingabe zu verwerfen — der Grund, warum
     // hier schmale Props stehen und nicht ein neues `editingUser`.
     expect(screen.getByLabelText('Abteilung (unsaved)')).toHaveValue('Labor');
+  });
+});
+
+describe('Spec 2026-10-08 (PR1): heute gültige Blöcke werden mit nachgezogen', () => {
+  it('reicht work_blocks_today als displayBlocks durch und zieht es nach einer Dialog-Speicherung nach', async () => {
+    const before: WeekBlocks = [
+      { blocks: [{ start: '08:00', end: '17:00' }], pause_minutes: null },
+      { blocks: [], pause_minutes: null }, { blocks: [], pause_minutes: null },
+      { blocks: [], pause_minutes: null }, { blocks: [], pause_minutes: null },
+    ];
+    let today: WeekBlocks | null = before;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({ work_blocks_today: today })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByTitle('Bearbeiten')[0]);
+    await screen.findByTestId('fake-user-form');
+    expect(screen.getByTestId('display-blocks')).toHaveTextContent('"start":"08:00","end":"17:00"');
+
+    fireEvent.click(screen.getByText('Wochenstunden anpassen…'));
+    today = null;
+    fireEvent.click(screen.getByText('Stundenänderung speichern (simuliert)'));
+
+    await waitFor(() => expect(screen.getByTestId('display-blocks')).toHaveTextContent('null'));
   });
 });

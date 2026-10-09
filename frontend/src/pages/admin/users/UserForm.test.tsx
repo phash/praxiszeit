@@ -503,3 +503,85 @@ describe('Bug-Tracker #3: Kalenderfarben-Kacheln überdecken den Text nicht', ()
     expect(swatch.className).not.toContain('w-full');
   });
 });
+
+describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => {
+  const baseEditUser = {
+    id: 'u1', username: 'jd', first_name: 'Jane', last_name: 'Doe', role: 'employee',
+    weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+    is_active: true, use_daily_schedule: false,
+  };
+  const empty = { blocks: [], pause_minutes: 0 };
+  const TWO_BLOCKS = [
+    { blocks: [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }], pause_minutes: 30 },
+    empty, empty, empty, empty,
+  ];
+  const legacyEmpty = { blocks: [], pause_minutes: null };
+  const LEGACY = [
+    { blocks: [{ start: '07:37', end: '16:30' }], pause_minutes: null },
+    legacyEmpty, legacyEmpty, legacyEmpty,
+    { blocks: [{ start: '07:30', end: '23:59' }], pause_minutes: null },
+  ];
+
+  async function fillAndSave() {
+    fireEvent.change(screen.getByLabelText(/Benutzername/i), { target: { value: 'newemployee' } });
+    fireEvent.change(screen.getByLabelText('Passwort *'), { target: { value: 'TestPass123!' } });
+    fireEvent.change(screen.getByLabelText('Vorname'), { target: { value: 'New' } });
+    fireEvent.change(screen.getByLabelText('Nachname'), { target: { value: 'User' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+  }
+
+  it('zeigt keine Soll-Fenster-Felder mehr (Anlegen und Bearbeiten)', () => {
+    const { unmount } = renderForm();
+    expect(screen.queryByLabelText(/Soll-Beginn/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Soll-Arbeitszeiten je Wochentag/)).not.toBeInTheDocument();
+    unmount();
+    renderForm({ editUser: baseEditUser });
+    expect(screen.queryByLabelText(/Soll-Ende/)).not.toBeInTheDocument();
+  });
+
+  it('POST-Payload trägt keinen Schlüssel mit Präfix scheduled_ (sonst 400)', async () => {
+    renderForm();
+    await fillAndSave();
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const keys = Object.keys(postMock.mock.calls[0][1] as object);
+    expect(keys.filter((k) => k.startsWith('scheduled_'))).toEqual([]);
+    expect(keys).not.toContain('work_blocks');
+  });
+
+  it('PUT-Payload trägt weder scheduled_* noch work_blocks/work_blocks_today (sonst 400)', async () => {
+    renderForm({ editUser: { ...baseEditUser, work_blocks: LEGACY, work_blocks_today: LEGACY } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
+      expect(call).toBeTruthy();
+      const keys = Object.keys(call![1] as object);
+      expect(keys.filter((k) => k.startsWith('scheduled_'))).toEqual([]);
+      expect(keys).not.toContain('work_blocks');
+      expect(keys).not.toContain('work_blocks_today');
+    });
+  });
+
+  it('zeigt beim Bearbeiten die heute gültigen Blöcke (displayBlocks)', () => {
+    renderForm({ editUser: baseEditUser, displayBlocks: TWO_BLOCKS });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent(
+      'Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min)',
+    );
+    expect(screen.queryByText(/Altbestand/)).not.toBeInTheDocument();
+  });
+
+  it('kennzeichnet ein Altfenster aus Migration 073 und zeigt Altwerte unverändert', () => {
+    renderForm({ editUser: { ...baseEditUser, work_blocks_today: LEGACY } });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Mo 07:37–16:30 · Fr 07:30–23:59');
+    expect(screen.getByText(/Altbestand: kappt die erfasste Zeit/)).toBeInTheDocument();
+  });
+
+  it('ohne Blöcke: „Keine Arbeitszeit-Blöcke hinterlegt"', () => {
+    renderForm({ editUser: baseEditUser, displayBlocks: null });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
+  });
+
+  it('beim Anlegen keine Blöcke-Anzeige (der Editor folgt mit PR3)', () => {
+    renderForm();
+    expect(screen.queryByLabelText('Arbeitszeit heute')).not.toBeInTheDocument();
+  });
+});
