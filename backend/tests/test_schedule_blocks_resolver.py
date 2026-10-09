@@ -1,7 +1,9 @@
 """Spec 3.3/3.6: Blöcke kommen datumsaufgelöst aus dem Vertrags-Snapshot."""
 from datetime import date, time
 
-from app.models import ChangeRequest, TimeEntry, WorkingHoursChange
+from sqlalchemy import select
+
+from app.models import ChangeRequest, TimeEntry, User, WorkingHoursChange
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.services import calculation_service as cs
 from tests.conftest import DEFAULT_TENANT_ID
@@ -18,6 +20,13 @@ def _row(db, user, effective_from, blocks):
     return row
 
 
+def _stored_as_sql_null(db, column, pk_column, pk) -> bool:
+    """Prüft auf DB-Ebene (``IS NULL``), nicht über das ORM: dort lesen sich
+    SQL-NULL und der JSON-Wert ``null`` beide als ``None``."""
+    db.expire_all()
+    return bool(db.execute(select(column.is_(None)).where(pk_column == pk)).scalar())
+
+
 def test_fallback_to_user_work_blocks_without_history(db, test_user):
     test_user.work_blocks = legacy_week(mon=("07:30", "16:30"))
     db.commit()
@@ -28,9 +37,26 @@ def test_fallback_to_user_work_blocks_without_history(db, test_user):
 
 def test_null_in_history_row_means_no_blocks_never_fallback(db, test_user):
     test_user.work_blocks = legacy_week(mon=("07:30", "16:30"))
-    _row(db, test_user, date(2026, 1, 1), None)
+    row = _row(db, test_user, date(2026, 1, 1), None)
+    # E8/3.3 meinen SQL-NULL — nicht den JSON-Wert ``null`` (none_as_null).
+    assert _stored_as_sql_null(db, WorkingHoursChange.blocks, WorkingHoursChange.id, row.id)
     s = cs.get_schedule_for_date(db, test_user, MON)
     assert s.blocks is None and s.block_pauses is None
+
+
+def test_reassigning_none_stores_sql_null_not_json_null(db, test_user):
+    """Spätere Schreiber setzen ausdrücklich ``None`` (Sync der User-Zeile,
+    neue Verlaufszeilen ohne Blöcke). Das muss in beiden Spalten als SQL-NULL
+    landen, sonst gäbe es zwei DB-Darstellungen von „keine Blöcke" und jede
+    ``IS NULL``-Abfrage (Downgrade 073, Diagnose, Support) zählte falsch."""
+    row = _row(db, test_user, date(2026, 5, 1), K_BLOCKS)
+    row.blocks = None
+    test_user.work_blocks = legacy_week(mon=("07:30", "16:30"))
+    db.commit()
+    test_user.work_blocks = None
+    db.commit()
+    assert _stored_as_sql_null(db, WorkingHoursChange.blocks, WorkingHoursChange.id, row.id)
+    assert _stored_as_sql_null(db, User.work_blocks, User.id, test_user.id)
 
 
 def test_history_row_wins_and_date_before_falls_back(db, test_user):

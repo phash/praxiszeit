@@ -46,7 +46,13 @@ class User(Base):
     # Zeile ≤ heute. Gelesen wird sie AUSSCHLIESSLICH vom Resolver
     # (calculation_service.get_schedule_for_date) — Guard-Test
     # test_no_live_work_blocks_read.py. JSON-Form: Spec 3.1.
-    work_blocks = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
+    # ``none_as_null`` an beiden Varianten: ``None`` (z. B. aus der Sync einer
+    # Verlaufszeile ohne Blöcke) muss SQL-NULL ergeben, nicht JSON-``null``
+    # (Begründung bei working_hours_changes.blocks).
+    work_blocks = Column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        nullable=True,
+    )
     # #201: optionales Soll-Arbeitszeit-Fenster je Wochentag (Mo–Fr). NULL =
     # kein Fenster an dem Tag → keine Kappung. Kappt nur das Ist, nicht das Soll.
     scheduled_start_monday = Column(Time, nullable=True)

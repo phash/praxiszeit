@@ -43,7 +43,14 @@ class WorkingHoursChange(Base):
     # — NIE Rückfall auf users.work_blocks (sonst schlüge jede Sync der
     # User-Zeile rückwirkend in alle Altzeilen durch, #431-Fehlerklasse).
     # Änderung nur per Neuzuweisung des ganzen Werts (keine In-place-Mutation).
-    blocks = Column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
+    # ``none_as_null`` an BEIDEN Varianten (auf PG zählt das Flag des JSONB-
+    # Typs): ein ausdrücklich zugewiesenes ``None`` landet sonst als JSON-Wert
+    # ``null`` statt SQL-NULL — zwei DB-Darstellungen von „keine Blöcke", die
+    # das ORM gleich liest, jede ``IS NULL``-Abfrage aber verschieden zählt.
+    blocks = Column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        nullable=True,
+    )
     note = Column(String(500), nullable=True)  # Optional note about the change
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
