@@ -2822,18 +2822,16 @@ bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Va
    (künftige Einträge voll angerechnet, bestehende unverändert). Ergebnis hier nachtragen,
    bevor Task 1 beginnt.
 
-   **Zwischenergebnis (2026-10-09, Sicherung vom 06.06.2026, natives Prod, PG 18.3):**
-   Die jüngste lokal vorliegende Prod-Kopie steht auf `046_add_vr_half_day` — vor #201,
-   es gibt darin also noch keine Arbeitszeit-Fenster. Ergebnis auf dieser Kopie nach
-   `upgrade 072_cr_sunday_reason` (Kette 046 → 072 auf echten Daten fehlerfrei, 9 Konten,
-   375 Zeiteinträge): Q1–Q5 je 0 Zeilen, Q6 `Default | 15 (Default)`. Damit ist die
-   Kette und die Syntax belegt, über die tatsächliche Verteilung der Fenster sagt diese
-   Kopie nichts. **Offen:** dieselbe Diagnose auf einer aktuellen Sicherung (Stand 072)
-   — liefert der Betreiber nach; bis dahin gilt das Risiko „Beginn ≥ Ende" als
-   unbeziffert, die Migration meldet solche Tage beim Lauf selbst (Abschnitt 5.1).
-   Die Umsetzung beginnt auf dieser Grundlage (Entscheidung 2026-10-09: die Diagnose
-   ändert keinen Code, nur Texte und die Einschätzung; Task 17 wird mit der aktuellen
-   Kopie wiederholt).
+   **Ergebnis (2026-10-09, Sicherung vom 09.10.2026 03:00, natives Prod, Stand 071 → per
+   Code vor PR1 auf `072_cr_sunday_reason` gehoben; 10 Konten, 649 Zeiteinträge,
+   3 Verlaufszeilen):** Q2: 2 Fenster, Befund beide `ok` — **kein** „Beginn ≥ Ende",
+   kein halboffenes Fenster, keine Sekunden. Q3: 1 Konto mit Fenster (`track_hours` an,
+   gleichmäßiger Modus, 0 eigene Verlaufszeilen → 073 legt die Basis-/Altzeile an).
+   Q4: keine Abweichung Fensterlänge ↔ Tagessoll. Q5: 2 Einträge mit Beginn auf der
+   Kante, beide mit Rohstempel (sauber gekappt), 0 auf der Ende-Kante. Q6: Puffer
+   `15 (Default)`. Das Verhaltensrisiko aus 5.3 („Beginn ≥ Ende" wird nach 073 nicht
+   mehr gekappt) trifft damit **keinen** Bestandsfall. Die frühere Kopie vom 06.06.2026
+   (Stand 046, vor #201) belegte zusätzlich die Kette 046 → 072 auf echten Daten.
 2. **Puffer: gespeichert je Eintrag, aktuell nur in der Massen-Neukappung (E79/E80).**
    Einzelbearbeitungen kappen mit dem Puffer, mit dem der Eintrag erfasst wurde; eine
    spätere Puffer-Änderung wirkt nur auf neue Einträge. Zwei Restfälle bleiben:
