@@ -171,7 +171,11 @@ def _clamp_core(db, user, d, start, end, grace, *, credit_override, wh_changes, 
     # auch für Eingaben mit Sekunden (Kappungsparität, Spec 17.1).
     if start is not None and start < floor:
         eff_start, raw_start = floor, start
-    if end is not None and end > ceil:
+    # Platzhalter 23:59 aus 073 = kein Ende (Spec 5.3, „Kappung unverändert"):
+    # unter 072 gab es ohne Soll-Ende keine Ende-Kappung, auch nicht für ein Ende
+    # mit Sekunden (23:59:30). Neue Blöcke enden spätestens 23:55 (Spec 3.5) —
+    # ein letzter Block bis 23:59 ist immer eine Altzeile.
+    if end is not None and blocks[-1][1] < _LAST_MINUTE and end > ceil:
         eff_end, raw_end = ceil, end
 
     # Kollaps außerhalb der Hülle — unverändert seit #201: liegt der Eintrag ganz

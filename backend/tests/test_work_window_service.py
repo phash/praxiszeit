@@ -98,6 +98,16 @@ def test_half_open_placeholders_behave_like_072(db):
     start_only = _user(work_blocks=legacy_week(mon=("08:00", None)))
     r = _c(db, start_only, MON, time(9, 0), time(23, 59))
     assert (r.eff_end, r.raw_end) == (time(23, 59), None)
+    # Review Task 3: auch ein Ende mit Sekunden (API-Client) bleibt ungekappt —
+    # unter 072 gab es ohne Soll-Ende gar keine Ende-Kappung und keine Warnung.
+    r = _c(db, start_only, MON, time(9, 0), time(23, 59, 30))
+    assert (r.eff_end, r.raw_end) == (time(23, 59, 30), None)
+    assert wws.clamp_warning_text(db, start_only, MON, r, for_employee=False) is None
+    # Kontrolle: ein echtes spätes Ende (23:50 + 15 → Hülle 23:59) kappt die
+    # Sekunden weiter wie 072.
+    late_end = _user(work_blocks=legacy_week(mon=("08:00", "23:50")))
+    r = _c(db, late_end, MON, time(9, 0), time(23, 59, 30))
+    assert (r.eff_end, r.raw_end) == (time(23, 59), time(23, 59, 30))
     end_only = _user(work_blocks=legacy_week(mon=(None, "17:00")))
     r = _c(db, end_only, MON, time(0, 0), time(16, 0))
     assert (r.eff_start, r.raw_start) == (time(0, 0), None)
