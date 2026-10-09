@@ -67,7 +67,8 @@ einem Schutzpaket gegen rückwirkende Verkürzung.
    #431-Suiten, `test_wh_change_preview.py`), die jetzt Grund/Haken senden oder bewusst 400
    erwarten (19.1 Nr. 1).
 4. Nach Migration 073 sind `net_hours`, Tagessoll und Überstundensaldo aller
-   Bestandsdaten byte-identisch (Nachweis per Postgres-Lauf auf einer Prod-Kopie).
+   Bestandsdaten byte-identisch (Nachweis per Postgres-Lauf auf einer Prod-Kopie;
+   Zwischenstand und ausstehende Wiederholung: §19 Nr. 1).
 5. Eine Änderung mit Wirkungsdatum in der Vergangenheit kappt die betroffenen Einträge
    neu; die Vorschau nennt vorher die Anzahl, die Monatssummen alt → neu, die
    Überstunden-Differenz und jeden übersprungenen Eintrag mit Grund.
@@ -2849,12 +2850,31 @@ bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Va
    Code vor PR1 auf `072_cr_sunday_reason` gehoben; 10 Konten, 649 Zeiteinträge,
    3 Verlaufszeilen):** Q2: 2 Fenster, Befund beide `ok` — **kein** „Beginn ≥ Ende",
    kein halboffenes Fenster, keine Sekunden. Q3: 1 Konto mit Fenster (`track_hours` an,
-   gleichmäßiger Modus, 0 eigene Verlaufszeilen → 073 legt die Basis-/Altzeile an).
+   gleichmäßiger Modus, 0 eigene Verlaufszeilen → 073 schreibt das Altfenster nach
+   `users.work_blocks` (Rückfall); die Basis-Zeile entsteht erst bei der ersten
+   Arbeitszeit-Änderung).
    Q4: keine Abweichung Fensterlänge ↔ Tagessoll. Q5: 2 Einträge mit Beginn auf der
    Kante, beide mit Rohstempel (sauber gekappt), 0 auf der Ende-Kante. Q6: Puffer
    `15 (Default)`. Das Verhaltensrisiko aus 5.3 („Beginn ≥ Ende" wird nach 073 nicht
    mehr gekappt) trifft damit **keinen** Bestandsfall. Die frühere Kopie vom 06.06.2026
    (Stand 046, vor #201) belegte zusätzlich die Kette 046 → 072 auf echten Daten.
+
+   **Erfolgskriterium 4, PR1 Task 17 — Zwischenstand (dieselbe Sicherung vom 09.10.2026
+   03:00, auf einer Kopie der Datenbank im Container `pz073-prod`; Datenstand: letzter
+   Eintrag 08.10.2026; Lauf 09./10.10.2026 mit `PROBE_TODAY=2026-10-09`, Code vor PR1 =
+   `3d46c2f`, Probe `tools/migration-073/probe_073.py`):** 10 Personen, 649 Einträge,
+   3 Verlaufszeilen. 073-Diagnose „1 Konto, 0 Verlaufszeilen", keine Zeile „Abweichung".
+   Auto-Close: 63 Einträge mit `auto_close`-Protokollzeile, davon 5 mit Ende 23:59 und
+   0 nachgekappt (Rohende 23:59) → `auto_closed = true: 5`. 072 → 073: `BYTE-IDENTISCH`
+   (`net_hours` je Eintrag, Tagessoll je Kalendertag, Monats-Soll/-Ist, Überstundensaldo)
+   und `TABELLEN NACH UPGRADE IDENTISCH (time_entries, working_hours_changes, users)`.
+   Round-Trip 073 → 072 → 073: `TABELLEN IDENTISCH (time_entries, working_hours_changes,
+   users)`, keine Person mit geändertem 072-Fenster, `NACH ROUND-TRIP BYTE-IDENTISCH`.
+   Die Commit-Nachricht von `2614606` nennt für die Auto-Close-Zahlen (63/5/0) irrtümlich
+   die Sicherung vom 06.06.2026; sie stammen aus dieser Kopie (die 06.06.-Kopie stand auf
+   046 und kannte `raw_end_time` noch nicht). **Vor dem Release 1.20.0 folgt eine
+   Wiederholung** (Task 0 Step 3 und Task 17) auf einer dann aktuellen Sicherung; erst
+   deren Ergebnis gilt als Nachweis für Erfolgskriterium 4.
 2. **Puffer: gespeichert je Eintrag, aktuell nur in der Massen-Neukappung (E79/E80).**
    Einzelbearbeitungen kappen mit dem Puffer, mit dem der Eintrag erfasst wurde; eine
    spätere Puffer-Änderung wirkt nur auf neue Einträge. Zwei Restfälle bleiben:

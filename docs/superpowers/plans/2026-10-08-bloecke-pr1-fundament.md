@@ -7643,6 +7643,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
 ```
 
+Das Ergebnis gehört zusätzlich in Spec §19 Nr. 1 (Absatz „Erfolgskriterium 4, PR1 Task 17"), nicht nur in den PR-Text oder eine Commit-Nachricht: PR1–PR4 laufen auf einem Branch, ein eigener PR-Text für diesen Lauf entfällt.
+
+**Ergebnis (Zwischenstand, Gesamtreview PR1):** in Spec §19 Nr. 1 eingetragen — Sicherung 09.10.2026 03:00, 10 Personen, 649 Einträge, 073-Diagnose „1 Konto, 0 Verlaufszeilen", `auto_closed = true: 5` (5 | 0), 072 → 073 byte-identisch, Round-Trip 073 → 072 → 073 Tabellen identisch und erneut byte-identisch. Vor dem Release 1.20.0 Task 0 Step 3 und diesen Task mit einer dann aktuellen Sicherung wiederholen und §19 Nr. 1 nachtragen.
+
 Den Container `pz073-prod` entfernt der Betreiber (`docker rm -f pz073-prod`), sobald PR1 gemergt ist — bis dahin bleibt er für einen erneuten Lauf nach Review-Korrekturen stehen.
 
 ---
