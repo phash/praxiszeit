@@ -49,7 +49,8 @@ from app.services.calculation_service import request_day_count
 #     (2) ``admin_time_entries`` hält die ZEITEINTRAGS-Zeile und will
 #         ``KEY SHARE`` auf der Benutzerzeile; die Betriebsferien halten die
 #         Benutzerzeile und wollen den Zeiteintrag → Zyklus über nur EINE
-#         Benutzerzeile.
+#         Benutzerzeile. (Befund vor Spec 2026-10-08; seit P5 sperrt
+#         ``admin_time_entries`` zuerst die Benutzerzeile.)
 #
 #   ``FOR NO KEY UPDATE`` (Zeile 3) entfernt genau diese Kante (Spalte 1 =
 #   frei) und behält alles, wofür der Anker da ist: er schließt sich weiterhin

@@ -354,8 +354,10 @@ def clock_in(
     # `_get_open_entry(with_lock=True)` bleibt als defense-in-depth: sobald die
     # Zeile existiert (Stale-Entry von gestern, s.u.), sperrt FOR UPDATE hier
     # echt und verhindert eine parallele Änderung/Auto-Close-Race auf genau
-    # dieser Zeile. Für clock_out (existierende offene Zeile) ist genau dieser
-    # Lock bereits ausreichend — dort gibt es keine Cold-Start-Lücke.
+    # dieser Zeile. Gegen den Kaltstart-Wettlauf genügt bei clock_out
+    # (existierende offene Zeile) diese Zeilensperre; den Anker nimmt clock_out
+    # trotzdem zuerst, wegen P5 (Spec 2026-10-08: Snapshot-Konsistenz gegenüber
+    # laufenden Arbeitszeit-Änderungen) — nicht zurückbauen.
     open_entry = _get_open_entry(db, current_user.id, with_lock=True, tenant_id=current_user.tenant_id)
     if open_entry:
         if open_entry.date != _today_local():

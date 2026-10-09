@@ -999,10 +999,13 @@ def test_delete_closure_locks_the_user_rows_before_touching_absences(
 #       geankerten Benutzerzeile. Gegen die sortierte Teilnehmer-Sperre der
 #       Betriebsferien ist das ein Zyklus, sobald die Admin-Zeile VOR der
 #       Mitarbeiterzeile sortiert.
-#   (2) ``admin_time_entries`` nimmt überhaupt nie einen Anker: es sperrt die
-#       ZEITEINTRAGS-Zeile und braucht danach ``FOR KEY SHARE`` auf den
-#       Benutzerzeilen — während die Betriebsferien die Benutzerzeilen halten
-#       und danach genau diesen Zeiteintrag löschen.
+#   (2) ``admin_time_entries`` nahm bis Spec 2026-10-08 (P5) überhaupt nie
+#       einen Anker: es sperrte die ZEITEINTRAGS-Zeile und brauchte danach
+#       ``FOR KEY SHARE`` auf den Benutzerzeilen — während die Betriebsferien
+#       die Benutzerzeilen halten und danach genau diesen Zeiteintrag löschen.
+#       Seit P5 sperren ``admin_create_time_entry`` und
+#       ``admin_update_time_entry`` zuerst die Benutzerzeile (siehe
+#       ``test_admin_time_entry_edit_does_not_deadlock_with_a_parallel_closure``).
 #
 # Beide Zyklen brauchen ZWEI Objekte und ZWEI gleichzeitige Vorgänge; eine
 # Sperr-Eskalation auf EINER Zeile deadlockt nicht.
