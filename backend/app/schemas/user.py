@@ -1,11 +1,11 @@
 import re
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
-from typing import Optional
-from datetime import datetime, date, time
+from typing import Any, Optional
+from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
-from app.schemas.validators import validate_employment_and_window_order
+from app.schemas.validators import strip_legacy_window_fields, validate_employment_order
 
 
 def _validate_password_complexity(password: str) -> str:
@@ -55,21 +55,10 @@ class UserBase(BaseModel):
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
     child_sick_days_per_year: Optional[int] = Field(None, ge=0, le=70)  # #376 §45 SGB V; None = Tenant-Default
-    # #201: Soll-Zeitfenster pro Wochentag
-    scheduled_start_monday: Optional[time] = None
-    scheduled_end_monday: Optional[time] = None
-    scheduled_start_tuesday: Optional[time] = None
-    scheduled_end_tuesday: Optional[time] = None
-    scheduled_start_wednesday: Optional[time] = None
-    scheduled_end_wednesday: Optional[time] = None
-    scheduled_start_thursday: Optional[time] = None
-    scheduled_end_thursday: Optional[time] = None
-    scheduled_start_friday: Optional[time] = None
-    scheduled_end_friday: Optional[time] = None
 
     @model_validator(mode='after')
     def check_work_day_order(self):
-        return validate_employment_and_window_order(self)  # #219: shared
+        return validate_employment_order(self)  # #219: shared
 
     @model_validator(mode='after')
     def check_fixed_monthly_target_requirements(self):
@@ -89,6 +78,13 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=10)
     role: UserRole = UserRole.EMPLOYEE
+    # Spec 11.4 (E26): gesetzt vom before-Validator, nie serialisiert.
+    legacy_window_fields_sent: bool = Field(False, exclude=True)
+
+    @model_validator(mode='before')
+    @classmethod
+    def reject_legacy_window_fields(cls, data):
+        return strip_legacy_window_fields(data)
 
     @field_validator("password")
     @classmethod
@@ -172,21 +168,20 @@ class UserUpdate(BaseModel):
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
     child_sick_days_per_year: Optional[int] = Field(None, ge=0, le=70)  # #376
-    # #201: Soll-Zeitfenster pro Wochentag
-    scheduled_start_monday: Optional[time] = None
-    scheduled_end_monday: Optional[time] = None
-    scheduled_start_tuesday: Optional[time] = None
-    scheduled_end_tuesday: Optional[time] = None
-    scheduled_start_wednesday: Optional[time] = None
-    scheduled_end_wednesday: Optional[time] = None
-    scheduled_start_thursday: Optional[time] = None
-    scheduled_end_thursday: Optional[time] = None
-    scheduled_start_friday: Optional[time] = None
-    scheduled_end_friday: Optional[time] = None
+    # E27: nur deklariert, damit die Sperre in update_user greift (400) —
+    # Blöcke haben genau EINEN Schreibweg, den Verlauf mit Wirkungsdatum.
+    work_blocks: Optional[Any] = None
+    # Spec 11.4 (E26): gesetzt vom before-Validator, nie serialisiert.
+    legacy_window_fields_sent: bool = Field(False, exclude=True)
+
+    @model_validator(mode='before')
+    @classmethod
+    def reject_legacy_window_fields(cls, data):
+        return strip_legacy_window_fields(data)
 
     @model_validator(mode='after')
     def check_work_day_order(self):
-        return validate_employment_and_window_order(self)  # #219: shared
+        return validate_employment_order(self)  # #219: shared
 
     @model_validator(mode='after')
     def check_fixed_monthly_target_requirements(self):
@@ -221,6 +216,12 @@ class UserResponse(UserBase):
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None
+    # Spec E29/11.5: Leseschema LOCKER (kein Validator) — Altwerte wie 07:37 oder
+    # 23:59 dürfen Login und Listen nie in einen HTTP 500 verwandeln.
+    work_blocks: Optional[Any] = None
+    # Spec 11.1: datumsaufgelöst für heute (calculation_service.attach_work_blocks_today);
+    # ohne Aufruf None.
+    work_blocks_today: Optional[Any] = None
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:
@@ -260,17 +261,9 @@ class UserListResponse(BaseModel):
     last_work_day: Optional[date] = None
     department: Optional[str] = None  # #162: Abteilung/Bereich
     child_sick_days_per_year: Optional[int] = None  # #376 (latenter Bug: fehlte hier → Edit-Reset)
-    # #201: Soll-Zeitfenster pro Wochentag
-    scheduled_start_monday: Optional[time] = None
-    scheduled_end_monday: Optional[time] = None
-    scheduled_start_tuesday: Optional[time] = None
-    scheduled_end_tuesday: Optional[time] = None
-    scheduled_start_wednesday: Optional[time] = None
-    scheduled_end_wednesday: Optional[time] = None
-    scheduled_start_thursday: Optional[time] = None
-    scheduled_end_thursday: Optional[time] = None
-    scheduled_start_friday: Optional[time] = None
-    scheduled_end_friday: Optional[time] = None
+    # Spec E29/11.5: locker, siehe UserResponse.
+    work_blocks: Optional[Any] = None
+    work_blocks_today: Optional[Any] = None
     totp_enabled: bool = False
     deactivated_at: Optional[datetime] = None
     created_at: datetime

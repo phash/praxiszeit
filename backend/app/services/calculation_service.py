@@ -1,3 +1,4 @@
+import logging
 from datetime import date, datetime, timedelta
 from app.services.timezone_service import today_local
 from app.services.date_filters import date_in_year, date_in_month, date_in_range
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, extract
 from app.models import User, TimeEntry, Absence, AbsenceReason, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
 from app.services import special_days_service, settings_service, work_blocks_service
+
+logger = logging.getLogger(__name__)
 
 
 class Schedule(NamedTuple):
@@ -171,6 +174,34 @@ def get_blocks_json_for_date(
     kanonische JSON-Woche (Strings, nie ``time``) oder None."""
     schedule = get_schedule_for_date(db, user, target_date, wh_changes)
     return work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses)
+
+
+def attach_work_blocks_today(db: Session, users, on_date: date) -> None:
+    """Spec 11.1 ``work_blocks_today``: hängt die für ``on_date`` aufgelösten
+    Blöcke als transientes Attribut an jede User-Instanz — die Leseschemas
+    lesen es per ``from_attributes``. EIN Preload der Verlaufszeilen für alle
+    übergebenen Personen (Muster #449/#204).
+
+    Locker wie ein Leseschema (E29): strukturell kaputtes JSON (nur per Hand in
+    der Datenbank erzeugbar) wird als ``None`` angezeigt und geloggt, statt
+    Login oder Benutzerliste mit HTTP 500 zu sperren."""
+    users = [u for u in users if u is not None]
+    if not users:
+        return
+    tenant_ids = sorted({u.tenant_id for u in users if u.tenant_id is not None}, key=str)
+    by_user: dict = {}
+    for row in db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id.in_([u.id for u in users]),
+        WorkingHoursChange.tenant_id.in_(tenant_ids),  # F-026
+    ).all():
+        by_user.setdefault(row.user_id, []).append(row)
+    for user in users:
+        try:
+            user.work_blocks_today = get_blocks_json_for_date(
+                db, user, on_date, by_user.get(user.id, []))
+        except ValueError:
+            logger.warning("work_blocks_today: Blöcke von Benutzer %s nicht lesbar", user.id)
+            user.work_blocks_today = None
 
 
 class ScheduleSegment(NamedTuple):

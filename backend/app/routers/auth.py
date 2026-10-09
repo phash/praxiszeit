@@ -297,6 +297,11 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     security_logger.info("AUTH login_success user=%s", username_lower)
 
+    # Spec 11.1: heute gültige Blöcke (locker, E29 — nie ein 500 im Login).
+    from app.services import calculation_service
+    from app.services.timezone_service import today_local
+    calculation_service.attach_work_blocks_today(db, [user], today_local())
+
     return LoginResponse(
         access_token=access_token,
         user=UserListResponse.model_validate(user),

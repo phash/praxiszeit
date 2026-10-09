@@ -399,6 +399,14 @@ def _role_label(role) -> str:
     return _ROLE_LABELS_DE.get(role, role.value)
 
 
+# Spec 11.4 (E26): ein gecachtes altes Frontend schickt die entfallenen
+# Fensterfelder bei jedem Speichern mit.
+LEGACY_WINDOW_FIELDS_DETAIL = (
+    "Bitte Seite neu laden: Die Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende) "
+    "wurden durch Arbeitszeit-Blöcke ersetzt."
+)
+
+
 LAST_ADMIN_DETAIL = (
     "Das ist das letzte aktive Admin-Konto dieser Praxis. Legen Sie zuerst ein "
     "weiteres Admin-Konto an oder ernennen Sie jemanden zum Admin – sonst kommt "
@@ -473,6 +481,8 @@ def list_users(
     users = _filtered_user_list_query(
         db, current_user, include_inactive, include_hidden
     ).offset(skip).limit(limit).all()
+    # Spec 11.1: EIN Preload der Verlaufszeilen für alle gelisteten Personen.
+    calculation_service.attach_work_blocks_today(db, users, today_local())
     return users
 
 
@@ -1057,12 +1067,16 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = D
     """Get a specific user by ID (admin only)."""
     # _get_user_in_tenant raises 404 itself (never returns None) — the former
     # `if not user` guard here was dead code; the tenant scope is already enforced.
-    return _get_user_in_tenant(db, user_id, current_user)
+    user = _get_user_in_tenant(db, user_id, current_user)
+    calculation_service.attach_work_blocks_today(db, [user], today_local())
+    return user
 
 
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Create a new user (admin only)."""
+    if user_data.legacy_window_fields_sent:
+        raise HTTPException(status_code=400, detail=LEGACY_WINDOW_FIELDS_DETAIL)
     # F-026: usernames are unique per (tenant_id, username) — scope the
     # uniqueness probe to the caller's tenant so the same username can exist in
     # different tenants, and so the check does not silently depend on RLS.
@@ -1122,16 +1136,6 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         milog_working_time_account=user_data.milog_working_time_account,  # #377
         agreed_monthly_hours=user_data.agreed_monthly_hours,  # #377 Baustein 2a
         use_fixed_monthly_target=user_data.use_fixed_monthly_target,  # #377 Baustein 2b
-        scheduled_start_monday=user_data.scheduled_start_monday,
-        scheduled_end_monday=user_data.scheduled_end_monday,
-        scheduled_start_tuesday=user_data.scheduled_start_tuesday,
-        scheduled_end_tuesday=user_data.scheduled_end_tuesday,
-        scheduled_start_wednesday=user_data.scheduled_start_wednesday,
-        scheduled_end_wednesday=user_data.scheduled_end_wednesday,
-        scheduled_start_thursday=user_data.scheduled_start_thursday,
-        scheduled_end_thursday=user_data.scheduled_end_thursday,
-        scheduled_start_friday=user_data.scheduled_start_friday,
-        scheduled_end_friday=user_data.scheduled_end_friday,
         tenant_id=current_user.tenant_id,
     )
 
@@ -1144,6 +1148,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
     _enroll_user_in_open_closures(db, new_user, current_user)
     db.commit()
 
+    calculation_service.attach_work_blocks_today(db, [new_user], today_local())
     return UserCreateResponse(
         user=UserResponse.model_validate(new_user)
     )
@@ -1157,6 +1162,8 @@ def update_user(
     current_user: User = Depends(require_admin)
 ):
     """Update user data (admin only)."""
+    if user_data.legacy_window_fields_sent:
+        raise HTTPException(status_code=400, detail=LEGACY_WINDOW_FIELDS_DETAIL)
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
@@ -1193,14 +1200,16 @@ def update_user(
         'weekly_hours', 'use_daily_schedule', 'work_days_per_week',
         'hours_monday', 'hours_tuesday', 'hours_wednesday',
         'hours_thursday', 'hours_friday',
+        # Spec E27: Blöcke gehören zum Vertrags-Snapshot.
+        'work_blocks',
     )
     if any(f in update_data for f in _HISTORISED_FIELDS):
         raise HTTPException(
             status_code=400,
             detail=(
-                "Wochenstunden, Tagesstunden und Arbeitstage werden über "
-                "„Wochenstunden anpassen“ mit Wirkungsdatum geändert, damit "
-                "Historie und Soll vergangener Monate korrekt bleiben."
+                "Wochenstunden, Tagesstunden, Arbeitstage und Arbeitszeit-Blöcke "
+                "werden über „Wochenstunden anpassen“ mit Wirkungsdatum geändert, "
+                "damit Historie und Soll vergangener Monate korrekt bleiben."
             ),
         )
 
@@ -1247,9 +1256,9 @@ def update_user(
                 detail="Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
             )
 
-    # Release-Review 1.16.0: Beschäftigungsfenster und Soll-Zeit-Fenster ebenfalls
+    # Release-Review 1.16.0: Beschäftigungsfenster ebenfalls
     # gegen den EFFEKTIVEN Zustand prüfen, nicht nur gegen den Payload.
-    # `validate_employment_and_window_order` im Schema sieht nur die mitgeschickten
+    # `validate_employment_order` im Schema sieht nur die mitgeschickten
     # Felder: ein Partial-PUT mit ausschliesslich `last_work_day` kommt an ihm vorbei
     # (first_work_day ist dort None) und schreibt first > last in die DB. Danach
     # wirft der `UserResponse`-Validator beim SERIALISIEREN — also erst in der
@@ -1263,16 +1272,6 @@ def update_user(
             status_code=400,
             detail="Erster Arbeitstag darf nicht nach dem letzten Arbeitstag liegen.",
         )
-    for _wd, _label in (
-        ('monday', 'Montag'), ('tuesday', 'Dienstag'), ('wednesday', 'Mittwoch'),
-        ('thursday', 'Donnerstag'), ('friday', 'Freitag'),
-    ):
-        _s, _e = _eff(f'scheduled_start_{_wd}'), _eff(f'scheduled_end_{_wd}')
-        if _s and _e and _s >= _e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{_label}: Soll-Beginn muss vor dem Soll-Ende liegen.",
-            )
 
     # VULN-010: invalidate existing JWTs when role is changed
     role_changed = False
@@ -1326,6 +1325,7 @@ def update_user(
     if closures_enabled:
         _enroll_user_in_open_closures(db, user, current_user)
         db.commit()
+    calculation_service.attach_work_blocks_today(db, [user], today_local())
     return user
 
 

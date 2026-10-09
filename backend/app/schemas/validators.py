@@ -11,14 +11,10 @@ from typing import Any
 # Erlaubte absence_type-Werte für Urlaubs-/Abwesenheitsanträge.
 VACATION_REQUEST_ABSENCE_TYPES = {"vacation", "training", "overtime", "other"}
 
-# (start_field, end_field, Label) je Wochentag für die Soll-Arbeitszeit-Fenster (#201).
-SCHEDULED_WINDOW_PAIRS = [
-    ("scheduled_start_monday", "scheduled_end_monday", "Montag"),
-    ("scheduled_start_tuesday", "scheduled_end_tuesday", "Dienstag"),
-    ("scheduled_start_wednesday", "scheduled_end_wednesday", "Mittwoch"),
-    ("scheduled_start_thursday", "scheduled_end_thursday", "Donnerstag"),
-    ("scheduled_start_friday", "scheduled_end_friday", "Freitag"),
-]
+# Spec 2026-10-08 (11.4/E26): Präfix der mit Migration 073 entfallenen
+# Fensterfelder. Erkannt wird NUR das Präfix — die vollen Feldnamen dürfen in
+# app/ nicht mehr vorkommen (Guard-Test test_no_scheduled_columns.py).
+LEGACY_WINDOW_FIELD_PREFIX = "scheduled_"
 
 
 def validate_half_day_single_day(v: bool, info: Any) -> bool:
@@ -45,14 +41,29 @@ def validate_vr_absence_type(v, *, allow_none: bool):
     return v
 
 
-def validate_employment_and_window_order(model: Any) -> Any:
-    """Erster < letzter Arbeitstag, und je Wochentag Soll-Beginn < Soll-Ende (#193/#201)."""
+def validate_employment_order(model: Any) -> Any:
+    """Erster < letzter Arbeitstag (#193). Die Soll-Fenster-Prüfung (#201)
+    entfällt mit Migration 073 — Blöcke werden im Verlauf validiert (PR3)."""
     if model.first_work_day and model.last_work_day:
         if model.first_work_day >= model.last_work_day:
             raise ValueError("Erster Arbeitstag muss vor dem letzten Arbeitstag liegen")
-    for start_field, end_field, label in SCHEDULED_WINDOW_PAIRS:
-        s = getattr(model, start_field, None)
-        e = getattr(model, end_field, None)
-        if s is not None and e is not None and s >= e:
-            raise ValueError(f"Soll-Beginn muss vor Soll-Ende liegen ({label})")
     return model
+
+
+def strip_legacy_window_fields(data: Any) -> Any:
+    """``model_validator(mode="before")``-Kern für UserCreate/UserUpdate (E26).
+
+    Ein gecachtes altes Frontend schickt die entfallenen Fensterfelder bei
+    jedem Speichern. Pydantic verwürfe sie still — der Router meldete dann
+    „gespeichert", ohne zu speichern. Stattdessen werden sie entfernt und das
+    nie serialisierte Feld ``legacy_window_fields_sent`` gesetzt; der Router
+    antwortet daraufhin mit 400 „Bitte Seite neu laden"."""
+    if isinstance(data, dict) and any(
+        isinstance(key, str) and key.startswith(LEGACY_WINDOW_FIELD_PREFIX) for key in data
+    ):
+        data = {
+            key: value for key, value in data.items()
+            if not (isinstance(key, str) and key.startswith(LEGACY_WINDOW_FIELD_PREFIX))
+        }
+        data["legacy_window_fields_sent"] = True
+    return data

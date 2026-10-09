@@ -719,10 +719,12 @@ class TestUsersOverview:
     # TestAdminUsers.test_employee_cannot_list_users — no separate test here.
 
 
-class TestScheduledWindowRoundtrip:
-    """#201: scheduled_start/end_monday..friday round-trip through admin user API."""
+class TestLegacyWindowFieldsRejected:
+    """Spec 2026-10-08, 11.4 (E26): die mit Migration 073 entfallenen #201-Felder
+    lehnt die Benutzer-API mit 400 ab — ein gecachtes altes Frontend darf nicht
+    „gespeichert" melden, ohne zu speichern."""
 
-    def test_user_scheduled_window_roundtrip(self, admin_client, _db_session):
+    def test_post_with_legacy_window_fields_is_400(self, admin_client, _db_session):
         resp = admin_client.post("/api/admin/users", json={
             "username": "win",
             "first_name": "Win",
@@ -734,29 +736,17 @@ class TestScheduledWindowRoundtrip:
             "scheduled_start_monday": "08:00",
             "scheduled_end_monday": "17:00",
         })
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["user"]["scheduled_start_monday"] == "08:00:00"
-        assert resp.json()["user"]["scheduled_end_monday"] == "17:00:00"
-        assert resp.json()["user"]["scheduled_start_tuesday"] is None
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"].startswith("Bitte Seite neu laden")
+        assert _db_session.query(User).filter(User.username == "win").first() is None
 
-        # Also verify the GET list includes the fields
-        list_resp = admin_client.get("/api/admin/users")
-        assert list_resp.status_code == 200
-        users = list_resp.json()
-        win = next((u for u in users if u["username"] == "win"), None)
-        assert win is not None
-        assert win["scheduled_start_monday"] == "08:00:00"
-        assert win["scheduled_end_monday"] == "17:00:00"
-        assert win["scheduled_start_tuesday"] is None
-
-    def test_user_scheduled_window_update(self, admin_client, employee_user, _db_session):
+    def test_put_with_legacy_window_fields_is_400(self, admin_client, employee_user, _db_session):
         resp = admin_client.put(f"/api/admin/users/{employee_user.id}", json={
             "scheduled_start_friday": "09:00",
             "scheduled_end_friday": "15:00",
         })
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["scheduled_start_friday"] == "09:00:00"
-        assert resp.json()["scheduled_end_friday"] == "15:00:00"
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"].startswith("Bitte Seite neu laden")
 
 
 class TestAdminYearClosing:
@@ -965,10 +955,10 @@ class TestAdminSettings:
         bad = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "-5"})
         assert bad.status_code == 400
 
-    def test_inverted_scheduled_window_rejected(self, admin_client):
-        """#201: Invertiertes Soll-Fenster (Start >= Ende) muss 422 liefern."""
+    def test_inverted_legacy_window_is_rejected_as_legacy_field(self, admin_client):
+        """#201 → Spec 11.4: auch ein (invertiertes) Altfenster ist ein Altfeld → 400."""
         resp = admin_client.post("/api/admin/users", json={
             "username": "inv", "first_name": "In", "last_name": "V", "weekly_hours": 40.0,
             "vacation_days": 30, "work_days_per_week": 5, "password": "InvWindow2025!",
             "scheduled_start_monday": "18:00", "scheduled_end_monday": "08:00"})
-        assert resp.status_code == 422, resp.text
+        assert resp.status_code == 400, resp.text
