@@ -90,7 +90,7 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 
 **Monat wechseln:** Mit den Pfeilen `<` und `>` wechseln Sie den angezeigten Monat.
 
-**Monat ↔ Woche umschalten (#329):** Über den Umschalter **„Monat / Woche"** oben neben dem Zeitraum wechseln Sie zwischen der Monats- und einer **Wochenansicht**. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche, z. B. **„22.–28.06.2026 (KW 26)"**; mit den Pfeilen blättern Sie wochenweise. Die Spalten sind dieselben wie im Monat. So erhalten Sie eine schnelle Plausibilitätsübersicht, wer zu viel oder zu wenig gearbeitet hat. Ihre Auswahl (Monat oder Woche) bleibt **pro Browser/Gerät** gespeichert. In der Wochenansicht heißt die zweite Option der Soll-Basis entsprechend **„volle Woche"** statt „Monatsende".
+**Monat ↔ Woche umschalten (#329):** Über den Umschalter **„Monat / Woche"** oben neben dem Zeitraum wechseln Sie zwischen der Monats- und einer **Wochenansicht**. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche, z. B. **„22.–28.06.2026 (KW 26)"**; mit den Pfeilen blättern Sie wochenweise. Die Spalten sind dieselben wie im Monat. So erhalten Sie eine schnelle Plausibilitätsübersicht, wer zu viel oder zu wenig gearbeitet hat. Ihre Auswahl (Monat oder Woche) bleibt **pro Browser/Gerät** gespeichert. In der Wochenansicht heißt die zweite Option der Soll-Basis entsprechend **„volle Woche"** statt „Monatsende". Mitarbeitende haben auf ihrem eigenen Dashboard denselben Umschalter (letzte 8 Wochen, Soll-Basis „bis heute") – für dieselbe Woche zeigen beide Ansichten dieselben Zahlen.
 
 **Soll-Basis umschalten (#313):** Über das Dropdown **„Soll: bis heute / Monatsende"** in der Monatsübersicht steuern Sie, wie das Monats-**Soll** gezählt wird:
 - **bis heute** (Standard): nur bis zum **letzten abgeschlossenen Arbeitstag** des laufenden Monats — so startet der Saldo nicht mit einem Monatsanfangs-Minus.
@@ -106,6 +106,8 @@ Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/a
 ### Jahresabschluss
 
 Unterhalb der Monatsübersicht finden Sie die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeiter. Hier können Sie den Jahresabschluss durchführen.
+
+> **Jahresend-Warnung (ab Oktober):** Im letzten Quartal des laufenden Jahres erscheint über der Jahresübersicht der gelbe Hinweis **„Jahresend-Warnung: Offene Urlaubstage"** mit allen Mitarbeitenden, die noch **mindestens einen ganzen Urlaubstag** offen haben. Kleinere Reste – typisch bei Teilzeit, z. B. 0,3 oder 0,5 Tage – lösen bewusst **keine** Warnung aus: sie lassen sich nicht als ganzer Tag nehmen und werden üblicherweise im Folgejahr mit weiteren Bruchteilen zusammengelegt. In der Tabelle, im Urlaubskonto und beim Jahresabschluss zählen sie unverändert mit. Dieselbe Schwelle gilt für den Hinweis im Urlaubskonto auf dem Mitarbeiter-Dashboard.
 
 #### Jahresabschluss erstellen
 
@@ -329,7 +331,14 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 - **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
 - **Format:** Excel (.xlsx), ODS (.ods) oder PDF (.pdf)
-- **Details pro Mitarbeiter:** Datum, Wochentag, Start, Ende, Pause, Ist-Stunden, Soll-Stunden, Abwesenheitstyp, Monatssaldo
+- **Spalten je Tag:** Datum, Wochentag, Von, Bis, Pause (Min), Netto (Std), Soll (Std), Differenz, Abwesenheit, Bemerkung – in Excel und ODS zusätzlich **Unterbrechung (Min)** und **Arbeitsblöcke** (hinten angehängt; alle übrigen Spalten stehen unverändert an ihrem Platz, damit bestehende Auswertungen weiter funktionieren)
+- **Zusammenfassung pro Mitarbeiter:** Soll-/Ist-Stunden, Saldo Monat, Überstunden kumuliert, Urlaub, Nachtarbeitstage
+
+**So lesen Sie eine Tageszeile:**
+
+- **Netto (Std)** ist die **angerechnete Arbeitszeit** der Zeiteinträge des Tages. Ist für die Person ein [Soll-Arbeitszeit-Fenster](#soll-arbeitszeiten-soll-arbeitszeit-fenster-201) hinterlegt, ist das die auf das Fenster gekappte Zeit – auch „Von"/„Bis" zeigen dann die gekappten Zeiten; der ursprüngliche Stempel bleibt in PraxisZeit gespeichert (Monatsjournal, Admin-Dashboard), steht aber nicht in der Datei. An einem Krank- oder Fortbildungstag ohne Zeiteintrag steht hier 0, außerhalb des Beschäftigungszeitraums ebenfalls (die Stempel bleiben dort sichtbar).
+- **Differenz** ist der Saldo des Tages: Netto **plus Gutschrift für Krankheit/Fortbildung** minus Soll. Ein Krank- oder Fortbildungstag ist damit **±0** – das Soll bleibt stehen, die Stunden aus der Spalte „Abwesenheit" werden gutgeschrieben. Die Summe der Spalte entspricht dem „Saldo Monat" der Zusammenfassung. **Ausnahme:** Mitarbeitende mit fester Monatsarbeitszeit (Minijob-Modus, → [Abschnitt 13](#13-einstellungen)) – dort ist das Monats-Soll fest und nicht die Summe der Tage; verbindlich ist dann nur die Zusammenfassung.
+- **Geteilte Dienste** (mehrere Zeiteinträge an einem Tag, z. B. 07:45–12:00 und 14:15–17:00): In Excel/ODS zeigen „Von"/„Bis" den Rahmen des Tages (erster Beginn, letztes Ende), **Unterbrechung (Min)** die Zeit zwischen den Blöcken und **Arbeitsblöcke** die einzelnen Blöcke („07:45–12:00, 14:15–17:00"). Damit geht die Zeile auf: Bis − Von − Pause − Unterbrechung = Netto. **Ausnahmen:** Überschneiden sich zwei Einträge, zählt Netto die Überschneidung doppelt – die Spalte „Arbeitsblöcke" zeigt sie; läuft ein Eintrag des Tages noch (nicht ausgestempelt), fehlt seine Zeit in Netto und in „Bis"; außerhalb des Beschäftigungszeitraums ist Netto 0. Im **PDF** stehen die Blöcke in „Von"/„Bis" untereinander, die Unterbrechung in einer eigenen Spalte direkt neben der Pause.
 
 **Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
 
@@ -344,7 +353,7 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 ### Jahresreport Detailliert
 
 - **Format:** Excel (.xlsx) oder ODS (.ods)
-- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter
+- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter – mit denselben Tagesspalten wie der Monatsreport (inkl. Unterbrechung und Arbeitsblöcke; die Differenz enthält die Gutschrift für Krankheit/Fortbildung)
 - **Hinweis:** Generierungszeit 3–5 Sekunden
 
 **Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung
@@ -380,9 +389,18 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 
 ### Antrag genehmigen
 
-1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, Notiz
+1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, **Arbeitstage**, Notiz
 2. Klicken Sie auf **„Genehmigen"** (grüner Button)
-3. Das System trägt automatisch Abwesenheiten für alle Werktage ein (Wochenenden und Feiertage ausgeschlossen)
+3. Das System trägt automatisch Abwesenheiten für alle Arbeitstage der Person ein (Wochenenden, Feiertage, als „frei" eingestellte Sondertage 24./31.12. und freie Wochentage laut Tagesplan ausgeschlossen)
+
+**„Arbeitstage" auf der Antragskarte** zeigt, wie viele Tage der Antrag nach der Genehmigung tatsächlich kostet – nach genau denselben Regeln wie die Buchung und das Urlaubskonto:
+
+- Es zählen nur Tage, an denen die Person laut ihrem **zum jeweiligen Datum gültigen** Arbeitsplan arbeitet. Bei einer 4-Tage-Woche mit freiem Mittwoch kostet eine Woche Montag bis Freitag **4** Tage, nicht 5. Liegt im Zeitraum eine Stundenänderung, gilt für jeden Tag der Plan, der an diesem Tag gültig ist.
+- Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht.
+- Ein **halber Tag** zählt **0,5**; ein als **„halber Feiertag"** eingestellter 24./31.12. ebenfalls **0,5**.
+- Tage nach einem inzwischen eingetragenen **letzten Arbeitstag** zählen nicht mit – ein solcher Antrag lässt sich so aber nicht mehr genehmigen (Fehlermeldung „Datum liegt nach dem letzten Arbeitstag"). Kürzen Sie ihn vorher über **„Bearbeiten"** auf den Beschäftigungszeitraum.
+
+Dieselbe Zahl sehen Mitarbeitende im Tab **„Meine Anträge"**. Bis Version 1.19.3 zählte die Anzeige stumpf Montag bis Freitag ohne Feiertage und widersprach damit bei Teilzeitkräften mit Tagesplan, bei Halbtagen und bei freien Sondertagen dem, was die Genehmigung danach verbucht.
 
 ### Genehmigten Antrag stornieren
 
@@ -625,9 +643,17 @@ Die Option ist **global** und gilt nur für Betriebsferien, die als Urlaub gewer
 
 > **Hinweis:** Hintergrund zur Pausenpflicht selbst (§ 4 ArbZG) siehe [Abschnitt 14 → „Pflicht-Pause-Ausnahme"](#pflicht-pause-ausnahme-§4-arbzg).
 
-Konnte eine gesetzlich vorgeschriebene Pause (§ 4 ArbZG) nicht eingelegt werden, kann ein Eintrag mit einer **Pflicht-Begründung** trotzdem erfasst werden, statt ihn zu blockieren. Der Schalter **„Genehmigung erforderlich"** steuert das Verhalten:
+Konnte eine gesetzlich vorgeschriebene Pause (§ 4 ArbZG) nicht eingelegt werden, kann ein Eintrag mit einer **Pflicht-Begründung** („Pflicht-Pause war nicht möglich") trotzdem erfasst werden, statt ihn zu blockieren.
+
+Der Schalter **„Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"** (Standard: **an**) legt fest, ob es diese Ausnahme in Ihrer Praxis überhaupt gibt:
+- **An** (Standard): Mitarbeitende und Admins können eine fehlende Pause begründen – beim Ausstempeln, in der Zeiterfassung, im Monatsjournal und in Änderungsanträgen.
+- **Aus**: Die Auswahl verschwindet an all diesen Stellen, und der Server lehnt jede Ausnahme ab – **auch für Admins**. Ein Tag über 6 bzw. 9 Stunden lässt sich dann nur noch mit eingetragener Pause speichern oder ausstempeln. Sinnvoll, wenn in Ihrer Praxis immer eine Pause möglich ist und die Pausenzeit in jedem Fall abgezogen werden soll. Bereits erfasste Ausnahmen bleiben unverändert stehen. Ein noch **offener** Ausnahme-Antrag gilt nach dem Abschalten als Antrag **ohne** Ausnahme: Die Genehmigung prüft die Pause des Tages erneut und klappt nur noch, wenn sie jetzt reicht – sonst lehnen Sie ihn ab, damit er mit Pause neu gestellt wird.
+
+Ist die Ausnahme erlaubt, steuert der Schalter **„Genehmigung erforderlich"**, was mit einer Ausnahme geschieht, die Mitarbeitende in der **Zeiterfassung** begründen (Eintrag anlegen oder bearbeiten):
 - **Aus** (Standard): Der Eintrag wird sofort gespeichert; die Abweichung wird als Warnung gemeldet und im Änderungsprotokoll dokumentiert.
 - **Ein**: Der Eintrag wird erst nach **Admin-Genehmigung** wirksam (**4-Augen-Prinzip**).
+
+**Beim Ausstempeln** wird eine Begründung dagegen immer **sofort wirksam** – auch bei eingeschalteter Genehmigungspflicht. Die Arbeitszeit ist dann bereits geleistet, und der Eintrag muss geschlossen werden (§ 16 ArbZG). Diese Ausnahmen finden Sie im Änderungsprotokoll (Quelle „break_waiver", siehe [Abschnitt 9](#9-änderungsprotokoll-audit-log)). Soll beim Ausstempeln gar keine Ausnahme möglich sein, schalten Sie die Ausnahme ganz ab. Änderungsanträge gehen ohnehin immer zur Genehmigung an Sie; Korrekturen durch Admins wirken sofort.
 
 > **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden.
 
@@ -781,9 +807,11 @@ Eine **8-Stunden-Warnung** weist bereits ab Überschreiten der Regelgrenze auf d
 
 Nach § 4 ArbZG ist die Arbeit durch im Voraus feststehende Ruhepausen zu unterbrechen: **mindestens 30 Minuten** bei mehr als 6 Stunden, **mindestens 45 Minuten** bei mehr als 9 Stunden Arbeitszeit.
 
-Wird beim Erfassen, Korrigieren oder Genehmigen eines Eintrags die Pausenpflicht verletzt, blockiert PraxisZeit den Vorgang nicht zwingend. Stattdessen kann eine **dokumentierte Ausnahme mit Pflicht-Begründung** erfasst werden, falls die Pause im konkreten Fall nicht eingelegt werden konnte. Die Begründung wird im Änderungsprotokoll festgehalten.
+**Maßstab ist der ganze Tag.** PraxisZeit rechnet alle Einträge eines Tages zusammen. Eine Unterbrechung zählt nach § 4 Satz 2 ArbZG erst ab **15 Minuten** als Pause – wer um 13:59 aus- und sofort wieder einstempelt, hat keine Pause gemacht. Zwei aneinandergereihte Einträge (z. B. 08:49–13:59 und 13:59–18:00) werden deshalb wie ein durchgehender 9-Stunden-Tag behandelt.
 
-Ob solche Ausnahmen sofort wirksam werden oder zuerst genehmigt werden müssen, steuern Sie unter **Einstellungen → „Pflicht-Pause-Ausnahme"** (→ [Abschnitt 13](#pflicht-pause-ausnahme)).
+Wird beim **Ausstempeln**, Erfassen, Korrigieren oder Genehmigen eines Eintrags die Pausenpflicht verletzt, lässt sich der Vorgang erst abschließen, wenn eine ausreichende Pause eingetragen ist – oder, falls die Pause im konkreten Fall nicht eingelegt werden konnte, mit einer **dokumentierten Ausnahme mit Pflicht-Begründung**. Die Begründung wird im Änderungsprotokoll festgehalten. Bis Version 1.19 meldete das Ausstempeln einen Verstoß nur als Warnung; seit #499 gilt dort dieselbe Sperre wie an allen anderen Erfassungswegen (anders als bei der 10-Stunden-Grenze kann die Person den Verstoß im selben Schritt beheben).
+
+Ob es solche Ausnahmen in Ihrer Praxis gibt und ob sie sofort wirksam werden oder zuerst genehmigt werden müssen, steuern Sie unter **Einstellungen → „Pflicht-Pause-Ausnahme"** (→ [Abschnitt 13](#pflicht-pause-ausnahme)).
 
 > **4-Augen-Prinzip:** Ist die Genehmigungspflicht aktiv, darf ein Admin seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen**. Sie muss von einer zweiten Person geprüft werden.
 
@@ -795,7 +823,7 @@ Ob solche Ausnahmen sofort wirksam werden oder zuerst genehmigt werden müssen, 
 |---------|----------|-----------|----------------|
 | **Tageshöchstgrenze** | > 10h Arbeitszeit | Warnung beim Live-Ausstempeln; harte Sperre bei manueller Eingabe/Antrag | § 3 ArbZG |
 | **8h-Warnung** | > 8h Arbeitszeit | Warnung | § 3 ArbZG |
-| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h | Warnung; dokumentierte Ausnahme mit Begründung möglich | § 4 ArbZG |
+| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h (alle Einträge des Tages; Lücken < 15 Min. zählen nicht) | Sperre, auch beim Ausstempeln; dokumentierte Ausnahme mit Begründung möglich, sofern in den Einstellungen erlaubt | § 4 ArbZG |
 | **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag | Warnung | § 9 ArbZG |
 | **Wochenhöchstgrenze** | > 48h/Woche | Warnung | § 14 ArbZG |
 | **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | Warnung | § 6 ArbZG |
@@ -1030,6 +1058,12 @@ Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kom
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py reset-admin-password
 ```
 
+**macOS** (Standard-Installationsordner `/usr/local/praxiszeit`; das Dienstkonto heißt hier `_praxiszeit` – mit Unterstrich):
+
+```
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py reset-admin-password
+```
+
 **Windows** (Eingabeaufforderung **als Administrator** im Installationsordner, z. B. `C:\PraxisZeit`):
 
 ```
@@ -1139,6 +1173,12 @@ Arbeitsplätze des Plans denselben Standort, steht er einmal in der Kopfzeile
 ist er bei einem Teil gar nicht gesetzt), steht er stattdessen hinter jedem
 betroffenen Arbeitsplatznamen, z. B. „Tresen (Hauptstelle)" – so ist bei zwei
 Aushängen für zwei Standorte am Schwarzen Brett klar, welcher gemeint ist.
+Der **Praxisname** in der Kopfzeile ist der bei der Installation angegebene –
+in der nativen Installation der Eintrag `name` im Abschnitt `[practice]` der
+Datei `config/praxiszeit.conf`, bei Docker `PRACTICE_NAME` in der `.env`.
+Ändern Sie ihn dort; er gilt nach einem Neustart des Dienstes (Docker:
+`docker compose up -d`). Ohne eigenen Eintrag steht dort der Vorgabewert
+„Praxis".
 
 Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
 fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht

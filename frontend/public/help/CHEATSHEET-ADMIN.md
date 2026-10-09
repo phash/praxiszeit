@@ -110,6 +110,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 - **Aus** (Standard): Mitarbeiter buchen Urlaub direkt
 - **Ein**: Urlaub landet als „Offen" zur Genehmigung
 
+**Arbeitstage** auf der Karte = was die Genehmigung kostet: nur Arbeitstage laut Tagesplan zum jeweiligen Datum (4-Tage-Woche, Mi frei: Mo–Fr = 4), ohne Wochenende/Feiertag/„frei"-Sondertag; Halbtag und „halber Feiertag" je 0,5
 **Genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen
 **Ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
 **Stornieren:** Filter „Genehmigt" → Antrag → **„Urlaub stornieren"** (nur wenn Zeitraum noch nicht begonnen) → Abwesenheiten werden **automatisch entfernt**, Antrag wird „Zurückgezogen"
@@ -152,7 +153,7 @@ Jeder Bereich hat einen eigenen **Speichern**-Button.
 | **Feiertage** | Bundesland wählen + eigene Feiertage (reduzieren Soll, grau im Kalender) |
 | **Sondertage (24./31.12.)** | s. u. (#188) |
 | **Urlaubsgenehmigung** | Genehmigungspflicht an/aus |
-| **Pflicht-Pause-Ausnahme** | Genehmigungspflicht für §4-Ausnahmen (s. o.) |
+| **Pflicht-Pause-Ausnahme** | Ausnahme erlauben an/aus (Standard **an**, #499) + Genehmigungspflicht für §4-Ausnahmen (s. o.) |
 | **Soll-Arbeitszeit-Fenster** | Puffer (Min.) für Soll-Zeiten, Default 15 (s. o.) |
 | **Onboarding / Willkommens-Tour** | Erst-Login-Tour für neue Nutzer an/aus (Standard **an**) |
 | **Eigene Abwesenheitsgründe** | Bezeichnung + Farbe + Basis-Verhalten (#312) – s. u. |
@@ -196,7 +197,7 @@ Erscheinen beim Buchen unter „Eigene Gründe". Im Team-Kalender für Kolleg:in
 |---------|--------|-----------|---|
 | Tagesarbeitszeit Warnung | > 8h Netto | Warnung | §3 |
 | Tagesarbeitszeit 10h | > 10h Netto | **Live-Ausstempeln: nur Warnung (kein Block)**; manuelle Eingabe/Antrag: **harte Sperre** | §3 |
-| Pausenpflicht | > 6h → 30 Min. / > 9h → 45 Min. | Warnung; dokumentierte Ausnahme mit Begründung möglich (s. u.) | §4 |
+| Pausenpflicht | > 6h → 30 Min. / > 9h → 45 Min. über **alle Einträge des Tages**; Lücken < 15 Min. sind keine Pause | **Sperre** an allen Schreibwegen – auch beim Ausstempeln (#499); dokumentierte Ausnahme mit Begründung möglich, sofern erlaubt (s. u.) | §4 |
 | Nachtarbeitnehmer | > 8h täglich | Warnung | §6 |
 | Sonntagsarbeit | Eintrag an So/Feiertag | Warnung + Ausnahmegrund-Pflicht | §9/§10 |
 | Wochenstunden | > 48h | Warnung | §14 |
@@ -209,9 +210,14 @@ Erscheinen beim Buchen unter „Eigene Gründe". Im Team-Kalender für Kolleg:in
 ## Pflicht-Pause-Ausnahme (§4)
 
 Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** möglich (im Änderungsprotokoll dokumentiert, Quelle „break_waiver").
-**Einstellungen → „Pflicht-Pause-Ausnahme" → „Genehmigung erforderlich":**
+**Einstellungen → „Pflicht-Pause-Ausnahme" → „Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"** (#499):
+- **An** (Standard): Begründung wird angeboten (Ausstempeln, Zeiterfassung, Anträge, Admin-Korrektur)
+- **Aus**: kein Begründungsfeld mehr; der Server lehnt Ausnahmen ab (auch von Admins) – ein Tag über 6/9 h lässt sich nur mit eingetragener Pause speichern. Offene Ausnahme-Anträge gelten dann als Anträge ohne Ausnahme: Genehmigen klappt nur, wenn die Pause des Tages jetzt reicht (sonst ablehnen → mit Pause neu stellen). Bestehende Ausnahmen bleiben.
+
+**„Genehmigung erforderlich"** (nur bei erlaubter Ausnahme; gilt für Ausnahmen, die MA in der Zeiterfassung beim Anlegen/Bearbeiten begründen):
 - **Aus** (Standard): Eintrag sofort wirksam, Abweichung als Warnung
 - **Ein**: Eintrag erst nach Admin-Genehmigung wirksam
+- **Ausstempeln:** Begründung wirkt **immer sofort** (Eintrag muss geschlossen werden, §16) → im Änderungsprotokoll prüfen (Quelle „break_waiver"). Keine Ausnahme beim Ausstempeln gewünscht → Ausnahme ganz abschalten.
 > **4-Augen:** Eigene Pflicht-Pause-Ausnahme **nie selbst genehmigen** – muss ein anderer Admin prüfen.
 
 ---
@@ -309,7 +315,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **Stammdaten:** Standorte (optional) + Arbeitsplätze (mit Farbe) anlegen.
 - **Plan:** beliebig viele Wochenpläne; Slots per Drag & Drop / Klick, Mitarbeitende auf Slot ziehen, Mindestbesetzung optional.
 - **Aktiv schalten** → für alle sichtbar (mehrere Pläne gleichzeitig aktiv möglich).
-- **Freigabe:** Plan-Einstellungen → „Für Mitarbeitende sichtbar" macht einen Plan unabhängig vom Datums-Fenster sichtbar – auch bevor er gilt **und nach dessen Ablauf** (Kopie erbt das nicht). **Falle:** befristeter Plan abgelaufen, Schalter vergessen zurückzusetzen → bleibt für MA sichtbar (als „Nicht mehr gültig" markiert). Freigegebene Pläne erkennbar am **Augen-Symbol** in der Planliste / Abzeichen „Sichtbar" im Plan-Kopf. **Hinweis** je Slot (optional, 500 Zeichen, sichtbar als »-Text). **PDF**-Knopf druckt Arbeitsplatz×Wochentag im Querformat – auch MA können ihren sichtbaren Plan drucken; gilt der gedruckte Plan gerade nicht, trägt der Ausdruck den Vermerk „Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig". Einheitlicher Standort → Kopfzeile; unterschiedliche/teils fehlende Standorte → je Arbeitsplatzname, z. B. „Tresen (Hauptstelle)".
+- **Freigabe:** Plan-Einstellungen → „Für Mitarbeitende sichtbar" macht einen Plan unabhängig vom Datums-Fenster sichtbar – auch bevor er gilt **und nach dessen Ablauf** (Kopie erbt das nicht). **Falle:** befristeter Plan abgelaufen, Schalter vergessen zurückzusetzen → bleibt für MA sichtbar (als „Nicht mehr gültig" markiert). Freigegebene Pläne erkennbar am **Augen-Symbol** in der Planliste / Abzeichen „Sichtbar" im Plan-Kopf. **Hinweis** je Slot (optional, 500 Zeichen, sichtbar als »-Text). **PDF**-Knopf druckt Arbeitsplatz×Wochentag im Querformat – auch MA können ihren sichtbaren Plan drucken; gilt der gedruckte Plan gerade nicht, trägt der Ausdruck den Vermerk „Vorschau — gilt derzeit nicht" bzw. „Nicht mehr gültig". Einheitlicher Standort → Kopfzeile; unterschiedliche/teils fehlende Standorte → je Arbeitsplatzname, z. B. „Tresen (Hauptstelle)". **Praxisname** in der Kopfzeile = `[practice] name` in `config/praxiszeit.conf` (nativ) bzw. `PRACTICE_NAME` in `.env` (Docker); gilt nach Neustart des Dienstes (Docker: `docker compose up -d`), Vorgabe „Praxis".
 - **Einweisungen:** Matrix MA × Arbeitsplätze; nicht eingewiesene Zuweisung → weiche Warnung (blockiert nicht). MA sehen ihre Einweisungen im Profil.
 - **KW-/Jahresplanung (#305 M2):** pro Plan optionales Aktiv-Datums-Fenster („von/bis") + Jahres-Zeitstrahl. **Automatisch füllen** verteilt eingewiesene, verfügbare MA greedy auf die Slots (Zielwoche, ausgewogen nach Auslastung/Überstunden) → Entwurf, aktiviert den Plan **nicht**.
 - **Woche/Tag-Umschalter** (#321); im Slot-Dialog **„Auf Wochentage kopieren"** → Schicht (Arbeitsplatz, Zeit, Mindestbesetzung, Zuweisungen **und Hinweis**) auf weitere Tage (#322).

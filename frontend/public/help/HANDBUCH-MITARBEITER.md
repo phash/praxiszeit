@@ -60,7 +60,7 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 | Kachel | Was wird angezeigt |
 |--------|-------------------|
-| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll (grün = eingestempelt, rot = noch nicht eingestempelt an einem Arbeitstag) |
+| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll. Gezählt werden **alle** heute erfassten Blöcke – bei geteiltem Dienst also Vormittag **und** Nachmittag, auch nach dem Ausstempeln (grün = eingestempelt, rot = an einem Arbeitstag heute noch gar nicht eingestempelt, neutral „Ausgestempelt" = heute schon gearbeitet, gerade nicht eingestempelt). An Feiertagen, bei ganztägiger Abwesenheit (Urlaub, Krankheit, Fortbildung, Überstundenausgleich …), vor dem Eintritt und an einem freien 24./31.12. gibt es heute kein Tagessoll – dann erscheint weder Rot noch „x von y". Ein halber Urlaubstag oder ein halber 24./31.12. halbiert das Tagessoll |
 | **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats (H:MM) |
 | **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
@@ -70,15 +70,21 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 > **Voraussichtlicher Stand zum Jahresende:** Neben Ihrem **Überstundenkonto** steht, wie es zum 31.12. voraussichtlich aussieht – Ihr Saldo bis heute abzüglich der Stunden Ihrer bereits eingetragenen künftigen **Überstundenausgleich**-Tage. So sehen Sie sofort, ob die schon geplanten freien Tage Ihr Konto wie gewünscht abbauen. Urlaub, Krankheit und Fortbildung senken das Konto nicht und fließen deshalb nicht in die Vorschau ein. Ihre Praxisleitung kann diese Anzeige abschalten – fehlt die Zeile, ist entweder kein künftiger Ausgleichstag eingetragen oder die Anzeige in den Einstellungen deaktiviert.
 
+> **Hinweis auf offenen Urlaub (ab Oktober):** Im letzten Quartal zeigt das **Urlaubskonto** einen gelben Hinweis „Noch … Urlaubstage offen!" mit der Frist – aber erst, wenn noch **mindestens ein ganzer Urlaubstag** offen ist. Kleinere Reste (z. B. 0,5 Tage bei Teilzeit) lösen keinen Hinweis aus; sie stehen unverändert in Ihrem Urlaubskonto.
+
+> **Auf dem Smartphone** steht oben die Stempelkarte mit „x von y h heute" (Tagessaldo, siehe oben) und darunter die Karte **„Letzte Einträge"** mit Ihren fünf **neuesten** Zeiteinträgen des laufenden Monats – der jüngste zuerst. Alle Einträge finden Sie über „Alle anzeigen →" in der Zeiterfassung.
+
 > **Zeitanzeige:** Stunden werden im Format H:MM angezeigt (z. B. „8:30" für 8 Stunden 30 Minuten). Negative Salden werden mit einem Minus-Zeichen dargestellt (z. B. „-2:15").
 
 > **Hinweis:** Falls Ihre Praxis für Sie **keine Stundenzählung** führt, fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto** – das ist bei Ihnen so eingestellt und kein Fehler. Ihr **Urlaubskonto** wird trotzdem geführt. Mehr dazu in [Abschnitt 6](#6-wenn-für-sie-keine-stunden-gezählt-werden).
 
 > **Minijob mit festem Monats-Soll:** Führt Ihre Praxis Sie als Minijob-Kraft mit einer **festen vereinbarten Monatsarbeitszeit** (statt eines aus Wochenstunden berechneten Solls), zeigt Ihr **Monatssaldo** jeden Monat dasselbe feste Soll (bei unterjährigem Ein-/Austritt anteilig gekürzt). Feiertage sowie Urlaub oder bezahlte Freistellung an einem für Sie geplanten Arbeitstag werden Ihnen dabei automatisch mit den geplanten Stunden gutgeschrieben; unbezahlt freie Tage mindern das Monatssoll entsprechend. Unter dem **Überstundenkonto** kann in diesem Fall ein gelber Hinweis erscheinen, wenn die vereinbarte Zeit deutlich überschritten wird oder ein Zeitguthaben zu lange nicht ausgeglichen wurde (§ 2 Abs. 2 MiLoG) – das ist eine reine Information und blockiert nichts. Ob dieses Modell für Sie gilt, legt Ihre Praxisleitung fest.
 
-### Monatsübersicht (Tabelle)
+### Monats-/Wochenübersicht (Tabelle)
 
-Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto.
+Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto – die neueste Zeile steht oben.
+
+Über den Umschalter **„Monat / Woche"** rechts über der Tabelle wechseln Sie zur **Wochenübersicht**: die letzten **8 Kalenderwochen** (z. B. „KW 41 · 05.–11.10."), je Woche Soll, Ist, Saldo und der Stand Ihres Überstundenkontos am Wochenende. Pro Woche fällt sofort auf, wenn etwas fehlt – etwa ein vergessener Nachmittagsblock oder ein Eintrag, der nicht beendet wurde und automatisch um 23:59 geschlossen wurde. Die **laufende Woche** zählt wie der Monatssaldo nur **bis heute** (bis zum letzten abgeschlossenen Arbeitstag; heute zählt mit, sobald Sie ausgestempelt haben). Ihre Auswahl bleibt auf diesem Gerät/Browser gespeichert.
 
 - **Grün** = Plusstunden
 - **Rot** = Minusstunden
@@ -151,6 +157,10 @@ Am einfachsten erfassen Sie Ihre Arbeitszeit live mit der Stempeluhr. Sie finden
 > 2. **Begründung angeben** – falls eine Pause wirklich nicht möglich war, schreiben Sie in das Textfeld kurz, warum (z. B. „Notfall, keine Vertretung"). Diese **dokumentierte Ausnahme** wird gespeichert, und Sie können danach normal ausstempeln.
 >
 > Anders als früher genügt also kein flüchtiger Hinweis mehr – Sie müssen entweder die Pause eintragen **oder** die Ausnahme begründen, bevor das Ausstempeln abgeschlossen wird.
+>
+> **Der ganze Tag zählt:** Geprüft wird nicht nur der gerade laufende Abschnitt, sondern alle Einträge des Tages zusammen. Wer z. B. um 13:59 aus- und sofort wieder einstempelt, hat **keine** Pause gemacht – eine Unterbrechung zählt erst ab **15 Minuten** als Pause. Stempeln Sie abends nach insgesamt mehr als 6 bzw. 9 Stunden aus, verlangt PraxisZeit die Pause deshalb auch dann, wenn der letzte Abschnitt für sich kurz war.
+>
+> **Keine Begründung angeboten?** Ihre Praxis kann die Ausnahme „Pflicht-Pause war nicht möglich" abschalten. Dann fehlt das Textfeld, und das Ausstempeln klappt nur mit eingetragener Pause.
 
 > **Verschrieben?** Mit **Abbrechen** schließen Sie das Pausenfeld wieder, ohne auszustempeln – die Uhr läuft weiter.
 
@@ -171,6 +181,7 @@ Das Eingabeformular erscheint direkt oberhalb der Eintrags-Tabelle.
 3. **Bis** – Arbeitsende (Format: `17:00`)
 4. **Pause (Min.)** – Pausenzeit in Minuten (z. B. `30`)
 5. **Notiz** – Optional: Anmerkung zum Tag (keine Gesundheitsdaten eintragen)
+6. **Ausnahmegrund** – erscheint nur an **Sonn- und gesetzlichen Feiertagen** (§ 10 ArbZG, z. B. „Notdienst")
 
 Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das Formular.
 
@@ -179,8 +190,7 @@ Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das
 >
 > - **> 8 Stunden Netto:** Hinweis gem. [§ 3 ArbZG](https://www.gesetze-im-internet.de/arbzg/__3.html)
 > - **> 10 Stunden Netto:** Bei **manueller Eingabe** (wie hier) wird der Eintrag blockiert (Tageshöchstgrenze). Beim **Live-Ausstempeln** wird stattdessen nur gewarnt — die Zeit ist dann bereits geleistet und § 16-aufzeichnungspflichtig.
-> - **Zu kurze Pause:** Warnung gem. [§ 4 ArbZG](https://www.gesetze-im-internet.de/arbzg/__4.html):
->   bei > 6h → mind. 30 Min.; bei > 9h → mind. 45 Min.
+> - **Zu kurze Pause** gem. [§ 4 ArbZG](https://www.gesetze-im-internet.de/arbzg/__4.html) (bei > 6h → mind. 30 Min.; bei > 9h → mind. 45 Min.), gerechnet über **alle** Einträge des Tages; Lücken unter 15 Min. zählen nicht als Pause: Speichern erst mit ausreichender Pause oder – falls Ihre Praxis es erlaubt – mit Begründung („Pflicht-Pause war nicht möglich"). Je nach Einstellung Ihrer Praxis wird ein so begründeter Eintrag erst nach Genehmigung durch die Verwaltung wirksam.
 
 ---
 
@@ -229,8 +239,11 @@ Ein Dialog öffnet sich mit dem Vergleich von aktuellem und gewünschtem Eintrag
 
 Für eine vollständige Löschung eines gesperrten Eintrags klicken Sie stattdessen auf **Löschantrag**, geben eine Begründung ein und bestätigen.
 
+> **Sonn- oder Feiertag (§ 10 ArbZG):** Liegt das Datum des Antrags auf einem Sonntag oder gesetzlichen Feiertag, erscheint zusätzlich das Feld **„Ausnahmegrund (§10 ArbZG)"** (z. B. „Notdienst", „Patientenversorgung"). Der Grund wird mit der Genehmigung am Eintrag gespeichert und erscheint in den Exporten. Ein bereits gespeicherter Grund ist beim Änderungsantrag vorausgefüllt.
+
 > **Pflicht-Pause war nicht möglich? (§ 4 ArbZG):**
 > Wenn Ihre korrigierten Zeiten die Pausenregel nicht erfüllen (mind. 30 Min. bei mehr als 6 h, mind. 45 Min. bei mehr als 9 h), wird Ihr Antrag **nicht einfach abgelehnt**. Stattdessen erscheint ein zusätzliches Feld **„Pflicht-Pause war nicht möglich – Begründung"**. Tragen Sie dort kurz ein, warum keine ausreichende Pause möglich war (z. B. „Notfall, keine Vertretung verfügbar"), und senden Sie den Antrag mit **Mit dokumentierter Ausnahme senden** ab. Die Abweichung wird dokumentiert und dem Administrator zur Genehmigung vorgelegt.
+> Hat Ihre Praxis diese Ausnahme abgeschaltet, erscheint das Feld nicht – tragen Sie dann die Pause in den Antrag ein.
 
 **Was danach passiert:**
 - Der Antrag erscheint beim Administrator zur Prüfung
@@ -335,6 +348,8 @@ Wenn Ihr Administrator die **Genehmigungspflicht für Urlaub** aktiviert hat:
 Statt direkt eingetragen zu werden, erscheint die Meldung: **„Urlaubsantrag gestellt"**.
 
 Die App wechselt automatisch zum Tab **„Meine Anträge"**, wo Sie den Status verfolgen können.
+
+Neben dem Zeitraum steht, wie viele **Tage** der Antrag kostet. Gezählt werden nur Ihre Arbeitstage – arbeiten Sie z. B. mittwochs nicht, kostet eine Woche Montag bis Freitag 4 Tage. Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht; ein halber Tag und ein als „halber Feiertag" eingestellter 24./31.12. zählen je **0,5**. Dieselbe Zahl sieht Ihr Administrator bei der Entscheidung. Bei einem Urlaubsantrag werden genau so viele Urlaubstage nach der Genehmigung von Ihrem Konto abgezogen.
 
 **Statusbedeutungen:**
 
@@ -562,10 +577,10 @@ A: Überprüfen Sie, ob Sie den richtigen Monat anzeigen. Nutzen Sie die Pfeile 
 A: PraxisZeit prüft die gesetzlichen Grenzen:
 - Netto > 8h: Hinweis (zulässig mit Ausgleich – § 3 ArbZG)
 - Netto > 10h: bei **manueller Eingabe** blockiert; beim **Live-Ausstempeln** nur Warnung, weil die Zeit bereits geleistet ist (Tageshöchstgrenze – § 3 ArbZG)
-- Zu kurze Pause: Warnung (§ 4 ArbZG – bei >6h mind. 30 Min., bei >9h mind. 45 Min.)
+- Zu kurze Pause (§ 4 ArbZG – bei >6h mind. 30 Min., bei >9h mind. 45 Min., gerechnet über **alle** Einträge des Tages; Lücken unter 15 Min. zählen nicht als Pause): Speichern und Ausstempeln erst mit ausreichender Pause oder – sofern Ihre Praxis das erlaubt – mit Begründung
 
 **F: Beim Ausstempeln werde ich nach meiner Pause gefragt – was muss ich eintragen?**
-A: Tragen Sie im Feld **Pause (Min.)** ein, wie viele Minuten Sie heute Pause gemacht haben. Bei mehr als 6 Stunden Arbeit verlangt das Gesetz eine Pause (§ 4 ArbZG). Reicht Ihre Eingabe nicht aus, können Sie entweder die Pausenminuten korrigieren **oder** im erscheinenden Textfeld kurz begründen, warum keine Pause möglich war. Erst danach ist das Ausstempeln abgeschlossen.
+A: Tragen Sie im Feld **Pause (Min.)** ein, wie viele Minuten Sie heute Pause gemacht haben. Bei mehr als 6 Stunden Arbeit am Tag – alle Einträge des Tages zusammengerechnet – verlangt das Gesetz eine Pause (§ 4 ArbZG). Reicht Ihre Eingabe nicht aus, können Sie entweder die Pausenminuten korrigieren **oder** im erscheinenden Textfeld kurz begründen, warum keine Pause möglich war (das Textfeld fehlt, wenn Ihre Praxis diese Ausnahme abgeschaltet hat). Erst danach ist das Ausstempeln abgeschlossen.
 
 **F: Warum steht bei meinem Eintrag „gestempelt 07:30 · angerechnet ab 07:45"?**
 A: Ihre Praxis hat für diesen Wochentag eine Soll-Arbeitszeit hinterlegt. Wenn Sie deutlich vor dem Soll-Beginn ein- oder nach dem Soll-Ende ausstempeln, wird nur bis zu einem kleinen Puffer (Standard 15 Min.) angerechnet. Ihre tatsächliche Stempelzeit bleibt aber gespeichert. Siehe [Abschnitt 3.3](#33-soll-arbeitszeiten-und-anrechnung).
@@ -595,7 +610,7 @@ A: Navigieren Sie zu **Zeiterfassung → Tab „Einträge"**, suchen Sie den bet
 A: Sonntagsarbeit wird markiert. Als Ausgleich steht Ihnen gem. [§ 11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html) ein Ersatzruhetag zu (innerhalb von 2 Wochen).
 
 **F: Wie trage ich Arbeit am Wochenende oder Feiertag ein (z. B. KV-Dienst)?**
-A: **Am selben Tag** stempeln Sie ganz normal oder legen unter **Zeiterfassung → Tab „Einträge" → + Neuer Eintrag** einen Eintrag an; an einem Sonntag erscheint dort zusätzlich das Feld **Ausnahmegrund** (z. B. „Notdienst"). **Nachträglich** stellen Sie einen Antrag: entweder über den Button **Antrag** im Tab „Einträge" oder im **Journal** über das **+** in der Zeile des Tages (seit Version 1.19.2 auch an Wochenend- und Feiertagen). An einem Sonntag oder Feiertag fragt das Journal dabei ebenfalls nach dem **Ausnahmegrund (§10 ArbZG)**; er wird mit der Genehmigung am Eintrag gespeichert und erscheint in den Exporten. Nach der Genehmigung zählen die Stunden zum Ist; da das Soll an diesen Tagen 0 ist, erhöhen die angerechneten Stunden Ihren Saldo.
+A: **Am selben Tag** stempeln Sie ganz normal oder legen unter **Zeiterfassung → Tab „Einträge" → + Neuer Eintrag** einen Eintrag an; an Sonn- und Feiertagen erscheint dort zusätzlich das Feld **Ausnahmegrund** (z. B. „Notdienst"). **Nachträglich** stellen Sie einen Antrag: entweder über den Button **Antrag** im Tab „Einträge" oder im **Journal** über das **+** in der Zeile des Tages (seit Version 1.19.2 auch an Wochenend- und Feiertagen). An einem Sonntag oder Feiertag fragen beide Antragswege – das Antragsformular hinter dem Button **Antrag** und das Journal – nach dem **Ausnahmegrund (§10 ArbZG)**; er wird mit der Genehmigung am Eintrag gespeichert und erscheint in den Exporten. Nach der Genehmigung zählen die Stunden zum Ist; da das Soll an diesen Tagen 0 ist, erhöhen die angerechneten Stunden Ihren Saldo.
 
 **F: Ich habe mein Passwort vergessen.**
 A: Wenden Sie sich an Ihren Administrator. Er kann Ihr Passwort zurücksetzen.
