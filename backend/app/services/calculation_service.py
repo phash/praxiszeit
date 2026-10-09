@@ -1100,6 +1100,62 @@ def _day_soll_contribution(
     return daily_target
 
 
+def get_day_presence_target(db: Session, user: User, d: date) -> Decimal:
+    """#494 (Review F1): Stunden, die ``user`` am Tag ``d`` zu stempeln hat — das
+    Tagessoll der mobilen Stempelkarte („x von y h heute", rot „Noch nicht
+    eingestempelt" nur bei Wert > 0).
+
+    Die Soll-STRUKTUR des Tages kommt aus :func:`_day_soll_contribution` (Feiertag
+    des Mandanten, datumsaufgelöster Vertrags-Snapshot #431, #146-Sondertagsfaktor
+    24./31.12.); Wochenende, Beschäftigungsfenster (#193) und ``track_hours``
+    (#191) prüft — wie in jeder Soll-Schleife — der Aufrufer, also hier.
+
+    Abwesenheiten zählen hier anders als in der Saldo-Rechnung: dort senken
+    SICK/TRAINING/OVERTIME das Soll NICHT (Ist-Gutschrift bzw. Konto-Abbau). Für
+    die Karte zählt aber nur, ob heute gestempelt werden muss — und das muss bei
+    keiner ganztägigen Abwesenheit, gleich welchen Typs. Deshalb:
+
+    * ganztägige Abwesenheit (``start_time IS NULL``, nicht ``half_day``) → 0
+    * ``half_day``-Abwesenheiten decken je einen halben Tag ab (zwei Hälften,
+      z. B. ½ Urlaub + ½ Krank, den ganzen Tag) — derselbe Halbierungs-Pfad wie
+      im Soll (Sondertagsfaktor ZUERST, dann × 0,5)
+    * stundenweise Abwesenheit (Uhrzeiten gesetzt) lässt das Soll stehen — die
+      Person kommt an dem Tag noch
+
+    Gilt bewusst auch im festen Monats-Soll-Modus (#377 2b): ``get_range_target``
+    lieferte dort für einen Einzeltag den kalendertag-anteiligen Monatswert, nicht
+    die für den Wochentag geplanten Stunden.
+
+    Reine Lesefunktion, keine Berechnungswirkung (Saldo/Exporte unberührt).
+    """
+    if not user.track_hours or d.weekday() >= 5 or not _within_employment_window(user, d):
+        return Decimal('0')
+
+    absences = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
+        Absence.date == d,
+    ).all()
+    if any(a.start_time is None and a.half_day is not True for a in absences):
+        return Decimal('0')
+    halves = sum(1 for a in absences if a.half_day is True)
+    if halves >= 2:
+        return Decimal('0')
+
+    is_holiday = db.query(PublicHoliday.id).filter(
+        PublicHoliday.date == d,
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).first() is not None
+
+    return _day_soll_contribution(
+        db, user, d,
+        holiday_dates={d} if is_holiday else set(),
+        absence_half_map={d: True} if halves == 1 else {},
+        wh_changes=None,
+        special_cfg=special_days_service.get_special_day_config(db, user.tenant_id, d.year),
+    ).quantize(Decimal('0.01'))
+
+
 def get_soll_cutoff_date(db: Session, user: User, today: date = None) -> date:
     """#313: last date (inclusive) that counts toward the running Soll/Ist.
 
@@ -1737,6 +1793,58 @@ def get_overtime_account(
     return total_balance.quantize(Decimal('0.01'))
 
 
+class WeekSummary(NamedTuple):
+    """Soll/Ist/Saldo einer ISO-Woche (Mo–So) + Überstundenkonto zum Wochenende.
+
+    Aus :func:`get_week_summary`; ``ot_cutoff`` ist der letzte Tag, bis zu dem
+    das Konto gerechnet wurde (Wochenende bzw. der #313-Stichtag in der
+    laufenden Woche) — der Admin-Wochenbericht braucht ihn als Grenze der
+    #402-Jahresende-Projektion.
+    """
+    week_start: date
+    week_end: date
+    target: Decimal
+    actual: Decimal
+    balance: Decimal
+    cumulative: Decimal
+    ot_cutoff: date
+
+
+def get_week_summary(
+    db: Session, user: User, any_day: date, cutoff: Optional[date] = None
+) -> WeekSummary:
+    """#329/#500: DIE eine Wochenrechnung — Admin-Wochenbericht
+    (``/admin/reports/weekly``) UND Wochenübersicht des Mitarbeiter-Dashboards
+    (``/dashboard/weekly-overview``) rufen sie, damit beide Flächen für dieselbe
+    Woche dieselben Zahlen zeigen.
+
+    ``any_day`` wird auf den Montag seiner ISO-Woche normalisiert (die Woche darf
+    eine Monats-/Jahresgrenze überschreiten). ``cutoff`` ist der #313-Stichtag
+    („bis heute") oder ``None`` für die volle Woche. Soll/Ist über
+    :func:`get_range_target` / :func:`get_range_actual` (damit auch der feste
+    Monats-Soll-Modus #377 und die Gutschrift-Regeln mitkommen), das Konto über
+    :func:`get_overtime_account` zum Wochenende bzw. zum Stichtag.
+    """
+    wk_start = any_day - timedelta(days=any_day.weekday())  # Monday
+    wk_end = wk_start + timedelta(days=6)                   # Sunday
+    target = get_range_target(db, user, wk_start, wk_end, up_to_date=cutoff)
+    actual = get_range_actual(db, user, wk_start, wk_end, up_to_date=cutoff)
+    balance = (actual - target).quantize(Decimal('0.01'))
+    # Konto = kumulativer laufender Saldo zum Wochenende (in der laufenden Woche
+    # am bis_heute-Stichtag gekappt).
+    ot_cutoff = wk_end if cutoff is None else min(wk_end, cutoff)
+    cumulative = get_overtime_account(db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff)
+    return WeekSummary(
+        week_start=wk_start,
+        week_end=wk_end,
+        target=target,
+        actual=actual,
+        balance=balance,
+        cumulative=cumulative,
+        ot_cutoff=ot_cutoff,
+    )
+
+
 class MonthlyOvertime(NamedTuple):
     """Per-Monat-Aufschlüsselung aus :func:`get_overtime_history_detailed`.
 
@@ -2232,6 +2340,32 @@ def child_sick_days_used(db: Session, user: User, year: int,
     )
     windowed = [a for a in rows if _within_employment_window(user, a.date)]
     return absence_days(db, user, windowed, wh_changes=wh_changes)
+
+
+# #501: Ab so vielen offenen Urlaubstagen warnt die Jahresend-Warnung. Ein
+# kleinerer Rest (Teilzeit-Bruchteile wie 0,3 / 0,5 Tage) wandert ins Folgejahr
+# und wird dort mit weiteren Bruchteilen zu ganzen Tagen zusammengelegt — als
+# „verfallender Urlaub, jetzt noch nehmen" lässt er sich gar nicht nehmen.
+YEAR_END_VACATION_WARNING_MIN_DAYS = Decimal('1')
+
+
+def has_year_end_vacation_warning(remaining_days, year: int, today: date) -> bool:
+    """#501: DIE eine Regel für die plakative Jahresend-Warnung vor verfallendem
+    Urlaub — gespeist in ``/dashboard/vacation`` (``has_carryover_warning``) UND
+    ``/admin/reports/yearly-absences`` (``has_year_end_warning``). Vorher lebte
+    sie zweimal (Backend ``> 0`` und Admin-Frontend ``> 0``).
+
+    Warnt nur im 4. Quartal des betrachteten Jahres und erst ab
+    ``YEAR_END_VACATION_WARNING_MIN_DAYS`` (1,0) offenen Tagen. Der Wert ist im
+    Urlaubskonto bereits auf 0,1 Tag gerundet; der Vergleich läuft über
+    ``Decimal(str(…))``, damit 1,0 als float nicht knapp darunter landet.
+    Reine Anzeige-Schwelle: das Urlaubskonto, der Übertrag und der
+    Jahresabschluss rechnen den Rest unverändert weiter."""
+    return (
+        Decimal(str(remaining_days)) >= YEAR_END_VACATION_WARNING_MIN_DAYS
+        and today.year == year
+        and today.month >= 10
+    )
 
 
 def get_vacation_account(

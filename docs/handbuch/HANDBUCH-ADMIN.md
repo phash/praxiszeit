@@ -90,7 +90,7 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 
 **Monat wechseln:** Mit den Pfeilen `<` und `>` wechseln Sie den angezeigten Monat.
 
-**Monat ↔ Woche umschalten (#329):** Über den Umschalter **„Monat / Woche"** oben neben dem Zeitraum wechseln Sie zwischen der Monats- und einer **Wochenansicht**. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche, z. B. **„22.–28.06.2026 (KW 26)"**; mit den Pfeilen blättern Sie wochenweise. Die Spalten sind dieselben wie im Monat. So erhalten Sie eine schnelle Plausibilitätsübersicht, wer zu viel oder zu wenig gearbeitet hat. Ihre Auswahl (Monat oder Woche) bleibt **pro Browser/Gerät** gespeichert. In der Wochenansicht heißt die zweite Option der Soll-Basis entsprechend **„volle Woche"** statt „Monatsende".
+**Monat ↔ Woche umschalten (#329):** Über den Umschalter **„Monat / Woche"** oben neben dem Zeitraum wechseln Sie zwischen der Monats- und einer **Wochenansicht**. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche, z. B. **„22.–28.06.2026 (KW 26)"**; mit den Pfeilen blättern Sie wochenweise. Die Spalten sind dieselben wie im Monat. So erhalten Sie eine schnelle Plausibilitätsübersicht, wer zu viel oder zu wenig gearbeitet hat. Ihre Auswahl (Monat oder Woche) bleibt **pro Browser/Gerät** gespeichert. In der Wochenansicht heißt die zweite Option der Soll-Basis entsprechend **„volle Woche"** statt „Monatsende". Mitarbeitende haben auf ihrem eigenen Dashboard denselben Umschalter (letzte 8 Wochen, Soll-Basis „bis heute") – für dieselbe Woche zeigen beide Ansichten dieselben Zahlen.
 
 **Soll-Basis umschalten (#313):** Über das Dropdown **„Soll: bis heute / Monatsende"** in der Monatsübersicht steuern Sie, wie das Monats-**Soll** gezählt wird:
 - **bis heute** (Standard): nur bis zum **letzten abgeschlossenen Arbeitstag** des laufenden Monats — so startet der Saldo nicht mit einem Monatsanfangs-Minus.
@@ -106,6 +106,8 @@ Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/a
 ### Jahresabschluss
 
 Unterhalb der Monatsübersicht finden Sie die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeiter. Hier können Sie den Jahresabschluss durchführen.
+
+> **Jahresend-Warnung (ab Oktober):** Im letzten Quartal des laufenden Jahres erscheint über der Jahresübersicht der gelbe Hinweis **„Jahresend-Warnung: Offene Urlaubstage"** mit allen Mitarbeitenden, die noch **mindestens einen ganzen Urlaubstag** offen haben. Kleinere Reste – typisch bei Teilzeit, z. B. 0,3 oder 0,5 Tage – lösen bewusst **keine** Warnung aus: sie lassen sich nicht als ganzer Tag nehmen und werden üblicherweise im Folgejahr mit weiteren Bruchteilen zusammengelegt. In der Tabelle, im Urlaubskonto und beim Jahresabschluss zählen sie unverändert mit. Dieselbe Schwelle gilt für den Hinweis im Urlaubskonto auf dem Mitarbeiter-Dashboard.
 
 #### Jahresabschluss erstellen
 

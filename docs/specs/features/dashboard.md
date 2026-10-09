@@ -31,13 +31,13 @@ Als **Mitarbeiter** möchte ich auf dem Dashboard sofort sehen, wie meine aktuel
 Als **Admin** möchte ich eine Teamübersicht aller Mitarbeiter sehen.
 
 - [x] **REQ-9**: Tabelle: MA-Name, Wochenstunden, Monats-Soll/Ist/Saldo, kumulierte Überstunden
-- [x] **REQ-10**: Jahreswechsel-Warnung im Q4: Liste der MAs mit offenen Urlaubstagen
+- [x] **REQ-10**: Jahreswechsel-Warnung im Q4: Liste der MAs mit offenen Urlaubstagen — #501: erst ab **1,0** offenen Tagen (Teilzeit-Bruchteile wandern ins Folgejahr); Entscheidung serverseitig (`EmployeeYearlyAbsences.has_year_end_warning`), dieselbe Regel wie die MA-Warnung
 - [x] **REQ-11**: Jährliche Abwesenheitsübersicht (Urlaub, Krank, Fortbildung, Sonstiges in Tagen)
 
 ### Nicht-funktionale Anforderungen
 
 - [x] Dashboard-Daten in einem API-Call (kein Waterfall)
-- [x] Resturlaub-Warnung nur im Q4 (Oktober–Dezember) des aktuellen Jahres
+- [x] Resturlaub-Warnung nur im Q4 (Oktober–Dezember) des aktuellen Jahres und erst ab 1,0 offenen Tagen (#501)
 
 ---
 
@@ -49,7 +49,9 @@ Als **Admin** möchte ich eine Teamübersicht aller Mitarbeiter sehen.
 |---------|------|------|-------------|
 | `GET` | `/api/dashboard` | Employee | MA-Dashboard Stats |
 | `GET` | `/api/dashboard/overtime` | Employee | Überstunden-Verlauf (months=6) |
+| `GET` | `/api/dashboard/weekly-overview` | Employee | #500: letzte `weeks` (Default 8, 1–53) ISO-Wochen, älteste zuerst — Soll/Ist/Saldo + Konto zum Wochenende; Rechnung = Admin-Wochenbericht (`calculation_service.get_week_summary`), laufende Woche „bis heute" (#313) |
 | `GET` | `/api/dashboard/vacation` | Employee | Urlaubskonto (year) |
+| `GET` | `/api/time-entries/clock-status` | Employee | Stempelstatus; #494: zusätzlich `today_net_minutes` (alle Blöcke des Tages) + `today_target_hours` (Tagessoll laut Snapshot #431) |
 | `GET` | `/api/admin/dashboard` | Admin | Team-Übersicht |
 
 **Vacation Account Schema:**
@@ -61,7 +63,7 @@ class VacationAccount(BaseModel):
     remaining_days: float
     color: str               # 'green' | 'yellow' | 'red'
     carryover_deadline: Optional[date]
-    has_carryover_warning: bool  # True wenn Q4 und remaining > 0
+    has_carryover_warning: bool  # #501: True wenn Q4 und remaining >= 1,0 (calculation_service.has_year_end_vacation_warning)
 ```
 
 **Betroffene Dateien:**

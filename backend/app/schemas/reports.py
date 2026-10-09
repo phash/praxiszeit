@@ -36,6 +36,23 @@ class OvertimeAccount(BaseModel):
     projected_year_end: Optional[float] = None
 
 
+class WeeklyOverviewRow(BaseModel):
+    """#500: eine ISO-Woche der Wochenübersicht im Mitarbeiter-Dashboard.
+
+    Gleiche Bedeutung wie eine Zeile von :class:`OvertimeHistory`, nur je Woche:
+    Soll/Ist/Saldo der Woche (laufende Woche bis zum #313-Stichtag) und das
+    Überstundenkonto zum Wochenende.
+    """
+    week_start: date  # Montag
+    week_end: date  # Sonntag
+    iso_year: int
+    iso_week: int
+    target: float
+    actual: float
+    balance: float
+    cumulative: float
+
+
 class YtdOvertime(BaseModel):
     """Year-to-date overtime summary (Jan 1 to today)."""
     year: int
@@ -197,3 +214,7 @@ class EmployeeYearlyAbsences(BaseModel):
     paid_leave_days: float = 0.0
     overtime_year: float
     total_days: float
+    # #501: Banner „Jahresend-Warnung: Offene Urlaubstage" im Admin-Dashboard —
+    # dieselbe Regel wie VacationAccount.has_carryover_warning
+    # (calculation_service.has_year_end_vacation_warning).
+    has_year_end_warning: bool = False

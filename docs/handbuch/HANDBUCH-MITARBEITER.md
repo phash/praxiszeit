@@ -60,7 +60,7 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 | Kachel | Was wird angezeigt |
 |--------|-------------------|
-| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll (grün = eingestempelt, rot = noch nicht eingestempelt an einem Arbeitstag) |
+| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll. Gezählt werden **alle** heute erfassten Blöcke – bei geteiltem Dienst also Vormittag **und** Nachmittag, auch nach dem Ausstempeln (grün = eingestempelt, rot = an einem Arbeitstag heute noch gar nicht eingestempelt, neutral „Ausgestempelt" = heute schon gearbeitet, gerade nicht eingestempelt). An Feiertagen, bei ganztägiger Abwesenheit (Urlaub, Krankheit, Fortbildung, Überstundenausgleich …), vor dem Eintritt und an einem freien 24./31.12. gibt es heute kein Tagessoll – dann erscheint weder Rot noch „x von y". Ein halber Urlaubstag oder ein halber 24./31.12. halbiert das Tagessoll |
 | **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats (H:MM) |
 | **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
@@ -70,15 +70,21 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 > **Voraussichtlicher Stand zum Jahresende:** Neben Ihrem **Überstundenkonto** steht, wie es zum 31.12. voraussichtlich aussieht – Ihr Saldo bis heute abzüglich der Stunden Ihrer bereits eingetragenen künftigen **Überstundenausgleich**-Tage. So sehen Sie sofort, ob die schon geplanten freien Tage Ihr Konto wie gewünscht abbauen. Urlaub, Krankheit und Fortbildung senken das Konto nicht und fließen deshalb nicht in die Vorschau ein. Ihre Praxisleitung kann diese Anzeige abschalten – fehlt die Zeile, ist entweder kein künftiger Ausgleichstag eingetragen oder die Anzeige in den Einstellungen deaktiviert.
 
+> **Hinweis auf offenen Urlaub (ab Oktober):** Im letzten Quartal zeigt das **Urlaubskonto** einen gelben Hinweis „Noch … Urlaubstage offen!" mit der Frist – aber erst, wenn noch **mindestens ein ganzer Urlaubstag** offen ist. Kleinere Reste (z. B. 0,5 Tage bei Teilzeit) lösen keinen Hinweis aus; sie stehen unverändert in Ihrem Urlaubskonto.
+
+> **Auf dem Smartphone** steht oben die Stempelkarte mit „x von y h heute" (Tagessaldo, siehe oben) und darunter die Karte **„Letzte Einträge"** mit Ihren fünf **neuesten** Zeiteinträgen des laufenden Monats – der jüngste zuerst. Alle Einträge finden Sie über „Alle anzeigen →" in der Zeiterfassung.
+
 > **Zeitanzeige:** Stunden werden im Format H:MM angezeigt (z. B. „8:30" für 8 Stunden 30 Minuten). Negative Salden werden mit einem Minus-Zeichen dargestellt (z. B. „-2:15").
 
 > **Hinweis:** Falls Ihre Praxis für Sie **keine Stundenzählung** führt, fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto** – das ist bei Ihnen so eingestellt und kein Fehler. Ihr **Urlaubskonto** wird trotzdem geführt. Mehr dazu in [Abschnitt 6](#6-wenn-für-sie-keine-stunden-gezählt-werden).
 
 > **Minijob mit festem Monats-Soll:** Führt Ihre Praxis Sie als Minijob-Kraft mit einer **festen vereinbarten Monatsarbeitszeit** (statt eines aus Wochenstunden berechneten Solls), zeigt Ihr **Monatssaldo** jeden Monat dasselbe feste Soll (bei unterjährigem Ein-/Austritt anteilig gekürzt). Feiertage sowie Urlaub oder bezahlte Freistellung an einem für Sie geplanten Arbeitstag werden Ihnen dabei automatisch mit den geplanten Stunden gutgeschrieben; unbezahlt freie Tage mindern das Monatssoll entsprechend. Unter dem **Überstundenkonto** kann in diesem Fall ein gelber Hinweis erscheinen, wenn die vereinbarte Zeit deutlich überschritten wird oder ein Zeitguthaben zu lange nicht ausgeglichen wurde (§ 2 Abs. 2 MiLoG) – das ist eine reine Information und blockiert nichts. Ob dieses Modell für Sie gilt, legt Ihre Praxisleitung fest.
 
-### Monatsübersicht (Tabelle)
+### Monats-/Wochenübersicht (Tabelle)
 
-Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto.
+Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto – die neueste Zeile steht oben.
+
+Über den Umschalter **„Monat / Woche"** rechts über der Tabelle wechseln Sie zur **Wochenübersicht**: die letzten **8 Kalenderwochen** (z. B. „KW 41 · 05.–11.10."), je Woche Soll, Ist, Saldo und der Stand Ihres Überstundenkontos am Wochenende. Pro Woche fällt sofort auf, wenn etwas fehlt – etwa ein vergessener Nachmittagsblock oder ein Eintrag, der nicht beendet wurde und automatisch um 23:59 geschlossen wurde. Die **laufende Woche** zählt wie der Monatssaldo nur **bis heute** (bis zum letzten abgeschlossenen Arbeitstag; heute zählt mit, sobald Sie ausgestempelt haben). Ihre Auswahl bleibt auf diesem Gerät/Browser gespeichert.
 
 - **Grün** = Plusstunden
 - **Rot** = Minusstunden

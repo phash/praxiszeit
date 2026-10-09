@@ -131,7 +131,7 @@ Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, si
 
 | Karte | Bedeutung |
 |-------|----------|
-| **Tagessaldo** | Heute: Ist-Zeit vs. Tagessoll (grün = eingestempelt) |
+| **Tagessaldo** | Heute: Ist-Zeit aller Blöcke des Tages (z. B. Vormittag + Nachmittag) vs. Tagessoll (grün = eingestempelt) |
 | **Monatssaldo** | Über-/Unterstunden diesen Monat (H:MM) |
 | **Überstunden** | Kumulierter Jahressaldo |
 | **Urlaub** | Verbleibende Urlaubstage |
@@ -139,6 +139,8 @@ Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, si
 **Grüner Saldo (+)** = Überstunden · **Roter Saldo (–)** = Fehlstunden
 
 *Monatssaldo und Überstunden zählen nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus am 1.).*
+
+**Monat ↔ Woche:** Umschalter über der Übersichtstabelle → letzte 8 Kalenderwochen mit Soll/Ist/Saldo/Konto (laufende Woche bis heute). Fehlende Blöcke fallen pro Woche sofort auf.
 
 ---
 

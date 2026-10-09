@@ -141,13 +141,14 @@ export function CheatsheetMitarbeiter() {
             </tr>
           </thead>
           <tbody>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Tagessaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Heute: Ist vs. Tagessoll (grün = eingestempelt)</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Tagessaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Heute: Ist aller Blöcke des Tages (z. B. Vormittag + Nachmittag) vs. Tagessoll (grün = eingestempelt)</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Monatssaldo</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Über-/Unterstunden diesen Monat (H:MM)</td></tr>
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Überstunden</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Kumulierter Jahressaldo</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Urlaub</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Verbleibende Urlaubstage</td></tr>
           </tbody>
         </table>
         <p className="text-sm text-gray-500 mt-2">Grüner Saldo (+) = Überstunden | Roter Saldo (–) = Fehlstunden</p>
+        <p className="text-sm text-gray-500 mt-1"><strong>Monat ↔ Woche:</strong> Umschalter über der Übersichtstabelle → letzte 8 Kalenderwochen mit Soll/Ist/Saldo/Konto (laufende Woche bis heute). Fehlende Blöcke fallen pro Woche sofort auf.</p>
       </section>
 
       {/* Passwort */}
@@ -285,6 +286,9 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Das Dashboard zeigt Ihren <strong>Tagessaldo</strong> (heute: Ist vs. Tagessoll), den <strong>Monatssaldo</strong> (Ist – Soll in H:MM), den kumulierten Jahressaldo, das Urlaubskonto und den <strong>Urlaubscountdown</strong> (Tage bis zum nächsten Urlaub oder zur nächsten Praxisschließung – das frühere Datum zählt).</p>
         <p>Im <strong>laufenden Monat</strong> zählt das Soll nur bis zum <strong>letzten abgeschlossenen Arbeitstag</strong> – Sie starten den Monat also nicht mit einem dicken Minus; der heutige Tag zählt mit, sobald Sie <strong>ausgestempelt</strong> haben. Abgeschlossene Monate entsprechen dem vollen Monat. Das <strong>Überstundenkonto</strong> folgt für den laufenden Monat demselben Stichtag – auch hier entsteht am Monatsanfang kein künstliches Minus.</p>
+        <p>Der <strong>Tagessaldo</strong> („x von y h heute") zählt <strong>alle</strong> heute erfassten Blöcke – bei geteiltem Dienst Vormittag <strong>und</strong> Nachmittag, auch nach dem Ausstempeln. Rot („Noch nicht eingestempelt") erscheint nur an einem Arbeitstag, an dem Sie heute noch gar nicht gestempelt haben; wer schon gearbeitet hat und gerade nicht eingestempelt ist, sieht neutral „Ausgestempelt". An Feiertagen, bei ganztägiger Abwesenheit (Urlaub, Krankheit, Fortbildung, Überstundenausgleich …), vor dem Eintritt und an einem freien 24./31.12. gibt es heute kein Tagessoll – dann erscheint weder Rot noch „x von y". Ein halber Urlaubstag oder ein halber 24./31.12. halbiert das Tagessoll. Auf dem Smartphone listet die Karte <strong>„Letzte Einträge"</strong> Ihre fünf neuesten Einträge des Monats, der jüngste zuerst.</p>
+        <p><strong>Monats-/Wochenübersicht:</strong> Über den Umschalter <strong>„Monat / Woche"</strong> über der Tabelle sehen Sie statt der Monate die <strong>letzten 8 Kalenderwochen</strong> mit Soll, Ist, Saldo und dem Stand Ihres Überstundenkontos am Wochenende. So fällt ein vergessener Nachmittagsblock oder ein automatisch um 23:59 geschlossener Eintrag sofort auf. Die laufende Woche zählt wie der Monatssaldo nur bis heute; Ihre Auswahl bleibt auf dem Gerät gespeichert.</p>
+        <p className="text-gray-700"><strong>Offener Urlaub (ab Oktober):</strong> Im letzten Quartal weist das Urlaubskonto gelb auf noch offene Urlaubstage und die Frist hin – erst ab <strong>einem ganzen</strong> offenen Tag. Kleinere Reste (z. B. 0,5 Tage bei Teilzeit) lösen keinen Hinweis aus; sie stehen unverändert in Ihrem Urlaubskonto.</p>
         <p>Grüner Saldo = Überstunden, roter Saldo = Fehlstunden. Auf mobilen Geräten wird die untere Tab-Leiste zur Navigation genutzt.</p>
       </div>
     ),
@@ -406,9 +410,10 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Das <strong>Admin-Dashboard</strong> zeigt alle aktiven Mitarbeiter mit Soll, Ist, Saldo (H:MM), kumulierten Überstunden, verbleibenden Urlaubstagen und Kranktagen für den gewählten Monat.</p>
-        <p>Mit dem Umschalter <strong>„Monat / Woche"</strong> oben wechseln Sie zwischen Monats- und <strong>Wochenansicht</strong>. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche (z. B. <em>„22.–28.06.2026 (KW 26)"</em>); die Pfeile blättern wochenweise. Gleiche Spalten wie im Monat – ideal für eine schnelle Plausibilitätsübersicht. Ihre Auswahl bleibt pro Browser/Gerät gespeichert.</p>
+        <p>Mit dem Umschalter <strong>„Monat / Woche"</strong> oben wechseln Sie zwischen Monats- und <strong>Wochenansicht</strong>. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche (z. B. <em>„22.–28.06.2026 (KW 26)"</em>); die Pfeile blättern wochenweise. Gleiche Spalten wie im Monat – ideal für eine schnelle Plausibilitätsübersicht. Ihre Auswahl bleibt pro Browser/Gerät gespeichert. Mitarbeitende haben auf ihrem Dashboard denselben Umschalter (letzte 8 Wochen, „bis heute") – für dieselbe Woche mit denselben Zahlen.</p>
         <p>Das Dropdown <strong>„Soll: bis heute / Monatsende"</strong> schaltet die Soll-Basis um: <strong>bis heute</strong> (Standard) zählt das Soll des laufenden Monats nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus), <strong>Monatsende</strong> den vollen Monat. Für abgeschlossene Monate identisch; die §16-Datei-Exporte bleiben voll-Monat. In der Wochenansicht heißt die zweite Option entsprechend <strong>„volle Woche"</strong>.</p>
         <p>Klicken Sie auf den Pfeil am Ende einer Zeile für die Detailansicht. Nutzen Sie die Suche zum Filtern nach Name.</p>
+        <p><strong>Jahresend-Warnung (ab Oktober):</strong> Über der Jahresübersicht des laufenden Jahres listet ein gelber Hinweis alle Mitarbeitenden, die noch <strong>mindestens einen ganzen Urlaubstag</strong> offen haben. Kleinere Reste (z. B. 0,3 oder 0,5 Tage bei Teilzeit) lösen bewusst keine Warnung aus – sie lassen sich nicht als ganzer Tag nehmen und werden üblicherweise im Folgejahr mit weiteren Bruchteilen zusammengelegt; in Tabelle, Urlaubskonto und Jahresabschluss zählen sie unverändert. Dieselbe Schwelle gilt für den Hinweis im Mitarbeiter-Dashboard.</p>
       </div>
     ),
   },

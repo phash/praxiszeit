@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { stripWarningCode } from '../utils/arbzgWarnings';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -52,6 +52,59 @@ interface OvertimeAccount {
   milog_warnings?: string[]; // #377 §2 Abs.2 MiLoG (self-scoped)
   future_comp_hours?: number; // #402: bereits feststehender künftiger Freizeitausgleich
   projected_year_end?: number | null; // #402: projizierter Saldo am 31.12. (null = kein künftiger Ausgleich)
+}
+
+// #500: eine ISO-Woche aus GET /dashboard/weekly-overview (älteste zuerst).
+interface WeeklyOverviewRow {
+  week_start: string; // Montag, YYYY-MM-DD
+  week_end: string;
+  iso_year: number;
+  iso_week: number;
+  target: number;
+  actual: number;
+  balance: number;
+  cumulative: number;
+}
+
+type OverviewMode = 'month' | 'week';
+
+/**
+ * #500: Datumsspanne einer Woche, kompakt — steht unter „KW nn", damit die
+ * Tabelle auch auf dem Smartphone ohne Querscrollen auskommt. Im laufenden Jahr
+ * ohne Jahreszahl („05.–11.10.", über die Monatsgrenze „28.09.–04.10."), sonst
+ * mit („22.–28.12.2025", über den Jahreswechsel „28.12.2026–03.01.2027").
+ */
+function weekRange(w: WeeklyOverviewRow, currentYear: number): string {
+  const start = parseISO(w.week_start);
+  const end = parseISO(w.week_end);
+  const sameMonth = start.getMonth() === end.getMonth();
+  if (start.getFullYear() !== end.getFullYear()) {
+    return `${format(start, 'dd.MM.yyyy')}–${format(end, 'dd.MM.yyyy')}`;
+  }
+  const startStr = format(start, sameMonth ? 'dd.' : 'dd.MM.');
+  const endStr = format(end, end.getFullYear() === currentYear ? 'dd.MM.' : 'dd.MM.yyyy');
+  return `${startStr}–${endStr}`;
+}
+
+interface OverviewRow {
+  key: string;
+  label: ReactNode;
+  target: number;
+  actual: number;
+  balance: number;
+  cumulative: number;
+}
+
+// #500: Monat/Woche-Auswahl pro Browser merken (wie `adminDashboardViewMode`).
+// Reine Komfortfunktion — ohne Storage (privates Fenster) gilt „Monat".
+const OVERVIEW_MODE_KEY = 'dashboardOverviewViewMode';
+
+function readOverviewMode(): OverviewMode {
+  try {
+    return localStorage.getItem(OVERVIEW_MODE_KEY) === 'week' ? 'week' : 'month';
+  } catch {
+    return 'month';
+  }
 }
 
 interface YearlyAbsenceSummary {
@@ -109,6 +162,27 @@ function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], da
     .reduce((sum, a) => sum + a.hours, 0) / dailyTarget;
 }
 
+interface RecentEntry {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string | null;
+  net_hours: number;
+}
+
+/**
+ * #493: die `n` neuesten Einträge, neueste zuerst. Sortiert selbst statt sich auf
+ * die Reihenfolge der API-Antwort zu verlassen — `GET /time-entries?month=`
+ * liefert absteigend, das frühere `slice(-5).reverse()` setzte aufsteigend voraus
+ * und zeigte so die fünf ÄLTESTEN Einträge des Monats. ISO-Datum und `HH:MM:SS`
+ * sortieren lexikografisch korrekt.
+ */
+function newestEntries(entries: RecentEntry[], n = 5): RecentEntry[] {
+  return [...entries]
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.start_time ?? '').localeCompare(a.start_time ?? ''))
+    .slice(0, n);
+}
+
 export default function Dashboard() {
   const toast = useToast();
   const { user } = useAuthStore();
@@ -121,8 +195,14 @@ export default function Dashboard() {
   const { openStampSheet, stampVersion, notifyStampChange } = useUIStore();
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [clockStatus, setClockStatus] = useState<{ is_clocked_in: boolean; elapsed_minutes?: number | null; current_entry?: { start_time: string } } | null>(null);
-  const [recentEntries, setRecentEntries] = useState<Array<{ id: string; date: string; start_time: string; end_time: string | null; net_hours: number }>>([]);
+  const [clockStatus, setClockStatus] = useState<{
+    is_clocked_in: boolean;
+    elapsed_minutes?: number | null;
+    current_entry?: { start_time: string };
+    today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Blöcke
+    today_target_hours?: number; // #494/#431: Tagessoll laut Snapshot
+  } | null>(null);
+  const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsenceSummary | null>(null);
@@ -133,6 +213,40 @@ export default function Dashboard() {
   const [teamMissingBookings, setTeamMissingBookings] = useState<Array<{ user_id: string; first_name: string; last_name: string; entries: Array<{ date: string; type: string; start_time?: string }> }>>([]);
   const [loading, setLoading] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
+  // #500: Übersicht Monat ↔ Woche (wie im Admin-Dashboard, #329).
+  const [overviewMode, setOverviewMode] = useState<OverviewMode>(readOverviewMode);
+  const [weeklyOverview, setWeeklyOverview] = useState<WeeklyOverviewRow[] | null>(null);
+  const [weeklyError, setWeeklyError] = useState(false);
+
+  const changeOverviewMode = (mode: OverviewMode) => {
+    setOverviewMode(mode);
+    try {
+      localStorage.setItem(OVERVIEW_MODE_KEY, mode);
+    } catch {
+      /* Storage nicht verfügbar — Auswahl gilt nur für diese Ansicht */
+    }
+  };
+
+  // #500: Wochen erst laden, wenn die Wochenansicht gewählt ist; nach dem
+  // Stempeln (stampVersion) neu laden wie die übrigen Salden.
+  useEffect(() => {
+    if (!trackHours || overviewMode !== 'week') return;
+    let cancelled = false;
+    apiClient.get('/dashboard/weekly-overview')
+      .then((res) => {
+        if (cancelled) return;
+        setWeeklyOverview(Array.isArray(res.data) ? res.data : []);
+        setWeeklyError(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn('weekly-overview fetch failed', err);
+        setWeeklyError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [overviewMode, stampVersion, trackHours, user?.id]);
 
   useEffect(() => {
     // F-047: cancellation flag prevents setState-after-unmount React
@@ -184,7 +298,7 @@ export default function Dashboard() {
             trackHours ? apiClient.get('/time-entries/clock-status') : Promise.resolve({ data: null }),
           ]);
           if (cancelled) return;
-          setRecentEntries(entriesRes.data.slice(-5).reverse());
+          setRecentEntries(newestEntries(entriesRes.data));
           if (clockRes.data) setClockStatus(clockRes.data);
         } catch (err) {
           if (!cancelled) console.warn('recent entries fetch failed', err);
@@ -256,7 +370,7 @@ export default function Dashboard() {
       setDashboardData(dashRes.data);
       setOvertimeAccount(overtimeRes.data);
       setYtdOvertime(ytdRes.data);
-      setRecentEntries(entriesRes.data.slice(-5).reverse());
+      setRecentEntries(newestEntries(entriesRes.data));
     }).catch((err) => {
       if (!cancelled) console.warn('stamp-refresh failed', err);
     });
@@ -359,22 +473,18 @@ export default function Dashboard() {
 
       {/* Status Card - Mobile Hero */}
       {trackHours && (() => {
-        // Calculate today's target hours from user schedule
-        const weekday = new Date().getDay(); // 0=Sun, 1=Mon...6=Sat
-        const dayFields = [null, 'hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday', null] as const;
-        let todayTarget = 0;
-        if (user && weekday >= 1 && weekday <= 5) {
-          if (user.use_daily_schedule) {
-            const field = dayFields[weekday];
-            todayTarget = field ? ((user as unknown as Record<string, number | null>)[field] ?? 0) : 0;
-          } else {
-            todayTarget = user.weekly_hours / (user.work_days_per_week || 5);
-          }
-        }
+        // #494: Tagessoll und Tages-Ist kommen vom Server. Das Soll stammt aus dem
+        // datumsaufgelösten Vertrags-Snapshot (#431) statt aus den Live-Feldern
+        // der User-Zeile; das Ist enthält auch die heute bereits ABGESCHLOSSENEN
+        // Blöcke (geteilter Dienst), nicht nur die Laufzeit des offenen Eintrags.
+        const todayTarget = clockStatus?.today_target_hours ?? 0;
         const isWorkday = todayTarget > 0;
-        const todayActual = (clockStatus?.elapsed_minutes ?? 0) / 60;
+        const todayActual = (clockStatus?.today_net_minutes ?? 0) / 60;
         const isClockedIn = clockStatus?.is_clocked_in ?? false;
-        const shouldBeClockedIn = isWorkday && !isClockedIn;
+        // Wer heute schon gestempelt hat (z. B. Mittagspause, Feierabend), ist
+        // nicht „noch nicht eingestempelt" — kein roter Hinweis.
+        const workedToday = todayActual > 0;
+        const shouldBeClockedIn = isWorkday && !isClockedIn && !workedToday;
         const cardBg = isClockedIn
           ? 'bg-success/8 border border-success/25'
           : shouldBeClockedIn
@@ -403,6 +513,8 @@ export default function Dashboard() {
                   ? `Eingestempelt seit ${startDisplay}`
                   : shouldBeClockedIn
                   ? 'Noch nicht eingestempelt'
+                  : !isClockedIn && workedToday
+                  ? 'Ausgestempelt'
                   : 'Nicht eingestempelt'}
               </span>
             </div>
@@ -666,52 +778,121 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Monthly Overview Table */}
-      {trackHours && overtimeAccount && overtimeAccount.history.length > 0 && (
-        <div className="bg-surface rounded-2xl shadow-card border border-border overflow-hidden mb-8">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">Monatsübersicht</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monat</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Soll</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ist</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Saldo</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Überstunden kum.</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {overtimeAccount.history.slice().reverse().map((month) => (
-                  <tr key={`${month.year}-${month.month}`} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      {format(new Date(month.year, month.month - 1), 'MMMM yyyy', { locale: de })}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{formatHoursHM(month.target)}h</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{formatHoursHM(month.actual)}h</td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className={`font-medium ${
-                        month.balance >= 0 ? 'text-success' : 'text-danger'
-                      }`}>
-                        {month.balance >= 0 ? '+' : ''}{formatHoursHM(month.balance)}h
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className={`font-semibold ${
-                        month.cumulative >= 0 ? 'text-success' : 'text-danger'
-                      }`}>
-                        {month.cumulative >= 0 ? '+' : ''}{formatHoursHM(month.cumulative)}h
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* Übersicht Monat/Woche (#500) — neueste Zeile zuerst */}
+      {trackHours && overtimeAccount && overtimeAccount.history.length > 0 && (() => {
+        const isWeek = overviewMode === 'week';
+        const rows: OverviewRow[] = isWeek
+          ? (weeklyOverview ?? []).slice().reverse().map((w) => ({
+              key: w.week_start,
+              label: (
+                <>
+                  <span className="font-medium">KW {w.iso_week}</span>
+                  <span className="block text-xs text-gray-500">{weekRange(w, new Date().getFullYear())}</span>
+                </>
+              ),
+              target: w.target,
+              actual: w.actual,
+              balance: w.balance,
+              cumulative: w.cumulative,
+            }))
+          : overtimeAccount.history.slice().reverse().map((m) => ({
+              key: `${m.year}-${m.month}`,
+              label: format(new Date(m.year, m.month - 1), 'MMMM yyyy', { locale: de }),
+              target: m.target,
+              actual: m.actual,
+              balance: m.balance,
+              cumulative: m.cumulative,
+            }));
+        const weekPending = isWeek && weeklyOverview === null && !weeklyError;
+        return (
+          <section
+            aria-labelledby="dashboard-overview-heading"
+            className="bg-surface rounded-2xl shadow-card border border-border overflow-hidden mb-8"
+          >
+            <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h2 id="dashboard-overview-heading" className="text-xl font-bold text-gray-900">{isWeek ? 'Wochenübersicht' : 'Monatsübersicht'}</h2>
+                {isWeek && (
+                  <p className="text-xs text-gray-500 mt-0.5">Letzte 8 Wochen · laufende Woche bis heute</p>
+                )}
+              </div>
+              <div
+                className="inline-flex rounded-xl border border-gray-300 overflow-hidden"
+                role="group"
+                aria-label="Zeitraum-Ansicht"
+              >
+                <button
+                  type="button"
+                  onClick={() => changeOverviewMode('month')}
+                  aria-pressed={!isWeek}
+                  className={`px-4 py-2 text-sm font-medium transition ${
+                    !isWeek ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-muted'
+                  }`}
+                >
+                  Monat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeOverviewMode('week')}
+                  aria-pressed={isWeek}
+                  className={`px-4 py-2 text-sm font-medium transition ${
+                    isWeek ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-muted'
+                  }`}
+                >
+                  Woche
+                </button>
+              </div>
+            </div>
+            {weekPending ? (
+              <p className="px-6 py-6 text-sm text-gray-500">Lade Wochenübersicht…</p>
+            ) : isWeek && weeklyError ? (
+              <p className="px-6 py-6 text-sm text-danger">Wochenübersicht konnte nicht geladen werden.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{isWeek ? 'Woche' : 'Monat'}</th>
+                      <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Soll</th>
+                      <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ist</th>
+                      <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Saldo</th>
+                      <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        {/* Smartphone: kurz wie die Kachel „Überstd." — die volle
+                            Überschrift schöbe die Spalte aus dem Bild. */}
+                        <span className="sm:hidden">Überstd.</span>
+                        <span className="hidden sm:inline">Überstunden kum.</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {rows.map((row) => (
+                      <tr key={row.key} className="hover:bg-gray-50">
+                        <td className="px-2 sm:px-6 py-3 sm:py-4 text-sm text-gray-900">{row.label}</td>
+                        <td className="px-2 sm:px-6 py-3 sm:py-4 text-sm text-gray-600 whitespace-nowrap">{formatHoursHM(row.target)}h</td>
+                        <td className="px-2 sm:px-6 py-3 sm:py-4 text-sm text-gray-600 whitespace-nowrap">{formatHoursHM(row.actual)}h</td>
+                        <td className="px-2 sm:px-6 py-3 sm:py-4 text-sm whitespace-nowrap">
+                          <span className={`font-medium ${
+                            row.balance >= 0 ? 'text-success' : 'text-danger'
+                          }`}>
+                            {row.balance >= 0 ? '+' : ''}{formatHoursHM(row.balance)}h
+                          </span>
+                        </td>
+                        <td className="px-2 sm:px-6 py-3 sm:py-4 text-sm whitespace-nowrap">
+                          <span className={`font-semibold ${
+                            row.cumulative >= 0 ? 'text-success' : 'text-danger'
+                          }`}>
+                            {row.cumulative >= 0 ? '+' : ''}{formatHoursHM(row.cumulative)}h
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {/* Details Toggle */}
       <div className="mb-4 flex justify-center">

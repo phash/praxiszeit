@@ -80,6 +80,7 @@ interface YearlyAbsences {
   overtime_comp_days?: number;
   overtime_year: number;
   total_days: number;
+  has_year_end_warning?: boolean; // #501: serverseitige Jahresend-Warnung (ab 1,0 Tagen, Q4)
 }
 
 interface UserDetails {
@@ -96,6 +97,10 @@ export default function AdminDashboard() {
   // #159: leitende MA (§18) verzerren den Schnitt — standardmäßig aus dem Ø ausschließen.
   const [includeExemptInAvg, setIncludeExemptInAvg] = useState(false);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsences[]>([]);
+  // #501/Review F3: Jahr, zu dem `yearlyAbsences` gehört. Beim Umschalten bleibt
+  // die alte Liste stehen, bis die neue Antwort da ist (oder für immer, wenn die
+  // Anfrage scheitert) — der Jahresend-Banner darf sie nur fürs eigene Jahr zeigen.
+  const [yearlyAbsencesYear, setYearlyAbsencesYear] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [yearlyLoading, setYearlyLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -203,12 +208,14 @@ export default function AdminDashboard() {
   const yearlySeq = useRef(0);
   const fetchYearlyAbsences = async () => {
     const seq = ++yearlySeq.current;
+    const year = currentYear;
     try {
       const hp = showHealthData ? '&include_health_data=true' : '';
-      const response = await apiClient.get(`/admin/reports/yearly-absences?year=${currentYear}${hp}`);
+      const response = await apiClient.get(`/admin/reports/yearly-absences?year=${year}${hp}`);
       if (seq !== yearlySeq.current) return;
       // #382: same guard — yearlyAbsences.filter/.map run unconditionally in render.
       setYearlyAbsences(Array.isArray(response.data) ? response.data : []);
+      setYearlyAbsencesYear(year);
     } catch (error) {
       if (seq === yearlySeq.current) toast.error('Fehler beim Laden der Jahresübersicht');
     } finally {
@@ -967,9 +974,17 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Year-end vacation warning banner (Q4 only) */}
-        {new Date().getMonth() >= 9 && currentYear === new Date().getFullYear() && (() => {
-          const withRemaining = yearlyAbsences.filter(e => e.remaining_vacation_days > 0);
+        {/* Year-end vacation warning banner. #501: Ob gewarnt wird (Q4 des
+            laufenden Jahres, erst ab 1,0 offenen Tagen — Teilzeit-Bruchteile
+            wandern ins Folgejahr), entscheidet der Server über dieselbe Regel
+            wie im Mitarbeiter-Dashboard; hier wird NICHT mehr selbst gefiltert.
+            Review F3: nur mit Daten des GEWÄHLTEN Jahres — beim Umschalten (Anfrage
+            läuft oder scheitert) stünden sonst die Namen des Vorjahres unter dem
+            Verfallsdatum des neu gewählten Jahres. */}
+        {(() => {
+          const withRemaining = yearlyAbsencesYear === currentYear
+            ? yearlyAbsences.filter(e => e.has_year_end_warning)
+            : [];
           return withRemaining.length > 0 ? (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
               <p className="font-semibold text-amber-800 mb-2">
