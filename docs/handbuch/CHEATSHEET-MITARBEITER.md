@@ -36,6 +36,7 @@ Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
 - Datum, Startzeit (Von), Endzeit (Bis)
 - Pause in Minuten *(Pflicht!)*
 - Optional: Notiz
+- An Sonn-/Feiertagen: **Ausnahmegrund** (§10 ArbZG, z. B. „Notdienst")
 - **Speichern**
 
 Mobil: **+**-Button oben rechts auf der Zeiterfassungsseite

@@ -3,6 +3,7 @@ import { X, ArrowRight } from 'lucide-react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
+import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
 
 interface TimeEntry {
   id: string;
@@ -45,35 +46,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
   // kamen Anträge über den Button „Antrag" ohne Grund an, während das
   // Monatsjournal danach fragt.
   const [sundayReason, setSundayReason] = useState(entry?.sunday_exception_reason || '');
-  const [holidayDates, setHolidayDates] = useState<Set<string>>(() => new Set());
-  const holidayYear = /^\d{4}-/.test(formData.proposed_date) ? formData.proposed_date.slice(0, 4) : '';
-
-  useEffect(() => {
-    if (requestType === 'delete' || !holidayYear) return;
-    let cancelled = false;
-    apiClient
-      .get<{ date: string }[]>(`/holidays?year=${holidayYear}`)
-      .then((res) => {
-        if (!cancelled) setHolidayDates(new Set((res.data ?? []).map((h) => h.date)));
-      })
-      // Ohne Feiertagsliste bleibt die Sonntagsregel — das Feld ist optional.
-      .catch(() => {
-        if (!cancelled) setHolidayDates(new Set());
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [holidayYear, requestType]);
-
-  // Samstag ist ein Werktag — dort fragt §10 nicht (gleiche Regel wie im Journal).
-  const isSundayOrHoliday = (() => {
-    const d = formData.proposed_date;
-    if (!d) return false;
-    if (new Date(`${d}T12:00:00`).getDay() === 0) return true;
-    if (holidayDates.has(d)) return true;
-    return !!entry?.is_sunday_or_holiday && d === entry.date;
-  })();
-  const showSundayReason = requestType !== 'delete' && isSundayOrHoliday;
+  // Gemeinsame Regel mit der Direkteingabe (TimeTracking): Sonntag oder
+  // Feiertag des Mandanten, Samstag nicht; ohne Feiertagsliste die Sonntagsregel.
+  const showSundayReason = useSundayOrHoliday(formData.proposed_date, entry, requestType !== 'delete');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

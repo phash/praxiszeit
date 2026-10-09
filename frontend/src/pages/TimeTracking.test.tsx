@@ -131,3 +131,61 @@ describe('<TimeTracking /> laufender Eintrag (U2, Audit 2026-07-31)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// #491 F4 (Review-Nachzug): auch die Direkteingabe „+ Neuer Eintrag" fragt an
+// einem gesetzlichen Feiertag unter der Woche (KV-Dienst an Christi
+// Himmelfahrt) nach dem §10-Ausnahmegrund — bisher nur an Sonntagen. Gleiche
+// Regel wie im Antragsformular und im Monatsjournal.
+// ---------------------------------------------------------------------------
+
+const ASCENSION = '2026-05-14'; // Donnerstag, Christi Himmelfahrt
+const SUNDAY = '2026-05-17';
+const THURSDAY_BEFORE = '2026-05-07';
+const REASON = /Ausnahmegrund/;
+
+function mockEntriesAndHolidays(entries: unknown[]) {
+  getMock.mockImplementation((url: string) => {
+    if (url.includes('/settings')) return Promise.resolve({ data: {} });
+    if (url.includes('/time-entries')) return Promise.resolve({ data: entries });
+    if (url.includes('/holidays')) {
+      return Promise.resolve({ data: [{ date: ASCENSION, name: 'Christi Himmelfahrt' }] });
+    }
+    return Promise.resolve({ data: [] });
+  });
+}
+
+async function openNewEntryWithDate(date: string) {
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: date } });
+}
+
+describe('<TimeTracking /> §10-Ausnahmegrund bei der Direkteingabe (#491 F4)', () => {
+  it('zeigt das Feld an einem gesetzlichen Feiertag unter der Woche', async () => {
+    mockEntriesAndHolidays([]);
+    await openNewEntryWithDate(ASCENSION);
+    expect(await screen.findByLabelText(REASON)).toBeInTheDocument();
+    expect(getMock).toHaveBeenCalledWith('/holidays?year=2026');
+  });
+
+  it('zeigt das Feld weiterhin an einem Sonntag', async () => {
+    mockEntriesAndHolidays([]);
+    await openNewEntryWithDate(SUNDAY);
+    expect(await screen.findByLabelText(REASON)).toBeInTheDocument();
+  });
+
+  it('zeigt das Feld an einem normalen Werktag nicht', async () => {
+    mockEntriesAndHolidays([]);
+    await openNewEntryWithDate(THURSDAY_BEFORE);
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/holidays?year=2026'));
+    expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument();
+  });
+
+  it('fragt die Feiertage erst ab, wenn das Formular offen ist', async () => {
+    mockEntriesAndHolidays([]);
+    renderPage();
+    await screen.findByRole('button', { name: /Neuer Eintrag/ });
+    expect(getMock.mock.calls.some(([url]) => String(url).includes('/holidays'))).toBe(false);
+  });
+});

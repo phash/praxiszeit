@@ -9,6 +9,7 @@ import ChangeRequests from './ChangeRequests';
 import { Plus, Edit2, Trash2, Save, X, Lock, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
+import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
 import { useAuthStore } from '../stores/authStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ChangeRequestForm from '../components/ChangeRequestForm';
@@ -205,6 +206,15 @@ export default function TimeTracking() {
   const [submitting, setSubmitting] = useState(false);
   // Whether the practice requires admin approval for such exceptions (public setting).
   const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
+
+  // #491 F4: §10-Ausnahmegrund an Sonn- UND Feiertagen (vorher nur Sonntag) —
+  // dieselbe Regel wie im Antragsformular. Feiertage erst laden, wenn das
+  // Formular offen ist.
+  const showSundayReason = useSundayOrHoliday(
+    formData.date,
+    editingId ? entries.find((e) => e.id === editingId) : null,
+    showForm,
+  );
 
   // Change request modal
   const [crModalOpen, setCrModalOpen] = useState(false);
@@ -781,8 +791,7 @@ export default function TimeTracking() {
               />
               <p className="text-xs text-gray-400 mt-1">Bitte keine Gesundheitsangaben oder sensiblen Daten eintragen.</p>
             </div>
-            {(new Date(formData.date + 'T12:00:00').getDay() === 0 ||
-              (editingId && entries.find(e => e.id === editingId)?.is_sunday_or_holiday)) && (
+            {showSundayReason && (
               <div className="md:col-span-2 lg:col-span-5">
                 <label htmlFor="sunday-exception-reason" className="block text-sm font-medium text-gray-700 mb-1">
                   Ausnahmegrund <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>

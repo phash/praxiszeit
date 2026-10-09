@@ -59,6 +59,7 @@ export function CheatsheetMitarbeiter() {
               <li>Zeiterfassung → Tab <strong>Einträge</strong> → <strong>+ Neuer Eintrag</strong></li>
               <li>Datum, Von, Bis eintragen</li>
               <li>Pause in Minuten (Pflicht!)</li>
+              <li>An Sonn-/Feiertagen: <strong>Ausnahmegrund</strong> (§10 ArbZG)</li>
               <li>Speichern</li>
             </ol>
             <p className="text-sm text-gray-500 mt-1">Mobil: <strong>+</strong>-Button oben rechts auf der Seite</p>
@@ -293,7 +294,7 @@ export const handbuchMitarbeiterSections: AccordionItem[] = [
       <div className="space-y-2">
         <p>Navigieren Sie zu <strong>Zeiterfassung → Tab „Einträge"</strong>. Klicken Sie auf <strong>+ Neuer Eintrag</strong>. Das Formular erscheint direkt über der Tabelle – Datum, Von, Bis und Pause ausfüllen, dann Speichern.</p>
         <p>Aktuelle entsperrte Einträge können direkt über <strong>Bearbeiten</strong> geändert werden. Ältere oder gesperrte Einträge erfordern einen Korrekturantrag.</p>
-        <p><strong>Wochenende/Feiertag (z. B. KV-Dienst):</strong> Am selben Tag stempeln oder normal eintragen – an einem Sonntag erscheint zusätzlich das Feld <strong>Ausnahmegrund</strong>. Nachträglich per Antrag: Button <strong>Antrag</strong> im Tab „Einträge" oder im <strong>Journal</strong> das <strong>+</strong> in der Zeile des Tages; an Sonn- und Feiertagen fragen beide Wege (Antragsformular und Journal) nach dem <strong>Ausnahmegrund (§10 ArbZG)</strong>. Das Soll ist an diesen Tagen 0, die angerechneten Stunden erhöhen also den Saldo.</p>
+        <p><strong>Wochenende/Feiertag (z. B. KV-Dienst):</strong> Am selben Tag stempeln oder normal eintragen – an Sonn- und Feiertagen erscheint zusätzlich das Feld <strong>Ausnahmegrund</strong>. Nachträglich per Antrag: Button <strong>Antrag</strong> im Tab „Einträge" oder im <strong>Journal</strong> das <strong>+</strong> in der Zeile des Tages; an Sonn- und Feiertagen fragen beide Wege (Antragsformular und Journal) nach dem <strong>Ausnahmegrund (§10 ArbZG)</strong>. Das Soll ist an diesen Tagen 0, die angerechneten Stunden erhöhen also den Saldo.</p>
         <p className="text-amber-700 font-medium">ArbZG: Pflichtpause ab 6h (30 Min.), ab 9h (45 Min.). Über 10h Nettoarbeitszeit: beim Live-Ausstempeln Warnung, bei manueller Eingabe/Antrag harte Sperre.</p>
       </div>
     ),

@@ -171,6 +171,7 @@ Das Eingabeformular erscheint direkt oberhalb der Eintrags-Tabelle.
 3. **Bis** – Arbeitsende (Format: `17:00`)
 4. **Pause (Min.)** – Pausenzeit in Minuten (z. B. `30`)
 5. **Notiz** – Optional: Anmerkung zum Tag (keine Gesundheitsdaten eintragen)
+6. **Ausnahmegrund** – erscheint nur an **Sonn- und gesetzlichen Feiertagen** (§ 10 ArbZG, z. B. „Notdienst")
 
 Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das Formular.
 
@@ -597,7 +598,7 @@ A: Navigieren Sie zu **Zeiterfassung → Tab „Einträge"**, suchen Sie den bet
 A: Sonntagsarbeit wird markiert. Als Ausgleich steht Ihnen gem. [§ 11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html) ein Ersatzruhetag zu (innerhalb von 2 Wochen).
 
 **F: Wie trage ich Arbeit am Wochenende oder Feiertag ein (z. B. KV-Dienst)?**
-A: **Am selben Tag** stempeln Sie ganz normal oder legen unter **Zeiterfassung → Tab „Einträge" → + Neuer Eintrag** einen Eintrag an; an einem Sonntag erscheint dort zusätzlich das Feld **Ausnahmegrund** (z. B. „Notdienst"). **Nachträglich** stellen Sie einen Antrag: entweder über den Button **Antrag** im Tab „Einträge" oder im **Journal** über das **+** in der Zeile des Tages (seit Version 1.19.2 auch an Wochenend- und Feiertagen). An einem Sonntag oder Feiertag fragen beide Antragswege – das Antragsformular hinter dem Button **Antrag** und das Journal – nach dem **Ausnahmegrund (§10 ArbZG)**; er wird mit der Genehmigung am Eintrag gespeichert und erscheint in den Exporten. Nach der Genehmigung zählen die Stunden zum Ist; da das Soll an diesen Tagen 0 ist, erhöhen die angerechneten Stunden Ihren Saldo.
+A: **Am selben Tag** stempeln Sie ganz normal oder legen unter **Zeiterfassung → Tab „Einträge" → + Neuer Eintrag** einen Eintrag an; an Sonn- und Feiertagen erscheint dort zusätzlich das Feld **Ausnahmegrund** (z. B. „Notdienst"). **Nachträglich** stellen Sie einen Antrag: entweder über den Button **Antrag** im Tab „Einträge" oder im **Journal** über das **+** in der Zeile des Tages (seit Version 1.19.2 auch an Wochenend- und Feiertagen). An einem Sonntag oder Feiertag fragen beide Antragswege – das Antragsformular hinter dem Button **Antrag** und das Journal – nach dem **Ausnahmegrund (§10 ArbZG)**; er wird mit der Genehmigung am Eintrag gespeichert und erscheint in den Exporten. Nach der Genehmigung zählen die Stunden zum Ist; da das Soll an diesen Tagen 0 ist, erhöhen die angerechneten Stunden Ihren Saldo.
 
 **F: Ich habe mein Passwort vergessen.**
 A: Wenden Sie sich an Ihren Administrator. Er kann Ihr Passwort zurücksetzen.
