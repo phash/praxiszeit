@@ -6065,7 +6065,8 @@ Upgrade (Spec 5.2):
 * Bestandsfallen (halboffen, Beginn >= Ende, Sekunden) brechen NICHT ab,
   sondern stehen namentlich in der Diagnose (Spec 5.3/5.4) - ein Update eines
   Kundensystems darf nicht haengen;
-* ``auto_closed`` fuer Eintraege, die der Auto-Close auf 23:59 geschlossen hat;
+* ``auto_closed`` fuer Eintraege, die der Auto-Close auf 23:59 geschlossen hat
+  (Ende ODER Rohende 23:59, siehe ``backfill_auto_closed``);
 * die zehn ``scheduled_*``-Spalten werden geloescht (E23, kein Expand/Contract).
 
 KEINE Neukappung: ``uncredited_minutes`` bleibt 0, ``clamp_grace_minutes``
@@ -6077,9 +6078,9 @@ HUELLE der Bloecke (Beginn des ersten bis Ende des letzten Blocks), nicht aus
 dem ersten Block. Verlustbehaftet; die Diagnose nennt die Betroffenen.
 
 Die reinen Helfer (``build_week``, ``window_from_week``, ``upgrade_report``,
-``downgrade_report``) sind ohne Datenbank testbar
-(``tests/test_073_work_blocks_migration.py``); der Lauf gegen echtes
-PostgreSQL steht in ``tests/test_073_migration_pg.py``.
+``downgrade_report``) sind ohne Datenbank testbar, ``backfill_auto_closed``
+gegen die SQLite-Test-DB (``tests/test_073_work_blocks_migration.py``); der
+Lauf gegen echtes PostgreSQL steht in ``tests/test_073_migration_pg.py``.
 """
 import json
 from datetime import time
@@ -6264,6 +6265,31 @@ def _superadmin(conn) -> bool:
     return True
 
 
+def backfill_auto_closed(conn) -> int:
+    """P18: vor 073 kappte der Auto-Close nie - ein Eintrag mit Ende 23:59 UND
+    Protokollzeile auto_close ist der Auto-Close. Reines Kennzeichen, net_hours
+    unveraendert. Rueckgabe: Anzahl gekennzeichneter Eintraege.
+
+    ``raw_end_time = 23:59`` gehoert dazu: unter 072 kappte ein spaeteres
+    Speichern des ganzen Formulars (etwa nur die Pause ergaenzt, Ende 23:59
+    unveraendert - ``unclamp_input`` reicht es mangels Rohwert durch) die
+    synthetischen 23:59 auf das Fensterende und hielt 23:59 als ``raw_end_time``
+    fest. Das ist genau die Form, die der neue Auto-Close mit
+    ``auto_closed = true`` schreibt; ohne Kennzeichen zaehlte P19 die Strecke bis
+    23:59 als "nicht angerechnet", und Anerkennen rechnete bis 23:59 an.
+
+    Kein Fehltreffer: ein echt korrigiertes Ende laesst ``raw_end_time`` NULL
+    (im Fenster) oder traegt den echten Wert (ausserhalb), nie 23:59. Offen
+    bleibt nur ein echtes Ende um genau 23:59 - dieselbe Mehrdeutigkeit, die die
+    Spec fuer ``end_time = 23:59`` schon hinnimmt."""
+    return conn.execute(sa.text(
+        "UPDATE time_entries SET auto_closed = true "
+        "WHERE (end_time = :t OR raw_end_time = :t) AND EXISTS ("
+        "  SELECT 1 FROM time_entry_audit_logs a "
+        "  WHERE a.time_entry_id = time_entries.id AND a.source = 'auto_close')"
+    ).bindparams(sa.bindparam("t", time(23, 59), type_=sa.Time()))).rowcount
+
+
 def upgrade():
     op.add_column("users", sa.Column("work_blocks", _json_type(), nullable=True))
     op.add_column("working_hours_changes", sa.Column("blocks", _json_type(), nullable=True))
@@ -6312,15 +6338,7 @@ def upgrade():
             f"Abweichung: {expected} Konten erwartet, {accounts} aktualisiert (RLS?)"
         )
 
-    # P18: vor 073 kappte der Auto-Close nie - ein Eintrag mit Ende 23:59 UND
-    # Protokollzeile auto_close ist der Auto-Close; ein spaeter korrigiertes Ende
-    # faellt heraus. Reines Kennzeichen, net_hours unveraendert.
-    conn.execute(sa.text(
-        "UPDATE time_entries SET auto_closed = true "
-        "WHERE end_time = :t AND EXISTS ("
-        "  SELECT 1 FROM time_entry_audit_logs a "
-        "  WHERE a.time_entry_id = time_entries.id AND a.source = 'auto_close')"
-    ), {"t": time(23, 59)})
+    backfill_auto_closed(conn)
 
     print(upgrade_report(accounts, history_rows, notes))
 
@@ -6485,7 +6503,8 @@ TENANT = "00000000-0000-0000-0000-000000000001"  # legt Migration 027 an
 U = {name: str(uuid.UUID(int=0x1111_0000_0000_4000_8000_0000_0000_0000 + i))
      for i, name in enumerate(("zwei", "halbende", "invers", "sek", "nurinvers", "ohne", "mehr"), 1)}
 E = {name: str(uuid.UUID(int=0x3333_0000_0000_4000_8000_0000_0000_0000 + i))
-     for i, name in enumerate(("autoclose", "korrigiert", "ohne_protokoll", "mehr"), 1)}
+     for i, name in enumerate(("autoclose", "korrigiert", "ohne_protokoll", "mehr",
+                               "nachgekappt", "nachgekappt_echt"), 1)}
 WINDOW_COLUMNS = [f"scheduled_{k}_{d}" for d in ("monday", "tuesday", "wednesday", "thursday", "friday")
                   for k in ("start", "end")]
 OLD_TE = "id, user_id, date, start_time, end_time, break_minutes, raw_start_time, raw_end_time, note"
@@ -6553,15 +6572,21 @@ def _seed_072(conn):
             "VALUES (:id, :t, :u, :d, 40)"
         ), {"id": str(uuid.UUID(int=0x2222_0000_0000_4000_8000_0000_0000_0000 + i)),
             "t": TENANT, "u": U[who], "d": day})
-    for key, who, day, end in (("autoclose", "zwei", "2026-06-01", time(23, 59)),
-                               ("korrigiert", "zwei", "2026-06-02", time(17, 0)),
-                               ("ohne_protokoll", "zwei", "2026-06-03", time(23, 59)),
-                               ("mehr", "mehr", "2026-06-01", time(18, 0))):
+    # "nachgekappt": 072-Auto-Close (23:59), danach das ganze Formular gespeichert →
+    # 072 kappte die 23:59 auf das Fensterende und hielt sie als Rohende fest
+    # (dieselbe Form wie der neue Auto-Close). "nachgekappt_echt": Kontrolle, echtes
+    # Ende 19:00 außerhalb des Fensters.
+    for key, who, day, end, raw_end in (("autoclose", "zwei", "2026-06-01", time(23, 59), None),
+                                        ("korrigiert", "zwei", "2026-06-02", time(17, 0), None),
+                                        ("ohne_protokoll", "zwei", "2026-06-03", time(23, 59), None),
+                                        ("mehr", "mehr", "2026-06-01", time(18, 0), None),
+                                        ("nachgekappt", "zwei", "2026-06-08", time(16, 45), time(23, 59)),
+                                        ("nachgekappt_echt", "zwei", "2026-06-09", time(16, 45), time(19, 0))):
         conn.execute(text(
-            "INSERT INTO time_entries (id, tenant_id, user_id, date, start_time, end_time, break_minutes) "
-            "VALUES (:id, :t, :u, :d, :s, :e, 0)"
-        ), {"id": E[key], "t": TENANT, "u": U[who], "d": day, "s": time(8, 0), "e": end})
-    for key in ("autoclose", "korrigiert"):
+            "INSERT INTO time_entries (id, tenant_id, user_id, date, start_time, end_time, raw_end_time, break_minutes) "
+            "VALUES (:id, :t, :u, :d, :s, :e, :re, 0)"
+        ), {"id": E[key], "t": TENANT, "u": U[who], "d": day, "s": time(8, 0), "e": end, "re": raw_end})
+    for key in ("autoclose", "korrigiert", "nachgekappt", "nachgekappt_echt"):
         conn.execute(text(
             "INSERT INTO time_entry_audit_logs (tenant_id, time_entry_id, user_id, changed_by, action, source, new_end_time) "
             "VALUES (:t, :e, :u, :u, 'update', 'auto_close', :end)"
@@ -6611,7 +6636,8 @@ def test_073_upgrade_downgrade_round_trip(scratch):
         assert all(b == _blocks(conn, "zwei") for u, b in wh if u == U["zwei"])
         flags = dict(conn.execute(text("SELECT id::text, auto_closed FROM time_entries")).all())
         assert flags == {E["autoclose"]: True, E["korrigiert"]: False,
-                         E["ohne_protokoll"]: False, E["mehr"]: False}
+                         E["ohne_protokoll"]: False, E["mehr"]: False,
+                         E["nachgekappt"]: True, E["nachgekappt_echt"]: False}
         assert conn.execute(text(
             "SELECT count(*) FROM time_entries WHERE clamp_grace_minutes IS NOT NULL "
             "OR uncredited_minutes <> 0 OR credit_override"
@@ -7452,6 +7478,8 @@ migrate() { run "$PWD/backend" python -c "from alembic.config import main; main(
 echo "== Stand: $(sql 'SELECT version_num FROM alembic_version')"
 sql "DROP TABLE IF EXISTS _probe_users_072; CREATE TABLE _probe_users_072 AS SELECT id, username, $WIN FROM users" > /dev/null
 md5s | tee "$WORK/md5-072.txt"
+echo "-- Auto-Close-Formen (P18): Ende 23:59 | nachgekappt (Ende <> 23:59, Rohende 23:59)"
+sql "SELECT count(*) FILTER (WHERE end_time = '23:59'), count(*) FILTER (WHERE end_time <> '23:59' AND raw_end_time = '23:59') FROM time_entries t WHERE EXISTS (SELECT 1 FROM time_entry_audit_logs a WHERE a.time_entry_id = t.id AND a.source = 'auto_close')"
 BASE=$(cat "$(git rev-parse --git-dir)/pr1-base")  # Task 0 Step 5 — Kopf des Integrationszweigs vor PR1
 git cat-file -e "${BASE}^{commit}"; echo "== Code vor PR1: $(git log -1 --oneline "$BASE")"
 mkdir -p "$WORK/old"; git archive "$BASE" backend | tar -x -C "$WORK/old"
@@ -7463,6 +7491,7 @@ python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(len(d), 'Pers
 echo "== Upgrade auf 073 mit dem PR1-Code"
 migrate upgrade 073_work_blocks 2>&1 | tee "$WORK/upgrade.log" | sed -n '/HINWEIS (Migration 073)/,/ENDE HINWEIS/p'
 run "$PWD/backend" python /probe/probe_073.py > "$WORK/073.json"
+echo "-- auto_closed = true: $(sql 'SELECT count(*) FROM time_entries WHERE auto_closed')"
 diff -q "$WORK/072.json" "$WORK/073.json" && echo "BYTE-IDENTISCH"
 
 echo "== Round-Trip 073 -> 072 -> 073"
@@ -7480,8 +7509,8 @@ BASHEOF
 ```
 
 Expected, in dieser Reihenfolge:
-1. `== Stand: 072_cr_sunday_reason`, zwei Zeilen `time_entries|<n>|<md5>` / `working_hours_changes|<n>|<md5>`, `== Code vor PR1: 3d46c2f …` (bzw. der in Task 0 Step 5 festgehaltene Kopf; fehlt die Datei `pr1-base`, bricht `set -e` hier ab — dann nicht auf `merge-base` ausweichen, sondern den Commit unmittelbar vor dem ersten PR1-Commit per `git log --oneline` bestimmen und in die Datei schreiben), „<p> Personen, <e> Einträge" mit e > 0.
-2. Der 073-Diagnoseblock nennt dieselben Fallen wie Task 0 (Q2: halboffen → „halboffen: …", `Beginn>=Ende` → „nicht übernommen: …", Sekunden → „Sekunden abgeschnitten: …"; Kontenzahl = Q3-Zeilen mit mindestens einem gültigen Tag) und **keine** Zeile „Abweichung: … (RLS?)"; danach `BYTE-IDENTISCH`.
+1. `== Stand: 072_cr_sunday_reason`, zwei Zeilen `time_entries|<n>|<md5>` / `working_hours_changes|<n>|<md5>`, die Zeile „Auto-Close-Formen" mit zwei Zahlen `<a>|<b>`, `== Code vor PR1: 3d46c2f …` (bzw. der in Task 0 Step 5 festgehaltene Kopf; fehlt die Datei `pr1-base`, bricht `set -e` hier ab — dann nicht auf `merge-base` ausweichen, sondern den Commit unmittelbar vor dem ersten PR1-Commit per `git log --oneline` bestimmen und in die Datei schreiben), „<p> Personen, <e> Einträge" mit e > 0.
+2. Der 073-Diagnoseblock nennt dieselben Fallen wie Task 0 (Q2: halboffen → „halboffen: …", `Beginn>=Ende` → „nicht übernommen: …", Sekunden → „Sekunden abgeschnitten: …"; Kontenzahl = Q3-Zeilen mit mindestens einem gültigen Tag) und **keine** Zeile „Abweichung: … (RLS?)"; `auto_closed = true: <a + b>` (Summe der beiden Auto-Close-Formen aus 1.); danach `BYTE-IDENTISCH`.
 3. Der Downgrade-Block nennt keine Mehrblock-Personen und keine Einträge mit nicht angerechneter Zeit (PR1 erzeugt keine); `TABELLEN IDENTISCH`; unter „Personen mit geändertem 072-Fenster" stehen nur Personen, die die 073-Diagnose mit „Sekunden abgeschnitten" oder „nicht übernommen" nennt (halboffene Fenster kommen über die Platzhalter identisch zurück).
 4. `NACH ROUND-TRIP BYTE-IDENTISCH`, `== Stand: 073_work_blocks`.
 
@@ -7489,7 +7518,7 @@ Fehlt `BYTE-IDENTISCH`: `diff "$WORK/072.json" "$WORK/073.json" | head -40` (Pfa
 
 - [ ] **Step 3: Ergebnis festhalten, aufräumen, Commit**
 
-Für den PR-Text notieren: Datum der Sicherung, „<p> Personen, <e> Einträge", die Zählzeile der 073-Diagnose, „BYTE-IDENTISCH", „TABELLEN IDENTISCH", die Zahl der Personen mit geändertem Fenster. Dann das Arbeitsverzeichnis aus der ersten Ausgabezeile löschen (`rm -rf <Pfad>` — es enthält Prod-Daten) und:
+Für den PR-Text notieren: Datum der Sicherung, „<p> Personen, <e> Einträge", die Zählzeile der 073-Diagnose, die beiden Auto-Close-Formen und `auto_closed = true`, „BYTE-IDENTISCH", „TABELLEN IDENTISCH", die Zahl der Personen mit geändertem Fenster. Dann das Arbeitsverzeichnis aus der ersten Ausgabezeile löschen (`rm -rf <Pfad>` — es enthält Prod-Daten) und:
 
 ```bash
 git add tools/migration-073/probe_073.py
