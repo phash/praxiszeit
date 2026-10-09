@@ -933,7 +933,18 @@ export default function UserForm({
               <div aria-labelledby="f-work-blocks-label" className="text-sm text-gray-800">
                 {workBlocksText ?? 'Keine Arbeitszeit-Blöcke hinterlegt'}
               </div>
-              {workBlocksText && isLegacyWeek(shownBlocks) && (
+              {/* E63: ohne Stundenzählung wirken weder Soll noch Kappung — das
+                  Backend kappt dann nie (`clamp_applies`/`_clamp_core`), 073
+                  übernimmt Altfenster aber unabhängig von track_hours (P2).
+                  Wortlaut wie im Dialog (Spec 12.1). */}
+              {workBlocksText && !formData.track_hours && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {isLegacyWeek(shownBlocks)
+                    ? 'Arbeitszeit-Fenster aus dem Altbestand gespeichert, ohne Wirkung (keine Stundenzählung).'
+                    : 'Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung).'}
+                </p>
+              )}
+              {workBlocksText && formData.track_hours && isLegacyWeek(shownBlocks) && (
                 <p className="text-xs text-gray-500 mt-1">
                   Arbeitszeit-Fenster aus dem Altbestand: kappt die erfasste Zeit, ändert das Tagessoll nicht.
                 </p>

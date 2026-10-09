@@ -575,6 +575,36 @@ describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => 
     expect(screen.getByText(/Altbestand: kappt die erfasste Zeit/)).toBeInTheDocument();
   });
 
+  // E63/P2: ohne Stundenzählung kappt das Backend nie (`_clamp_core`/`clamp_applies`
+  // brechen bei track_hours=False ab), 073 übernimmt Altfenster aber unabhängig davon.
+  // Der Kappungs-Hinweis wäre dort eine falsche Aussage.
+  it('Altfenster bei track_hours=false: kein Kappungs-Hinweis, sondern „ohne Wirkung"', () => {
+    renderForm({ editUser: { ...baseEditUser, track_hours: false, work_blocks_today: LEGACY } });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Mo 07:37–16:30 · Fr 07:30–23:59');
+    expect(screen.queryByText(/kappt die erfasste Zeit/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Altbestand gespeichert, ohne Wirkung \(keine Stundenzählung\)/)).toBeInTheDocument();
+  });
+
+  it('Blöcke bei track_hours=false: „gespeichert, ohne Wirkung" (Wortlaut wie im Dialog, Spec 12.1)', () => {
+    renderForm({ editUser: { ...baseEditUser, track_hours: false }, displayBlocks: TWO_BLOCKS });
+    expect(screen.getByText('Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung).')).toBeInTheDocument();
+    expect(screen.queryByText(/Altbestand/)).not.toBeInTheDocument();
+  });
+
+  it('Hinweis folgt dem Haken „Stundenzählung aktiv" im Formular', () => {
+    renderForm({ editUser: { ...baseEditUser, work_blocks_today: LEGACY } });
+    expect(screen.getByText(/Altbestand: kappt die erfasste Zeit/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Stundenzählung aktiv/));
+    expect(screen.queryByText(/kappt die erfasste Zeit/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Altbestand gespeichert, ohne Wirkung/)).toBeInTheDocument();
+  });
+
+  it('ohne Blöcke bei track_hours=false: kein „ohne Wirkung"-Hinweis', () => {
+    renderForm({ editUser: { ...baseEditUser, track_hours: false }, displayBlocks: null });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
+    expect(screen.queryByText(/ohne Wirkung/)).not.toBeInTheDocument();
+  });
+
   it('ohne Blöcke: „Keine Arbeitszeit-Blöcke hinterlegt"', () => {
     renderForm({ editUser: baseEditUser, displayBlocks: null });
     expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
