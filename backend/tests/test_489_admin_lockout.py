@@ -112,7 +112,8 @@ class TestLetzterAdmin:
         from app.routers import admin_users as admin_users_router
 
         other = _make_user(db, "zweitadmin", role=UserRole.ADMIN)
-        monkeypatch.setattr(admin_users_router, "lock_active_admin_ids", lambda db, tid: [])
+        monkeypatch.setattr(admin_users_router, "lock_active_admins_and_user",
+                            lambda db, tid, uid: [])
         r = client_as(other).put(f"/api/admin/users/{test_admin.id}", json={"role": "employee"})
         assert r.status_code == 400, r.text
         db.refresh(test_admin)

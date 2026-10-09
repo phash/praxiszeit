@@ -21,7 +21,9 @@ from app.models.security_event import (
     SecurityEvent,
 )
 from app.schemas.security_event import SecurityEventResponse
-from app.routers.admin_helpers import lock_active_admin_ids, lock_user_row
+from app.routers.admin_helpers import (
+    lock_active_admin_ids, lock_active_admins_and_user, lock_user_row,
+)
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
@@ -1282,14 +1284,16 @@ def update_user(
         # Wechsel fuer wirkungslos — keine Protokollzeile, kein
         # token_version-Bump, und das ORM schrieb die „unveraenderte" Rolle
         # nicht: das Konto blieb im Zustand der anderen Anfrage, obwohl diese
-        # hier 200 meldete. Deshalb dieselbe Sperrreihenfolge wie beim
-        # Deaktivieren: IMMER zuerst die Admin-Menge (nicht nur, wenn die
-        # veraltete Rolle ADMIN ist — die veraltete Rolle ist genau das
-        # Problem), dann die Zielzeile, erst danach lesen. Die Letzter-Admin-
-        # Pruefung laeuft gegen die bereits gesperrte ID-Liste; ein erneutes
-        # Sperren nach der Zeilensperre drehte die Reihenfolge um (Deadlock).
-        admin_ids = lock_active_admin_ids(db, current_user.tenant_id)
-        _lock_and_reload(db, current_user, user)
+        # hier 200 meldete. Deshalb IMMER (nicht nur, wenn die veraltete Rolle
+        # ADMIN ist — die veraltete Rolle ist genau das Problem) Admin-Menge
+        # UND Zielzeile sperren, erst danach lesen. Beides in EINER nach ID
+        # sortierten Anweisung: zwei Anweisungen (erst Admin-Menge, dann Ziel)
+        # verklemmten sich mit der sortierten Mehrzeilen-Sperre der
+        # Betriebsferien-Buchung, sobald die Ziel-ID vor einer Admin-ID liegt
+        # (test_concurrency.py). Die Letzter-Admin-Pruefung laeuft gegen die
+        # dabei gesperrte ID-Liste — kein zweites Sperren danach.
+        admin_ids = lock_active_admins_and_user(db, current_user.tenant_id, user.id)
+        db.refresh(user)
         old_role = user.role
         role_changed = update_data['role'] != old_role
         # Konservativ: auch eine leere Liste (kein anderer aktiver Admin

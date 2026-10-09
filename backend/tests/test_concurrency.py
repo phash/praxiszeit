@@ -1631,3 +1631,51 @@ def test_parallel_role_change_reads_the_locked_role(
     )
     assert events == ["user_role_changed", "user_role_changed"], events
     assert (tv_after or 0) == (tv_before or 0) + 1, (tv_before, tv_after)
+
+
+def test_role_change_and_sorted_multi_row_lock_do_not_deadlock(
+    concurrency_seed, account_event_state, admin_engine,
+):
+    """#491 API-2 (Nachzug): der Rollenwechsel darf sich nicht mit einer
+    sortierten Mehrzeilen-Sperre (``lock_user_rows`` der Betriebsferien-
+    Buchung) ueber Kreuz verklemmen.
+
+    Sperrt ``update_user`` erst die Admin-Menge und DANACH die Zielzeile, und
+    liegt die Ziel-ID (Mitarbeiterin) vor der Admin-ID, ergibt sich ein Zyklus:
+    die Betriebsferien-Buchung haelt die Mitarbeiterin und wartet auf den
+    Admin, der Rollenwechsel haelt den Admin und wartet auf die Mitarbeiterin.
+    Die Sitzung ``holder`` spielt die sortierte Sperre in ihren zwei Schritten
+    nach (USER_ID < ACCOUNT_ACTOR_ID).
+    """
+    from app.routers.admin_helpers import lock_user_row
+
+    assert str(USER_ID) < str(ACCOUNT_ACTOR_ID)  # Voraussetzung des Szenarios
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    lock_user_row(holder, TENANT_ID, USER_ID)  # Schritt 1 der sortierten Sperre
+
+    results: list = []
+    t = threading.Thread(target=_run_role_call, args=(results, "admin"))
+    t.start()
+    time_module.sleep(1.5)  # update_user steht jetzt in seiner Sperre
+    try:
+        lock_user_row(holder, TENANT_ID, ACCOUNT_ACTOR_ID)  # Schritt 2
+        holder.commit()
+        holder_result = "ok"
+    except OperationalError as e:
+        holder.rollback()
+        holder_result = f"error: {type(e.orig).__name__}"
+    finally:
+        holder.close()
+    t.join(timeout=20)
+    assert not t.is_alive(), "Rollenwechsel haengt"
+    assert holder_result == "ok", (
+        f"Sortierte Mehrzeilen-Sperre abgebrochen ({holder_result}) — Rollenwechsel "
+        "und Betriebsferien-Buchung haben sich ueber Kreuz verklemmt."
+    )
+    assert results == [("ok",)], results
+    with admin_engine.connect() as conn:
+        role = conn.execute(
+            text("SELECT role FROM users WHERE id = :u"), {"u": str(USER_ID)},
+        ).scalar()
+    assert role == "ADMIN"
