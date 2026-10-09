@@ -580,6 +580,16 @@ describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => 
     expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
   });
 
+  // Vorrangregel nach dem Muster `displayDayHours` (Spec 12.2, vgl. #431 Fund 3):
+  // ein frisch nachgeführtes `displayBlocks = null` (Fenster entfernt, Verlaufszeile
+  // gelöscht) schlägt den beim Öffnen übergebenen Stand. Ein `??` an dieser Stelle
+  // fiele auf das alte Altfenster samt Altbestand-Hinweis zurück.
+  it('frisches displayBlocks=null schlägt veraltete editUser.work_blocks_today', () => {
+    renderForm({ editUser: { ...baseEditUser, work_blocks_today: LEGACY }, displayBlocks: null });
+    expect(screen.getByLabelText('Arbeitszeit heute')).toHaveTextContent('Keine Arbeitszeit-Blöcke hinterlegt');
+    expect(screen.queryByText(/Altbestand/)).not.toBeInTheDocument();
+  });
+
   it('beim Anlegen keine Blöcke-Anzeige (der Editor folgt mit PR3)', () => {
     renderForm();
     expect(screen.queryByLabelText('Arbeitszeit heute')).not.toBeInTheDocument();
