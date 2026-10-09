@@ -34,6 +34,7 @@ gegen die SQLite-Test-DB (``tests/test_073_work_blocks_migration.py``); der
 Lauf gegen echtes PostgreSQL steht in ``tests/test_073_migration_pg.py``.
 """
 import json
+import sys
 from datetime import time
 
 from alembic import op
@@ -64,6 +65,24 @@ def _hms(t: time) -> str:
 
 def _parse_hhmm(value: str) -> time:
     return time(int(value[:2]), int(value[3:5]))
+
+
+def _emit(text: str) -> None:
+    """Diagnose ausgeben, ohne an der Kodierung der Ausgabe zu scheitern.
+
+    Die Texte enthalten "→" (U+2192), das cp1252 nicht kennt. Nativ unter
+    Windows ist stdout dieser Migration eine Pipe in der ANSI-Codepage, sobald
+    PYTHONUTF8 nicht gesetzt ist (etwa beim Konsolenstart des Prozessmanagers);
+    ein nacktes ``print`` wuerfe dann UnicodeEncodeError, alembic rollte die
+    Migration zurueck und der Dienst startete nicht - genau das, was E21
+    ausschliesst. Rueckfall: "→" als "->", alles Uebrige, was die Kodierung
+    nicht kennt (etwa ein Benutzername mit "ł"), als "?". Mit UTF-8 bleibt der
+    Wortlaut der Spec unveraendert."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.replace("→", "->").encode(enc, "replace").decode(enc))
 
 
 def tenant_label(tenant_id) -> str:
@@ -145,8 +164,9 @@ def window_from_week(week) -> tuple:
 
 
 def upgrade_report(accounts: int, history_rows: int, notes) -> str:
-    """Diagnose-Ausgabe (Spec 5.4) - ``print`` wie 067, landet im Update-Log
-    (nativ) bzw. im Container-Log (Docker)."""
+    """Diagnose-Ausgabe (Spec 5.4) - ausgegeben ueber ``_emit`` (``print`` wie
+    067, mit Rueckfall fuer Nicht-UTF-8-Ausgaben), landet im Update-Log (nativ)
+    bzw. im Container-Log (Docker)."""
     lines = [
         "",
         "*** HINWEIS (Migration 073) ***",
@@ -293,7 +313,7 @@ def upgrade():
 
     backfill_auto_closed(conn)
 
-    print(upgrade_report(accounts, history_rows, notes))
+    _emit(upgrade_report(accounts, history_rows, notes))
 
     for column in WINDOW_COLUMNS:
         op.drop_column("users", column)
@@ -347,7 +367,7 @@ def downgrade():
         "WHERE request_credit_override AND status = 'pending'"
     )).scalar() or 0
 
-    print(downgrade_report(multi_block, uncredited, overrides, int(open_requests)))
+    _emit(downgrade_report(multi_block, uncredited, overrides, int(open_requests)))
 
     op.drop_column("change_requests", "original_uncredited_minutes")
     op.drop_column("change_requests", "request_credit_override")

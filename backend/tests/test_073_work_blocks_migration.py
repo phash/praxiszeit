@@ -147,6 +147,48 @@ def test_downgrade_report_names_everyone():
     assert "2 offene Anträge" in text
 
 
+def _stdout(monkeypatch, encoding):
+    import io
+    import sys
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding=encoding)
+    monkeypatch.setattr(sys, "stdout", stream)
+    return raw, stream
+
+
+def test_emit_survives_cp1252_stdout(monkeypatch):
+    """Nativ unter Windows ist stdout der Migration eine Pipe in der
+    ANSI-Codepage (cp1252), solange PYTHONUTF8 nicht gesetzt ist — cp1252
+    kennt „→" nicht. Ein nacktes ``print`` würfe UnicodeEncodeError, alembic
+    rollte zurück, der Dienst startete nicht (E21)."""
+    raw, stream = _stdout(monkeypatch, "cp1252")
+    M._emit(M.upgrade_report(2, 0, [
+        "mfa.mueller (Mandant 0000…0001): halboffen: Fr ab 07:30 → Ende 23:59 (Kappung unverändert)",
+        "łukasz (Mandant 0000…0001): Sekunden abgeschnitten: Mo 07:30:45 → 07:30",
+    ]))
+    stream.flush()
+    out = raw.getvalue().decode("cp1252")
+    assert "übernommen: 2 Konten, 0 Verlaufszeilen." in out
+    assert "halboffen: Fr ab 07:30 -> Ende 23:59 (Kappung unverändert)" in out
+    assert "?ukasz (Mandant 0000…0001): Sekunden abgeschnitten: Mo 07:30:45 -> 07:30" in out
+    assert "*** ENDE HINWEIS ***" in out
+
+
+def test_emit_keeps_the_spec_wording_on_utf8(monkeypatch):
+    raw, stream = _stdout(monkeypatch, "utf-8")
+    M._emit("halboffen: Fr ab 07:30 → Ende 23:59")
+    stream.flush()
+    assert raw.getvalue().decode("utf-8") == "halboffen: Fr ab 07:30 → Ende 23:59\n"
+
+
+def test_upgrade_and_downgrade_print_only_through_emit():
+    import inspect
+    for fn in (M.upgrade, M.downgrade):
+        source = inspect.getsource(fn)
+        assert "print(" not in source, fn.__name__
+        assert "_emit(" in source, fn.__name__
+
+
 def test_tenant_label():
     assert M.tenant_label("00000000-0000-0000-0000-000000000001") == "0000…0001"
 

@@ -930,3 +930,43 @@ class TestResetAdminPasswordReichtOptionenDurch:
                 pass
         assert handler.called
         assert handler.call_args[0][0].reactivate is True
+
+
+class TestMigrationenLaufenInUtf8:
+    """Review Task 13 (073): die Diagnose der Migration 073 enthaelt „→", das
+    cp1252 nicht kennt. Nativ unter Windows ist stdout des alembic-Kinds eine
+    Pipe in der ANSI-Codepage, solange PYTHONUTF8 nicht geerbt wird (etwa beim
+    Konsolenstart ``bin\\python\\python.exe praxiszeit-server.py start``) —
+    ``run_migrations`` setzt die Variable deshalb selbst, wie ``uvicorn_start``
+    und ``cmd_reset_admin_password``. Und weil das Kind dann UTF-8 schreibt,
+    muss der Elternprozess UTF-8 lesen, unabhaengig von seiner eigenen
+    Codepage: sonst wird die Ausgabe zu Zeichensalat, und ein Byte, das cp1252
+    nicht belegt (0x81/0x8D/0x8F/0x90/0x9D, etwa in „Ł" oder „”"), braeche
+    ``subprocess.run`` NACH der erfolgreichen Migration mit UnicodeDecodeError ab."""
+
+    def _run(self, srv, stdout=""):
+        import subprocess as sp
+        captured = {}
+
+        def fake_run(cmd, **kw):
+            captured.update(kw)
+            return sp.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        with patch.object(srv.subprocess, "run", side_effect=fake_run):
+            srv.run_migrations({})
+        return captured
+
+    def test_kind_laeuft_im_utf8_modus(self, srv, monkeypatch):
+        monkeypatch.delenv("PYTHONUTF8", raising=False)
+        assert self._run(srv)["env"]["PYTHONUTF8"] == "1"
+
+    def test_eltern_lesen_utf8_ohne_abbruch(self, srv):
+        kw = self._run(srv)
+        assert kw["encoding"] == "utf-8"
+        assert kw["errors"] == "replace"
+
+    def test_diagnose_landet_im_log(self, srv, caplog):
+        import logging
+        with caplog.at_level(logging.INFO):
+            self._run(srv, stdout="halboffen: Fr ab 07:30 → Ende 23:59\n")
+        assert "alembic: halboffen: Fr ab 07:30 → Ende 23:59" in caplog.text

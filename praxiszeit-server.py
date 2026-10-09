@@ -1044,6 +1044,12 @@ def run_migrations(config: dict):
 
     env = os.environ.copy()
     # DATABASE_URL_MIGRATIONS should already be set
+    # Migrationen geben Diagnosen aus (073: "halboffen: Mo ab 07:30 → Ende
+    # 23:59"). Ohne UTF-8-Modus ist stdout des Kinds unter Windows eine Pipe in
+    # cp1252, das "→" nicht kennt — wie bei uvicorn_start nicht darauf
+    # verlassen, dass der Aufrufer (Dienst, Update-Assistent) die Variable
+    # mitgibt; beim Konsolenstart fehlt sie.
+    env["PYTHONUTF8"] = "1"
 
     python = sys.executable
     # Invoke Alembic's CLI programmatically instead of `python -m alembic`:
@@ -1058,8 +1064,13 @@ def run_migrations(config: dict):
     ]
     last_err = ""
     for attempt in range(1, 4):
+        # Das Kind schreibt UTF-8 (PYTHONUTF8 oben) — also auch UTF-8 lesen,
+        # nicht die Codepage dieses Prozesses (text=True): sonst Zeichensalat im
+        # Log, und ein Byte, das cp1252 nicht belegt (etwa aus "Ł" oder "”"),
+        # braeche hier NACH der erfolgreichen Migration mit UnicodeDecodeError ab.
         result = subprocess.run(
-            cmd, cwd=str(BACKEND_DIR), env=env, capture_output=True, text=True,
+            cmd, cwd=str(BACKEND_DIR), env=env, capture_output=True,
+            encoding="utf-8", errors="replace",
         )
         if result.returncode == 0:
             # Die Ausgabe der Migrationen gehoert ins Log, auch wenn sie
