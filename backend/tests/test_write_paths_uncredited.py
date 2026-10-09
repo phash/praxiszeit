@@ -1,6 +1,6 @@
 """Spec 7.1 Nr. 1–6, 8, 9: jede schreibende Stelle speichert uncredited_minutes."""
 import datetime as dt
-from datetime import time
+from datetime import date, time
 from decimal import Decimal
 
 import pytest
@@ -21,8 +21,8 @@ def _blocks(db, user, blocks=K_BLOCKS):
     db.commit()
 
 
-def _entry(db, user, start, end, brk=0):
-    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=MON,
+def _entry(db, user, start, end, brk=0, day=MON):
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=day,
                   start_time=start, end_time=end, break_minutes=brk)
     db.add(e)
     db.commit()
@@ -189,3 +189,69 @@ def test_clock_out_daily_check_counts_credited_time(_db_session, employee_user, 
     assert "DAILY_HOURS_WARNING" in warnings, warnings
     entry = _db_session.query(TimeEntry).one()
     assert (entry.uncredited_minutes, entry.net_hours) == (210, Decimal("8.75"))
+
+
+# Review Task 4: Die 48-h-Wochenwarnung (Spec 7.1 Nr. 2/3/5) und die
+# Tagesnachprüfung NACH dem Commit in update_time_entry (speist
+# DAILY_HOURS_WARNING und §6) rechnen an JEDER Aufrufstelle auf der
+# angerechneten Zeit. Mo–Do je 10,0 h ohne Blöcke (07:00–17:15, Pause 15),
+# Fr mit Lücke 12:15–14:45: 08:00–18:00, Pause 45 → roh 9,25 h (Woche
+# 49,25 h → beide Warnungen), angerechnet 6,75 h (Woche 46,75 h → keine).
+# Die Nachprüfung der Antragsgenehmigung (Nr. 10) bleibt außen vor, bis E41
+# (Task 9) die Doppelzählung des eben geschriebenen Eintrags behebt — sie
+# warnte bis dahin ohnehin.
+FRI = date(2026, 6, 5)
+FRI_BLOCKS = block_week(fri=[("08:00", "12:00"), ("15:00", "18:00")])
+FRI_DAY = {"start_time": "08:00", "end_time": "18:00", "break_minutes": 45}
+
+
+def _seed_week(db, user):
+    user.work_blocks = FRI_BLOCKS
+    for d in range(1, 5):
+        db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=date(2026, 6, d),
+                         start_time=time(7, 0), end_time=time(17, 15), break_minutes=15))
+    db.commit()
+
+
+def _week_ma_create(db, user, request):
+    return request.getfixturevalue("employee_client").post(
+        "/api/time-entries/", json={"date": FRI.isoformat(), **FRI_DAY})
+
+
+def _week_ma_update(db, user, request):
+    e = _entry(db, user, time(8, 0), time(12, 0), day=FRI)
+    return request.getfixturevalue("employee_client").put(f"/api/time-entries/{e.id}", json=FRI_DAY)
+
+
+def _week_clock_out(db, user, request):
+    _entry(db, user, time(8, 0), None, day=FRI)
+    return request.getfixturevalue("employee_client").post(
+        "/api/time-entries/clock-out", json={"break_minutes": 45})
+
+
+def _week_admin_create(db, user, request):
+    return request.getfixturevalue("admin_client").post(
+        f"/api/admin/users/{user.id}/time-entries", json={"date": FRI.isoformat(), **FRI_DAY})
+
+
+def _week_admin_update(db, user, request):
+    e = _entry(db, user, time(8, 0), time(12, 0), day=FRI)
+    return request.getfixturevalue("admin_client").put(f"/api/admin/time-entries/{e.id}", json=FRI_DAY)
+
+
+@pytest.mark.parametrize("path", [
+    _week_ma_create, _week_ma_update, _week_clock_out, _week_admin_create, _week_admin_update,
+], ids=["ma_create", "ma_update", "clock_out", "admin_create", "admin_update"])
+def test_weekly_and_post_commit_daily_warnings_use_credited_time(_db_session, employee_user, request,
+                                                                 monkeypatch, path):
+    _seed_week(_db_session, employee_user)
+    monkeypatch.setattr(te, "_today_local", lambda: FRI)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 5, 18, 0))
+    resp = path(_db_session, employee_user, request)
+    assert resp.status_code in (200, 201), resp.text
+    warnings = resp.json()["warnings"]
+    assert not any(w.startswith("WEEKLY_HOURS_WARNING") for w in warnings), warnings
+    assert not any(w.startswith("DAILY_HOURS_WARNING") for w in warnings), warnings
+    _db_session.expire_all()
+    fri = _db_session.query(TimeEntry).filter(TimeEntry.date == FRI).one()
+    assert (fri.uncredited_minutes, fri.net_hours) == (150, Decimal("6.75"))
