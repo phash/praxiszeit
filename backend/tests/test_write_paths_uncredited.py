@@ -3,6 +3,8 @@ import datetime as dt
 from datetime import time
 from decimal import Decimal
 
+import pytest
+
 from app.models import ChangeRequest, TimeEntry
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from tests.conftest import DEFAULT_TENANT_ID
@@ -120,3 +122,70 @@ def test_cr_update_approval_writes_uncredited(_db_session, employee_user, admin_
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert e.uncredited_minutes == 150
+
+
+# Review Task 4: §3 (10-h-Hartgrenze, HTTP 422) rechnet an JEDER Tagesprüfung
+# auf der angerechneten Zeit — nicht nur in admin_create (Test oben). Tag mit
+# Lücke 10:15–13:45 (Puffer 15): 06:00–19:00, Pause 45 → roh 12,25 h (422),
+# angerechnet 8,75 h. Die übrigen Tests dieser Datei bleiben mit 08:00–18:00
+# (roh 9,25 h) unter der Grenze und sähen einen fehlenden Lückenabzug nicht.
+GAP_BLOCKS = block_week(mon=[("06:00", "10:00"), ("14:00", "19:00")])
+WIDE = {"start_time": "06:00", "end_time": "19:00", "break_minutes": 45}
+
+
+def _ma_create(db, user, request):
+    return request.getfixturevalue("employee_client").post(
+        "/api/time-entries/", json={"date": MON.isoformat(), **WIDE})
+
+
+def _ma_update(db, user, request):
+    e = _entry(db, user, time(8, 0), time(12, 0))
+    return request.getfixturevalue("employee_client").put(f"/api/time-entries/{e.id}", json=WIDE)
+
+
+def _admin_update(db, user, request):
+    e = _entry(db, user, time(8, 0), time(12, 0))
+    return request.getfixturevalue("admin_client").put(f"/api/admin/time-entries/{e.id}", json=WIDE)
+
+
+def _cr_approval(db, user, request):
+    # Antrag direkt angelegt: der MA-Antragsweg prüft bis E40 noch roh und
+    # lehnte 06:00–19:00 schon beim Stellen ab. Geprüft wird hier die
+    # Vorprüfung der Genehmigung (Spec 7.1 Nr. 7, gilt auch für Bulk).
+    cr = ChangeRequest(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
+                       request_type=ChangeRequestType.CREATE, status=ChangeRequestStatus.PENDING,
+                       proposed_date=MON, proposed_start_time=time(6, 0), proposed_end_time=time(19, 0),
+                       proposed_break_minutes=45, reason="Nachtrag")
+    db.add(cr)
+    db.commit()
+    return request.getfixturevalue("admin_client").post(
+        f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+
+
+@pytest.mark.parametrize("path, expected_status", [
+    (_ma_create, 201), (_ma_update, 200), (_admin_update, 200), (_cr_approval, 200),
+], ids=["ma_create", "ma_update", "admin_update", "cr_approval"])
+def test_daily_hard_cap_counts_credited_time(_db_session, employee_user, request, monkeypatch,
+                                             path, expected_status):
+    _blocks(_db_session, employee_user, GAP_BLOCKS)
+    _today(monkeypatch, 19, 30)
+    resp = path(_db_session, employee_user, request)
+    assert resp.status_code == expected_status, resp.text
+    _db_session.expire_all()
+    entry = _db_session.query(TimeEntry).one()
+    assert (entry.uncredited_minutes, entry.net_hours) == (210, Decimal("8.75"))
+
+
+def test_clock_out_daily_check_counts_credited_time(_db_session, employee_user, employee_client, monkeypatch):
+    """clock_out sperrt §3 nicht (Review R2-b), meldet aber DAILY_HOURS_HARD —
+    auch das nur auf der angerechneten Zeit (8,75 h → nur die 8-h-Warnung)."""
+    _blocks(_db_session, employee_user, GAP_BLOCKS)
+    _entry(_db_session, employee_user, time(6, 0), None)
+    _today(monkeypatch, 19, 0)
+    resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 45})
+    assert resp.status_code == 200, resp.text
+    warnings = resp.json()["warnings"]
+    assert not any(w.startswith("DAILY_HOURS_HARD") for w in warnings), warnings
+    assert "DAILY_HOURS_WARNING" in warnings, warnings
+    entry = _db_session.query(TimeEntry).one()
+    assert (entry.uncredited_minutes, entry.net_hours) == (210, Decimal("8.75"))
