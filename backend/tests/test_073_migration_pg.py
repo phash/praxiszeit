@@ -7,22 +7,29 @@ Alembic läuft als Unterprozess über ``from alembic.config import main``
 
 Geprüft: Backfill (zweiseitig, halboffen, invertiert, Sekunden, nur invertiert),
 Verlaufszeilen, ``auto_closed``-Backfill, ``clamp_grace_minutes`` NULL,
-Spaltentypen, Diagnose-Ausgabe, Byte-Identität der Bestandsspalten,
-Downgrade aus der HÜLLE inkl. Diagnose, Round-Trip 073 → 072 → 073.
+Spaltentypen, Diagnose-Ausgabe, Byte-Identität der Bestandsspalten
+(``time_entries``, ``working_hours_changes`` vollständig, ``users`` ohne die
+Fensterspalten; nach jedem der drei Schritte), Downgrade aus der HÜLLE inkl.
+Diagnose, Round-Trip 073 → 072 → 073 — und der Backfill als Eigentümerin OHNE
+Superuser-Recht unter FORCE RLS (die Rolle ``praxiszeit`` ist in Docker, CI und
+auf der Prod-Kopie Superuser und umgeht RLS; nur dieser Lauf sieht, ob
+``SET LOCAL app.is_superadmin`` greift).
 
 Eingehängt in ``scripts/local-ci.sh`` Schritt 2 und den PostgreSQL-Schritt von
 ``.github/workflows/cross-tenant-ci.yml`` (im SQLite-Schritt per ``--ignore``).
 """
 import json
 import os
+import secrets
 import subprocess
 import sys
 import uuid
+from contextlib import contextmanager
 from datetime import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import make_url
 
 ADMIN_URL = os.environ.get("ADMIN_DB_URL") or os.environ.get("DATABASE_URL_MIGRATIONS")
@@ -41,8 +48,9 @@ E = {name: str(uuid.UUID(int=0x3333_0000_0000_4000_8000_0000_0000_0000 + i))
                                "nachgekappt", "nachgekappt_echt"), 1)}
 WINDOW_COLUMNS = [f"scheduled_{k}_{d}" for d in ("monday", "tuesday", "wednesday", "thursday", "friday")
                   for k in ("start", "end")]
-OLD_TE = "id, user_id, date, start_time, end_time, break_minutes, raw_start_time, raw_end_time, note"
-OLD_WH = "id, user_id, effective_from, weekly_hours, use_daily_schedule, work_days_per_week"
+# Bestandstabellen des Vergleichs (Spec 17.1) und die Spalten, die dabei
+# herausfallen: die Fenster prüft der Test einzeln, sie ändern sich gewollt.
+COMPARED_TABLES = {"time_entries": (), "working_hours_changes": (), "users": tuple(WINDOW_COLUMNS)}
 
 
 def _alembic(url: str, *args: str) -> str:
@@ -61,8 +69,26 @@ def _md5(conn, sql: str) -> tuple:
     )).one())
 
 
-@pytest.fixture(scope="module")
-def scratch():
+def _bestand(conn) -> dict:
+    """Spaltenlisten der Bestandstabellen im Stand 072, in der Reihenfolge der
+    Tabelle aus ``information_schema`` (nicht von Hand: eine vergessene Spalte
+    wäre genau die, die ein Fehler verändert)."""
+    lists = {}
+    for table, skip in COMPARED_TABLES.items():
+        names = [c for (c,) in conn.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :t ORDER BY ordinal_position"
+        ), {"t": table}).all() if c not in skip]
+        lists[table] = ", ".join(f'"{c}"' for c in names)
+    return lists
+
+
+def _snapshot(conn, lists: dict) -> dict:
+    return {table: _md5(conn, f"SELECT {cols} FROM {table}") for table, cols in lists.items()}
+
+
+@contextmanager
+def _scratch_database():
     name = f"pz073_{uuid.uuid4().hex[:10]}"
     admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
     with admin.connect() as conn:
@@ -75,6 +101,33 @@ def scratch():
         engine.dispose()
         with admin.connect() as conn:
             conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        admin.dispose()
+
+
+@pytest.fixture(scope="module")
+def scratch():
+    with _scratch_database() as db:
+        yield db
+
+
+@pytest.fixture
+def owner_scratch():
+    """Wegwerf-Datenbank plus eine Rolle OHNE Superuser- und BYPASSRLS-Recht.
+
+    Die Rolle ist clusterweit, deshalb räumt der Teardown in dieser Reihenfolge
+    ab: erst die Datenbank (darin liegt alles, was ihr gehört), dann die Rolle."""
+    role = f"pz073_owner_{uuid.uuid4().hex[:10]}"
+    password = secrets.token_hex(16)
+    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            conn.execute(text(f"CREATE ROLE \"{role}\" LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '{password}'"))
+        with _scratch_database() as (url, engine):
+            owner_url = make_url(url).set(username=role, password=password).render_as_string(hide_password=False)
+            yield url, engine, role, owner_url
+    finally:
+        with admin.connect() as conn:
+            conn.execute(text(f'DROP ROLE IF EXISTS "{role}"'))
         admin.dispose()
 
 
@@ -101,11 +154,7 @@ def _seed_072(conn):
     _user(conn, "ohne")
     _user(conn, "mehr", scheduled_start_monday=time(8, 0), scheduled_end_monday=time(18, 0))
     for i, (who, day) in enumerate((("zwei", "2026-01-01"), ("zwei", "2026-06-01"), ("nurinvers", "2026-01-01")), 1):
-        conn.execute(text(
-            "INSERT INTO working_hours_changes (id, tenant_id, user_id, effective_from, weekly_hours) "
-            "VALUES (:id, :t, :u, :d, 40)"
-        ), {"id": str(uuid.UUID(int=0x2222_0000_0000_4000_8000_0000_0000_0000 + i)),
-            "t": TENANT, "u": U[who], "d": day})
+        _history_row(conn, i, who, day)
     # "nachgekappt": 072-Auto-Close (23:59), danach das ganze Formular gespeichert →
     # 072 kappte die 23:59 auf das Fensterende und hielt sie als Rohende fest
     # (dieselbe Form wie der neue Auto-Close). "nachgekappt_echt": Kontrolle, echtes
@@ -116,15 +165,31 @@ def _seed_072(conn):
                                         ("mehr", "mehr", "2026-06-01", time(18, 0), None),
                                         ("nachgekappt", "zwei", "2026-06-08", time(16, 45), time(23, 59)),
                                         ("nachgekappt_echt", "zwei", "2026-06-09", time(16, 45), time(19, 0))):
-        conn.execute(text(
-            "INSERT INTO time_entries (id, tenant_id, user_id, date, start_time, end_time, raw_end_time, break_minutes) "
-            "VALUES (:id, :t, :u, :d, :s, :e, :re, 0)"
-        ), {"id": E[key], "t": TENANT, "u": U[who], "d": day, "s": time(8, 0), "e": end, "re": raw_end})
+        _entry(conn, key, who, day, end, raw_end)
     for key in ("autoclose", "korrigiert", "nachgekappt", "nachgekappt_echt"):
-        conn.execute(text(
-            "INSERT INTO time_entry_audit_logs (tenant_id, time_entry_id, user_id, changed_by, action, source, new_end_time) "
-            "VALUES (:t, :e, :u, :u, 'update', 'auto_close', :end)"
-        ), {"t": TENANT, "e": E[key], "u": U["zwei"], "end": time(23, 59)})
+        _auto_close_log(conn, key)
+
+
+def _history_row(conn, i, who, day):
+    conn.execute(text(
+        "INSERT INTO working_hours_changes (id, tenant_id, user_id, effective_from, weekly_hours) "
+        "VALUES (:id, :t, :u, :d, 40)"
+    ), {"id": str(uuid.UUID(int=0x2222_0000_0000_4000_8000_0000_0000_0000 + i)),
+        "t": TENANT, "u": U[who], "d": day})
+
+
+def _entry(conn, key, who, day, end, raw_end=None):
+    conn.execute(text(
+        "INSERT INTO time_entries (id, tenant_id, user_id, date, start_time, end_time, raw_end_time, break_minutes) "
+        "VALUES (:id, :t, :u, :d, :s, :e, :re, 0)"
+    ), {"id": E[key], "t": TENANT, "u": U[who], "d": day, "s": time(8, 0), "e": end, "re": raw_end})
+
+
+def _auto_close_log(conn, key):
+    conn.execute(text(
+        "INSERT INTO time_entry_audit_logs (tenant_id, time_entry_id, user_id, changed_by, action, source, new_end_time) "
+        "VALUES (:t, :e, :u, :u, 'update', 'auto_close', :end)"
+    ), {"t": TENANT, "e": E[key], "u": U["zwei"], "end": time(23, 59)})
 
 
 def _blocks(conn, key):
@@ -144,8 +209,8 @@ def test_073_upgrade_downgrade_round_trip(scratch):
     with engine.begin() as conn:
         _seed_072(conn)
     with engine.connect() as conn:
-        te_before = _md5(conn, f"SELECT {OLD_TE} FROM time_entries")
-        wh_before = _md5(conn, f"SELECT {OLD_WH} FROM working_hours_changes")
+        bestand = _bestand(conn)
+        before = _snapshot(conn, bestand)
 
     out = _alembic(url, "upgrade", "073_work_blocks")
     assert "*** HINWEIS (Migration 073) ***" in out
@@ -189,8 +254,7 @@ def test_073_upgrade_downgrade_round_trip(scratch):
         assert columns[("time_entries", "clamp_grace_minutes")][:2] == ("integer", "YES")
         assert columns[("change_requests", "request_credit_override")] == ("boolean", "NO", "false")
         assert columns[("change_requests", "original_uncredited_minutes")][:2] == ("integer", "YES")
-        assert _md5(conn, f"SELECT {OLD_TE} FROM time_entries") == te_before
-        assert _md5(conn, f"SELECT {OLD_WH} FROM working_hours_changes") == wh_before
+        assert _snapshot(conn, bestand) == before
     with engine.connect() as conn:
         first_upgrade = {k: _blocks(conn, k) for k in U}
 
@@ -212,6 +276,8 @@ def test_073_upgrade_downgrade_round_trip(scratch):
     assert ("mehr (Mandant 0000…0001): Mo 08:00–12:00 + 15:00–18:00 → Fenster 08:00–18:00 "
             "(wieder angerechnete Lücken: 12:00–15:00)") in out
     assert "mehr (Mandant 0000…0001): 1 Eintrag, zusammen 2,50 h" in out
+    # Mit Zeilenende: die Zeile für nicht angerechnete Zeit beginnt genauso.
+    assert "Anerkannte Einträge (das Kennzeichen entfällt):\n  - mehr (Mandant 0000…0001): 1 Eintrag\n" in out
     assert "1 offener Antrag „Anrechnung beantragen“ wird" in out
     with engine.connect() as conn:
         windows = {row[0]: row[1:] for row in conn.execute(text(
@@ -228,11 +294,63 @@ def test_073_upgrade_downgrade_round_trip(scratch):
             "'clamp_grace_minutes', 'request_credit_override', 'original_uncredited_minutes')"
         )).all()}
         assert remaining == set()
-        assert _md5(conn, f"SELECT {OLD_TE} FROM time_entries") == te_before
+        assert _snapshot(conn, bestand) == before
 
     _alembic(url, "upgrade", "073_work_blocks")
     with engine.connect() as conn:
         for key in ("zwei", "halbende", "sek", "ohne", "nurinvers"):
             assert _blocks(conn, key) == first_upgrade[key], key
         assert _blocks(conn, "mehr") == [_one("08:00", "18:00")] + [EMPTY] * 4
-        assert _md5(conn, f"SELECT {OLD_TE} FROM time_entries") == te_before
+        assert _snapshot(conn, bestand) == before
+
+
+RLS_TABLES = ("users", "working_hours_changes", "time_entries", "time_entry_audit_logs")
+
+
+def test_073_backfill_as_owner_under_force_rls(owner_scratch):
+    """Spec 5.2 Schritt 2 / 17.1: „Backfill als praxiszeit unter FORCE RLS trifft
+    alle Zeilen". Die Migrationsrolle besitzt die Tabellen, ist aber KEIN
+    Superuser — dann gilt FORCE RLS auch für sie, und ohne
+    ``SET LOCAL app.is_superadmin`` sähe der Backfill keine einzige Zeile.
+
+    Zugesichert wird die ZÄHLUNG, nicht das Fehlen der Zeile „Abweichung …
+    (RLS?)": die Zählprobe vergleicht aktualisierte mit gelesenen Konten, und
+    RLS filtert das Lesen genauso wie das Schreiben — sie meldet bei diesem
+    Fehlerbild „0 Konten" ohne jede Abweichung."""
+    url, engine, role, owner_url = owner_scratch
+    _alembic(url, "upgrade", "072_cr_sunday_reason")
+    with engine.begin() as conn:
+        _user(conn, "zwei", scheduled_start_monday=time(8, 0), scheduled_end_monday=time(16, 0))
+        _history_row(conn, 1, "zwei", "2026-01-01")
+        _entry(conn, "autoclose", "zwei", "2026-06-01", time(23, 59))
+        _auto_close_log(conn, "autoclose")
+        conn.execute(text(
+            "DO $$ DECLARE r record; BEGIN "
+            "FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP "
+            f"EXECUTE format('ALTER TABLE %I OWNER TO %I', r.tablename, '{role}'); "
+            "END LOOP; END $$"
+        ))
+    with engine.connect() as conn:
+        # Vorbedingung: sonst prüfte der Test still wieder den Superuser-Fall.
+        assert conn.execute(text(
+            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = :r"
+        ), {"r": role}).scalar() is False
+        assert dict(conn.execute(text(
+            "SELECT c.relname, c.relrowsecurity AND c.relforcerowsecurity "
+            "AND pg_get_userbyid(c.relowner) = :r "
+            "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relname IN :tables"
+        ).bindparams(bindparam("tables", expanding=True)),
+            {"r": role, "tables": list(RLS_TABLES)}).all()) == {t: True for t in RLS_TABLES}
+
+    out = _alembic(owner_url, "upgrade", "073_work_blocks")
+    assert "übernommen: 1 Konto, 1 Verlaufszeile." in out
+
+    with engine.connect() as conn:  # Superuser: liest an RLS vorbei
+        assert _blocks(conn, "zwei") == [_one("08:00", "16:00")] + [EMPTY] * 4
+        assert conn.execute(text(
+            "SELECT blocks IS NOT NULL FROM working_hours_changes WHERE user_id = :u"
+        ), {"u": U["zwei"]}).scalars().all() == [True]
+        assert conn.execute(text(
+            "SELECT auto_closed FROM time_entries WHERE id = :id"
+        ), {"id": E["autoclose"]}).scalar() is True
