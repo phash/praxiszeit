@@ -145,6 +145,17 @@ def test_rest_time_uses_the_raw_end(db, test_user):
     assert any(w.startswith("§5 ArbZG: Ruhezeit 9.0h") for w in row.arbzg_warnings), row.arbzg_warnings
 
 
+def test_rest_time_uses_the_raw_start_of_a_clamped_row(db, test_user):
+    """7.3: auch der BEGINN zählt für §5 als Rohstempel — die Datei sagt 06:00,
+    angerechnet wird ab 07:45; die Ruhezeit seit 20:00 beträgt 10 h, nicht 11:45 h."""
+    test_user.work_blocks = LEGACY
+    db.commit()
+    _entry(db, test_user, time(12), time(20), day=date(2026, 5, 31))
+    [row] = parse_xls(_xls((_dt(2026, 6, 1, 6, 0), _dt(2026, 6, 1, 12, 0))), test_user.id, db)
+    assert (row.start_time, row.raw_start_time) == (time(7, 45), time(6, 0))
+    assert any(w.startswith("§5 ArbZG: Ruhezeit 10.0h") for w in row.arbzg_warnings), row.arbzg_warnings
+
+
 def test_overwriting_an_acknowledged_entry_keeps_the_flag_and_warns(db, test_user, test_admin):
     test_user.work_blocks = LEGACY
     db.commit()
@@ -172,6 +183,37 @@ def test_reimport_after_grace_reduction_finds_the_entry_and_keeps_its_grace(db, 
     assert db.query(TimeEntry).count() == 1
     db.refresh(e)
     assert (e.start_time, e.raw_start_time, e.clamp_grace_minutes, e.auto_closed) == (time(7, 45), time(7, 0), 15, False)
+
+
+def test_overwrite_k1_sets_uncredited_grace_and_clears_auto_closed(db, test_user, test_admin):
+    """7.1 Nr. 12 / 17.3 / P18: der Überschreib-Zweig schreibt ``uncredited``,
+    den angewandten Puffer (vorher NULL) und ``auto_closed = false`` — die
+    Datei liefert ein echtes Ende. Die Auto-Pause rechnet die Lücke ein (K1: 0)."""
+    test_user.work_blocks = K_BLOCKS
+    db.commit()
+    e = _entry(db, test_user, time(8), time(18), auto_closed=True, break_minutes=45)
+    assert (e.uncredited_minutes, e.clamp_grace_minutes) == (0, None)
+    [row] = parse_xls(_xls((_dt(2026, 6, 1, 8, 0), _dt(2026, 6, 1, 18, 0))), test_user.id, db)
+    result = _run(db, test_user, test_admin, [row], overwrite=True)
+    assert (result.imported, result.overwritten) == (0, 1)
+    db.refresh(e)
+    assert (e.uncredited_minutes, e.clamp_grace_minutes, e.auto_closed, e.break_minutes) == (150, 15, False, 0)
+
+
+def test_overwrite_reclamps_an_entry_stored_before_blocks(db, test_user, test_admin):
+    """Ein ungekappt gespeicherter Eintrag (Bestand ohne Blöcke, raw NULL) wird
+    beim Überschreiben gekappt: neuer Beginn, Rohstempel und Puffer gespeichert —
+    kein zweiter Eintrag daneben."""
+    test_user.work_blocks = LEGACY
+    db.commit()
+    e = _entry(db, test_user, time(7), time(16))
+    [row] = parse_xls(_xls((_dt(2026, 6, 1, 7, 0), _dt(2026, 6, 1, 16, 0))), test_user.id, db)
+    assert row.has_conflict is True
+    result = _run(db, test_user, test_admin, [row], overwrite=True)
+    assert (result.imported, result.overwritten) == (0, 1)
+    assert db.query(TimeEntry).count() == 1
+    db.refresh(e)
+    assert (e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (time(7, 45), time(7), 15)
 
 
 def test_overwrite_skips_when_the_new_start_is_taken(db, test_user, test_admin):
