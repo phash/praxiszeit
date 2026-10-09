@@ -400,7 +400,14 @@ def review_change_request(
                 # the soll-window first, then re-validate. Checking the raw span
                 # here would wrongly reject an entry whose credited time is legal
                 # (e.g. a wide raw stamp the window clamps back under 10h).
-                _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+                # E80: dieselbe Puffer-Herkunft wie der Schreibzweig unten —
+                # UPDATE kappt mit dem gespeicherten Puffer des Eintrags,
+                # CREATE (Neuanlage) mit dem aktuellen Mandanten-Puffer.
+                _grace = (
+                    work_window_service.grace_for_entry(db, entry)
+                    if cr.request_type == ChangeRequestType.UPDATE and entry is not None
+                    else work_window_service.get_grace_minutes(db, current_user.tenant_id)
+                )
                 _r_pre = work_window_service.clamp(
                     db, cr_user, cr.proposed_date, _in_start, _in_end, _grace,
                     credit_override=bool(entry is not None and entry.credit_override),
@@ -535,6 +542,8 @@ def review_change_request(
                 raw_end_time=raw_end,
                 # Spec 7.1 Nr. 8 (E11): Lückenminuten immer serverseitig aus clamp().
                 uncredited_minutes=_r.uncredited_minutes,
+                # Spec E79/E80: Neuanlage merkt sich den aktuellen Puffer.
+                clamp_grace_minutes=_r.grace_minutes,
                 break_minutes=cr.proposed_break_minutes or 0,
                 note=cr.proposed_note,
                 # #144 §4 ArbZG: materialise the documented break-exception on
@@ -565,7 +574,8 @@ def review_change_request(
                 User.id == cr.user_id,
                 User.tenant_id == cr.tenant_id,
             ).first()
-            _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+            # E80: Einzel-Neukappung des gespeicherten Eintrags mit SEINEM Puffer.
+            _grace = work_window_service.grace_for_entry(db, entry)
             _r = work_window_service.clamp(
                 db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
                 credit_override=entry.credit_override,
@@ -600,6 +610,10 @@ def review_change_request(
             entry.raw_end_time = raw_end
             # Spec 7.1 Nr. 9 (E11): die Lückenminuten folgen dem übernommenen Zeitpaar.
             entry.uncredited_minutes = _r.uncredited_minutes
+            # E79: angewandten Puffer merken; None (Tag ohne Blöcke) lässt den
+            # gespeicherten Wert stehen.
+            if _r.grace_minutes is not None:
+                entry.clamp_grace_minutes = _r.grace_minutes
             entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
             if cr.proposed_note is not None:
                 entry.note = cr.proposed_note

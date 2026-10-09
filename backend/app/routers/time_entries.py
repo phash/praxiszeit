@@ -384,6 +384,9 @@ def clock_in(
         raw_start_time=raw_start,
         # Spec 7.1 Nr. 1: offen → 0, Lücken zählen erst mit dem Ende.
         uncredited_minutes=_r.uncredited_minutes,
+        # Spec E79/E80: Neuanlage merkt sich den aktuellen Puffer; clock_out
+        # kappt das Ende später mit genau diesem Wert (None = keine Blöcke).
+        clamp_grace_minutes=_r.grace_minutes,
         end_time=None,
         break_minutes=0,
         note=body.note,
@@ -483,7 +486,8 @@ def clock_out(
 
     # #201: clamp late end to [soll_end + grace]; preserve raw stamp.
     from app.services import work_window_service
-    grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    # E80: Einzel-Neukappung des offenen Eintrags mit SEINEM Puffer aus clock_in.
+    grace = work_window_service.grace_for_entry(db, open_entry)
     _r = work_window_service.clamp(
         db, current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
         credit_override=open_entry.credit_override,
@@ -553,6 +557,8 @@ def clock_out(
     open_entry.raw_end_time = raw_end
     # Spec 7.1 Nr. 2 (E11): die Lückenminuten folgen dem geschriebenen Ende.
     open_entry.uncredited_minutes = _r.uncredited_minutes
+    if _r.grace_minutes is not None:
+        open_entry.clamp_grace_minutes = _r.grace_minutes
     open_entry.break_minutes = body.break_minutes
     if body.note:
         open_entry.note = body.note
@@ -961,6 +967,8 @@ def create_time_entry(
         raw_end_time=raw_end,
         # Spec 7.1 Nr. 3 (E11): Lückenminuten immer serverseitig aus clamp().
         uncredited_minutes=_r.uncredited_minutes,
+        # Spec E79/E80: Neuanlage merkt sich den aktuellen Puffer.
+        clamp_grace_minutes=_r.grace_minutes,
         break_minutes=entry_data.break_minutes,
         note=entry_data.note,
         sunday_exception_reason=entry_data.sunday_exception_reason,
@@ -1121,7 +1129,10 @@ def update_time_entry(
     # bearbeitenden Admin. 404 wie in ``admin_update_time_entry``.
     if _entry_owner is None:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
-    _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    # E80: Einzel-Neukappung eines gespeicherten Eintrags mit SEINEM Puffer
+    # (NULL → aktueller Mandanten-Puffer); eine spätere Puffer-Senkung kürzt
+    # die angerechnete Zeit damit nicht nebenbei.
+    _grace = work_window_service.grace_for_entry(db, entry)
     # Release-Review 1.19.1: wie im Admin-Pfad — kommt die bereits gekappte Zeit
     # unveraendert zurueck, mit dem Rohwert weiterrechnen, statt raw_* zu loeschen.
     # ``entry.start_time`` traegt hier bereits den Wert aus ``update_data``; der
@@ -1158,10 +1169,13 @@ def update_time_entry(
         entry.end_time = _eff_end
         entry.raw_end_time = _raw_end
     if "start_time" in update_data or "end_time" in update_data:
-        # Spec E11: die Lückenminuten folgen dem geschriebenen Zeitpaar. Ohne
-        # Zeitfeld im Update bleibt der gespeicherte Wert stehen (passend zu den
-        # unverändert gespeicherten Zeiten, Fix #2).
+        # Spec E11/E79: Lückenminuten und angewandter Puffer folgen dem
+        # geschriebenen Zeitpaar. Ohne Zeitfeld im Update bleibt der gespeicherte
+        # Wert stehen (passend zu den unverändert gespeicherten Zeiten, Fix #2);
+        # ein None-Puffer (Tag ohne Blöcke) lässt den gespeicherten Wert stehen.
         entry.uncredited_minutes = _r.uncredited_minutes
+        if _r.grace_minutes is not None:
+            entry.clamp_grace_minutes = _r.grace_minutes
 
     exempt = _entry_owner.exempt_from_arbzg
 

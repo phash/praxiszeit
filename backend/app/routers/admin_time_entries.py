@@ -203,6 +203,8 @@ def admin_create_time_entry(
         raw_end_time=raw_end,
         # Spec 7.1 Nr. 5 (E11): Lückenminuten immer serverseitig aus clamp().
         uncredited_minutes=_r.uncredited_minutes,
+        # Spec E79/E80: Neuanlage merkt sich den aktuellen Puffer.
+        clamp_grace_minutes=_r.grace_minutes,
     )
     db.add(entry)
     db.flush()
@@ -308,7 +310,9 @@ def admin_update_time_entry(
 
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
-    _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    # E80: Einzel-Neukappung eines gespeicherten Eintrags (auch Datumswechsel)
+    # mit SEINEM Puffer; NULL (Bestand vor 073) → aktueller Mandanten-Puffer.
+    _grace = work_window_service.grace_for_entry(db, entry)
     _r = work_window_service.clamp(
         db, affected_user, update_date, update_start_time, update_end_time, _grace,
         credit_override=entry.credit_override,
@@ -473,11 +477,14 @@ def admin_update_time_entry(
         entry.raw_start_time = raw_start
     if entry_data.end_time is not None or _times_affected:
         entry.raw_end_time = raw_end
-    # Spec 7.1 Nr. 6 (E11): die Lückenminuten folgen dem geschriebenen
-    # Zeitpaar — dasselbe Gate wie start/end; eine reine Notiz- oder
-    # Pausenkorrektur lässt den gespeicherten Wert stehen.
+    # Spec 7.1 Nr. 6 (E11/E79): Lückenminuten und angewandter Puffer folgen dem
+    # geschriebenen Zeitpaar — dasselbe Gate wie start/end; eine reine Notiz-
+    # oder Pausenkorrektur lässt die gespeicherten Werte stehen, ein None-Puffer
+    # (Tag ohne Blöcke) ebenso.
     if entry_data.start_time is not None or entry_data.end_time is not None or _times_affected:
         entry.uncredited_minutes = _r.uncredited_minutes
+        if _r.grace_minutes is not None:
+            entry.clamp_grace_minutes = _r.grace_minutes
 
     db.commit()
     db.refresh(entry)
