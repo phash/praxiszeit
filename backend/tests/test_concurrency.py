@@ -1221,7 +1221,7 @@ def test_absence_booking_by_an_admin_does_not_deadlock_with_a_parallel_closure(
 def test_admin_time_entry_edit_does_not_deadlock_with_a_parallel_closure(
     concurrency_seed, clean_cross_lock_state, app_engine, monkeypatch,
 ):
-    """Restklasse (2): ``admin_time_entries`` nimmt nie einen Anker.
+    """Restklasse (2): Zeitkorrektur der Verwaltung parallel zu Betriebsferien.
 
     ``admin_update_time_entry`` sperrt die ZEITEINTRAGS-Zeile (``FOR UPDATE``)
     und schreibt danach eine Audit-Zeile, deren Fremdschlüssel ``FOR KEY SHARE``
@@ -1237,11 +1237,12 @@ def test_admin_time_entry_edit_does_not_deadlock_with_a_parallel_closure(
     Ecke ist die Zeiteintrags-Zeile. Er ist damit deutlich leichter erreichbar
     als (1) und hängt an keiner Sortierlage.
 
-    Auch hier reicht ``FOR NO KEY UPDATE`` am Anker: T1s ``FOR KEY SHARE``
-    kollidiert nicht mehr mit T2s Sperre, T1 kommt durch, gibt die
-    Zeiteintrags-Zeile frei, T2 löscht sie danach. Ein Anker in
-    ``admin_time_entries`` ist dafür NICHT nötig (und wäre teuer: er würde
-    jede Zeitkorrektur zusätzlich auf der Admin-Zeile serialisieren).
+    Seit Spec 2026-10-08 (P5) nimmt ``admin_update_time_entry`` ZUERST die
+    Ankersperre der Mitarbeiterin (``FOR NO KEY UPDATE``) und erst danach die
+    Zeiteintrags-Zeile — dieselbe Reihenfolge wie die Betriebsferien. Damit gibt
+    es keinen Zyklus mehr; die beiden Vorgänge serialisieren auf der
+    Benutzerzeile. Die Korrektur startet hier zuerst (sonst löschte die
+    Buchung den Eintrag, und die Korrektur endete regulär mit 404).
     """
     entry_id = _seed_time_entry()
 
@@ -1263,7 +1264,9 @@ def test_admin_time_entry_edit_does_not_deadlock_with_a_parallel_closure(
         target=_run_create_closure,
         args=(results, USER2_ID, "Kreuzsperren-Betriebsferien 2"),
     )
-    t_edit.start(); t_closure.start()
+    t_edit.start()
+    time_module.sleep(0.5)  # P5: die Korrektur hält den Anker, bevor die Buchung ihn anfragt
+    t_closure.start()
     t_edit.join(timeout=60); t_closure.join(timeout=60)
 
     assert ("deadlock",) not in results, (

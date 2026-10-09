@@ -276,11 +276,22 @@ def get_clock_status(
     today = _today_local()
     open_entry = _get_open_entry(db, current_user.id, tenant_id=current_user.tenant_id)
 
-    # If the open entry is from a previous day, auto-close it
-    if open_entry and open_entry.date != today:
-        _close_stale_entry(db, open_entry, changed_by_id=current_user.id)
-        db.commit()  # F-043: /clock-status now owns the commit
-        open_entry = None
+    # If the open entry is from a previous day, auto-close it.
+    # P5: Ankersperre, danach den offenen Eintrag NEU lesen (ein paralleler
+    # Schreiber kann ihn inzwischen geschlossen oder ersetzt haben).
+    if open_entry is not None and open_entry.date != today:
+        lock_user_row(db, current_user.tenant_id, current_user.id)
+        # Ohne ``expire`` gäbe die zweite Abfrage dasselbe Objekt der
+        # Identity-Map mit den VOR der Sperre gelesenen Werten zurück (Datum,
+        # Notiz) — „neu lesen" hieße dann nur „Filter neu auswerten".
+        db.expire(open_entry)
+        open_entry = _get_open_entry(
+            db, current_user.id, with_lock=True, tenant_id=current_user.tenant_id,
+        )
+        if open_entry is not None and open_entry.date != today:
+            _close_stale_entry(db, open_entry, changed_by_id=current_user.id)
+            db.commit()  # F-043: /clock-status owns the commit
+            open_entry = None
 
     closed_minutes = _today_closed_net_minutes(db, current_user, today)
     target_hours = _today_target_hours(db, current_user, today)
@@ -460,6 +471,11 @@ def clock_out(
     current_user: User = Depends(get_current_user),
 ):
     """Clock out: set end_time=now and break_minutes on the open entry."""
+    # P5 (Spec 2.10): Ankersperre als ERSTE Datenbankaktion — vor Puffer,
+    # Snapshot und clamp, vor der Zeilensperre auf den offenen Eintrag. Sonst
+    # kappt ein Ausstempeln während einer laufenden Arbeitszeit-Änderung noch
+    # gegen den alten Snapshot und entgeht deren Neuberechnung.
+    lock_user_row(db, current_user.tenant_id, current_user.id)
     open_entry = _get_open_entry(db, current_user.id, with_lock=True, tenant_id=current_user.tenant_id)
 
     if not open_entry:
@@ -757,6 +773,11 @@ def create_time_entry(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new time entry."""
+    # P5 (Spec 2.10): Ankersperre als ERSTE Datenbankaktion — vor Puffer,
+    # Snapshot und clamp. Sonst kappt eine Neuanlage während einer laufenden
+    # Arbeitszeit-Änderung noch gegen den alten Snapshot und entgeht deren
+    # Neuberechnung.
+    lock_user_row(db, current_user.tenant_id, current_user.id)
 
     # Edit protection: employees can only create entries for today
     if current_user.role != UserRole.ADMIN and entry_data.date != _today_local():
@@ -1021,10 +1042,18 @@ def update_time_entry(
     current_user: User = Depends(get_current_user)
 ):
     """Update a time entry."""
+    # P5: Ankersperre auf den EIGENTÜMER vor jeder Zeilensperre. Der Eigentümer
+    # eines Eintrags ist unveränderlich — ein ungesperrter Lesezugriff genügt.
+    _owner_id = db.query(TimeEntry.user_id).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if _owner_id is not None:
+        lock_user_row(db, current_user.tenant_id, _owner_id)
     entry = db.query(TimeEntry).filter(
         TimeEntry.id == entry_id,
         TimeEntry.tenant_id == current_user.tenant_id,  # F-026
-    ).first()
+    ).with_for_update().first()
 
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")

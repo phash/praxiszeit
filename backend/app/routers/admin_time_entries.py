@@ -10,7 +10,7 @@ from app.models import User, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate
 from app.schemas.time_entry_audit_log import AuditLogResponse
-from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses
+from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses, lock_user_row
 from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
@@ -81,6 +81,9 @@ def admin_create_time_entry(
     ).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # P5: Ankersperre auf die Zielperson vor Puffer, Snapshot und clamp.
+    lock_user_row(db, current_user.tenant_id, user.id)
 
     # #201: Clamp start/end to the employee's soll window (grace from tenant setting).
     # The affected employee is `user`, NOT the admin (current_user).
@@ -231,6 +234,14 @@ def admin_update_time_entry(
     current_user: User = Depends(require_admin),
 ):
     """Admin updates a time entry with audit logging."""
+    # P5: Ankersperre (Eigentümer) VOR der Zeilensperre F-028 — feste
+    # Reihenfolge gegen Deadlocks (40P01 → 500).
+    _owner_id = db.query(TimeEntry.user_id).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,
+    ).scalar()
+    if _owner_id is not None:
+        lock_user_row(db, current_user.tenant_id, _owner_id)
     # F-028: lock the row so two concurrent admin edits can't race between
     # validation and apply — otherwise state-B is written while state-A was
     # validated.
