@@ -61,7 +61,12 @@ def test_auto_close_uses_stored_grace(_db_session, employee_user, employee_clien
     e = _open(_db_session, employee_user, clamp_grace_minutes=15)
     _next_day_clock_in(employee_client, monkeypatch)
     _db_session.refresh(e)
-    assert e.end_time == time(18, 15)
+    # Spec 17 (test_clamp_grace, E80): weiter mit 15 gekappt UND der Puffer
+    # bleibt 15 gespeichert — sonst kappte jede spätere Einzel-Neukappung
+    # (Admin-Bearbeitung, Datumswechsel, CR-UPDATE) mit dem gesenkten Wert 0.
+    assert (e.end_time, e.raw_end_time, e.clamp_grace_minutes, e.auto_closed) == (
+        time(18, 15), time(23, 59), 15, True)
+    assert e.net_hours == Decimal("7.75")  # angerechnete Zeit unverändert
 
 
 def test_clock_status_stale_branch_closes_with_clamp(_db_session, employee_user, employee_client, monkeypatch):
