@@ -267,9 +267,11 @@ class WorkingHoursChangePreview(BaseModel):
     * ``period_start``/``period_end`` — der WIRKUNGSBEREICH der Änderung
       (``calculation_service.retarget_window``): ab dem Wirkungsdatum bis zum
       Tag vor der nächsten Stundenänderung, sonst offen und praktisch bis zur
-      spätesten gebuchten Abwesenheit (mindestens bis heute). Früher hart auf
-      „heute" geklemmt — das verschwieg genau die künftigen Abwesenheiten, die
-      das Speichern trotzdem umschreibt.
+      spätesten gebuchten Abwesenheit bzw. zum spätesten Zeiteintrag (Spec 9.1:
+      die Neukappung muss jeden erfassten Eintrag erreichen), mindestens bis
+      heute bzw. zum Wirkungsdatum. Früher hart auf „heute" geklemmt — das
+      verschwieg genau die künftigen Abwesenheiten, die das Speichern trotzdem
+      umschreibt.
     * ``affected_absences`` — Zeilen in diesem Bereich, deren ``hours`` sich
       tatsächlich ändern würden (> 0 ⇒ das Speichern schreibt §16-relevante
       Daten um, egal ob das Datum rückwirkend ist).

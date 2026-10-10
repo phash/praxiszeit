@@ -369,8 +369,10 @@ def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWi
     """Bestimmt den Wirkungsbereich einer ``WorkingHoursChange`` zum
     ``effective_from``: ab diesem Tag bis zum Tag VOR der naechsten Aenderung
     mit groesserem ``effective_from`` — gibt es keine, ist der Bereich offen und
-    wird praktisch auf die spaeteste bereits gebuchte Abwesenheit (mindestens
-    aber heute bzw. das Wirkungsdatum selbst) begrenzt.
+    wird praktisch auf die spaeteste bereits gebuchte Abwesenheit bzw. den
+    spaetesten Zeiteintrag (Spec 9.1: die Neukappung muss jeden erfassten
+    Eintrag erreichen) begrenzt, mindestens aber bis heute bzw. zum
+    Wirkungsdatum selbst.
 
     DIE eine Stelle, die dieses Fenster kennt — Anlegen, Loeschen und Vorschau
     fragen alle hier (Release-Review 1.17.0; vorher klemmte jeder Aufrufer das
@@ -426,10 +428,12 @@ def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWi
     if hard_end is not None:
         end = hard_end
     else:
-        # Offener Bereich: praktisch bis zur spaetesten gebuchten Abwesenheit —
-        # weiter zu laufen brauechte niemand. Mindestens bis heute (bzw. bis zum
-        # Wirkungsdatum, wenn das in der Zukunft liegt), damit das Fenster auch
-        # ohne Abwesenheiten einen sinnvollen Anzeigewert hat.
+        # Offener Bereich: praktisch bis zur spaetesten gebuchten Abwesenheit
+        # bzw. zum spaetesten Zeiteintrag (Spec 9.1: die Neukappung muss jeden
+        # erfassten Eintrag erreichen) — weiter zu laufen brauechte niemand.
+        # Mindestens bis heute (bzw. bis zum Wirkungsdatum, wenn das in der
+        # Zukunft liegt), damit das Fenster auch ohne Abwesenheiten und
+        # Zeiteintraege einen sinnvollen Anzeigewert hat.
         end = max(d for d in (effective_from, today_local(), last_absence, last_time_entry)
                   if d is not None)
 
